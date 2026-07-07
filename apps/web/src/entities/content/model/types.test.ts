@@ -1,0 +1,72 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  canAccessExistingRoom,
+  canDiscoverPublicly,
+  canViewDetailPage,
+  resolveAccessStatus,
+} from "./types";
+
+describe("resolveAccessStatus", () => {
+  it("returns deleted when moderationStatus is deleted, regardless of visibility", () => {
+    expect(resolveAccessStatus("public", "deleted")).toEqual({ kind: "deleted" });
+    expect(resolveAccessStatus("private", "deleted")).toEqual({ kind: "deleted" });
+  });
+
+  it("returns restricted when moderationStatus is restricted, regardless of visibility", () => {
+    expect(resolveAccessStatus("public", "restricted")).toEqual({ kind: "restricted" });
+    expect(resolveAccessStatus("private", "restricted")).toEqual({ kind: "restricted" });
+  });
+
+  it("returns accessible with the visibility when moderationStatus is normal", () => {
+    expect(resolveAccessStatus("public", "normal")).toEqual({ kind: "accessible", visibility: "public" });
+    expect(resolveAccessStatus("link", "normal")).toEqual({ kind: "accessible", visibility: "link" });
+    expect(resolveAccessStatus("private", "normal")).toEqual({ kind: "accessible", visibility: "private" });
+  });
+});
+
+describe("canDiscoverPublicly", () => {
+  it("is true only for accessible + public", () => {
+    expect(canDiscoverPublicly({ kind: "accessible", visibility: "public" })).toBe(true);
+  });
+
+  it("is false for accessible + link or private", () => {
+    expect(canDiscoverPublicly({ kind: "accessible", visibility: "link" })).toBe(false);
+    expect(canDiscoverPublicly({ kind: "accessible", visibility: "private" })).toBe(false);
+  });
+
+  it("is false for restricted or deleted", () => {
+    expect(canDiscoverPublicly({ kind: "restricted" })).toBe(false);
+    expect(canDiscoverPublicly({ kind: "deleted" })).toBe(false);
+  });
+});
+
+describe("canAccessExistingRoom", () => {
+  it("is false only for restricted or deleted moderationStatus", () => {
+    expect(canAccessExistingRoom("restricted")).toBe(false);
+    expect(canAccessExistingRoom("deleted")).toBe(false);
+  });
+
+  it("is true for normal moderationStatus regardless of visibility", () => {
+    expect(canAccessExistingRoom("normal")).toBe(true);
+  });
+});
+
+describe("canViewDetailPage", () => {
+  it("blocks restricted and deleted for owner and non-owner alike", () => {
+    expect(canViewDetailPage({ kind: "restricted" }, true)).toBe(false);
+    expect(canViewDetailPage({ kind: "restricted" }, false)).toBe(false);
+    expect(canViewDetailPage({ kind: "deleted" }, true)).toBe(false);
+    expect(canViewDetailPage({ kind: "deleted" }, false)).toBe(false);
+  });
+
+  it("allows private only for the owner", () => {
+    expect(canViewDetailPage({ kind: "accessible", visibility: "private" }, true)).toBe(true);
+    expect(canViewDetailPage({ kind: "accessible", visibility: "private" }, false)).toBe(false);
+  });
+
+  it("allows public and link for everyone", () => {
+    expect(canViewDetailPage({ kind: "accessible", visibility: "public" }, false)).toBe(true);
+    expect(canViewDetailPage({ kind: "accessible", visibility: "link" }, false)).toBe(true);
+  });
+});

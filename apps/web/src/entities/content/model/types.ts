@@ -19,3 +19,20 @@ export function resolveAccessStatus(
   if (moderationStatus === "restricted") return { kind: "restricted" };
   return { kind: "accessible", visibility };
 }
+
+/** 홈/검색/타인 프로필 노출 가드(techspec-content-versioning.md §1, FR-9/FR-69) — accessible이면서 public인 콘텐츠만. */
+export function canDiscoverPublicly(access: ContentAccessStatus): boolean {
+  return access.kind === "accessible" && access.visibility === "public";
+}
+
+/** 기존 대화방 재접속 가드(FR-86) — visibility와 무관하게 restricted/deleted일 때만 차단. */
+export function canAccessExistingRoom(moderationStatus: ModerationStatus): boolean {
+  return moderationStatus !== "restricted" && moderationStatus !== "deleted";
+}
+
+/** 상세화면/신규 진입 가드(US-019) — canAccessExistingRoom과 규칙이 달라 별도 함수로 둔다. */
+export function canViewDetailPage(access: ContentAccessStatus, isOwner: boolean): boolean {
+  if (access.kind === "restricted" || access.kind === "deleted") return false;
+  if (access.visibility === "private") return isOwner;
+  return true;
+}
