@@ -296,6 +296,23 @@ export interface paths {
         patch: operations["change_password_me_password_patch"];
         trace?: never;
     };
+    "/me/drafts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List My Drafts */
+        get: operations["list_my_drafts_me_drafts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -346,6 +363,32 @@ export interface components {
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+        };
+        /**
+         * ContentType
+         * @enum {string}
+         */
+        ContentType: "character" | "story";
+        /** DraftSummary */
+        DraftSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /**
+             * Thumbnailassetid
+             * Format: uuid
+             */
+            thumbnailAssetId: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /** GuardianConsentRequest */
         GuardianConsentRequest: {
@@ -1100,6 +1143,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_drafts_me_drafts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DraftSummary"][];
                 };
             };
         };

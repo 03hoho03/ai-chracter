@@ -671,6 +671,31 @@
         }
       }
     },
+    "/me/drafts": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List My Drafts",
+        "operationId": "list_my_drafts_me_drafts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DraftSummary"
+                  },
+                  "type": "array",
+                  "title": "Response List My Drafts Me Drafts Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -750,6 +775,49 @@
           "newPassword"
         ],
         "title": "ChangePasswordRequest"
+      },
+      "ContentType": {
+        "type": "string",
+        "enum": [
+          "character",
+          "story"
+        ],
+        "title": "ContentType"
+      },
+      "DraftSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thumbnailassetid"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailAssetId",
+          "updatedAt"
+        ],
+        "title": "DraftSummary"
       },
       "GuardianConsentRequest": {
         "properties": {
