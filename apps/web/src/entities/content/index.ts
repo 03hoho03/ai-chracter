@@ -8,6 +8,7 @@ export { useGenreListQuery } from "./api/useGenreListQuery";
 export type { GenreResponse } from "./api/useGenreListQuery";
 export { useProfileContentListQuery } from "./api/useProfileContentListQuery";
 export type { ContentSummary } from "./api/useProfileContentListQuery";
+export { useToggleLikeMutation } from "./api/useToggleLikeMutation";
 export {
   canAccessExistingRoom,
   canDiscoverPublicly,

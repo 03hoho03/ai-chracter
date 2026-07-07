@@ -588,6 +588,14 @@ async def get_content_detail(
             for setup in setups
         ]
 
+    is_liked = False
+    if viewer_user_id is not None:
+        is_liked = (
+            await db.execute(
+                select(Like).where(Like.user_id == viewer_user_id, Like.content_id == id)
+            )
+        ).scalar_one_or_none() is not None
+
     return ContentDetailResponse(
         id=content.id,
         type=content.type,
@@ -602,6 +610,7 @@ async def get_content_detail(
         detail_description=version.detail_description,
         chat_count=content.chat_count,
         like_count=content.like_count,
+        is_liked=is_liked,
         starting_setups=starting_setups,
         version_number=version.version_number,
         updated_at=version.published_at,

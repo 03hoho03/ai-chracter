@@ -95,6 +95,7 @@ class ContentDetailResponse(CamelModel):
     detail_description: str
     chat_count: int
     like_count: int
+    is_liked: bool
     starting_setups: list[StartingSetupSummary] | None
     version_number: int
     updated_at: datetime

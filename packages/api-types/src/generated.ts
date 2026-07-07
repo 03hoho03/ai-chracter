@@ -673,6 +673,8 @@ export interface components {
             chatCount: number;
             /** Likecount */
             likeCount: number;
+            /** Isliked */
+            isLiked: boolean;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupSummary"][] | null;
             /** Versionnumber */

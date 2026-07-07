@@ -1,11 +1,18 @@
+import { useState } from "react";
+import { cn } from "@ai-character-chat/ui/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { BookOpen, ImageOff, UserRound } from "lucide-react";
+import { BookOpen, Heart, ImageOff, MessageCircle, UserRound } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
+import { useDebounce } from "react-use";
+import { toast } from "sonner";
 
 import {
   canViewDetailPage,
+  contentKeys,
   toContentAccessStatus,
   useContentDetailQuery,
+  useToggleLikeMutation,
   type ContentType,
 } from "../../../entities/content";
 import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
@@ -15,6 +22,10 @@ const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
   story: "스토리",
 };
+
+// techspec-overview.md §11 — 좋아요 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
+// 화면 표시는 desiredLiked로 매 클릭마다 즉시 반영한다.
+const LIKE_SYNC_DEBOUNCE_MS = 400;
 
 function ContentDetailSkeleton() {
   return (
@@ -33,6 +44,31 @@ export function ContentDetailView({ id }: { id: string }) {
   const detailQuery = useContentDetailQuery(id);
   const setModalState = useSetAtom(contentDetailModalAtom);
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const toggleLike = useToggleLikeMutation(id);
+  const [desiredLiked, setDesiredLiked] = useState<boolean | undefined>(undefined);
+  const content = detailQuery.data;
+
+  useDebounce(
+    () => {
+      if (content === undefined || desiredLiked === undefined || desiredLiked === content.isLiked) return;
+      const syncingLiked = desiredLiked;
+      toggleLike.mutate(syncingLiked, {
+        onError: (error) => {
+          toast.error(
+            error.status === 401 ? "로그인 후 좋아요를 남길 수 있어요." : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+        },
+        onSettled: () => {
+          // 정산되는 사이 다시 클릭해 desiredLiked가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
+          setDesiredLiked((current) => (current === syncingLiked ? undefined : current));
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+        },
+      });
+    },
+    LIKE_SYNC_DEBOUNCE_MS,
+    [desiredLiked],
+  );
 
   if (detailQuery.isPending) return <ContentDetailSkeleton />;
 
@@ -44,12 +80,16 @@ export function ContentDetailView({ id }: { id: string }) {
     );
   }
 
-  const content = detailQuery.data;
+  if (content === undefined) return null;
+
   const access = toContentAccessStatus(content.accessStatus);
 
   if (!canViewDetailPage(access, content.isOwner)) {
     return <ContentUnavailableState access={access} />;
   }
+
+  const isLiked = desiredLiked ?? content.isLiked;
+  const likeCount = content.likeCount + (isLiked === content.isLiked ? 0 : isLiked ? 1 : -1);
 
   return (
     <article className="flex flex-col gap-5 p-1">
@@ -104,6 +144,27 @@ export function ContentDetailView({ id }: { id: string }) {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="flex items-center gap-4 text-sm text-muted-foreground">
+        <span className="inline-flex items-center gap-1.5">
+          <MessageCircle aria-hidden className="size-4" />
+          {content.chatCount.toLocaleString()}
+        </span>
+
+        <button
+          type="button"
+          aria-pressed={isLiked}
+          onClick={() => setDesiredLiked((current) => !(current ?? content.isLiked))}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground",
+            isLiked && "text-primary hover:text-primary",
+          )}
+        >
+          <Heart aria-hidden className={cn("size-4", isLiked && "fill-primary")} />
+          {likeCount.toLocaleString()}
+          <span className="sr-only">{isLiked ? "좋아요 취소" : "좋아요"}</span>
+        </button>
       </div>
 
       <p className="text-sm font-medium text-foreground">{content.oneLiner}</p>

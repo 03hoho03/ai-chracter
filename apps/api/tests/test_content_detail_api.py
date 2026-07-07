@@ -15,6 +15,7 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Genre,
+    Like,
     ModerationStatus,
     StartingSetup,
     StoryPromptTemplate,
@@ -175,6 +176,7 @@ async def test_get_content_detail_returns_meta_metrics_and_version_fields(
     assert body["detailDescription"] == "상세"
     assert body["chatCount"] == 3
     assert body["likeCount"] == 5
+    assert body["isLiked"] is False
     assert body["startingSetups"] is None
     assert body["versionNumber"] == 1
     assert body["isOwner"] is False
@@ -270,6 +272,32 @@ async def test_get_content_detail_is_owner_true_only_for_creator(
     await _login_as(db_client, owner.id)
     owner_resp = await db_client.get(f"/contents/{content.id}")
     assert owner_resp.json()["isOwner"] is True
+
+
+async def test_get_content_detail_is_liked_reflects_viewers_own_like(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = _make_user()
+    liker = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, liker, other])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+
+    content, _ = await _make_published_content(db_session, creator_user_id=owner.id, genre_id=genre.id)
+    db_session.add(Like(user_id=liker.id, content_id=content.id))
+    await db_session.commit()
+
+    anon_resp = await db_client.get(f"/contents/{content.id}")
+    assert anon_resp.json()["isLiked"] is False
+
+    await _login_as(db_client, other.id)
+    other_resp = await db_client.get(f"/contents/{content.id}")
+    assert other_resp.json()["isLiked"] is False
+
+    await _login_as(db_client, liker.id)
+    liker_resp = await db_client.get(f"/contents/{content.id}")
+    assert liker_resp.json()["isLiked"] is True
 
 
 async def test_get_content_detail_404_when_not_found_or_never_published(
