@@ -34,6 +34,12 @@ async def test_migration_creates_expected_tables(db_engine: AsyncEngine) -> None
         "chat_room_stats",
         "story_ending_unlocks",
         "character_image_exposures",
+        "favorites",
+        "likes",
+        "reports",
+        "moderation_actions",
+        "notifications",
+        "appeals",
     } <= tables
 
 
@@ -143,3 +149,49 @@ async def test_character_image_exposures_composite_pk(db_engine: AsyncEngine) ->
         columns = await connection.run_sync(_pk_columns)
 
     assert columns == {"user_id", "content_id", "image_entity_id"}
+
+
+async def test_favorites_composite_pk(db_engine: AsyncEngine) -> None:
+    def _pk_columns(sync_conn: Connection) -> set[str]:
+        pk = sa.inspect(sync_conn).get_pk_constraint("favorites")
+        return set(pk["constrained_columns"])
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_pk_columns)
+
+    assert columns == {"user_id", "content_id"}
+
+
+async def test_likes_composite_pk(db_engine: AsyncEngine) -> None:
+    def _pk_columns(sync_conn: Connection) -> set[str]:
+        pk = sa.inspect(sync_conn).get_pk_constraint("likes")
+        return set(pk["constrained_columns"])
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_pk_columns)
+
+    assert columns == {"user_id", "content_id"}
+
+
+async def test_notifications_action_id_fk_points_to_moderation_actions(db_engine: AsyncEngine) -> None:
+    def _fk_targets(sync_conn: Connection) -> set[str]:
+        fks = sa.inspect(sync_conn).get_foreign_keys("notifications")
+        return {fk["referred_table"] for fk in fks if "action_id" in fk["constrained_columns"]}
+
+    async with db_engine.connect() as connection:
+        targets = await connection.run_sync(_fk_targets)
+
+    assert targets == {"moderation_actions"}
+
+
+async def test_appeals_target_id_has_no_fk(db_engine: AsyncEngine) -> None:
+    """target_id는 target_kind에 따라 다른 대상을 가리키는 다형 참조라 DB FK가 없다."""
+
+    def _fk_constrained_columns(sync_conn: Connection) -> set[str]:
+        fks = sa.inspect(sync_conn).get_foreign_keys("appeals")
+        return {col for fk in fks for col in fk["constrained_columns"]}
+
+    async with db_engine.connect() as connection:
+        constrained_columns = await connection.run_sync(_fk_constrained_columns)
+
+    assert "target_id" not in constrained_columns

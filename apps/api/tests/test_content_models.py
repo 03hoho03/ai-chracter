@@ -12,7 +12,9 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Favorite,
     Genre,
+    Like,
     ModerationStatus,
     User,
 )
@@ -118,5 +120,63 @@ async def test_content_version_rejects_unknown_content(db_session: AsyncSession)
     version = ContentVersion(content_id=uuid.uuid4(), detail_description="설명")
     db_session.add(version)
 
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def _make_user_and_content(db_session: AsyncSession) -> tuple[User, Content]:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session, "일상")
+
+    content = _make_content(user, genre)
+    db_session.add(content)
+    await db_session.flush()
+    return user, content
+
+
+async def test_favorite_composite_pk_allows_same_content_favorited_by_two_users(
+    db_session: AsyncSession,
+) -> None:
+    _, content = await _make_user_and_content(db_session)
+    other_user = _make_user()
+    db_session.add(other_user)
+    await db_session.flush()
+
+    db_session.add(Favorite(user_id=other_user.id, content_id=content.id))
+    another_user = _make_user()
+    db_session.add(another_user)
+    await db_session.flush()
+    db_session.add(Favorite(user_id=another_user.id, content_id=content.id))
+    await db_session.flush()
+
+
+async def test_favorite_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
+    user, content = await _make_user_and_content(db_session)
+
+    db_session.add(Favorite(user_id=user.id, content_id=content.id))
+    await db_session.flush()
+
+    db_session.add(Favorite(user_id=user.id, content_id=content.id))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_like_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
+    user, content = await _make_user_and_content(db_session)
+
+    db_session.add(Like(user_id=user.id, content_id=content.id))
+    await db_session.flush()
+
+    db_session.add(Like(user_id=user.id, content_id=content.id))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_like_rejects_unknown_content(db_session: AsyncSession) -> None:
+    user, _ = await _make_user_and_content(db_session)
+
+    db_session.add(Like(user_id=user.id, content_id=uuid.uuid4()))
     with pytest.raises(IntegrityError):
         await db_session.flush()
