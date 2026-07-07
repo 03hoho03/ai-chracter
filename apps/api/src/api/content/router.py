@@ -10,11 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.content.schemas import (
+    ContentAccessStatus,
+    ContentDetailResponse,
     ContentListItem,
     ContentListResponse,
     ContentSummary,
+    ContentVersionSummary,
     DraftSummary,
     GenreResponse,
+    StartingSetupSummary,
     UpdateProfileRequest,
     UserProfileResponse,
     VisibilityFilter,
@@ -31,7 +35,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetStatus
-from api.db.models.story import StoryVersionDetail
+from api.db.models.story import StartingSetup, StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -418,3 +422,121 @@ async def list_contents(
             next_cursor = _encode_cursor([last_content.created_at.isoformat(), str(last_content.id)])
 
     return ContentListResponse(items=items, next_cursor=next_cursor)
+
+
+def _resolve_access_status(
+    visibility: ContentVisibility, moderation_status: ModerationStatus
+) -> ContentAccessStatus:
+    """Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` — kept as the
+    single source of truth for this rule on the BE side too."""
+    if moderation_status == ModerationStatus.DELETED:
+        return ContentAccessStatus(kind="deleted")
+    if moderation_status == ModerationStatus.RESTRICTED:
+        return ContentAccessStatus(kind="restricted")
+    return ContentAccessStatus(kind="accessible", visibility=visibility)
+
+
+@router.get("/contents/{id}")
+async def get_content_detail(
+    id: uuid.UUID,
+    viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
+    db: AsyncSession = Depends(get_db_session),
+) -> ContentDetailResponse:
+    """techspec-backend-content.md §1, techspec-content-versioning.md §1.
+
+    Access control is query-response-based, not a 403/404 gate here: the full detail
+    (including `accessStatus`/`isOwner`) is always returned for any existing, published
+    content, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides
+    whether to render it or an "unavailable" state instead.
+    """
+    peek = await db.get(Content, id)
+    if peek is None or peek.current_published_version_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    detail_model = _detail_model(peek.type)
+    row = (
+        await db.execute(
+            select(
+                Content,
+                ContentVersion,
+                detail_model.name,
+                detail_model.one_liner,
+                detail_model.thumbnail_asset_id,
+                Genre.name,
+                User.nickname,
+            )
+            .join(ContentVersion, ContentVersion.id == Content.current_published_version_id)
+            .join(detail_model, detail_model.content_version_id == ContentVersion.id)
+            .join(Genre, Genre.id == Content.genre_id)
+            .join(User, User.id == Content.creator_user_id)
+            .where(Content.id == id)
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    content, version, name, one_liner, thumbnail_asset_id, genre_name, creator_nickname = row
+    assert version.version_number is not None
+    assert version.published_at is not None
+
+    starting_setups: list[StartingSetupSummary] | None = None
+    if content.type == ContentType.STORY:
+        setups = (
+            await db.scalars(
+                select(StartingSetup)
+                .where(StartingSetup.content_version_id == version.id)
+                .order_by(StartingSetup.order)
+            )
+        ).all()
+        starting_setups = [
+            StartingSetupSummary(id=setup.id, name=setup.name, prologue=setup.prologue)
+            for setup in setups
+        ]
+
+    return ContentDetailResponse(
+        id=content.id,
+        type=content.type,
+        name=name,
+        thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
+        creator_user_id=content.creator_user_id,
+        creator_nickname=creator_nickname,
+        genre_id=content.genre_id,
+        genre_name=genre_name,
+        hashtags=content.hashtags,
+        one_liner=one_liner,
+        detail_description=version.detail_description,
+        chat_count=content.chat_count,
+        like_count=content.like_count,
+        starting_setups=starting_setups,
+        version_number=version.version_number,
+        updated_at=version.published_at,
+        access_status=_resolve_access_status(content.visibility, content.moderation_status),
+        is_owner=viewer_user_id is not None and viewer_user_id == content.creator_user_id,
+    )
+
+
+@router.get("/contents/{id}/versions")
+async def list_content_versions(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ContentVersionSummary]:
+    """techspec-backend-content.md §1, US-017 — history only, no version-switch action."""
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    versions = (
+        await db.scalars(
+            select(ContentVersion)
+            .where(ContentVersion.content_id == id, ContentVersion.published_at.is_not(None))
+            .order_by(ContentVersion.version_number.desc())
+        )
+    ).all()
+
+    summaries: list[ContentVersionSummary] = []
+    for version in versions:
+        assert version.version_number is not None
+        assert version.published_at is not None
+        summaries.append(
+            ContentVersionSummary(version_number=version.version_number, published_at=version.published_at)
+        )
+    return summaries

@@ -364,6 +364,94 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/genres": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Genres */
+        get: operations["list_genres_genres_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Contents
+         * @description techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.
+         *
+         *     `sort=popular` prioritizes chat_count over like_count/view_count by ordering on
+         *     all three columns lexicographically (chat_count first) instead of a single
+         *     weighted score, so chat_count strictly dominates ties by construction — the
+         *     actual weighted-score formula is still a PRD-level open question for later
+         *     tuning. `sort=genre` orders by the genre master's sort_order.
+         */
+        get: operations["list_contents_contents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Content Detail
+         * @description techspec-backend-content.md §1, techspec-content-versioning.md §1.
+         *
+         *     Access control is query-response-based, not a 403/404 gate here: the full detail
+         *     (including `accessStatus`/`isOwner`) is always returned for any existing, published
+         *     content, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides
+         *     whether to render it or an "unavailable" state instead.
+         */
+        get: operations["get_content_detail_contents__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{id}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Content Versions
+         * @description techspec-backend-content.md §1, US-017 — history only, no version-switch action.
+         */
+        get: operations["list_content_versions_contents__id__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -449,6 +537,97 @@ export interface components {
             /** Newpassword */
             newPassword: string;
         };
+        /**
+         * ContentAccessStatus
+         * @description Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:
+         *     `visibility` is only meaningful when `kind == "accessible"`.
+         */
+        ContentAccessStatus: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "accessible" | "restricted" | "deleted";
+            visibility?: components["schemas"]["ContentVisibility"] | null;
+        };
+        /** ContentDetailResponse */
+        ContentDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /**
+             * Creatoruserid
+             * Format: uuid
+             */
+            creatorUserId: string;
+            /** Creatornickname */
+            creatorNickname: string;
+            /**
+             * Genreid
+             * Format: uuid
+             */
+            genreId: string;
+            /** Genrename */
+            genreName: string;
+            /** Hashtags */
+            hashtags: string[];
+            /** Oneliner */
+            oneLiner: string;
+            /** Detaildescription */
+            detailDescription: string;
+            /** Chatcount */
+            chatCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Startingsetups */
+            startingSetups: components["schemas"]["StartingSetupSummary"][] | null;
+            /** Versionnumber */
+            versionNumber: number;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+            accessStatus: components["schemas"]["ContentAccessStatus"];
+            /** Isowner */
+            isOwner: boolean;
+        };
+        /** ContentListItem */
+        ContentListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Viewcount */
+            viewCount: number;
+            /**
+             * Creatoruserid
+             * Format: uuid
+             */
+            creatorUserId: string;
+            /** Creatornickname */
+            creatorNickname: string;
+        };
+        /** ContentListResponse */
+        ContentListResponse: {
+            /** Items */
+            items: components["schemas"]["ContentListItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
         /** ContentSummary */
         ContentSummary: {
             /**
@@ -476,6 +655,16 @@ export interface components {
          * @enum {string}
          */
         ContentType: "character" | "story";
+        /** ContentVersionSummary */
+        ContentVersionSummary: {
+            /** Versionnumber */
+            versionNumber: number;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
         /**
          * ContentVisibility
          * @enum {string}
@@ -501,6 +690,18 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /** GenreResponse */
+        GenreResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Sortorder */
+            sortOrder: number;
         };
         /** GuardianConsentRequest */
         GuardianConsentRequest: {
@@ -685,6 +886,18 @@ export interface components {
         SignupResponse: {
             /** Email */
             email: string;
+        };
+        /** StartingSetupSummary */
+        StartingSetupSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Prologue */
+            prologue: string;
         };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
@@ -1422,6 +1635,125 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContentSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_genres_genres_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenreResponse"][];
+                };
+            };
+        };
+    };
+    list_contents_contents_get: {
+        parameters: {
+            query: {
+                type: components["schemas"]["ContentType"];
+                sort?: "latest" | "popular" | "genre";
+                genre?: string | null;
+                creator?: string | null;
+                hashtag?: string | null;
+                q?: string | null;
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_content_detail_contents__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_content_versions_contents__id__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentVersionSummary"][];
                 };
             };
             /** @description Validation Error */

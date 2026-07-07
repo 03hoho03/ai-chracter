@@ -857,6 +857,262 @@
         }
       }
     },
+    "/genres": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List Genres",
+        "operationId": "list_genres_genres_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GenreResponse"
+                  },
+                  "type": "array",
+                  "title": "Response List Genres Genres Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List Contents",
+        "description": "techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.\n\n`sort=popular` prioritizes chat_count over like_count/view_count by ordering on\nall three columns lexicographically (chat_count first) instead of a single\nweighted score, so chat_count strictly dominates ties by construction — the\nactual weighted-score formula is still a PRD-level open question for later\ntuning. `sort=genre` orders by the genre master's sort_order.",
+        "operationId": "list_contents_contents_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContentType"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "latest",
+                "popular",
+                "genre"
+              ],
+              "type": "string",
+              "default": "latest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "genre",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Genre"
+            }
+          },
+          {
+            "name": "creator",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Creator"
+            }
+          },
+          {
+            "name": "hashtag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Hashtag"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Get Content Detail",
+        "description": "techspec-backend-content.md §1, techspec-content-versioning.md §1.\n\nAccess control is query-response-based, not a 403/404 gate here: the full detail\n(including `accessStatus`/`isOwner`) is always returned for any existing, published\ncontent, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides\nwhether to render it or an \"unavailable\" state instead.",
+        "operationId": "get_content_detail_contents__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/versions": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List Content Versions",
+        "description": "techspec-backend-content.md §1, US-017 — history only, no version-switch action.",
+        "operationId": "list_content_versions_contents__id__versions_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentVersionSummary"
+                  },
+                  "title": "Response List Content Versions Contents  Id  Versions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/notifications": {
       "get": {
         "tags": [
@@ -1005,6 +1261,234 @@
         ],
         "title": "ChangePasswordRequest"
       },
+      "ContentAccessStatus": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "accessible",
+              "restricted",
+              "deleted"
+            ],
+            "title": "Kind"
+          },
+          "visibility": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentVisibility"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ContentAccessStatus",
+        "description": "Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:\n`visibility` is only meaningful when `kind == \"accessible\"`."
+      },
+      "ContentDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "creatorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Creatoruserid"
+          },
+          "creatorNickname": {
+            "type": "string",
+            "title": "Creatornickname"
+          },
+          "genreId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Genreid"
+          },
+          "genreName": {
+            "type": "string",
+            "title": "Genrename"
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "detailDescription": {
+            "type": "string",
+            "title": "Detaildescription"
+          },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "startingSetups": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/StartingSetupSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startingsetups"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "title": "Versionnumber"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          },
+          "accessStatus": {
+            "$ref": "#/components/schemas/ContentAccessStatus"
+          },
+          "isOwner": {
+            "type": "boolean",
+            "title": "Isowner"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailUrl",
+          "creatorUserId",
+          "creatorNickname",
+          "genreId",
+          "genreName",
+          "hashtags",
+          "oneLiner",
+          "detailDescription",
+          "chatCount",
+          "likeCount",
+          "startingSetups",
+          "versionNumber",
+          "updatedAt",
+          "accessStatus",
+          "isOwner"
+        ],
+        "title": "ContentDetailResponse"
+      },
+      "ContentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "creatorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Creatoruserid"
+          },
+          "creatorNickname": {
+            "type": "string",
+            "title": "Creatornickname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailUrl",
+          "viewCount",
+          "creatorUserId",
+          "creatorNickname"
+        ],
+        "title": "ContentListItem"
+      },
+      "ContentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "ContentListResponse"
+      },
       "ContentSummary": {
         "properties": {
           "id": {
@@ -1067,6 +1551,25 @@
         ],
         "title": "ContentType"
       },
+      "ContentVersionSummary": {
+        "properties": {
+          "versionNumber": {
+            "type": "integer",
+            "title": "Versionnumber"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "versionNumber",
+          "publishedAt"
+        ],
+        "title": "ContentVersionSummary"
+      },
       "ContentVisibility": {
         "type": "string",
         "enum": [
@@ -1110,6 +1613,30 @@
           "updatedAt"
         ],
         "title": "DraftSummary"
+      },
+      "GenreResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "sortOrder": {
+            "type": "integer",
+            "title": "Sortorder"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "sortOrder"
+        ],
+        "title": "GenreResponse"
       },
       "GuardianConsentRequest": {
         "properties": {
@@ -1493,6 +2020,30 @@
           "email"
         ],
         "title": "SignupResponse"
+      },
+      "StartingSetupSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prologue": {
+            "type": "string",
+            "title": "Prologue"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prologue"
+        ],
+        "title": "StartingSetupSummary"
       },
       "UpdateProfileRequest": {
         "properties": {
