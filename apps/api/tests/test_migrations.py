@@ -24,6 +24,11 @@ async def test_migration_creates_expected_tables(db_engine: AsyncEngine) -> None
         "story_version_details",
         "starting_setups",
         "stat_defs",
+        "keyword_notes",
+        "shortcuts",
+        "endings",
+        "ending_rule_groups",
+        "ending_rules",
     } <= tables
 
 
@@ -76,3 +81,27 @@ async def test_stat_defs_fk_points_to_starting_setups(db_engine: AsyncEngine) ->
         targets = await connection.run_sync(_fk_targets)
 
     assert targets == {"starting_setups"}
+
+
+async def test_ending_rule_groups_has_no_self_referential_fk(db_engine: AsyncEngine) -> None:
+    """techspec-db-schema.md §5: groups allow only one level of nesting (no group-in-group)."""
+
+    def _fk_targets(sync_conn: Connection) -> set[str]:
+        fks = sa.inspect(sync_conn).get_foreign_keys("ending_rule_groups")
+        return {fk["referred_table"] for fk in fks}
+
+    async with db_engine.connect() as connection:
+        targets = await connection.run_sync(_fk_targets)
+
+    assert "ending_rule_groups" not in targets
+
+
+async def test_ending_rules_has_exactly_one_parent_check_constraint(db_engine: AsyncEngine) -> None:
+    def _check_constraint_names(sync_conn: Connection) -> set[str]:
+        checks = sa.inspect(sync_conn).get_check_constraints("ending_rules")
+        return {c["name"] for c in checks if c["name"] is not None}
+
+    async with db_engine.connect() as connection:
+        names = await connection.run_sync(_check_constraint_names)
+
+    assert "ck_ending_rules_exactly_one_parent" in names

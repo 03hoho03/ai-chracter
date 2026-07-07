@@ -12,7 +12,19 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind
-from api.db.models.story import StartingSetup, StatDef, StoryPromptTemplate, StoryVersionDetail
+from api.db.models.story import (
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    EndingRuleOperator,
+    KeywordNote,
+    LogicalOp,
+    Shortcut,
+    StartingSetup,
+    StatDef,
+    StoryPromptTemplate,
+    StoryVersionDetail,
+)
 
 __all__ = [
     "AdminUser",
@@ -24,9 +36,16 @@ __all__ = [
     "ContentType",
     "ContentVersion",
     "ContentVisibility",
+    "Ending",
+    "EndingRule",
+    "EndingRuleGroup",
+    "EndingRuleOperator",
     "Genre",
     "GuardianConsent",
+    "KeywordNote",
+    "LogicalOp",
     "ModerationStatus",
+    "Shortcut",
     "SituationalImage",
     "StartingSetup",
     "StatDef",

@@ -14,8 +14,15 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    EndingRuleOperator,
     Genre,
+    KeywordNote,
+    LogicalOp,
     ModerationStatus,
+    Shortcut,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -188,6 +195,181 @@ async def test_stat_def_rejects_unknown_starting_setup(db_session: AsyncSession)
         order=1,
     )
     db_session.add(stat)
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_keyword_note_can_apply_to_whole_story_or_one_starting_setup(
+    db_session: AsyncSession,
+) -> None:
+    draft = await _make_story_draft(db_session)
+    setup = await _make_starting_setup(db_session, draft)
+
+    story_wide = KeywordNote(
+        entity_id=uuid.uuid4(),
+        content_version_id=draft.id,
+        info_text="이 세계관에서는 마법이 금지되어 있다.",
+        trigger_keywords=["마법", "금지"],
+    )
+    scoped = KeywordNote(
+        entity_id=uuid.uuid4(),
+        content_version_id=draft.id,
+        starting_setup_id=setup.id,
+        info_text="이 시작 설정에서는 주인공이 이미 마법사다.",
+        trigger_keywords=["마법사"],
+    )
+    db_session.add_all([story_wide, scoped])
+    await db_session.flush()
+
+    assert story_wide.starting_setup_id is None
+    assert scoped.starting_setup_id == setup.id
+
+
+async def test_shortcut_attaches_to_content_version(db_session: AsyncSession) -> None:
+    draft = await _make_story_draft(db_session)
+
+    shortcut = Shortcut(
+        entity_id=uuid.uuid4(),
+        content_version_id=draft.id,
+        name="자기소개",
+        description="캐릭터가 자기소개를 하도록 유도",
+        prompt="당신의 이름과 목적을 소개해주세요.",
+    )
+    db_session.add(shortcut)
+    await db_session.flush()
+
+    assert shortcut.content_version_id == draft.id
+
+
+async def test_ending_attaches_to_starting_setup_and_orders_list(db_session: AsyncSession) -> None:
+    draft = await _make_story_draft(db_session)
+    setup = await _make_starting_setup(db_session, draft)
+
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="해피엔딩",
+        turn_count_gate=10,
+        judgment_prompt="호감도가 80 이상이면 해피엔딩",
+        order=1,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+
+    assert ending.epilogue is None
+    assert ending.starting_setup_id == setup.id
+
+
+async def test_ending_rule_top_level_is_valid(db_session: AsyncSession) -> None:
+    draft = await _make_story_draft(db_session)
+    setup = await _make_starting_setup(db_session, draft)
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="해피엔딩",
+        turn_count_gate=10,
+        judgment_prompt="호감도가 80 이상이면 해피엔딩",
+        order=1,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+
+    rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        ending_id=ending.id,
+        stat_def_entity_id=uuid.uuid4(),
+        operator=EndingRuleOperator.GTE,
+        threshold=80,
+        order=1,
+    )
+    db_session.add(rule)
+    await db_session.flush()
+
+    assert rule.ending_id == ending.id
+    assert rule.rule_group_id is None
+
+
+async def test_ending_rule_inside_group_is_valid(db_session: AsyncSession) -> None:
+    draft = await _make_story_draft(db_session)
+    setup = await _make_starting_setup(db_session, draft)
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="해피엔딩",
+        turn_count_gate=10,
+        judgment_prompt="호감도가 80 이상이면 해피엔딩",
+        order=1,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+
+    group = EndingRuleGroup(
+        entity_id=uuid.uuid4(),
+        ending_id=ending.id,
+        next_op=LogicalOp.OR,
+        order=1,
+    )
+    db_session.add(group)
+    await db_session.flush()
+
+    rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        rule_group_id=group.id,
+        stat_def_entity_id=uuid.uuid4(),
+        operator=EndingRuleOperator.LT,
+        threshold=20,
+        order=1,
+    )
+    db_session.add(rule)
+    await db_session.flush()
+
+    assert rule.rule_group_id == group.id
+    assert rule.ending_id is None
+
+
+async def test_ending_rule_rejects_both_ending_and_group_set(db_session: AsyncSession) -> None:
+    draft = await _make_story_draft(db_session)
+    setup = await _make_starting_setup(db_session, draft)
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="해피엔딩",
+        turn_count_gate=10,
+        judgment_prompt="호감도가 80 이상이면 해피엔딩",
+        order=1,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+
+    group = EndingRuleGroup(entity_id=uuid.uuid4(), ending_id=ending.id, order=1)
+    db_session.add(group)
+    await db_session.flush()
+
+    rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        ending_id=ending.id,
+        rule_group_id=group.id,
+        stat_def_entity_id=uuid.uuid4(),
+        operator=EndingRuleOperator.EQ,
+        threshold=50,
+        order=1,
+    )
+    db_session.add(rule)
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_ending_rule_rejects_neither_ending_nor_group_set(db_session: AsyncSession) -> None:
+    rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        stat_def_entity_id=uuid.uuid4(),
+        operator=EndingRuleOperator.EQ,
+        threshold=50,
+        order=1,
+    )
+    db_session.add(rule)
 
     with pytest.raises(IntegrityError):
         await db_session.flush()
