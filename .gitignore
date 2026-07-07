@@ -5,3 +5,8 @@
 node_modules/
 dist/
 .turbo/
+.env
+.venv/
+__pycache__/
+*.pyc
+.mypy_cache/
