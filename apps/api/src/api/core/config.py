@@ -15,5 +15,12 @@ class Settings(BaseSettings):
 
     cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
+    aws_region: str = "ap-northeast-2"
+    s3_bucket_name: str = "ai-character-chat-assets-dev"
+    s3_presigned_url_expires_seconds: int = 900
+    # Overridden for local dev/tests to point at a non-AWS S3-compatible endpoint
+    # (e.g. `uv run moto_server`); left unset in real AWS environments.
+    s3_endpoint_url: str | None = None
+
 
 settings = Settings()

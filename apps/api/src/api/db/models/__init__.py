@@ -21,7 +21,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetKind
+from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import (
     Appeal,
     AppealStatus,
@@ -56,6 +56,7 @@ __all__ = [
     "AppealVerdict",
     "Asset",
     "AssetKind",
+    "AssetStatus",
     "CharacterImageExposure",
     "CharacterVersionDetail",
     "ChatMessage",

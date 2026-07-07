@@ -23,6 +23,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/presigned-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Presigned Upload */
+        post: operations["create_presigned_upload_assets_presigned_upload_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assets/{asset_id}/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Complete Asset Upload */
+        post: operations["complete_asset_upload_assets__asset_id__complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -44,10 +78,54 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AssetCompleteResponse */
+        AssetCompleteResponse: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            status: components["schemas"]["AssetStatus"];
+        };
+        /**
+         * AssetPurpose
+         * @description techspec-backend-media.md §1. Extend as new upload flows need a purpose.
+         * @enum {string}
+         */
+        AssetPurpose: "profile-image" | "situational-image";
+        /**
+         * AssetStatus
+         * @description techspec-backend-media.md §1: row is created pending at presigned-upload
+         *     time, and flipped to ready once POST /assets/{id}/complete confirms the S3
+         *     object exists.
+         * @enum {string}
+         */
+        AssetStatus: "pending" | "ready";
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** PresignedUploadRequest */
+        PresignedUploadRequest: {
+            /** Contenttype */
+            contentType: string;
+            purpose: components["schemas"]["AssetPurpose"];
+        };
+        /** PresignedUploadResponse */
+        PresignedUploadResponse: {
+            /** Uploadurl */
+            uploadUrl: string;
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
         };
         /** SessionEchoPayload */
         SessionEchoPayload: {
@@ -153,6 +231,70 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    create_presigned_upload_assets_presigned_upload_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PresignedUploadRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PresignedUploadResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_asset_upload_assets__asset_id__complete_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssetCompleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

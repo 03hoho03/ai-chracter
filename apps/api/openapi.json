@@ -83,6 +83,90 @@
         }
       }
     },
+    "/assets/presigned-upload": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Create Presigned Upload",
+        "operationId": "create_presigned_upload_assets_presigned_upload_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignedUploadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedUploadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/assets/{asset_id}/complete": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Complete Asset Upload",
+        "operationId": "complete_asset_upload_assets__asset_id__complete_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssetCompleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -108,6 +192,42 @@
   },
   "components": {
     "schemas": {
+      "AssetCompleteResponse": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AssetStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "status"
+        ],
+        "title": "AssetCompleteResponse"
+      },
+      "AssetPurpose": {
+        "type": "string",
+        "enum": [
+          "profile-image",
+          "situational-image"
+        ],
+        "title": "AssetPurpose",
+        "description": "techspec-backend-media.md §1. Extend as new upload flows need a purpose."
+      },
+      "AssetStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "ready"
+        ],
+        "title": "AssetStatus",
+        "description": "techspec-backend-media.md §1: row is created pending at presigned-upload\ntime, and flipped to ready once POST /assets/{id}/complete confirms the S3\nobject exists."
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -120,6 +240,49 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "PresignedUploadRequest": {
+        "properties": {
+          "contentType": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Contenttype"
+          },
+          "purpose": {
+            "$ref": "#/components/schemas/AssetPurpose"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentType",
+          "purpose"
+        ],
+        "title": "PresignedUploadRequest"
+      },
+      "PresignedUploadResponse": {
+        "properties": {
+          "uploadUrl": {
+            "type": "string",
+            "title": "Uploadurl"
+          },
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "uploadUrl",
+          "assetId",
+          "expiresAt"
+        ],
+        "title": "PresignedUploadResponse"
       },
       "SessionEchoPayload": {
         "properties": {
