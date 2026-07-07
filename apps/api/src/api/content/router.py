@@ -31,7 +31,9 @@ from api.db.models.content import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Favorite,
     Genre,
+    Like,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetStatus
@@ -44,6 +46,7 @@ router = APIRouter(tags=["content"])
 ContentListSort = Literal["latest", "popular", "genre"]
 
 CONTENT_LIST_PAGE_SIZE = 20
+FAVORITES_PAGE_SIZE = 20
 
 
 @router.get("/me/drafts")
@@ -130,6 +133,97 @@ async def list_my_drafts(
 
     drafts.sort(key=lambda draft: draft.updated_at, reverse=True)
     return drafts
+
+
+@router.get("/me/favorites")
+async def list_my_favorites(
+    cursor: str | None = None,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ContentListResponse:
+    """techspec-backend-content.md §1.1, US-039. Mixes character/story types (no `type`
+    filter), so details are resolved per-type like `/me/drafts` rather than joined against
+    a single `_detail_model`. Excludes moderation_status=deleted content (same precedent as
+    `/users/{id}/contents`'s owner "all" filter) since that's the fully-hidden equivalent of
+    non-existence; otherwise still shows the bookmark regardless of visibility/restriction."""
+    query = (
+        select(Favorite.created_at, Content, User.nickname)
+        .join(Content, Content.id == Favorite.content_id)
+        .join(User, User.id == Content.creator_user_id)
+        .where(
+            Favorite.user_id == user_id,
+            Content.current_published_version_id.is_not(None),
+            Content.moderation_status != ModerationStatus.DELETED,
+        )
+        .order_by(Favorite.created_at.desc(), Favorite.content_id.desc())
+    )
+    if cursor is not None:
+        favorited_at, last_content_id = _decode_cursor(cursor)
+        query = query.where(
+            tuple_(Favorite.created_at, Favorite.content_id)
+            < (datetime.fromisoformat(favorited_at), uuid.UUID(last_content_id))
+        )
+
+    rows = (await db.execute(query.limit(FAVORITES_PAGE_SIZE + 1))).all()
+    has_more = len(rows) > FAVORITES_PAGE_SIZE
+    page = rows[:FAVORITES_PAGE_SIZE]
+
+    character_details = {
+        detail.content_version_id: detail
+        for detail in (
+            await db.scalars(
+                select(CharacterVersionDetail).where(
+                    CharacterVersionDetail.content_version_id.in_(
+                        content.current_published_version_id
+                        for _, content, _ in page
+                        if content.type == ContentType.CHARACTER
+                    )
+                )
+            )
+        ).all()
+    }
+    story_details = {
+        detail.content_version_id: detail
+        for detail in (
+            await db.scalars(
+                select(StoryVersionDetail).where(
+                    StoryVersionDetail.content_version_id.in_(
+                        content.current_published_version_id
+                        for _, content, _ in page
+                        if content.type == ContentType.STORY
+                    )
+                )
+            )
+        ).all()
+    }
+
+    items: list[ContentListItem] = []
+    for _favorited_at, content, creator_nickname in page:
+        detail: CharacterVersionDetail | StoryVersionDetail | None
+        if content.type == ContentType.CHARACTER:
+            detail = character_details.get(content.current_published_version_id)
+        else:
+            detail = story_details.get(content.current_published_version_id)
+        if detail is None:
+            continue
+        items.append(
+            ContentListItem(
+                id=content.id,
+                type=content.type,
+                name=detail.name,
+                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
+                view_count=content.view_count,
+                creator_user_id=content.creator_user_id,
+                creator_nickname=creator_nickname,
+            )
+        )
+
+    next_cursor: str | None = None
+    if has_more and page:
+        last_favorited_at, last_content, _ = page[-1]
+        next_cursor = _encode_cursor([last_favorited_at.isoformat(), str(last_content.id)])
+
+    return ContentListResponse(items=items, next_cursor=next_cursor)
 
 
 async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
@@ -540,3 +634,80 @@ async def list_content_versions(
             ContentVersionSummary(version_number=version.version_number, published_at=version.published_at)
         )
     return summaries
+
+
+@router.post("/contents/{id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def like_content(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """techspec-backend-content.md §1.1, US-039. Idempotent: a repeat like is a no-op
+    rather than a second row/double increment (techspec-content-detail.md §4 does an FE
+    optimistic update and never reads this response body, hence 204)."""
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    existing = (
+        await db.execute(select(Like).where(Like.user_id == user_id, Like.content_id == id))
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(Like(user_id=user_id, content_id=id))
+        content.like_count += 1
+        await db.commit()
+
+
+@router.delete("/contents/{id}/like", status_code=status.HTTP_204_NO_CONTENT)
+async def unlike_content(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    existing = (
+        await db.execute(select(Like).where(Like.user_id == user_id, Like.content_id == id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        content.like_count -= 1
+        await db.commit()
+
+
+@router.post("/contents/{id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
+async def favorite_content(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    existing = (
+        await db.execute(select(Favorite).where(Favorite.user_id == user_id, Favorite.content_id == id))
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(Favorite(user_id=user_id, content_id=id))
+        await db.commit()
+
+
+@router.delete("/contents/{id}/favorite", status_code=status.HTTP_204_NO_CONTENT)
+async def unfavorite_content(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    existing = (
+        await db.execute(select(Favorite).where(Favorite.user_id == user_id, Favorite.content_id == id))
+    ).scalar_one_or_none()
+    if existing is not None:
+        await db.delete(existing)
+        await db.commit()

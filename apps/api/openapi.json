@@ -696,6 +696,56 @@
         }
       }
     },
+    "/me/favorites": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List My Favorites",
+        "description": "techspec-backend-content.md §1.1, US-039. Mixes character/story types (no `type`\nfilter), so details are resolved per-type like `/me/drafts` rather than joined against\na single `_detail_model`. Excludes moderation_status=deleted content (same precedent as\n`/users/{id}/contents`'s owner \"all\" filter) since that's the fully-hidden equivalent of\nnon-existence; otherwise still shows the bookmark regardless of visibility/restriction.",
+        "operationId": "list_my_favorites_me_favorites_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/users/{id}/profile": {
       "get": {
         "tags": [
@@ -1099,6 +1149,147 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/like": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Like Content",
+        "description": "techspec-backend-content.md §1.1, US-039. Idempotent: a repeat like is a no-op\nrather than a second row/double increment (techspec-content-detail.md §4 does an FE\noptimistic update and never reads this response body, hence 204).",
+        "operationId": "like_content_contents__id__like_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Unlike Content",
+        "operationId": "unlike_content_contents__id__like_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/favorite": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Favorite Content",
+        "operationId": "favorite_content_contents__id__favorite_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Unfavorite Content",
+        "operationId": "unfavorite_content_contents__id__favorite_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
