@@ -24,6 +24,6 @@ jobs:
 
       - run: uv sync --locked
 
-      - run: uv run mypy src migrations
+      - run: uv run mypy src migrations scripts
 
       - run: docker build -t ai-character-chat-api:ci .
