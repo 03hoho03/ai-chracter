@@ -19,6 +19,8 @@ async def test_migration_creates_expected_tables(db_engine: AsyncEngine) -> None
         "genres",
         "contents",
         "content_versions",
+        "character_version_details",
+        "situational_images",
     } <= tables
 
 
@@ -48,3 +50,15 @@ async def test_contents_current_published_version_fk_points_to_content_versions(
         targets = await connection.run_sync(_fk_targets)
 
     assert targets == {"content_versions"}
+
+
+async def test_situational_images_id_and_entity_id_are_distinct_columns(
+    db_engine: AsyncEngine,
+) -> None:
+    def _column_names(sync_conn: Connection) -> set[str]:
+        return {col["name"] for col in sa.inspect(sync_conn).get_columns("situational_images")}
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_column_names)
+
+    assert {"id", "entity_id", "order"} <= columns
