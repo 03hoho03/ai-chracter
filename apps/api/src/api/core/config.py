@@ -41,5 +41,9 @@ class Settings(BaseSettings):
     # techspec-backend-auth.md: password reset tokens expire 1 hour after issuance.
     password_reset_token_ttl_seconds: int = 60 * 60
 
+    # techspec-overview-backend.md §5: Gemini 2.5 LLMClient 구현체 (US-050).
+    gemini_api_key: str = ""
+    gemini_model_name: str = "gemini-2.5-flash"
+
 
 settings = Settings()
