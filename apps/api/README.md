@@ -12,3 +12,12 @@ uv run mypy src migrations                 # 타입체크
 uv run alembic revision --autogenerate -m "..."  # 마이그레이션 생성
 uv run alembic upgrade head                # 마이그레이션 적용
 ```
+
+## Docker
+
+```sh
+docker build -t ai-character-chat-api .
+docker run --rm -p 8000:8000 ai-character-chat-api
+curl http://localhost:8000/health
+```
+
