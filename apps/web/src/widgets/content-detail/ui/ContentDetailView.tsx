@@ -16,7 +16,9 @@ import {
   type ContentType,
 } from "../../../entities/content";
 import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
+import { CharacterPlayButton } from "./CharacterPlayButton";
 import { ContentUnavailableState } from "./ContentUnavailableState";
+import { StoryDetailBody } from "./StoryDetailBody";
 
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
@@ -170,6 +172,12 @@ export function ContentDetailView({ id }: { id: string }) {
       <p className="text-sm font-medium text-foreground">{content.oneLiner}</p>
 
       <p className="whitespace-pre-wrap text-sm text-muted-foreground">{content.detailDescription}</p>
+
+      {content.type === "story" ? (
+        <StoryDetailBody contentId={content.id} startingSetups={content.startingSetups ?? []} />
+      ) : (
+        <CharacterPlayButton contentId={content.id} />
+      )}
     </article>
   );
 }
