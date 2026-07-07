@@ -29,6 +29,11 @@ async def test_migration_creates_expected_tables(db_engine: AsyncEngine) -> None
         "endings",
         "ending_rule_groups",
         "ending_rules",
+        "chat_rooms",
+        "chat_messages",
+        "chat_room_stats",
+        "story_ending_unlocks",
+        "character_image_exposures",
     } <= tables
 
 
@@ -105,3 +110,36 @@ async def test_ending_rules_has_exactly_one_parent_check_constraint(db_engine: A
         names = await connection.run_sync(_check_constraint_names)
 
     assert "ck_ending_rules_exactly_one_parent" in names
+
+
+async def test_chat_room_stats_composite_pk(db_engine: AsyncEngine) -> None:
+    def _pk_columns(sync_conn: Connection) -> set[str]:
+        pk = sa.inspect(sync_conn).get_pk_constraint("chat_room_stats")
+        return set(pk["constrained_columns"])
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_pk_columns)
+
+    assert columns == {"chat_room_id", "stat_entity_id"}
+
+
+async def test_story_ending_unlocks_composite_pk(db_engine: AsyncEngine) -> None:
+    def _pk_columns(sync_conn: Connection) -> set[str]:
+        pk = sa.inspect(sync_conn).get_pk_constraint("story_ending_unlocks")
+        return set(pk["constrained_columns"])
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_pk_columns)
+
+    assert columns == {"user_id", "starting_setup_entity_id", "ending_entity_id"}
+
+
+async def test_character_image_exposures_composite_pk(db_engine: AsyncEngine) -> None:
+    def _pk_columns(sync_conn: Connection) -> set[str]:
+        pk = sa.inspect(sync_conn).get_pk_constraint("character_image_exposures")
+        return set(pk["constrained_columns"])
+
+    async with db_engine.connect() as connection:
+        columns = await connection.run_sync(_pk_columns)
+
+    assert columns == {"user_id", "content_id", "image_entity_id"}

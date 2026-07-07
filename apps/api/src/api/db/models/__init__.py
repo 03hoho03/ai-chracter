@@ -2,6 +2,14 @@
 
 from api.db.models.auth import AdminUser, GuardianConsent, User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.db.models.chat import (
+    CharacterImageExposure,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomStat,
+    StoryEndingUnlock,
+)
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -30,7 +38,12 @@ __all__ = [
     "AdminUser",
     "Asset",
     "AssetKind",
+    "CharacterImageExposure",
     "CharacterVersionDetail",
+    "ChatMessage",
+    "ChatMessageRole",
+    "ChatRoom",
+    "ChatRoomStat",
     "Content",
     "ContentTarget",
     "ContentType",
@@ -49,6 +62,7 @@ __all__ = [
     "SituationalImage",
     "StartingSetup",
     "StatDef",
+    "StoryEndingUnlock",
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
