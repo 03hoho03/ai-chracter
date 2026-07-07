@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
 from api.core.config import settings
+from api.db import models  # noqa: F401  (populates Base.metadata for autogenerate)
 from api.db.base import Base
 
 # this is the Alembic Config object, which provides
