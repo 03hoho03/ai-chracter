@@ -4,6 +4,10 @@ export type ContentType = components["schemas"]["ContentType"];
 export type ContentVisibility = components["schemas"]["ContentVisibility"];
 export type ModerationStatus = components["schemas"]["ModerationStatus"];
 
+/** `GET /contents`(techspec-home-discovery.md §1)의 sort 쿼리 파라미터 — 별도 named schema가 아니라
+ * OpenAPI 오퍼레이션의 인라인 유니언이라 여기서 직접 선언한다. */
+export type ContentListSort = "latest" | "popular" | "genre";
+
 export type ContentAccessStatus =
   | { kind: "accessible"; visibility: ContentVisibility }
   | { kind: "restricted" }

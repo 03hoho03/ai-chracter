@@ -31,7 +31,9 @@ export function SearchInlineExpand() {
     () => {
       if (!expanded) return;
       const q = value.trim();
-      void navigate({ to: "/", search: { q: q === "" ? undefined : q } });
+      // US-044 — 홈의 정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
+      // 나머지 search param은 보존한다(이전엔 `search: { q }`로 통째로 덮어써 다른 필터가 날아갔다).
+      void navigate({ to: "/", search: (prev) => ({ ...prev, q: q === "" ? undefined : q }) });
     },
     DEBOUNCE_MS,
     [value],

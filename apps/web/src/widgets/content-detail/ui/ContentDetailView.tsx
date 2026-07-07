@@ -1,6 +1,6 @@
 import { useSetAtom } from "jotai";
 import { BookOpen, ImageOff, UserRound } from "lucide-react";
-import { Link } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
   canViewDetailPage,
@@ -32,6 +32,7 @@ function ContentDetailSkeleton() {
 export function ContentDetailView({ id }: { id: string }) {
   const detailQuery = useContentDetailQuery(id);
   const setModalState = useSetAtom(contentDetailModalAtom);
+  const navigate = useNavigate();
 
   if (detailQuery.isPending) return <ContentDetailSkeleton />;
 
@@ -88,9 +89,18 @@ export function ContentDetailView({ id }: { id: string }) {
         {content.hashtags.length > 0 && (
           <div className="flex flex-wrap gap-1.5">
             {content.hashtags.map((tag) => (
-              <span key={tag} className="text-xs text-muted-foreground">
+              <button
+                key={tag}
+                type="button"
+                onClick={() => {
+                  setModalState(null);
+                  // techspec-home-discovery.md §2 — 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
+                  void navigate({ to: "/", search: { hashtag: tag } });
+                }}
+                className="text-xs text-muted-foreground hover:underline"
+              >
                 #{tag}
-              </span>
+              </button>
             ))}
           </div>
         )}
