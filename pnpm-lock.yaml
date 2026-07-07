@@ -87,6 +87,9 @@ importers:
       react:
         specifier: ^19.2.7
         version: 19.2.7
+      react-call:
+        specifier: ^2.0.2
+        version: 2.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vite@8.1.3(esbuild@0.28.1)(jiti@2.7.0))
       react-dom:
         specifier: ^19.2.7
         version: 19.2.7(react@19.2.7)
@@ -2939,6 +2942,18 @@ packages:
   raw-body@3.0.2:
     resolution: {integrity: sha512-K5zQjDllxWkf7Z5xJdV0/B0WTNqx6vxG70zJE4N0kBs4LovmEYWJzQGxC9bS9RAKu3bgM40lrd5zoLJ12MQ5BA==}
     engines: {node: '>= 0.10'}
+
+  react-call@2.0.2:
+    resolution: {integrity: sha512-egXLdccpWeRq+6XmR+jm/4Lg0w5zLAe/2jMzYdWtQkfe5qgfUJReZWdLWyPIfzZt215FBF6wFOZPaqne6MhNNw==}
+    peerDependencies:
+      react: '>=18'
+      react-dom: '>=18'
+      vite: '>=8'
+    peerDependenciesMeta:
+      react-dom:
+        optional: true
+      vite:
+        optional: true
 
   react-dom@19.2.7:
     resolution: {integrity: sha512-t0BRVXvbiE/o20Hfw669rLbMCDWtYZLvmJigy2f0MxsXF+71pxhR3xOkspmsO8h3ZlNzyibAmtCa3l4lYKk6gQ==}
@@ -6223,6 +6238,13 @@ snapshots:
       http-errors: 2.0.1
       iconv-lite: 0.7.3
       unpipe: 1.0.0
+
+  react-call@2.0.2(react-dom@19.2.7(react@19.2.7))(react@19.2.7)(vite@8.1.3(esbuild@0.28.1)(jiti@2.7.0)):
+    dependencies:
+      react: 19.2.7
+    optionalDependencies:
+      react-dom: 19.2.7(react@19.2.7)
+      vite: 8.1.3(esbuild@0.28.1)(jiti@2.7.0)
 
   react-dom@19.2.7(react@19.2.7):
     dependencies:

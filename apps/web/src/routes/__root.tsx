@@ -3,6 +3,7 @@ import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { ContentDetailModalOutlet } from "../widgets/content-detail";
 import { Header } from "../widgets/header";
+import { ReportContentModal } from "../features/report-content";
 
 export interface RouterContext {
   queryClient: QueryClient;
@@ -18,6 +19,7 @@ function RootComponent() {
       <Header />
       <Outlet />
       <ContentDetailModalOutlet />
+      <ReportContentModal />
     </>
   );
 }

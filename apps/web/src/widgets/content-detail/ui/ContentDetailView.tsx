@@ -17,6 +17,7 @@ import {
 } from "../../../entities/content";
 import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
 import { CharacterPlayButton } from "./CharacterPlayButton";
+import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { VersionHistoryModal } from "./VersionHistoryModal";
@@ -114,14 +115,18 @@ export function ContentDetailView({ id }: { id: string }) {
       </div>
 
       <div className="flex flex-col gap-2">
-        <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
-          {content.type === "character" ? (
-            <UserRound aria-hidden className="size-3.5" />
-          ) : (
-            <BookOpen aria-hidden className="size-3.5" />
-          )}
-          {TYPE_LABEL[content.type]}
-        </span>
+        <div className="flex items-center justify-between">
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+            {content.type === "character" ? (
+              <UserRound aria-hidden className="size-3.5" />
+            ) : (
+              <BookOpen aria-hidden className="size-3.5" />
+            )}
+            {TYPE_LABEL[content.type]}
+          </span>
+
+          <ContentActionsMenu contentId={content.id} />
+        </div>
 
         <h1 className="text-xl font-bold tracking-tight text-foreground">{content.name}</h1>
 

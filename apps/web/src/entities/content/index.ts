@@ -11,6 +11,8 @@ export type { GenreResponse } from "./api/useGenreListQuery";
 export { useProfileContentListQuery } from "./api/useProfileContentListQuery";
 export type { ContentSummary } from "./api/useProfileContentListQuery";
 export { useToggleLikeMutation } from "./api/useToggleLikeMutation";
+export { useReportContentMutation } from "./api/useReportContentMutation";
+export type { ReportReasonCategory } from "./api/useReportContentMutation";
 export {
   canAccessExistingRoom,
   canDiscoverPublicly,
