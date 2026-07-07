@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
@@ -20,6 +20,7 @@ from api.auth.google_oauth import (
 )
 from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
+    ChangePasswordRequest,
     GuardianConsentRequest,
     LoginRequest,
     MeResponse,
@@ -43,6 +44,8 @@ from api.auth.verification import (
 from api.core.config import settings
 from api.core.security import hash_password, verify_password
 from api.db.models.auth import GuardianConsent, User
+from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
+from api.db.models.content import Content, ContentVisibility
 from api.db.session import get_db_session
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
@@ -266,6 +269,7 @@ async def login(
     if (
         user is None
         or user.password_hash is None
+        or user.deleted_at is not None
         or not verify_password(payload.password, user.password_hash)
     ):
         raise HTTPException(
@@ -355,3 +359,59 @@ async def get_me(
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
     )
+
+
+@me_router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_password(
+    payload: ChangePasswordRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    if user.password_hash is None or not verify_password(
+        payload.current_password, user.password_hash
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
+        )
+
+    user.password_hash = hash_password(payload.new_password)
+    await db.commit()
+    return None
+
+
+@me_router.delete("/me", status_code=status.HTTP_204_NO_CONTENT)
+async def withdraw(
+    request: Request,
+    response: Response,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    user.deleted_at = datetime.now(UTC)
+
+    await db.execute(
+        update(Content)
+        .where(Content.creator_user_id == user_id)
+        .values(visibility=ContentVisibility.PRIVATE)
+    )
+
+    room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
+    if room_ids:
+        await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id.in_(room_ids)))
+        await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
+        await db.execute(delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))
+
+    await db.commit()
+
+    session_id = get_session_id_from_request(request)
+    if session_id is not None:
+        await delete_session(session_id)
+    clear_session_cookie(response)
+    return None

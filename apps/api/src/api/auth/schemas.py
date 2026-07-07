@@ -86,6 +86,11 @@ class PasswordResetConfirmRequest(CamelModel):
     new_password: str = Field(min_length=8)
 
 
+class ChangePasswordRequest(CamelModel):
+    current_password: str
+    new_password: str = Field(min_length=8)
+
+
 class MeResponse(CamelModel):
     id: uuid.UUID
     email: str
