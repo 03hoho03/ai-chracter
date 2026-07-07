@@ -43,6 +43,16 @@ def generate_presigned_put_url(key: str, content_type: str) -> tuple[str, dateti
     return url, expires_at
 
 
+def generate_presigned_get_url(key: str) -> str:
+    """Local signing only, no network call — safe to call from an async context directly."""
+    url: str = s3_client.generate_presigned_url(
+        "get_object",
+        Params={"Bucket": settings.s3_bucket_name, "Key": key},
+        ExpiresIn=settings.s3_presigned_url_expires_seconds,
+    )
+    return url
+
+
 def object_exists(key: str) -> bool:
     """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
     try:

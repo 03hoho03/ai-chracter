@@ -1547,13 +1547,25 @@
               }
             ],
             "title": "Profileimageassetid"
+          },
+          "profileImageUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profileimageurl"
           }
         },
         "type": "object",
         "required": [
           "nickname",
           "bio",
-          "profileImageAssetId"
+          "profileImageAssetId",
+          "profileImageUrl"
         ],
         "title": "UserProfileResponse"
       },

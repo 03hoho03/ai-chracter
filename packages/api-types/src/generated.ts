@@ -701,6 +701,8 @@ export interface components {
             bio: string | null;
             /** Profileimageassetid */
             profileImageAssetId: string | null;
+            /** Profileimageurl */
+            profileImageUrl: string | null;
         };
         /** ValidationError */
         ValidationError: {

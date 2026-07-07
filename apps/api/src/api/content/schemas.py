@@ -32,6 +32,7 @@ class UserProfileResponse(CamelModel):
     nickname: str
     bio: str | None
     profile_image_asset_id: uuid.UUID | None
+    profile_image_url: str | None
 
 
 class UpdateProfileRequest(CamelModel):

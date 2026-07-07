@@ -52,6 +52,7 @@ async def test_get_user_profile_returns_nickname_bio_and_image(
     resp = await db_client.get(f"/users/{user.id}/profile")
     assert resp.status_code == 200
     body = resp.json()
+    assert body.pop("profileImageUrl").startswith("http")
     assert body == {
         "nickname": "테스터",
         "bio": "안녕하세요",
@@ -68,6 +69,7 @@ async def test_get_user_profile_works_without_login(
 
     resp = await db_client.get(f"/users/{user.id}/profile")
     assert resp.status_code == 200
+    assert resp.json()["profileImageUrl"] is None
 
 
 async def test_get_user_profile_returns_404_for_unknown_user(db_client: httpx.AsyncClient) -> None:
@@ -108,7 +110,9 @@ async def test_update_my_profile_updates_own_fields(
         json={"nickname": "새이름", "bio": "새소개", "profileImageAssetId": str(asset.id)},
     )
     assert resp.status_code == 200
-    assert resp.json() == {
+    body = resp.json()
+    assert body.pop("profileImageUrl").startswith("http")
+    assert body == {
         "nickname": "새이름",
         "bio": "새소개",
         "profileImageAssetId": str(asset.id),

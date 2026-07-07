@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from api.content.schemas import (
     ContentSummary,
@@ -11,6 +12,7 @@ from api.content.schemas import (
     UserProfileResponse,
     VisibilityFilter,
 )
+from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
@@ -108,6 +110,18 @@ async def list_my_drafts(
     return drafts
 
 
+async def _resolve_profile_image_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+    """No presigned-GET/public-read path exists for assets yet, so the profile
+    image URL is signed on demand from the stored object key each time the
+    profile is read (apps/web/CLAUDE.md US-034 gap, resolved here for US-035)."""
+    if asset_id is None:
+        return None
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        return None
+    return await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+
+
 @router.get("/users/{id}/profile")
 async def get_user_profile(
     id: uuid.UUID,
@@ -121,6 +135,7 @@ async def get_user_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
+        profile_image_url=await _resolve_profile_image_url(db, user.profile_image_asset_id),
     )
 
 
@@ -154,6 +169,7 @@ async def update_my_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
+        profile_image_url=await _resolve_profile_image_url(db, user.profile_image_asset_id),
     )
 
 
