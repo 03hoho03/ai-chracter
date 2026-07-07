@@ -100,7 +100,7 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
     assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": False}
+    assert resp.json() == {"isMinorGuardianRequired": False, "email": ctx["email"]}
     assert settings.session_cookie_name in resp.cookies
 
     user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
@@ -122,7 +122,7 @@ async def test_onboarding_google_minor_requires_guardian_consent_and_no_session(
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
     assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": True}
+    assert resp.json() == {"isMinorGuardianRequired": True, "email": ctx["email"]}
     assert settings.session_cookie_name not in resp.cookies
 
     me = await db_client.get("/me")

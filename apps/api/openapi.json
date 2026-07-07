@@ -1192,11 +1192,16 @@
           "isMinorGuardianRequired": {
             "type": "boolean",
             "title": "Isminorguardianrequired"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
           }
         },
         "type": "object",
         "required": [
-          "isMinorGuardianRequired"
+          "isMinorGuardianRequired",
+          "email"
         ],
         "title": "OnboardingGoogleResponse"
       },

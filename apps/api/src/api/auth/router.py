@@ -252,11 +252,11 @@ async def onboarding_google(
     await delete_pending_google_signup(payload.token)
 
     if is_guardian_consent_required(user.birth_date, now.date()):
-        return OnboardingGoogleResponse(is_minor_guardian_required=True)
+        return OnboardingGoogleResponse(is_minor_guardian_required=True, email=user.email)
 
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
-    return OnboardingGoogleResponse(is_minor_guardian_required=False)
+    return OnboardingGoogleResponse(is_minor_guardian_required=False, email=user.email)
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)

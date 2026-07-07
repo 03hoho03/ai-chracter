@@ -536,6 +536,8 @@ export interface components {
         OnboardingGoogleResponse: {
             /** Isminorguardianrequired */
             isMinorGuardianRequired: boolean;
+            /** Email */
+            email: string;
         };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {

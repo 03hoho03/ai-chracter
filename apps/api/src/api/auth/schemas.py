@@ -75,6 +75,7 @@ class OnboardingGoogleRequest(CamelModel):
 
 class OnboardingGoogleResponse(CamelModel):
     is_minor_guardian_required: bool
+    email: str
 
 
 class PasswordResetRequestRequest(CamelModel):
