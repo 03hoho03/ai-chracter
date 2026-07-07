@@ -20,6 +20,7 @@ import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
+import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
 
 const UiDemoRoute = UiDemoRouteImport.update({
   id: '/ui-demo',
@@ -76,6 +77,11 @@ const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
   path: '/onboarding/google',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuilderTypeDraftIdRoute = BuilderTypeDraftIdRouteImport.update({
+  id: '/builder/$type/$draftId',
+  path: '/builder/$type/$draftId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +95,7 @@ export interface FileRoutesByFullPath {
   '/ui-demo': typeof UiDemoRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +109,7 @@ export interface FileRoutesByTo {
   '/ui-demo': typeof UiDemoRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +124,7 @@ export interface FileRoutesById {
   '/ui-demo': typeof UiDemoRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/builder/$type/$draftId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +154,7 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/builder/$type/$draftId'
   id:
     | '__root__'
     | '/'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/ui-demo'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/builder/$type/$draftId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +183,7 @@ export interface RootRouteChildren {
   UiDemoRoute: typeof UiDemoRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
+  BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingGoogleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/builder/$type/$draftId': {
+      id: '/builder/$type/$draftId'
+      path: '/builder/$type/$draftId'
+      fullPath: '/builder/$type/$draftId'
+      preLoaderRoute: typeof BuilderTypeDraftIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +287,7 @@ const rootRouteChildren: RootRouteChildren = {
   UiDemoRoute: UiDemoRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
+  BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
