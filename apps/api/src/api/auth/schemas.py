@@ -58,6 +58,25 @@ class LoginRequest(CamelModel):
     password: str
 
 
+class OnboardingGoogleRequest(CamelModel):
+    token: str
+    nickname: str = Field(min_length=1)
+    birth_date: date
+    terms_agreed: bool
+    privacy_agreed: bool
+
+    @field_validator("terms_agreed", "privacy_agreed")
+    @classmethod
+    def _must_be_agreed(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("이용약관 및 개인정보처리방침에 모두 동의해야 합니다.")
+        return value
+
+
+class OnboardingGoogleResponse(CamelModel):
+    is_minor_guardian_required: bool
+
+
 class MeResponse(CamelModel):
     id: uuid.UUID
     email: str

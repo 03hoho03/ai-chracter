@@ -317,6 +317,137 @@
         }
       }
     },
+    "/auth/google": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Login",
+        "operationId": "google_login_auth_google_get",
+        "parameters": [
+          {
+            "name": "redirect",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "/",
+              "title": "Redirect"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/google/callback": {
+      "get": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Google Callback",
+        "operationId": "google_callback_auth_google_callback_get",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "State"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/onboarding/google": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Onboarding Google",
+        "operationId": "onboarding_google_auth_onboarding_google_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OnboardingGoogleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OnboardingGoogleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/login": {
       "post": {
         "tags": [
@@ -558,6 +689,54 @@
           "profileImageAssetId"
         ],
         "title": "MeResponse"
+      },
+      "OnboardingGoogleRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "title": "Token"
+          },
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Nickname"
+          },
+          "birthDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Birthdate"
+          },
+          "termsAgreed": {
+            "type": "boolean",
+            "title": "Termsagreed"
+          },
+          "privacyAgreed": {
+            "type": "boolean",
+            "title": "Privacyagreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token",
+          "nickname",
+          "birthDate",
+          "termsAgreed",
+          "privacyAgreed"
+        ],
+        "title": "OnboardingGoogleRequest"
+      },
+      "OnboardingGoogleResponse": {
+        "properties": {
+          "isMinorGuardianRequired": {
+            "type": "boolean",
+            "title": "Isminorguardianrequired"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isMinorGuardianRequired"
+        ],
+        "title": "OnboardingGoogleResponse"
       },
       "PresignedUploadRequest": {
         "properties": {

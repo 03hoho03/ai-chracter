@@ -2,15 +2,28 @@ import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
 from api.auth.emails import send_verification_code_email
+from api.auth.google_oauth import (
+    GoogleProfile,
+    build_authorization_url,
+    consume_oauth_state,
+    delete_pending_google_signup,
+    get_google_profile,
+    get_pending_google_signup,
+    store_oauth_state,
+    store_pending_google_signup,
+)
 from api.auth.schemas import (
     GuardianConsentRequest,
     LoginRequest,
     MeResponse,
+    OnboardingGoogleRequest,
+    OnboardingGoogleResponse,
     ResendVerificationCodeRequest,
     SignupRequest,
     SignupResponse,
@@ -148,6 +161,96 @@ async def guardian_consent(
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
     return None
+
+
+@router.get("/google")
+async def google_login(redirect: str = "/") -> RedirectResponse:
+    state = await store_oauth_state(redirect)
+    return RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
+
+
+async def _guardian_consent_missing(db: AsyncSession, user: User) -> bool:
+    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
+        return False
+    consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
+    return consent is None
+
+
+async def _get_oauth_redirect_target(state: str) -> str:
+    """A separate dependency (resolved before `get_google_profile` below, in
+    signature order) so a forged/expired `state` is rejected before we spend a
+    real network round-trip exchanging `code` with Google."""
+    redirect_target = await consume_oauth_state(state)
+    if redirect_target is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
+    return redirect_target
+
+
+@router.get("/google/callback")
+async def google_callback(
+    redirect_target: str = Depends(_get_oauth_redirect_target),
+    profile: GoogleProfile = Depends(get_google_profile),
+    db: AsyncSession = Depends(get_db_session),
+) -> RedirectResponse:
+    user = await db.scalar(select(User).where(User.google_sub == profile["sub"]))
+    if user is None:
+        # Same email already registered via the password flow: link this Google
+        # account to it instead of failing on the users.email unique constraint.
+        user = await db.scalar(select(User).where(User.email == profile["email"]))
+        if user is not None and user.google_sub is None:
+            user.google_sub = profile["sub"]
+            await db.commit()
+
+    if user is None or await _guardian_consent_missing(db, user):
+        token = await store_pending_google_signup(profile)
+        return RedirectResponse(
+            f"{settings.frontend_base_url}/onboarding/google?token={token}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    session_id = await create_session({"user_id": str(user.id)})
+    response = RedirectResponse(
+        f"{settings.frontend_base_url}{redirect_target}", status_code=status.HTTP_302_FOUND
+    )
+    set_session_cookie(response, session_id)
+    return response
+
+
+@router.post("/onboarding/google")
+async def onboarding_google(
+    payload: OnboardingGoogleRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+) -> OnboardingGoogleResponse:
+    pending = await get_pending_google_signup(payload.token)
+    if pending is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    now = datetime.now(UTC)
+    user = await db.scalar(select(User).where(User.google_sub == pending["sub"]))
+    if user is None:
+        user = User(
+            email=pending["email"],
+            google_sub=pending["sub"],
+            nickname=payload.nickname,
+            birth_date=payload.birth_date,
+            terms_agreed_at=now,
+            privacy_agreed_at=now,
+            email_verified_at=now,
+        )
+        db.add(user)
+    else:
+        user.nickname = payload.nickname
+        user.birth_date = payload.birth_date
+    await db.commit()
+    await delete_pending_google_signup(payload.token)
+
+    if is_guardian_consent_required(user.birth_date, now.date()):
+        return OnboardingGoogleResponse(is_minor_guardian_required=True)
+
+    session_id = await create_session({"user_id": str(user.id)})
+    set_session_cookie(response, session_id)
+    return OnboardingGoogleResponse(is_minor_guardian_required=False)
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)

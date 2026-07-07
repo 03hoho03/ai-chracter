@@ -27,5 +27,16 @@ class Settings(BaseSettings):
     email_verification_code_ttl_seconds: int = 60 * 15
     email_verification_resend_cooldown_seconds: int = 60
 
+    google_client_id: str = ""
+    google_client_secret: str = ""
+    # Used to build the redirect_uri sent to Google and the /auth/google/callback
+    # Location header target after a successful/pending login.
+    api_base_url: str = "http://localhost:8000"
+    frontend_base_url: str = "http://localhost:5173"
+    google_oauth_state_ttl_seconds: int = 60 * 10
+    # Same TTL rationale as email_verification_code_ttl_seconds: how long a new
+    # Google user has to finish POST /auth/onboarding/google before retrying.
+    google_pending_signup_ttl_seconds: int = 60 * 15
+
 
 settings = Settings()
