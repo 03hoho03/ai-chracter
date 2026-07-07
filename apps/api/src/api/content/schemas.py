@@ -40,3 +40,24 @@ class UpdateProfileRequest(CamelModel):
     nickname: str = Field(min_length=1)
     bio: str | None = None
     profile_image_asset_id: uuid.UUID | None = None
+
+
+class GenreResponse(CamelModel):
+    id: uuid.UUID
+    name: str
+    sort_order: int
+
+
+class ContentListItem(CamelModel):
+    id: uuid.UUID
+    type: ContentType
+    name: str
+    thumbnail_url: str | None
+    view_count: int
+    creator_user_id: uuid.UUID
+    creator_nickname: str
+
+
+class ContentListResponse(CamelModel):
+    items: list[ContentListItem]
+    next_cursor: str | None

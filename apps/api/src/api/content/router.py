@@ -1,13 +1,20 @@
+import base64
+import json
 import uuid
+from datetime import datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import and_, any_, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.content.schemas import (
+    ContentListItem,
+    ContentListResponse,
     ContentSummary,
     DraftSummary,
+    GenreResponse,
     UpdateProfileRequest,
     UserProfileResponse,
     VisibilityFilter,
@@ -15,13 +22,24 @@ from api.content.schemas import (
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
+from api.db.models.content import (
+    Content,
+    ContentType,
+    ContentVersion,
+    ContentVisibility,
+    Genre,
+    ModerationStatus,
+)
 from api.db.models.media import Asset, AssetStatus
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
 router = APIRouter(tags=["content"])
+
+ContentListSort = Literal["latest", "popular", "genre"]
+
+CONTENT_LIST_PAGE_SIZE = 20
 
 
 @router.get("/me/drafts")
@@ -257,3 +275,146 @@ async def list_user_contents(
             )
         )
     return summaries
+
+
+@router.get("/genres")
+async def list_genres(db: AsyncSession = Depends(get_db_session)) -> list[GenreResponse]:
+    genres = (await db.scalars(select(Genre).order_by(Genre.sort_order))).all()
+    return [GenreResponse(id=genre.id, name=genre.name, sort_order=genre.sort_order) for genre in genres]
+
+
+def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:
+    return CharacterVersionDetail if content_type == ContentType.CHARACTER else StoryVersionDetail
+
+
+def _encode_cursor(parts: list[str]) -> str:
+    return base64.urlsafe_b64encode(json.dumps(parts).encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> list[str]:
+    decoded: list[str] = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+    return decoded
+
+
+@router.get("/contents")
+async def list_contents(
+    type: ContentType,
+    sort: ContentListSort = "latest",
+    genre: uuid.UUID | None = None,
+    creator: uuid.UUID | None = None,
+    hashtag: str | None = None,
+    q: str | None = None,
+    cursor: str | None = None,
+    db: AsyncSession = Depends(get_db_session),
+) -> ContentListResponse:
+    """techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.
+
+    `sort=popular` prioritizes chat_count over like_count/view_count by ordering on
+    all three columns lexicographically (chat_count first) instead of a single
+    weighted score, so chat_count strictly dominates ties by construction — the
+    actual weighted-score formula is still a PRD-level open question for later
+    tuning. `sort=genre` orders by the genre master's sort_order.
+    """
+    detail_model = _detail_model(type)
+
+    query = (
+        select(Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname, Genre.sort_order)
+        .join(detail_model, detail_model.content_version_id == Content.current_published_version_id)
+        .join(User, User.id == Content.creator_user_id)
+        .join(Genre, Genre.id == Content.genre_id)
+        .where(
+            Content.type == type,
+            Content.current_published_version_id.is_not(None),
+            Content.visibility == ContentVisibility.PUBLIC,
+            Content.moderation_status == ModerationStatus.NORMAL,
+        )
+    )
+
+    if genre is not None:
+        query = query.where(Content.genre_id == genre)
+    if creator is not None:
+        query = query.where(Content.creator_user_id == creator)
+    if hashtag is not None:
+        query = query.where(any_(Content.hashtags) == hashtag)
+    if q is not None:
+        query = query.join(ContentVersion, ContentVersion.id == Content.current_published_version_id).where(
+            or_(
+                detail_model.name.ilike(f"%{q}%"),
+                detail_model.one_liner.ilike(f"%{q}%"),
+                ContentVersion.detail_description.ilike(f"%{q}%"),
+            )
+        )
+
+    if sort == "popular":
+        query = query.order_by(
+            Content.chat_count.desc(),
+            Content.like_count.desc(),
+            Content.view_count.desc(),
+            Content.id.desc(),
+        )
+        if cursor is not None:
+            chat_count, like_count, view_count, last_id = _decode_cursor(cursor)
+            query = query.where(
+                tuple_(Content.chat_count, Content.like_count, Content.view_count, Content.id)
+                < (int(chat_count), int(like_count), int(view_count), uuid.UUID(last_id))
+            )
+    elif sort == "genre":
+        query = query.order_by(Genre.sort_order.asc(), Content.created_at.desc(), Content.id.desc())
+        if cursor is not None:
+            sort_order, created_at, last_id = _decode_cursor(cursor)
+            query = query.where(
+                or_(
+                    Genre.sort_order > int(sort_order),
+                    and_(
+                        Genre.sort_order == int(sort_order),
+                        tuple_(Content.created_at, Content.id)
+                        < (datetime.fromisoformat(created_at), uuid.UUID(last_id)),
+                    ),
+                )
+            )
+    else:
+        query = query.order_by(Content.created_at.desc(), Content.id.desc())
+        if cursor is not None:
+            created_at, last_id = _decode_cursor(cursor)
+            query = query.where(
+                tuple_(Content.created_at, Content.id)
+                < (datetime.fromisoformat(created_at), uuid.UUID(last_id))
+            )
+
+    rows = (await db.execute(query.limit(CONTENT_LIST_PAGE_SIZE + 1))).all()
+    has_more = len(rows) > CONTENT_LIST_PAGE_SIZE
+    page = rows[:CONTENT_LIST_PAGE_SIZE]
+
+    items = [
+        ContentListItem(
+            id=content.id,
+            type=content.type,
+            name=name,
+            thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
+            view_count=content.view_count,
+            creator_user_id=content.creator_user_id,
+            creator_nickname=nickname,
+        )
+        for content, name, thumbnail_asset_id, nickname, _genre_sort_order in page
+    ]
+
+    next_cursor: str | None = None
+    if has_more and page:
+        last_content, _, _, _, last_genre_sort_order = page[-1]
+        if sort == "popular":
+            next_cursor = _encode_cursor(
+                [
+                    str(last_content.chat_count),
+                    str(last_content.like_count),
+                    str(last_content.view_count),
+                    str(last_content.id),
+                ]
+            )
+        elif sort == "genre":
+            next_cursor = _encode_cursor(
+                [str(last_genre_sort_order), last_content.created_at.isoformat(), str(last_content.id)]
+            )
+        else:
+            next_cursor = _encode_cursor([last_content.created_at.isoformat(), str(last_content.id)])
+
+    return ContentListResponse(items=items, next_cursor=next_cursor)
