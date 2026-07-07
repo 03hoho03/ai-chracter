@@ -1304,6 +1304,53 @@
         }
       }
     },
+    "/contents/{id}/report": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Report Content",
+        "description": "techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):\neach call inserts a new pending report row, matching techspec-db-schema.md §8's\nreports table having no unique constraint on (reporter_user_id, content_id).",
+        "operationId": "report_content_contents__id__report_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/notifications": {
       "get": {
         "tags": [
@@ -2130,6 +2177,29 @@
           "expiresAt"
         ],
         "title": "PresignedUploadResponse"
+      },
+      "ReportReasonCategory": {
+        "type": "string",
+        "enum": [
+          "adult",
+          "copyright",
+          "hate",
+          "spam",
+          "other"
+        ],
+        "title": "ReportReasonCategory"
+      },
+      "ReportRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "ReportRequest"
       },
       "ResendVerificationCodeRequest": {
         "properties": {

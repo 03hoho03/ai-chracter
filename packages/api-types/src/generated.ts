@@ -517,6 +517,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contents/{id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Content
+         * @description techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):
+         *     each call inserts a new pending report row, matching techspec-db-schema.md §8's
+         *     reports table having no unique constraint on (reporter_user_id, content_id).
+         */
+        post: operations["report_content_contents__id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -907,6 +929,15 @@ export interface components {
              * Format: date-time
              */
             expiresAt: string;
+        };
+        /**
+         * ReportReasonCategory
+         * @enum {string}
+         */
+        ReportReasonCategory: "adult" | "copyright" | "hate" | "spam" | "other";
+        /** ReportRequest */
+        ReportRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
         };
         /** ResendVerificationCodeRequest */
         ResendVerificationCodeRequest: {
@@ -1960,6 +1991,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_content_contents__id__report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             204: {

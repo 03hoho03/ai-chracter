@@ -6,6 +6,7 @@ from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
+from api.db.models.moderation import ReportReasonCategory
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
 
@@ -104,3 +105,7 @@ class ContentDetailResponse(CamelModel):
 class ContentVersionSummary(CamelModel):
     version_number: int
     published_at: datetime
+
+
+class ReportRequest(CamelModel):
+    reason_category: ReportReasonCategory

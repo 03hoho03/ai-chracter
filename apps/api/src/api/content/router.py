@@ -18,6 +18,7 @@ from api.content.schemas import (
     ContentVersionSummary,
     DraftSummary,
     GenreResponse,
+    ReportRequest,
     StartingSetupSummary,
     UpdateProfileRequest,
     UserProfileResponse,
@@ -37,6 +38,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetStatus
+from api.db.models.moderation import Report, ReportStatus
 from api.db.models.story import StartingSetup, StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
@@ -711,3 +713,28 @@ async def unfavorite_content(
     if existing is not None:
         await db.delete(existing)
         await db.commit()
+
+
+@router.post("/contents/{id}/report", status_code=status.HTTP_204_NO_CONTENT)
+async def report_content(
+    id: uuid.UUID,
+    body: ReportRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):
+    each call inserts a new pending report row, matching techspec-db-schema.md §8's
+    reports table having no unique constraint on (reporter_user_id, content_id)."""
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+
+    db.add(
+        Report(
+            reporter_user_id=user_id,
+            content_id=id,
+            reason_category=body.reason_category,
+            status=ReportStatus.PENDING,
+        )
+    )
+    await db.commit()
