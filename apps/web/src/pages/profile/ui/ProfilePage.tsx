@@ -1,8 +1,10 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 
+import type { ContentType } from "../../../entities/content";
 import { useProfileQuery } from "../../../entities/profile";
 import { useSessionQuery } from "../../../entities/session";
 import { EditProfileDialog } from "../../../features/edit-profile";
+import { ProfileContentSection } from "./ProfileContentSection";
 
 function ProfileHeaderSkeleton() {
   return (
@@ -16,13 +18,21 @@ function ProfileHeaderSkeleton() {
   );
 }
 
-export function ProfilePage({ userId }: { userId: string }) {
+export function ProfilePage({
+  userId,
+  contentType,
+  onContentTypeChange,
+}: {
+  userId: string;
+  contentType: ContentType;
+  onContentTypeChange: (type: ContentType) => void;
+}) {
   const profileQuery = useProfileQuery(userId);
   const sessionQuery = useSessionQuery();
   const isOwner = sessionQuery.data?.id === userId;
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-8 px-6 py-10">
+    <main className="mx-auto flex max-w-4xl flex-col gap-8 px-6 py-10">
       {profileQuery.isPending && <ProfileHeaderSkeleton />}
 
       {profileQuery.isError && (
@@ -34,24 +44,33 @@ export function ProfilePage({ userId }: { userId: string }) {
       )}
 
       {profileQuery.data && (
-        <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex items-center gap-4">
-            <Avatar className="size-20 shrink-0">
-              <AvatarImage src={profileQuery.data.profileImageUrl ?? undefined} alt="" />
-              <AvatarFallback className="text-2xl">{profileQuery.data.nickname.slice(0, 1)}</AvatarFallback>
-            </Avatar>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                {profileQuery.data.nickname}
-              </h1>
-              <p className="max-w-md text-sm text-muted-foreground">
-                {profileQuery.data.bio || "아직 소개글이 없어요."}
-              </p>
+        <>
+          <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <Avatar className="size-20 shrink-0">
+                <AvatarImage src={profileQuery.data.profileImageUrl ?? undefined} alt="" />
+                <AvatarFallback className="text-2xl">{profileQuery.data.nickname.slice(0, 1)}</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col gap-1">
+                <h1 className="text-2xl font-bold tracking-tight text-foreground">
+                  {profileQuery.data.nickname}
+                </h1>
+                <p className="max-w-md text-sm text-muted-foreground">
+                  {profileQuery.data.bio || "아직 소개글이 없어요."}
+                </p>
+              </div>
             </div>
-          </div>
 
-          {isOwner && <EditProfileDialog userId={userId} profile={profileQuery.data} />}
-        </section>
+            {isOwner && <EditProfileDialog userId={userId} profile={profileQuery.data} />}
+          </section>
+
+          <ProfileContentSection
+            userId={userId}
+            isOwner={isOwner}
+            contentType={contentType}
+            onContentTypeChange={onContentTypeChange}
+          />
+        </>
       )}
     </main>
   );

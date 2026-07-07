@@ -110,10 +110,11 @@ async def list_my_drafts(
     return drafts
 
 
-async def _resolve_profile_image_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
-    """No presigned-GET/public-read path exists for assets yet, so the profile
-    image URL is signed on demand from the stored object key each time the
-    profile is read (apps/web/CLAUDE.md US-034 gap, resolved here for US-035)."""
+async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+    """No presigned-GET/public-read path exists for assets yet, so a renderable
+    URL is signed on demand from the stored object key each time it's needed
+    (apps/web/CLAUDE.md US-034 gap, resolved for profile images in US-035 and
+    reused here for content thumbnails)."""
     if asset_id is None:
         return None
     asset = await db.get(Asset, asset_id)
@@ -135,7 +136,7 @@ async def get_user_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        profile_image_url=await _resolve_profile_image_url(db, user.profile_image_asset_id),
+        profile_image_url=await _resolve_asset_url(db, user.profile_image_asset_id),
     )
 
 
@@ -169,7 +170,7 @@ async def update_my_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        profile_image_url=await _resolve_profile_image_url(db, user.profile_image_asset_id),
+        profile_image_url=await _resolve_asset_url(db, user.profile_image_asset_id),
     )
 
 
@@ -249,6 +250,7 @@ async def list_user_contents(
                 type=content.type,
                 name=detail.name,
                 thumbnail_asset_id=detail.thumbnail_asset_id,
+                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
                 view_count=content.view_count,
                 visibility=content.visibility,
                 moderation_status=content.moderation_status,

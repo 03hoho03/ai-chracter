@@ -1024,6 +1024,17 @@
             "format": "uuid",
             "title": "Thumbnailassetid"
           },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
           "viewCount": {
             "type": "integer",
             "title": "Viewcount"
@@ -1041,6 +1052,7 @@
           "type",
           "name",
           "thumbnailAssetId",
+          "thumbnailUrl",
           "viewCount",
           "visibility",
           "moderationStatus"

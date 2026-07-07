@@ -188,6 +188,7 @@ async def test_list_user_contents_returns_published_content_for_stranger(
     assert item["moderationStatus"] == "normal"
     assert item["viewCount"] == 0
     assert "thumbnailAssetId" in item
+    assert item["thumbnailUrl"] is not None
 
 
 async def test_list_user_contents_hides_link_and_private_from_stranger(

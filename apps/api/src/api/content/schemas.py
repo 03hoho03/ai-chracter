@@ -23,6 +23,7 @@ class ContentSummary(CamelModel):
     type: ContentType
     name: str
     thumbnail_asset_id: uuid.UUID
+    thumbnail_url: str | None
     view_count: int
     visibility: ContentVisibility
     moderation_status: ModerationStatus

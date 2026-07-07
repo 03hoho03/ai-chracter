@@ -464,6 +464,8 @@ export interface components {
              * Format: uuid
              */
             thumbnailAssetId: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
             /** Viewcount */
             viewCount: number;
             visibility: components["schemas"]["ContentVisibility"];
