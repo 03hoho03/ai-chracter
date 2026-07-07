@@ -12,6 +12,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind
+from api.db.models.story import StartingSetup, StatDef, StoryPromptTemplate, StoryVersionDetail
 
 __all__ = [
     "AdminUser",
@@ -27,5 +28,9 @@ __all__ = [
     "GuardianConsent",
     "ModerationStatus",
     "SituationalImage",
+    "StartingSetup",
+    "StatDef",
+    "StoryPromptTemplate",
+    "StoryVersionDetail",
     "User",
 ]
