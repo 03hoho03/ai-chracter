@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
-from api.auth.emails import send_verification_code_email
+from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
     GoogleProfile,
     build_authorization_url,
@@ -18,12 +18,15 @@ from api.auth.google_oauth import (
     store_oauth_state,
     store_pending_google_signup,
 )
+from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
     GuardianConsentRequest,
     LoginRequest,
     MeResponse,
     OnboardingGoogleRequest,
     OnboardingGoogleResponse,
+    PasswordResetConfirmRequest,
+    PasswordResetRequestRequest,
     ResendVerificationCodeRequest,
     SignupRequest,
     SignupResponse,
@@ -292,6 +295,47 @@ async def logout(request: Request, response: Response) -> None:
     if session_id is not None:
         await delete_session(session_id)
     clear_session_cookie(response)
+    return None
+
+
+@router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
+async def request_password_reset(
+    payload: PasswordResetRequestRequest, db: AsyncSession = Depends(get_db_session)
+) -> None:
+    # Same 204 response whether or not the email is registered, so the caller
+    # can't use this endpoint to probe which emails have an account.
+    user = await db.scalar(select(User).where(User.email == payload.email))
+    if user is not None:
+        token = await store_reset_token(user.id)
+        reset_link = f"{settings.frontend_base_url}/reset-password?token={token}"
+        send_password_reset_email(payload.email, reset_link)
+    return None
+
+
+@router.get("/password-reset/validate")
+async def validate_password_reset_token(token: str) -> None:
+    stored = await get_reset_token(token)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+    return None
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def confirm_password_reset(
+    payload: PasswordResetConfirmRequest, db: AsyncSession = Depends(get_db_session)
+) -> None:
+    stored = await get_reset_token(payload.token)
+    if stored is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    user = await db.get(User, uuid.UUID(stored["user_id"]))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+
+    user.password_hash = hash_password(payload.new_password)
+    await db.commit()
+    # Invalidate immediately so the token can't be replayed.
+    await delete_reset_token(payload.token)
     return None
 
 

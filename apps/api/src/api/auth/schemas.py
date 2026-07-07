@@ -77,6 +77,15 @@ class OnboardingGoogleResponse(CamelModel):
     is_minor_guardian_required: bool
 
 
+class PasswordResetRequestRequest(CamelModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmRequest(CamelModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
 class MeResponse(CamelModel):
     id: uuid.UUID
     email: str

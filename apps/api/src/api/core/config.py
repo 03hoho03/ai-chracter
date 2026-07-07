@@ -38,5 +38,8 @@ class Settings(BaseSettings):
     # Google user has to finish POST /auth/onboarding/google before retrying.
     google_pending_signup_ttl_seconds: int = 60 * 15
 
+    # techspec-backend-auth.md: password reset tokens expire 1 hour after issuance.
+    password_reset_token_ttl_seconds: int = 60 * 60
+
 
 settings = Settings()
