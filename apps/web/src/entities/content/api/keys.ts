@@ -16,6 +16,7 @@ export const contentKeys = {
   list: (userId: string, type: ContentType, visibility?: VisibilityFilter) =>
     [...contentKeys.all, "list", userId, type, visibility ?? "all"] as const,
   detail: (id: string) => [...contentKeys.all, "detail", id] as const,
+  versions: (id: string) => [...contentKeys.all, "versions", id] as const,
   browse: (params: ContentBrowseParams) => [...contentKeys.all, "browse", params] as const,
   genres: () => [...contentKeys.all, "genres"] as const,
 };

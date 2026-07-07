@@ -2,6 +2,8 @@ export { contentKeys } from "./api/keys";
 export type { ContentBrowseParams, VisibilityFilter } from "./api/keys";
 export { useContentDetailQuery } from "./api/useContentDetailQuery";
 export type { ContentDetailResponse } from "./api/useContentDetailQuery";
+export { useContentVersionsQuery } from "./api/useContentVersionsQuery";
+export type { ContentVersionSummary } from "./api/useContentVersionsQuery";
 export { useContentListQuery } from "./api/useContentListQuery";
 export type { ContentListItem, ContentListResponse } from "./api/useContentListQuery";
 export { useGenreListQuery } from "./api/useGenreListQuery";

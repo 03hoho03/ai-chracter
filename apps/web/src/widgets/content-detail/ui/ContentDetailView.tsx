@@ -2,7 +2,7 @@ import { useState } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { BookOpen, Heart, ImageOff, MessageCircle, UserRound } from "lucide-react";
+import { BookOpen, Heart, History, ImageOff, MessageCircle, UserRound } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useDebounce } from "react-use";
 import { toast } from "sonner";
@@ -19,6 +19,13 @@ import { contentDetailModalAtom } from "../../../shared/model/content-detail-mod
 import { CharacterPlayButton } from "./CharacterPlayButton";
 import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
+import { VersionHistoryModal } from "./VersionHistoryModal";
+
+const updatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+});
 
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
@@ -49,6 +56,7 @@ export function ContentDetailView({ id }: { id: string }) {
   const queryClient = useQueryClient();
   const toggleLike = useToggleLikeMutation(id);
   const [desiredLiked, setDesiredLiked] = useState<boolean | undefined>(undefined);
+  const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const content = detailQuery.data;
 
   useDebounce(
@@ -167,6 +175,15 @@ export function ContentDetailView({ id }: { id: string }) {
           {likeCount.toLocaleString()}
           <span className="sr-only">{isLiked ? "좋아요 취소" : "좋아요"}</span>
         </button>
+
+        <button
+          type="button"
+          onClick={() => setIsVersionHistoryOpen(true)}
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground"
+        >
+          <History aria-hidden className="size-4" />
+          최근 업데이트 {updatedAtFormatter.format(new Date(content.updatedAt))} · v{content.versionNumber}
+        </button>
       </div>
 
       <p className="text-sm font-medium text-foreground">{content.oneLiner}</p>
@@ -178,6 +195,12 @@ export function ContentDetailView({ id }: { id: string }) {
       ) : (
         <CharacterPlayButton contentId={content.id} />
       )}
+
+      <VersionHistoryModal
+        contentId={content.id}
+        open={isVersionHistoryOpen}
+        onOpenChange={setIsVersionHistoryOpen}
+      />
     </article>
   );
 }
