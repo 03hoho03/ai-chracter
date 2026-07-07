@@ -9,3 +9,5 @@ export {
   resolveAccessStatus,
 } from "./model/types";
 export type { ContentAccessStatus, ContentType, ContentVisibility, ModerationStatus } from "./model/types";
+export { ContentCard } from "./ui/ContentCard";
+export type { ContentCardStatusTag } from "./ui/ContentCard";
