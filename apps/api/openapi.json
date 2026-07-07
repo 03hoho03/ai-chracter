@@ -283,6 +283,40 @@
         }
       }
     },
+    "/auth/guardian-consent": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Guardian Consent",
+        "operationId": "guardian_consent_auth_guardian_consent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GuardianConsentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -343,6 +377,37 @@
         ],
         "title": "AssetStatus",
         "description": "techspec-backend-media.md §1: row is created pending at presigned-upload\ntime, and flipped to ready once POST /assets/{id}/complete confirms the S3\nobject exists."
+      },
+      "GuardianConsentRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "guardianName": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Guardianname"
+          },
+          "guardianContact": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Guardiancontact"
+          },
+          "consentAgreed": {
+            "type": "boolean",
+            "title": "Consentagreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "guardianName",
+          "guardianContact",
+          "consentAgreed"
+        ],
+        "title": "GuardianConsentRequest"
       },
       "HTTPValidationError": {
         "properties": {

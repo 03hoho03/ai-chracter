@@ -36,3 +36,17 @@ class VerifyEmailResponse(CamelModel):
 
 class ResendVerificationCodeRequest(CamelModel):
     email: EmailStr
+
+
+class GuardianConsentRequest(CamelModel):
+    email: EmailStr
+    guardian_name: str = Field(min_length=1)
+    guardian_contact: str = Field(min_length=1)
+    consent_agreed: bool
+
+    @field_validator("consent_agreed")
+    @classmethod
+    def _must_be_agreed(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("법정대리인 동의가 필요합니다.")
+        return value

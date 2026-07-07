@@ -6,7 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code, store_verification_code
-from api.db.models.auth import User
+from api.core.config import settings
+from api.db.models.auth import GuardianConsent, User
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -149,5 +150,90 @@ async def test_resend_after_cooldown_issues_new_code(db_client: httpx.AsyncClien
 async def test_resend_unknown_user_returns_404(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post(
         "/auth/resend-verification-code", json={"email": "nobody@example.com"}
+    )
+    assert resp.status_code == 404
+
+
+async def _signup_and_verify(db_client: httpx.AsyncClient, **overrides: object) -> dict[str, object]:
+    payload = _signup_payload(**overrides)
+    await db_client.post("/auth/signup", json=payload)
+    stored = await get_verification_code(str(payload["email"]))
+    assert stored is not None
+
+    resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": stored["code"]}
+    )
+    assert resp.status_code == 200
+    return payload
+
+
+def _guardian_consent_payload(email: str, **overrides: object) -> dict[str, object]:
+    defaults: dict[str, object] = {
+        "email": email,
+        "guardianName": "홍길동",
+        "guardianContact": "010-1234-5678",
+        "consentAgreed": True,
+    }
+    defaults.update(overrides)
+    return defaults
+
+
+async def test_guardian_consent_activates_minor_account_and_issues_session(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    minor_birth_date = date.today().replace(year=date.today().year - 10)
+    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
+
+    resp = await db_client.post(
+        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
+    )
+    assert resp.status_code == 204
+    assert settings.session_cookie_name in resp.cookies
+
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    consent = await db_session.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
+    assert consent is not None
+    assert consent.guardian_name == "홍길동"
+
+    echo = await db_client.get("/dev/session-echo")
+    assert echo.status_code == 200
+    assert echo.json() == {"user_id": str(user.id)}
+
+
+async def test_guardian_consent_rejects_before_email_verified(db_client: httpx.AsyncClient) -> None:
+    minor_birth_date = date.today().replace(year=date.today().year - 10)
+    payload = _signup_payload(birthDate=minor_birth_date.isoformat())
+    await db_client.post("/auth/signup", json=payload)
+
+    resp = await db_client.post(
+        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
+    )
+    assert resp.status_code == 400
+
+
+async def test_guardian_consent_rejects_adult_account(db_client: httpx.AsyncClient) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+
+    resp = await db_client.post(
+        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
+    )
+    assert resp.status_code == 400
+
+
+async def test_guardian_consent_rejects_consent_not_agreed(db_client: httpx.AsyncClient) -> None:
+    minor_birth_date = date.today().replace(year=date.today().year - 10)
+    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
+
+    resp = await db_client.post(
+        "/auth/guardian-consent",
+        json=_guardian_consent_payload(str(payload["email"]), consentAgreed=False),
+    )
+    assert resp.status_code == 422
+
+
+async def test_guardian_consent_unknown_user_returns_404(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post(
+        "/auth/guardian-consent", json=_guardian_consent_payload("nobody@example.com")
     )
     assert resp.status_code == 404

@@ -1,12 +1,13 @@
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
 from api.auth.emails import send_verification_code_email
 from api.auth.schemas import (
+    GuardianConsentRequest,
     ResendVerificationCodeRequest,
     SignupRequest,
     SignupResponse,
@@ -22,8 +23,10 @@ from api.auth.verification import (
 )
 from api.core.config import settings
 from api.core.security import hash_password
-from api.db.models.auth import User
+from api.db.models.auth import GuardianConsent, User
 from api.db.session import get_db_session
+from api.session.cookies import set_session_cookie
+from api.session.store import create_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -102,4 +105,41 @@ async def resend_verification_code(
     code = generate_code()
     await store_verification_code(payload.email, code, now)
     send_verification_code_email(payload.email, code)
+    return None
+
+
+@router.post("/guardian-consent", status_code=status.HTTP_204_NO_CONTENT)
+async def guardian_consent(
+    payload: GuardianConsentRequest,
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    user = await db.scalar(select(User).where(User.email == payload.email))
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Email verification required"
+        )
+
+    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Guardian consent is not required for this account",
+        )
+
+    consent = GuardianConsent(
+        user_id=user.id,
+        guardian_name=payload.guardian_name,
+        guardian_contact=payload.guardian_contact,
+        consent_agreed_at=datetime.now(UTC),
+        ip_address=request.client.host if request.client else None,
+    )
+    db.add(consent)
+    await db.commit()
+
+    session_id = await create_session({"user_id": str(user.id)})
+    set_session_cookie(response, session_id)
     return None
