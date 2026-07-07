@@ -57,6 +57,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/signup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Signup */
+        post: operations["signup_auth_signup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/verify-email": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Verify Email */
+        post: operations["verify_email_auth_verify_email_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/resend-verification-code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resend Verification Code */
+        post: operations["resend_verification_code_auth_resend_verification_code_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -127,6 +178,14 @@ export interface components {
              */
             expiresAt: string;
         };
+        /** ResendVerificationCodeRequest */
+        ResendVerificationCodeRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+        };
         /** SessionEchoPayload */
         SessionEchoPayload: {
             /**
@@ -136,6 +195,32 @@ export interface components {
             data: {
                 [key: string]: unknown;
             };
+        };
+        /** SignupRequest */
+        SignupRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Password */
+            password: string;
+            /** Nickname */
+            nickname: string;
+            /**
+             * Birthdate
+             * Format: date
+             */
+            birthDate: string;
+            /** Termsagreed */
+            termsAgreed: boolean;
+            /** Privacyagreed */
+            privacyAgreed: boolean;
+        };
+        /** SignupResponse */
+        SignupResponse: {
+            /** Email */
+            email: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -149,6 +234,21 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** VerifyEmailRequest */
+        VerifyEmailRequest: {
+            /**
+             * Email
+             * Format: email
+             */
+            email: string;
+            /** Code */
+            code: string;
+        };
+        /** VerifyEmailResponse */
+        VerifyEmailResponse: {
+            /** Isminorguardianrequired */
+            isMinorGuardianRequired: boolean;
         };
     };
     responses: never;
@@ -286,6 +386,103 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AssetCompleteResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    signup_auth_signup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignupResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    verify_email_auth_verify_email_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerifyEmailRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VerifyEmailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resend_verification_code_auth_resend_verification_code_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResendVerificationCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

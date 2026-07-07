@@ -22,5 +22,10 @@ class Settings(BaseSettings):
     # (e.g. `uv run moto_server`); left unset in real AWS environments.
     s3_endpoint_url: str | None = None
 
+    # Not specified by techspec-backend-auth.md (only the 60s resend cooldown is) —
+    # a reasonable default for how long an issued email verification code stays usable.
+    email_verification_code_ttl_seconds: int = 60 * 15
+    email_verification_resend_cooldown_seconds: int = 60
+
 
 settings = Settings()

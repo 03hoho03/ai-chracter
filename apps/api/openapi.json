@@ -167,6 +167,122 @@
         }
       }
     },
+    "/auth/signup": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Signup",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Verify Email",
+        "operationId": "verify_email_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyEmailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/resend-verification-code": {
+      "post": {
+        "tags": [
+          "auth"
+        ],
+        "summary": "Resend Verification Code",
+        "operationId": "resend_verification_code_auth_resend_verification_code_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ResendVerificationCodeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -284,6 +400,20 @@
         ],
         "title": "PresignedUploadResponse"
       },
+      "ResendVerificationCodeRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "ResendVerificationCodeRequest"
+      },
       "SessionEchoPayload": {
         "properties": {
           "data": {
@@ -295,6 +425,61 @@
         },
         "type": "object",
         "title": "SessionEchoPayload"
+      },
+      "SignupRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "minLength": 8,
+            "title": "Password"
+          },
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Nickname"
+          },
+          "birthDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Birthdate"
+          },
+          "termsAgreed": {
+            "type": "boolean",
+            "title": "Termsagreed"
+          },
+          "privacyAgreed": {
+            "type": "boolean",
+            "title": "Privacyagreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password",
+          "nickname",
+          "birthDate",
+          "termsAgreed",
+          "privacyAgreed"
+        ],
+        "title": "SignupRequest"
+      },
+      "SignupResponse": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "SignupResponse"
       },
       "ValidationError": {
         "properties": {
@@ -335,6 +520,38 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "VerifyEmailRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "code"
+        ],
+        "title": "VerifyEmailRequest"
+      },
+      "VerifyEmailResponse": {
+        "properties": {
+          "isMinorGuardianRequired": {
+            "type": "boolean",
+            "title": "Isminorguardianrequired"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isMinorGuardianRequired"
+        ],
+        "title": "VerifyEmailResponse"
       }
     }
   }

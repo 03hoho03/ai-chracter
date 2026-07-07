@@ -1,0 +1,38 @@
+from datetime import date
+
+from pydantic import EmailStr, Field, field_validator
+
+from api.core.schema import CamelModel
+
+
+class SignupRequest(CamelModel):
+    email: EmailStr
+    password: str = Field(min_length=8)
+    nickname: str = Field(min_length=1)
+    birth_date: date
+    terms_agreed: bool
+    privacy_agreed: bool
+
+    @field_validator("terms_agreed", "privacy_agreed")
+    @classmethod
+    def _must_be_agreed(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("이용약관 및 개인정보처리방침에 모두 동의해야 합니다.")
+        return value
+
+
+class SignupResponse(CamelModel):
+    email: str
+
+
+class VerifyEmailRequest(CamelModel):
+    email: EmailStr
+    code: str
+
+
+class VerifyEmailResponse(CamelModel):
+    is_minor_guardian_required: bool
+
+
+class ResendVerificationCodeRequest(CamelModel):
+    email: EmailStr
