@@ -1,6 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
+import { ContentDetailModalOutlet } from "../widgets/content-detail";
 import { Header } from "../widgets/header";
 
 export interface RouterContext {
@@ -16,6 +17,7 @@ function RootComponent() {
     <>
       <Header />
       <Outlet />
+      <ContentDetailModalOutlet />
     </>
   );
 }

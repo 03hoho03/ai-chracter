@@ -5,6 +5,7 @@ import {
   canDiscoverPublicly,
   canViewDetailPage,
   resolveAccessStatus,
+  toContentAccessStatus,
 } from "./types";
 
 describe("resolveAccessStatus", () => {
@@ -68,5 +69,19 @@ describe("canViewDetailPage", () => {
   it("allows public and link for everyone", () => {
     expect(canViewDetailPage({ kind: "accessible", visibility: "public" }, false)).toBe(true);
     expect(canViewDetailPage({ kind: "accessible", visibility: "link" }, false)).toBe(true);
+  });
+});
+
+describe("toContentAccessStatus", () => {
+  it("keeps visibility only when kind is accessible", () => {
+    expect(toContentAccessStatus({ kind: "accessible", visibility: "link" })).toEqual({
+      kind: "accessible",
+      visibility: "link",
+    });
+  });
+
+  it("drops visibility for restricted and deleted", () => {
+    expect(toContentAccessStatus({ kind: "restricted", visibility: null })).toEqual({ kind: "restricted" });
+    expect(toContentAccessStatus({ kind: "deleted" })).toEqual({ kind: "deleted" });
   });
 });

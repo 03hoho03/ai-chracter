@@ -9,6 +9,7 @@ import {
   type ContentType,
   type VisibilityFilter,
 } from "../../../entities/content";
+import { useContentDetailModal } from "../../../shared/lib/hooks/useContentDetailModal";
 
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
@@ -40,9 +41,14 @@ function ContentCard({ content, isOwner }: { content: ContentSummary; isOwner: b
   // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 태그는
   // content.visibility를 그대로 쓴다(restricted 케이스도 두 태그가 함께 노출돼야 하므로).
   const access = resolveAccessStatus(content.visibility, content.moderationStatus);
+  const { open } = useContentDetailModal();
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-card p-3">
+    <button
+      type="button"
+      onClick={() => open(content.type, content.id)}
+      className="flex w-full flex-col gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent/50"
+    >
       <div className="aspect-square overflow-hidden rounded-lg bg-muted">
         {content.thumbnailUrl ? (
           <img src={content.thumbnailUrl} alt="" className="size-full object-cover" />
@@ -76,7 +82,7 @@ function ContentCard({ content, isOwner }: { content: ContentSummary; isOwner: b
           )}
         </div>
       </div>
-    </div>
+    </button>
   );
 }
 

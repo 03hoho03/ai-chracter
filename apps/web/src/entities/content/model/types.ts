@@ -36,3 +36,13 @@ export function canViewDetailPage(access: ContentAccessStatus, isOwner: boolean)
   if (access.visibility === "private") return isOwner;
   return true;
 }
+
+/** `GET /contents/{id}`가 내려주는 평평한(optional visibility) accessStatus를 이 판별 유니언으로
+ * 변환한다(BE는 kind==='accessible'일 때 항상 visibility를 함께 채워 보낸다). */
+export function toContentAccessStatus(raw: {
+  kind: "accessible" | "restricted" | "deleted";
+  visibility?: ContentVisibility | null;
+}): ContentAccessStatus {
+  if (raw.kind !== "accessible") return { kind: raw.kind };
+  return { kind: "accessible", visibility: raw.visibility as ContentVisibility };
+}
