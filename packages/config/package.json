@@ -4,8 +4,7 @@
   "private": true,
   "files": [
     "tsconfig.base.json",
-    "eslint.config.js",
-    "tailwind.preset.js"
+    "eslint.config.js"
   ],
   "scripts": {
     "typecheck": "tsc --noEmit"

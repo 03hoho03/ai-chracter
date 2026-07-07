@@ -1,0 +1,21 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "style": "radix-nova",
+  "rsc": false,
+  "tsx": true,
+  "tailwind": {
+    "config": "",
+    "css": "src/styles/globals.css",
+    "baseColor": "neutral",
+    "cssVariables": true
+  },
+  "iconLibrary": "lucide",
+  "aliases": {
+    "components": "@ai-character-chat/ui/components",
+    "utils": "@ai-character-chat/ui/lib/utils",
+    "hooks": "@ai-character-chat/ui/hooks",
+    "lib": "@ai-character-chat/ui/lib",
+    "ui": "@ai-character-chat/ui/components"
+  },
+  "rtl": false
+}

@@ -1,0 +1,10 @@
+{
+  "extends": "@ai-character-chat/config/tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@ai-character-chat/ui/*": ["./src/*"]
+    }
+  },
+  "include": ["src"]
+}
