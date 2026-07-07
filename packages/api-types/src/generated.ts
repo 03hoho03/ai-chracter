@@ -573,6 +573,64 @@ export interface paths {
         patch: operations["mark_notification_read_notifications__notification_id__read_patch"];
         trace?: never;
     };
+    "/chat-rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chat Rooms */
+        get: operations["list_chat_rooms_chat_rooms_get"];
+        put?: never;
+        /** Create Chat Room */
+        post: operations["create_chat_room_chat_rooms_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chat Room */
+        get: operations["get_chat_room_chat_rooms__room_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete Chat Room
+         * @description No ON DELETE CASCADE on chat_messages/chat_room_stats (apps/api/CLAUDE.md) —
+         *     children must be deleted before the room itself.
+         */
+        delete: operations["delete_chat_room_chat_rooms__room_id__delete"];
+        options?: never;
+        head?: never;
+        /** Rename Chat Room */
+        patch: operations["rename_chat_room_chat_rooms__room_id__patch"];
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reset Chat Room */
+        post: operations["reset_chat_room_chat_rooms__room_id__reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -623,6 +681,98 @@ export interface components {
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+        };
+        /** ChatMessageResponse */
+        ChatMessageResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            role: components["schemas"]["ChatMessageRole"];
+            /** Content */
+            content: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * ChatMessageRole
+         * @enum {string}
+         */
+        ChatMessageRole: "user" | "assistant";
+        /** ChatRoomCreateRequest */
+        ChatRoomCreateRequest: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /**
+             * Contenttype
+             * @constant
+             */
+            contentType: "character";
+        };
+        /** ChatRoomListItem */
+        ChatRoomListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Lastmessagepreview */
+            lastMessagePreview: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** ChatRoomRenameRequest */
+        ChatRoomRenameRequest: {
+            /** Name */
+            name: string;
+        };
+        /** ChatRoomResponse */
+        ChatRoomResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Turncount */
+            turnCount: number;
+            /** Endingreached */
+            endingReached: boolean;
+            /** Messages */
+            messages: components["schemas"]["ChatMessageResponse"][];
+            /** Latestversionavailable */
+            latestVersionAvailable: boolean;
+            /** Versionautoupgraded */
+            versionAutoUpgraded: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /**
          * ContentAccessStatus
@@ -2085,6 +2235,196 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_rooms_chat_rooms_get: {
+        parameters: {
+            query: {
+                contentId: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomListItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_chat_room_chat_rooms_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_room_chat_rooms__room_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_chat_room_chat_rooms__room_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    rename_chat_room_chat_rooms__room_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_chat_room_chat_rooms__room_id__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
                 };
             };
             /** @description Validation Error */

@@ -1419,6 +1419,264 @@
         }
       }
     },
+    "/chat-rooms": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Create Chat Room",
+        "operationId": "create_chat_room_chat_rooms_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List Chat Rooms",
+        "operationId": "list_chat_rooms_chat_rooms_get",
+        "parameters": [
+          {
+            "name": "contentId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Contentid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ChatRoomListItem"
+                  },
+                  "title": "Response List Chat Rooms Chat Rooms Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Chat Room",
+        "operationId": "get_chat_room_chat_rooms__room_id__get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Rename Chat Room",
+        "operationId": "rename_chat_room_chat_rooms__room_id__patch",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomRenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Delete Chat Room",
+        "description": "No ON DELETE CASCADE on chat_messages/chat_room_stats (apps/api/CLAUDE.md) —\nchildren must be deleted before the room itself.",
+        "operationId": "delete_chat_room_chat_rooms__room_id__delete",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/reset": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Reset Chat Room",
+        "operationId": "reset_chat_room_chat_rooms__room_id__reset_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -1498,6 +1756,176 @@
           "newPassword"
         ],
         "title": "ChangePasswordRequest"
+      },
+      "ChatMessageResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatMessageRole"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ],
+        "title": "ChatMessageResponse"
+      },
+      "ChatMessageRole": {
+        "type": "string",
+        "enum": [
+          "user",
+          "assistant"
+        ],
+        "title": "ChatMessageRole"
+      },
+      "ChatRoomCreateRequest": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "type": "string",
+            "const": "character",
+            "title": "Contenttype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentType"
+        ],
+        "title": "ChatRoomCreateRequest"
+      },
+      "ChatRoomListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "lastMessagePreview": {
+            "type": "string",
+            "title": "Lastmessagepreview"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "lastMessagePreview",
+          "createdAt"
+        ],
+        "title": "ChatRoomListItem"
+      },
+      "ChatRoomRenameRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "ChatRoomRenameRequest"
+      },
+      "ChatRoomResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "turnCount": {
+            "type": "integer",
+            "title": "Turncount"
+          },
+          "endingReached": {
+            "type": "boolean",
+            "title": "Endingreached"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/ChatMessageResponse"
+            },
+            "type": "array",
+            "title": "Messages"
+          },
+          "latestVersionAvailable": {
+            "type": "boolean",
+            "title": "Latestversionavailable"
+          },
+          "versionAutoUpgraded": {
+            "type": "boolean",
+            "title": "Versionautoupgraded"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "contentId",
+          "contentType",
+          "name",
+          "turnCount",
+          "endingReached",
+          "messages",
+          "latestVersionAvailable",
+          "versionAutoUpgraded",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ChatRoomResponse"
       },
       "ContentAccessStatus": {
         "properties": {
