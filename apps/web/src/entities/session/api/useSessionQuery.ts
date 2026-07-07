@@ -1,16 +1,9 @@
-import type { components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
-import { sessionKeys } from "./keys";
+import { sessionQueryOptions } from "./session-query-options";
 
-export type MeResponse = components["schemas"]["MeResponse"];
+export type { MeResponse } from "./session-query-options";
 
 export function useSessionQuery() {
-  return useQuery({
-    queryKey: sessionKeys.current(),
-    queryFn: async () => (await apiClient.get<MeResponse>("/me")).data,
-    staleTime: Infinity,
-    retry: false,
-  });
+  return useQuery(sessionQueryOptions);
 }
