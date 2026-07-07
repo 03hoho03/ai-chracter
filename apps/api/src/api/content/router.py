@@ -1,12 +1,14 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.content.schemas import DraftSummary
+from api.content.schemas import DraftSummary, UpdateProfileRequest, UserProfileResponse
+from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentType, ContentVersion
+from api.db.models.media import Asset, AssetStatus
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id
@@ -98,3 +100,52 @@ async def list_my_drafts(
 
     drafts.sort(key=lambda draft: draft.updated_at, reverse=True)
     return drafts
+
+
+@router.get("/users/{id}/profile")
+async def get_user_profile(
+    id: uuid.UUID,
+    db: AsyncSession = Depends(get_db_session),
+) -> UserProfileResponse:
+    user = await db.get(User, id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    return UserProfileResponse(
+        nickname=user.nickname,
+        bio=user.bio,
+        profile_image_asset_id=user.profile_image_asset_id,
+    )
+
+
+@router.patch("/me/profile")
+async def update_my_profile(
+    payload: UpdateProfileRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> UserProfileResponse:
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    if payload.profile_image_asset_id is not None:
+        asset = await db.get(Asset, payload.profile_image_asset_id)
+        if (
+            asset is None
+            or asset.owner_user_id != user_id
+            or asset.status != AssetStatus.READY
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid profile image asset"
+            )
+
+    user.nickname = payload.nickname
+    user.bio = payload.bio
+    user.profile_image_asset_id = payload.profile_image_asset_id
+    await db.commit()
+
+    return UserProfileResponse(
+        nickname=user.nickname,
+        bio=user.bio,
+        profile_image_asset_id=user.profile_image_asset_id,
+    )

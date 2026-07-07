@@ -313,6 +313,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/users/{id}/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get User Profile */
+        get: operations["get_user_profile_users__id__profile_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update My Profile */
+        patch: operations["update_my_profile_me_profile_patch"];
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -535,6 +569,24 @@ export interface components {
         SignupResponse: {
             /** Email */
             email: string;
+        };
+        /** UpdateProfileRequest */
+        UpdateProfileRequest: {
+            /** Nickname */
+            nickname: string;
+            /** Bio */
+            bio?: string | null;
+            /** Profileimageassetid */
+            profileImageAssetId?: string | null;
+        };
+        /** UserProfileResponse */
+        UserProfileResponse: {
+            /** Nickname */
+            nickname: string;
+            /** Bio */
+            bio: string | null;
+            /** Profileimageassetid */
+            profileImageAssetId: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1163,6 +1215,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DraftSummary"][];
+                };
+            };
+        };
+    };
+    get_user_profile_users__id__profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_my_profile_me_profile_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateProfileRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
