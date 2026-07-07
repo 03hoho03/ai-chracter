@@ -237,3 +237,105 @@ async def test_guardian_consent_unknown_user_returns_404(db_client: httpx.AsyncC
         "/auth/guardian-consent", json=_guardian_consent_payload("nobody@example.com")
     )
     assert resp.status_code == 404
+
+
+async def test_login_adult_issues_session_and_me_returns_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert resp.status_code == 204
+    assert settings.session_cookie_name in resp.cookies
+
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    me = await db_client.get("/me")
+    assert me.status_code == 200
+    assert me.json() == {
+        "id": str(user.id),
+        "email": user.email,
+        "nickname": user.nickname,
+        "bio": None,
+        "profileImageAssetId": None,
+    }
+
+
+async def test_login_rejects_wrong_password(db_client: httpx.AsyncClient) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": "wrong-password"}
+    )
+    assert resp.status_code == 401
+
+
+async def test_login_rejects_unknown_email(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post(
+        "/auth/login", json={"email": "nobody@example.com", "password": "password123"}
+    )
+    assert resp.status_code == 401
+
+
+async def test_login_rejects_unverified_email(db_client: httpx.AsyncClient) -> None:
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert resp.status_code == 403
+
+
+async def test_login_rejects_minor_without_guardian_consent(db_client: httpx.AsyncClient) -> None:
+    minor_birth_date = date.today().replace(year=date.today().year - 10)
+    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert resp.status_code == 403
+
+
+async def test_login_succeeds_for_minor_with_guardian_consent(db_client: httpx.AsyncClient) -> None:
+    minor_birth_date = date.today().replace(year=date.today().year - 10)
+    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
+    consent_resp = await db_client.post(
+        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
+    )
+    assert consent_resp.status_code == 204
+
+    resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert resp.status_code == 204
+
+
+async def test_me_without_session_returns_401(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.get("/me")
+    assert resp.status_code == 401
+
+
+async def test_logout_invalidates_session(db_client: httpx.AsyncClient) -> None:
+    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
+    login_resp = await db_client.post(
+        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+    )
+    assert login_resp.status_code == 204
+
+    me_before = await db_client.get("/me")
+    assert me_before.status_code == 200
+
+    logout_resp = await db_client.post("/auth/logout")
+    assert logout_resp.status_code == 204
+
+    me_after = await db_client.get("/me")
+    assert me_after.status_code == 401
+
+
+async def test_logout_without_session_is_idempotent(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post("/auth/logout")
+    assert resp.status_code == 204

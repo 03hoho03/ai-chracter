@@ -1,3 +1,4 @@
+import uuid
 from datetime import date
 
 from pydantic import EmailStr, Field, field_validator
@@ -50,3 +51,16 @@ class GuardianConsentRequest(CamelModel):
         if not value:
             raise ValueError("법정대리인 동의가 필요합니다.")
         return value
+
+
+class LoginRequest(CamelModel):
+    email: EmailStr
+    password: str
+
+
+class MeResponse(CamelModel):
+    id: uuid.UUID
+    email: str
+    nickname: str
+    bio: str | None
+    profile_image_asset_id: uuid.UUID | None

@@ -1,3 +1,4 @@
+import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -8,6 +9,8 @@ from api.auth.age import is_guardian_consent_required
 from api.auth.emails import send_verification_code_email
 from api.auth.schemas import (
     GuardianConsentRequest,
+    LoginRequest,
+    MeResponse,
     ResendVerificationCodeRequest,
     SignupRequest,
     SignupResponse,
@@ -22,13 +25,15 @@ from api.auth.verification import (
     store_verification_code,
 )
 from api.core.config import settings
-from api.core.security import hash_password
+from api.core.security import hash_password, verify_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.session import get_db_session
-from api.session.cookies import set_session_cookie
-from api.session.store import create_session
+from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
+from api.session.dependencies import get_current_user_id
+from api.session.store import create_session, delete_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+me_router = APIRouter(tags=["auth"])
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -143,3 +148,63 @@ async def guardian_consent(
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
     return None
+
+
+@router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
+async def login(
+    payload: LoginRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    user = await db.scalar(select(User).where(User.email == payload.email))
+    if (
+        user is None
+        or user.password_hash is None
+        or not verify_password(payload.password, user.password_hash)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password"
+        )
+
+    if user.email_verified_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required"
+        )
+
+    if is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
+        consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
+        if consent is None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN, detail="Guardian consent required"
+            )
+
+    session_id = await create_session({"user_id": str(user.id)})
+    set_session_cookie(response, session_id)
+    return None
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(request: Request, response: Response) -> None:
+    session_id = get_session_id_from_request(request)
+    if session_id is not None:
+        await delete_session(session_id)
+    clear_session_cookie(response)
+    return None
+
+
+@me_router.get("/me")
+async def get_me(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> MeResponse:
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+
+    return MeResponse(
+        id=user.id,
+        email=user.email,
+        nickname=user.nickname,
+        bio=user.bio,
+        profile_image_asset_id=user.profile_image_asset_id,
+    )
