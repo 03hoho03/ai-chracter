@@ -1,10 +1,13 @@
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import Field
 
 from api.core.schema import CamelModel
-from api.db.models.content import ContentType
+from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
+
+VisibilityFilter = Literal["all", "public", "link", "private"]
 
 
 class DraftSummary(CamelModel):
@@ -13,6 +16,16 @@ class DraftSummary(CamelModel):
     name: str
     thumbnail_asset_id: uuid.UUID
     updated_at: datetime
+
+
+class ContentSummary(CamelModel):
+    id: uuid.UUID
+    type: ContentType
+    name: str
+    thumbnail_asset_id: uuid.UUID
+    view_count: int
+    visibility: ContentVisibility
+    moderation_status: ModerationStatus
 
 
 class UserProfileResponse(CamelModel):

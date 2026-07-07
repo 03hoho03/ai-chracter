@@ -347,6 +347,23 @@ export interface paths {
         patch: operations["update_my_profile_me_profile_patch"];
         trace?: never;
     };
+    "/users/{id}/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List User Contents */
+        get: operations["list_user_contents_users__id__contents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -398,11 +415,36 @@ export interface components {
             /** Newpassword */
             newPassword: string;
         };
+        /** ContentSummary */
+        ContentSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /**
+             * Thumbnailassetid
+             * Format: uuid
+             */
+            thumbnailAssetId: string;
+            /** Viewcount */
+            viewCount: number;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+        };
         /**
          * ContentType
          * @enum {string}
          */
         ContentType: "character" | "story";
+        /**
+         * ContentVisibility
+         * @enum {string}
+         */
+        ContentVisibility: "public" | "link" | "private";
         /** DraftSummary */
         DraftSummary: {
             /**
@@ -469,6 +511,11 @@ export interface components {
             /** Profileimageassetid */
             profileImageAssetId: string | null;
         };
+        /**
+         * ModerationStatus
+         * @enum {string}
+         */
+        ModerationStatus: "normal" | "restricted" | "deleted";
         /** OnboardingGoogleRequest */
         OnboardingGoogleRequest: {
             /** Token */
@@ -1270,6 +1317,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["UserProfileResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_contents_users__id__contents_get: {
+        parameters: {
+            query: {
+                type: components["schemas"]["ContentType"];
+                visibility?: ("all" | "public" | "link" | "private") | null;
+            };
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentSummary"][];
                 };
             };
             /** @description Validation Error */

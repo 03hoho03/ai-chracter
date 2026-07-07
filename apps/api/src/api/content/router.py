@@ -4,14 +4,20 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.content.schemas import DraftSummary, UpdateProfileRequest, UserProfileResponse
+from api.content.schemas import (
+    ContentSummary,
+    DraftSummary,
+    UpdateProfileRequest,
+    UserProfileResponse,
+    VisibilityFilter,
+)
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.content import Content, ContentType, ContentVersion
+from api.db.models.content import Content, ContentType, ContentVersion, ContentVisibility, ModerationStatus
 from api.db.models.media import Asset, AssetStatus
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
-from api.session.dependencies import get_current_user_id
+from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
 router = APIRouter(tags=["content"])
 
@@ -149,3 +155,87 @@ async def update_my_profile(
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
     )
+
+
+@router.get("/users/{id}/contents")
+async def list_user_contents(
+    id: uuid.UUID,
+    type: ContentType,
+    visibility: VisibilityFilter | None = None,
+    viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ContentSummary]:
+    is_owner = viewer_user_id is not None and viewer_user_id == id
+
+    query = select(Content).where(
+        Content.creator_user_id == id,
+        Content.type == type,
+        Content.current_published_version_id.is_not(None),
+    )
+    if is_owner:
+        effective_visibility = visibility or "all"
+        if effective_visibility == "all":
+            query = query.where(Content.moderation_status != ModerationStatus.DELETED)
+        else:
+            query = query.where(
+                Content.visibility == ContentVisibility(effective_visibility),
+                Content.moderation_status == ModerationStatus.NORMAL,
+            )
+    else:
+        query = query.where(
+            Content.visibility == ContentVisibility.PUBLIC,
+            Content.moderation_status == ModerationStatus.NORMAL,
+        )
+
+    contents = (await db.scalars(query)).all()
+    if not contents:
+        return []
+
+    published_version_ids = [
+        content.current_published_version_id
+        for content in contents
+        if content.current_published_version_id is not None
+    ]
+    if type == ContentType.CHARACTER:
+        details: dict[uuid.UUID, CharacterVersionDetail | StoryVersionDetail] = {
+            detail.content_version_id: detail
+            for detail in (
+                await db.scalars(
+                    select(CharacterVersionDetail).where(
+                        CharacterVersionDetail.content_version_id.in_(published_version_ids)
+                    )
+                )
+            ).all()
+        }
+    else:
+        details = {
+            detail.content_version_id: detail
+            for detail in (
+                await db.scalars(
+                    select(StoryVersionDetail).where(
+                        StoryVersionDetail.content_version_id.in_(published_version_ids)
+                    )
+                )
+            ).all()
+        }
+
+    summaries: list[ContentSummary] = []
+    for content in contents:
+        version_id = content.current_published_version_id
+        if version_id is None:
+            continue
+        detail = details.get(version_id)
+        if detail is None:
+            continue
+        summaries.append(
+            ContentSummary(
+                id=content.id,
+                type=content.type,
+                name=detail.name,
+                thumbnail_asset_id=detail.thumbnail_asset_id,
+                view_count=content.view_count,
+                visibility=content.visibility,
+                moderation_status=content.moderation_status,
+            )
+        )
+    return summaries

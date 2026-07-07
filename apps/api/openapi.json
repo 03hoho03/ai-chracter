@@ -780,6 +780,83 @@
         }
       }
     },
+    "/users/{id}/contents": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "List User Contents",
+        "operationId": "list_user_contents_users__id__contents_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContentType"
+            }
+          },
+          {
+            "name": "visibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "all",
+                    "public",
+                    "link",
+                    "private"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visibility"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContentSummary"
+                  },
+                  "title": "Response List User Contents Users  Id  Contents Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -860,6 +937,48 @@
         ],
         "title": "ChangePasswordRequest"
       },
+      "ContentSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Thumbnailassetid"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailAssetId",
+          "viewCount",
+          "visibility",
+          "moderationStatus"
+        ],
+        "title": "ContentSummary"
+      },
       "ContentType": {
         "type": "string",
         "enum": [
@@ -867,6 +986,15 @@
           "story"
         ],
         "title": "ContentType"
+      },
+      "ContentVisibility": {
+        "type": "string",
+        "enum": [
+          "public",
+          "link",
+          "private"
+        ],
+        "title": "ContentVisibility"
       },
       "DraftSummary": {
         "properties": {
@@ -1014,6 +1142,15 @@
           "profileImageAssetId"
         ],
         "title": "MeResponse"
+      },
+      "ModerationStatus": {
+        "type": "string",
+        "enum": [
+          "normal",
+          "restricted",
+          "deleted"
+        ],
+        "title": "ModerationStatus"
       },
       "OnboardingGoogleRequest": {
         "properties": {
