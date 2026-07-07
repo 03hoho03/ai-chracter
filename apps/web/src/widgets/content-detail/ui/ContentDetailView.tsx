@@ -2,7 +2,7 @@ import { useState } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { BookOpen, Heart, History, ImageOff, MessageCircle, UserRound } from "lucide-react";
+import { BookOpen, Heart, History, ImageOff, MessageCircle, Star, UserRound } from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useDebounce } from "react-use";
 import { toast } from "sonner";
@@ -10,8 +10,10 @@ import { toast } from "sonner";
 import {
   canViewDetailPage,
   contentKeys,
+  favoriteKeys,
   toContentAccessStatus,
   useContentDetailQuery,
+  useToggleFavoriteMutation,
   useToggleLikeMutation,
   type ContentType,
 } from "../../../entities/content";
@@ -33,9 +35,9 @@ const TYPE_LABEL: Record<ContentType, string> = {
   story: "스토리",
 };
 
-// techspec-overview.md §11 — 좋아요 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
-// 화면 표시는 desiredLiked로 매 클릭마다 즉시 반영한다.
-const LIKE_SYNC_DEBOUNCE_MS = 400;
+// techspec-overview.md §11 — 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
+// 화면 표시는 desiredLiked/desiredFavorited로 매 클릭마다 즉시 반영한다.
+const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
 function ContentDetailSkeleton() {
   return (
@@ -56,7 +58,9 @@ export function ContentDetailView({ id }: { id: string }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const toggleLike = useToggleLikeMutation(id);
+  const toggleFavorite = useToggleFavoriteMutation(id);
   const [desiredLiked, setDesiredLiked] = useState<boolean | undefined>(undefined);
+  const [desiredFavorited, setDesiredFavorited] = useState<boolean | undefined>(undefined);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const content = detailQuery.data;
 
@@ -77,8 +81,36 @@ export function ContentDetailView({ id }: { id: string }) {
         },
       });
     },
-    LIKE_SYNC_DEBOUNCE_MS,
+    TOGGLE_SYNC_DEBOUNCE_MS,
     [desiredLiked],
+  );
+
+  useDebounce(
+    () => {
+      if (
+        content === undefined ||
+        desiredFavorited === undefined ||
+        desiredFavorited === content.isFavorited
+      )
+        return;
+      const syncingFavorited = desiredFavorited;
+      toggleFavorite.mutate(syncingFavorited, {
+        onError: (error) => {
+          toast.error(
+            error.status === 401
+              ? "로그인 후 즐겨찾기에 담을 수 있어요."
+              : "즐겨찾기 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+        },
+        onSettled: () => {
+          setDesiredFavorited((current) => (current === syncingFavorited ? undefined : current));
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+          void queryClient.invalidateQueries({ queryKey: favoriteKeys.list() });
+        },
+      });
+    },
+    TOGGLE_SYNC_DEBOUNCE_MS,
+    [desiredFavorited],
   );
 
   if (detailQuery.isPending) return <ContentDetailSkeleton />;
@@ -101,6 +133,7 @@ export function ContentDetailView({ id }: { id: string }) {
 
   const isLiked = desiredLiked ?? content.isLiked;
   const likeCount = content.likeCount + (isLiked === content.isLiked ? 0 : isLiked ? 1 : -1);
+  const isFavorited = desiredFavorited ?? content.isFavorited;
 
   return (
     <article className="flex flex-col gap-5 p-1">
@@ -179,6 +212,19 @@ export function ContentDetailView({ id }: { id: string }) {
           <Heart aria-hidden className={cn("size-4", isLiked && "fill-primary")} />
           {likeCount.toLocaleString()}
           <span className="sr-only">{isLiked ? "좋아요 취소" : "좋아요"}</span>
+        </button>
+
+        <button
+          type="button"
+          aria-pressed={isFavorited}
+          onClick={() => setDesiredFavorited((current) => !(current ?? content.isFavorited))}
+          className={cn(
+            "inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground",
+            isFavorited && "text-primary hover:text-primary",
+          )}
+        >
+          <Star aria-hidden className={cn("size-4", isFavorited && "fill-primary")} />
+          <span className="sr-only">{isFavorited ? "즐겨찾기 해제" : "즐겨찾기"}</span>
         </button>
 
         <button

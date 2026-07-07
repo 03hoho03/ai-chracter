@@ -20,3 +20,9 @@ export const contentKeys = {
   browse: (params: ContentBrowseParams) => [...contentKeys.all, "browse", params] as const,
   genres: () => [...contentKeys.all, "genres"] as const,
 };
+
+/** techspec-home-discovery.md §4 — 상세화면 즐겨찾기 토글 성공 시 이 키를 invalidate해 목록을 최신화한다. */
+export const favoriteKeys = {
+  all: ["favorites"] as const,
+  list: () => [...favoriteKeys.all, "list"] as const,
+};

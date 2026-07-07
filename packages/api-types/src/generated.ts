@@ -675,6 +675,8 @@ export interface components {
             likeCount: number;
             /** Isliked */
             isLiked: boolean;
+            /** Isfavorited */
+            isFavorited: boolean;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupSummary"][] | null;
             /** Versionnumber */

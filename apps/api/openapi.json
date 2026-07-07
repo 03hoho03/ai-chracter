@@ -1598,6 +1598,10 @@
             "type": "boolean",
             "title": "Isliked"
           },
+          "isFavorited": {
+            "type": "boolean",
+            "title": "Isfavorited"
+          },
           "startingSetups": {
             "anyOf": [
               {
@@ -1645,6 +1649,7 @@
           "chatCount",
           "likeCount",
           "isLiked",
+          "isFavorited",
           "startingSetups",
           "versionNumber",
           "updatedAt",

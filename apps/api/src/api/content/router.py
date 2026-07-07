@@ -589,10 +589,16 @@ async def get_content_detail(
         ]
 
     is_liked = False
+    is_favorited = False
     if viewer_user_id is not None:
         is_liked = (
             await db.execute(
                 select(Like).where(Like.user_id == viewer_user_id, Like.content_id == id)
+            )
+        ).scalar_one_or_none() is not None
+        is_favorited = (
+            await db.execute(
+                select(Favorite).where(Favorite.user_id == viewer_user_id, Favorite.content_id == id)
             )
         ).scalar_one_or_none() is not None
 
@@ -611,6 +617,7 @@ async def get_content_detail(
         chat_count=content.chat_count,
         like_count=content.like_count,
         is_liked=is_liked,
+        is_favorited=is_favorited,
         starting_setups=starting_setups,
         version_number=version.version_number,
         updated_at=version.published_at,
