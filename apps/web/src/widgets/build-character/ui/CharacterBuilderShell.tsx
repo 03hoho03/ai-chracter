@@ -12,6 +12,7 @@ import {
 import { characterBuilderActiveTabAtom, type CharacterBuilderTab } from "../model/activeTabAtom";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
+import { PromptTab } from "./PromptTab";
 
 type CharacterDraftResponse = components["schemas"]["CharacterDraftResponse"];
 
@@ -62,7 +63,7 @@ export function CharacterBuilderShell({ data }: { data: CharacterDraftResponse }
           <IntroTab form={form} />
         </TabsContent>
         <TabsContent value="prompt">
-          <TabPlaceholder />
+          <PromptTab form={form} />
         </TabsContent>
         <TabsContent value="advanced">
           <TabPlaceholder />
