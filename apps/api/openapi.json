@@ -1289,9 +1289,9 @@
         "tags": [
           "content"
         ],
-        "summary": "Publish Character Content",
-        "description": "techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083).",
-        "operationId": "publish_character_content_contents__id__publish_post",
+        "summary": "Publish Content",
+        "description": "techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,\nUS-085 story).",
+        "operationId": "publish_content_contents__id__publish_post",
         "parameters": [
           {
             "name": "id",

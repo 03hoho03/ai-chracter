@@ -496,10 +496,11 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Publish Character Content
-         * @description techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083).
+         * Publish Content
+         * @description techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,
+         *     US-085 story).
          */
-        post: operations["publish_character_content_contents__id__publish_post"];
+        post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2985,7 +2986,7 @@ export interface operations {
             };
         };
     };
-    publish_character_content_contents__id__publish_post: {
+    publish_content_contents__id__publish_post: {
         parameters: {
             query?: never;
             header?: never;

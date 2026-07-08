@@ -2,6 +2,7 @@ import base64
 import json
 import mimetypes
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
@@ -14,7 +15,9 @@ from starlette.concurrency import run_in_threadpool
 from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
+    build_story_publish_filter_prompt,
     validate_character_publish,
+    validate_story_publish,
 )
 from api.content.schemas import (
     CharacterDraftPayload,
@@ -1071,14 +1074,25 @@ async def _load_publish_filter_images(
 
 
 @router.post("/contents/{id}/publish")
-async def publish_character_content(
+async def publish_content(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> ContentPublishResponse:
-    """techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083)."""
-    content, version = await _get_owned_draft_version(db, id, user_id, (ContentType.CHARACTER,))
+    """techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,
+    US-085 story)."""
+    content, version = await _get_owned_draft_version(
+        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+    )
+    if content.type == ContentType.CHARACTER:
+        return await _publish_character_content(db, content, version, llm_client)
+    return await _publish_story_content(db, content, version, llm_client)
+
+
+async def _publish_character_content(
+    db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
+) -> ContentPublishResponse:
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 
@@ -1143,6 +1157,227 @@ async def publish_character_content(
                 blurred_asset_id=image.blurred_asset_id,
                 trigger_condition=image.trigger_condition,
                 order=image.order,
+            )
+        )
+
+    content.current_published_version_id = version.id
+    await db.commit()
+
+    assert version.version_number is not None
+    return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
+
+
+async def _load_story_publish_filter_images(
+    db: AsyncSession, detail: StoryVersionDetail
+) -> list[tuple[bytes, str]]:
+    """스토리는 상황별 이미지 개념이 없어(techspec-db-schema.md §5) 대표 이미지 하나만 첨부한다 —
+    캐릭터의 `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍 형태로 반환한다."""
+    if detail.thumbnail_asset_id is None:
+        return []
+    asset = await db.get(Asset, detail.thumbnail_asset_id)
+    assert asset is not None
+    data = await run_in_threadpool(download_object, asset.storage_key)
+    mime_type, _ = mimetypes.guess_type(asset.storage_key)
+    return [(data, mime_type or "application/octet-stream")]
+
+
+async def _clone_ending_rules(db: AsyncSession, old_ending_id: uuid.UUID, new_ending_id: uuid.UUID) -> None:
+    """Publish-time deep copy of one ending's rule tree onto its freshly-cloned sibling — same
+    tree shape as `_reconcile_ending_rules` but duplicates rather than upserts (a republish clone
+    always starts from an empty `new_ending_id`, techspec-db-schema.md §3)."""
+    top_rules = (
+        await db.scalars(select(EndingRule).where(EndingRule.ending_id == old_ending_id))
+    ).all()
+    for rule in top_rules:
+        db.add(
+            EndingRule(
+                entity_id=rule.entity_id,
+                ending_id=new_ending_id,
+                stat_def_entity_id=rule.stat_def_entity_id,
+                operator=rule.operator,
+                threshold=rule.threshold,
+                next_op=rule.next_op,
+                order=rule.order,
+            )
+        )
+
+    groups = (
+        await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == old_ending_id))
+    ).all()
+    for group in groups:
+        new_group = EndingRuleGroup(
+            entity_id=group.entity_id, ending_id=new_ending_id, next_op=group.next_op, order=group.order
+        )
+        db.add(new_group)
+        await db.flush()
+
+        nested_rules = (
+            await db.scalars(select(EndingRule).where(EndingRule.rule_group_id == group.id))
+        ).all()
+        for nested_rule in nested_rules:
+            db.add(
+                EndingRule(
+                    entity_id=nested_rule.entity_id,
+                    rule_group_id=new_group.id,
+                    stat_def_entity_id=nested_rule.stat_def_entity_id,
+                    operator=nested_rule.operator,
+                    threshold=nested_rule.threshold,
+                    next_op=nested_rule.next_op,
+                    order=nested_rule.order,
+                )
+            )
+
+
+async def _publish_story_content(
+    db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
+) -> ContentPublishResponse:
+    detail = await db.get(StoryVersionDetail, version.id)
+    assert detail is not None
+
+    starting_setups = (
+        await db.scalars(
+            select(StartingSetup)
+            .where(StartingSetup.content_version_id == version.id)
+            .order_by(StartingSetup.order)
+        )
+    ).all()
+    endings_by_setup_id: dict[uuid.UUID, Sequence[Ending]] = {}
+    for setup in starting_setups:
+        endings_by_setup_id[setup.id] = (
+            await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))
+        ).all()
+
+    missing_fields = validate_story_publish(content, version, detail, starting_setups, endings_by_setup_id)
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
+        )
+
+    filter_images = await _load_story_publish_filter_images(db, detail)
+    filter_prompt = build_story_publish_filter_prompt(
+        name=detail.name,
+        one_liner=detail.one_liner,
+        setting_text=detail.setting_text,
+        development_example=detail.development_example,
+        custom_prompt=detail.custom_prompt,
+        detail_description=version.detail_description,
+        starting_setups=starting_setups,
+    )
+    filter_result = await llm_client.generate_structured(
+        filter_prompt, PublishFilterResult, images=filter_images
+    )
+    if not filter_result.passed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
+        )
+
+    keyword_notes = (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+    ).all()
+    shortcuts = (
+        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version.id))
+    ).all()
+
+    latest_version_number = await db.scalar(
+        select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
+    )
+    version.version_number = (latest_version_number or 0) + 1
+    version.published_at = datetime.now(UTC)
+
+    new_version = ContentVersion(content_id=content.id, detail_description=version.detail_description)
+    db.add(new_version)
+    await db.flush()
+
+    db.add(
+        StoryVersionDetail(
+            content_version_id=new_version.id,
+            name=detail.name,
+            one_liner=detail.one_liner,
+            thumbnail_asset_id=detail.thumbnail_asset_id,
+            prompt_template=detail.prompt_template,
+            setting_text=detail.setting_text,
+            development_example=detail.development_example,
+            custom_prompt=detail.custom_prompt,
+        )
+    )
+
+    old_setup_entity_id_by_physical_id = {setup.id: setup.entity_id for setup in starting_setups}
+    new_setup_physical_id_by_entity_id: dict[uuid.UUID, uuid.UUID] = {}
+
+    for setup in starting_setups:
+        new_setup = StartingSetup(
+            entity_id=setup.entity_id,
+            content_version_id=new_version.id,
+            name=setup.name,
+            prologue=setup.prologue,
+            opening_message=setup.opening_message,
+            playguide=setup.playguide,
+            suggested_replies=setup.suggested_replies,
+            order=setup.order,
+        )
+        db.add(new_setup)
+        await db.flush()
+        new_setup_physical_id_by_entity_id[setup.entity_id] = new_setup.id
+
+        stat_defs = (
+            await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))
+        ).all()
+        for stat_def in stat_defs:
+            db.add(
+                StatDef(
+                    entity_id=stat_def.entity_id,
+                    starting_setup_id=new_setup.id,
+                    name=stat_def.name,
+                    icon=stat_def.icon,
+                    color=stat_def.color,
+                    min_value=stat_def.min_value,
+                    max_value=stat_def.max_value,
+                    initial_value=stat_def.initial_value,
+                    unit=stat_def.unit,
+                    description=stat_def.description,
+                    order=stat_def.order,
+                )
+            )
+
+        for ending in endings_by_setup_id[setup.id]:
+            new_ending = Ending(
+                entity_id=ending.entity_id,
+                starting_setup_id=new_setup.id,
+                name=ending.name,
+                turn_count_gate=ending.turn_count_gate,
+                judgment_prompt=ending.judgment_prompt,
+                epilogue=ending.epilogue,
+                hint=ending.hint,
+                order=ending.order,
+            )
+            db.add(new_ending)
+            await db.flush()
+            await _clone_ending_rules(db, ending.id, new_ending.id)
+
+    for note in keyword_notes:
+        new_starting_setup_id = None
+        if note.starting_setup_id is not None:
+            old_entity_id = old_setup_entity_id_by_physical_id[note.starting_setup_id]
+            new_starting_setup_id = new_setup_physical_id_by_entity_id[old_entity_id]
+        db.add(
+            KeywordNote(
+                entity_id=note.entity_id,
+                content_version_id=new_version.id,
+                starting_setup_id=new_starting_setup_id,
+                info_text=note.info_text,
+                trigger_keywords=note.trigger_keywords,
+            )
+        )
+
+    for shortcut in shortcuts:
+        db.add(
+            Shortcut(
+                entity_id=shortcut.entity_id,
+                content_version_id=new_version.id,
+                name=shortcut.name,
+                description=shortcut.description,
+                prompt=shortcut.prompt,
             )
         )
 
