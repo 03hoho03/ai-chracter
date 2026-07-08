@@ -7,6 +7,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { storyBuilderSchema, serverToForm, type StoryBuilderFormValues } from "../../../features/build-story";
 import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/activeTabAtom";
 import { ProfileTab } from "./ProfileTab";
+import { SettingTab } from "./SettingTab";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 
@@ -57,7 +58,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <ProfileTab form={form} />
         </TabsContent>
         <TabsContent value="setting">
-          <TabPlaceholder />
+          <SettingTab form={form} />
         </TabsContent>
         <TabsContent value="startingSetup">
           <TabPlaceholder />
