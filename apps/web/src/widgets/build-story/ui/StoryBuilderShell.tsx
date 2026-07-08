@@ -9,6 +9,7 @@ import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/active
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
 import { ProfileTab } from "./ProfileTab";
+import { RegistrationTab } from "./RegistrationTab";
 import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
 import { StartingSetupTab } from "./StartingSetupTab";
@@ -26,14 +27,6 @@ const TABS: { id: StoryBuilderTab; label: string }[] = [
   { id: "ending", label: "엔딩" },
   { id: "registration", label: "등록" },
 ];
-
-function TabPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-      <p className="text-sm text-muted-foreground">다음 스토리에서 준비할게요.</p>
-    </div>
-  );
-}
 
 /** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 탭은 뷰 전환일 뿐, 발행/자동저장
  * 연동은 US-114가 담당한다 — 여기서는 발행 버튼의 활성/비활성만 스키마 유효성으로 판단한다. */
@@ -81,7 +74,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <EndingTab form={form} />
         </TabsContent>
         <TabsContent value="registration">
-          <TabPlaceholder />
+          <RegistrationTab form={form} />
         </TabsContent>
       </Tabs>
     </main>
