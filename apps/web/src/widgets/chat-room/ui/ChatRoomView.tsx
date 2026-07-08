@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { ArrowLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { ArrowLeft, History, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import type { Shortcut } from "../../../entities/chat-room";
-import { useChatRoomQuery, useDeleteMessageMutation } from "../../../entities/chat-room";
+import {
+  useAcknowledgeVersionUpgradeMutation,
+  useChatRoomQuery,
+  useDeleteMessageMutation,
+} from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
@@ -43,6 +47,22 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // US-079, techspec-content-versioning.md §4 — 배너는 방 진입 시 1회만 노출한다. versionAutoUpgraded는
+  // acknowledge 뮤테이션 성공 즉시 캐시에서 false로 꺼지므로, 그 값을 직접 렌더링 조건으로 쓰면 배너가
+  // 뜨자마자 사라진다 — 로컬 state로 "봤다"는 사실을 분리해서 들고 있는다. room이 비동기로 로드되므로
+  // useEffectOnce 대신 usePlayContent와 동일한 ref 가드+useEffect 패턴을 쓴다.
+  const [versionUpgradeBannerVisible, setVersionUpgradeBannerVisible] = useState(false);
+  const acknowledgeVersionUpgradeMutation = useAcknowledgeVersionUpgradeMutation(roomId);
+  const versionUpgradeAcknowledgedRef = useRef(false);
+  useEffect(() => {
+    if (versionUpgradeAcknowledgedRef.current || !room) return;
+    versionUpgradeAcknowledgedRef.current = true;
+    if (room.versionAutoUpgraded) {
+      setVersionUpgradeBannerVisible(true);
+      acknowledgeVersionUpgradeMutation.mutate();
+    }
+  }, [room]);
 
   function handleDeleteMessage(messageId: string) {
     deleteMessageMutation.mutate(messageId, {
@@ -113,6 +133,13 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           characterId={characterId}
         />
       </header>
+
+      {versionUpgradeBannerVisible && (
+        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+          <History aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+          <span className="text-xs text-muted-foreground">최신 버전으로 자동 전환되었어요.</span>
+        </div>
+      )}
 
       {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
 

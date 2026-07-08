@@ -8,6 +8,7 @@ import { ImageArchiveModal } from "../features/image-archive";
 import { ConfirmChatRoomActionModal } from "../features/manage-chat-room";
 import { PlayGuideModal } from "../features/play-guide";
 import { ReportContentModal } from "../features/report-content";
+import { UpdateInfoModal } from "../features/update-info";
 
 export interface RouterContext {
   queryClient: QueryClient;
@@ -28,6 +29,7 @@ function RootComponent() {
       <PlayGuideModal />
       <EndingCollectionModal />
       <ImageArchiveModal />
+      <UpdateInfoModal />
     </>
   );
 }

@@ -12,6 +12,7 @@ import { BookOpen, History, Images, MoreVertical, Repeat, Sparkles } from "lucid
 import { EndingCollectionModal } from "../../../features/ending-collection";
 import { ImageArchiveModal } from "../../../features/image-archive";
 import { PlayGuideModal } from "../../../features/play-guide";
+import { UpdateInfoModal } from "../../../features/update-info";
 import { chatMorePanelOpenAtom } from "../model/atom";
 
 type MorePanelItem = {
@@ -23,13 +24,13 @@ type MorePanelItem = {
 
 const CHARACTER_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
-  { key: "update-info", label: "업데이트 정보", icon: History, active: false },
+  { key: "update-info", label: "업데이트 정보", icon: History, active: true },
   { key: "image-archive", label: "이미지 보관함", icon: Images, active: true },
 ];
 
 const STORY_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
-  { key: "update-info", label: "업데이트 정보", icon: History, active: false },
+  { key: "update-info", label: "업데이트 정보", icon: History, active: true },
   { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, active: false },
   { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, active: true },
 ];
@@ -55,6 +56,7 @@ export function ChatMorePanel({
     if (!item.active) return;
     setOpen(false);
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
+    if (item.key === "update-info") void UpdateInfoModal.call({ roomId });
     if (item.key === "ending-collection" && startingSetupId) {
       void EndingCollectionModal.call({ startingSetupId });
     }
