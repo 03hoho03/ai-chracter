@@ -112,6 +112,14 @@ describe("statDefSchema", () => {
 
     expect(result.success).toBe(false);
   });
+
+  it("requires icon and color", () => {
+    const missingIcon = statDefSchema.safeParse({ ...validStatDef(), icon: "" });
+    const missingColor = statDefSchema.safeParse({ ...validStatDef(), color: "" });
+
+    expect(missingIcon.success).toBe(false);
+    expect(missingColor.success).toBe(false);
+  });
 });
 
 describe("startingSetupSchema", () => {

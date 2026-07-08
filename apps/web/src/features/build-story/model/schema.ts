@@ -37,8 +37,8 @@ export const storySettingSchema = z
 export const statDefSchema = z.object({
   id: z.string(),
   name: z.string().min(1),
-  icon: z.string(),
-  color: z.string(),
+  icon: z.string().min(1),
+  color: z.string().min(1),
   min: z.number(),
   max: z.number(),
   initial: z.number(),
