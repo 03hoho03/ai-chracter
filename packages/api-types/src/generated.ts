@@ -57,6 +57,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assets/{asset_id}/register-situational-image": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register Situational Image
+         * @description techspec-backend-media.md §2. Downloads the original asset, synchronously
+         *     generates a Gaussian-blurred variant (no queue — a single-image blur is
+         *     sub-second), and upserts the situational_images row keyed by entity_id.
+         */
+        post: operations["register_situational_image_assets__asset_id__register_situational_image_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -1275,6 +1297,23 @@ export interface components {
              */
             expiresAt: string;
         };
+        /** RegisterSituationalImageRequest */
+        RegisterSituationalImageRequest: {
+            /**
+             * Entityid
+             * Format: uuid
+             */
+            entityId: string;
+            /**
+             * Contentversionid
+             * Format: uuid
+             */
+            contentVersionId: string;
+            /** Triggercondition */
+            triggerCondition: string;
+            /** Order */
+            order: number;
+        };
         /**
          * ReportReasonCategory
          * @enum {string}
@@ -1341,6 +1380,28 @@ export interface components {
         SignupResponse: {
             /** Email */
             email: string;
+        };
+        /** SituationalImageResponse */
+        SituationalImageResponse: {
+            /**
+             * Entityid
+             * Format: uuid
+             */
+            entityId: string;
+            /**
+             * Imageassetid
+             * Format: uuid
+             */
+            imageAssetId: string;
+            /**
+             * Blurredassetid
+             * Format: uuid
+             */
+            blurredAssetId: string;
+            /** Triggercondition */
+            triggerCondition: string;
+            /** Order */
+            order: number;
         };
         /** StartingSetupSummary */
         StartingSetupSummary: {
@@ -1561,6 +1622,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssetCompleteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    register_situational_image_assets__asset_id__register_situational_image_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterSituationalImageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SituationalImageResponse"];
                 };
             };
             /** @description Validation Error */

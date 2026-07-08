@@ -29,3 +29,18 @@ class PresignedUploadResponse(CamelModel):
 class AssetCompleteResponse(CamelModel):
     asset_id: uuid.UUID
     status: AssetStatus
+
+
+class RegisterSituationalImageRequest(CamelModel):
+    entity_id: uuid.UUID
+    content_version_id: uuid.UUID
+    trigger_condition: str = Field(min_length=1)
+    order: int
+
+
+class SituationalImageResponse(CamelModel):
+    entity_id: uuid.UUID
+    image_asset_id: uuid.UUID
+    blurred_asset_id: uuid.UUID
+    trigger_condition: str
+    order: int

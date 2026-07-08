@@ -53,6 +53,17 @@ def generate_presigned_get_url(key: str) -> str:
     return url
 
 
+def download_object(key: str) -> bytes:
+    """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
+    response = s3_client.get_object(Bucket=settings.s3_bucket_name, Key=key)
+    return response["Body"].read()
+
+
+def upload_object(key: str, body: bytes, content_type: str) -> None:
+    """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
+    s3_client.put_object(Bucket=settings.s3_bucket_name, Key=key, Body=body, ContentType=content_type)
+
+
 def object_exists(key: str) -> bool:
     """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
     try:

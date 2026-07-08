@@ -167,6 +167,60 @@
         }
       }
     },
+    "/assets/{asset_id}/register-situational-image": {
+      "post": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Register Situational Image",
+        "description": "techspec-backend-media.md §2. Downloads the original asset, synchronously\ngenerates a Gaussian-blurred variant (no queue — a single-image blur is\nsub-second), and upserts the situational_images row keyed by entity_id.",
+        "operationId": "register_situational_image_assets__asset_id__register_situational_image_post",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterSituationalImageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SituationalImageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/signup": {
       "post": {
         "tags": [
@@ -3145,6 +3199,37 @@
         ],
         "title": "PresignedUploadResponse"
       },
+      "RegisterSituationalImageRequest": {
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entityid"
+          },
+          "contentVersionId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentversionid"
+          },
+          "triggerCondition": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Triggercondition"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entityId",
+          "contentVersionId",
+          "triggerCondition",
+          "order"
+        ],
+        "title": "RegisterSituationalImageRequest"
+      },
       "ReportReasonCategory": {
         "type": "string",
         "enum": [
@@ -3277,6 +3362,42 @@
           "email"
         ],
         "title": "SignupResponse"
+      },
+      "SituationalImageResponse": {
+        "properties": {
+          "entityId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Entityid"
+          },
+          "imageAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Imageassetid"
+          },
+          "blurredAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Blurredassetid"
+          },
+          "triggerCondition": {
+            "type": "string",
+            "title": "Triggercondition"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "entityId",
+          "imageAssetId",
+          "blurredAssetId",
+          "triggerCondition",
+          "order"
+        ],
+        "title": "SituationalImageResponse"
       },
       "StartingSetupSummary": {
         "properties": {
