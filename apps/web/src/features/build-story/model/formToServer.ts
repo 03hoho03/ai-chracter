@@ -1,15 +1,16 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { StartingSetupValues, StatDefValues, StoryBuilderFormValues } from "./schema";
+import type { KeywordNoteValues, StartingSetupValues, StatDefValues, StoryBuilderFormValues } from "./schema";
 
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
+type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
 
 /**
- * keywordNotes/shortcuts는 아직 폼 스키마에 없다 — US-094가 이 함수에 그 매핑을 추가해 반환 타입을
- * `StoryDraftPayload` 전체로 넓힌다. startingSetups 안의 `endings`도 같은 이유로 US-095 몫이라
- * `StartingSetupDraftItem`을 그대로 쓰지 않고 이 스토리(US-093)가 채우는 필드만 Pick했다.
+ * startingSetups 안의 `endings`는 US-095 몫이라 `StartingSetupDraftItem`을 그대로 쓰지 않고 지금까지
+ * (US-093/094) 채우는 필드만 Pick했다. keywordNotes/shortcuts(US-094)는 `KeywordNoteDraftItem`/
+ * `ShortcutDraftItem`을 그대로 다 채우므로 Pick 없이 `StoryDraftPayload`의 필드로 바로 포함한다.
  */
 export type StoryStartingSetupPayload = Pick<
   StartingSetupDraftItem,
@@ -25,6 +26,8 @@ export type StoryBuilderDraftPayload = Pick<
   | "settingText"
   | "developmentExample"
   | "customPrompt"
+  | "keywordNotes"
+  | "shortcuts"
   | "description"
   | "genreId"
   | "target"
@@ -48,6 +51,16 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
   };
 }
 
+// scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다(techspec §1.3 [확정] 매핑).
+function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
+  return {
+    id: note.id,
+    infoText: note.content,
+    triggerKeywords: note.triggerKeywords,
+    startingSetupId: note.scope.kind === "global" ? null : note.scope.startingSetupId,
+  };
+}
+
 // order는 서버 스키마에 별도 숫자 필드가 없다 — 배열 인덱스 자체가 order다(US-091 캐릭터 빌더와 동일).
 function toApiStartingSetup(setup: StartingSetupValues): StoryStartingSetupPayload {
   return {
@@ -62,8 +75,8 @@ function toApiStartingSetup(setup: StartingSetupValues): StoryStartingSetupPaylo
 }
 
 /**
- * 폼값 -> `PATCH /contents/{id}/draft` payload 중 profile/storySetting/startingSetups/registration
- * 부분(techspec-overview.md §8.1, 순수 함수).
+ * 폼값 -> `PATCH /contents/{id}/draft` payload 중 profile/storySetting/startingSetups/
+ * keywordNotes/shortcuts/registration 부분(techspec-overview.md §8.1, 순수 함수).
  */
 export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftPayload {
   return {
@@ -75,6 +88,8 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     developmentExample: values.storySetting.developmentExample ?? null,
     customPrompt: values.storySetting.customPrompt ?? null,
     startingSetups: values.startingSetups.map(toApiStartingSetup),
+    keywordNotes: values.keywordNotes.map(toApiKeywordNote),
+    shortcuts: values.shortcuts,
     description: values.registration.description,
     genreId: values.registration.genre,
     target: values.registration.target,

@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { startingSetupSchema, statDefSchema, storyBuilderSchema, storySettingSchema } from "./schema";
+import {
+  keywordNoteSchema,
+  shortcutSchema,
+  startingSetupSchema,
+  statDefSchema,
+  storyBuilderSchema,
+  storySettingSchema,
+} from "./schema";
 
 describe("storySettingSchema", () => {
   it.each(["basic", "emotional", "simulation"] as const)(
@@ -129,6 +136,66 @@ describe("startingSetupSchema", () => {
   });
 });
 
+describe("keywordNoteSchema", () => {
+  function validKeywordNote() {
+    return {
+      id: "note-1",
+      content: "주인공은 밤에만 등장한다.",
+      triggerKeywords: ["밤"],
+      scope: { kind: "global" as const },
+    };
+  }
+
+  it("requires content and at least one triggerKeyword", () => {
+    const missingContent = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "" });
+    const missingKeywords = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
+
+    expect(missingContent.success).toBe(false);
+    expect(missingKeywords.success).toBe(false);
+  });
+
+  it("accepts a global scope with no startingSetupId", () => {
+    const result = keywordNoteSchema.safeParse(validKeywordNote());
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts a startingSetup scope with a startingSetupId", () => {
+    const result = keywordNoteSchema.safeParse({
+      ...validKeywordNote(),
+      scope: { kind: "startingSetup" as const, startingSetupId: "setup-1" },
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.scope).toEqual({
+      kind: "startingSetup",
+      startingSetupId: "setup-1",
+    });
+  });
+
+  it("rejects an unknown scope kind", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), scope: { kind: "unknown" } });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("shortcutSchema", () => {
+  function validShortcut() {
+    return { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" };
+  }
+
+  it("requires name/description/prompt", () => {
+    expect(shortcutSchema.safeParse({ ...validShortcut(), name: "" }).success).toBe(false);
+    expect(shortcutSchema.safeParse({ ...validShortcut(), description: "" }).success).toBe(false);
+    expect(shortcutSchema.safeParse({ ...validShortcut(), prompt: "" }).success).toBe(false);
+  });
+
+  it("passes with all fields present", () => {
+    expect(shortcutSchema.safeParse(validShortcut()).success).toBe(true);
+  });
+});
+
 describe("storyBuilderSchema startingSetups", () => {
   function validFullForm() {
     return {
@@ -151,5 +218,13 @@ describe("storyBuilderSchema startingSetups", () => {
 
     expect(empty.success).toBe(false);
     expect(withOne.success).toBe(true);
+  });
+
+  it("defaults keywordNotes/shortcuts to empty arrays when omitted", () => {
+    const result = storyBuilderSchema.safeParse(validFullForm());
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.keywordNotes).toEqual([]);
+    expect(result.success && result.data.shortcuts).toEqual([]);
   });
 });

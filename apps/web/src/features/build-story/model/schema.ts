@@ -60,6 +60,25 @@ export const startingSetupSchema = z.object({
   stats: z.array(statDefSchema).default([]),
 });
 
+/** techspec-builder-story.md §1.3 — scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
+export const keywordNoteSchema = z.object({
+  id: z.string(),
+  content: z.string().min(1),
+  triggerKeywords: z.array(z.string().min(1)).min(1),
+  scope: z.discriminatedUnion("kind", [
+    z.object({ kind: z.literal("global") }),
+    z.object({ kind: z.literal("startingSetup"), startingSetupId: z.string() }),
+  ]),
+});
+
+/** techspec-builder-story.md §1.4. */
+export const shortcutSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  description: z.string().min(1),
+  prompt: z.string().min(1),
+});
+
 export const storyBuilderSchema = z.object({
   profile: z.object({
     name: z.string().min(1),
@@ -68,6 +87,8 @@ export const storyBuilderSchema = z.object({
   }),
   storySetting: storySettingSchema,
   startingSetups: z.array(startingSetupSchema).min(1),
+  keywordNotes: z.array(keywordNoteSchema).default([]),
+  shortcuts: z.array(shortcutSchema).default([]),
   registration: z.object({
     description: z.string().min(1),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
@@ -83,4 +104,6 @@ export const storyBuilderSchema = z.object({
 export type StorySettingValues = z.infer<typeof storySettingSchema>;
 export type StatDefValues = z.infer<typeof statDefSchema>;
 export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
+export type KeywordNoteValues = z.infer<typeof keywordNoteSchema>;
+export type ShortcutValues = z.infer<typeof shortcutSchema>;
 export type StoryBuilderFormValues = z.infer<typeof storyBuilderSchema>;

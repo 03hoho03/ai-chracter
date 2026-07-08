@@ -1,10 +1,11 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { StartingSetupValues, StatDefValues, StoryBuilderFormValues } from "./schema";
+import type { KeywordNoteValues, StartingSetupValues, StatDefValues, StoryBuilderFormValues } from "./schema";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
+type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
 
 /** `formToServer.ts`의 `StoryStartingSetupPayload`와 대칭 — endings는 US-095 몫이라 제외한다. */
 type StoryStartingSetupResponse = Pick<
@@ -26,6 +27,19 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
   };
 }
 
+// startingSetupId === null이면 global, 아니면 startingSetup 스코프로 역변환한다(techspec §1.3 [확정] 매핑).
+function fromApiKeywordNote(note: KeywordNoteDraftItem): KeywordNoteValues {
+  return {
+    id: note.id,
+    content: note.infoText,
+    triggerKeywords: note.triggerKeywords,
+    scope:
+      note.startingSetupId === null
+        ? { kind: "global" }
+        : { kind: "startingSetup", startingSetupId: note.startingSetupId },
+  };
+}
+
 // BE가 이미 order 기준으로 정렬해 배열로 내려주므로, 별도 정렬 없이 배열 순서를 그대로 복원한다.
 function fromApiStartingSetup(setup: StoryStartingSetupResponse): StartingSetupValues {
   return {
@@ -40,9 +54,8 @@ function fromApiStartingSetup(setup: StoryStartingSetupResponse): StartingSetupV
 }
 
 /**
- * `GET /contents/{id}/draft` 응답 중 profile/storySetting/startingSetups/registration 부분 ->
- * 폼 defaultValues(techspec-overview.md §8.1, 순수 함수). keywordNotes/shortcuts는 아직 폼 스키마에
- * 없다 — US-094가 이 함수에 그 매핑을 추가한다(`formToServer.ts` 노트 참고).
+ * `GET /contents/{id}/draft` 응답 중 profile/storySetting/startingSetups/keywordNotes/shortcuts/
+ * registration 부분 -> 폼 defaultValues(techspec-overview.md §8.1, 순수 함수).
  *
  * `settingText`/`developmentExample`/`customPrompt`는 promptTemplate 값과 무관하게 서버가 저장된
  * 값을 그대로 돌려주므로(§1 "값은 보존") 여기서 분기 없이 그대로 복원한다 — 필수 여부 분기는
@@ -58,6 +71,8 @@ export function serverToForm(
     | "settingText"
     | "developmentExample"
     | "customPrompt"
+    | "keywordNotes"
+    | "shortcuts"
     | "description"
     | "genreId"
     | "target"
@@ -78,6 +93,8 @@ export function serverToForm(
       customPrompt: data.customPrompt ?? undefined,
     },
     startingSetups: data.startingSetups.map(fromApiStartingSetup),
+    keywordNotes: data.keywordNotes.map(fromApiKeywordNote),
+    shortcuts: data.shortcuts,
     registration: {
       description: data.description,
       genre: data.genreId,

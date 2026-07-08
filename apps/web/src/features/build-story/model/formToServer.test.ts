@@ -35,6 +35,17 @@ function baseFormValues(): StoryBuilderFormValues {
         ],
       },
     ],
+    keywordNotes: [
+      {
+        id: "note-1",
+        content: "밤에는 늑대 울음소리가 들린다.",
+        triggerKeywords: ["밤", "늑대"],
+        scope: { kind: "startingSetup", startingSetupId: "setup-1" },
+      },
+    ],
+    shortcuts: [
+      { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
+    ],
     registration: {
       description: "표류한 선원들의 생존기",
       genre: "genre-adventure",
@@ -77,6 +88,17 @@ describe("formToServer", () => {
             },
           ],
         },
+      ],
+      keywordNotes: [
+        {
+          id: "note-1",
+          infoText: "밤에는 늑대 울음소리가 들린다.",
+          triggerKeywords: ["밤", "늑대"],
+          startingSetupId: "setup-1",
+        },
+      ],
+      shortcuts: [
+        { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
       ],
       description: "표류한 선원들의 생존기",
       genreId: "genre-adventure",
@@ -156,5 +178,33 @@ describe("formToServer", () => {
 
     expect(payload.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
     expect(payload.startingSetups[0]!.statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+  });
+
+  it("maps a global keyword note scope to a null startingSetupId", () => {
+    const values = baseFormValues();
+    values.keywordNotes = [{ ...values.keywordNotes[0]!, scope: { kind: "global" } }];
+
+    const payload = formToServer(values);
+
+    expect(payload.keywordNotes[0]!.startingSetupId).toBeNull();
+  });
+
+  it("maps a startingSetup keyword note scope to its startingSetupId", () => {
+    const values = baseFormValues();
+    values.keywordNotes = [
+      { ...values.keywordNotes[0]!, scope: { kind: "startingSetup", startingSetupId: "setup-9" } },
+    ];
+
+    const payload = formToServer(values);
+
+    expect(payload.keywordNotes[0]!.startingSetupId).toBe("setup-9");
+  });
+
+  it("passes shortcuts through unchanged", () => {
+    const payload = formToServer(baseFormValues());
+
+    expect(payload.shortcuts).toEqual([
+      { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
+    ]);
   });
 });

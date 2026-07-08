@@ -41,8 +41,12 @@ function baseDraftResponse(): StoryDraftResponse {
         endings: [],
       },
     ],
-    keywordNotes: [],
-    shortcuts: [],
+    keywordNotes: [
+      { id: "note-1", infoText: "밤에는 늑대 울음소리가 들린다.", triggerKeywords: ["밤", "늑대"], startingSetupId: "setup-1" },
+    ],
+    shortcuts: [
+      { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
+    ],
     description: "표류한 선원들의 생존기",
     genreId: "genre-adventure",
     target: "all",
@@ -83,6 +87,17 @@ describe("serverToForm", () => {
             },
           ],
         },
+      ],
+      keywordNotes: [
+        {
+          id: "note-1",
+          content: "밤에는 늑대 울음소리가 들린다.",
+          triggerKeywords: ["밤", "늑대"],
+          scope: { kind: "startingSetup", startingSetupId: "setup-1" },
+        },
+      ],
+      shortcuts: [
+        { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
       ],
       registration: {
         description: "표류한 선원들의 생존기",
@@ -165,7 +180,16 @@ describe("serverToForm", () => {
     expect(form.startingSetups[0]!.stats.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
   });
 
-  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups/registration fields", () => {
+  it("maps a null startingSetupId to a global keyword note scope", () => {
+    const data = baseDraftResponse();
+    data.keywordNotes = [{ ...data.keywordNotes[0]!, startingSetupId: null }];
+
+    const form = serverToForm(data);
+
+    expect(form.keywordNotes[0]!.scope).toEqual({ kind: "global" });
+  });
+
+  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups/keywordNotes/shortcuts/registration fields", () => {
     const response = baseDraftResponse();
 
     const payload = formToServer(serverToForm(response));
@@ -179,6 +203,8 @@ describe("serverToForm", () => {
     expect(payload.startingSetups).toEqual(
       response.startingSetups.map(({ endings: _endings, ...rest }) => rest),
     );
+    expect(payload.keywordNotes).toEqual(response.keywordNotes);
+    expect(payload.shortcuts).toEqual(response.shortcuts);
     expect(payload.genreId).toBe(response.genreId);
     expect(payload.target).toBe(response.target);
     expect(payload.hashtags).toEqual(response.hashtags);
