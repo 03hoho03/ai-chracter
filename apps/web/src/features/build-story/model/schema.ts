@@ -33,6 +33,33 @@ export const storySettingSchema = z
     }
   });
 
+/** techspec-builder-story.md §1.2 — 시작설정별 독립 스탯. */
+export const statDefSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  icon: z.string(),
+  color: z.string(),
+  min: z.number(),
+  max: z.number(),
+  initial: z.number(),
+  unit: z.string().optional(),
+  description: z.string().min(1),
+});
+
+/**
+ * techspec-builder-story.md §1.1 — 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
+ * 항목이 기본 선택이다. endings는 이 스토리(US-093)의 범위 밖이라 아직 필드에 없다(US-095가 추가).
+ */
+export const startingSetupSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  prologue: z.string().min(1),
+  openingSituation: z.string().optional(),
+  playGuide: z.string().optional(),
+  suggestedReplies: z.array(z.string()).default([]),
+  stats: z.array(statDefSchema).default([]),
+});
+
 export const storyBuilderSchema = z.object({
   profile: z.object({
     name: z.string().min(1),
@@ -40,6 +67,7 @@ export const storyBuilderSchema = z.object({
     image: z.object({ assetId: z.string() }).nullable(),
   }),
   storySetting: storySettingSchema,
+  startingSetups: z.array(startingSetupSchema).min(1),
   registration: z.object({
     description: z.string().min(1),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
@@ -53,4 +81,6 @@ export const storyBuilderSchema = z.object({
 });
 
 export type StorySettingValues = z.infer<typeof storySettingSchema>;
+export type StatDefValues = z.infer<typeof statDefSchema>;
+export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
 export type StoryBuilderFormValues = z.infer<typeof storyBuilderSchema>;

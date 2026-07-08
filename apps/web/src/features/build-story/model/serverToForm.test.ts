@@ -17,7 +17,30 @@ function baseDraftResponse(): StoryDraftResponse {
     settingText: "근미래 해양 도시",
     developmentExample: "폭풍우로 배가 좌초된다",
     customPrompt: null,
-    startingSetups: [],
+    startingSetups: [
+      {
+        id: "setup-1",
+        name: "표류 첫날",
+        prologue: "배가 좌초되고 눈을 뜨니 낯선 해변이다.",
+        openingMessage: "파도 소리만 들린다.",
+        playguide: "생존에 집중하는 톤을 유지하세요.",
+        suggestedReplies: ["주변을 둘러본다"],
+        statDefs: [
+          {
+            id: "stat-1",
+            name: "체력",
+            icon: "heart",
+            color: "rose",
+            minValue: 0,
+            maxValue: 100,
+            initialValue: 80,
+            unit: "pt",
+            description: "생존에 필요한 신체 상태",
+          },
+        ],
+        endings: [],
+      },
+    ],
     keywordNotes: [],
     shortcuts: [],
     description: "표류한 선원들의 생존기",
@@ -38,6 +61,29 @@ describe("serverToForm", () => {
         developmentExample: "폭풍우로 배가 좌초된다",
         customPrompt: undefined,
       },
+      startingSetups: [
+        {
+          id: "setup-1",
+          name: "표류 첫날",
+          prologue: "배가 좌초되고 눈을 뜨니 낯선 해변이다.",
+          openingSituation: "파도 소리만 들린다.",
+          playGuide: "생존에 집중하는 톤을 유지하세요.",
+          suggestedReplies: ["주변을 둘러본다"],
+          stats: [
+            {
+              id: "stat-1",
+              name: "체력",
+              icon: "heart",
+              color: "rose",
+              min: 0,
+              max: 100,
+              initial: 80,
+              unit: "pt",
+              description: "생존에 필요한 신체 상태",
+            },
+          ],
+        },
+      ],
       registration: {
         description: "표류한 선원들의 생존기",
         genre: "genre-adventure",
@@ -86,7 +132,40 @@ describe("serverToForm", () => {
     expect(form.storySetting.customPrompt).toBe("커스텀 프롬프트 본문");
   });
 
-  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/registration fields", () => {
+  it("maps a null openingMessage/playguide/unit to unset form fields", () => {
+    const data = baseDraftResponse();
+    const [setup] = data.startingSetups;
+    setup!.openingMessage = null;
+    setup!.playguide = null;
+    setup!.statDefs[0]!.unit = null;
+
+    const form = serverToForm(data);
+
+    expect(form.startingSetups[0]!.openingSituation).toBeUndefined();
+    expect(form.startingSetups[0]!.playGuide).toBeUndefined();
+    expect(form.startingSetups[0]!.stats[0]!.unit).toBeUndefined();
+  });
+
+  it("preserves startingSetups/statDefs array order as returned by the server (no explicit order field)", () => {
+    const data = baseDraftResponse();
+    const [firstSetup] = data.startingSetups;
+    const [firstStat] = firstSetup!.statDefs;
+    data.startingSetups = [
+      { ...firstSetup!, id: "second", name: "second" },
+      { ...firstSetup!, id: "first", name: "first" },
+    ];
+    data.startingSetups[0]!.statDefs = [
+      { ...firstStat!, id: "stat-b" },
+      { ...firstStat!, id: "stat-a" },
+    ];
+
+    const form = serverToForm(data);
+
+    expect(form.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
+    expect(form.startingSetups[0]!.stats.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+  });
+
+  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups/registration fields", () => {
     const response = baseDraftResponse();
 
     const payload = formToServer(serverToForm(response));
@@ -97,6 +176,9 @@ describe("serverToForm", () => {
     expect(payload.settingText).toBe(response.settingText);
     expect(payload.developmentExample).toBe(response.developmentExample);
     expect(payload.customPrompt).toBe(response.customPrompt);
+    expect(payload.startingSetups).toEqual(
+      response.startingSetups.map(({ endings: _endings, ...rest }) => rest),
+    );
     expect(payload.genreId).toBe(response.genreId);
     expect(payload.target).toBe(response.target);
     expect(payload.hashtags).toEqual(response.hashtags);
