@@ -14,9 +14,8 @@ interface UsePlayContentOptions {
 
 /**
  * techspec-content-detail.md §3 / techspec-chat-common.md §3 — 플레이 버튼의 로그인 유도 +
- * 복귀 후 자동 시작 로직. 캐릭터 챗은 US-055부터 실제 대화방 생성(`useStartChatMutation`) 후
- * `/chat/$roomId`로 이동한다. 스토리 챗은 방 생성 API가 아직 없어(US-057) 여전히
- * `/chat/$type/$id`(ComingSoonPage 스텁)로 이동하는 것까지만 책임진다.
+ * 복귀 후 자동 시작 로직. 캐릭터/스토리 챗 모두 실제 대화방을 생성(`useStartChatMutation`)한 뒤
+ * `/chat/$roomId`로 이동한다(스토리는 US-057부터 `contentType: "story"` + `startingSetupId`를 함께 보낸다).
  */
 export function usePlayContent(contentId: string, contentType: ContentType, options?: UsePlayContentOptions) {
   const session = useSessionQuery();
@@ -26,21 +25,12 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
   const startChatMutation = useStartChatMutation();
 
   async function start(startingSetupId?: string) {
-    if (contentType === "character") {
-      try {
-        const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
-        void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
-      } catch {
-        toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
-      }
-      return;
+    try {
+      const room = await startChatMutation.mutateAsync({ contentId, contentType, startingSetupId });
+      void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
+    } catch {
+      toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
     }
-
-    void navigate({
-      to: "/chat/$type/$id",
-      params: { type: contentType, id: contentId },
-      search: startingSetupId ? { startingSetupId } : {},
-    });
   }
 
   useEffect(() => {

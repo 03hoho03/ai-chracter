@@ -8,6 +8,7 @@ import { useChatRoomQuery } from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { MessageBubble, TypingIndicator } from "./MessageBubble";
+import { StatGaugePanel } from "./StatGaugePanel";
 
 function ChatRoomSkeleton() {
   return (
@@ -19,13 +20,14 @@ function ChatRoomSkeleton() {
   );
 }
 
-// techspec-chat-character.md, techspec-chat-common.md §1/§5 — US-055: 대화방 상세 조회 + 메시지
-// 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터 챗 대화 화면.
+// techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
+// 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
+// 스토리 챗은 room.contentSnapshot이 있을 때만 스탯 게이지가 추가로 붙는다(캐릭터 챗은 undefined).
 export function ChatRoomView({ roomId }: { roomId: string }) {
   const roomQuery = useChatRoomQuery(roomId);
   const room = roomQuery.data;
-  const characterQuery = useContentDetailQuery(room?.contentId ?? "", room !== undefined);
-  const character = characterQuery.data;
+  const contentQuery = useContentDetailQuery(room?.contentId ?? "", room !== undefined);
+  const content = contentQuery.data;
 
   const { send, retry, isSending, error, policyWarning, streamingText } = useSendMessage(roomId);
   const [text, setText] = useState("");
@@ -70,14 +72,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           <ArrowLeft aria-hidden className="size-4" />
         </Button>
         <Avatar>
-          <AvatarImage src={character?.thumbnailUrl ?? undefined} alt="" />
-          <AvatarFallback>{character?.name.slice(0, 1) ?? "?"}</AvatarFallback>
+          <AvatarImage src={content?.thumbnailUrl ?? undefined} alt="" />
+          <AvatarFallback>{content?.name.slice(0, 1) ?? "?"}</AvatarFallback>
         </Avatar>
         <div className="flex min-w-0 flex-col">
-          <span className="truncate text-sm font-semibold text-foreground">{character?.name ?? "캐릭터"}</span>
+          <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
           <span className="truncate text-xs text-muted-foreground">{room.name}</span>
         </div>
       </header>
+
+      {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="flex flex-col gap-3">

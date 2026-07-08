@@ -22,7 +22,6 @@ import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
-import { Route as ChatTypeIdRouteImport } from './routes/chat.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
 
 const UiDemoRoute = UiDemoRouteImport.update({
@@ -90,11 +89,6 @@ const ContentTypeIdRoute = ContentTypeIdRouteImport.update({
   path: '/content/$type/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ChatTypeIdRoute = ChatTypeIdRouteImport.update({
-  id: '/chat/$type/$id',
-  path: '/chat/$type/$id',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BuilderTypeDraftIdRoute = BuilderTypeDraftIdRouteImport.update({
   id: '/builder/$type/$draftId',
   path: '/builder/$type/$draftId',
@@ -115,7 +109,6 @@ export interface FileRoutesByFullPath {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/chat/$type/$id': typeof ChatTypeIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRoutesByTo {
@@ -132,7 +125,6 @@ export interface FileRoutesByTo {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/chat/$type/$id': typeof ChatTypeIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRoutesById {
@@ -150,7 +142,6 @@ export interface FileRoutesById {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/chat/$type/$id': typeof ChatTypeIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRouteTypes {
@@ -169,7 +160,6 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
-    | '/chat/$type/$id'
     | '/content/$type/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -186,7 +176,6 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
-    | '/chat/$type/$id'
     | '/content/$type/$id'
   id:
     | '__root__'
@@ -203,7 +192,6 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
-    | '/chat/$type/$id'
     | '/content/$type/$id'
   fileRoutesById: FileRoutesById
 }
@@ -221,7 +209,6 @@ export interface RootRouteChildren {
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
-  ChatTypeIdRoute: typeof ChatTypeIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
 }
 
@@ -318,13 +305,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContentTypeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/chat/$type/$id': {
-      id: '/chat/$type/$id'
-      path: '/chat/$type/$id'
-      fullPath: '/chat/$type/$id'
-      preLoaderRoute: typeof ChatTypeIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/builder/$type/$draftId': {
       id: '/builder/$type/$draftId'
       path: '/builder/$type/$draftId'
@@ -349,7 +329,6 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
-  ChatTypeIdRoute: ChatTypeIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
 }
 export const routeTree = rootRouteImport

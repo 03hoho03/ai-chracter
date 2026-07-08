@@ -8,9 +8,8 @@ import type { ChatRoomState } from "./types";
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 type ChatRoomCreateRequestDto = components["schemas"]["ChatRoomCreateRequest"];
 
-// techspec-chat-common.md §3 — "새 대화 시작"(플레이 버튼의 최초 진입 포함)의 실체. BE의
-// ChatRoomCreateRequest.contentType이 아직 "character" literal만 허용한다(US-057 이전) — 스토리
-// 챗은 여전히 기존 스텁 라우트를 쓴다(widgets/content-detail/lib/usePlayContent.ts 참고).
+// techspec-chat-common.md §3 — "새 대화 시작"(플레이 버튼의 최초 진입 포함)의 실체. 캐릭터/스토리
+// 공용(BE의 ChatRoomCreateRequest.contentType은 US-057부터 "character"|"story" 둘 다 허용).
 export function useStartChatMutation() {
   return useMutation<ChatRoomState, ApiError, ChatRoomCreateRequestDto>({
     mutationFn: async (payload) =>
