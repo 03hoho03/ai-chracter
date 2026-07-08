@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { RotateCw, Send, TriangleAlert } from "lucide-react";
+import { ChevronLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import type { PreviewShortcut, PreviewStartPayload } from "../../../entities/preview-session";
@@ -25,7 +25,13 @@ function PreviewSkeleton() {
 // 그대로 처리하고 이 화면은 그 결과만 반영한다. getPayload는 호출 시점의 최신 폼 값
 // (formToServer(getValues()))을 돌려주는 함수로, "미리보기 초기화"도 이 함수를 다시 호출해
 // 최신 폼 값 기준 새 세션을 연다.
-export function PreviewSessionView({ getPayload }: { getPayload: () => PreviewStartPayload }) {
+export function PreviewSessionView({
+  getPayload,
+  onClose,
+}: {
+  getPayload: () => PreviewStartPayload;
+  onClose?: () => void;
+}) {
   const startMutation = useStartPreviewMutation();
   const [previewSessionId, setPreviewSessionId] = useState<string>();
   const stateQuery = usePreviewSessionQuery(previewSessionId);
@@ -87,7 +93,14 @@ export function PreviewSessionView({ getPayload }: { getPayload: () => PreviewSt
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
-        <span className="text-sm font-semibold text-foreground">미리보기</span>
+        <div className="flex items-center gap-2">
+          {onClose && (
+            <Button variant="ghost" size="icon-sm" aria-label="미리보기 닫기" onClick={onClose}>
+              <ChevronLeft aria-hidden className="size-4" />
+            </Button>
+          )}
+          <span className="text-sm font-semibold text-foreground">미리보기</span>
+        </div>
         <Button variant="outline" size="sm" onClick={startPreview} disabled={isStarting}>
           <RotateCw aria-hidden className="size-3.5" />
           미리보기 초기화

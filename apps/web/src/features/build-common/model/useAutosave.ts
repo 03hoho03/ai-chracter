@@ -30,7 +30,7 @@ export function useAutosave<TForm, TPayload>(opts: {
   return {
     saveNow: (values: TForm) => {
       debouncedSave.cancel();
-      opts.save(opts.formToServer(values));
+      return opts.save(opts.formToServer(values));
     },
   };
 }
