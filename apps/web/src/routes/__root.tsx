@@ -10,6 +10,7 @@ import { ConfirmChatRoomActionModal } from "../features/manage-chat-room";
 import { PlayGuideModal } from "../features/play-guide";
 import { ReportContentModal } from "../features/report-content";
 import { GeneratedImagePickerModal } from "../features/select-generated-image";
+import { AppealModal } from "../features/submit-appeal";
 import { UpdateInfoModal } from "../features/update-info";
 
 export interface RouterContext {
@@ -35,6 +36,7 @@ function RootComponent() {
       <ChangeStartingSetupModal />
       <ConfirmStartingSetupChangeModal />
       <GeneratedImagePickerModal />
+      <AppealModal />
     </>
   );
 }
