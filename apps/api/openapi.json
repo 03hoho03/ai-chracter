@@ -987,6 +987,46 @@
       }
     },
     "/contents": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Create Content Draft",
+        "description": "techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for\nnow (US-084 widens the request schema and adds the `'story'` branch). The new\ncharacter_version_details row is genuinely empty (character.py's docstring) — text\ncolumns get `\"\"`, `thumbnail_asset_id` stays unset until an image is uploaded.",
+        "operationId": "create_content_draft_contents_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "tags": [
           "content"
@@ -1108,6 +1148,101 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ContentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/draft": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Get Content Draft",
+        "operationId": "get_content_draft_contents__id__draft_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Update Content Draft",
+        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (US-083 publish is where that happens) — character_version_details\nis overwritten wholesale, situational_images is upserted by entity_id (array index ->\norder column), and entity_ids missing from the payload are deleted.",
+        "operationId": "update_content_draft_contents__id__draft_patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CharacterDraftPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CharacterDraftResponse"
                 }
               }
             }
@@ -2359,6 +2494,208 @@
         ],
         "title": "ChangeStartingSetupRequest"
       },
+      "CharacterDraftPayload": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "thumbnailAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailassetid"
+          },
+          "intro": {
+            "type": "string",
+            "title": "Intro"
+          },
+          "exampleDialogues": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleDialogueItem"
+            },
+            "type": "array",
+            "title": "Exampledialogues"
+          },
+          "characterPrompt": {
+            "type": "string",
+            "title": "Characterprompt"
+          },
+          "playguide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playguide"
+          },
+          "situationalImages": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterSituationalImageDraftInput"
+            },
+            "type": "array",
+            "title": "Situationalimages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "oneLiner",
+          "thumbnailAssetId",
+          "intro",
+          "exampleDialogues",
+          "characterPrompt",
+          "playguide",
+          "situationalImages"
+        ],
+        "title": "CharacterDraftPayload"
+      },
+      "CharacterDraftResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "const": "character",
+            "title": "Type",
+            "default": "character"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "thumbnailAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailassetid"
+          },
+          "intro": {
+            "type": "string",
+            "title": "Intro"
+          },
+          "exampleDialogues": {
+            "items": {
+              "$ref": "#/components/schemas/ExampleDialogueItem"
+            },
+            "type": "array",
+            "title": "Exampledialogues"
+          },
+          "characterPrompt": {
+            "type": "string",
+            "title": "Characterprompt"
+          },
+          "playguide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playguide"
+          },
+          "situationalImages": {
+            "items": {
+              "$ref": "#/components/schemas/CharacterSituationalImageItem"
+            },
+            "type": "array",
+            "title": "Situationalimages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "oneLiner",
+          "thumbnailAssetId",
+          "intro",
+          "exampleDialogues",
+          "characterPrompt",
+          "playguide",
+          "situationalImages"
+        ],
+        "title": "CharacterDraftResponse"
+      },
+      "CharacterSituationalImageDraftInput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "triggerCondition": {
+            "type": "string",
+            "title": "Triggercondition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "triggerCondition"
+        ],
+        "title": "CharacterSituationalImageDraftInput",
+        "description": "`PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.\n`imageAssetId`/blurred variant are exclusively written by\n`POST /assets/{id}/register-situational-image` (US-071)."
+      },
+      "CharacterSituationalImageItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "imageAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageassetid"
+          },
+          "triggerCondition": {
+            "type": "string",
+            "title": "Triggercondition"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "imageAssetId",
+          "triggerCondition"
+        ],
+        "title": "CharacterSituationalImageItem"
+      },
       "ChatMessageCreateRequest": {
         "properties": {
           "content": {
@@ -2718,6 +3055,35 @@
         "title": "ContentAccessStatus",
         "description": "Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:\n`visibility` is only meaningful when `kind == \"accessible\"`."
       },
+      "ContentCreateRequest": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "const": "character",
+            "title": "Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "ContentCreateRequest",
+        "description": "techspec-backend-content.md §1.2. Only `'character'` is implemented so far —\nUS-084 widens this to also accept `'story'`."
+      },
+      "ContentCreateResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId"
+        ],
+        "title": "ContentCreateResponse"
+      },
       "ContentDetailResponse": {
         "properties": {
           "id": {
@@ -3032,8 +3398,15 @@
             "title": "Name"
           },
           "thumbnailAssetId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Thumbnailassetid"
           },
           "updatedAt": {
@@ -3268,6 +3641,29 @@
           "statRules"
         ],
         "title": "EndingSnapshot"
+      },
+      "ExampleDialogueItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "userLine": {
+            "type": "string",
+            "title": "Userline"
+          },
+          "characterLine": {
+            "type": "string",
+            "title": "Characterline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "userLine",
+          "characterLine"
+        ],
+        "title": "ExampleDialogueItem"
       },
       "GenreResponse": {
         "properties": {

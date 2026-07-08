@@ -10,13 +10,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.content.schemas import (
+    CharacterDraftPayload,
+    CharacterDraftResponse,
+    CharacterSituationalImageItem,
     ContentAccessStatus,
+    ContentCreateRequest,
+    ContentCreateResponse,
     ContentDetailResponse,
     ContentListItem,
     ContentListResponse,
     ContentSummary,
     ContentVersionSummary,
     DraftSummary,
+    ExampleDialogueItem,
     GenreResponse,
     ReportRequest,
     StartingSetupSummary,
@@ -26,7 +32,7 @@ from api.content.schemas import (
 )
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
-from api.db.models.character import CharacterVersionDetail
+from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
     ContentType,
@@ -362,6 +368,9 @@ async def list_user_contents(
         detail = details.get(version_id)
         if detail is None:
             continue
+        # Published content's thumbnail is guaranteed set by publish validation (US-083);
+        # only drafts (character.py's CharacterVersionDetail docstring) can have it unset.
+        assert detail.thumbnail_asset_id is not None
         summaries.append(
             ContentSummary(
                 id=content.id,
@@ -381,6 +390,161 @@ async def list_user_contents(
 async def list_genres(db: AsyncSession = Depends(get_db_session)) -> list[GenreResponse]:
     genres = (await db.scalars(select(Genre).order_by(Genre.sort_order))).all()
     return [GenreResponse(id=genre.id, name=genre.name, sort_order=genre.sort_order) for genre in genres]
+
+
+@router.post("/contents", status_code=status.HTTP_201_CREATED)
+async def create_content_draft(
+    payload: ContentCreateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ContentCreateResponse:
+    """techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for
+    now (US-084 widens the request schema and adds the `'story'` branch). The new
+    character_version_details row is genuinely empty (character.py's docstring) — text
+    columns get `""`, `thumbnail_asset_id` stays unset until an image is uploaded."""
+    content = Content(
+        type=ContentType.CHARACTER,
+        creator_user_id=user_id,
+        hashtags=[],
+        visibility=ContentVisibility.PRIVATE,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db.add(content)
+    await db.flush()
+
+    version = ContentVersion(content_id=content.id, detail_description="")
+    db.add(version)
+    await db.flush()
+
+    db.add(
+        CharacterVersionDetail(
+            content_version_id=version.id,
+            name="",
+            one_liner="",
+            intro="",
+            example_dialogues=[],
+            character_prompt="",
+        )
+    )
+    await db.commit()
+
+    return ContentCreateResponse(content_id=content.id)
+
+
+async def _get_owned_draft_version(
+    db: AsyncSession, content_id: uuid.UUID, user_id: uuid.UUID
+) -> ContentVersion:
+    """404/403 gate shared by the draft read/write endpoints below (same content_version
+    existence + creator-ownership check `register_situational_image`, US-071, established
+    for content_version_id-scoped child resources)."""
+    content = await db.get(Content, content_id)
+    if content is None or content.type != ContentType.CHARACTER:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    if content.creator_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
+
+    version = await db.scalar(
+        select(ContentVersion).where(
+            ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None)
+        )
+    )
+    if version is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found")
+    return version
+
+
+async def _character_draft_response(
+    db: AsyncSession, content_id: uuid.UUID, version_id: uuid.UUID
+) -> CharacterDraftResponse:
+    detail = await db.get(CharacterVersionDetail, version_id)
+    assert detail is not None
+
+    images = (
+        await db.scalars(
+            select(SituationalImage)
+            .where(SituationalImage.content_version_id == version_id)
+            .order_by(SituationalImage.order)
+        )
+    ).all()
+
+    return CharacterDraftResponse(
+        id=content_id,
+        name=detail.name,
+        one_liner=detail.one_liner,
+        thumbnail_asset_id=detail.thumbnail_asset_id,
+        intro=detail.intro,
+        example_dialogues=[
+            ExampleDialogueItem.model_validate(item) for item in detail.example_dialogues
+        ],
+        character_prompt=detail.character_prompt,
+        playguide=detail.playguide,
+        situational_images=[
+            CharacterSituationalImageItem(
+                id=image.entity_id,
+                image_asset_id=image.image_asset_id,
+                trigger_condition=image.trigger_condition,
+            )
+            for image in images
+        ],
+    )
+
+
+@router.get("/contents/{id}/draft")
+async def get_content_draft(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CharacterDraftResponse:
+    version = await _get_owned_draft_version(db, id, user_id)
+    return await _character_draft_response(db, id, version.id)
+
+
+@router.patch("/contents/{id}/draft")
+async def update_content_draft(
+    id: uuid.UUID,
+    payload: CharacterDraftPayload,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CharacterDraftResponse:
+    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
+    business validation (US-083 publish is where that happens) — character_version_details
+    is overwritten wholesale, situational_images is upserted by entity_id (array index ->
+    order column), and entity_ids missing from the payload are deleted."""
+    version = await _get_owned_draft_version(db, id, user_id)
+
+    detail = await db.get(CharacterVersionDetail, version.id)
+    assert detail is not None
+    detail.name = payload.name
+    detail.one_liner = payload.one_liner
+    detail.thumbnail_asset_id = payload.thumbnail_asset_id
+    detail.intro = payload.intro
+    detail.example_dialogues = [item.model_dump(by_alias=True) for item in payload.example_dialogues]
+    detail.character_prompt = payload.character_prompt
+    detail.playguide = payload.playguide
+
+    existing_images = {
+        image.entity_id: image
+        for image in (
+            await db.scalars(
+                select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+            )
+        ).all()
+    }
+    incoming_entity_ids = {item.id for item in payload.situational_images}
+    for entity_id, image in existing_images.items():
+        if entity_id not in incoming_entity_ids:
+            await db.delete(image)
+
+    for order, item in enumerate(payload.situational_images):
+        existing_image = existing_images.get(item.id)
+        if existing_image is None:
+            existing_image = SituationalImage(entity_id=item.id, content_version_id=version.id)
+            db.add(existing_image)
+        existing_image.trigger_condition = item.trigger_condition
+        existing_image.order = order
+
+    await db.commit()
+    return await _character_draft_response(db, id, version.id)
 
 
 def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:
@@ -573,6 +737,7 @@ async def get_content_detail(
     content, version, name, one_liner, thumbnail_asset_id, genre_name, creator_nickname = row
     assert version.version_number is not None
     assert version.published_at is not None
+    assert content.genre_id is not None
 
     starting_setups: list[StartingSetupSummary] | None = None
     if content.type == ContentType.STORY:

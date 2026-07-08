@@ -446,11 +446,42 @@ export interface paths {
          */
         get: operations["list_contents_contents_get"];
         put?: never;
-        post?: never;
+        /**
+         * Create Content Draft
+         * @description techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for
+         *     now (US-084 widens the request schema and adds the `'story'` branch). The new
+         *     character_version_details row is genuinely empty (character.py's docstring) — text
+         *     columns get `""`, `thumbnail_asset_id` stays unset until an image is uploaded.
+         */
+        post: operations["create_content_draft_contents_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/contents/{id}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Content Draft */
+        get: operations["get_content_draft_contents__id__draft_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Content Draft
+         * @description techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
+         *     business validation (US-083 publish is where that happens) — character_version_details
+         *     is overwritten wholesale, situational_images is upserted by entity_id (array index ->
+         *     order column), and entity_ids missing from the payload are deleted.
+         */
+        patch: operations["update_content_draft_contents__id__draft_patch"];
         trace?: never;
     };
     "/contents/{id}": {
@@ -926,6 +957,82 @@ export interface components {
              */
             startingSetupId: string;
         };
+        /** CharacterDraftPayload */
+        CharacterDraftPayload: {
+            /** Name */
+            name: string;
+            /** Oneliner */
+            oneLiner: string;
+            /** Thumbnailassetid */
+            thumbnailAssetId: string | null;
+            /** Intro */
+            intro: string;
+            /** Exampledialogues */
+            exampleDialogues: components["schemas"]["ExampleDialogueItem"][];
+            /** Characterprompt */
+            characterPrompt: string;
+            /** Playguide */
+            playguide: string | null;
+            /** Situationalimages */
+            situationalImages: components["schemas"]["CharacterSituationalImageDraftInput"][];
+        };
+        /** CharacterDraftResponse */
+        CharacterDraftResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Type
+             * @default character
+             * @constant
+             */
+            type: "character";
+            /** Name */
+            name: string;
+            /** Oneliner */
+            oneLiner: string;
+            /** Thumbnailassetid */
+            thumbnailAssetId: string | null;
+            /** Intro */
+            intro: string;
+            /** Exampledialogues */
+            exampleDialogues: components["schemas"]["ExampleDialogueItem"][];
+            /** Characterprompt */
+            characterPrompt: string;
+            /** Playguide */
+            playguide: string | null;
+            /** Situationalimages */
+            situationalImages: components["schemas"]["CharacterSituationalImageItem"][];
+        };
+        /**
+         * CharacterSituationalImageDraftInput
+         * @description `PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.
+         *     `imageAssetId`/blurred variant are exclusively written by
+         *     `POST /assets/{id}/register-situational-image` (US-071).
+         */
+        CharacterSituationalImageDraftInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Triggercondition */
+            triggerCondition: string;
+        };
+        /** CharacterSituationalImageItem */
+        CharacterSituationalImageItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Imageassetid */
+            imageAssetId: string | null;
+            /** Triggercondition */
+            triggerCondition: string;
+        };
         /** ChatMessageCreateRequest */
         ChatMessageCreateRequest: {
             /** Content */
@@ -1072,6 +1179,26 @@ export interface components {
             kind: "accessible" | "restricted" | "deleted";
             visibility?: components["schemas"]["ContentVisibility"] | null;
         };
+        /**
+         * ContentCreateRequest
+         * @description techspec-backend-content.md §1.2. Only `'character'` is implemented so far —
+         *     US-084 widens this to also accept `'story'`.
+         */
+        ContentCreateRequest: {
+            /**
+             * Type
+             * @constant
+             */
+            type: "character";
+        };
+        /** ContentCreateResponse */
+        ContentCreateResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+        };
         /** ContentDetailResponse */
         ContentDetailResponse: {
             /**
@@ -1206,11 +1333,8 @@ export interface components {
             type: components["schemas"]["ContentType"];
             /** Name */
             name: string;
-            /**
-             * Thumbnailassetid
-             * Format: uuid
-             */
-            thumbnailAssetId: string;
+            /** Thumbnailassetid */
+            thumbnailAssetId: string | null;
             /**
              * Updatedat
              * Format: date-time
@@ -1295,6 +1419,15 @@ export interface components {
             hint: string | null;
             /** Statrules */
             statRules: (components["schemas"]["EndingRuleItem"] | components["schemas"]["EndingRuleGroupItem"])[];
+        };
+        /** ExampleDialogueItem */
+        ExampleDialogueItem: {
+            /** Id */
+            id: string;
+            /** Userline */
+            userLine: string;
+            /** Characterline */
+            characterLine: string;
         };
         /** GenreResponse */
         GenreResponse: {
@@ -2471,6 +2604,105 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ContentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_content_draft_contents_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_content_draft_contents__id__draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_content_draft_contents__id__draft_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterDraftPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CharacterDraftResponse"];
                 };
             };
             /** @description Validation Error */

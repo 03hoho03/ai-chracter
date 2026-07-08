@@ -15,7 +15,7 @@ class DraftSummary(CamelModel):
     id: uuid.UUID
     type: ContentType
     name: str
-    thumbnail_asset_id: uuid.UUID
+    thumbnail_asset_id: uuid.UUID | None
     updated_at: datetime
 
 
@@ -111,3 +111,59 @@ class ContentVersionSummary(CamelModel):
 
 class ReportRequest(CamelModel):
     reason_category: ReportReasonCategory
+
+
+class ContentCreateRequest(CamelModel):
+    """techspec-backend-content.md §1.2. Only `'character'` is implemented so far —
+    US-084 widens this to also accept `'story'`."""
+
+    type: Literal["character"]
+
+
+class ContentCreateResponse(CamelModel):
+    content_id: uuid.UUID
+
+
+class ExampleDialogueItem(CamelModel):
+    id: str
+    user_line: str
+    character_line: str
+
+
+class CharacterSituationalImageDraftInput(CamelModel):
+    """`PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.
+    `imageAssetId`/blurred variant are exclusively written by
+    `POST /assets/{id}/register-situational-image` (US-071)."""
+
+    id: uuid.UUID
+    trigger_condition: str
+
+
+class CharacterDraftPayload(CamelModel):
+    name: str
+    one_liner: str
+    thumbnail_asset_id: uuid.UUID | None
+    intro: str
+    example_dialogues: list[ExampleDialogueItem]
+    character_prompt: str
+    playguide: str | None
+    situational_images: list[CharacterSituationalImageDraftInput]
+
+
+class CharacterSituationalImageItem(CamelModel):
+    id: uuid.UUID
+    image_asset_id: uuid.UUID | None
+    trigger_condition: str
+
+
+class CharacterDraftResponse(CamelModel):
+    id: uuid.UUID
+    type: Literal["character"] = "character"
+    name: str
+    one_liner: str
+    thumbnail_asset_id: uuid.UUID | None
+    intro: str
+    example_dialogues: list[ExampleDialogueItem]
+    character_prompt: str
+    playguide: str | None
+    situational_images: list[CharacterSituationalImageItem]

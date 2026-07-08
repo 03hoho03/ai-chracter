@@ -667,6 +667,9 @@ async def _stream_new_turn(
 
     matched_image_url: str | None = None
     if matched_image is not None:
+        # A room only ever matches against a published version's situational_images
+        # (US-083 publish validation requires the image to be set by then).
+        assert matched_image.image_asset_id is not None
         image_asset = await db.get(Asset, matched_image.image_asset_id)
         assert image_asset is not None
         matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
@@ -1101,6 +1104,9 @@ async def get_image_archive(
     for image in images:
         exposed = image.entity_id in exposed_entity_ids
         asset_id = image.image_asset_id if exposed else image.blurred_asset_id
+        # This endpoint only lists a published version's images (assert below mirrors
+        # the same US-083 publish-validation invariant as send_message's match above).
+        assert asset_id is not None
         asset = await db.get(Asset, asset_id)
         assert asset is not None
         image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)

@@ -48,6 +48,10 @@ class Content(Base):
     because content_versions.content_id -> contents.id creates a table-creation cycle
     between contents and content_versions; use_alter defers this FK to a post-create
     ALTER TABLE (same pattern as users/assets, see auth.py).
+
+    `genre_id`/`target` are nullable even though the registration tab treats them as
+    required (US-083 publish validation enforces that) — a brand-new draft
+    (`POST /contents`, US-082) has neither set yet, so the DB must allow the empty state.
     """
 
     __tablename__ = "contents"
@@ -55,8 +59,10 @@ class Content(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     type: Mapped[ContentType] = mapped_column(Enum(ContentType, name="content_type"), nullable=False)
     creator_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
-    genre_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("genres.id"), nullable=False)
-    target: Mapped[ContentTarget] = mapped_column(Enum(ContentTarget, name="content_target"), nullable=False)
+    genre_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("genres.id"), nullable=True)
+    target: Mapped[ContentTarget | None] = mapped_column(
+        Enum(ContentTarget, name="content_target"), nullable=True
+    )
     hashtags: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
     visibility: Mapped[ContentVisibility] = mapped_column(
         Enum(ContentVisibility, name="content_visibility"), nullable=False
