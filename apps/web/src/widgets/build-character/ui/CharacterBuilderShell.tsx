@@ -11,6 +11,7 @@ import {
 } from "../../../features/build-character";
 import { characterBuilderActiveTabAtom, type CharacterBuilderTab } from "../model/activeTabAtom";
 import { AdvancedTab } from "./AdvancedTab";
+import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
@@ -24,14 +25,6 @@ const TABS: { id: CharacterBuilderTab; label: string }[] = [
   { id: "advanced", label: "고급기능" },
   { id: "detail", label: "상세" },
 ];
-
-function TabPlaceholder() {
-  return (
-    <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-      <p className="text-sm text-muted-foreground">다음 스토리에서 준비할게요.</p>
-    </div>
-  );
-}
 
 /** techspec-builder-character.md §0/§1 — 5탭 단일 useForm 셸. 탭은 뷰 전환일 뿐, 발행/자동저장
  * 연동은 US-105가 담당한다 — 여기서는 발행 버튼의 활성/비활성만 스키마 유효성으로 판단한다. */
@@ -70,7 +63,7 @@ export function CharacterBuilderShell({ data }: { data: CharacterDraftResponse }
           <AdvancedTab form={form} contentVersionId={data.contentVersionId} />
         </TabsContent>
         <TabsContent value="detail">
-          <TabPlaceholder />
+          <DetailTab form={form} />
         </TabsContent>
       </Tabs>
     </main>
