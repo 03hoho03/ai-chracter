@@ -1892,6 +1892,54 @@
         }
       }
     },
+    "/characters/{id}/image-archive": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Image Archive",
+        "description": "techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와\n동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,\n노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`\n존재 여부로 사용자+캐릭터 단위 누적 판정한다.",
+        "operationId": "get_image_archive_characters__id__image_archive_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ImageArchiveItem"
+                  },
+                  "title": "Response Get Image Archive Characters  Id  Image Archive Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -2935,6 +2983,30 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "ImageArchiveItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "exposed": {
+            "type": "boolean",
+            "title": "Exposed"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "exposed",
+          "imageUrl"
+        ],
+        "title": "ImageArchiveItem"
       },
       "LogicalOp": {
         "type": "string",

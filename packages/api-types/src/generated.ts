@@ -725,6 +725,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/characters/{id}/image-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Image Archive
+         * @description techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
+         *     동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
+         *     노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
+         *     존재 여부로 사용자+캐릭터 단위 누적 판정한다.
+         */
+        get: operations["get_image_archive_characters__id__image_archive_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1171,6 +1194,18 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** ImageArchiveItem */
+        ImageArchiveItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Exposed */
+            exposed: boolean;
+            /** Imageurl */
+            imageUrl: string;
         };
         /**
          * LogicalOp
@@ -2853,6 +2888,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EndingCollectionItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_archive_characters__id__image_archive_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageArchiveItem"][];
                 };
             };
             /** @description Validation Error */

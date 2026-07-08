@@ -40,6 +40,7 @@ from api.chat.schemas import (
     EndingRuleItem,
     EndingRuleListItem,
     EndingSnapshot,
+    ImageArchiveItem,
     PlayGuideResponse,
     ShortcutSnapshot,
     StatDefSnapshot,
@@ -74,9 +75,11 @@ from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/chat-rooms", tags=["chat"])
 
-# `/stories/*`는 techspec-backend-chat.md §1에 `/chat-rooms/*`와 함께 나열돼 있지만 URL
-# prefix가 달라 같은 파일 안에 별도 APIRouter를 둔다 (`api/auth/router.py`의 `me_router`와 동일 패턴).
+# `/stories/*`, `/characters/*`는 techspec-backend-chat.md §1에 `/chat-rooms/*`와 함께 나열돼
+# 있지만 URL prefix가 달라 같은 파일 안에 별도 APIRouter를 둔다 (`api/auth/router.py`의
+# `me_router`와 동일 패턴).
 stories_router = APIRouter(prefix="/stories", tags=["chat"])
+characters_router = APIRouter(prefix="/characters", tags=["chat"])
 
 
 async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> ChatRoom:
@@ -782,3 +785,47 @@ async def get_ending_collection(
         )
         for ending in endings
     ]
+
+
+@characters_router.get("/{id}/image-archive")
+async def get_image_archive(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[ImageArchiveItem]:
+    """techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
+    동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
+    노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
+    존재 여부로 사용자+캐릭터 단위 누적 판정한다."""
+    content = await db.get(Content, id)
+    if content is None or content.current_published_version_id is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    images = (
+        await db.scalars(
+            select(SituationalImage)
+            .where(SituationalImage.content_version_id == content.current_published_version_id)
+            .order_by(SituationalImage.order)
+        )
+    ).all()
+    if not images:
+        return []
+
+    exposed_entity_ids = set(
+        await db.scalars(
+            select(CharacterImageExposure.image_entity_id).where(
+                CharacterImageExposure.user_id == user_id,
+                CharacterImageExposure.content_id == content.id,
+            )
+        )
+    )
+
+    items = []
+    for image in images:
+        exposed = image.entity_id in exposed_entity_ids
+        asset_id = image.image_asset_id if exposed else image.blurred_asset_id
+        asset = await db.get(Asset, asset_id)
+        assert asset is not None
+        image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+        items.append(ImageArchiveItem(id=image.entity_id, exposed=exposed, image_url=image_url))
+    return items

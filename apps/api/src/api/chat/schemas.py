@@ -137,6 +137,12 @@ class EndingCollectionItem(CamelModel):
     hint: str | None = None
 
 
+class ImageArchiveItem(CamelModel):
+    id: uuid.UUID
+    exposed: bool
+    image_url: str
+
+
 class PlayGuideResponse(CamelModel):
     play_guide: str | None
 
