@@ -86,6 +86,7 @@ describe("serverToForm", () => {
               description: "생존에 필요한 신체 상태",
             },
           ],
+          endings: [],
         },
       ],
       keywordNotes: [
@@ -189,8 +190,101 @@ describe("serverToForm", () => {
     expect(form.keywordNotes[0]!.scope).toEqual({ kind: "global" });
   });
 
-  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups/keywordNotes/shortcuts/registration fields", () => {
+  function endingRuleTreeResponse(): StoryDraftResponse["startingSetups"][number]["endings"] {
+    return [
+      {
+        id: "ending-1",
+        name: "함께 살아남기",
+        turnCountGate: 12,
+        judgmentPrompt: "주인공들이 서로를 구조했는지 판정",
+        epilogue: "두 사람은 무사히 구조되었다.",
+        hint: "체력과 신뢰를 함께 관리하세요.",
+        statRules: [
+          { kind: "rule", id: "rule-1", statId: "stat-1", operator: "gte", threshold: 50, nextOp: "and" },
+          {
+            kind: "group",
+            id: "group-1",
+            nextOp: null,
+            rules: [
+              { kind: "rule", id: "rule-2", statId: "stat-2", operator: "lt", threshold: 10, nextOp: "or" },
+              { kind: "rule", id: "rule-3", statId: "stat-3", operator: "eq", threshold: 3, nextOp: null },
+            ],
+          },
+        ],
+      },
+    ];
+  }
+
+  it("maps an ending's rule tree (single rule + group) from the wire shape, including the operator rename", () => {
+    const data = baseDraftResponse();
+    data.startingSetups[0]!.endings = endingRuleTreeResponse();
+
+    const form = serverToForm(data);
+
+    expect(form.startingSetups[0]!.endings).toEqual([
+      {
+        id: "ending-1",
+        name: "함께 살아남기",
+        turnGate: 12,
+        judgePrompt: "주인공들이 서로를 구조했는지 판정",
+        epilogue: "두 사람은 무사히 구조되었다.",
+        hint: "체력과 신뢰를 함께 관리하세요.",
+        statRules: [
+          { kind: "rule", id: "rule-1", statId: "stat-1", operator: ">=", value: 50, nextOp: "and" },
+          {
+            kind: "group",
+            id: "group-1",
+            nextOp: null,
+            rules: [
+              { kind: "rule", id: "rule-2", statId: "stat-2", operator: "<", value: 10, nextOp: "or" },
+              { kind: "rule", id: "rule-3", statId: "stat-3", operator: "==", value: 3, nextOp: null },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("maps a null ending epilogue/hint to unset form fields", () => {
+    const data = baseDraftResponse();
+    data.startingSetups[0]!.endings = [
+      {
+        id: "ending-1",
+        name: "열린 결말",
+        turnCountGate: 10,
+        judgmentPrompt: "판정 프롬프트",
+        epilogue: null,
+        hint: null,
+        statRules: [],
+      },
+    ];
+
+    const form = serverToForm(data);
+
+    expect(form.startingSetups[0]!.endings[0]!.epilogue).toBeUndefined();
+    expect(form.startingSetups[0]!.endings[0]!.hint).toBeUndefined();
+  });
+
+  it("preserves endings/statRules array order as returned by the server (no explicit order field)", () => {
+    const data = baseDraftResponse();
+    data.startingSetups[0]!.endings = [
+      { id: "second", name: "second", turnCountGate: 10, judgmentPrompt: "판정", epilogue: null, hint: null, statRules: [] },
+      { id: "first", name: "first", turnCountGate: 10, judgmentPrompt: "판정", epilogue: null, hint: null, statRules: [] },
+    ];
+    data.startingSetups[0]!.endings[0]!.statRules = [
+      { kind: "rule", id: "rule-b", statId: "stat-1", operator: "gt", threshold: 1, nextOp: null },
+      { kind: "rule", id: "rule-a", statId: "stat-1", operator: "gt", threshold: 1, nextOp: null },
+    ];
+
+    const form = serverToForm(data);
+
+    expect(form.startingSetups[0]!.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
+    expect(form.startingSetups[0]!.endings[0]!.statRules.map((rule) => rule.id)).toEqual(["rule-b", "rule-a"]);
+  });
+
+  it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups (incl. endings/rule trees)/keywordNotes/shortcuts/registration fields", () => {
     const response = baseDraftResponse();
+    response.startingSetups[0]!.endings = endingRuleTreeResponse();
 
     const payload = formToServer(serverToForm(response));
 
@@ -200,9 +294,7 @@ describe("serverToForm", () => {
     expect(payload.settingText).toBe(response.settingText);
     expect(payload.developmentExample).toBe(response.developmentExample);
     expect(payload.customPrompt).toBe(response.customPrompt);
-    expect(payload.startingSetups).toEqual(
-      response.startingSetups.map(({ endings: _endings, ...rest }) => rest),
-    );
+    expect(payload.startingSetups).toEqual(response.startingSetups);
     expect(payload.keywordNotes).toEqual(response.keywordNotes);
     expect(payload.shortcuts).toEqual(response.shortcuts);
     expect(payload.genreId).toBe(response.genreId);

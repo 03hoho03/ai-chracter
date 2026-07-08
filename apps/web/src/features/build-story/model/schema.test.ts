@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  endingSchema,
   keywordNoteSchema,
+  ruleListItemSchema,
   shortcutSchema,
   startingSetupSchema,
   statDefSchema,
@@ -193,6 +195,89 @@ describe("shortcutSchema", () => {
 
   it("passes with all fields present", () => {
     expect(shortcutSchema.safeParse(validShortcut()).success).toBe(true);
+  });
+});
+
+function singleRule(overrides: Partial<Record<string, unknown>> = {}) {
+  return { kind: "rule", id: "rule-1", statId: "stat-1", operator: ">=", value: 50, nextOp: null, ...overrides };
+}
+
+describe("ruleListItemSchema", () => {
+  it("accepts a single rule", () => {
+    expect(ruleListItemSchema.safeParse(singleRule()).success).toBe(true);
+  });
+
+  it("accepts a group containing only single rules", () => {
+    const result = ruleListItemSchema.safeParse({
+      kind: "group",
+      id: "group-1",
+      nextOp: null,
+      rules: [singleRule({ id: "rule-a" }), singleRule({ id: "rule-b", nextOp: "or" })],
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a group nested inside another group (FR-59, no nesting)", () => {
+    const result = ruleListItemSchema.safeParse({
+      kind: "group",
+      id: "group-1",
+      nextOp: null,
+      rules: [{ kind: "group", id: "group-2", nextOp: null, rules: [singleRule()] }],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects the '!=' operator (server EndingRuleOperator has no not-equal value)", () => {
+    const result = ruleListItemSchema.safeParse(singleRule({ operator: "!=" }));
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts the other 5 comparison operators", () => {
+    for (const operator of [">", ">=", "<", "<=", "=="]) {
+      expect(ruleListItemSchema.safeParse(singleRule({ operator })).success).toBe(true);
+    }
+  });
+});
+
+describe("endingSchema", () => {
+  function validEnding() {
+    return {
+      id: "ending-1",
+      name: "함께 살아남기",
+      turnGate: 10,
+      judgePrompt: "주인공들이 서로를 구조했는지 판정",
+    };
+  }
+
+  it("requires turnGate to be at least 10", () => {
+    const belowMin = endingSchema.safeParse({ ...validEnding(), turnGate: 9 });
+    const atMin = endingSchema.safeParse({ ...validEnding(), turnGate: 10 });
+
+    expect(belowMin.success).toBe(false);
+    expect(atMin.success).toBe(true);
+  });
+
+  it("defaults statRules to an empty array (judgePrompt만으로 판정)", () => {
+    const result = endingSchema.safeParse(validEnding());
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.statRules).toEqual([]);
+  });
+
+  it("makes epilogue/hint optional", () => {
+    const result = endingSchema.safeParse(validEnding());
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.epilogue).toBeUndefined();
+    expect(result.success && result.data.hint).toBeUndefined();
+  });
+
+  it("requires name/judgePrompt", () => {
+    expect(endingSchema.safeParse({ ...validEnding(), name: "" }).success).toBe(false);
+    expect(endingSchema.safeParse({ ...validEnding(), judgePrompt: "" }).success).toBe(false);
   });
 });
 

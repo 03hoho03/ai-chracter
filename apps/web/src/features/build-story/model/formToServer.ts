@@ -1,41 +1,69 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { KeywordNoteValues, StartingSetupValues, StatDefValues, StoryBuilderFormValues } from "./schema";
+import type {
+  EndingValues,
+  KeywordNoteValues,
+  RuleListItemValues,
+  SingleRuleValues,
+  StartingSetupValues,
+  StatDefValues,
+  StoryBuilderFormValues,
+} from "./schema";
 
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
 type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
+type EndingDraftItem = components["schemas"]["EndingDraftItem"];
+type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
+type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
 
-/**
- * startingSetups 안의 `endings`는 US-095 몫이라 `StartingSetupDraftItem`을 그대로 쓰지 않고 지금까지
- * (US-093/094) 채우는 필드만 Pick했다. keywordNotes/shortcuts(US-094)는 `KeywordNoteDraftItem`/
- * `ShortcutDraftItem`을 그대로 다 채우므로 Pick 없이 `StoryDraftPayload`의 필드로 바로 포함한다.
- */
-export type StoryStartingSetupPayload = Pick<
-  StartingSetupDraftItem,
-  "id" | "name" | "prologue" | "openingMessage" | "playguide" | "suggestedReplies" | "statDefs"
->;
+// endings(US-095)가 startingSetups의 마지막 남은 필드였다 — 이제 storyBuilderSchema가 StoryDraftPayload의
+// 모든 필드를 채우므로 US-092~094가 쓰던 `Pick<...>` 좁히기가 더 필요 없다(US-092 CLAUDE.md 메모 참고).
+export type StoryBuilderDraftPayload = StoryDraftPayload;
 
-export type StoryBuilderDraftPayload = Pick<
-  StoryDraftPayload,
-  | "name"
-  | "oneLiner"
-  | "thumbnailAssetId"
-  | "promptTemplate"
-  | "settingText"
-  | "developmentExample"
-  | "customPrompt"
-  | "keywordNotes"
-  | "shortcuts"
-  | "description"
-  | "genreId"
-  | "target"
-  | "hashtags"
-  | "visibility"
-> & {
-  startingSetups: StoryStartingSetupPayload[];
+// FE는 techspec 의사코드의 비교 연산자 기호(>=, <= ...)를 쓰고 서버는 EndingRuleOperator(gte/lte/eq/gt/lt,
+// DB 컬럼 그대로)를 쓴다 — entities/chat-room/model/toChatRoomState.ts의 OPERATOR_MAP과 반대 방향(FE -> 서버) 매핑.
+// schema.ts가 이미 "!="을 제외해뒀으므로(서버 enum에 없음) 이 Record는 5개 키로 완전하다.
+const OPERATOR_TO_API: Record<SingleRuleValues["operator"], EndingRuleDraftItem["operator"]> = {
+  ">=": "gte",
+  "<=": "lte",
+  "==": "eq",
+  ">": "gt",
+  "<": "lt",
 };
+
+function toApiSingleRule(rule: SingleRuleValues): EndingRuleDraftItem {
+  return {
+    kind: "rule",
+    id: rule.id,
+    statId: rule.statId,
+    operator: OPERATOR_TO_API[rule.operator],
+    threshold: rule.value,
+    nextOp: rule.nextOp,
+  };
+}
+
+// 그룹 내부(rules)는 schema.ts의 ruleGroupSchema가 이미 단일 규칙만 허용하도록 강제해뒀다(그룹 중첩 불가).
+function toApiRuleListItem(item: RuleListItemValues): EndingRuleDraftItem | EndingRuleGroupDraftItem {
+  if (item.kind === "group") {
+    return { kind: "group", id: item.id, rules: item.rules.map(toApiSingleRule), nextOp: item.nextOp };
+  }
+  return toApiSingleRule(item);
+}
+
+// order는 서버 스키마에 별도 숫자 필드가 없다 — statRules 배열 인덱스 자체가 order다(US-091 패턴과 동일).
+function toApiEnding(ending: EndingValues): EndingDraftItem {
+  return {
+    id: ending.id,
+    name: ending.name,
+    turnCountGate: ending.turnGate,
+    judgmentPrompt: ending.judgePrompt,
+    epilogue: ending.epilogue ?? null,
+    hint: ending.hint ?? null,
+    statRules: ending.statRules.map(toApiRuleListItem),
+  };
+}
 
 function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
   return {
@@ -62,7 +90,7 @@ function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
 }
 
 // order는 서버 스키마에 별도 숫자 필드가 없다 — 배열 인덱스 자체가 order다(US-091 캐릭터 빌더와 동일).
-function toApiStartingSetup(setup: StartingSetupValues): StoryStartingSetupPayload {
+function toApiStartingSetup(setup: StartingSetupValues): StartingSetupDraftItem {
   return {
     id: setup.id,
     name: setup.name,
@@ -71,6 +99,7 @@ function toApiStartingSetup(setup: StartingSetupValues): StoryStartingSetupPaylo
     playguide: setup.playGuide ?? null,
     suggestedReplies: setup.suggestedReplies,
     statDefs: setup.stats.map(toApiStatDef),
+    endings: setup.endings.map(toApiEnding),
   };
 }
 

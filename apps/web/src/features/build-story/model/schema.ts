@@ -47,8 +47,48 @@ export const statDefSchema = z.object({
 });
 
 /**
+ * techspec-builder-story.md §1.5 — `shared/lib/rule-engine`의 `SingleRule`/`RuleGroup`/`RuleListItem`과
+ * 구조적으로 동일한 값을 생성한다(재정의가 아니라 재사용 — `formToServer.ts`/`serverToForm.ts`가 이
+ * 스키마의 추론 타입을 그 타입들의 함수 시그니처에 그대로 대입해 컴파일타임에 어긋남을 잡아낸다).
+ * `operator`는 실제 DB enum(`EndingRuleOperator`: gte/lte/eq/gt/lt, techspec-db-schema.md §5)에 맞춰
+ * `ComparisonOp`의 6개 값 중 서버가 애초에 저장할 방법이 없는 "!="만 제외한 5개로 좁힌다.
+ * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다(FR-59).
+ */
+const comparisonOpSchema = z.enum([">", ">=", "<", "<=", "=="]);
+const logicOpSchema = z.enum(["and", "or"]);
+
+const singleRuleSchema = z.object({
+  kind: z.literal("rule"),
+  id: z.string(),
+  statId: z.string(),
+  operator: comparisonOpSchema,
+  value: z.number(),
+  nextOp: logicOpSchema.nullable(),
+});
+
+const ruleGroupSchema = z.object({
+  kind: z.literal("group"),
+  id: z.string(),
+  rules: z.array(singleRuleSchema),
+  nextOp: logicOpSchema.nullable(),
+});
+
+export const ruleListItemSchema = z.discriminatedUnion("kind", [singleRuleSchema, ruleGroupSchema]);
+
+/** techspec-builder-story.md §1.5 — turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다(FR-58). */
+export const endingSchema = z.object({
+  id: z.string(),
+  name: z.string().min(1),
+  turnGate: z.number().min(10),
+  judgePrompt: z.string().min(1),
+  statRules: z.array(ruleListItemSchema).default([]),
+  epilogue: z.string().optional(),
+  hint: z.string().optional(),
+});
+
+/**
  * techspec-builder-story.md §1.1 — 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
- * 항목이 기본 선택이다. endings는 이 스토리(US-093)의 범위 밖이라 아직 필드에 없다(US-095가 추가).
+ * 항목이 기본 선택이다.
  */
 export const startingSetupSchema = z.object({
   id: z.string(),
@@ -58,6 +98,7 @@ export const startingSetupSchema = z.object({
   playGuide: z.string().optional(),
   suggestedReplies: z.array(z.string()).default([]),
   stats: z.array(statDefSchema).default([]),
+  endings: z.array(endingSchema).default([]),
 });
 
 /** techspec-builder-story.md §1.3 — scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
@@ -103,6 +144,9 @@ export const storyBuilderSchema = z.object({
 
 export type StorySettingValues = z.infer<typeof storySettingSchema>;
 export type StatDefValues = z.infer<typeof statDefSchema>;
+export type RuleListItemValues = z.infer<typeof ruleListItemSchema>;
+export type SingleRuleValues = Extract<RuleListItemValues, { kind: "rule" }>;
+export type EndingValues = z.infer<typeof endingSchema>;
 export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
 export type KeywordNoteValues = z.infer<typeof keywordNoteSchema>;
 export type ShortcutValues = z.infer<typeof shortcutSchema>;

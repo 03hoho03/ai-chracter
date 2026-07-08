@@ -33,6 +33,7 @@ function baseFormValues(): StoryBuilderFormValues {
             description: "생존에 필요한 신체 상태",
           },
         ],
+        endings: [],
       },
     ],
     keywordNotes: [
@@ -87,6 +88,7 @@ describe("formToServer", () => {
               description: "생존에 필요한 신체 상태",
             },
           ],
+          endings: [],
         },
       ],
       keywordNotes: [
@@ -205,6 +207,97 @@ describe("formToServer", () => {
 
     expect(payload.shortcuts).toEqual([
       { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
+    ]);
+  });
+
+  it("maps an ending's rule tree (single rule + group) into the wire shape, including the operator rename", () => {
+    const values = baseFormValues();
+    values.startingSetups[0]!.endings = [
+      {
+        id: "ending-1",
+        name: "함께 살아남기",
+        turnGate: 12,
+        judgePrompt: "주인공들이 서로를 구조했는지 판정",
+        statRules: [
+          { kind: "rule", id: "rule-1", statId: "stat-1", operator: ">=", value: 50, nextOp: "and" },
+          {
+            kind: "group",
+            id: "group-1",
+            nextOp: null,
+            rules: [
+              { kind: "rule", id: "rule-2", statId: "stat-2", operator: "<", value: 10, nextOp: "or" },
+              { kind: "rule", id: "rule-3", statId: "stat-3", operator: "==", value: 3, nextOp: null },
+            ],
+          },
+        ],
+        epilogue: "두 사람은 무사히 구조되었다.",
+        hint: "체력과 신뢰를 함께 관리하세요.",
+      },
+    ];
+
+    const payload = formToServer(values);
+
+    expect(payload.startingSetups[0]!.endings).toEqual([
+      {
+        id: "ending-1",
+        name: "함께 살아남기",
+        turnCountGate: 12,
+        judgmentPrompt: "주인공들이 서로를 구조했는지 판정",
+        epilogue: "두 사람은 무사히 구조되었다.",
+        hint: "체력과 신뢰를 함께 관리하세요.",
+        statRules: [
+          { kind: "rule", id: "rule-1", statId: "stat-1", operator: "gte", threshold: 50, nextOp: "and" },
+          {
+            kind: "group",
+            id: "group-1",
+            nextOp: null,
+            rules: [
+              { kind: "rule", id: "rule-2", statId: "stat-2", operator: "lt", threshold: 10, nextOp: "or" },
+              { kind: "rule", id: "rule-3", statId: "stat-3", operator: "eq", threshold: 3, nextOp: null },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("maps unset ending epilogue/hint to null", () => {
+    const values = baseFormValues();
+    values.startingSetups[0]!.endings = [
+      {
+        id: "ending-1",
+        name: "열린 결말",
+        turnGate: 10,
+        judgePrompt: "판정 프롬프트",
+        statRules: [],
+        epilogue: undefined,
+        hint: undefined,
+      },
+    ];
+
+    const payload = formToServer(values);
+
+    expect(payload.startingSetups[0]!.endings[0]!.epilogue).toBeNull();
+    expect(payload.startingSetups[0]!.endings[0]!.hint).toBeNull();
+  });
+
+  it("preserves endings/statRules array order as the wire's implicit order (no explicit order field)", () => {
+    const values = baseFormValues();
+    values.startingSetups[0]!.endings = [
+      { id: "second", name: "second", turnGate: 10, judgePrompt: "판정", statRules: [] },
+      { id: "first", name: "first", turnGate: 10, judgePrompt: "판정", statRules: [] },
+    ];
+    values.startingSetups[0]!.endings[0]!.statRules = [
+      { kind: "rule", id: "rule-b", statId: "stat-1", operator: ">", value: 1, nextOp: null },
+      { kind: "rule", id: "rule-a", statId: "stat-1", operator: ">", value: 1, nextOp: null },
+    ];
+
+    const payload = formToServer(values);
+
+    expect(payload.startingSetups[0]!.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
+    expect(payload.startingSetups[0]!.endings[0]!.statRules.map((rule) => rule.id)).toEqual([
+      "rule-b",
+      "rule-a",
     ]);
   });
 });
