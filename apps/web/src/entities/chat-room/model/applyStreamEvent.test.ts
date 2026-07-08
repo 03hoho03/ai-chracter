@@ -18,7 +18,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     contentSnapshot: { stats: [], endings: [], shortcuts: [], suggestedReplies: [] },
     messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
     stats: { hp: 50 },
-    endingStatus: { reached: false, endingId: null, reachedAtTurn: null },
+    endingStatus: { reached: false, endingId: null, reachedAtTurn: null, epilogue: null },
     turnCount: 3,
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
@@ -59,14 +59,23 @@ describe("applyStreamEvent", () => {
     });
   });
 
-  it("endingReached sets endingStatus using the current turnCount", () => {
+  it("endingReached sets endingStatus (including epilogue) using the current turnCount", () => {
     applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: "끝" });
 
     expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.endingStatus).toEqual({
       reached: true,
       endingId: "ending-1",
       reachedAtTurn: 3,
+      epilogue: "끝",
     });
+  });
+
+  it("endingReached stores a null epilogue as-is", () => {
+    applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: null });
+
+    expect(
+      queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.endingStatus.epilogue,
+    ).toBeNull();
   });
 
   it("done appends the final message and increments turnCount by default (mode: append)", () => {

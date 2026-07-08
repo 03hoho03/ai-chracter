@@ -88,7 +88,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
       : undefined,
     messages: dto.messages,
     stats: dto.stats ?? {},
-    endingStatus: { reached: dto.endingReached, endingId: null, reachedAtTurn: null },
+    endingStatus: { reached: dto.endingReached, endingId: null, reachedAtTurn: null, epilogue: null },
     turnCount: dto.turnCount,
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,

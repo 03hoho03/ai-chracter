@@ -77,7 +77,7 @@ export type ChatRoomState = {
   };
   messages: ChatMessage[];
   stats: Record<string, number>; // statId -> 현재값 — 캐릭터 챗에서는 항상 빈 객체(techspec-chat-character.md §0)
-  endingStatus: { reached: boolean; endingId: string | null; reachedAtTurn: number | null };
+  endingStatus: { reached: boolean; endingId: string | null; reachedAtTurn: number | null; epilogue: string | null };
   turnCount: number;
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지
   versionAutoUpgraded: boolean; // 이번 조회에서 서버가 자동 마이그레이션했는지

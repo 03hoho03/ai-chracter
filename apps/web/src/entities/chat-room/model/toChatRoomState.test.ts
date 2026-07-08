@@ -25,7 +25,7 @@ describe("toChatRoomState", () => {
       name: "대화 1",
       messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
       stats: {},
-      endingStatus: { reached: false, endingId: null, reachedAtTurn: null },
+      endingStatus: { reached: false, endingId: null, reachedAtTurn: null, epilogue: null },
       turnCount: 3,
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
@@ -47,7 +47,7 @@ describe("toChatRoomState", () => {
       updatedAt: "2026-07-08T00:00:00Z",
     });
 
-    expect(state.endingStatus).toEqual({ reached: true, endingId: null, reachedAtTurn: null });
+    expect(state.endingStatus).toEqual({ reached: true, endingId: null, reachedAtTurn: null, epilogue: null });
   });
 
   it("maps story chat contentSnapshot/stats/startingSetupId, translating raw operators to comparison symbols", () => {

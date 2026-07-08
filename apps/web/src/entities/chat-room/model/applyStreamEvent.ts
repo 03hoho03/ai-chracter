@@ -35,7 +35,12 @@ export function applyStreamEvent(
         (prev) =>
           prev && {
             ...prev,
-            endingStatus: { reached: true, endingId: event.endingId, reachedAtTurn: prev.turnCount },
+            endingStatus: {
+              reached: true,
+              endingId: event.endingId,
+              reachedAtTurn: prev.turnCount,
+              epilogue: event.epilogue,
+            },
           },
       );
       return;

@@ -7,7 +7,7 @@ import { ArrowLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { useChatRoomQuery } from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
-import { MessageBubble, TypingIndicator } from "./MessageBubble";
+import { EndingDivider, MessageBubble, TypingIndicator } from "./MessageBubble";
 import { StatGaugePanel } from "./StatGaugePanel";
 
 function ChatRoomSkeleton() {
@@ -88,6 +88,17 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           {room.messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
           ))}
+
+          {room.endingStatus.reached && room.endingStatus.epilogue && (
+            <>
+              <EndingDivider
+                endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
+              />
+              <MessageBubble
+                message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
+              />
+            </>
+          )}
 
           {isSending &&
             (streamingText ? (
