@@ -14,6 +14,10 @@ export type {
   StatDef,
 } from "./api/types";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
+export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";
+export { useDeleteChatRoomMutation } from "./api/useDeleteChatRoomMutation";
+export { useRenameChatRoomMutation } from "./api/useRenameChatRoomMutation";
+export { useResetChatRoomMutation } from "./api/useResetChatRoomMutation";
 export { useStartChatMutation } from "./api/useStartChatMutation";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildSendPayload } from "./model/buildSendPayload";
