@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import httpx
 from google import genai
@@ -42,11 +42,23 @@ class GeminiLLMClient(LLMClient):
         except (genai_errors.APIError, httpx.HTTPError) as exc:
             raise LLMClientError(f"Gemini generate() call failed: {exc}") from exc
 
-    async def generate_structured(self, prompt: str, response_schema: type[T]) -> T:
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        images: list[tuple[bytes, str]] | None = None,
+    ) -> T:
+        contents: str | list[Any] = prompt
+        if images:
+            contents = [
+                prompt,
+                *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
+            ]
+
         try:
             response = await self._client.aio.models.generate_content(
                 model=self._model_name,
-                contents=prompt,
+                contents=contents,
                 config=genai_types.GenerateContentConfig(
                     response_mime_type="application/json",
                     response_schema=response_schema,

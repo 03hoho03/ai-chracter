@@ -86,6 +86,11 @@ def _draft_payload(**overrides: object) -> dict[str, object]:
         "characterPrompt": "너는 아리아다.",
         "playguide": None,
         "situationalImages": [],
+        "description": "상세 설명",
+        "genreId": None,
+        "target": None,
+        "hashtags": [],
+        "visibility": "private",
     }
     payload.update(overrides)
     return payload
@@ -233,6 +238,11 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
     assert body["characterPrompt"] == ""
     assert body["playguide"] is None
     assert body["situationalImages"] == []
+    assert body["description"] == ""
+    assert body["genreId"] is None
+    assert body["target"] is None
+    assert body["hashtags"] == []
+    assert body["visibility"] == "private"
 
 
 async def test_patch_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
@@ -289,6 +299,51 @@ async def test_patch_content_draft_updates_fields_without_validation(
     assert detail.example_dialogues == [
         {"id": "d1", "userLine": "안녕", "characterLine": "반가워"}
     ]
+
+
+async def test_patch_content_draft_updates_registration_fields(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """registration-tab fields live on Content/ContentVersion, not character_version_details
+    (shared across versions, not per-version snapshot data) — US-083 depends on these being
+    settable so a draft can ever pass publish validation."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    genre = await _get_genre(db_session)
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(
+            description="상세 설명입니다",
+            genreId=str(genre.id),
+            target="female",
+            hashtags=["힐링", "일상"],
+            visibility="public",
+        ),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["description"] == "상세 설명입니다"
+    assert body["genreId"] == str(genre.id)
+    assert body["target"] == "female"
+    assert body["hashtags"] == ["힐링", "일상"]
+    assert body["visibility"] == "public"
+
+    await db_session.refresh(content)
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    assert version.detail_description == "상세 설명입니다"
+    assert content.genre_id == genre.id
+    assert content.target == ContentTarget.FEMALE
+    assert content.hashtags == ["힐링", "일상"]
+    assert content.visibility == ContentVisibility.PUBLIC
 
 
 async def test_patch_content_draft_upserts_inserts_updates_deletes_and_reorders_images(

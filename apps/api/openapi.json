@@ -1212,7 +1212,7 @@
           "content"
         ],
         "summary": "Update Content Draft",
-        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (US-083 publish is where that happens) — character_version_details\nis overwritten wholesale, situational_images is upserted by entity_id (array index ->\norder column), and entity_ids missing from the payload are deleted.",
+        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (US-083 publish is where that happens) — character_version_details\nis overwritten wholesale, situational_images is upserted by entity_id (array index ->\norder column), and entity_ids missing from the payload are deleted. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than character_version_details, since they're shared across versions,\nnot per-version snapshot data (techspec-db-schema.md §3).",
         "operationId": "update_content_draft_contents__id__draft_patch",
         "parameters": [
           {
@@ -1243,6 +1243,50 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/CharacterDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{id}/publish": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Publish Character Content",
+        "description": "techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083).",
+        "operationId": "publish_character_content_contents__id__publish_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContentPublishResponse"
                 }
               }
             }
@@ -2548,6 +2592,42 @@
             },
             "type": "array",
             "title": "Situationalimages"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "genreId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genreid"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
           }
         },
         "type": "object",
@@ -2559,7 +2639,12 @@
           "exampleDialogues",
           "characterPrompt",
           "playguide",
-          "situationalImages"
+          "situationalImages",
+          "description",
+          "genreId",
+          "target",
+          "hashtags",
+          "visibility"
         ],
         "title": "CharacterDraftPayload"
       },
@@ -2628,6 +2713,42 @@
             },
             "type": "array",
             "title": "Situationalimages"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "genreId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genreid"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
           }
         },
         "type": "object",
@@ -2640,7 +2761,12 @@
           "exampleDialogues",
           "characterPrompt",
           "playguide",
-          "situationalImages"
+          "situationalImages",
+          "description",
+          "genreId",
+          "target",
+          "hashtags",
+          "visibility"
         ],
         "title": "CharacterDraftResponse"
       },
@@ -3293,6 +3419,25 @@
         ],
         "title": "ContentListResponse"
       },
+      "ContentPublishResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "versionNumber": {
+            "type": "integer",
+            "title": "Versionnumber"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "versionNumber"
+        ],
+        "title": "ContentPublishResponse"
+      },
       "ContentSummary": {
         "properties": {
           "id": {
@@ -3346,6 +3491,15 @@
           "moderationStatus"
         ],
         "title": "ContentSummary"
+      },
+      "ContentTarget": {
+        "type": "string",
+        "enum": [
+          "female",
+          "male",
+          "all"
+        ],
+        "title": "ContentTarget"
       },
       "ContentType": {
         "type": "string",

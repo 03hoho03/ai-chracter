@@ -5,7 +5,7 @@ from typing import Literal
 from pydantic import Field
 
 from api.core.schema import CamelModel
-from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
+from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import ReportReasonCategory
 
 VisibilityFilter = Literal["all", "public", "link", "private"]
@@ -148,6 +148,11 @@ class CharacterDraftPayload(CamelModel):
     character_prompt: str
     playguide: str | None
     situational_images: list[CharacterSituationalImageDraftInput]
+    description: str
+    genre_id: uuid.UUID | None
+    target: ContentTarget | None
+    hashtags: list[str]
+    visibility: ContentVisibility
 
 
 class CharacterSituationalImageItem(CamelModel):
@@ -167,3 +172,13 @@ class CharacterDraftResponse(CamelModel):
     character_prompt: str
     playguide: str | None
     situational_images: list[CharacterSituationalImageItem]
+    description: str
+    genre_id: uuid.UUID | None
+    target: ContentTarget | None
+    hashtags: list[str]
+    visibility: ContentVisibility
+
+
+class ContentPublishResponse(CamelModel):
+    content_id: uuid.UUID
+    version_number: int

@@ -479,9 +479,32 @@ export interface paths {
          * @description techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
          *     business validation (US-083 publish is where that happens) — character_version_details
          *     is overwritten wholesale, situational_images is upserted by entity_id (array index ->
-         *     order column), and entity_ids missing from the payload are deleted.
+         *     order column), and entity_ids missing from the payload are deleted. `registration`-tab
+         *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
+         *     directly rather than character_version_details, since they're shared across versions,
+         *     not per-version snapshot data (techspec-db-schema.md §3).
          */
         patch: operations["update_content_draft_contents__id__draft_patch"];
+        trace?: never;
+    };
+    "/contents/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Character Content
+         * @description techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083).
+         */
+        post: operations["publish_character_content_contents__id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/contents/{id}": {
@@ -975,6 +998,14 @@ export interface components {
             playguide: string | null;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageDraftInput"][];
+            /** Description */
+            description: string;
+            /** Genreid */
+            genreId: string | null;
+            target: components["schemas"]["ContentTarget"] | null;
+            /** Hashtags */
+            hashtags: string[];
+            visibility: components["schemas"]["ContentVisibility"];
         };
         /** CharacterDraftResponse */
         CharacterDraftResponse: {
@@ -1005,6 +1036,14 @@ export interface components {
             playguide: string | null;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageItem"][];
+            /** Description */
+            description: string;
+            /** Genreid */
+            genreId: string | null;
+            target: components["schemas"]["ContentTarget"] | null;
+            /** Hashtags */
+            hashtags: string[];
+            visibility: components["schemas"]["ContentVisibility"];
         };
         /**
          * CharacterSituationalImageDraftInput
@@ -1281,6 +1320,16 @@ export interface components {
             /** Nextcursor */
             nextCursor: string | null;
         };
+        /** ContentPublishResponse */
+        ContentPublishResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Versionnumber */
+            versionNumber: number;
+        };
         /** ContentSummary */
         ContentSummary: {
             /**
@@ -1303,6 +1352,11 @@ export interface components {
             visibility: components["schemas"]["ContentVisibility"];
             moderationStatus: components["schemas"]["ModerationStatus"];
         };
+        /**
+         * ContentTarget
+         * @enum {string}
+         */
+        ContentTarget: "female" | "male" | "all";
         /**
          * ContentType
          * @enum {string}
@@ -2703,6 +2757,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_character_content_contents__id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContentPublishResponse"];
                 };
             };
             /** @description Validation Error */

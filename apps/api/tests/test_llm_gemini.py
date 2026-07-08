@@ -150,3 +150,47 @@ async def test_generate_structured_wraps_api_error(monkeypatch: pytest.MonkeyPat
 
     with pytest.raises(LLMClientError):
         await client.generate_structured("judge this", _JudgmentResult)
+
+
+async def test_generate_structured_without_images_sends_plain_string_contents(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = _JudgmentResult(triggered=True, ending_id=None)
+    received: dict[str, Any] = {}
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        received.update(kwargs)
+        return SimpleNamespace(parsed=expected)
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    await client.generate_structured("judge this", _JudgmentResult)
+
+    assert received["contents"] == "judge this"
+
+
+async def test_generate_structured_with_images_sends_multimodal_parts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = _JudgmentResult(triggered=True, ending_id=None)
+    received: dict[str, Any] = {}
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        received.update(kwargs)
+        return SimpleNamespace(parsed=expected)
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    await client.generate_structured(
+        "judge this",
+        _JudgmentResult,
+        images=[(b"fake-png-bytes", "image/png"), (b"fake-jpeg-bytes", "image/jpeg")],
+    )
+
+    contents = received["contents"]
+    assert contents[0] == "judge this"
+    assert len(contents) == 3
+    assert contents[1].inline_data.data == b"fake-png-bytes"
+    assert contents[1].inline_data.mime_type == "image/png"
+    assert contents[2].inline_data.data == b"fake-jpeg-bytes"
+    assert contents[2].inline_data.mime_type == "image/jpeg"

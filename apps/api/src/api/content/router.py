@@ -1,14 +1,20 @@
 import base64
 import json
+import mimetypes
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, any_, or_, select, tuple_
+from sqlalchemy import and_, any_, func, or_, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from api.content.publish import (
+    PublishFilterResult,
+    build_character_publish_filter_prompt,
+    validate_character_publish,
+)
 from api.content.schemas import (
     CharacterDraftPayload,
     CharacterDraftResponse,
@@ -19,6 +25,7 @@ from api.content.schemas import (
     ContentDetailResponse,
     ContentListItem,
     ContentListResponse,
+    ContentPublishResponse,
     ContentSummary,
     ContentVersionSummary,
     DraftSummary,
@@ -30,7 +37,7 @@ from api.content.schemas import (
     UserProfileResponse,
     VisibilityFilter,
 )
-from api.core.s3 import generate_presigned_get_url
+from api.core.s3 import download_object, generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
@@ -47,6 +54,8 @@ from api.db.models.media import Asset, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
 from api.db.models.story import StartingSetup, StoryVersionDetail
 from api.db.session import get_db_session
+from api.llm.client import LLMClient
+from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
 router = APIRouter(tags=["content"])
@@ -433,7 +442,7 @@ async def create_content_draft(
 
 async def _get_owned_draft_version(
     db: AsyncSession, content_id: uuid.UUID, user_id: uuid.UUID
-) -> ContentVersion:
+) -> tuple[Content, ContentVersion]:
     """404/403 gate shared by the draft read/write endpoints below (same content_version
     existence + creator-ownership check `register_situational_image`, US-071, established
     for content_version_id-scoped child resources)."""
@@ -450,25 +459,25 @@ async def _get_owned_draft_version(
     )
     if version is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Draft not found")
-    return version
+    return content, version
 
 
 async def _character_draft_response(
-    db: AsyncSession, content_id: uuid.UUID, version_id: uuid.UUID
+    db: AsyncSession, content: Content, version: ContentVersion
 ) -> CharacterDraftResponse:
-    detail = await db.get(CharacterVersionDetail, version_id)
+    detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 
     images = (
         await db.scalars(
             select(SituationalImage)
-            .where(SituationalImage.content_version_id == version_id)
+            .where(SituationalImage.content_version_id == version.id)
             .order_by(SituationalImage.order)
         )
     ).all()
 
     return CharacterDraftResponse(
-        id=content_id,
+        id=content.id,
         name=detail.name,
         one_liner=detail.one_liner,
         thumbnail_asset_id=detail.thumbnail_asset_id,
@@ -486,6 +495,11 @@ async def _character_draft_response(
             )
             for image in images
         ],
+        description=version.detail_description,
+        genre_id=content.genre_id,
+        target=content.target,
+        hashtags=content.hashtags,
+        visibility=content.visibility,
     )
 
 
@@ -495,8 +509,8 @@ async def get_content_draft(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> CharacterDraftResponse:
-    version = await _get_owned_draft_version(db, id, user_id)
-    return await _character_draft_response(db, id, version.id)
+    content, version = await _get_owned_draft_version(db, id, user_id)
+    return await _character_draft_response(db, content, version)
 
 
 @router.patch("/contents/{id}/draft")
@@ -509,8 +523,11 @@ async def update_content_draft(
     """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
     business validation (US-083 publish is where that happens) — character_version_details
     is overwritten wholesale, situational_images is upserted by entity_id (array index ->
-    order column), and entity_ids missing from the payload are deleted."""
-    version = await _get_owned_draft_version(db, id, user_id)
+    order column), and entity_ids missing from the payload are deleted. `registration`-tab
+    fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
+    directly rather than character_version_details, since they're shared across versions,
+    not per-version snapshot data (techspec-db-schema.md §3)."""
+    content, version = await _get_owned_draft_version(db, id, user_id)
 
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
@@ -521,6 +538,11 @@ async def update_content_draft(
     detail.example_dialogues = [item.model_dump(by_alias=True) for item in payload.example_dialogues]
     detail.character_prompt = payload.character_prompt
     detail.playguide = payload.playguide
+    version.detail_description = payload.description
+    content.genre_id = payload.genre_id
+    content.target = payload.target
+    content.hashtags = payload.hashtags
+    content.visibility = payload.visibility
 
     existing_images = {
         image.entity_id: image
@@ -544,7 +566,120 @@ async def update_content_draft(
         existing_image.order = order
 
     await db.commit()
-    return await _character_draft_response(db, id, version.id)
+    return await _character_draft_response(db, content, version)
+
+
+async def _load_publish_filter_images(
+    db: AsyncSession, detail: CharacterVersionDetail, version_id: uuid.UUID
+) -> list[tuple[bytes, str]]:
+    """썸네일(대표이미지) + 이 버전에 등록된 상황별 이미지 원본을 전부 내려받아
+    (바이트, MIME 타입) 쌍으로 반환한다 — LLMClient.generate_structured()의 멀티모달
+    images 인자로 그대로 전달된다. 이미지 원본이 아직 없는 상황별 이미지 슬롯은
+    건너뛴다(situationalImageSchema의 image가 nullable이라 발행 필수 항목이 아님)."""
+    asset_ids: list[uuid.UUID] = []
+    if detail.thumbnail_asset_id is not None:
+        asset_ids.append(detail.thumbnail_asset_id)
+
+    situational_images = (
+        await db.scalars(
+            select(SituationalImage).where(SituationalImage.content_version_id == version_id)
+        )
+    ).all()
+    asset_ids.extend(
+        image.image_asset_id for image in situational_images if image.image_asset_id is not None
+    )
+
+    images: list[tuple[bytes, str]] = []
+    for asset_id in asset_ids:
+        asset = await db.get(Asset, asset_id)
+        assert asset is not None
+        data = await run_in_threadpool(download_object, asset.storage_key)
+        mime_type, _ = mimetypes.guess_type(asset.storage_key)
+        images.append((data, mime_type or "application/octet-stream"))
+    return images
+
+
+@router.post("/contents/{id}/publish")
+async def publish_character_content(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> ContentPublishResponse:
+    """techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083)."""
+    content, version = await _get_owned_draft_version(db, id, user_id)
+    detail = await db.get(CharacterVersionDetail, version.id)
+    assert detail is not None
+
+    missing_fields = validate_character_publish(content, version, detail)
+    if missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
+        )
+
+    filter_images = await _load_publish_filter_images(db, detail, version.id)
+    filter_prompt = build_character_publish_filter_prompt(
+        name=detail.name,
+        one_liner=detail.one_liner,
+        intro=detail.intro,
+        example_dialogues=detail.example_dialogues,
+        character_prompt=detail.character_prompt,
+        detail_description=version.detail_description,
+    )
+    filter_result = await llm_client.generate_structured(
+        filter_prompt, PublishFilterResult, images=filter_images
+    )
+    if not filter_result.passed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
+        )
+
+    situational_images = (
+        await db.scalars(
+            select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+        )
+    ).all()
+
+    latest_version_number = await db.scalar(
+        select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
+    )
+    version.version_number = (latest_version_number or 0) + 1
+    version.published_at = datetime.now(UTC)
+
+    new_version = ContentVersion(content_id=content.id, detail_description=version.detail_description)
+    db.add(new_version)
+    await db.flush()
+
+    db.add(
+        CharacterVersionDetail(
+            content_version_id=new_version.id,
+            name=detail.name,
+            one_liner=detail.one_liner,
+            thumbnail_asset_id=detail.thumbnail_asset_id,
+            intro=detail.intro,
+            example_dialogues=detail.example_dialogues,
+            character_prompt=detail.character_prompt,
+            playguide=detail.playguide,
+        )
+    )
+    for image in situational_images:
+        db.add(
+            SituationalImage(
+                entity_id=image.entity_id,
+                content_version_id=new_version.id,
+                image_asset_id=image.image_asset_id,
+                blurred_asset_id=image.blurred_asset_id,
+                trigger_condition=image.trigger_condition,
+                order=image.order,
+            )
+        )
+
+    content.current_published_version_id = version.id
+    await db.commit()
+
+    assert version.version_number is not None
+    return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
 
 
 def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:

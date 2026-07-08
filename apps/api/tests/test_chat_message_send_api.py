@@ -149,7 +149,9 @@ class _FakeLLMClient(LLMClient):
         for token in self.tokens:
             yield token
 
-    async def generate_structured(self, prompt: str, response_schema: Any) -> Any:
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None
+    ) -> Any:
         self.generate_structured_called = True
         self.received_judgment_prompt = prompt
         if self.structured_result is None:

@@ -28,5 +28,12 @@ class LLMClient(abc.ABC):
         raise NotImplementedError
 
     @abc.abstractmethod
-    async def generate_structured(self, prompt: str, response_schema: type[T]) -> T:
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_schema: type[T],
+        images: list[tuple[bytes, str]] | None = None,
+    ) -> T:
+        """`images`는 (바이트, MIME 타입) 쌍의 목록 — 전달되면 멀티모달 판단(예: 발행
+        자동 필터, techspec-backend-content.md §1.3)에 프롬프트와 함께 첨부된다."""
         raise NotImplementedError
