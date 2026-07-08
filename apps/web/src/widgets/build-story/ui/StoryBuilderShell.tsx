@@ -9,6 +9,7 @@ import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/active
 import { KeywordNoteTab } from "./KeywordNoteTab";
 import { ProfileTab } from "./ProfileTab";
 import { SettingTab } from "./SettingTab";
+import { ShortcutTab } from "./ShortcutTab";
 import { StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
 
@@ -73,7 +74,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <KeywordNoteTab form={form} />
         </TabsContent>
         <TabsContent value="shortcut">
-          <TabPlaceholder />
+          <ShortcutTab form={form} />
         </TabsContent>
         <TabsContent value="ending">
           <TabPlaceholder />
