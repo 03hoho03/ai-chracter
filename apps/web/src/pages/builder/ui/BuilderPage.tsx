@@ -1,6 +1,6 @@
 import { useContentDraftQuery } from "../../../entities/content";
-import { ComingSoonPage } from "../../../shared/ui/ComingSoonPage";
 import { CharacterBuilderShell } from "../../../widgets/build-character";
+import { StoryBuilderShell } from "../../../widgets/build-story";
 
 function BuilderSkeleton() {
   return (
@@ -13,7 +13,7 @@ function BuilderSkeleton() {
 }
 
 /** techspec-builder-common.md §2 — 초안 이어쓰기 진입점. `data.type` 판별값으로 캐릭터/스토리
- * 빌더를 나눈다(스토리 빌더는 US-106까지 ComingSoonPage로 남겨둔다). */
+ * 빌더를 나눈다. */
 export function BuilderPage({ draftId }: { draftId: string }) {
   const draftQuery = useContentDraftQuery(draftId);
 
@@ -31,5 +31,5 @@ export function BuilderPage({ draftId }: { draftId: string }) {
     return <CharacterBuilderShell data={draftQuery.data} />;
   }
 
-  return <ComingSoonPage title="스토리 빌더" description="스토리 빌더 화면을 준비하고 있어요." />;
+  return <StoryBuilderShell data={draftQuery.data} />;
 }
