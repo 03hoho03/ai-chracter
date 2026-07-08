@@ -21,6 +21,10 @@ class ChatMessageCreateRequest(CamelModel):
     shortcut_id: uuid.UUID | None = None
 
 
+class ChatMessageEditRequest(CamelModel):
+    content: str = Field(min_length=1)
+
+
 class ChatRoomRenameRequest(CamelModel):
     name: str = Field(min_length=1)
 

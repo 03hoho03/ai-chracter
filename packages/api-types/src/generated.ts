@@ -668,21 +668,73 @@ export interface paths {
         put?: never;
         /**
          * Send Message
-         * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
-         *
-         *     캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
-         *     프롤로그로 생성 프롬프트를 조립한다(§3.1). 생성 완료 후 판단 단계(§3.1
-         *     buildJudgmentPrompt+generateStructured)를 매 턴 추가로 호출하는데, 캐릭터 챗은 상황별
-         *     이미지 매칭만(US-072, 결과는 done 이벤트의 finalMessage.imageId), 스토리 챗은 스탯 변경과
-         *     엔딩 판정만 수행한다 — 서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달
-         *     (room.ending_reached) 이후로는 이 판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) —
-         *     메시지 생성 자체는 계속 허용.
+         * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
+         *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/regenerate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Regenerate Message
+         * @description 마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
+         *     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
+         *     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
+         *     판단·이미지 매칭도 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을
+         *     되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만
+         *     교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
+         *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.
+         */
+        post: operations["regenerate_message_chat_rooms__room_id__regenerate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/messages/{message_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Message
+         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다(US-023 AC).
+         */
+        delete: operations["delete_message_chat_rooms__room_id__messages__message_id__delete"];
+        options?: never;
+        head?: never;
+        /**
+         * Edit Message
+         * @description 수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
+         *     생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
+         *     (판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를
+         *     추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.
+         *
+         *     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의
+         *     +=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
+         *     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
+         *     건 이번 스토리 범위 밖이다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
+         *     (알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.
+         */
+        patch: operations["edit_message_chat_rooms__room_id__messages__message_id__patch"];
         trace?: never;
     };
     "/chat-rooms/{room_id}/reset": {
@@ -805,6 +857,11 @@ export interface components {
             content: string;
             /** Shortcutid */
             shortcutId?: string | null;
+        };
+        /** ChatMessageEditRequest */
+        ChatMessageEditRequest: {
+            /** Content */
+            content: string;
         };
         /** ChatMessageResponse */
         ChatMessageResponse: {
@@ -2816,6 +2873,103 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChatMessageCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    regenerate_message_chat_rooms__room_id__regenerate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_message_chat_rooms__room_id__messages__message_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_message_chat_rooms__room_id__messages__message_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageEditRequest"];
             };
         };
         responses: {
