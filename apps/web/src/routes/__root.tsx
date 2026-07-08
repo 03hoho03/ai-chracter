@@ -7,6 +7,7 @@ import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "../fe
 import { EndingCollectionModal } from "../features/ending-collection";
 import { ImageArchiveModal } from "../features/image-archive";
 import { ConfirmChatRoomActionModal } from "../features/manage-chat-room";
+import { MakeContentPrivateModal } from "../features/make-content-private";
 import { PlayGuideModal } from "../features/play-guide";
 import { ReportContentModal } from "../features/report-content";
 import { GeneratedImagePickerModal } from "../features/select-generated-image";
@@ -37,6 +38,7 @@ function RootComponent() {
       <ConfirmStartingSetupChangeModal />
       <GeneratedImagePickerModal />
       <AppealModal />
+      <MakeContentPrivateModal />
     </>
   );
 }

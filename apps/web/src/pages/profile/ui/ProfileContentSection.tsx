@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { BookOpen, ImageOff, UserRound } from "lucide-react";
 
@@ -9,6 +10,7 @@ import {
   type ContentType,
   type VisibilityFilter,
 } from "../../../entities/content";
+import { MakeContentPrivateModal } from "../../../features/make-content-private";
 import { useContentDetailModal } from "../../../shared/lib/hooks/useContentDetailModal";
 
 const TYPE_LABEL: Record<ContentType, string> = {
@@ -37,17 +39,33 @@ function ContentTypeIcon({ type }: { type: ContentType }) {
   );
 }
 
-function ContentCard({ content, isOwner }: { content: ContentSummary; isOwner: boolean }) {
+function ContentCard({
+  content,
+  isOwner,
+  ownerUserId,
+}: {
+  content: ContentSummary;
+  isOwner: boolean;
+  ownerUserId: string;
+}) {
   // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 태그는
   // content.visibility를 그대로 쓴다(restricted 케이스도 두 태그가 함께 노출돼야 하므로).
   const access = resolveAccessStatus(content.visibility, content.moderationStatus);
   const { open } = useContentDetailModal();
+  // US-115(FR-67) — 완전 삭제 액션은 없고 비공개 전환만 허용되며, 이미 비공개인 항목엔 노출하지 않는다.
+  const canMakePrivate = isOwner && content.visibility !== "private";
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={() => open(content.type, content.id)}
-      className="flex w-full flex-col gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent/50"
+      onKeyDown={(event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        open(content.type, content.id);
+      }}
+      className="flex w-full cursor-pointer flex-col gap-3 rounded-xl border border-border bg-card p-3 text-left transition-colors hover:bg-accent/50"
     >
       <div className="aspect-square overflow-hidden rounded-lg bg-muted">
         {content.thumbnailUrl ? (
@@ -81,8 +99,23 @@ function ContentCard({ content, isOwner }: { content: ContentSummary; isOwner: b
             </span>
           )}
         </div>
+
+        {canMakePrivate && (
+          <Button
+            type="button"
+            variant="outline"
+            size="xs"
+            className="w-fit"
+            onClick={(event) => {
+              event.stopPropagation();
+              void MakeContentPrivateModal.call({ contentId: content.id, creatorUserId: ownerUserId });
+            }}
+          >
+            비공개 전환
+          </Button>
+        )}
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -166,7 +199,7 @@ export function ProfileContentSection({
       {contentListQuery.data && contentListQuery.data.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {contentListQuery.data.map((content) => (
-            <ContentCard key={content.id} content={content} isOwner={isOwner} />
+            <ContentCard key={content.id} content={content} isOwner={isOwner} ownerUserId={userId} />
           ))}
         </div>
       )}

@@ -21,6 +21,7 @@ export { useProfileContentListQuery } from "./api/useProfileContentListQuery";
 export type { ContentSummary } from "./api/useProfileContentListQuery";
 export { useToggleLikeMutation } from "./api/useToggleLikeMutation";
 export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
+export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
 export {

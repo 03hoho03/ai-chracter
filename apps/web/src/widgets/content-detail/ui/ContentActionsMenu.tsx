@@ -6,15 +6,29 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { Flag, MoreHorizontal, Share2 } from "lucide-react";
+import { EyeOff, Flag, MoreHorizontal, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { useReportContentMutation } from "../../../entities/content";
+import { useReportContentMutation, type ContentVisibility } from "../../../entities/content";
+import { MakeContentPrivateModal } from "../../../features/make-content-private";
 import { ReportContentModal } from "../../../features/report-content";
 
-/** techspec-content-detail.md §5, US-018/US-048 — 공유(클립보드 복사)/신고 진입점인 "⋯" 메뉴. */
-export function ContentActionsMenu({ contentId }: { contentId: string }) {
+/** techspec-content-detail.md §5, US-018/US-048/US-115 — 공유(클립보드 복사)/신고/(본인 소유일 때)
+ * 비공개 전환 진입점인 "⋯" 메뉴. */
+export function ContentActionsMenu({
+  contentId,
+  creatorUserId,
+  isOwner,
+  visibility,
+}: {
+  contentId: string;
+  creatorUserId: string;
+  isOwner: boolean;
+  visibility: ContentVisibility;
+}) {
   const reportMutation = useReportContentMutation(contentId);
+  // US-115(FR-67) — 완전 삭제 액션은 없고 비공개 전환만 허용되며, 이미 비공개인 항목엔 노출하지 않는다.
+  const canMakePrivate = isOwner && visibility !== "private";
 
   const handleShare = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -40,6 +54,10 @@ export function ContentActionsMenu({ contentId }: { contentId: string }) {
     });
   };
 
+  const handleMakePrivate = () => {
+    void MakeContentPrivateModal.call({ contentId, creatorUserId });
+  };
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -56,6 +74,12 @@ export function ContentActionsMenu({ contentId }: { contentId: string }) {
           <Flag aria-hidden />
           신고
         </DropdownMenuItem>
+        {canMakePrivate && (
+          <DropdownMenuItem onSelect={handleMakePrivate}>
+            <EyeOff aria-hidden />
+            비공개 전환
+          </DropdownMenuItem>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

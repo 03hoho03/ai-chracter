@@ -158,7 +158,12 @@ export function ContentDetailView({ id }: { id: string }) {
             {TYPE_LABEL[content.type]}
           </span>
 
-          <ContentActionsMenu contentId={content.id} />
+          <ContentActionsMenu
+            contentId={content.id}
+            creatorUserId={content.creatorUserId}
+            isOwner={content.isOwner}
+            visibility={access.kind === "accessible" ? access.visibility : "private"}
+          />
         </div>
 
         <h1 className="text-xl font-bold tracking-tight text-foreground">{content.name}</h1>
