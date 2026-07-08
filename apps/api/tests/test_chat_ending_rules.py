@@ -1,6 +1,6 @@
 import uuid
 
-from api.chat.ending_rules import evaluate_item, evaluate_rule_list
+from api.chat.ending_rules import evaluate_item, evaluate_rule_list, is_ending_check_due
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
 from api.db.models.story import EndingRuleOperator, LogicalOp
 
@@ -121,3 +121,21 @@ def test_evaluate_rule_list_with_nested_group() -> None:
     assert evaluate_rule_list(items, {str(affection): 60, str(tension): 20, str(trust): 90}) is True
     assert evaluate_rule_list(items, {str(affection): 60, str(tension): 20, str(trust): 0}) is False
     assert evaluate_rule_list(items, {str(affection): 10, str(tension): 5, str(trust): 90}) is False
+
+
+def test_is_ending_check_due_before_gate_is_false() -> None:
+    assert is_ending_check_due(9, 10) is False
+
+
+def test_is_ending_check_due_at_gate_is_true() -> None:
+    assert is_ending_check_due(10, 10) is True
+
+
+def test_is_ending_check_due_every_five_turns_after_gate() -> None:
+    assert is_ending_check_due(15, 10) is True
+    assert is_ending_check_due(20, 10) is True
+
+
+def test_is_ending_check_due_off_cycle_turns_after_gate_are_false() -> None:
+    assert is_ending_check_due(11, 10) is False
+    assert is_ending_check_due(14, 10) is False

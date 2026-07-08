@@ -7,14 +7,18 @@ from fastapi.sse import EventSourceResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.prompt_builder import (
+    EndingJudgmentResult,
     StatJudgmentResult,
+    build_ending_judgment_prompt,
     build_generation_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
 )
 from api.chat.schemas import (
     ChatDoneEvent,
+    ChatEndingReachedEvent,
     ChatErrorEvent,
     ChatMessageCreateRequest,
     ChatMessageResponse,
@@ -36,7 +40,7 @@ from api.chat.schemas import (
 )
 from api.chat.stats import StatChange, apply_stat_changes
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, StoryEndingUnlock
 from api.db.models.content import Content, ContentType
 from api.db.models.story import (
     Ending,
@@ -130,7 +134,10 @@ def _ending_rule_item(rule: EndingRule) -> EndingRuleItem:
     )
 
 
-async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRuleListItem]:
+    """`ending_rules`(top-level)와 `ending_rule_groups`(1단계 중첩) 두 테이블을 하나의
+    `order` 공유 시퀀스로 합쳐 재구성한다 — 엔딩 규칙 평가 엔진(`evaluate_rule_list`,
+    US-061)과 §4 contentSnapshot 응답 양쪽이 이 결과를 그대로 재사용한다."""
     top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending.id))).all()
     top_groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending.id))).all()
 
@@ -150,7 +157,10 @@ async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
             )
         )
     items.sort(key=lambda pair: pair[0])
+    return [item for _, item in items]
 
+
+async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
@@ -158,7 +168,7 @@ async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
         judgment_prompt=ending.judgment_prompt,
         epilogue=ending.epilogue,
         hint=ending.hint,
-        stat_rules=[item for _, item in items],
+        stat_rules=await _ending_rule_items(db, ending),
     )
 
 
@@ -331,9 +341,10 @@ async def send_message(
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
 
     캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
-    프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단
-    (§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 — 캐릭터 챗에는
-    이 판단 단계가 없다. 엔딩 판정은 US-061/062 범위라 아직 없다.
+    프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단과
+    엔딩 판정(§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 —
+    캐릭터 챗에는 이 판단 단계가 없다. 최초 엔딩 도달(room.ending_reached) 이후로는 이
+    판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
     """
     setup = await _resolve_starting_setup(db, room)
 
@@ -396,7 +407,8 @@ async def send_message(
     room.turn_count += 1
 
     stat_change_events: list[ChatStatChangeEvent] = []
-    if setup is not None:
+    ending_reached_event: ChatEndingReachedEvent | None = None
+    if setup is not None and not room.ending_reached:
         stat_defs = list(
             (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
         )
@@ -424,10 +436,61 @@ async def send_message(
                 stat_rows[stat_id].current_value = Decimal(str(new_value))
                 stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
+        # 엔딩 판정(FR-58): 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
+        # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
+        # 첫 충족 엔딩에서 멈춘다(FR-61, 동시 충족 시 최상위 하나만 발동).
+        endings = list(
+            (
+                await db.scalars(
+                    select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+                )
+            ).all()
+        )
+        for ending in endings:
+            if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
+                continue
+            ending_judgment_prompt = build_ending_judgment_prompt(
+                judgment_prompt=ending.judgment_prompt,
+                history=history,
+                user_message=payload.content,
+                assistant_message=assistant_content,
+            )
+            ending_judgment = await llm_client.generate_structured(ending_judgment_prompt, EndingJudgmentResult)
+            if not ending_judgment.triggered:
+                continue
+            rule_items = await _ending_rule_items(db, ending)
+            if not evaluate_rule_list(rule_items, updated_stats):
+                continue
+
+            room.ending_reached = True
+            room.ending_entity_id = ending.entity_id
+            room.ending_reached_at_turn = room.turn_count
+
+            existing_unlock = await db.scalar(
+                select(StoryEndingUnlock).where(
+                    StoryEndingUnlock.user_id == room.user_id,
+                    StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
+                    StoryEndingUnlock.ending_entity_id == ending.entity_id,
+                )
+            )
+            if existing_unlock is None:
+                db.add(
+                    StoryEndingUnlock(
+                        user_id=room.user_id,
+                        starting_setup_entity_id=setup.entity_id,
+                        ending_entity_id=ending.entity_id,
+                    )
+                )
+            ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
+            break
+
     await db.commit()
 
     for stat_change_event in stat_change_events:
         yield stat_change_event
+
+    if ending_reached_event is not None:
+        yield ending_reached_event
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(

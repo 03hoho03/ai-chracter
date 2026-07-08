@@ -32,3 +32,9 @@ def evaluate_rule_list(items: Sequence[EndingRuleListItem], stat_values: dict[st
         current = evaluate_item(items[i], stat_values)
         result = (result or current) if prev_op == LogicalOp.OR else (result and current)
     return result
+
+
+def is_ending_check_due(turn_count: int, turn_count_gate: int) -> bool:
+    """FR-58 — turn_count_gate(최소 10)를 넘긴 시점부터 5턴마다만 엔딩 판정을 호출하고,
+    그 외 턴은 스킵한다."""
+    return turn_count >= turn_count_gate and (turn_count - turn_count_gate) % 5 == 0

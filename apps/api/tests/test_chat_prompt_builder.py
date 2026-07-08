@@ -1,6 +1,7 @@
 import uuid
 
 from api.chat.prompt_builder import (
+    build_ending_judgment_prompt,
     build_generation_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
@@ -191,6 +192,33 @@ def test_build_stat_judgment_prompt_includes_history_before_this_turn() -> None:
     prompt = build_stat_judgment_prompt(
         stat_defs=[],
         current_stats={},
+        history=history,
+        user_message="이번 메시지",
+        assistant_message="이번 응답",
+    )
+
+    history_section = prompt.split("[대화 기록]\n", 1)[1]
+    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+
+
+def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:
+    prompt = build_ending_judgment_prompt(
+        judgment_prompt="주인공이 마을을 완전히 떠났는가?",
+        history=[],
+        user_message="마을을 떠났다",
+        assistant_message="주인공은 마을을 뒤로하고 떠났다.",
+    )
+
+    assert "[판정 기준]\n주인공이 마을을 완전히 떠났는가?" in prompt
+    assert "사용자: 마을을 떠났다" in prompt
+    assert "진행자: 주인공은 마을을 뒤로하고 떠났다." in prompt
+
+
+def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> None:
+    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+
+    prompt = build_ending_judgment_prompt(
+        judgment_prompt="기준",
         history=history,
         user_message="이번 메시지",
         assistant_message="이번 응답",

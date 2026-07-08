@@ -628,9 +628,10 @@ export interface paths {
          * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
          *
          *     캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
-         *     프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단
-         *     (§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 — 캐릭터 챗에는
-         *     이 판단 단계가 없다. 엔딩 판정은 US-061/062 범위라 아직 없다.
+         *     프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단과
+         *     엔딩 판정(§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 —
+         *     캐릭터 챗에는 이 판단 단계가 없다. 최초 엔딩 도달(room.ending_reached) 이후로는 이
+         *     판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;

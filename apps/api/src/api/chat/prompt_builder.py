@@ -125,3 +125,38 @@ class StatJudgmentResult(BaseModel):
     """techspec-backend-chat.md §3.1 판단용 response_schema — 스탯 변경."""
 
     stat_changes: list[StatChangeJudgment]
+
+
+def build_ending_judgment_prompt(
+    *,
+    judgment_prompt: str,
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> str:
+    """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 엔딩 판정(스토리 챗 전용).
+
+    엔딩 하나의 judgment_prompt(판정 기준)와 이번 턴까지의 대화를 근거로
+    LLMClient.generateStructured()가 EndingJudgmentResult(구조화 출력)로 그 엔딩의
+    발동 조건 충족 여부를 판단하게 한다. 여러 엔딩이 있으면 이 함수를 엔딩별로 호출한다.
+    """
+    turn_lines = [
+        f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
+        for message in history
+    ]
+    turn_lines.append(f"사용자: {user_message}")
+    turn_lines.append(f"진행자: {assistant_message}")
+
+    return (
+        "다음은 스토리 챗의 대화 기록이다.\n\n"
+        "[대화 기록]\n" + "\n".join(turn_lines) + "\n\n"
+        "아래는 하나의 엔딩이 발동하기 위한 판정 기준이다. 지금까지의 대화가 이 기준을 "
+        "충족하는지 판단하라.\n"
+        f"[판정 기준]\n{judgment_prompt}"
+    )
+
+
+class EndingJudgmentResult(BaseModel):
+    """techspec-backend-chat.md §3.1 판단용 response_schema — 엔딩 판정."""
+
+    triggered: bool

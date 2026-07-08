@@ -117,7 +117,6 @@ class ChatRoomListItem(CamelModel):
 
 
 # SSE 이벤트 스키마 (techspec-backend-chat.md §2, techspec-chat-story.md §1.2가 유일한 정의처).
-# endingReached는 아직 스토리 챗 전용(US-062)이라 여기서는 다루지 않는다.
 class ChatTokenEvent(CamelModel):
     type: Literal["token"] = "token"
     delta: str
@@ -127,6 +126,12 @@ class ChatStatChangeEvent(CamelModel):
     type: Literal["statChange"] = "statChange"
     stat_id: str
     new_value: float
+
+
+class ChatEndingReachedEvent(CamelModel):
+    type: Literal["endingReached"] = "endingReached"
+    ending_id: uuid.UUID
+    epilogue: str | None
 
 
 class ChatPolicyWarningEvent(CamelModel):
@@ -145,6 +150,11 @@ class ChatErrorEvent(CamelModel):
 
 
 ChatStreamEvent = Annotated[
-    ChatTokenEvent | ChatStatChangeEvent | ChatPolicyWarningEvent | ChatDoneEvent | ChatErrorEvent,
+    ChatTokenEvent
+    | ChatStatChangeEvent
+    | ChatEndingReachedEvent
+    | ChatPolicyWarningEvent
+    | ChatDoneEvent
+    | ChatErrorEvent,
     Field(discriminator="type"),
 ]
