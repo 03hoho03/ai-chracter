@@ -20,6 +20,7 @@ import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
+import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as ChatTypeIdRouteImport } from './routes/chat.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
@@ -79,6 +80,11 @@ const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
   path: '/onboarding/google',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
+  id: '/chat/$roomId',
+  path: '/chat/$roomId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContentTypeIdRoute = ContentTypeIdRouteImport.update({
   id: '/content/$type/$id',
   path: '/content/$type/$id',
@@ -105,6 +111,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/ui-demo': typeof UiDemoRoute
+  '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/ui-demo': typeof UiDemoRoute
+  '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -138,6 +146,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
   '/ui-demo': typeof UiDemoRoute
+  '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -156,6 +165,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/ui-demo'
+    | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
@@ -172,6 +182,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/ui-demo'
+    | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
@@ -188,6 +199,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/signup'
     | '/ui-demo'
+    | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/builder/$type/$draftId'
@@ -205,6 +217,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
   UiDemoRoute: typeof UiDemoRoute
+  ChatRoomIdRoute: typeof ChatRoomIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
@@ -291,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingGoogleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/chat/$roomId': {
+      id: '/chat/$roomId'
+      path: '/chat/$roomId'
+      fullPath: '/chat/$roomId'
+      preLoaderRoute: typeof ChatRoomIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/content/$type/$id': {
       id: '/content/$type/$id'
       path: '/content/$type/$id'
@@ -325,6 +345,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
   UiDemoRoute: UiDemoRoute,
+  ChatRoomIdRoute: ChatRoomIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,

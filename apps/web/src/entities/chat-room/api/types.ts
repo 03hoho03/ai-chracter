@@ -59,19 +59,24 @@ export type Ending = {
   endingHint?: string;
 };
 
+// US-055 — BE의 실제 ChatRoomResponse(캐릭터 챗, US-051)는 storyId가 아니라 contentId를 쓰고
+// contentType/name을 함께 내려준다. startingSetupId/contentVersion/contentSnapshot은 스토리 챗
+// 전용 필드라 아직 BE가 보내지 않는다(US-057 이전) — optional로 두고 캐릭터 챗에서는 그냥 비운다.
 export type ChatRoomState = {
   id: string;
-  storyId: string;
-  startingSetupId: string;
-  contentVersion: number; // 고정된 콘텐츠 버전
-  contentSnapshot: {
+  contentId: string;
+  contentType: "character" | "story";
+  name: string;
+  startingSetupId?: string;
+  contentVersion?: number; // 고정된 콘텐츠 버전
+  contentSnapshot?: {
     stats: StatDef[];
     endings: Ending[];
     shortcuts: Shortcut[];
     suggestedReplies: string[];
   };
   messages: ChatMessage[];
-  stats: Record<string, number>; // statId -> 현재값
+  stats: Record<string, number>; // statId -> 현재값 — 캐릭터 챗에서는 항상 빈 객체(techspec-chat-character.md §0)
   endingStatus: { reached: boolean; endingId: string | null; reachedAtTurn: number | null };
   turnCount: number;
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지

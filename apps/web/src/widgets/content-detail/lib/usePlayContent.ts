@@ -1,7 +1,9 @@
 import { useEffect, useRef } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { toast } from "sonner";
 
 import type { ContentType } from "../../../entities/content";
+import { useStartChatMutation } from "../../../entities/chat-room";
 import { useSessionQuery } from "../../../entities/session";
 import { useRawSearchParams } from "../../../shared/lib/hooks/useRawSearchParams";
 
@@ -12,18 +14,28 @@ interface UsePlayContentOptions {
 
 /**
  * techspec-content-detail.md §3 / techspec-chat-common.md §3 — 플레이 버튼의 로그인 유도 +
- * 복귀 후 자동 시작 로직. 대화방 생성 API(US-051 캐릭터 챗/US-057 스토리 챗)가 아직 없어
- * 실제 채팅 세션을 만들 수 없다 — 그 전까지는 `/chat/$type/$id`(ComingSoonPage 스텁)로 이동하는
- * 것까지만 책임진다. 그 스토리들이 실제 방 생성 뮤테이션으로 교체할 때 `start()` 내부
- * navigate 대상만 바꾸면 된다.
+ * 복귀 후 자동 시작 로직. 캐릭터 챗은 US-055부터 실제 대화방 생성(`useStartChatMutation`) 후
+ * `/chat/$roomId`로 이동한다. 스토리 챗은 방 생성 API가 아직 없어(US-057) 여전히
+ * `/chat/$type/$id`(ComingSoonPage 스텁)로 이동하는 것까지만 책임진다.
  */
 export function usePlayContent(contentId: string, contentType: ContentType, options?: UsePlayContentOptions) {
   const session = useSessionQuery();
   const navigate = useNavigate();
   const params = useRawSearchParams();
   const hasAutoStartedRef = useRef(false);
+  const startChatMutation = useStartChatMutation();
 
-  function start(startingSetupId?: string) {
+  async function start(startingSetupId?: string) {
+    if (contentType === "character") {
+      try {
+        const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
+        void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
+      } catch {
+        toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+      }
+      return;
+    }
+
     void navigate({
       to: "/chat/$type/$id",
       params: { type: contentType, id: contentId },
@@ -39,7 +51,7 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     if (!session.data) return; // 로그인 리다이렉트 복귀 경로라 이론상 항상 존재하지만 방어적으로 둔다.
     const restoredSetupId = params.get("startingSetupId") ?? undefined;
     if (restoredSetupId) options?.onRestoreSetup?.(restoredSetupId);
-    start(restoredSetupId);
+    void start(restoredSetupId);
   }, [session.isPending, session.data]);
 
   function handlePlay(startingSetupId?: string) {
@@ -52,7 +64,7 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       });
       return;
     }
-    start(startingSetupId);
+    void start(startingSetupId);
   }
 
   return { handlePlay };

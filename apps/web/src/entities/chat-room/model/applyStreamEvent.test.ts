@@ -10,7 +10,9 @@ const ROOM_ID = "room-1";
 function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
   return {
     id: ROOM_ID,
-    storyId: "story-1",
+    contentId: "story-1",
+    contentType: "story",
+    name: "대화 1",
     startingSetupId: "setup-1",
     contentVersion: 1,
     contentSnapshot: { stats: [], endings: [], shortcuts: [], suggestedReplies: [] },
