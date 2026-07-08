@@ -117,6 +117,14 @@ class ChatRoomListItem(CamelModel):
     created_at: datetime
 
 
+class EndingCollectionItem(CamelModel):
+    id: uuid.UUID
+    name: str
+    reached: bool
+    epilogue: str | None = None
+    hint: str | None = None
+
+
 class PlayGuideResponse(CamelModel):
     play_guide: str | None
 

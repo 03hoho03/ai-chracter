@@ -32,6 +32,7 @@ from api.chat.schemas import (
     ChatStatChangeEvent,
     ChatStreamEvent,
     ChatTokenEvent,
+    EndingCollectionItem,
     EndingRuleGroupItem,
     EndingRuleItem,
     EndingRuleListItem,
@@ -60,6 +61,10 @@ from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/chat-rooms", tags=["chat"])
+
+# `/stories/*`는 techspec-backend-chat.md §1에 `/chat-rooms/*`와 함께 나열돼 있지만 URL
+# prefix가 달라 같은 파일 안에 별도 APIRouter를 둔다 (`api/auth/router.py`의 `me_router`와 동일 패턴).
+stories_router = APIRouter(prefix="/stories", tags=["chat"])
 
 
 async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> ChatRoom:
@@ -639,3 +644,46 @@ async def delete_chat_room(
     await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
     await db.delete(room)
     await db.commit()
+
+
+@stories_router.get("/starting-setups/{starting_setup_id}/ending-collection")
+async def get_ending_collection(
+    starting_setup_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[EndingCollectionItem]:
+    """techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
+    `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
+    여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로
+    새 대화방을 만들어도 이전 기록이 유지되게 한다."""
+    setup = await db.get(StartingSetup, starting_setup_id)
+    if setup is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Starting setup not found")
+
+    endings = (
+        await db.scalars(
+            select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+        )
+    ).all()
+    if not endings:
+        return []
+
+    unlocked_entity_ids = set(
+        await db.scalars(
+            select(StoryEndingUnlock.ending_entity_id).where(
+                StoryEndingUnlock.user_id == user_id,
+                StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
+            )
+        )
+    )
+
+    return [
+        EndingCollectionItem(
+            id=ending.entity_id,
+            name=ending.name,
+            reached=ending.entity_id in unlocked_entity_ids,
+            epilogue=ending.epilogue if ending.entity_id in unlocked_entity_ids else None,
+            hint=ending.hint if ending.entity_id not in unlocked_entity_ids else None,
+        )
+        for ending in endings
+    ]

@@ -1790,6 +1790,54 @@
         }
       }
     },
+    "/stories/starting-setups/{starting_setup_id}/ending-collection": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Ending Collection",
+        "description": "techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의\n`startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달\n여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로\n새 대화방을 만들어도 이전 기록이 유지되게 한다.",
+        "operationId": "get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get",
+        "parameters": [
+          {
+            "name": "starting_setup_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Starting Setup Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/EndingCollectionItem"
+                  },
+                  "title": "Response Get Ending Collection Stories Starting Setups  Starting Setup Id  Ending Collection Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -2519,6 +2567,52 @@
           "updatedAt"
         ],
         "title": "DraftSummary"
+      },
+      "EndingCollectionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "reached": {
+            "type": "boolean",
+            "title": "Reached"
+          },
+          "epilogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epilogue"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "reached"
+        ],
+        "title": "EndingCollectionItem"
       },
       "EndingRuleGroupItem": {
         "properties": {

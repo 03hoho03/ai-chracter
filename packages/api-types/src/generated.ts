@@ -678,6 +678,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stories/starting-setups/{starting_setup_id}/ending-collection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ending Collection
+         * @description techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
+         *     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
+         *     여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로
+         *     새 대화방을 만들어도 이전 기록이 유지되게 한다.
+         */
+        get: operations["get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1005,6 +1028,22 @@ export interface components {
              * Format: date-time
              */
             updatedAt: string;
+        };
+        /** EndingCollectionItem */
+        EndingCollectionItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Reached */
+            reached: boolean;
+            /** Epilogue */
+            epilogue?: string | null;
+            /** Hint */
+            hint?: string | null;
         };
         /** EndingRuleGroupItem */
         EndingRuleGroupItem: {
@@ -2676,6 +2715,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                starting_setup_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EndingCollectionItem"][];
                 };
             };
             /** @description Validation Error */
