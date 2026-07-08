@@ -36,6 +36,7 @@ from api.chat.schemas import (
     EndingRuleItem,
     EndingRuleListItem,
     EndingSnapshot,
+    PlayGuideResponse,
     ShortcutSnapshot,
     StatDefSnapshot,
 )
@@ -352,6 +353,24 @@ async def get_chat_room(
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
     return await _to_response(db, room)
+
+
+@router.get("/{room_id}/play-guide")
+async def get_play_guide(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> PlayGuideResponse:
+    """방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —
+    contentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    setup = await _resolve_starting_setup(db, room)
+    if setup is not None:
+        return PlayGuideResponse(play_guide=setup.playguide)
+
+    detail = await db.get(CharacterVersionDetail, room.content_version_id)
+    assert detail is not None
+    return PlayGuideResponse(play_guide=detail.playguide)
 
 
 @router.post("/{room_id}/messages", response_class=EventSourceResponse)

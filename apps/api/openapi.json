@@ -1634,6 +1634,50 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/play-guide": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Play Guide",
+        "description": "방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —\ncontentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2).",
+        "operationId": "get_play_guide_chat_rooms__room_id__play_guide_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlayGuideResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/messages": {
       "post": {
         "tags": [
@@ -2937,6 +2981,26 @@
           "email"
         ],
         "title": "PasswordResetRequestRequest"
+      },
+      "PlayGuideResponse": {
+        "properties": {
+          "playGuide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playguide"
+          }
+        },
+        "type": "object",
+        "required": [
+          "playGuide"
+        ],
+        "title": "PlayGuideResponse"
       },
       "PresignedUploadRequest": {
         "properties": {

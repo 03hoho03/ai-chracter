@@ -614,6 +614,27 @@ export interface paths {
         patch: operations["rename_chat_room_chat_rooms__room_id__patch"];
         trace?: never;
     };
+    "/chat-rooms/{room_id}/play-guide": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Play Guide
+         * @description 방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —
+         *     contentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2).
+         */
+        get: operations["get_play_guide_chat_rooms__room_id__play_guide_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/messages": {
         parameters: {
             query?: never;
@@ -1183,6 +1204,11 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /** PlayGuideResponse */
+        PlayGuideResponse: {
+            /** Playguide */
+            playGuide: string | null;
         };
         /** PresignedUploadRequest */
         PresignedUploadRequest: {
@@ -2553,6 +2579,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_play_guide_chat_rooms__room_id__play_guide_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlayGuideResponse"];
                 };
             };
             /** @description Validation Error */

@@ -65,7 +65,12 @@ async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> 
 
 
 async def _make_published_character(
-    db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID, intro: str = "인트로"
+    db_session: AsyncSession,
+    *,
+    creator_user_id: uuid.UUID,
+    genre_id: uuid.UUID,
+    intro: str = "인트로",
+    playguide: str | None = None,
 ) -> Content:
     content = Content(
         creator_user_id=creator_user_id,
@@ -95,6 +100,7 @@ async def _make_published_character(
             intro=intro,
             example_dialogues=[],
             character_prompt="프롬프트",
+            playguide=playguide,
         )
     )
     await db_session.flush()
@@ -169,7 +175,12 @@ async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uu
 
 
 async def _add_starting_setup(
-    db_session: AsyncSession, content: Content, *, opening_message: str | None = "다시 만났네요!", order: int = 1
+    db_session: AsyncSession,
+    content: Content,
+    *,
+    opening_message: str | None = "다시 만났네요!",
+    order: int = 1,
+    playguide: str | None = None,
 ) -> StartingSetup:
     assert content.current_published_version_id is not None
     setup = StartingSetup(
@@ -178,6 +189,7 @@ async def _add_starting_setup(
         name="첫 만남",
         prologue="옛날 옛적, 낯선 마을에 도착했다.",
         opening_message=opening_message,
+        playguide=playguide,
         suggested_replies=["안녕하세요", "여긴 어디죠?"],
         order=order,
     )
@@ -688,3 +700,82 @@ async def test_delete_story_chat_room_removes_stats(
         await db_session.execute(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room_id))
     ).scalars().all()
     assert remaining == []
+
+
+async def test_get_play_guide_character_returns_pinned_version_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(
+        db_session, creator_user_id=user.id, genre_id=genre.id, playguide="이렇게 대화해보세요."
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (await _create_room_via_api(db_client, content.id)).json()["id"]
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}/play-guide")
+    assert resp.status_code == 200
+    assert resp.json() == {"playGuide": "이렇게 대화해보세요."}
+
+
+async def test_get_play_guide_character_without_playguide_returns_null(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (await _create_room_via_api(db_client, content.id)).json()["id"]
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}/play-guide")
+    assert resp.status_code == 200
+    assert resp.json() == {"playGuide": None}
+
+
+async def test_get_play_guide_story_returns_pinned_starting_setup_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story, playguide="스탯을 잘 관리하세요.")
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (
+        await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    ).json()["id"]
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}/play-guide")
+    assert resp.status_code == 200
+    assert resp.json() == {"playGuide": "스탯을 잘 관리하세요."}
+
+
+async def test_get_play_guide_requires_ownership(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    owner = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, other])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=owner.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, owner.id)
+    room_id = (await _create_room_via_api(db_client, content.id)).json()["id"]
+
+    await _login_as(db_client, other.id)
+    resp = await db_client.get(f"/chat-rooms/{room_id}/play-guide")
+    assert resp.status_code == 403
+
+    resp = await db_client.get(f"/chat-rooms/{uuid.uuid4()}/play-guide")
+    assert resp.status_code == 404

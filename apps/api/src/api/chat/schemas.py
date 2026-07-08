@@ -117,6 +117,10 @@ class ChatRoomListItem(CamelModel):
     created_at: datetime
 
 
+class PlayGuideResponse(CamelModel):
+    play_guide: str | None
+
+
 # SSE 이벤트 스키마 (techspec-backend-chat.md §2, techspec-chat-story.md §1.2가 유일한 정의처).
 class ChatTokenEvent(CamelModel):
     type: Literal["token"] = "token"
