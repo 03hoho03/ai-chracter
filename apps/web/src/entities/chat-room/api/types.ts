@@ -1,6 +1,10 @@
 // techspec-chat-story.md §1.1/§1.2, techspec-content-versioning.md §2 — 캐릭터/스토리 챗 공용 상태 모델.
 // StatDef/Shortcut/Ending은 techspec-builder-story.md §1.2/§1.4/§1.5의 스키마를 그대로 반영한다.
 
+import type { RuleListItem } from "../../../shared/lib/rule-engine/types";
+
+export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "../../../shared/lib/rule-engine/types";
+
 export type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -28,27 +32,6 @@ export type Shortcut = {
   description: string;
   prompt: string;
 };
-
-export type ComparisonOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
-export type LogicOp = "and" | "or";
-
-export type SingleRule = {
-  kind: "rule";
-  id: string;
-  statId: string;
-  operator: ComparisonOp;
-  value: number;
-  nextOp: LogicOp | null; // 목록의 마지막 항목이면 null(무시)
-};
-
-export type RuleGroup = {
-  kind: "group";
-  id: string;
-  rules: SingleRule[]; // 그룹 중첩 불가
-  nextOp: LogicOp | null;
-};
-
-export type RuleListItem = SingleRule | RuleGroup;
 
 export type Ending = {
   id: string;
