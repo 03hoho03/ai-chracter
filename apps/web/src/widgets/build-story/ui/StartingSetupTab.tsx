@@ -17,7 +17,10 @@ import { GripVertical, Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "../../../features/build-story";
+import {
+  reconcileKeywordNotesOnStartingSetupRemoval,
+  type StoryBuilderFormValues,
+} from "../../../features/build-story";
 
 /** techspec-builder-story.md §1.1 — 이름/프롤로그(필수), 시작상황(선택, 비어있으면 프롤로그가 첫
  * 메시지로 노출됨을 안내), 고급설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
@@ -190,9 +193,19 @@ function StartingSetupRow({
 /** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
  * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
 export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
-  const { control } = form;
+  const { control, getValues, setValue } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
   const sensors = useSensors(useSensor(PointerSensor));
+
+  function handleRemove(index: number) {
+    const removedId = getValues(`startingSetups.${index}.id`);
+    setValue(
+      "keywordNotes",
+      reconcileKeywordNotesOnStartingSetupRemoval(getValues("keywordNotes"), removedId),
+      { shouldDirty: true },
+    );
+    remove(index);
+  }
 
   function handleDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
@@ -224,7 +237,7 @@ export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFor
                   id={field.id}
                   index={index}
                   form={form}
-                  onRemove={() => remove(index)}
+                  onRemove={() => handleRemove(index)}
                 />
               ))}
             </div>

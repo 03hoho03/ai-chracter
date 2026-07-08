@@ -6,6 +6,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { storyBuilderSchema, serverToForm, type StoryBuilderFormValues } from "../../../features/build-story";
 import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/activeTabAtom";
+import { KeywordNoteTab } from "./KeywordNoteTab";
 import { ProfileTab } from "./ProfileTab";
 import { SettingTab } from "./SettingTab";
 import { StartingSetupTab } from "./StartingSetupTab";
@@ -69,7 +70,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <StatTab form={form} />
         </TabsContent>
         <TabsContent value="keywordNote">
-          <TabPlaceholder />
+          <KeywordNoteTab form={form} />
         </TabsContent>
         <TabsContent value="shortcut">
           <TabPlaceholder />
