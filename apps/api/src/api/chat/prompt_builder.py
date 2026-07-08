@@ -2,6 +2,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import StatDef, StoryPromptTemplate
 
@@ -168,3 +169,47 @@ class EndingJudgmentResult(BaseModel):
     """techspec-backend-chat.md §3.1 판단용 response_schema — 엔딩 판정."""
 
     triggered: bool
+
+
+def build_image_judgment_prompt(
+    *,
+    situational_images: list[SituationalImage],
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> str:
+    """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 상황별 이미지 매칭(캐릭터 챗 전용).
+
+    등록된 이미지의 노출 조건(trigger_condition)과 이번 턴까지의 대화를 근거로
+    LLMClient.generateStructured()가 ImageMatchJudgmentResult(구조화 출력)로 매칭되는 이미지가
+    있는지 판단하게 한다. 목록을 order 오름차순으로 제시하고, 여러 조건이 동시에 충족돼도
+    응답은 항상 단수이므로 더 앞(우선순위가 높은) 이미지 하나만 고르도록 명시적으로 지시한다
+    (techspec-chat-character.md §1.1 "동시 매칭 처리").
+    """
+    image_lines = "\n".join(
+        f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}"
+        for image in situational_images
+    )
+
+    turn_lines = [
+        f"{'사용자' if message.role == ChatMessageRole.USER else '캐릭터'}: {message.content}"
+        for message in history
+    ]
+    turn_lines.append(f"사용자: {user_message}")
+    turn_lines.append(f"캐릭터: {assistant_message}")
+
+    return (
+        "다음은 이 캐릭터에 등록된 상황별 이미지 목록이다(우선순위가 높은 순서로 나열됨).\n"
+        f"{image_lines}\n\n"
+        "[대화 기록]\n" + "\n".join(turn_lines) + "\n\n"
+        "위 대화, 특히 마지막 사용자 행동과 그에 대한 캐릭터의 응답을 근거로 이번 턴에 노출 "
+        "조건이 충족된 이미지가 있는지 판단하라. 여러 이미지의 조건이 동시에 충족되면 목록에서 "
+        "더 앞에 있는(우선순위가 높은) 이미지 하나만 선택하라. 조건을 충족하는 이미지가 없으면 "
+        "matchedImageEntityId를 null로 응답하라."
+    )
+
+
+class ImageMatchJudgmentResult(BaseModel):
+    """techspec-backend-chat.md §3.1 판단용 response_schema — 상황별 이미지 매칭(캐릭터 챗 전용)."""
+
+    matched_image_entity_id: str | None

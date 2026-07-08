@@ -8,9 +8,11 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.db.models import (
     Asset,
     AssetKind,
+    CharacterImageExposure,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -22,6 +24,7 @@ from api.db.models import (
     ContentVisibility,
     Genre,
     ModerationStatus,
+    SituationalImage,
     User,
 )
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
@@ -102,11 +105,42 @@ async def _create_room_via_api(client: httpx.AsyncClient, content_id: uuid.UUID)
     return await client.post("/chat-rooms", json={"contentId": str(content_id), "contentType": "character"})
 
 
+async def _make_situational_image(
+    db_session: AsyncSession,
+    *,
+    content_version_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    order: int,
+    trigger_condition: str = "조건",
+) -> SituationalImage:
+    image_asset = await _make_asset(db_session, owner_user_id=owner_user_id)
+    blurred_asset = await _make_asset(db_session, owner_user_id=owner_user_id)
+    situational_image = SituationalImage(
+        entity_id=uuid.uuid4(),
+        content_version_id=content_version_id,
+        image_asset_id=image_asset.id,
+        blurred_asset_id=blurred_asset.id,
+        trigger_condition=trigger_condition,
+        order=order,
+    )
+    db_session.add(situational_image)
+    await db_session.flush()
+    return situational_image
+
+
 class _FakeLLMClient(LLMClient):
-    def __init__(self, tokens: list[str] | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        tokens: list[str] | None = None,
+        error: Exception | None = None,
+        structured_result: ImageMatchJudgmentResult | None = None,
+    ) -> None:
         self.tokens = tokens or []
         self.error = error
+        self.structured_result = structured_result
         self.received_prompt: str | None = None
+        self.received_judgment_prompt: str | None = None
+        self.generate_structured_called = False
 
     async def generate(self, prompt: str) -> AsyncIterator[str]:
         self.received_prompt = prompt
@@ -116,7 +150,11 @@ class _FakeLLMClient(LLMClient):
             yield token
 
     async def generate_structured(self, prompt: str, response_schema: Any) -> Any:
-        raise NotImplementedError
+        self.generate_structured_called = True
+        self.received_judgment_prompt = prompt
+        if self.structured_result is None:
+            raise NotImplementedError
+        return self.structured_result
 
 
 def _override_llm_client(fake: _FakeLLMClient) -> None:
@@ -313,3 +351,193 @@ async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
     ).scalars().all()
     assert len(messages) == 1
     assert messages[0].content == "안녕"
+
+
+async def test_send_message_no_situational_images_skips_judgment_call(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert not fake.generate_structured_called
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] is None
+
+
+async def test_send_message_matched_situational_image_included_in_done_event_and_records_exposure(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    low_priority = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=1
+    )
+    high_priority = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(high_priority.entity_id)),
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안아줘"})
+    finally:
+        _clear_llm_override()
+
+    assert fake.generate_structured_called
+    # 우선순위(order)가 낮은(=높은 우선순위) 이미지가 먼저 나열되어야 한다(동시 매칭 시
+    # 최상위 하나만 고르도록 유도하는 프롬프트 지시, techspec-chat-character.md §1.1).
+    assert fake.received_judgment_prompt is not None
+    assert fake.received_judgment_prompt.index(str(high_priority.entity_id)) < fake.received_judgment_prompt.index(
+        str(low_priority.entity_id)
+    )
+
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] == str(high_priority.entity_id)
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert len(exposures) == 1
+    assert exposures[0].user_id == user.id
+    assert exposures[0].image_entity_id == high_priority.entity_id
+
+
+async def test_send_message_no_matched_image_returns_null_imageid_and_no_exposure(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    await _make_situational_image(db_session, content_version_id=version_id, owner_user_id=user.id, order=0)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"], structured_result=ImageMatchJudgmentResult(matched_image_entity_id=None)
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert fake.generate_structured_called
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] is None
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert exposures == []
+
+
+async def test_send_message_hallucinated_image_entity_id_is_ignored(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    await _make_situational_image(db_session, content_version_id=version_id, owner_user_id=user.id, order=0)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(uuid.uuid4())),
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] is None
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert exposures == []
+
+
+async def test_send_message_repeated_match_does_not_duplicate_exposure_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    for _ in range(2):
+        fake = _FakeLLMClient(
+            tokens=["안녕"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+        )
+        _override_llm_client(fake)
+        try:
+            resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "또 안아줘"})
+        finally:
+            _clear_llm_override()
+        assert resp.status_code == 200
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert len(exposures) == 1
+    assert exposures[0].image_entity_id == image.entity_id

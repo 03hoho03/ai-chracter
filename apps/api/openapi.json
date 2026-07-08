@@ -1738,7 +1738,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정\n프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단과\n엔딩 판정(§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 —\n캐릭터 챗에는 이 판단 단계가 없다. 최초 엔딩 도달(room.ending_reached) 이후로는 이\n판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.",
+        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정\n프롤로그로 생성 프롬프트를 조립한다(§3.1). 생성 완료 후 판단 단계(§3.1\nbuildJudgmentPrompt+generateStructured)를 매 턴 추가로 호출하는데, 캐릭터 챗은 상황별\n이미지 매칭만(US-072, 결과는 done 이벤트의 finalMessage.imageId), 스토리 챗은 스탯 변경과\n엔딩 판정만 수행한다 — 서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달\n(room.ending_reached) 이후로는 이 판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) —\n메시지 생성 자체는 계속 허용.",
         "operationId": "send_message_chat_rooms__room_id__messages_post",
         "parameters": [
           {
@@ -2016,6 +2016,18 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "imageId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageid"
           }
         },
         "type": "object",

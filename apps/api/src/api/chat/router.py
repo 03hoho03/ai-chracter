@@ -11,9 +11,11 @@ from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
+    ImageMatchJudgmentResult,
     StatJudgmentResult,
     build_ending_judgment_prompt,
     build_generation_prompt,
+    build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
 )
@@ -42,8 +44,15 @@ from api.chat.schemas import (
     StatDefSnapshot,
 )
 from api.chat.stats import StatChange, apply_stat_changes
-from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat, StoryEndingUnlock
+from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.db.models.chat import (
+    CharacterImageExposure,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomStat,
+    StoryEndingUnlock,
+)
 from api.db.models.content import Content, ContentType
 from api.db.models.story import (
     Ending,
@@ -245,6 +254,66 @@ async def _build_content_snapshot(
     )
 
 
+async def _match_situational_image(
+    db: AsyncSession,
+    room: ChatRoom,
+    llm_client: LLMClient,
+    *,
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> uuid.UUID | None:
+    """캐릭터 챗 전용 상황별 이미지 매칭(techspec-chat-character.md §1.1, techspec-backend-chat.md
+    §3.1). 등록된 이미지가 없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상
+    단수라 "동시 매칭 시 order 최상위만 발동"은 buildJudgmentPrompt의 프롬프트 지시로 처리하고,
+    여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다."""
+    situational_images = list(
+        (
+            await db.scalars(
+                select(SituationalImage)
+                .where(SituationalImage.content_version_id == room.content_version_id)
+                .order_by(SituationalImage.order)
+            )
+        ).all()
+    )
+    if not situational_images:
+        return None
+
+    judgment_prompt = build_image_judgment_prompt(
+        situational_images=situational_images,
+        history=history,
+        user_message=user_message,
+        assistant_message=assistant_message,
+    )
+    judgment = await llm_client.generate_structured(judgment_prompt, ImageMatchJudgmentResult)
+    if judgment.matched_image_entity_id is None:
+        return None
+
+    matched = next(
+        (image for image in situational_images if str(image.entity_id) == judgment.matched_image_entity_id),
+        None,
+    )
+    if matched is None:
+        return None
+
+    existing_exposure = await db.scalar(
+        select(CharacterImageExposure).where(
+            CharacterImageExposure.user_id == room.user_id,
+            CharacterImageExposure.content_id == room.content_id,
+            CharacterImageExposure.image_entity_id == matched.entity_id,
+        )
+    )
+    if existing_exposure is None:
+        db.add(
+            CharacterImageExposure(
+                user_id=room.user_id,
+                content_id=room.content_id,
+                image_entity_id=matched.entity_id,
+            )
+        )
+    return matched.entity_id
+
+
 async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatMessage:
     if setup is not None:
         opening_text = setup.opening_message or setup.prologue
@@ -390,10 +459,12 @@ async def send_message(
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
 
     캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
-    프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단과
-    엔딩 판정(§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 —
-    캐릭터 챗에는 이 판단 단계가 없다. 최초 엔딩 도달(room.ending_reached) 이후로는 이
-    판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
+    프롤로그로 생성 프롬프트를 조립한다(§3.1). 생성 완료 후 판단 단계(§3.1
+    buildJudgmentPrompt+generateStructured)를 매 턴 추가로 호출하는데, 캐릭터 챗은 상황별
+    이미지 매칭만(US-072, 결과는 done 이벤트의 finalMessage.imageId), 스토리 챗은 스탯 변경과
+    엔딩 판정만 수행한다 — 서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달
+    (room.ending_reached) 이후로는 이 판단 단계 전체(스탯/엔딩 모두)가 중단된다(FR-41) —
+    메시지 생성 자체는 계속 허용.
     """
     setup = await _resolve_starting_setup(db, room)
 
@@ -468,6 +539,7 @@ async def send_message(
 
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
+    matched_image_entity_id: uuid.UUID | None = None
     if setup is not None and not room.ending_reached:
         stat_defs = list(
             (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
@@ -543,6 +615,15 @@ async def send_message(
                 )
             ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
             break
+    elif setup is None:
+        matched_image_entity_id = await _match_situational_image(
+            db,
+            room,
+            llm_client,
+            history=history,
+            user_message=payload.content,
+            assistant_message=assistant_content,
+        )
 
     await db.commit()
 
@@ -558,6 +639,7 @@ async def send_message(
             role=assistant_message.role,
             content=assistant_message.content,
             created_at=assistant_message.created_at,
+            image_id=matched_image_entity_id,
         )
     )
 

@@ -3,9 +3,11 @@ import uuid
 from api.chat.prompt_builder import (
     build_ending_judgment_prompt,
     build_generation_prompt,
+    build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
 )
+from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import StatDef, StoryPromptTemplate
 
@@ -30,6 +32,19 @@ def _stat_def(**overrides: object) -> StatDef:
     }
     defaults.update(overrides)
     return StatDef(**defaults)
+
+
+def _situational_image(**overrides: object) -> SituationalImage:
+    defaults: dict[str, object] = {
+        "entity_id": uuid.uuid4(),
+        "content_version_id": uuid.uuid4(),
+        "image_asset_id": uuid.uuid4(),
+        "blurred_asset_id": uuid.uuid4(),
+        "trigger_condition": "캐릭터가 웃을 때",
+        "order": 1,
+    }
+    defaults.update(overrides)
+    return SituationalImage(**defaults)
 
 
 def test_build_generation_prompt_includes_character_prompt_only_when_no_extras() -> None:
@@ -245,6 +260,39 @@ def test_build_stat_judgment_prompt_includes_history_before_this_turn() -> None:
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
     assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+
+
+def test_build_image_judgment_prompt_lists_images_in_order_with_trigger_conditions() -> None:
+    low_priority = _situational_image(order=1, trigger_condition="캐릭터가 화날 때")
+    high_priority = _situational_image(order=0, trigger_condition="캐릭터가 웃을 때")
+
+    prompt = build_image_judgment_prompt(
+        situational_images=[low_priority, high_priority],
+        history=[],
+        user_message="재밌는 얘기 해줘",
+        assistant_message="하하, 정말 웃기지 않아?",
+    )
+
+    # 인자 순서와 무관하게, 호출부가 넘긴 순서(=order로 미리 정렬된 순서)를 그대로 나열한다.
+    assert prompt.index(str(low_priority.entity_id)) < prompt.index(str(high_priority.entity_id))
+    assert f"imageEntityId={low_priority.entity_id}, 노출 조건=캐릭터가 화날 때" in prompt
+    assert f"imageEntityId={high_priority.entity_id}, 노출 조건=캐릭터가 웃을 때" in prompt
+    assert "재밌는 얘기 해줘" in prompt
+    assert "하하, 정말 웃기지 않아?" in prompt
+
+
+def test_build_image_judgment_prompt_includes_history_before_this_turn() -> None:
+    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+
+    prompt = build_image_judgment_prompt(
+        situational_images=[_situational_image()],
+        history=history,
+        user_message="이번 메시지",
+        assistant_message="이번 응답",
+    )
+
+    history_section = prompt.split("[대화 기록]\n", 1)[1]
+    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "캐릭터: 이번 응답"]
 
 
 def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:

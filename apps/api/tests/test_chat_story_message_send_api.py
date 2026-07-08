@@ -24,6 +24,7 @@ from api.db.models import (
     KeywordNote,
     ModerationStatus,
     Shortcut,
+    SituationalImage,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -159,6 +160,7 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.received_judgment_prompt: str | None = None
         self.generate_structured_called = False
+        self.generate_structured_calls: list[Any] = []
 
     async def generate(self, prompt: str) -> AsyncIterator[str]:
         self.received_prompt = prompt
@@ -167,6 +169,7 @@ class _FakeLLMClient(LLMClient):
 
     async def generate_structured(self, prompt: str, response_schema: Any) -> Any:
         self.generate_structured_called = True
+        self.generate_structured_calls.append(response_schema)
         self.received_judgment_prompt = prompt
         assert self.structured_result is not None
         return self.structured_result
@@ -603,3 +606,48 @@ async def test_send_message_character_room_does_not_call_generate_structured(
         await db_session.execute(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room_id))
     ).scalars().all()
     assert stat_rows == []
+
+
+async def test_send_message_story_room_ignores_situational_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-072 AC4: 스토리 챗은 상황별 이미지 매칭 판단 단계 자체가 호출되지 않는다 — 같은
+    content_version_id에 SituationalImage(캐릭터 전용 개념)가 등록돼 있어도 무관하다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50)
+    assert content.current_published_version_id is not None
+    image_asset = await _make_asset(db_session, owner_user_id=user.id)
+    blurred_asset = await _make_asset(db_session, owner_user_id=user.id)
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=content.current_published_version_id,
+            image_asset_id=image_asset.id,
+            blurred_asset_id=blurred_asset.id,
+            trigger_condition="조건",
+            order=0,
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    # 스탯 판단 한 번만 호출되고, 이미지 매칭 판단은 추가로 호출되지 않는다.
+    assert fake.generate_structured_calls == [StatJudgmentResult]
+
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] is None
