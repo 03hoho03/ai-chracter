@@ -4,4 +4,5 @@ export const chatRoomKeys = {
   list: (params: { contentId: string; contentType: "character" | "story" }) =>
     [...chatRoomKeys.all, "list", params] as const,
   detail: (roomId: string) => [...chatRoomKeys.all, "detail", roomId] as const,
+  playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
 };

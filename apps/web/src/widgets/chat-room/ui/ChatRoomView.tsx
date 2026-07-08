@@ -9,6 +9,7 @@ import { useChatRoomQuery } from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
+import { ChatMorePanel } from "../../chat-more-panel";
 import { EndingDivider, MessageBubble, TypingIndicator } from "./MessageBubble";
 import { StatGaugePanel } from "./StatGaugePanel";
 
@@ -88,10 +89,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           <AvatarImage src={content?.thumbnailUrl ?? undefined} alt="" />
           <AvatarFallback>{content?.name.slice(0, 1) ?? "?"}</AvatarFallback>
         </Avatar>
-        <div className="flex min-w-0 flex-col">
+        <div className="flex min-w-0 flex-1 flex-col">
           <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
           <span className="truncate text-xs text-muted-foreground">{room.name}</span>
         </div>
+        <ChatMorePanel roomId={roomId} contentType={room.contentType} />
       </header>
 
       {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
