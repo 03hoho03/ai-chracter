@@ -1,7 +1,8 @@
 import type { ApiError } from "@ai-character-chat/api-types";
 import axios, { type AxiosError } from "axios";
 
-const baseURL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
+const baseURL = apiBaseUrl;
 
 /**
  * 인증은 httpOnly 세션 쿠키로 처리되어 브라우저가 요청마다 자동으로 쿠키를
