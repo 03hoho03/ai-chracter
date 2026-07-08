@@ -1,21 +1,127 @@
+import { useEffect, useState } from "react";
+import { Button } from "@ai-character-chat/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@ai-character-chat/ui/components/dropdown-menu";
+import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Sparkles } from "lucide-react";
+import { MoreHorizontal, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
 
 import type { ChatMessage } from "../../../entities/chat-room";
 
-export function MessageBubble({ message }: { message: ChatMessage }) {
+type MessageBubbleProps = {
+  message: ChatMessage;
+  // US-077 — 재생성/수정/삭제 액션. 세 콜백 모두 optional인 이유는 스트리밍 중 임시 버블
+  // (streaming/ending-epilogue, ChatRoomView.tsx 참고)에는 실제 messageId가 없어 어떤 액션도
+  // 붙일 수 없기 때문 — onDelete가 없으면 "⋯" 메뉴 자체를 렌더링하지 않는다.
+  canRegenerate?: boolean;
+  isEditing?: boolean;
+  disabled?: boolean;
+  onRegenerate?: () => void;
+  onStartEdit?: () => void;
+  onCancelEdit?: () => void;
+  onSaveEdit?: (text: string) => void;
+  onDelete?: () => void;
+};
+
+export function MessageBubble({
+  message,
+  canRegenerate = false,
+  isEditing = false,
+  disabled = false,
+  onRegenerate,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
+}: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const [draft, setDraft] = useState(message.content);
+
+  useEffect(() => {
+    if (isEditing) setDraft(message.content);
+  }, [isEditing, message.content]);
+
+  if (isEditing) {
+    const trimmed = draft.trim();
+    return (
+      <div className="flex flex-col items-end gap-1.5">
+        <Textarea
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              if (trimmed) onSaveEdit?.(trimmed);
+            } else if (event.key === "Escape") {
+              onCancelEdit?.();
+            }
+          }}
+          autoFocus
+          rows={2}
+          className="max-w-[75%] resize-none"
+        />
+        <div className="flex gap-2">
+          <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit}>
+            취소
+          </Button>
+          <Button type="button" size="sm" disabled={!trimmed} onClick={() => onSaveEdit?.(trimmed)}>
+            저장
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={cn("flex flex-col gap-1.5", isUser ? "items-end" : "items-start")}>
-      <p
-        className={cn(
-          "max-w-[75%] whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm leading-relaxed",
-          isUser ? "bg-primary text-primary-foreground" : "bg-card text-foreground",
+      <div className={cn("flex items-end gap-1", isUser ? "flex-row-reverse" : "flex-row")}>
+        <p
+          className={cn(
+            "max-w-[75%] whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm leading-relaxed",
+            isUser ? "bg-primary text-primary-foreground" : "bg-card text-foreground",
+          )}
+        >
+          {message.content}
+        </p>
+        {onDelete && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                aria-label="메시지 옵션"
+                disabled={disabled}
+                className="text-muted-foreground"
+              >
+                <MoreHorizontal aria-hidden />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align={isUser ? "end" : "start"}>
+              {canRegenerate && onRegenerate && (
+                <DropdownMenuItem onSelect={onRegenerate}>
+                  <RotateCw aria-hidden />
+                  다시 생성
+                </DropdownMenuItem>
+              )}
+              {isUser && onStartEdit && (
+                <DropdownMenuItem onSelect={onStartEdit}>
+                  <Pencil aria-hidden />
+                  수정
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                <Trash2 aria-hidden />
+                삭제
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         )}
-      >
-        {message.content}
-      </p>
+      </div>
       {message.imageUrl && (
         // US-073 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). max-w/max-h만 지정하면
         // object-fit 없이도 브라우저가 원본 비율을 유지한 채 그 안에 맞춰 축소한다.

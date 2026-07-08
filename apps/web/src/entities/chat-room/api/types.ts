@@ -95,7 +95,16 @@ export type ChatStreamEvent =
   | { type: "error"; message: string }; // 캐시 변경 없음(techspec-chat-common.md §1)
 
 export type SendMessageRequest = {
+  kind: "send";
   roomId: string;
   content: string;
   shortcutId: string | null;
 };
+
+// US-077 — 재생성/수정도 send와 동일하게 SSE로 열리므로, openChatStream이 메서드/URL/바디를
+// 분기할 수 있도록 kind로 식별되는 요청 셋을 이룬다(techspec-chat-common.md §2.1).
+export type RegenerateRequest = { kind: "regenerate"; roomId: string };
+
+export type EditMessageRequest = { kind: "edit"; roomId: string; messageId: string; content: string };
+
+export type ChatStreamRequest = SendMessageRequest | RegenerateRequest | EditMessageRequest;

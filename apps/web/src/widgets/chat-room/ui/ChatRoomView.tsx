@@ -3,9 +3,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/compo
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ArrowLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { toast } from "sonner";
 
 import type { Shortcut } from "../../../entities/chat-room";
-import { useChatRoomQuery } from "../../../entities/chat-room";
+import { useChatRoomQuery, useDeleteMessageMutation } from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
@@ -33,10 +34,21 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
-  const { send, retry, isSending, error, policyWarning, streamingText } = useSendMessage(roomId, characterId);
+  const { send, retry, regenerate, editMessage, isSending, error, policyWarning, streamingText } = useSendMessage(
+    roomId,
+    characterId,
+  );
+  const deleteMessageMutation = useDeleteMessageMutation(roomId);
   const [text, setText] = useState("");
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  function handleDeleteMessage(messageId: string) {
+    deleteMessageMutation.mutate(messageId, {
+      onError: () => toast.error("메시지 삭제에 실패했어요. 잠시 후 다시 시도해주세요."),
+    });
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
@@ -106,9 +118,26 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
       <div className="flex-1 overflow-y-auto px-4 py-4">
         <div className="flex flex-col gap-3">
-          {room.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))}
+          {room.messages.map((message, index) => {
+            const isLastMessage = index === room.messages.length - 1;
+            return (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                disabled={isSending}
+                isEditing={editingMessageId === message.id}
+                canRegenerate={isLastMessage && message.role === "assistant" && room.messages.length >= 2}
+                onRegenerate={isLastMessage && message.role === "assistant" ? regenerate : undefined}
+                onStartEdit={message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
+                onCancelEdit={() => setEditingMessageId(null)}
+                onSaveEdit={(newText) => {
+                  editMessage(message.id, newText);
+                  setEditingMessageId(null);
+                }}
+                onDelete={() => handleDeleteMessage(message.id)}
+              />
+            );
+          })}
 
           {room.endingStatus.reached && room.endingStatus.epilogue && (
             <>
