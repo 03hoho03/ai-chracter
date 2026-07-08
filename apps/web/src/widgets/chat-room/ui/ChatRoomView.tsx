@@ -4,9 +4,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ArrowLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
 
+import type { Shortcut } from "../../../entities/chat-room";
 import { useChatRoomQuery } from "../../../entities/chat-room";
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
+import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
 import { EndingDivider, MessageBubble, TypingIndicator } from "./MessageBubble";
 import { StatGaugePanel } from "./StatGaugePanel";
 
@@ -47,6 +49,17 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     if (!trimmed || isSending) return;
     send(trimmed);
     setText("");
+  }
+
+  function handleShortcutSelect(shortcut: Shortcut) {
+    if (isSending) return;
+    send(shortcut.prompt, shortcut.id);
+    setText("");
+  }
+
+  function handleSuggestedReplyClick(reply: string) {
+    if (isSending) return;
+    send(reply);
   }
 
   if (roomQuery.isPending) {
@@ -129,22 +142,49 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       </div>
 
       <div className="shrink-0 border-t border-border bg-background p-3">
+        {room.contentSnapshot && room.contentSnapshot.suggestedReplies.length > 0 && (
+          <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
+            {room.contentSnapshot.suggestedReplies.map((reply) => (
+              <Button
+                key={reply}
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={isSending}
+                onClick={() => handleSuggestedReplyClick(reply)}
+                className="shrink-0 rounded-full"
+              >
+                {reply}
+              </Button>
+            ))}
+          </div>
+        )}
+
         <div className="flex items-end gap-2">
-          <Textarea
-            ref={inputRef}
-            value={text}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey) {
-                event.preventDefault();
-                handleSend();
-              }
-            }}
-            placeholder="메시지를 입력하세요"
-            disabled={isSending}
-            rows={1}
-            className="max-h-40 resize-none"
-          />
+          <div className="relative flex-1">
+            <Textarea
+              ref={inputRef}
+              value={text}
+              onChange={(event) => setText(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && !event.shiftKey) {
+                  event.preventDefault();
+                  handleSend();
+                }
+              }}
+              placeholder="메시지를 입력하세요"
+              disabled={isSending}
+              rows={1}
+              className="max-h-40 resize-none"
+            />
+            {room.contentSnapshot && text.startsWith("/") && (
+              <ShortcutAutocomplete
+                shortcuts={room.contentSnapshot.shortcuts}
+                query={text.slice(1)}
+                onSelect={handleShortcutSelect}
+              />
+            )}
+          </div>
           <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
             <Send aria-hidden className="size-4" />
           </Button>
