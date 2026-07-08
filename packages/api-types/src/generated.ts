@@ -673,6 +673,27 @@ export interface paths {
         patch: operations["mark_notification_read_notifications__notification_id__read_patch"];
         trace?: never;
     };
+    "/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Appeal
+         * @description techspec-backend-admin-moderation.md §1/§3. `target_kind='publish-rejection'`일 때
+         *     `target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다.
+         */
+        post: operations["create_appeal_appeals_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms": {
         parameters: {
             query?: never;
@@ -966,6 +987,36 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AppealCreateRequest */
+        AppealCreateRequest: {
+            targetKind: components["schemas"]["AppealTargetKind"];
+            /**
+             * Targetid
+             * Format: uuid
+             */
+            targetId: string;
+            /** Reasontext */
+            reasonText: string;
+        };
+        /** AppealResponse */
+        AppealResponse: {
+            /**
+             * Appealid
+             * Format: uuid
+             */
+            appealId: string;
+            status: components["schemas"]["AppealStatus"];
+        };
+        /**
+         * AppealStatus
+         * @enum {string}
+         */
+        AppealStatus: "pending" | "resolved";
+        /**
+         * AppealTargetKind
+         * @enum {string}
+         */
+        AppealTargetKind: "publish-rejection" | "moderation-action";
         /** AssetCompleteResponse */
         AssetCompleteResponse: {
             /**
@@ -3327,6 +3378,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NotificationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_appeal_appeals_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppealCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AppealResponse"];
                 };
             };
             /** @description Validation Error */

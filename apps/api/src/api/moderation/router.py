@@ -4,9 +4,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.moderation import Notification
+from api.db.models.moderation import Appeal, AppealStatus, Notification
 from api.db.session import get_db_session
-from api.moderation.schemas import NotificationResponse
+from api.moderation.schemas import AppealCreateRequest, AppealResponse, NotificationResponse
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(tags=["moderation"])
@@ -58,3 +58,24 @@ async def mark_notification_read(
     await db.commit()
 
     return _to_response(notification)
+
+
+@router.post("/appeals", status_code=status.HTTP_201_CREATED)
+async def create_appeal(
+    body: AppealCreateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AppealResponse:
+    """techspec-backend-admin-moderation.md §1/§3. `target_kind='publish-rejection'`일 때
+    `target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다."""
+    appeal = Appeal(
+        user_id=user_id,
+        target_kind=body.target_kind,
+        target_id=body.target_id,
+        reason_text=body.reason_text,
+        status=AppealStatus.PENDING,
+    )
+    db.add(appeal)
+    await db.commit()
+
+    return AppealResponse(appeal_id=appeal.id, status=appeal.status)
