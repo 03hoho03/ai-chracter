@@ -184,6 +184,10 @@ class ContentPublishResponse(CamelModel):
     version_number: int
 
 
+class ContentVisibilityUpdateRequest(CamelModel):
+    visibility: ContentVisibility
+
+
 class StatDefDraftItem(CamelModel):
     id: uuid.UUID
     name: str

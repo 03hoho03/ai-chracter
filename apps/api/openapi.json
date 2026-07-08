@@ -1328,6 +1328,53 @@
         }
       }
     },
+    "/contents/{id}/visibility": {
+      "patch": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Update Content Visibility",
+        "description": "techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change\nendpoint; there is no delete API. Writes `Content.visibility` directly regardless of\ndraft/publish state, so the existing `Content.visibility == PUBLIC` filter already used\nby home/search/other-profile discovery queries excludes it immediately, matching\ntechspec-content-versioning.md §1's `canDiscoverPublicly`.",
+        "operationId": "update_content_visibility_contents__id__visibility_patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContentVisibilityUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/contents/{id}": {
       "get": {
         "tags": [
@@ -3563,6 +3610,18 @@
           "private"
         ],
         "title": "ContentVisibility"
+      },
+      "ContentVisibilityUpdateRequest": {
+        "properties": {
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "visibility"
+        ],
+        "title": "ContentVisibilityUpdateRequest"
       },
       "DraftSummary": {
         "properties": {

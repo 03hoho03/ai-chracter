@@ -32,6 +32,7 @@ from api.content.schemas import (
     ContentPublishResponse,
     ContentSummary,
     ContentVersionSummary,
+    ContentVisibilityUpdateRequest,
     DraftSummary,
     EndingDraftItem,
     EndingRuleDraftItem,
@@ -1386,6 +1387,28 @@ async def _publish_story_content(
 
     assert version.version_number is not None
     return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
+
+
+@router.patch("/contents/{id}/visibility", status_code=status.HTTP_204_NO_CONTENT)
+async def update_content_visibility(
+    id: uuid.UUID,
+    body: ContentVisibilityUpdateRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change
+    endpoint; there is no delete API. Writes `Content.visibility` directly regardless of
+    draft/publish state, so the existing `Content.visibility == PUBLIC` filter already used
+    by home/search/other-profile discovery queries excludes it immediately, matching
+    techspec-content-versioning.md §1's `canDiscoverPublicly`."""
+    content = await db.get(Content, id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    if content.creator_user_id != user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
+
+    content.visibility = body.visibility
+    await db.commit()
 
 
 def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:

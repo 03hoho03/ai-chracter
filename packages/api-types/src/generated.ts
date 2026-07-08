@@ -507,6 +507,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/contents/{id}/visibility": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Content Visibility
+         * @description techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change
+         *     endpoint; there is no delete API. Writes `Content.visibility` directly regardless of
+         *     draft/publish state, so the existing `Content.visibility == PUBLIC` filter already used
+         *     by home/search/other-profile discovery queries excludes it immediately, matching
+         *     techspec-content-versioning.md §1's `canDiscoverPublicly`.
+         */
+        patch: operations["update_content_visibility_contents__id__visibility_patch"];
+        trace?: never;
+    };
     "/contents/{id}": {
         parameters: {
             query?: never;
@@ -1376,6 +1400,10 @@ export interface components {
          * @enum {string}
          */
         ContentVisibility: "public" | "link" | "private";
+        /** ContentVisibilityUpdateRequest */
+        ContentVisibilityUpdateRequest: {
+            visibility: components["schemas"]["ContentVisibility"];
+        };
         /** DraftSummary */
         DraftSummary: {
             /**
@@ -3005,6 +3033,39 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ContentPublishResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_content_visibility_contents__id__visibility_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContentVisibilityUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
