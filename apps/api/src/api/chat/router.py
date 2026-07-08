@@ -927,6 +927,39 @@ async def reset_chat_room(
     return await _to_response(db, room)
 
 
+@router.post("/{room_id}/pin-latest-version")
+async def pin_latest_version(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomResponse:
+    """US-078, techspec-content-versioning.md §3. `messages`는 그대로 두고 방이 고정한
+    `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
+    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    content = await db.get(Content, room.content_id)
+    assert content is not None
+    if content.current_published_version_id is not None:
+        room.content_version_id = content.current_published_version_id
+    await db.commit()
+    return await _to_response(db, room)
+
+
+@router.post("/{room_id}/acknowledge-version-upgrade")
+async def acknowledge_version_upgrade(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomResponse:
+    """techspec-content-versioning.md §4. `GET /chat-rooms/{id}`는 순수 조회라 스스로
+    플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가
+    `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점)."""
+    room = await _get_owned_room(db, room_id, user_id)
+    room.version_auto_upgraded = False
+    await db.commit()
+    return await _to_response(db, room)
+
+
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_chat_room(
     room_id: uuid.UUID,

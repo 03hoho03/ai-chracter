@@ -754,6 +754,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/pin-latest-version": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pin Latest Version
+         * @description US-078, techspec-content-versioning.md §3. `messages`는 그대로 두고 방이 고정한
+         *     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
+         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상).
+         */
+        post: operations["pin_latest_version_chat_rooms__room_id__pin_latest_version_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Acknowledge Version Upgrade
+         * @description techspec-content-versioning.md §4. `GET /chat-rooms/{id}`는 순수 조회라 스스로
+         *     플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가
+         *     `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점).
+         */
+        post: operations["acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
         parameters: {
             query?: never;
@@ -2994,6 +3038,68 @@ export interface operations {
         };
     };
     reset_chat_room_chat_rooms__room_id__reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_latest_version_chat_rooms__room_id__pin_latest_version_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post: {
         parameters: {
             query?: never;
             header?: never;

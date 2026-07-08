@@ -433,6 +433,90 @@ async def test_delete_chat_room_removes_room_and_messages(
     assert remaining == []
 
 
+async def test_pin_latest_version_updates_pinned_version_and_preserves_messages(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="처음뵙겠습니다")
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    db_session.add(ChatMessage(chat_room_id=room_id, role=ChatMessageRole.USER, content="안녕"))
+    await db_session.commit()
+
+    new_version = await _publish_new_character_version(db_session, content)
+    await db_session.commit()
+
+    resp = await db_client.post(f"/chat-rooms/{room_id}/pin-latest-version")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["latestVersionAvailable"] is False
+    assert len(body["messages"]) == 2
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.content_version_id == new_version.id
+
+
+async def test_acknowledge_version_upgrade_resets_flag(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    room.version_auto_upgraded = True
+    await db_session.commit()
+
+    resp = await db_client.post(f"/chat-rooms/{room_id}/acknowledge-version-upgrade")
+    assert resp.status_code == 200
+    assert resp.json()["versionAutoUpgraded"] is False
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.version_auto_upgraded is False
+
+
+async def test_acknowledge_version_upgrade_get_does_not_reset_flag(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """techspec-content-versioning.md §4 — GET은 순수 조회라 스스로 플래그를 끄면 안 된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    room.version_auto_upgraded = True
+    await db_session.commit()
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert resp.status_code == 200
+    assert resp.json()["versionAutoUpgraded"] is True
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.version_auto_upgraded is True
+
+
 async def test_rename_reset_delete_require_ownership(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -451,6 +535,8 @@ async def test_rename_reset_delete_require_ownership(
     assert (await db_client.patch(f"/chat-rooms/{room_id}", json={"name": "훔친 이름"})).status_code == 403
     assert (await db_client.post(f"/chat-rooms/{room_id}/reset")).status_code == 403
     assert (await db_client.delete(f"/chat-rooms/{room_id}")).status_code == 403
+    assert (await db_client.post(f"/chat-rooms/{room_id}/pin-latest-version")).status_code == 403
+    assert (await db_client.post(f"/chat-rooms/{room_id}/acknowledge-version-upgrade")).status_code == 403
 
 
 async def test_create_story_chat_room_requires_starting_setup_id(
