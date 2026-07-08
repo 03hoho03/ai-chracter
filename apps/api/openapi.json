@@ -2071,6 +2071,60 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/change-starting-setup": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Change Starting Setup",
+        "description": "US-080, techspec-backend-chat.md §1. 기존 방은 그대로 두고, 선택한 시작설정으로 새\n대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행\n버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가\n없으므로(room.starting_setup_entity_id is None) 400으로 거부한다.",
+        "operationId": "change_starting_setup_chat_rooms__room_id__change_starting_setup_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeStartingSetupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
       "post": {
         "tags": [
@@ -2290,6 +2344,20 @@
           "newPassword"
         ],
         "title": "ChangePasswordRequest"
+      },
+      "ChangeStartingSetupRequest": {
+        "properties": {
+          "startingSetupId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Startingsetupid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "startingSetupId"
+        ],
+        "title": "ChangeStartingSetupRequest"
       },
       "ChatMessageCreateRequest": {
         "properties": {

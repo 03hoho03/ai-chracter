@@ -21,6 +21,7 @@ from api.chat.prompt_builder import (
     build_story_generation_prompt,
 )
 from api.chat.schemas import (
+    ChangeStartingSetupRequest,
     ChatDoneEvent,
     ChatEndingReachedEvent,
     ChatErrorEvent,
@@ -382,6 +383,41 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
     )
 
 
+async def _create_room(
+    db: AsyncSession, user_id: uuid.UUID, content: Content, setup: StartingSetup | None
+) -> ChatRoom:
+    """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`(US-080)가 공유하는
+    방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다."""
+    room = ChatRoom(
+        user_id=user_id,
+        content_id=content.id,
+        content_version_id=content.current_published_version_id,
+        starting_setup_entity_id=setup.entity_id if setup is not None else None,
+    )
+    db.add(room)
+    await db.flush()
+
+    if setup is not None:
+        await _seed_initial_stats(db, room, setup)
+
+    await _insert_opening_message(db, room, setup)
+    return room
+
+
+async def _resolve_setup_for_content(
+    db: AsyncSession, content: Content, starting_setup_id: uuid.UUID
+) -> StartingSetup:
+    setup = await db.scalar(
+        select(StartingSetup).where(
+            StartingSetup.id == starting_setup_id,
+            StartingSetup.content_version_id == content.current_published_version_id,
+        )
+    )
+    if setup is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid startingSetupId")
+    return setup
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_chat_room(
     payload: ChatRoomCreateRequest,
@@ -402,28 +438,9 @@ async def create_chat_room(
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST, detail="startingSetupId is required for story chat rooms"
             )
-        setup = await db.scalar(
-            select(StartingSetup).where(
-                StartingSetup.id == payload.starting_setup_id,
-                StartingSetup.content_version_id == content.current_published_version_id,
-            )
-        )
-        if setup is None:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid startingSetupId")
+        setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    room = ChatRoom(
-        user_id=user_id,
-        content_id=content.id,
-        content_version_id=content.current_published_version_id,
-        starting_setup_entity_id=setup.entity_id if setup is not None else None,
-    )
-    db.add(room)
-    await db.flush()
-
-    if setup is not None:
-        await _seed_initial_stats(db, room, setup)
-
-    await _insert_opening_message(db, room, setup)
+    room = await _create_room(db, user_id, content, setup)
     await db.commit()
 
     return await _to_response(db, room)
@@ -943,6 +960,34 @@ async def pin_latest_version(
         room.content_version_id = content.current_published_version_id
     await db.commit()
     return await _to_response(db, room)
+
+
+@router.post("/{room_id}/change-starting-setup", status_code=status.HTTP_201_CREATED)
+async def change_starting_setup(
+    room_id: uuid.UUID,
+    payload: ChangeStartingSetupRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomResponse:
+    """US-080, techspec-backend-chat.md §1. 기존 방은 그대로 두고, 선택한 시작설정으로 새
+    대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행
+    버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가
+    없으므로(room.starting_setup_entity_id is None) 400으로 거부한다."""
+    room = await _get_owned_room(db, room_id, user_id)
+    if room.starting_setup_entity_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="change-starting-setup is only available for story chat rooms",
+        )
+
+    content = await db.get(Content, room.content_id)
+    assert content is not None
+    setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
+
+    new_room = await _create_room(db, user_id, content, setup)
+    await db.commit()
+
+    return await _to_response(db, new_room)
 
 
 @router.post("/{room_id}/acknowledge-version-upgrade")

@@ -849,6 +849,113 @@ async def test_get_play_guide_story_returns_pinned_starting_setup_text(
     assert resp.json() == {"playGuide": "스탯을 잘 관리하세요."}
 
 
+async def test_change_starting_setup_creates_new_room_and_keeps_old_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    first_setup = await _add_starting_setup(db_session, story, opening_message="첫 시작", order=1)
+    second_setup = await _add_starting_setup(db_session, story, opening_message="다른 시작", order=2)
+    stat = await _add_stat_def(db_session, second_setup, initial_value=30)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    old_room_id = uuid.UUID(
+        (
+            await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=first_setup.id)
+        ).json()["id"]
+    )
+    db_session.add(ChatMessage(chat_room_id=old_room_id, role=ChatMessageRole.USER, content="안녕"))
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/chat-rooms/{old_room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["id"] != str(old_room_id)
+    assert body["contentId"] == str(story.id)
+    assert body["startingSetupId"] == str(second_setup.entity_id)
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["content"] == "다른 시작"
+    assert body["stats"] == {str(stat.entity_id): 30.0}
+
+    old_room = await db_session.get(ChatRoom, old_room_id)
+    assert old_room is not None
+    old_messages = (
+        await db_session.execute(sa.select(ChatMessage).where(ChatMessage.chat_room_id == old_room_id))
+    ).scalars().all()
+    assert len(old_messages) == 2
+
+
+async def test_change_starting_setup_rejects_character_chat_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (await _create_room_via_api(db_client, content.id)).json()["id"]
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(uuid.uuid4())}
+    )
+    assert resp.status_code == 400
+
+
+async def test_change_starting_setup_rejects_unknown_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (
+        await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    ).json()["id"]
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(uuid.uuid4())}
+    )
+    assert resp.status_code == 400
+
+
+async def test_change_starting_setup_requires_ownership(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, other])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=owner.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story)
+    await db_session.commit()
+
+    await _login_as(db_client, owner.id)
+    room_id = (
+        await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    ).json()["id"]
+
+    await _login_as(db_client, other.id)
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(setup.id)}
+    )
+    assert resp.status_code == 403
+
+
 async def test_get_play_guide_requires_ownership(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     owner = _make_user()
     other = _make_user()

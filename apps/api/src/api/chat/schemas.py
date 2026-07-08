@@ -29,6 +29,10 @@ class ChatRoomRenameRequest(CamelModel):
     name: str = Field(min_length=1)
 
 
+class ChangeStartingSetupRequest(CamelModel):
+    starting_setup_id: uuid.UUID
+
+
 class ChatMessageResponse(CamelModel):
     id: uuid.UUID
     role: ChatMessageRole
