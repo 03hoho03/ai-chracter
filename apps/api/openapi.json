@@ -2557,6 +2557,56 @@
         }
       }
     },
+    "/preview-sessions": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Start Preview Session",
+        "description": "techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever\n`formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)\nand is stored in Redis with no validation, mirroring autosave's unvalidated path.",
+        "operationId": "start_preview_session_preview_sessions_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CharacterDraftPayload"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StoryDraftPayload"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PreviewSessionStartResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -4582,6 +4632,19 @@
           "expiresAt"
         ],
         "title": "PresignedUploadResponse"
+      },
+      "PreviewSessionStartResponse": {
+        "properties": {
+          "previewSessionId": {
+            "type": "string",
+            "title": "Previewsessionid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "previewSessionId"
+        ],
+        "title": "PreviewSessionStartResponse"
       },
       "RegisterSituationalImageRequest": {
         "properties": {

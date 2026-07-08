@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
+from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType
@@ -153,6 +154,24 @@ class ImageArchiveItem(CamelModel):
 
 class PlayGuideResponse(CamelModel):
     play_guide: str | None
+
+
+# techspec-builder-common.md §3 — 빌더 미리보기 세션. 실제 ChatRoom과 형태는 비슷하지만
+# Postgres에 전혀 기록되지 않고 Redis에만 저장되는 별도 상태다(지표 미반영, TTL 자동 소멸).
+class PreviewSessionState(CamelModel):
+    """Redis에 그대로 직렬화되는 세션 상태. `payload`는 발행/자동저장과 동일한
+    formToServer 결과(검증 없이 그대로 저장, techspec-builder-common.md §3)이고,
+    `messages`/`stats`는 그 payload로부터 계산한 첫 턴 상태(오프닝 메시지/스탯 초기값)다."""
+
+    payload: CharacterDraftPayload | StoryDraftPayload
+    messages: list[ChatMessageResponse]
+    stats: dict[str, float]
+    turn_count: int = 0
+    ending_reached: bool = False
+
+
+class PreviewSessionStartResponse(CamelModel):
+    preview_session_id: str
 
 
 # SSE 이벤트 스키마 (techspec-backend-chat.md §2, techspec-chat-story.md §1.2가 유일한 정의처).

@@ -45,5 +45,9 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
     gemini_model_name: str = "gemini-2.5-flash"
 
+    # techspec-builder-common.md §3: 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
+    # 마지막 활동 기준 TTL — 확정값 24시간.
+    preview_session_ttl_seconds: int = 60 * 60 * 24
+
 
 settings = Settings()

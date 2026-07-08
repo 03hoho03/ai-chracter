@@ -1,5 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
+from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -10,6 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.preview_session import create_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -44,10 +46,13 @@ from api.chat.schemas import (
     EndingSnapshot,
     ImageArchiveItem,
     PlayGuideResponse,
+    PreviewSessionStartResponse,
+    PreviewSessionState,
     ShortcutSnapshot,
     StatDefSnapshot,
 )
 from api.chat.stats import StatChange, apply_stat_changes
+from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
@@ -82,6 +87,7 @@ router = APIRouter(prefix="/chat-rooms", tags=["chat"])
 # `me_router`와 동일 패턴).
 stories_router = APIRouter(prefix="/stories", tags=["chat"])
 characters_router = APIRouter(prefix="/characters", tags=["chat"])
+preview_router = APIRouter(prefix="/preview-sessions", tags=["chat"])
 
 
 async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> ChatRoom:
@@ -1112,3 +1118,44 @@ async def get_image_archive(
         image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
         items.append(ImageArchiveItem(id=image.entity_id, exposed=exposed, image_url=image_url))
     return items
+
+
+def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayload) -> PreviewSessionState:
+    """First-turn state for a preview session — the same opening-message/initial-stats
+    shape `_create_room`/`_insert_opening_message`/`_seed_initial_stats` build for a real
+    chat room, computed directly from the unsaved draft payload instead of DB rows (there's
+    no persisted `Content`/`StartingSetup` to query yet, per techspec-builder-common.md §3).
+    A story with multiple starting setups previews its first one — the payload carries no
+    startingSetupId to choose another (AC only asks for the formToServer payload as-is)."""
+    now = datetime.now(UTC)
+    if isinstance(payload, CharacterDraftPayload):
+        messages = [
+            ChatMessageResponse(
+                id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=payload.intro, created_at=now
+            )
+        ]
+        return PreviewSessionState(payload=payload, messages=messages, stats={})
+
+    if not payload.starting_setups:
+        return PreviewSessionState(payload=payload, messages=[], stats={})
+
+    setup = payload.starting_setups[0]
+    opening_text = setup.opening_message or setup.prologue
+    messages = [
+        ChatMessageResponse(id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=opening_text, created_at=now)
+    ]
+    stats = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
+    return PreviewSessionState(payload=payload, messages=messages, stats=stats)
+
+
+@preview_router.post("", status_code=status.HTTP_201_CREATED)
+async def start_preview_session(
+    payload: CharacterDraftPayload | StoryDraftPayload,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> PreviewSessionStartResponse:
+    """techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever
+    `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
+    and is stored in Redis with no validation, mirroring autosave's unvalidated path."""
+    state = _build_preview_start_state(payload)
+    session_id = await create_preview_session(state)
+    return PreviewSessionStartResponse(preview_session_id=session_id)

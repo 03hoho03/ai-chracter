@@ -966,6 +966,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preview-sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start Preview Session
+         * @description techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever
+         *     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
+         *     and is stored in Redis with no validation, mirroring autosave's unvalidated path.
+         */
+        post: operations["start_preview_session_preview_sessions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -1815,6 +1837,11 @@ export interface components {
              * Format: date-time
              */
             expiresAt: string;
+        };
+        /** PreviewSessionStartResponse */
+        PreviewSessionStartResponse: {
+            /** Previewsessionid */
+            previewSessionId: string;
         };
         /** RegisterSituationalImageRequest */
         RegisterSituationalImageRequest: {
@@ -3923,6 +3950,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ImageArchiveItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_preview_session_preview_sessions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CharacterDraftPayload"] | components["schemas"]["StoryDraftPayload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewSessionStartResponse"];
                 };
             };
             /** @description Validation Error */
