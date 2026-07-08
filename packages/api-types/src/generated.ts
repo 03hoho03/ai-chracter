@@ -988,6 +988,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/preview-sessions/{id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Preview Message
+         * @description 미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
+         *     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
+         *     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신).
+         */
+        post: operations["send_preview_message_preview_sessions__id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -3983,6 +4005,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreviewSessionStartResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_preview_message_preview_sessions__id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
                 };
             };
             /** @description Validation Error */

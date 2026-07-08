@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
-from api.chat.preview_session import create_preview_session
+from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
@@ -52,7 +52,15 @@ from api.chat.schemas import (
     StatDefSnapshot,
 )
 from api.chat.stats import StatChange, apply_stat_changes
-from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
+from api.content.schemas import (
+    CharacterDraftPayload,
+    EndingRuleDraftItem,
+    EndingRuleGroupDraftItem,
+    EndingRuleListDraftItem,
+    ShortcutDraftItem,
+    StatDefDraftItem,
+    StoryDraftPayload,
+)
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
@@ -1159,3 +1167,219 @@ async def start_preview_session(
     state = _build_preview_start_state(payload)
     session_id = await create_preview_session(state)
     return PreviewSessionStartResponse(preview_session_id=session_id)
+
+
+async def _owned_preview_session_dependency(
+    id: str,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+) -> PreviewSessionState:
+    """미리보기 세션 접근도 `_owned_room_dependency`와 같은 이유(SSE 제너레이터 본문 안에서
+    HTTPException 금지)로 평범한 Depends로 분리한다. `PreviewSessionState`(US-088)엔 저장된
+    user_id가 없어 실제 소유권 대조는 불가능하다 — 로그인 요구 + 추측 불가능한 세션 id 자체가
+    접근 통제라는 점에서 비밀번호 재설정 토큰과 같은 처지(apps/api/CLAUDE.md 참고)."""
+    state = await get_preview_session(id)
+    if state is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview session not found")
+    return state
+
+
+async def _validate_preview_shortcut(
+    payload: ChatMessageCreateRequest,
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+) -> ShortcutDraftItem | None:
+    """`_validate_shortcut`과 동일한 이유로 SSE 제너레이터 밖에 둔다. 실제 방은 DB에서
+    content_version_id로 소속을 검증하지만, 미리보기는 그 자체가 payload 안의
+    `shortcuts` 배열이 유일한 소속 스코프다."""
+    if payload.shortcut_id is None:
+        return None
+    if isinstance(state.payload, StoryDraftPayload):
+        shortcut = next((s for s in state.payload.shortcuts if s.id == payload.shortcut_id), None)
+        if shortcut is not None:
+            return shortcut
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid shortcutId")
+
+
+def _preview_chat_message(message: ChatMessageResponse) -> ChatMessage:
+    """`build_generation_prompt`류가 실제로 읽는 필드(role/content)만 채운 인메모리
+    `ChatMessage` — DB에 저장되지 않고 프롬프트 빌더에 넘기기 위해서만 존재한다(다른
+    순수함수 테스트들이 이미 쓰는 "생성자로만 채운 ORM 모델" 패턴과 동일, apps/api/CLAUDE.md)."""
+    return ChatMessage(role=message.role, content=message.content)
+
+
+def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
+    return StatDef(
+        entity_id=item.id,
+        name=item.name,
+        description=item.description,
+        min_value=item.min_value,
+        max_value=item.max_value,
+        initial_value=item.initial_value,
+    )
+
+
+def _preview_ending_rule_item(item: EndingRuleDraftItem) -> EndingRuleItem:
+    return EndingRuleItem(
+        id=item.id, stat_id=item.stat_id, operator=item.operator, threshold=item.threshold, next_op=item.next_op
+    )
+
+
+def _preview_ending_rule_list_item(item: EndingRuleListDraftItem) -> EndingRuleListItem:
+    if isinstance(item, EndingRuleGroupDraftItem):
+        return EndingRuleGroupItem(
+            id=item.id, rules=[_preview_ending_rule_item(rule) for rule in item.rules], next_op=item.next_op
+        )
+    return _preview_ending_rule_item(item)
+
+
+def _preview_keyword_notes(payload: StoryDraftPayload, setup_id: uuid.UUID | None) -> list[KeywordNote]:
+    """실제 방의 `starting_setup_id IS NULL OR == 현재 setup` DB 필터(US-065)와 동일한
+    스코프 규칙을 payload 안에서 그대로 적용한다."""
+    return [
+        KeywordNote(info_text=note.info_text, trigger_keywords=note.trigger_keywords)
+        for note in payload.keyword_notes
+        if note.starting_setup_id is None or note.starting_setup_id == setup_id
+    ]
+
+
+def _build_preview_prompt(
+    payload: CharacterDraftPayload | StoryDraftPayload,
+    history: list[ChatMessage],
+    user_content: str,
+    shortcut: ShortcutDraftItem | None,
+) -> str:
+    """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
+    읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면(US-088과 동일한
+    "미완성 상태에서도 테스트 가능" 원칙) 빈 프롤로그로 진행한다."""
+    if isinstance(payload, CharacterDraftPayload):
+        return build_generation_prompt(
+            character_prompt=payload.character_prompt,
+            example_dialogues=[dialogue.model_dump(by_alias=True) for dialogue in payload.example_dialogues],
+            history=history,
+            user_message=user_content,
+        )
+
+    setup = payload.starting_setups[0] if payload.starting_setups else None
+    notes = _preview_keyword_notes(payload, setup.id if setup is not None else None)
+    matched_notes = match_keyword_notes(user_content, notes)
+    return build_story_generation_prompt(
+        prompt_template=payload.prompt_template,
+        setting_text=payload.setting_text,
+        development_example=payload.development_example,
+        custom_prompt=payload.custom_prompt,
+        prologue=setup.prologue if setup is not None else "",
+        history=history,
+        user_message=user_content,
+        keyword_note_texts=[note.info_text for note in matched_notes],
+        shortcut_prompt=shortcut.prompt if shortcut is not None else None,
+    )
+
+
+async def _stream_preview_turn(
+    state: PreviewSessionState,
+    llm_client: LLMClient,
+    history: list[ChatMessage],
+    user_content: str,
+    shortcut: ShortcutDraftItem | None,
+) -> AsyncIterator[ChatStreamEvent]:
+    """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
+    `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
+    클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
+    (`is_ending_check_due`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
+    실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — DB에 결합된 조회/커밋 부분만
+    Redis 상태 갱신으로 대체했다."""
+    prompt = _build_preview_prompt(state.payload, history, user_content, shortcut)
+
+    chunks: list[str] = []
+    try:
+        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+            yield token_event
+    except LLMPolicyViolationError:
+        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        return
+    except LLMClientError:
+        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+        return
+
+    assistant_content = "".join(chunks)
+    assistant_message = ChatMessageResponse(
+        id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content=assistant_content, created_at=datetime.now(UTC)
+    )
+    state.messages.append(assistant_message)
+    state.turn_count += 1
+
+    stat_change_events: list[ChatStatChangeEvent] = []
+    ending_reached_event: ChatEndingReachedEvent | None = None
+
+    if isinstance(state.payload, StoryDraftPayload) and not state.ending_reached and state.payload.starting_setups:
+        setup = state.payload.starting_setups[0]
+        stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
+        current_stats = dict(state.stats)
+
+        judgment_prompt = build_stat_judgment_prompt(
+            stat_defs=stat_defs,
+            current_stats=current_stats,
+            history=history,
+            user_message=user_content,
+            assistant_message=assistant_content,
+        )
+        judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+        changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+        updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
+
+        for stat_id, new_value in updated_stats.items():
+            if new_value != current_stats.get(stat_id):
+                stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+        state.stats = updated_stats
+
+        for ending in setup.endings:
+            if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
+                continue
+            ending_judgment_prompt = build_ending_judgment_prompt(
+                judgment_prompt=ending.judgment_prompt,
+                history=history,
+                user_message=user_content,
+                assistant_message=assistant_content,
+            )
+            ending_judgment = await llm_client.generate_structured(ending_judgment_prompt, EndingJudgmentResult)
+            if not ending_judgment.triggered:
+                continue
+            rule_items: list[EndingRuleListItem] = [
+                _preview_ending_rule_list_item(item) for item in ending.stat_rules
+            ]
+            if not evaluate_rule_list(rule_items, updated_stats):
+                continue
+
+            state.ending_reached = True
+            ending_reached_event = ChatEndingReachedEvent(ending_id=ending.id, epilogue=ending.epilogue)
+            break
+
+    for stat_change_event in stat_change_events:
+        yield stat_change_event
+    if ending_reached_event is not None:
+        yield ending_reached_event
+
+    yield ChatDoneEvent(final_message=assistant_message)
+
+
+@preview_router.post("/{id}/messages", response_class=EventSourceResponse)
+async def send_preview_message(
+    id: str,
+    payload: ChatMessageCreateRequest,
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> AsyncIterator[ChatStreamEvent]:
+    """미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
+    실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
+    이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신)."""
+    history = [_preview_chat_message(message) for message in state.messages]
+    state.messages.append(
+        ChatMessageResponse(
+            id=uuid.uuid4(), role=ChatMessageRole.USER, content=payload.content, created_at=datetime.now(UTC)
+        )
+    )
+
+    async for event in _stream_preview_turn(state, llm_client, history, payload.content, shortcut):
+        yield event
+
+    await update_preview_session(id, state)

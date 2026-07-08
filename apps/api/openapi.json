@@ -2607,6 +2607,74 @@
         }
       }
     },
+    "/preview-sessions/{id}/messages": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send Preview Message",
+        "description": "미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이\n실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도\n이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신).",
+        "operationId": "send_preview_message_preview_sessions__id__messages_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
