@@ -1,12 +1,18 @@
 import uuid
 from collections.abc import AsyncIterator
+from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import build_generation_prompt
+from api.chat.prompt_builder import (
+    StatJudgmentResult,
+    build_generation_prompt,
+    build_stat_judgment_prompt,
+    build_story_generation_prompt,
+)
 from api.chat.schemas import (
     ChatDoneEvent,
     ChatErrorEvent,
@@ -18,6 +24,7 @@ from api.chat.schemas import (
     ChatRoomListItem,
     ChatRoomRenameRequest,
     ChatRoomResponse,
+    ChatStatChangeEvent,
     ChatStreamEvent,
     ChatTokenEvent,
     EndingRuleGroupItem,
@@ -27,10 +34,19 @@ from api.chat.schemas import (
     ShortcutSnapshot,
     StatDefSnapshot,
 )
+from api.chat.stats import StatChange, apply_stat_changes
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentType
-from api.db.models.story import Ending, EndingRule, EndingRuleGroup, Shortcut, StartingSetup, StatDef
+from api.db.models.story import (
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    Shortcut,
+    StartingSetup,
+    StatDef,
+    StoryVersionDetail,
+)
 from api.db.session import get_db_session
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
@@ -314,12 +330,12 @@ async def send_message(
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
 
-    캐릭터 챗 전용 파이프라인이다(character_prompt + exampleDialogues + 히스토리로 프롬프트를
-    조립해 LLMClient.generate()에 릴레이) — 스토리 챗의 스탯 판단/엔딩 평가 파이프라인은
-    아직 여기 없다(US-059/US-061에서 추가 예정, 스토리 방 생성/조회 자체는 US-057에서 이미 가능).
+    캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
+    프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단
+    (§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 — 캐릭터 챗에는
+    이 판단 단계가 없다. 엔딩 판정은 US-061/062 범위라 아직 없다.
     """
-    detail = await db.get(CharacterVersionDetail, room.content_version_id)
-    assert detail is not None
+    setup = await _resolve_starting_setup(db, room)
 
     history = list(
         (
@@ -337,12 +353,27 @@ async def send_message(
     db.add(user_message)
     await db.commit()
 
-    prompt = build_generation_prompt(
-        character_prompt=detail.character_prompt,
-        example_dialogues=detail.example_dialogues,
-        history=history,
-        user_message=payload.content,
-    )
+    if setup is not None:
+        story_detail = await db.get(StoryVersionDetail, room.content_version_id)
+        assert story_detail is not None
+        prompt = build_story_generation_prompt(
+            prompt_template=story_detail.prompt_template,
+            setting_text=story_detail.setting_text,
+            development_example=story_detail.development_example,
+            custom_prompt=story_detail.custom_prompt,
+            prologue=setup.prologue,
+            history=history,
+            user_message=payload.content,
+        )
+    else:
+        detail = await db.get(CharacterVersionDetail, room.content_version_id)
+        assert detail is not None
+        prompt = build_generation_prompt(
+            character_prompt=detail.character_prompt,
+            example_dialogues=detail.example_dialogues,
+            history=history,
+            user_message=payload.content,
+        )
 
     chunks: list[str] = []
     try:
@@ -356,13 +387,47 @@ async def send_message(
         yield ChatErrorEvent(message="메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
         return
 
+    assistant_content = "".join(chunks)
     assistant_message = ChatMessage(
-        chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content="".join(chunks)
+        chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content
     )
     db.add(assistant_message)
     await db.flush()
     room.turn_count += 1
+
+    stat_change_events: list[ChatStatChangeEvent] = []
+    if setup is not None:
+        stat_defs = list(
+            (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+        )
+        stat_rows = {
+            str(row.stat_entity_id): row
+            for row in (
+                await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+            ).all()
+        }
+        current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
+
+        judgment_prompt = build_stat_judgment_prompt(
+            stat_defs=stat_defs,
+            current_stats=current_stats,
+            history=history,
+            user_message=payload.content,
+            assistant_message=assistant_content,
+        )
+        judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+        changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+        updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
+
+        for stat_id, new_value in updated_stats.items():
+            if new_value != current_stats.get(stat_id):
+                stat_rows[stat_id].current_value = Decimal(str(new_value))
+                stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+
     await db.commit()
+
+    for stat_change_event in stat_change_events:
+        yield stat_change_event
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(

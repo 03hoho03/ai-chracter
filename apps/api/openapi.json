@@ -1640,7 +1640,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n캐릭터 챗 전용 파이프라인이다(character_prompt + exampleDialogues + 히스토리로 프롬프트를\n조립해 LLMClient.generate()에 릴레이) — 스토리 챗의 스탯 판단/엔딩 평가 파이프라인은\n아직 여기 없다(US-059/US-061에서 추가 예정, 스토리 방 생성/조회 자체는 US-057에서 이미 가능).",
+        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정\n프롤로그로 생성 프롬프트를 조립한다(§3.1). 스토리 챗은 생성 완료 후 스탯 변경 판단\n(§3.1 buildJudgmentPrompt+generateStructured)을 매 턴 추가로 호출한다 — 캐릭터 챗에는\n이 판단 단계가 없다. 엔딩 판정은 US-061/062 범위라 아직 없다.",
         "operationId": "send_message_chat_rooms__room_id__messages_post",
         "parameters": [
           {
