@@ -4,10 +4,11 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
+from api.chat.keyword_notes import match_keyword_notes
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     StatJudgmentResult,
@@ -46,6 +47,7 @@ from api.db.models.story import (
     Ending,
     EndingRule,
     EndingRuleGroup,
+    KeywordNote,
     Shortcut,
     StartingSetup,
     StatDef,
@@ -78,6 +80,27 @@ async def _owned_room_dependency(
     an `HTTPException` raised *inside* that generator escapes FastAPI's normal
     exception handling instead of becoming a JSON error response."""
     return await _get_owned_room(db, room_id, user_id)
+
+
+async def _validate_shortcut(
+    payload: ChatMessageCreateRequest,
+    room: ChatRoom = Depends(_owned_room_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> Shortcut | None:
+    """단축어 검증도 `_owned_room_dependency`와 같은 이유로 SSE 제너레이터 밖의
+    평범한 Depends로 분리한다 — 제너레이터 본문 안에서 HTTPException을 raise하면
+    정상 404/403처럼 400도 JSON 응답이 아니라 깨진 스트림이 되어버린다."""
+    if payload.shortcut_id is None:
+        return None
+    shortcut = await db.scalar(
+        select(Shortcut).where(
+            Shortcut.entity_id == payload.shortcut_id,
+            Shortcut.content_version_id == room.content_version_id,
+        )
+    )
+    if shortcut is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid shortcutId")
+    return shortcut
 
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
@@ -335,6 +358,7 @@ async def get_chat_room(
 async def send_message(
     payload: ChatMessageCreateRequest,
     room: ChatRoom = Depends(_owned_room_dependency),
+    shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> AsyncIterator[ChatStreamEvent]:
@@ -367,6 +391,15 @@ async def send_message(
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
         assert story_detail is not None
+        notes = (
+            await db.scalars(
+                select(KeywordNote).where(
+                    KeywordNote.content_version_id == room.content_version_id,
+                    or_(KeywordNote.starting_setup_id.is_(None), KeywordNote.starting_setup_id == setup.id),
+                )
+            )
+        ).all()
+        matched_notes = match_keyword_notes(payload.content, list(notes))
         prompt = build_story_generation_prompt(
             prompt_template=story_detail.prompt_template,
             setting_text=story_detail.setting_text,
@@ -375,6 +408,8 @@ async def send_message(
             prologue=setup.prologue,
             history=history,
             user_message=payload.content,
+            keyword_note_texts=[note.info_text for note in matched_notes],
+            shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
     else:
         detail = await db.get(CharacterVersionDetail, room.content_version_id)

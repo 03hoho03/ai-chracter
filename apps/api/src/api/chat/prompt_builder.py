@@ -47,12 +47,14 @@ def build_story_generation_prompt(
     prologue: str,
     history: list[ChatMessage],
     user_message: str,
+    keyword_note_texts: list[str] | None = None,
+    shortcut_prompt: str | None = None,
 ) -> str:
     """techspec-backend-chat.md §3.1 buildGenerationPrompt — 스토리 챗 전용.
 
-    "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리와 이번 턴의 사용자
-    메시지로 마무리한다(캐릭터의 예시 대화 주입에 대응하는 스토리 전용 섹션은
-    없음 — 키워드북/단축어 주입은 별도 스토리(US-064/065) 범위).
+    "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 매칭된 키워드북 정보(사용자에게는
+    비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), 최근 히스토리, (단축어
+    실행 시) 단축어 프롬프트, 이번 턴의 사용자 메시지 순으로 마무리한다.
     """
     sections: list[str] = []
 
@@ -67,12 +69,18 @@ def build_story_generation_prompt(
 
     sections.append(f"[시작 상황]\n{prologue}")
 
+    if keyword_note_texts:
+        sections.append("[키워드북]\n" + "\n".join(keyword_note_texts))
+
     if history:
         history_lines = "\n".join(
             f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
             for message in history
         )
         sections.append(f"[대화 기록]\n{history_lines}")
+
+    if shortcut_prompt:
+        sections.append(f"[단축어]\n{shortcut_prompt}")
 
     sections.append(f"사용자: {user_message}\n진행자:")
 

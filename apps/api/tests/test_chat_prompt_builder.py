@@ -132,6 +132,52 @@ def test_build_story_generation_prompt_custom_template_uses_custom_prompt_only()
     assert "세계관 설정(무시되어야 함)" not in prompt
 
 
+def test_build_story_generation_prompt_includes_matched_keyword_notes() -> None:
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_example=None,
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+        keyword_note_texts=["마법사는 사실 왕자다"],
+    )
+
+    assert "[키워드북]\n마법사는 사실 왕자다" in prompt
+
+
+def test_build_story_generation_prompt_omits_keyword_note_section_when_no_match() -> None:
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_example=None,
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+        keyword_note_texts=[],
+    )
+
+    assert "[키워드북]" not in prompt
+
+
+def test_build_story_generation_prompt_includes_shortcut_prompt_before_final_turn() -> None:
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_example=None,
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+        shortcut_prompt="주변을 수색한다",
+    )
+
+    assert "[단축어]\n주변을 수색한다" in prompt
+    assert prompt.rstrip().endswith("사용자: 메시지\n진행자:")
+
+
 def test_build_story_generation_prompt_includes_history_in_order() -> None:
     history = [
         _message(ChatMessageRole.ASSISTANT, "안녕하세요"),

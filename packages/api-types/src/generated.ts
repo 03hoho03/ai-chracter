@@ -712,6 +712,8 @@ export interface components {
         ChatMessageCreateRequest: {
             /** Content */
             content: string;
+            /** Shortcutid */
+            shortcutId?: string | null;
         };
         /** ChatMessageResponse */
         ChatMessageResponse: {

@@ -21,7 +21,9 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Genre,
+    KeywordNote,
     ModerationStatus,
+    Shortcut,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -361,6 +363,182 @@ async def test_send_message_story_room_builds_generation_prompt_from_story_setti
     assert "옛날 옛적, 낯선 마을에 도착했다." in fake.received_prompt
     assert "다시 만났네요!" in fake.received_prompt
     assert "모험을 시작한다" in fake.received_prompt
+
+
+async def test_send_message_story_room_injects_matched_keyword_note_hidden_from_client(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    db_session.add(
+        KeywordNote(
+            entity_id=uuid.uuid4(),
+            content_version_id=content.current_published_version_id,
+            starting_setup_id=None,
+            info_text="마법사는 사실 왕자다",
+            trigger_keywords=["마법사"],
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "저 마법사는 누구야?"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "마법사는 사실 왕자다" in fake.received_prompt
+
+    events = _parse_sse_events(resp.text)
+    done_event = next(e for e in events if e["type"] == "done")
+    assert "마법사는 사실 왕자다" not in json.dumps(done_event)
+
+
+async def test_send_message_story_room_ignores_keyword_note_scoped_to_other_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    other_setup = await _add_starting_setup(db_session, content)
+    db_session.add(
+        KeywordNote(
+            entity_id=uuid.uuid4(),
+            content_version_id=content.current_published_version_id,
+            starting_setup_id=other_setup.id,
+            info_text="다른 시작설정 전용 정보",
+            trigger_keywords=["마법사"],
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "저 마법사는 누구야?"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "다른 시작설정 전용 정보" not in fake.received_prompt
+
+
+async def test_send_message_story_room_with_valid_shortcut_id_injects_shortcut_prompt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    shortcut = Shortcut(
+        entity_id=uuid.uuid4(),
+        content_version_id=content.current_published_version_id,
+        name="수색",
+        description="주변을 수색한다",
+        prompt="플레이어가 주변을 자세히 수색하는 상황을 묘사하라",
+    )
+    db_session.add(shortcut)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(
+            f"/chat-rooms/{room_id}/messages",
+            json={"content": "/수색", "shortcutId": str(shortcut.entity_id)},
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "플레이어가 주변을 자세히 수색하는 상황을 묘사하라" in fake.received_prompt
+
+
+async def test_send_message_story_room_with_unknown_shortcut_id_returns_400(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(
+            f"/chat-rooms/{room_id}/messages",
+            json={"content": "/수색", "shortcutId": str(uuid.uuid4())},
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert fake.received_prompt is None
+
+
+async def test_send_message_story_room_with_shortcut_id_from_other_content_version_returns_400(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    other_content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    other_shortcut = Shortcut(
+        entity_id=uuid.uuid4(),
+        content_version_id=other_content.current_published_version_id,
+        name="다른 작품 단축어",
+        description="설명",
+        prompt="다른 작품 전용 프롬프트",
+    )
+    db_session.add(other_shortcut)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(
+            f"/chat-rooms/{room_id}/messages",
+            json={"content": "메시지", "shortcutId": str(other_shortcut.entity_id)},
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
 
 
 async def test_send_message_character_room_does_not_call_generate_structured(
