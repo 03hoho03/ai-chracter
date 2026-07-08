@@ -6,6 +6,7 @@ import { useForm, useWatch } from "react-hook-form";
 
 import { storyBuilderSchema, serverToForm, type StoryBuilderFormValues } from "../../../features/build-story";
 import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/activeTabAtom";
+import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
 import { ProfileTab } from "./ProfileTab";
 import { SettingTab } from "./SettingTab";
@@ -77,7 +78,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <ShortcutTab form={form} />
         </TabsContent>
         <TabsContent value="ending">
-          <TabPlaceholder />
+          <EndingTab form={form} />
         </TabsContent>
         <TabsContent value="registration">
           <TabPlaceholder />
