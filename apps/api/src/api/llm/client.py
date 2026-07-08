@@ -11,6 +11,10 @@ class LLMClientError(Exception):
     """Raised when an LLM provider call fails or returns an unusable response."""
 
 
+class LLMPolicyViolationError(LLMClientError):
+    """Raised when the provider's safety filtering blocks a prompt or its output."""
+
+
 class LLMClient(abc.ABC):
     """Provider-agnostic 대화 생성/판단 인터페이스 (techspec-overview-backend.md §5).
 

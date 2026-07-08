@@ -2,11 +2,13 @@ from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from google.genai import errors as genai_errors
+from google.genai import types as genai_types
 from pydantic import BaseModel
 
-from api.llm.client import LLMClientError
+from api.llm.client import LLMClientError, LLMPolicyViolationError
 from api.llm.gemini import GeminiLLMClient
 
 
@@ -62,6 +64,59 @@ async def test_generate_wraps_api_error(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(LLMClientError):
         async for _ in client.generate("hi"):
             pass
+
+
+async def test_generate_wraps_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        raise httpx.ConnectTimeout("timed out")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    with pytest.raises(LLMClientError):
+        async for _ in client.generate("hi"):
+            pass
+
+
+async def test_generate_raises_policy_violation_on_blocked_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        async def _iter() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(
+                text=None,
+                prompt_feedback=genai_types.GenerateContentResponsePromptFeedback(
+                    block_reason=genai_types.BlockedReason.SAFETY
+                ),
+                candidates=None,
+            )
+
+        return _iter()
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    with pytest.raises(LLMPolicyViolationError):
+        async for _ in client.generate("hi"):
+            pass
+
+
+async def test_generate_raises_policy_violation_on_blocked_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        async def _iter() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(text="some ", prompt_feedback=None, candidates=None)
+            yield SimpleNamespace(
+                text=None,
+                prompt_feedback=None,
+                candidates=[genai_types.Candidate(finish_reason=genai_types.FinishReason.SAFETY)],
+            )
+
+        return _iter()
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    tokens: list[str] = []
+    with pytest.raises(LLMPolicyViolationError):
+        async for token in client.generate("hi"):
+            tokens.append(token)
+
+    assert tokens == ["some "]
 
 
 async def test_generate_structured_returns_deserialized_model(monkeypatch: pytest.MonkeyPatch) -> None:

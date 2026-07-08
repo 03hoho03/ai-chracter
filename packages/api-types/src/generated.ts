@@ -614,6 +614,29 @@ export interface paths {
         patch: operations["rename_chat_room_chat_rooms__room_id__patch"];
         trace?: never;
     };
+    "/chat-rooms/{room_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send Message
+         * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
+         *
+         *     현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +
+         *     exampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.
+         */
+        post: operations["send_message_chat_rooms__room_id__messages_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/reset": {
         parameters: {
             query?: never;
@@ -681,6 +704,11 @@ export interface components {
             currentPassword: string;
             /** Newpassword */
             newPassword: string;
+        };
+        /** ChatMessageCreateRequest */
+        ChatMessageCreateRequest: {
+            /** Content */
+            content: string;
         };
         /** ChatMessageResponse */
         ChatMessageResponse: {
@@ -2394,6 +2422,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    send_message_chat_rooms__room_id__messages_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
                 };
             };
             /** @description Validation Error */

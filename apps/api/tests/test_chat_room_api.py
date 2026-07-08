@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import sqlalchemy as sa
@@ -283,6 +283,15 @@ async def test_list_chat_rooms_returns_auto_and_custom_names_with_last_message_p
     await _login_as(db_client, user.id)
     first_room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
     second_room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    # Both rooms are created inside this test's single outer transaction, so
+    # Postgres' now() (used for the created_at server_default) ties between them —
+    # force a real ordering instead of leaving sibling order to a random UUID
+    # tiebreak (apps/api/CLAUDE.md's "same-transaction now() ties" gotcha).
+    first_room = await db_session.get(ChatRoom, first_room_id)
+    assert first_room is not None
+    first_room.created_at = first_room.created_at - timedelta(minutes=1)
+    await db_session.commit()
 
     rename_resp = await db_client.patch(f"/chat-rooms/{second_room_id}", json={"name": "나만의 대화방"})
     assert rename_resp.status_code == 200

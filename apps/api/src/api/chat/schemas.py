@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -12,6 +12,10 @@ from api.db.models.content import ContentType
 class ChatRoomCreateRequest(CamelModel):
     content_id: uuid.UUID
     content_type: Literal["character"]
+
+
+class ChatMessageCreateRequest(CamelModel):
+    content: str = Field(min_length=1)
 
 
 class ChatRoomRenameRequest(CamelModel):
@@ -44,3 +48,31 @@ class ChatRoomListItem(CamelModel):
     name: str
     last_message_preview: str
     created_at: datetime
+
+
+# SSE 이벤트 스키마 (techspec-backend-chat.md §2, techspec-chat-story.md §1.2가 유일한 정의처).
+# statChange/endingReached는 스토리 챗 전용(US-059/US-062)이라 여기서는 다루지 않는다.
+class ChatTokenEvent(CamelModel):
+    type: Literal["token"] = "token"
+    delta: str
+
+
+class ChatPolicyWarningEvent(CamelModel):
+    type: Literal["policyWarning"] = "policyWarning"
+    message: str
+
+
+class ChatDoneEvent(CamelModel):
+    type: Literal["done"] = "done"
+    final_message: ChatMessageResponse
+
+
+class ChatErrorEvent(CamelModel):
+    type: Literal["error"] = "error"
+    message: str
+
+
+ChatStreamEvent = Annotated[
+    ChatTokenEvent | ChatPolicyWarningEvent | ChatDoneEvent | ChatErrorEvent,
+    Field(discriminator="type"),
+]

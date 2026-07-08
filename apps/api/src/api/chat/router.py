@@ -1,20 +1,31 @@
 import uuid
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.sse import EventSourceResponse
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.prompt_builder import build_generation_prompt
 from api.chat.schemas import (
+    ChatDoneEvent,
+    ChatErrorEvent,
+    ChatMessageCreateRequest,
     ChatMessageResponse,
+    ChatPolicyWarningEvent,
     ChatRoomCreateRequest,
     ChatRoomListItem,
     ChatRoomRenameRequest,
     ChatRoomResponse,
+    ChatStreamEvent,
+    ChatTokenEvent,
 )
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentType
 from api.db.session import get_db_session
+from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/chat-rooms", tags=["chat"])
@@ -27,6 +38,18 @@ async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UU
     if room.user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the chat room owner")
     return room
+
+
+async def _owned_room_dependency(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoom:
+    """Same ownership check as `_get_owned_room`, but as a `Depends()` so it resolves
+    (and can raise a clean 404/403) before an SSE route's generator body starts —
+    an `HTTPException` raised *inside* that generator escapes FastAPI's normal
+    exception handling instead of becoming a JSON error response."""
+    return await _get_owned_room(db, room_id, user_id)
 
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
@@ -123,6 +146,74 @@ async def get_chat_room(
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
     return await _to_response(db, room)
+
+
+@router.post("/{room_id}/messages", response_class=EventSourceResponse)
+async def send_message(
+    payload: ChatMessageCreateRequest,
+    room: ChatRoom = Depends(_owned_room_dependency),
+    db: AsyncSession = Depends(get_db_session),
+    llm_client: LLMClient = Depends(get_llm_client),
+) -> AsyncIterator[ChatStreamEvent]:
+    """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
+
+    현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +
+    exampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.
+    """
+    detail = await db.get(CharacterVersionDetail, room.content_version_id)
+    assert detail is not None
+
+    history = list(
+        (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id == room.id)
+                .order_by(ChatMessage.created_at.asc())
+            )
+        ).all()
+    )
+
+    # 사용자 메시지는 Gemini 호출 전에 먼저 커밋한다 — 이후 생성이 실패해도
+    # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문 (US-053 AC).
+    user_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content=payload.content)
+    db.add(user_message)
+    await db.commit()
+
+    prompt = build_generation_prompt(
+        character_prompt=detail.character_prompt,
+        example_dialogues=detail.example_dialogues,
+        history=history,
+        user_message=payload.content,
+    )
+
+    chunks: list[str] = []
+    try:
+        async for delta in llm_client.generate(prompt):
+            chunks.append(delta)
+            yield ChatTokenEvent(delta=delta)
+    except LLMPolicyViolationError:
+        yield ChatPolicyWarningEvent(message="메시지 생성이 콘텐츠 정책에 의해 중단되었습니다.")
+        return
+    except LLMClientError:
+        yield ChatErrorEvent(message="메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")
+        return
+
+    assistant_message = ChatMessage(
+        chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content="".join(chunks)
+    )
+    db.add(assistant_message)
+    await db.flush()
+    room.turn_count += 1
+    await db.commit()
+
+    yield ChatDoneEvent(
+        final_message=ChatMessageResponse(
+            id=assistant_message.id,
+            role=assistant_message.role,
+            content=assistant_message.content,
+            created_at=assistant_message.created_at,
+        )
+    )
 
 
 @router.get("")

@@ -1634,6 +1634,75 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/messages": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Send Message",
+        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +\nexampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.",
+        "operationId": "send_message_chat_rooms__room_id__messages_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatMessageCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "text/event-stream": {
+                "itemSchema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "string"
+                    },
+                    "event": {
+                      "type": "string"
+                    },
+                    "id": {
+                      "type": "string"
+                    },
+                    "retry": {
+                      "type": "integer",
+                      "minimum": 0
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/reset": {
       "post": {
         "tags": [
@@ -1756,6 +1825,20 @@
           "newPassword"
         ],
         "title": "ChangePasswordRequest"
+      },
+      "ChatMessageCreateRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Content"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "ChatMessageCreateRequest"
       },
       "ChatMessageResponse": {
         "properties": {
