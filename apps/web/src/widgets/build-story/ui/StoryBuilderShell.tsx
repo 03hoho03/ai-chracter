@@ -8,6 +8,7 @@ import { storyBuilderSchema, serverToForm, type StoryBuilderFormValues } from ".
 import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/activeTabAtom";
 import { ProfileTab } from "./ProfileTab";
 import { SettingTab } from "./SettingTab";
+import { StartingSetupTab } from "./StartingSetupTab";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 
@@ -61,7 +62,7 @@ export function StoryBuilderShell({ data }: { data: StoryDraftResponse }) {
           <SettingTab form={form} />
         </TabsContent>
         <TabsContent value="startingSetup">
-          <TabPlaceholder />
+          <StartingSetupTab form={form} />
         </TabsContent>
         <TabsContent value="stat">
           <TabPlaceholder />
