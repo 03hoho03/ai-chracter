@@ -3,6 +3,7 @@ import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { ContentDetailModalOutlet } from "../widgets/content-detail";
 import { Header } from "../widgets/header";
+import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "../features/change-starting-setup";
 import { EndingCollectionModal } from "../features/ending-collection";
 import { ImageArchiveModal } from "../features/image-archive";
 import { ConfirmChatRoomActionModal } from "../features/manage-chat-room";
@@ -30,6 +31,8 @@ function RootComponent() {
       <EndingCollectionModal />
       <ImageArchiveModal />
       <UpdateInfoModal />
+      <ChangeStartingSetupModal />
+      <ConfirmStartingSetupChangeModal />
     </>
   );
 }
