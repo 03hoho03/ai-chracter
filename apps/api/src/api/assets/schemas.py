@@ -44,3 +44,13 @@ class SituationalImageResponse(CamelModel):
     blurred_asset_id: uuid.UUID
     trigger_condition: str
     order: int
+
+
+class GeneratedImageItem(CamelModel):
+    """techspec-backend-media.md §3: `GET /me/generated-images` stub item shape.
+    AI 이미지 생성 자체(제공업체/과금/비동기 처리)는 별도 세션 범위라 이 엔드포인트는 지금
+    항상 빈 배열을 반환한다 — 실제 생성 파이프라인이 생기면 이 스키마를 채우는 쿼리만 추가하면 된다."""
+
+    asset_id: uuid.UUID
+    image_url: str
+    created_at: datetime

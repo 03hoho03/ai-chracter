@@ -79,6 +79,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/generated-images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Generated Images
+         * @description techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회. AI 이미지 생성 자체는
+         *     별도 세션 범위라 아직 자산에 "생성됨"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을
+         *     반환하는 스텁이다.
+         */
+        get: operations["list_generated_images_me_generated_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -1672,6 +1694,26 @@ export interface components {
             /** Characterline */
             characterLine: string;
         };
+        /**
+         * GeneratedImageItem
+         * @description techspec-backend-media.md §3: `GET /me/generated-images` stub item shape.
+         *     AI 이미지 생성 자체(제공업체/과금/비동기 처리)는 별도 세션 범위라 이 엔드포인트는 지금
+         *     항상 빈 배열을 반환한다 — 실제 생성 파이프라인이 생기면 이 스키마를 채우는 쿼리만 추가하면 된다.
+         */
+        GeneratedImageItem: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /** Imageurl */
+            imageUrl: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
         /** GenreResponse */
         GenreResponse: {
             /**
@@ -2370,6 +2412,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_generated_images_me_generated_images_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GeneratedImageItem"][];
                 };
             };
         };

@@ -18,6 +18,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
@@ -69,6 +70,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StudioImagesRoute = StudioImagesRouteImport.update({
+  id: '/studio/images',
+  path: '/studio/images',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProfileUserIdRoute = ProfileUserIdRouteImport.update({
   id: '/profile/$userId',
   path: '/profile/$userId',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/studio/images': typeof StudioImagesRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/studio/images': typeof StudioImagesRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/chat/$roomId': typeof ChatRoomIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
+  '/studio/images': typeof StudioImagesRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/studio/images'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/studio/images'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   id:
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/chat/$roomId'
     | '/onboarding/google'
     | '/profile/$userId'
+    | '/studio/images'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   fileRoutesById: FileRoutesById
@@ -208,6 +220,7 @@ export interface RootRouteChildren {
   ChatRoomIdRoute: typeof ChatRoomIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
+  StudioImagesRoute: typeof StudioImagesRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
 }
@@ -277,6 +290,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/studio/images': {
+      id: '/studio/images'
+      path: '/studio/images'
+      fullPath: '/studio/images'
+      preLoaderRoute: typeof StudioImagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/profile/$userId': {
       id: '/profile/$userId'
       path: '/profile/$userId'
@@ -328,6 +348,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoomIdRoute: ChatRoomIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
+  StudioImagesRoute: StudioImagesRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
 }

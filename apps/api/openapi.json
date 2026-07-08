@@ -221,6 +221,32 @@
         }
       }
     },
+    "/me/generated-images": {
+      "get": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "List Generated Images",
+        "description": "techspec-backend-media.md §3: \"생성한 이미지에서 선택\" 갤러리 조회. AI 이미지 생성 자체는\n별도 세션 범위라 아직 자산에 \"생성됨\"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을\n반환하는 스텁이다.",
+        "operationId": "list_generated_images_me_generated_images_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/GeneratedImageItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Generated Images Me Generated Images Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/signup": {
       "post": {
         "tags": [
@@ -4282,6 +4308,32 @@
           "characterLine"
         ],
         "title": "ExampleDialogueItem"
+      },
+      "GeneratedImageItem": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "imageUrl",
+          "createdAt"
+        ],
+        "title": "GeneratedImageItem",
+        "description": "techspec-backend-media.md §3: `GET /me/generated-images` stub item shape.\nAI 이미지 생성 자체(제공업체/과금/비동기 처리)는 별도 세션 범위라 이 엔드포인트는 지금\n항상 빈 배열을 반환한다 — 실제 생성 파이프라인이 생기면 이 스키마를 채우는 쿼리만 추가하면 된다."
       },
       "GenreResponse": {
         "properties": {

@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.image_processing import BLURRED_CONTENT_TYPE, generate_blurred_image
 from api.assets.schemas import (
     AssetCompleteResponse,
+    GeneratedImageItem,
     PresignedUploadRequest,
     PresignedUploadResponse,
     RegisterSituationalImageRequest,
@@ -27,6 +28,7 @@ from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/assets", tags=["assets"])
+me_router = APIRouter(prefix="/me", tags=["assets"])
 
 
 @router.post("/presigned-upload", status_code=status.HTTP_201_CREATED)
@@ -152,3 +154,13 @@ async def register_situational_image(
         trigger_condition=payload.trigger_condition,
         order=payload.order,
     )
+
+
+@me_router.get("/generated-images")
+async def list_generated_images(
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+) -> list[GeneratedImageItem]:
+    """techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회. AI 이미지 생성 자체는
+    별도 세션 범위라 아직 자산에 "생성됨"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을
+    반환하는 스텁이다."""
+    return []
