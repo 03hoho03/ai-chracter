@@ -163,6 +163,10 @@ class CharacterSituationalImageItem(CamelModel):
 
 class CharacterDraftResponse(CamelModel):
     id: uuid.UUID
+    # Needed by the FE builder to call `POST /assets/{id}/register-situational-image`
+    # (US-071), which is content_version_id-scoped and otherwise unreachable from this
+    # response (`id` above is the content's physical id, not the draft version's).
+    content_version_id: uuid.UUID
     type: Literal["character"] = "character"
     name: str
     one_liner: str

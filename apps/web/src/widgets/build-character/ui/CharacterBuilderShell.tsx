@@ -10,6 +10,7 @@ import {
   type CharacterBuilderFormValues,
 } from "../../../features/build-character";
 import { characterBuilderActiveTabAtom, type CharacterBuilderTab } from "../model/activeTabAtom";
+import { AdvancedTab } from "./AdvancedTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
@@ -66,7 +67,7 @@ export function CharacterBuilderShell({ data }: { data: CharacterDraftResponse }
           <PromptTab form={form} />
         </TabsContent>
         <TabsContent value="advanced">
-          <TabPlaceholder />
+          <AdvancedTab form={form} contentVersionId={data.contentVersionId} />
         </TabsContent>
         <TabsContent value="detail">
           <TabPlaceholder />

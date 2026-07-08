@@ -9,6 +9,7 @@ type CharacterDraftResponse = components["schemas"]["CharacterDraftResponse"];
 function baseDraftResponse(): CharacterDraftResponse {
   return {
     id: "content-1",
+    contentVersionId: "version-1",
     type: "character",
     name: "루나",
     oneLiner: "달빛 마법사",

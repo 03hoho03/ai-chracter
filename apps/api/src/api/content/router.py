@@ -514,6 +514,7 @@ async def _character_draft_response(
 
     return CharacterDraftResponse(
         id=content.id,
+        content_version_id=version.id,
         name=detail.name,
         one_liner=detail.one_liner,
         thumbnail_asset_id=detail.thumbnail_asset_id,

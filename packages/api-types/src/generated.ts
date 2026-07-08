@@ -1156,6 +1156,11 @@ export interface components {
              */
             id: string;
             /**
+             * Contentversionid
+             * Format: uuid
+             */
+            contentVersionId: string;
+            /**
              * Type
              * @default character
              * @constant

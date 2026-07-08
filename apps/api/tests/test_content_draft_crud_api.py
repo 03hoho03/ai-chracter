@@ -320,6 +320,12 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
     assert resp.status_code == 200
     body = resp.json()
     assert body["id"] == content_id
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == uuid.UUID(content_id))
+        )
+    ).scalar_one()
+    assert body["contentVersionId"] == str(version.id)
     assert body["type"] == "character"
     assert body["name"] == ""
     assert body["oneLiner"] == ""
