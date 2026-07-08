@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
@@ -44,6 +45,7 @@ from api.chat.schemas import (
     StatDefSnapshot,
 )
 from api.chat.stats import StatChange, apply_stat_changes
+from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -54,6 +56,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
 )
 from api.db.models.content import Content, ContentType
+from api.db.models.media import Asset
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -262,11 +265,13 @@ async def _match_situational_image(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
-) -> uuid.UUID | None:
+) -> SituationalImage | None:
     """캐릭터 챗 전용 상황별 이미지 매칭(techspec-chat-character.md §1.1, techspec-backend-chat.md
     §3.1). 등록된 이미지가 없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상
     단수라 "동시 매칭 시 order 최상위만 발동"은 buildJudgmentPrompt의 프롬프트 지시로 처리하고,
-    여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다."""
+    여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다. 매칭된 이미지
+    자체(entity_id뿐 아니라 image_asset_id도 필요, US-073의 인라인 렌더링 URL 조회용)를
+    그대로 반환한다."""
     situational_images = list(
         (
             await db.scalars(
@@ -311,7 +316,7 @@ async def _match_situational_image(
                 image_entity_id=matched.entity_id,
             )
         )
-    return matched.entity_id
+    return matched
 
 
 async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatMessage:
@@ -539,7 +544,7 @@ async def send_message(
 
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
-    matched_image_entity_id: uuid.UUID | None = None
+    matched_image: SituationalImage | None = None
     if setup is not None and not room.ending_reached:
         stat_defs = list(
             (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
@@ -616,7 +621,7 @@ async def send_message(
             ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
             break
     elif setup is None:
-        matched_image_entity_id = await _match_situational_image(
+        matched_image = await _match_situational_image(
             db,
             room,
             llm_client,
@@ -626,6 +631,12 @@ async def send_message(
         )
 
     await db.commit()
+
+    matched_image_url: str | None = None
+    if matched_image is not None:
+        image_asset = await db.get(Asset, matched_image.image_asset_id)
+        assert image_asset is not None
+        matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
 
     for stat_change_event in stat_change_events:
         yield stat_change_event
@@ -639,7 +650,8 @@ async def send_message(
             role=assistant_message.role,
             content=assistant_message.content,
             created_at=assistant_message.created_at,
-            image_id=matched_image_entity_id,
+            image_id=matched_image.entity_id if matched_image is not None else None,
+            image_url=matched_image_url,
         )
     )
 

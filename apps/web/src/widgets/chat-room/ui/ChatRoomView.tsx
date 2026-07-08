@@ -32,7 +32,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const contentQuery = useContentDetailQuery(room?.contentId ?? "", room !== undefined);
   const content = contentQuery.data;
 
-  const { send, retry, isSending, error, policyWarning, streamingText } = useSendMessage(roomId);
+  const characterId = room?.contentType === "character" ? room.contentId : undefined;
+  const { send, retry, isSending, error, policyWarning, streamingText } = useSendMessage(roomId, characterId);
   const [text, setText] = useState("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);

@@ -376,6 +376,7 @@ async def test_send_message_no_situational_images_skips_judgment_call(
     assert not fake.generate_structured_called
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
 
 
 async def test_send_message_matched_situational_image_included_in_done_event_and_records_exposure(
@@ -419,6 +420,7 @@ async def test_send_message_matched_situational_image_included_in_done_event_and
 
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] == str(high_priority.entity_id)
+    assert done_event["finalMessage"]["imageUrl"].startswith("http")
 
     exposures = (
         await db_session.execute(
@@ -458,6 +460,7 @@ async def test_send_message_no_matched_image_returns_null_imageid_and_no_exposur
     assert fake.generate_structured_called
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
 
     exposures = (
         await db_session.execute(
@@ -495,6 +498,7 @@ async def test_send_message_hallucinated_image_entity_id_is_ignored(
 
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
 
     exposures = (
         await db_session.execute(

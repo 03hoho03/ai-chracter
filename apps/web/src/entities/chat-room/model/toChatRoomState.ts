@@ -1,8 +1,18 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { ChatRoomState, ComparisonOp, Ending, RuleListItem, Shortcut, SingleRule, StatDef } from "../api/types";
+import type {
+  ChatMessage,
+  ChatRoomState,
+  ComparisonOp,
+  Ending,
+  RuleListItem,
+  Shortcut,
+  SingleRule,
+  StatDef,
+} from "../api/types";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
+type ChatMessageDto = ChatRoomResponseDto["messages"][number];
 type StatDefSnapshotDto = components["schemas"]["StatDefSnapshot"];
 type EndingSnapshotDto = components["schemas"]["EndingSnapshot"];
 type EndingRuleItemDto = components["schemas"]["EndingRuleItem"];
@@ -67,6 +77,17 @@ function toShortcut(dto: components["schemas"]["ShortcutSnapshot"]): Shortcut {
   return { id: dto.id, name: dto.name, description: dto.description, prompt: dto.prompt };
 }
 
+function toChatMessage(dto: ChatMessageDto): ChatMessage {
+  return {
+    id: dto.id,
+    role: dto.role,
+    content: dto.content,
+    imageId: dto.imageId ?? undefined,
+    imageUrl: dto.imageUrl ?? undefined,
+    createdAt: dto.createdAt,
+  };
+}
+
 // US-055 — apps/api의 ChatRoomResponse(캐릭터 챗, US-051)를 ChatRoomState로 변환하는 유일한 경계.
 // US-060 — 스토리 챗 전용 필드(startingSetupId/stats/contentSnapshot)도 여기서 함께 매핑한다.
 // 캐릭터 챗은 BE가 이 필드들을 보내지 않아(null/undefined) techspec-chat-character.md §0이 정한
@@ -87,7 +108,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
           pinnedStartingSetupId: dto.contentSnapshot.pinnedStartingSetupId,
         }
       : undefined,
-    messages: dto.messages,
+    messages: dto.messages.map(toChatMessage),
     stats: dto.stats ?? {},
     endingStatus: { reached: dto.endingReached, endingId: null, reachedAtTurn: null, epilogue: null },
     turnCount: dto.turnCount,

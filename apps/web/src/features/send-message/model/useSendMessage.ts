@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { characterImageArchiveKeys } from "../../../entities/character-image-archive";
 import { applyStreamEvent, buildSendPayload, chatRoomKeys } from "../../../entities/chat-room";
 import type { ChatMessage, ChatRoomState, ChatStreamEvent, SendMessageRequest } from "../../../entities/chat-room";
 import { openChatStream } from "../../../shared/lib/sse/openChatStream";
@@ -8,8 +9,10 @@ import { openChatStream } from "../../../shared/lib/sse/openChatStream";
 type SendMessageError = { retryPayload: SendMessageRequest };
 
 /** techspec-chat-common.md §1 — 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
- * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88). */
-export function useSendMessage(roomId: string) {
+ * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
+ * characterId는 캐릭터 챗일 때만(스토리 챗은 undefined) 전달 — 상황별 이미지가 트리거된
+ * 메시지가 도착하면 이미지 보관함(US-074) 쿼리를 무효화한다(techspec-chat-character.md §1.2). */
+export function useSendMessage(roomId: string, characterId?: string) {
   const queryClient = useQueryClient();
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<SendMessageError | null>(null);
@@ -31,7 +34,13 @@ export function useSendMessage(roomId: string) {
         } else if (event.type === "error") {
           setError({ retryPayload: payload });
         }
-        applyStreamEvent(queryClient, roomId, event);
+        applyStreamEvent(queryClient, roomId, event, {
+          onDone: (message) => {
+            if (message.imageId && characterId) {
+              queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
+            }
+          },
+        });
       }
     } catch {
       setError({ retryPayload: payload });

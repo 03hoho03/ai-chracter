@@ -800,6 +800,8 @@ export interface components {
             createdAt: string;
             /** Imageid */
             imageId?: string | null;
+            /** Imageurl */
+            imageUrl?: string | null;
         };
         /**
          * ChatMessageRole

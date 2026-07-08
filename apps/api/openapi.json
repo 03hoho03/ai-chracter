@@ -2028,6 +2028,17 @@
               }
             ],
             "title": "Imageid"
+          },
+          "imageUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageurl"
           }
         },
         "type": "object",

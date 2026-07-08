@@ -34,6 +34,9 @@ class ChatMessageResponse(CamelModel):
     # 필드라 chat_messages 테이블엔 컬럼이 없다 — GET 재조회 시 항상 None(techspec-chat-character.md
     # §1: 별도 이벤트가 아니라 done 이벤트의 finalMessage에만 실려온다).
     image_id: uuid.UUID | None = None
+    # US-073 인라인 렌더링용 presigned GET URL. image_id와 동시에 채워지는 같은 세션 한정 필드 —
+    # image_id를 이미지 보관함(US-074) 조회 없이 즉시 렌더링할 수 있도록 함께 내려준다.
+    image_url: str | None = None
 
 
 # 스토리 챗 전용 스냅샷 (techspec-content-versioning.md §2). entity_id 기반 id를 쓴다 —

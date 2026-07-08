@@ -6,6 +6,7 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   imageId?: string; // 상황별 이미지 매칭 결과(캐릭터 챗 전용) — 스토리 챗에서는 항상 undefined
+  imageUrl?: string; // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정)
   createdAt: string;
 };
 
