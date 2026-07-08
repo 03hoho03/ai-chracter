@@ -597,6 +597,8 @@ async def test_get_story_chat_room_embeds_content_snapshot(
     assert resp.status_code == 200
     snapshot = resp.json()["contentSnapshot"]
 
+    assert snapshot["pinnedStartingSetupId"] == str(setup.id)
+
     assert snapshot["stats"] == [
         {
             "id": str(stat.entity_id),

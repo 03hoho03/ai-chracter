@@ -84,6 +84,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
           endings: dto.contentSnapshot.endings.map(toEnding),
           shortcuts: dto.contentSnapshot.shortcuts.map(toShortcut),
           suggestedReplies: dto.contentSnapshot.suggestedReplies,
+          pinnedStartingSetupId: dto.contentSnapshot.pinnedStartingSetupId,
         }
       : undefined,
     messages: dto.messages,

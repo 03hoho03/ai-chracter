@@ -96,6 +96,7 @@ describe("toChatRoomState", () => {
         ],
         shortcuts: [{ id: "shortcut-1", name: "인사", description: "인사하기", prompt: "안녕이라고 인사해줘" }],
         suggestedReplies: ["계속 이야기해줘"],
+        pinnedStartingSetupId: "physical-setup-1",
       },
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
@@ -140,6 +141,7 @@ describe("toChatRoomState", () => {
       ],
       shortcuts: [{ id: "shortcut-1", name: "인사", description: "인사하기", prompt: "안녕이라고 인사해줘" }],
       suggestedReplies: ["계속 이야기해줘"],
+      pinnedStartingSetupId: "physical-setup-1",
     });
   });
 });

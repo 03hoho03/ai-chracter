@@ -2010,6 +2010,11 @@
             },
             "type": "array",
             "title": "Suggestedreplies"
+          },
+          "pinnedStartingSetupId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Pinnedstartingsetupid"
           }
         },
         "type": "object",
@@ -2017,7 +2022,8 @@
           "stats",
           "endings",
           "shortcuts",
-          "suggestedReplies"
+          "suggestedReplies",
+          "pinnedStartingSetupId"
         ],
         "title": "ChatRoomContentSnapshot"
       },

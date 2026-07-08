@@ -241,6 +241,7 @@ async def _build_content_snapshot(
             for sc in shortcuts
         ],
         suggested_replies=setup.suggested_replies or [],
+        pinned_starting_setup_id=setup.id,
     )
 
 

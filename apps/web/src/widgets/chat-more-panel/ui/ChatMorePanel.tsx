@@ -9,6 +9,7 @@ import {
 } from "@ai-character-chat/ui/components/sheet";
 import { BookOpen, History, Images, MoreVertical, Repeat, Sparkles } from "lucide-react";
 
+import { EndingCollectionModal } from "../../../features/ending-collection";
 import { PlayGuideModal } from "../../../features/play-guide";
 import { chatMorePanelOpenAtom } from "../model/atom";
 
@@ -29,7 +30,7 @@ const STORY_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
   { key: "update-info", label: "업데이트 정보", icon: History, active: false },
   { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, active: false },
-  { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, active: false },
+  { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, active: true },
 ];
 
 // techspec-chat-story.md §6, techspec-chat-character.md — 패널 자체는 react-call을 쓰지 않는다
@@ -38,9 +39,11 @@ const STORY_ITEMS: MorePanelItem[] = [
 export function ChatMorePanel({
   roomId,
   contentType,
+  startingSetupId,
 }: {
   roomId: string;
   contentType: "character" | "story";
+  startingSetupId?: string;
 }) {
   const [open, setOpen] = useAtom(chatMorePanelOpenAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
@@ -49,6 +52,9 @@ export function ChatMorePanel({
     if (!item.active) return;
     setOpen(false);
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
+    if (item.key === "ending-collection" && startingSetupId) {
+      void EndingCollectionModal.call({ startingSetupId });
+    }
   }
 
   return (

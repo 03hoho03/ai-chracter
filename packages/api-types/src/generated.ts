@@ -790,6 +790,11 @@ export interface components {
             shortcuts: components["schemas"]["ShortcutSnapshot"][];
             /** Suggestedreplies */
             suggestedReplies: string[];
+            /**
+             * Pinnedstartingsetupid
+             * Format: uuid
+             */
+            pinnedStartingSetupId: string;
         };
         /** ChatRoomCreateRequest */
         ChatRoomCreateRequest: {

@@ -93,7 +93,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
           <span className="truncate text-xs text-muted-foreground">{room.name}</span>
         </div>
-        <ChatMorePanel roomId={roomId} contentType={room.contentType} />
+        <ChatMorePanel
+          roomId={roomId}
+          contentType={room.contentType}
+          startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
+        />
       </header>
 
       {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}

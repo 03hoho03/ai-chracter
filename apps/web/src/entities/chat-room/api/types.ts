@@ -74,6 +74,7 @@ export type ChatRoomState = {
     endings: Ending[];
     shortcuts: Shortcut[];
     suggestedReplies: string[];
+    pinnedStartingSetupId: string; // US-070 — 물리적 PK(entity_id인 startingSetupId와 다름). GET /stories/starting-setups/{id}/ending-collection 호출에 쓴다.
   };
   messages: ChatMessage[];
   stats: Record<string, number>; // statId -> 현재값 — 캐릭터 챗에서는 항상 빈 객체(techspec-chat-character.md §0)

@@ -5,4 +5,6 @@ export const chatRoomKeys = {
     [...chatRoomKeys.all, "list", params] as const,
   detail: (roomId: string) => [...chatRoomKeys.all, "detail", roomId] as const,
   playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
+  endingCollection: (startingSetupId: string) =>
+    [...chatRoomKeys.all, "ending-collection", startingSetupId] as const,
 };

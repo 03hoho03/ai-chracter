@@ -91,6 +91,11 @@ class ChatRoomContentSnapshot(CamelModel):
     endings: list[EndingSnapshot]
     shortcuts: list[ShortcutSnapshot]
     suggested_replies: list[str]
+    # US-070 — 유일하게 물리적 PK인 필드(위 entity_id 기반 id들과 다름). GET /stories/starting-setups/
+    # {id}/ending-collection(US-069)이 물리적 PK를 요구하는데(POST /chat-rooms의 startingSetupId 관례와
+    # 동일), ChatRoomResponse.startingSetupId(entity_id, 이미 테스트로 고정됨)로는 그 호출을 만들 수
+    # 없어 room이 고정한 물리적 StartingSetup 행의 id를 별도로 노출한다.
+    pinned_starting_setup_id: uuid.UUID
 
 
 class ChatRoomResponse(CamelModel):
