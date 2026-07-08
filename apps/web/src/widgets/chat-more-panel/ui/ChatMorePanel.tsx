@@ -10,6 +10,7 @@ import {
 import { BookOpen, History, Images, MoreVertical, Repeat, Sparkles } from "lucide-react";
 
 import { EndingCollectionModal } from "../../../features/ending-collection";
+import { ImageArchiveModal } from "../../../features/image-archive";
 import { PlayGuideModal } from "../../../features/play-guide";
 import { chatMorePanelOpenAtom } from "../model/atom";
 
@@ -23,7 +24,7 @@ type MorePanelItem = {
 const CHARACTER_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
   { key: "update-info", label: "업데이트 정보", icon: History, active: false },
-  { key: "image-archive", label: "이미지 보관함", icon: Images, active: false },
+  { key: "image-archive", label: "이미지 보관함", icon: Images, active: true },
 ];
 
 const STORY_ITEMS: MorePanelItem[] = [
@@ -40,10 +41,12 @@ export function ChatMorePanel({
   roomId,
   contentType,
   startingSetupId,
+  characterId,
 }: {
   roomId: string;
   contentType: "character" | "story";
   startingSetupId?: string;
+  characterId?: string;
 }) {
   const [open, setOpen] = useAtom(chatMorePanelOpenAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
@@ -54,6 +57,9 @@ export function ChatMorePanel({
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
     if (item.key === "ending-collection" && startingSetupId) {
       void EndingCollectionModal.call({ startingSetupId });
+    }
+    if (item.key === "image-archive" && characterId) {
+      void ImageArchiveModal.call({ characterId });
     }
   }
 

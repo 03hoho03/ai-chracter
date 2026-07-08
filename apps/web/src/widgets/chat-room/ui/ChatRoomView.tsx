@@ -98,6 +98,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           roomId={roomId}
           contentType={room.contentType}
           startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
+          characterId={characterId}
         />
       </header>
 
