@@ -627,8 +627,9 @@ export interface paths {
          * Send Message
          * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
          *
-         *     현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +
-         *     exampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.
+         *     캐릭터 챗 전용 파이프라인이다(character_prompt + exampleDialogues + 히스토리로 프롬프트를
+         *     조립해 LLMClient.generate()에 릴레이) — 스토리 챗의 스탯 판단/엔딩 평가 파이프라인은
+         *     아직 여기 없다(US-059/US-061에서 추가 예정, 스토리 방 생성/조회 자체는 US-057에서 이미 가능).
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
         delete?: never;
@@ -731,6 +732,17 @@ export interface components {
          * @enum {string}
          */
         ChatMessageRole: "user" | "assistant";
+        /** ChatRoomContentSnapshot */
+        ChatRoomContentSnapshot: {
+            /** Stats */
+            stats: components["schemas"]["StatDefSnapshot"][];
+            /** Endings */
+            endings: components["schemas"]["EndingSnapshot"][];
+            /** Shortcuts */
+            shortcuts: components["schemas"]["ShortcutSnapshot"][];
+            /** Suggestedreplies */
+            suggestedReplies: string[];
+        };
         /** ChatRoomCreateRequest */
         ChatRoomCreateRequest: {
             /**
@@ -740,9 +752,11 @@ export interface components {
             contentId: string;
             /**
              * Contenttype
-             * @constant
+             * @enum {string}
              */
-            contentType: "character";
+            contentType: "character" | "story";
+            /** Startingsetupid */
+            startingSetupId?: string | null;
         };
         /** ChatRoomListItem */
         ChatRoomListItem: {
@@ -781,12 +795,19 @@ export interface components {
             contentType: components["schemas"]["ContentType"];
             /** Name */
             name: string;
+            /** Startingsetupid */
+            startingSetupId?: string | null;
             /** Turncount */
             turnCount: number;
             /** Endingreached */
             endingReached: boolean;
+            /** Stats */
+            stats?: {
+                [key: string]: number;
+            } | null;
             /** Messages */
             messages: components["schemas"]["ChatMessageResponse"][];
+            contentSnapshot?: components["schemas"]["ChatRoomContentSnapshot"] | null;
             /** Latestversionavailable */
             latestVersionAvailable: boolean;
             /** Versionautoupgraded */
@@ -960,6 +981,69 @@ export interface components {
              */
             updatedAt: string;
         };
+        /** EndingRuleGroupItem */
+        EndingRuleGroupItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "group";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rules */
+            rules: components["schemas"]["EndingRuleItem"][];
+            nextOp: components["schemas"]["LogicalOp"] | null;
+        };
+        /** EndingRuleItem */
+        EndingRuleItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rule";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Statid
+             * Format: uuid
+             */
+            statId: string;
+            operator: components["schemas"]["EndingRuleOperator"];
+            /** Threshold */
+            threshold: number;
+            nextOp: components["schemas"]["LogicalOp"] | null;
+        };
+        /**
+         * EndingRuleOperator
+         * @enum {string}
+         */
+        EndingRuleOperator: "gte" | "lte" | "eq" | "gt" | "lt";
+        /** EndingSnapshot */
+        EndingSnapshot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Turncountgate */
+            turnCountGate: number;
+            /** Judgmentprompt */
+            judgmentPrompt: string;
+            /** Epilogue */
+            epilogue: string | null;
+            /** Hint */
+            hint: string | null;
+            /** Statrules */
+            statRules: (components["schemas"]["EndingRuleItem"] | components["schemas"]["EndingRuleGroupItem"])[];
+        };
         /** GenreResponse */
         GenreResponse: {
             /**
@@ -991,6 +1075,11 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * LogicalOp
+         * @enum {string}
+         */
+        LogicalOp: "and" | "or";
         /** LoginRequest */
         LoginRequest: {
             /**
@@ -1139,6 +1228,20 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ShortcutSnapshot */
+        ShortcutSnapshot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Prompt */
+            prompt: string;
+        };
         /** SignupRequest */
         SignupRequest: {
             /**
@@ -1176,6 +1279,30 @@ export interface components {
             name: string;
             /** Prologue */
             prologue: string;
+        };
+        /** StatDefSnapshot */
+        StatDefSnapshot: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon */
+            icon: string;
+            /** Color */
+            color: string;
+            /** Minvalue */
+            minValue: number;
+            /** Maxvalue */
+            maxValue: number;
+            /** Initialvalue */
+            initialValue: number;
+            /** Unit */
+            unit: string | null;
+            /** Description */
+            description: string;
         };
         /** UpdateProfileRequest */
         UpdateProfileRequest: {

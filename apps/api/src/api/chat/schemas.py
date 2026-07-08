@@ -7,11 +7,13 @@ from pydantic import Field
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType
+from api.db.models.story import EndingRuleOperator, LogicalOp
 
 
 class ChatRoomCreateRequest(CamelModel):
     content_id: uuid.UUID
-    content_type: Literal["character"]
+    content_type: Literal["character", "story"]
+    starting_setup_id: uuid.UUID | None = None
 
 
 class ChatMessageCreateRequest(CamelModel):
@@ -29,14 +31,78 @@ class ChatMessageResponse(CamelModel):
     created_at: datetime
 
 
+# 스토리 챗 전용 스냅샷 (techspec-content-versioning.md §2). entity_id 기반 id를 쓴다 —
+# 물리적 PK가 아니라 버전이 바뀌어도 안정적인 참조(§1 원칙 4)라 SSE statChange/endingReached,
+# chat_room_stats, story_ending_unlocks가 참조하는 값과 그대로 일치한다.
+class StatDefSnapshot(CamelModel):
+    id: uuid.UUID
+    name: str
+    icon: str
+    color: str
+    min_value: int
+    max_value: int
+    initial_value: int
+    unit: str | None
+    description: str
+
+
+class ShortcutSnapshot(CamelModel):
+    id: uuid.UUID
+    name: str
+    description: str
+    prompt: str
+
+
+class EndingRuleItem(CamelModel):
+    kind: Literal["rule"] = "rule"
+    id: uuid.UUID
+    stat_id: uuid.UUID
+    operator: EndingRuleOperator
+    threshold: float
+    next_op: LogicalOp | None
+
+
+class EndingRuleGroupItem(CamelModel):
+    kind: Literal["group"] = "group"
+    id: uuid.UUID
+    rules: list[EndingRuleItem]
+    next_op: LogicalOp | None
+
+
+EndingRuleListItem = Annotated[
+    EndingRuleItem | EndingRuleGroupItem,
+    Field(discriminator="kind"),
+]
+
+
+class EndingSnapshot(CamelModel):
+    id: uuid.UUID
+    name: str
+    turn_count_gate: int
+    judgment_prompt: str
+    epilogue: str | None
+    hint: str | None
+    stat_rules: list[EndingRuleListItem]
+
+
+class ChatRoomContentSnapshot(CamelModel):
+    stats: list[StatDefSnapshot]
+    endings: list[EndingSnapshot]
+    shortcuts: list[ShortcutSnapshot]
+    suggested_replies: list[str]
+
+
 class ChatRoomResponse(CamelModel):
     id: uuid.UUID
     content_id: uuid.UUID
     content_type: ContentType
     name: str
+    starting_setup_id: uuid.UUID | None = None
     turn_count: int
     ending_reached: bool
+    stats: dict[str, float] | None = None
     messages: list[ChatMessageResponse]
+    content_snapshot: ChatRoomContentSnapshot | None = None
     latest_version_available: bool
     version_auto_upgraded: bool
     created_at: datetime

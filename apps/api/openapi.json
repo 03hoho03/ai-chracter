@@ -1640,7 +1640,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +\nexampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.",
+        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).\n\n캐릭터 챗 전용 파이프라인이다(character_prompt + exampleDialogues + 히스토리로 프롬프트를\n조립해 LLMClient.generate()에 릴레이) — 스토리 챗의 스탯 판단/엔딩 평가 파이프라인은\n아직 여기 없다(US-059/US-061에서 추가 예정, 스토리 방 생성/조회 자체는 US-057에서 이미 가능).",
         "operationId": "send_message_chat_rooms__room_id__messages_post",
         "parameters": [
           {
@@ -1877,6 +1877,46 @@
         ],
         "title": "ChatMessageRole"
       },
+      "ChatRoomContentSnapshot": {
+        "properties": {
+          "stats": {
+            "items": {
+              "$ref": "#/components/schemas/StatDefSnapshot"
+            },
+            "type": "array",
+            "title": "Stats"
+          },
+          "endings": {
+            "items": {
+              "$ref": "#/components/schemas/EndingSnapshot"
+            },
+            "type": "array",
+            "title": "Endings"
+          },
+          "shortcuts": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutSnapshot"
+            },
+            "type": "array",
+            "title": "Shortcuts"
+          },
+          "suggestedReplies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestedreplies"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stats",
+          "endings",
+          "shortcuts",
+          "suggestedReplies"
+        ],
+        "title": "ChatRoomContentSnapshot"
+      },
       "ChatRoomCreateRequest": {
         "properties": {
           "contentId": {
@@ -1886,8 +1926,23 @@
           },
           "contentType": {
             "type": "string",
-            "const": "character",
+            "enum": [
+              "character",
+              "story"
+            ],
             "title": "Contenttype"
+          },
+          "startingSetupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startingsetupid"
           }
         },
         "type": "object",
@@ -1960,6 +2015,18 @@
             "type": "string",
             "title": "Name"
           },
+          "startingSetupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startingsetupid"
+          },
           "turnCount": {
             "type": "integer",
             "title": "Turncount"
@@ -1968,12 +2035,36 @@
             "type": "boolean",
             "title": "Endingreached"
           },
+          "stats": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stats"
+          },
           "messages": {
             "items": {
               "$ref": "#/components/schemas/ChatMessageResponse"
             },
             "type": "array",
             "title": "Messages"
+          },
+          "contentSnapshot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRoomContentSnapshot"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "latestVersionAvailable": {
             "type": "boolean",
@@ -2373,6 +2464,177 @@
         ],
         "title": "DraftSummary"
       },
+      "EndingRuleGroupItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "group",
+            "title": "Kind",
+            "default": "group"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/EndingRuleItem"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "nextOp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalOp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "rules",
+          "nextOp"
+        ],
+        "title": "EndingRuleGroupItem"
+      },
+      "EndingRuleItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "rule",
+            "title": "Kind",
+            "default": "rule"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "statId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Statid"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/EndingRuleOperator"
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          },
+          "nextOp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalOp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "statId",
+          "operator",
+          "threshold",
+          "nextOp"
+        ],
+        "title": "EndingRuleItem"
+      },
+      "EndingRuleOperator": {
+        "type": "string",
+        "enum": [
+          "gte",
+          "lte",
+          "eq",
+          "gt",
+          "lt"
+        ],
+        "title": "EndingRuleOperator"
+      },
+      "EndingSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "turnCountGate": {
+            "type": "integer",
+            "title": "Turncountgate"
+          },
+          "judgmentPrompt": {
+            "type": "string",
+            "title": "Judgmentprompt"
+          },
+          "epilogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epilogue"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "statRules": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EndingRuleItem"
+                },
+                {
+                  "$ref": "#/components/schemas/EndingRuleGroupItem"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "group": "#/components/schemas/EndingRuleGroupItem",
+                  "rule": "#/components/schemas/EndingRuleItem"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Statrules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "turnCountGate",
+          "judgmentPrompt",
+          "epilogue",
+          "hint",
+          "statRules"
+        ],
+        "title": "EndingSnapshot"
+      },
       "GenreResponse": {
         "properties": {
           "id": {
@@ -2440,6 +2702,14 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "LogicalOp": {
+        "type": "string",
+        "enum": [
+          "and",
+          "or"
+        ],
+        "title": "LogicalOp"
       },
       "LoginRequest": {
         "properties": {
@@ -2748,6 +3018,35 @@
         "type": "object",
         "title": "SessionEchoPayload"
       },
+      "ShortcutSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "prompt"
+        ],
+        "title": "ShortcutSnapshot"
+      },
       "SignupRequest": {
         "properties": {
           "email": {
@@ -2826,6 +3125,67 @@
           "prologue"
         ],
         "title": "StartingSetupSummary"
+      },
+      "StatDefSnapshot": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "color": {
+            "type": "string",
+            "title": "Color"
+          },
+          "minValue": {
+            "type": "integer",
+            "title": "Minvalue"
+          },
+          "maxValue": {
+            "type": "integer",
+            "title": "Maxvalue"
+          },
+          "initialValue": {
+            "type": "integer",
+            "title": "Initialvalue"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon",
+          "color",
+          "minValue",
+          "maxValue",
+          "initialValue",
+          "unit",
+          "description"
+        ],
+        "title": "StatDefSnapshot"
       },
       "UpdateProfileRequest": {
         "properties": {

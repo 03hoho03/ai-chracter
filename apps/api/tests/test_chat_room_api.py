@@ -1,5 +1,6 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 import httpx
 import sqlalchemy as sa
@@ -12,13 +13,22 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomStat,
     Content,
     ContentTarget,
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    EndingRuleOperator,
     Genre,
+    LogicalOp,
     ModerationStatus,
+    Shortcut,
+    StartingSetup,
+    StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
@@ -158,10 +168,56 @@ async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uu
     return content
 
 
+async def _add_starting_setup(
+    db_session: AsyncSession, content: Content, *, opening_message: str | None = "다시 만났네요!", order: int = 1
+) -> StartingSetup:
+    assert content.current_published_version_id is not None
+    setup = StartingSetup(
+        entity_id=uuid.uuid4(),
+        content_version_id=content.current_published_version_id,
+        name="첫 만남",
+        prologue="옛날 옛적, 낯선 마을에 도착했다.",
+        opening_message=opening_message,
+        suggested_replies=["안녕하세요", "여긴 어디죠?"],
+        order=order,
+    )
+    db_session.add(setup)
+    await db_session.flush()
+    return setup
+
+
+async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup, *, order: int = 1, **overrides: object) -> StatDef:
+    defaults: dict[str, object] = {
+        "entity_id": uuid.uuid4(),
+        "starting_setup_id": setup.id,
+        "name": "호감도",
+        "icon": "heart",
+        "color": "#ff0000",
+        "min_value": 0,
+        "max_value": 100,
+        "initial_value": 50,
+        "unit": None,
+        "description": "호감도 스탯",
+        "order": order,
+    }
+    defaults.update(overrides)
+    stat_def = StatDef(**defaults)
+    db_session.add(stat_def)
+    await db_session.flush()
+    return stat_def
+
+
 async def _create_room_via_api(
-    client: httpx.AsyncClient, content_id: uuid.UUID, *, content_type: str = "character"
+    client: httpx.AsyncClient,
+    content_id: uuid.UUID,
+    *,
+    content_type: str = "character",
+    starting_setup_id: uuid.UUID | None = None,
 ) -> httpx.Response:
-    return await client.post("/chat-rooms", json={"contentId": str(content_id), "contentType": content_type})
+    payload: dict[str, object] = {"contentId": str(content_id), "contentType": content_type}
+    if starting_setup_id is not None:
+        payload["startingSetupId"] = str(starting_setup_id)
+    return await client.post("/chat-rooms", json=payload)
 
 
 async def test_create_chat_room_requires_login(db_client: httpx.AsyncClient) -> None:
@@ -383,3 +439,252 @@ async def test_rename_reset_delete_require_ownership(
     assert (await db_client.patch(f"/chat-rooms/{room_id}", json={"name": "훔친 이름"})).status_code == 403
     assert (await db_client.post(f"/chat-rooms/{room_id}/reset")).status_code == 403
     assert (await db_client.delete(f"/chat-rooms/{room_id}")).status_code == 403
+
+
+async def test_create_story_chat_room_requires_starting_setup_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await _add_starting_setup(db_session, story)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await _create_room_via_api(db_client, story.id, content_type="story")
+    assert resp.status_code == 400
+
+
+async def test_create_story_chat_room_rejects_unknown_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await _add_starting_setup(db_session, story)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=uuid.uuid4())
+    assert resp.status_code == 400
+
+
+async def test_create_story_chat_room_pins_starting_setup_and_seeds_stats(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story, opening_message="정신을 차려보니 낯선 방이었다.")
+    stat = await _add_stat_def(db_session, setup, initial_value=42)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    assert resp.status_code == 201
+    body = resp.json()
+    assert body["contentType"] == "story"
+    assert body["startingSetupId"] == str(setup.entity_id)
+    assert len(body["messages"]) == 1
+    assert body["messages"][0]["content"] == "정신을 차려보니 낯선 방이었다."
+    assert body["stats"] == {str(stat.entity_id): 42.0}
+
+    room_id = uuid.UUID(body["id"])
+    stat_rows = (
+        await db_session.execute(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room_id))
+    ).scalars().all()
+    assert len(stat_rows) == 1
+    assert stat_rows[0].stat_entity_id == stat.entity_id
+    assert stat_rows[0].current_value == 42
+
+
+async def test_create_story_chat_room_falls_back_to_prologue_when_no_opening_message(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story, opening_message=None)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    assert resp.status_code == 201
+    assert resp.json()["messages"][0]["content"] == setup.prologue
+
+
+async def test_get_story_chat_room_embeds_content_snapshot(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story)
+    stat = await _add_stat_def(db_session, setup)
+
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="해피엔딩",
+        turn_count_gate=10,
+        judgment_prompt="호감도가 충분히 높은가?",
+        order=1,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+
+    top_rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        ending_id=ending.id,
+        stat_def_entity_id=stat.entity_id,
+        operator=EndingRuleOperator.GTE,
+        threshold=80,
+        next_op=LogicalOp.AND,
+        order=1,
+    )
+    group = EndingRuleGroup(entity_id=uuid.uuid4(), ending_id=ending.id, order=2)
+    db_session.add_all([top_rule, group])
+    await db_session.flush()
+
+    nested_rule = EndingRule(
+        entity_id=uuid.uuid4(),
+        rule_group_id=group.id,
+        stat_def_entity_id=stat.entity_id,
+        operator=EndingRuleOperator.LT,
+        threshold=20,
+        order=1,
+    )
+    db_session.add(nested_rule)
+
+    shortcut = Shortcut(
+        entity_id=uuid.uuid4(),
+        content_version_id=story.current_published_version_id,
+        name="자기소개",
+        description="자기소개를 유도",
+        prompt="당신의 이름과 목적을 소개해주세요.",
+    )
+    db_session.add(shortcut)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = (
+        await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+    ).json()["id"]
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert resp.status_code == 200
+    snapshot = resp.json()["contentSnapshot"]
+
+    assert snapshot["stats"] == [
+        {
+            "id": str(stat.entity_id),
+            "name": stat.name,
+            "icon": stat.icon,
+            "color": stat.color,
+            "minValue": stat.min_value,
+            "maxValue": stat.max_value,
+            "initialValue": stat.initial_value,
+            "unit": stat.unit,
+            "description": stat.description,
+        }
+    ]
+    assert snapshot["shortcuts"] == [
+        {"id": str(shortcut.entity_id), "name": "자기소개", "description": "자기소개를 유도", "prompt": shortcut.prompt}
+    ]
+    assert snapshot["suggestedReplies"] == ["안녕하세요", "여긴 어디죠?"]
+
+    assert len(snapshot["endings"]) == 1
+    ending_body = snapshot["endings"][0]
+    assert ending_body["id"] == str(ending.entity_id)
+    assert ending_body["statRules"] == [
+        {
+            "kind": "rule",
+            "id": str(top_rule.entity_id),
+            "statId": str(stat.entity_id),
+            "operator": "gte",
+            "threshold": 80.0,
+            "nextOp": "and",
+        },
+        {
+            "kind": "group",
+            "id": str(group.entity_id),
+            "nextOp": None,
+            "rules": [
+                {
+                    "kind": "rule",
+                    "id": str(nested_rule.entity_id),
+                    "statId": str(stat.entity_id),
+                    "operator": "lt",
+                    "threshold": 20.0,
+                    "nextOp": None,
+                }
+            ],
+        },
+    ]
+
+
+async def test_reset_story_chat_room_resets_stats_to_initial_values(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story)
+    stat = await _add_stat_def(db_session, setup, initial_value=50)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID(
+        (
+            await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+        ).json()["id"]
+    )
+
+    room_stat = await db_session.get(ChatRoomStat, (room_id, stat.entity_id))
+    assert room_stat is not None
+    room_stat.current_value = Decimal(5)
+    await db_session.commit()
+
+    resp = await db_client.post(f"/chat-rooms/{room_id}/reset")
+    assert resp.status_code == 200
+    assert resp.json()["stats"] == {str(stat.entity_id): 50.0}
+
+
+async def test_delete_story_chat_room_removes_stats(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, story)
+    await _add_stat_def(db_session, setup)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID(
+        (
+            await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup.id)
+        ).json()["id"]
+    )
+
+    resp = await db_client.delete(f"/chat-rooms/{room_id}")
+    assert resp.status_code == 204
+
+    remaining = (
+        await db_session.execute(sa.select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room_id))
+    ).scalars().all()
+    assert remaining == []

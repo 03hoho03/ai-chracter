@@ -13,16 +13,24 @@ from api.chat.schemas import (
     ChatMessageCreateRequest,
     ChatMessageResponse,
     ChatPolicyWarningEvent,
+    ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
     ChatRoomListItem,
     ChatRoomRenameRequest,
     ChatRoomResponse,
     ChatStreamEvent,
     ChatTokenEvent,
+    EndingRuleGroupItem,
+    EndingRuleItem,
+    EndingRuleListItem,
+    EndingSnapshot,
+    ShortcutSnapshot,
+    StatDefSnapshot,
 )
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentType
+from api.db.models.story import Ending, EndingRule, EndingRuleGroup, Shortcut, StartingSetup, StatDef
 from api.db.session import get_db_session
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
@@ -70,10 +78,125 @@ def _display_name(room: ChatRoom, ordinal: int) -> str:
     return room.name or f"대화 {ordinal}"
 
 
-async def _insert_opening_message(db: AsyncSession, room: ChatRoom) -> ChatMessage:
-    detail = await db.get(CharacterVersionDetail, room.content_version_id)
-    assert detail is not None
-    message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=detail.intro)
+async def _resolve_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingSetup | None:
+    """Story chat rooms only. `room.starting_setup_entity_id` is the version-stable
+    reference (§1 원칙 4) — resolve it back to the physical row belonging to the room's
+    *pinned* `content_version_id` (not necessarily the content's current version)."""
+    if room.starting_setup_entity_id is None:
+        return None
+    setup: StartingSetup | None = await db.scalar(
+        select(StartingSetup).where(
+            StartingSetup.content_version_id == room.content_version_id,
+            StartingSetup.entity_id == room.starting_setup_entity_id,
+        )
+    )
+    return setup
+
+
+async def _seed_initial_stats(db: AsyncSession, room: ChatRoom, setup: StartingSetup) -> None:
+    stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+    for stat_def in stat_defs:
+        db.add(
+            ChatRoomStat(
+                chat_room_id=room.id, stat_entity_id=stat_def.entity_id, current_value=stat_def.initial_value
+            )
+        )
+    await db.flush()
+
+
+def _ending_rule_item(rule: EndingRule) -> EndingRuleItem:
+    return EndingRuleItem(
+        id=rule.entity_id,
+        stat_id=rule.stat_def_entity_id,
+        operator=rule.operator,
+        threshold=float(rule.threshold),
+        next_op=rule.next_op,
+    )
+
+
+async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+    top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending.id))).all()
+    top_groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending.id))).all()
+
+    items: list[tuple[int, EndingRuleListItem]] = [(rule.order, _ending_rule_item(rule)) for rule in top_rules]
+    for group in top_groups:
+        nested = (
+            await db.scalars(
+                select(EndingRule).where(EndingRule.rule_group_id == group.id).order_by(EndingRule.order)
+            )
+        ).all()
+        items.append(
+            (
+                group.order,
+                EndingRuleGroupItem(
+                    id=group.entity_id, rules=[_ending_rule_item(r) for r in nested], next_op=group.next_op
+                ),
+            )
+        )
+    items.sort(key=lambda pair: pair[0])
+
+    return EndingSnapshot(
+        id=ending.entity_id,
+        name=ending.name,
+        turn_count_gate=ending.turn_count_gate,
+        judgment_prompt=ending.judgment_prompt,
+        epilogue=ending.epilogue,
+        hint=ending.hint,
+        stat_rules=[item for _, item in items],
+    )
+
+
+async def _build_content_snapshot(
+    db: AsyncSession, room: ChatRoom, setup: StartingSetup
+) -> ChatRoomContentSnapshot:
+    """techspec-content-versioning.md §2 — stats/endings는 방이 고정한 시작설정(setup) 기준,
+    단축어는 작품 전역(content_version_id) 기준(techspec-db-schema.md §5)."""
+    stat_defs = (
+        await db.scalars(
+            select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
+        )
+    ).all()
+    endings = (
+        await db.scalars(
+            select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+        )
+    ).all()
+    shortcuts = (
+        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == room.content_version_id))
+    ).all()
+
+    return ChatRoomContentSnapshot(
+        stats=[
+            StatDefSnapshot(
+                id=s.entity_id,
+                name=s.name,
+                icon=s.icon,
+                color=s.color,
+                min_value=s.min_value,
+                max_value=s.max_value,
+                initial_value=s.initial_value,
+                unit=s.unit,
+                description=s.description,
+            )
+            for s in stat_defs
+        ],
+        endings=[await _ending_snapshot(db, ending) for ending in endings],
+        shortcuts=[
+            ShortcutSnapshot(id=sc.entity_id, name=sc.name, description=sc.description, prompt=sc.prompt)
+            for sc in shortcuts
+        ],
+        suggested_replies=setup.suggested_replies or [],
+    )
+
+
+async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatMessage:
+    if setup is not None:
+        opening_text = setup.opening_message or setup.prologue
+    else:
+        detail = await db.get(CharacterVersionDetail, room.content_version_id)
+        assert detail is not None
+        opening_text = detail.intro
+    message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=opening_text)
     db.add(message)
     await db.flush()
     return message
@@ -94,17 +217,30 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         )
     ).all()
 
+    setup = await _resolve_starting_setup(db, room)
+    content_snapshot = None
+    stats = None
+    if setup is not None:
+        content_snapshot = await _build_content_snapshot(db, room, setup)
+        stat_rows = (
+            await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+        ).all()
+        stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
         content_type=content.type,
         name=_display_name(room, ordinal),
+        starting_setup_id=setup.entity_id if setup is not None else None,
         turn_count=room.turn_count,
         ending_reached=room.ending_reached,
+        stats=stats,
         messages=[
             ChatMessageResponse(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
             for m in messages
         ],
+        content_snapshot=content_snapshot,
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         created_at=room.created_at,
@@ -121,18 +257,39 @@ async def create_chat_room(
     content = await db.get(Content, payload.content_id)
     if content is None or content.current_published_version_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
-    if content.type != ContentType.CHARACTER:
+
+    expected_type = ContentType.STORY if payload.content_type == "story" else ContentType.CHARACTER
+    if content.type != expected_type:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Content type mismatch")
+
+    setup: StartingSetup | None = None
+    if payload.content_type == "story":
+        if payload.starting_setup_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST, detail="startingSetupId is required for story chat rooms"
+            )
+        setup = await db.scalar(
+            select(StartingSetup).where(
+                StartingSetup.id == payload.starting_setup_id,
+                StartingSetup.content_version_id == content.current_published_version_id,
+            )
+        )
+        if setup is None:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid startingSetupId")
 
     room = ChatRoom(
         user_id=user_id,
         content_id=content.id,
         content_version_id=content.current_published_version_id,
+        starting_setup_entity_id=setup.entity_id if setup is not None else None,
     )
     db.add(room)
     await db.flush()
 
-    await _insert_opening_message(db, room)
+    if setup is not None:
+        await _seed_initial_stats(db, room, setup)
+
+    await _insert_opening_message(db, room, setup)
     await db.commit()
 
     return await _to_response(db, room)
@@ -157,8 +314,9 @@ async def send_message(
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3).
 
-    현재 모든 대화방은 캐릭터 챗뿐(스토리 챗은 US-057) — character_prompt +
-    exampleDialogues + 히스토리로 프롬프트를 조립해 LLMClient.generate()에 릴레이한다.
+    캐릭터 챗 전용 파이프라인이다(character_prompt + exampleDialogues + 히스토리로 프롬프트를
+    조립해 LLMClient.generate()에 릴레이) — 스토리 챗의 스탯 판단/엔딩 평가 파이프라인은
+    아직 여기 없다(US-059/US-061에서 추가 예정, 스토리 방 생성/조회 자체는 US-057에서 이미 가능).
     """
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
@@ -274,7 +432,12 @@ async def reset_chat_room(
     room.ending_entity_id = None
     room.ending_reached_at_turn = None
 
-    await _insert_opening_message(db, room)
+    setup = await _resolve_starting_setup(db, room)
+    if setup is not None:
+        await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+        await _seed_initial_stats(db, room, setup)
+
+    await _insert_opening_message(db, room, setup)
     await db.commit()
 
     return await _to_response(db, room)
