@@ -30,7 +30,12 @@ class EndingRuleOperator(str, enum.Enum):
 
 
 class StoryVersionDetail(Base):
-    """techspec-db-schema.md §5. 1:1 extension of content_versions for type='story'."""
+    """techspec-db-schema.md §5. 1:1 extension of content_versions for type='story'.
+
+    `thumbnail_asset_id` is nullable for the same reason as
+    `CharacterVersionDetail.thumbnail_asset_id` (US-082/US-084): a brand-new draft
+    (`POST /contents`) has no image yet — publish validation is what requires it.
+    """
 
     __tablename__ = "story_version_details"
 
@@ -39,7 +44,9 @@ class StoryVersionDetail(Base):
     )
     name: Mapped[str] = mapped_column(Text, nullable=False)
     one_liner: Mapped[str] = mapped_column(Text, nullable=False)
-    thumbnail_asset_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("assets.id"), nullable=False)
+    thumbnail_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("assets.id"), nullable=True
+    )
     prompt_template: Mapped[StoryPromptTemplate] = mapped_column(
         Enum(StoryPromptTemplate, name="story_prompt_template"), nullable=False
     )

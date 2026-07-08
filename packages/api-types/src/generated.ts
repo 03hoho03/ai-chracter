@@ -448,10 +448,10 @@ export interface paths {
         put?: never;
         /**
          * Create Content Draft
-         * @description techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for
-         *     now (US-084 widens the request schema and adds the `'story'` branch). The new
-         *     character_version_details row is genuinely empty (character.py's docstring) — text
-         *     columns get `""`, `thumbnail_asset_id` stays unset until an image is uploaded.
+         * @description techspec-backend-content.md §1.2. The new detail row is genuinely empty (see
+         *     character.py/story.py docstrings) — text columns get `""`, `thumbnail_asset_id` stays
+         *     unset until an image is uploaded. type='story' creates no child rows (starting_setups
+         *     etc.) yet — those are added via `PATCH /contents/{id}/draft`.
          */
         post: operations["create_content_draft_contents_post"];
         delete?: never;
@@ -477,11 +477,10 @@ export interface paths {
         /**
          * Update Content Draft
          * @description techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
-         *     business validation (US-083 publish is where that happens) — character_version_details
-         *     is overwritten wholesale, situational_images is upserted by entity_id (array index ->
-         *     order column), and entity_ids missing from the payload are deleted. `registration`-tab
+         *     business validation (publish is where that happens) — the version-detail row is
+         *     overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
-         *     directly rather than character_version_details, since they're shared across versions,
+         *     directly rather than the per-type detail table, since they're shared across versions,
          *     not per-version snapshot data (techspec-db-schema.md §3).
          */
         patch: operations["update_content_draft_contents__id__draft_patch"];
@@ -1220,15 +1219,14 @@ export interface components {
         };
         /**
          * ContentCreateRequest
-         * @description techspec-backend-content.md §1.2. Only `'character'` is implemented so far —
-         *     US-084 widens this to also accept `'story'`.
+         * @description techspec-backend-content.md §1.2.
          */
         ContentCreateRequest: {
             /**
              * Type
-             * @constant
+             * @enum {string}
              */
-            type: "character";
+            type: "character" | "story";
         };
         /** ContentCreateResponse */
         ContentCreateResponse: {
@@ -1411,6 +1409,73 @@ export interface components {
             /** Hint */
             hint?: string | null;
         };
+        /** EndingDraftItem */
+        EndingDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Turncountgate */
+            turnCountGate: number;
+            /** Judgmentprompt */
+            judgmentPrompt: string;
+            /** Epilogue */
+            epilogue: string | null;
+            /** Hint */
+            hint: string | null;
+            /** Statrules */
+            statRules: (components["schemas"]["EndingRuleDraftItem"] | components["schemas"]["EndingRuleGroupDraftItem"])[];
+        };
+        /**
+         * EndingRuleDraftItem
+         * @description A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —
+         *     matches `EndingRule.stat_def_entity_id` (techspec-db-schema.md §5, §1 원칙 4: the chat
+         *     runtime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is
+         *     entity_id even though within one draft this is otherwise just a same-version reference).
+         */
+        EndingRuleDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "rule";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Statid
+             * Format: uuid
+             */
+            statId: string;
+            operator: components["schemas"]["EndingRuleOperator"];
+            /** Threshold */
+            threshold: number;
+            nextOp?: components["schemas"]["LogicalOp"] | null;
+        };
+        /**
+         * EndingRuleGroupDraftItem
+         * @description One level of nesting only (techspec-db-schema.md §5) — `rules` never contains groups.
+         */
+        EndingRuleGroupDraftItem: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "group";
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Rules */
+            rules: components["schemas"]["EndingRuleDraftItem"][];
+            nextOp?: components["schemas"]["LogicalOp"] | null;
+        };
         /** EndingRuleGroupItem */
         EndingRuleGroupItem: {
             /**
@@ -1525,6 +1590,20 @@ export interface components {
             exposed: boolean;
             /** Imageurl */
             imageUrl: string;
+        };
+        /** KeywordNoteDraftItem */
+        KeywordNoteDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Infotext */
+            infoText: string;
+            /** Triggerkeywords */
+            triggerKeywords: string[];
+            /** Startingsetupid */
+            startingSetupId: string | null;
         };
         /**
          * LogicalOp
@@ -1701,6 +1780,20 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ShortcutDraftItem */
+        ShortcutDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Prompt */
+            prompt: string;
+        };
         /** ShortcutSnapshot */
         ShortcutSnapshot: {
             /**
@@ -1763,6 +1856,28 @@ export interface components {
             /** Order */
             order: number;
         };
+        /** StartingSetupDraftItem */
+        StartingSetupDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Prologue */
+            prologue: string;
+            /** Openingmessage */
+            openingMessage: string | null;
+            /** Playguide */
+            playguide: string | null;
+            /** Suggestedreplies */
+            suggestedReplies: string[];
+            /** Statdefs */
+            statDefs: components["schemas"]["StatDefDraftItem"][];
+            /** Endings */
+            endings: components["schemas"]["EndingDraftItem"][];
+        };
         /** StartingSetupSummary */
         StartingSetupSummary: {
             /**
@@ -1774,6 +1889,30 @@ export interface components {
             name: string;
             /** Prologue */
             prologue: string;
+        };
+        /** StatDefDraftItem */
+        StatDefDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Icon */
+            icon: string;
+            /** Color */
+            color: string;
+            /** Minvalue */
+            minValue: number;
+            /** Maxvalue */
+            maxValue: number;
+            /** Initialvalue */
+            initialValue: number;
+            /** Unit */
+            unit: string | null;
+            /** Description */
+            description: string;
         };
         /** StatDefSnapshot */
         StatDefSnapshot: {
@@ -1799,6 +1938,82 @@ export interface components {
             /** Description */
             description: string;
         };
+        /** StoryDraftPayload */
+        StoryDraftPayload: {
+            /** Name */
+            name: string;
+            /** Oneliner */
+            oneLiner: string;
+            /** Thumbnailassetid */
+            thumbnailAssetId: string | null;
+            promptTemplate: components["schemas"]["StoryPromptTemplate"];
+            /** Settingtext */
+            settingText: string | null;
+            /** Developmentexample */
+            developmentExample: string | null;
+            /** Customprompt */
+            customPrompt: string | null;
+            /** Startingsetups */
+            startingSetups: components["schemas"]["StartingSetupDraftItem"][];
+            /** Keywordnotes */
+            keywordNotes: components["schemas"]["KeywordNoteDraftItem"][];
+            /** Shortcuts */
+            shortcuts: components["schemas"]["ShortcutDraftItem"][];
+            /** Description */
+            description: string;
+            /** Genreid */
+            genreId: string | null;
+            target: components["schemas"]["ContentTarget"] | null;
+            /** Hashtags */
+            hashtags: string[];
+            visibility: components["schemas"]["ContentVisibility"];
+        };
+        /** StoryDraftResponse */
+        StoryDraftResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Type
+             * @default story
+             * @constant
+             */
+            type: "story";
+            /** Name */
+            name: string;
+            /** Oneliner */
+            oneLiner: string;
+            /** Thumbnailassetid */
+            thumbnailAssetId: string | null;
+            promptTemplate: components["schemas"]["StoryPromptTemplate"];
+            /** Settingtext */
+            settingText: string | null;
+            /** Developmentexample */
+            developmentExample: string | null;
+            /** Customprompt */
+            customPrompt: string | null;
+            /** Startingsetups */
+            startingSetups: components["schemas"]["StartingSetupDraftItem"][];
+            /** Keywordnotes */
+            keywordNotes: components["schemas"]["KeywordNoteDraftItem"][];
+            /** Shortcuts */
+            shortcuts: components["schemas"]["ShortcutDraftItem"][];
+            /** Description */
+            description: string;
+            /** Genreid */
+            genreId: string | null;
+            target: components["schemas"]["ContentTarget"] | null;
+            /** Hashtags */
+            hashtags: string[];
+            visibility: components["schemas"]["ContentVisibility"];
+        };
+        /**
+         * StoryPromptTemplate
+         * @enum {string}
+         */
+        StoryPromptTemplate: "basic" | "emotional" | "simulation" | "custom";
         /** UpdateProfileRequest */
         UpdateProfileRequest: {
             /** Nickname */
@@ -2721,7 +2936,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CharacterDraftResponse"];
+                    "application/json": components["schemas"]["CharacterDraftResponse"] | components["schemas"]["StoryDraftResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2746,7 +2961,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CharacterDraftPayload"];
+                "application/json": components["schemas"]["CharacterDraftPayload"] | components["schemas"]["StoryDraftPayload"];
             };
         };
         responses: {
@@ -2756,7 +2971,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["CharacterDraftResponse"];
+                    "application/json": components["schemas"]["CharacterDraftResponse"] | components["schemas"]["StoryDraftResponse"];
                 };
             };
             /** @description Validation Error */

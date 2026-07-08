@@ -992,7 +992,7 @@
           "content"
         ],
         "summary": "Create Content Draft",
-        "description": "techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for\nnow (US-084 widens the request schema and adds the `'story'` branch). The new\ncharacter_version_details row is genuinely empty (character.py's docstring) — text\ncolumns get `\"\"`, `thumbnail_asset_id` stays unset until an image is uploaded.",
+        "description": "techspec-backend-content.md §1.2. The new detail row is genuinely empty (see\ncharacter.py/story.py docstrings) — text columns get `\"\"`, `thumbnail_asset_id` stays\nunset until an image is uploaded. type='story' creates no child rows (starting_setups\netc.) yet — those are added via `PATCH /contents/{id}/draft`.",
         "operationId": "create_content_draft_contents_post",
         "requestBody": {
           "required": true,
@@ -1190,7 +1190,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CharacterDraftResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CharacterDraftResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StoryDraftResponse"
+                    }
+                  ],
+                  "title": "Response Get Content Draft Contents  Id  Draft Get"
                 }
               }
             }
@@ -1212,7 +1220,7 @@
           "content"
         ],
         "summary": "Update Content Draft",
-        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (US-083 publish is where that happens) — character_version_details\nis overwritten wholesale, situational_images is upserted by entity_id (array index ->\norder column), and entity_ids missing from the payload are deleted. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than character_version_details, since they're shared across versions,\nnot per-version snapshot data (techspec-db-schema.md §3).",
+        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data (techspec-db-schema.md §3).",
         "operationId": "update_content_draft_contents__id__draft_patch",
         "parameters": [
           {
@@ -1231,7 +1239,15 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CharacterDraftPayload"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/CharacterDraftPayload"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StoryDraftPayload"
+                  }
+                ],
+                "title": "Payload"
               }
             }
           }
@@ -1242,7 +1258,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CharacterDraftResponse"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/CharacterDraftResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/StoryDraftResponse"
+                    }
+                  ],
+                  "title": "Response Update Content Draft Contents  Id  Draft Patch"
                 }
               }
             }
@@ -3185,7 +3209,10 @@
         "properties": {
           "type": {
             "type": "string",
-            "const": "character",
+            "enum": [
+              "character",
+              "story"
+            ],
             "title": "Type"
           }
         },
@@ -3194,7 +3221,7 @@
           "type"
         ],
         "title": "ContentCreateRequest",
-        "description": "techspec-backend-content.md §1.2. Only `'character'` is implemented so far —\nUS-084 widens this to also accept `'story'`."
+        "description": "techspec-backend-content.md §1.2."
       },
       "ContentCreateResponse": {
         "properties": {
@@ -3625,6 +3652,166 @@
         ],
         "title": "EndingCollectionItem"
       },
+      "EndingDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "turnCountGate": {
+            "type": "integer",
+            "title": "Turncountgate"
+          },
+          "judgmentPrompt": {
+            "type": "string",
+            "title": "Judgmentprompt"
+          },
+          "epilogue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Epilogue"
+          },
+          "hint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hint"
+          },
+          "statRules": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EndingRuleDraftItem"
+                },
+                {
+                  "$ref": "#/components/schemas/EndingRuleGroupDraftItem"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "group": "#/components/schemas/EndingRuleGroupDraftItem",
+                  "rule": "#/components/schemas/EndingRuleDraftItem"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Statrules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "turnCountGate",
+          "judgmentPrompt",
+          "epilogue",
+          "hint",
+          "statRules"
+        ],
+        "title": "EndingDraftItem"
+      },
+      "EndingRuleDraftItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "rule",
+            "title": "Kind",
+            "default": "rule"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "statId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Statid"
+          },
+          "operator": {
+            "$ref": "#/components/schemas/EndingRuleOperator"
+          },
+          "threshold": {
+            "type": "number",
+            "title": "Threshold"
+          },
+          "nextOp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalOp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "statId",
+          "operator",
+          "threshold"
+        ],
+        "title": "EndingRuleDraftItem",
+        "description": "A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —\nmatches `EndingRule.stat_def_entity_id` (techspec-db-schema.md §5, §1 원칙 4: the chat\nruntime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is\nentity_id even though within one draft this is otherwise just a same-version reference)."
+      },
+      "EndingRuleGroupDraftItem": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "group",
+            "title": "Kind",
+            "default": "group"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "rules": {
+            "items": {
+              "$ref": "#/components/schemas/EndingRuleDraftItem"
+            },
+            "type": "array",
+            "title": "Rules"
+          },
+          "nextOp": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalOp"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "rules"
+        ],
+        "title": "EndingRuleGroupDraftItem",
+        "description": "One level of nesting only (techspec-db-schema.md §5) — `rules` never contains groups."
+      },
       "EndingRuleGroupItem": {
         "properties": {
           "kind": {
@@ -3910,6 +4097,46 @@
           "imageUrl"
         ],
         "title": "ImageArchiveItem"
+      },
+      "KeywordNoteDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "infoText": {
+            "type": "string",
+            "title": "Infotext"
+          },
+          "triggerKeywords": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Triggerkeywords"
+          },
+          "startingSetupId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Startingsetupid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "infoText",
+          "triggerKeywords",
+          "startingSetupId"
+        ],
+        "title": "KeywordNoteDraftItem"
       },
       "LogicalOp": {
         "type": "string",
@@ -4277,6 +4504,35 @@
         "type": "object",
         "title": "SessionEchoPayload"
       },
+      "ShortcutDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "description",
+          "prompt"
+        ],
+        "title": "ShortcutDraftItem"
+      },
       "ShortcutSnapshot": {
         "properties": {
           "id": {
@@ -4397,6 +4653,78 @@
         ],
         "title": "SituationalImageResponse"
       },
+      "StartingSetupDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "prologue": {
+            "type": "string",
+            "title": "Prologue"
+          },
+          "openingMessage": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openingmessage"
+          },
+          "playguide": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Playguide"
+          },
+          "suggestedReplies": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggestedreplies"
+          },
+          "statDefs": {
+            "items": {
+              "$ref": "#/components/schemas/StatDefDraftItem"
+            },
+            "type": "array",
+            "title": "Statdefs"
+          },
+          "endings": {
+            "items": {
+              "$ref": "#/components/schemas/EndingDraftItem"
+            },
+            "type": "array",
+            "title": "Endings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "prologue",
+          "openingMessage",
+          "playguide",
+          "suggestedReplies",
+          "statDefs",
+          "endings"
+        ],
+        "title": "StartingSetupDraftItem"
+      },
       "StartingSetupSummary": {
         "properties": {
           "id": {
@@ -4420,6 +4748,67 @@
           "prologue"
         ],
         "title": "StartingSetupSummary"
+      },
+      "StatDefDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "icon": {
+            "type": "string",
+            "title": "Icon"
+          },
+          "color": {
+            "type": "string",
+            "title": "Color"
+          },
+          "minValue": {
+            "type": "integer",
+            "title": "Minvalue"
+          },
+          "maxValue": {
+            "type": "integer",
+            "title": "Maxvalue"
+          },
+          "initialValue": {
+            "type": "integer",
+            "title": "Initialvalue"
+          },
+          "unit": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unit"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "icon",
+          "color",
+          "minValue",
+          "maxValue",
+          "initialValue",
+          "unit",
+          "description"
+        ],
+        "title": "StatDefDraftItem"
       },
       "StatDefSnapshot": {
         "properties": {
@@ -4481,6 +4870,300 @@
           "description"
         ],
         "title": "StatDefSnapshot"
+      },
+      "StoryDraftPayload": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "thumbnailAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailassetid"
+          },
+          "promptTemplate": {
+            "$ref": "#/components/schemas/StoryPromptTemplate"
+          },
+          "settingText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settingtext"
+          },
+          "developmentExample": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Developmentexample"
+          },
+          "customPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customprompt"
+          },
+          "startingSetups": {
+            "items": {
+              "$ref": "#/components/schemas/StartingSetupDraftItem"
+            },
+            "type": "array",
+            "title": "Startingsetups"
+          },
+          "keywordNotes": {
+            "items": {
+              "$ref": "#/components/schemas/KeywordNoteDraftItem"
+            },
+            "type": "array",
+            "title": "Keywordnotes"
+          },
+          "shortcuts": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutDraftItem"
+            },
+            "type": "array",
+            "title": "Shortcuts"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "genreId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genreid"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "oneLiner",
+          "thumbnailAssetId",
+          "promptTemplate",
+          "settingText",
+          "developmentExample",
+          "customPrompt",
+          "startingSetups",
+          "keywordNotes",
+          "shortcuts",
+          "description",
+          "genreId",
+          "target",
+          "hashtags",
+          "visibility"
+        ],
+        "title": "StoryDraftPayload"
+      },
+      "StoryDraftResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "const": "story",
+            "title": "Type",
+            "default": "story"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "thumbnailAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailassetid"
+          },
+          "promptTemplate": {
+            "$ref": "#/components/schemas/StoryPromptTemplate"
+          },
+          "settingText": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settingtext"
+          },
+          "developmentExample": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Developmentexample"
+          },
+          "customPrompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Customprompt"
+          },
+          "startingSetups": {
+            "items": {
+              "$ref": "#/components/schemas/StartingSetupDraftItem"
+            },
+            "type": "array",
+            "title": "Startingsetups"
+          },
+          "keywordNotes": {
+            "items": {
+              "$ref": "#/components/schemas/KeywordNoteDraftItem"
+            },
+            "type": "array",
+            "title": "Keywordnotes"
+          },
+          "shortcuts": {
+            "items": {
+              "$ref": "#/components/schemas/ShortcutDraftItem"
+            },
+            "type": "array",
+            "title": "Shortcuts"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "genreId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Genreid"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContentTarget"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "hashtags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Hashtags"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "oneLiner",
+          "thumbnailAssetId",
+          "promptTemplate",
+          "settingText",
+          "developmentExample",
+          "customPrompt",
+          "startingSetups",
+          "keywordNotes",
+          "shortcuts",
+          "description",
+          "genreId",
+          "target",
+          "hashtags",
+          "visibility"
+        ],
+        "title": "StoryDraftResponse"
+      },
+      "StoryPromptTemplate": {
+        "type": "string",
+        "enum": [
+          "basic",
+          "emotional",
+          "simulation",
+          "custom"
+        ],
+        "title": "StoryPromptTemplate"
       },
       "UpdateProfileRequest": {
         "properties": {

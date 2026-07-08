@@ -3,6 +3,7 @@ import json
 import mimetypes
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -29,10 +30,20 @@ from api.content.schemas import (
     ContentSummary,
     ContentVersionSummary,
     DraftSummary,
+    EndingDraftItem,
+    EndingRuleDraftItem,
+    EndingRuleGroupDraftItem,
+    EndingRuleListDraftItem,
     ExampleDialogueItem,
     GenreResponse,
+    KeywordNoteDraftItem,
     ReportRequest,
+    ShortcutDraftItem,
+    StartingSetupDraftItem,
     StartingSetupSummary,
+    StatDefDraftItem,
+    StoryDraftPayload,
+    StoryDraftResponse,
     UpdateProfileRequest,
     UserProfileResponse,
     VisibilityFilter,
@@ -52,7 +63,17 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
-from api.db.models.story import StartingSetup, StoryVersionDetail
+from api.db.models.story import (
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    KeywordNote,
+    Shortcut,
+    StartingSetup,
+    StatDef,
+    StoryPromptTemplate,
+    StoryVersionDetail,
+)
 from api.db.session import get_db_session
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
@@ -407,12 +428,13 @@ async def create_content_draft(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentCreateResponse:
-    """techspec-backend-content.md §1.2. `payload.type` is only ever `'character'` for
-    now (US-084 widens the request schema and adds the `'story'` branch). The new
-    character_version_details row is genuinely empty (character.py's docstring) — text
-    columns get `""`, `thumbnail_asset_id` stays unset until an image is uploaded."""
+    """techspec-backend-content.md §1.2. The new detail row is genuinely empty (see
+    character.py/story.py docstrings) — text columns get `""`, `thumbnail_asset_id` stays
+    unset until an image is uploaded. type='story' creates no child rows (starting_setups
+    etc.) yet — those are added via `PATCH /contents/{id}/draft`."""
+    content_type = ContentType.CHARACTER if payload.type == "character" else ContentType.STORY
     content = Content(
-        type=ContentType.CHARACTER,
+        type=content_type,
         creator_user_id=user_id,
         hashtags=[],
         visibility=ContentVisibility.PRIVATE,
@@ -425,29 +447,39 @@ async def create_content_draft(
     db.add(version)
     await db.flush()
 
-    db.add(
-        CharacterVersionDetail(
-            content_version_id=version.id,
-            name="",
-            one_liner="",
-            intro="",
-            example_dialogues=[],
-            character_prompt="",
+    if content_type == ContentType.CHARACTER:
+        db.add(
+            CharacterVersionDetail(
+                content_version_id=version.id,
+                name="",
+                one_liner="",
+                intro="",
+                example_dialogues=[],
+                character_prompt="",
+            )
         )
-    )
+    else:
+        db.add(
+            StoryVersionDetail(
+                content_version_id=version.id,
+                name="",
+                one_liner="",
+                prompt_template=StoryPromptTemplate.BASIC,
+            )
+        )
     await db.commit()
 
     return ContentCreateResponse(content_id=content.id)
 
 
 async def _get_owned_draft_version(
-    db: AsyncSession, content_id: uuid.UUID, user_id: uuid.UUID
+    db: AsyncSession, content_id: uuid.UUID, user_id: uuid.UUID, allowed_types: tuple[ContentType, ...]
 ) -> tuple[Content, ContentVersion]:
     """404/403 gate shared by the draft read/write endpoints below (same content_version
     existence + creator-ownership check `register_situational_image`, US-071, established
     for content_version_id-scoped child resources)."""
     content = await db.get(Content, content_id)
-    if content is None or content.type != ContentType.CHARACTER:
+    if content is None or content.type not in allowed_types:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
     if content.creator_user_id != user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content owner")
@@ -503,32 +535,181 @@ async def _character_draft_response(
     )
 
 
+async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
+    """Mirrors `chat/router.py`'s `_ending_rule_items` — `ending_rules`(top-level) and
+    `ending_rule_groups` share one `order` sequence (techspec-db-schema.md §5), reconstructed
+    here as the same `kind`-discriminated tree so the draft response round-trips through
+    `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/router.py` directly — same
+    "duplicate the small helper, don't cross-import router files" convention as
+    `_resolve_asset_url`."""
+    top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending_id))).all()
+    groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending_id))).all()
+
+    items: list[tuple[int, EndingRuleListDraftItem]] = [
+        (
+            rule.order,
+            EndingRuleDraftItem(
+                id=rule.entity_id,
+                stat_id=rule.stat_def_entity_id,
+                operator=rule.operator,
+                threshold=float(rule.threshold),
+                next_op=rule.next_op,
+            ),
+        )
+        for rule in top_rules
+    ]
+    for group in groups:
+        nested = (
+            await db.scalars(
+                select(EndingRule).where(EndingRule.rule_group_id == group.id).order_by(EndingRule.order)
+            )
+        ).all()
+        items.append(
+            (
+                group.order,
+                EndingRuleGroupDraftItem(
+                    id=group.entity_id,
+                    next_op=group.next_op,
+                    rules=[
+                        EndingRuleDraftItem(
+                            id=r.entity_id,
+                            stat_id=r.stat_def_entity_id,
+                            operator=r.operator,
+                            threshold=float(r.threshold),
+                            next_op=r.next_op,
+                        )
+                        for r in nested
+                    ],
+                ),
+            )
+        )
+    items.sort(key=lambda pair: pair[0])
+    return [item for _, item in items]
+
+
+async def _story_draft_response(
+    db: AsyncSession, content: Content, version: ContentVersion
+) -> StoryDraftResponse:
+    detail = await db.get(StoryVersionDetail, version.id)
+    assert detail is not None
+
+    setups = (
+        await db.scalars(
+            select(StartingSetup)
+            .where(StartingSetup.content_version_id == version.id)
+            .order_by(StartingSetup.order)
+        )
+    ).all()
+    setup_entity_id_by_physical_id = {setup.id: setup.entity_id for setup in setups}
+
+    starting_setups: list[StartingSetupDraftItem] = []
+    for setup in setups:
+        stat_defs = (
+            await db.scalars(
+                select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
+            )
+        ).all()
+        endings = (
+            await db.scalars(
+                select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+            )
+        ).all()
+        starting_setups.append(
+            StartingSetupDraftItem(
+                id=setup.entity_id,
+                name=setup.name,
+                prologue=setup.prologue,
+                opening_message=setup.opening_message,
+                playguide=setup.playguide,
+                suggested_replies=setup.suggested_replies or [],
+                stat_defs=[
+                    StatDefDraftItem(
+                        id=stat_def.entity_id,
+                        name=stat_def.name,
+                        icon=stat_def.icon,
+                        color=stat_def.color,
+                        min_value=stat_def.min_value,
+                        max_value=stat_def.max_value,
+                        initial_value=stat_def.initial_value,
+                        unit=stat_def.unit,
+                        description=stat_def.description,
+                    )
+                    for stat_def in stat_defs
+                ],
+                endings=[
+                    EndingDraftItem(
+                        id=ending.entity_id,
+                        name=ending.name,
+                        turn_count_gate=ending.turn_count_gate,
+                        judgment_prompt=ending.judgment_prompt,
+                        epilogue=ending.epilogue,
+                        hint=ending.hint,
+                        stat_rules=await _ending_rule_draft_items(db, ending.id),
+                    )
+                    for ending in endings
+                ],
+            )
+        )
+
+    keyword_notes = (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+    ).all()
+    shortcuts = (
+        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version.id))
+    ).all()
+
+    return StoryDraftResponse(
+        id=content.id,
+        name=detail.name,
+        one_liner=detail.one_liner,
+        thumbnail_asset_id=detail.thumbnail_asset_id,
+        prompt_template=detail.prompt_template,
+        setting_text=detail.setting_text,
+        development_example=detail.development_example,
+        custom_prompt=detail.custom_prompt,
+        starting_setups=starting_setups,
+        keyword_notes=[
+            KeywordNoteDraftItem(
+                id=note.entity_id,
+                info_text=note.info_text,
+                trigger_keywords=note.trigger_keywords,
+                starting_setup_id=(
+                    setup_entity_id_by_physical_id.get(note.starting_setup_id)
+                    if note.starting_setup_id is not None
+                    else None
+                ),
+            )
+            for note in keyword_notes
+        ],
+        shortcuts=[
+            ShortcutDraftItem(id=s.entity_id, name=s.name, description=s.description, prompt=s.prompt)
+            for s in shortcuts
+        ],
+        description=version.detail_description,
+        genre_id=content.genre_id,
+        target=content.target,
+        hashtags=content.hashtags,
+        visibility=content.visibility,
+    )
+
+
 @router.get("/contents/{id}/draft")
 async def get_content_draft(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
-) -> CharacterDraftResponse:
-    content, version = await _get_owned_draft_version(db, id, user_id)
-    return await _character_draft_response(db, content, version)
+) -> CharacterDraftResponse | StoryDraftResponse:
+    content, version = await _get_owned_draft_version(
+        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+    )
+    if content.type == ContentType.CHARACTER:
+        return await _character_draft_response(db, content, version)
+    return await _story_draft_response(db, content, version)
 
 
-@router.patch("/contents/{id}/draft")
-async def update_content_draft(
-    id: uuid.UUID,
-    payload: CharacterDraftPayload,
-    user_id: uuid.UUID = Depends(get_current_user_id),
-    db: AsyncSession = Depends(get_db_session),
-) -> CharacterDraftResponse:
-    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
-    business validation (US-083 publish is where that happens) — character_version_details
-    is overwritten wholesale, situational_images is upserted by entity_id (array index ->
-    order column), and entity_ids missing from the payload are deleted. `registration`-tab
-    fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
-    directly rather than character_version_details, since they're shared across versions,
-    not per-version snapshot data (techspec-db-schema.md §3)."""
-    content, version = await _get_owned_draft_version(db, id, user_id)
-
+async def _update_character_draft(
+    db: AsyncSession, content: Content, version: ContentVersion, payload: CharacterDraftPayload
+) -> None:
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
     detail.name = payload.name
@@ -565,8 +746,298 @@ async def update_content_draft(
         existing_image.trigger_condition = item.trigger_condition
         existing_image.order = order
 
+
+async def _delete_ending_subtree(db: AsyncSession, ending: Ending) -> None:
+    """Deletes children before the parent, with explicit flushes between tiers — these
+    FKs have no ON DELETE CASCADE and (per apps/api/CLAUDE.md's seeding-script gotcha)
+    the ORM won't infer cross-table delete order on its own for plain FK columns with no
+    `relationship()` declared, so relying on flush-time ordering alone is unsafe."""
+    groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending.id))).all()
+    for group in groups:
+        nested_rules = (
+            await db.scalars(select(EndingRule).where(EndingRule.rule_group_id == group.id))
+        ).all()
+        for rule in nested_rules:
+            await db.delete(rule)
+        await db.flush()
+        await db.delete(group)
+    top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending.id))).all()
+    for rule in top_rules:
+        await db.delete(rule)
+    await db.flush()
+    await db.delete(ending)
+
+
+async def _delete_starting_setup_subtree(db: AsyncSession, setup: StartingSetup) -> None:
+    stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+    for stat_def in stat_defs:
+        await db.delete(stat_def)
+    endings = (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
+    for ending in endings:
+        await _delete_ending_subtree(db, ending)
+    await db.flush()
+    await db.delete(setup)
+
+
+async def _reconcile_ending_rules(
+    db: AsyncSession, ending_id: uuid.UUID, items: list[EndingRuleListDraftItem]
+) -> None:
+    """entity_id 기준 업서트, `order`는 §1.5 규칙과 동일하게 `ending_rules`(top-level)와
+    `ending_rule_groups`가 공유하는 하나의 시퀀스(= `items`의 배열 인덱스)."""
+    existing_groups = {
+        g.entity_id: g
+        for g in (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending_id))).all()
+    }
+    existing_top_rules = {
+        r.entity_id: r
+        for r in (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending_id))).all()
+    }
+    incoming_group_ids = {item.id for item in items if isinstance(item, EndingRuleGroupDraftItem)}
+    incoming_top_rule_ids = {item.id for item in items if isinstance(item, EndingRuleDraftItem)}
+
+    for group_entity_id, existing_group in existing_groups.items():
+        if group_entity_id not in incoming_group_ids:
+            nested_rules_to_delete = (
+                await db.scalars(select(EndingRule).where(EndingRule.rule_group_id == existing_group.id))
+            ).all()
+            for nested_rule_to_delete in nested_rules_to_delete:
+                await db.delete(nested_rule_to_delete)
+            await db.flush()
+            await db.delete(existing_group)
+    for top_rule_entity_id, existing_top_rule in existing_top_rules.items():
+        if top_rule_entity_id not in incoming_top_rule_ids:
+            await db.delete(existing_top_rule)
+
+    for order, item in enumerate(items):
+        if isinstance(item, EndingRuleDraftItem):
+            top_rule = existing_top_rules.get(item.id)
+            if top_rule is None:
+                top_rule = EndingRule(entity_id=item.id, ending_id=ending_id)
+                db.add(top_rule)
+            top_rule.stat_def_entity_id = item.stat_id
+            top_rule.operator = item.operator
+            top_rule.threshold = Decimal(str(item.threshold))
+            top_rule.next_op = item.next_op
+            top_rule.order = order
+            continue
+
+        group = existing_groups.get(item.id)
+        if group is None:
+            group = EndingRuleGroup(entity_id=item.id, ending_id=ending_id)
+            db.add(group)
+        group.next_op = item.next_op
+        group.order = order
+        await db.flush()
+
+        existing_nested_rules = {
+            r.entity_id: r
+            for r in (await db.scalars(select(EndingRule).where(EndingRule.rule_group_id == group.id))).all()
+        }
+        incoming_nested_ids = {rule_item.id for rule_item in item.rules}
+        for nested_entity_id, existing_nested_rule in existing_nested_rules.items():
+            if nested_entity_id not in incoming_nested_ids:
+                await db.delete(existing_nested_rule)
+        for nested_order, rule_item in enumerate(item.rules):
+            nested_rule = existing_nested_rules.get(rule_item.id)
+            if nested_rule is None:
+                nested_rule = EndingRule(entity_id=rule_item.id, rule_group_id=group.id)
+                db.add(nested_rule)
+            nested_rule.stat_def_entity_id = rule_item.stat_id
+            nested_rule.operator = rule_item.operator
+            nested_rule.threshold = Decimal(str(rule_item.threshold))
+            nested_rule.next_op = rule_item.next_op
+            nested_rule.order = nested_order
+
+
+async def _update_story_draft(
+    db: AsyncSession, content: Content, version: ContentVersion, payload: StoryDraftPayload
+) -> None:
+    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4·§5. Autosave: no
+    business validation — every child resource is upserted by entity_id (array index ->
+    `order` column where applicable), removed entity_ids are deleted (children-first, since
+    these FKs have no ON DELETE CASCADE), and `keywordNotes[].startingSetupId` (entity_id) is
+    mapped to the physical `starting_setups.id` FK column."""
+    detail = await db.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.name = payload.name
+    detail.one_liner = payload.one_liner
+    detail.thumbnail_asset_id = payload.thumbnail_asset_id
+    detail.prompt_template = payload.prompt_template
+    detail.setting_text = payload.setting_text
+    detail.development_example = payload.development_example
+    detail.custom_prompt = payload.custom_prompt
+    version.detail_description = payload.description
+    content.genre_id = payload.genre_id
+    content.target = payload.target
+    content.hashtags = payload.hashtags
+    content.visibility = payload.visibility
+
+    existing_setups = {
+        s.entity_id: s
+        for s in (
+            await db.scalars(select(StartingSetup).where(StartingSetup.content_version_id == version.id))
+        ).all()
+    }
+    incoming_setups = {item.id: item for item in payload.starting_setups}
+
+    for setup_entity_id, existing_setup in existing_setups.items():
+        if setup_entity_id not in incoming_setups:
+            await _delete_starting_setup_subtree(db, existing_setup)
+
+    for setup_item in payload.starting_setups:
+        kept_setup = existing_setups.get(setup_item.id)
+        if kept_setup is None:
+            continue
+        existing_stat_defs_for_prune = {
+            sd.entity_id: sd
+            for sd in (
+                await db.scalars(select(StatDef).where(StatDef.starting_setup_id == kept_setup.id))
+            ).all()
+        }
+        incoming_stat_def_ids = {sd.id for sd in setup_item.stat_defs}
+        for stat_entity_id, stat_def_to_prune in existing_stat_defs_for_prune.items():
+            if stat_entity_id not in incoming_stat_def_ids:
+                await db.delete(stat_def_to_prune)
+
+        existing_endings_for_prune = {
+            e.entity_id: e
+            for e in (
+                await db.scalars(select(Ending).where(Ending.starting_setup_id == kept_setup.id))
+            ).all()
+        }
+        incoming_ending_ids = {e.id for e in setup_item.endings}
+        for ending_entity_id, ending_to_prune in existing_endings_for_prune.items():
+            if ending_entity_id not in incoming_ending_ids:
+                await _delete_ending_subtree(db, ending_to_prune)
+
+    setup_physical_id: dict[uuid.UUID, uuid.UUID] = {}
+    for order, setup_item in enumerate(payload.starting_setups):
+        setup = existing_setups.get(setup_item.id)
+        if setup is None:
+            setup = StartingSetup(entity_id=setup_item.id, content_version_id=version.id)
+            db.add(setup)
+        setup.name = setup_item.name
+        setup.prologue = setup_item.prologue
+        setup.opening_message = setup_item.opening_message
+        setup.playguide = setup_item.playguide
+        setup.suggested_replies = setup_item.suggested_replies
+        setup.order = order
+        await db.flush()
+        setup_physical_id[setup_item.id] = setup.id
+
+        existing_stat_defs = {
+            sd.entity_id: sd
+            for sd in (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+        }
+        for stat_order, stat_item in enumerate(setup_item.stat_defs):
+            stat_def = existing_stat_defs.get(stat_item.id)
+            if stat_def is None:
+                stat_def = StatDef(entity_id=stat_item.id, starting_setup_id=setup.id)
+                db.add(stat_def)
+            stat_def.name = stat_item.name
+            stat_def.icon = stat_item.icon
+            stat_def.color = stat_item.color
+            stat_def.min_value = stat_item.min_value
+            stat_def.max_value = stat_item.max_value
+            stat_def.initial_value = stat_item.initial_value
+            stat_def.unit = stat_item.unit
+            stat_def.description = stat_item.description
+            stat_def.order = stat_order
+
+        existing_endings = {
+            e.entity_id: e
+            for e in (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
+        }
+        for ending_order, ending_item in enumerate(setup_item.endings):
+            ending = existing_endings.get(ending_item.id)
+            if ending is None:
+                ending = Ending(entity_id=ending_item.id, starting_setup_id=setup.id)
+                db.add(ending)
+            ending.name = ending_item.name
+            ending.turn_count_gate = ending_item.turn_count_gate
+            ending.judgment_prompt = ending_item.judgment_prompt
+            ending.epilogue = ending_item.epilogue
+            ending.hint = ending_item.hint
+            ending.order = ending_order
+            await db.flush()
+            await _reconcile_ending_rules(db, ending.id, ending_item.stat_rules)
+
+    existing_notes = {
+        n.entity_id: n
+        for n in (
+            await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+        ).all()
+    }
+    incoming_note_ids = {note_item.id for note_item in payload.keyword_notes}
+    for note_entity_id, note_to_prune in existing_notes.items():
+        if note_entity_id not in incoming_note_ids:
+            await db.delete(note_to_prune)
+    for note_item in payload.keyword_notes:
+        note = existing_notes.get(note_item.id)
+        if note is None:
+            note = KeywordNote(entity_id=note_item.id, content_version_id=version.id)
+            db.add(note)
+        note.info_text = note_item.info_text
+        note.trigger_keywords = note_item.trigger_keywords
+        note.starting_setup_id = (
+            setup_physical_id.get(note_item.starting_setup_id)
+            if note_item.starting_setup_id is not None
+            else None
+        )
+
+    existing_shortcuts = {
+        s.entity_id: s
+        for s in (
+            await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version.id))
+        ).all()
+    }
+    incoming_shortcut_ids = {shortcut_item.id for shortcut_item in payload.shortcuts}
+    for shortcut_entity_id, shortcut_to_prune in existing_shortcuts.items():
+        if shortcut_entity_id not in incoming_shortcut_ids:
+            await db.delete(shortcut_to_prune)
+    for shortcut_item in payload.shortcuts:
+        shortcut = existing_shortcuts.get(shortcut_item.id)
+        if shortcut is None:
+            shortcut = Shortcut(entity_id=shortcut_item.id, content_version_id=version.id)
+            db.add(shortcut)
+        shortcut.name = shortcut_item.name
+        shortcut.description = shortcut_item.description
+        shortcut.prompt = shortcut_item.prompt
+
+
+@router.patch("/contents/{id}/draft")
+async def update_content_draft(
+    id: uuid.UUID,
+    payload: CharacterDraftPayload | StoryDraftPayload,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CharacterDraftResponse | StoryDraftResponse:
+    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
+    business validation (publish is where that happens) — the version-detail row is
+    overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
+    fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
+    directly rather than the per-type detail table, since they're shared across versions,
+    not per-version snapshot data (techspec-db-schema.md §3)."""
+    content, version = await _get_owned_draft_version(
+        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+    )
+
+    if isinstance(payload, CharacterDraftPayload):
+        if content.type != ContentType.CHARACTER:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Payload does not match content type"
+            )
+        await _update_character_draft(db, content, version, payload)
+        await db.commit()
+        return await _character_draft_response(db, content, version)
+
+    if content.type != ContentType.STORY:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Payload does not match content type"
+        )
+    await _update_story_draft(db, content, version, payload)
     await db.commit()
-    return await _character_draft_response(db, content, version)
+    return await _story_draft_response(db, content, version)
 
 
 async def _load_publish_filter_images(
@@ -607,7 +1078,7 @@ async def publish_character_content(
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> ContentPublishResponse:
     """techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083)."""
-    content, version = await _get_owned_draft_version(db, id, user_id)
+    content, version = await _get_owned_draft_version(db, id, user_id, (ContentType.CHARACTER,))
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 

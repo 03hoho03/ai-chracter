@@ -21,6 +21,17 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.story import (
+    Ending,
+    EndingRule,
+    EndingRuleGroup,
+    KeywordNote,
+    Shortcut,
+    StartingSetup,
+    StatDef,
+    StoryPromptTemplate,
+    StoryVersionDetail,
+)
 
 
 def _make_user(**overrides: object) -> User:
@@ -76,6 +87,33 @@ async def _make_empty_character_draft(
     return content
 
 
+async def _make_empty_story_draft(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> Content:
+    content = Content(
+        creator_user_id=creator_user_id,
+        type=ContentType.STORY,
+        hashtags=[],
+        visibility=ContentVisibility.PRIVATE,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+
+    version = ContentVersion(content_id=content.id, detail_description="")
+    db_session.add(version)
+    await db_session.flush()
+
+    db_session.add(
+        StoryVersionDetail(
+            content_version_id=version.id,
+            name="",
+            one_liner="",
+            prompt_template=StoryPromptTemplate.BASIC,
+        )
+    )
+    await db_session.flush()
+    return content
+
+
 def _draft_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "name": "아리아",
@@ -86,6 +124,28 @@ def _draft_payload(**overrides: object) -> dict[str, object]:
         "characterPrompt": "너는 아리아다.",
         "playguide": None,
         "situationalImages": [],
+        "description": "상세 설명",
+        "genreId": None,
+        "target": None,
+        "hashtags": [],
+        "visibility": "private",
+    }
+    payload.update(overrides)
+    return payload
+
+
+def _story_draft_payload(**overrides: object) -> dict[str, object]:
+    payload: dict[str, object] = {
+        "name": "잃어버린 도시",
+        "oneLiner": "한 줄 소개",
+        "thumbnailAssetId": None,
+        "promptTemplate": "basic",
+        "settingText": "세계관 설명",
+        "developmentExample": None,
+        "customPrompt": None,
+        "startingSetups": [],
+        "keywordNotes": [],
+        "shortcuts": [],
         "description": "상세 설명",
         "genreId": None,
         "target": None,
@@ -144,14 +204,40 @@ async def test_create_content_draft_creates_empty_character_draft(
     assert detail.playguide is None
 
 
-async def test_create_content_draft_rejects_story_type(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+async def test_create_content_draft_creates_empty_story_draft(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     await _login_as(db_client, user.id)
 
     resp = await db_client.post("/contents", json={"type": "story"})
-    assert resp.status_code == 422
+    assert resp.status_code == 201
+    content_id = uuid.UUID(resp.json()["contentId"])
+
+    content = await db_session.get(Content, content_id)
+    assert content is not None
+    assert content.type == ContentType.STORY
+    assert content.creator_user_id == user.id
+    assert content.genre_id is None
+
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content_id)
+        )
+    ).scalar_one()
+    assert version.published_at is None
+
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    assert detail.name == ""
+    assert detail.one_liner == ""
+    assert detail.thumbnail_asset_id is None
+    assert detail.prompt_template == StoryPromptTemplate.BASIC
+    assert detail.setting_text is None
+    assert detail.development_example is None
+    assert detail.custom_prompt is None
 
 
 async def test_get_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
@@ -186,32 +272,37 @@ async def test_get_content_draft_returns_403_for_non_owner(
     assert resp.status_code == 403
 
 
-async def test_get_content_draft_returns_404_for_story_content(
+async def test_get_content_draft_returns_newly_created_empty_story_draft(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    genre = await _get_genre(db_session)
-
-    content = Content(
-        creator_user_id=user.id,
-        type=ContentType.STORY,
-        genre_id=genre.id,
-        target=ContentTarget.ALL,
-        hashtags=[],
-        visibility=ContentVisibility.PRIVATE,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db_session.add(content)
-    await db_session.flush()
-    version = ContentVersion(content_id=content.id, detail_description="")
-    db_session.add(version)
-    await db_session.commit()
     await _login_as(db_client, user.id)
 
-    resp = await db_client.get(f"/contents/{content.id}/draft")
-    assert resp.status_code == 404
+    create_resp = await db_client.post("/contents", json={"type": "story"})
+    content_id = create_resp.json()["contentId"]
+
+    resp = await db_client.get(f"/contents/{content_id}/draft")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["id"] == content_id
+    assert body["type"] == "story"
+    assert body["name"] == ""
+    assert body["oneLiner"] == ""
+    assert body["thumbnailAssetId"] is None
+    assert body["promptTemplate"] == "basic"
+    assert body["settingText"] is None
+    assert body["developmentExample"] is None
+    assert body["customPrompt"] is None
+    assert body["startingSetups"] == []
+    assert body["keywordNotes"] == []
+    assert body["shortcuts"] == []
+    assert body["description"] == ""
+    assert body["genreId"] is None
+    assert body["target"] is None
+    assert body["hashtags"] == []
+    assert body["visibility"] == "private"
 
 
 async def test_get_content_draft_returns_newly_created_empty_draft(
@@ -469,3 +560,380 @@ async def test_patch_content_draft_preserves_image_asset_id_set_by_register_endp
     assert row.image_asset_id == asset.id
     assert str(row.blurred_asset_id) == blurred_asset_id
     assert row.trigger_condition == "수정된 조건"
+
+
+async def test_patch_content_draft_returns_422_for_mismatched_payload_type(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_draft_payload())
+    assert resp.status_code == 422
+
+
+async def test_patch_content_draft_updates_story_fields_without_validation(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """AC: PATCH accepts the payload as-is, no min-length/required-ness checks."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    genre = await _get_genre(db_session)
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            name="",
+            promptTemplate="custom",
+            customPrompt="",
+            description="상세 설명입니다",
+            genreId=str(genre.id),
+            target="all",
+            hashtags=["판타지"],
+            visibility="public",
+        ),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["type"] == "story"
+    assert body["name"] == ""
+    assert body["promptTemplate"] == "custom"
+    assert body["customPrompt"] == ""
+    assert body["description"] == "상세 설명입니다"
+    assert body["genreId"] == str(genre.id)
+    assert body["target"] == "all"
+    assert body["hashtags"] == ["판타지"]
+    assert body["visibility"] == "public"
+
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    assert detail.setting_text == "세계관 설명"
+
+
+def _starting_setup_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "name": "시작설정1",
+        "prologue": "프롤로그",
+        "openingMessage": None,
+        "playguide": None,
+        "suggestedReplies": [],
+        "statDefs": [],
+        "endings": [],
+    }
+    item.update(overrides)
+    return item
+
+
+async def test_patch_content_draft_upserts_starting_setup_tree(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    setup_id = str(uuid.uuid4())
+    stat_id = str(uuid.uuid4())
+    ending_id = str(uuid.uuid4())
+    top_rule_id = str(uuid.uuid4())
+    group_id = str(uuid.uuid4())
+    nested_rule_id = str(uuid.uuid4())
+    note_id = str(uuid.uuid4())
+    shortcut_id = str(uuid.uuid4())
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                {
+                    "id": setup_id,
+                    "name": "시작설정1",
+                    "prologue": "프롤로그",
+                    "openingMessage": "오프닝 메시지",
+                    "playguide": None,
+                    "suggestedReplies": ["응답1"],
+                    "statDefs": [
+                        {
+                            "id": stat_id,
+                            "name": "체력",
+                            "icon": "heart",
+                            "color": "rose",
+                            "minValue": 0,
+                            "maxValue": 100,
+                            "initialValue": 50,
+                            "unit": None,
+                            "description": "체력 스탯",
+                        }
+                    ],
+                    "endings": [
+                        {
+                            "id": ending_id,
+                            "name": "해피엔딩",
+                            "turnCountGate": 10,
+                            "judgmentPrompt": "판정 프롬프트",
+                            "epilogue": "에필로그",
+                            "hint": None,
+                            "statRules": [
+                                {
+                                    "kind": "rule",
+                                    "id": top_rule_id,
+                                    "statId": stat_id,
+                                    "operator": "gte",
+                                    "threshold": 50,
+                                    "nextOp": "and",
+                                },
+                                {
+                                    "kind": "group",
+                                    "id": group_id,
+                                    "nextOp": None,
+                                    "rules": [
+                                        {
+                                            "kind": "rule",
+                                            "id": nested_rule_id,
+                                            "statId": stat_id,
+                                            "operator": "lt",
+                                            "threshold": 10,
+                                            "nextOp": None,
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            keywordNotes=[
+                {
+                    "id": note_id,
+                    "infoText": "키워드 노트",
+                    "triggerKeywords": ["단서"],
+                    "startingSetupId": setup_id,
+                }
+            ],
+            shortcuts=[
+                {"id": shortcut_id, "name": "단축어1", "description": "설명", "prompt": "프롬프트"}
+            ],
+        ),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert [s["id"] for s in body["startingSetups"]] == [setup_id]
+    setup_body = body["startingSetups"][0]
+    assert setup_body["openingMessage"] == "오프닝 메시지"
+    assert [sd["id"] for sd in setup_body["statDefs"]] == [stat_id]
+    assert setup_body["endings"][0]["id"] == ending_id
+    stat_rules = setup_body["endings"][0]["statRules"]
+    assert stat_rules[0] == {
+        "kind": "rule",
+        "id": top_rule_id,
+        "statId": stat_id,
+        "operator": "gte",
+        "threshold": 50.0,
+        "nextOp": "and",
+    }
+    assert stat_rules[1]["kind"] == "group"
+    assert stat_rules[1]["id"] == group_id
+    assert stat_rules[1]["rules"][0]["id"] == nested_rule_id
+    assert body["keywordNotes"] == [
+        {
+            "id": note_id,
+            "infoText": "키워드 노트",
+            "triggerKeywords": ["단서"],
+            "startingSetupId": setup_id,
+        }
+    ]
+    assert body["shortcuts"] == [
+        {"id": shortcut_id, "name": "단축어1", "description": "설명", "prompt": "프롬프트"}
+    ]
+
+    # keyword_notes.starting_setup_id is a physical FK, not the entity_id used in the API.
+    setup_row = await db_session.scalar(
+        sa.select(StartingSetup).where(StartingSetup.entity_id == uuid.UUID(setup_id))
+    )
+    assert setup_row is not None
+    note_row = await db_session.scalar(
+        sa.select(KeywordNote).where(KeywordNote.entity_id == uuid.UUID(note_id))
+    )
+    assert note_row is not None
+    assert note_row.starting_setup_id == setup_row.id
+    assert note_row.starting_setup_id != uuid.UUID(setup_id)
+
+    # GET returns the same tree (AC1: startingSetups(entity_id, order) + descendants).
+    get_resp = await db_client.get(f"/contents/{content.id}/draft")
+    assert get_resp.status_code == 200
+    assert get_resp.json() == body
+
+    setup_physical_id = setup_row.id
+
+    # Second PATCH: reorder two setups, update a stat value, drop nothing yet — physical
+    # ids must be stable (real upsert, not delete+reinsert).
+    second_setup_id = str(uuid.uuid4())
+    second_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=second_setup_id, name="시작설정2"),
+                {
+                    "id": setup_id,
+                    "name": "시작설정1",
+                    "prologue": "프롤로그",
+                    "openingMessage": "오프닝 메시지",
+                    "playguide": None,
+                    "suggestedReplies": ["응답1"],
+                    "statDefs": [
+                        {
+                            "id": stat_id,
+                            "name": "체력",
+                            "icon": "heart",
+                            "color": "rose",
+                            "minValue": 0,
+                            "maxValue": 100,
+                            "initialValue": 80,
+                            "unit": None,
+                            "description": "체력 스탯",
+                        }
+                    ],
+                    "endings": [],
+                },
+            ],
+            keywordNotes=[],
+            shortcuts=[],
+        ),
+    )
+    assert second_resp.status_code == 200
+    second_body = second_resp.json()
+    assert [s["id"] for s in second_body["startingSetups"]] == [second_setup_id, setup_id]
+    assert second_body["startingSetups"][1]["statDefs"][0]["initialValue"] == 80
+    # ending removed from the incoming payload -> its rule tree must be gone too.
+    assert second_body["startingSetups"][1]["endings"] == []
+
+    await db_session.refresh(setup_row)
+    assert setup_row.id == setup_physical_id
+    assert setup_row.order == 1
+
+    remaining_ending = await db_session.scalar(
+        sa.select(Ending).where(Ending.entity_id == uuid.UUID(ending_id))
+    )
+    assert remaining_ending is None
+    remaining_group = await db_session.scalar(
+        sa.select(EndingRuleGroup).where(EndingRuleGroup.entity_id == uuid.UUID(group_id))
+    )
+    assert remaining_group is None
+    remaining_rules = (
+        await db_session.execute(
+            sa.select(EndingRule).where(
+                EndingRule.entity_id.in_([uuid.UUID(top_rule_id), uuid.UUID(nested_rule_id)])
+            )
+        )
+    ).scalars().all()
+    assert remaining_rules == []
+    # keyword note dropped from the payload -> deleted.
+    remaining_note = await db_session.scalar(
+        sa.select(KeywordNote).where(KeywordNote.entity_id == uuid.UUID(note_id))
+    )
+    assert remaining_note is None
+
+
+async def test_patch_content_draft_deletes_removed_starting_setup_subtree(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    setup_id = str(uuid.uuid4())
+    stat_id = str(uuid.uuid4())
+    ending_id = str(uuid.uuid4())
+    rule_id = str(uuid.uuid4())
+
+    first_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                {
+                    "id": setup_id,
+                    "name": "시작설정1",
+                    "prologue": "프롤로그",
+                    "openingMessage": None,
+                    "playguide": None,
+                    "suggestedReplies": [],
+                    "statDefs": [
+                        {
+                            "id": stat_id,
+                            "name": "체력",
+                            "icon": "heart",
+                            "color": "rose",
+                            "minValue": 0,
+                            "maxValue": 100,
+                            "initialValue": 50,
+                            "unit": None,
+                            "description": "체력 스탯",
+                        }
+                    ],
+                    "endings": [
+                        {
+                            "id": ending_id,
+                            "name": "엔딩",
+                            "turnCountGate": 10,
+                            "judgmentPrompt": "판정",
+                            "epilogue": None,
+                            "hint": None,
+                            "statRules": [
+                                {
+                                    "kind": "rule",
+                                    "id": rule_id,
+                                    "statId": stat_id,
+                                    "operator": "eq",
+                                    "threshold": 1,
+                                    "nextOp": None,
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        ),
+    )
+    assert first_resp.status_code == 200
+
+    # Removing the starting setup entirely must cascade-delete stat_defs/endings/rules —
+    # these FKs have no ON DELETE CASCADE, so a naive delete would raise an IntegrityError.
+    second_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[]),
+    )
+    assert second_resp.status_code == 200
+    assert second_resp.json()["startingSetups"] == []
+
+    assert (
+        await db_session.scalar(sa.select(StartingSetup).where(StartingSetup.entity_id == uuid.UUID(setup_id)))
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(StatDef).where(StatDef.entity_id == uuid.UUID(stat_id)))
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(Ending).where(Ending.entity_id == uuid.UUID(ending_id)))
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(EndingRule).where(EndingRule.entity_id == uuid.UUID(rule_id)))
+    ) is None
