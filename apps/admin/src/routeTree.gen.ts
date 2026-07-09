@@ -9,12 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 
+const UsageMetricsRoute = UsageMetricsRouteImport.update({
+  id: '/usage-metrics',
+  path: '/usage-metrics',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -45,6 +51,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
+  '/usage-metrics': typeof UsageMetricsRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports/': typeof ReportsIndexRoute
 }
@@ -52,6 +59,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
+  '/usage-metrics': typeof UsageMetricsRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports': typeof ReportsIndexRoute
 }
@@ -60,19 +68,33 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
+  '/usage-metrics': typeof UsageMetricsRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/reports/': typeof ReportsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/appeals' | '/login' | '/reports/$reportId' | '/reports/'
+  fullPaths:
+    | '/'
+    | '/appeals'
+    | '/login'
+    | '/usage-metrics'
+    | '/reports/$reportId'
+    | '/reports/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/appeals' | '/login' | '/reports/$reportId' | '/reports'
+  to:
+    | '/'
+    | '/appeals'
+    | '/login'
+    | '/usage-metrics'
+    | '/reports/$reportId'
+    | '/reports'
   id:
     | '__root__'
     | '/'
     | '/appeals'
     | '/login'
+    | '/usage-metrics'
     | '/reports/$reportId'
     | '/reports/'
   fileRoutesById: FileRoutesById
@@ -81,12 +103,20 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AppealsRoute: typeof AppealsRoute
   LoginRoute: typeof LoginRoute
+  UsageMetricsRoute: typeof UsageMetricsRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/usage-metrics': {
+      id: '/usage-metrics'
+      path: '/usage-metrics'
+      fullPath: '/usage-metrics'
+      preLoaderRoute: typeof UsageMetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/login': {
       id: '/login'
       path: '/login'
@@ -129,6 +159,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AppealsRoute: AppealsRoute,
   LoginRoute: LoginRoute,
+  UsageMetricsRoute: UsageMetricsRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ReportsIndexRoute: ReportsIndexRoute,
 }
