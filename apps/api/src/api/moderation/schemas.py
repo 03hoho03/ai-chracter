@@ -4,7 +4,8 @@ from datetime import datetime
 from pydantic import Field
 
 from api.core.schema import CamelModel
-from api.db.models.moderation import AppealStatus, AppealTargetKind
+from api.db.models.content import ContentType, ModerationStatus
+from api.db.models.moderation import AppealStatus, AppealTargetKind, ReportReasonCategory, ReportStatus
 
 
 class NotificationResponse(CamelModel):
@@ -27,3 +28,41 @@ class AppealCreateRequest(CamelModel):
 class AppealResponse(CamelModel):
     appeal_id: uuid.UUID
     status: AppealStatus
+
+
+class AdminReportListItem(CamelModel):
+    id: uuid.UUID
+    reason_category: ReportReasonCategory
+    content_id: uuid.UUID
+    content_type: ContentType
+    content_name: str
+    status: ReportStatus
+    created_at: datetime
+
+
+class AdminReportListResponse(CamelModel):
+    items: list[AdminReportListItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class AdminReportContentDetail(CamelModel):
+    id: uuid.UUID
+    type: ContentType
+    name: str
+    thumbnail_url: str | None
+    detail_description: str
+    prompt: str | None
+    moderation_status: ModerationStatus
+
+
+class AdminReportDetailResponse(CamelModel):
+    id: uuid.UUID
+    reason_category: ReportReasonCategory
+    reporter_user_id: uuid.UUID
+    status: ReportStatus
+    created_at: datetime
+    resolved_by_admin_id: uuid.UUID | None
+    resolved_at: datetime | None
+    content: AdminReportContentDetail

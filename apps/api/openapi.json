@@ -1860,6 +1860,111 @@
         }
       }
     },
+    "/admin/reports": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "List Admin Reports",
+        "description": "techspec-backend-admin-moderation.md §1, techspec-admin.md §1 — traditional\n(offset) pagination, unlike the cursor pagination `GET /contents` uses, since\nadmin review work benefits from jumping to a specific page number.",
+        "operationId": "list_admin_reports_admin_reports_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReportListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/reports/{report_id}": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Get Admin Report Detail",
+        "description": "techspec-backend-admin-moderation.md §1. `reports.content_id` is a plain FK to an\nexisting `contents` row (rows are never hard-deleted, only moderation_status-flagged),\nso the target content is always found.",
+        "operationId": "get_admin_report_detail_admin_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms": {
       "post": {
         "tags": [
@@ -2832,6 +2937,200 @@
           "email"
         ],
         "title": "AdminMeResponse"
+      },
+      "AdminReportContentDetail": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "detailDescription": {
+            "type": "string",
+            "title": "Detaildescription"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailUrl",
+          "detailDescription",
+          "prompt",
+          "moderationStatus"
+        ],
+        "title": "AdminReportContentDetail"
+      },
+      "AdminReportDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "resolvedByAdminId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedbyadminid"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AdminReportContentDetail"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reasonCategory",
+          "reporterUserId",
+          "status",
+          "createdAt",
+          "resolvedByAdminId",
+          "resolvedAt",
+          "content"
+        ],
+        "title": "AdminReportDetailResponse"
+      },
+      "AdminReportListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reasonCategory",
+          "contentId",
+          "contentType",
+          "contentName",
+          "status",
+          "createdAt"
+        ],
+        "title": "AdminReportListItem"
+      },
+      "AdminReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminReportListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminReportListResponse"
       },
       "AppealCreateRequest": {
         "properties": {
@@ -4944,6 +5243,15 @@
           "reasonCategory"
         ],
         "title": "ReportRequest"
+      },
+      "ReportStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "resolved",
+          "rejected"
+        ],
+        "title": "ReportStatus"
       },
       "ResendVerificationCodeRequest": {
         "properties": {

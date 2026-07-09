@@ -767,6 +767,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Reports
+         * @description techspec-backend-admin-moderation.md §1, techspec-admin.md §1 — traditional
+         *     (offset) pagination, unlike the cursor pagination `GET /contents` uses, since
+         *     admin review work benefits from jumping to a specific page number.
+         */
+        get: operations["list_admin_reports_admin_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Admin Report Detail
+         * @description techspec-backend-admin-moderation.md §1. `reports.content_id` is a plain FK to an
+         *     existing `contents` row (rows are never hard-deleted, only moderation_status-flagged),
+         *     so the target content is always found.
+         */
+        get: operations["get_admin_report_detail_admin_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms": {
         parameters: {
             query?: never;
@@ -1123,6 +1167,83 @@ export interface components {
             id: string;
             /** Email */
             email: string;
+        };
+        /** AdminReportContentDetail */
+        AdminReportContentDetail: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Detaildescription */
+            detailDescription: string;
+            /** Prompt */
+            prompt: string | null;
+            moderationStatus: components["schemas"]["ModerationStatus"];
+        };
+        /** AdminReportDetailResponse */
+        AdminReportDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Resolvedbyadminid */
+            resolvedByAdminId: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            content: components["schemas"]["AdminReportContentDetail"];
+        };
+        /** AdminReportListItem */
+        AdminReportListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Contentname */
+            contentName: string;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminReportListResponse */
+        AdminReportListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminReportListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
         };
         /** AppealCreateRequest */
         AppealCreateRequest: {
@@ -2011,6 +2132,11 @@ export interface components {
         ReportRequest: {
             reasonCategory: components["schemas"]["ReportReasonCategory"];
         };
+        /**
+         * ReportStatus
+         * @enum {string}
+         */
+        ReportStatus: "pending" | "resolved" | "rejected";
         /** ResendVerificationCodeRequest */
         ResendVerificationCodeRequest: {
             /**
@@ -3669,6 +3795,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AppealResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_reports_admin_reports_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["ReportStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_report_detail_admin_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminReportDetailResponse"];
                 };
             };
             /** @description Validation Error */
