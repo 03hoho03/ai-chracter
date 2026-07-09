@@ -3899,6 +3899,17 @@
             ],
             "title": "Thumbnailassetid"
           },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
@@ -3911,6 +3922,7 @@
           "type",
           "name",
           "thumbnailAssetId",
+          "thumbnailUrl",
           "updatedAt"
         ],
         "title": "DraftSummary"

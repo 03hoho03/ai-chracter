@@ -28,16 +28,25 @@ function DraftCard({ draft }: { draft: DraftSummary }) {
     <Link
       to="/builder/$type/$draftId"
       params={{ type: draft.type, draftId: draft.id }}
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted"
+      className="flex gap-3 rounded-xl border border-border bg-card p-4 transition-colors hover:bg-muted"
     >
-      <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
-        <DraftTypeIcon type={draft.type} />
-        {DRAFT_TYPE_LABEL[draft.type]}
+      <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
+        {draft.thumbnailUrl ? (
+          <img src={draft.thumbnailUrl} alt="" className="size-full object-cover" />
+        ) : (
+          <DraftTypeIcon type={draft.type} />
+        )}
       </div>
-      <p className="truncate text-base font-semibold text-foreground">{draft.name}</p>
-      <p className="text-xs text-muted-foreground">
-        {draftUpdatedAtFormatter.format(new Date(draft.updatedAt))} 수정
-      </p>
+      <div className="flex min-w-0 flex-col justify-center gap-1">
+        <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+          <DraftTypeIcon type={draft.type} />
+          {DRAFT_TYPE_LABEL[draft.type]}
+        </div>
+        <p className="truncate text-base font-semibold text-foreground">{draft.name}</p>
+        <p className="text-xs text-muted-foreground">
+          {draftUpdatedAtFormatter.format(new Date(draft.updatedAt))} 수정
+        </p>
+      </div>
     </Link>
   );
 }

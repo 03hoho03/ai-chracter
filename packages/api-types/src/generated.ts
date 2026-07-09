@@ -1538,6 +1538,8 @@ export interface components {
             name: string;
             /** Thumbnailassetid */
             thumbnailAssetId: string | null;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
             /**
              * Updatedat
              * Format: date-time

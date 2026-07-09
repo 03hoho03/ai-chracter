@@ -17,6 +17,7 @@ class DraftSummary(CamelModel):
     type: ContentType
     name: str
     thumbnail_asset_id: uuid.UUID | None
+    thumbnail_url: str | None
     updated_at: datetime
 
 

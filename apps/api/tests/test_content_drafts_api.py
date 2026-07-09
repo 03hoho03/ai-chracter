@@ -162,6 +162,7 @@ async def test_list_drafts_returns_never_published_character_draft(
     assert draft["type"] == "character"
     assert draft["name"] == "캐릭터 초안"
     assert draft["thumbnailAssetId"] == str(thumbnail.id)
+    assert draft["thumbnailUrl"]
     assert draft["updatedAt"]
 
 

@@ -169,6 +169,7 @@ async def list_my_drafts(
                 type=content.type,
                 name=detail.name,
                 thumbnail_asset_id=detail.thumbnail_asset_id,
+                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
                 updated_at=content.updated_at,
             )
         )
