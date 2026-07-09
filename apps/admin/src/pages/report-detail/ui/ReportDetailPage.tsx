@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 
+import { ReportActionPanel } from "../../../features/act-on-report";
 import {
   CONTENT_TYPE_LABELS,
   MODERATION_STATUS_LABELS,
@@ -106,6 +107,13 @@ export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
               </div>
             )}
           </section>
+
+          <ReportActionPanel
+            reportId={reportDetailQuery.data.id}
+            reportPending={reportDetailQuery.data.status === "pending"}
+            contentName={reportDetailQuery.data.content.name || "(이름 없음)"}
+            contentRestricted={reportDetailQuery.data.content.moderationStatus === "restricted"}
+          />
         </>
       )}
     </main>
