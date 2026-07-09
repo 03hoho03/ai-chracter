@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from api.admin.router import me_router as admin_me_router, router as admin_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
 from api.auth.router import me_router, router as auth_router
 from api.chat.router import characters_router, preview_router, router as chat_router, stories_router
@@ -20,6 +21,8 @@ app.add_middleware(
 )
 
 app.include_router(session_router)
+app.include_router(admin_router)
+app.include_router(admin_me_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)

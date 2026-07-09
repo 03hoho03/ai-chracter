@@ -83,6 +83,75 @@
         }
       }
     },
+    "/admin/auth/login": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Login",
+        "operationId": "admin_login_admin_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/auth/logout": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Admin Logout",
+        "operationId": "admin_logout_admin_auth_logout_post",
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          }
+        }
+      }
+    },
+    "/admin/me": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Me",
+        "operationId": "get_admin_me_admin_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminMeResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -2726,6 +2795,44 @@
   },
   "components": {
     "schemas": {
+      "AdminLoginRequest": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AdminLoginRequest"
+      },
+      "AdminMeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email"
+        ],
+        "title": "AdminMeResponse"
+      },
       "AppealCreateRequest": {
         "properties": {
           "targetKind": {

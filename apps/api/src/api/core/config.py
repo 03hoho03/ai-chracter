@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # this defaults to False and must be overridden to True in any deployed env.
     session_cookie_secure: bool = False
 
+    # techspec-backend-auth.md §2: admin sessions use a separate cookie name (and,
+    # in api/admin/session.py, a separate Redis key prefix) so they never collide
+    # with a regular user's session cookie.
+    admin_session_cookie_name: str = "admin_session_id"
+
     cors_allow_origins: list[str] = ["http://localhost:5173", "http://localhost:5174"]
 
     aws_region: str = "ap-northeast-2"
