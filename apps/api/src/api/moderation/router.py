@@ -1,17 +1,27 @@
 import uuid
 from collections.abc import Sequence
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.admin.dependencies import get_current_admin_id
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.content import Content, ContentType, ContentVersion
+from api.db.models.chat import ChatRoom
+from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
-from api.db.models.moderation import Appeal, AppealStatus, Notification, Report, ReportStatus
+from api.db.models.moderation import (
+    Appeal,
+    AppealStatus,
+    ModerationAction,
+    ModerationActionType,
+    Notification,
+    Report,
+    ReportStatus,
+)
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
 from api.moderation.schemas import (
@@ -22,6 +32,7 @@ from api.moderation.schemas import (
     AppealCreateRequest,
     AppealResponse,
     NotificationResponse,
+    ReportActionRequest,
 )
 from api.session.dependencies import get_current_user_id
 
@@ -262,6 +273,89 @@ async def get_admin_report_detail(
 
     content = await db.get(Content, report.content_id)
     assert content is not None
+
+    return AdminReportDetailResponse(
+        id=report.id,
+        reason_category=report.reason_category,
+        reporter_user_id=report.reporter_user_id,
+        status=report.status,
+        created_at=report.created_at,
+        resolved_by_admin_id=report.resolved_by_admin_id,
+        resolved_at=report.resolved_at,
+        content=await _admin_report_content_detail(db, content),
+    )
+
+
+async def upgrade_content_chat_rooms_to_latest_version(db: AsyncSession, content: Content) -> None:
+    """techspec-content-versioning.md §4. Sync bulk-migrates every chat room referencing
+    this content to its latest published version, flipping `version_auto_upgraded` so the
+    FE can show the upgrade banner (`chat/router.py`'s `acknowledge-version-upgrade`
+    consumes that flag) — all within the caller's own transaction, no background job.
+    Exported (not prefixed `_`) since `POST /admin/appeals/{id}/resolve` (US-123) reuses
+    this exact path for `verdict='accepted'` on a `target_kind='moderation-action'` appeal."""
+    if content.current_published_version_id is None:
+        return
+    await db.execute(
+        update(ChatRoom)
+        .where(ChatRoom.content_id == content.id)
+        .values(content_version_id=content.current_published_version_id, version_auto_upgraded=True)
+    )
+
+
+@router.post("/admin/reports/{report_id}/action")
+async def act_on_report(
+    report_id: uuid.UUID,
+    body: ReportActionRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminReportDetailResponse:
+    """techspec-backend-admin-moderation.md §2."""
+    report = await db.get(Report, report_id)
+    if report is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+
+    content = await db.get(Content, report.content_id)
+    assert content is not None
+
+    if (
+        body.action == ModerationActionType.LIFT_RESTRICTION
+        and content.moderation_status != ModerationStatus.RESTRICTED
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="lift-restriction is only allowed on restricted content",
+        )
+
+    action_row = ModerationAction(content_id=content.id, admin_id=admin_id, action=body.action)
+    db.add(action_row)
+    await db.flush()
+
+    if body.action == ModerationActionType.RESTRICT:
+        content.moderation_status = ModerationStatus.RESTRICTED
+    elif body.action == ModerationActionType.DELETE:
+        content.moderation_status = ModerationStatus.DELETED
+    elif body.action == ModerationActionType.LIFT_RESTRICTION:
+        content.moderation_status = ModerationStatus.NORMAL
+        await upgrade_content_chat_rooms_to_latest_version(db, content)
+
+    if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE):
+        db.add(
+            Notification(
+                user_id=content.creator_user_id,
+                content_id=content.id,
+                action_id=action_row.id,
+                reason_category=report.reason_category.value,
+                admin_comment=body.admin_comment or "",
+            )
+        )
+
+    report.status = (
+        ReportStatus.REJECTED if body.action == ModerationActionType.REJECT else ReportStatus.RESOLVED
+    )
+    report.resolved_by_admin_id = admin_id
+    report.resolved_at = datetime.now(UTC)
+
+    await db.commit()
 
     return AdminReportDetailResponse(
         id=report.id,

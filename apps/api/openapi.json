@@ -1965,6 +1965,60 @@
         }
       }
     },
+    "/admin/reports/{report_id}/action": {
+      "post": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Act On Report",
+        "description": "techspec-backend-admin-moderation.md §2.",
+        "operationId": "act_on_report_admin_reports__report_id__action_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReportActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms": {
       "post": {
         "tags": [
@@ -4967,6 +5021,16 @@
         ],
         "title": "MeResponse"
       },
+      "ModerationActionType": {
+        "type": "string",
+        "enum": [
+          "restrict",
+          "lift-restriction",
+          "delete",
+          "reject"
+        ],
+        "title": "ModerationActionType"
+      },
       "ModerationStatus": {
         "type": "string",
         "enum": [
@@ -5220,6 +5284,29 @@
           "order"
         ],
         "title": "RegisterSituationalImageRequest"
+      },
+      "ReportActionRequest": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ModerationActionType"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "ReportActionRequest"
       },
       "ReportReasonCategory": {
         "type": "string",

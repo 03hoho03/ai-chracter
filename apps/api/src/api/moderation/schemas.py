@@ -5,7 +5,13 @@ from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.db.models.content import ContentType, ModerationStatus
-from api.db.models.moderation import AppealStatus, AppealTargetKind, ReportReasonCategory, ReportStatus
+from api.db.models.moderation import (
+    AppealStatus,
+    AppealTargetKind,
+    ModerationActionType,
+    ReportReasonCategory,
+    ReportStatus,
+)
 
 
 class NotificationResponse(CamelModel):
@@ -66,3 +72,8 @@ class AdminReportDetailResponse(CamelModel):
     resolved_by_admin_id: uuid.UUID | None
     resolved_at: datetime | None
     content: AdminReportContentDetail
+
+
+class ReportActionRequest(CamelModel):
+    action: ModerationActionType
+    admin_comment: str | None = None

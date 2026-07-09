@@ -11,13 +11,17 @@ from api.db.models import (
     Asset,
     AssetKind,
     CharacterVersionDetail,
+    ChatRoom,
     Content,
     ContentTarget,
     ContentType,
     ContentVersion,
     ContentVisibility,
     Genre,
+    ModerationAction,
+    ModerationActionType,
     ModerationStatus,
+    Notification,
     Report,
     ReportReasonCategory,
     ReportStatus,
@@ -349,3 +353,221 @@ async def test_report_detail_for_story_uses_custom_prompt(
     assert body["content"]["name"] == "스토리D"
     assert body["content"]["prompt"] == "커스텀 프롬프트"
     assert body["content"]["thumbnailUrl"] is None
+
+
+async def test_report_action_requires_admin_session(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post(f"/admin/reports/{uuid.uuid4()}/action", json={"action": "reject"})
+    assert resp.status_code == 401
+
+
+async def test_report_action_unknown_report_returns_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/reports/{uuid.uuid4()}/action", json={"action": "reject"})
+    assert resp.status_code == 404
+
+
+async def test_report_action_restrict_updates_content_and_notifies_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    report = await _make_report(
+        db_session,
+        reporter_user_id=reporter.id,
+        content_id=character.id,
+        reason_category=ReportReasonCategory.HATE,
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/reports/{report.id}/action",
+        json={"action": "restrict", "adminComment": "부적절한 콘텐츠입니다"},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "resolved"
+    assert body["content"]["moderationStatus"] == "restricted"
+
+    actions = (
+        await db_session.scalars(
+            sa.select(ModerationAction).where(ModerationAction.content_id == character.id)
+        )
+    ).all()
+    assert len(actions) == 1
+    assert actions[0].action == ModerationActionType.RESTRICT
+
+    notifications = (
+        await db_session.scalars(sa.select(Notification).where(Notification.content_id == character.id))
+    ).all()
+    assert len(notifications) == 1
+    notification = notifications[0]
+    assert notification.user_id == creator.id
+    assert notification.reason_category == "hate"
+    assert notification.admin_comment == "부적절한 콘텐츠입니다"
+    assert notification.action_id == actions[0].id
+
+
+async def test_report_action_delete_updates_content_and_notifies_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=character.id)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json={"action": "delete"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "resolved"
+    assert body["content"]["moderationStatus"] == "deleted"
+
+    notifications = (
+        await db_session.scalars(sa.select(Notification).where(Notification.content_id == character.id))
+    ).all()
+    assert len(notifications) == 1
+    assert notifications[0].admin_comment == ""
+
+
+async def test_report_action_reject_leaves_content_status_untouched(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=character.id)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json={"action": "reject"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["status"] == "rejected"
+    assert body["content"]["moderationStatus"] == "normal"
+
+    notifications = (
+        await db_session.scalars(sa.select(Notification).where(Notification.content_id == character.id))
+    ).all()
+    assert notifications == []
+
+
+async def test_report_action_lift_restriction_requires_restricted_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=character.id)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/reports/{report.id}/action", json={"action": "lift-restriction"}
+    )
+    assert resp.status_code == 400
+
+
+async def test_report_action_lift_restriction_migrates_chat_rooms_to_latest_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    reporter = _make_user()
+    creator = _make_user()
+    chatter = _make_user()
+    db_session.add_all([reporter, creator, chatter])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    old_version_id = character.current_published_version_id
+    assert old_version_id is not None
+
+    new_version = ContentVersion(
+        content_id=character.id,
+        version_number=2,
+        published_at=datetime.now(timezone.utc),
+        detail_description="설명 v2",
+    )
+    db_session.add(new_version)
+    await db_session.flush()
+    character.current_published_version_id = new_version.id
+    character.moderation_status = ModerationStatus.RESTRICTED
+
+    room = ChatRoom(user_id=chatter.id, content_id=character.id, content_version_id=old_version_id)
+    db_session.add(room)
+
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=character.id)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/reports/{report.id}/action", json={"action": "lift-restriction"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["content"]["moderationStatus"] == "normal"
+
+    await db_session.refresh(room)
+    assert room.content_version_id == new_version.id
+    assert room.version_auto_upgraded is True
+
+    notifications = (
+        await db_session.scalars(sa.select(Notification).where(Notification.content_id == character.id))
+    ).all()
+    assert notifications == []
+
+
+async def test_report_submission_does_not_auto_change_content_moderation_status(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-121 AC3: reports.status/action 처리 전까지는 신고 접수 자체가 moderation_status를
+    바꾸지 않는다 (US-051)."""
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    await db_session.commit()
+
+    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(reporter.id)}})
+    assert resp.status_code == 201
+
+    resp = await db_client.post(f"/contents/{character.id}/report", json={"reasonCategory": "spam"})
+    assert resp.status_code == 204
+
+    await db_session.refresh(character)
+    assert character.moderation_status == ModerationStatus.NORMAL

@@ -811,6 +811,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/reports/{report_id}/action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Report
+         * @description techspec-backend-admin-moderation.md §2.
+         */
+        post: operations["act_on_report_admin_reports__report_id__action_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms": {
         parameters: {
             query?: never;
@@ -2002,6 +2022,11 @@ export interface components {
             profileImageAssetId: string | null;
         };
         /**
+         * ModerationActionType
+         * @enum {string}
+         */
+        ModerationActionType: "restrict" | "lift-restriction" | "delete" | "reject";
+        /**
          * ModerationStatus
          * @enum {string}
          */
@@ -2122,6 +2147,12 @@ export interface components {
             triggerCondition: string;
             /** Order */
             order: number;
+        };
+        /** ReportActionRequest */
+        ReportActionRequest: {
+            action: components["schemas"]["ModerationActionType"];
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /**
          * ReportReasonCategory
@@ -3850,6 +3881,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_report_admin_reports__report_id__action_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ReportActionRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
