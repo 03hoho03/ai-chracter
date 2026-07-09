@@ -16,6 +16,8 @@ from api.db.models.media import Asset
 from api.db.models.moderation import (
     Appeal,
     AppealStatus,
+    AppealTargetKind,
+    AppealVerdict,
     ModerationAction,
     ModerationActionType,
     Notification,
@@ -25,11 +27,14 @@ from api.db.models.moderation import (
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
 from api.moderation.schemas import (
+    AdminAppealListItem,
+    AdminAppealListResponse,
     AdminReportContentDetail,
     AdminReportDetailResponse,
     AdminReportListItem,
     AdminReportListResponse,
     AppealCreateRequest,
+    AppealResolveRequest,
     AppealResponse,
     NotificationResponse,
     ReportActionRequest,
@@ -39,6 +44,7 @@ from api.session.dependencies import get_current_user_id
 router = APIRouter(tags=["moderation"])
 
 ADMIN_REPORT_PAGE_SIZE = 20
+ADMIN_APPEAL_PAGE_SIZE = 20
 
 
 def _to_response(notification: Notification) -> NotificationResponse:
@@ -367,3 +373,91 @@ async def act_on_report(
         resolved_at=report.resolved_at,
         content=await _admin_report_content_detail(db, content),
     )
+
+
+def _to_admin_appeal_list_item(appeal: Appeal) -> AdminAppealListItem:
+    return AdminAppealListItem(
+        id=appeal.id,
+        target_kind=appeal.target_kind,
+        reason_text=appeal.reason_text,
+        status=appeal.status,
+        verdict=appeal.verdict,
+        created_at=appeal.created_at,
+        resolved_at=appeal.resolved_at,
+    )
+
+
+@router.get("/admin/appeals")
+async def list_admin_appeals(
+    page: int = Query(1, ge=1),
+    status_filter: AppealStatus | None = Query(None, alias="status"),
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminAppealListResponse:
+    """techspec-backend-admin-moderation.md §1/§3. No separate detail endpoint — unlike
+    reports, an appeal's full reason text lives on the same row, so the list item already
+    carries everything the review screen needs (techspec-admin.md §2 only defines
+    useAppealListQuery/useResolveAppealMutation, no detail query)."""
+    filters = [Appeal.status == status_filter] if status_filter is not None else []
+
+    total_count = await db.scalar(select(func.count()).select_from(Appeal).where(*filters))
+    total_count = total_count or 0
+    total_pages = -(-total_count // ADMIN_APPEAL_PAGE_SIZE) if total_count else 0
+
+    appeals = (
+        await db.scalars(
+            select(Appeal)
+            .where(*filters)
+            .order_by(Appeal.created_at.desc())
+            .offset((page - 1) * ADMIN_APPEAL_PAGE_SIZE)
+            .limit(ADMIN_APPEAL_PAGE_SIZE)
+        )
+    ).all()
+
+    return AdminAppealListResponse(
+        items=[_to_admin_appeal_list_item(appeal) for appeal in appeals],
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+    )
+
+
+@router.post("/admin/appeals/{appeal_id}/resolve")
+async def resolve_appeal(
+    appeal_id: uuid.UUID,
+    body: AppealResolveRequest,
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminAppealListItem:
+    """techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal
+    reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
+    that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
+    persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
+    appeal's own status/verdict."""
+    appeal = await db.get(Appeal, appeal_id)
+    if appeal is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Appeal not found")
+    if appeal.status != AppealStatus.PENDING:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Appeal already resolved"
+        )
+
+    if body.verdict == AppealVerdict.ACCEPTED and appeal.target_kind == AppealTargetKind.MODERATION_ACTION:
+        action = await db.get(ModerationAction, appeal.target_id)
+        if action is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="Moderation action not found"
+            )
+        content = await db.get(Content, action.content_id)
+        assert content is not None
+
+        content.moderation_status = ModerationStatus.NORMAL
+        await upgrade_content_chat_rooms_to_latest_version(db, content)
+
+    appeal.status = AppealStatus.RESOLVED
+    appeal.verdict = body.verdict
+    appeal.resolved_at = datetime.now(UTC)
+
+    await db.commit()
+
+    return _to_admin_appeal_list_item(appeal)

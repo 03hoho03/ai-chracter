@@ -831,6 +831,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/appeals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Appeals
+         * @description techspec-backend-admin-moderation.md §1/§3. No separate detail endpoint — unlike
+         *     reports, an appeal's full reason text lives on the same row, so the list item already
+         *     carries everything the review screen needs (techspec-admin.md §2 only defines
+         *     useAppealListQuery/useResolveAppealMutation, no detail query).
+         */
+        get: operations["list_admin_appeals_admin_appeals_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/appeals/{appeal_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Appeal
+         * @description techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal
+         *     reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
+         *     that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
+         *     persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
+         *     appeal's own status/verdict.
+         */
+        post: operations["resolve_appeal_admin_appeals__appeal_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms": {
         parameters: {
             query?: never;
@@ -1168,6 +1215,37 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdminAppealListItem */
+        AdminAppealListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            targetKind: components["schemas"]["AppealTargetKind"];
+            /** Reasontext */
+            reasonText: string;
+            status: components["schemas"]["AppealStatus"];
+            verdict: components["schemas"]["AppealVerdict"] | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Resolvedat */
+            resolvedAt: string | null;
+        };
+        /** AdminAppealListResponse */
+        AdminAppealListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminAppealListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
         /** AdminLoginRequest */
         AdminLoginRequest: {
             /**
@@ -1276,6 +1354,10 @@ export interface components {
             /** Reasontext */
             reasonText: string;
         };
+        /** AppealResolveRequest */
+        AppealResolveRequest: {
+            verdict: components["schemas"]["AppealVerdict"];
+        };
         /** AppealResponse */
         AppealResponse: {
             /**
@@ -1295,6 +1377,11 @@ export interface components {
          * @enum {string}
          */
         AppealTargetKind: "publish-rejection" | "moderation-action";
+        /**
+         * AppealVerdict
+         * @enum {string}
+         */
+        AppealVerdict: "accepted" | "rejected";
         /** AssetCompleteResponse */
         AssetCompleteResponse: {
             /**
@@ -3924,6 +4011,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_appeals_admin_appeals_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["AppealStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAppealListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_appeal_admin_appeals__appeal_id__resolve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                appeal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppealResolveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminAppealListItem"];
                 };
             };
             /** @description Validation Error */

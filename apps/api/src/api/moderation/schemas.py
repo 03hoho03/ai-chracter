@@ -8,6 +8,7 @@ from api.db.models.content import ContentType, ModerationStatus
 from api.db.models.moderation import (
     AppealStatus,
     AppealTargetKind,
+    AppealVerdict,
     ModerationActionType,
     ReportReasonCategory,
     ReportStatus,
@@ -77,3 +78,24 @@ class AdminReportDetailResponse(CamelModel):
 class ReportActionRequest(CamelModel):
     action: ModerationActionType
     admin_comment: str | None = None
+
+
+class AdminAppealListItem(CamelModel):
+    id: uuid.UUID
+    target_kind: AppealTargetKind
+    reason_text: str
+    status: AppealStatus
+    verdict: AppealVerdict | None
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+class AdminAppealListResponse(CamelModel):
+    items: list[AdminAppealListItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class AppealResolveRequest(CamelModel):
+    verdict: AppealVerdict
