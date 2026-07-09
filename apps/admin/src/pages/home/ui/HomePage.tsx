@@ -23,6 +23,9 @@ export function HomePage() {
           <Button asChild variant="outline" size="sm">
             <Link to="/reports">신고 관리</Link>
           </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link to="/appeals">이의제기 검토</Link>
+          </Button>
           <Button
             type="button"
             variant="outline"
