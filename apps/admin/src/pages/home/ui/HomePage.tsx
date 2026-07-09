@@ -1,5 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { useSessionQuery } from "../../../entities/session";
 import { useLogoutMutation } from "../../../features/logout";
@@ -20,6 +20,9 @@ export function HomePage() {
         <h1 className="text-xl font-semibold text-foreground">AI 캐릭터 챗 관리자</h1>
         <div className="flex items-center gap-3 text-sm text-muted-foreground">
           {session.data && <span>{session.data.email}</span>}
+          <Button asChild variant="outline" size="sm">
+            <Link to="/reports">신고 관리</Link>
+          </Button>
           <Button
             type="button"
             variant="outline"
