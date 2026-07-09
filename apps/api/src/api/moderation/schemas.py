@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import Field
 
@@ -99,3 +99,14 @@ class AdminAppealListResponse(CamelModel):
 
 class AppealResolveRequest(CamelModel):
     verdict: AppealVerdict
+
+
+class UsageMetricsTrendPoint(CamelModel):
+    date: date
+    message_count: int
+
+
+class UsageMetricsResponse(CamelModel):
+    daily_average_per_user: float
+    monthly_average_per_user: float
+    trend: list[UsageMetricsTrendPoint]

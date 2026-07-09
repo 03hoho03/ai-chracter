@@ -2134,6 +2134,60 @@
         }
       }
     },
+    "/admin/usage-metrics": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Get Usage Metrics",
+        "description": "techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은\n사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라\n이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id\ndistinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해\n유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한\n재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖).",
+        "operationId": "get_usage_metrics_admin_usage_metrics_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UsageMetricsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms": {
       "post": {
         "tags": [
@@ -6286,6 +6340,51 @@
           "nickname"
         ],
         "title": "UpdateProfileRequest"
+      },
+      "UsageMetricsResponse": {
+        "properties": {
+          "dailyAveragePerUser": {
+            "type": "number",
+            "title": "Dailyaverageperuser"
+          },
+          "monthlyAveragePerUser": {
+            "type": "number",
+            "title": "Monthlyaverageperuser"
+          },
+          "trend": {
+            "items": {
+              "$ref": "#/components/schemas/UsageMetricsTrendPoint"
+            },
+            "type": "array",
+            "title": "Trend"
+          }
+        },
+        "type": "object",
+        "required": [
+          "dailyAveragePerUser",
+          "monthlyAveragePerUser",
+          "trend"
+        ],
+        "title": "UsageMetricsResponse"
+      },
+      "UsageMetricsTrendPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "messageCount": {
+            "type": "integer",
+            "title": "Messagecount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "messageCount"
+        ],
+        "title": "UsageMetricsTrendPoint"
       },
       "UserProfileResponse": {
         "properties": {

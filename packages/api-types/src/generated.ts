@@ -878,6 +878,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/usage-metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Usage Metrics
+         * @description techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은
+         *     사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라
+         *     이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id
+         *     distinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해
+         *     유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한
+         *     재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖).
+         */
+        get: operations["get_usage_metrics_admin_usage_metrics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms": {
         parameters: {
             query?: never;
@@ -2516,6 +2541,25 @@ export interface components {
             /** Profileimageassetid */
             profileImageAssetId?: string | null;
         };
+        /** UsageMetricsResponse */
+        UsageMetricsResponse: {
+            /** Dailyaverageperuser */
+            dailyAveragePerUser: number;
+            /** Monthlyaverageperuser */
+            monthlyAveragePerUser: number;
+            /** Trend */
+            trend: components["schemas"]["UsageMetricsTrendPoint"][];
+        };
+        /** UsageMetricsTrendPoint */
+        UsageMetricsTrendPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Messagecount */
+            messageCount: number;
+        };
         /** UserProfileResponse */
         UserProfileResponse: {
             /** Nickname */
@@ -4078,6 +4122,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminAppealListItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_usage_metrics_admin_usage_metrics_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UsageMetricsResponse"];
                 };
             };
             /** @description Validation Error */

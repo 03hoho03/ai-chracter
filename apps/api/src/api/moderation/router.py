@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import Sequence
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select, update
@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from api.admin.dependencies import get_current_admin_id
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
-from api.db.models.chat import ChatRoom
+from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.moderation import (
@@ -38,6 +38,8 @@ from api.moderation.schemas import (
     AppealResponse,
     NotificationResponse,
     ReportActionRequest,
+    UsageMetricsResponse,
+    UsageMetricsTrendPoint,
 )
 from api.session.dependencies import get_current_user_id
 
@@ -461,3 +463,72 @@ async def resolve_appeal(
     await db.commit()
 
     return _to_admin_appeal_list_item(appeal)
+
+
+@router.get("/admin/usage-metrics")
+async def get_usage_metrics(
+    from_date: date = Query(..., alias="from"),
+    to_date: date = Query(..., alias="to"),
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> UsageMetricsResponse:
+    """techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은
+    사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라
+    이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id
+    distinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해
+    유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한
+    재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖)."""
+    if to_date < from_date:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="to must not be before from"
+        )
+
+    range_start = datetime.combine(from_date, time.min, tzinfo=UTC)
+    range_end = datetime.combine(to_date + timedelta(days=1), time.min, tzinfo=UTC)
+    message_filters = (
+        ChatMessage.role == ChatMessageRole.USER,
+        ChatMessage.created_at >= range_start,
+        ChatMessage.created_at < range_end,
+    )
+
+    total_messages = (
+        await db.scalar(select(func.count()).select_from(ChatMessage).where(*message_filters))
+    ) or 0
+    active_user_count = (
+        await db.scalar(
+            select(func.count(func.distinct(ChatRoom.user_id)))
+            .select_from(ChatMessage)
+            .join(ChatRoom, ChatMessage.chat_room_id == ChatRoom.id)
+            .where(*message_filters)
+        )
+    ) or 0
+
+    days_in_range = (to_date - from_date).days + 1
+    daily_average_per_user = (
+        total_messages / active_user_count / days_in_range if active_user_count else 0.0
+    )
+    monthly_average_per_user = daily_average_per_user * 30
+
+    trend_rows = (
+        await db.execute(
+            select(
+                func.date(ChatMessage.created_at).label("day"),
+                func.count().label("message_count"),
+            )
+            .where(*message_filters)
+            .group_by(func.date(ChatMessage.created_at))
+        )
+    ).all()
+    counts_by_day = {row.day: row.message_count for row in trend_rows}
+
+    trend: list[UsageMetricsTrendPoint] = []
+    day = from_date
+    while day <= to_date:
+        trend.append(UsageMetricsTrendPoint(date=day, message_count=counts_by_day.get(day, 0)))
+        day += timedelta(days=1)
+
+    return UsageMetricsResponse(
+        daily_average_per_user=daily_average_per_user,
+        monthly_average_per_user=monthly_average_per_user,
+        trend=trend,
+    )
