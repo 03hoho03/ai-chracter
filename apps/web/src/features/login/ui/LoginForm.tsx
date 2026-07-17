@@ -96,7 +96,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
               type={isPasswordVisible ? "text" : "password"}
               autoComplete="current-password"
               placeholder="비밀번호를 입력해주세요"
-              className="pr-9"
+              className="pr-10"
               aria-invalid={!!errors.password}
               aria-describedby={errors.password ? "login-password-error" : undefined}
               {...register("password")}
@@ -104,7 +104,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
             <button
               type="button"
               onClick={() => setIsPasswordVisible((prev) => !prev)}
-              className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+              className="absolute -inset-y-1 right-0 flex w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               aria-label={isPasswordVisible ? "비밀번호 숨기기" : "비밀번호 표시"}
             >
               {isPasswordVisible ? (
