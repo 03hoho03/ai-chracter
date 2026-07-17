@@ -4,6 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>AI 캐릭터 챗</title>
+    <script>
+      // 첫 페인트 전에 테마 적용 (FOUC 방지) — 규칙은 shared/model/theme.ts와 동일
+      if (localStorage.getItem("theme") !== "light") {
+        document.documentElement.classList.add("dark");
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
