@@ -3,9 +3,13 @@ import { useDraftListQuery } from "../../../entities/draft";
 import { ChangePasswordForm } from "../../../features/change-password";
 import { useLogoutMutation } from "../../../features/logout";
 import { WithdrawAccountDialog } from "../../../features/withdraw-account";
+import type { Theme } from "../../../shared/model/theme";
+import { themeAtom } from "../../../shared/model/theme";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { BookOpen, UserRound } from "lucide-react";
+import { useAtom } from "jotai";
+import { BookOpen, Moon, Sun, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 const draftUpdatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
@@ -85,6 +89,46 @@ function DraftListSection() {
   );
 }
 
+const THEME_ITEM_CLASSNAME =
+  "data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80";
+
+function isTheme(value: string): value is Theme {
+  return value === "dark" || value === "light";
+}
+
+function ThemeSection() {
+  const [theme, setTheme] = useAtom(themeAtom);
+
+  const handleValueChange = (value: string) => {
+    // Radix ToggleGroup(type="single")은 이미 선택된 항목을 다시 누르면 빈 문자열을 emit한다 — 그 경우 무시해
+    // 항상 정확히 하나만 선택된 상태를 유지한다.
+    if (!isTheme(value)) return;
+    setTheme(value);
+  };
+
+  return (
+    <section className="flex flex-col gap-4">
+      <h2 className="text-2xl font-bold tracking-tight text-foreground">테마</h2>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        value={theme}
+        onValueChange={handleValueChange}
+        aria-label="테마 선택"
+      >
+        <ToggleGroupItem value="dark" className={THEME_ITEM_CLASSNAME}>
+          <Moon aria-hidden />
+          다크
+        </ToggleGroupItem>
+        <ToggleGroupItem value="light" className={THEME_ITEM_CLASSNAME}>
+          <Sun aria-hidden />
+          라이트
+        </ToggleGroupItem>
+      </ToggleGroup>
+    </section>
+  );
+}
+
 function AccountSection() {
   const navigate = useNavigate();
   const logoutMutation = useLogoutMutation();
@@ -120,6 +164,8 @@ export function MyPagePage() {
       <h1 className="text-2xl font-bold tracking-tight text-foreground">마이페이지 · 설정</h1>
 
       <DraftListSection />
+
+      <ThemeSection />
 
       <section className="flex flex-col gap-4">
         <h2 className="text-2xl font-bold tracking-tight text-foreground">비밀번호 변경</h2>
