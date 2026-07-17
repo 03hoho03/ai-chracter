@@ -49,7 +49,7 @@ export const EndingCollectionModal = createCallable<Props, void>(({ call, starti
                 목록으로
               </Button>
               <DialogTitle className="flex items-center gap-1.5">
-                <Sparkles aria-hidden className="size-4 shrink-0 text-[oklch(0.72_0.14_50)]" />
+                <Sparkles aria-hidden className="size-4 shrink-0 text-foreground" />
                 {selectedEnding.name}
               </DialogTitle>
               <DialogDescription className="sr-only">엔딩 에필로그</DialogDescription>
@@ -85,7 +85,7 @@ export const EndingCollectionModal = createCallable<Props, void>(({ call, starti
                         onClick={() => setSelectedEnding(ending)}
                         className="flex w-full items-center gap-2.5 rounded-md py-2.5 text-left transition-colors hover:bg-secondary/50"
                       >
-                        <Sparkles aria-hidden className="size-4 shrink-0 text-[oklch(0.72_0.14_50)]" />
+                        <Sparkles aria-hidden className="size-4 shrink-0 text-foreground" />
                         <span className="flex-1 text-sm font-medium text-foreground">{ending.name}</span>
                         <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                       </button>

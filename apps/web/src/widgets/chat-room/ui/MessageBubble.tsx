@@ -137,7 +137,7 @@ export function EndingDivider({ endingName }: { endingName?: string }) {
   return (
     <div role="separator" aria-label="엔딩 도달" className="flex items-center gap-3 py-1">
       <div className="h-px flex-1 bg-border" />
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-[oklch(0.72_0.14_50)] px-3 py-1 text-xs font-medium text-white">
+      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
         <Sparkles aria-hidden className="size-3.5" />
         {endingName ? `엔딩 · ${endingName}` : "엔딩에 도달했어요"}
       </span>
