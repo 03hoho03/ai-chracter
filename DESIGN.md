@@ -1,68 +1,124 @@
-<!-- SEED -->
 ---
 name: AI 캐릭터 챗 서비스
 description: 내가 만든 AI 캐릭터·스토리로 롤플레이 대화를 나누는 오픈 플랫폼
 colors:
-  bg: "oklch(1.000 0.000 0)"
-  surface: "oklch(0.970 0.000 0)"
-  ink: "oklch(0.220 0.000 0)"
-  muted: "oklch(0.530 0.000 0)"
-  border: "oklch(0.890 0.000 0)"
-  primary: "oklch(0.220 0.000 0)"
-  primary-deep: "oklch(0.380 0.000 0)"
-  accent: "oklch(0.930 0.000 0)"
-  destructive: "oklch(0.550 0.190 25)"
+  background: "oklch(0.160 0.000 0)"
+  foreground: "oklch(0.930 0.000 0)"
+  card: "oklch(0.210 0.000 0)"
+  card-foreground: "oklch(0.930 0.000 0)"
+  popover: "oklch(0.210 0.000 0)"
+  popover-foreground: "oklch(0.930 0.000 0)"
+  primary: "oklch(0.930 0.000 0)"
+  primary-foreground: "oklch(0.160 0.000 0)"
+  secondary: "oklch(0.260 0.000 0)"
+  secondary-foreground: "oklch(0.930 0.000 0)"
+  muted: "oklch(0.210 0.000 0)"
+  muted-foreground: "oklch(0.680 0.000 0)"
+  accent: "oklch(0.260 0.000 0)"
+  accent-foreground: "oklch(0.930 0.000 0)"
+  destructive: "oklch(0.640 0.190 25)"
+  destructive-foreground: "oklch(0.160 0.000 0)"
+  border: "oklch(0.300 0.000 0)"
+  input: "oklch(0.300 0.000 0)"
+  ring: "oklch(0.930 0.000 0)"
 typography:
   display:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
-    fontSize: "clamp(1.5rem, 2.5vw, 2rem)"
+    fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
+    fontSize: "1.5rem"
     fontWeight: 700
-    lineHeight: 1.25
-    letterSpacing: "-0.02em"
+    lineHeight: "2rem"
+    letterSpacing: "-0.025em"
+  title:
+    fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
+    fontSize: "1.25rem"
+    fontWeight: 600
+    lineHeight: "1.75rem"
+    letterSpacing: "-0.025em"
   body:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
-    fontSize: "0.9375rem"
+    fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
+    fontSize: "0.875rem"
     fontWeight: 400
-    lineHeight: 1.6
+    lineHeight: "1.25rem"
     letterSpacing: "normal"
   label:
-    fontFamily: "Pretendard, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
-    fontSize: "0.8125rem"
+    fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
+    fontSize: "0.75rem"
     fontWeight: 500
-    lineHeight: 1.4
+    lineHeight: "1rem"
     letterSpacing: "normal"
 rounded:
   sm: "6px"
-  md: "10px"
-  lg: "16px"
+  md: "8px"
+  lg: "10px"
+  xl: "14px"
   full: "9999px"
 spacing:
   xs: "4px"
-  sm: "8px"
-  md: "16px"
-  lg: "24px"
-  xl: "40px"
+  sm: "6px"
+  md: "8px"
+  lg: "12px"
+  xl: "16px"
+  2xl: "24px"
+  3xl: "40px"
 components:
   button-primary:
     backgroundColor: "{colors.primary}"
-    textColor: "{colors.bg}"
-    rounded: "{rounded.md}"
-    padding: "10px 20px"
+    textColor: "{colors.primary-foreground}"
+    rounded: "{rounded.lg}"
+    height: "32px"
+    padding: "0 10px"
+    typography: "{typography.body}"
   button-primary-hover:
-    backgroundColor: "{colors.primary-deep}"
+    backgroundColor: "oklch(0.930 0.000 0 / 0.8)"
+  button-outline:
+    backgroundColor: "{colors.background}"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.lg}"
+    height: "32px"
+    padding: "0 10px"
+  button-outline-hover:
+    backgroundColor: "{colors.muted}"
   button-ghost:
     backgroundColor: "transparent"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.md}"
-    padding: "10px 20px"
-  input:
-    backgroundColor: "{colors.bg}"
-    textColor: "{colors.ink}"
-    rounded: "{rounded.sm}"
-    padding: "8px 12px"
-  dialog:
-    backgroundColor: "{colors.bg}"
+    textColor: "{colors.foreground}"
     rounded: "{rounded.lg}"
+    height: "32px"
+    padding: "0 10px"
+  button-ghost-hover:
+    backgroundColor: "{colors.muted}"
+  button-destructive:
+    backgroundColor: "oklch(0.640 0.190 25 / 0.1)"
+    textColor: "{colors.destructive}"
+    rounded: "{rounded.lg}"
+    height: "32px"
+    padding: "0 10px"
+  button-destructive-hover:
+    backgroundColor: "oklch(0.640 0.190 25 / 0.2)"
+  card:
+    backgroundColor: "{colors.card}"
+    textColor: "{colors.card-foreground}"
+    rounded: "{rounded.xl}"
+    padding: "12px"
+  input:
+    backgroundColor: "transparent"
+    textColor: "{colors.foreground}"
+    rounded: "{rounded.md}"
+    height: "32px"
+    padding: "0 12px"
+  badge-status:
+    backgroundColor: "{colors.muted}"
+    textColor: "{colors.muted-foreground}"
+    rounded: "{rounded.full}"
+    padding: "2px 8px"
+  badge-restricted:
+    backgroundColor: "oklch(0.640 0.190 25 / 0.1)"
+    textColor: "{colors.destructive}"
+    rounded: "{rounded.full}"
+    padding: "2px 8px"
+  dialog:
+    backgroundColor: "{colors.popover}"
+    textColor: "{colors.popover-foreground}"
+    rounded: "{rounded.xl}"
     padding: "24px"
 ---
 
@@ -70,107 +126,170 @@ components:
 
 ## 1. Overview
 
-**Creative North Star: "따뜻한 저녁 채팅방(The Evening Chatroom)"**
+**Creative North Star: "불 꺼진 방의 유일한 빛(The Only Light in the Room)"**
 
-늦은 저녁, 익숙한 캐릭터와의 대화창을 열었을 때의 느낌 — 화면은 조용하고 밝지만, 그 안에서 오가는 이야기와 캐릭터 카드만큼은 은은한 로즈 톤으로 따뜻하게 빛난다. 크롬(헤더/버튼/입력창)은 절제되고 얇게 유지해 콘텐츠(썸네일, 이름, 대화 텍스트)가 항상 주인공이 되도록 하고, 브랜드 컬러(로즈)는 CTA·포커스·활성 상태처럼 "지금 누를 수 있는 것"에만 집중 사용한다(Restrained 전략). 이는 `packages/ui`가 캐주얼한 소비자 앱(`apps/web`)과 실무형 관리자 앱(`apps/admin`) 양쪽이 공유하는 기반 레이어이기 때문이기도 하다 — 두 표면 모두에서 과하지 않게 통한다.
+늦은 밤, 불을 끄고 침대에 누워 혼자 캐릭터와 대화하는 장면. 이 한 장면이 이 시스템의 모든 결정을 강제한다. 방의 조명은 꺼져 있고 **화면이 그 방의 유일한 광원이다**. 사용자의 눈은 이미 어둠에 적응해 있고, 손은 하나뿐이며, 급할 것이 없고, 옆에는 아무도 없다. 그래서 이 인터페이스는 인쇄된 종이가 아니라 **빛을 내뿜는 물건**으로 설계된다 — 밝기는 스타일이 아니라 예산이고, 모든 밝은 표면은 그 예산을 쓴다.
 
-명시적으로 지양하는 것: 성인 지향적이거나 자극적인 원색 대비(전연령 정책), 그리고 딱딱한 기업 SaaS 대시보드의 네이비/그레이 일변도 톤(이 제품은 업무 도구가 아니라 캐주얼 엔터테인먼트다).
+여기서 다크는 선호가 아니라 **기본 조건**이다(`apps/web`는 저장값이 없으면 다크로 부팅한다). 배경이 순수 검정(oklch 0)이 아닌 near-black(0.160)인 것도, 본문이 순백(oklch 1)이 아닌 소프트 화이트(0.930)인 것도 취향이 아니다 — 순수 검정 위의 밝은 텍스트는 OLED에서 번지고 레이어 위계를 쌓을 여지를 남기지 않으며, 어두운 방에서의 순백은 그냥 눈부심이다. 라이트 팔레트는 다크의 열등한 형제가 아니라 **다른 장면**을 위한 것이다: 낮의 사용자, 그리고 항상 라이트로 고정된 관리자 앱(`apps/admin`).
+
+몰입은 시끄러움이 아니라 고요함에서 나온다. UI 전체가 무채색인 이유가 이것이다 — 화면에서 색을 가진 것은 사용자가 만든 썸네일과 대화 텍스트뿐이고, 그래서 그 한 장이 유일하게 빛난다. 명시적으로 지양하는 것: 자극적이거나 성인 지향적인 비주얼 톤(전연령 정책), 그리고 어두운 방에서 사용자를 놀라게 하는 모든 것 — 갑작스러운 움직임, 큰 밝은 면적, 예고 없는 대비 점프.
 
 **Key Characteristics:**
-- 배경은 순백(`bg`), 브랜드 로즈(`primary`)는 전체 화면의 ~10% 이내로만 사용
-- 카드/콘텐츠가 시각적 우선순위 1순위, 크롬(헤더/네비게이션)은 항상 얇고 동일하게 유지
-- 상태(공개/비공개/이용제한/삭제, 초안 여부 등 도메인 상태 배지)는 `packages/ui`가 아닌 각 앱의 `entities/*`에서 이 팔레트의 `accent`/`destructive`/`muted` 롤을 조합해 표현(§techspec-overview.md §10)
-- 절제된 모션, `prefers-reduced-motion` 항상 존중
+- 다크가 기본값(web), 라이트는 낮·admin용 대등한 대안 — 두 팔레트 모두 chroma 0
+- 다크에서 가장 밝은 값은 `foreground`(0.930)이며 그보다 밝은 것은 존재하지 않는다
+- `primary`는 hue 강조가 아니라 **최고 대비 무채색 채움**이다(다크 0.930 / 라이트 0.220 — 즉 `foreground`와 같은 값)
+- 유채색은 위험 액션(`destructive`)과 사용자가 고른 스탯 스와치에만 존재
+- 정지 상태는 평평하다 — 그림자는 앱 전체에 5개뿐이고 그중 3개가 떠 있는 팝오버다
+- 크롬은 sticky 헤더 하나(`h-14`)뿐 — 하단 탭바도, 사이드 레일도, 푸터도 없다
 
 ## 2. Colors
 
-순백 배경 위에서 잉크 블랙 하나가 위계를 만드는 무채색(모노크롬) 팔레트. 역할 구분은 색상(hue)이 아니라 명도 차이로만 하고, 유채색은 위험 액션(`destructive`)에만 남긴다 — 콘텐츠(썸네일, 대화 텍스트)가 화면에서 유일한 색이 된다.
+명도 하나로만 위계를 만드는 무채색 시스템. 역할 구분은 색상(hue)이 아니라 밝기 차이로만 하고, 유채색은 위험 액션에만 남긴다. 프론트매터는 **기본 테마인 다크**를 담는다. 두 팔레트 모두 `packages/ui/src/styles/globals.css` 한 곳에서만 정의된다.
 
 ### Primary
-- **Ink Black (잉크 블랙)** (oklch(0.220 0.000 0)): 주요 CTA(플레이 버튼, 발행/제출), 링크, 포커스 링, 활성 토글. 채워진 배경 위에는 항상 흰 텍스트(`bg`)를 올린다.
-- **Ink Hover** (oklch(0.380 0.000 0)) — `primary-deep`: `primary`의 hover/active 상태. 구현은 별도 토큰 없이 투명도로 만든다(`bg-primary/80` — 흰 배경 위 실효 명도가 이 값에 대응).
+- **Soft White Fill (소프트 화이트 채움)** — `primary` (다크 oklch(0.930) / 라이트 oklch(0.220)): 주요 CTA(플레이, 발행/제출), 포커스 링, 활성 토글. **`primary`는 `foreground`와 정확히 같은 값이다** — 이것은 색 강조가 아니라 "이 화면에서 가장 대비가 센 채움"이라는 뜻이다. 채움 위 텍스트는 항상 `primary-foreground`로 뒤집는다.
+- **Hover**: 별도 토큰 없이 `bg-primary/80`(투명도)으로 만든다.
 
 ### Neutral
-- **Pure White** (oklch(1.000 0.000 0)) — `bg`: 기본 배경. 채도 0의 순백을 그대로 쓰고 임의로 톤을 섞지 않는다.
-- **Surface** (oklch(0.970 0.000 0)) — `surface`: 카드/패널/섹션 구분용, `bg`에서 `ink` 방향으로 아주 살짝만 이동한 옅은 회색.
-- **Near-black Ink** (oklch(0.220 0.000 0)) — `ink`: 본문 텍스트. `bg` 대비 ≥7:1.
-- **Muted** (oklch(0.530 0.000 0)) — `muted`: 보조 텍스트(캡션, 타임스탬프, 조회수). `bg` 대비 ≥4.5:1.
-- **Border** (oklch(0.890 0.000 0)) — `border`: 구분선, 인풋 테두리.
-- **Accent Surface** (oklch(0.930 0.000 0)) — `accent`: hover/선택 상태 배경, 배지 등 2차 강조용 표면. 유채색 강조가 아니라 옅은 회색 표면이다.
+다크와 라이트는 같은 사다리를 뒤집은 구조다. **다크에서는 위로 뜰수록 밝아지고, 라이트에서는 위로 뜰수록 어두워진다.**
+
+| 역할 | 다크 | 라이트 | 쓰임 |
+|---|---|---|---|
+| `background` | oklch(0.160) | oklch(1.000) | 기본 배경 |
+| `card` / `popover` / `muted` | oklch(0.210) | oklch(0.970) | 배경 위 첫 레이어 — 카드, 팝오버, 썸네일 우물 |
+| `secondary` / `accent` | oklch(0.260) | oklch(0.930) | 두 번째 레이어 — hover/선택 배경, 배지, 필터 칩 |
+| `border` / `input` | oklch(0.300) | oklch(0.890) | 구분선, 인풋 테두리 |
+| `muted-foreground` | oklch(0.680) | oklch(0.530) | 보조 텍스트 — 캡션, 타임스탬프, 조회수 |
+| `foreground` | oklch(0.930) | oklch(0.220) | 본문 텍스트 |
+
+측정된 대비(WCAG 2.x, sRGB 변환 기준):
+- 다크 `foreground` on `background`: **15.79:1** / 라이트 `foreground` on `background`: **17.31:1**
+- 다크 `muted-foreground` on `background`: **6.74:1**, on `secondary`: **5.39:1** — 두 레이어 모두 AA 통과
+- 라이트 `muted-foreground` on `background`: **5.28:1**, on `card`: **4.84:1** — 통과. 단 **on `accent`(0.930)에서는 4.30:1로 AA 미달**이므로, 라이트에서 `accent` 표면 위에 `muted-foreground`로 본문을 올리지 않는다(배지처럼 큰 텍스트가 아닌 이상).
 
 ### Semantic
-- **Destructive** (oklch(0.550 0.190 25)): 삭제/탈퇴/거부 등 위험 액션 전용 시스템 컬러. 무채색 팔레트에서 유일하게 허용되는 유채색이다.
+- **Destructive (경고 레드)** — 다크 oklch(0.640 0.190 25) / 라이트 oklch(0.550 0.190 25): 삭제/탈퇴/거부/이용제한. 무채색 팔레트에서 유일하게 허용되는 시스템 유채색이다. 다크에서 빨강을 밝힌 것은 텍스트 대비를 위해서이며(on `background` **5.27:1**), 그 대가로 **밝힌 빨강 위 흰 텍스트는 3.68:1로 AA에 미달한다** — 그래서 `destructive-foreground`도 함께 어둡게 뒤집는다(0.160, 대비 5.27:1). 토큰을 조정할 때 이 쌍을 반드시 함께 유지할 것.
+- **실제 구현에서 destructive는 채움이 아니라 틴트다**: 버튼도 배지도 `bg-destructive/10 text-destructive`를 쓴다. 어두운 방에서 솔리드 레드 블록은 그 자체로 놀람이다.
 
-### Dark Palette (`.dark`)
-
-`html`의 `.dark` 클래스로 전환되는 무채색 다크 테마(globals.css `.dark` 블록과 동일 소스). 라이트의 명도 사다리(1.0 → 0.97 → 0.93 → 0.89)를 반전한 구조로, 다크에서는 위로 뜨는 레이어일수록 밝아진다.
-
-- **Background** (oklch(0.160 0.000 0)): 기본 배경. 순수 검정이 아닌 near-black — 카드/팝오버 레이어 위계의 여지를 남긴다.
-- **Foreground** (oklch(0.930 0.000 0)): 본문 텍스트. 순백이 아닌 소프트 화이트(bg 대비 ≈15.8:1) — 장시간 채팅 읽기 피로를 줄인다.
-- **Card / Popover / Muted** (oklch(0.210 0.000 0)): 배경 위 첫 레이어.
-- **Secondary / Accent** (oklch(0.260 0.000 0)): hover/선택 상태 배경, 배지 등 두 번째 레이어.
-- **Border / Input** (oklch(0.300 0.000 0)): 구분선, 인풋 테두리.
-- **Muted Foreground** (oklch(0.680 0.000 0)): 보조 텍스트. bg 대비 ≈6.7:1, secondary 위에서도 ≥4.5:1.
-- **Primary** (oklch(0.930 0.000 0)) + **Primary Foreground** (oklch(0.160 0.000 0)): 라이트의 반전 — 다크에서 주요 CTA는 밝은 채움 + 어두운 텍스트. "primary = 최고 대비 채움" 규칙은 그대로 유지된다.
-- **Destructive** (oklch(0.640 0.190 25)) + **Destructive Foreground** (oklch(0.160 0.000 0)): 어두운 배경에서 텍스트로 쓰일 때 ≥4.5:1이 되도록 빨강을 밝히고, 채움 위 텍스트는 primary와 같은 방식으로 어둡게 뒤집는다(밝힌 빨강 위 흰 텍스트는 AA 미달).
-- **Ring** (oklch(0.930 0.000 0)): 포커스 링 — 라이트와 동일하게 primary를 따른다.
+### Tertiary
+- **스탯 스와치(User-chosen swatches)** — `packages/ui/src/lib/color-palette.ts`의 10색 고정 팔레트(rose/orange/amber/lime/emerald/teal/sky/indigo/violet/fuchsia, 예: oklch(0.62 0.19 350)). **UI 팔레트가 아니라 사용자 데이터다** — 채팅방 스탯 게이지와 컬러 피커에서 사용자가 직접 고른 값이며, 테마에 따라 변하지 않는다. 시스템 토큰으로 승격하지 말 것.
 
 ### Named Rules
-**The One Accent Rule.** `primary`(잉크 블랙 채움)는 화면 안에서 "지금 누를 수 있는 액션"에만 쓴다 — 장식적 배경, 텍스트 그라디언트, 카드 전체 채우기에는 쓰지 않는다. 다크 모드에서는 채움이 소프트 화이트로 반전되지만 규칙은 동일하다.
+**The Brightness Budget Rule (밝기 예산 규칙).** 화면은 방의 유일한 광원이다. 다크 테마에서 `foreground`(0.930)보다 밝은 값은 **존재하지 않는다** — 순백(oklch 1.000)은 다크에서 금지다. 밝은 표면은 예산이며, 큰 면적일수록 비싸다. `primary` 채움이 `h-8`(32px) 버튼 크기에 머무는 것은 우연이 아니다.
+
+**The Inverted Ladder Rule (반전 사다리 규칙).** 다크에서는 위로 뜨는 레이어일수록 밝아진다(0.160 → 0.210 → 0.260 → 0.300). 라이트에서는 정확히 반대다(1.000 → 0.970 → 0.930 → 0.890). 새 레이어를 추가할 때 이 사다리에 없는 중간값을 발명하지 말 것.
+
+**The Content-Is-The-Color Rule (색은 콘텐츠에서만 규칙).** UI 자체(배경/텍스트/버튼/배지)는 무채색이다. 화면에서 색을 가질 수 있는 것은 사용자 콘텐츠(썸네일, 스탯 스와치)와 위험 액션뿐이다. 썸네일 한 장이 화면에서 유일하게 색을 가진 것이 되게 하는 것이 목표다.
 
 ## 3. Typography
 
-**Display/Body/Label Font:** Pretendard (with `-apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif` fallback)
+**Display / Title / Body / Label Font:** Pretendard Variable (with `-apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif`)
 
-**Character:** 한글 가독성이 검증된 단일 휴머니스트 산세리프를 굵기(weight)만 바꿔가며 전 화면에 일관되게 사용한다 — 서로 다른 서체를 섞어 대비를 만들지 않는다(카테고리가 유사한 두 서체를 섞는 것보다 하나의 가변 굵기 패밀리가 더 안정적).
+`--font-heading`은 `--font-sans`의 별칭이다(`globals.css`) — 제목용 별도 서체는 존재하지 않으며, 앱 코드에서 `font-heading`은 한 번도 쓰이지 않는다.
+
+**Character:** 한글 가독성이 검증된 단일 휴머니스트 산세리프를 굵기(weight)만 바꿔 전 화면에 쓴다. 실제로 코드에 존재하는 굵기는 셋뿐이다 — medium(500) / semibold(600) / bold(700). 크기 스케일도 `text-2xl`(1.5rem)에서 멈춘다: 이 제품에는 히어로가 없고, 가장 큰 글자도 페이지 제목이다.
 
 ### Hierarchy
-- **Display** (700, `clamp(1.5rem, 2.5vw, 2rem)`, 1.25): 빌더/설정 화면 섹션 제목 등 화면 내 최상위 제목.
-- **Title** (600, 1.125rem, 1.35): 카드 제목(캐릭터/스토리 이름), 모달 헤더.
-- **Body** (400, 0.9375rem, 1.6): 본문, 대화 메시지, 설명 텍스트. 한 줄 65-75자 내외로 줄바꿈.
-- **Label** (500, 0.8125rem, 1.4): 버튼 텍스트, 폼 라벨, 배지.
+- **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1)과 마이페이지 섹션 제목. 화면 내 최상위.
+- **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목.
+- **Body** (400, 0.875rem/1.25rem): 본문, 대화 메시지, 설명. 앱에서 압도적으로 가장 많이 쓰이는 크기(122회)이며 **사실상의 기본값**이다. 산문은 65-75자에서 줄바꿈.
+- **Label** (500, 0.75rem/1rem): 폼 라벨, 캡션, 메타(조회수·타임스탬프), 에러 텍스트.
+- **Badge** (500, 11px): 상태 배지 전용. **스케일 밖의 값이며 의도된 예외다** — `text-xs`(12px)는 배지 안에서 너무 크고, 이 한 티어를 위해 스케일을 늘리지 않았다.
 
 ### Named Rules
-**The Single Family Rule.** 새 화면에 다른 서체 패밀리를 추가하지 않는다. 위계는 굵기·크기·자간으로만 만든다.
+**The Single Family Rule (단일 서체 규칙).** 새 화면에 다른 서체 패밀리를 추가하지 않는다. 위계는 굵기·크기·자간으로만 만든다. `font-medium` / `font-semibold` / `font-bold` 셋 밖의 굵기를 도입하지 말 것.
+
+**The No-Hero Rule (히어로 없음 규칙).** `text-2xl`(1.5rem)이 천장이다. 이 제품은 랜딩 페이지가 아니라 사용자가 이미 들어와 있는 도구다 — 큰 글자로 설득할 대상이 없다. clamp()나 vw 기반 유동 타이포는 쓰지 않는다(모든 크기는 고정 rem).
 
 ## 4. Elevation
 
-기본은 플랫(그림자 없음) — 리스트 카드, 인풋, 버튼은 평평한 표면 위에서 `border`만으로 구분된다. 그림자는 오직 "현재 화면 위에 떠 있는" 상태(다이얼로그, 드롭다운, 토스트)에만 나타나는 반응형 신호로 사용한다.
+**이 시스템은 사실상 그림자가 없다.** 깊이는 그림자가 아니라 §2의 명도 사다리(tonal layering)로 표현한다 — 다크에서 카드가 배경 위에 있다는 것은 그림자가 아니라 `card`(0.210)가 `background`(0.160)보다 밝다는 사실로 전달된다. 이것이 "불 꺼진 방"에서 옳은 선택이다: 어두운 방에서 드리운 그림자는 보이지도 않고, 보이게 만들려면 배경을 더 어둡게 깎아야 하는데 그럴 여지가 없다.
+
+앱 전체에 그림자는 **5개뿐이며**, 그중 3개는 화면 위로 떠 있는 팝오버(단축어 자동완성, 컬러 피커, 아이콘 피커)다. 카드·버튼·인풋은 정지 상태에서 그림자를 갖지 않는다.
 
 ### Shadow Vocabulary
-- **Overlay** (`box-shadow: 0 12px 32px -8px oklch(0.220 0.020 330 / 0.18)`): Dialog, Sheet, DropdownMenu 등 배경 위로 뜨는 오버레이 전용.
-- **Toast** (`box-shadow: 0 8px 20px -6px oklch(0.220 0.020 330 / 0.14)`): Toast/Sonner 알림.
+- **Floating panel** (`shadow-md` + `ring-1 ring-foreground/10`): 트리거 위에 떠서 열리는 커스텀 팝오버 전용. 그림자만으로는 다크에서 경계가 보이지 않으므로 **반드시 `ring`과 함께 쓴다** — 이 조합이 다크에서 실제로 경계를 만드는 것은 ring 쪽이다.
+- **Overlay scrim** (`bg-black/10` + `backdrop-blur`): Dialog/Sheet/AlertDialog 배경. **라이트/다크 공통 하드코딩이며 의도된 것이다**(US-131 판정) — 다크에서는 블러가 배경 분리를 담당한다. 시맨틱 토큰으로 바꾸지 말 것.
 
 ### Named Rules
-**The Flat-at-Rest Rule.** 카드/버튼/인풋은 정지 상태에서 그림자를 갖지 않는다. 그림자는 z축으로 떠 있는 엘리먼트(다이얼로그류)에만 붙는다.
+**The Flat-at-Rest Rule (정지 시 평평 규칙).** 카드·버튼·인풋은 정지 상태에서 그림자를 갖지 않는다. 그림자는 z축으로 실제로 떠 있는 엘리먼트에만 붙는다. 감사 테스트: 새 컴포넌트에 `shadow-*`를 쓰려 한다면, 그것이 클릭으로 열려서 다른 것 위에 뜨는 물건인지 자문하라. 아니라면 `border`를 쓴다.
+
+**The Ring-Not-Shadow Rule (그림자 대신 링 규칙).** 다크에서 떠 있는 표면의 경계는 그림자가 아니라 `ring-1 ring-foreground/10`이 만든다. 그림자를 더 진하게 키워 경계를 만들려 하지 말 것 — 어두운 배경 위에서는 아무리 키워도 보이지 않는다.
 
 ## 5. Components
 
-카주얼하지만 신뢰감 있는, "탭하면 바로 반응하는" 성격 — 라운드는 눈에 띄게 부드럽지만(6-16px) 장식적이지 않다.
+캐주얼하지 않고 **조용하다**. 컴포넌트는 작고(기본 높이 32px), 라운드는 부드럽지만 장식적이지 않으며, 반응은 즉각적이되 과장이 없다. 밤에 한 손으로 쓰는 물건의 성격이다.
 
 ### Buttons
-- **Shape:** radius `md`(10px), 텍스트는 `label` 타이포
-- **Primary:** `primary` 배경 + `bg`(흰색) 텍스트, hover 시 `primary-deep`
-- **Ghost:** 배경 투명 + `ink` 텍스트, hover 시 `surface` 배경
-- **Destructive:** `destructive` 배경 + 흰 텍스트 — 삭제/탈퇴/거부 액션 전용
+- **Shape:** radius `lg`(10px), 기본 높이 `h-8`(32px). 크기 4단계(`xs` 24px / `sm` 28px / `default` 32px / `lg` 36px)와 아이콘 전용 4종.
+- **Primary:** `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝은 채움 + 어두운 텍스트, 라이트에서는 정반대 — **규칙은 "최고 대비 채움"으로 동일하다.**
+- **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
+- **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
+- **Ghost:** 투명, hover 시 `bg-muted`.
+- **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다.
+- **Link:** `text-primary` + underline-offset-4.
+- **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).
+- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다.
 
-### Inputs & Select
-- **Shape:** radius `sm`(6px), `border` 테두리, 포커스 시 `primary` 2px 링(box-shadow, outline 대체 아님 — 접근성을 위해 `:focus-visible`에 항상 노출)
+### Cards / Containers
+- **Corner Style:** radius `xl`(14px).
+- **Background:** `bg-card`, 테두리 `border-border` 한 줄. **그림자 없음.**
+- **Internal Padding:** 12px(콘텐츠 카드) / 16px(초안 카드) / 32px(인증 카드).
+- **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸.
+- **Thumbnail well:** `aspect-square rounded-lg bg-muted`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로.
+- **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
-### Dialog
-- **Shape:** radius `lg`(16px), `bg` 배경, Overlay 그림자, backdrop은 `ink`의 저채도 반투명 스크림
-- 열기/닫기는 짧은 페이드+스케일(120-160ms, ease-out-quart), `prefers-reduced-motion`에서는 즉시 전환(크로스페이드)로 대체
+### Inputs / Fields
+- **Style:** radius `md`(8px), `border-input` 테두리, 투명 배경.
+- **Focus:** `ring-3 ring-ring/50` — 버튼과 동일한 포커스 언어.
+- **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive`.
 
-### Toast
-- **Shape:** radius `md`, Toast 그림자, `surface` 배경 — **사이드 스트라이프 보더 금지**(절대 금지 목록). 상태(성공/실패)는 좌측 아이콘 색상과 텍스트로만 구분한다.
+### Navigation
+- **크롬은 sticky 헤더 하나뿐이다.** `sticky top-0 z-30 h-14 border-b border-border bg-background`, 내부는 `mx-auto max-w-6xl px-4 sm:px-6`. 하단 탭바·사이드 레일·푸터는 **존재하지 않으며, 추가하지 않는다** — 크롬은 얇고 항상 동일해야 한다.
+- **모바일 대응은 레이아웃 분기가 아니라 라벨 숨김이다**: 워드마크와 토글 라벨이 `sm:` 미만에서 사라지고 아이콘만 남는다. 검색은 `w-8`에서 `w-40 sm:w-64`로 펼쳐진다.
+- **채팅 화면은 뷰포트 고정이다**: `h-[calc(100dvh-3.5rem)]`. 이 `3.5rem`은 헤더의 `h-14`를 수동으로 미러링한 값이므로 **헤더 높이를 바꾸면 5곳을 함께 고쳐야 한다.**
+
+### Status badges
+- **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다.
+- **중립 상태(공개/링크공개/비공개):** `bg-muted text-muted-foreground`.
+- **이용제한:** `bg-destructive/10 text-destructive` — 틴트, 채움 아님.
+- **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.
+- **삭제:** 배지가 아니라 전체 패널 빈 상태로 표현한다(`ContentUnavailableState`) — 아이콘 + 제목 + 설명.
+- 상태 배지는 소유자에게만 렌더한다.
+
+### Layout containers
+페이지 컨테이너의 표준 관용구는 `mx-auto flex max-w-* flex-col gap-* px-6 py-10`이다. max-width는 콘텐츠 밀도에 따라 고른다: 그리드형 목록 `max-w-5xl`, 프로필 `max-w-4xl`, 폼·빌더·상세·채팅 `max-w-2xl`. 인증 화면만 다른 셸을 쓴다(`min-h-screen items-center justify-center px-4 py-12` + `sm:max-w-sm` 카드).
+
+**간격은 gap 하나로만 만든다** — `space-y-*`와 `divide-*`는 앱 전체에서 **0회** 사용이며, 레이아웃은 100% `flex flex-col gap-*`이다. 가장 많이 쓰이는 값은 `gap-1.5`(6px, 라벨↔인풋)와 `gap-2`(8px, 버튼 행)다.
+
+**브레이크포인트는 `sm`(640px)과 `md`(768px) 둘뿐이다.** `lg:` 이상은 앱에 존재하지 않는다 — 콘텐츠 그리드가 `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`에서 멈추는 것이 의도다.
+
+### Motion
+- **모션 라이브러리는 없다.** `tw-animate-css` + Tailwind 유틸리티만 쓴다. 이 시스템에 코레오그래피는 존재하지 않는다.
+- **지속시간은 100-300ms**: 팝오버 100ms, 스텝 전환·검색 확장 200ms, 스탯 게이지 300ms. `ease-out`.
+- **모든 모션은 `motion-safe:` 접두사로 가드한다** — 어두운 방에서 갑작스러운 움직임은 놀람이다. 새 애니메이션을 추가할 때 `motion-safe:`를 빼먹지 말 것.
+- 상태 전달만 한다: 스텝 전환, 팝오버 열림, 게이지 변화, 타이핑 인디케이터. 장식적 등장 연출은 금지.
 
 ## 6. Do's and Don'ts
 
-- **Do** `primary`를 화면당 하나의 주 액션에만 집중해서 쓴다(플레이 버튼, 발행 버튼 등).
-- **Do** 카드/리스트에서 `border` 한 줄로만 구분하고, 불필요한 그림자를 추가하지 않는다.
-- **Do** 모든 인터랙티브 엘리먼트에 `:focus-visible` 링을 유지한다(전연령/접근성 정책).
-- **Don't** `primary`/`accent`를 배경 전체 채우기나 텍스트 그라디언트로 쓰지 않는다.
-- **Don't** Toast/Alert에 색상 사이드 보더를 쓰지 않는다.
-- **Don't** 서로 다른 서체 패밀리를 섞지 않는다 — Pretendard 굵기 변화로만 위계를 만든다.
+### Do:
+- **Do** 색을 쓰고 싶으면 그것이 사용자 콘텐츠인지 위험 액션인지 먼저 확인한다. 둘 다 아니면 무채색이다.
+- **Do** 새 표면을 §2의 명도 사다리 위에 올린다(다크 0.160/0.210/0.260/0.300). 사다리에 없는 중간값을 발명하지 않는다.
+- **Do** 깊이를 그림자가 아니라 명도로 만든다. 카드가 떠 보여야 하면 `bg-card`를 쓰지 `shadow-md`를 쓰지 않는다.
+- **Do** 다크에서 채움 위 텍스트를 뒤집는다 — `primary`와 `destructive` 모두 밝은 채움 + 어두운 텍스트다. 이 쌍을 깨지 말 것.
+- **Do** 모든 애니메이션에 `motion-safe:`를 붙인다.
+- **Do** 모든 인터랙티브 엘리먼트에 `focus-visible` 링(`ring-3 ring-ring/50`)을 유지한다(전연령/접근성 정책).
+- **Do** 본문에 `text-sm`(0.875rem)을 쓴다. 이것이 기본값이다.
 
-<!-- impeccable:note 이 SEED DESIGN.md는 자율 Ralph 루프(US-003) 중 실사용자 인터뷰 없이 PRODUCT.md + tasks/techspec-overview.md §10 + palette.mjs 시드(oklch(0.650 0.160 330), seed-103)를 근거로 작성되었습니다. packages/ui 구현에 착수하는 지금 시점의 토큰 소스로 사용하되, 실제 컴포넌트/페이지가 만들어진 뒤 `/impeccable document`를 다시 실행해 scan mode로 실제 토큰을 재확인하는 것을 권장합니다. -->
+### Don't:
+- **Don't** 다크에서 순백(`oklch(1)`, `text-white`, `#fff`)을 쓰지 않는다. 천장은 `foreground`(0.930)다.
+- **Don't** 자극적이거나 성인 지향적인 비주얼 톤을 쓰지 않는다(전연령 정책) — 원색 대비, 네온, 선정적 이미지 트리트먼트.
+- **Don't** `primary`를 배경 전체 채우기나 텍스트 그라디언트로 쓰지 않는다. `primary`는 "지금 누를 수 있는 것"에만 쓴다.
+- **Don't** 솔리드 레드 버튼/배지를 만들지 않는다. destructive는 항상 `/10` 틴트다.
+- **Don't** 카드·버튼·인풋에 정지 상태 그림자를 붙이지 않는다.
+- **Don't** Toast/Alert에 색상 사이드 보더를 쓰지 않는다. 상태는 아이콘 색과 텍스트로만 구분한다.
+- **Don't** 서로 다른 서체 패밀리를 섞지 않는다 — Pretendard 굵기 변화로만 위계를 만든다.
+- **Don't** clamp()나 vw 유동 타이포를 쓰지 않는다. 모든 크기는 고정 rem이고 천장은 `text-2xl`이다.
+- **Don't** 하단 탭바·사이드 레일·푸터를 추가하지 않는다. 크롬은 `h-14` 헤더 하나다.
+- **Don't** 라이트 테마에서 `accent`(0.930) 표면 위에 `muted-foreground`로 본문을 올리지 않는다 — 4.30:1로 AA 미달이다.
+- **Don't** `space-y-*`나 `divide-*`를 쓰지 않는다. 간격은 `flex flex-col gap-*`으로만 만든다.
