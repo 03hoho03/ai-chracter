@@ -4,13 +4,13 @@ name: AI 캐릭터 챗 서비스
 description: 내가 만든 AI 캐릭터·스토리로 롤플레이 대화를 나누는 오픈 플랫폼
 colors:
   bg: "oklch(1.000 0.000 0)"
-  surface: "oklch(0.970 0.006 330)"
-  ink: "oklch(0.220 0.020 330)"
-  muted: "oklch(0.530 0.012 330)"
-  border: "oklch(0.890 0.008 330)"
-  primary: "oklch(0.550 0.160 330)"
-  primary-deep: "oklch(0.440 0.160 330)"
-  accent: "oklch(0.720 0.140 50)"
+  surface: "oklch(0.970 0.000 0)"
+  ink: "oklch(0.220 0.000 0)"
+  muted: "oklch(0.530 0.000 0)"
+  border: "oklch(0.890 0.000 0)"
+  primary: "oklch(0.220 0.000 0)"
+  primary-deep: "oklch(0.380 0.000 0)"
+  accent: "oklch(0.930 0.000 0)"
   destructive: "oklch(0.550 0.190 25)"
 typography:
   display:
@@ -84,27 +84,25 @@ components:
 
 ## 2. Colors
 
-배경은 순백, 로즈 톤 하나(`primary`)가 브랜드를 지탱하고 따뜻한 앰버(`accent`)가 보조 강조를 맡는 절제된(Restrained) 팔레트.
+순백 배경 위에서 잉크 블랙 하나가 위계를 만드는 무채색(모노크롬) 팔레트. 역할 구분은 색상(hue)이 아니라 명도 차이로만 하고, 유채색은 위험 액션(`destructive`)에만 남긴다 — 콘텐츠(썸네일, 대화 텍스트)가 화면에서 유일한 색이 된다.
 
 ### Primary
-- **Rose (딥 로즈)** (oklch(0.550 0.160 330)): 주요 CTA(플레이 버튼, 발행/제출), 링크, 포커스 링, 활성 토글. 채워진 배경 위에는 항상 흰 텍스트(`bg`)를 올린다(중명도 채도 색 위 흰 텍스트 규칙).
-- **Rose Deep** (oklch(0.440 0.160 330)): `primary`의 hover/active 상태.
-
-### Secondary (Accent)
-- **Warm Amber** (oklch(0.720 0.140 50)): 배지/하이라이트 등 2차 강조. `primary`와 색상(hue)·명도 모두 달라 나란히 놓여도 구분된다. 채워진 배지 위에는 흰 텍스트를 올린다.
+- **Ink Black (잉크 블랙)** (oklch(0.220 0.000 0)): 주요 CTA(플레이 버튼, 발행/제출), 링크, 포커스 링, 활성 토글. 채워진 배경 위에는 항상 흰 텍스트(`bg`)를 올린다.
+- **Ink Hover** (oklch(0.380 0.000 0)) — `primary-deep`: `primary`의 hover/active 상태. 구현은 별도 토큰 없이 투명도로 만든다(`bg-primary/80` — 흰 배경 위 실효 명도가 이 값에 대응).
 
 ### Neutral
 - **Pure White** (oklch(1.000 0.000 0)) — `bg`: 기본 배경. 채도 0의 순백을 그대로 쓰고 임의로 톤을 섞지 않는다.
-- **Rose-tinted Surface** (oklch(0.970 0.006 330)) — `surface`: 카드/패널/섹션 구분용, `bg`에서 `ink` 방향으로 아주 살짝만 이동.
-- **Near-black Ink** (oklch(0.220 0.020 330)) — `ink`: 본문 텍스트. `bg` 대비 ≥7:1.
-- **Muted** (oklch(0.530 0.012 330)) — `muted`: 보조 텍스트(캡션, 타임스탬프, 조회수). `bg` 대비 ≥3.5:1.
-- **Border** (oklch(0.890 0.008 330)) — `border`: 구분선, 인풋 테두리.
+- **Surface** (oklch(0.970 0.000 0)) — `surface`: 카드/패널/섹션 구분용, `bg`에서 `ink` 방향으로 아주 살짝만 이동한 옅은 회색.
+- **Near-black Ink** (oklch(0.220 0.000 0)) — `ink`: 본문 텍스트. `bg` 대비 ≥7:1.
+- **Muted** (oklch(0.530 0.000 0)) — `muted`: 보조 텍스트(캡션, 타임스탬프, 조회수). `bg` 대비 ≥4.5:1.
+- **Border** (oklch(0.890 0.000 0)) — `border`: 구분선, 인풋 테두리.
+- **Accent Surface** (oklch(0.930 0.000 0)) — `accent`: hover/선택 상태 배경, 배지 등 2차 강조용 표면. 유채색 강조가 아니라 옅은 회색 표면이다.
 
 ### Semantic
-- **Destructive** (oklch(0.550 0.190 25)): 삭제/탈퇴/거부 등 위험 액션 전용 시스템 컬러. 브랜드 팔레트와 별개로 기능적 의미만 가진다.
+- **Destructive** (oklch(0.550 0.190 25)): 삭제/탈퇴/거부 등 위험 액션 전용 시스템 컬러. 무채색 팔레트에서 유일하게 허용되는 유채색이다.
 
 ### Named Rules
-**The One Accent Rule.** `primary`는 화면 안에서 "지금 누를 수 있는 액션"에만 쓴다 — 장식적 배경, 텍스트 그라디언트, 카드 전체 채우기에는 쓰지 않는다.
+**The One Accent Rule.** `primary`(잉크 블랙 채움)는 화면 안에서 "지금 누를 수 있는 액션"에만 쓴다 — 장식적 배경, 텍스트 그라디언트, 카드 전체 채우기에는 쓰지 않는다.
 
 ## 3. Typography
 

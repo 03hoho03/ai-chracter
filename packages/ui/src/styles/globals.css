@@ -36,26 +36,26 @@
 }
 
 :root {
-  /* AI 캐릭터 챗 서비스 팔레트 — DESIGN.md §2 기준 (Rose primary, Restrained strategy) */
+  /* AI 캐릭터 챗 서비스 팔레트 — DESIGN.md §2 기준 (무채색 모노크롬, destructive만 유채색) */
   --background: oklch(1 0 0);
-  --foreground: oklch(0.22 0.02 330);
-  --card: oklch(0.97 0.006 330);
-  --card-foreground: oklch(0.22 0.02 330);
-  --popover: oklch(0.97 0.006 330);
-  --popover-foreground: oklch(0.22 0.02 330);
-  --primary: oklch(0.55 0.16 330);
+  --foreground: oklch(0.22 0 0);
+  --card: oklch(0.97 0 0);
+  --card-foreground: oklch(0.22 0 0);
+  --popover: oklch(0.97 0 0);
+  --popover-foreground: oklch(0.22 0 0);
+  --primary: oklch(0.22 0 0);
   --primary-foreground: oklch(1 0 0);
-  --secondary: oklch(0.93 0.008 330);
-  --secondary-foreground: oklch(0.22 0.02 330);
-  --muted: oklch(0.97 0.006 330);
-  --muted-foreground: oklch(0.53 0.012 330);
-  --accent: oklch(0.93 0.008 330);
-  --accent-foreground: oklch(0.22 0.02 330);
+  --secondary: oklch(0.93 0 0);
+  --secondary-foreground: oklch(0.22 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.53 0 0);
+  --accent: oklch(0.93 0 0);
+  --accent-foreground: oklch(0.22 0 0);
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(1 0 0);
-  --border: oklch(0.89 0.008 330);
-  --input: oklch(0.89 0.008 330);
-  --ring: oklch(0.55 0.16 330);
+  --border: oklch(0.89 0 0);
+  --input: oklch(0.89 0 0);
+  --ring: oklch(0.22 0 0);
   --radius: 0.625rem;
 }
 
