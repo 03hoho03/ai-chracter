@@ -2,6 +2,7 @@
 /tasks/
 .DS_Store
 .impeccable/
+.playwright-mcp/
 node_modules/
 dist/
 .turbo/

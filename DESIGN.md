@@ -101,8 +101,22 @@ components:
 ### Semantic
 - **Destructive** (oklch(0.550 0.190 25)): 삭제/탈퇴/거부 등 위험 액션 전용 시스템 컬러. 무채색 팔레트에서 유일하게 허용되는 유채색이다.
 
+### Dark Palette (`.dark`)
+
+`html`의 `.dark` 클래스로 전환되는 무채색 다크 테마(globals.css `.dark` 블록과 동일 소스). 라이트의 명도 사다리(1.0 → 0.97 → 0.93 → 0.89)를 반전한 구조로, 다크에서는 위로 뜨는 레이어일수록 밝아진다.
+
+- **Background** (oklch(0.160 0.000 0)): 기본 배경. 순수 검정이 아닌 near-black — 카드/팝오버 레이어 위계의 여지를 남긴다.
+- **Foreground** (oklch(0.930 0.000 0)): 본문 텍스트. 순백이 아닌 소프트 화이트(bg 대비 ≈15.8:1) — 장시간 채팅 읽기 피로를 줄인다.
+- **Card / Popover / Muted** (oklch(0.210 0.000 0)): 배경 위 첫 레이어.
+- **Secondary / Accent** (oklch(0.260 0.000 0)): hover/선택 상태 배경, 배지 등 두 번째 레이어.
+- **Border / Input** (oklch(0.300 0.000 0)): 구분선, 인풋 테두리.
+- **Muted Foreground** (oklch(0.680 0.000 0)): 보조 텍스트. bg 대비 ≈6.7:1, secondary 위에서도 ≥4.5:1.
+- **Primary** (oklch(0.930 0.000 0)) + **Primary Foreground** (oklch(0.160 0.000 0)): 라이트의 반전 — 다크에서 주요 CTA는 밝은 채움 + 어두운 텍스트. "primary = 최고 대비 채움" 규칙은 그대로 유지된다.
+- **Destructive** (oklch(0.640 0.190 25)) + **Destructive Foreground** (oklch(0.160 0.000 0)): 어두운 배경에서 텍스트로 쓰일 때 ≥4.5:1이 되도록 빨강을 밝히고, 채움 위 텍스트는 primary와 같은 방식으로 어둡게 뒤집는다(밝힌 빨강 위 흰 텍스트는 AA 미달).
+- **Ring** (oklch(0.930 0.000 0)): 포커스 링 — 라이트와 동일하게 primary를 따른다.
+
 ### Named Rules
-**The One Accent Rule.** `primary`(잉크 블랙 채움)는 화면 안에서 "지금 누를 수 있는 액션"에만 쓴다 — 장식적 배경, 텍스트 그라디언트, 카드 전체 채우기에는 쓰지 않는다.
+**The One Accent Rule.** `primary`(잉크 블랙 채움)는 화면 안에서 "지금 누를 수 있는 액션"에만 쓴다 — 장식적 배경, 텍스트 그라디언트, 카드 전체 채우기에는 쓰지 않는다. 다크 모드에서는 채움이 소프트 화이트로 반전되지만 규칙은 동일하다.
 
 ## 3. Typography
 
