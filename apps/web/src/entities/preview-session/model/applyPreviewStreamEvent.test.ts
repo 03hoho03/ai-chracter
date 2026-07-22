@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { previewSessionKeys } from "../api/keys";
-import type { PreviewSessionState } from "../api/types";
+import type { PreviewSessionState } from "../api/preview-session";
 import { applyPreviewStreamEvent } from "./applyPreviewStreamEvent";
 
 const SESSION_ID = "preview-1";

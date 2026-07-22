@@ -2,7 +2,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { chatRoomKeys } from "../api/keys";
-import type { ChatMessage, ChatRoomState } from "../api/types";
+import type { ChatMessage, ChatRoomState } from "../api/chat-room";
 import { truncateAndEdit } from "./truncateAndEdit";
 
 const ROOM_ID = "room-1";

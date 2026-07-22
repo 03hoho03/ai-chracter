@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys } from "../api/keys";
-import type { ChatRoomState } from "../api/types";
+import type { ChatRoomState } from "../api/chat-room";
 
 // techspec-chat-common.md §2.1, US-023/077 — 사용자 메시지 수정은 그 메시지 이후 메시지를 전부
 // 잘라내고 내용만 갱신하는 낙관적 반영이다(별도 분기 조회/전환 UI 없음). 실제 재전송(PATCH

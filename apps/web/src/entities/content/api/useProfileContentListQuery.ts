@@ -2,7 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../../shared/lib/api/client";
-import type { ContentType } from "../model/types";
+import type { ContentType } from "../model/content";
 import { contentKeys, type VisibilityFilter } from "./keys";
 
 export type ContentSummary = components["schemas"]["ContentSummary"];

@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { previewSessionKeys } from "../api/keys";
-import type { PreviewSessionState, PreviewStreamEvent } from "../api/types";
+import type { PreviewSessionState, PreviewStreamEvent } from "../api/preview-session";
 
 // entities/chat-room의 applyStreamEvent(techspec-chat-story.md §1.2)와 케이스 구조는 동일하지만
 // previewSessionKeys(별도 쿼리 키)만 건드린다 — 실제 대화방 캐시엔 절대 영향을 주지 않는다.

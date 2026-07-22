@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
@@ -8,6 +8,7 @@ import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { usePublishContentMutation, useUpdateContentDraftMutation } from "../../../entities/content";
+import type { PreviewStartPayload } from "../../../entities/preview-session";
 import {
   characterBuilderSchema,
   formToServer,
@@ -16,7 +17,6 @@ import {
 } from "../../../features/build-character";
 import { useAutosave } from "../../../features/build-common";
 import { AppealModal } from "../../../features/submit-appeal";
-import { PreviewSessionView } from "../../preview-session";
 import { characterBuilderActiveTabAtom, type CharacterBuilderTab } from "../model/activeTabAtom";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
@@ -68,7 +68,13 @@ function getMissingFieldLabels(error: unknown): string[] | null {
 
 /** techspec-builder-character.md §0/§1 — 5탭 단일 useForm 셸. 자동저장(US-096)/발행(US-083)/
  * 미리보기(US-088)를 여기서 연동한다. */
-export function CharacterBuilderShell({ data }: { data: CharacterDraftResponse }) {
+export function CharacterBuilderShell({
+  data,
+  renderPreview,
+}: {
+  data: CharacterDraftResponse;
+  renderPreview: (args: { getPayload: () => PreviewStartPayload; onClose: () => void }) => ReactNode;
+}) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useAtom(characterBuilderActiveTabAtom);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -121,12 +127,10 @@ export function CharacterBuilderShell({ data }: { data: CharacterDraftResponse }
   }
 
   if (isPreviewOpen) {
-    return (
-      <PreviewSessionView
-        getPayload={() => formToServer(form.getValues())}
-        onClose={() => setIsPreviewOpen(false)}
-      />
-    );
+    return renderPreview({
+      getPayload: () => formToServer(form.getValues()),
+      onClose: () => setIsPreviewOpen(false),
+    });
   }
 
   const isPublishing = updateDraftMutation.isPending || publishMutation.isPending;

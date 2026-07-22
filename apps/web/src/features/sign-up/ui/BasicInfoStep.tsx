@@ -6,7 +6,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
-import type { SignUpFormValues } from "../model/schema";
+import type { SignUpFormValues } from "../../../entities/registration";
 
 const BASIC_INFO_FIELDS = [
   "email",

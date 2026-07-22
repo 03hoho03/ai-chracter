@@ -7,6 +7,10 @@ import { toast } from "sonner";
 
 import type { Shortcut } from "../../../entities/chat-room";
 import {
+  EndingDivider,
+  MessageBubble,
+  StatGaugePanel,
+  TypingIndicator,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
   useDeleteMessageMutation,
@@ -14,9 +18,7 @@ import {
 import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
-import { ChatMorePanel } from "../../chat-more-panel";
-import { EndingDivider, MessageBubble, TypingIndicator } from "./MessageBubble";
-import { StatGaugePanel } from "./StatGaugePanel";
+import { ChatMorePanel } from "./ChatMorePanel";
 
 function ChatRoomSkeleton() {
   return (

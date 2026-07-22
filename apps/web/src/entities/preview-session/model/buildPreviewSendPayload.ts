@@ -1,4 +1,4 @@
-import type { SendPreviewMessageRequest } from "../api/types";
+import type { SendPreviewMessageRequest } from "../api/preview-session";
 
 export function buildPreviewSendPayload(input: {
   previewSessionId: string;

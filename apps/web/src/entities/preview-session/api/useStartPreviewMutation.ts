@@ -4,7 +4,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiClient } from "../../../shared/lib/api/client";
 import { buildPreviewStartState } from "../model/buildPreviewStartState";
 import { previewSessionKeys } from "./keys";
-import type { PreviewSessionState, PreviewStartPayload } from "./types";
+import type { PreviewSessionState, PreviewStartPayload } from "./preview-session";
 
 type PreviewSessionStartResponseDto = components["schemas"]["PreviewSessionStartResponse"];
 

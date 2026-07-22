@@ -6,7 +6,7 @@ import {
   canViewDetailPage,
   resolveAccessStatus,
   toContentAccessStatus,
-} from "./types";
+} from "./content";
 
 describe("resolveAccessStatus", () => {
   it("returns deleted when moderationStatus is deleted, regardless of visibility", () => {

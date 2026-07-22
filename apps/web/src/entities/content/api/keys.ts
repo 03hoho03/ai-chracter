@@ -1,4 +1,4 @@
-import type { ContentListSort, ContentType } from "../model/types";
+import type { ContentListSort, ContentType } from "../model/content";
 
 export type VisibilityFilter = "all" | "public" | "link" | "private";
 

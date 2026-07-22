@@ -10,7 +10,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { MoreHorizontal, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
 
-import type { ChatMessage } from "../../../entities/chat-room";
+import type { ChatMessage } from "../api/chat-room";
 
 type MessageBubbleProps = {
   message: ChatMessage;

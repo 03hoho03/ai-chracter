@@ -1,7 +1,7 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import { chatRoomKeys } from "../api/keys";
-import type { ChatMessage, ChatRoomState, ChatStreamEvent } from "../api/types";
+import type { ChatMessage, ChatRoomState, ChatStreamEvent } from "../api/chat-room";
 
 type ApplyStreamEventOptions = {
   mode?: "append" | "replaceLast"; // 기본 append, 재생성 시 replaceLast(techspec-chat-common.md §2.1)

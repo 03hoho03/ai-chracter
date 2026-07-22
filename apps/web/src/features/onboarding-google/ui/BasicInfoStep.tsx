@@ -4,7 +4,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
-import type { SignUpFormValues } from "../../sign-up/model/schema";
+import type { SignUpFormValues } from "../../../entities/registration";
 
 const BASIC_INFO_FIELDS = ["nickname", "birthDate", "termsAgreed", "privacyAgreed"] as const;
 

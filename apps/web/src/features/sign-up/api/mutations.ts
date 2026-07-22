@@ -8,7 +8,6 @@ type SignupResponse = components["schemas"]["SignupResponse"];
 type VerifyEmailRequest = components["schemas"]["VerifyEmailRequest"];
 type VerifyEmailResponse = components["schemas"]["VerifyEmailResponse"];
 type ResendVerificationCodeRequest = components["schemas"]["ResendVerificationCodeRequest"];
-type GuardianConsentRequest = components["schemas"]["GuardianConsentRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 
 export function useSignUpMutation() {
@@ -29,13 +28,6 @@ export function useResendVerificationCodeMutation() {
   return useMutation({
     mutationFn: (payload: ResendVerificationCodeRequest) =>
       apiClient.post<void>("/auth/resend-verification-code", payload).then((res) => res.data),
-  });
-}
-
-export function useGuardianConsentMutation() {
-  return useMutation({
-    mutationFn: (payload: GuardianConsentRequest) =>
-      apiClient.post<void>("/auth/guardian-consent", payload).then((res) => res.data),
   });
 }
 

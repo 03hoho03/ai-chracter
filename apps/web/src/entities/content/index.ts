@@ -30,14 +30,14 @@ export {
   canViewDetailPage,
   resolveAccessStatus,
   toContentAccessStatus,
-} from "./model/types";
+} from "./model/content";
 export type {
   ContentAccessStatus,
   ContentListSort,
   ContentType,
   ContentVisibility,
   ModerationStatus,
-} from "./model/types";
+} from "./model/content";
 export { ContentCard } from "./ui/ContentCard";
 export type { ContentCardStatusTag } from "./ui/ContentCard";
 export { ContentListEmptyState } from "./ui/ContentListEmptyState";

@@ -1,8 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useAtomValue } from "jotai";
 
-import { SignUpWizard } from "../../../features/sign-up";
-import { signUpStepAtom } from "../../../features/sign-up/model/atom";
+import { SignUpWizard, signUpStepAtom } from "../../../features/sign-up";
 
 const STEP_COPY = {
   basicInfo: {

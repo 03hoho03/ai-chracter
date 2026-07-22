@@ -8,7 +8,7 @@ import type { PreviewShortcut, PreviewStartPayload } from "../../../entities/pre
 import { usePreviewSessionQuery, useStartPreviewMutation } from "../../../entities/preview-session";
 import { usePreviewSendMessage } from "../../../features/preview-chat";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
-import { EndingDivider, MessageBubble, StatGaugePanel, TypingIndicator } from "../../chat-room";
+import { EndingDivider, MessageBubble, StatGaugePanel, TypingIndicator } from "../../../entities/chat-room";
 
 function PreviewSkeleton() {
   return (
@@ -19,7 +19,7 @@ function PreviewSkeleton() {
 }
 
 // techspec-builder-common.md §3 — 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
-// 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지/단축어 자동완성)는 widgets/chat-room·
+// 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지)는 entities/chat-room, 단축어 자동완성은
 // features/shortcut-autocomplete에서 그대로 재사용하되, 데이터 레이어(entities/preview-session)는
 // 완전히 분리되어 있다 — 스탯/키워드북/단축어/엔딩 판정은 실제 채팅과 동일한 서버 로직(US-089)이
 // 그대로 처리하고 이 화면은 그 결과만 반영한다. getPayload는 호출 시점의 최신 폼 값

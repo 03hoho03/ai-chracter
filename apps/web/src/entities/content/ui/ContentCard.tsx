@@ -1,6 +1,6 @@
 import { ImageOff } from "lucide-react";
 
-import type { ContentVisibility } from "../model/types";
+import type { ContentVisibility } from "../model/content";
 
 export type ContentCardStatusTag = ContentVisibility | "restricted";
 

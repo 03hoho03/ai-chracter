@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { evaluateRuleList, type RuleListItem, type SingleRule } from "./types";
+import { evaluateRuleList, type RuleListItem, type SingleRule } from "./ending-rules";
 
 function rule(overrides: Partial<SingleRule> & Pick<SingleRule, "statId" | "operator" | "value">): SingleRule {
   return { kind: "rule", id: overrides.statId, nextOp: null, ...overrides };

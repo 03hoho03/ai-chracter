@@ -12,8 +12,8 @@ import {
   useGenreListQuery,
   type ContentListSort,
 } from "../../../entities/content";
-import { useContentDetailModal } from "../../../shared/lib/hooks/useContentDetailModal";
-import { useInfiniteScrollSentinel } from "../../../shared/lib/hooks/useInfiniteScrollSentinel";
+import { useContentDetailModal } from "../../../shared/lib/content-detail-modal/useContentDetailModal";
+import { useInfiniteScrollSentinel } from "../../../shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 import { contentTypeToggleAtom } from "../../../shared/model/content-type-toggle";
 
 export type HomeSearch = {

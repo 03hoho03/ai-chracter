@@ -15,7 +15,7 @@ export type {
   Shortcut,
   SingleRule,
   StatDef,
-} from "./api/types";
+} from "./api/chat-room";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
@@ -28,6 +28,8 @@ export { usePinLatestVersionMutation } from "./api/usePinLatestVersionMutation";
 export { useRenameChatRoomMutation } from "./api/useRenameChatRoomMutation";
 export { useResetChatRoomMutation } from "./api/useResetChatRoomMutation";
 export { useStartChatMutation } from "./api/useStartChatMutation";
+export { EndingDivider, MessageBubble, TypingIndicator } from "./ui/MessageBubble";
+export { StatGaugePanel } from "./ui/StatGaugePanel";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildEditPayload } from "./model/buildEditPayload";
 export { buildRegeneratePayload } from "./model/buildRegeneratePayload";

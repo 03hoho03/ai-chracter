@@ -6,18 +6,22 @@ import { useAtom } from "jotai";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import {
+  GuardianConsentStep,
+  signUpDefaultValues,
+  signUpSchema,
+  useGuardianConsentMutation,
+  type SignUpFormValues,
+} from "../../../entities/registration";
 import { sessionKeys } from "../../../entities/session";
 import {
-  useGuardianConsentMutation,
   useSignUpLoginMutation,
   useSignUpMutation,
   useVerifyEmailMutation,
 } from "../api/mutations";
 import { signUpStepAtom } from "../model/atom";
-import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../model/schema";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
-import { GuardianConsentStep } from "./GuardianConsentStep";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 

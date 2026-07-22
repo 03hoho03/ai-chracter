@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { PreviewSessionState, PreviewShortcut, PreviewStartPayload, PreviewStatDef } from "../api/types";
+import type { PreviewSessionState, PreviewShortcut, PreviewStartPayload, PreviewStatDef } from "../api/preview-session";
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];

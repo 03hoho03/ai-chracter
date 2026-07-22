@@ -6,10 +6,14 @@ import { useAtom } from "jotai";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import {
+  GuardianConsentStep,
+  signUpDefaultValues,
+  signUpSchema,
+  useGuardianConsentMutation,
+  type SignUpFormValues,
+} from "../../../entities/registration";
 import { sessionKeys } from "../../../entities/session";
-import { useGuardianConsentMutation } from "../../sign-up/api/mutations";
-import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../../sign-up/model/schema";
-import { GuardianConsentStep } from "../../sign-up/ui/GuardianConsentStep";
 import { useOnboardingGoogleMutation } from "../api/mutations";
 import { onboardingGoogleStepAtom } from "../model/atom";
 import { BasicInfoStep } from "./BasicInfoStep";

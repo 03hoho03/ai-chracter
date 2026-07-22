@@ -8,6 +8,6 @@ export type {
   PreviewStartPayload,
   PreviewStatDef,
   PreviewStreamEvent,
-} from "./api/types";
+} from "./api/preview-session";
 export { applyPreviewStreamEvent } from "./model/applyPreviewStreamEvent";
 export { buildPreviewSendPayload } from "./model/buildPreviewSendPayload";

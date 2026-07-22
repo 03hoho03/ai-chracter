@@ -1,4 +1,4 @@
-import type { StatDef } from "../../../entities/chat-room";
+import type { StatDef } from "../api/chat-room";
 
 interface StatGaugePanelProps {
   stats: StatDef[];

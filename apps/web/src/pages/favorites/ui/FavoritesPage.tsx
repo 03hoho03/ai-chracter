@@ -2,8 +2,8 @@ import { useCallback } from "react";
 import { Loader2 } from "lucide-react";
 
 import { ContentCard, ContentListEmptyState, useFavoriteListQuery } from "../../../entities/content";
-import { useContentDetailModal } from "../../../shared/lib/hooks/useContentDetailModal";
-import { useInfiniteScrollSentinel } from "../../../shared/lib/hooks/useInfiniteScrollSentinel";
+import { useContentDetailModal } from "../../../shared/lib/content-detail-modal/useContentDetailModal";
+import { useInfiniteScrollSentinel } from "../../../shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 
 function ContentGridSkeleton() {
   return (

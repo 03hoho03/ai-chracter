@@ -6,8 +6,8 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
+import type { SignUpFormValues } from "../../../entities/registration";
 import { useResendVerificationCodeMutation } from "../api/mutations";
-import type { SignUpFormValues } from "../model/schema";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 

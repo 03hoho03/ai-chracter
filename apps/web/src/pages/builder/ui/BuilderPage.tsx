@@ -1,6 +1,7 @@
 import { useContentDraftQuery } from "../../../entities/content";
 import { CharacterBuilderShell } from "../../../widgets/build-character";
 import { StoryBuilderShell } from "../../../widgets/build-story";
+import { PreviewSessionView } from "../../../widgets/preview-session";
 
 function BuilderSkeleton() {
   return (
@@ -28,8 +29,18 @@ export function BuilderPage({ draftId }: { draftId: string }) {
   }
 
   if (draftQuery.data.type === "character") {
-    return <CharacterBuilderShell data={draftQuery.data} />;
+    return (
+      <CharacterBuilderShell
+        data={draftQuery.data}
+        renderPreview={(previewProps) => <PreviewSessionView {...previewProps} />}
+      />
+    );
   }
 
-  return <StoryBuilderShell data={draftQuery.data} />;
+  return (
+    <StoryBuilderShell
+      data={draftQuery.data}
+      renderPreview={(previewProps) => <PreviewSessionView {...previewProps} />}
+    />
+  );
 }

@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { previewSessionKeys } from "./keys";
-import type { PreviewSessionState } from "./types";
+import type { PreviewSessionState } from "./preview-session";
 
 /**
  * 미리보기 세션엔 GET 엔드포인트가 없다(techspec-builder-common.md §3 — Redis뿐인 세션이라 조회

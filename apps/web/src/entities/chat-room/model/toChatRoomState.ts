@@ -9,7 +9,7 @@ import type {
   Shortcut,
   SingleRule,
   StatDef,
-} from "../api/types";
+} from "../api/chat-room";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 type ChatMessageDto = ChatRoomResponseDto["messages"][number];

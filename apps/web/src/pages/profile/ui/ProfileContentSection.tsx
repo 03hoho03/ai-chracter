@@ -11,7 +11,7 @@ import {
   type VisibilityFilter,
 } from "../../../entities/content";
 import { MakeContentPrivateModal } from "../../../features/make-content-private";
-import { useContentDetailModal } from "../../../shared/lib/hooks/useContentDetailModal";
+import { useContentDetailModal } from "../../../shared/lib/content-detail-modal/useContentDetailModal";
 
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
