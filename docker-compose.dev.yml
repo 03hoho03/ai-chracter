@@ -1,0 +1,71 @@
+# 로컬 개발용 인프라 — Postgres + Redis + moto(S3 호환) + 버킷/CORS 자동 생성.
+#
+#   docker compose -f docker-compose.dev.yml up -d --wait
+#
+# 앱(API/web/admin)은 컨테이너 밖(호스트)에서 실행하고, 아래 published 포트로 접속한다.
+# 부트스트랩 전체(인프라 → 마이그레이션 → 시드)는 루트의 ./dev-up.sh 를 쓰면 한 번에 끝난다.
+name: ai-character-chat-dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_character_chat
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_character_chat"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # S3 호환 로컬 스토리지. 인메모리라 컨테이너를 재생성하면 업로드된 객체가 사라진다
+  # (그때는 dev-up.sh/seed 를 다시 돌리면 샘플 썸네일이 재업로드된다). Postgres 는 볼륨으로 유지된다.
+  moto:
+    image: motoserver/moto:latest
+    # 호스트 5001 → 컨테이너 5000 (macOS 는 5000 을 AirPlay Receiver 가 점유).
+    ports:
+      - "5001:5000"
+
+  # moto 가 뜨면 버킷을 만들고 브라우저 직접 업로드(presigned PUT)용 CORS 를 건다.
+  # 매 up 마다 재실행되어(moto 가 비휘발성) 버킷을 idempotent 하게 재생성한다.
+  s3-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      moto:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_DEFAULT_REGION: ap-northeast-2
+    volumes:
+      - ./apps/api/scripts/dev/s3-cors.json:/tmp/s3-cors.json:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until aws --endpoint-url http://moto:5000 s3 ls >/dev/null 2>&1; do
+          echo "moto 기다리는 중..."; sleep 1;
+        done
+        aws --endpoint-url http://moto:5000 s3 mb s3://ai-character-chat-assets-dev 2>/dev/null || true
+        aws --endpoint-url http://moto:5000 s3api put-bucket-cors \
+          --bucket ai-character-chat-assets-dev \
+          --cors-configuration file:///tmp/s3-cors.json
+        echo "S3 버킷 + CORS 준비 완료"
+    restart: "no"
+
+volumes:
+  pgdata:
