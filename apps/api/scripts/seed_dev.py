@@ -25,6 +25,7 @@ os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 from PIL import Image  # noqa: E402
 
 from api.core.s3 import build_object_key, upload_object  # noqa: E402
+from api.core.security import hash_password  # noqa: E402
 from api.db.models.auth import User  # noqa: E402
 from api.db.models.character import CharacterVersionDetail  # noqa: E402
 from api.db.models.content import (  # noqa: E402
@@ -40,6 +41,10 @@ from api.db.session import async_session_factory  # noqa: E402
 
 # 고정 UUID (재실행 시 중복 방지). 실사용자 UUID 와 겹치지 않도록 5eed... 프리픽스 사용.
 USER_ID = uuid.UUID("5eed0000-0000-4000-8000-000000000001")
+# 비밀번호로 바로 로그인 가능한 테스트 계정 (Google 설정 없이 채팅 흐름 확인용).
+TEST_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000d1")
+TEST_EMAIL = "test@example.com"
+TEST_PASSWORD = "password1234"
 ASSET_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000a5")
 CONTENT_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000c0")
 VERSION_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000e0")
@@ -67,11 +72,33 @@ async def main() -> None:
 
     # 2) DB 로우 (idempotent)
     async with async_session_factory() as session:
+        now = datetime.now(UTC)
+
+        # 2a) 비밀번호로 바로 로그인 가능한 테스트 계정 (성인 + 이메일 인증 완료 상태).
+        if await session.get(User, TEST_USER_ID) is None:
+            session.add(
+                User(
+                    id=TEST_USER_ID,
+                    email=TEST_EMAIL,
+                    password_hash=hash_password(TEST_PASSWORD),
+                    google_sub=None,
+                    nickname="테스트",
+                    birth_date=date(1995, 1, 1),
+                    terms_agreed_at=now,
+                    privacy_agreed_at=now,
+                    email_verified_at=now,
+                )
+            )
+            await session.commit()
+            print(f"  ✓ 테스트 로그인 계정: {TEST_EMAIL} / {TEST_PASSWORD}")
+        else:
+            print(f"  = 테스트 로그인 계정 이미 있음: {TEST_EMAIL}")
+
+        # 2b) 발행된 샘플 캐릭터
         if await session.get(Content, CONTENT_ID) is not None:
-            print("  = 샘플 캐릭터가 이미 있음 → DB 삽입 건너뜀")
+            print("  = 샘플 캐릭터가 이미 있음 → 건너뜀")
             return
 
-        now = datetime.now(UTC)
         session.add(
             User(
                 id=USER_ID,
