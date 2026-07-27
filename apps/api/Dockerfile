@@ -1,4 +1,3 @@
-# syntax=docker/dockerfile:1
 FROM python:3.11-slim-bookworm AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.11.15 /uv /uvx /bin/
@@ -9,16 +8,15 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
-# Install dependencies first (cached separately from app source changes)
-RUN --mount=type=cache,target=/root/.cache/uv \
-    --mount=type=bind,source=uv.lock,target=uv.lock \
-    --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
-    uv sync --locked --no-install-project --no-dev
+# Install dependencies first (separate layer from app source so source edits don't
+# bust the dependency cache). BuildKit cache/bind mounts were removed so this image
+# builds on non-BuildKit builders too (e.g. Cloud Build's default docker daemon).
+COPY uv.lock pyproject.toml ./
+RUN uv sync --locked --no-install-project --no-dev
 
 COPY . /app
 
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev
+RUN uv sync --locked --no-dev
 
 FROM python:3.11-slim-bookworm
 

@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -12,6 +14,11 @@ class Settings(BaseSettings):
     # Secure requires HTTPS; browsers drop the cookie on local http dev servers, so
     # this defaults to False and must be overridden to True in any deployed env.
     session_cookie_secure: bool = False
+    # Default "lax" keeps local dev (same-site) working. A cross-site deploy where the
+    # API and the SPA live on different registrable domains (e.g. *.run.app vs
+    # *.pages.dev) must set this to "none" (with session_cookie_secure=True) or the
+    # browser won't attach the session cookie to the SPA's cross-site XHR at all.
+    session_cookie_samesite: Literal["lax", "strict", "none"] = "lax"
 
     # techspec-backend-auth.md §2: admin sessions use a separate cookie name (and,
     # in api/admin/session.py, a separate Redis key prefix) so they never collide
