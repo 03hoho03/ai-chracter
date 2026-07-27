@@ -49,6 +49,7 @@
 
 - **멀티스텝 폼**: 스텝마다 별도 `useForm`을 두지 않고 **단일 `useForm` + 단일 zod 스키마**를 전체 스텝이 공유한다. 스텝별 검증은 `form.trigger(['필드'])`(도달 안 한 다음 스텝의 필수 필드가 현재 제출을 막지 않음). `handleSubmit`은 전체 검증이라 스텝 제출엔 쓰지 않는다. 위저드마다 `useForm`·스텝 atom은 새로 만든다(모듈 전역 싱글턴 atom 공유 시 라우트 간 상태 누수).
 - **shadcn Checkbox**는 Radix `checked`/`onCheckedChange`라 `register()`로 못 묶는다 → `Controller`(단일 필드) 또는 `watch`/`setValue`(여러 필드 동시).
+- **shadcn Select로 숫자 필드를 다룰 땐 `z.coerce.number()`를 쓰지 말 것** — Select value는 항상 string이라 `Controller`의 `onValueChange={(v) => field.onChange(Number(v))}`로 이미 number로 변환해서 RHF에 넣는데, `z.coerce.number()`는 스키마의 input 타입을 `unknown`으로 만들어(출력은 number) `zodResolver`의 input/output 타입이 어긋나 타입에러가 난다(`features/generate-images/model/schema.ts`의 `count` 필드에서 발견). 이미 number로 변환해서 넣는 필드는 그냥 `z.number()`를 쓸 것 — `z.coerce`는 `<input>` 같은 항상 string인 네이티브 컨트롤에서만 필요하다.
 - **formToServer/serverToForm 경계**: draft 상태를 표현해야 하는 필수 선택 필드는 `.nullable()`(`z.enum`은 "미선택" 멤버가 없어 서버 `null`을 담을 수 없음). 배열 `order`는 배열 위치 자체(명시 숫자 필드 만들지 말 것). **실제 필드명은 techspec 코드블록이 아니라 `packages/api-types/src/generated.ts`에서 확인**(techspec의 `worldSetting`이 실제 `settingText`인 사례 등) — rename은 이 경계 함수가 전담.
 - **자동저장**: `features/build-common`의 `useAutosave`(`subscribe`/`formToServer`/`save`/`debounceMs`). 각 빌더는 자기 `formToServer`만 주입하고 디바운스/즉시저장을 재구현하지 않는다.
 - **발행 가능 여부**는 `formState.isValid`/개별 `trigger()`가 아니라 `builderSchema.safeParse(useWatch({ control }))`로 판단(미구현 탭 필수 필드가 자연스럽게 발행 버튼을 비활성 유지).
