@@ -9,7 +9,7 @@ import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 # boto3 resolves and caches credentials once, at client-construction time (see
 # api/core/s3.py's module-level `s3_client`) — these must be set before that
@@ -39,7 +39,7 @@ os.environ.setdefault("S3_ENDPOINT_URL", f"http://{_moto_host}:{_moto_port}")
 
 from api.core.config import settings  # noqa: E402
 from api.db.session import engine  # noqa: E402
-from api.db.session import get_db_session  # noqa: E402
+from api.db.session import get_db_session, get_session_factory  # noqa: E402
 from api.main import app  # noqa: E402
 
 APPS_API_DIR = Path(__file__).resolve().parents[1]
@@ -121,14 +121,25 @@ async def db_client(
     test's own rolled-back `db_session` — so API requests and test setup code
     (e.g. inserting a user row to log in as) share one transaction and nothing
     written during the test ever persists.
+
+    Also overrides `get_session_factory` (used by code that opens its own DB
+    session outside a request's lifetime, e.g. `api.images.router`'s asyncio
+    background task) with a sessionmaker bound to the *same* connection as
+    `db_session` — verified empirically that sessions sharing a connection
+    share its transaction (conditional_savepoint join mode), so writes made
+    through it are visible to `db_session` assertions and still roll back.
     """
 
     async def _get_db_session_override() -> AsyncGenerator[AsyncSession, None]:
         yield db_session
 
+    session_factory = async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+
     app.dependency_overrides[get_db_session] = _get_db_session_override
+    app.dependency_overrides[get_session_factory] = lambda: session_factory
     api_client.cookies.clear()
     try:
         yield api_client
     finally:
         del app.dependency_overrides[get_db_session]
+        del app.dependency_overrides[get_session_factory]

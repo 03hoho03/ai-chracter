@@ -5,6 +5,7 @@ from collections.abc import Callable, Coroutine
 from typing import Any
 
 from pydantic import BaseModel, Field
+from redis.exceptions import WatchError
 
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -72,20 +73,37 @@ async def update_job(
 ) -> None:
     """Progress-update helper: bumps `completed_count`, appends a succeeded
     `asset_id`, and/or sets `status`/`error` (e.g. queued->running, or the final
-    succeeded/failed transition once generation finishes)."""
-    raw = await redis_client.get(_job_key(job_id))
-    if raw is None:
-        return
-    job = ImageGenerationJob.model_validate_json(raw)
-    if status is not None:
-        job.status = status
-    if completed_increment:
-        job.completed_count += completed_increment
-    if asset_id is not None:
-        job.asset_ids.append(asset_id)
-    if error is not None:
-        job.error = error
-    await _save_job(job)
+    succeeded/failed transition once generation finishes).
+
+    Uses Redis WATCH/MULTI/EXEC (optimistic locking, retried on conflict)
+    instead of a plain GET-then-SET: US-004's `asyncio.gather`'d generation
+    calls each call this concurrently for the same job, and a bare
+    GET-then-SET loses updates under that concurrency (confirmed empirically —
+    `completed_count`/`asset_ids` under-counted with 2 concurrent callers)."""
+    key = _job_key(job_id)
+    async with redis_client.pipeline() as pipe:
+        while True:
+            try:
+                await pipe.watch(key)
+                raw = await pipe.get(key)
+                if raw is None:
+                    await pipe.unwatch()  # type: ignore[no-untyped-call]
+                    return
+                job = ImageGenerationJob.model_validate_json(raw)
+                if status is not None:
+                    job.status = status
+                if completed_increment:
+                    job.completed_count += completed_increment
+                if asset_id is not None:
+                    job.asset_ids.append(asset_id)
+                if error is not None:
+                    job.error = error
+                pipe.multi()  # type: ignore[no-untyped-call]
+                pipe.set(key, job.model_dump_json(), ex=settings.image_generation_job_ttl_seconds)
+                await pipe.execute()
+                return
+            except WatchError:
+                continue
 
 
 _background_tasks: set[asyncio.Task[None]] = set()
