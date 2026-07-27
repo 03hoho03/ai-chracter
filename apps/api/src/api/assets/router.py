@@ -17,6 +17,7 @@ from api.assets.schemas import (
 from api.core.s3 import (
     build_object_key,
     download_object,
+    generate_presigned_get_url,
     generate_presigned_put_url,
     object_exists,
     upload_object,
@@ -159,8 +160,23 @@ async def register_situational_image(
 @me_router.get("/generated-images")
 async def list_generated_images(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
 ) -> list[GeneratedImageItem]:
-    """techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회. AI 이미지 생성 자체는
-    별도 세션 범위라 아직 자산에 "생성됨"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을
-    반환하는 스텁이다."""
-    return []
+    """techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회."""
+    assets = await db.scalars(
+        select(Asset)
+        .where(
+            Asset.owner_user_id == current_user_id,
+            Asset.kind == AssetKind.GENERATED,
+            Asset.status == AssetStatus.READY,
+        )
+        .order_by(Asset.created_at.desc())
+    )
+
+    items: list[GeneratedImageItem] = []
+    for asset in assets:
+        image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+        items.append(
+            GeneratedImageItem(asset_id=asset.id, image_url=image_url, created_at=asset.created_at)
+        )
+    return items
