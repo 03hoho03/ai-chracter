@@ -21,14 +21,10 @@ import {
 } from "../model/schema";
 
 interface GenerateImagesFormProps {
-  onSubmit?: (values: GenerateImagesFormValues) => void | Promise<void>;
+  onSubmit: (values: GenerateImagesFormValues) => void | Promise<void>;
 }
 
-function noop() {
-  // US-008이 잡 생성 + 폴링 로직을 이 자리에 주입한다.
-}
-
-export function GenerateImagesForm({ onSubmit = noop }: GenerateImagesFormProps) {
+export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
   const {
     register,
     handleSubmit,
