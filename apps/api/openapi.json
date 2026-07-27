@@ -296,7 +296,7 @@
           "assets"
         ],
         "summary": "List Generated Images",
-        "description": "techspec-backend-media.md §3: \"생성한 이미지에서 선택\" 갤러리 조회. AI 이미지 생성 자체는\n별도 세션 범위라 아직 자산에 \"생성됨\"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을\n반환하는 스텁이다.",
+        "description": "techspec-backend-media.md §3: \"생성한 이미지에서 선택\" 갤러리 조회.",
         "operationId": "list_generated_images_me_generated_images_get",
         "responses": {
           "200": {
@@ -3098,6 +3098,89 @@
         }
       }
     },
+    "/images/generate": {
+      "post": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Generate Images",
+        "operationId": "generate_images_images_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GenerateImageRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateImageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/images/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "Get Image Job",
+        "operationId": "get_image_job_images_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ImageJobStatusResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "summary": "Health",
@@ -5064,6 +5147,56 @@
         ],
         "title": "ExampleDialogueItem"
       },
+      "GenerateImageRequest": {
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Prompt"
+          },
+          "style": {
+            "$ref": "#/components/schemas/ImageStylePreset"
+          },
+          "aspectRatio": {
+            "type": "string",
+            "enum": [
+              "1:1",
+              "4:3",
+              "3:4",
+              "16:9",
+              "9:16"
+            ],
+            "title": "Aspectratio"
+          },
+          "count": {
+            "type": "integer",
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Count",
+            "default": 1
+          }
+        },
+        "type": "object",
+        "required": [
+          "prompt",
+          "style",
+          "aspectRatio"
+        ],
+        "title": "GenerateImageRequest"
+      },
+      "GenerateImageResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId"
+        ],
+        "title": "GenerateImageResponse"
+      },
       "GeneratedImageItem": {
         "properties": {
           "assetId": {
@@ -5088,7 +5221,7 @@
           "createdAt"
         ],
         "title": "GeneratedImageItem",
-        "description": "techspec-backend-media.md §3: `GET /me/generated-images` stub item shape.\nAI 이미지 생성 자체(제공업체/과금/비동기 처리)는 별도 세션 범위라 이 엔드포인트는 지금\n항상 빈 배열을 반환한다 — 실제 생성 파이프라인이 생기면 이 스키마를 채우는 쿼리만 추가하면 된다."
+        "description": "techspec-backend-media.md §3: `GET /me/generated-images` item shape."
       },
       "GenreResponse": {
         "properties": {
@@ -5181,6 +5314,88 @@
           "imageUrl"
         ],
         "title": "ImageArchiveItem"
+      },
+      "ImageGenerationJobStatus": {
+        "type": "string",
+        "enum": [
+          "queued",
+          "running",
+          "succeeded",
+          "failed"
+        ],
+        "title": "ImageGenerationJobStatus"
+      },
+      "ImageJobImageItem": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "imageUrl"
+        ],
+        "title": "ImageJobImageItem"
+      },
+      "ImageJobStatusResponse": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/ImageGenerationJobStatus"
+          },
+          "requestedCount": {
+            "type": "integer",
+            "title": "Requestedcount"
+          },
+          "completedCount": {
+            "type": "integer",
+            "title": "Completedcount"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/ImageJobImageItem"
+            },
+            "type": "array",
+            "title": "Images"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "requestedCount",
+          "completedCount",
+          "images",
+          "error"
+        ],
+        "title": "ImageJobStatusResponse"
+      },
+      "ImageStylePreset": {
+        "type": "string",
+        "enum": [
+          "realistic",
+          "anime",
+          "illustration",
+          "render3d",
+          "none"
+        ],
+        "title": "ImageStylePreset"
       },
       "KeywordNoteDraftItem": {
         "properties": {

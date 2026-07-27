@@ -1,4 +1,4 @@
-import { GenerateImagesForm } from "../../../features/generate-images";
+import { GenerateImagesPanel } from "../../../features/generate-images";
 
 export function StudioImagesPage() {
   return (
@@ -10,7 +10,7 @@ export function StudioImagesPage() {
         </p>
       </div>
 
-      <GenerateImagesForm />
+      <GenerateImagesPanel />
     </main>
   );
 }

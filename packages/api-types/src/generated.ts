@@ -139,9 +139,7 @@ export interface paths {
         };
         /**
          * List Generated Images
-         * @description techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회. AI 이미지 생성 자체는
-         *     별도 세션 범위라 아직 자산에 "생성됨"을 표시할 방법이 없다 — 로그인만 요구하고 항상 빈 목록을
-         *     반환하는 스텁이다.
+         * @description techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회.
          */
         get: operations["list_generated_images_me_generated_images_get"];
         put?: never;
@@ -1219,6 +1217,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/images/generate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Generate Images */
+        post: operations["generate_images_images_generate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/images/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Image Job */
+        get: operations["get_image_job_images_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -2025,11 +2057,30 @@ export interface components {
             /** Characterline */
             characterLine: string;
         };
+        /** GenerateImageRequest */
+        GenerateImageRequest: {
+            /** Prompt */
+            prompt: string;
+            style: components["schemas"]["ImageStylePreset"];
+            /**
+             * Aspectratio
+             * @enum {string}
+             */
+            aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+            /**
+             * Count
+             * @default 1
+             */
+            count: number;
+        };
+        /** GenerateImageResponse */
+        GenerateImageResponse: {
+            /** Jobid */
+            jobId: string;
+        };
         /**
          * GeneratedImageItem
-         * @description techspec-backend-media.md §3: `GET /me/generated-images` stub item shape.
-         *     AI 이미지 생성 자체(제공업체/과금/비동기 처리)는 별도 세션 범위라 이 엔드포인트는 지금
-         *     항상 빈 배열을 반환한다 — 실제 생성 파이프라인이 생기면 이 스키마를 채우는 쿼리만 추가하면 된다.
+         * @description techspec-backend-media.md §3: `GET /me/generated-images` item shape.
          */
         GeneratedImageItem: {
             /**
@@ -2088,6 +2139,38 @@ export interface components {
             /** Imageurl */
             imageUrl: string;
         };
+        /**
+         * ImageGenerationJobStatus
+         * @enum {string}
+         */
+        ImageGenerationJobStatus: "queued" | "running" | "succeeded" | "failed";
+        /** ImageJobImageItem */
+        ImageJobImageItem: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /** Imageurl */
+            imageUrl: string;
+        };
+        /** ImageJobStatusResponse */
+        ImageJobStatusResponse: {
+            status: components["schemas"]["ImageGenerationJobStatus"];
+            /** Requestedcount */
+            requestedCount: number;
+            /** Completedcount */
+            completedCount: number;
+            /** Images */
+            images: components["schemas"]["ImageJobImageItem"][];
+            /** Error */
+            error: string | null;
+        };
+        /**
+         * ImageStylePreset
+         * @enum {string}
+         */
+        ImageStylePreset: "realistic" | "anime" | "illustration" | "render3d" | "none";
         /** KeywordNoteDraftItem */
         KeywordNoteDraftItem: {
             /**
@@ -4734,6 +4817,70 @@ export interface operations {
                 };
                 content: {
                     "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    generate_images_images_generate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GenerateImageRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GenerateImageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_job_images_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageJobStatusResponse"];
                 };
             };
             /** @description Validation Error */
