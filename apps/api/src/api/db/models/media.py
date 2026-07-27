@@ -12,6 +12,7 @@ class AssetKind(str, enum.Enum):
     ORIGINAL = "original"
     BLURRED = "blurred"
     THUMBNAIL = "thumbnail"
+    GENERATED = "generated"
 
 
 class AssetStatus(str, enum.Enum):

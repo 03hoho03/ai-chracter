@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # techspec-overview-backend.md §5: Gemini 2.5 LLMClient 구현체 (US-050).
     gemini_api_key: str = ""
     gemini_model_name: str = "gemini-2.5-flash"
+    # tasks/prd-image-generation.md §3: 이미지 생성 전용 모델(채팅과 같은 키를 공유).
+    gemini_image_model_name: str = "gemini-2.5-flash-image"
 
     # techspec-builder-common.md §3: 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.
