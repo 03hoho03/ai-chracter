@@ -1,15 +1,21 @@
 import asyncio
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
-from api.core.s3 import build_object_key, upload_object
+from api.core.s3 import build_object_key, generate_presigned_get_url, upload_object
 from api.db.models.media import Asset, AssetKind, AssetStatus
-from api.db.session import get_session_factory
-from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, update_job
-from api.images.schemas import AspectRatio, GenerateImageRequest, GenerateImageResponse
+from api.db.session import get_db_session, get_session_factory
+from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
+from api.images.schemas import (
+    AspectRatio,
+    GenerateImageRequest,
+    GenerateImageResponse,
+    ImageJobImageItem,
+    ImageJobStatusResponse,
+)
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import GeminiImageClient, ImageStylePreset
@@ -97,3 +103,30 @@ async def generate_images(
         payload.count,
     )
     return GenerateImageResponse(job_id=job.job_id)
+
+
+@router.get("/jobs/{job_id}")
+async def get_image_job(
+    job_id: str,
+    owner_user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ImageJobStatusResponse:
+    job = await get_job(job_id, owner_user_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Job not found")
+
+    images: list[ImageJobImageItem] = []
+    for asset_id in job.asset_ids:
+        asset = await db.get(Asset, asset_id)
+        if asset is None:
+            continue
+        image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+        images.append(ImageJobImageItem(asset_id=asset_id, image_url=image_url))
+
+    return ImageJobStatusResponse(
+        status=job.status,
+        requested_count=job.requested_count,
+        completed_count=job.completed_count,
+        images=images,
+        error=job.error,
+    )
