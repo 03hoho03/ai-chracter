@@ -10,7 +10,7 @@ def set_admin_session_cookie(response: Response, session_id: str) -> None:
         max_age=settings.session_ttl_seconds,
         httponly=True,
         secure=settings.session_cookie_secure,
-        samesite="lax",
+        samesite=settings.session_cookie_samesite,
     )
 
 
