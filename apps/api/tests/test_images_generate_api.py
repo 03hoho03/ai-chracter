@@ -293,3 +293,27 @@ async def test_generate_total_failure_marks_job_failed(
     assert job.completed_count == 0
     assert job.asset_ids == []
     assert job.error is not None
+
+
+async def test_generate_unexpected_error_marks_job_failed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        raise ValueError("boom")  # LLMClientError가 아닌 예기치 못한 오류
+
+    client = _make_image_client(monkeypatch, generate_content)
+    _override_image_client(client)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    # 예기치 못한 예외라도 잡이 running에 멈추지 않고 FAILED로 끝나야 한다(hang 방지).
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED

@@ -37,27 +37,31 @@ async def _generate_and_store_one(
 ) -> bool:
     try:
         data, mime_type = await image_client.generate_image(prompt, style, aspect_ratio)
+        asset_id = uuid.uuid4()
+        storage_key = build_object_key("generated", asset_id, mime_type)
+        await run_in_threadpool(upload_object, storage_key, data, mime_type)
+
+        async with session_factory() as session:
+            session.add(
+                Asset(
+                    id=asset_id,
+                    owner_user_id=owner_user_id,
+                    storage_key=storage_key,
+                    kind=AssetKind.GENERATED,
+                    status=AssetStatus.READY,
+                )
+            )
+            await session.commit()
+
+        await update_job(job_id, completed_increment=1, asset_id=asset_id)
+        return True
     except LLMClientError:
         return False
-
-    asset_id = uuid.uuid4()
-    storage_key = build_object_key("generated", asset_id, mime_type)
-    await run_in_threadpool(upload_object, storage_key, data, mime_type)
-
-    async with session_factory() as session:
-        session.add(
-            Asset(
-                id=asset_id,
-                owner_user_id=owner_user_id,
-                storage_key=storage_key,
-                kind=AssetKind.GENERATED,
-                status=AssetStatus.READY,
-            )
-        )
-        await session.commit()
-
-    await update_job(job_id, completed_increment=1, asset_id=asset_id)
-    return True
+    except Exception as exc:  # noqa: BLE001
+        # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에
+        # 영원히 멈추는 것을 방지한다(uvicorn이 root logger 핸들러를 안 붙여서 print로 남긴다).
+        print(f"[imggen] job={job_id} unexpected generation error: {type(exc).__name__}: {exc}", flush=True)
+        return False
 
 
 async def _run_generation(
