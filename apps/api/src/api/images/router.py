@@ -1,5 +1,6 @@
 import asyncio
 import uuid
+from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -9,23 +10,24 @@ from api.core.s3 import build_object_key, generate_presigned_get_url, upload_obj
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
+from api.images.models import IMAGE_MODELS, IMAGE_MODELS_BY_ID, AspectRatio, ImageModelId
 from api.images.schemas import (
-    AspectRatio,
     GenerateImageRequest,
     GenerateImageResponse,
     ImageJobImageItem,
     ImageJobStatusResponse,
+    ImageModelItem,
 )
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
-from api.llm.image import GeminiImageClient, ImageStylePreset
+from api.llm.image import ImageClient, ImageStylePreset
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/images", tags=["images"])
 
 
 async def _generate_and_store_one(
-    image_client: GeminiImageClient,
+    image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
     job_id: str,
     owner_user_id: uuid.UUID,
@@ -61,7 +63,7 @@ async def _generate_and_store_one(
 async def _run_generation(
     job_id: str,
     owner_user_id: uuid.UUID,
-    image_client: GeminiImageClient,
+    image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
     prompt: str,
     style: ImageStylePreset,
@@ -83,13 +85,36 @@ async def _run_generation(
         await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
 
 
+@router.get("/models")
+async def list_image_models(
+    owner_user_id: uuid.UUID = Depends(get_current_user_id),
+) -> list[ImageModelItem]:
+    """생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비. FE가 모델 선택 시 미지원
+    종횡비를 비활성화하는 데 쓴다."""
+    return [
+        ImageModelItem(
+            id=spec.id,
+            name=spec.name,
+            supported_aspect_ratios=list(spec.supported_aspect_ratios),
+        )
+        for spec in IMAGE_MODELS
+    ]
+
+
 @router.post("/generate", status_code=status.HTTP_202_ACCEPTED)
 async def generate_images(
     payload: GenerateImageRequest,
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
-    image_client: GeminiImageClient = Depends(get_image_client),
+    image_client_factory: Callable[[ImageModelId], ImageClient] = Depends(get_image_client),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> GenerateImageResponse:
+    spec = IMAGE_MODELS_BY_ID[payload.model]
+    if payload.aspect_ratio not in spec.supported_aspect_ratios:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{spec.name}' does not support aspect ratio '{payload.aspect_ratio}'",
+        )
+    image_client = image_client_factory(payload.model)
     job = await create_job(owner_user_id, payload.count)
     await enqueue_generation(
         _run_generation,

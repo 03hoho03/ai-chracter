@@ -22,8 +22,11 @@ export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
 /** POST /images/generate 요청 필드 4개뿐인 단순 폼이라 formToServer/serverToForm 분리 없이 구현한다
  * (change-password/edit-profile 선례). 실제 제출 로직은 US-008에서 이 값을 그대로 API 바디에 맞춰 붙인다. */
+/** 모델 목록은 GET /images/models(entities/image-model)에서 동적으로 받지만, 폼 값 검증용
+ * enum은 백엔드 ImageModelId와 동일하게 고정한다(BE가 종횡비 지원 여부까지 재검증한다). */
 export const generateImagesSchema = z.object({
   prompt: z.string().trim().min(1, { message: "프롬프트를 입력해주세요" }),
+  model: z.enum(["flux-schnell", "sdxl"]),
   style: z.enum(["realistic", "anime", "illustration", "render3d", "none"]),
   aspectRatio: z.enum(["1:1", "4:3", "3:4", "16:9", "9:16"]),
   count: z.number().int().min(1).max(4),
@@ -33,6 +36,7 @@ export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;
 
 export const generateImagesDefaultValues: GenerateImagesFormValues = {
   prompt: "",
+  model: "flux-schnell",
   style: "none",
   aspectRatio: "1:1",
   count: 1,

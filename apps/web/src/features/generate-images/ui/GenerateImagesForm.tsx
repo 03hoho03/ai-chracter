@@ -9,8 +9,9 @@ import {
 } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Controller, useForm } from "react-hook-form";
+import { Controller, useForm, useWatch } from "react-hook-form";
 
+import { useImageModelsQuery } from "../../../entities/image-model";
 import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_COUNT_OPTIONS,
@@ -25,15 +26,38 @@ interface GenerateImagesFormProps {
 }
 
 export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
+  const { data: models, isPending: isModelsPending } = useImageModelsQuery();
   const {
     register,
     handleSubmit,
     control,
+    setValue,
+    getValues,
     formState: { errors, isSubmitting },
   } = useForm<GenerateImagesFormValues>({
     resolver: zodResolver(generateImagesSchema),
     defaultValues: generateImagesDefaultValues,
   });
+
+  const selectedModelId = useWatch({ control, name: "model" });
+  const selectedModel = models?.find((model) => model.id === selectedModelId);
+  const supportedRatios = new Set<string>(
+    selectedModel?.supportedAspectRatios ?? IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value),
+  );
+  const isRatioRestricted =
+    selectedModel != null &&
+    selectedModel.supportedAspectRatios.length < IMAGE_ASPECT_RATIO_OPTIONS.length;
+
+  // 모델을 바꿨을 때 현재 선택한 비율을 그 모델이 지원하지 않으면, 지원하는 첫 비율로 옮긴다.
+  const handleModelChange = (nextModelId: string, onChange: (value: string) => void) => {
+    onChange(nextModelId);
+    const nextModel = models?.find((model) => model.id === nextModelId);
+    if (nextModel == null) return;
+    if (!nextModel.supportedAspectRatios.includes(getValues("aspectRatio"))) {
+      const [firstSupported] = nextModel.supportedAspectRatios;
+      if (firstSupported != null) setValue("aspectRatio", firstSupported);
+    }
+  };
 
   return (
     <form
@@ -59,6 +83,32 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
             {errors.prompt.message}
           </p>
         )}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="generate-images-model">모델</Label>
+        <Controller
+          control={control}
+          name="model"
+          render={({ field }) => (
+            <Select
+              value={field.value}
+              onValueChange={(value) => handleModelChange(value, field.onChange)}
+              disabled={isModelsPending}
+            >
+              <SelectTrigger id="generate-images-model" className="w-full">
+                <SelectValue placeholder="모델 불러오는 중…" />
+              </SelectTrigger>
+              <SelectContent>
+                {models?.map((model) => (
+                  <SelectItem key={model.id} value={model.id}>
+                    {model.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -96,7 +146,11 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem
+                      key={option.value}
+                      value={option.value}
+                      disabled={!supportedRatios.has(option.value)}
+                    >
                       {option.label}
                     </SelectItem>
                   ))}
@@ -104,6 +158,9 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
               </Select>
             )}
           />
+          {isRatioRestricted && (
+            <p className="text-xs text-muted-foreground">이 모델이 지원하는 비율만 선택할 수 있어요</p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1.5">

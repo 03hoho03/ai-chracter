@@ -1,3 +1,4 @@
+import abc
 import enum
 
 import httpx
@@ -33,14 +34,25 @@ STYLE_PRESET_PROMPT_SUFFIXES: dict[ImageStylePreset, str] = {
 }
 
 
-def _apply_style_preset(prompt: str, style: ImageStylePreset) -> str:
+def apply_style_preset(prompt: str, style: ImageStylePreset) -> str:
     suffix = STYLE_PRESET_PROMPT_SUFFIXES[style]
     if not suffix:
         return prompt
     return f"{prompt}, {suffix}"
 
 
-class GeminiImageClient:
+class ImageClient(abc.ABC):
+    """Provider-agnostic 이미지 생성 인터페이스. 구현체(Gemini/Cloudflare)는 프롬프트·스타일·
+    종횡비를 받아 (이미지 바이트, MIME 타입)을 반환한다. 잡 러너/라우터는 이 타입만 안다."""
+
+    @abc.abstractmethod
+    async def generate_image(
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+    ) -> tuple[bytes, str]:
+        raise NotImplementedError
+
+
+class GeminiImageClient(ImageClient):
     """이미지 생성 전용 Gemini 클라이언트 (tasks/prd-image-generation.md §3/§8).
 
     채팅용 GeminiLLMClient(gemini.py)와 같은 API 키를 쓰지만, 스트리밍 대화/판단
@@ -53,7 +65,7 @@ class GeminiImageClient:
         self._model_name = model_name if model_name is not None else settings.gemini_image_model_name
 
     async def generate_image(self, prompt: str, style: ImageStylePreset, aspect_ratio: str) -> tuple[bytes, str]:
-        full_prompt = _apply_style_preset(prompt, style)
+        full_prompt = apply_style_preset(prompt, style)
         try:
             response = await self._client.aio.models.generate_content(
                 model=self._model_name,

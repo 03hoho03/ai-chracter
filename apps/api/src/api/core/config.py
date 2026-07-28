@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # tasks/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 
+    # Cloudflare Workers AI 이미지 생성(FLUX.1-schnell / SDXL, 무료 티어). account_id는
+    # R2 엔드포인트의 계정 hex와 동일, api_token은 Workers AI 권한 토큰(R2 토큰과 별개).
+    cloudflare_account_id: str = ""
+    cloudflare_api_token: str = ""
+
     # techspec-builder-common.md §3: 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.
     preview_session_ttl_seconds: int = 60 * 60 * 24

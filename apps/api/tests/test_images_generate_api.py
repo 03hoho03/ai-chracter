@@ -64,7 +64,9 @@ def _api_error() -> genai_errors.APIError:
 
 
 def _override_image_client(client: GeminiImageClient) -> None:
-    app.dependency_overrides[get_image_client] = lambda: client
+    # get_image_client는 이제 모델 id → ImageClient 팩토리를 반환한다. 테스트는 모델과
+    # 무관하게 같은 fake 클라이언트를 주는 팩토리로 오버라이드한다.
+    app.dependency_overrides[get_image_client] = lambda: lambda _model_id: client
 
 
 def _clear_image_override() -> None:
@@ -84,6 +86,7 @@ async def _wait_for_job_completion(job_id: str, owner_user_id: uuid.UUID) -> Ima
 def _generate_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "prompt": "a cat wizard",
+        "model": "flux-schnell",
         "style": "anime",
         "aspectRatio": "1:1",
         "count": 1,
@@ -143,6 +146,55 @@ async def test_generate_rejects_unknown_aspect_ratio(
 
     resp = await db_client.post("/images/generate", json=_generate_payload(aspectRatio="2:1"))
     assert resp.status_code == 422
+
+
+async def test_generate_rejects_aspect_ratio_unsupported_by_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    # 16:9는 유효한 enum이지만 flux-schnell(정사각형 전용)엔 미지원 → 400 (생성 착수 전 방어)
+    resp = await db_client.post(
+        "/images/generate", json=_generate_payload(model="flux-schnell", aspectRatio="16:9")
+    )
+    assert resp.status_code == 400
+
+
+async def test_generate_rejects_missing_model(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    payload = _generate_payload()
+    del payload["model"]
+    resp = await db_client.post("/images/generate", json=payload)
+    assert resp.status_code == 422
+
+
+async def test_list_image_models_requires_login(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.get("/images/models")
+    assert resp.status_code == 401
+
+
+async def test_list_image_models_returns_capabilities(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get("/images/models")
+    assert resp.status_code == 200
+    models = {m["id"]: m for m in resp.json()}
+    assert models["flux-schnell"]["supportedAspectRatios"] == ["1:1"]
+    assert set(models["sdxl"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16"}
 
 
 async def test_generate_creates_assets_and_completes_job(

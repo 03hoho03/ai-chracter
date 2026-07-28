@@ -1217,6 +1217,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/images/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Image Models
+         * @description 생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비. FE가 모델 선택 시 미지원
+         *     종횡비를 비활성화하는 데 쓴다.
+         */
+        get: operations["list_image_models_images_models_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/images/generate": {
         parameters: {
             query?: never;
@@ -2061,6 +2082,11 @@ export interface components {
         GenerateImageRequest: {
             /** Prompt */
             prompt: string;
+            /**
+             * Model
+             * @enum {string}
+             */
+            model: "flux-schnell" | "sdxl";
             style: components["schemas"]["ImageStylePreset"];
             /**
              * Aspectratio
@@ -2165,6 +2191,18 @@ export interface components {
             images: components["schemas"]["ImageJobImageItem"][];
             /** Error */
             error: string | null;
+        };
+        /** ImageModelItem */
+        ImageModelItem: {
+            /**
+             * Id
+             * @enum {string}
+             */
+            id: "flux-schnell" | "sdxl";
+            /** Name */
+            name: string;
+            /** Supportedaspectratios */
+            supportedAspectRatios: ("1:1" | "4:3" | "3:4" | "16:9" | "9:16")[];
         };
         /**
          * ImageStylePreset
@@ -4826,6 +4864,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_image_models_images_models_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageModelItem"][];
                 };
             };
         };

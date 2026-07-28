@@ -1,20 +1,34 @@
 import uuid
-from typing import Literal
 
 from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.images.jobs import ImageGenerationJobStatus
+from api.images.models import AspectRatio, ImageModelId
 from api.llm.image import ImageStylePreset
 
-AspectRatio = Literal["1:1", "4:3", "3:4", "16:9", "9:16"]
+__all__ = [
+    "AspectRatio",
+    "GenerateImageRequest",
+    "GenerateImageResponse",
+    "ImageJobImageItem",
+    "ImageJobStatusResponse",
+    "ImageModelItem",
+]
 
 
 class GenerateImageRequest(CamelModel):
     prompt: str = Field(min_length=1)
+    model: ImageModelId
     style: ImageStylePreset
     aspect_ratio: AspectRatio
     count: int = Field(default=1, ge=1, le=4)
+
+
+class ImageModelItem(CamelModel):
+    id: ImageModelId
+    name: str
+    supported_aspect_ratios: list[AspectRatio]
 
 
 class GenerateImageResponse(CamelModel):

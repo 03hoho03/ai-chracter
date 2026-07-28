@@ -3098,6 +3098,32 @@
         }
       }
     },
+    "/images/models": {
+      "get": {
+        "tags": [
+          "images"
+        ],
+        "summary": "List Image Models",
+        "description": "생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비. FE가 모델 선택 시 미지원\n종횡비를 비활성화하는 데 쓴다.",
+        "operationId": "list_image_models_images_models_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ImageModelItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Image Models Images Models Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/images/generate": {
       "post": {
         "tags": [
@@ -5154,6 +5180,14 @@
             "minLength": 1,
             "title": "Prompt"
           },
+          "model": {
+            "type": "string",
+            "enum": [
+              "flux-schnell",
+              "sdxl"
+            ],
+            "title": "Model"
+          },
           "style": {
             "$ref": "#/components/schemas/ImageStylePreset"
           },
@@ -5179,6 +5213,7 @@
         "type": "object",
         "required": [
           "prompt",
+          "model",
           "style",
           "aspectRatio"
         ],
@@ -5385,6 +5420,43 @@
           "error"
         ],
         "title": "ImageJobStatusResponse"
+      },
+      "ImageModelItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "enum": [
+              "flux-schnell",
+              "sdxl"
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "supportedAspectRatios": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "1:1",
+                "4:3",
+                "3:4",
+                "16:9",
+                "9:16"
+              ]
+            },
+            "type": "array",
+            "title": "Supportedaspectratios"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "supportedAspectRatios"
+        ],
+        "title": "ImageModelItem"
       },
       "ImageStylePreset": {
         "type": "string",
