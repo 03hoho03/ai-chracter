@@ -1,9 +1,11 @@
 import base64
+import io
 import json
 from collections.abc import Callable
 
 import httpx
 import pytest
+from PIL import Image
 
 from api.llm.client import LLMClientError
 from api.llm.cloudflare_image import CloudflareImageClient
@@ -93,3 +95,42 @@ async def test_empty_json_image_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
         await _client(_FLUX, send_dimensions=False).generate_image("a cat", ImageStylePreset.ANIME, "1:1")
+
+
+def _solid_color_png(color: tuple[int, int, int]) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), color).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_blank_solid_color_image_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Cloudflare's safety filter swaps flagged output for a solid-color image instead
+    of erroring — this must surface as a failure, not a "successful" empty result."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, content=_solid_color_png((0, 0, 0)), headers={"content-type": "image/png"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError):
+        await _client(_SDXL, send_dimensions=True).generate_image("a cat", ImageStylePreset.ANIME, "1:1")
+
+
+async def test_non_blank_image_with_few_colors_is_not_rejected(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Guard against an overly aggressive blank check: an image with a couple of flat
+    colors (not literally solid) must still pass through."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        image = Image.new("RGB", (8, 8), (0, 0, 0))
+        for x in range(4):
+            for y in range(8):
+                image.putpixel((x, y), (255, 255, 255))
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        return httpx.Response(200, content=buffer.getvalue(), headers={"content-type": "image/png"})
+
+    _patch_httpx(monkeypatch, handler)
+    data, mime = await _client(_SDXL, send_dimensions=True).generate_image(
+        "a cat", ImageStylePreset.ANIME, "1:1"
+    )
+    assert mime == "image/png"
+    assert len(data) > 0

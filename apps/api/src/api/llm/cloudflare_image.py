@@ -6,8 +6,10 @@ FLUX.1-schnell / SDXL를 같은 REST 엔드포인트로 호출한다. 두 모델
 """
 
 import base64
+import io
 
 import httpx
+from PIL import Image
 
 from api.core.config import settings
 from api.llm.client import LLMClientError
@@ -22,6 +24,20 @@ _ASPECT_TO_WH: dict[str, tuple[int, int]] = {
     "16:9": (1024, 576),
     "9:16": (576, 1024),
 }
+
+
+def _is_blank_image(data: bytes) -> bool:
+    """Cloudflare's built-in safety filter doesn't error on a flagged prompt — it silently
+    swaps the output for a solid single-color (usually black) image instead. Detect that
+    case so it surfaces as a failure rather than a "successful" empty result. Any decode
+    failure is left to the normal image-handling path, not treated as blank.
+    """
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            colors = img.convert("RGB").getcolors(maxcolors=2)
+    except Exception:  # noqa: BLE001 - decode failure isn't this function's concern
+        return False
+    return colors is not None and len(colors) == 1
 
 
 class CloudflareImageClient(ImageClient):
@@ -70,10 +86,17 @@ class CloudflareImageClient(ImageClient):
             encoded = result.get("image")
             if not encoded:
                 raise LLMClientError("Cloudflare image response contained no image data")
-            return base64.b64decode(encoded), "image/jpeg"
+            data, mime = base64.b64decode(encoded), "image/jpeg"
+        else:
+            # SDXL 등: 이미지 바이트를 그대로 반환
+            data = response.content
+            if not data:
+                raise LLMClientError("Cloudflare image response was empty")
+            mime = content_type or "image/png"
 
-        # SDXL 등: 이미지 바이트를 그대로 반환
-        data = response.content
-        if not data:
-            raise LLMClientError("Cloudflare image response was empty")
-        return data, content_type or "image/png"
+        if _is_blank_image(data):
+            raise LLMClientError(
+                "Cloudflare returned a blank single-color image — the prompt was likely "
+                "flagged by the provider's built-in safety filter"
+            )
+        return data, mime
