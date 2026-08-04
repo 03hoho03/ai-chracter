@@ -1,0 +1,25 @@
+steps:
+  - name: "gcr.io/cloud-builders/docker"
+    dir: "apps/api"
+    args:
+      - "build"
+      - "-t"
+      - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ai-character-chat-api:$SHORT_SHA"
+      - "."
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ai-character-chat-api:$SHORT_SHA"
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: gcloud
+    args:
+      - "run"
+      - "deploy"
+      - "ai-character-chat-api"
+      - "--image=asia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ai-character-chat-api:$SHORT_SHA"
+      - "--region=asia-southeast1"
+      - "--platform=managed"
+images:
+  - "asia-southeast1-docker.pkg.dev/$PROJECT_ID/cloud-run-source-deploy/ai-character-chat-api:$SHORT_SHA"
+options:
+  logging: CLOUD_LOGGING_ONLY
