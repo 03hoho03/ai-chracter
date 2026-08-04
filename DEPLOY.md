@@ -1,6 +1,6 @@
 # 배포 런북 — 무료 티어 (Cloud Run + Neon + Upstash + R2 + Cloudflare Pages)
 
-> 상태: 준비 단계. 스택은 확정(아래), 실제 프로비저닝/시크릿은 사용자 수작업.
+> 상태: 배포 완료 + CI/CD 구축 완료(2026-08-04). main push 시 자동배포(§3-4).
 > 근거·대안 분석은 옵시디언 노트 "AI 캐릭터 챗 - 추천 무료 배포 스택" 참고.
 
 ## 0. 확정 스택
@@ -18,7 +18,7 @@
 
 ---
 
-## 배포 완료 상태 (2026-07-27 · 실제 값)
+## 배포 완료 상태 (2026-08-04 · 실제 값)
 
 | 구성 | 값 |
 |---|---|
@@ -28,11 +28,12 @@
 | web (Pages) | `https://ai-character-chat-web.pages.dev` |
 | admin (Pages) | `https://ai-character-chat-admin.pages.dev` |
 | R2 버킷 | `ai-chracter-chat` (CORS: 두 pages.dev origin으로 제한) |
-| Neon | main head `ec416a217f5d`까지 마이그레이션 적용 |
+| Neon | main head까지 마이그레이션 적용(image-gen `asset_kind=GENERATED` 포함) |
+| GitHub | `github.com/03hoho03/ai-chracter` (public) |
+| CI/CD | main push 시 경로별 자동배포 — §3-4 참고 |
 
 - env 주입: `gcloud ... --env-vars-file`(YAML). 소스는 로컬 `apps/api/.env`(gitignore), `.dockerignore`가 `.env` 제외.
-- **남은 수동 작업**: Google OAuth redirect URI 등록 → `<Backend>/auth/google/callback`
-- **알려진 한계**: 이메일 print 스텁(이메일 가입 미완, Google 로그인만 동작) · 이미지 생성 미배포(Ralph 진행 중, 병합 후 재배포)
+- **알려진 한계**: 이메일 print 스텁(이메일 가입 미완, Google 로그인만 동작) · 스테이징 환경 없음(즉시 롤백 + fix-forward 전략) · Pages 프리뷰 배포는 CORS 미허용이라 API 연동 확인 불가
 
 ---
 
@@ -94,8 +95,9 @@
 | `REDIS_URL` | `rediss://...` (Upstash) | TLS 자동 |
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅+이미지 공용 |
 | `GEMINI_MODEL_NAME` | (기본 `gemini-2.5-flash`) | 보통 생략 |
-| `GEMINI_IMAGE_MODEL_NAME` | (기본 `gemini-2.5-flash-image`) | image-gen 병합 후 유효 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | §1-5 |
+| `CLOUDFLARE_ACCOUNT_ID` | R2 엔드포인트 hex와 동일 | 이미지 생성(Workers AI). §7 |
+| `CLOUDFLARE_API_TOKEN` | Workers AI 권한 토큰(R2 토큰과 별개) | 이미지 생성(Workers AI). §7 |
 | `API_BASE_URL` | `https://<be>.run.app` | OAuth redirect_uri 조립 |
 | `FRONTEND_BASE_URL` | `https://<web>.pages.dev` | |
 | `CORS_ALLOW_ORIGINS` | `["https://<web>.pages.dev","https://<admin>.pages.dev"]` | **JSON 배열 문자열**(pydantic `list[str]` 파싱) |
@@ -122,19 +124,26 @@
 ## 3. 배포 절차
 
 ### 3-1. BE → Cloud Run (Dockerfile 기반, 이미 `:8000` 준비됨)
+
+**수동 배포**(로컬에서 즉시 재배포하고 싶을 때):
 ```bash
 cd apps/api
 gcloud run deploy ai-character-chat-api \
   --source . \
-  --region asia-northeast3 \
+  --region asia-southeast1 \
   --allow-unauthenticated \
   --port 8000 \
-  --set-env-vars "DATABASE_URL=...,REDIS_URL=...,GEMINI_API_KEY=...,..." \
-  # 시크릿류는 --set-env-vars 대신 Secret Manager + --set-secrets 권장
+  --no-cpu-throttling \
+  --memory 512Mi \
+  --cpu 1 \
+  --max-instances 20
 ```
 - `--source .`는 기존 `apps/api/Dockerfile`로 빌드 → Cloud Run 배포(Cloud Build 경유).
-- 첫 배포 후 나온 `*.run.app` URL을 §1-5 OAuth redirect URI와 §2 `API_BASE_URL`/FE `VITE_API_BASE_URL`에 반영.
-- 시크릿은 `--set-env-vars` 평문 대신 **Secret Manager**(`--set-secrets`)를 권장.
+- **`--set-env-vars`를 생략하면 기존 리비전의 env vars/시크릿이 그대로 유지된다**(실증 완료) — 매번 전체 env를 다시 넣을 필요 없음. env를 실제로 바꿀 때만 `--update-env-vars KEY=VALUE`(부분 갱신) 또는 `--env-vars-file`(전체 교체)을 쓴다.
+- 첫 배포 후 나온 `*.run.app` URL을 §1-5 OAuth redirect URI와 §2 `API_BASE_URL`/FE `VITE_API_BASE_URL`에 반영(이미 완료됨).
+- `--no-cpu-throttling`은 필수(§7 참고 — 이미지 생성 백그라운드 잡이 CPU 스로틀링에 걸려 hang되는 문제 실증됨).
+
+**자동 배포**는 main push로 트리거된다 — §3-4 참고. 수동 배포는 긴급 hotfix나 트리거 우회가 필요할 때만.
 
 ### 3-2. DB 마이그레이션 (Neon 대상, 최초 1회 + 스키마 변경 시)
 ```bash
@@ -151,6 +160,25 @@ DATABASE_URL="postgresql+asyncpg://...neon..." uv run alembic upgrade head
   - **Root directory**: 저장소 루트 (모노레포)
   - **Env var**: `VITE_API_BASE_URL=https://<be>.run.app`
 - SPA fallback: `apps/{web,admin}/public/_redirects`가 이미 추가됨(`/* /index.html 200`) → Vite가 `dist/`로 복사.
+
+### 3-4. 자동 배포 (CI/CD, 2026-08-04 구축)
+
+`main`에 push하면 변경된 경로에 해당하는 컴포넌트만 자동 재배포된다. 세 파이프라인 모두 GitHub Actions CI(`api.yml`/`web.yml`/`admin.yml`, typecheck·lint·test·build)와는 별개다 — CI는 품질 게이트, 아래는 배포 자체.
+
+**BE — Cloud Build 트리거**
+- Cloud Build 2nd-gen GitHub connection(`ai-chracter-github`, region=`asia-southeast1`) + 트리거 `ai-chat-deploy`
+- 감지 경로(Included files filter): `apps/api/**`
+- 빌드 레시피 `apps/api/cloudbuild.yaml`: docker build → Artifact Registry push(`cloud-run-source-deploy` repo, 태그=커밋 SHORT_SHA) → `gcloud run deploy --image=...`(env-vars 미지정이라 기존 설정 유지)
+- 사전 조건: Secret Manager API 활성화, Cloud Build P4SA(`service-{num}@gcp-sa-cloudbuild...`)에 `roles/secretmanager.admin`, 레거시 Cloud Build SA(`{num}@cloudbuild.gserviceaccount.com`)에 `roles/run.developer` + `roles/iam.serviceAccountUser` + `roles/artifactregistry.writer`.
+- **⚠️ `gcloud builds triggers create/update github`가 API에서 원인불명 400(`INVALID_ARGUMENT`)** — 리전 무관, 최소 payload에도 재현. **Cloud Console UI(`console.cloud.google.com/cloud-build/triggers`)로 생성/수정하고, CLI는 조회·수동실행·삭제만**(`describe`/`run`/`delete`는 정상). Console에서 만든 트리거는 기본으로 `{project-num}-compute@developer.gserviceaccount.com`(Editor 롤)을 실행 SA로 씀 — 레거시 Cloud Build SA와 별개라 권한도 따로 부여해야 함.
+- 수동 재실행: `gcloud builds triggers run ai-chat-deploy --branch=main --region=asia-southeast1`
+
+**web/admin — Cloudflare Pages Git 연동**
+- 각 프로젝트 Settings → Build → "Connect to a repository"로 사후 연결 가능(예전엔 Direct Upload 프로젝트는 불가능했으나 지금은 됨, 확인일 2026-08-04)
+- Root directory는 **비워서 repo 루트 유지**(pnpm workspace 설치 때문에 필수) — Build output directory만 `apps/web/dist`/`apps/admin/dist`로 지정
+- Build command: `pnpm install --frozen-lockfile && pnpm --filter @ai-character-chat/{web|admin} build`
+- **Build watch paths 기본값이 `*`(전체 감시)** → `apps/{web|admin}/**, packages/**, pnpm-lock.yaml, pnpm-workspace.yaml`로 축소 필요(그대로 두면 BE만 바뀌어도 FE가 재배포됨)
+- `VITE_API_BASE_URL`을 Production + Preview 둘 다 plaintext variable로 등록
 
 ---
 
@@ -200,14 +228,12 @@ Neon은 SSL 필수지만, `DATABASE_URL`을 `postgresql+asyncpg://...?ssl=requir
 - **이메일 발송이 print 스텁**(`apps/api/src/api/core/email.py`). Google 로그인은 동작하지만
   **이메일/비밀번호 가입의 인증 코드가 실제로 발송되지 않는다** → 이메일 가입 경로는 사실상 미동작.
   실사용자를 받으려면 Resend 등 연동 필요(함수 본문만 교체). **런칭 블로커 여부는 로그인 정책에 따라 판단.**
-- **`GET /me/generated-images`는 현재 빈 배열 스텁**(US-097). 실제 생성 이미지 조회는 image-gen 기능
-  병합 후에야 동작 → 배포 env(`GEMINI_IMAGE_MODEL_NAME`)와 R2 용량 계획은 그 병합에 맞춰 갱신.
+- **스테이징 환경 없음**: main push → 바로 prod 자동배포(§3-4). 대신 Cloud Run 리비전/Pages 배포 둘 다 즉시 롤백 가능(트래픽 스위칭만, 재빌드 불필요) → 문제 발생 시 1순위는 롤백, fix는 그 다음.
+- **Pages 프리뷰 배포는 API 연동 확인 불가**: BE `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해서 PR 프리뷰(랜덤 서브도메인)에서 API 호출이 CORS로 막힘. 필요해지면 CORS 완화.
 - **Cloud Run 요청 타임아웃**: SSE 채팅 응답은 짧아 무관하나, 장시간 스트림이 생기면 재확인.
 - **Cloud Run 콜드스타트**: 0으로 스케일다운 → 첫 요청 수 초 지연. 필요 시 min-instances=1(무료 벗어남).
 
 ---
 
-## 7. image-gen 병합 시 반영 체크
-- `config.py`에 이미 있는 `gemini_image_model_name`이 실제 파이프라인에서 소비되는지 확인.
-- 생성 이미지가 R2에 쌓이는 경로/키 규칙 → 용량 모니터 대상 추가.
-- 새로 생기는 env(있다면)를 §2-1 표에 추가.
+## 7. image-gen 병합 (완료, 2026-07-28)
+main 병합 + 배포 완료. Gemini 이미지 모델은 무료 티어 quota 0이라 **Cloudflare Workers AI**(FLUX.1-schnell/SDXL)로 교체해서 씀 — `GEMINI_IMAGE_MODEL_NAME`은 더 이상 안 쓰임, `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`이 대신 필요(§2-1에 추가함). 생성 이미지는 R2에 저장.
