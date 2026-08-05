@@ -1,5 +1,8 @@
 /scripts/
 /tasks/
+# 시드 콘텐츠 이미지는 생성물이라 리포에 담지 않는다 — 없으면 목업 썸네일로 대체되고,
+# scripts/generate_seed_images.py 로 언제든 다시 만들 수 있다(픽셀 동일하진 않다).
+apps/api/scripts/seed_content/images/
 .DS_Store
 .impeccable/
 .playwright-mcp/

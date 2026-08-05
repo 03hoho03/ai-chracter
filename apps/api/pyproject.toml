@@ -43,6 +43,9 @@ explicit_package_bases = true
 strict = true
 
 [tool.pytest.ini_options]
+# `scripts/` 는 src 레이아웃 밖의 CLI 스크립트 모음이라 설치되지 않는다 — 테스트가
+# `seed_content` 를 import 하려면 mypy 가 쓰는 것과 같은 패키지 베이스가 필요하다.
+pythonpath = ["scripts"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
