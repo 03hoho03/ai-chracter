@@ -15,6 +15,10 @@ import uuid
 # 이 값을 바꾸면 시드된 콘텐츠 전체가 새 UUID 로 다시 생기므로 절대 바꾸지 않는다.
 SEED_NAMESPACE = uuid.UUID("5eed0000-0000-4000-8000-00000000f00d")
 
+# 시드 콘텐츠 전체의 작가이자 시드 자산의 소유자. seed_dev.py 가 이 계정을 만들고
+# (`USER_ID`), 기존 '미아' 캐릭터의 creator_user_id 도 이 값이라 절대 바꾸지 않는다.
+SEED_AUTHOR_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-000000000001")
+
 
 def seed_uuid(*parts: str) -> uuid.UUID:
     """`seed_uuid("story", "romance-3rdloop", "version")` 처럼 경로를 넘겨 UUID 를 얻는다.

@@ -38,7 +38,9 @@ dev = [
 
 [tool.mypy]
 python_version = "3.11"
-mypy_path = "src"
+# `scripts/` 는 설치되지 않는 CLI 모음이라 여기 없으면 스크립트끼리의 절대 import
+# (`from seed_content.ids import ...`)를 mypy 가 못 찾는다 — pytest 의 pythonpath 와 같은 짝.
+mypy_path = ["src", "scripts"]
 explicit_package_bases = true
 strict = true
 
