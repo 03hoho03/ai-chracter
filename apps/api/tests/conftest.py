@@ -1,22 +1,30 @@
+import asyncio
 import atexit
 import os
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
 
+import asyncpg
 import boto3
 import httpx
 import pytest
 import pytest_asyncio
 from alembic import command
 from alembic.config import Config
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 # boto3 resolves and caches credentials once, at client-construction time (see
 # api/core/s3.py's module-level `s3_client`) — these must be set before that
 # module is first imported (via `from api.main import app` below), or presigned
 # URL signing fails with NoCredentialsError even under moto in individual tests.
-os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
-os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
+#
+# Overwritten, not `setdefault`: `uv run --env-file .env pytest` puts the developer's
+# real object-storage credentials in the environment, and combined with the same
+# leak on S3_ENDPOINT_URL below that pointed the whole suite at a live Cloudflare R2
+# bucket. Tests must only ever talk to their own moto server.
+os.environ["AWS_ACCESS_KEY_ID"] = "testing"
+os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 
 # A real local S3-compatible server (moto's own recommended approach for
 # multi-threaded code), not the `mock_aws()` decorator: `object_exists`/
@@ -35,7 +43,28 @@ _moto_server = ThreadedMotoServer(port=0)
 _moto_server.start()
 atexit.register(_moto_server.stop)
 _moto_host, _moto_port = _moto_server.get_host_and_port()
-os.environ.setdefault("S3_ENDPOINT_URL", f"http://{_moto_host}:{_moto_port}")
+# Overwritten, not `setdefault` — see the credentials note above: `.env`'s endpoint
+# would otherwise win and send the suite at whatever storage the developer is
+# currently pointed at (the dev moto container at best, production R2 at worst).
+os.environ["S3_ENDPOINT_URL"] = f"http://{_moto_host}:{_moto_port}"
+
+# Tests get their own database and Redis index inside the same local Postgres/Redis
+# as dev. `_migrated_schema` below ends every session with `alembic downgrade base`,
+# which drops every table it finds — aimed at the dev database that wipes the local
+# workspace, and the app then 500s on its first query until someone re-runs
+# `alembic upgrade head` and the seed.
+#
+# Direct assignment, not `setdefault`: `uv run --env-file .env pytest` injects the
+# dev DATABASE_URL into the process environment before this file is imported, and
+# `setdefault` would silently keep it. Real env vars also outrank `.env` in
+# pydantic-settings, so this beats the file too. Both must be set before
+# `api.core.config` is imported below, since `settings` is read at import time by
+# `api.db.session`'s engine and `api.core.redis`'s client.
+os.environ["DATABASE_URL"] = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat_test",
+)
+os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
 from api.core.config import settings  # noqa: E402
 from api.db.session import engine  # noqa: E402
@@ -45,6 +74,43 @@ from api.main import app  # noqa: E402
 APPS_API_DIR = Path(__file__).resolve().parents[1]
 
 
+def _create_test_database_if_missing() -> None:
+    """`CREATE DATABASE` the test database unless it already exists.
+
+    Postgres has no `CREATE DATABASE IF NOT EXISTS` and refuses to run the
+    statement inside a transaction, so this goes through a raw asyncpg connection
+    to the `postgres` maintenance database rather than the app's engine. Only the
+    database *shell* is managed here — it is never dropped; `_migrated_schema`
+    owns the tables inside it.
+    """
+    url = make_url(settings.database_url)
+    if url.database is None or not url.database.endswith("_test"):
+        raise RuntimeError(
+            f"Refusing to run tests against database {url.database!r}: this session ends "
+            "with `alembic downgrade base`, which drops every table in it. The test "
+            "database name must end with '_test' (override via TEST_DATABASE_URL)."
+        )
+
+    async def _create() -> None:
+        connection = await asyncpg.connect(
+            host=url.host,
+            port=url.port,
+            user=url.username,
+            password=url.password,
+            database="postgres",
+        )
+        try:
+            exists = await connection.fetchval(
+                "SELECT 1 FROM pg_database WHERE datname = $1", url.database
+            )
+            if exists is None:
+                await connection.execute(f'CREATE DATABASE "{url.database}"')
+        finally:
+            await connection.close()
+
+    asyncio.run(_create())
+
+
 @pytest.fixture(scope="session", autouse=True)
 def _migrated_schema() -> Generator[None, None, None]:
     """Apply every migration before the test session, then fully unwind them after.
@@ -52,6 +118,7 @@ def _migrated_schema() -> Generator[None, None, None]:
     This is the executable proof (not just a manual check) that `alembic upgrade
     head` / `downgrade base` both work end-to-end against a real Postgres.
     """
+    _create_test_database_if_missing()
     config = Config(str(APPS_API_DIR / "alembic.ini"))
     command.upgrade(config, "head")
     yield
