@@ -177,7 +177,9 @@ DATABASE_URL="postgresql+asyncpg://...neon..." uv run alembic upgrade head
 - 각 프로젝트 Settings → Build → "Connect to a repository"로 사후 연결 가능(예전엔 Direct Upload 프로젝트는 불가능했으나 지금은 됨, 확인일 2026-08-04)
 - Root directory는 **비워서 repo 루트 유지**(pnpm workspace 설치 때문에 필수) — Build output directory만 `apps/web/dist`/`apps/admin/dist`로 지정
 - Build command: `pnpm install --frozen-lockfile && pnpm --filter @ai-character-chat/{web|admin} build`
-- **Build watch paths 기본값이 `*`(전체 감시)** → `apps/{web|admin}/**, packages/**, pnpm-lock.yaml, pnpm-workspace.yaml`로 축소 필요(그대로 두면 BE만 바뀌어도 FE가 재배포됨)
+- **Build watch paths 기본값이 `*`(전체 감시)** → `apps/{web|admin}/*, packages/*, pnpm-lock.yaml, pnpm-workspace.yaml`로 축소(그대로 두면 BE만 바뀌어도 FE가 재배포됨)
+- **⚠️ Cloudflare의 와일드카드는 `*` **하나가 이미 `/`를 가로질러** 매칭한다("matches zero or more characters, including path separators"). `**`는 지원하지 않으므로 `apps/web/**`로 쓰면 아무것도 매칭되지 않아 **모든 푸시가 조용히 스킵된다**(Deployments 목록에 "No deployment available"로 표시). 2026-08-05에 실제로 이 상태였고, `apps/web` 변경 커밋 2개가 배포되지 않았다. 반드시 `*` 하나만 쓸 것.
+- 스킵된 커밋을 뒤늦게 배포하려면 대시보드 Deployments에서 **Retry deployment** — watch paths를 고쳐도 과거 푸시가 소급 빌드되지는 않는다.
 - `VITE_API_BASE_URL`을 Production + Preview 둘 다 plaintext variable로 등록
 
 ---
