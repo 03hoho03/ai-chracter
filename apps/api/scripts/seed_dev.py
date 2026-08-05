@@ -6,8 +6,12 @@
     cd apps/api && uv run --env-file .env python scripts/seed_dev.py
 
 - 썸네일용 placeholder 이미지를 moto(S3)에 업로드한다(moto 가 떠 있어야 함, 없으면 경고만 하고 계속).
-- DB 로우는 고정 UUID 로 idempotent 하게 넣는다(이미 있으면 건너뜀). moto 는 인메모리라
-  재기동 시 이미지가 사라지므로, 이미지 업로드는 DB 존재 여부와 무관하게 매번 다시 수행한다.
+- DB 로우는 고정 UUID 로 upsert 한다(`session.merge`): 없으면 넣고, 있으면 이 파일에 적힌 값으로
+  덮어쓴다. 그래서 미아의 프롬프트나 소개 문구를 고친 뒤 다시 돌리면 그대로 반영된다 —
+  이 스크립트가 시드 데이터의 단일 진실 공급원이다.
+- dev DB 는 계속 쌓이는 작업공간이므로, 이 스크립트는 자기가 소유한 고정 UUID 로우만 건드린다.
+  직접 만든 대화방·업로드한 자산 등 그 밖의 데이터는 절대 지우지 않는다.
+- moto 는 인메모리라 재기동 시 이미지가 사라지므로, 이미지 업로드는 DB 상태와 무관하게 매번 수행한다.
 """
 
 import asyncio
@@ -70,36 +74,30 @@ async def main() -> None:
     except Exception as exc:  # noqa: BLE001 - moto 미기동 등 어떤 실패든 시드 자체는 계속
         print(f"  ! 썸네일 업로드 건너뜀 ({exc!r}) — moto 기동 후 seed 재실행하면 채워짐")
 
-    # 2) DB 로우 (idempotent)
+    # 2) DB 로우 (고정 UUID upsert)
+    #
+    # 이 코드베이스는 `relationship()` 을 선언하지 않으므로(순수 FK 컬럼만) 참조 순서를 직접
+    # 지킨다 — 부모를 merge 한 뒤 `flush()` 로 실제 INSERT 를 내보내고 나서 자식으로 넘어간다.
     async with async_session_factory() as session:
         now = datetime.now(UTC)
 
         # 2a) 비밀번호로 바로 로그인 가능한 테스트 계정 (성인 + 이메일 인증 완료 상태).
-        if await session.get(User, TEST_USER_ID) is None:
-            session.add(
-                User(
-                    id=TEST_USER_ID,
-                    email=TEST_EMAIL,
-                    password_hash=hash_password(TEST_PASSWORD),
-                    google_sub=None,
-                    nickname="테스트",
-                    birth_date=date(1995, 1, 1),
-                    terms_agreed_at=now,
-                    privacy_agreed_at=now,
-                    email_verified_at=now,
-                )
+        await session.merge(
+            User(
+                id=TEST_USER_ID,
+                email=TEST_EMAIL,
+                password_hash=hash_password(TEST_PASSWORD),
+                google_sub=None,
+                nickname="테스트",
+                birth_date=date(1995, 1, 1),
+                terms_agreed_at=now,
+                privacy_agreed_at=now,
+                email_verified_at=now,
             )
-            await session.commit()
-            print(f"  ✓ 테스트 로그인 계정: {TEST_EMAIL} / {TEST_PASSWORD}")
-        else:
-            print(f"  = 테스트 로그인 계정 이미 있음: {TEST_EMAIL}")
+        )
 
-        # 2b) 발행된 샘플 캐릭터
-        if await session.get(Content, CONTENT_ID) is not None:
-            print("  = 샘플 캐릭터가 이미 있음 → 건너뜀")
-            return
-
-        session.add(
+        # 2b) 발행된 샘플 캐릭터와 그 크리에이터.
+        await session.merge(
             User(
                 id=USER_ID,
                 email="seed-creator@example.com",
@@ -112,7 +110,9 @@ async def main() -> None:
                 email_verified_at=now,
             )
         )
-        session.add(
+        await session.flush()  # assets.owner_user_id -> users.id
+
+        await session.merge(
             Asset(
                 id=ASSET_ID,
                 owner_user_id=USER_ID,
@@ -121,19 +121,26 @@ async def main() -> None:
                 status=AssetStatus.READY,
             )
         )
-        content = Content(
-            id=CONTENT_ID,
-            type=ContentType.CHARACTER,
-            creator_user_id=USER_ID,
-            genre_id=GENRE_ROMANCE,
-            target=ContentTarget.ALL,
-            hashtags=["데모", "샘플"],
-            visibility=ContentVisibility.PUBLIC,
-            moderation_status=ModerationStatus.NORMAL,
-            current_published_version_id=None,
+        # contents ↔ content_versions 순환 FK: `current_published_version_id` 를 생성자에
+        # 아예 넘기지 않는다. merge 는 생성자에서 실제로 설정한 속성만 복사하므로, 최초
+        # INSERT 때는 NULL(아직 버전 행이 없음)로 들어가고 재실행 때는 기존 값이 그대로
+        # 보존된다 — 발행 포인터는 버전을 flush 한 뒤 아래에서 건다. `created_at` 같은
+        # server_default 컬럼이 재실행 때 덮어써지지 않는 것도 같은 이유다.
+        content = await session.merge(
+            Content(
+                id=CONTENT_ID,
+                type=ContentType.CHARACTER,
+                creator_user_id=USER_ID,
+                genre_id=GENRE_ROMANCE,
+                target=ContentTarget.ALL,
+                hashtags=["데모", "샘플"],
+                visibility=ContentVisibility.PUBLIC,
+                moderation_status=ModerationStatus.NORMAL,
+            )
         )
-        session.add(content)
-        session.add(
+        await session.flush()  # content_versions.content_id -> contents.id
+
+        await session.merge(
             ContentVersion(
                 id=VERSION_ID,
                 content_id=CONTENT_ID,
@@ -142,8 +149,10 @@ async def main() -> None:
                 detail_description="로컬 개발용 샘플 캐릭터입니다.",
             )
         )
-        await session.flush()
-        session.add(
+        await session.flush()  # character_version_details / 발행 포인터가 이 행을 참조
+
+        content.current_published_version_id = VERSION_ID
+        await session.merge(
             CharacterVersionDetail(
                 content_version_id=VERSION_ID,
                 name="미아",
@@ -164,9 +173,8 @@ async def main() -> None:
                 playguide=None,
             )
         )
-        # contents ↔ content_versions 순환 FK: 버전이 flush 된 뒤에 발행 포인터를 건다.
-        content.current_published_version_id = VERSION_ID
         await session.commit()
+        print(f"  ✓ 테스트 로그인 계정: {TEST_EMAIL} / {TEST_PASSWORD}")
         print("  ✓ 발행된 샘플 캐릭터 '미아' 시드 완료")
 
 

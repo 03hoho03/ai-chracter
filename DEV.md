@@ -107,8 +107,10 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
 - **채팅 응답이 안 옴 / LLM 에러**: `.env`의 `GEMINI_API_KEY` 확인.
 - **`pnpm typecheck`가 zod 등 이상한 에러**: 먼저 `pnpm install`(stale node_modules).
 - **DB를 완전히 초기화하고 싶을 때**: `docker compose -f docker-compose.dev.yml down -v` 후 `./dev-up.sh`.
-- **캐릭터 목록이 비어 있음**: `pytest`가 세션 종료 시 `alembic downgrade base`까지 돌려 테이블을 비운다(`apps/api/CLAUDE.md` 참고).
-  `cd apps/api && uv run alembic upgrade head && uv run --env-file .env python scripts/seed_dev.py`로 복구.
+- **캐릭터 목록이 비어 있음**: `cd apps/api && uv run alembic upgrade head && uv run --env-file .env python scripts/seed_dev.py`로 복구.
+  (`pytest`는 dev DB를 건드리지 않는다 — 별도의 `ai_character_chat_test`를 쓴다. `apps/api/CLAUDE.md` 참고.)
+- **시드 캐릭터의 문구/프롬프트를 고치고 싶을 때**: `apps/api/scripts/seed_dev.py`를 고친 뒤 그대로 다시 실행하면 된다.
+  고정 UUID upsert라 재실행이 스크립트의 값으로 덮어쓴다. 직접 만든 대화방·자산은 건드리지 않는다.
 - **`.env`에 JSON 값(리스트 등)을 넣었더니 API가 `SettingsError`로 기동 실패**: `uv run --env-file`의 dotenv 파서가 값 안의 `"`를
   셸 인용부호로 보고 벗겨낸다(`["a","b"]` → `[a,b]` → JSON 파싱 실패). **전체를 홑따옴표로 감쌀 것**: `KEY='["a","b"]'`.
   `--env-file` 없이 띄우면 pydantic이 `.env`를 직접 읽어 이 문제가 안 나타나므로 재현 조건에 주의.
