@@ -16,11 +16,17 @@ import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
+/** 구글 콜백이 `?error=` 로 되돌려 보낸 코드 → 사용자용 문구. */
+const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
+  google_state: "구글 로그인 요청이 만료되었어요. 다시 시도해주세요.",
+};
+
 interface LoginFormProps {
   redirectTo?: string;
+  errorCode?: string;
 }
 
-export function LoginForm({ redirectTo }: LoginFormProps) {
+export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   const {
     register,
     handleSubmit,
@@ -30,7 +36,9 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
     defaultValues: loginDefaultValues,
   });
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(
+    errorCode ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : null,
+  );
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();

@@ -33,12 +33,16 @@ async def test_google_login_redirects_to_google_auth_url(db_client: httpx.AsyncC
 
 
 async def test_google_callback_rejects_unknown_state(db_client: httpx.AsyncClient) -> None:
+    """소비된/위조된 state는 날것의 400이 아니라 로그인 화면으로 되돌린다 — 온보딩에서
+    뒤로가기 후 계정 재선택처럼 정상 사용자도 도달하는 경로라, 브라우저에 JSON 본문이
+    렌더링되는 막다른 페이지가 되면 안 된다."""
     _override_google_profile("google-sub-unknown-state", "unknown-state@example.com")
     try:
         resp = await db_client.get(
             "/auth/google/callback", params={"state": "not-a-real-state"}, follow_redirects=False
         )
-        assert resp.status_code == 400
+        assert resp.status_code == 302
+        assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
     finally:
         _clear_google_profile_override()
 

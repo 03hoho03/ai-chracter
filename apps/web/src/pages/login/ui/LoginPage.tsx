@@ -2,9 +2,10 @@ import { LoginForm } from "../../../features/login";
 
 interface LoginPageProps {
   redirectTo?: string;
+  errorCode?: string;
 }
 
-export function LoginPage({ redirectTo }: LoginPageProps) {
+export function LoginPage({ redirectTo, errorCode }: LoginPageProps) {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
@@ -18,7 +19,7 @@ export function LoginPage({ redirectTo }: LoginPageProps) {
             <p className="text-sm text-muted-foreground">이메일과 비밀번호로 로그인해주세요.</p>
           </div>
 
-          <LoginForm redirectTo={redirectTo} />
+          <LoginForm redirectTo={redirectTo} errorCode={errorCode} />
         </div>
       </div>
     </main>

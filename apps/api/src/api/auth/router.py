@@ -188,7 +188,15 @@ async def _get_oauth_redirect_target(state: str) -> str:
     real network round-trip exchanging `code` with Google."""
     redirect_target = await consume_oauth_state(state)
     if redirect_target is None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired state")
+        # state는 1회용이라(consume_oauth_state 가 읽는 즉시 삭제) 위조뿐 아니라 정상 사용자도
+        # 여기 도달한다 — 온보딩 화면에서 뒤로가기 후 계정 재선택, 콜백 URL 새로고침, TTL 만료.
+        # 이때 400 JSON을 그대로 내면 브라우저에 날것의 본문이 렌더링되어 빠져나갈 수 없으므로,
+        # 로그인 화면으로 되돌려 재시도할 수 있게 한다(state 1회성 자체는 그대로 유지).
+        raise HTTPException(
+            status_code=status.HTTP_302_FOUND,
+            detail="Invalid or expired state",
+            headers={"Location": f"{settings.frontend_base_url}/login?error=google_state"},
+        )
     return redirect_target
 
 
