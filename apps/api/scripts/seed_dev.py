@@ -44,7 +44,12 @@ from api.db.models.media import Asset, AssetKind, AssetStatus  # noqa: E402
 from api.db.session import async_session_factory  # noqa: E402
 
 # 고정 UUID (재실행 시 중복 방지). 실사용자 UUID 와 겹치지 않도록 5eed... 프리픽스 사용.
+# 시드 콘텐츠 전체의 작가 계정. 이 UUID 는 절대 바꾸지 않는다 — 기존 시드 콘텐츠의
+# creator_user_id 가 전부 이 값을 참조한다. 빌더로 시드 콘텐츠를 열어보려면 로그인이
+# 필요하므로 독자 계정과 동일하게 비밀번호를 부여한다(작가/독자 계정은 분리 유지).
 USER_ID = uuid.UUID("5eed0000-0000-4000-8000-000000000001")
+SEED_AUTHOR_EMAIL = "seed-creator@example.com"
+SEED_AUTHOR_PASSWORD = "password1234"
 # 비밀번호로 바로 로그인 가능한 테스트 계정 (Google 설정 없이 채팅 흐름 확인용).
 TEST_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000d1")
 TEST_EMAIL = "test@example.com"
@@ -100,10 +105,10 @@ async def main() -> None:
         await session.merge(
             User(
                 id=USER_ID,
-                email="seed-creator@example.com",
-                password_hash=None,
+                email=SEED_AUTHOR_EMAIL,
+                password_hash=hash_password(SEED_AUTHOR_PASSWORD),
                 google_sub=None,
-                nickname="샘플 크리에이터",
+                nickname="시드 작가",
                 birth_date=date(1995, 1, 1),
                 terms_agreed_at=now,
                 privacy_agreed_at=now,
@@ -174,7 +179,8 @@ async def main() -> None:
             )
         )
         await session.commit()
-        print(f"  ✓ 테스트 로그인 계정: {TEST_EMAIL} / {TEST_PASSWORD}")
+        print(f"  ✓ 테스트 로그인 계정(독자): {TEST_EMAIL} / {TEST_PASSWORD}")
+        print(f"  ✓ 시드 작가 계정: {SEED_AUTHOR_EMAIL} / {SEED_AUTHOR_PASSWORD}")
         print("  ✓ 발행된 샘플 캐릭터 '미아' 시드 완료")
 
 
