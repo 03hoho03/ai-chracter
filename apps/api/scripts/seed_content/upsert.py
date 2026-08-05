@@ -1,9 +1,10 @@
 """시드 JSON 하나를 발행 상태의 콘텐츠로 DB 에 밀어 넣는다.
 
-빌더 API 의 자동저장 로직(`api.content.router._update_story_draft`)을 그대로 재사용하고,
-그 앞뒤로 시드에만 필요한 것 — 결정적 UUID, 발행 검증, 발행 포인터 — 만 붙인다(PRD §8 의
-선택지 (a)). 자식 행 조정(entity_id 업서트 + 사라진 항목 삭제) 로직을 두 벌 유지하지
-않으려는 것이고, 그래서 draft 스키마가 바뀌면 시드도 자동으로 따라간다.
+빌더 API 의 자동저장 로직(`api.content.router._update_story_draft` /
+`_update_character_draft`)을 그대로 재사용하고, 그 앞뒤로 시드에만 필요한 것 — 결정적
+UUID, 발행 검증, 발행 포인터 — 만 붙인다(PRD §8 의 선택지 (a)). 자식 행 조정(entity_id
+업서트 + 사라진 항목 삭제) 로직을 두 벌 유지하지 않으려는 것이고, 그래서 draft 스키마가
+바뀌면 시드도 자동으로 따라간다.
 
 프로덕션 발행과 의도적으로 다른 점 두 가지:
 
@@ -21,11 +22,18 @@ import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.content.publish import validate_story_publish
-from api.content.router import _update_story_draft
-from api.content.schemas import EndingRuleGroupDraftItem, StoryDraftPayload
+from api.assets.image_processing import generate_blurred_image
+from api.content.publish import validate_character_publish, validate_story_publish
+from api.content.router import _update_character_draft, _update_story_draft
+from api.content.schemas import (
+    CharacterDraftPayload,
+    EndingRuleGroupDraftItem,
+    StoryDraftPayload,
+)
+from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
     ContentType,
@@ -33,9 +41,11 @@ from api.db.models.content import (
     ContentVisibility,
     ModerationStatus,
 )
+from api.db.models.media import AssetKind
 from api.db.models.story import Ending, StartingSetup, StoryVersionDetail
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
+from .images import ensure_asset, read_image, situational_image_slug
 
 
 class SeedPublishError(Exception):
@@ -48,6 +58,14 @@ def story_content_id(slug: str) -> uuid.UUID:
 
 def story_version_id(slug: str) -> uuid.UUID:
     return seed_uuid("story", slug, "version")
+
+
+def character_content_id(slug: str) -> uuid.UUID:
+    return seed_uuid("character", slug)
+
+
+def character_version_id(slug: str) -> uuid.UUID:
+    return seed_uuid("character", slug, "version")
 
 
 async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayload) -> uuid.UUID:
@@ -67,31 +85,9 @@ async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayl
 
     content_id = story_content_id(slug)
     version_id = story_version_id(slug)
-
-    # `relationship()` 을 선언하지 않는 코드베이스라(순수 FK 컬럼만) 참조 순서를 직접 지킨다:
-    # contents -> flush -> content_versions -> flush -> story_version_details -> flush -> 자식들.
-    content = await session.get(Content, content_id)
-    if content is None:
-        # 순환 FK 인 `current_published_version_id` 는 생성자에 넘기지 않는다 — 가리킬 버전
-        # 행이 아직 없다. 아래에서 버전을 flush 한 뒤 속성 대입으로 건다.
-        content = Content(
-            id=content_id,
-            type=ContentType.STORY,
-            creator_user_id=SEED_AUTHOR_USER_ID,
-            hashtags=payload.hashtags,
-            visibility=ContentVisibility.PUBLIC,
-            moderation_status=ModerationStatus.NORMAL,
-        )
-        session.add(content)
-        await session.flush()
-
-    version = await session.get(ContentVersion, version_id)
-    if version is None:
-        version = ContentVersion(
-            id=version_id, content_id=content_id, detail_description=payload.description
-        )
-        session.add(version)
-        await session.flush()
+    content, version = await _ensure_content_and_version(
+        session, content_id, version_id, ContentType.STORY, payload.hashtags, payload.description
+    )
 
     if await session.get(StoryVersionDetail, version_id) is None:
         # `_update_story_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
@@ -108,6 +104,144 @@ async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayl
 
     await _update_story_draft(session, content, version, payload)
 
+    await _publish(session, content, version)
+    return content_id
+
+
+async def upsert_character(
+    session: AsyncSession, slug: str, payload: CharacterDraftPayload
+) -> uuid.UUID:
+    """캐릭터 하나를 발행 상태로 업서트하고 콘텐츠 id 를 돌려준다.
+
+    스토리와 달리 **상황별 이미지 자산까지 이 함수가 만든다** — `situationalImages` 항목에는
+    자산을 담을 필드가 아예 없어서(`CharacterSituationalImageDraftInput` 은 빌더 자동저장이
+    소유하는 `id`/`triggerCondition` 뿐, 실제 이미지는 `POST /assets/{id}/
+    register-situational-image` 가 채운다) 호출부가 payload 로 넘길 방법이 없다. 대표
+    썸네일(`payload.thumbnail_asset_id`)만 스토리와 동일하게 호출부가 채워서 넘긴다.
+
+    이미지 하나마다 원본(`kind=ORIGINAL`)과 블러(`kind=BLURRED`) 자산 두 행이 생긴다 —
+    이미지 보관함이 아직 노출되지 않은 이미지를 블러본으로 보여주기 때문이다(US-074).
+
+    발행 검증에 실패하면 DB 를 **전혀 건드리지 않고** `SeedPublishError` 를 던진다.
+    """
+    missing = validate_character_publish(
+        Content(genre_id=payload.genre_id, target=payload.target),
+        ContentVersion(detail_description=payload.description),
+        CharacterVersionDetail(
+            name=payload.name,
+            one_liner=payload.one_liner,
+            thumbnail_asset_id=payload.thumbnail_asset_id,
+            intro=payload.intro,
+            character_prompt=payload.character_prompt,
+        ),
+    )
+    if missing:
+        raise SeedPublishError(f"{slug}: 발행 검증 실패 — 비어 있는 필드: {', '.join(missing)}")
+
+    content_id = character_content_id(slug)
+    version_id = character_version_id(slug)
+    content, version = await _ensure_content_and_version(
+        session, content_id, version_id, ContentType.CHARACTER, payload.hashtags, payload.description
+    )
+
+    if await session.get(CharacterVersionDetail, version_id) is None:
+        # `_update_character_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
+        # (빌더에서는 `POST /contents` 가 만들어 둔다). 나머지 필드는 그 함수가 채운다.
+        session.add(
+            CharacterVersionDetail(
+                content_version_id=version_id,
+                name=payload.name,
+                one_liner=payload.one_liner,
+                intro=payload.intro,
+                example_dialogues=[],
+                character_prompt=payload.character_prompt,
+            )
+        )
+        await session.flush()
+
+    # 자산을 먼저 flush 한다 — `situational_images.image_asset_id` 가 참조한다.
+    image_assets: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
+    for order, item in enumerate(payload.situational_images):
+        original_asset_id, blurred_asset_id = await _ensure_situational_assets(session, slug, order)
+        image_assets.append((item.id, original_asset_id, blurred_asset_id))
+    await session.flush()
+
+    await _update_character_draft(session, content, version, payload)
+    await session.flush()
+
+    # 자동저장 로직은 이미지 자산 필드를 의도적으로 건드리지 않으므로(US-082) 여기서 채운다.
+    rows = {
+        row.entity_id: row
+        for row in (
+            await session.scalars(
+                select(SituationalImage).where(SituationalImage.content_version_id == version_id)
+            )
+        ).all()
+    }
+    for entity_id, original_asset_id, blurred_asset_id in image_assets:
+        rows[entity_id].image_asset_id = original_asset_id
+        rows[entity_id].blurred_asset_id = blurred_asset_id
+
+    await _publish(session, content, version)
+    return content_id
+
+
+async def _ensure_situational_assets(
+    session: AsyncSession, slug: str, order: int
+) -> tuple[uuid.UUID, uuid.UUID]:
+    """상황별 이미지 한 장의 (원본, 블러) 자산 id — 블러는 원본에서 그때그때 만든다.
+
+    원본 바이트를 한 번만 읽어 둘 다에 쓴다: 이미지 파일이 없을 때 목업 폴백 경고가 장당 한
+    번만 나오고, 블러본이 항상 실제로 올라간 원본의 흐린 버전임이 보장된다. Pillow 호출이
+    CPU 를 잡지만 여기는 요청 핸들러가 아니라 시드 스크립트라 스레드풀로 뺄 이유가 없다.
+    """
+    image_slug = situational_image_slug(slug, order)
+    original = read_image(image_slug)
+    return (
+        await ensure_asset(session, image_slug, AssetKind.ORIGINAL, data=original),
+        await ensure_asset(
+            session, image_slug, AssetKind.BLURRED, data=generate_blurred_image(original)
+        ),
+    )
+
+
+async def _ensure_content_and_version(
+    session: AsyncSession,
+    content_id: uuid.UUID,
+    version_id: uuid.UUID,
+    content_type: ContentType,
+    hashtags: list[str],
+    description: str,
+) -> tuple[Content, ContentVersion]:
+    """`relationship()` 을 선언하지 않는 코드베이스라(순수 FK 컬럼만) 참조 순서를 직접
+    지킨다: contents -> flush -> content_versions -> flush -> {타입}_version_details."""
+    content = await session.get(Content, content_id)
+    if content is None:
+        # 순환 FK 인 `current_published_version_id` 는 생성자에 넘기지 않는다 — 가리킬 버전
+        # 행이 아직 없다. `_publish` 가 버전을 flush 한 뒤 속성 대입으로 건다.
+        content = Content(
+            id=content_id,
+            type=content_type,
+            creator_user_id=SEED_AUTHOR_USER_ID,
+            hashtags=hashtags,
+            visibility=ContentVisibility.PUBLIC,
+            moderation_status=ModerationStatus.NORMAL,
+        )
+        session.add(content)
+        await session.flush()
+
+    version = await session.get(ContentVersion, version_id)
+    if version is None:
+        version = ContentVersion(
+            id=version_id, content_id=content_id, detail_description=description
+        )
+        session.add(version)
+        await session.flush()
+
+    return content, version
+
+
+async def _publish(session: AsyncSession, content: Content, version: ContentVersion) -> None:
     version.version_number = 1
     # 최초 시드 시각을 유지한다 — 재시드가 발행 시각을 매번 앞당길 이유가 없다.
     version.published_at = version.published_at or datetime.now(UTC)
@@ -115,9 +249,8 @@ async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayl
     # 이용제한 상태가 아니라 이 값이 진실 공급원이다.
     content.visibility = ContentVisibility.PUBLIC
     content.moderation_status = ModerationStatus.NORMAL
-    content.current_published_version_id = version_id
+    content.current_published_version_id = version.id
     await session.flush()
-    return content_id
 
 
 def _validate_payload(payload: StoryDraftPayload) -> list[str]:

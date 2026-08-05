@@ -111,6 +111,16 @@ def band_slant_sign(slug: str) -> int:
     return 1 if _unit_hash(slug, "slant") < 0.5 else -1
 
 
+def situational_image_slug(character_slug: str, order: int) -> str:
+    """캐릭터의 n 번째 상황별 이미지가 쓰는 이미지 slug.
+
+    상황별 이미지는 JSON 에 자기 이름이 없고 리스트 안의 위치가 곧 정체성이라(entity_id 도
+    같은 규약으로 파생된다) 파일명도 위치에서 만든다. `image_prompts.json`(US-007)이 이
+    함수와 같은 이름을 써야 생성한 PNG 가 시드에 실제로 붙는다.
+    """
+    return f"{character_slug}-scene{order + 1}"
+
+
 def read_image(slug: str, genre_name: str | None = None) -> bytes:
     """`images/{slug}.png` 의 바이트, 없으면 경고 한 줄과 함께 목업."""
     path = IMAGES_DIR / f"{slug}.png"
