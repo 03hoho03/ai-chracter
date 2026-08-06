@@ -2,6 +2,7 @@
 
 발행(published) 상태의 캐릭터 1개("미아")를 넣어 홈 목록에 뜨고 바로 채팅할 수 있게 한다.
 빌더로 직접 만들면 이미지 업로드/발행 검증까지 거쳐야 하는데, 그 과정을 건너뛰기 위한 스크립트다.
+`seed_content/data/` 의 스토리·캐릭터 JSON 도 여기서 함께 발행 상태로 업서트한다.
 
     cd apps/api && uv run --env-file .env python scripts/seed_dev.py
 
@@ -27,6 +28,8 @@ os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
 from PIL import Image  # noqa: E402
+from sqlalchemy import select  # noqa: E402
+from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
 from api.core.s3 import build_object_key, upload_object  # noqa: E402
 from api.core.security import hash_password  # noqa: E402
@@ -38,11 +41,15 @@ from api.db.models.content import (  # noqa: E402
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Genre,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus  # noqa: E402
 from api.db.session import async_session_factory  # noqa: E402
 from seed_content.ids import SEED_AUTHOR_USER_ID  # noqa: E402
+from seed_content.images import ensure_asset  # noqa: E402
+from seed_content.loader import load_characters, load_stories  # noqa: E402
+from seed_content.upsert import upsert_character, upsert_story  # noqa: E402
 
 # 고정 UUID (재실행 시 중복 방지). 실사용자 UUID 와 겹치지 않도록 5eed... 프리픽스 사용.
 # 시드 콘텐츠 전체의 작가 계정. 이 UUID 는 절대 바꾸지 않는다 — 기존 시드 콘텐츠의
@@ -70,6 +77,54 @@ def _placeholder_png() -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="PNG")
     return buffer.getvalue()
+
+
+async def seed_content_files(session: AsyncSession) -> None:
+    """`seed_content/data/` 의 스토리·캐릭터 JSON 을 전부 발행 상태로 업서트한다.
+
+    콘텐츠 대표 썸네일은 자동저장 로직이 소유하지 않는 필드라 여기서 `ensure_asset` 으로
+    만들어 payload 에 주입한다(상황별 이미지는 `upsert_character` 가 직접 만든다).
+    장르명은 이미지가 없을 때 쓰는 목업 색을 장르별로 갈라놓기 위한 것뿐이다.
+
+    데이터 파일이나 발행 검증이 잘못됐으면 그 자리에서 죽는다 — 시드가 콘텐츠의 단일 진실
+    공급원이라 절반만 들어간 상태로 넘어가면 안 된다.
+    """
+    genre_names = {
+        genre_id: name
+        for genre_id, name in (await session.execute(select(Genre.id, Genre.name))).all()
+    }
+
+    for story in load_stories():
+        genre_id = story.payload.genre_id
+        thumbnail_asset_id = await ensure_asset(
+            session,
+            story.slug,
+            AssetKind.THUMBNAIL,
+            genre_names.get(genre_id) if genre_id is not None else None,
+        )
+        await session.flush()  # story_version_details.thumbnail_asset_id -> assets.id
+        await upsert_story(
+            session,
+            story.slug,
+            story.payload.model_copy(update={"thumbnail_asset_id": thumbnail_asset_id}),
+        )
+        print(f"  ✓ 스토리 시드: {story.slug} — 「{story.payload.name}」")
+
+    for character in load_characters():
+        genre_id = character.payload.genre_id
+        thumbnail_asset_id = await ensure_asset(
+            session,
+            character.slug,
+            AssetKind.THUMBNAIL,
+            genre_names.get(genre_id) if genre_id is not None else None,
+        )
+        await session.flush()  # character_version_details.thumbnail_asset_id -> assets.id
+        await upsert_character(
+            session,
+            character.slug,
+            character.payload.model_copy(update={"thumbnail_asset_id": thumbnail_asset_id}),
+        )
+        print(f"  ✓ 캐릭터 시드: {character.slug} — {character.payload.name}")
 
 
 async def main() -> None:
@@ -179,6 +234,9 @@ async def main() -> None:
                 playguide=None,
             )
         )
+        await session.flush()
+
+        await seed_content_files(session)
         await session.commit()
         print(f"  ✓ 테스트 로그인 계정(독자): {TEST_EMAIL} / {TEST_PASSWORD}")
         print(f"  ✓ 시드 작가 계정: {SEED_AUTHOR_EMAIL} / {SEED_AUTHOR_PASSWORD}")
