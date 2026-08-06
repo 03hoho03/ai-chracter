@@ -1,3 +1,4 @@
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -87,6 +88,11 @@ from api.db.session import get_db_session
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
+
+# LLM 실패(특히 429 쿼터 소진)는 화면에 "대화 품질 문제"와 구분되지 않게 보이므로 반드시
+# 서버 로그에 남긴다. uvicorn은 root logger에 핸들러를 붙이지 않아 INFO는 조용히 사라지지만
+# WARNING 이상은 logging.lastResort로 stderr에 찍힌다 — 이 모듈의 로그는 전부 warning 이상.
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat-rooms", tags=["chat"])
 
@@ -577,7 +583,8 @@ async def _stream_new_turn(
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
-    except LLMClientError:
+    except LLMClientError as exc:
+        logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -592,90 +599,100 @@ async def _stream_new_turn(
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
     matched_image: SituationalImage | None = None
-    if setup is not None and not room.ending_reached:
-        stat_defs = list(
-            (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
-        )
-        stat_rows = {
-            str(row.stat_entity_id): row
-            for row in (
-                await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
-            ).all()
-        }
-        current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
+    # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
+    # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
+    # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
+    # 이미 응답은 스트리밍됐고 assistant 메시지도 flush된 뒤라, 그 턴의 판정만 포기하고
+    # 정상적으로 커밋 → done 이벤트까지 마무리하는 것이 실패의 폭발 반경을 그 턴에 가둔다.
+    try:
+        if setup is not None and not room.ending_reached:
+            stat_defs = list(
+                (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+            )
+            stat_rows = {
+                str(row.stat_entity_id): row
+                for row in (
+                    await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+                ).all()
+            }
+            current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
 
-        judgment_prompt = build_stat_judgment_prompt(
-            stat_defs=stat_defs,
-            current_stats=current_stats,
-            history=history,
-            user_message=user_content,
-            assistant_message=assistant_content,
-        )
-        judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
-        changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-        updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
-
-        for stat_id, new_value in updated_stats.items():
-            if new_value != current_stats.get(stat_id):
-                stat_rows[stat_id].current_value = Decimal(str(new_value))
-                stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
-
-        # 엔딩 판정(FR-58): 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
-        # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
-        # 첫 충족 엔딩에서 멈춘다(FR-61, 동시 충족 시 최상위 하나만 발동).
-        endings = list(
-            (
-                await db.scalars(
-                    select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
-                )
-            ).all()
-        )
-        for ending in endings:
-            if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
-                continue
-            ending_judgment_prompt = build_ending_judgment_prompt(
-                judgment_prompt=ending.judgment_prompt,
+            judgment_prompt = build_stat_judgment_prompt(
+                stat_defs=stat_defs,
+                current_stats=current_stats,
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            ending_judgment = await llm_client.generate_structured(ending_judgment_prompt, EndingJudgmentResult)
-            if not ending_judgment.triggered:
-                continue
-            rule_items = await _ending_rule_items(db, ending)
-            if not evaluate_rule_list(rule_items, updated_stats):
-                continue
+            judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+            changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+            updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
-            room.ending_reached = True
-            room.ending_entity_id = ending.entity_id
-            room.ending_reached_at_turn = room.turn_count
+            for stat_id, new_value in updated_stats.items():
+                if new_value != current_stats.get(stat_id):
+                    stat_rows[stat_id].current_value = Decimal(str(new_value))
+                    stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
-            existing_unlock = await db.scalar(
-                select(StoryEndingUnlock).where(
-                    StoryEndingUnlock.user_id == room.user_id,
-                    StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
-                    StoryEndingUnlock.ending_entity_id == ending.entity_id,
-                )
+            # 엔딩 판정(FR-58): 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
+            # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
+            # 첫 충족 엔딩에서 멈춘다(FR-61, 동시 충족 시 최상위 하나만 발동).
+            endings = list(
+                (
+                    await db.scalars(
+                        select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+                    )
+                ).all()
             )
-            if existing_unlock is None:
-                db.add(
-                    StoryEndingUnlock(
-                        user_id=room.user_id,
-                        starting_setup_entity_id=setup.entity_id,
-                        ending_entity_id=ending.entity_id,
+            for ending in endings:
+                if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
+                    continue
+                ending_judgment_prompt = build_ending_judgment_prompt(
+                    judgment_prompt=ending.judgment_prompt,
+                    history=history,
+                    user_message=user_content,
+                    assistant_message=assistant_content,
+                )
+                ending_judgment = await llm_client.generate_structured(
+                    ending_judgment_prompt, EndingJudgmentResult
+                )
+                if not ending_judgment.triggered:
+                    continue
+                rule_items = await _ending_rule_items(db, ending)
+                if not evaluate_rule_list(rule_items, updated_stats):
+                    continue
+
+                room.ending_reached = True
+                room.ending_entity_id = ending.entity_id
+                room.ending_reached_at_turn = room.turn_count
+
+                existing_unlock = await db.scalar(
+                    select(StoryEndingUnlock).where(
+                        StoryEndingUnlock.user_id == room.user_id,
+                        StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
+                        StoryEndingUnlock.ending_entity_id == ending.entity_id,
                     )
                 )
-            ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
-            break
-    elif setup is None:
-        matched_image = await _match_situational_image(
-            db,
-            room,
-            llm_client,
-            history=history,
-            user_message=user_content,
-            assistant_message=assistant_content,
-        )
+                if existing_unlock is None:
+                    db.add(
+                        StoryEndingUnlock(
+                            user_id=room.user_id,
+                            starting_setup_entity_id=setup.entity_id,
+                            ending_entity_id=ending.entity_id,
+                        )
+                    )
+                ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
+                break
+        elif setup is None:
+            matched_image = await _match_situational_image(
+                db,
+                room,
+                llm_client,
+                history=history,
+                user_message=user_content,
+                assistant_message=assistant_content,
+            )
+    except LLMClientError as exc:
+        logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
 
     await db.commit()
 
@@ -797,7 +814,8 @@ async def regenerate_message(
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
-    except LLMClientError:
+    except LLMClientError as exc:
+        logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1296,7 +1314,8 @@ async def _stream_preview_turn(
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
-    except LLMClientError:
+    except LLMClientError as exc:
+        logger.warning("미리보기 메시지 생성 실패: %s", exc)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1310,48 +1329,59 @@ async def _stream_preview_turn(
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
 
-    if isinstance(state.payload, StoryDraftPayload) and not state.ending_reached and state.payload.starting_setups:
-        setup = state.payload.starting_setups[0]
-        stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
-        current_stats = dict(state.stats)
+    # 실제 채팅(`_stream_new_turn`)과 같은 이유로 판정 실패를 여기서 흡수한다 — 미리보기는 DB를
+    # 쓰지 않지만, 예외가 SSE 제너레이터 밖으로 새면 커넥션이 깨지는 것은 동일하다.
+    try:
+        if (
+            isinstance(state.payload, StoryDraftPayload)
+            and not state.ending_reached
+            and state.payload.starting_setups
+        ):
+            setup = state.payload.starting_setups[0]
+            stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
+            current_stats = dict(state.stats)
 
-        judgment_prompt = build_stat_judgment_prompt(
-            stat_defs=stat_defs,
-            current_stats=current_stats,
-            history=history,
-            user_message=user_content,
-            assistant_message=assistant_content,
-        )
-        judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
-        changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-        updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
-
-        for stat_id, new_value in updated_stats.items():
-            if new_value != current_stats.get(stat_id):
-                stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
-        state.stats = updated_stats
-
-        for ending in setup.endings:
-            if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
-                continue
-            ending_judgment_prompt = build_ending_judgment_prompt(
-                judgment_prompt=ending.judgment_prompt,
+            judgment_prompt = build_stat_judgment_prompt(
+                stat_defs=stat_defs,
+                current_stats=current_stats,
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            ending_judgment = await llm_client.generate_structured(ending_judgment_prompt, EndingJudgmentResult)
-            if not ending_judgment.triggered:
-                continue
-            rule_items: list[EndingRuleListItem] = [
-                _preview_ending_rule_list_item(item) for item in ending.stat_rules
-            ]
-            if not evaluate_rule_list(rule_items, updated_stats):
-                continue
+            judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+            changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+            updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
-            state.ending_reached = True
-            ending_reached_event = ChatEndingReachedEvent(ending_id=ending.id, epilogue=ending.epilogue)
-            break
+            for stat_id, new_value in updated_stats.items():
+                if new_value != current_stats.get(stat_id):
+                    stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+            state.stats = updated_stats
+
+            for ending in setup.endings:
+                if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
+                    continue
+                ending_judgment_prompt = build_ending_judgment_prompt(
+                    judgment_prompt=ending.judgment_prompt,
+                    history=history,
+                    user_message=user_content,
+                    assistant_message=assistant_content,
+                )
+                ending_judgment = await llm_client.generate_structured(
+                    ending_judgment_prompt, EndingJudgmentResult
+                )
+                if not ending_judgment.triggered:
+                    continue
+                rule_items: list[EndingRuleListItem] = [
+                    _preview_ending_rule_list_item(item) for item in ending.stat_rules
+                ]
+                if not evaluate_rule_list(rule_items, updated_stats):
+                    continue
+
+                state.ending_reached = True
+                ending_reached_event = ChatEndingReachedEvent(ending_id=ending.id, epilogue=ending.epilogue)
+                break
+    except LLMClientError as exc:
+        logger.warning("미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", exc)
 
     for stat_change_event in stat_change_events:
         yield stat_change_event

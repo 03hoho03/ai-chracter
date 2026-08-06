@@ -64,7 +64,9 @@ class GeminiLLMClient(LLMClient):
                     response_schema=response_schema,
                 ),
             )
-        except genai_errors.APIError as exc:
+        except (genai_errors.APIError, httpx.HTTPError) as exc:
+            # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
+            # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다.
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc
 
         if not isinstance(response.parsed, response_schema):

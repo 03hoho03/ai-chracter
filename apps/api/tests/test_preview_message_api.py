@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import EndingJudgmentResult, StatChangeJudgment, StatJudgmentResult
 from api.chat.preview_session import get_preview_session
 from api.db.models.chat import ChatRoom
-from api.llm.client import LLMClient
+from api.llm.client import LLMClient, LLMClientError
 from api.llm.dependencies import get_llm_client
 from api.main import app
 
@@ -124,7 +124,10 @@ class _FakeLLMClient(LLMClient):
 
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
         self.generate_structured_calls.append(response_schema)
-        return self._structured_results.pop(0)
+        result = self._structured_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def _override_llm_client(fake: _FakeLLMClient) -> None:
@@ -227,6 +230,36 @@ async def test_send_preview_message_story_stat_change(api_client: httpx.AsyncCli
     state = await get_preview_session(session_id)
     assert state is not None
     assert state.stats == {stat_id: 80.0}
+
+
+async def test_send_preview_message_judgment_llm_failure_still_completes_the_turn(
+    api_client: httpx.AsyncClient,
+) -> None:
+    """실제 채팅과 동일하게, 판정 LLM 실패는 SSE 제너레이터 밖으로 새지 않고 흡수된다 —
+    이미 스트리밍된 응답은 세션에 정상 반영되고 그 턴의 판정만 포기한다."""
+    api_client.cookies.clear()
+    await _login_as(api_client, uuid.uuid4())
+    stat_id = str(uuid.uuid4())
+    stat = _stat_def_item(id=stat_id)
+    session_id = await _start_session(
+        api_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
+    )
+
+    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[LLMClientError("429 RESOURCE_EXHAUSTED")])
+    _override_llm_client(fake)
+    try:
+        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert [e["type"] for e in _parse_sse_events(resp.text)] == ["token", "done"]
+
+    state = await get_preview_session(session_id)
+    assert state is not None
+    assert state.messages[-1].content == "이야기"
+    assert state.turn_count == 1
+    assert state.stats == {stat_id: 50.0}
 
 
 async def test_send_preview_message_keyword_note_injected_into_prompt(api_client: httpx.AsyncClient) -> None:

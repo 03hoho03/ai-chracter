@@ -134,10 +134,12 @@ class _FakeLLMClient(LLMClient):
         tokens: list[str] | None = None,
         error: Exception | None = None,
         structured_result: ImageMatchJudgmentResult | None = None,
+        structured_error: Exception | None = None,
     ) -> None:
         self.tokens = tokens or []
         self.error = error
         self.structured_result = structured_result
+        self.structured_error = structured_error
         self.received_prompt: str | None = None
         self.received_judgment_prompt: str | None = None
         self.generate_structured_called = False
@@ -154,6 +156,8 @@ class _FakeLLMClient(LLMClient):
     ) -> Any:
         self.generate_structured_called = True
         self.received_judgment_prompt = prompt
+        if self.structured_error is not None:
+            raise self.structured_error
         if self.structured_result is None:
             raise NotImplementedError
         return self.structured_result
@@ -547,3 +551,55 @@ async def test_send_message_repeated_match_does_not_duplicate_exposure_row(
     ).scalars().all()
     assert len(exposures) == 1
     assert exposures[0].image_entity_id == image.entity_id
+
+
+async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상황별 이미지 매칭 판단이 실패해도(429 등) 예외가 SSE 제너레이터 밖으로 새면 안 된다 —
+    새면 ASGI 태스크 취소로 DB 커넥션이 망가진 채 풀로 돌아가 무관한 다음 요청이 500이 된다.
+    이미 스트리밍된 응답은 정상 커밋하고 이미지 매칭만 포기한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    await _make_situational_image(db_session, content_version_id=version_id, owner_user_id=user.id, order=0)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_error=LLMClientError("429 RESOURCE_EXHAUSTED"))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "done"]
+    done_event = events[-1]
+    assert done_event["finalMessage"]["content"] == "안녕"
+    assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
+
+    assistant_messages = (
+        await db_session.execute(
+            sa.select(ChatMessage).where(
+                ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.ASSISTANT
+            )
+        )
+    ).scalars().all()
+    # 오프닝 메시지(intro) + 이번 턴의 응답. 판정이 실패해도 응답 자체는 커밋된다.
+    assert [message.content for message in assistant_messages] == ["인트로", "안녕"]
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert exposures == []

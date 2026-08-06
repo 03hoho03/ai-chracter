@@ -12,7 +12,10 @@ from api.chat.prompt_builder import EndingJudgmentResult, StatChangeJudgment, St
 from api.db.models import (
     Asset,
     AssetKind,
+    ChatMessage,
+    ChatMessageRole,
     ChatRoom,
+    ChatRoomStat,
     Content,
     ContentTarget,
     ContentType,
@@ -30,7 +33,7 @@ from api.db.models import (
     StoryVersionDetail,
     User,
 )
-from api.llm.client import LLMClient
+from api.llm.client import LLMClient, LLMClientError
 from api.llm.dependencies import get_llm_client
 from api.main import app
 
@@ -181,7 +184,10 @@ class _FakeLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None
     ) -> Any:
         self.generate_structured_calls.append(response_schema)
-        return self._structured_results.pop(0)
+        result = self._structured_results.pop(0)
+        if isinstance(result, Exception):
+            raise result
+        return result
 
 
 def _override_llm_client(fake: _FakeLLMClient) -> None:
@@ -519,3 +525,102 @@ async def test_send_message_ending_judgment_uses_stat_values_updated_this_turn(
     assert room is not None
     assert room.ending_reached is True
     assert room.ending_entity_id == ending.entity_id
+
+
+async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판정 LLM 실패(429 등)가 SSE 제너레이터 밖으로 새면 ASGI 태스크가 취소되며 요청 스코프 DB
+    세션이 강제 종료되고, 망가진 커넥션이 풀로 돌아가 무관한 다음 요청이 500이 된다 — 그래서
+    실패를 흡수하고 그 턴의 판정만 포기한다. 이미 스트리밍된 응답은 정상 커밋되어야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    await _add_ending(db_session, setup, turn_count_gate=1)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안", "녕"], structured_results=[LLMClientError("429 RESOURCE_EXHAUSTED")])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "token", "done"]
+    assert events[-1]["finalMessage"]["content"] == "안녕"
+
+    # 스탯 판단이 실패했으니 엔딩 판정까지 통째로 건너뛴다.
+    assert fake.generate_structured_calls == [StatJudgmentResult]
+
+    assistant_messages = (
+        await db_session.execute(
+            sa.select(ChatMessage).where(
+                ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.ASSISTANT
+            )
+        )
+    ).scalars().all()
+    # 오프닝 메시지 + 이번 턴의 응답. 판정이 실패해도 응답 자체는 커밋된다.
+    assert [message.content for message in assistant_messages] == ["다시 만났네요!", "안녕"]
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.turn_count == 1
+    assert room.ending_reached is False
+
+    stat_row = await db_session.get(ChatRoomStat, (room_id, stat_def.entity_id))
+    assert stat_row is not None
+    assert float(stat_row.current_value) == 50
+
+
+async def test_send_message_ending_judgment_llm_failure_keeps_stat_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """스탯 판단은 성공하고 엔딩 판정만 실패한 경우 — 이미 계산된 스탯 변경은 그대로 커밋하고
+    엔딩 판정만 포기한다(부분 진행 보존)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    await _add_ending(db_session, setup, turn_count_gate=1)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[
+            StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=70)]),
+            LLMClientError("429 RESOURCE_EXHAUSTED"),
+        ],
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "statChange", "done"]
+    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult]
+
+    stat_row = await db_session.get(ChatRoomStat, (room_id, stat_def.entity_id))
+    assert stat_row is not None
+    assert float(stat_row.current_value) == 70
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.ending_reached is False
