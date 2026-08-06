@@ -180,3 +180,58 @@ def test_major_character_is_written_for_the_generated_images() -> None:
     conditions = [image.trigger_condition for image in payload.situational_images]
     assert len(set(conditions)) == 4
     assert all(condition.strip() for condition in conditions)
+
+
+def test_seed_story_development_examples_read_as_a_turn_transcript() -> None:
+    """`developmentExample` 은 문체·구조·소품을 준-축자 복제시키는 템플릿 씨앗이라(US-021 실측)
+    포맷 자체가 그대로 학습된다.
+
+    - 화자 라벨이 문단 중간에 인라인으로 박혀 있으면(줄바꿈 없이 턴이 이어붙은 경우) 모델이
+      자기 응답 안에 `사용자:` 를 그대로 찍는다 — 30 개 `settingText` 가 하나같이 "응답 앞에
+      라벨을 붙이지 마라"고 지시하는 것과 정면으로 어긋나는 신호다.
+    - 예시가 사용자 턴으로 끝나면 모델이 사용자의 대사까지 대신 써버린다(화자 뒤집힘).
+    런타임 프롬프트(`build_story_generation_prompt`)가 대화 기록을 같은 `화자: 내용` 줄
+    형식으로 넣으므로, 라벨을 줄 맨 앞에 두는 것 자체는 오히려 일관된다.
+    """
+    narrator_labels = {"서술자", "진행자"}
+
+    for story in load_stories():
+        example = story.payload.development_example
+        if not example:
+            continue
+
+        turns = []
+        for line in example.split("\n"):
+            speaker, separator, _ = line.partition(":")
+            speaker = speaker.strip()
+            if separator and speaker in narrator_labels | {"사용자"}:
+                turns.append(speaker)
+                continue
+            for label in narrator_labels | {"사용자"}:
+                assert f"{label}:" not in line, (
+                    f"{story.slug}: 화자 라벨 '{label}:' 이 줄 중간에 박혀 있다 — 턴마다 줄을 나눌 것"
+                )
+
+        assert turns, f"{story.slug}: developmentExample 에 화자 라벨이 하나도 없어 턴 구분이 안 된다"
+        assert turns[-1] in narrator_labels, (
+            f"{story.slug}: developmentExample 이 사용자 턴으로 끝난다 — 모델이 사용자 대사를 대신 쓴다"
+        )
+
+
+def test_seed_story_setting_text_does_not_quote_stat_names() -> None:
+    """스탯 증감·엔딩 조건은 `settingText` 가 아니라 스탯 `description` 의 몫이다.
+
+    별도 판정 호출(`build_stat_judgment_prompt`)이 `description` 만 보고 판단하므로,
+    `settingText` 에 적힌 규칙은 판정에 반영되지도 않으면서 서술자 지시문만 오염시킨다
+    (healing-walkinglog 가 실제로 이랬다). 규칙은 스탯 이름을 따옴표로 인용하는 형태로
+    나타나므로 그 패턴을 금지선으로 삼는다 — 개념을 산문으로 언급하는 것은 막지 않는다.
+    """
+    for story in load_stories():
+        setting_text = story.payload.setting_text or ""
+        for setup in story.payload.starting_setups:
+            for stat in setup.stat_defs:
+                for quoted in (f"'{stat.name}'", f'"{stat.name}"', f"“{stat.name}”"):
+                    assert quoted not in setting_text, (
+                        f"{story.slug}: settingText 가 스탯 {quoted} 을 인용해 규칙처럼 적고 있다 "
+                        f"— 스탯 description 으로 옮길 것"
+                    )
