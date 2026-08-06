@@ -25,6 +25,7 @@ JSON 이 `id` 를 직접 적어두면 그 값을 그대로 존중한다.
 파일명을 담은 에러로 죽는다.
 """
 
+import copy
 import json
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -68,6 +69,17 @@ def load_character(path: Path) -> CharacterDraftPayload:
     return _load_payload(path, CharacterDraftPayload, "character")
 
 
+def parse_story(raw: dict[str, Any], slug: str) -> StoryDraftPayload:
+    """아직 파일이 아닌 JSON 객체를 `load_story` 와 똑같은 규칙으로 검증한다(배치 생성기용).
+
+    생성기가 만든 dict 를 **쓰기 전에** 통과시키려는 것이라 경로 대신 slug 를 받는다 — id
+    파생 경로와 에러 메시지가 실제로 저장될 파일과 같아야 한다. 인자는 건드리지 않는다
+    (검증 과정에서 채워지는 id 가 파일에 새어 나가면 "시드 JSON 에 UUID 를 쓰지 않는다"는
+    규약이 깨진다).
+    """
+    return _parse_payload(copy.deepcopy(raw), StoryDraftPayload, "story", slug, _resolve_stat_refs)
+
+
 def load_stories(directory: Path = STORIES_DIR) -> list[SeedStory]:
     return [SeedStory(slug=path.stem, payload=load_story(path)) for path in _json_files(directory)]
 
@@ -98,14 +110,24 @@ def _load_payload(
         raise SeedContentError(f"{path.name}: JSON 을 읽지 못했다 — {exc}") from exc
     if not isinstance(raw, dict):
         raise SeedContentError(f"{path.name}: 최상위가 JSON 객체가 아니다")
+    return _parse_payload(raw, model, kind, path.stem, resolve_refs)
 
-    _fill_entity_ids(raw, f"{kind}:{path.stem}")
+
+def _parse_payload(
+    raw: dict[str, Any],
+    model: type[PayloadT],
+    kind: str,
+    slug: str,
+    resolve_refs: Callable[[dict[str, Any], str], None] | None,
+) -> PayloadT:
+    filename = f"{slug}.json"
+    _fill_entity_ids(raw, f"{kind}:{slug}")
     if resolve_refs is not None:
-        resolve_refs(raw, path.name)
+        resolve_refs(raw, filename)
     try:
         return model.model_validate(raw)
     except ValidationError as exc:
-        raise SeedContentError(f"{path.name}: {model.__name__} 스키마에 맞지 않는다 — {exc}") from exc
+        raise SeedContentError(f"{filename}: {model.__name__} 스키마에 맞지 않는다 — {exc}") from exc
 
 
 def _fill_entity_ids(node: dict[str, Any], path: str) -> None:
