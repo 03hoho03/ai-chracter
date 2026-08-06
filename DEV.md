@@ -51,7 +51,12 @@ web과 API가 같은 오리진이 되므로 CORS·쿠키 문제가 아예 발생
 ```
 https://<호스트>.<테일넷>.ts.net/      → localhost:5173  (web)
 https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프리픽스는 serve가 제거)
+https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네일·이미지)
 ```
+
+**`/s3`를 빠뜨리면 이미지가 하나도 안 나온다.** 자산 URL은 `S3_ENDPOINT_URL`을 그대로 붙여 서명하므로,
+그 값이 `http://localhost:5001`인 채로 다른 기기에서 접속하면 그 `localhost`는 **보고 있는 기기 자신**을
+가리켜 전부 깨진다(썸네일·상황별 이미지 전부). 화면엔 깨진 이미지만 보이고 콘솔 에러도 안 뜬다.
 
 ### 1회 준비
 
@@ -61,6 +66,7 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
 3. **serve 설정** (tailscaled에 영구 저장 → 재부팅해도 유지, 1회만):
    ```sh
    tailscale serve --bg --set-path=/api http://localhost:8000
+   tailscale serve --bg --set-path=/s3 http://localhost:5001
    tailscale serve --bg http://localhost:5173
    tailscale serve status   # 확인
    ```
@@ -72,6 +78,7 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
    ```sh
    API_BASE_URL=https://<호스트>.<테일넷>.ts.net/api
    FRONTEND_BASE_URL=https://<호스트>.<테일넷>.ts.net
+   S3_ENDPOINT_URL=https://<호스트>.<테일넷>.ts.net/s3
    ```
    `apps/web/.env.local` (신규, gitignore 대상):
    ```sh
@@ -89,6 +96,13 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
   Google 로그인 리디렉션도 ts.net으로 간다. 로컬 전용으로 되돌리려면 위 env 3개를 localhost로 되돌린다.
 - SSE 채팅 스트리밍과 Vite HMR 웹소켓 모두 serve를 통과하는 것을 확인했다(버퍼링·업그레이드 실패 없음).
 - `SESSION_COOKIE_SECURE`는 `false`로 둔다. HTTPS에서도 쿠키는 정상 동작하고, `true`로 올리면 http 접속 여지가 사라진다.
+- **이미지가 `NoSuchBucket`으로 깨지면** moto 컨테이너의 `S3_IGNORE_SUBDOMAIN_BUCKETNAME=1`이 안 걸린 것이다
+  (`docker-compose.dev.yml`에 있다 — 옛 컨테이너가 떠 있으면 `docker compose -f docker-compose.dev.yml up -d --force-recreate moto s3-init`).
+  moto는 기본적으로 Host 헤더의 첫 라벨을 버킷 이름으로 보는 virtual-hosted-style이라, serve를 앞에 두면
+  버킷명을 `<호스트>`로 착각한다. moto는 인메모리라 재생성하면 객체가 사라지니 **시드를 다시 돌릴 것.**
+- **tailscale IP 직결(`http://100.x.y.z:5001`)로 우회하지 말 것** — curl로는 되지만 web이 HTTPS라
+  브라우저가 mixed content로 막아 화면에선 여전히 안 보인다.
+- 이건 dev 전용 문제다. 운영은 R2가 자체 도메인으로 HTTPS 서명 URL을 주므로 해당 없음.
 
 ## 시드 콘텐츠 (스토리 30개 + 캐릭터)
 

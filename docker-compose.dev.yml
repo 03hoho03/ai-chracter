@@ -36,6 +36,11 @@ services:
   # (그때는 dev-up.sh/seed 를 다시 돌리면 샘플 썸네일이 재업로드된다). Postgres 는 볼륨으로 유지된다.
   moto:
     image: motoserver/moto:latest
+    environment:
+      # 항상 path-style(`/{bucket}/{key}`)로 해석한다. 기본값은 Host 헤더의 첫 라벨을 버킷
+      # 이름으로 보는 virtual-hosted-style 이라, tailscale serve 처럼 호스트가 localhost 가
+      # 아닌 리버스 프록시를 앞에 두면 버킷명을 호스트명으로 착각해 NoSuchBucket 이 난다.
+      S3_IGNORE_SUBDOMAIN_BUCKETNAME: "1"
     # 호스트 5001 → 컨테이너 5000 (macOS 는 5000 을 AirPlay Receiver 가 점유).
     ports:
       - "5001:5000"
