@@ -261,3 +261,33 @@ def test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat() -> No
             f"{story.slug}: settingText 가 {match.group()!r} 처럼 스탯을 이름으로 지목한다 "
             f"— 서술 지시로 바꿔 쓸 것"
         )
+
+
+def test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds() -> None:
+    """판정 프롬프트와 스탯 규칙은 AND 로 결합된다(`_stream_new_turn`) — 규칙이 이미 재는
+    숫자를 판정문이 다시 물으면 LLM 이 그 숫자를 서사적으로 재해석해 룰 엔진을 거부한다.
+
+    실측(2026-08-07, wuxia-oneform 「몸이 허물어진 파멸」): 규칙 `몸 손상>=90` 에 실제
+    값이 100 이고 턴게이트도 통과했는데 엔딩이 안 났다. 판정문이 "몸 손상 수치가 90 이상에
+    도달하여…"라고 같은 조건을 되물었고, 서사가 "그래도 기어간다"로 이어지자 LLM 이
+    '아직 완전 파괴는 아니다'로 판단한 것으로 보인다. 그래서 판정문은 **규칙이 잴 수 없는
+    서사적 사건**만 물어야 한다.
+
+    스탯 이름을 산문으로 언급하는 것까지는 막지 않는다("산소가 바닥난 상태에서 ~했는가"는
+    연출이다) — 규칙의 **임계값 숫자**가 판정문에 그대로 다시 나오는 경우만 잡는다.
+    """
+    for story in load_stories():
+        for setup in story.payload.starting_setups:
+            stat_names = {stat.id: stat.name for stat in setup.stat_defs}
+            for ending in setup.endings:
+                numbers_in_prompt = {int(n) for n in re.findall(r"\d+", ending.judgment_prompt)}
+                for item in ending.stat_rules:
+                    rules = item.rules if isinstance(item, EndingRuleGroupDraftItem) else [item]
+                    for rule in rules:
+                        name = stat_names.get(rule.stat_id)
+                        restated = name and name in ending.judgment_prompt
+                        assert not (restated and int(rule.threshold) in numbers_in_prompt), (
+                            f"{story.slug} / 「{ending.name}」: 판정 프롬프트가 규칙 "
+                            f"({name} {rule.operator.value} {rule.threshold})의 임계값을 그대로 되묻는다 "
+                            f"— 서사적 사건만 묻도록 고칠 것"
+                        )

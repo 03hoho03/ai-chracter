@@ -320,3 +320,25 @@ def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> Non
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
     assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+
+
+def test_build_stat_judgment_prompt_binds_the_direction_constraints_in_descriptions() -> None:
+    """"절대 늘지 않는다" / "매 턴 반드시 줄어든다" 류 제약은 스탯 `description` 의 산문일
+    뿐이고 `apply_stat_changes` 는 min/max clamp 만 한다 — 코드가 강제하지 못하는 구간이다.
+
+    실측(2026-08-07): `wuxia-oneform` 의 '남은 날' 이 26→27 로 **올랐고**(정의상 금지),
+    `romance-3rdloop` 의 '남은 방송 회차' 는 여러 턴 감소를 건너뛰었다. 엔딩이 이런 카운터에
+    걸려 있으면(wuxia 엔딩 2·3 은 `남은 날<=0`) 도달 가능성이 통째로 흔들린다. 완전한 해결은
+    스탯에 방향 필드를 두고 코드로 막는 것이지만, 그 전까지 최소한 판정 프롬프트가 이 제약을
+    연출 지침이 아닌 규칙으로 못박고 있어야 한다.
+    """
+    prompt = build_stat_judgment_prompt(
+        stat_defs=[_stat_def(name="남은 날", description="매 턴 반드시 1일씩 줄어들며 절대 늘어나지 않는다")],
+        current_stats={},
+        history=[],
+        user_message="수련한다",
+        assistant_message="뼈가 부서진다",
+    )
+
+    assert "반드시 지켜야 하는 규칙" in prompt
+    assert "현재값보다 큰 값을 내지 말고" in prompt
