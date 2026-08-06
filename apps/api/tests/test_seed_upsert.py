@@ -380,7 +380,17 @@ async def test_upsert_story_twice_does_not_duplicate_rows(
     await upsert_story(db_session, SLUG, payload)
 
     assert await _count(db_session, Content, Content.id == story_content_id(SLUG)) == 1
-    assert await _count(db_session, ContentVersion, ContentVersion.content_id == story_content_id(SLUG)) == 1
+    # 콘텐츠당 버전은 둘 — 발행본과, 빌더가 열 초안. 재시드해도 늘지 않는다.
+    assert await _count(db_session, ContentVersion, ContentVersion.content_id == story_content_id(SLUG)) == 2
+    assert (
+        await _count(
+            db_session,
+            ContentVersion,
+            ContentVersion.content_id == story_content_id(SLUG),
+            ContentVersion.published_at.is_(None),
+        )
+        == 1
+    )
     assert await _child_row_counts(db_session, version_id) == first_counts
     # 자식의 물리 id 까지 그대로여야 재시드가 기존 참조를 끊지 않는다.
     assert (

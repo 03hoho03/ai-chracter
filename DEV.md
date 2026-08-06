@@ -117,7 +117,12 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
 | 작가 — 시드 콘텐츠 전부의 소유자 | `seed-creator@example.com` | `password1234` |
 | 독자 | `test@example.com` | `password1234` |
 
-작가 계정으로 로그인하면 시드된 콘텐츠를 **빌더에서 소유자로 열어** 볼 수 있다.
+작가 계정으로 로그인하면 시드된 콘텐츠를 **빌더에서 소유자로 열어** 볼 수 있다 — 시드가 콘텐츠마다
+발행본 옆에 초안 버전을 하나 같이 넣기 때문이다(프로덕션 발행이 다음 편집용 초안을 남기는 것과 같은 모양).
+초안을 고쳐 발행하면 v2 가 생기고, 그 콘텐츠로 이미 열려 있던 대화방은 v1 에 고정된 채 `latestVersionAvailable=true`
+가 되어 `POST /chat-rooms/{id}/pin-latest-version` 으로 옮겨탈 수 있다(메시지·턴 수는 보존). 단 **재시드는
+발행본을 in-place 로 덮어쓸 뿐 새 버전을 만들지 않으므로**, 손으로 발행한 v2 가 있으면 재시드가 발행 포인터를
+v1 로 되돌린다.
 (`POST /auth/login` 성공 응답은 200이 아니라 `204 No Content` + `Set-Cookie: session_id=...`다.)
 
 ### 데이터 파일

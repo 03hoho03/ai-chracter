@@ -60,12 +60,20 @@ def story_version_id(slug: str) -> uuid.UUID:
     return seed_uuid("story", slug, "version")
 
 
+def story_draft_version_id(slug: str) -> uuid.UUID:
+    return seed_uuid("story", slug, "draft")
+
+
 def character_content_id(slug: str) -> uuid.UUID:
     return seed_uuid("character", slug)
 
 
 def character_version_id(slug: str) -> uuid.UUID:
     return seed_uuid("character", slug, "version")
+
+
+def character_draft_version_id(slug: str) -> uuid.UUID:
+    return seed_uuid("character", slug, "draft")
 
 
 async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayload) -> uuid.UUID:
@@ -84,25 +92,25 @@ async def upsert_story(session: AsyncSession, slug: str, payload: StoryDraftPayl
         )
 
     content_id = story_content_id(slug)
-    version_id = story_version_id(slug)
-    content, version = await _ensure_content_and_version(
-        session, content_id, version_id, ContentType.STORY, payload.hashtags, payload.description
-    )
+    content = await _ensure_content(session, content_id, ContentType.STORY, payload.hashtags)
 
-    if await session.get(StoryVersionDetail, version_id) is None:
-        # `_update_story_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
-        # (빌더에서는 `POST /contents` 가 만들어 둔다). 나머지 필드는 그 함수가 채운다.
-        session.add(
-            StoryVersionDetail(
-                content_version_id=version_id,
-                name=payload.name,
-                one_liner=payload.one_liner,
-                prompt_template=payload.prompt_template,
+    # 초안을 발행 버전보다 **먼저** 채운다 — `_update_story_draft` 가 `content.visibility` 를
+    # payload 값으로 되돌리므로, 마지막에 도는 `_publish` 가 PUBLIC 으로 확정해야 한다.
+    for version_id in (story_draft_version_id(slug), story_version_id(slug)):
+        version = await _ensure_version(session, content_id, version_id, payload.description)
+        if await session.get(StoryVersionDetail, version_id) is None:
+            # `_update_story_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
+            # (빌더에서는 `POST /contents` 가 만들어 둔다). 나머지 필드는 그 함수가 채운다.
+            session.add(
+                StoryVersionDetail(
+                    content_version_id=version_id,
+                    name=payload.name,
+                    one_liner=payload.one_liner,
+                    prompt_template=payload.prompt_template,
+                )
             )
-        )
-        await session.flush()
-
-    await _update_story_draft(session, content, version, payload)
+            await session.flush()
+        await _update_story_draft(session, content, version, payload)
 
     await _publish(session, content, version)
     return content_id
@@ -139,48 +147,48 @@ async def upsert_character(
         raise SeedPublishError(f"{slug}: 발행 검증 실패 — 비어 있는 필드: {', '.join(missing)}")
 
     content_id = character_content_id(slug)
-    version_id = character_version_id(slug)
-    content, version = await _ensure_content_and_version(
-        session, content_id, version_id, ContentType.CHARACTER, payload.hashtags, payload.description
-    )
+    content = await _ensure_content(session, content_id, ContentType.CHARACTER, payload.hashtags)
 
-    if await session.get(CharacterVersionDetail, version_id) is None:
-        # `_update_character_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
-        # (빌더에서는 `POST /contents` 가 만들어 둔다). 나머지 필드는 그 함수가 채운다.
-        session.add(
-            CharacterVersionDetail(
-                content_version_id=version_id,
-                name=payload.name,
-                one_liner=payload.one_liner,
-                intro=payload.intro,
-                example_dialogues=[],
-                character_prompt=payload.character_prompt,
-            )
-        )
-        await session.flush()
-
-    # 자산을 먼저 flush 한다 — `situational_images.image_asset_id` 가 참조한다.
+    # 자산은 버전과 무관하게 slug 파생이라 한 번만 만들면 두 버전이 같은 것을 가리킨다.
     image_assets: list[tuple[uuid.UUID, uuid.UUID, uuid.UUID]] = []
     for order, item in enumerate(payload.situational_images):
         original_asset_id, blurred_asset_id = await _ensure_situational_assets(session, slug, order)
         image_assets.append((item.id, original_asset_id, blurred_asset_id))
-    await session.flush()
+    await session.flush()  # `situational_images.image_asset_id` 가 참조한다
 
-    await _update_character_draft(session, content, version, payload)
-    await session.flush()
-
-    # 자동저장 로직은 이미지 자산 필드를 의도적으로 건드리지 않으므로(US-082) 여기서 채운다.
-    rows = {
-        row.entity_id: row
-        for row in (
-            await session.scalars(
-                select(SituationalImage).where(SituationalImage.content_version_id == version_id)
+    # 초안을 발행 버전보다 **먼저** 채운다 — 이유는 `upsert_story` 와 같다.
+    for version_id in (character_draft_version_id(slug), character_version_id(slug)):
+        version = await _ensure_version(session, content_id, version_id, payload.description)
+        if await session.get(CharacterVersionDetail, version_id) is None:
+            # `_update_character_draft` 는 이 행이 이미 있다고 보고 `db.get` 으로 집어 든다
+            # (빌더에서는 `POST /contents` 가 만들어 둔다). 나머지 필드는 그 함수가 채운다.
+            session.add(
+                CharacterVersionDetail(
+                    content_version_id=version_id,
+                    name=payload.name,
+                    one_liner=payload.one_liner,
+                    intro=payload.intro,
+                    example_dialogues=[],
+                    character_prompt=payload.character_prompt,
+                )
             )
-        ).all()
-    }
-    for entity_id, original_asset_id, blurred_asset_id in image_assets:
-        rows[entity_id].image_asset_id = original_asset_id
-        rows[entity_id].blurred_asset_id = blurred_asset_id
+            await session.flush()
+
+        await _update_character_draft(session, content, version, payload)
+        await session.flush()
+
+        # 자동저장 로직은 이미지 자산 필드를 의도적으로 건드리지 않으므로(US-082) 여기서 채운다.
+        rows = {
+            row.entity_id: row
+            for row in (
+                await session.scalars(
+                    select(SituationalImage).where(SituationalImage.content_version_id == version_id)
+                )
+            ).all()
+        }
+        for entity_id, original_asset_id, blurred_asset_id in image_assets:
+            rows[entity_id].image_asset_id = original_asset_id
+            rows[entity_id].blurred_asset_id = blurred_asset_id
 
     await _publish(session, content, version)
     return content_id
@@ -205,14 +213,12 @@ async def _ensure_situational_assets(
     )
 
 
-async def _ensure_content_and_version(
+async def _ensure_content(
     session: AsyncSession,
     content_id: uuid.UUID,
-    version_id: uuid.UUID,
     content_type: ContentType,
     hashtags: list[str],
-    description: str,
-) -> tuple[Content, ContentVersion]:
+) -> Content:
     """`relationship()` 을 선언하지 않는 코드베이스라(순수 FK 컬럼만) 참조 순서를 직접
     지킨다: contents -> flush -> content_versions -> flush -> {타입}_version_details."""
     content = await session.get(Content, content_id)
@@ -230,6 +236,20 @@ async def _ensure_content_and_version(
         session.add(content)
         await session.flush()
 
+    return content
+
+
+async def _ensure_version(
+    session: AsyncSession, content_id: uuid.UUID, version_id: uuid.UUID, description: str
+) -> ContentVersion:
+    """콘텐츠 하나당 버전 행은 둘이다 — 발행본(`*_version_id`)과, 그 옆에 늘 비워 두는
+    초안(`*_draft_version_id`).
+
+    초안이 필요한 이유: 빌더는 `published_at IS NULL` 인 버전을 찾아 편집하고(`GET
+    /contents/{id}/draft`), 프로덕션 발행 로직은 발행 직후 다음 편집용 초안을 하나 남긴다.
+    시드가 발행본만 만들면 작가 계정으로 로그인해도 시드 콘텐츠가 빌더에서 404 로 안 열린다.
+    두 버전 다 같은 payload 로 채우므로 초안은 "발행본과 동일한 편집 출발점"이 된다.
+    """
     version = await session.get(ContentVersion, version_id)
     if version is None:
         version = ContentVersion(
@@ -238,7 +258,7 @@ async def _ensure_content_and_version(
         session.add(version)
         await session.flush()
 
-    return content, version
+    return version
 
 
 async def _publish(session: AsyncSession, content: Content, version: ContentVersion) -> None:

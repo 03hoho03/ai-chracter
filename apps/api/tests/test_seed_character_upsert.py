@@ -216,10 +216,21 @@ async def test_upsert_character_twice_does_not_duplicate_rows(
     await upsert_character(db_session, SLUG, payload)
 
     assert await _count(db_session, Content, Content.id == character_content_id(SLUG)) == 1
+    # 콘텐츠당 버전은 둘 — 발행본과, 빌더가 열 초안. 재시드해도 늘지 않는다.
     assert (
         await _count(db_session, ContentVersion, ContentVersion.content_id == character_content_id(SLUG))
+        == 2
+    )
+    assert (
+        await _count(
+            db_session,
+            ContentVersion,
+            ContentVersion.content_id == character_content_id(SLUG),
+            ContentVersion.published_at.is_(None),
+        )
         == 1
     )
+    # 두 버전이 같은 자산을 가리키므로 초안이 생겨도 자산 수는 그대로다.
     assert await _count(db_session, Asset) == first_asset_count
     # 자식의 물리 id 까지 그대로여야 재시드가 기존 참조를 끊지 않는다.
     assert [
