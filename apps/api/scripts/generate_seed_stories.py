@@ -58,6 +58,11 @@ MIN_ENDINGS_PER_SETUP = 2
 MIN_KEYWORD_NOTES = 4
 MIN_SHORTCUTS = 2
 
+# `settingText` 는 런타임에 서술자의 지시문으로 그대로 들어간다(`build_story_generation_prompt`,
+# 응답자 라벨은 '진행자'). 사용자를 주인공으로 부르는 소개문이 오면 서술자가 자기를 주인공으로
+# 착각해 대화가 뒤집히는데, 발행 검증은 이걸 잡지 못하므로 여기서 호칭으로 거른다.
+NARRATOR_WORDS = ("서술자", "진행자")
+
 # 스탯 아이콘/색은 자유 문자열이 아니라 FE 의 고정 목록에서만 골라야 화면에 제대로 뜬다
 # (`apps/web/src/shared/ui/color-icon-picker/icons.ts`, `packages/ui/src/lib/color-palette.ts`).
 # BE 스키마는 `str` 이라 아무 값이나 통과하므로 시드가 스스로 지킨다.
@@ -241,8 +246,12 @@ def _structure_section(slot: MatrixSlot) -> str:
     stat_names = ", ".join(stat_display_name(stat) for stat in slot.stats)
     return (
         "[구조 요건]\n"
-        "- settingText: 대화를 진행할 서술자에게 주는 지시문. 무대·등장인물·진행 방식·금지사항을 "
-        "포함하고, '응답 앞에 화자 이름이나 라벨을 붙이지 않는다'는 지시를 반드시 넣는다. 800~1500자.\n"
+        "- settingText: 대화를 진행할 **서술자에게 주는 지시문**이다 — 사용자에게 보여줄 소개문이 "
+        "아니다. 반드시 '당신은 …의 서술자다'처럼 서술자가 무엇을 연기하는지 못 박고 시작하고, "
+        "플레이하는 사람은 '당신'이 아니라 '사용자'로 지칭한다. 무대·등장인물(이름·나이대·말투)·"
+        "진행 방식·금지사항을 담되 스탯 증감이나 엔딩 조건 같은 시스템 규칙은 쓰지 않는다"
+        "(그건 별도 판정이 하는 일이라 서술자가 알면 오히려 방해가 된다). '응답 앞에 화자 이름이나 "
+        "라벨을 붙이지 않는다'는 지시를 반드시 넣는다. 800~1500자.\n"
         "- developmentExample: 사용자와 서술자가 두 번 주고받는 짧은 예시 대화.\n"
         "- description: 상세 페이지에 뜨는 소개문 3~5문장. 제목과 한 줄 소개를 그대로 반복하지 않는다.\n"
         "- hashtags: 4~6개, '#' 없이 단어만.\n"
@@ -270,7 +279,7 @@ def _structure_section(slot: MatrixSlot) -> str:
 
 def assemble_story(slot: MatrixSlot, generated: GeneratedStory) -> dict[str, Any]:
     """LLM 결과 + 매트릭스 확정값을 시드 JSON 모양(camelCase, id 없음)으로 합친다."""
-    return {
+    story: dict[str, Any] = {
         "name": slot.title,
         "oneLiner": slot.one_liner,
         "thumbnailAssetId": None,  # 시드 실행 시점에 `ensure_asset` 이 채운다
@@ -297,6 +306,23 @@ def assemble_story(slot: MatrixSlot, generated: GeneratedStory) -> dict[str, Any
         "hashtags": list(generated.hashtags),
         "visibility": "public",
     }
+    return {key: _unescaped(value) for key, value in story.items()}
+
+
+def _unescaped(value: object) -> object:
+    r"""줄바꿈을 이스케이프 시퀀스 글자 그대로(`\n` 두 글자) 뱉은 것을 되돌린다.
+
+    강제 스키마의 문자열 필드라 JSON 파싱은 멀쩡히 통과하지만, 그 두 글자가 그대로 저장되면
+    화면에도 서술자 지시문에도 `\n` 이 글자로 보인다(US-015 실측 — 발행 검증도 유사도 게이트도
+    글자 수준만 보므로 잡지 못한다).
+    """
+    if isinstance(value, str):
+        return value.replace("\\r\\n", "\n").replace("\\n", "\n")
+    if isinstance(value, list):
+        return [_unescaped(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _unescaped(item) for key, item in value.items()}
+    return value
 
 
 def _setup_json(setup: GeneratedStartingSetup) -> dict[str, Any]:
@@ -361,6 +387,14 @@ def validate_story(slot: MatrixSlot, raw: dict[str, Any]) -> list[str]:
 def _structure_errors(slot: MatrixSlot, payload: StoryDraftPayload) -> list[str]:
     errors: list[str] = []
     expected_stats = sorted(stat_display_name(stat) for stat in slot.stats)
+
+    setting_text = payload.setting_text or ""
+    if not any(word in setting_text for word in NARRATOR_WORDS):
+        errors.append(
+            "settingText 가 서술자에게 주는 지시문이 아니라 사용자에게 하는 설명문이다 "
+            "— '당신은 …의 서술자다'로 시작해 서술자가 연기할 인물과 진행 방식을 지시하고, "
+            "플레이하는 사람은 '사용자'로 지칭할 것"
+        )
 
     if len(payload.starting_setups) != len(slot.starting_setups):
         errors.append(

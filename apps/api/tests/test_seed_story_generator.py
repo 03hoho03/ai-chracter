@@ -247,6 +247,26 @@ def test_rejects_too_few_keyword_notes(slot: MatrixSlot) -> None:
     assert any("keywordNotes" in error for error in errors)
 
 
+def test_rejects_setting_text_written_to_the_player(slot: MatrixSlot) -> None:
+    """서술자 지시문이어야 할 자리에 사용자용 소개문이 오면 대화에서 화자가 뒤집힌다."""
+    story = _story(slot)
+    story.setting_text = "당신은 촉망받는 변호사입니다. 대화를 통해 세 스탯을 변화시켜야 합니다."
+
+    errors = validate_story(slot, assemble_story(slot, story))
+
+    assert any("서술자에게 주는 지시문이 아니라" in error for error in errors)
+
+
+def test_assemble_restores_newlines_written_as_escape_sequences(slot: MatrixSlot) -> None:
+    r"""`\n` 두 글자를 그대로 뱉는 경우가 있다 — 저장되면 화면에도 글자로 보인다."""
+    story = _story(slot)
+    story.setting_text = "당신은 서술자다.\\n\\n[등장인물]\\n김한샘(29세)"
+
+    raw = assemble_story(slot, story)
+
+    assert raw["settingText"] == "당신은 서술자다.\n\n[등장인물]\n김한샘(29세)"
+
+
 def test_rejects_wrong_starting_setup_count(slot: MatrixSlot) -> None:
     story = _story(slot)
     story.starting_setups = story.starting_setups[:1]

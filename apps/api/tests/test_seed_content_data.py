@@ -16,7 +16,9 @@ from api.content.publish import validate_character_publish
 from api.content.schemas import EndingRuleGroupDraftItem
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
-from seed_content.loader import load_characters, load_stories
+from generate_seed_stories import NARRATOR_WORDS, stat_display_name
+from seed_content.loader import CHARACTERS_DIR, STORIES_DIR, load_characters, load_stories
+from seed_content.matrix import load_matrix
 from seed_content.upsert import _validate_payload
 
 MAJOR_CHARACTER_SLUG = "romance-3rdloop-dj"
@@ -56,6 +58,57 @@ def test_every_seed_story_passes_publish_validation() -> None:
         assert _validate_payload(payload) == [], f"{story.slug}: 발행 검증 실패"
 
 
+def test_every_seed_story_keeps_its_matrix_concept() -> None:
+    """생성기는 본문만 채운다 — 제목/한줄/타겟/장르/스탯 이름은 §7 슬롯 그대로여야 한다.
+
+    LLM 이 콘셉트를 바꿔버리면 다양성 매트릭스가 보장하던 좌표 분산이 조용히 무너지므로,
+    배치가 늘어날 때마다(US-015~019) 이 대조를 사람이 다시 하지 않도록 여기서 고정한다.
+    """
+    slots = {slot.slug: slot for slot in load_matrix()}
+
+    for story in load_stories():
+        slot = slots.get(story.slug)
+        assert slot is not None, f"{story.slug}: 다양성 매트릭스에 없는 slug 다"
+
+        payload = story.payload
+        assert payload.name == slot.title, f"{story.slug}: 제목이 §7 과 다르다"
+        assert payload.one_liner == slot.one_liner, f"{story.slug}: 한 줄 소개가 §7 과 다르다"
+        assert payload.genre_id == slot.genre_id, f"{story.slug}: 장르가 §7 과 다르다"
+        assert payload.target is not None and payload.target.value == slot.target, (
+            f"{story.slug}: target 이 §7 과 다르다"
+        )
+        assert len(payload.starting_setups) == len(slot.starting_setups), (
+            f"{story.slug}: 시작 상황 개수가 §7 과 다르다"
+        )
+
+        expected_stats = sorted(stat_display_name(stat) for stat in slot.stats)
+        for setup in payload.starting_setups:
+            assert sorted(stat.name for stat in setup.stat_defs) == expected_stats, (
+                f"{story.slug} / {setup.name}: 스탯 이름이 §7 과 다르다"
+            )
+
+
+def test_every_seed_story_setting_text_instructs_the_narrator() -> None:
+    """`settingText` 는 런타임에 서술자의 지시문으로 들어간다 — 사용자용 소개문이면 화자가 뒤집힌다."""
+    for story in load_stories():
+        setting_text = story.payload.setting_text or ""
+        assert any(word in setting_text for word in NARRATOR_WORDS), (
+            f"{story.slug}: settingText 가 서술자에게 주는 지시문이 아니다"
+        )
+
+
+def test_no_seed_content_file_contains_escaped_newlines() -> None:
+    r"""`\n` 두 글자가 그대로 저장되면 화면에도 프롬프트에도 글자로 보인다.
+
+    JSON 파싱도 발행 검증도 통과하는 종류의 결함이라(US-015 실측) 파일 원문에서 직접 본다.
+    진짜 줄바꿈은 `"\n"` 으로 인코딩되므로 여기 걸리는 건 백슬래시 자체가 저장된 경우뿐이다.
+    """
+    for path in sorted(STORIES_DIR.glob("*.json")) + sorted(CHARACTERS_DIR.glob("*.json")):
+        assert "\\\\n" not in path.read_text(encoding="utf-8"), (
+            f"{path.name}: 줄바꿈이 이스케이프 시퀀스 글자 그대로 저장돼 있다"
+        )
+
+
 def test_major_story_matches_the_fixed_concept() -> None:
     """§7 R1 의 확정 콘셉트(제목/타겟/시작상황 2개/스탯 3종)에서 벗어나면 안 된다."""
     payload = next(
@@ -80,30 +133,31 @@ def test_major_story_matches_the_fixed_concept() -> None:
             assert ending.judgment_prompt.strip()
 
 
-def test_major_story_ending_thresholds_are_reachable_but_not_free() -> None:
+def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
     """엔딩 규칙이 스탯 범위 안이면서, 초기값 그대로는 만족되지 않아야 한다.
 
     범위 밖 임계값은 영영 안 열리고, 반대로 초기값에서 이미 참인 규칙은 스탯을 장식으로
     만든다(턴게이트만 넘으면 판정 프롬프트 하나로 엔딩이 난다). 둘 다 실제로 채팅을
-    해보기 전에는 드러나지 않으므로 여기서 막는다.
+    해보기 전에는 드러나지 않으므로 여기서 막는다. 생성기(US-013)도 파일로 쓰기 전에 같은
+    검사를 하지만, 그건 생성 시점 한 번뿐이라 커밋된 파일은 여기서 다시 본다.
     """
-    payload = next(story.payload for story in load_stories() if story.slug == MAJOR_STORY_SLUG)
-
-    for setup in payload.starting_setups:
-        stats = {stat.id: stat for stat in setup.stat_defs}
-        initial_values = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
-        for ending in setup.endings:
-            for item in ending.stat_rules:
-                rules = item.rules if isinstance(item, EndingRuleGroupDraftItem) else [item]
-                for rule in rules:
-                    stat = stats[rule.stat_id]
-                    assert stat.min_value <= rule.threshold <= stat.max_value, (
-                        f"{ending.name}: {stat.name} 임계값 {rule.threshold} 이 범위 밖이다"
-                    )
-            rule_items = [_preview_ending_rule_list_item(item) for item in ending.stat_rules]
-            assert not evaluate_rule_list(rule_items, initial_values), (
-                f"{ending.name}: 스탯이 하나도 안 움직여도 규칙이 만족된다"
-            )
+    for story in load_stories():
+        for setup in story.payload.starting_setups:
+            stats = {stat.id: stat for stat in setup.stat_defs}
+            initial_values = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
+            for ending in setup.endings:
+                for item in ending.stat_rules:
+                    rules = item.rules if isinstance(item, EndingRuleGroupDraftItem) else [item]
+                    for rule in rules:
+                        stat = stats[rule.stat_id]
+                        assert stat.min_value <= rule.threshold <= stat.max_value, (
+                            f"{story.slug} / {ending.name}: "
+                            f"{stat.name} 임계값 {rule.threshold} 이 범위 밖이다"
+                        )
+                rule_items = [_preview_ending_rule_list_item(item) for item in ending.stat_rules]
+                assert not evaluate_rule_list(rule_items, initial_values), (
+                    f"{story.slug} / {ending.name}: 스탯이 하나도 안 움직여도 규칙이 만족된다"
+                )
 
 
 def test_major_character_is_written_for_the_generated_images() -> None:
