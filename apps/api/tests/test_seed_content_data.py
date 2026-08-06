@@ -8,6 +8,7 @@
 US-003/005), 검증 전에 자리표시자 UUID 를 채워 넣는다.
 """
 
+import re
 import uuid
 
 from api.chat.ending_rules import evaluate_rule_list
@@ -235,3 +236,28 @@ def test_seed_story_setting_text_does_not_quote_stat_names() -> None:
                         f"{story.slug}: settingText 가 스탯 {quoted} 을 인용해 규칙처럼 적고 있다 "
                         f"— 스탯 description 으로 옮길 것"
                     )
+
+
+# 인용부호로 묶인 이름 바로 뒤에 시스템 어휘가 붙은 형태(`'잠' 스탯`).
+_STAT_LABELLED_IN_PROSE = re.compile(r"['\"“‘][^'\"”’]{1,20}['\"”’]\s*(스탯|게이지|수치)")
+
+
+def test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat() -> None:
+    """서술자에게 스탯을 **재료로** 건네면 모델이 가짜 상태 표시기를 본문에 그린다.
+
+    healing-4am 이 실제로 이랬다 — `settingText` 가 "'잠' 스탯이 고갈될수록 서술의 몽롱함을
+    더한다"고 시켰더니 5턴 내내 응답 맨 앞에 `[잠: 90%]`→`60%` 라는 표시기를 지어냈다(실제
+    스탯은 0~20 '시간' 단위이므로 퍼센트 자체가 허구다). `[사용자 이름]` 플레이스홀더와 같은
+    계열 — `settingText` 가 시스템 기계장치를 가리키면 모델이 그 UI 를 산문에 렌더링한다.
+
+    반대로 "스탯 수치를 본문에 노출하지 마라" 같은 **금지문**은 막지 않는다(5개 스토리가
+    이렇게 쓰고 있고, 그것들은 표시기를 그리지 않았다) — 금지는 재료를 건네는 게 아니다.
+    세계관 고유명사를 인용하는 것도 막지 않는다(sf-norespawn 의 '권한 조각' 은 스탯 이름과
+    겹치지만 등장인물이 빼앗는 물건이다). 그래서 "인용된 이름 + 시스템 어휘" 조합만 본다.
+    """
+    for story in load_stories():
+        match = _STAT_LABELLED_IN_PROSE.search(story.payload.setting_text or "")
+        assert match is None, (
+            f"{story.slug}: settingText 가 {match.group()!r} 처럼 스탯을 이름으로 지목한다 "
+            f"— 서술 지시로 바꿔 쓸 것"
+        )
