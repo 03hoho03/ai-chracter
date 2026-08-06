@@ -1,0 +1,61 @@
+"""리포에 커밋된 시드 콘텐츠 데이터 파일 자체를 검사한다 (US-008 이후).
+
+`test_seed_content.py` 가 로더의 **동작**을 인위적인 payload 로 검사한다면, 이 파일은
+`data/characters/*.json` / `data/stories/*.json` **실물**이 발행 가능한 상태인지를 본다 —
+시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은 홈 목록에 뜰 수 있다"가 보장된다.
+
+썸네일 자산만은 시드 실행 시점에 만들어져 호출부가 payload 에 주입하므로(`ensure_asset`,
+US-003/005), 검증 전에 자리표시자 UUID 를 채워 넣는다.
+"""
+
+import uuid
+
+from api.content.publish import validate_character_publish
+from api.db.models.character import CharacterVersionDetail
+from api.db.models.content import Content, ContentVersion
+from seed_content.loader import load_characters
+
+MAJOR_CHARACTER_SLUG = "romance-3rdloop-dj"
+ROMANCE_GENRE_ID = uuid.UUID("b8a1e6b0-1c1a-4b8a-9b0a-000000000001")
+
+
+def test_every_seed_character_passes_publish_validation() -> None:
+    characters = load_characters()
+    assert characters, "시드 캐릭터가 하나도 없다"
+
+    for character in characters:
+        payload = character.payload
+        missing = validate_character_publish(
+            Content(genre_id=payload.genre_id, target=payload.target),
+            ContentVersion(detail_description=payload.description),
+            CharacterVersionDetail(
+                name=payload.name,
+                one_liner=payload.one_liner,
+                thumbnail_asset_id=uuid.uuid4(),  # 시드가 실행 시점에 채운다
+                intro=payload.intro,
+                character_prompt=payload.character_prompt,
+            ),
+        )
+        assert missing == [], f"{character.slug}: 발행 검증 실패 — {missing}"
+
+
+def test_major_character_is_written_for_the_generated_images() -> None:
+    """메이저 캐릭터는 상황 이미지 4장과 1:1 로 맞물려야 한다.
+
+    배열 위치가 곧 `situational_image_slug()` 의 scene 번호이자 매칭 우선순위(`order`)라,
+    개수가 바뀌면 PNG 가 엇갈리고 순서가 바뀌면 우선순위가 뒤집힌다.
+    """
+    payload = next(
+        character.payload
+        for character in load_characters()
+        if character.slug == MAJOR_CHARACTER_SLUG
+    )
+
+    assert len(payload.situational_images) == 4
+    assert len(payload.example_dialogues) >= 2
+    assert payload.genre_id == ROMANCE_GENRE_ID
+    assert payload.target is not None and payload.target.value == "female"
+
+    conditions = [image.trigger_condition for image in payload.situational_images]
+    assert len(set(conditions)) == 4
+    assert all(condition.strip() for condition in conditions)
