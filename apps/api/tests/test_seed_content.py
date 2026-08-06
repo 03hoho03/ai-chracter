@@ -59,7 +59,7 @@ def _story_payload() -> dict[str, Any]:
                                 "rules": [
                                     {
                                         "kind": "rule",
-                                        "statId": "00000000-0000-4000-8000-000000000001",
+                                        "stat": "신뢰",
                                         "operator": "gte",
                                         "threshold": 80,
                                     }
@@ -166,6 +166,68 @@ def test_load_story_keeps_explicit_id(tmp_path: Path) -> None:
     payload = load_story(path)
 
     assert payload.shortcuts[0].id == uuid.UUID(explicit)
+
+
+def test_load_story_resolves_stat_reference_by_name(tmp_path: Path) -> None:
+    """엔딩 규칙은 스탯의 파생 id 를 손으로 쓸 수 없으므로 `stat` 에 이름을 적는다."""
+    path = _write(tmp_path, "romance-3rdloop", _story_payload())
+
+    payload = load_story(path)
+
+    setup = payload.starting_setups[0]
+    group = setup.endings[0].stat_rules[0]
+    assert group.kind == "group"
+    assert group.rules[0].stat_id == setup.stat_defs[0].id
+
+
+def test_load_story_resolves_flat_stat_reference_by_name(tmp_path: Path) -> None:
+    """그룹으로 감싸지 않은 최상위 규칙도 같은 방식으로 풀린다."""
+    raw = _story_payload()
+    raw["startingSetups"][0]["endings"][0]["statRules"] = [
+        {"kind": "rule", "stat": "신뢰", "operator": "lte", "threshold": 20}
+    ]
+    path = _write(tmp_path, "romance-3rdloop", raw)
+
+    payload = load_story(path)
+
+    setup = payload.starting_setups[0]
+    assert setup.endings[0].stat_rules[0].stat_id == setup.stat_defs[0].id
+
+
+def test_load_story_resolves_stat_names_within_each_starting_setup(tmp_path: Path) -> None:
+    """같은 이름의 스탯이라도 시작설정마다 다른 entity_id 라 각자 자기 것을 가리켜야 한다."""
+    raw = _story_payload()
+    raw["startingSetups"].append(json.loads(json.dumps(raw["startingSetups"][0])))
+    path = _write(tmp_path, "romance-3rdloop", raw)
+
+    payload = load_story(path)
+
+    first, second = payload.starting_setups
+    assert first.stat_defs[0].id != second.stat_defs[0].id
+    assert first.endings[0].stat_rules[0].rules[0].stat_id == first.stat_defs[0].id
+    assert second.endings[0].stat_rules[0].rules[0].stat_id == second.stat_defs[0].id
+
+
+def test_load_story_keeps_explicit_stat_id(tmp_path: Path) -> None:
+    explicit = "5eed0000-0000-4000-8000-0000000000fe"
+    raw = _story_payload()
+    raw["startingSetups"][0]["endings"][0]["statRules"][0]["rules"][0]["statId"] = explicit
+    path = _write(tmp_path, "romance-3rdloop", raw)
+
+    payload = load_story(path)
+
+    assert payload.starting_setups[0].endings[0].stat_rules[0].rules[0].stat_id == uuid.UUID(
+        explicit
+    )
+
+
+def test_load_story_reports_unknown_stat_name(tmp_path: Path) -> None:
+    raw = _story_payload()
+    raw["startingSetups"][0]["endings"][0]["statRules"][0]["rules"][0]["stat"] = "없는스탯"
+    path = _write(tmp_path, "dangling-story", raw)
+
+    with pytest.raises(SeedContentError, match="dangling-story.json"):
+        load_story(path)
 
 
 def test_load_character_derives_entity_ids(tmp_path: Path) -> None:
