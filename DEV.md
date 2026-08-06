@@ -39,7 +39,8 @@ pnpm --filter @ai-character-chat/admin dev                  # http://localhost:5
 `http://localhost:5173` → Google 로그인 → 홈의 **'미아'** 카드 → 대화 시작.
 
 - 이메일 회원가입은 실제 메일 발송이 없어(인증코드가 API stdout / Redis에 찍힘) 불편하니 **Google 로그인**을 권장.
-- 시드된 크리에이터 계정(`seed-creator@example.com`)은 콘텐츠 소유자일 뿐 로그인용이 아닙니다.
+- 시드된 계정으로 바로 로그인해도 된다(비밀번호는 아래 [시드 콘텐츠](#시드-콘텐츠-스토리-30개--캐릭터) 참고).
+- 홈에는 '미아' 외에 장르별 시드 스토리 30개도 함께 올라와 있다.
 
 ## 4) (선택) 원격 접속 — 태블릿/폰에서 실기기 확인
 
@@ -89,6 +90,57 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
 - SSE 채팅 스트리밍과 Vite HMR 웹소켓 모두 serve를 통과하는 것을 확인했다(버퍼링·업그레이드 실패 없음).
 - `SESSION_COOKIE_SECURE`는 `false`로 둔다. HTTPS에서도 쿠키는 정상 동작하고, `true`로 올리면 http 접속 여지가 사라진다.
 
+## 시드 콘텐츠 (스토리 30개 + 캐릭터)
+
+`./dev-up.sh`(또는 `cd apps/api && uv run --env-file .env python scripts/seed_dev.py`)가 장르 10종 × 3개 = **스토리 30개**와
+메이저 캐릭터 1개, 그리고 기존 샘플 캐릭터 '미아'를 전부 **발행 상태**로 넣는다. 고정 UUID 업서트라 몇 번을 돌려도 행이 늘지 않고,
+`docker compose -f docker-compose.dev.yml down -v`로 DB를 통째로 날려도 `./dev-up.sh` 한 번이면 같은 상태로 돌아온다.
+
+### 계정
+
+| 역할 | 이메일 | 비밀번호 |
+|---|---|---|
+| 작가 — 시드 콘텐츠 전부의 소유자 | `seed-creator@example.com` | `password1234` |
+| 독자 | `test@example.com` | `password1234` |
+
+작가 계정으로 로그인하면 시드된 콘텐츠를 **빌더에서 소유자로 열어** 볼 수 있다.
+(`POST /auth/login` 성공 응답은 200이 아니라 `204 No Content` + `Set-Cookie: session_id=...`다.)
+
+### 데이터 파일
+
+콘텐츠의 진실은 DB가 아니라 리포에 커밋된 JSON이다.
+
+```
+apps/api/scripts/seed_content/data/
+├── stories/{slug}.json        # 스토리 30개 (파일명 = slug)
+├── characters/{slug}.json     # 캐릭터
+├── diversity_matrix.json      # 30개 콘셉트 원본 (tasks/prd-genre-seed-content.md §7의 전사본)
+└── image_prompts.json         # 이미지 생성 프롬프트
+```
+
+**스토리 문구를 고칠 때는 빌더나 DB가 아니라 JSON을 고치고 시드를 다시 돌린다** — 시드는 자기 UUID 행을 파일 값으로 덮어쓰므로
+빌더에서 손으로 고친 내용은 다음 시드에 지워진다. JSON에는 UUID를 적지 않는다(로더가 파일 안의 **위치**로 파생한다).
+그래서 이미 시드된 콘텐츠의 리스트(엔딩·스탯·키워드북 등) 중간에 항목을 끼워 넣으면 그 뒤 항목의 id가 전부 밀린다 — **새 항목은 항상 뒤에 붙일 것.**
+고친 JSON은 `cd apps/api && uv run pytest tests/test_seed_content_data.py`가 DB 없이 검증한다(발행 검증 + 엔딩 규칙 도달 가능성).
+
+### 이미지
+
+`apps/api/scripts/seed_content/images/`는 **gitignore**다(생성물 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
+장르별 색으로 그려진 **절차적 목업 PNG**로 뜬다 — 채팅·발행·이미지 매칭 동작에는 영향이 없다.
+
+진짜 애니메 이미지가 필요하면 `apps/api/.env`에 `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`을 채우고:
+
+```sh
+cd apps/api
+uv run --env-file .env python scripts/generate_seed_images.py --dry-run    # 키 없이 조립된 프롬프트만 출력
+uv run --env-file .env python scripts/generate_seed_images.py             # 아직 없는 것만 생성
+uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rdloop-dj --force
+```
+
+- 파일명 규약: 콘텐츠 썸네일 `{콘텐츠slug}.png`, 상황 이미지 `{캐릭터slug}-scene{n}.png`(1-based). 이 이름이 아니면 시드가 목업으로 폴백한다.
+- 생성 후 시드를 다시 돌려야 S3(moto)에 올라간다. moto는 인메모리라 컨테이너를 재생성할 때마다 시드가 매번 재업로드한다.
+- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** Cloudflare Workers AI에 시드값을 보낼 수 없어 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
+
 ## 구성 요소
 
 | 서비스 | 포트 | 비고 |
@@ -111,6 +163,7 @@ https://<호스트>.<테일넷>.ts.net/api/  → localhost:8000  (API, /api 프�
   (`pytest`는 dev DB를 건드리지 않는다 — 별도의 `ai_character_chat_test`를 쓴다. `apps/api/CLAUDE.md` 참고.)
 - **시드 캐릭터의 문구/프롬프트를 고치고 싶을 때**: `apps/api/scripts/seed_dev.py`를 고친 뒤 그대로 다시 실행하면 된다.
   고정 UUID upsert라 재실행이 스크립트의 값으로 덮어쓴다. 직접 만든 대화방·자산은 건드리지 않는다.
+  (단 '미아' 얘기다 — 시드 스토리 30개와 메이저 캐릭터는 `seed_dev.py`가 아니라 `seed_content/data/`의 JSON이 원본이다. 위 [시드 콘텐츠](#시드-콘텐츠-스토리-30개--캐릭터) 참고.)
 - **`.env`에 JSON 값(리스트 등)을 넣었더니 API가 `SettingsError`로 기동 실패**: `uv run --env-file`의 dotenv 파서가 값 안의 `"`를
   셸 인용부호로 보고 벗겨낸다(`["a","b"]` → `[a,b]` → JSON 파싱 실패). **전체를 홑따옴표로 감쌀 것**: `KEY='["a","b"]'`.
   `--env-file` 없이 띄우면 pydantic이 `.env`를 직접 읽어 이 문제가 안 나타나므로 재현 조건에 주의.
