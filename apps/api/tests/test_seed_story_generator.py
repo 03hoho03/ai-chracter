@@ -1,11 +1,13 @@
-"""`scripts/generate_seed_stories.py` 의 조립·검증·재시도 (US-013).
+"""`scripts/generate_seed_stories.py` 의 조립·검증·재시도(US-013)와 유사도 게이트(US-014).
 
 Gemini 호출 자체는 테스트하지 않는다 — 생성기가 (a) 매트릭스의 확정 콘셉트를 그대로 박아
 넣는지, (b) 시드가 실제로 거는 관문을 파일로 쓰기 **전에** 통과시키는지, (c) 걸렸을 때 그
 이유를 프롬프트에 되먹여 다시 부르는지를 고정한다.
 """
 
+import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from typing import Any, TypeVar
 
 import pytest
@@ -15,6 +17,7 @@ import generate_seed_stories
 from api.llm.client import LLMClient, LLMClientError
 from generate_seed_stories import (
     MAX_ATTEMPTS,
+    MAX_SIMILARITY_ROUNDS,
     GeneratedEnding,
     GeneratedEndingRule,
     GeneratedKeywordNote,
@@ -22,8 +25,12 @@ from generate_seed_stories import (
     GeneratedStartingSetup,
     GeneratedStatDef,
     GeneratedStory,
+    SimilarityOverlap,
+    SimilarityReview,
     assemble_story,
     build_prompt,
+    build_similarity_prompt,
+    regeneration_targets,
     stat_display_name,
     validate_story,
 )
@@ -33,11 +40,17 @@ from seed_content.matrix import MatrixSlot, load_matrix
 T = TypeVar("T", bound=BaseModel)
 
 SLOT_SLUG = "romance-lockedwith"  # 시작설정 2개 · 스탯 3개 · 추리/밀실
+OTHER_SLOT_SLUG = "romance-threeoffering"  # 같은 장르의 다른 슬롯
 
 
 @pytest.fixture
 def slot() -> MatrixSlot:
     return next(item for item in load_matrix() if item.slug == SLOT_SLUG)
+
+
+@pytest.fixture
+def other_slot() -> MatrixSlot:
+    return next(item for item in load_matrix() if item.slug == OTHER_SLOT_SLUG)
 
 
 def _story(slot: MatrixSlot, **overrides: Any) -> GeneratedStory:
@@ -100,7 +113,7 @@ def _story(slot: MatrixSlot, **overrides: Any) -> GeneratedStory:
 class FakeLLMClient(LLMClient):
     """정해진 결과를 순서대로 돌려주고 받은 프롬프트를 기록한다."""
 
-    def __init__(self, results: list[GeneratedStory | LLMClientError]) -> None:
+    def __init__(self, results: list[GeneratedStory | SimilarityReview | LLMClientError]) -> None:
         self.results = results
         self.prompts: list[str] = []
 
@@ -286,3 +299,174 @@ async def test_transient_call_failure_is_retried(slot: MatrixSlot) -> None:
 
     assert await generate_seed_stories._generate_slot(client, slot, []) is not None
     assert len(client.prompts) == 2
+
+
+# --- 유사도 게이트 (US-014) -------------------------------------------------
+
+
+@pytest.fixture
+def gate(
+    slot: MatrixSlot, other_slot: MatrixSlot, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> tuple[list[MatrixSlot], dict[str, Any], set[str]]:
+    """같은 장르 두 슬롯이 이미 생성돼 있고 둘 다 다시 쓸 수 있는 상태."""
+    monkeypatch.setattr(generate_seed_stories, "STORIES_DIR", tmp_path)
+    group = [slot, other_slot]
+    stories = {item.slug: assemble_story(item, _story(item)) for item in group}
+    return group, stories, {item.slug for item in group}
+
+
+def _overlap(slot: MatrixSlot, other_slot: MatrixSlot) -> SimilarityReview:
+    return SimilarityReview(
+        overlaps=[
+            SimilarityOverlap(
+                slug=other_slot.slug,
+                overlaps_with=slot.slug,
+                axis="말투",
+                detail="두 주인공이 똑같이 '…군요' 로 끝맺는다.",
+            )
+        ]
+    )
+
+
+def test_similarity_prompt_asks_about_execution_not_coordinates(
+    slot: MatrixSlot, other_slot: MatrixSlot
+) -> None:
+    entries = [(item, assemble_story(item, _story(item))) for item in (slot, other_slot)]
+
+    prompt = build_similarity_prompt(entries)
+
+    assert "본문 실행이 그 좌표대로 실제로 갈라졌는지" in prompt
+    for axis in ("말투", "문장 리듬", "엔딩 판정", "키워드북 소재"):
+        assert axis in prompt
+    for item, raw in entries:  # 두 스토리의 본문이 실제로 실려 있다
+        assert item.slug in prompt
+        assert raw["settingText"] in prompt
+        assert raw["startingSetups"][0]["endings"][0]["judgmentPrompt"] in prompt
+        assert raw["keywordNotes"][0]["infoText"] in prompt
+
+
+def test_prompt_feeds_overlap_axes_back(slot: MatrixSlot) -> None:
+    prompt = build_prompt(slot, [], overlaps=["말투: romance-3rdloop 와 겹친다 — 어미가 같다"])
+
+    assert "유사도 심사에서" in prompt
+    assert "어미가 같다" in prompt
+
+
+def test_regeneration_targets_groups_notes_by_slot() -> None:
+    overlaps = [
+        SimilarityOverlap(slug="b", overlaps_with="a", axis="말투", detail="어미가 같다"),
+        SimilarityOverlap(slug="b", overlaps_with="a", axis="엔딩 판정", detail="같은 걸 묻는다"),
+    ]
+
+    targets = regeneration_targets(overlaps, {"a", "b"})
+
+    assert list(targets) == ["b"]
+    assert len(targets["b"]) == 2
+    assert "말투: a 와 겹친다" in targets["b"][0]
+
+
+def test_regeneration_targets_falls_back_to_the_counterpart() -> None:
+    """심사가 손으로 쓴 슬롯을 지목하면 다시 쓸 수 있는 상대 쪽을 고친다."""
+    overlaps = [
+        SimilarityOverlap(slug="major", overlaps_with="b", axis="말투", detail="어미가 같다")
+    ]
+
+    targets = regeneration_targets(overlaps, {"b"})
+
+    assert list(targets) == ["b"]
+    assert "major 와 겹친다" in targets["b"][0]
+
+
+def test_regeneration_targets_drops_unfixable_findings() -> None:
+    overlaps = [
+        SimilarityOverlap(slug="major", overlaps_with="없는슬롯", axis="말투", detail="…")
+    ]
+
+    assert regeneration_targets(overlaps, {"b"}) == {}
+
+
+async def test_gate_passes_when_the_review_is_clean(
+    gate: tuple[list[MatrixSlot], dict[str, Any], set[str]],
+) -> None:
+    group, stories, regenerable = gate
+    before = dict(stories)
+    client = FakeLLMClient([SimilarityReview(overlaps=[])])
+
+    reason = await generate_seed_stories._apply_similarity_gate(
+        client, group, stories, regenerable
+    )
+
+    assert reason is None
+    assert stories == before  # 아무것도 다시 쓰지 않았다
+    assert len(client.prompts) == 1  # 장르당 심사 1회
+
+
+async def test_gate_regenerates_the_overlapping_slot(
+    gate: tuple[list[MatrixSlot], dict[str, Any], set[str]],
+    slot: MatrixSlot,
+    other_slot: MatrixSlot,
+    tmp_path: Path,
+) -> None:
+    group, stories, regenerable = gate
+    rewritten = _story(other_slot, description="완전히 다른 결의 소개문.")
+    client = FakeLLMClient([_overlap(slot, other_slot), rewritten, SimilarityReview(overlaps=[])])
+
+    reason = await generate_seed_stories._apply_similarity_gate(
+        client, group, stories, regenerable
+    )
+
+    assert reason is None
+    assert stories[other_slot.slug]["description"] == "완전히 다른 결의 소개문."
+    assert stories[slot.slug]["description"] != "완전히 다른 결의 소개문."  # 지목된 쪽만 다시 썼다
+    assert "'…군요' 로 끝맺는다" in client.prompts[1]  # 겹친 축이 되먹여졌다
+    written = json.loads((tmp_path / f"{other_slot.slug}.json").read_text(encoding="utf-8"))
+    assert written["description"] == "완전히 다른 결의 소개문."
+
+
+async def test_gate_flags_manual_review_after_two_rounds(
+    gate: tuple[list[MatrixSlot], dict[str, Any], set[str]],
+    slot: MatrixSlot,
+    other_slot: MatrixSlot,
+) -> None:
+    group, stories, regenerable = gate
+    overlap = _overlap(slot, other_slot)
+    client = FakeLLMClient(
+        [overlap, _story(other_slot), overlap, _story(other_slot), overlap]
+    )
+
+    reason = await generate_seed_stories._apply_similarity_gate(
+        client, group, stories, regenerable
+    )
+
+    assert reason is not None
+    assert f"{MAX_SIMILARITY_ROUNDS}회" in reason
+    assert not client.results  # 심사 3회 + 재생성 2회로 정확히 끝났다
+
+
+async def test_gate_flags_manual_review_when_the_call_fails(
+    gate: tuple[list[MatrixSlot], dict[str, Any], set[str]],
+) -> None:
+    group, stories, regenerable = gate
+    client = FakeLLMClient([LLMClientError("")])
+
+    reason = await generate_seed_stories._apply_similarity_gate(
+        client, group, stories, regenerable
+    )
+
+    assert reason is not None
+    assert "심사 호출" in reason
+
+
+async def test_gate_skips_when_there_is_nothing_to_compare(
+    gate: tuple[list[MatrixSlot], dict[str, Any], set[str]], slot: MatrixSlot
+) -> None:
+    group, stories, _ = gate
+    single = {slot.slug: stories[slot.slug]}
+    client = FakeLLMClient([])
+
+    reason = await generate_seed_stories._apply_similarity_gate(
+        client, group, single, {slot.slug}
+    )
+
+    assert reason is None
+    assert client.prompts == []  # 심사 호출 자체가 없다

@@ -13,6 +13,11 @@
 (`GeneratedStory`)다. 받은 결과를 시드 JSON 모양으로 조립한 뒤, **파일로 쓰기 전에**
 `seed_content.loader.parse_story` + `upsert._validate_payload` 로 실제 시드가 거는 관문을
 그대로 통과시킨다. 실패하면 무엇이 틀렸는지를 프롬프트에 되먹여 재생성한다(최대 2회).
+
+한 장르를 다 만든 뒤에는 **유사도 게이트**(US-014)가 그 장르 전체를 한 번에 심사한다. 좌표는
+매트릭스가 이미 갈라놨으므로 심사가 보는 것은 좌표가 아니라 본문 실행이 그 좌표대로 갈라졌는지
+(말투·문장 리듬·엔딩 판정·키워드북 소재)다. 겹친다고 판정된 슬롯은 겹친 축을 프롬프트에 되먹여
+다시 쓰고, 2회 재생성 후에도 겹치면 그 장르를 '수동 검수 필요'로 표시하고 넘어간다.
 """
 
 import argparse
@@ -44,6 +49,9 @@ from seed_content.upsert import _validate_payload
 
 # 검증에 걸리면 무엇이 틀렸는지 되먹여 다시 부른다 — 첫 호출 + 재시도 2회.
 MAX_ATTEMPTS = 3
+
+# 유사도 게이트: 심사 → 재생성 → 심사 → 재생성 → 심사. 그래도 겹치면 수동 검수로 넘긴다.
+MAX_SIMILARITY_ROUNDS = 2
 
 # 구조 요건. 발행 검증(`turnCountGate >= 10` 등)과 겹치지 않는 것만 여기서 본다.
 MIN_ENDINGS_PER_SETUP = 2
@@ -150,12 +158,32 @@ class GeneratedStory(BaseModel):
     shortcuts: list[GeneratedShortcut]
 
 
+class SimilarityOverlap(BaseModel):
+    """겹쳤다고 판정된 축 하나. `slug` 가 고쳐 쓸 쪽, `overlaps_with` 가 상대다."""
+
+    slug: str
+    overlaps_with: str
+    axis: Literal["말투", "문장 리듬", "엔딩 판정", "키워드북 소재"]
+    detail: str
+
+
+class SimilarityReview(BaseModel):
+    """장르 하나에 대한 심사 결과 — 겹친 데가 없으면 빈 배열."""
+
+    overlaps: list[SimilarityOverlap]
+
+
 def stat_display_name(matrix_stat: str) -> str:
     """`남은 방송 회차(30→0)` 처럼 매트릭스가 달아둔 설계 주석을 뗀 표시 이름."""
     return matrix_stat.split("(")[0].strip()
 
 
-def build_prompt(slot: MatrixSlot, previous: Sequence[str], errors: Sequence[str] = ()) -> str:
+def build_prompt(
+    slot: MatrixSlot,
+    previous: Sequence[str],
+    errors: Sequence[str] = (),
+    overlaps: Sequence[str] = (),
+) -> str:
     """PRD §6 의 5단 구조 — 역할·제약 / 좌표와 콘셉트 / 누적 컨텍스트 / 구조 요건 / 출력 스키마."""
     sections = [
         "너는 한국어 인터랙티브 스토리를 쓰는 작가다. 아래 콘셉트는 이미 확정된 것이고, "
@@ -165,6 +193,12 @@ def build_prompt(slot: MatrixSlot, previous: Sequence[str], errors: Sequence[str
         CONTENT_RATING_RULES,
         _structure_section(slot),
     ]
+    if overlaps:
+        sections.append(
+            "[유사도 심사에서 같은 장르의 다른 스토리와 겹친다고 판정된 축 — 이 축들을 확실히 "
+            "갈라서 다시 써라. 콘셉트와 좌표는 그대로 두고 본문 실행만 바꾼다]\n"
+            + "\n".join(f"- {note}" for note in overlaps)
+        )
     if errors:
         sections.append(
             "[직전 생성물이 검증에서 걸렸다 — 아래를 반드시 고쳐서 다시 써라]\n"
@@ -408,6 +442,125 @@ def summarize(slot: MatrixSlot, raw: dict[str, Any]) -> str:
     )
 
 
+def build_similarity_prompt(entries: Sequence[tuple[MatrixSlot, dict[str, Any]]]) -> str:
+    """장르 하나를 통째로 넣는 심사 프롬프트 — 좌표가 아니라 본문 실행의 겹침을 묻는다."""
+    sections = [
+        "너는 같은 장르로 묶인 한국어 인터랙티브 스토리들을 심사하는 편집자다. "
+        "좌표(정서·관계·플레이·세계·엔딩 압력)는 이미 서로 다르게 배정돼 있다 — 네가 볼 것은 "
+        "좌표가 다른지가 아니라 **본문 실행이 그 좌표대로 실제로 갈라졌는지**다.",
+        "[판정 축]\n"
+        "- 말투: 등장인물의 어미·호칭·존댓말 여부·감정 표현 방식이 서로 구분되는가\n"
+        "- 문장 리듬: 설정문·프롤로그의 문장 길이·호흡·묘사 밀도가 서로 구분되는가\n"
+        "- 엔딩 판정: 엔딩 judgmentPrompt 가 묻는 것이 서로 다른가\n"
+        "- 키워드북 소재: 키워드와 정보 내용이 서로 다른 소재를 다루는가",
+        "[판정 기준]\n"
+        "- 장르가 같아서 소재군이 비슷한 것은 겹침이 아니다. 문장·표현·판정 기준·키워드가 실제로 "
+        "서로 베낀 수준일 때만 겹침으로 적는다.\n"
+        "- 겹치는 축이 없으면 overlaps 를 빈 배열로 둔다. 억지로 찾아내지 않는다.\n"
+        "- 항목의 slug 에는 **고쳐 써야 할 쪽**(뒤 번호 슬롯)을, overlaps_with 에는 상대 슬롯을 적는다.\n"
+        "- detail 에는 겹친다고 본 근거를 두 문장 안에 적는다.",
+        *[_story_digest(slot, raw) for slot, raw in entries],
+    ]
+    return "\n\n".join(sections)
+
+
+def _story_digest(slot: MatrixSlot, raw: dict[str, Any]) -> str:
+    axes = slot.axes
+    setups = "\n".join(
+        f"  - 시작 상황 「{setup.get('name')}」\n"
+        f"    프롤로그: {setup.get('prologue')}\n"
+        f"    첫 발화: {setup.get('openingMessage')}\n"
+        + "\n".join(
+            f"    엔딩 「{ending.get('name')}」 판정: {ending.get('judgmentPrompt')}"
+            for ending in setup.get("endings") or []
+        )
+        for setup in raw.get("startingSetups") or []
+    )
+    keywords = "\n".join(
+        f"  - [{', '.join(str(keyword) for keyword in note.get('triggerKeywords') or [])}] "
+        f"{note.get('infoText')}"
+        for note in raw.get("keywordNotes") or []
+    )
+    return (
+        f"[{slot.slug}] 「{raw.get('name')}」\n"
+        f"좌표: 정서 {axes.tone} / 관계 {axes.relation} / 플레이 {axes.verb} / "
+        f"세계 {axes.space} / 엔딩 압력 {axes.ending_pressure}\n"
+        f"설정문: {raw.get('settingText')}\n"
+        f"전개 예시: {raw.get('developmentExample')}\n"
+        f"시작 상황:\n{setups}\n"
+        f"키워드북:\n{keywords}"
+    )
+
+
+def regeneration_targets(
+    overlaps: Sequence[SimilarityOverlap], regenerable: set[str]
+) -> dict[str, list[str]]:
+    """겹침 판정을 '다시 쓸 수 있는 슬롯 → 되먹일 문구' 로 모은다.
+
+    심사가 지목한 쪽이 손으로 쓴 슬롯(메이저)이거나 이번 실행 범위 밖이면 상대 쪽을 고친다.
+    양쪽 다 못 고치거나 알 수 없는 slug 면 그 판정은 사람 몫으로 남긴다.
+    """
+    targets: dict[str, list[str]] = {}
+    for overlap in overlaps:
+        slug = overlap.slug if overlap.slug in regenerable else overlap.overlaps_with
+        if slug not in regenerable:
+            continue
+        other = overlap.overlaps_with if slug == overlap.slug else overlap.slug
+        targets.setdefault(slug, []).append(f"{overlap.axis}: {other} 와 겹친다 — {overlap.detail}")
+    return targets
+
+
+async def _apply_similarity_gate(
+    client: LLMClient,
+    group: Sequence[MatrixSlot],
+    stories: dict[str, dict[str, Any]],
+    regenerable: set[str],
+) -> str | None:
+    """장르 하나의 겹침을 심사하고 필요하면 다시 쓴다 — 수동 검수가 필요하면 그 사유를 반환."""
+    slots_by_slug = {slot.slug: slot for slot in group}
+    for round_number in range(MAX_SIMILARITY_ROUNDS + 1):
+        entries = [(slot, stories[slot.slug]) for slot in group if slot.slug in stories]
+        if len(entries) < 2:
+            return None  # 비교 대상이 없으면 심사할 것도 없다
+
+        print(f"  · 유사도 심사 중… ({len(entries)}개)")
+        try:
+            review = await client.generate_structured(
+                build_similarity_prompt(entries), SimilarityReview
+            )
+        except LLMClientError as exc:
+            print(f"  ! 유사도 심사 호출 실패 — {exc}")
+            return "유사도 심사 호출이 실패했다"
+
+        for overlap in review.overlaps:
+            print(
+                f"    · [{overlap.axis}] {overlap.slug} ↔ {overlap.overlaps_with}: {overlap.detail}"
+            )
+        if not review.overlaps:
+            print("  ✓ 유사도 심사 통과")
+            return None
+
+        targets = regeneration_targets(review.overlaps, regenerable)
+        if not targets:
+            return "겹친 슬롯을 이번 실행에서 다시 쓸 수 없다(손으로 쓴 슬롯이거나 실행 범위 밖)"
+        if round_number == MAX_SIMILARITY_ROUNDS:
+            return f"{MAX_SIMILARITY_ROUNDS}회 재생성 후에도 겹친다"
+
+        for slug, notes in targets.items():
+            print(f"  · {slug}: 겹친 축을 되먹여 재생성 ({round_number + 1}/{MAX_SIMILARITY_ROUNDS})")
+            previous = [
+                summarize(other, stories[other.slug])
+                for other in group
+                if other.slug != slug and other.slug in stories
+            ]
+            raw = await _generate_slot(client, slots_by_slug[slug], previous, notes)
+            if raw is None:
+                return f"{slug} 재생성이 검증을 통과하지 못했다"
+            _write_story(slug, raw)
+            stories[slug] = raw
+    return None
+
+
 def main() -> int:
     args = _parse_args()
     try:
@@ -454,16 +607,20 @@ def _select(slots: list[MatrixSlot], genre: str | None, slot_number: int | None)
 async def _generate_all(slots: list[MatrixSlot], selected: set[str], *, force: bool) -> int:
     client = get_llm_client()
     failed: list[str] = []
+    manual_review: list[tuple[str, str]] = []
 
     for genre, group in _by_genre(slots):
         if not any(slot.slug in selected for slot in group):
             continue
         print(f"\n[{genre}]")
         previous: list[str] = []
+        stories: dict[str, dict[str, Any]] = {}
+        regenerable: set[str] = set()
         for slot in group:
             existing = _read_existing(slot.slug)
             if slot.slug not in selected or (existing is not None and not force):
                 if existing is not None:
+                    stories[slot.slug] = existing
                     previous.append(summarize(slot, existing))
                     if slot.slug in selected:
                         print(f"  - {slot.slug}: 이미 있음 — 건너뜀 (--force 로 재생성)")
@@ -476,8 +633,21 @@ async def _generate_all(slots: list[MatrixSlot], selected: set[str], *, force: b
                 continue
             path = _write_story(slot.slug, raw)
             print(f"  ✓ {slot.slug} → {path}")
+            stories[slot.slug] = raw
+            regenerable.add(slot.slug)
             previous.append(summarize(slot, raw))
 
+        # 이번 실행에서 아무것도 안 만들었으면 심사할 이유가 없다(고칠 수 있는 슬롯이 없다).
+        if regenerable:
+            reason = await _apply_similarity_gate(client, group, stories, regenerable)
+            if reason is not None:
+                print(f"  ⚠ 수동 검수 필요 — {reason}")
+                manual_review.append((genre, reason))
+
+    if manual_review:
+        print("\n수동 검수 필요:")
+        for genre, reason in manual_review:
+            print(f"  - {genre}: {reason}")
     if failed:
         print(f"\n실패 {len(failed)}건: {', '.join(failed)} — 프롬프트나 콘셉트를 보고 다시 돌릴 것")
         return 1
@@ -486,12 +656,17 @@ async def _generate_all(slots: list[MatrixSlot], selected: set[str], *, force: b
 
 
 async def _generate_slot(
-    client: LLMClient, slot: MatrixSlot, previous: Sequence[str]
+    client: LLMClient,
+    slot: MatrixSlot,
+    previous: Sequence[str],
+    overlaps: Sequence[str] = (),
 ) -> dict[str, Any] | None:
     errors: list[str] = []
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
-            generated = await client.generate_structured(build_prompt(slot, previous, errors), GeneratedStory)
+            generated = await client.generate_structured(
+                build_prompt(slot, previous, errors, overlaps), GeneratedStory
+            )
         except LLMClientError as exc:
             print(f"    ! {attempt}차 생성 호출 실패 — {exc}")
             continue
