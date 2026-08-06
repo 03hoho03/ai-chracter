@@ -91,6 +91,11 @@ class StatDef(Base):
     initial_value: Mapped[int] = mapped_column(Integer, nullable=False)
     unit: Mapped[str | None] = mapped_column(Text, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
+    # 매 턴 결정적으로 더해지는 값(감소는 음수). None 이면 종전대로 LLM 판단에만 맡긴다.
+    # "매 턴 반드시 1씩 줄어든다" 같은 제약을 description 산문으로만 두면 판정 LLM 이 조용히
+    # 건너뛰거나 거꾸로 올리는 일이 실제로 있었고(2026-08-07 실측), 그 카운터에 걸린 엔딩은
+    # 도달 가능성이 통째로 흔들린다 — 그래서 카운터는 판단 대상이 아니라 시스템이 굴린다.
+    per_turn_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 

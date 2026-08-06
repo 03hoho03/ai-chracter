@@ -639,6 +639,7 @@ async def _story_draft_response(
                         initial_value=stat_def.initial_value,
                         unit=stat_def.unit,
                         description=stat_def.description,
+                        per_turn_delta=stat_def.per_turn_delta,
                     )
                     for stat_def in stat_defs
                 ],
@@ -948,6 +949,7 @@ async def _update_story_draft(
             stat_def.initial_value = stat_item.initial_value
             stat_def.unit = stat_item.unit
             stat_def.description = stat_item.description
+            stat_def.per_turn_delta = stat_item.per_turn_delta
             stat_def.order = stat_order
 
         existing_endings = {
@@ -1339,6 +1341,7 @@ async def _publish_story_content(
                     initial_value=stat_def.initial_value,
                     unit=stat_def.unit,
                     description=stat_def.description,
+                    per_turn_delta=stat_def.per_turn_delta,
                     order=stat_def.order,
                 )
             )

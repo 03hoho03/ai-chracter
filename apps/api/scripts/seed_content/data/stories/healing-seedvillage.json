@@ -46,7 +46,8 @@
           "maxValue": 30,
           "initialValue": 30,
           "unit": "일",
-          "description": "사용자가 행동을 한 대목 진행할 때마다 반드시 1일씩 줄어들며, 절대 늘어나지 않는다."
+          "description": "사용자가 행동을 한 대목 진행할 때마다 반드시 1일씩 줄어들며, 절대 늘어나지 않는다.",
+          "perTurnDelta": -1
         }
       ],
       "endings": [

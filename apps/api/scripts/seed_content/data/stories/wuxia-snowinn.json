@@ -46,7 +46,8 @@
           "maxValue": 10,
           "initialValue": 10,
           "unit": "자",
-          "description": "시간의 흐름을 나타내며, 대화 대목이 진행될 때마다 반드시 1자씩 줄어들고 절대로 늘어나지 않습니다."
+          "description": "시간의 흐름을 나타내며, 대화 대목이 진행될 때마다 반드시 1자씩 줄어들고 절대로 늘어나지 않습니다.",
+          "perTurnDelta": -1
         }
       ],
       "endings": [

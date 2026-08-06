@@ -342,3 +342,24 @@ def test_build_stat_judgment_prompt_binds_the_direction_constraints_in_descripti
 
     assert "반드시 지켜야 하는 규칙" in prompt
     assert "현재값보다 큰 값을 내지 말고" in prompt
+
+
+def test_build_stat_judgment_prompt_marks_system_managed_counters() -> None:
+    """`per_turn_delta` 스탯은 `apply_stat_changes` 가 굴리고 LLM 판단은 버려진다 —
+    현재값은 서사 판단의 근거라 목록엔 남기되, 판단 대상이 아님을 표시해 헛수고를 줄인다."""
+    counter = _stat_def(name="산소", description="밀실의 산소")
+    counter.per_turn_delta = -5
+    judged = _stat_def(name="상호 신뢰", description="서로에 대한 신뢰")
+
+    prompt = build_stat_judgment_prompt(
+        stat_defs=[counter, judged],
+        current_stats={},
+        history=[],
+        user_message="문을 두드린다",
+        assistant_message="아무도 답하지 않는다",
+    )
+
+    oxygen_line = next(line for line in prompt.splitlines() if "이름=산소" in line)
+    trust_line = next(line for line in prompt.splitlines() if "이름=상호 신뢰" in line)
+    assert "statChanges에 넣지 마라" in oxygen_line
+    assert "statChanges에 넣지 마라" not in trust_line

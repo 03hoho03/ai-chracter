@@ -203,6 +203,10 @@ class StatDefDraftItem(CamelModel):
     initial_value: int
     unit: str | None
     description: str
+    # 매 턴 결정적으로 더해지는 값(감소는 음수). 채우면 그 스탯은 판정 LLM 대신 시스템이
+    # 굴린다(`api.chat.stats.apply_stat_changes`) — "매 턴 반드시 1씩 줄어든다" 같은 카운터용.
+    # 턴당 변화와 행동 반응이 섞인 스탯에는 쓰지 말 것(쓰면 LLM이 영영 못 건드린다).
+    per_turn_delta: int | None = None
 
 
 class EndingRuleDraftItem(CamelModel):

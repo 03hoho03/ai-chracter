@@ -101,10 +101,14 @@ def build_stat_judgment_prompt(
     스탯 정의(설명/범위/현재값)와 이번 턴까지의 대화를 근거로 LLMClient.generateStructured()가
     StatJudgmentResult(구조화 출력)로 각 스탯의 변경 여부를 판단하게 한다.
     """
+    # `per_turn_delta`가 있는 스탯은 `apply_stat_changes`가 매 턴 결정적으로 굴리고 LLM 판단은
+    # 무시된다. 그래도 현재값은 서사 판단의 근거이므로 목록에는 남기고, 판단 대상이 아니라는
+    # 것만 표시해 불필요한 출력을 줄인다.
     stat_lines = "\n".join(
         f"- statId={stat_def.entity_id}, 이름={stat_def.name}, 설명={stat_def.description}, "
         f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
         f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}"
+        + ("  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라." if stat_def.per_turn_delta is not None else "")
         for stat_def in stat_defs
     )
 
@@ -122,14 +126,13 @@ def build_stat_judgment_prompt(
         "위 대화, 특히 마지막 사용자 행동과 그에 대한 응답을 근거로 각 스탯이 이번 턴에 "
         "어떻게 변해야 하는지 판단하라. 변화가 없는 스탯은 statChanges에 포함하지 않아도 된다. "
         "newValue는 항상 그 스탯의 최종 절대값으로 응답하라. "
-        # 30개 시드 중 13개 스탯이 "절대 늘지 않는다" / "매 턴 반드시 1씩 줄어든다" 같은 제약을
-        # 설명에만 적어두고 있는데, 코드(`apply_stat_changes`)는 min/max clamp만 해서 이를
-        # 강제하지 못한다 — 실측으로 카운터가 거꾸로 오르거나(남은 날 26→27) 감소를 건너뛰는
-        # 일이 있었다. 엔딩이 이 카운터에 걸려 있으면 도달 가능성이 흔들리므로, 제약을 연출
-        # 지침이 아니라 규칙으로 못박아 둔다(강제가 아니라 완화라는 점은 유지).
+        # "매 턴 반드시 N씩" 카운터는 `per_turn_delta`로 코드가 굴리므로 여기서 지시하지
+        # 않는다. 남는 건 "사건이 일어날 때만 한 방향으로 움직이는" 스탯(몸 손상, 남은 씨앗
+        # 등)인데, 그 제약은 여전히 description 산문뿐이라 코드가 막지 못한다 — 최소한
+        # 연출 지침이 아니라 규칙이라는 것만 못박아 둔다(강제가 아니라 완화).
         "각 스탯 설명에 적힌 증감 제약은 연출 지침이 아니라 반드시 지켜야 하는 규칙이다. "
         "'절대 늘어나지 않는다'고 적힌 스탯은 현재값보다 큰 값을 내지 말고, "
-        "'매 턴 반드시 줄어든다'고 적힌 스탯은 이번 턴에도 빠짐없이 그만큼 줄여서 응답하라."
+        "'절대 감소하지 않는다'고 적힌 스탯은 현재값보다 작은 값을 내지 마라."
     )
 
 

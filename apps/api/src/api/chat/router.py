@@ -1232,6 +1232,7 @@ def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
         min_value=item.min_value,
         max_value=item.max_value,
         initial_value=item.initial_value,
+        per_turn_delta=item.per_turn_delta,
     )
 
 

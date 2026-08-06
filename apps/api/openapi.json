@@ -6220,6 +6220,17 @@
           "description": {
             "type": "string",
             "title": "Description"
+          },
+          "perTurnDelta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Perturndelta"
           }
         },
         "type": "object",

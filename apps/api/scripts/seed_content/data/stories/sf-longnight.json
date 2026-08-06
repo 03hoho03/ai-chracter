@@ -135,7 +135,8 @@
           "maxValue": 600,
           "initialValue": 600,
           "unit": "일",
-          "description": "목적지 도착까지 남은 시간입니다. 매 턴 10일씩 줄어듭니다."
+          "description": "목적지 도착까지 남은 시간입니다. 매 턴 10일씩 줄어듭니다.",
+          "perTurnDelta": -10
         }
       ],
       "endings": [

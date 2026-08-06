@@ -44,6 +44,8 @@ export const statDefSchema = z.object({
   initial: z.number(),
   unit: z.string().optional(),
   description: z.string().min(1),
+  /** 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다. */
+  perTurnDelta: z.number().int().optional(),
 });
 
 /**

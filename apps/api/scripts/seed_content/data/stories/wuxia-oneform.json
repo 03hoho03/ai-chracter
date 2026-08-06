@@ -46,7 +46,8 @@
           "maxValue": 30,
           "initialValue": 30,
           "unit": "일",
-          "description": "결전까지 남은 시간입니다. 대화 한 대목마다 반드시 1일씩 줄어들며 절대 늘어나지 않습니다."
+          "description": "결전까지 남은 시간입니다. 대화 한 대목마다 반드시 1일씩 줄어들며 절대 늘어나지 않습니다.",
+          "perTurnDelta": -1
         }
       ],
       "endings": [
@@ -143,7 +144,8 @@
           "maxValue": 20,
           "initialValue": 20,
           "unit": "일",
-          "description": "결전까지 남아있는 시간입니다. 한 대목마다 반드시 1일씩 감소하며 늘어나지 않습니다."
+          "description": "결전까지 남아있는 시간입니다. 한 대목마다 반드시 1일씩 감소하며 늘어나지 않습니다.",
+          "perTurnDelta": -1
         }
       ],
       "endings": [

@@ -2552,6 +2552,8 @@ export interface components {
             unit: string | null;
             /** Description */
             description: string;
+            /** Perturndelta */
+            perTurnDelta?: number | null;
         };
         /** StatDefSnapshot */
         StatDefSnapshot: {

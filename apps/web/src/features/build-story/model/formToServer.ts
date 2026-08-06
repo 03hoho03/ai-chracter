@@ -76,6 +76,7 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
     initialValue: stat.initial,
     unit: stat.unit ?? null,
     description: stat.description,
+    perTurnDelta: stat.perTurnDelta ?? null,
   };
 }
 

@@ -291,3 +291,45 @@ def test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds() -> None:
                             f"({name} {rule.operator.value} {rule.threshold})의 임계값을 그대로 되묻는다 "
                             f"— 서사적 사건만 묻도록 고칠 것"
                         )
+
+
+# "매 턴 반드시 N씩" 을 뜻하는 표현들. 이 말이 들어 있으면 시스템이 굴려야 한다.
+_PER_TURN_PHRASE = re.compile(
+    r"(매 ?턴|대화 한 대목|대화가 한 차례|턴이 진행|한 대목 진행|대목이 진행|한 대목마다"
+    r"|하루가 지날|대화의 밤이 깊어질|매 대화|대화가 한 차례 오갈)"
+)
+# 그중에서도 조건 없이 "반드시" 일어나는 것만. 조리할 때만/스트레스받을 때만처럼 행동에
+# 반응하는 혼합형은 델타를 넣으면 LLM 이 그 스탯을 영영 못 건드리게 되므로 제외한다.
+_UNCONDITIONAL = re.compile(r"(반드시|무조건|확정적으로|고정적으로|강제로|1분씩 증가|10일씩 줄어듭니다)")
+_ACTION_CONDITIONED = re.compile(r"(조리할 때마다|스트레스|휴식|시전할 때|자극을 받으면|부담이 누적)")
+
+
+def test_seed_per_turn_counters_are_system_driven_not_llm_judged() -> None:
+    """"매 턴 반드시 N씩 줄어든다"는 스탯은 `perTurnDelta` 로 시스템이 굴려야 한다.
+
+    description 산문으로만 두면 판정 LLM 이 조용히 건너뛰거나(romance-3rdloop '남은 방송
+    회차') 거꾸로 올린다(wuxia-oneform '남은 날' 26→27, 둘 다 2026-08-07 실측). 그 카운터에
+    엔딩이 걸려 있으면 도달 가능성이 통째로 흔들리므로 데이터 단계에서 막는다.
+    """
+    for story in load_stories():
+        for setup in story.payload.starting_setups:
+            for stat in setup.stat_defs:
+                mandatory = (
+                    _PER_TURN_PHRASE.search(stat.description)
+                    and _UNCONDITIONAL.search(stat.description)
+                    and not _ACTION_CONDITIONED.search(stat.description)
+                )
+                if mandatory:
+                    assert stat.per_turn_delta is not None, (
+                        f"{story.slug} / {setup.name} / {stat.name}: 매 턴 필수 변화인데 "
+                        f"perTurnDelta 가 없다 — 판정 LLM 에 맡기면 건너뛴다"
+                    )
+                if stat.per_turn_delta is not None:
+                    assert stat.per_turn_delta != 0, (
+                        f"{story.slug} / {stat.name}: perTurnDelta 가 0이면 켠 의미가 없다"
+                    )
+                    span = stat.max_value - stat.min_value
+                    assert abs(stat.per_turn_delta) <= span, (
+                        f"{story.slug} / {stat.name}: 델타 {stat.per_turn_delta} 가 "
+                        f"범위 {span} 보다 커서 한 턴에 끝까지 간다"
+                    )

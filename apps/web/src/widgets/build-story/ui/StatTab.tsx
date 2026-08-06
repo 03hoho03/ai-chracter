@@ -82,13 +82,31 @@ function StatRow({
         </div>
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-unit`}>단위</Label>
-        <Input
-          id={`stat-${id}-unit`}
-          placeholder="예: pt, %"
-          {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.unit`)}
-        />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`stat-${id}-unit`}>단위</Label>
+          <Input
+            id={`stat-${id}-unit`}
+            placeholder="예: pt, %"
+            {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.unit`)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`stat-${id}-per-turn-delta`}>턴당 자동 변화</Label>
+          <Input
+            id={`stat-${id}-per-turn-delta`}
+            type="number"
+            placeholder="예: -1"
+            aria-describedby={`stat-${id}-per-turn-delta-hint`}
+            // 빈 칸에 valueAsNumber를 쓰면 NaN이 들어가 zod가 막는다 — 빈 칸은 undefined로 되돌린다.
+            {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.perTurnDelta`, {
+              setValueAs: (value) => (value === "" || value === null ? undefined : Number(value)),
+            })}
+          />
+          <p id={`stat-${id}-per-turn-delta-hint`} className="text-xs text-muted-foreground">
+            매 턴 이만큼 자동으로 변해요(줄어들면 -1처럼 음수). 비워두면 AI가 대화를 보고 판단해요.
+          </p>
+        </div>
       </div>
 
       <div className="flex flex-col gap-1.5">

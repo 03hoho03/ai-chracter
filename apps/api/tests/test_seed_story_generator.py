@@ -73,6 +73,7 @@ def _story(slot: MatrixSlot, **overrides: Any) -> GeneratedStory:
                     initial_value=30,
                     unit="",
                     description=f"{name} 은 근거를 댈 때 오르고 말을 바꾸면 내려간다.",
+                    per_turn_delta=0,  # 행동에 반응하는 스탯 — 시스템 카운터가 아니다
                 )
                 for name in names
             ],
