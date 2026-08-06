@@ -35,3 +35,11 @@ export const ICON_OPTIONS: IconPickerOption[] = [
   { name: "Coins", label: "재화", Icon: Coins },
   { name: "Sparkles", label: "마력", Icon: Sparkles },
 ];
+
+/** 저장된 아이콘 이름(`ICON_OPTIONS[].name`)을 실제 컴포넌트로 되돌린다 — 스탯의 `icon`은
+ * 그냥 문자열이라 그대로 렌더하면 화면에 "Droplet"이라는 글자가 나온다. 목록에 없는
+ * 이름이면 `undefined`이고, 그때 무엇을 보여줄지는 호출부가 정한다(피커는 HelpCircle로
+ * "고르라"고 알리지만, 읽기 전용 표시에서는 아무것도 안 그리는 편이 조용하다). */
+export function getIconByName(name: string): LucideIcon | undefined {
+  return ICON_OPTIONS.find((option) => option.name === name)?.Icon;
+}

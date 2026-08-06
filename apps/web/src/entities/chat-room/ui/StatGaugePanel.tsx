@@ -1,3 +1,4 @@
+import { getIconByName } from "../../../shared/ui/color-icon-picker";
 import type { StatDef } from "../api/chat-room";
 
 interface StatGaugePanelProps {
@@ -16,12 +17,20 @@ export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
         const value = values[stat.id] ?? stat.initial;
         const ratio = stat.max > stat.min ? (value - stat.min) / (stat.max - stat.min) : 0;
         const percent = Math.min(100, Math.max(0, ratio * 100));
+        // stat.icon은 "Droplet" 같은 이름 문자열이다 — 컴포넌트로 되돌리지 않으면 글자로 렌더된다.
+        const Icon = getIconByName(stat.icon);
 
+        // w-32: 시드 스탯 이름의 85%가 7자 이하이고, 그 길이까지는 아이콘·값과 나란히 놓아도
+        // 안 잘린다(w-28은 5자에서 잘렸다). 더 긴 이름은 의도대로 truncate + title로 노출.
         return (
-          <div key={stat.id} className="flex w-28 shrink-0 flex-col gap-1">
+          <div key={stat.id} className="flex w-32 shrink-0 flex-col gap-1">
             <div className="flex items-center justify-between gap-1.5 text-xs">
-              <span className="truncate font-medium text-foreground">
-                {stat.icon} {stat.name}
+              {/* min-w-0 이 없으면 flex 아이템의 기본 min-width:auto 때문에 truncate가 먹지 않는다. */}
+              <span className="flex min-w-0 items-center gap-1 font-medium text-foreground">
+                {Icon && <Icon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />}
+                <span className="truncate" title={stat.name}>
+                  {stat.name}
+                </span>
               </span>
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {value}
