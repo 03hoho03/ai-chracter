@@ -1,6 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
-import { useSetAtom } from "jotai";
+import { useAtom } from "jotai";
 import { MessagesSquare, Play } from "lucide-react";
 
 import { useSessionQuery } from "../../../entities/session";
@@ -17,7 +17,7 @@ interface CharacterPlayButtonProps {
 export function CharacterPlayButton({ contentId }: CharacterPlayButtonProps) {
   const { handlePlay } = usePlayContent(contentId, "character");
   const session = useSessionQuery();
-  const setModalState = useSetAtom(contentDetailModalAtom);
+  const [modalState, setModalState] = useAtom(contentDetailModalAtom);
 
   return (
     <div className="flex flex-col gap-2 border-t border-border pt-5">
@@ -28,7 +28,9 @@ export function CharacterPlayButton({ contentId }: CharacterPlayButtonProps) {
 
       {session.data && (
         <Button asChild variant="ghost" className="w-full gap-2" onClick={() => setModalState(null)}>
-          <Link to="/chats" search={{ contentId, contentType: "character" }}>
+          {/* 모달 경유면 `open()`이 밀어 넣은 `/content/...` 엔트리를 덮어써야 /chats에서 뒤로가기가
+              풀페이지 상세로 튀지 않는다(usePlayContent의 플레이 이동과 같은 이유). */}
+          <Link to="/chats" search={{ contentId, contentType: "character" }} replace={modalState !== null}>
             <MessagesSquare aria-hidden className="size-4" />
             내 대화 목록
           </Link>

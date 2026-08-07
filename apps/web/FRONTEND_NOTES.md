@@ -6,6 +6,7 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 
 - **History.prototype.pushState 우회** (`shared/lib/content-detail-modal/useContentDetailModal.ts`): TanStack Router의 `createBrowserHistory`가 `window.history.pushState`를 감시 래퍼로 덮으므로, 라우터 모르게 URL만 바꾸려면 `History.prototype.pushState.call(window.history, window.history.state, "", url)`로 프로토타입 메서드를 직접 호출한다. `back()`/`forward()`/`go()`는 패치 대상이 아니라 그대로 써도 된다.
 - **redirect 서치 값에 `?` 포함 안전**: `navigate({ to: "/login", search: { redirect: "<pathname>?<query>" } })`는 라우터가 값을 percent-encode하고, `navigate({ to: redirectTo })`(디코딩된 원본)가 다시 정상 매치한다. `requireSession`의 `location.href`도 동일.
+- **상세 모달에서 다른 화면으로 나갈 때는 엔트리를 replace한다**: `useContentDetailModal.open()`이 라우터 우회 pushState로 `/content/$type/$id` 엔트리를 하나 남기므로, 모달 안의 버튼/링크가 push로 이동하면 스택이 `[리스트, /content/x, 목적지]`가 되어 뒤로가기가 **풀페이지 상세**로 튄다(모달로 열었을 뿐인데 다른 화면이 나온다). 모달 안에서 나가는 경로는 `contentDetailModalAtom`을 `null`로 비우고(모달이 새 화면 위에 남는 것 방지) `contentDetailModalAtom !== null`일 때만 `replace`로 이동한다 — 풀페이지 상세에서 같은 버튼을 누른 경우는 push가 맞으므로 atom 값 유무로만 분기한다(`usePlayContent.start()`, `CharacterPlayButton`의 "내 대화 목록"). **아직 안 고친 곳**: `ContentDetailView`의 작성자 프로필 링크와 해시태그 버튼은 atom만 비우고 push라 `/content/x` 엔트리가 남는다.
 - **content 타입 토글 vs 로컬 토글** (`routes/profile.$userId.tsx`): 헤더 전역 `contentTypeToggleAtom`과 프로필 로컬 `[스토리]/[캐릭터]` 토글은 별개다. 후자는 `validateSearch`(zod, `type` optional, 기본 `"character"`)로 관리하고 변경은 `Route.useNavigate()`로 search만 갱신. 공개여부 필터는 URL 없는 로컬 useState.
 
 ## 모달 / Radix
@@ -39,5 +40,4 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 
 ## 미해결 — 이슈로 승격 대상
 
-- **모달 위 navigate 버그**: 홈/프로필 카드 → 상세 **모달**(`contentDetailModalAtom`)에서 "플레이" → `navigate("/chat/$roomId")`를 해도 그 atom은 안 닫혀 모달이 새 화면 위에 남는다(직접 전체페이지로 진입한 경우엔 재현 안 됨). 고치려면 `usePlayContent.start()`(또는 호출부)가 navigate 직전 `useContentDetailModal().close()`.
 - **ContentCard 이중 구현 debt**: 공용 `entities/content/ui/ContentCard`와 프로필 로컬 `ContentCard`(`ProfileContentSection`)가 별개로 남아 있다(프로필 쪽은 `role="button"` 마이그레이션도 미완). 프로필 카드를 만질 일이 있으면 통합 함께 고려.
