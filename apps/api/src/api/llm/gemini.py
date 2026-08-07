@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from typing import Any, TypeVar
 
@@ -18,6 +19,17 @@ _POLICY_FINISH_REASONS = frozenset(
     {genai_types.FinishReason.SAFETY, genai_types.FinishReason.PROHIBITED_CONTENT}
 )
 
+# 폭주 방지용 상한이지 길이 연출 수단이 아니다 — 실측 90턴의 최대 응답이 1635자였으므로
+# 정상 출력은 건드리지 않고 그보다 한참 위에 둔다. 한국어는 대략 글자당 1~1.5토큰이다.
+_MAX_OUTPUT_TOKENS = 2048
+
+# 생성 프롬프트가 `사용자: {입력}\n진행자:` 라는 대본 프레임으로 끝나서, 모델이 이어서
+# 사용자의 다음 턴까지 지어낼 수 있는 구조다(실측 90턴에서는 발현되지 않았지만 구조적 위험은
+# 남아 있다). 캐릭터 챗도 같은 프레임(`\n캐릭터:`)이라 이 하나로 양쪽이 덮인다.
+_STOP_SEQUENCES = ["\n사용자:"]
+
+logger = logging.getLogger(__name__)
+
 
 class GeminiLLMClient(LLMClient):
     def __init__(self, api_key: str | None = None, model_name: str | None = None) -> None:
@@ -29,6 +41,10 @@ class GeminiLLMClient(LLMClient):
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,
                 contents=prompt,
+                config=genai_types.GenerateContentConfig(
+                    max_output_tokens=_MAX_OUTPUT_TOKENS,
+                    stop_sequences=_STOP_SEQUENCES,
+                ),
             )
             async for chunk in stream:
                 prompt_feedback = getattr(chunk, "prompt_feedback", None)
@@ -37,6 +53,11 @@ class GeminiLLMClient(LLMClient):
                 for candidate in getattr(chunk, "candidates", None) or []:
                     if candidate.finish_reason in _POLICY_FINISH_REASONS:
                         raise LLMPolicyViolationError("Gemini blocked the output via safetySettings")
+                    if candidate.finish_reason == genai_types.FinishReason.MAX_TOKENS:
+                        # 상한에 걸리면 문장 중간에서 잘린 응답이 그대로 사용자에게 간다 —
+                        # 조용히 넘기면 "AI가 말을 하다 말았다"로만 보이므로 로그에 남긴다.
+                        # 이게 자주 찍히면 상한이 너무 낮은 것이다.
+                        logger.warning("Gemini 응답이 max_output_tokens(%d)에서 잘렸다", _MAX_OUTPUT_TOKENS)
                 if chunk.text:
                     yield chunk.text
         except (genai_errors.APIError, httpx.HTTPError) as exc:

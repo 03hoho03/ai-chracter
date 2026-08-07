@@ -194,3 +194,52 @@ async def test_generate_structured_with_images_sends_multimodal_parts(
     assert contents[1].inline_data.mime_type == "image/png"
     assert contents[2].inline_data.data == b"fake-jpeg-bytes"
     assert contents[2].inline_data.mime_type == "image/jpeg"
+
+
+async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """대화 생성에는 오랫동안 `GenerateContentConfig` 가 전혀 붙지 않아 출력 상한도 정지
+    조건도 없었다 — 폭주 응답에 천장이 없고, 프롬프트가 `사용자: …\\n진행자:` 대본 프레임으로
+    끝나서 모델이 사용자의 다음 턴까지 이어 쓸 수 있는 구조였다."""
+    captured: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured.update(kwargs)
+        return _chunks("네")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    assert [token async for token in client.generate("hi")] == ["네"]
+
+    config = captured["config"]
+    assert config.max_output_tokens == 2048
+    assert config.stop_sequences == ["\n사용자:"]
+
+
+async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """상한에 걸리면 문장 중간에서 잘린 응답이 그대로 사용자에게 간다 — 화면상으로는 그냥
+    "말을 하다 말았다"로만 보이므로, 상한이 너무 낮은지 판단할 근거를 로그에 남겨야 한다."""
+
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        async def stream() -> AsyncIterator[SimpleNamespace]:
+            yield SimpleNamespace(
+                text="말을 하다",
+                candidates=[SimpleNamespace(finish_reason=genai_types.FinishReason.MAX_TOKENS)],
+            )
+
+        return stream()
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+    warnings: list[str] = []
+    monkeypatch.setattr(
+        "api.llm.gemini.logger",
+        SimpleNamespace(warning=lambda message, *args: warnings.append(message % args)),
+    )
+
+    tokens = [token async for token in client.generate("hi")]
+
+    assert tokens == ["말을 하다"]
+    assert warnings == ["Gemini 응답이 max_output_tokens(2048)에서 잘렸다"]
