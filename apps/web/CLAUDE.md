@@ -66,6 +66,7 @@
 - **자동완성 드롭다운**: `packages/ui`에 Popover/Command 없이 `relative` 래퍼 + 조건부 `absolute` div로 충분(배경은 `bg-popover ... ring-1 ring-foreground/10` 재사용). 스크롤 컨테이너 **안**이면 `fixed`/포털 필요.
 - **클릭 칩**: 새 컴포넌트 대신 `Button` `variant="secondary" size="sm" className="rounded-full"`(hover/focus/disabled 공짜). 비클릭 뱃지와 혼동 금지.
 - **자기완결 위젯**: 트리거 + Sheet/Dropdown 콘텐츠를 위젯이 통째로 소유(열림 atom도 위젯 내부), 호출부는 컴포넌트 하나만 배치.
+- **뷰포트에 따라 Sheet ↔ 인라인 패널을 갈라야 하면 CSS가 아니라 JS로 분기한다**(`react-use`의 `useMedia`). `Sheet`/`Dialog`는 body로 포털되므로 부모의 `lg:hidden`이 닿지 않고, 열린 Sheet는 포커스 트랩 + 바깥 클릭 차단까지 걸어 인라인 패널과 공존할 수 없다 — 둘 중 하나만 마운트되어야 한다. 브레이크포인트는 두 분기가 공유하는 훅 한 곳에 두고(`widgets/chat-room/lib/useIsChatMoreSidebarLayout.ts`), 항목 목록·핸들러는 별도 컴포넌트로 뽑아 양쪽이 같은 것을 쓰게 한다.
 - **탭**: shadcn `tabs` `variant="line"`(DESIGN.md Flat-at-Rest / One Accent Rule — 활성 탭은 `primary`가 아니라 `foreground` 밑줄).
 - **absolute + grid-cols**: `width` 없는 `absolute` 안의 `grid-cols-N`(=`minmax(0, 1fr)`)은 intrinsic 폭이 0으로 붕괴한다 → 명시 `w-*` 필수.
 - **공용 컴포넌트 재사용**: `ContentCard`·`GeneratedImageField` 등은 로컬 재구현 말고 import.

@@ -19,6 +19,7 @@ import { useContentDetailQuery } from "../../../entities/content";
 import { useSendMessage } from "../../../features/send-message";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
 import { ChatMorePanel } from "./ChatMorePanel";
+import { ChatMoreSidebar } from "./ChatMoreSidebar";
 
 function ChatRoomSkeleton() {
   return (
@@ -136,125 +137,138 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
         />
       </header>
 
-      {versionUpgradeBannerVisible && (
-        <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-          <History aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-          <span className="text-xs text-muted-foreground">최신 버전으로 자동 전환되었어요.</span>
-        </div>
-      )}
-
-      {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
-
-      <div className="flex-1 overflow-y-auto px-4 py-4">
-        <div className="flex flex-col gap-3">
-          {room.messages.map((message, index) => {
-            const isLastMessage = index === room.messages.length - 1;
-            return (
-              <MessageBubble
-                key={message.id}
-                message={message}
-                disabled={isSending}
-                isEditing={editingMessageId === message.id}
-                canRegenerate={isLastMessage && message.role === "assistant" && room.messages.length >= 2}
-                onRegenerate={isLastMessage && message.role === "assistant" ? regenerate : undefined}
-                onStartEdit={message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
-                onCancelEdit={() => setEditingMessageId(null)}
-                onSaveEdit={(newText) => {
-                  editMessage(message.id, newText);
-                  setEditingMessageId(null);
-                }}
-                onDelete={() => handleDeleteMessage(message.id)}
-              />
-            );
-          })}
-
-          {room.endingStatus.reached && room.endingStatus.epilogue && (
-            <>
-              <EndingDivider
-                endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
-              />
-              <MessageBubble
-                message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
-              />
-            </>
-          )}
-
-          {isSending &&
-            (streamingText ? (
-              <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText, createdAt: "" }} />
-            ) : (
-              <TypingIndicator />
-            ))}
-
-          {error && (
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-              <span className="text-xs text-destructive">응답 생성에 실패했습니다 · 다시 시도</span>
-              <Button variant="destructive" size="sm" onClick={retry}>
-                <RotateCw aria-hidden className="size-3.5" />
-                다시 시도
-              </Button>
+      {/* US-004 — 더보기 사이드바는 채팅 헤더 아래부터 바닥까지 채우고 채팅 컬럼과 폭을 나눠 갖는다.
+          min-h-0/min-w-0이 없으면 flex 아이템의 기본 min-*:auto가 메시지 영역의 스크롤과 축소를 막는다. */}
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
+          {versionUpgradeBannerVisible && (
+            <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+              <History aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">최신 버전으로 자동 전환되었어요.</span>
             </div>
           )}
 
-          {policyWarning && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
-              <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{policyWarning}</span>
+          {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
+
+          <div className="flex-1 overflow-y-auto px-4 py-4">
+            <div className="flex flex-col gap-3">
+              {room.messages.map((message, index) => {
+                const isLastMessage = index === room.messages.length - 1;
+                return (
+                  <MessageBubble
+                    key={message.id}
+                    message={message}
+                    disabled={isSending}
+                    isEditing={editingMessageId === message.id}
+                    canRegenerate={isLastMessage && message.role === "assistant" && room.messages.length >= 2}
+                    onRegenerate={isLastMessage && message.role === "assistant" ? regenerate : undefined}
+                    onStartEdit={message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
+                    onCancelEdit={() => setEditingMessageId(null)}
+                    onSaveEdit={(newText) => {
+                      editMessage(message.id, newText);
+                      setEditingMessageId(null);
+                    }}
+                    onDelete={() => handleDeleteMessage(message.id)}
+                  />
+                );
+              })}
+
+              {room.endingStatus.reached && room.endingStatus.epilogue && (
+                <>
+                  <EndingDivider
+                    endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
+                  />
+                  <MessageBubble
+                    message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
+                  />
+                </>
+              )}
+
+              {isSending &&
+                (streamingText ? (
+                  <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText, createdAt: "" }} />
+                ) : (
+                  <TypingIndicator />
+                ))}
+
+              {error && (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+                  <span className="text-xs text-destructive">응답 생성에 실패했습니다 · 다시 시도</span>
+                  <Button variant="destructive" size="sm" onClick={retry}>
+                    <RotateCw aria-hidden className="size-3.5" />
+                    다시 시도
+                  </Button>
+                </div>
+              )}
+
+              {policyWarning && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
+                  <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="text-xs text-muted-foreground">{policyWarning}</span>
+                </div>
+              )}
+
+              <div ref={bottomRef} />
             </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      <div className="shrink-0 border-t border-border bg-background p-3">
-        {room.contentSnapshot && room.contentSnapshot.suggestedReplies.length > 0 && (
-          <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
-            {room.contentSnapshot.suggestedReplies.map((reply) => (
-              <Button
-                key={reply}
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={isSending}
-                onClick={() => handleSuggestedReplyClick(reply)}
-                className="shrink-0 rounded-full"
-              >
-                {reply}
-              </Button>
-            ))}
           </div>
-        )}
 
-        <div className="flex items-end gap-2">
-          <div className="relative flex-1">
-            <Textarea
-              ref={inputRef}
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="메시지를 입력하세요"
-              disabled={isSending}
-              rows={1}
-              className="max-h-40 resize-none"
-            />
-            {room.contentSnapshot && text.startsWith("/") && (
-              <ShortcutAutocomplete
-                shortcuts={room.contentSnapshot.shortcuts}
-                query={text.slice(1)}
-                onSelect={handleShortcutSelect}
-              />
+          <div className="shrink-0 border-t border-border bg-background p-3">
+            {room.contentSnapshot && room.contentSnapshot.suggestedReplies.length > 0 && (
+              <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
+                {room.contentSnapshot.suggestedReplies.map((reply) => (
+                  <Button
+                    key={reply}
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={isSending}
+                    onClick={() => handleSuggestedReplyClick(reply)}
+                    className="shrink-0 rounded-full"
+                  >
+                    {reply}
+                  </Button>
+                ))}
+              </div>
             )}
+
+            <div className="flex items-end gap-2">
+              <div className="relative flex-1">
+                <Textarea
+                  ref={inputRef}
+                  value={text}
+                  onChange={(event) => setText(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && !event.shiftKey) {
+                      event.preventDefault();
+                      handleSend();
+                    }
+                  }}
+                  placeholder="메시지를 입력하세요"
+                  disabled={isSending}
+                  rows={1}
+                  className="max-h-40 resize-none"
+                />
+                {room.contentSnapshot && text.startsWith("/") && (
+                  <ShortcutAutocomplete
+                    shortcuts={room.contentSnapshot.shortcuts}
+                    query={text.slice(1)}
+                    onSelect={handleShortcutSelect}
+                  />
+                )}
+              </div>
+              <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
+                <Send aria-hidden className="size-4" />
+              </Button>
+            </div>
           </div>
-          <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
-            <Send aria-hidden className="size-4" />
-          </Button>
         </div>
+
+        <ChatMoreSidebar
+          roomId={roomId}
+          contentType={room.contentType}
+          startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
+          characterId={characterId}
+        />
       </div>
     </div>
   );
