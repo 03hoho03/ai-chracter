@@ -170,6 +170,27 @@ uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rd
 | API | 8000 | `uv run --env-file .env uvicorn ...` |
 | web | 5173 | 기본 다크 |
 
+### 여러 체크아웃이 이 인프라를 나눠 쓸 때
+
+워크트리나 두 번째 클론에서 동시에 작업할 때, 컨테이너는 하나를 공유해도 된다. **충돌하는 건 pytest끼리다** —
+기본값이 어느 체크아웃에서나 같은 `ai_character_chat_test`/Redis 1번인데, 스위트가 끝날 때 `alembic downgrade base`로
+그 안의 테이블을 전부 지운다. 한쪽이 테스트 중일 때 다른 쪽이 끝나면 그대로 깨진다. 체크아웃마다 다른 값을 주면 된다:
+
+```sh
+export TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat_<이름>_test
+export TEST_REDIS_URL=redis://localhost:6379/<인덱스>
+```
+
+- **`.env`에 적으면 안 된다** — `conftest.py`가 `os.environ`을 직접 읽으므로, `uv run pytest`처럼 `--env-file` 없이
+  돌리면 `.env`는 프로세스 환경에 주입되지 않아 조용히 무시되고 기본 DB로 간다. `export`가 확실하다.
+- **DB 이름은 `_test`로 끝날 것** — 아니면 `conftest`가 `RuntimeError`로 거부한다(오설정 시 실패 모드가 "dev DB 전체 삭제"라 방어함).
+  DB 자체는 없으면 자동 생성되므로 미리 만들 필요 없다.
+- **Redis 인덱스 배분**: `0` = dev, `1` = 기본 pytest, `2`~`15` = 병렬 체크아웃용. 1번을 재사용하면 기본 실행과 부딪힌다.
+- dev DB(`ai_character_chat`)와 S3는 신경 쓸 것 없다 — pytest는 dev DB를 건드리지 않고, S3는 `conftest`가
+  인프로세스 moto를 랜덤 포트로 띄워 이미 프로세스마다 격리돼 있다.
+
+오버라이드가 왜 그렇게 동작하는지(직접 대입 vs `setdefault`, import 순서)는 `apps/api/CLAUDE.md`의 "테스트 DB 인프라" 항목에 있다.
+
 ## 트러블슈팅
 
 - **썸네일이 깨져 보임(이미지 404)**: moto는 인메모리라 `docker compose down`/재생성 시 업로드된 이미지가 사라집니다. `uv run --env-file .env python apps/api/... ` 대신 루트에서 `./dev-up.sh`를 다시 돌리면(또는 `cd apps/api && uv run --env-file .env python scripts/seed_dev.py`) 재업로드됩니다. 채팅 자체는 이미지와 무관하게 동작합니다.
