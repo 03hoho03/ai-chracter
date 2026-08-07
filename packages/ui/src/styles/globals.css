@@ -38,14 +38,21 @@
 }
 
 :root {
-  /* AI 캐릭터 챗 서비스 팔레트 — DESIGN.md §2 기준 (무채색 모노크롬, destructive만 유채색) */
+  /* AI 캐릭터 챗 서비스 팔레트 — DESIGN.md §2 기준. 배경·카드·보더 사다리는 무채색이고
+     유채색은 강조 지점(primary/ring), 사용자 콘텐츠, destructive에만 있다 */
   --background: oklch(1 0 0);
   --foreground: oklch(0.22 0 0);
   --card: oklch(0.97 0 0);
   --card-foreground: oklch(0.22 0 0);
   --popover: oklch(0.97 0 0);
   --popover-foreground: oklch(0.22 0 0);
-  --primary: oklch(0.22 0 0);
+  /* 핑크-레드 강조. 흰 텍스트를 얹어야 해서 라이트는 어둡게 간다 — 채움 위 흰 텍스트 6.70:1,
+     hover(bg-primary/80) 상태에서도 4.77:1로 AA 유지.
+     destructive와의 구분: 구조적으로는 이미 갈라져 있고(destructive는 항상 /10 틴트, 솔리드 레드
+     채움은 이 시스템에 없다) 그 위에 hue를 0 대 25로 25° 벌렸다. Oklab ΔE 라이트 0.096 / 다크
+     0.114로 JND(~0.02)의 5배다. chroma는 sRGB 게멋 상한(hue 0, L 0.5에서 0.203)에 걸려 더 벌릴
+     여지가 없어 hue와 명도로만 가른다 */
+  --primary: oklch(0.5 0.19 0);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.93 0 0);
   --secondary-foreground: oklch(0.22 0 0);
@@ -57,7 +64,7 @@
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.89 0 0);
   --input: oklch(0.89 0 0);
-  --ring: oklch(0.22 0 0);
+  --ring: oklch(0.5 0.19 0);
   --radius: 0.625rem;
   color-scheme: light;
 }
@@ -70,7 +77,12 @@
   --card-foreground: oklch(0.93 0 0);
   --popover: oklch(0.21 0 0);
   --popover-foreground: oklch(0.93 0 0);
-  --primary: oklch(0.93 0 0);
+  /* 같은 핑크-레드(hue 0)를 어두운 배경 대비를 위해 밝힌 값. 채움 위 텍스트는 destructive와 같은
+     규칙으로 뒤집는다 — 0.16 텍스트 7.18:1, hover(bg-primary/80)에서도 4.90:1. L 0.72는 밝기 천장
+     foreground(0.930) 아래이고, 라이트(0.5)와 명도 차를 크게 둔 것은 primary만이 유일한 '솔리드 채움'
+     이라 양쪽 테마 모두 채움 자체가 자기 텍스트와 4.5:1을 져야 하기 때문이다(destructive는 /10 틴트라
+     텍스트 대비만 맞추면 되어 0.55→0.64로 조금만 밝힌다) */
+  --primary: oklch(0.72 0.18 0);
   --primary-foreground: oklch(0.16 0 0);
   --secondary: oklch(0.26 0 0);
   --secondary-foreground: oklch(0.93 0 0);
@@ -83,7 +95,7 @@
   --destructive-foreground: oklch(0.16 0 0);
   --border: oklch(0.3 0 0);
   --input: oklch(0.3 0 0);
-  --ring: oklch(0.93 0 0);
+  --ring: oklch(0.72 0.18 0);
   color-scheme: dark;
 }
 
