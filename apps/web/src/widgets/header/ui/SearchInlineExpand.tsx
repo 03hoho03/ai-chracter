@@ -51,7 +51,9 @@ export function SearchInlineExpand() {
   return (
     <div
       className={cn(
-        "flex items-center justify-end motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
+        // `w-40`은 선호 폭이지 하한이 아니다 — `min-w-0`이 없으면 390px 폭에서 헤더 아이콘 4개 + 펼친 검색이
+        // 합쳐 뷰포트를 14px 넘겨 페이지가 가로로 스크롤된다. 좁을 때만 줄어들고 여유가 있으면 w-40/sm:w-64를 지킨다.
+        "flex min-w-0 items-center justify-end motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
         expanded ? "w-40 sm:w-64" : "w-8",
       )}
     >
@@ -70,7 +72,7 @@ export function SearchInlineExpand() {
             }}
             placeholder="캐릭터·스토리 검색"
             aria-label="캐릭터·스토리 검색"
-            className="h-8"
+            className="h-8 min-w-0"
           />
           <Button type="button" variant="ghost" size="icon" aria-label="검색 닫기" onClick={collapse}>
             <X aria-hidden />
