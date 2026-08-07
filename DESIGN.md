@@ -8,7 +8,7 @@ colors:
   card-foreground: "oklch(0.930 0.000 0)"
   popover: "oklch(0.210 0.000 0)"
   popover-foreground: "oklch(0.930 0.000 0)"
-  primary: "oklch(0.930 0.000 0)"
+  primary: "oklch(0.720 0.180 0)"
   primary-foreground: "oklch(0.160 0.000 0)"
   secondary: "oklch(0.260 0.000 0)"
   secondary-foreground: "oklch(0.930 0.000 0)"
@@ -20,7 +20,7 @@ colors:
   destructive-foreground: "oklch(0.160 0.000 0)"
   border: "oklch(0.300 0.000 0)"
   input: "oklch(0.300 0.000 0)"
-  ring: "oklch(0.930 0.000 0)"
+  ring: "oklch(0.720 0.180 0)"
 typography:
   display:
     fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
@@ -69,7 +69,7 @@ components:
     padding: "0 10px"
     typography: "{typography.body}"
   button-primary-hover:
-    backgroundColor: "oklch(0.930 0.000 0 / 0.8)"
+    backgroundColor: "oklch(0.720 0.180 0 / 0.8)"
   button-outline:
     backgroundColor: "{colors.background}"
     textColor: "{colors.foreground}"
@@ -132,22 +132,28 @@ components:
 
 여기서 다크는 선호가 아니라 **기본 조건**이다(`apps/web`는 저장값이 없으면 다크로 부팅한다). 배경이 순수 검정(oklch 0)이 아닌 near-black(0.160)인 것도, 본문이 순백(oklch 1)이 아닌 소프트 화이트(0.930)인 것도 취향이 아니다 — 순수 검정 위의 밝은 텍스트는 OLED에서 번지고 레이어 위계를 쌓을 여지를 남기지 않으며, 어두운 방에서의 순백은 그냥 눈부심이다. 라이트 팔레트는 다크의 열등한 형제가 아니라 **다른 장면**을 위한 것이다: 낮의 사용자, 그리고 항상 라이트로 고정된 관리자 앱(`apps/admin`).
 
-몰입은 시끄러움이 아니라 고요함에서 나온다. UI 전체가 무채색인 이유가 이것이다 — 화면에서 색을 가진 것은 사용자가 만든 썸네일과 대화 텍스트뿐이고, 그래서 그 한 장이 유일하게 빛난다. 명시적으로 지양하는 것: 자극적이거나 성인 지향적인 비주얼 톤(전연령 정책), 그리고 어두운 방에서 사용자를 놀라게 하는 모든 것 — 갑작스러운 움직임, 큰 밝은 면적, 예고 없는 대비 점프.
+몰입은 시끄러움이 아니라 고요함에서 나온다. 표면(배경·카드·보더 사다리)이 끝까지 무채색인 이유가 이것이다 — 색을 가질 수 있는 것은 사용자가 만든 썸네일, 지금 누를 수 있는 한 곳(`primary`), 그리고 위험(`destructive`)뿐이다. 그래서 그 한 장과 그 한 버튼이 유일하게 빛난다. 명시적으로 지양하는 것: 자극적이거나 성인 지향적인 비주얼 톤(전연령 정책), 그리고 어두운 방에서 사용자를 놀라게 하는 모든 것 — 갑작스러운 움직임, 큰 밝은 면적, 예고 없는 대비 점프.
 
 **Key Characteristics:**
-- 다크가 기본값(web), 라이트는 낮·admin용 대등한 대안 — 두 팔레트 모두 chroma 0
+- 다크가 기본값(web), 라이트는 낮·admin용 대등한 대안 — 두 팔레트 모두 **표면은 chroma 0**이다
 - 다크에서 가장 밝은 값은 `foreground`(0.930)이며 그보다 밝은 것은 존재하지 않는다
-- `primary`는 hue 강조가 아니라 **최고 대비 무채색 채움**이다(다크 0.930 / 라이트 0.220 — 즉 `foreground`와 같은 값)
-- 유채색은 위험 액션(`destructive`)과 사용자가 고른 스탯 스와치에만 존재
+- `primary`는 **핑크-레드 강조**이자 이 시스템의 유일한 유채색 솔리드 채움이다(라이트 `oklch(0.5 0.19 0)` / 다크 `oklch(0.72 0.18 0)`, `ring`도 같은 값)
+- 그 밖의 유채색은 위험 액션(`destructive`, 항상 `/10` 틴트)과 사용자가 고른 스탯 스와치뿐 — 배경·카드·보더 사다리는 무채색을 유지한다
 - 정지 상태는 평평하다 — 그림자는 앱 전체에 5개뿐이고 그중 3개가 떠 있는 팝오버다
 - 크롬은 sticky 헤더 하나(`h-14`)뿐 — 하단 탭바도, 사이드 레일도, 푸터도 없다
 
 ## 2. Colors
 
-명도 하나로만 위계를 만드는 무채색 시스템. 역할 구분은 색상(hue)이 아니라 밝기 차이로만 하고, 유채색은 위험 액션에만 남긴다. 프론트매터는 **기본 테마인 다크**를 담는다. 두 팔레트 모두 `packages/ui/src/styles/globals.css` 한 곳에서만 정의된다.
+**표면은 명도 하나로만 위계를 만들고(무채색 사다리), 색은 강조 지점에만 얹는다.** 레이어 구분은 여전히 색상(hue)이 아니라 밝기 차이로만 하고, 유채색은 `primary`/`ring`·`destructive`·사용자 콘텐츠 셋에만 남긴다. 프론트매터는 **기본 테마인 다크**를 담는다. 두 팔레트 모두 `packages/ui/src/styles/globals.css` 한 곳에서만 정의된다.
+
+아래 본문의 oklch 값은 `globals.css`와 **문자열까지 같게** 적는다(프론트매터 블록만 도구 규약상 3자리 정규화 표기 — 같은 값이다). 문서와 코드가 어긋났는지는 grep 한 번으로 확인할 수 있어야 한다.
 
 ### Primary
-- **Soft White Fill (소프트 화이트 채움)** — `primary` (다크 oklch(0.930) / 라이트 oklch(0.220)): 주요 CTA(플레이, 발행/제출), 포커스 링, 활성 토글. **`primary`는 `foreground`와 정확히 같은 값이다** — 이것은 색 강조가 아니라 "이 화면에서 가장 대비가 센 채움"이라는 뜻이다. 채움 위 텍스트는 항상 `primary-foreground`로 뒤집는다.
+- **Pink-Red Accent (핑크-레드 강조)** — `primary`(= `ring`, 라이트 `oklch(0.5 0.19 0)` / 다크 `oklch(0.72 0.18 0)`): 주요 CTA(플레이, 발행/제출), 사용자 말풍선, 포커스 링·보더, 활성 토글, 체크박스·스위치의 on 상태. **이 시스템에서 유일한 유채색 솔리드 채움이다** — `destructive`가 언제나 `/10` 틴트인 것과 형태로 갈린다.
+- **채움 위 텍스트는 항상 `primary-foreground`로 뒤집는다**(라이트 `oklch(1 0 0)` / 다크 `oklch(0.16 0 0)`): 라이트 **6.70:1** / 다크 **7.18:1**. 라이트 채움이 더 어두운 것은 그 위에 흰 텍스트를 얹기 때문이다.
+- **명도는 hover까지 보고 고른 값이다** — `bg-primary/80`(hover)에서도 `background` 위 라이트 **4.77:1** / 다크 **4.90:1**로 AA를 유지한다. 정지 대비만 재고 토큰을 바꾸면 hover에서 깨진다.
+- **`text-primary`의 대비 대역은 5.78~7.18:1**이다(background / card / popover / secondary·accent 전부 AA 이상, 최저는 라이트에서 `bg-secondary/50` 위 5.78). `primary`가 `foreground`와 같은 값이던 시절의 15.8:1이 아니므로, 새 표면 위에 `text-primary`를 얹을 땐 이 대역을 하한으로 본다.
+- **`destructive`와의 거리**: hue를 0 대 25로 **25° 벌렸고** Oklab ΔE 라이트 0.096 / 다크 0.114 — JND(~0.02)의 5배다. chroma는 sRGB 게멋 상한(hue 0에서 L 0.5 → 0.203, L 0.72 → 0.191)에 걸려 더 벌릴 여지가 없어 hue와 명도로만 가른다.
 - **Hover**: 별도 토큰 없이 `bg-primary/80`(투명도)으로 만든다.
 
 ### Neutral
@@ -168,18 +174,18 @@ components:
 - 라이트 `muted-foreground` on `background`: **5.28:1**, on `card`: **4.84:1** — 통과. 단 **on `accent`(0.930)에서는 4.30:1로 AA 미달**이므로, 라이트에서 `accent` 표면 위에 `muted-foreground`로 본문을 올리지 않는다(배지처럼 큰 텍스트가 아닌 이상).
 
 ### Semantic
-- **Destructive (경고 레드)** — 다크 oklch(0.640 0.190 25) / 라이트 oklch(0.550 0.190 25): 삭제/탈퇴/거부/이용제한. 무채색 팔레트에서 유일하게 허용되는 시스템 유채색이다. 다크에서 빨강을 밝힌 것은 텍스트 대비를 위해서이며(on `background` **5.27:1**), 그 대가로 **밝힌 빨강 위 흰 텍스트는 3.68:1로 AA에 미달한다** — 그래서 `destructive-foreground`도 함께 어둡게 뒤집는다(0.160, 대비 5.27:1). 토큰을 조정할 때 이 쌍을 반드시 함께 유지할 것.
+- **Destructive (경고 레드)** — 다크 oklch(0.640 0.190 25) / 라이트 oklch(0.550 0.190 25): 삭제/탈퇴/거부/이용제한. `primary`와 함께 시스템 유채색 둘 중 하나이며, 둘은 hue(25 대 0)와 **형태**로 갈린다 — destructive는 언제나 틴트, primary는 솔리드 채움이다. 다크에서 빨강을 밝힌 것은 텍스트 대비를 위해서이며(on `background` **5.27:1**), 그 대가로 **밝힌 빨강 위 흰 텍스트는 3.68:1로 AA에 미달한다** — 그래서 `destructive-foreground`도 함께 어둡게 뒤집는다(0.160, 대비 5.27:1). 토큰을 조정할 때 이 쌍을 반드시 함께 유지할 것.
 - **실제 구현에서 destructive는 채움이 아니라 틴트다**: 버튼도 배지도 `bg-destructive/10 text-destructive`를 쓴다. 어두운 방에서 솔리드 레드 블록은 그 자체로 놀람이다.
 
 ### Tertiary
 - **스탯 스와치(User-chosen swatches)** — `packages/ui/src/lib/color-palette.ts`의 10색 고정 팔레트(rose/orange/amber/lime/emerald/teal/sky/indigo/violet/fuchsia, 예: oklch(0.62 0.19 350)). **UI 팔레트가 아니라 사용자 데이터다** — 채팅방 스탯 게이지와 컬러 피커에서 사용자가 직접 고른 값이며, 테마에 따라 변하지 않는다. 시스템 토큰으로 승격하지 말 것.
 
 ### Named Rules
-**The Brightness Budget Rule (밝기 예산 규칙).** 화면은 방의 유일한 광원이다. 다크 테마에서 `foreground`(0.930)보다 밝은 값은 **존재하지 않는다** — 순백(oklch 1.000)은 다크에서 금지다. 밝은 표면은 예산이며, 큰 면적일수록 비싸다. `primary` 채움이 `h-8`(32px) 버튼 크기에 머무는 것은 우연이 아니다.
+**The Brightness Budget Rule (밝기 예산 규칙).** 화면은 방의 유일한 광원이다. 다크 테마에서 `foreground`(0.930)보다 밝은 값은 **존재하지 않는다** — 순백(oklch 1.000)은 다크에서 금지다. 밝은 표면은 예산이며, 큰 면적일수록 비싸다. `primary` 채움이 `h-8`(32px) 버튼 크기에 머무는 것은 우연이 아니다. 핑크-레드로 바뀐 뒤에도 다크 `primary`의 L(0.72)은 이 천장 아래에 있다.
 
 **The Inverted Ladder Rule (반전 사다리 규칙).** 다크에서는 위로 뜨는 레이어일수록 밝아진다(0.160 → 0.210 → 0.260 → 0.300). 라이트에서는 정확히 반대다(1.000 → 0.970 → 0.930 → 0.890). 새 레이어를 추가할 때 이 사다리에 없는 중간값을 발명하지 말 것.
 
-**The Content-Is-The-Color Rule (색은 콘텐츠에서만 규칙).** UI 자체(배경/텍스트/버튼/배지)는 무채색이다. 화면에서 색을 가질 수 있는 것은 사용자 콘텐츠(썸네일, 스탯 스와치)와 위험 액션뿐이다. 썸네일 한 장이 화면에서 유일하게 색을 가진 것이 되게 하는 것이 목표다.
+**The One-Accent Rule (강조는 하나뿐 규칙).** 색이 존재할 수 있는 곳은 셋뿐이다 — 강조 지점(`primary`/`ring`), 사용자 콘텐츠(썸네일, 스탯 스와치), 위험 액션(`destructive`). 배경·카드·보더 사다리와 그 위의 텍스트·배지·비활성 컨트롤은 끝까지 무채색이다. 새 UI 색(성공 그린, 정보 블루, 브랜드 세컨더리)을 발명하지 말 것 — 상태는 아이콘과 텍스트로 구분한다. 그리고 강조는 **하나**라는 뜻이기도 하다: 한 화면에서 `primary`로 칠할 것을 고를 때 "지금 누를 수 있는 것"과 "지금 내가 한 말"(사용자 말풍선) 밖으로 번지면, 썸네일 한 장이 유일하게 빛난다는 전제가 무너진다.
 
 ## 3. Typography
 
@@ -222,7 +228,7 @@ components:
 
 ### Buttons
 - **Shape:** radius `lg`(10px), 기본 높이 `h-8`(32px). 크기 4단계(`xs` 24px / `sm` 28px / `default` 32px / `lg` 36px)와 아이콘 전용 4종.
-- **Primary:** `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝은 채움 + 어두운 텍스트, 라이트에서는 정반대 — **규칙은 "최고 대비 채움"으로 동일하다.**
+- **Primary:** 핑크-레드 `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝힌 핑크 + 어두운 텍스트, 라이트에서는 어두운 핑크 + 흰 텍스트 — **규칙은 "채움 위 텍스트를 뒤집는다"로 동일하다**(§2 Primary).
 - **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
 - **Ghost:** 투명, hover 시 `bg-muted`.
@@ -275,7 +281,7 @@ components:
 ## 6. Do's and Don'ts
 
 ### Do:
-- **Do** 색을 쓰고 싶으면 그것이 사용자 콘텐츠인지 위험 액션인지 먼저 확인한다. 둘 다 아니면 무채색이다.
+- **Do** 색을 쓰고 싶으면 그것이 강조 지점(`primary`/`ring`)인지, 사용자 콘텐츠인지, 위험 액션인지 먼저 확인한다. 셋 다 아니면 무채색이다.
 - **Do** 새 표면을 §2의 명도 사다리 위에 올린다(다크 0.160/0.210/0.260/0.300). 사다리에 없는 중간값을 발명하지 않는다.
 - **Do** 깊이를 그림자가 아니라 명도로 만든다. 카드가 떠 보여야 하면 `bg-card`를 쓰지 `shadow-md`를 쓰지 않는다.
 - **Do** 다크에서 채움 위 텍스트를 뒤집는다 — `primary`와 `destructive` 모두 밝은 채움 + 어두운 텍스트다. 이 쌍을 깨지 말 것.
@@ -286,7 +292,7 @@ components:
 ### Don't:
 - **Don't** 다크에서 순백(`oklch(1)`, `text-white`, `#fff`)을 쓰지 않는다. 천장은 `foreground`(0.930)다.
 - **Don't** 자극적이거나 성인 지향적인 비주얼 톤을 쓰지 않는다(전연령 정책) — 원색 대비, 네온, 선정적 이미지 트리트먼트.
-- **Don't** `primary`를 배경 전체 채우기나 텍스트 그라디언트로 쓰지 않는다. `primary`는 "지금 누를 수 있는 것"에만 쓴다.
+- **Don't** `primary`를 배경 전체 채우기나 텍스트 그라디언트로 쓰지 않는다. `primary`는 "지금 누를 수 있는 것"과 "지금 내가 한 말"(사용자 말풍선)에만 쓴다.
 - **Don't** 솔리드 레드 버튼/배지를 만들지 않는다. destructive는 항상 `/10` 틴트다.
 - **Don't** 카드·버튼·인풋에 정지 상태 그림자를 붙이지 않는다.
 - **Don't** Toast/Alert에 색상 사이드 보더를 쓰지 않는다. 상태는 아이콘 색과 텍스트로만 구분한다.
