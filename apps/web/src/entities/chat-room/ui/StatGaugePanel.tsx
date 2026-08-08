@@ -12,7 +12,15 @@ export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
   if (stats.length === 0) return null;
 
   return (
-    <div role="group" aria-label="스탯" className="flex shrink-0 gap-4 overflow-x-auto border-b border-border px-4 py-2.5">
+    // 스탯 3개만 넘어도 모바일 폭을 넘겨 가로 스크롤이 생기는데 안에 포커스 가능한 요소가 하나도
+    // 없다 — tabIndex 없이는 키보드만 쓰는 사용자가 잘린 스탯에 영영 닿지 못한다(WCAG 2.1.1).
+    // role="group" + aria-label은 이미 이 패턴의 나머지 절반이었다.
+    <div
+      role="group"
+      aria-label="스탯"
+      tabIndex={0}
+      className="flex shrink-0 gap-4 overflow-x-auto border-b border-border px-4 py-2.5 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+    >
       {stats.map((stat) => {
         const value = values[stat.id] ?? stat.initial;
         const ratio = stat.max > stat.min ? (value - stat.min) / (stat.max - stat.min) : 0;

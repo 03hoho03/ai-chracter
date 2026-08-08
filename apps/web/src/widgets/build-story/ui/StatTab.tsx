@@ -82,7 +82,9 @@ function StatRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      {/* 360px에서 2열이면 한 칸이 134px로 좁아져 아래 힌트가 5줄로 접힌다 — 좁을 땐 1열로 편다
+          (앱의 기존 반응형 패턴: grid-cols-1 ... sm:grid-cols-N). */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`stat-${id}-unit`}>단위</Label>
           <Input
@@ -96,6 +98,7 @@ function StatRow({
           <Input
             id={`stat-${id}-per-turn-delta`}
             type="number"
+            step={1}
             placeholder="예: -1"
             aria-describedby={`stat-${id}-per-turn-delta-hint`}
             // 빈 칸에 valueAsNumber를 쓰면 NaN이 들어가 zod가 막는다 — 빈 칸은 undefined로 되돌린다.
