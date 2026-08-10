@@ -89,9 +89,6 @@ function DraftListSection() {
   );
 }
 
-const THEME_ITEM_CLASSNAME =
-  "data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80";
-
 function isTheme(value: string): value is Theme {
   return value === "dark" || value === "light";
 }
@@ -116,11 +113,11 @@ function ThemeSection() {
         onValueChange={handleValueChange}
         aria-label="테마 선택"
       >
-        <ToggleGroupItem value="dark" className={THEME_ITEM_CLASSNAME}>
+        <ToggleGroupItem value="dark">
           <Moon aria-hidden />
           다크
         </ToggleGroupItem>
-        <ToggleGroupItem value="light" className={THEME_ITEM_CLASSNAME}>
+        <ToggleGroupItem value="light">
           <Sun aria-hidden />
           라이트
         </ToggleGroupItem>

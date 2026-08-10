@@ -43,7 +43,7 @@ export const ReportContentModal = createCallable<Props, void>(({ call, mutationF
 
         <ToggleGroup
           type="single"
-          variant="outline"
+          variant="list"
           orientation="vertical"
           value={reason ?? ""}
           onValueChange={(value) => setReason(value ? (value as ReportReasonCategory) : undefined)}

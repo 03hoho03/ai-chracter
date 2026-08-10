@@ -5,9 +5,6 @@ import { BookOpen, UserRound } from "lucide-react";
 
 import { contentTypeToggleAtom, type ContentTypeToggleValue } from "../../../shared/model/content-type-toggle";
 
-const ACTIVE_ITEM_CLASSNAME =
-  "data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80";
-
 function isContentTypeToggleValue(value: string): value is ContentTypeToggleValue {
   return value === "character" || value === "story";
 }
@@ -34,11 +31,11 @@ export function ContentTypeToggle() {
       aria-label="콘텐츠 유형 전환"
       className="shrink-0"
     >
-      <ToggleGroupItem value="character" aria-label="캐릭터" className={ACTIVE_ITEM_CLASSNAME}>
+      <ToggleGroupItem value="character" aria-label="캐릭터">
         <UserRound aria-hidden />
         <span className="hidden sm:inline">캐릭터</span>
       </ToggleGroupItem>
-      <ToggleGroupItem value="story" aria-label="스토리" className={ACTIVE_ITEM_CLASSNAME}>
+      <ToggleGroupItem value="story" aria-label="스토리">
         <BookOpen aria-hidden />
         <span className="hidden sm:inline">스토리</span>
       </ToggleGroupItem>
