@@ -112,10 +112,25 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
 
 ### 계정
 
-| 역할 | 이메일 | 비밀번호 |
-|---|---|---|
-| 작가 — 시드 콘텐츠 전부의 소유자 | `seed-creator@example.com` | `password1234` |
-| 독자 | `test@example.com` | `password1234` |
+| 역할 | 이메일 | 비밀번호 | 시드가 만드나 |
+|---|---|---|---|
+| 작가 — 시드 콘텐츠 전부의 소유자 | `seed-creator@example.com` | `password1234` | O |
+| 독자 | `test@example.com` | `password1234` | O |
+| 관리자(`apps/admin`, 5174) | `admin@example.com` | `password1234` | **X — 아래 참고** |
+
+**관리자 계정은 시드가 만들지 않는다.** `admin_users`는 공개 가입이 없는 완전 별도 테이블이라
+`seed_dev.py`가 손대지 않는다 — 즉 `docker compose ... down -v`로 DB를 날리면 이 계정만 사라지고
+`./dev-up.sh`로도 돌아오지 않는다. 없으면 admin 화면에 로그인할 방법 자체가 없으니 다시 넣을 것:
+
+```sh
+cd apps/api && H=$(uv run python -c "from api.core.security import hash_password; print(hash_password('password1234'))") \
+  && docker exec ai-character-chat-dev-postgres-1 psql -U postgres -d ai_character_chat \
+    -c "insert into admin_users (id, email, password_hash) values (gen_random_uuid(), 'admin@example.com', '$H')
+        on conflict (email) do update set password_hash = excluded.password_hash;"
+```
+
+신고 처리 화면(`/reports/{id}`)은 **PENDING 신고가 있어야** 렌더된다 — web에서 아무 콘텐츠나
+'더보기 → 신고'로 하나 만들면 된다(자기 콘텐츠도 신고할 수 있다).
 
 작가 계정으로 로그인하면 시드된 콘텐츠를 **빌더에서 소유자로 열어** 볼 수 있다 — 시드가 콘텐츠마다
 발행본 옆에 초안 버전을 하나 같이 넣기 때문이다(프로덕션 발행이 다음 편집용 초안을 남기는 것과 같은 모양).
