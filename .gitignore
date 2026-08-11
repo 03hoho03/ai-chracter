@@ -15,3 +15,6 @@ dist/
 __pycache__/
 *.pyc
 .mypy_cache/
+
+# 채팅 프로브 대화록 — 용량이 크고 실행마다 달라진다. 요약 수치는 메모리/커밋 메시지에 남긴다.
+apps/api/probe-runs/
