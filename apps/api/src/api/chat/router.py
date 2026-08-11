@@ -14,6 +14,7 @@ from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
+    STORY_CHAT_SYSTEM_INSTRUCTION,
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
     StatJudgmentResult,
@@ -548,8 +549,11 @@ async def _stream_generated_tokens(
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
-    텍스트를 이 out-param으로 호출부에 넘긴다."""
-    async for delta in llm_client.generate(prompt):
+    텍스트를 이 out-param으로 호출부에 넘긴다.
+
+    스토리/캐릭터/미리보기의 모든 생성 호출이 이 한 곳을 지나므로, 공통 바닥 지시문도 여기서
+    한 번만 붙인다(`STORY_CHAT_SYSTEM_INSTRUCTION`)."""
+    async for delta in llm_client.generate(prompt, STORY_CHAT_SYSTEM_INSTRUCTION):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 

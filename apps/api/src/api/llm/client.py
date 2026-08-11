@@ -24,7 +24,7 @@ class LLMClient(abc.ABC):
     """
 
     @abc.abstractmethod
-    def generate(self, prompt: str) -> AsyncIterator[str]:
+    def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         raise NotImplementedError
 
     @abc.abstractmethod

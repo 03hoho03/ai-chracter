@@ -36,7 +36,7 @@ class GeminiLLMClient(LLMClient):
         self._client = genai.Client(api_key=api_key if api_key is not None else settings.gemini_api_key)
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,
@@ -44,6 +44,7 @@ class GeminiLLMClient(LLMClient):
                 config=genai_types.GenerateContentConfig(
                     max_output_tokens=_MAX_OUTPUT_TOKENS,
                     stop_sequences=_STOP_SEQUENCES,
+                    system_instruction=system_instruction,
                 ),
             )
             async for chunk in stream:

@@ -1,6 +1,7 @@
 import uuid
 
 from api.chat.prompt_builder import (
+    STORY_CHAT_SYSTEM_INSTRUCTION,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
@@ -363,3 +364,21 @@ def test_build_stat_judgment_prompt_marks_system_managed_counters() -> None:
     trust_line = next(line for line in prompt.splitlines() if "이름=상호 신뢰" in line)
     assert "statChanges에 넣지 마라" in oxygen_line
     assert "statChanges에 넣지 마라" not in trust_line
+
+
+def test_shared_system_instruction_covers_only_the_measured_gaps() -> None:
+    """바닥 지시문은 "여러 작품이 똑같이 반복해 적는 것"과 "아무도 안 적어서 무너지는 것"만
+    담는다(2026-08-07 실측: 라벨 금지 29/30·되받기 제약 0/30·사용자 대사 대신쓰기 금지 1/30).
+
+    톤·시점·길이는 작품마다 정당하게 달라야 하므로 넣지 않는다 — 특히 길이는 현재 응답이
+    중앙값 18문장이라, 임의의 문장 수 상한을 두면 30개의 연출을 통째로 바꾼다.
+    """
+    text = STORY_CHAT_SYSTEM_INSTRUCTION
+
+    assert "라벨" in text  # 29/30 이 각자 적던 것 — 여기로 모은다
+    assert "대신 쓰지 않는다" in text  # 1/30
+    assert "되받거나" in text  # 0/30 — 실측 되받기율 70%
+    assert "전연령" in text
+
+    assert "문장" not in text, "문장 수 상한은 작품 연출을 침범한다 — 넣지 말 것"
+    assert "인칭" not in text, "시점은 작품마다 다르다(wuxia-oneform 은 2인칭을 금지한다)"

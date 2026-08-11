@@ -215,6 +215,22 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
     config = captured["config"]
     assert config.max_output_tokens == 2048
     assert config.stop_sequences == ["\n사용자:"]
+    assert config.system_instruction is None  # 호출부가 안 주면 붙지 않는다
+
+
+async def test_generate_forwards_the_shared_system_instruction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """작품별 settingText 와 별개로, 모든 생성 호출에 공통 바닥 지시문을 실을 수 있어야 한다 —
+    사용자 콘텐츠 안에 섞어 넣으면 긴 프롬프트에서 묻히고 작품 설정과 권위가 동등해진다."""
+    captured: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured.update(kwargs)
+        return _chunks("네")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    assert [t async for t in client.generate("hi", "라벨을 붙이지 마라")] == ["네"]
+    assert captured["config"].system_instruction == "라벨을 붙이지 마라"
 
 
 async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
