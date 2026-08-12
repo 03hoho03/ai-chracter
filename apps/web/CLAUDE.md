@@ -14,6 +14,7 @@
 | 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
 | SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
+| 오프닝 선택지 노출 | `shared/lib/suggested-replies/shouldShowSuggestedReplies` + `!isSending` 게이트 — 인라인 조건 금지 (ChatRoomView·PreviewSessionView 참조) |
 | 발행 | draft PATCH 먼저 → `publish`(무바디), 400은 `missingFields`/`reason` 분기 |
 | 테마 | `shared/model/theme.ts`의 `themeAtom`만 write (DOM·스토리지 직접 금지) |
 

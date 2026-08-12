@@ -9,6 +9,7 @@ import { usePreviewSessionQuery, useStartPreviewMutation } from "../../../entiti
 import { usePreviewSendMessage } from "../../../features/preview-chat";
 import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
 import { EndingDivider, MessageBubble, StatGaugePanel, TypingIndicator } from "../../../entities/chat-room";
+import { shouldShowSuggestedReplies } from "../../../shared/lib/suggested-replies/shouldShowSuggestedReplies";
 
 function PreviewSkeleton() {
   return (
@@ -149,7 +150,10 @@ export function PreviewSessionView({
       </div>
 
       <div className="shrink-0 border-t border-border bg-background p-3">
-        {state.suggestedReplies.length > 0 && (
+        {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
+            turnCount는 스트림 종료(done)에야 오르므로 isSending 게이트가 없으면
+            첫 응답이 스트리밍되는 내내 죽은 칩 줄이 남는다. */}
+        {!isSending && shouldShowSuggestedReplies(state.suggestedReplies, state.turnCount) && (
           <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
             {state.suggestedReplies.map((reply) => (
               <Button
