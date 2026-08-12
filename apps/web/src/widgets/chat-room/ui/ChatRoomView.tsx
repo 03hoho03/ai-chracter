@@ -218,8 +218,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 isSending 게이트가 없으면 첫 응답이 스트리밍되는 내내 죽은 칩 줄이 남는다.
                 전송 실패 시엔 isSending이 풀리고 turnCount도 0 그대로라 칩이 돌아와 재시도할 수 있다. */}
             {room.contentSnapshot &&
-              !isSending &&
-              shouldShowSuggestedReplies(room.contentSnapshot.suggestedReplies, room.turnCount) && (
+              shouldShowSuggestedReplies(
+                room.contentSnapshot.suggestedReplies,
+                room.turnCount,
+                room.messages.some((message) => message.role === "user"),
+              ) && (
                 <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
                   {room.contentSnapshot.suggestedReplies.map((reply) => (
                     <Button
