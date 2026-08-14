@@ -1,7 +1,8 @@
 import uuid
+from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -9,6 +10,8 @@ from api.assets.image_processing import BLURRED_CONTENT_TYPE, generate_blurred_i
 from api.assets.schemas import (
     AssetCompleteResponse,
     GeneratedImageItem,
+    GeneratedImageUsage,
+    GeneratedImageUsageField,
     PresignedUploadRequest,
     PresignedUploadResponse,
     RegisterSituationalImageRequest,
@@ -22,9 +25,10 @@ from api.core.s3 import (
     object_exists,
     upload_object,
 )
-from api.db.models.character import SituationalImage
-from api.db.models.content import Content, ContentVersion
+from api.db.models.character import CharacterVersionDetail, SituationalImage
+from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
 from api.session.dependencies import get_current_user_id
 
@@ -157,26 +161,111 @@ async def register_situational_image(
     )
 
 
+async def collect_asset_usages(
+    db: AsyncSession, asset_ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, list[GeneratedImageUsage]]:
+    """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다 (US-001, tasks/prd-image-library.md).
+
+    assets.id를 참조하는 4개 컬럼(character/story thumbnail_asset_id,
+    situational_images.image/blurred_asset_id)을 컬럼별 일괄 select로 훑는다 —
+    이미지마다 개별 조회하지 않는다(N+1 금지). 초안/발행 버전을 구분하지 않고 둘 다
+    '사용 중'으로 보며, 같은 (content_id, field) 참조는 하나로 합친다(제목은 최신
+    버전의 detail name이 남는다). US-002의 삭제 사전 판정도 이 함수를 재사용한다.
+    """
+    if not asset_ids:
+        return {}
+
+    merged: dict[uuid.UUID, dict[tuple[uuid.UUID, str], GeneratedImageUsage]] = {}
+
+    def _add(
+        asset_id: uuid.UUID,
+        content_id: uuid.UUID,
+        content_type: ContentType,
+        content_title: str,
+        field: GeneratedImageUsageField,
+    ) -> None:
+        merged.setdefault(asset_id, {})[(content_id, field)] = GeneratedImageUsage(
+            content_id=content_id,
+            content_type=content_type,
+            content_title=content_title,
+            field=field,
+        )
+
+    detail_models: tuple[type[CharacterVersionDetail] | type[StoryVersionDetail], ...] = (
+        CharacterVersionDetail,
+        StoryVersionDetail,
+    )
+    for detail_model in detail_models:
+        thumbnail_rows = await db.execute(
+            select(detail_model.thumbnail_asset_id, Content.id, Content.type, detail_model.name)
+            .join(ContentVersion, ContentVersion.id == detail_model.content_version_id)
+            .join(Content, Content.id == ContentVersion.content_id)
+            .where(detail_model.thumbnail_asset_id.in_(asset_ids))
+            .order_by(ContentVersion.created_at)
+        )
+        for thumbnail_asset_id, content_id, content_type, name in thumbnail_rows:
+            _add(thumbnail_asset_id, content_id, content_type, name, "thumbnail")
+
+    # 상황별 이미지는 캐릭터 전용이라 제목은 소속 버전의 character_version_details.name이다.
+    requested_ids = set(asset_ids)
+    situational_rows = await db.execute(
+        select(
+            SituationalImage.image_asset_id,
+            SituationalImage.blurred_asset_id,
+            Content.id,
+            Content.type,
+            CharacterVersionDetail.name,
+        )
+        .join(ContentVersion, ContentVersion.id == SituationalImage.content_version_id)
+        .join(
+            CharacterVersionDetail,
+            CharacterVersionDetail.content_version_id == SituationalImage.content_version_id,
+        )
+        .join(Content, Content.id == ContentVersion.content_id)
+        .where(
+            or_(
+                SituationalImage.image_asset_id.in_(asset_ids),
+                SituationalImage.blurred_asset_id.in_(asset_ids),
+            )
+        )
+        .order_by(ContentVersion.created_at)
+    )
+    for image_asset_id, blurred_asset_id, content_id, content_type, name in situational_rows:
+        for referenced_id in (image_asset_id, blurred_asset_id):
+            if referenced_id in requested_ids:
+                _add(referenced_id, content_id, content_type, name, "situationalImage")
+
+    return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
+
+
 @me_router.get("/generated-images")
 async def list_generated_images(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[GeneratedImageItem]:
     """techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회."""
-    assets = await db.scalars(
-        select(Asset)
-        .where(
-            Asset.owner_user_id == current_user_id,
-            Asset.kind == AssetKind.GENERATED,
-            Asset.status == AssetStatus.READY,
+    assets = list(
+        await db.scalars(
+            select(Asset)
+            .where(
+                Asset.owner_user_id == current_user_id,
+                Asset.kind == AssetKind.GENERATED,
+                Asset.status == AssetStatus.READY,
+            )
+            .order_by(Asset.created_at.desc())
         )
-        .order_by(Asset.created_at.desc())
     )
+    usages_by_asset = await collect_asset_usages(db, [asset.id for asset in assets])
 
     items: list[GeneratedImageItem] = []
     for asset in assets:
         image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
         items.append(
-            GeneratedImageItem(asset_id=asset.id, image_url=image_url, created_at=asset.created_at)
+            GeneratedImageItem(
+                asset_id=asset.id,
+                image_url=image_url,
+                created_at=asset.created_at,
+                usages=usages_by_asset.get(asset.id, []),
+            )
         )
     return items

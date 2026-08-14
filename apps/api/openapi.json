@@ -5247,16 +5247,57 @@
             "type": "string",
             "format": "date-time",
             "title": "Createdat"
+          },
+          "usages": {
+            "items": {
+              "$ref": "#/components/schemas/GeneratedImageUsage"
+            },
+            "type": "array",
+            "title": "Usages"
           }
         },
         "type": "object",
         "required": [
           "assetId",
           "imageUrl",
-          "createdAt"
+          "createdAt",
+          "usages"
         ],
         "title": "GeneratedImageItem",
         "description": "techspec-backend-media.md §3: `GET /me/generated-images` item shape."
+      },
+      "GeneratedImageUsage": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "contentTitle": {
+            "type": "string",
+            "title": "Contenttitle"
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "thumbnail",
+              "situationalImage"
+            ],
+            "title": "Field"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentType",
+          "contentTitle",
+          "field"
+        ],
+        "title": "GeneratedImageUsage",
+        "description": "One content referencing a generated asset (US-001, tasks/prd-image-library.md).\n\nDraft and published versions both count as \"in use\"; versions of the same\ncontent referencing the asset with the same field are merged into one entry."
       },
       "GenreResponse": {
         "properties": {

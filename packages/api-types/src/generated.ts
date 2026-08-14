@@ -2121,6 +2121,30 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+            /** Usages */
+            usages: components["schemas"]["GeneratedImageUsage"][];
+        };
+        /**
+         * GeneratedImageUsage
+         * @description One content referencing a generated asset (US-001, tasks/prd-image-library.md).
+         *
+         *     Draft and published versions both count as "in use"; versions of the same
+         *     content referencing the asset with the same field are merged into one entry.
+         */
+        GeneratedImageUsage: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Contenttitle */
+            contentTitle: string;
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "thumbnail" | "situationalImage";
         };
         /** GenreResponse */
         GenreResponse: {

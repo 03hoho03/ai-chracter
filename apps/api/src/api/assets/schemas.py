@@ -1,10 +1,12 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from pydantic import Field
 
 from api.core.schema import CamelModel
+from api.db.models.content import ContentType
 from api.db.models.media import AssetStatus
 
 
@@ -46,9 +48,26 @@ class SituationalImageResponse(CamelModel):
     order: int
 
 
+GeneratedImageUsageField = Literal["thumbnail", "situationalImage"]
+
+
+class GeneratedImageUsage(CamelModel):
+    """One content referencing a generated asset (US-001, tasks/prd-image-library.md).
+
+    Draft and published versions both count as "in use"; versions of the same
+    content referencing the asset with the same field are merged into one entry.
+    """
+
+    content_id: uuid.UUID
+    content_type: ContentType
+    content_title: str
+    field: GeneratedImageUsageField
+
+
 class GeneratedImageItem(CamelModel):
     """techspec-backend-media.md §3: `GET /me/generated-images` item shape."""
 
     asset_id: uuid.UUID
     image_url: str
     created_at: datetime
+    usages: list[GeneratedImageUsage]
