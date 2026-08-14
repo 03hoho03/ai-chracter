@@ -9,7 +9,7 @@ import {
 import { ExternalLink, Images } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { useGeneratedImagesQuery } from "../api/useGeneratedImagesQuery";
+import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 export type PickedGeneratedImage = { assetId: string; imageUrl: string };
 

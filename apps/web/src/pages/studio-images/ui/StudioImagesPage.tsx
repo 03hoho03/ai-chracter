@@ -2,6 +2,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/
 
 import { GenerateImagesPanel } from "@/features/generate-images";
 
+import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
+
 export type StudioImagesTab = "generate" | "library";
 
 export function StudioImagesPage({
@@ -32,12 +34,7 @@ export function StudioImagesPage({
           <GenerateImagesPanel />
         </TabsContent>
         <TabsContent value="library">
-          {/* prd-image-library US-004가 실제 그리드로 채운다. */}
-          <div className="flex min-h-40 items-center justify-center rounded-xl border border-dashed border-border px-6 py-10">
-            <p className="text-sm text-muted-foreground">
-              생성한 이미지를 모아 보는 화면을 준비하고 있어요.
-            </p>
-          </div>
+          <GeneratedImageLibraryPanel onNavigateToGenerate={() => onTabChange("generate")} />
         </TabsContent>
       </Tabs>
     </main>
