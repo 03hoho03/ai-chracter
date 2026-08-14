@@ -316,6 +316,43 @@
         }
       }
     },
+    "/me/generated-images/{asset_id}": {
+      "delete": {
+        "tags": [
+          "assets"
+        ],
+        "summary": "Delete Generated Image",
+        "description": "US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.\n\n존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset\n존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아\n발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.",
+        "operationId": "delete_generated_image_me_generated_images__asset_id__delete",
+        "parameters": [
+          {
+            "name": "asset_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Asset Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/signup": {
       "post": {
         "tags": [

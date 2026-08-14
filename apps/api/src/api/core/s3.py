@@ -64,6 +64,11 @@ def upload_object(key: str, body: bytes, content_type: str) -> None:
     s3_client.put_object(Bucket=settings.s3_bucket_name, Key=key, Body=body, ContentType=content_type)
 
 
+def delete_object(key: str) -> None:
+    """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
+    s3_client.delete_object(Bucket=settings.s3_bucket_name, Key=key)
+
+
 def object_exists(key: str) -> bool:
     """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
     try:

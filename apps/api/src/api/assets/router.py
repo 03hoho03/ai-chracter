@@ -19,6 +19,7 @@ from api.assets.schemas import (
 )
 from api.core.s3 import (
     build_object_key,
+    delete_object,
     download_object,
     generate_presigned_get_url,
     generate_presigned_put_url,
@@ -269,3 +270,39 @@ async def list_generated_images(
             )
         )
     return items
+
+
+@me_router.delete("/generated-images/{asset_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_generated_image(
+    asset_id: uuid.UUID,
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.
+
+    존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
+    존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
+    발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.
+    """
+    asset = await db.get(Asset, asset_id)
+    if (
+        asset is None
+        or asset.owner_user_id != current_user_id
+        or asset.kind != AssetKind.GENERATED
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
+
+    usages = (await collect_asset_usages(db, [asset_id])).get(asset_id, [])
+    if usages:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={
+                "usages": [usage.model_dump(mode="json", by_alias=True) for usage in usages]
+            },
+        )
+
+    # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다(고아 레코드 대신
+    # 고아 파일을 피한다).
+    await run_in_threadpool(delete_object, asset.storage_key)
+    await db.delete(asset)
+    await db.commit()

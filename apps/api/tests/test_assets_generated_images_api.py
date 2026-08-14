@@ -1,9 +1,11 @@
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
+import boto3
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
@@ -440,6 +442,140 @@ async def test_generated_image_same_content_same_field_multiple_versions_merged(
             "contentId": str(content.id),
             "contentType": "character",
             "contentTitle": "신버전이름",
+            "field": "thumbnail",
+        }
+    ]
+
+
+async def test_delete_unused_generated_image_removes_it_from_list_and_s3(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    await db_session.commit()
+    asset_id, storage_key = asset.id, asset.storage_key
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-image-bytes")
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+    assert resp.status_code == 204
+
+    list_resp = await db_client.get("/me/generated-images")
+    assert list_resp.status_code == 200
+    assert [item["assetId"] for item in list_resp.json()] == []
+
+    listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=storage_key)
+    assert listed["KeyCount"] == 0
+
+
+async def test_delete_generated_image_of_other_user_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, other])
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, owner.id)
+    await db_session.commit()
+    await _login_as(db_client, other.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+    assert resp.status_code == 404
+
+
+async def test_delete_non_generated_asset_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset_id = uuid.uuid4()
+    db_session.add(
+        Asset(
+            id=asset_id,
+            owner_user_id=user.id,
+            storage_key=f"assets/profile-image/{asset_id}.png",
+            kind=AssetKind.ORIGINAL,
+            status=AssetStatus.READY,
+        )
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+    assert resp.status_code == 404
+
+
+async def test_delete_missing_generated_image_is_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{uuid.uuid4()}")
+    assert resp.status_code == 404
+
+
+async def test_delete_used_generated_image_is_409_with_usages(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    content, _ = await _make_character_content(
+        db_session, creator_user_id=user.id, name="사용중캐릭터", thumbnail_asset_id=asset.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {
+        "usages": [
+            {
+                "contentId": str(content.id),
+                "contentType": "character",
+                "contentTitle": "사용중캐릭터",
+                "field": "thumbnail",
+            }
+        ]
+    }
+
+    # 삭제되지 않고 목록에 그대로 남아 있다.
+    list_resp = await db_client.get("/me/generated-images")
+    assert [item["assetId"] for item in list_resp.json()] == [str(asset.id)]
+
+
+async def test_delete_generated_image_referenced_only_by_draft_is_409(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    content, _ = await _make_character_content(
+        db_session,
+        creator_user_id=user.id,
+        name="초안참조",
+        thumbnail_asset_id=asset.id,
+        published=False,
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["usages"] == [
+        {
+            "contentId": str(content.id),
+            "contentType": "character",
+            "contentTitle": "초안참조",
             "field": "thumbnail",
         }
     ]

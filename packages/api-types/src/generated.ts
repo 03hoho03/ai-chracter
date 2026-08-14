@@ -150,6 +150,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/generated-images/{asset_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Generated Image
+         * @description US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.
+         *
+         *     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
+         *     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
+         *     발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.
+         */
+        delete: operations["delete_generated_image_me_generated_images__asset_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -3014,6 +3038,35 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GeneratedImageItem"][];
+                };
+            };
+        };
+    };
+    delete_generated_image_me_generated_images__asset_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
