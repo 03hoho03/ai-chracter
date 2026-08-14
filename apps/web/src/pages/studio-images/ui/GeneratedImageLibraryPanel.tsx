@@ -3,7 +3,7 @@ import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Images } from "lucide-react";
 
-import { useGeneratedImagesQuery, type GeneratedImageItem } from "@/entities/generated-image";
+import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 import { GeneratedImageDetailModal } from "./GeneratedImageDetailModal";
 
@@ -26,9 +26,9 @@ function LibraryGridSkeleton() {
   );
 }
 
-/** prd-image-library US-004/US-005 — '내 이미지' 탭. 생성 이미지를 최신순 그리드로 보여준다
- * (정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고, 셀을
- * 누르면 사용처 목록이 있는 상세 모달을 연다. 삭제는 US-006이 붙인다. */
+/** prd-image-library US-004/US-005/US-006 — '내 이미지' 탭. 생성 이미지를 최신순 그리드로
+ * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,
+ * 셀을 누르면 사용처 목록·삭제가 있는 상세 모달을 연다. */
 export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
 }: {
@@ -36,7 +36,10 @@ export function GeneratedImageLibraryPanel({
 }) {
   const galleryQuery = useGeneratedImagesQuery(true);
   const images = galleryQuery.data;
-  const [selectedImage, setSelectedImage] = useState<GeneratedImageItem | null>(null);
+  // 항목 스냅샷이 아니라 id로 선택하고 목록에서 매번 찾는다 — 삭제 409로 목록을 다시 받으면
+  // 열려 있는 상세 모달이 갱신된 usages를 보여줘야 한다(항목이 사라지면 모달도 내려간다).
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const selectedImage = images?.find((image) => image.assetId === selectedAssetId);
 
   if (galleryQuery.isPending) {
     return <LibraryGridSkeleton />;
@@ -76,7 +79,7 @@ export function GeneratedImageLibraryPanel({
               <button
                 type="button"
                 aria-label={`${createdAtLabel} 생성 이미지 상세 보기`}
-                onClick={() => setSelectedImage(image)}
+                onClick={() => setSelectedAssetId(image.assetId)}
                 className="aspect-square overflow-hidden rounded-lg bg-muted motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <img src={image.imageUrl} alt="" className="size-full object-cover" />
@@ -94,8 +97,8 @@ export function GeneratedImageLibraryPanel({
         })}
       </div>
 
-      {selectedImage !== null && (
-        <GeneratedImageDetailModal image={selectedImage} onClose={() => setSelectedImage(null)} />
+      {selectedImage !== undefined && (
+        <GeneratedImageDetailModal image={selectedImage} onClose={() => setSelectedAssetId(null)} />
       )}
     </>
   );
