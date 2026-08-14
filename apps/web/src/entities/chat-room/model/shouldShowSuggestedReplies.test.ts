@@ -18,16 +18,13 @@ describe("shouldShowSuggestedReplies", () => {
     expect(shouldShowSuggestedReplies([], 0, false)).toBe(false);
   });
 
-  // 서버 turn_count는 성공한 턴만 센다. 사용자 메시지는 Gemini 호출 전에 커밋되지만
-  // turn_count += 1은 생성 성공 후에만 실행되므로, 생성이 실패한 방은 발화가 쌓여도 0에 머문다
-  // (dev DB 실측: turn_count=0인 방 38개 중 31개가 이 상태였다).
-  it("returns false when generation kept failing — user has spoken but turnCount is still 0", () => {
-    expect(shouldShowSuggestedReplies(REPLIES, 0, true)).toBe(false);
-  });
-
-  // turnCount는 스트림이 끝나야 오른다. 사용자 메시지는 전송 즉시 캐시에 들어가므로
-  // 이 항이 첫 응답을 생성하는 구간을 덮는다.
-  it("returns false while the first response is still streaming", () => {
+  // 같은 인자 조합(turnCount 0 + 사용자 발화 있음)이 두 실제 상황을 덮는다.
+  // (1) 생성 실패가 반복된 방 — 서버 turn_count는 성공한 턴만 세므로(사용자 메시지는 Gemini 호출
+  //     전에 커밋되지만 turn_count += 1은 생성 성공 후에만 실행) 발화가 쌓여도 0에 머문다
+  //     (dev DB 실측: turn_count=0인 방 38개 중 31개가 이 상태였다).
+  // (2) 첫 응답 스트리밍 구간 — turnCount는 스트림이 끝나야 오르지만 사용자 메시지는 전송 즉시
+  //     캐시에 들어간다.
+  it("returns false when the user has spoken but turnCount is still 0 (failed generation, streaming)", () => {
     expect(shouldShowSuggestedReplies(REPLIES, 0, true)).toBe(false);
   });
 });

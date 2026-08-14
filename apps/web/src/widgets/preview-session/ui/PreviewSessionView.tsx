@@ -4,12 +4,17 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ChevronLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import type { PreviewShortcut, PreviewStartPayload } from "../../../entities/preview-session";
-import { usePreviewSessionQuery, useStartPreviewMutation } from "../../../entities/preview-session";
-import { usePreviewSendMessage } from "../../../features/preview-chat";
-import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
-import { EndingDivider, MessageBubble, StatGaugePanel, TypingIndicator } from "../../../entities/chat-room";
-import { shouldShowSuggestedReplies } from "../../../shared/lib/suggested-replies/shouldShowSuggestedReplies";
+import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
+import {
+  EndingDivider,
+  MessageBubble,
+  StatGaugePanel,
+  TypingIndicator,
+  shouldShowSuggestedReplies,
+} from "@/entities/chat-room";
+import { usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
+import { usePreviewSendMessage } from "@/features/preview-chat";
+import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
 function PreviewSkeleton() {
   return (
@@ -85,6 +90,11 @@ export function PreviewSessionView({
     if (isSending) return;
     void send(shortcut.prompt, shortcut.id);
     setText("");
+  }
+
+  function handleSuggestedReplyClick(reply: string) {
+    if (isSending) return;
+    void send(reply);
   }
 
   if (!state) {
@@ -166,7 +176,7 @@ export function PreviewSessionView({
                 variant="secondary"
                 size="sm"
                 disabled={isSending}
-                onClick={() => void send(reply)}
+                onClick={() => handleSuggestedReplyClick(reply)}
                 className="shrink-0 rounded-full"
               >
                 {reply}

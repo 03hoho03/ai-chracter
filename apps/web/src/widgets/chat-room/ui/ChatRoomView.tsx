@@ -5,20 +5,20 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ArrowLeft, History, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Shortcut } from "../../../entities/chat-room";
+import type { Shortcut } from "@/entities/chat-room";
 import {
   EndingDivider,
   MessageBubble,
   StatGaugePanel,
   TypingIndicator,
+  shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
   useDeleteMessageMutation,
-} from "../../../entities/chat-room";
-import { useContentDetailQuery } from "../../../entities/content";
-import { useSendMessage } from "../../../features/send-message";
-import { ShortcutAutocomplete } from "../../../features/shortcut-autocomplete";
-import { shouldShowSuggestedReplies } from "../../../shared/lib/suggested-replies/shouldShowSuggestedReplies";
+} from "@/entities/chat-room";
+import { useContentDetailQuery } from "@/entities/content";
+import { useSendMessage } from "@/features/send-message";
+import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
 
@@ -214,9 +214,10 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           </div>
 
           <div className="shrink-0 border-t border-border bg-background p-3">
-            {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르므로,
-                isSending 게이트가 없으면 첫 응답이 스트리밍되는 내내 죽은 칩 줄이 남는다.
-                전송 실패 시엔 isSending이 풀리고 turnCount도 0 그대로라 칩이 돌아와 재시도할 수 있다. */}
+            {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르지만,
+                사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
+                구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로(FR-88) 칩은 되살아나지
+                않는다 — 재시도는 오류 배너의 "다시 시도"가 담당한다. */}
             {room.contentSnapshot &&
               shouldShowSuggestedReplies(
                 room.contentSnapshot.suggestedReplies,
