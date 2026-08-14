@@ -21,6 +21,7 @@
 ## 아키텍처 / 라우팅
 
 - **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 import 금지). 동일 레이어 슬라이스가 코드를 공유해야 하면 그 코드를 `entities`로 내려 각자 하위 의존한다(슬라이스 간 직접 import 금지). `routes/*`는 로직 없이 `pages/{page}`를 렌더링만 하는 얇은 어댑터.
+- **내부 import는 `@/` alias**(`@/*` → `src/*`): 레이어를 넘는 import는 `@/entities/...`처럼 alias로, 같은 슬라이스 내부는 상대경로. 정의는 `tsconfig.json` `paths` + `vite.config.ts`·`vitest.config.ts` `resolve.alias` 세 곳이 함께 움직인다. 기존 상대경로는 그 파일을 만질 때 점진 전환.
 - **routeTree.gen.ts**: `@tanstack/router-plugin`이 `vite dev`/`vite build` 때 생성하며 git에 커밋한다. 라우트 추가/변경 후 typecheck·커밋 전에 `vite build`(또는 `vite dev` 1회)로 갱신할 것 — `tsc --noEmit`만으론 fresh checkout에서 생성되지 않고, 빼먹으면 새 라우트가 검증에서 누락된다.
 - **디자인시스템**: `packages/ui`(shadcn + Tailwind v4). `main.tsx`에서 `@ai-character-chat/ui/globals.css`를 1회 import하면 전체 앱에 토큰/유틸 적용(이 앱은 별도 tailwind.config/전역 css 없음). 컴포넌트는 `@ai-character-chat/ui/components/{name}`. 상세는 `packages/ui/CLAUDE.md`.
 - **라우터 컨텍스트**: `createRootRouteWithContext<{ queryClient }>()`로 `app/providers.tsx`의 단일 `queryClient` 인스턴스를 실어 넘긴다(`QueryClientProvider`와 반드시 같은 인스턴스라야 캐시가 맞는다). 인증 라우트는 `beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href)`. 진입 자체에 서버 검증 데이터가 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 API 호출은 라우트 파일이 아니라 해당 `features/*`의 순수 async 함수에 둔다.
