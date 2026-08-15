@@ -1,3 +1,5 @@
+import base64
+import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 
@@ -6,6 +8,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.content.router import CONTENT_LIST_PAGE_SIZE
 from api.db.models import (
     Asset,
     AssetKind,
@@ -418,6 +421,133 @@ async def test_list_contents_sort_genre_orders_by_genre_master_sort_order(
     assert resp.status_code == 200
     names = [item["name"] for item in resp.json()["items"]]
     assert names == ["장르1-최근", "장르2-오래됨"]
+
+
+async def test_list_contents_sort_popular_orders_by_view_count_when_chat_and_like_tie(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+
+    for name, view_count in [("조회42", 42), ("조회0", 0), ("조회250", 250), ("조회3", 3)]:
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            name=name,
+            chat_count=5,
+            like_count=7,
+            view_count=view_count,
+        )
+    await db_session.commit()
+
+    resp = await db_client.get("/contents", params={"type": "character", "sort": "popular"})
+    assert resp.status_code == 200
+    names = [item["name"] for item in resp.json()["items"]]
+    assert names == ["조회250", "조회42", "조회3", "조회0"]
+
+
+async def test_list_contents_sort_popular_cursor_covers_all_items_with_nonzero_view_counts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+
+    contents_by_view: dict[int, uuid.UUID] = {}
+    for i in range(CONTENT_LIST_PAGE_SIZE * 2 + 5):
+        view_count = i * 3 + 1
+        content = await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            name=f"인기-{i}",
+            chat_count=5,
+            like_count=7,
+            view_count=view_count,
+        )
+        contents_by_view[view_count] = content.id
+    await db_session.commit()
+
+    views_desc = sorted(contents_by_view, reverse=True)
+    expected_ids = [str(contents_by_view[v]) for v in views_desc]
+
+    collected: list[str] = []
+    cursors: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        params: dict[str, str] = {"type": "character", "sort": "popular"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        resp = await db_client.get("/contents", params=params)
+        assert resp.status_code == 200
+        body = resp.json()
+        collected.extend(item["id"] for item in body["items"])
+        cursor = body["nextCursor"]
+        if cursor is None:
+            break
+        cursors.append(cursor)
+
+    assert len(cursors) >= 2
+    assert collected == expected_ids
+
+    # 커서가 0이 아닌 view_count를 문자열로 담았다가 int()로 되돌리는 왕복 확인
+    first_cursor_parts = json.loads(base64.urlsafe_b64decode(cursors[0].encode()).decode())
+    boundary_view_count = views_desc[CONTENT_LIST_PAGE_SIZE - 1]
+    assert first_cursor_parts[2] == str(boundary_view_count)
+    assert int(first_cursor_parts[2]) == boundary_view_count > 0
+
+
+async def test_list_contents_sort_popular_next_page_survives_view_count_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+
+    contents: list[Content] = []
+    for i in range(CONTENT_LIST_PAGE_SIZE + 5):
+        contents.append(
+            await _make_published_content(
+                db_session,
+                creator_user_id=user.id,
+                genre_id=genre.id,
+                name=f"변동-{i}",
+                chat_count=5,
+                like_count=7,
+                view_count=i + 1,
+            )
+        )
+    await db_session.commit()
+
+    resp = await db_client.get("/contents", params={"type": "character", "sort": "popular"})
+    assert resp.status_code == 200
+    body = resp.json()
+    first_page_ids = {item["id"] for item in body["items"]}
+    cursor = body["nextCursor"]
+    assert cursor is not None
+
+    # 첫 페이지에 없는 작품을 경계 너머로 밀어 올려도 다음 페이지 요청이 깨지지 않아야 한다
+    # (값 기반 커서라 항목이 밀리거나 겹칠 수는 있다 — 여기서는 200과 정상 종료만 고정)
+    off_page = next(c for c in contents if str(c.id) not in first_page_ids)
+    off_page.view_count = 10_000
+    await db_session.commit()
+
+    for _ in range(10):
+        resp = await db_client.get(
+            "/contents", params={"type": "character", "sort": "popular", "cursor": cursor}
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert isinstance(body["items"], list)
+        cursor = body["nextCursor"]
+        if cursor is None:
+            break
+    assert cursor is None
 
 
 async def test_list_contents_cursor_pagination_covers_all_items_without_duplicates(
