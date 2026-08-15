@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
@@ -68,9 +68,14 @@ export function ContentDetailView({ id }: { id: string }) {
   // 경로는 홈 리스트가 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
   // dataUpdatedAt이 트리거인 이유: 상세 응답에 viewCount가 없어 페이로드가 동일하면 structural
   // sharing으로 data 참조가 안 바뀌지만, dataUpdatedAt은 fetch가 해석될 때마다 바뀐다.
+  // ref 가드는 마운트 시점 값(재열람이면 캐시된 이전 타임스탬프)을 무시하기 위한 것 — staleTime 0이라
+  // 마운트 리페치가 곧 새 타임스탬프로 진짜 무효화를 일으키므로, 가드 없이는 재열람 한 번에
+  // 홈 리스트 전 페이지가 두 번(마운트 직후 + 리페치 해석 후) 리페치된다.
   const detailUpdatedAt = detailQuery.dataUpdatedAt;
+  const lastListSyncAtRef = useRef(detailUpdatedAt);
   useEffect(() => {
-    if (detailUpdatedAt === 0) return;
+    if (detailUpdatedAt === lastListSyncAtRef.current) return;
+    lastListSyncAtRef.current = detailUpdatedAt;
     void queryClient.invalidateQueries({ queryKey: contentKeys.browseAll() });
   }, [detailUpdatedAt, queryClient]);
 
