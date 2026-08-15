@@ -22,6 +22,8 @@ export const contentKeys = {
   draft: (id: string) => [...contentKeys.all, "draft", id] as const,
   versions: (id: string) => [...contentKeys.all, "versions", id] as const,
   browse: (params: ContentBrowseParams) => [...contentKeys.all, "browse", params] as const,
+  /** 상세 조회가 조회수를 올린 뒤 유형/정렬/필터와 무관하게 홈 목록을 무효화하기 위한 공통 접두사. */
+  browseAll: () => [...contentKeys.all, "browse"] as const,
   genres: () => [...contentKeys.all, "genres"] as const,
 };
 

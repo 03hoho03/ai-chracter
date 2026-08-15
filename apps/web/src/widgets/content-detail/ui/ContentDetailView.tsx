@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
@@ -63,6 +63,16 @@ export function ContentDetailView({ id }: { id: string }) {
   const [desiredFavorited, setDesiredFavorited] = useState<boolean | undefined>(undefined);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const content = detailQuery.data;
+
+  // 상세 GET이 백그라운드로 조회수를 올리므로, 응답이 해석될 때마다 홈 목록을 무효화한다 — 모달
+  // 경로는 홈 리스트가 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
+  // dataUpdatedAt이 트리거인 이유: 상세 응답에 viewCount가 없어 페이로드가 동일하면 structural
+  // sharing으로 data 참조가 안 바뀌지만, dataUpdatedAt은 fetch가 해석될 때마다 바뀐다.
+  const detailUpdatedAt = detailQuery.dataUpdatedAt;
+  useEffect(() => {
+    if (detailUpdatedAt === 0) return;
+    void queryClient.invalidateQueries({ queryKey: contentKeys.browseAll() });
+  }, [detailUpdatedAt, queryClient]);
 
   useDebounce(
     () => {
