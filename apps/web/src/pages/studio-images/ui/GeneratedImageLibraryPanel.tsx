@@ -1,5 +1,4 @@
 import { useState } from "react";
-
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Images } from "lucide-react";
 
@@ -38,7 +37,7 @@ export function GeneratedImageLibraryPanel({
   const images = galleryQuery.data;
   // 항목 스냅샷이 아니라 id로 선택하고 목록에서 매번 찾는다 — 삭제 409로 목록을 다시 받으면
   // 열려 있는 상세 모달이 갱신된 usages를 보여줘야 한다(항목이 사라지면 모달도 내려간다).
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [selectedAssetId, setSelectedAssetId] = useState<string>();
   const selectedImage = images?.find((image) => image.assetId === selectedAssetId);
 
   if (galleryQuery.isPending) {
@@ -47,9 +46,12 @@ export function GeneratedImageLibraryPanel({
 
   if (galleryQuery.isError) {
     return (
-      <p className="py-4 text-sm text-destructive">
-        목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
-      </p>
+      <div className="flex flex-col items-start gap-3 py-4">
+        <p className="text-sm text-destructive">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <Button variant="outline" size="sm" onClick={() => void galleryQuery.refetch()}>
+          다시 시도
+        </Button>
+      </div>
     );
   }
 
@@ -82,7 +84,13 @@ export function GeneratedImageLibraryPanel({
                 onClick={() => setSelectedAssetId(image.assetId)}
                 className="aspect-square overflow-hidden rounded-lg bg-muted motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
-                <img src={image.imageUrl} alt="" className="size-full object-cover" />
+                <img
+                  src={image.imageUrl}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  className="size-full object-cover"
+                />
               </button>
               <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
                 <time dateTime={image.createdAt}>{createdAtLabel}</time>
@@ -98,7 +106,10 @@ export function GeneratedImageLibraryPanel({
       </div>
 
       {selectedImage !== undefined && (
-        <GeneratedImageDetailModal image={selectedImage} onClose={() => setSelectedAssetId(null)} />
+        <GeneratedImageDetailModal
+          image={selectedImage}
+          onClose={() => setSelectedAssetId(undefined)}
+        />
       )}
     </>
   );

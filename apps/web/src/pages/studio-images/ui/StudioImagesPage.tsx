@@ -22,7 +22,12 @@ export function StudioImagesPage({
         </p>
       </div>
 
-      <Tabs value={tab} onValueChange={(value) => onTabChange(value as StudioImagesTab)}>
+      <Tabs
+        value={tab}
+        onValueChange={(value) => {
+          if (value === "generate" || value === "library") onTabChange(value);
+        }}
+      >
         <TabsList variant="line">
           <TabsTrigger value="generate">생성</TabsTrigger>
           <TabsTrigger value="library">내 이미지</TabsTrigger>
