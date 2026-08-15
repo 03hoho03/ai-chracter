@@ -7,9 +7,9 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import and_, any_, func, or_, select, tuple_
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
+from sqlalchemy import and_, any_, func, or_, select, tuple_, update
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.content.publish import (
@@ -52,6 +52,7 @@ from api.content.schemas import (
     UserProfileResponse,
     VisibilityFilter,
 )
+from api.content.view_count import resolve_viewer_key, try_mark_viewed
 from api.core.s3 import download_object, generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -78,7 +79,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from api.db.session import get_db_session
+from api.db.session import get_db_session, get_session_factory
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
@@ -1565,11 +1566,34 @@ def _resolve_access_status(
     return ContentAccessStatus(kind="accessible", visibility=visibility)
 
 
+async def _count_view(
+    session_factory: async_sessionmaker[AsyncSession], content_id: uuid.UUID, viewer_key: str
+) -> None:
+    """Background task: 24h Redis dedup, then let the DB do the increment atomically.
+
+    Opens its own session — the request-scoped `Depends(get_db_session)` is already
+    closed by the time background tasks run (same pattern as api/images/router.py).
+    The increment is a relative SQL UPDATE, not read-modify-write in Python, so
+    concurrent views never lose counts (FR-8).
+    """
+    if not await try_mark_viewed(content_id, viewer_key):
+        return
+    async with session_factory() as session:
+        await session.execute(
+            update(Content).where(Content.id == content_id).values(view_count=Content.view_count + 1)
+        )
+        await session.commit()
+
+
 @router.get("/contents/{id}")
 async def get_content_detail(
     id: uuid.UUID,
+    request: Request,
+    response: Response,
+    background_tasks: BackgroundTasks,
     viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
     db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContentDetailResponse:
     """techspec-backend-content.md §1, techspec-content-versioning.md §1.
 
@@ -1607,6 +1631,20 @@ async def get_content_detail(
     assert version.version_number is not None
     assert version.published_at is not None
     assert content.genre_id is not None
+
+    access_status = _resolve_access_status(content.visibility, content.moderation_status)
+    is_owner = viewer_user_id is not None and viewer_user_id == content.creator_user_id
+    # Count only views the FE will actually render for someone else — exactly
+    # `canViewDetailPage` (accessible AND public-or-owner) minus the owner.
+    if (
+        access_status.kind == "accessible"
+        and content.visibility == ContentVisibility.PUBLIC
+        and not is_owner
+    ):
+        # Viewer key resolution stays in the handler: baking the guest cookie
+        # needs the response object, which background tasks don't have.
+        viewer_key = resolve_viewer_key(request, response, viewer_user_id)
+        background_tasks.add_task(_count_view, session_factory, id, viewer_key)
 
     starting_setups: list[StartingSetupSummary] | None = None
     if content.type == ContentType.STORY:
@@ -1655,8 +1693,8 @@ async def get_content_detail(
         starting_setups=starting_setups,
         version_number=version.version_number,
         updated_at=version.published_at,
-        access_status=_resolve_access_status(content.visibility, content.moderation_status),
-        is_owner=viewer_user_id is not None and viewer_user_id == content.creator_user_id,
+        access_status=access_status,
+        is_owner=is_owner,
     )
 
 

@@ -2,8 +2,12 @@ import uuid
 from datetime import date, datetime, timezone
 
 import httpx
+import pytest
 import sqlalchemy as sa
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.core.redis import redis_client
 
 from api.db.models import (
     Asset,
@@ -423,3 +427,137 @@ async def test_list_content_versions_returns_only_published_ordered_desc(
 async def test_list_content_versions_404_when_content_not_found(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.get(f"/contents/{uuid.uuid4()}/versions")
     assert resp.status_code == 404
+
+
+async def _view_count(db_session: AsyncSession, content_id: uuid.UUID) -> int:
+    count = await db_session.scalar(sa.select(Content.view_count).where(Content.id == content_id))
+    assert count is not None
+    return count
+
+
+async def _make_viewable_content(
+    db_session: AsyncSession,
+    *,
+    visibility: ContentVisibility = ContentVisibility.PUBLIC,
+    moderation_status: ModerationStatus = ModerationStatus.NORMAL,
+) -> tuple[Content, User]:
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _ = await _make_published_content(
+        db_session,
+        creator_user_id=creator.id,
+        genre_id=genre.id,
+        visibility=visibility,
+        moderation_status=moderation_status,
+    )
+    await db_session.commit()
+    return content, creator
+
+
+async def test_view_count_increments_on_first_view(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session)
+
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    # ASGITransport awaits the whole app call including background tasks, so the
+    # increment must already be visible here.
+    assert await _view_count(db_session, content.id) == 1
+
+
+async def test_view_count_deduped_for_same_viewer(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session)
+
+    await db_client.get(f"/contents/{content.id}")
+    await db_client.get(f"/contents/{content.id}")
+    assert await _view_count(db_session, content.id) == 1
+
+
+async def test_view_count_counts_distinct_guests_separately(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session)
+
+    await db_client.get(f"/contents/{content.id}")
+    db_client.cookies.clear()
+    await db_client.get(f"/contents/{content.id}")
+    assert await _view_count(db_session, content.id) == 2
+
+
+async def test_view_count_counts_user_and_guest_separately(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session)
+    viewer = _make_user()
+    db_session.add(viewer)
+    await db_session.commit()
+
+    await db_client.get(f"/contents/{content.id}")
+    assert await _view_count(db_session, content.id) == 1
+
+    await _login_as(db_client, viewer.id)
+    await db_client.get(f"/contents/{content.id}")
+    assert await _view_count(db_session, content.id) == 2
+
+
+async def test_view_count_not_incremented_for_owner(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, creator = await _make_viewable_content(db_session)
+
+    await _login_as(db_client, creator.id)
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    assert await _view_count(db_session, content.id) == 0
+
+
+async def test_view_count_not_incremented_for_private_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session, visibility=ContentVisibility.PRIVATE)
+
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    assert await _view_count(db_session, content.id) == 0
+
+
+async def test_view_count_not_incremented_for_restricted_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(
+        db_session, moderation_status=ModerationStatus.RESTRICTED
+    )
+
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    assert await _view_count(db_session, content.id) == 0
+
+
+async def test_view_count_not_incremented_for_deleted_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    content, _ = await _make_viewable_content(db_session, moderation_status=ModerationStatus.DELETED)
+
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    assert await _view_count(db_session, content.id) == 0
+
+
+async def test_view_count_skipped_when_redis_errors(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    content, _ = await _make_viewable_content(db_session)
+
+    async def _raise_redis_error(*args: object, **kwargs: object) -> None:
+        raise RedisError("connection refused")
+
+    monkeypatch.setattr(redis_client, "set", _raise_redis_error)
+
+    resp = await db_client.get(f"/contents/{content.id}")
+    assert resp.status_code == 200
+    assert await _view_count(db_session, content.id) == 0
