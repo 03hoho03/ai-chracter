@@ -70,5 +70,12 @@ class Settings(BaseSettings):
     # 마지막 활동 기준 TTL — 확정값 24시간.
     preview_session_ttl_seconds: int = 60 * 60 * 24
 
+    # tasks/prd-view-count.md: 조회수 중복 제거용 게스트 뷰어 쿠키. 쿠키 수명은
+    # 중복 제거 TTL보다 반드시 길어야 한다(짧으면 쿠키 재발급 = 새 뷰어로 잡혀
+    # TTL 창 안에서 같은 사람이 두 번 세어진다).
+    guest_viewer_cookie_name: str = "guest_viewer_id"
+    guest_viewer_cookie_max_age_seconds: int = 60 * 60 * 24 * 365
+    content_view_dedup_ttl_seconds: int = 60 * 60 * 24
+
 
 settings = Settings()
