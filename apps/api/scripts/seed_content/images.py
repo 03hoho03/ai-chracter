@@ -133,6 +133,11 @@ def read_image(slug: str, genre_name: str | None = None) -> bytes:
     return mock_thumbnail(slug, genre_name)
 
 
+def asset_storage_key(slug: str, kind: AssetKind) -> str:
+    """이 slug/종류가 차지하는 S3 키. slug 파생이라 어느 환경에서 계산해도 같은 값이다."""
+    return build_object_key("seed", seed_uuid("asset", slug, kind.value), CONTENT_TYPE)
+
+
 async def ensure_asset(
     session: AsyncSession,
     slug: str,

@@ -22,5 +22,155 @@
   {
     "slug": "romance-3rdloop-dj-scene4",
     "prompt": "Three-quarter view from his left, headphones on, reading a listener letter aloud, eyes lowered to the paper. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+  },
+  {
+    "slug": "comedy-condolence",
+    "prompt": "1man, solo, mid-shot, black mourning suit, clutching a white envelope behind his back, eyes darting sideways, Korean funeral hall, white chrysanthemum wreaths, cold fluorescent light, dim muted interior",
+    "style": "illustration"
+  },
+  {
+    "slug": "comedy-demonintern",
+    "prompt": "1boy, solo, waist-up, small black horns, crooked necktie, panicked face, cramped office desk buried in paperwork, night office cubicles, monitor glow, muted teal shadows",
+    "style": "illustration"
+  },
+  {
+    "slug": "comedy-fakefather",
+    "prompt": "1man, solo, waist-up, middle-aged, rented dark suit with a corsage, stiffly adjusting his tie, wedding hall corridor, nervous sweat, blurred guests behind, warm dim chandelier glow",
+    "style": "illustration"
+  },
+  {
+    "slug": "daily-lastorder",
+    "prompt": "1woman, solo, night, deep shadows, dim single hanging bulb, tired middle-aged woman in a dark apron standing among stacked chairs, cramped old Korean neighborhood diner, worn steel tables, kitchen steam, closing time, muted brown",
+    "style": "illustration"
+  },
+  {
+    "slug": "daily-lostandfound",
+    "prompt": "1woman, solo, night-shift clerk at a desk, staring at a brown leather diary, underground subway lost and found office, dusty steel shelves of unclaimed items, flickering cold light, dread",
+    "style": "illustration"
+  },
+  {
+    "slug": "daily-rooftop",
+    "prompt": "1man, solo, elderly, kneeling over planter boxes of young seedlings, rooftop of an old walk-up apartment, watering can, laundry lines, dusk skyline, warm low sun, gentle",
+    "style": "illustration"
+  },
+  {
+    "slug": "fantasy-burnlife",
+    "prompt": "1woman, solo, young mage, white streaked hair, cracked greying skin, burning embers swirling around her raised hand, collapsing dark mage tower, falling stone dust, cold blue glow, grim",
+    "style": "illustration"
+  },
+  {
+    "slug": "fantasy-guildkitchen",
+    "prompt": "1man, solo, cook in an apron ladling stew, warm fantasy guild kitchen, wooden counter, hanging copper pots, a retired knight's sword leaning by the door, candlelight, cozy dim",
+    "style": "illustration"
+  },
+  {
+    "slug": "fantasy-inkcity",
+    "prompt": "1woman, solo, back view, standing in a rain-slick night alley of a mirrored Seoul, black ink bleeding down a wall, umbrella, cold neon reflections, deep shadows, dread",
+    "style": "illustration"
+  },
+  {
+    "slug": "healing-4am",
+    "prompt": "1woman, solo, attendant behind the counter of an old Korean bathhouse, key shelf and battered radio, tiled floor, drifting steam, pale predawn blue light, quiet, empty",
+    "style": "illustration"
+  },
+  {
+    "slug": "healing-seedvillage",
+    "prompt": "1woman, solo, kneeling to press seeds into cracked barren soil, ruined stone village behind, dead windmill, first frost, breath fog, pale grey dawn, quiet resolve",
+    "style": "illustration"
+  },
+  {
+    "slug": "healing-walkinglog",
+    "prompt": "1woman, solo, back view, walking a quiet neighborhood path holding an old worn notebook, bare autumn trees, low stone wall, overcast sky, long shadows, cool muted tones, lonely",
+    "style": "illustration"
+  },
+  {
+    "slug": "horror-callerid",
+    "prompt": "1man, solo, sitting on the floor of a tiny dark studio apartment, phone pressed to his ear, face lit only by the screen, two shadows on the wall behind him, night, dread",
+    "style": "illustration"
+  },
+  {
+    "slug": "horror-sevenrules",
+    "prompt": "1man, solo, night security guard sweeping a flashlight beam, shuttered underground shopping mall, dead escalator, mannequins standing in the dark, radio in hand, heavy black shadows",
+    "style": "illustration"
+  },
+  {
+    "slug": "horror-yeondeung",
+    "prompt": "1boy, solo, pale ghostly young man in dark hanbok, standing under thousands of hanging paper lanterns, night mountain temple courtyard, incense smoke, amber glow, cold blue dark",
+    "style": "illustration"
+  },
+  {
+    "slug": "mystery-elevator",
+    "prompt": "1man, solo, pressed against the wall of a stalled elevator, tense sweat, scratched steel doors half open, red emergency light overhead, claustrophobic, deep red shadows",
+    "style": "illustration"
+  },
+  {
+    "slug": "mystery-onair12",
+    "prompt": "1man, solo, news producer in a broadcast control room, headset, clenched fist, wall of monitors showing a live studio, red tally glow, dark room, urgent tension",
+    "style": "illustration"
+  },
+  {
+    "slug": "mystery-teahouse",
+    "prompt": "1woman, solo, teahouse owner pouring tea, narrow alley shop at night, shelves crowded with lost umbrellas rings and pocket watches, lantern light, rising steam, warm dark, secretive",
+    "style": "illustration"
+  },
+  {
+    "slug": "romance-lockedwith",
+    "prompt": "1man, solo, sharp-suited lawyer leaning on a filing cabinet, loosened tie, locked basement archive room, scattered case files, rain-streaked window, single desk lamp, tense",
+    "style": "illustration"
+  },
+  {
+    "slug": "romance-threeoffering",
+    "prompt": "1girl, solo, young woman in white hanbok holding a paper lantern, standing before a mountain shrine gate at night, ritual ropes, faint silhouettes waiting in the dark, cold moonlight, ominous",
+    "style": "illustration"
+  },
+  {
+    "slug": "school-honorcode",
+    "prompt": "full frame edge to edge interior, no border, dim empty boarding school hearing room at night, long wooden tribunal table, vacant chairs facing one lone chair, stacked documents, single cold overhead lamp, deep shadows, tense, muted",
+    "style": "illustration"
+  },
+  {
+    "slug": "school-notebook",
+    "prompt": "1girl, solo, high school student in a school uniform reading a folded letter between tall library shelves, dust motes, old books, low golden afternoon light, quiet longing",
+    "style": "illustration"
+  },
+  {
+    "slug": "school-relay",
+    "prompt": "1boy, solo, high school student in a gym uniform gripping a relay baton, dusk running track, blurred classmates watching from the stands, kicked-up dust, orange sunset, pressure",
+    "style": "illustration"
+  },
+  {
+    "slug": "sf-backup",
+    "prompt": "1man, solo, dim dark office corridor at night, standing with hand pressed on glass wall, staring at empty desk chair inside office, near-future Seoul, low-key cold blue light, deep shadows, sterile unease",
+    "style": "illustration"
+  },
+  {
+    "slug": "sf-longnight",
+    "prompt": "1woman, solo, lone crew member facing a glowing ship AI interface panel, dim cargo starship corridor, rows of cryo pods, starfield window, cold cyan light, solitude",
+    "style": "illustration"
+  },
+  {
+    "slug": "sf-norespawn",
+    "prompt": "1man, solo, armored player with drawn sword, ruined fantasy game world, glitching red system window fragments floating in the air, cracked stone bridge, storm sky, harsh red rim light",
+    "style": "illustration"
+  },
+  {
+    "slug": "wuxia-lastguard",
+    "prompt": "1man, solo, veteran bodyguard in a black suit standing watch, earpiece, hand inside his jacket, dark penthouse interior, Seoul night skyline through tall windows, cold blue light, weary",
+    "style": "illustration"
+  },
+  {
+    "slug": "wuxia-oneform",
+    "prompt": "1man, solo, lone swordsman in tattered robes drawing a sword, windswept snowy plain, bandaged cracked forearm, hair whipping, grey storm sky, desaturated cold, tragic",
+    "style": "illustration"
+  },
+  {
+    "slug": "wuxia-snowinn",
+    "prompt": "1man, solo, wary traveler in wuxia robes seated alone at a table, snowbound mountain inn hall, lantern light, steaming wine cup, snow piled against the window, dim guests behind",
+    "style": "illustration"
+  },
+  {
+    "slug": "mia",
+    "prompt": "1girl, solo, full-bleed image with no border or frame, gentle young woman sitting beside a low table, soft smile, looking at viewer, modest sweater, dark quiet room at night, single warm lamp, mug of tea, cozy shadows",
+    "style": "illustration"
   }
 ]

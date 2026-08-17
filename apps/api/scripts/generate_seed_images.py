@@ -10,6 +10,10 @@
 
 Cloudflare 는 간헐적으로 실패한다(빈 메시지의 `LLMClientError` = 일시적 blip). 한 장이
 실패해도 나머지는 계속 생성하고, 끝에 실패 목록을 찍는다 — `--only <slug>` 로 재시도할 것.
+
+무료 티어는 하루 10,000 뉴런을 계정 전체가 나눠 쓰므로 30장짜리 배치는 한 번에 몰아치지
+않는다: 장과 장 사이에 `--sleep` 만큼 쉬고, 실패한 장은 `RETRY_DELAYS` 간격으로 두 번 더
+되짚는다(429 든 일시적 blip 이든 같은 취급 — 응답이 둘을 구분해주지 않는다).
 """
 
 import argparse
@@ -37,6 +41,11 @@ PROMPTS_PATH = DATA_DIR / "image_prompts.json"
 DEFAULT_MODEL: ImageModelId = "sdxl"
 DEFAULT_ASPECT_RATIO: AspectRatio = "3:4"
 DEFAULT_STYLE = ImageStylePreset.ANIME
+
+# 장과 장 사이의 기본 간격(초)과, 실패한 장을 되짚는 간격. 뒤로 갈수록 벌려 쿼터가 실제로
+# 마른 경우에도 무의미한 연타가 되지 않게 한다.
+DEFAULT_SLEEP_SECONDS = 2.0
+RETRY_DELAYS: tuple[float, ...] = (5.0, 20.0)
 
 # JSON 의 문자열을 Literal 타입으로 좁히는 통로 (캐스트 없이).
 _MODEL_IDS: dict[str, ImageModelId] = {model_id: model_id for model_id in IMAGE_MODELS_BY_ID}
@@ -107,20 +116,36 @@ def main() -> int:
         )
         return 1
 
-    return asyncio.run(_generate_all(specs, force=bool(args.force)))
+    return asyncio.run(
+        _generate_all(
+            specs,
+            force=bool(args.force),
+            sleep_seconds=float(args.sleep),
+            retry_delays=RETRY_DELAYS,
+        )
+    )
 
 
-async def _generate_all(specs: list[ImagePromptSpec], *, force: bool) -> int:
+async def _generate_all(
+    specs: list[ImagePromptSpec],
+    *,
+    force: bool,
+    sleep_seconds: float,
+    retry_delays: tuple[float, ...],
+) -> int:
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     failed: list[str] = []
+    called = False
     for spec in specs:
         if spec.path.exists() and not force:
             print(f"  - {spec.slug}: 이미 있음 — 건너뜀 (--force 로 재생성)")
             continue
+        if called and sleep_seconds > 0:
+            await asyncio.sleep(sleep_seconds)
         print(f"  · {spec.slug}: {spec.model} / {spec.aspect_ratio} / {spec.style.value} 생성 중…")
-        client = build_image_client(spec.model)
+        called = True
         try:
-            data, mime_type = await client.generate_image(spec.prompt, spec.style, spec.aspect_ratio)
+            data, mime_type = await _generate_with_retry(spec, retry_delays)
         except LLMClientError as exc:
             # 세이프티 필터(단색 이미지)든 일시적 blip 이든 한 장의 실패로 배치를 멈추지 않는다.
             print(f"  ✗ {spec.slug}: {exc}")
@@ -134,6 +159,20 @@ async def _generate_all(specs: list[ImagePromptSpec], *, force: bool) -> int:
         return 1
     print(f"\n완료 — {IMAGES_DIR}")
     return 0
+
+
+async def _generate_with_retry(
+    spec: ImagePromptSpec, retry_delays: tuple[float, ...]
+) -> tuple[bytes, str]:
+    """마지막 시도의 실패는 그대로 올린다 — 배치 전체를 멈출지는 호출부가 정한다."""
+    client = build_image_client(spec.model)
+    for delay in retry_delays:
+        try:
+            return await client.generate_image(spec.prompt, spec.style, spec.aspect_ratio)
+        except LLMClientError as exc:
+            print(f"    ↻ {spec.slug}: {exc} — {delay:.0f}s 뒤 재시도")
+            await asyncio.sleep(delay)
+    return await client.generate_image(spec.prompt, spec.style, spec.aspect_ratio)
 
 
 def _print_dry_run(specs: list[ImagePromptSpec]) -> None:
@@ -206,6 +245,13 @@ def _parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--only", metavar="SLUG", help="이 slug 하나만 생성한다")
     parser.add_argument("--force", action="store_true", help="이미 있는 PNG 도 다시 생성한다")
+    parser.add_argument(
+        "--sleep",
+        type=float,
+        default=DEFAULT_SLEEP_SECONDS,
+        metavar="SECONDS",
+        help=f"장과 장 사이 대기 시간 (기본 {DEFAULT_SLEEP_SECONDS}초)",
+    )
     parser.add_argument(
         "--dry-run", action="store_true", help="API 호출 없이 조립된 프롬프트 목록만 출력한다"
     )

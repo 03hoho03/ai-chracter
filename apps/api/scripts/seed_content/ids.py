@@ -19,6 +19,12 @@ SEED_NAMESPACE = uuid.UUID("5eed0000-0000-4000-8000-00000000f00d")
 # (`USER_ID`), 기존 '미아' 캐릭터의 creator_user_id 도 이 값이라 절대 바꾸지 않는다.
 SEED_AUTHOR_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-000000000001")
 
+# 샘플 캐릭터 '미아'의 썸네일 자산. `seed_dev.py` 가 이 캐릭터를 소유하지만 UUID 는 여기 둔다
+# — 이미지 업로드 스크립트(`upload_seed_images.py`)도 같은 키를 계산해야 하고, 두 스크립트가
+# 리터럴을 각자 들고 있으면 어긋난다. 다른 시드 자산과 달리 slug 파생이 아니라 리터럴인 건
+# 이 행이 seed_content 보다 먼저 있었고 이미 프로덕션 DB 가 이 id 를 참조하기 때문이다.
+MIA_THUMBNAIL_ASSET_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000a5")
+
 
 def seed_uuid(*parts: str) -> uuid.UUID:
     """`seed_uuid("story", "romance-3rdloop", "version")` 처럼 경로를 넘겨 UUID 를 얻는다.

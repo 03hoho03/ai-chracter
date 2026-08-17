@@ -6,7 +6,7 @@
 
     cd apps/api && uv run --env-file .env python scripts/seed_dev.py
 
-- 썸네일용 placeholder 이미지를 moto(S3)에 업로드한다(moto 가 떠 있어야 함, 없으면 경고만 하고 계속).
+- 썸네일 이미지를 moto(S3)에 업로드한다(moto 가 떠 있어야 함, 없으면 경고만 하고 계속).
 - DB 로우는 고정 UUID 로 upsert 한다(`session.merge`): 없으면 넣고, 있으면 이 파일에 적힌 값으로
   덮어쓴다. 그래서 미아의 프롬프트나 소개 문구를 고친 뒤 다시 돌리면 그대로 반영된다 —
   이 스크립트가 시드 데이터의 단일 진실 공급원이다.
@@ -16,7 +16,6 @@
 """
 
 import asyncio
-import io
 import os
 import uuid
 from datetime import UTC, date, datetime
@@ -27,7 +26,6 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
-from PIL import Image  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
 
@@ -46,8 +44,8 @@ from api.db.models.content import (  # noqa: E402
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus  # noqa: E402
 from api.db.session import async_session_factory  # noqa: E402
-from seed_content.ids import SEED_AUTHOR_USER_ID  # noqa: E402
-from seed_content.images import ensure_asset  # noqa: E402
+from seed_content.ids import MIA_THUMBNAIL_ASSET_ID, SEED_AUTHOR_USER_ID  # noqa: E402
+from seed_content.images import ensure_asset, read_image  # noqa: E402
 from seed_content.loader import load_characters, load_stories  # noqa: E402
 from seed_content.upsert import upsert_character, upsert_story  # noqa: E402
 
@@ -62,21 +60,14 @@ SEED_AUTHOR_PASSWORD = "password1234"
 TEST_USER_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000d1")
 TEST_EMAIL = "test@example.com"
 TEST_PASSWORD = "password1234"
-ASSET_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000a5")
+# 미아의 썸네일 자산 id 는 `seed_content.ids` 가 갖고 있다(업로드 스크립트와 공유).
+ASSET_ID = MIA_THUMBNAIL_ASSET_ID
 CONTENT_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000c0")
 VERSION_ID = uuid.UUID("5eed0000-0000-4000-8000-0000000000e0")
 # 장르 '로맨스' — 마이그레이션(91a008760f4a)이 시드한 고정 UUID.
 GENRE_ROMANCE = uuid.UUID("b8a1e6b0-1c1a-4b8a-9b0a-000000000001")
 
 THUMBNAIL_KEY = build_object_key("thumbnail", ASSET_ID, "image/png")
-
-
-def _placeholder_png() -> bytes:
-    """480x720 단색 다크 썸네일 (Pillow, 폰트 의존 없음)."""
-    image = Image.new("RGB", (480, 720), (32, 32, 36))
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return buffer.getvalue()
 
 
 async def seed_content_files(session: AsyncSession) -> None:
@@ -130,8 +121,8 @@ async def seed_content_files(session: AsyncSession) -> None:
 async def main() -> None:
     # 1) 썸네일 이미지 업로드 (moto 없으면 경고만 — 썸네일만 깨지고 채팅은 됨)
     try:
-        upload_object(THUMBNAIL_KEY, _placeholder_png(), "image/png")
-        print(f"  ✓ placeholder 썸네일 업로드: {THUMBNAIL_KEY}")
+        upload_object(THUMBNAIL_KEY, read_image("mia"), "image/png")
+        print(f"  ✓ 미아 썸네일 업로드: {THUMBNAIL_KEY}")
     except Exception as exc:  # noqa: BLE001 - moto 미기동 등 어떤 실패든 시드 자체는 계속
         print(f"  ! 썸네일 업로드 건너뜀 ({exc!r}) — moto 기동 후 seed 재실행하면 채워짐")
 

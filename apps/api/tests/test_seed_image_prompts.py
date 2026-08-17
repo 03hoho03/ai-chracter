@@ -15,7 +15,8 @@ import generate_seed_images
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient, ImageStylePreset
 from generate_seed_images import ImagePromptSpec, load_prompt_specs
-from seed_content.loader import SeedContentError
+from seed_content.images import situational_image_slug
+from seed_content.loader import SeedContentError, load_characters, load_stories
 
 
 def _write(tmp_path: Path, items: object) -> Path:
@@ -90,6 +91,22 @@ def test_committed_prompt_file_parses() -> None:
     load_prompt_specs()
 
 
+def test_every_seed_content_slug_has_a_prompt() -> None:
+    """프롬프트를 빠뜨린 콘텐츠는 조용히 목업 썸네일로 폴백한다 — 실패가 눈에 안 띄어서 고정한다."""
+    characters = load_characters()
+    expected = {story.slug for story in load_stories()}
+    expected |= {character.slug for character in characters}
+    expected |= {
+        situational_image_slug(character.slug, order)
+        for character in characters
+        for order in range(len(character.payload.situational_images))
+    }
+
+    missing = expected - {spec.slug for spec in load_prompt_specs()}
+
+    assert not missing, f"image_prompts.json 에 없는 slug: {sorted(missing)}"
+
+
 class _FakeImageClient(ImageClient):
     """`fail` slug 만 세이프티 필터처럼 실패시키는 클라이언트."""
 
@@ -115,8 +132,46 @@ async def test_one_failure_does_not_stop_the_batch(
         _write(tmp_path, [{"slug": "bad", "prompt": "fail"}, {"slug": "good", "prompt": "ok"}])
     )
 
-    exit_code = await generate_seed_images._generate_all(specs, force=False)
+    exit_code = await generate_seed_images._generate_all(
+        specs, force=False, sleep_seconds=0.0, retry_delays=()
+    )
 
     assert exit_code == 1  # 실패가 있었음을 종료코드로 알린다
     assert not (tmp_path / "bad.png").exists()
     assert (tmp_path / "good.png").exists()  # 실패 다음 항목도 계속 생성된다
+
+
+class _FlakyImageClient(ImageClient):
+    """처음 한 번만 실패하는 클라이언트 — Cloudflare 의 일시적 blip 재현."""
+
+    calls = 0
+
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+
+    async def generate_image(
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+    ) -> tuple[bytes, str]:
+        _FlakyImageClient.calls += 1
+        if _FlakyImageClient.calls == 1:
+            raise LLMClientError("429 rate limited")
+        buffer = io.BytesIO()
+        Image.new("RGB", (8, 8), (10, 20, 30)).save(buffer, format="PNG")
+        return buffer.getvalue(), "image/png"
+
+
+async def test_transient_failure_is_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _FlakyImageClient.calls = 0
+    monkeypatch.setattr(generate_seed_images, "IMAGES_DIR", tmp_path)
+    monkeypatch.setattr(generate_seed_images, "build_image_client", _FlakyImageClient)
+    specs = load_prompt_specs(_write(tmp_path, [{"slug": "flaky", "prompt": "ok"}]))
+
+    exit_code = await generate_seed_images._generate_all(
+        specs, force=False, sleep_seconds=0.0, retry_delays=(0.0,)
+    )
+
+    assert exit_code == 0
+    assert _FlakyImageClient.calls == 2  # 첫 실패 뒤 한 번 더 시도해서 살아났다
+    assert (tmp_path / "flaky.png").exists()
