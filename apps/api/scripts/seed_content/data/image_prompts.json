@@ -1,27 +1,33 @@
 [
   {
     "slug": "romance-3rdloop-dj",
-    "prompt": "Front-facing bust portrait, looking straight at the viewer, tired gentle half-smile, one hand on the microphone. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, front-facing bust portrait, looking at viewer, tired gentle half-smile, one hand on the microphone, late twenties man, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth, single desk lamp, red on-air glow, deep shadows",
+    "style": "illustration"
   },
   {
     "slug": "romance-3rdloop",
-    "prompt": "Wide shot from the doorway, seen from behind at the mixing console, listener letters scattered on the desk. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, wide shot from the doorway, seen from behind at the mixing console, listener letters scattered on the desk, late twenties man, black hair, charcoal cardigan over black shirt, headphones, dark late-night radio booth, single desk lamp, red on-air glow, deep shadows",
+    "style": "illustration"
   },
   {
     "slug": "romance-3rdloop-dj-scene1",
-    "prompt": "Facing viewer, staring straight at the camera, eye contact, centered symmetrical front view portrait, unsmiling, fixated. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, centered front view portrait, staring straight at viewer, eye contact, unsmiling, fixated, late twenties man, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth, single desk lamp, red on-air glow, deep shadows",
+    "style": "illustration"
   },
   {
     "slug": "romance-3rdloop-dj-scene2",
-    "prompt": "Standing alone in the doorway, looking back over his shoulder at a switched-off red ON AIR sign, lights out, everyone gone. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, back turned to viewer, standing up from his chair, head lowered, one hand on the chair back, dark radio booth, single desk lamp, red glow, black hair, charcoal cardigan over black shirt, headphones around neck",
+    "style": "illustration"
   },
   {
     "slug": "romance-3rdloop-dj-scene3",
-    "prompt": "Three-quarter view from his right, microphone pushed aside, leaning back, hand over his mouth, laughing quietly alone. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, mature man in his late twenties, black hair, charcoal cardigan over black shirt, headphones around neck, leaning close over the desk, looking at viewer, gentle eyes, soft quiet smile, radio studio microphone, dark booth, single warm desk lamp, dim red on-air glow",
+    "style": "illustration"
   },
   {
     "slug": "romance-3rdloop-dj-scene4",
-    "prompt": "Three-quarter view from his left, headphones on, reading a listener letter aloud, eyes lowered to the paper. 1boy, solo, young man in his late twenties, black hair, indigo eyes, charcoal cardigan over black shirt, headphones, dark late-night radio booth lit only by one desk lamp, red ON AIR sign, deep shadows"
+    "prompt": "1boy, solo, three-quarter view, holding up a listener letter and reading it aloud into the microphone, eyes lowered to the paper, late twenties man, black hair, charcoal cardigan over black shirt, headphones, dark late-night radio booth, single desk lamp, red on-air glow, deep shadows",
+    "style": "illustration"
   },
   {
     "slug": "comedy-condolence",
