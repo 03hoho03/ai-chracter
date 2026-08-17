@@ -64,20 +64,34 @@ export function ContentDetailView({ id }: { id: string }) {
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   const content = detailQuery.data;
 
-  // 상세 GET이 백그라운드로 조회수를 올리므로, 응답이 해석될 때마다 홈 목록을 무효화한다 — 모달
-  // 경로는 홈 리스트가 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
+  // 상세 GET이 백그라운드로 조회수를 올리므로 홈 목록을 무효화해야 한다 — 모달 경로는 홈 리스트가
+  // 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
   // dataUpdatedAt이 트리거인 이유: 상세 응답에 viewCount가 없어 페이로드가 동일하면 structural
   // sharing으로 data 참조가 안 바뀌지만, dataUpdatedAt은 fetch가 해석될 때마다 바뀐다.
   // ref 가드는 마운트 시점 값(재열람이면 캐시된 이전 타임스탬프)을 무시하기 위한 것 — staleTime 0이라
-  // 마운트 리페치가 곧 새 타임스탬프로 진짜 무효화를 일으키므로, 가드 없이는 재열람 한 번에
-  // 홈 리스트 전 페이지가 두 번(마운트 직후 + 리페치 해석 후) 리페치된다.
+  // 마운트 리페치가 곧 새 타임스탬프를 만든다.
   const detailUpdatedAt = detailQuery.dataUpdatedAt;
-  const lastListSyncAtRef = useRef(detailUpdatedAt);
+  const lastSeenUpdatedAtRef = useRef(detailUpdatedAt);
+  const hasCountedViewRef = useRef(false);
   useEffect(() => {
-    if (detailUpdatedAt === lastListSyncAtRef.current) return;
-    lastListSyncAtRef.current = detailUpdatedAt;
-    void queryClient.invalidateQueries({ queryKey: contentKeys.browseAll() });
-  }, [detailUpdatedAt, queryClient]);
+    if (detailUpdatedAt === lastSeenUpdatedAtRef.current) return;
+    lastSeenUpdatedAtRef.current = detailUpdatedAt;
+    hasCountedViewRef.current = true;
+  }, [detailUpdatedAt]);
+
+  // 무효화는 응답 해석 시점이 아니라 **언마운트(모달 닫힘/상세 이탈) 시점**에 한 번만 한다. BE의
+  // 증가는 응답을 보낸 뒤 도는 BackgroundTasks라, 해석 즉시 무효화하면 그 백그라운드 증가와 목록
+  // 리페치가 경쟁한다 — localhost에선 BE가 이기지만 Cloud Run+Neon+Upstash처럼 Redis/DB가
+  // 네트워크 건너편이면 리페치가 먼저 도착해 옛 숫자가 그대로 남을 수 있다. 사용자가 상세를 보는
+  // 체류 시간을 통째로 여유로 쓰면 그 창이 사실상 닫힌다. 덤으로 모달 뒤에 가려 안 보이는 리스트를
+  // 여는 동안 리페치하지 않게 되어, 스크롤이 깊을수록 커지던 전 페이지 리페치도 한 번으로 줄어든다.
+  useEffect(
+    () => () => {
+      if (!hasCountedViewRef.current) return;
+      void queryClient.invalidateQueries({ queryKey: contentKeys.browseAll() });
+    },
+    [queryClient],
+  );
 
   useDebounce(
     () => {
