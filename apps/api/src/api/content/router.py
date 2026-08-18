@@ -53,7 +53,7 @@ from api.content.schemas import (
     VisibilityFilter,
 )
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
-from api.core.s3 import download_object, generate_presigned_get_url
+from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
@@ -170,7 +170,7 @@ async def list_my_drafts(
                 type=content.type,
                 name=detail.name,
                 thumbnail_asset_id=detail.thumbnail_asset_id,
-                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
+                thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
                 updated_at=content.updated_at,
             )
         )
@@ -255,7 +255,7 @@ async def list_my_favorites(
                 id=content.id,
                 type=content.type,
                 name=detail.name,
-                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
+                thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
                 view_count=content.view_count,
                 creator_user_id=content.creator_user_id,
                 creator_nickname=creator_nickname,
@@ -283,6 +283,22 @@ async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> st
     return await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
 
 
+async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+    """Signs the `_thumb.webp` variant instead of the original — list/card slots never
+    need full resolution, and every READY image asset is guaranteed to have this
+    variant (generated at creation since US-004~006, backfilled for older assets by
+    `scripts/backfill_thumbnails.py`), so the key is derived without an existence check.
+    Detail views (`get_content_detail`) keep `_resolve_asset_url`."""
+    if asset_id is None:
+        return None
+    asset = await db.get(Asset, asset_id)
+    if asset is None:
+        return None
+    return await run_in_threadpool(
+        generate_presigned_get_url, build_thumbnail_key(asset.storage_key)
+    )
+
+
 @router.get("/users/{id}/profile")
 async def get_user_profile(
     id: uuid.UUID,
@@ -296,7 +312,7 @@ async def get_user_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        profile_image_url=await _resolve_asset_url(db, user.profile_image_asset_id),
+        profile_image_url=await _resolve_thumbnail_url(db, user.profile_image_asset_id),
     )
 
 
@@ -330,7 +346,7 @@ async def update_my_profile(
         nickname=user.nickname,
         bio=user.bio,
         profile_image_asset_id=user.profile_image_asset_id,
-        profile_image_url=await _resolve_asset_url(db, user.profile_image_asset_id),
+        profile_image_url=await _resolve_thumbnail_url(db, user.profile_image_asset_id),
     )
 
 
@@ -413,7 +429,7 @@ async def list_user_contents(
                 type=content.type,
                 name=detail.name,
                 thumbnail_asset_id=detail.thumbnail_asset_id,
-                thumbnail_url=await _resolve_asset_url(db, detail.thumbnail_asset_id),
+                thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
                 view_count=content.view_count,
                 visibility=content.visibility,
                 moderation_status=content.moderation_status,
@@ -1524,7 +1540,7 @@ async def list_contents(
             id=content.id,
             type=content.type,
             name=name,
-            thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
+            thumbnail_url=await _resolve_thumbnail_url(db, thumbnail_asset_id),
             view_count=content.view_count,
             creator_user_id=content.creator_user_id,
             creator_nickname=nickname,

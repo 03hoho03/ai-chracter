@@ -268,6 +268,42 @@ async def test_list_contents_response_includes_card_fields(
     assert item["thumbnailUrl"] is not None
 
 
+async def test_list_signs_thumbnail_variant_while_detail_signs_original(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-008: list responses sign the `_thumb.webp` variant key; the detail view
+    keeps signing the original object (original extension)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+
+    content = await _make_published_content(
+        db_session, creator_user_id=user.id, genre_id=genre.id, name="캐릭터"
+    )
+    detail = await db_session.scalar(
+        sa.select(CharacterVersionDetail).where(
+            CharacterVersionDetail.content_version_id == content.current_published_version_id
+        )
+    )
+    assert detail is not None and detail.thumbnail_asset_id is not None
+    asset = await db_session.get(Asset, detail.thumbnail_asset_id)
+    assert asset is not None
+    asset.storage_key = f"{asset.storage_key}.png"
+    await db_session.commit()
+
+    list_resp = await db_client.get("/contents", params={"type": "character"})
+    assert list_resp.status_code == 200
+    [item] = list_resp.json()["items"]
+    assert "_thumb.webp" in item["thumbnailUrl"]
+
+    detail_resp = await db_client.get(f"/contents/{content.id}")
+    assert detail_resp.status_code == 200
+    detail_url = detail_resp.json()["thumbnailUrl"]
+    assert "_thumb.webp" not in detail_url
+    assert ".png" in detail_url
+
+
 async def test_list_contents_search_matches_name_one_liner_and_description(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
