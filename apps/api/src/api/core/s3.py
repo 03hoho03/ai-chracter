@@ -1,4 +1,5 @@
 import mimetypes
+import posixpath
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -29,6 +30,12 @@ s3_client: "S3Client" = boto3.client(
 def build_object_key(purpose: str, asset_id: uuid.UUID, content_type: str) -> str:
     extension = mimetypes.guess_extension(content_type) or ""
     return f"assets/{purpose}/{asset_id}{extension}"
+
+
+def build_thumbnail_key(storage_key: str) -> str:
+    """`assets/profile-image/abc.png` -> `assets/profile-image/abc_thumb.webp`."""
+    base, _extension = posixpath.splitext(storage_key)
+    return f"{base}_thumb.webp"
 
 
 def generate_presigned_put_url(key: str, content_type: str) -> tuple[str, datetime]:
