@@ -6,7 +6,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.image_processing import BLURRED_CONTENT_TYPE, generate_blurred_image
+from api.assets.image_processing import (
+    BLURRED_CONTENT_TYPE,
+    THUMBNAIL_CONTENT_TYPE,
+    generate_blurred_image,
+    generate_thumbnail,
+)
 from api.assets.schemas import (
     UPLOAD_SIZE_LIMIT_BYTES,
     AssetCompleteResponse,
@@ -21,6 +26,7 @@ from api.assets.schemas import (
 )
 from api.core.s3 import (
     build_object_key,
+    build_thumbnail_key,
     delete_object,
     download_object,
     generate_presigned_get_url,
@@ -109,6 +115,29 @@ async def complete_asset_upload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"maxBytes": max_bytes, "actualBytes": actual_bytes},
         )
+
+    # Invariant: a READY image asset always has a `{key}_thumb.webp` variant, so
+    # list endpoints can derive the key without an existence check. A failed
+    # variant therefore fails the whole asset — never READY with only the original.
+    original_bytes = await run_in_threadpool(download_object, asset.storage_key)
+    try:
+        thumbnail_bytes = await run_in_threadpool(generate_thumbnail, original_bytes)
+    except (OSError, ValueError) as exc:
+        # Pillow can't decode the upload — deterministic failure, so clean up
+        # like the oversize path instead of leaving an unretryable PENDING row.
+        await run_in_threadpool(delete_object, asset.storage_key)
+        await db.delete(asset)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Uploaded object is not a decodable image",
+        ) from exc
+    await run_in_threadpool(
+        upload_object,
+        build_thumbnail_key(asset.storage_key),
+        thumbnail_bytes,
+        THUMBNAIL_CONTENT_TYPE,
+    )
 
     asset.status = AssetStatus.READY
     await db.commit()
