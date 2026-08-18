@@ -123,15 +123,20 @@ export function MessageBubble({
         )}
       </div>
       {message.imageUrl && (
-        // US-073 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). max-w/max-h만 지정하면
-        // object-fit 없이도 브라우저가 원본 비율을 유지한 채 그 안에 맞춰 축소한다.
-        <img
-          src={message.imageUrl}
-          alt="대화 중 노출된 이미지"
-          loading="lazy"
-          decoding="async"
-          className="max-h-80 max-w-[75%] rounded-lg"
-        />
+        // US-073/US-014 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). 다만 그 비율을
+        // 미리 알 수 없어 이미지가 도착한 뒤에야 높이가 정해지면 읽던 대화가 아래로 밀린다(CLS) →
+        // ContentCard의 썸네일 웰과 같은 고정 비율 자리(`aspect-square bg-muted`)를 먼저 깔고
+        // 그 안에서 `object-contain`으로 축소한다. `max-w-80`은 기존 `max-h-80`이 만들던
+        // 최대 크기를 그대로 옮긴 값이다.
+        <div className="aspect-square w-3/4 max-w-80 overflow-hidden rounded-lg bg-muted">
+          <img
+            src={message.imageUrl}
+            alt="대화 중 노출된 이미지"
+            loading="lazy"
+            decoding="async"
+            className="size-full object-contain"
+          />
+        </div>
       )}
     </div>
   );
