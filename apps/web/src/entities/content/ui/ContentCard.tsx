@@ -21,6 +21,8 @@ export function ContentCard({
   viewCount,
   author,
   statusTag,
+  priority = false,
+  isLcpCandidate = false,
   onClick,
   onAuthorClick,
 }: {
@@ -29,6 +31,12 @@ export function ContentCard({
   viewCount: number;
   author?: { name: string; profileUrl: string };
   statusTag?: ContentCardStatusTag;
+  /** US-013 — 첫 화면에 보이는 카드만 lazy를 풀고 즉시 로드한다. 그리드가
+   * `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라 첫 줄이 뷰포트에 따라 2/3/4장으로 갈리므로,
+   * 호출부는 최대값 4를 기준으로 `index < 4`에 준다(좁은 화면에선 2장이 과하게 당겨지는 정도). */
+  priority?: boolean;
+  /** LCP 후보 1장(`index === 0`)에만 준다 — 여러 장에 주면 우선순위 신호가 희석돼 의미가 없다. */
+  isLcpCandidate?: boolean;
   onClick: () => void;
   onAuthorClick?: () => void;
 }) {
@@ -46,7 +54,14 @@ export function ContentCard({
     >
       <div className="aspect-square overflow-hidden rounded-lg bg-muted">
         {thumbnailUrl ? (
-          <img src={thumbnailUrl} alt="" className="size-full object-cover" />
+          <img
+            src={thumbnailUrl}
+            alt=""
+            loading={priority ? "eager" : "lazy"}
+            fetchPriority={isLcpCandidate ? "high" : "auto"}
+            decoding="async"
+            className="size-full object-cover"
+          />
         ) : (
           <div className="flex size-full items-center justify-center text-muted-foreground">
             <ImageOff aria-hidden />

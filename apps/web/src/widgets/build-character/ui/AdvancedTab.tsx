@@ -104,7 +104,13 @@ function SituationalImageRow({
 
       <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
         {objectPreviewUrl ? (
-          <img src={objectPreviewUrl} alt="" className="size-full object-cover" />
+          <img
+            src={objectPreviewUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover"
+          />
         ) : hasRegisteredImage ? (
           <div className="flex size-full items-center justify-center text-center text-xs text-muted-foreground">
             등록됨

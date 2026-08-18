@@ -72,6 +72,7 @@
 - **탭**: shadcn `tabs` `variant="line"`(DESIGN.md Flat-at-Rest / One Accent Rule — 활성 탭은 `primary`가 아니라 `foreground` 밑줄).
 - **absolute + grid-cols**: `width` 없는 `absolute` 안의 `grid-cols-N`(=`minmax(0, 1fr)`)은 intrinsic 폭이 0으로 붕괴한다 → 명시 `w-*` 필수.
 - **공용 컴포넌트 재사용**: `ContentCard`·`GeneratedImageField` 등은 로컬 재구현 말고 import.
+- **이미지 로딩 정책**: `<img>`의 기본값은 `loading="lazy"` + `decoding="async"`다. 예외는 두 갈래 — (1) 목록 첫 화면 카드는 `priority` prop으로 `loading="eager"`(공용 `ContentCard`와 프로필 로컬 카드가 받는다. 호출부가 `index < 4`를 준다: 그리드가 `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라 첫 줄이 뷰포트에 따라 2/3/4장으로 갈리므로 최대값 기준), 그중 `fetchPriority="high"`는 LCP 후보 **1장**(`index === 0`)에만 준다(여러 장에 주면 우선순위 신호가 희석된다). (2) 모달·상세 뷰의 주인공 이미지는 열리는 순간 이미 뷰포트에 있어 lazy가 이득이 없으므로 `decoding="async"`만 준다.
 
 ## 검증 워크플로
 

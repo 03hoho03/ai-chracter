@@ -43,10 +43,18 @@ function ContentCard({
   content,
   isOwner,
   ownerUserId,
+  priority = false,
+  isLcpCandidate = false,
 }: {
   content: ContentSummary;
   isOwner: boolean;
   ownerUserId: string;
+  /** US-013 — entities의 공용 ContentCard와 같은 규칙. 그리드가
+   * `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라 첫 줄이 뷰포트에 따라 2/3/4장으로 갈리므로
+   * 호출부는 최대값 4를 기준으로 `index < 4`에 준다. */
+  priority?: boolean;
+  /** LCP 후보 1장(`index === 0`)에만 준다. */
+  isLcpCandidate?: boolean;
 }) {
   // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 태그는
   // content.visibility를 그대로 쓴다(restricted 케이스도 두 태그가 함께 노출돼야 하므로).
@@ -69,7 +77,14 @@ function ContentCard({
     >
       <div className="aspect-square overflow-hidden rounded-lg bg-muted">
         {content.thumbnailUrl ? (
-          <img src={content.thumbnailUrl} alt="" className="size-full object-cover" />
+          <img
+            src={content.thumbnailUrl}
+            alt=""
+            loading={priority ? "eager" : "lazy"}
+            fetchPriority={isLcpCandidate ? "high" : "auto"}
+            decoding="async"
+            className="size-full object-cover"
+          />
         ) : (
           <div className="flex size-full items-center justify-center text-muted-foreground">
             <ImageOff aria-hidden />
@@ -198,8 +213,15 @@ export function ProfileContentSection({
 
       {contentListQuery.data && contentListQuery.data.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {contentListQuery.data.map((content) => (
-            <ContentCard key={content.id} content={content} isOwner={isOwner} ownerUserId={userId} />
+          {contentListQuery.data.map((content, index) => (
+            <ContentCard
+              key={content.id}
+              content={content}
+              isOwner={isOwner}
+              ownerUserId={userId}
+              priority={index < 4}
+              isLcpCandidate={index === 0}
+            />
           ))}
         </div>
       )}

@@ -90,7 +90,8 @@ export function GeneratedImageDetailModal({
         {/* 상세에서는 원본 비율 그대로 보여준다(생성 비율이 1:1~9:16까지 다양 — 크롭 금지).
             세로 이미지는 60dvh에서 멈추고 남는 폭은 bg-muted가 레터박스로 받는다. */}
         <div className="overflow-hidden rounded-lg bg-muted">
-          <img src={image.imageUrl} alt="" className="max-h-[60dvh] w-full object-contain" />
+          {/* US-013 — 모달을 연 직후 바로 보이는 주인공 이미지라 lazy를 걸지 않는다(decoding만). */}
+          <img src={image.imageUrl} alt="" decoding="async" className="max-h-[60dvh] w-full object-contain" />
         </div>
 
         <div className="flex flex-col gap-1.5">

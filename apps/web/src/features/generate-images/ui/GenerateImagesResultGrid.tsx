@@ -64,7 +64,13 @@ export function GenerateImagesResultGrid({
       <div className="grid grid-cols-3 gap-2">
         {job.images.map((image) => (
           <div key={image.assetId} className="aspect-square overflow-hidden rounded-md bg-muted">
-            <img src={image.imageUrl} alt="" className="size-full object-cover" />
+            <img
+              src={image.imageUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover"
+            />
           </div>
         ))}
         {Array.from({ length: skeletonCount }, (_, i) => (

@@ -36,7 +36,13 @@ function DraftCard({ draft }: { draft: DraftSummary }) {
     >
       <div className="flex size-16 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted text-muted-foreground">
         {draft.thumbnailUrl ? (
-          <img src={draft.thumbnailUrl} alt="" className="size-full object-cover" />
+          <img
+            src={draft.thumbnailUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover"
+          />
         ) : (
           <DraftTypeIcon type={draft.type} />
         )}

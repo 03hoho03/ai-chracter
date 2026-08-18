@@ -167,8 +167,9 @@ export function ContentDetailView({ id }: { id: string }) {
   return (
     <article className="flex flex-col gap-5 p-1">
       <div className="aspect-video w-full overflow-hidden rounded-lg bg-muted">
+        {/* US-013 — 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
         {content.thumbnailUrl ? (
-          <img src={content.thumbnailUrl} alt="" className="size-full object-cover" />
+          <img src={content.thumbnailUrl} alt="" decoding="async" className="size-full object-cover" />
         ) : (
           <div className="flex size-full items-center justify-center text-muted-foreground">
             <ImageOff aria-hidden />

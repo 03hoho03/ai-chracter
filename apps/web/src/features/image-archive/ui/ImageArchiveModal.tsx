@@ -44,9 +44,11 @@ export const ImageArchiveModal = createCallable<Props, void>(({ call, characterI
           <div className="grid grid-cols-3 gap-2">
             {images.map((image) => (
               <div key={image.id} className="relative aspect-square overflow-hidden rounded-md bg-muted">
+                {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
                 <img
                   src={image.imageUrl}
                   alt={image.exposed ? "노출된 이미지" : "아직 보지 못한 이미지"}
+                  decoding="async"
                   className="h-full w-full object-cover"
                 />
                 {!image.exposed && (

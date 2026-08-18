@@ -173,13 +173,15 @@ export function HomePage({
       {contentListQuery.data && items.length > 0 && (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-            {items.map((item) => (
+            {items.map((item, index) => (
               <ContentCard
                 key={item.id}
                 thumbnailUrl={item.thumbnailUrl}
                 title={item.name}
                 viewCount={item.viewCount}
                 author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
+                priority={index < 4}
+                isLcpCandidate={index === 0}
                 onClick={() => open(item.type, item.id)}
                 onAuthorClick={() => onSearchChange({ creator: item.creatorUserId })}
               />

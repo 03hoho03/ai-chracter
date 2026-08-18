@@ -125,7 +125,13 @@ export function MessageBubble({
       {message.imageUrl && (
         // US-073 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). max-w/max-h만 지정하면
         // object-fit 없이도 브라우저가 원본 비율을 유지한 채 그 안에 맞춰 축소한다.
-        <img src={message.imageUrl} alt="대화 중 노출된 이미지" className="max-h-80 max-w-[75%] rounded-lg" />
+        <img
+          src={message.imageUrl}
+          alt="대화 중 노출된 이미지"
+          loading="lazy"
+          decoding="async"
+          className="max-h-80 max-w-[75%] rounded-lg"
+        />
       )}
     </div>
   );

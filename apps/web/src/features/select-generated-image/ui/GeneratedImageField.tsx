@@ -85,7 +85,13 @@ export function GeneratedImageField({
     <div className="flex items-start gap-4">
       <div className="relative size-28 shrink-0 overflow-hidden rounded-lg bg-muted">
         {displayUrl ? (
-          <img src={displayUrl} alt="" className="size-full object-cover" />
+          <img
+            src={displayUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="size-full object-cover"
+          />
         ) : (
           <div className="flex size-full items-center justify-center text-muted-foreground">
             <ImageOff aria-hidden />
