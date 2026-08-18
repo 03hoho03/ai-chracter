@@ -14,7 +14,18 @@ class AssetPurpose(str, enum.Enum):
     """techspec-backend-media.md §1. Extend as new upload flows need a purpose."""
 
     PROFILE_IMAGE = "profile-image"
+    CONTENT_THUMBNAIL = "content-thumbnail"
     SITUATIONAL_IMAGE = "situational-image"
+
+
+# Per-purpose upload size limits in bytes, applied to the *resized* result the FE
+# uploads (tasks/prd-image-delivery-optimization.md) — the normal path stays far
+# below these, so the server-side check is purely a bypass safety net.
+UPLOAD_SIZE_LIMIT_BYTES: dict[AssetPurpose, int] = {
+    AssetPurpose.PROFILE_IMAGE: 2 * 1024 * 1024,
+    AssetPurpose.CONTENT_THUMBNAIL: 5 * 1024 * 1024,
+    AssetPurpose.SITUATIONAL_IMAGE: 5 * 1024 * 1024,
+}
 
 
 class PresignedUploadRequest(CamelModel):

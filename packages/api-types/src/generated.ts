@@ -1498,7 +1498,7 @@ export interface components {
          * @description techspec-backend-media.md §1. Extend as new upload flows need a purpose.
          * @enum {string}
          */
-        AssetPurpose: "profile-image" | "situational-image";
+        AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image";
         /**
          * AssetStatus
          * @description techspec-backend-media.md §1: row is created pending at presigned-upload

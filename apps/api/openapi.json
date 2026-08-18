@@ -3689,6 +3689,7 @@
         "type": "string",
         "enum": [
           "profile-image",
+          "content-thumbnail",
           "situational-image"
         ],
         "title": "AssetPurpose",
