@@ -62,7 +62,7 @@ from api.content.schemas import (
     StatDefDraftItem,
     StoryDraftPayload,
 )
-from api.core.s3 import generate_presigned_get_url
+from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -1141,7 +1141,7 @@ async def get_image_archive(
         assert asset_id is not None
         asset = await db.get(Asset, asset_id)
         assert asset is not None
-        image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+        image_url = await run_in_threadpool(generate_presigned_get_url, build_thumbnail_key(asset.storage_key))
         items.append(ImageArchiveItem(id=image.entity_id, exposed=exposed, image_url=image_url))
     return items
 

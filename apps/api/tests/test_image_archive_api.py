@@ -9,6 +9,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult
+from api.core.s3 import build_thumbnail_key
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import CharacterImageExposure
@@ -259,8 +260,8 @@ async def test_image_archive_exposed_url_signs_original_asset_and_unexposed_sign
         await db_client.get(f"/characters/{content.id}/image-archive")
     ).json()
 
-    assert original.storage_key in exposed_item["imageUrl"]
-    assert blurred.storage_key in unexposed_item["imageUrl"]
+    assert build_thumbnail_key(original.storage_key) in exposed_item["imageUrl"]
+    assert build_thumbnail_key(blurred.storage_key) in unexposed_item["imageUrl"]
 
 
 async def test_image_archive_marks_image_exposed_right_after_chat_match(
@@ -293,7 +294,8 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
     finally:
         app.dependency_overrides.pop(get_llm_client, None)
 
-    assert _parse_sse_events(resp.text)[-1]["finalMessage"]["imageId"] == str(image.entity_id)
+    final_message = _parse_sse_events(resp.text)[-1]["finalMessage"]
+    assert final_message["imageId"] == str(image.entity_id)
 
     after = (await db_client.get(f"/characters/{content.id}/image-archive")).json()
     exposed_item, unexposed_item = after
@@ -304,7 +306,10 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
 
     original = await db_session.get(Asset, image.image_asset_id)
     assert original is not None
-    assert original.storage_key in exposed_item["imageUrl"]
+    # 채팅 인라인 imageUrl은 원본 화질을 유지하고, 보관함 그리드만 썸네일 변형을 서명한다.
+    assert original.storage_key in final_message["imageUrl"]
+    assert "_thumb.webp" not in final_message["imageUrl"]
+    assert build_thumbnail_key(original.storage_key) in exposed_item["imageUrl"]
 
 
 async def test_image_archive_exposure_accumulates_across_chat_rooms_not_scoped_to_one_room(

@@ -329,7 +329,7 @@ async def list_generated_images(
 
     items: list[GeneratedImageItem] = []
     for asset in assets:
-        image_url = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+        image_url = await run_in_threadpool(generate_presigned_get_url, build_thumbnail_key(asset.storage_key))
         items.append(
             GeneratedImageItem(
                 asset_id=asset.id,

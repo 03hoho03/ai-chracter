@@ -118,8 +118,10 @@ async def test_generated_images_lists_own_ready_generated_assets_newest_first(
     assert resp.status_code == 200
     body = resp.json()
     assert [item["assetId"] for item in body] == [str(newer_id), str(older_id)]
-    for item in body:
+    for item, asset_id in zip(body, [newer_id, older_id]):
         assert item["imageUrl"].startswith("http")
+        # 갤러리 그리드는 원본이 아니라 썸네일 변형을 서명한다(US-009).
+        assert f"assets/generated/{asset_id}_thumb.webp" in item["imageUrl"]
         assert "createdAt" in item
 
 
