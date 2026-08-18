@@ -19,6 +19,7 @@ import { toast } from "sonner";
 import type { CharacterBuilderFormValues } from "../../../features/build-character";
 import { registerSituationalImage } from "../../../shared/lib/asset/registerSituationalImage";
 import { uploadAsset } from "../../../shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
 
 /** 목록 순서가 곧 우선순위(techspec-builder-character.md §2)라 dnd-kit로 재정렬한다 — 순서가
  * 의미 없는 배열(IntroTab의 예시 대화)과 달리 add/remove만으로는 부족하다. 이미지는 업로드
@@ -76,8 +77,8 @@ function SituationalImageRow({
       });
       setSelectedFile(file);
       setValue(`situationalImages.${index}.image`, { assetId }, { shouldDirty: true });
-    } catch {
-      toast.error("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      toast.error(uploadAssetErrorMessage(error));
     } finally {
       setIsUploading(false);
     }
@@ -130,7 +131,7 @@ function SituationalImageRow({
           <input
             id={inputId}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             className="sr-only"
             disabled={isUploading}
             onChange={(event) => void handleFileChange(event)}

@@ -17,7 +17,7 @@ export function ProfileTab({ form }: { form: UseFormReturn<StoryBuilderFormValue
           control={control}
           name="profile.image"
           render={({ field }) => (
-            <GeneratedImageField value={field.value} onChange={field.onChange} purpose="profile-image" />
+            <GeneratedImageField value={field.value} onChange={field.onChange} purpose="content-thumbnail" />
           )}
         />
       </div>

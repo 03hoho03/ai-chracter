@@ -21,6 +21,7 @@ import { toast } from "sonner";
 
 import type { UserProfileResponse } from "../../../entities/profile";
 import { uploadAsset } from "../../../shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
 import { useUpdateProfileMutation } from "../api/mutations";
 import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
 
@@ -75,8 +76,8 @@ export function EditProfileDialog({
     try {
       const assetId = await uploadAsset(file, "profile-image");
       setProfileImageAssetId(assetId);
-    } catch {
-      toast.error("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      toast.error(uploadAssetErrorMessage(error));
       setSelectedFile(null);
     } finally {
       setIsUploadingImage(false);
@@ -144,7 +145,7 @@ export function EditProfileDialog({
               <input
                 id="edit-profile-image"
                 type="file"
-                accept="image/*"
+                accept="image/png,image/jpeg,image/webp"
                 className="sr-only"
                 disabled={isUploadingImage}
                 onChange={(event) => void handleFileChange(event)}

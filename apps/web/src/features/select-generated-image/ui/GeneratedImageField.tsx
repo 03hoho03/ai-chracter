@@ -5,6 +5,7 @@ import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { uploadAsset, type AssetPurpose } from "../../../shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
 import { GeneratedImagePickerModal } from "./GeneratedImagePickerModal";
 
 export type SelectedImageValue = { assetId: string } | null;
@@ -58,8 +59,8 @@ export function GeneratedImageField({
     try {
       const assetId = await uploadAsset(file, purpose);
       onChange({ assetId });
-    } catch {
-      toast.error("이미지 업로드에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      toast.error(uploadAssetErrorMessage(error));
       setSelectedFile(null);
     } finally {
       setIsUploading(false);
@@ -119,7 +120,7 @@ export function GeneratedImageField({
           <input
             id={inputId}
             type="file"
-            accept="image/*"
+            accept="image/png,image/jpeg,image/webp"
             className="sr-only"
             disabled={isUploading}
             onChange={(event) => void handleFileChange(event)}
