@@ -8,6 +8,7 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 from pydantic import BaseModel
 
+from api.core.config import settings
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from api.llm.gemini import GeminiLLMClient
 
@@ -213,8 +214,13 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
     assert [token async for token in client.generate("hi")] == ["네"]
 
     config = captured["config"]
-    assert config.max_output_tokens == 2048
+    assert config.max_output_tokens == settings.gemini_max_output_tokens
     assert config.stop_sequences == ["\n사용자:"]
+    # 상한이 설정에서 온다는 것까지 봐야 한다 — 리터럴을 그대로 두면 값을 올린 커밋이
+    # 테스트만 깨고 배선이 끊긴 것은 못 잡는다(사고형 모델에서는 이 값이 절단을 가른다).
+    monkeypatch.setattr(settings, "gemini_max_output_tokens", 4242)
+    assert [token async for token in client.generate("hi")] == ["네"]
+    assert captured["config"].max_output_tokens == 4242
 
 
 async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
@@ -242,4 +248,6 @@ async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
     tokens = [token async for token in client.generate("hi")]
 
     assert tokens == ["말을 하다"]
-    assert warnings == ["Gemini 응답이 max_output_tokens(2048)에서 잘렸다"]
+    assert warnings == [
+        f"Gemini 응답이 max_output_tokens({settings.gemini_max_output_tokens})에서 잘렸다"
+    ]

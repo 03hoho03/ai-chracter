@@ -19,10 +19,6 @@ _POLICY_FINISH_REASONS = frozenset(
     {genai_types.FinishReason.SAFETY, genai_types.FinishReason.PROHIBITED_CONTENT}
 )
 
-# 폭주 방지용 상한이지 길이 연출 수단이 아니다 — 실측 90턴의 최대 응답이 1635자였으므로
-# 정상 출력은 건드리지 않고 그보다 한참 위에 둔다. 한국어는 대략 글자당 1~1.5토큰이다.
-_MAX_OUTPUT_TOKENS = 2048
-
 # 생성 프롬프트가 `사용자: {입력}\n진행자:` 라는 대본 프레임으로 끝나서, 모델이 이어서
 # 사용자의 다음 턴까지 지어낼 수 있는 구조다(실측 90턴에서는 발현되지 않았지만 구조적 위험은
 # 남아 있다). 캐릭터 챗도 같은 프레임(`\n캐릭터:`)이라 이 하나로 양쪽이 덮인다.
@@ -37,14 +33,23 @@ class GeminiLLMClient(LLMClient):
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
     async def generate(self, prompt: str) -> AsyncIterator[str]:
+        # 출력 상한이 사고 토큰과 응답이 나눠 쓰는 예산이라는 점과 기본값의 근거는
+        # core/config.py 의 gemini_max_output_tokens 주석 참고.
+        config = genai_types.GenerateContentConfig(
+            max_output_tokens=settings.gemini_max_output_tokens,
+            stop_sequences=_STOP_SEQUENCES,
+        )
+        if settings.gemini_thinking_budget is not None:
+            # None 이면 thinking_config 를 아예 넘기지 않아야 한다(모델 기본 사고 동작) —
+            # 빈 ThinkingConfig 를 넘기는 것이 "안 넘김"과 같다는 보장이 없다.
+            config.thinking_config = genai_types.ThinkingConfig(
+                thinking_budget=settings.gemini_thinking_budget
+            )
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,
                 contents=prompt,
-                config=genai_types.GenerateContentConfig(
-                    max_output_tokens=_MAX_OUTPUT_TOKENS,
-                    stop_sequences=_STOP_SEQUENCES,
-                ),
+                config=config,
             )
             async for chunk in stream:
                 prompt_feedback = getattr(chunk, "prompt_feedback", None)
@@ -57,7 +62,10 @@ class GeminiLLMClient(LLMClient):
                         # 상한에 걸리면 문장 중간에서 잘린 응답이 그대로 사용자에게 간다 —
                         # 조용히 넘기면 "AI가 말을 하다 말았다"로만 보이므로 로그에 남긴다.
                         # 이게 자주 찍히면 상한이 너무 낮은 것이다.
-                        logger.warning("Gemini 응답이 max_output_tokens(%d)에서 잘렸다", _MAX_OUTPUT_TOKENS)
+                        logger.warning(
+                            "Gemini 응답이 max_output_tokens(%d)에서 잘렸다",
+                            settings.gemini_max_output_tokens,
+                        )
                 if chunk.text:
                     yield chunk.text
         except (genai_errors.APIError, httpx.HTTPError) as exc:
