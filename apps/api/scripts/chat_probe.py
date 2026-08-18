@@ -4,7 +4,15 @@
 이 스크립트는 판단하지 않는다.
 
     cd apps/api && uv run --env-file .env python scripts/chat_probe.py \
-        --slugs mystery-elevator,sf-backup --turns 5 --out /tmp/probe.json
+        --slugs romance-lockedwith --setups 0,1 --repeat 2 \
+        --model gemini-3.5-flash-lite --out probe-runs/2026-08-11_flash-lite.json
+
+출력은 gitignore 된 `probe-runs/` 아래에 둘 것 — `/tmp` 에 뒀다가 정리되면서 베이스라인
+원본을 잃은 적이 있다. 모델 비교 회차(2026-08-11)부터 출력 최상위는 리스트가 아니라
+메타(model/turns/collectedAt)를 담은 객체다 — 구 포맷 호환은 `analyze_chat_probe.py` 가 진다.
+`--model` 은 사람이 적는 값이다: 실제 모델은 서버 프로세스의 `GEMINI_MODEL_NAME` 이 정하는데
+그걸 밖에서 확인할 경로가 없다(`/health` 는 status 만 준다). uvicorn 재기동 시점의 env 와
+어긋나지 않게 직접 대조할 것.
 
 **쿼터가 이 스크립트의 진짜 제약이다.** 무료 티어는 모델당 분당 15요청(RPD 가 아니라
 RPM)이고 스토리 챗 1턴 = LLM 2회(생성 + 스탯 판단)라, 전체 합쳐 **분당 7.5턴이 천장**이다
@@ -19,6 +27,7 @@ import asyncio
 import json
 import sys
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import TypedDict
 
@@ -102,22 +111,22 @@ async def _send(client: httpx.AsyncClient, room_id: str, text: str) -> _Turn:
 
 
 async def _run_story(
-    client: httpx.AsyncClient, slug: str, turns: int, pacer: _Pacer
+    client: httpx.AsyncClient, slug: str, setup_index: int, label: str, turns: int, pacer: _Pacer
 ) -> dict[str, object]:
     cid = str(story_content_id(slug))
     detail = await client.get(f"/contents/{cid}")
     if detail.status_code != 200:
-        return {"slug": slug, "error": f"GET /contents {detail.status_code}"}
+        return {"slug": slug, "label": label, "error": f"GET /contents {detail.status_code}"}
     setups = detail.json().get("startingSetups") or []
-    if not setups:
-        return {"slug": slug, "error": "시작 상황 없음"}
+    if setup_index >= len(setups):
+        return {"slug": slug, "label": label, "error": f"시작설정 인덱스 {setup_index} 없음 (전체 {len(setups)}개)"}
 
     created = await client.post(
         "/chat-rooms",
-        json={"contentId": cid, "contentType": "story", "startingSetupId": setups[0]["id"]},
+        json={"contentId": cid, "contentType": "story", "startingSetupId": setups[setup_index]["id"]},
     )
     if created.status_code >= 400:
-        return {"slug": slug, "error": f"POST /chat-rooms {created.status_code}: {created.text[:200]}"}
+        return {"slug": slug, "label": label, "error": f"POST /chat-rooms {created.status_code}: {created.text[:200]}"}
     room = created.json()
 
     transcript = [
@@ -135,10 +144,14 @@ async def _run_story(
             {"role": "진행자", "text": got["reply"], "events": got["events"], "seconds": got["seconds"]}
         )
     # 빈 응답은 거의 항상 쿼터 소진(429)이다 — 대화록을 읽기 전에 여기서 먼저 드러나야 한다.
-    print(f"  · {slug:26} 빈응답 {empty}/{turns}, 에러이벤트 {failed}", flush=True)
+    print(f"  · {label:26} 빈응답 {empty}/{turns}, 에러이벤트 {failed}", flush=True)
     return {
         "slug": slug,
+        # 같은 slug 를 여러 시작설정/회차로 돌리면 slug 가 항목을 못 가른다 — 분석기는
+        # label 을 키로 쓰고, label 이 없는 구 포맷 파일에서만 slug 로 폴백한다.
+        "label": label,
         "name": detail.json().get("name"),
+        "startingSetupId": setups[setup_index]["id"],
         "roomId": room["id"],
         "emptyReplies": empty,
         "transcript": transcript,
@@ -148,10 +161,21 @@ async def _run_story(
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--slugs", required=True, help="쉼표로 구분한 스토리 slug 목록")
+    ap.add_argument(
+        "--model",
+        required=True,
+        help="서버 GEMINI_MODEL_NAME 값 그대로 (출력 메타에 기록 — 한계는 상단 docstring 참고)",
+    )
     ap.add_argument("--turns", type=int, default=5)
     ap.add_argument("--out", required=True)
     ap.add_argument(
-        "--concurrency", type=int, default=1, help="동시에 진행할 스토리 수 (쿼터가 공유되므로 1 권장)"
+        "--setups", default="0", help="쉼표로 구분한 시작설정 인덱스 목록 (기본 0 = 첫 번째만)"
+    )
+    ap.add_argument(
+        "--repeat", type=int, default=1, help="같은 (스토리, 시작설정) 조합을 반복할 회차 수"
+    )
+    ap.add_argument(
+        "--concurrency", type=int, default=1, help="동시에 진행할 회차 수 (쿼터가 공유되므로 1 권장)"
     )
     ap.add_argument(
         "--interval", type=float, default=10.0, help="턴 시작 간격의 하한(초). 1턴=LLM 2회 기준"
@@ -159,33 +183,51 @@ async def main() -> None:
     args = ap.parse_args()
 
     slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
+    setup_indexes = [int(s) for s in args.setups.split(",") if s.strip()]
+    # 표본을 늘리는 축이 스토리 수가 아니라 (시작설정 × 회차)다 — 모델 비교는 스토리 하나를
+    # 여러 번 돌려 얻는다(방 1개 = 응답 5개는 표본으로 너무 얇다).
+    jobs = [
+        (slug, setup_index, run_no)
+        for slug in slugs
+        for setup_index in setup_indexes
+        for run_no in range(1, args.repeat + 1)
+    ]
     sem = asyncio.Semaphore(args.concurrency)
     pacer = _Pacer(args.interval)
     started = time.monotonic()
     print(
-        f"스토리 {len(slugs)}개 × {args.turns}턴 = 요청 {len(slugs) * args.turns * 2}회, "
-        f"간격 {args.interval}초 → 예상 {len(slugs) * args.turns * args.interval / 60:.0f}분",
+        f"회차 {len(jobs)}개 × {args.turns}턴 = 요청 {len(jobs) * args.turns * 2}회, "
+        f"간격 {args.interval}초 → 예상 {len(jobs) * args.turns * args.interval / 60:.0f}분",
         flush=True,
     )
 
     async with httpx.AsyncClient(base_url=BASE, timeout=300) as client:
         await _login(client)
 
-        async def one(slug: str) -> dict[str, object]:
+        async def one(slug: str, setup_index: int, run_no: int) -> dict[str, object]:
+            label = f"{slug}#s{setup_index}r{run_no}"
             async with sem:
                 try:
-                    return await _run_story(client, slug, args.turns, pacer)
-                except Exception as exc:  # noqa: BLE001 - 한 스토리 실패가 나머지를 막지 않게
-                    return {"slug": slug, "error": f"{type(exc).__name__}: {exc}"}
+                    return await _run_story(client, slug, setup_index, label, args.turns, pacer)
+                except Exception as exc:  # noqa: BLE001 - 한 회차 실패가 나머지를 막지 않게
+                    return {"slug": slug, "label": label, "error": f"{type(exc).__name__}: {exc}"}
 
-        results = await asyncio.gather(*(one(s) for s in slugs))
+        results = await asyncio.gather(*(one(*job) for job in jobs))
 
-    Path(args.out).write_text(json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8")
+    # 모델 이름은 파일명이 아니라 파일 안에 남긴다 — 파일명은 옮기거나 바꾸는 순간 증거가
+    # 사라지고, 실제로 그렇게 베이스라인의 맥락을 잃을 뻔했다.
+    payload = {
+        "model": args.model,
+        "turns": args.turns,
+        "collectedAt": datetime.now().isoformat(timespec="seconds"),
+        "results": results,
+    }
+    Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     ok = [r for r in results if "error" not in r]
-    print(f"완료 {len(ok)}/{len(slugs)} — {time.monotonic() - started:.0f}초, 출력 {args.out}")
+    print(f"완료 {len(ok)}/{len(jobs)} — {time.monotonic() - started:.0f}초, 출력 {args.out}")
     for r in results:
         if "error" in r:
-            print(f"  실패 {r['slug']}: {r['error']}")
+            print(f"  실패 {r['label']}: {r['error']}")
 
 
 if __name__ == "__main__":
