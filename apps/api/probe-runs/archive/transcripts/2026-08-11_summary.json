@@ -1,0 +1,164 @@
+[
+  {
+    "path": "probe-runs/2026-08-11_gemini-3.5-flash-lite.json",
+    "label": "gemini-3.5-flash-lite",
+    "scored": 10,
+    "empty_replies": 0,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 9,
+      "sent2": 1,
+      "pct30": 7
+    },
+    "median_len": 570.0,
+    "median_sentences": 14.0,
+    "spread": 1.0746812386156648,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        5,
+        590
+      ],
+      "romance-lockedwith#s1r1": [
+        4,
+        549
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/2026-08-11_gemini-3.1-flash-lite.json",
+    "label": "gemini-3.1-flash-lite",
+    "scored": 10,
+    "empty_replies": 0,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 6,
+      "sent2": 2,
+      "pct30": 6
+    },
+    "median_len": 873.5,
+    "median_sentences": 21.0,
+    "spread": 1.2407834101382489,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        3,
+        868
+      ],
+      "romance-lockedwith#s1r1": [
+        3,
+        1077
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/2026-08-11_gemini-3-flash-preview.json",
+    "label": "gemini-3-flash-preview",
+    "scored": 9,
+    "empty_replies": 1,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 6,
+      "sent2": 3,
+      "pct30": 6
+    },
+    "median_len": 926,
+    "median_sentences": 23,
+    "spread": 1.0346368715083798,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        3,
+        895
+      ],
+      "romance-lockedwith#s1r1": [
+        3,
+        926
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/2026-08-11_gemini-3.5-flash.json",
+    "label": "gemini-3.5-flash",
+    "scored": 8,
+    "empty_replies": 2,
+    "truncated": 5,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 5,
+      "sent2": 2,
+      "pct30": 4
+    },
+    "median_len": 826.0,
+    "median_sentences": 18.0,
+    "spread": 1.1271753681392236,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        2,
+        842
+      ],
+      "romance-lockedwith#s1r1": [
+        3,
+        747
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/2026-08-11_gemini-3.6-flash.json",
+    "label": "gemini-3.6-flash",
+    "scored": 8,
+    "empty_replies": 2,
+    "truncated": 2,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 7,
+      "sent2": 2,
+      "pct30": 7
+    },
+    "median_len": 886.5,
+    "median_sentences": 18.5,
+    "spread": 1.2150127226463103,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        3,
+        786
+      ],
+      "romance-lockedwith#s1r1": [
+        4,
+        955
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/2026-08-11_gemini-2.5-flash.json",
+    "label": "gemini-2.5-flash",
+    "scored": 9,
+    "empty_replies": 1,
+    "truncated": 1,
+    "self_copies": 1,
+    "parrot_hits": {
+      "chars250": 7,
+      "sent2": 3,
+      "pct30": 7
+    },
+    "median_len": 571,
+    "median_sentences": 14,
+    "spread": 1.1695906432748537,
+    "per_story": {
+      "romance-lockedwith#s0r1": [
+        4,
+        513
+      ],
+      "romance-lockedwith#s1r1": [
+        3,
+        600
+      ]
+    },
+    "defects": []
+  }
+]

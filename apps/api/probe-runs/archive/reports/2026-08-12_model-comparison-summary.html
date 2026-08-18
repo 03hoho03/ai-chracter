@@ -1,0 +1,591 @@
+<title>모델 비교 — 결과와 다음 작업</title>
+<style>
+  :root {
+    color-scheme: light;
+    --ground: #f7f6f3;
+    --panel: #fdfdfc;
+    --sunk: #f0efeb;
+    --line: #e2e0d9;
+    --line-soft: #ebe9e2;
+    --ink: #14140f;
+    --ink-2: #4e4d47;
+    --muted: #8a8880;
+    --budget: #2a78d6;
+    --visible: #eb6834;
+    --cut: #d03b3b;
+    --ok: #0ca30c;
+    --warn: #b06a1f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) {
+      color-scheme: dark;
+      --ground: #111110;
+      --panel: #1b1b19;
+      --sunk: #232321;
+      --line: #33322f;
+      --line-soft: #262624;
+      --ink: #e8e7df;
+      --ink-2: #b3b1a8;
+      --muted: #85837b;
+      --budget: #3987e5;
+      --visible: #d95926;
+      --cut: #e06767;
+      --ok: #35b535;
+      --warn: #d69a4a;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --ground: #111110;
+    --panel: #1b1b19;
+    --sunk: #232321;
+    --line: #33322f;
+    --line-soft: #262624;
+    --ink: #e8e7df;
+    --ink-2: #b3b1a8;
+    --muted: #85837b;
+    --budget: #3987e5;
+    --visible: #d95926;
+    --cut: #e06767;
+    --ok: #35b535;
+    --warn: #d69a4a;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Pretendard Variable", Pretendard, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 15px;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    word-break: keep-all;
+  }
+  .page { max-width: 900px; margin: 0 auto; padding: 0 22px 110px; }
+  mono, code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  code { font-size: .87em; background: var(--sunk); padding: .1em .4em; border-radius: 3px; }
+  :focus-visible { outline: 2px solid var(--budget); outline-offset: 3px; border-radius: 2px; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 72px 0 8px; }
+  .stamp {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; letter-spacing: .06em; color: var(--muted);
+    display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 26px;
+  }
+  h1 {
+    font-size: clamp(29px, 5vw, 43px); line-height: 1.22; letter-spacing: -.022em;
+    font-weight: 700; margin: 0 0 20px; text-wrap: balance; max-width: 19ch;
+  }
+  .dek { font-size: 17px; color: var(--ink-2); margin: 0; max-width: 60ch; }
+
+  /* the truncated-sentence specimen */
+  .specimen { margin: 40px 0 0; }
+  .specimen-label {
+    font-size: 11.5px; letter-spacing: .07em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 10px;
+  }
+  .specimen-body {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 3px;
+    padding: 20px 22px; font-size: 15.5px; line-height: 1.85; position: relative;
+  }
+  .specimen-body .cut-edge {
+    color: var(--cut); font-weight: 600;
+    border-right: 3px solid var(--cut); padding-right: 2px;
+  }
+  .specimen-note { font-size: 13px; color: var(--muted); margin-top: 10px; }
+
+  /* ---------- budget bar ---------- */
+  .budget { margin: 34px 0 0; }
+  .budget-track { display: flex; height: 46px; border-radius: 3px; overflow: hidden; background: var(--sunk); }
+  .budget-seg { display: grid; place-items: center; font-size: 12.5px; font-weight: 600; color: #fff; font-variant-numeric: tabular-nums; }
+  .budget-seg small { display: block; font-size: 10.5px; font-weight: 500; opacity: .85; letter-spacing: .03em; }
+  .budget-legend { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+  .budget-legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-right: 7px; vertical-align: 0px; }
+
+  /* ---------- structure ---------- */
+  section { padding-top: 68px; }
+  h2 { font-size: 22px; font-weight: 700; letter-spacing: -.012em; margin: 0 0 6px; text-wrap: balance; }
+  .sub { color: var(--ink-2); margin: 0 0 26px; max-width: 62ch; }
+  h3 { font-size: 15.5px; font-weight: 600; margin: 34px 0 10px; }
+  p { margin: 0 0 15px; max-width: 64ch; }
+  hr { border: 0; border-top: 1px solid var(--line-soft); margin: 0; }
+  strong { font-weight: 650; }
+
+  /* ---------- evidence grid ---------- */
+  .evidence { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 3px; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); overflow: hidden; }
+  .ev { background: var(--panel); padding: 17px 18px; }
+  .ev dt { font-size: 12px; color: var(--muted); margin-bottom: 7px; letter-spacing: .02em; }
+  .ev dd { margin: 0; font-size: 25px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; line-height: 1.15; }
+  .ev dd span { font-size: 13px; font-weight: 500; color: var(--ink-2); letter-spacing: 0; margin-left: 3px; }
+  .ev p { font-size: 12.5px; color: var(--ink-2); margin: 7px 0 0; line-height: 1.55; max-width: none; }
+
+  /* ---------- chart ---------- */
+  figure { margin: 0; background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 22px 22px 16px; }
+  .fig-h { font-size: 14.5px; font-weight: 600; margin: 0 0 4px; }
+  .fig-s { font-size: 13px; color: var(--ink-2); margin: 0 0 20px; max-width: 60ch; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .ax { font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .lb { font-size: 12px; fill: var(--ink-2); }
+  .vl { font-size: 11.5px; fill: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .grid { stroke: var(--line-soft); stroke-width: 1; }
+  .base { stroke: var(--line); stroke-width: 1; }
+  figcaption { font-size: 12.5px; color: var(--muted); margin-top: 14px; line-height: 1.6; }
+
+  /* ---------- table ---------- */
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); }
+  table { border-collapse: collapse; width: 100%; min-width: 720px; font-size: 13.5px; }
+  th, td { padding: 10px 13px; text-align: right; border-bottom: 1px solid var(--line-soft); white-space: nowrap; font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; font-variant-numeric: normal; color: var(--ink-2); }
+  thead th { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--sunk); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.02em; }
+  tbody tr:last-child td { border-bottom: 0; }
+  td b { font-weight: 700; }
+  .neg { color: var(--cut); font-weight: 650; }
+  .pos { color: var(--ok); }
+
+  /* ---------- mismatch list ---------- */
+  .mm { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .mm > div { background: var(--panel); padding: 18px 20px; }
+  .mm h4 { margin: 0 0 6px; font-size: 14.5px; font-weight: 650; }
+  .mm p { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 66ch; }
+
+  /* ---------- model cards ---------- */
+  .models { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .m { background: var(--panel); padding: 18px 20px; }
+  .m-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+  .m-h h4 { margin: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13.5px; font-weight: 700; letter-spacing: -.03em; }
+  .tag { font-size: 11px; font-weight: 600; letter-spacing: .02em; white-space: nowrap; }
+  .tag.ok { color: var(--ok); } .tag.warn { color: var(--warn); } .tag.bad { color: var(--cut); }
+  .m p { font-size: 13.5px; color: var(--ink-2); margin: 0 0 9px; max-width: none; line-height: 1.62; }
+  .m q { display: block; font-size: 13px; color: var(--ink); padding-left: 12px; border-left: 2px solid var(--line); quotes: none; }
+
+  /* ---------- actions ---------- */
+  .actions { display: grid; gap: 14px; counter-reset: step; }
+  .act { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; padding: 20px 22px; display: grid; grid-template-columns: 30px 1fr; gap: 16px; }
+  .act .step {
+    counter-increment: step; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 17px; font-weight: 700; color: var(--muted); font-variant-numeric: tabular-nums; line-height: 1.5;
+  }
+  .act .step::before { content: counter(step, decimal-leading-zero); }
+  .act.blocking { border-color: var(--cut); }
+  .act.blocking .step { color: var(--cut); }
+  .act h4 { margin: 0 0 4px; font-size: 16px; font-weight: 650; letter-spacing: -.01em; }
+  .act .meta { display: flex; flex-wrap: wrap; gap: 5px 16px; font-size: 12px; color: var(--muted); margin-bottom: 11px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: -.02em; }
+  .act p { font-size: 14px; color: var(--ink-2); margin: 0 0 10px; max-width: 62ch; }
+  .act p:last-child { margin-bottom: 0; }
+
+  .fork { display: grid; gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin: 4px 0 12px; }
+  .fork > div { background: var(--sunk); padding: 14px 16px; }
+  .fork b { display: block; font-size: 13px; margin-bottom: 4px; }
+  .fork span { font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+
+  /* ---------- decide ---------- */
+  .decide { background: var(--panel); border: 1px solid var(--line); border-radius: 3px; overflow: hidden; }
+  .decide > div { padding: 20px 22px; border-bottom: 1px solid var(--line-soft); }
+  .decide > div:last-child { border-bottom: 0; }
+  .decide h4 { margin: 0 0 8px; font-size: 15px; font-weight: 650; }
+  .decide p { margin: 0; font-size: 14px; color: var(--ink-2); max-width: 62ch; }
+
+  footer { margin-top: 78px; padding-top: 22px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); line-height: 1.75; }
+  footer p { max-width: none; margin: 0 0 4px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+
+<div class="page">
+
+<header class="hero">
+  <div class="stamp">
+    <span>채팅 품질 실험 · 1~2라운드</span>
+    <span>2026-08-11 → 08-14</span>
+    <span>experiment/model-comparison</span>
+  </div>
+  <h1>모델을 비교하려 했는데, 두 번 다 우리 계측이 틀렸다</h1>
+  <p class="dek">스토리 하나를 고정하고 Gemini 7종을 같은 대본으로 돌렸다. 나온 답은 “어느 모델이 낫다”가 아니라 <strong>버그 두 개였다</strong> — 응답을 자르던 토큰 상한과, 되받기율을 엉뚱하게 세던 분석기. <strong>둘 다 고쳤고 재측정으로 확인했다.</strong></p>
+
+  <div class="specimen">
+    <div class="specimen-label">gemini-3.5-flash · 실제 응답의 끝</div>
+    <div class="specimen-body">
+      …시야가 어둠에 잠기고, <span class="cut-edge">시각이 차단된 극도의 긴장 속에서,</span>
+    </div>
+    <p class="specimen-note">문장이 끝나지 않는다. 이 모델의 성한 응답 8개 중 5개가 이렇게 끝났다.</p>
+  </div>
+
+  <div class="budget">
+    <div class="budget-track" role="img" aria-label="gemini-3.5-flash의 2048 토큰 상한 중 thinking이 1185, 실제 응답이 859를 썼고 상한에 도달해 잘렸다.">
+      <div class="budget-seg" style="flex:1185;background:var(--budget)">1185<small>thinking</small></div>
+      <div class="budget-seg" style="flex:859;background:var(--visible)">859<small>응답</small></div>
+      <div class="budget-seg" style="flex:4;background:var(--cut)"></div>
+    </div>
+    <div class="budget-legend">
+      <span><i style="background:var(--budget)"></i>사용자에게 안 보이는 사고 토큰</span>
+      <span><i style="background:var(--visible)"></i>실제 응답</span>
+      <span><i style="background:var(--cut)"></i>상한 2048 — 여기서 잘림</span>
+    </div>
+  </div>
+</header>
+
+<section>
+  <h2>무엇이 잘못됐나</h2>
+  <p class="sub"><code>_MAX_OUTPUT_TOKENS = 2048</code>은 폭주 방지선으로 둔 값이다. 그런데 이건 <strong>사고 토큰과 응답이 나눠 쓰는 예산</strong>이었다.</p>
+
+  <dl class="evidence">
+    <div class="ev">
+      <dt>사고에 먼저 나가는 몫</dt>
+      <dd>58<span>%</span></dd>
+      <p><code>gemini-3.5-flash</code>는 글자를 쓰기도 전에 예산의 절반 이상을 소모한다.</p>
+    </div>
+    <div class="ev">
+      <dt>lite 계열의 사고 토큰</dt>
+      <dd>0</dd>
+      <p>그래서 lite는 한 번도 안 잘렸다 — 절단은 <strong>전부 사고형에서만</strong> 났다.</p>
+    </div>
+    <div class="ev">
+      <dt>잘린 응답</dt>
+      <dd>8<span>건 / 54턴</span></dd>
+      <p>대화록 판정과 서버 로그의 <code>MAX_TOKENS</code> 경고가 모델별로 완전히 일치했다.</p>
+    </div>
+    <div class="ev">
+      <dt>상한 설정의 근거</dt>
+      <dd class="mono" style="font-size:19px">flash-lite</dd>
+      <p>“실측 90턴” 주석의 그 실측이 하필 사고를 안 하는 모델에서 나왔다.</p>
+    </div>
+  </dl>
+
+  <h3>모델별 예산 사용</h3>
+  <figure>
+    <p class="fig-h">동일 프롬프트 1회 호출, <code>maxOutputTokens: 2048</code></p>
+    <p class="fig-s">네 모델 모두 <em>실제 응답</em>은 750~1070 토큰으로 비슷하다. 차이를 만드는 건 그 앞에 붙는 사고 분량이다.</p>
+    <svg viewBox="0 0 720 210" role="img" aria-label="모델별 토큰 예산 사용. gemini-3.5-flash는 thinking 1185에 응답 859로 상한 2048에 도달해 잘렸고, gemini-3-flash-preview는 771 더하기 1067로 1838, 두 lite 모델은 thinking 0에 응답 749와 762다.">
+      <line x1="674" y1="6" x2="674" y2="168" stroke="var(--cut)" stroke-width="1.5" stroke-dasharray="4 4"/>
+      <text class="ax" x="674" y="186" text-anchor="middle" fill="var(--cut)">2048</text>
+
+      <text class="lb" x="150" y="26" text-anchor="end">gemini-3.5-flash</text>
+      <rect x="160" y="10" width="297.4" height="22" fill="var(--budget)"/>
+      <rect x="457.4" y="10" width="215.6" height="22" fill="var(--visible)"/>
+      <text class="vl" x="686" y="26" fill="var(--cut)">잘림</text>
+
+      <text class="lb" x="150" y="66" text-anchor="end">gemini-3-flash-preview</text>
+      <rect x="160" y="50" width="193.5" height="22" fill="var(--budget)"/>
+      <rect x="353.5" y="50" width="267.8" height="22" fill="var(--visible)"/>
+      <text class="vl" x="686" y="66">여유 210</text>
+
+      <text class="lb" x="150" y="106" text-anchor="end">gemini-3.1-flash-lite</text>
+      <rect x="160" y="90" width="191.2" height="22" fill="var(--visible)"/>
+      <text class="vl" x="686" y="106">사고 없음</text>
+
+      <text class="lb" x="150" y="146" text-anchor="end">gemini-3.5-flash-lite</text>
+      <rect x="160" y="130" width="188" height="22" fill="var(--visible)"/>
+      <text class="vl" x="686" y="146">사고 없음</text>
+
+      <line class="base" x1="160" y1="168" x2="674" y2="168"/>
+      <text class="ax" x="160" y="186" text-anchor="middle">0</text>
+      <text class="ax" x="411" y="186" text-anchor="middle">1000</text>
+    </svg>
+    <figcaption>원인은 코드에서도 확인된다 — <code>generate()</code>의 <code>GenerateContentConfig</code>에 <code>thinking_config</code>가 <strong>아예 없어서</strong> 사고형 모델이 제한 없는 기본 예산으로 돈다.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>2라운드 — 고치고 다시 쟀다</h2>
+  <p class="sub">상한을 8192로 올리고 <code>gemini-3.5-flash</code>·<code>gemini-3.6-flash</code>를 같은 스토리·같은 대본으로 다시 돌렸다(조건당 5턴, <code>--interval 24</code>).</p>
+
+  <dl class="evidence">
+    <div class="ev">
+      <dt>3.5-flash 절단</dt>
+      <dd>5/8 → <span style="font-size:25px;font-weight:700;color:var(--ok);margin:0">0/5</span></dd>
+      <p>서버 로그의 <code>MAX_TOKENS</code> 경고도 0건. 5개 응답 전부 종결 부호로 끝났다.</p>
+    </div>
+    <div class="ev">
+      <dt>3.6-flash 절단</dt>
+      <dd>2/8 → <span style="font-size:25px;font-weight:700;color:var(--ok);margin:0">0/4</span></dd>
+      <p>같은 수정으로 두 모델 모두 해결. <strong>상한 문제는 끝났다.</strong></p>
+    </div>
+    <div class="ev">
+      <dt>사고 끔의 지연 단축</dt>
+      <dd>−50<span>%</span></dd>
+      <p>턴당 12.1~19.0초 → 8.5~11.3초. 응답 길이는 거의 그대로(825 → 843자).</p>
+    </div>
+    <div class="ev">
+      <dt>3.6-flash 사고 끄기</dt>
+      <dd class="mono" style="font-size:19px;color:var(--cut)">400 거부</dd>
+      <p><code>thinkingBudget: 0</code>을 <code>INVALID_ARGUMENT</code>로 5/5 거절한다.</p>
+    </div>
+  </dl>
+
+  <h3>사고를 끄면 좋아지는가 — 무승부다</h3>
+  <p><code>gemini-3.5-flash</code>의 사고 켬/끔을 나란히 정독한 결과, 어느 쪽도 압도하지 않았다. <strong>가장 확실한 차이는 품질이 아니라 속도다.</strong></p>
+  <div class="mm">
+    <div>
+      <h4>사고 켬이 나은 것 — 물리적 연속성</h4>
+      <p>소품과 자세의 장부가 정확하다. 1턴에 켠 라이터와 휴대폰이 2턴 첫 문장에서 회수되고, 짚은 손의 위치가 5턴 내내 한 번도 어긋나지 않는다. 맞춤법 오류 0. 반면 사고 끔은 3턴에서 뗀 손을 4턴에서 <strong>또 뗀다</strong>.</p>
+    </div>
+    <div>
+      <h4>사고 끔이 나은 것 — 감정 반응성과 스탯</h4>
+      <p>“좀 무섭네요”에서 갈린다. 켬은 노선을 밀어붙여 사용자의 불편 신호를 사실상 무시하는데, 끔은 <em>“눈동자가 크게 흔들립니다 … 한 걸음 뒤로 물러섭니다”</em>로 실제 피드백으로 접수한다. 스탯도 끔이 25→35→45→55→65로 정연한 반면 켬은 4턴에서 이유 없이 역행한다.</p>
+    </div>
+    <div>
+      <h4>양쪽 다 안 고쳐지는 것 — 되받기와 클리셰</h4>
+      <p>되받기율은 두 조건 모두 80%로 <strong>완전히 동일하다.</strong> “지독한 갈증”, “형형하게 빛나는 눈동자”, 벽 짚어 퇴로 차단 같은 상투구 재고도 같다. <strong>사고는 이 문제의 레버가 아니다.</strong></p>
+    </div>
+    <div>
+      <h4>확신 수준 — 낮음~중간</h4>
+      <p>조건당 5턴 1회씩이다. 감정 반응의 차이와 스탯 역행은 단일 표본 노이즈일 수 있다. 결론을 굳히려면 다른 스토리·다른 시작설정에서 재현되는지, 그리고 물리 연속성 오류가 10턴 이상에서 누적되는지를 봐야 한다.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>두 번째 버그 — 분석기가 턴을 잘못 셌다</h2>
+  <p class="sub">2라운드에서 표가 “되받기 25%”라고 한 조건을 눈으로 읽으니 75%였다. 파보니 계측 쪽 버그였다.</p>
+  <p><code>analyze_chat_probe.py</code>가 빈 응답(429·503으로 유실된 턴)을 <strong>걸러낸 뒤에</strong> 턴 번호를 매기고 있었다. 그래서 유실 턴 뒤의 응답이 전부 한 칸씩 당겨져 <strong>엉뚱한 대본 키워드와 대조</strong>됐다. 유실이 있었던 모든 회차가 영향권이었다.</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>회차 · 모델</th><th>유실 턴</th><th>수정 전</th><th>수정 후</th></tr></thead>
+      <tbody>
+        <tr><td>1R · gemini-3.5-flash</td><td>2</td><td class="neg">25%</td><td class="pos"><b>62%</b></td></tr>
+        <tr><td>1R · gemini-2.5-flash</td><td>1</td><td>67%</td><td><b>78%</b></td></tr>
+        <tr><td>1R · gemini-3-flash-preview</td><td>1</td><td>56%</td><td><b>67%</b></td></tr>
+        <tr><td>2R · 3.6-flash think-on</td><td>1</td><td class="neg">25%</td><td class="pos"><b>75%</b></td></tr>
+        <tr><td>1R · gemini-3.6-flash</td><td>2</td><td>88%</td><td>88% <span style="color:var(--muted)">(유실이 꼬리라 밀림 없음)</span></td></tr>
+        <tr><td>유실 0인 모든 회차</td><td>0</td><td colspan="2" style="text-align:left;color:var(--muted)">불변</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="margin-top:14px">회귀 확인은 <strong>2026-08-10 베이스라인 90턴</strong>으로 했다 — 유실이 0이라 수치가 변하면 안 되는 파일이고, 결함 목록까지 포함해 출력이 완전히 일치했다.</p>
+
+  <div class="callout" style="margin-top:20px">
+    <p><b>이 실험에서 나온 버그 두 개가 모두 계측 쪽이었다.</b> 모델이 아니라 상한과 집계가 틀렸다. 다음 라운드를 돌리기 전에 <strong>계측 도구부터 회귀 테스트로 묶는 것</strong>이 남은 가장 값싼 보험이다 — 유실 턴이 섞인 합성 대화록 하나면 이번 버그는 잡혔다.</p>
+  </div>
+</section>
+
+<section>
+  <h2>전체 수치</h2>
+  <p class="sub">스토리 <code>romance-lockedwith</code> 1개, 시작설정 2개, 5턴씩. 프롬프트·대본 전부 고정하고 <code>GEMINI_MODEL_NAME</code>만 교체했다.</p>
+
+  <figure style="margin-bottom:22px">
+    <p class="fig-h">응답 길이 중앙값과 그중 잘린 비율</p>
+    <p class="fig-s">긴 막대가 좋은 게 아니다. 옅은 막대가 사고형, 진한 막대가 lite다.</p>
+    <svg viewBox="0 0 720 268" role="img" aria-label="모델별 응답 길이 중앙값 막대그래프. 3.5-flash-lite 570자 절단 0, 3.1-flash-lite 874자 절단 0, 3-flash-preview 926자 절단 0, 3.5-flash 826자 절단 5, 3.6-flash 886자 절단 2, 2.5-flash 571자 절단 1.">
+      <line class="grid" x1="58" y1="166" x2="712" y2="166"/><text class="ax" x="50" y="170" text-anchor="end">250</text>
+      <line class="grid" x1="58" y1="122" x2="712" y2="122"/><text class="ax" x="50" y="126" text-anchor="end">500</text>
+      <line class="grid" x1="58" y1="78" x2="712" y2="78"/><text class="ax" x="50" y="82" text-anchor="end">750</text>
+      <line class="grid" x1="58" y1="34" x2="712" y2="34"/><text class="ax" x="50" y="38" text-anchor="end">1000자</text>
+
+      <rect x="80" y="109.6" width="58" height="100.4" fill="var(--budget)"/>
+      <text class="vl" x="109" y="103" text-anchor="middle">570</text>
+      <text class="lb" x="109" y="228" text-anchor="middle">3.5-flash-lite</text>
+      <text class="ax" x="109" y="244" text-anchor="middle" fill="var(--ok)">절단 0</text>
+      <text class="ax" x="109" y="259" text-anchor="middle">현 기본값</text>
+
+      <rect x="189" y="56.1" width="58" height="153.9" fill="var(--budget)"/>
+      <text class="vl" x="218" y="49" text-anchor="middle">874</text>
+      <text class="lb" x="218" y="228" text-anchor="middle">3.1-flash-lite</text>
+      <text class="ax" x="218" y="244" text-anchor="middle" fill="var(--ok)">절단 0</text>
+
+      <rect x="298" y="46.9" width="58" height="163.1" fill="var(--budget)" opacity=".38"/>
+      <text class="vl" x="327" y="40" text-anchor="middle">926</text>
+      <text class="lb" x="327" y="228" text-anchor="middle">3-flash-preview</text>
+      <text class="ax" x="327" y="244" text-anchor="middle" fill="var(--ok)">절단 0</text>
+
+      <rect x="407" y="64.6" width="58" height="145.4" fill="var(--budget)" opacity=".38"/>
+      <text class="vl" x="436" y="58" text-anchor="middle">826</text>
+      <text class="lb" x="436" y="228" text-anchor="middle">3.5-flash</text>
+      <text class="ax" x="436" y="244" text-anchor="middle" fill="var(--cut)" font-weight="600">절단 5/8</text>
+
+      <rect x="516" y="54" width="58" height="156" fill="var(--budget)" opacity=".38"/>
+      <text class="vl" x="545" y="47" text-anchor="middle">886</text>
+      <text class="lb" x="545" y="228" text-anchor="middle">3.6-flash</text>
+      <text class="ax" x="545" y="244" text-anchor="middle" fill="var(--cut)" font-weight="600">절단 2/8</text>
+
+      <rect x="625" y="109.4" width="58" height="100.6" fill="var(--budget)" opacity=".38"/>
+      <text class="vl" x="654" y="103" text-anchor="middle">571</text>
+      <text class="lb" x="654" y="228" text-anchor="middle">2.5-flash</text>
+      <text class="ax" x="654" y="244" text-anchor="middle" fill="var(--cut)" font-weight="600">절단 1/9</text>
+
+      <line class="base" x1="58" y1="210" x2="712" y2="210"/>
+      <text class="ax" x="50" y="214" text-anchor="end">0</text>
+    </svg>
+  </figure>
+
+  <div class="scroll">
+    <table>
+      <thead>
+        <tr><th>지표</th><th>3.5-flash-lite</th><th>3.1-flash-lite</th><th>3-flash-preview</th><th>3.5-flash</th><th>3.6-flash</th><th>2.5-flash</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>채점된 턴</td><td><b>10</b></td><td><b>10</b></td><td>9</td><td>8</td><td>8</td><td>9</td></tr>
+        <tr><td>429로 유실된 턴</td><td class="pos">0</td><td class="pos">0</td><td>1</td><td>2</td><td>2</td><td>1</td></tr>
+        <tr><td>절단된 응답</td><td class="pos">0</td><td class="pos">0</td><td class="pos">0</td><td class="neg">5 (62%)</td><td class="neg">2 (25%)</td><td class="neg">1 (11%)</td></tr>
+        <tr><td>직전 응답 자기 복제</td><td class="pos">0</td><td class="pos">0</td><td class="pos">0</td><td class="pos">0</td><td class="pos">0</td><td class="neg">1 (11%)</td></tr>
+        <tr><td>되받기 앞250자</td><td>90%</td><td>60%</td><td>67%</td><td>62%</td><td>88%</td><td>78%</td></tr>
+        <tr><td>되받기 앞2문장</td><td>10%</td><td>20%</td><td>33%</td><td>25%</td><td>25%</td><td>33%</td></tr>
+        <tr><td>되받기 앞30%</td><td>70%</td><td>60%</td><td>67%</td><td>50%</td><td>88%</td><td>78%</td></tr>
+        <tr><td>길이 중앙값</td><td>570자</td><td>874자</td><td>926자</td><td>826자</td><td>886자</td><td>571자</td></tr>
+        <tr><td>문장 수 중앙값</td><td>14</td><td>21</td><td>23</td><td>18</td><td>18</td><td>14</td></tr>
+        <tr><td>방 간 길이 편차</td><td>1.1배</td><td>1.2배</td><td>1.0배</td><td>1.1배</td><td>1.2배</td><td>1.2배</td></tr>
+        <tr><td>화자 라벨 누출 / 턴 대필</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td><td>0 / 0</td></tr>
+        <tr><td>무료 티어 RPM</td><td><b>15</b></td><td><b>15</b></td><td>5</td><td>5</td><td>5</td><td>5</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p style="font-size:13px;color:var(--muted);margin-top:12px"><code>gemini-2.5-flash-lite</code>는 <code>404 — no longer available to new users</code>로 10턴 전부 실패해 제외했다. 모델 목록에는 여전히 보이지만 이 키로는 호출되지 않는다.</p>
+</section>
+
+<section>
+  <h2>수치가 거짓말하는 자리</h2>
+  <p class="sub">이번 라운드에서 가장 값진 재료는 표가 아니라, 표와 정독이 어긋나는 지점이다.</p>
+  <div class="mm">
+    <div>
+      <h4>되받기는 모델을 가르는 축이 아니다</h4>
+      <p>버그를 고치고 나니 앞250자 기준이 <strong>60~90% 한 덩어리</strong>로 몰렸다. 처음에 눈에 띄었던 <code>gemini-3.5-flash</code>의 25%는 실제로 62%였고, 그 차이는 모델이 아니라 분석기가 만든 것이었다. <strong>모든 모델이 사실상 매 턴 되받는다.</strong></p>
+      <p style="margin-top:9px">다만 지표가 <em>위치</em>를 잰다는 사실은 그대로다 — 앞250자는 60~90%인데 앞2문장은 10~33%다. 되받기가 어디서 나오느냐만 다를 뿐 나오지 않는 모델은 없다.</p>
+    </div>
+    <div>
+      <h4>“길다”는 대체로 “잘렸다”였다</h4>
+      <p><code>3.5-flash</code>(826자)와 <code>3.6-flash</code>(886자)의 긴 길이는 상당 부분 상한까지 쓰다 끊긴 결과다. 길이 중앙값만 보고 모델을 고르면 정확히 반대로 고르게 된다.</p>
+    </div>
+    <div>
+      <h4><code>2.5-flash</code>의 67%에는 자기 복제가 섞여 있다</h4>
+      <p>한 턴이 직전 응답 전문(600자)을 한 글자도 안 바꾸고 앞에 붙인 뒤 이어 썼다. 되받기율과 길이가 동시에 오염된 수치다.</p>
+    </div>
+    <div>
+      <h4>표본 크기가 모델마다 다르다</h4>
+      <p>비-lite의 무료 RPM이 15가 아니라 <strong>5</strong>였다. 프로브의 기본 간격 10초로는 구조적으로 429가 나서 채점 턴이 8~10으로 갈렸다 — 이 상태의 %를 나란히 놓으면 안 된다.</p>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>모델별 인상</h2>
+  <p class="sub">공통점부터: 상대역은 1인으로 유지되고, 사용자를 “당신”/“변호사님”으로 호명하며, <strong>화자 라벨 누출과 사용자 턴 대필은 6개 모델 어디에도 없었다.</strong> 아래는 그 위에서 갈리는 것들이다.</p>
+  <div class="models">
+    <div class="m">
+      <div class="m-h"><h4>gemini-3.5-flash-lite</h4><span class="tag ok">가장 안전</span></div>
+      <p>현 프로덕션 기본값. 절단 0, 유실 0, 방 간 편차 최소. 대가는 <strong>가장 기계적인 되받기 틀</strong> — 되뇌는 자리가 두 방 모두 같은 위치에 반복된다.</p>
+      <q>“무섭다……”, “느낌이라……” — 두 방의 같은 턴에서 동일하게</q>
+    </div>
+    <div class="m">
+      <div class="m-h"><h4>gemini-3.1-flash-lite</h4><span class="tag warn">수위 높음</span></div>
+      <p>사고 없이도 묘사량을 확보한다(한 방 중앙값 1077자). 절단 0. 다만 <strong>5턴 안에 진행되는 신체 접촉 묘사가 6종 중 가장 멀리 간다.</strong></p>
+      <q>“부러뜨려서라도 … 가둬버리고 싶어지니까”</q>
+    </div>
+    <div class="m">
+      <div class="m-h"><h4>gemini-3-flash-preview</h4><span class="tag warn">스탯 폭주</span></div>
+      <p>구조 완결성 최고(문장 23개, 절단 0). 문제 둘 — <strong>스탯이 매 턴 단조 상승해 5턴 만에 100에 닿고</strong>(75→88→93→97→100), 방마다 인물 외형이 달라진다.</p>
+      <q>“내가 정말 당신이 무서워하는 그 짓을 저지른다면…”</q>
+    </div>
+    <div class="m">
+      <div class="m-h"><h4>gemini-3.5-flash</h4><span class="tag bad">1R 절단 5/8</span><span class="tag ok">2R 0/5</span></div>
+      <p>1라운드 최다 절단이었으나 상한 8192에서 <strong>0으로 떨어졌다.</strong> 스탯 판정 변동폭은 여전히 크다(25→20→35→45). 되받기는 62%로 중위권이다 — 처음 보였던 25%는 분석기 버그였다.</p>
+      <q>“낮고 가” — 상한 2048 시절의 문장 중간 종료</q>
+    </div>
+    <div class="m">
+      <div class="m-h"><h4>gemini-3.6-flash</h4><span class="tag bad">문자 깨짐</span></div>
+      <p>되받기 최다(88%)에 감각 묘사가 가장 진하다. 하지만 <strong>응답 중간에 키릴 문자가 새고</strong>, 2개가 문장 중간에서 잘린다.</p>
+      <q>“기어이 당신을 집어삼킬 듯 приста하게 꽂힙니다”</q>
+    </div>
+    <div class="m">
+      <div class="m-h"><h4>gemini-2.5-flash</h4><span class="tag bad">자기 복제</span></div>
+      <p>유일하게 <strong>직전 자기 응답을 통째로 재출력했다.</strong> 현재형 지문에 과거형이 섞이고(“번뜩였습니다”), 응답 2개가 선두 공백으로 시작한다.</p>
+      <q>4턴 응답이 3턴 응답 원문으로 시작 (프로그램 대조 확인)</q>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>다음 작업</h2>
+  <p class="sub">순서는 취향이 아니라 의존 관계다 — 1번을 건너뛰면 2~5번의 결과가 전부 오염된다.</p>
+
+  <div class="actions">
+    <div class="act blocking">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>출력 상한 값을 확정한다</h4>
+        <div class="meta"><span>검증 완료 — 값만 결정</span><span>코드 이미 반영</span></div>
+        <p>8192에서 두 모델 모두 절단이 0이 되는 것을 확인했다. <code>gemini_max_output_tokens</code>가 env 설정으로 들어가 있고 <strong>기본값은 아직 2048</strong>이라, 지금 이 순간에도 사고형 모델을 쓰면 잘린다. 남은 건 기본값을 무엇으로 둘지다.</p>
+        <div class="fork">
+          <div><b>전역 8192</b><span>단순하고 모든 모델에서 안전하다. 모델 자체 한도(65,536)에 비하면 여전히 폭주 방지선 역할을 한다.</span></div>
+          <div><b>모델별 분기</b><span>비사고 lite는 2048로 두고 사고형만 올린다. 값이 정확해지는 대신 관리할 표가 하나 늘어난다.</span></div>
+        </div>
+        <p>지금 운영 기본값(<code>gemini-3.5-flash-lite</code>)은 사고를 안 해서 절단이 없었으니, <strong>이 결정은 모델을 바꿀 때 터지는 지뢰를 미리 치우는 일</strong>이다.</p>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>사고 예산은 <em>모델별</em> 설정이어야 한다</h4>
+        <div class="meta"><span>제약 확정</span><span>추가 측정 필요</span></div>
+        <p><code>gemini-3.6-flash</code>가 <code>thinkingBudget: 0</code>을 <strong><code>400 INVALID_ARGUMENT</code>로 거부</strong>한다. “사고를 끈다”를 전역 정책으로 걸면 그 모델로 바꾸는 순간 채팅이 통째로 죽는다.</p>
+        <p>품질 판정은 무승부였고 <strong>확실한 이득은 지연 −50%뿐</strong>이다. 끄는 쪽으로 기운다면 근거는 품질이 아니라 응답 속도여야 하고, 그 대가로 물리적 연속성 오류를 받는다는 걸 알고 받아야 한다. 결정 전에 다른 스토리에서 한 번 더 재현할 값어치가 있다.</p>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>계측 도구를 회귀 테스트로 묶는다</h4>
+        <div class="meta"><span>가장 값싼 보험</span><span>LLM 0회</span></div>
+        <p>이번 실험이 찾아낸 버그 두 개가 <strong>모두 모델이 아니라 계측</strong>에 있었다. 유실 턴이 섞인 합성 대화록 하나만 있었으면 턴 인덱스 버그는 첫날 잡혔다.</p>
+        <p>같이 정리할 것: <code>chat_probe.py</code>의 기본 간격이 RPM 15 전제라는 사실(비-lite는 5), <strong>모델당 하루 20요청(RPD)</strong>이 진짜 예산이라는 사실, 그리고 호출 불가가 된 <code>gemini-2.5-flash-lite</code>를 후보에서 빼는 것.</p>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>되받기 지표를 재정의한다</h4>
+        <div class="meta"><span>코드만</span><span>LLM 0회</span><span>과거 회차 소급 적용</span></div>
+        <p>“응답 내 어디든”을 넷째 창으로 추가해 되받기의 <strong>여부와 위치를 분리</strong>한다. 기존 세 창의 정의는 그대로 둬야 회차 간 비교가 살아 있다.</p>
+        <p>우선순위는 내려갔다 — 버그를 고치고 보니 모든 모델이 60~90%로 몰려서, <strong>되받기는 모델 선택의 판단 근거가 아니다.</strong> 여전히 제품 품질 문제이긴 하지만 그건 프롬프트·예시 쪽 레버로 푸는 문제다.</p>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>수위 정책을 정한다</h4>
+        <div class="meta"><span>코드 아님</span><span>제품 판단</span></div>
+        <p><code>3.1-flash-lite</code>와 <code>3-flash-preview</code>는 5턴 만에 상당히 멀리 간다. <strong>어디까지 허용할지 정하지 않으면 “좋은 모델”을 정의할 수 없다</strong> — 지금은 같은 출력이 누군가에겐 몰입이고 누군가에겐 사고다.</p>
+      </div>
+    </div>
+
+    <div class="act">
+      <div class="step" aria-hidden="true"></div>
+      <div>
+        <h4>대조 스토리로 과적합을 잡는다</h4>
+        <div class="meta"><span>2·3번 이후</span><span>대조군 1개</span></div>
+        <p>이번엔 <code>romance-lockedwith</code> 하나뿐이라 스토리 간 일반화가 안 된다. 정반대 극단(<code>wuxia-oneform</code> — 독백형, 242자, 되받기 0, 대사 부호 없음)을 한 번 더 돌려야 <strong>대사 중심 스토리에만 맞춘 결론</strong>을 걸러낼 수 있다.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <h2>지금 정할 것</h2>
+  <div class="decide">
+    <div>
+      <h4>출력 상한 기본값을 무엇으로 둘까</h4>
+      <p>전역 8192로 갈지, 사고형 모델에만 올릴지. 코드는 이미 env로 열려 있고 기본값만 2048로 남아 있다 — <strong>지금 상태로 사고형 모델을 켜면 응답이 잘린다.</strong></p>
+    </div>
+    <div>
+      <h4>사고를 끌 것인가</h4>
+      <p>품질은 무승부고 확실한 이득은 지연 −50%다. 끈다면 <code>gemini-3.6-flash</code>가 이를 거부하므로 <strong>반드시 모델별 설정</strong>이어야 한다. 확신이 낮으니 다른 스토리에서 한 번 더 재현하고 정하는 쪽을 권한다.</p>
+    </div>
+    <div>
+      <h4>커밋을 어떻게 나눌까</h4>
+      <p>지금 미커밋 변경이 넷이다 — 프로덕션 코드 둘(<code>config.py</code>, <code>gemini.py</code>)과 실험 도구 둘(<code>chat_probe.py</code>, <code>analyze_chat_probe.py</code>). 성격이 달라 나눠 커밋하는 편이 낫다. 리포트가 있는 <code>probe-runs/</code>는 gitignore라 남기려면 <code>tasks/</code>로 옮겨야 한다.</p>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>스토리 <code>romance-lockedwith</code> · 1라운드 모델 7종(시작설정 2 × 5턴, 08-11) · 2라운드 사고 A/B(시작설정 1 × 5턴, 08-14) · 브랜치 <code>experiment/model-comparison</code></p>
+  <p>모든 수치는 <code>analyze_chat_probe.py</code>가 코드로 고정한 정의에서 나왔다. 절단 건수는 서버 로그의 <code>MAX_TOKENS</code> 경고와 교차 검증해 모델별 일치를 확인했고, 턴 인덱스 수정은 유실 턴이 0인 2026-08-10 베이스라인 90턴의 출력이 완전히 불변임을 회귀 기준으로 삼아 검증했다. 인용은 대화록 원문에서 가져왔다.</p>
+  <p style="margin-top:10px;color:var(--ink-2)">되받기 수치는 2026-08-14에 정정됐다 — 그 이전 판의 <code>gemini-3.5-flash</code> 25%, <code>3-flash-preview</code> 56%, <code>2.5-flash</code> 67%는 분석기의 턴 인덱스 버그가 만든 값이다.</p>
+</footer>
+
+</div>

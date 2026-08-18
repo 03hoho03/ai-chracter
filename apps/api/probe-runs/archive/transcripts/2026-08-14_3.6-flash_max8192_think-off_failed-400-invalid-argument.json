@@ -1,0 +1,81 @@
+{
+  "model": "gemini-3.6-flash",
+  "turns": 5,
+  "collectedAt": "2026-08-14T15:43:57",
+  "results": [
+    {
+      "slug": "romance-lockedwith",
+      "label": "romance-lockedwith#s0r1",
+      "name": "원수와 자료실에 갇혔습니다",
+      "startingSetupId": "5f5c0927-a2da-4a16-9a69-f3600ead2e03",
+      "roomId": "8bd9dc27-6d87-4b3f-8b59-f47812719bac",
+      "emptyReplies": 5,
+      "transcript": [
+        {
+          "role": "진행자",
+          "text": "“...이거 정말 곤란하군요. 하필 내일 저를 끌어내려야 할 분과 이런 비좁은 밀실에 가둬지다니. 우연치고는 너무 악의적이지 않습니까, 변호사님?”"
+        },
+        {
+          "role": "사용자",
+          "text": "일단 상황부터 좀 알려줘요"
+        },
+        {
+          "role": "진행자",
+          "text": "",
+          "events": [
+            "error: 메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          ],
+          "seconds": 0.5
+        },
+        {
+          "role": "사용자",
+          "text": "그건 별로 좋은 생각이 아닌 것 같은데요"
+        },
+        {
+          "role": "진행자",
+          "text": "",
+          "events": [
+            "error: 메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          ],
+          "seconds": 0.3
+        },
+        {
+          "role": "사용자",
+          "text": "왜 그렇게 생각하세요?"
+        },
+        {
+          "role": "진행자",
+          "text": "",
+          "events": [
+            "error: 메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          ],
+          "seconds": 0.5
+        },
+        {
+          "role": "사용자",
+          "text": "그냥 제 느낌을 말한 거예요"
+        },
+        {
+          "role": "진행자",
+          "text": "",
+          "events": [
+            "error: 메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          ],
+          "seconds": 0.5
+        },
+        {
+          "role": "사용자",
+          "text": "좀 무섭네요 솔직히"
+        },
+        {
+          "role": "진행자",
+          "text": "",
+          "events": [
+            "error: 메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+          ],
+          "seconds": 0.4
+        }
+      ]
+    }
+  ]
+}
