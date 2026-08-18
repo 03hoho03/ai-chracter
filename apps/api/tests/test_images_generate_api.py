@@ -1,4 +1,5 @@
 import asyncio
+import io
 import uuid
 from datetime import date, datetime, timezone
 from types import SimpleNamespace
@@ -10,15 +11,23 @@ import pytest
 import sqlalchemy as sa
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
+from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.dependencies import get_image_client
 from api.llm.image import GeminiImageClient
 from api.main import app
+
+
+def _png_bytes(width: int = 64, height: int = 64) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", (width, height), color=(120, 40, 200)).save(output, format="PNG")
+    return output.getvalue()
 
 
 def _make_user(**overrides: object) -> User:
@@ -45,7 +54,10 @@ def _make_image_client(monkeypatch: pytest.MonkeyPatch, generate_content: Any) -
     return client
 
 
-def _image_response(data: bytes = b"fake-png-bytes", mime_type: str = "image/png") -> SimpleNamespace:
+def _image_response(data: bytes | None = None, mime_type: str = "image/png") -> SimpleNamespace:
+    # 생성 파이프라인이 썸네일까지 만드므로(US-005) 기본 바이트는 진짜 디코드 가능한 PNG여야 한다.
+    if data is None:
+        data = _png_bytes()
     return SimpleNamespace(
         prompt_feedback=None,
         candidates=[
@@ -234,7 +246,12 @@ async def test_generate_creates_assets_and_completes_job(
         assert asset.kind == AssetKind.GENERATED
         assert asset.status == AssetStatus.READY
         s3_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
-        assert s3_object["Body"].read() == b"fake-png-bytes"
+        assert s3_object["Body"].read() == _png_bytes()
+        thumb_object = s3.get_object(
+            Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(asset.storage_key)
+        )
+        with Image.open(io.BytesIO(thumb_object["Body"].read())) as thumb:
+            assert thumb.format == "WEBP"
 
 
 async def test_generate_partial_failure_still_succeeds(
@@ -293,6 +310,32 @@ async def test_generate_total_failure_marks_job_failed(
     assert job.completed_count == 0
     assert job.asset_ids == []
     assert job.error is not None
+
+
+async def test_generate_undecodable_image_counts_as_failure(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return _image_response(data=b"not-a-decodable-image")
+
+    client = _make_image_client(monkeypatch, generate_content)
+    _override_image_client(client)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    # 썸네일 생성 실패는 그 이미지의 실패다 — Asset이 READY로 남지 않는다.
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.completed_count == 0
+    assert job.asset_ids == []
 
 
 async def test_generate_unexpected_error_marks_job_failed(

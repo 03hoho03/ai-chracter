@@ -6,7 +6,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
-from api.core.s3 import build_object_key, generate_presigned_get_url, upload_object
+from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
+from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigned_get_url, upload_object
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
@@ -40,6 +41,15 @@ async def _generate_and_store_one(
         asset_id = uuid.uuid4()
         storage_key = build_object_key("generated", asset_id, mime_type)
         await run_in_threadpool(upload_object, storage_key, data, mime_type)
+        # Invariant: a READY image asset always has a `{key}_thumb.webp` variant.
+        # The bytes are already in memory, so no download_object round-trip. A
+        # thumbnail failure falls through to the except blocks below (return
+        # False) before the Asset row is created — never READY with only the
+        # original.
+        thumbnail_bytes = await run_in_threadpool(generate_thumbnail, data)
+        await run_in_threadpool(
+            upload_object, build_thumbnail_key(storage_key), thumbnail_bytes, THUMBNAIL_CONTENT_TYPE
+        )
 
         async with session_factory() as session:
             session.add(
