@@ -8,7 +8,9 @@ from starlette.concurrency import run_in_threadpool
 
 from api.assets.image_processing import BLURRED_CONTENT_TYPE, generate_blurred_image
 from api.assets.schemas import (
+    UPLOAD_SIZE_LIMIT_BYTES,
     AssetCompleteResponse,
+    AssetPurpose,
     GeneratedImageItem,
     GeneratedImageUsage,
     GeneratedImageUsageField,
@@ -23,7 +25,7 @@ from api.core.s3 import (
     download_object,
     generate_presigned_get_url,
     generate_presigned_put_url,
-    object_exists,
+    get_object_size,
     upload_object,
 )
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -63,6 +65,19 @@ async def create_presigned_upload(
     return PresignedUploadResponse(upload_url=upload_url, asset_id=asset_id, expires_at=expires_at)
 
 
+def _upload_size_limit(storage_key: str) -> int | None:
+    """Presigned-upload keys are `assets/{purpose}/{uuid}{ext}` (build_object_key);
+    the Asset table has no purpose column, so the purpose is recovered from the key
+    path. Keys outside the user-upload purposes (e.g. `assets/generated/...`) have
+    no limit — the size check is a bypass safety net for presigned uploads only.
+    """
+    try:
+        purpose = AssetPurpose(storage_key.split("/")[1])
+    except ValueError:
+        return None
+    return UPLOAD_SIZE_LIMIT_BYTES[purpose]
+
+
 @router.post("/{asset_id}/complete")
 async def complete_asset_upload(
     asset_id: uuid.UUID,
@@ -75,10 +90,24 @@ async def complete_asset_upload(
     if asset.owner_user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the asset owner")
 
-    if not await run_in_threadpool(object_exists, asset.storage_key):
+    actual_bytes = await run_in_threadpool(get_object_size, asset.storage_key)
+    if actual_bytes is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Uploaded object not found in storage yet",
+        )
+
+    max_bytes = _upload_size_limit(asset.storage_key)
+    if max_bytes is not None and actual_bytes > max_bytes:
+        # The FE resizes before upload, so oversize means the client bypassed it.
+        # Delete S3 first so a failure leaves the row for a retry (delete_generated_image's
+        # ordering), then drop the Asset row — never READY with an oversized original.
+        await run_in_threadpool(delete_object, asset.storage_key)
+        await db.delete(asset)
+        await db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"maxBytes": max_bytes, "actualBytes": actual_bytes},
         )
 
     asset.status = AssetStatus.READY

@@ -76,13 +76,17 @@ def delete_object(key: str) -> None:
     s3_client.delete_object(Bucket=settings.s3_bucket_name, Key=key)
 
 
-def object_exists(key: str) -> bool:
-    """Blocking network call — run via `starlette.concurrency.run_in_threadpool`."""
+def get_object_size(key: str) -> int | None:
+    """Blocking network call — run via `starlette.concurrency.run_in_threadpool`.
+
+    Returns the object's size in bytes, or None if it does not exist — one
+    head_object serves both the existence check and the size check.
+    """
     try:
-        s3_client.head_object(Bucket=settings.s3_bucket_name, Key=key)
+        response = s3_client.head_object(Bucket=settings.s3_bucket_name, Key=key)
     except ClientError as exc:
         error_code = exc.response.get("Error", {}).get("Code")
         if error_code in ("404", "NoSuchKey"):
-            return False
+            return None
         raise
-    return True
+    return response["ContentLength"]

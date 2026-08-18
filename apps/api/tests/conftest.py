@@ -27,7 +27,7 @@ os.environ["AWS_ACCESS_KEY_ID"] = "testing"
 os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 
 # A real local S3-compatible server (moto's own recommended approach for
-# multi-threaded code), not the `mock_aws()` decorator: `object_exists`/
+# multi-threaded code), not the `mock_aws()` decorator: `get_object_size`/
 # `generate_presigned_put_url` run inside FastAPI's anyio threadpool worker
 # threads via `run_in_threadpool`, and empirically `mock_aws()`'s patch of
 # `botocore.client.BaseClient._make_api_call` does not reliably apply inside

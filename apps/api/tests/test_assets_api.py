@@ -3,8 +3,11 @@ from datetime import date, datetime, timezone
 
 import boto3
 import httpx
+import pytest
+from botocore.exceptions import ClientError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core.config import settings
 from api.db.models.auth import User
 from api.db.models.media import Asset, AssetStatus
@@ -81,6 +84,36 @@ async def test_complete_marks_asset_ready_once_object_is_uploaded(
 
     await db_session.refresh(asset)
     assert asset.status == AssetStatus.READY
+
+
+async def test_complete_rejects_oversized_object_and_cleans_up(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+
+    presign_resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/png", "purpose": "profile-image"}
+    )
+    asset_id = presign_resp.json()["assetId"]
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    storage_key = asset.storage_key
+    max_bytes = UPLOAD_SIZE_LIMIT_BYTES[AssetPurpose.PROFILE_IMAGE]
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"x" * (max_bytes + 1))
+
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+    assert complete_resp.status_code == 400
+    assert complete_resp.json()["detail"] == {"maxBytes": max_bytes, "actualBytes": max_bytes + 1}
+
+    with pytest.raises(ClientError) as exc_info:
+        s3.head_object(Bucket=settings.s3_bucket_name, Key=storage_key)
+    assert exc_info.value.response["Error"]["Code"] == "404"
+    assert await db_session.get(Asset, uuid.UUID(asset_id)) is None
 
 
 async def test_complete_before_upload_is_rejected(
