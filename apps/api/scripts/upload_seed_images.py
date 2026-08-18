@@ -20,9 +20,13 @@ import argparse
 import sys
 from dataclasses import dataclass
 
-from api.assets.image_processing import generate_blurred_image
+from api.assets.image_processing import (
+    THUMBNAIL_CONTENT_TYPE,
+    generate_blurred_image,
+    generate_thumbnail,
+)
 from api.core.config import settings
-from api.core.s3 import build_object_key, upload_object
+from api.core.s3 import build_object_key, build_thumbnail_key, upload_object
 from api.db.models.media import AssetKind
 from seed_content.images import CONTENT_TYPE, IMAGES_DIR, asset_storage_key, situational_image_slug
 from seed_content.ids import MIA_THUMBNAIL_ASSET_ID
@@ -38,6 +42,7 @@ class Upload:
     slug: str
     key: str
     body: bytes
+    content_type: str = CONTENT_TYPE
 
 
 def collect_uploads() -> tuple[list[Upload], list[str]]:
@@ -51,7 +56,14 @@ def collect_uploads() -> tuple[list[Upload], list[str]]:
             missing.append(slug)
             return
         body = path.read_bytes()
-        uploads.append(Upload(slug, key, generate_blurred_image(body) if blurred else body))
+        if blurred:
+            body = generate_blurred_image(body)
+        uploads.append(Upload(slug, key, body))
+        # READY 자산에는 항상 `_thumb.webp`가 있다는 불변식(US-004~) — 원본을 갈아끼우면
+        # 썸네일도 같은 바이트에서 다시 만들어 함께 올린다.
+        uploads.append(
+            Upload(slug, build_thumbnail_key(key), generate_thumbnail(body), THUMBNAIL_CONTENT_TYPE)
+        )
 
     for story in load_stories():
         add(story.slug, asset_storage_key(story.slug, AssetKind.THUMBNAIL))
@@ -90,7 +102,7 @@ def main() -> int:
     failed: list[str] = []
     for upload in uploads:
         try:
-            upload_object(upload.key, upload.body, CONTENT_TYPE)
+            upload_object(upload.key, upload.body, upload.content_type)
         except Exception as exc:  # noqa: BLE001 - 한 건의 실패로 나머지를 멈추지 않는다
             print(f"  ✗ {upload.slug}: {exc!r}")
             failed.append(upload.slug)
