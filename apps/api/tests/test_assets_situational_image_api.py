@@ -9,6 +9,7 @@ from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.auth import User
 from api.db.models.character import SituationalImage
 from api.db.models.content import (
@@ -150,6 +151,52 @@ async def test_register_situational_image_generates_blur_and_upserts_row(
     assert situational_image.blurred_asset_id == blurred_asset_id
     assert situational_image.trigger_condition == "문을 열었을 때"
     assert situational_image.order == 0
+
+
+async def test_register_situational_image_creates_thumbnails_for_original_and_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """Full upload flow: /complete creates the original's thumbnail (US-004) and
+    register-situational-image creates the blurred variant's thumbnail (US-006),
+    so both READY assets satisfy the `_thumb.webp` invariant."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    presign_resp = await db_client.post(
+        "/assets/presigned-upload",
+        json={"contentType": "image/png", "purpose": "situational-image"},
+    )
+    asset_id = presign_resp.json()["assetId"]
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=_sample_png_bytes())
+    complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
+    assert complete_resp.status_code == 200
+
+    resp = await db_client.post(
+        f"/assets/{asset_id}/register-situational-image",
+        json={
+            "entityId": str(uuid.uuid4()),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "문을 열었을 때",
+            "order": 0,
+        },
+    )
+    assert resp.status_code == 200
+    blurred_asset = await db_session.get(Asset, uuid.UUID(resp.json()["blurredAssetId"]))
+    assert blurred_asset is not None
+
+    for storage_key in (asset.storage_key, blurred_asset.storage_key):
+        thumbnail_obj = s3.get_object(
+            Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(storage_key)
+        )
+        with Image.open(io.BytesIO(thumbnail_obj["Body"].read())) as thumbnail:
+            assert thumbnail.format == "WEBP"
 
 
 async def test_register_situational_image_upserts_by_entity_id(

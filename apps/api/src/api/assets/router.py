@@ -181,6 +181,17 @@ async def register_situational_image(
         "situational-image-blurred", blurred_asset_id, BLURRED_CONTENT_TYPE
     )
     await run_in_threadpool(upload_object, blurred_storage_key, blurred_bytes, BLURRED_CONTENT_TYPE)
+    # The BLURRED asset goes READY below, so it needs its `_thumb.webp` variant too
+    # (same invariant as complete_asset_upload — the original's thumbnail already
+    # exists from that step). A failure here propagates before the commit, so the
+    # registration fails as a whole and no READY asset is left without a thumbnail.
+    blurred_thumbnail_bytes = await run_in_threadpool(generate_thumbnail, blurred_bytes)
+    await run_in_threadpool(
+        upload_object,
+        build_thumbnail_key(blurred_storage_key),
+        blurred_thumbnail_bytes,
+        THUMBNAIL_CONTENT_TYPE,
+    )
 
     db.add(
         Asset(
