@@ -350,6 +350,76 @@ describe("handleRequest", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("잘못된 형식의 콘텐츠 id에서 봇은 404, 같은 URL의 일반 UA는 200이다", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const env = createEnv();
+    const path = "/content/character/not-a-uuid";
+
+    const botResponse = await handleRequest(
+      new Request(`https://ddona.example${path}`, {
+        headers: { "user-agent": "Googlebot/2.1" },
+      }),
+      env,
+      { cache: noopCache },
+    );
+    const userResponse = await handleRequest(
+      new Request(`https://ddona.example${path}`, {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(botResponse.status).toBe(404);
+    expect(userResponse.status).toBe(200);
+    // id 형식이 틀리면 봇 쪽도 API를 두드리지 않는다 — 크롤러가 곧 API 부하가 된다.
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("없는 사용자에서 봇은 404, 같은 URL의 일반 UA는 왕복 없이 200이다", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const requestedUrls: string[] = [];
+    vi.stubGlobal("fetch", (input: string | URL | Request) => {
+      requestedUrls.push(String(input));
+      return Promise.resolve(
+        new Response(JSON.stringify({ detail: "Not Found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    const env = createEnv();
+
+    const botResponse = await handleRequest(
+      new Request(`https://ddona.example/profile/${id}`, {
+        headers: { "user-agent": "Yeti/1.1 (NHN Corp.)" },
+      }),
+      env,
+      { cache: noopCache },
+    );
+    const userResponse = await handleRequest(
+      new Request(`https://ddona.example/profile/${id}`, {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(botResponse.status).toBe(404);
+    expect(userResponse.status).toBe(200);
+    // 왕복은 봇 요청 하나뿐이다 — 사용자 요청은 검사 자체를 하지 않는다.
+    expect(requestedUrls).toEqual([
+      `https://api.example.com/users/${id}/profile`,
+    ]);
+  });
+
   it("요청 host가 PUBLIC_ORIGIN과 다르면 SPA 셸에 noindex가 붙는다", async () => {
     const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.production" });
 
