@@ -27,6 +27,12 @@
     <meta property="og:site_name" content="또나" />
     <meta name="twitter:card" content="summary" />
 
+    <!-- 검색엔진 소유권 확인. injectHead가 자기 주입 키만 지우므로 봇 응답에도 남는다(DEPLOY.md §8-2) -->
+    <meta
+      name="google-site-verification"
+      content="KauwhPaVreMVP7KupoSUXOJQyamk-CIaFJfarpyiPeM"
+    />
+
     <script>
       // 첫 페인트 전에 테마 적용 (FOUC 방지) — 규칙은 shared/model/theme.ts와 동일
       if (localStorage.getItem("theme") !== "light") {
