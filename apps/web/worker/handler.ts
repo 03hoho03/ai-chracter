@@ -1,3 +1,5 @@
+import { applyIndexingPolicy } from "./indexing";
+import { handleRobots } from "./robots";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./types";
 
@@ -25,8 +27,20 @@ function serveAppShell(request: Request, env: WorkerEnv): Promise<Response> {
 /**
  * Worker 진입 핸들러. 런타임 전용 자원(Cache API)은 전부 `deps`로 주입받으므로
  * 이 함수는 vitest(`environment: "node"`)에서 그냥 호출해 테스트할 수 있다.
+ *
+ * 라우팅 결과는 예외 없이 `applyIndexingPolicy`를 통과해서 나간다 — 프리뷰 배포의
+ * 색인 차단을 라우트마다 기억해야 하는 규칙으로 만들지 않기 위해서다.
  */
 export async function handleRequest(
+  request: Request,
+  env: WorkerEnv,
+  deps: WorkerDeps,
+): Promise<Response> {
+  const response = await routeRequest(request, env, deps);
+  return applyIndexingPolicy(response, env, request);
+}
+
+async function routeRequest(
   request: Request,
   env: WorkerEnv,
   deps: WorkerDeps,
@@ -34,10 +48,14 @@ export async function handleRequest(
   const url = new URL(request.url);
 
   // Worker가 만들어 내는 경로는 정적 자산 검사보다 **먼저** 가로챈다.
-  // `/sitemap.xml`은 확장자가 있어 `isStaticAssetPath`가 true를 주고, 그대로 ASSETS로
-  // 넘기면 (dist에 그런 파일이 없으므로) index.html이 200으로 나간다.
+  // `/sitemap.xml`·`/robots.txt`는 확장자가 있어 `isStaticAssetPath`가 true를 주고,
+  // 그대로 ASSETS로 넘기면 (dist에 그런 파일이 없으므로) index.html이 200으로 나간다.
   if (url.pathname === "/sitemap.xml") {
     return handleSitemap(request, env, deps);
+  }
+
+  if (url.pathname === "/robots.txt") {
+    return handleRobots(request, env);
   }
 
   if (isStaticAssetPath(url.pathname)) {

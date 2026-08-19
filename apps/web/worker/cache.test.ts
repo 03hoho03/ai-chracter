@@ -18,4 +18,18 @@ describe("createRuntimeCache", () => {
     expect(match).toHaveBeenCalledWith(request);
     expect(put).toHaveBeenCalledWith(request, response);
   });
+
+  it("GET이 아닌 요청은 put하지 않는다 — 런타임이 던져 HEAD가 500이 된다", async () => {
+    const put = vi.fn(() => Promise.resolve());
+    Object.assign(globalThis, {
+      caches: { default: { match: () => Promise.resolve(undefined), put } },
+    });
+
+    await createRuntimeCache().put(
+      new Request("https://ddona.example/sitemap.xml", { method: "HEAD" }),
+      new Response("<urlset />"),
+    );
+
+    expect(put).not.toHaveBeenCalled();
+  });
 });

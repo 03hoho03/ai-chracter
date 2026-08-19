@@ -12,10 +12,18 @@ const noopCache: CacheLike = {
 function createEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv & {
   assetFetch: ReturnType<typeof vi.fn>;
 } {
-  const assetFetch = vi.fn(
-    (request: Request) =>
-      new Response(new URL(request.url).pathname, { status: 200 }),
-  );
+  const assetFetch = vi.fn((request: Request) => {
+    const { pathname } = new URL(request.url);
+    return new Response(pathname, {
+      status: 200,
+      // 응답 정책(X-Robots-Tag)이 content-type으로 갈리므로 스텁도 타입을 준다.
+      headers: {
+        "content-type": pathname.endsWith(".html")
+          ? "text/html; charset=utf-8"
+          : "application/octet-stream",
+      },
+    });
+  });
   return {
     ASSETS: { fetch: (request) => Promise.resolve(assetFetch(request)) },
     API_BASE_URL: "https://api.example.com",
@@ -85,6 +93,53 @@ describe("handleRequest", () => {
     expect(response.headers.get("content-type")).toBe(
       "application/xml; charset=utf-8",
     );
+  });
+
+  it("/robots.txt도 ASSETS로 넘기지 않는다 — Worker가 만든다", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/robots.txt"), env, {
+      cache: noopCache,
+    });
+
+    expect(env.assetFetch).not.toHaveBeenCalled();
+    expect(response.headers.get("content-type")).toBe(
+      "text/plain; charset=utf-8",
+    );
+  });
+
+  it("요청 host가 PUBLIC_ORIGIN과 다르면 SPA 셸에 noindex가 붙는다", async () => {
+    const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.production" });
+
+    const response = await handleRequest(get("/content/character/42"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  it("noindex는 sitemap 응답에도 소급 적용된다 — 라우트별로 기억하지 않는다", async () => {
+    const env = createEnv({
+      API_BASE_URL: undefined,
+      PUBLIC_ORIGIN: "https://ddona.production",
+    });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const response = await handleRequest(get("/sitemap.xml"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.headers.get("x-robots-tag")).toBe("noindex");
+  });
+
+  it("정식 host의 응답에는 noindex가 붙지 않는다", async () => {
+    const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.example" });
+
+    const response = await handleRequest(get("/content/character/42"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.headers.get("x-robots-tag")).toBeNull();
   });
 
   it("API_BASE_URL이 없어도 정적 자산과 SPA 셸은 정상 서빙한다", async () => {

@@ -15,6 +15,12 @@ declare const caches: {
 export function createRuntimeCache(): CacheLike {
   return {
     match: (request) => caches.default.match(request),
-    put: (request, response) => caches.default.put(request, response),
+    // `caches.default.put`은 GET이 아닌 요청에 대해 던진다("Cannot cache response to
+    // non-GET request"). 크롤러는 HEAD를 보내므로 그대로 두면 Worker가 만드는 응답이
+    // HEAD에서만 500이 된다 — 캐시를 조용히 건너뛰는 게 맞다.
+    put: (request, response) =>
+      request.method === "GET"
+        ? caches.default.put(request, response)
+        : Promise.resolve(),
   };
 }
