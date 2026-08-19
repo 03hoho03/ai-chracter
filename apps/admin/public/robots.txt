@@ -1,0 +1,4 @@
+# admin은 운영자 전용이라 색인될 이유가 없다. 로그인 화면이 검색 결과에 뜨면 공격 표면만 넓어진다.
+# web의 robots.txt는 Worker가 만들고(apps/web/worker/robots.ts) 이 파일과 무관하다 — 별도 Pages 프로젝트다.
+User-agent: *
+Disallow: /

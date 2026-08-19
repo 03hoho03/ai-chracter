@@ -119,6 +119,8 @@
 
 > Vite env는 런타임이 아니라 빌드타임. BE URL이 바뀌면 FE를 재빌드해야 한다.
 
+> web에는 이것 말고 **Worker 런타임 변수**(`PUBLIC_ORIGIN`·`API_BASE_URL`)가 따로 필요하다 — §8-1.
+
 ---
 
 ## 3. 배포 절차
@@ -239,3 +241,62 @@ Neon은 SSL 필수지만, `DATABASE_URL`을 `postgresql+asyncpg://...?ssl=requir
 
 ## 7. image-gen 병합 (완료, 2026-07-28)
 main 병합 + 배포 완료. Gemini 이미지 모델은 무료 티어 quota 0이라 **Cloudflare Workers AI**(FLUX.1-schnell/SDXL)로 교체해서 씀 — `GEMINI_IMAGE_MODEL_NAME`은 더 이상 안 쓰임, `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`이 대신 필요(§2-1에 추가함). 생성 이미지는 R2에 저장.
+
+---
+
+## 8. SEO 등록 (web 전용 · 2026-08-19)
+
+web은 순수 클라이언트 SPA라 크롤러가 빈 `<head>`를 본다. `apps/web/worker/`(Pages Advanced Mode `dist/_worker.js`)가 **봇 UA에만** 완성된 `<head>`를 주입하고 `/sitemap.xml`·`/robots.txt`·`/og/*` 프록시를 만들어 준다. 코드가 배포돼도 **아래 등록을 하지 않으면 효과가 0이다.**
+
+### 8-1. Pages 런타임 환경변수 (선행 조건, ⚠️ 빠지면 조용히 무효)
+
+web 프로젝트 → Settings → Environment variables. **Production과 Preview 양쪽 모두** plaintext로 등록한다.
+
+| 변수 | 값 | 없으면 |
+|---|---|---|
+| `PUBLIC_ORIGIN` | `https://ai-character-chat-web.pages.dev` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 프로덕션과 중복 콘텐츠가 된다 |
+| `API_BASE_URL` | `https://ai-character-chat-api-612311629427.asia-southeast1.run.app` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
+
+- **`VITE_API_BASE_URL`(§2-2)과 별개다** — 저건 빌드타임에 번들에 박히는 값이고 이건 Worker가 런타임에 읽는다. **둘 다** 필요하다.
+- **Preview에도 `PUBLIC_ORIGIN`은 프로덕션 오리진**을 넣는다(프리뷰 URL이 아니라). Worker는 `요청 host ≠ PUBLIC_ORIGIN host`일 때만 `X-Robots-Tag: noindex`를 붙이므로(`worker/indexing.ts`), Preview에서 비어 있으면 프리뷰 색인 차단이 함께 꺼진다.
+- 런타임 변수는 **저장만으로 반영되지 않는다** — 저장 후 재배포(또는 Deployments → 최신 배포 Retry)해야 Worker가 읽는다.
+
+**반영 확인**(재배포 후):
+```bash
+ORIGIN=https://ai-character-chat-web.pages.dev
+curl -s $ORIGIN/robots.txt | tail -2                          # Sitemap: $ORIGIN/sitemap.xml
+curl -s $ORIGIN/sitemap.xml | grep -c "<loc>"                 # 1 이상
+curl -s -A "Googlebot/2.1" $ORIGIN/ | grep -c 'rel="canonical"'   # 1 (PUBLIC_ORIGIN 확인)
+curl -s -A "Googlebot/2.1" $ORIGIN/content/character/<id> | grep -o "<title>.*</title>"   # 캐릭터 이름 (API_BASE_URL 확인)
+```
+상세 `<title>`이 홈 문구(`또나 — AI 캐릭터 챗`) 그대로면 `API_BASE_URL`이 안 들어갔거나 재배포를 안 한 것이다.
+
+### 8-2. 구글 서치콘솔
+
+1. **속성 추가** — [search.google.com/search-console](https://search.google.com/search-console) → 속성 추가 → **URL 접두어**에 `https://ai-character-chat-web.pages.dev` (`pages.dev`는 DNS를 우리가 못 만지므로 도메인 속성은 불가)
+2. **소유권 확인 — HTML 태그** — 발급된 `<meta name="google-site-verification" content="..." />`를 `apps/web/index.html`의 `<head>`에 넣고 커밋 → main push로 배포된 뒤 "확인" 클릭
+   - **봇 요청에서도 이 태그는 살아남는다** — `injectHead`(`worker/html.ts`)는 자기가 주입하는 키(title·description·og:*·canonical·robots)와 같은 키의 태그만 지우고 `name:google-site-verification`은 건드리지 않는다. 확인용 fetch는 `Google-Site-Verification` UA라 애초에 봇 분기에도 안 걸린다.
+   - HTML 파일 업로드 방식을 쓰려면 파일을 `apps/web/public/`에 커밋해야 한다(확장자가 있어 정적 자산으로 나간다). 태그 쪽이 파일을 안 남겨 더 낫다.
+3. **sitemap 제출** — 색인 생성 → Sitemaps → `sitemap.xml` 입력 후 제출
+4. **URL 검사로 캐릭터 페이지 1개 색인 요청** — 캐릭터 상세 URL(`/content/character/{id}`) 하나를 URL 검사 → "색인 생성 요청". 전체 크롤을 기다리지 말고, **테스트한 페이지 보기 → HTML**에서 `<title>`에 캐릭터 이름이 들어갔는지 눈으로 확인한다(주입이 실제로 구글에 보이는지 확인하는 가장 빠른 방법).
+
+### 8-3. 네이버 서치어드바이저
+
+1. **사이트 등록** — [searchadvisor.naver.com](https://searchadvisor.naver.com) → 웹마스터 도구 → 사이트 등록에 `https://ai-character-chat-web.pages.dev`
+2. **소유권 확인 — HTML 태그** — `<meta name="naver-site-verification" content="..." />`를 §8-2와 같은 자리(`apps/web/index.html`)에 넣고 배포 후 확인
+3. **사이트맵 제출** — 요청 → 사이트맵 제출에 `https://ai-character-chat-web.pages.dev/sitemap.xml`
+- 네이버 Yeti는 JS 렌더링이 제한적이라 **봇 메타 주입이 네이버에서는 색인 가부를 직접 가른다**(구글은 JS를 실행하므로 주입은 속도·정확도 문제에 가깝다). 등록 후 "요청 → 웹 페이지 수집"으로 캐릭터 페이지 1개를 넣어 수집 결과 title을 확인할 것.
+
+### 8-4. admin 색인 차단
+
+`apps/admin/public/robots.txt`(`User-agent: *` / `Disallow: /`)가 Vite 빌드로 `apps/admin/dist/`에 복사된다. **admin은 별도 Pages 프로젝트라 web의 robots.txt(Worker가 생성)와 무관하다** — web 쪽을 고쳐도 admin에는 아무 영향이 없다. admin은 서치콘솔·서치어드바이저에 등록하지 않는다.
+
+### 8-5. 커스텀 도메인 전환 체크리스트
+
+1. Pages web 프로젝트에 커스텀 도메인 연결 → **`PUBLIC_ORIGIN`을 새 도메인으로 교체(Production·Preview 양쪽) → 재배포**
+2. **`apps/web/index.html`의 `og:image` 절대 URL을 새 도메인으로 교체** — 홈 og:image만 하드코딩이다(상세·프로필은 Worker가 `PUBLIC_ORIGIN`으로 만든다). 빠뜨리면 홈 공유 미리보기 이미지만 옛 도메인을 가리킨 채 남는다.
+3. BE `CORS_ALLOW_ORIGINS`(§2-1) · Google OAuth redirect URI(§1-5) · R2 CORS(§1-3)에 새 도메인 추가 — 안 하면 로그인·업로드가 죽는다.
+4. 서치콘솔에 **새 속성 추가** + 소유권 확인 → 옛 속성에서 **설정 → 주소 변경**으로 이전 신고.
+   - ⚠️ 주소 변경 도구는 **옛 URL이 새 URL로 301**이어야 통과한다. 커스텀 도메인을 붙여도 `*.pages.dev`는 계속 살아 있으므로 리다이렉트를 따로 걸어야 하고, 지금 Worker에는 그 코드가 없다(별건 작업). **프리뷰 배포까지 같이 301로 날려버리지 않게** 프로덕션 pages.dev host에서만 걸 것.
+5. **sitemap 재제출**(새 속성) + 네이버도 새 사이트로 등록·사이트맵 재제출.
+6. 확인: `curl -s https://<새도메인>/robots.txt`의 `Sitemap:` 줄과 `curl -s -A "Googlebot/2.1" https://<새도메인>/ | grep canonical`이 둘 다 새 도메인이어야 한다.

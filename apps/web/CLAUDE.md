@@ -16,6 +16,7 @@
 | 서버에서만 할 수 있는 일(봇 메타 주입·sitemap·리다이렉트) | `worker/` — Cloudflare Pages Worker. `dist/_worker.js`로 번들된다 |
 | 라우트 추가/삭제 | `src/routes/*.tsx`와 `worker/routes.ts`의 `KNOWN_ROUTES`를 **함께** 고친다 (빠뜨리면 새 페이지가 404) |
 | 조회 없이 정해지는 메타(홈 title·description·og·파비콘 link) | `index.html`의 `<head>` — Worker가 아니다 |
+| 검색엔진 소유권 확인 태그·SEO 등록 절차 | `index.html`의 `<head>`에 태그, 절차·환경변수는 `DEPLOY.md` §8 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
 | SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 오프닝 선택지 노출 | `entities/chat-room`의 `shouldShowSuggestedReplies`(replies·turnCount·hasUserMessage) — 인라인 조건 금지 (ChatRoomView·PreviewSessionView 참조) |
@@ -46,6 +47,7 @@
 - **크롤러는 HEAD를 보낸다.** `caches.default.put`은 GET이 아닌 요청에 던지므로(`Cannot cache response to non-GET request`) Worker가 만드는 응답이 HEAD에서만 500이 된다 — `worker/cache.ts`의 어댑터가 non-GET을 건너뛰어 막고 있다. Worker 라우트를 로컬 검증할 때 **`curl`(GET)만 보지 말고 `curl -I`(HEAD)도 확인할 것**.
 - **API 실패를 오류 응답으로 번역하지 않는다**: sitemap은 홈만 담은 최소 XML을 200으로 준다(`worker/sitemap.ts`). 그리고 그 폴백은 **Cache API에 넣지 않는다** — 넣으면 몇 초짜리 장애가 한 시간짜리 빈 sitemap이 된다(성공 응답만 `cache.put`).
 - **`API_BASE_URL`은 Pages 런타임 환경변수**다 — 빌드타임 `VITE_API_BASE_URL`과 별개로 대시보드에 넣어야 한다. 없으면 Worker가 SEO 경로를 통째로 건너뛰고 정적 자산만 서빙한다(환경변수 하나가 사이트를 죽이지 않도록).
+- **환경변수·검색엔진 등록 절차는 `DEPLOY.md` §8**(`PUBLIC_ORIGIN`·`API_BASE_URL`을 Production·Preview 양쪽에, 서치콘솔·서치어드바이저 등록, 커스텀 도메인 전환 체크리스트). 소유권 확인은 **HTML 태그를 `index.html`에** 넣는다 — `injectHead`가 자기가 주입하는 키만 지우므로 `name:google-site-verification`·`name:naver-site-verification`은 봇 응답에서도 남는다(로컬 wrangler로 홈·상세 × 봇/일반/`Google-Site-Verification` UA 전수 실측).
 - **봇에게 내려보내는 HTML은 한 경로로만 만든다**: `worker/meta.ts`의 `buildMetaTags(PageMeta)` → `worker/html.ts`의 `injectHead(indexHtml, metaHtml)`. 사용자 입력(캐릭터 이름·소개·닉네임·bio)은 예외 없이 `escapeHtml`을 **정확히 한 번** 통과한다 — 텍스트/속성 컨텍스트를 분기하지 말 것(분기가 곧 누락 지점이고, 두 번 적용하면 `&`가 `&amp;amp;`로 이중 이스케이프된다). `injectHead`는 **주입하는 태그와 같은 키(title·name:*·property:*·canonical)의 기존 태그를 지운 뒤** `</head>` 앞에 넣으므로, index.html에 박아 둔 홈 기본 og와 상세 페이지 주입이 중복되지 않는다(크롤러 대부분이 중복 og 속성에서 앞의 것을 쓴다). JSON-LD는 `buildJsonLd`로만 만든다(`<`를 전부 이스케이프해 `</script>` 탈출을 막는다).
 - **API 호출은 `worker/api.ts`의 `fetchApiJson(apiBaseUrl, path)` 하나로** — 3초 타임아웃, 던지지 않고 `ok`/`notFound`/`unavailable` 세 갈래를 돌려준다. **`notFound`(404)와 `unavailable`(5xx·타임아웃·형식 파손)을 절대 합치지 말 것**: 장애를 "이 페이지 없음"으로 번역하면 검색엔진이 장애 중에 페이지를 색인에서 지우고 크롤러는 미리보기를 "이미지 없음"으로 굳힌다. `API_BASE_URL`이 경로 프리픽스(`https://host/api`)를 가질 수 있어 `new URL()`이 아니라 문자열 결합으로 붙인다.
 - **`GET /contents/{id}`는 비공개·제한·삭제 콘텐츠에도 200 + 썸네일 URL을 준다**(접근 판정을 응답 본문의 `accessStatus`로 내려주는 설계다 — `content/router.py`의 `get_content_detail`). 봇 경로는 FE의 `canViewDetailPage(access, isOwner=false)`와 같은 규칙(`kind === "accessible" && visibility !== "private"`)을 **직접** 걸어야 한다 — `worker/api.ts`의 `isViewableByCrawler` 한 곳에 있고 og 프록시와 메타 주입이 이걸 공유한다(id 형식 검사 `isUuid`도 같은 파일). 링크 공개(`link`)는 통과시킨다 — 링크 공유 미리보기가 목적이다.
