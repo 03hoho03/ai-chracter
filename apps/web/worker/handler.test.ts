@@ -81,6 +81,47 @@ describe("handleRequest", () => {
     expect(await response.text()).toBe("/index.html");
   });
 
+  it("앱에 없는 경로는 셸 본문 그대로 404다 (soft 404 제거)", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/asdf"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.status).toBe(404);
+    expect(await response.text()).toBe("/index.html");
+  });
+
+  it("정적 자산은 라우트 목록에 없어도 404가 아니다 — 검사 순서가 앞이다", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/og-default.png"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("/og-default.png");
+  });
+
+  it("봇 UA도 없는 경로에서는 API를 부르지 않고 404를 받는다", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const env = createEnv();
+
+    const response = await handleRequest(
+      new Request("https://ddona.example/asdf", {
+        headers: {
+          "user-agent": "Googlebot/2.1 (+http://www.google.com/bot.html)",
+        },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(response.status).toBe(404);
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("/sitemap.xml은 ASSETS로 넘기지 않는다 — 확장자가 있어도 Worker가 만든다", async () => {
     // 라우팅만 확인하면 되므로 API를 두드리지 않는 구성으로 부른다(내용은 sitemap.test.ts).
     const env = createEnv({ API_BASE_URL: undefined });

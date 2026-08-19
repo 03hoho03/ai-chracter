@@ -6,6 +6,7 @@ import { applyIndexingPolicy } from "./indexing";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
 import { handleProfileMeta, parseProfilePath } from "./profile-meta";
 import { handleRobots } from "./robots";
+import { isKnownRoute } from "./routes";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./types";
 
@@ -60,6 +61,13 @@ async function routeRequest(
 
   if (isStaticAssetPath(url.pathname)) {
     return env.ASSETS.fetch(request);
+  }
+
+  // 앱에 없는 경로는 셸 본문 그대로 404다 — 사용자는 앱의 NotFound 화면을 보고 봇만
+  // 404를 받는다. `env.ASSETS.fetch()`가 없는 경로에도 index.html을 200으로 주므로
+  // (Pages 자산 서버의 SPA 처리) 이 검사를 Worker가 직접 해야 soft 404가 사라진다.
+  if (!isKnownRoute(url.pathname)) {
+    return serveAppShell(request, env, 404);
   }
 
   // 봇에게만 <head>를 채워 준다 — 일반 사용자는 지금과 같은 응답(추가 API 왕복 0회)을 받는다.
