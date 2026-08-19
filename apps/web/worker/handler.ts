@@ -1,14 +1,14 @@
-import { serveAppShell } from "./app-shell";
-import { handleContentMeta, parseContentPath } from "./content-meta";
+import { serveAppShell } from "./appShell";
+import { handleContentMeta, parseContentPath } from "./contentMeta";
 import { isCrawler } from "./crawler";
-import { handleHomeMeta, HOME_PATH } from "./home-meta";
+import { handleHomeMeta, HOME_PATH } from "./homeMeta";
 import { applyIndexingPolicy } from "./indexing";
-import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
-import { handleProfileMeta, parseProfilePath } from "./profile-meta";
+import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
+import { handleProfileMeta, parseProfilePath } from "./profileMeta";
 import { handleRobots } from "./robots";
 import { isKnownRoute } from "./routes";
 import { handleSitemap } from "./sitemap";
-import type { WorkerDeps, WorkerEnv } from "./types";
+import type { WorkerDeps, WorkerEnv } from "./workerRuntime";
 
 /**
  * 확장자가 있는 경로와 `/assets/*`는 정적 자산이다. 다른 어떤 검사보다 먼저 통과시킨다 —
@@ -87,10 +87,12 @@ async function routeRequest(
 
   if (isBot) {
     const contentId = parseContentPath(url.pathname);
-    if (contentId !== null) return handleContentMeta(request, env, contentId);
+    if (contentId !== undefined) {
+      return handleContentMeta(request, env, contentId);
+    }
 
     const userId = parseProfilePath(url.pathname);
-    if (userId !== null) return handleProfileMeta(request, env, userId);
+    if (userId !== undefined) return handleProfileMeta(request, env, userId);
   }
 
   return serveAppShell(request, env);

@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { handleOgImage, parseOgImagePath } from "./og-image";
-import type { CacheLike, WorkerEnv } from "./types";
+import { handleOgImage, parseOgImagePath } from "./ogImage";
+import type { CacheLike, WorkerEnv } from "./workerRuntime";
 
 const CONTENT_ID = "11111111-2222-4333-8444-555555555555";
 const USER_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -87,17 +87,17 @@ describe("parseOgImagePath", () => {
   });
 
   it("UUID가 아닌 id는 받지 않는다", () => {
-    expect(parseOgImagePath("/og/content/not-a-uuid.jpg")).toBeNull();
-    expect(parseOgImagePath("/og/content/12345.jpg")).toBeNull();
-    expect(parseOgImagePath(`/og/content/${CONTENT_ID}extra.jpg`)).toBeNull();
+    expect(parseOgImagePath("/og/content/not-a-uuid.jpg")).toBeUndefined();
+    expect(parseOgImagePath("/og/content/12345.jpg")).toBeUndefined();
+    expect(parseOgImagePath(`/og/content/${CONTENT_ID}extra.jpg`)).toBeUndefined();
   });
 
   it("정해진 종류·확장자·깊이가 아니면 받지 않는다", () => {
-    expect(parseOgImagePath(`/og/admin/${CONTENT_ID}.jpg`)).toBeNull();
-    expect(parseOgImagePath(`/og/content/${CONTENT_ID}.png`)).toBeNull();
-    expect(parseOgImagePath(`/og/content/${CONTENT_ID}`)).toBeNull();
-    expect(parseOgImagePath(`/og/content/sub/${CONTENT_ID}.jpg`)).toBeNull();
-    expect(parseOgImagePath("/og-default.png")).toBeNull();
+    expect(parseOgImagePath(`/og/admin/${CONTENT_ID}.jpg`)).toBeUndefined();
+    expect(parseOgImagePath(`/og/content/${CONTENT_ID}.png`)).toBeUndefined();
+    expect(parseOgImagePath(`/og/content/${CONTENT_ID}`)).toBeUndefined();
+    expect(parseOgImagePath(`/og/content/sub/${CONTENT_ID}.jpg`)).toBeUndefined();
+    expect(parseOgImagePath("/og-default.png")).toBeUndefined();
   });
 });
 

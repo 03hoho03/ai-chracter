@@ -1,5 +1,5 @@
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /**
  * `X-Robots-Tag`가 의미를 갖는 응답 타입. 검색엔진은 HTML과 XML(sitemap)만 색인 대상으로

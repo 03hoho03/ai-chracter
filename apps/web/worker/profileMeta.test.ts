@@ -5,8 +5,8 @@ import {
   handleProfileMeta,
   parseProfilePath,
   type ProfileMetaSource,
-} from "./profile-meta";
-import type { WorkerEnv } from "./types";
+} from "./profileMeta";
+import type { WorkerEnv } from "./workerRuntime";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 
@@ -83,10 +83,10 @@ describe("parseProfilePath", () => {
   });
 
   it("세그먼트 수가 다르면 프로필 경로가 아니다", () => {
-    expect(parseProfilePath("/profile")).toBeNull();
-    expect(parseProfilePath("/profile/")).toBeNull();
-    expect(parseProfilePath(`/profile/${ID}/edit`)).toBeNull();
-    expect(parseProfilePath(`/content/character/${ID}`)).toBeNull();
+    expect(parseProfilePath("/profile")).toBeUndefined();
+    expect(parseProfilePath("/profile/")).toBeUndefined();
+    expect(parseProfilePath(`/profile/${ID}/edit`)).toBeUndefined();
+    expect(parseProfilePath(`/content/character/${ID}`)).toBeUndefined();
   });
 });
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildRobotsTxt, handleRobots } from "./robots";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 const ASSETS = { fetch: () => Promise.resolve(new Response("asset")) };
 

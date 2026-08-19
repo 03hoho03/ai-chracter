@@ -1,4 +1,4 @@
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 const APP_SHELL_PATH = "/index.html";
 

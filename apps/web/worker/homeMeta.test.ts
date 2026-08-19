@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { buildHomeHead, handleHomeMeta } from "./home-meta";
-import type { WorkerEnv } from "./types";
+import { buildHomeHead, handleHomeMeta } from "./homeMeta";
+import type { WorkerEnv } from "./workerRuntime";
 
 /** index.html과 같은 모양 — 홈 기본 메타는 이미 박혀 있고 Worker는 두 개만 더한다. */
 const SHELL_HTML = `<!doctype html>

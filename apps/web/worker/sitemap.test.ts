@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { buildSitemapXml, handleSitemap } from "./sitemap";
-import type { CacheLike, WorkerEnv } from "./types";
+import type { CacheLike, WorkerEnv } from "./workerRuntime";
 
-const noopCache: CacheLike = {
+const NOOP_CACHE: CacheLike = {
   match: () => Promise.resolve(undefined),
   put: () => Promise.resolve(),
 };
@@ -17,7 +17,7 @@ function createEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv {
   };
 }
 
-const sitemapRequest = new Request("https://preview.pages.dev/sitemap.xml");
+const SITEMAP_REQUEST = new Request("https://preview.pages.dev/sitemap.xml");
 
 /**
  * `/contents`를 흉내 내는 fetch 목. 타입별로 "페이지 배열"을 주면 커서를 페이지 인덱스로 쓴다.
@@ -100,8 +100,8 @@ describe("handleSitemap", () => {
       story: [["s1"]],
     });
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
     const xml = await response.text();
 
@@ -129,8 +129,8 @@ describe("handleSitemap", () => {
   it("URL은 요청 host가 아니라 PUBLIC_ORIGIN을 쓴다 — 프리뷰가 색인돼도 프로덕션을 가리킨다", async () => {
     stubContentsApi({ character: [["c1"]], story: [] });
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
 
     expect(await response.text()).not.toContain("preview.pages.dev");
@@ -140,8 +140,8 @@ describe("handleSitemap", () => {
     const manyPages = Array.from({ length: 60 }, (_, page) => [`c${page}`]);
     stubContentsApi({ character: manyPages, story: [] });
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
     const xml = await response.text();
 
@@ -159,8 +159,8 @@ describe("handleSitemap", () => {
       Promise.resolve(new Response("boom", { status: 503 })),
     );
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
     const xml = await response.text();
 
@@ -173,8 +173,8 @@ describe("handleSitemap", () => {
   it("fetch 자체가 실패해도 최소 sitemap을 200으로 준다", async () => {
     vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
 
     expect(response.status).toBe(200);
@@ -193,8 +193,8 @@ describe("handleSitemap", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
-      cache: noopCache,
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
+      cache: NOOP_CACHE,
     });
 
     expect(await response.text()).not.toContain("c1");
@@ -205,9 +205,9 @@ describe("handleSitemap", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const response = await handleSitemap(
-      sitemapRequest,
+      SITEMAP_REQUEST,
       createEnv({ API_BASE_URL: undefined }),
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
@@ -222,7 +222,7 @@ describe("handleSitemap", () => {
       put: () => Promise.resolve(),
     };
 
-    const response = await handleSitemap(sitemapRequest, createEnv(), {
+    const response = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
       cache,
     });
 
@@ -235,14 +235,14 @@ describe("handleSitemap", () => {
     const cache: CacheLike = { match: () => Promise.resolve(undefined), put };
 
     stubContentsApi({ character: [["c1"]], story: [] });
-    const ok = await handleSitemap(sitemapRequest, createEnv(), { cache });
+    const ok = await handleSitemap(SITEMAP_REQUEST, createEnv(), { cache });
 
     expect(put).toHaveBeenCalledTimes(1);
     // 캐시에 넣은 뒤에도 반환한 응답의 본문은 읽을 수 있어야 한다(clone).
     expect(await ok.text()).toContain("<loc>");
 
     vi.stubGlobal("fetch", () => Promise.reject(new Error("network down")));
-    const fallback = await handleSitemap(sitemapRequest, createEnv(), {
+    const fallback = await handleSitemap(SITEMAP_REQUEST, createEnv(), {
       cache,
     });
 

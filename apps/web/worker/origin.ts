@@ -1,4 +1,4 @@
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /**
  * canonical·sitemap·og:url에 쓰는 **사이트 기준 오리진**. 요청 host를 쓰지 않는다 —

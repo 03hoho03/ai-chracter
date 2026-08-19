@@ -5,8 +5,8 @@ import {
   handleContentMeta,
   parseContentPath,
   type ContentMetaSource,
-} from "./content-meta";
-import type { WorkerEnv } from "./types";
+} from "./contentMeta";
+import type { WorkerEnv } from "./workerRuntime";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 
@@ -95,10 +95,10 @@ describe("parseContentPath", () => {
   });
 
   it("세그먼트 수가 다르면 콘텐츠 경로가 아니다", () => {
-    expect(parseContentPath("/content/character")).toBeNull();
-    expect(parseContentPath(`/content/character/${ID}/extra`)).toBeNull();
-    expect(parseContentPath(`/content/character/${ID}/`)).toBeNull();
-    expect(parseContentPath("/profile/me")).toBeNull();
+    expect(parseContentPath("/content/character")).toBeUndefined();
+    expect(parseContentPath(`/content/character/${ID}/extra`)).toBeUndefined();
+    expect(parseContentPath(`/content/character/${ID}/`)).toBeUndefined();
+    expect(parseContentPath("/profile/me")).toBeUndefined();
   });
 });
 

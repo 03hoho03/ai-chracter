@@ -1,5 +1,5 @@
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /**
  * 크롤링을 막을 경로. 로그인·개인 화면·작성 도구는 색인돼도 검색 결과에서 쓸모가 없고

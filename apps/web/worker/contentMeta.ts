@@ -1,9 +1,9 @@
 import { fetchApiJson, isRecord, isUuid, isViewableByCrawler } from "./api";
-import { readAppShellHtml, serveAppShell } from "./app-shell";
+import { readAppShellHtml, serveAppShell } from "./appShell";
 import { buildJsonLd, injectHead } from "./html";
 import { buildMetaTags, SITE_NAME, toMetaDescription } from "./meta";
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /**
  * `/content/{type}/{id}`. `{type}`은 URL 가독성용 세그먼트일 뿐 조회에 쓰이지 않으므로
@@ -12,24 +12,24 @@ import type { WorkerEnv } from "./types";
  */
 const CONTENT_PATH = /^\/content\/[^/]+\/([^/]+)$/;
 
-/** 경로 → 콘텐츠 id. 콘텐츠 상세 경로가 아니면 `null`. 순수 함수다. */
-export function parseContentPath(pathname: string): string | null {
+/** 경로 → 콘텐츠 id. 콘텐츠 상세 경로가 아니면 `undefined`. 순수 함수다. */
+export function parseContentPath(pathname: string): string | undefined {
   const match = CONTENT_PATH.exec(pathname);
-  if (match === null) return null;
+  if (match === null) return undefined;
 
   const [, id] = match;
-  return id ?? null;
+  return id;
 }
 
 /** 메타를 만드는 데 실제로 쓰는 필드만 추린 콘텐츠. */
-export interface ContentMetaSource {
+export type ContentMetaSource = {
   id: string;
   type: string;
   name: string;
   oneLiner: string;
   detailDescription: string;
   creatorNickname: string;
-}
+};
 
 /** 한 줄 소개 우선, 없으면 상세 설명 앞부분. */
 function toDescription(content: ContentMetaSource): string | undefined {
@@ -101,10 +101,10 @@ function toText(value: unknown): string {
 function toContentMetaSource(
   data: Record<string, unknown>,
   id: string,
-): ContentMetaSource | null {
+): ContentMetaSource | undefined {
   // 이름과 타입이 없으면 주입할 게 없다 — 빈 제목을 내보내느니 주입을 건너뛴다.
   if (typeof data.name !== "string" || typeof data.type !== "string") {
-    return null;
+    return undefined;
   }
 
   return {
@@ -136,7 +136,9 @@ async function resolveContent(
   if (!isViewableByCrawler(data.accessStatus)) return { kind: "notFound" };
 
   const content = toContentMetaSource(data, id);
-  return content === null ? { kind: "unavailable" } : { kind: "ok", content };
+  return content === undefined
+    ? { kind: "unavailable" }
+    : { kind: "ok", content };
 }
 
 /**

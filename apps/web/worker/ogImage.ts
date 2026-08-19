@@ -4,7 +4,7 @@ import {
   isUuid,
   isViewableByCrawler,
 } from "./api";
-import type { WorkerDeps, WorkerEnv } from "./types";
+import type { WorkerDeps, WorkerEnv } from "./workerRuntime";
 
 /**
  * og:image 프록시의 경로 접두사.
@@ -30,23 +30,23 @@ const FALLBACK_MAX_AGE_SECONDS = 60;
 /** US-001의 브랜드 기본 이미지. 썸네일이 없는 콘텐츠의 미리보기가 여기로 떨어진다. */
 const DEFAULT_IMAGE_PATH = "/og-default.png";
 
-export interface OgImageTarget {
+export type OgImageTarget = {
   kind: "content" | "user";
   id: string;
-}
+};
 
 /**
  * 경로 → 프록시 대상. 순수 함수다.
  *
- * UUID가 아니면 여기서 `null`이 되어 API를 두드리지 않는다 — 아무 문자열이나 왕복을
+ * UUID가 아니면 여기서 `undefined`가 되어 API를 두드리지 않는다 — 아무 문자열이나 왕복을
  * 만들면 크롤러가 곧 API 부하가 된다.
  */
-export function parseOgImagePath(pathname: string): OgImageTarget | null {
+export function parseOgImagePath(pathname: string): OgImageTarget | undefined {
   const match = OG_IMAGE_PATH.exec(pathname);
-  if (match === null) return null;
+  if (match === null) return undefined;
 
   const [, kind, id] = match;
-  if (id === undefined || !isUuid(id)) return null;
+  if (id === undefined || !isUuid(id)) return undefined;
 
   return { kind: kind === "content" ? "content" : "user", id };
 }
@@ -62,6 +62,11 @@ type ImageSource =
   | { kind: "missing" }
   | { kind: "notFound" }
   | { kind: "unavailable" };
+
+/** 유니언에 멤버가 추가되면 여기서 컴파일 에러가 난다 — 조용히 폴백으로 흐르지 않게. */
+function assertNever(value: never): never {
+  throw new Error(`처리하지 않은 ImageSource: ${JSON.stringify(value)}`);
+}
 
 function toImageSource(rawUrl: unknown): ImageSource {
   if (typeof rawUrl !== "string" || rawUrl === "") return { kind: "missing" };
@@ -138,18 +143,18 @@ function toImageResponse(source: Response, maxAge: number): Response {
   });
 }
 
-async function fetchImage(url: string): Promise<Response | null> {
+async function fetchImage(url: string): Promise<Response | undefined> {
   let response: Response;
   try {
     response = await fetch(url);
   } catch (error) {
     console.warn("[og] 원본 이미지를 가져오지 못했다", error);
-    return null;
+    return undefined;
   }
 
   if (!response.ok) {
     console.warn(`[og] 원본 이미지 → ${response.status}`);
-    return null;
+    return undefined;
   }
   return response;
 }
@@ -191,24 +196,34 @@ export async function handleOgImage(
   deps: WorkerDeps,
 ): Promise<Response> {
   const target = parseOgImagePath(new URL(request.url).pathname);
-  if (target === null) return notFound();
+  if (target === undefined) return notFound();
 
   const cached = await deps.cache.match(request);
   if (cached !== undefined) return cached;
 
   const source = await resolveImageSource(env, target);
-  if (source.kind === "notFound") return notFound();
 
-  if (source.kind === "url") {
-    const upstream = await fetchImage(source.url);
-    if (upstream !== null) {
+  switch (source.kind) {
+    case "notFound":
+      return notFound();
+    case "url": {
+      const upstream = await fetchImage(source.url);
+      // 원본을 못 가져온 건 일시적 장애다 — 확정 폴백처럼 하루씩 캐시하지 않는다.
+      if (upstream === undefined) {
+        return serveDefaultImage(request, env, deps, false);
+      }
+
       const response = toImageResponse(upstream, CACHE_MAX_AGE_SECONDS);
       // 본문 스트림을 tee해야 하므로 clone이 필수다 — clone 없이 넣으면 본문이 캐시
       // 쪽에서 소비돼 호출자가 빈 응답을 받는다.
       await deps.cache.put(request, response.clone());
       return response;
     }
+    case "missing":
+      return serveDefaultImage(request, env, deps, true);
+    case "unavailable":
+      return serveDefaultImage(request, env, deps, false);
+    default:
+      return assertNever(source);
   }
-
-  return serveDefaultImage(request, env, deps, source.kind === "missing");
 }

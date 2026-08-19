@@ -7,7 +7,7 @@ export const SITE_NAME = "또나";
  * <head>에 넣을 메타. 전부 선택이다 — 상세 페이지는 전 항목을 채우지만
  * 홈은 index.html에 이미 박혀 있는 것 말고 canonical·og:url만 주입한다(US-009).
  */
-export interface PageMeta {
+export type PageMeta = {
   title?: string;
   description?: string;
   canonical?: string;
@@ -20,19 +20,22 @@ export interface PageMeta {
   ogType?: string;
   ogSiteName?: string;
   twitterCard?: string;
-}
+};
 
 /** 이름·속성명은 아래 상수뿐이라 이스케이프가 필요 없고, content는 전부 사용자 입력일 수 있다. */
-function metaByName(name: string, content: string | undefined): string | null {
-  if (content === undefined) return null;
+function metaByName(
+  name: string,
+  content: string | undefined,
+): string | undefined {
+  if (content === undefined) return undefined;
   return `<meta name="${name}" content="${escapeHtml(content)}" />`;
 }
 
 function metaByProperty(
   property: string,
   content: string | undefined,
-): string | null {
-  if (content === undefined) return null;
+): string | undefined {
+  if (content === undefined) return undefined;
   return `<meta property="${property}" content="${escapeHtml(content)}" />`;
 }
 
@@ -43,11 +46,11 @@ function metaByProperty(
 export function buildMetaTags(meta: PageMeta): string {
   const tags = [
     meta.title === undefined
-      ? null
+      ? undefined
       : `<title>${escapeHtml(meta.title)}</title>`,
     metaByName("description", meta.description),
     meta.canonical === undefined
-      ? null
+      ? undefined
       : `<link rel="canonical" href="${escapeHtml(meta.canonical)}" />`,
     metaByName("robots", meta.robots),
     metaByProperty("og:title", meta.ogTitle),
@@ -59,7 +62,7 @@ export function buildMetaTags(meta: PageMeta): string {
     metaByName("twitter:card", meta.twitterCard),
   ];
 
-  return tags.filter((tag) => tag !== null).join("\n");
+  return tags.filter((tag) => tag !== undefined).join("\n");
 }
 
 /**

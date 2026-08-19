@@ -1,8 +1,8 @@
-import { readAppShellHtml } from "./app-shell";
+import { readAppShellHtml } from "./appShell";
 import { injectHead } from "./html";
 import { buildMetaTags } from "./meta";
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /** 홈. 정렬·장르 쿼리(`?sort=popular` 등)가 붙어도 경로는 언제나 이것 하나다. */
 export const HOME_PATH = "/";

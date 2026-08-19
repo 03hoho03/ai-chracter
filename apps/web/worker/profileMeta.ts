@@ -1,28 +1,28 @@
 import { fetchApiJson, isRecord, isUuid } from "./api";
-import { readAppShellHtml, serveAppShell } from "./app-shell";
+import { readAppShellHtml, serveAppShell } from "./appShell";
 import { injectHead } from "./html";
 import { buildMetaTags, SITE_NAME, toMetaDescription } from "./meta";
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /** `/profile/{userId}`. 세그먼트가 하나뿐이라 콘텐츠 상세와 달리 정규화할 여지가 없다. */
 const PROFILE_PATH = /^\/profile\/([^/]+)$/;
 
-/** 경로 → 사용자 id. 프로필 경로가 아니면 `null`. 순수 함수다. */
-export function parseProfilePath(pathname: string): string | null {
+/** 경로 → 사용자 id. 프로필 경로가 아니면 `undefined`. 순수 함수다. */
+export function parseProfilePath(pathname: string): string | undefined {
   const match = PROFILE_PATH.exec(pathname);
-  if (match === null) return null;
+  if (match === null) return undefined;
 
   const [, id] = match;
-  return id ?? null;
+  return id;
 }
 
 /** 메타를 만드는 데 실제로 쓰는 필드만 추린 프로필. */
-export interface ProfileMetaSource {
+export type ProfileMetaSource = {
   id: string;
   nickname: string;
   bio: string;
-}
+};
 
 /**
  * 봇에게 내려보낼 <head> 조각을 만든다. 순수 함수다.

@@ -31,36 +31,36 @@ export function buildJsonLd(data: unknown): string {
 const OVERRIDABLE_HEAD_TAG =
   /(?:<title\b[^>]*>[\s\S]*?<\/title>|<meta\b[^>]*>|<link\b[^>]*>)\s*/gi;
 
-function attributeValue(tag: string, attribute: string): string | null {
+function attributeValue(tag: string, attribute: string): string | undefined {
   const match = new RegExp(`\\s${attribute}="([^"]*)"`, "i").exec(tag);
-  if (!match) return null;
+  if (!match) return undefined;
 
   const [, value] = match;
-  return value ?? null;
+  return value;
 }
 
 /**
  * 태그를 "같은 자리를 차지하는가"로 식별하는 키. 키가 없으면(charset·viewport·stylesheet 등)
  * 우리가 건드리지 않는 태그다.
  */
-function headTagKey(tag: string): string | null {
+function headTagKey(tag: string): string | undefined {
   if (/^<title\b/i.test(tag)) return "title";
   if (/^<link\b/i.test(tag)) {
-    return attributeValue(tag, "rel") === "canonical" ? "canonical" : null;
+    return attributeValue(tag, "rel") === "canonical" ? "canonical" : undefined;
   }
 
   const name = attributeValue(tag, "name");
-  if (name !== null) return `name:${name}`;
+  if (name !== undefined) return `name:${name}`;
 
   const property = attributeValue(tag, "property");
-  return property !== null ? `property:${property}` : null;
+  return property !== undefined ? `property:${property}` : undefined;
 }
 
 function headTagKeys(html: string): Set<string> {
   const keys = new Set<string>();
   for (const tag of html.match(OVERRIDABLE_HEAD_TAG) ?? []) {
     const key = headTagKey(tag);
-    if (key !== null) keys.add(key);
+    if (key !== undefined) keys.add(key);
   }
   return keys;
 }
@@ -84,7 +84,7 @@ export function injectHead(html: string, headHtml: string): string {
     .slice(0, closeHeadIndex)
     .replace(OVERRIDABLE_HEAD_TAG, (tag) => {
       const key = headTagKey(tag);
-      return key !== null && injectedKeys.has(key) ? "" : tag;
+      return key !== undefined && injectedKeys.has(key) ? "" : tag;
     });
 
   // `html.replace("</head>", ...)`가 아니라 슬라이스로 이어붙인다 — headHtml에는 사용자 입력이

@@ -1,6 +1,6 @@
 import { createRuntimeCache } from "./cache";
 import { handleRequest } from "./handler";
-import type { WorkerEnv } from "./types";
+import type { WorkerEnv } from "./workerRuntime";
 
 /**
  * Cloudflare Pages Advanced Mode 진입점. esbuild가 이 파일을 `dist/_worker.js`로 번들한다.

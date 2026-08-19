@@ -1,4 +1,4 @@
-import type { CacheLike } from "./types";
+import type { CacheLike } from "./workerRuntime";
 
 /**
  * Workers 런타임 전역. DOM lib의 `CacheStorage`에는 `default`가 없어서 여기서만 좁혀 선언한다.

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { handleRequest } from "./handler";
-import type { CacheLike, WorkerEnv } from "./types";
+import type { CacheLike, WorkerEnv } from "./workerRuntime";
 
-const noopCache: CacheLike = {
+const NOOP_CACHE: CacheLike = {
   match: () => Promise.resolve(undefined),
   put: () => Promise.resolve(),
 };
@@ -46,7 +46,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/favicon.svg"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(await response.text()).toBe("/favicon.svg");
@@ -56,7 +56,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/assets/chunk"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(await response.text()).toBe("/assets/chunk");
@@ -66,7 +66,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/content/character/42"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.status).toBe(200);
@@ -76,7 +76,7 @@ describe("handleRequest", () => {
   it("루트도 index.html로 서빙한다", async () => {
     const env = createEnv();
 
-    const response = await handleRequest(get("/"), env, { cache: noopCache });
+    const response = await handleRequest(get("/"), env, { cache: NOOP_CACHE });
 
     expect(await response.text()).toBe("/index.html");
   });
@@ -85,7 +85,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/asdf"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.status).toBe(404);
@@ -96,7 +96,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/og-default.png"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.status).toBe(200);
@@ -115,7 +115,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(404);
@@ -128,7 +128,7 @@ describe("handleRequest", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await handleRequest(get("/sitemap.xml"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(env.assetFetch).not.toHaveBeenCalled();
@@ -141,7 +141,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/robots.txt"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(env.assetFetch).not.toHaveBeenCalled();
@@ -173,7 +173,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get(`/og/content/${id}.jpg`), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(env.assetFetch).not.toHaveBeenCalled();
@@ -184,7 +184,7 @@ describe("handleRequest", () => {
     const env = createEnv();
 
     const response = await handleRequest(get("/og/content/nope.jpg"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.status).toBe(404);
@@ -194,7 +194,7 @@ describe("handleRequest", () => {
   it("봇 UA의 홈은 API 없이 canonical·og:url을 주입한다", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    // 이 파일의 기본 스텁 셸에는 <head>가 없어 주입 결과가 보이지 않는다(내용은 home-meta.test.ts).
+    // 이 파일의 기본 스텁 셸에는 <head>가 없어 주입 결과가 보이지 않는다(내용은 homeMeta.test.ts).
     const env = createEnv({
       ASSETS: {
         fetch: () =>
@@ -216,7 +216,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
@@ -237,7 +237,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(await response.text()).toBe("/index.html");
@@ -269,11 +269,11 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
-    // 주입 결과 자체는 content-meta.test.ts가 본다(이 스텁의 셸에는 <head>가 없다).
+    // 주입 결과 자체는 contentMeta.test.ts가 본다(이 스텁의 셸에는 <head>가 없다).
     expect(requestedUrls).toEqual([`https://api.example.com/contents/${id}`]);
   });
 
@@ -295,7 +295,7 @@ describe("handleRequest", () => {
         headers: { "user-agent": "facebookexternalhit/1.1" },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
@@ -320,7 +320,7 @@ describe("handleRequest", () => {
         },
       ),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
@@ -342,7 +342,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(response.status).toBe(200);
@@ -361,7 +361,7 @@ describe("handleRequest", () => {
         headers: { "user-agent": "Googlebot/2.1" },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
     const userResponse = await handleRequest(
       new Request(`https://ddona.example${path}`, {
@@ -371,7 +371,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(botResponse.status).toBe(404);
@@ -399,7 +399,7 @@ describe("handleRequest", () => {
         headers: { "user-agent": "Yeti/1.1 (NHN Corp.)" },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
     const userResponse = await handleRequest(
       new Request(`https://ddona.example/profile/${id}`, {
@@ -409,7 +409,7 @@ describe("handleRequest", () => {
         },
       }),
       env,
-      { cache: noopCache },
+      { cache: NOOP_CACHE },
     );
 
     expect(botResponse.status).toBe(404);
@@ -424,7 +424,7 @@ describe("handleRequest", () => {
     const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.production" });
 
     const response = await handleRequest(get("/content/character/42"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
@@ -438,7 +438,7 @@ describe("handleRequest", () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
     const response = await handleRequest(get("/sitemap.xml"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.headers.get("x-robots-tag")).toBe("noindex");
@@ -448,7 +448,7 @@ describe("handleRequest", () => {
     const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.example" });
 
     const response = await handleRequest(get("/content/character/42"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(response.headers.get("x-robots-tag")).toBeNull();
@@ -458,10 +458,10 @@ describe("handleRequest", () => {
     const env = createEnv({ API_BASE_URL: undefined });
 
     const shell = await handleRequest(get("/login"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
     const asset = await handleRequest(get("/assets/app.js"), env, {
-      cache: noopCache,
+      cache: NOOP_CACHE,
     });
 
     expect(shell.status).toBe(200);

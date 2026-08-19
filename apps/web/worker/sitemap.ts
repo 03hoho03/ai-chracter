@@ -1,7 +1,7 @@
-import { isRecord } from "./api";
+import { fetchApiJson, isRecord } from "./api";
 import { escapeHtml } from "./html";
 import { resolvePublicOrigin } from "./origin";
-import type { WorkerDeps, WorkerEnv } from "./types";
+import type { WorkerDeps, WorkerEnv } from "./workerRuntime";
 
 /** 상세 라우트가 있는 콘텐츠 타입. `/contents?type=` 쿼리값과 URL 세그먼트가 같은 문자열이다. */
 const CONTENT_TYPES = ["character", "story"];
@@ -41,8 +41,8 @@ export function buildSitemapXml(locations: string[]): string {
 /** `/contents` 응답에서 sitemap이 쓰는 두 가지(id 목록, 다음 커서)만 뽑는다. */
 function parseContentListPage(
   payload: unknown,
-): { ids: string[]; nextCursor: string | null } | null {
-  if (!isRecord(payload) || !Array.isArray(payload.items)) return null;
+): { ids: string[]; nextCursor: string | undefined } | undefined {
+  if (!isRecord(payload) || !Array.isArray(payload.items)) return undefined;
 
   const ids: string[] = [];
   for (const item of payload.items) {
@@ -50,7 +50,10 @@ function parseContentListPage(
   }
 
   const { nextCursor } = payload;
-  return { ids, nextCursor: typeof nextCursor === "string" ? nextCursor : null };
+  return {
+    ids,
+    nextCursor: typeof nextCursor === "string" ? nextCursor : undefined,
+  };
 }
 
 /**
@@ -64,28 +67,28 @@ async function fetchPublicContentIds(
   apiBaseUrl: string,
   type: string,
 ): Promise<string[]> {
-  const endpoint = `${apiBaseUrl.replace(/\/+$/, "")}/contents?type=${type}`;
+  const endpoint = `/contents?type=${type}`;
   const ids: string[] = [];
-  let cursor: string | null = null;
+  let cursor: string | undefined;
 
   for (let page = 0; page < MAX_PAGES_PER_TYPE; page += 1) {
-    const url =
-      cursor === null
+    const path =
+      cursor === undefined
         ? endpoint
         : `${endpoint}&cursor=${encodeURIComponent(cursor)}`;
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`GET /contents?type=${type} → ${response.status}`);
+    const result = await fetchApiJson(apiBaseUrl, path);
+    if (result.kind !== "ok") {
+      throw new Error(`GET ${path} → ${result.kind}`);
     }
 
-    const parsed = parseContentListPage(await response.json());
-    if (parsed === null) {
-      throw new Error(`GET /contents?type=${type} → 예상 밖의 응답 형식`);
+    const parsed = parseContentListPage(result.data);
+    if (parsed === undefined) {
+      throw new Error(`GET ${path} → 예상 밖의 응답 형식`);
     }
 
     ids.push(...parsed.ids);
     cursor = parsed.nextCursor;
-    if (cursor === null) return ids;
+    if (cursor === undefined) return ids;
   }
 
   console.warn(
@@ -125,7 +128,7 @@ export async function handleSitemap(
 
   const origin = resolvePublicOrigin(env, request);
 
-  let locations: string[] | null = null;
+  let locations: string[] | undefined;
   try {
     if (env.API_BASE_URL === undefined) {
       throw new Error("API_BASE_URL 런타임 환경변수가 없다");
@@ -138,7 +141,7 @@ export async function handleSitemap(
     );
   }
 
-  const isComplete = locations !== null;
+  const isComplete = locations !== undefined;
   const maxAge = isComplete ? CACHE_MAX_AGE_SECONDS : FALLBACK_MAX_AGE_SECONDS;
   const response = new Response(buildSitemapXml(locations ?? [`${origin}/`]), {
     headers: {
