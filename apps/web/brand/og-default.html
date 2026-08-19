@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>또나 og-default 1200x630</title>
+    <!--
+      apps/web/public/og-default.png 의 원본. 재생성은 apps/web/brand/generate.sh.
+      저장소 루트를 document root로 하는 HTTP 서버 위에서 열어야 폰트가 붙는다
+      (file://에서는 Chrome이 @font-face를 차단한다).
+
+      색은 DESIGN.md 다크 팔레트를 그대로 쓴다 — 배경 background(oklch 0.16),
+      글자 foreground(oklch 0.93, 밝기 천장이라 순백 금지), 보조 글자 muted-foreground,
+      유일한 유채색 솔리드 채움은 primary 하나.
+
+      글자 크기가 앱의 text-2xl 천장을 넘는 것은 여기가 UI가 아니라 1200x630 캔버스이기
+      때문이다 — 공유 카드는 축소되어 보이므로 이 크기가 앱의 text-2xl에 해당한다.
+    -->
+    <style>
+      @font-face {
+        font-family: "Pretendard Variable";
+        src: url("/packages/ui/node_modules/pretendard/dist/web/variable/woff2/PretendardVariable.woff2")
+          format("woff2-variations");
+        font-weight: 45 930;
+        font-display: block;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        width: 1200px;
+        height: 630px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 40px;
+        /* 불 꺼진 방의 유일한 빛 — 무채색 사다리 안에서만 밝힌다(0.235 → 0.16) */
+        background:
+          radial-gradient(
+            60% 55% at 50% 44%,
+            oklch(0.235 0 0) 0%,
+            oklch(0.16 0 0) 100%
+          ),
+          oklch(0.16 0 0);
+        font-family: "Pretendard Variable", sans-serif;
+        color: oklch(0.93 0 0);
+      }
+
+      /* 카카오톡·트위터 summary 카드는 중앙을 정사각으로 잘라 쓴다. 아래 블록은 전부
+         가운데 630x630 안에 들어가야 한다 */
+      .wordmark {
+        font-size: 208px;
+        font-weight: 700;
+        letter-spacing: -0.04em;
+        line-height: 1;
+      }
+
+      .rule {
+        width: 72px;
+        height: 5px;
+        border-radius: 999px;
+        background: oklch(0.72 0.18 0);
+      }
+
+      .tagline {
+        font-size: 46px;
+        font-weight: 500;
+        letter-spacing: 0.01em;
+        color: oklch(0.68 0 0);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wordmark">또나</div>
+    <div class="rule"></div>
+    <div class="tagline">AI 캐릭터 챗</div>
+  </body>
+</html>

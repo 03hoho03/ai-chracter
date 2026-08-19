@@ -12,6 +12,7 @@
 | 라우트 파라미터/서치 | RouteComponent가 읽어 페이지에 props 주입(routes↔pages 순환 방지) |
 | 액션/확인 모달 | react-call 2계열 — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
 | 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
+| 브랜드 자산(파비콘·OG 이미지) | `public/`의 파일을 직접 고치지 말고 `brand/generate.sh`로 재생성 (원본·이유는 `brand/README.md`) |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
 | SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 오프닝 선택지 노출 | `entities/chat-room`의 `shouldShowSuggestedReplies`(replies·turnCount·hasUserMessage) — 인라인 조건 금지 (ChatRoomView·PreviewSessionView 참조) |
