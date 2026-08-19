@@ -1,3 +1,4 @@
+import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./types";
 
 /**
@@ -28,9 +29,16 @@ function serveAppShell(request: Request, env: WorkerEnv): Promise<Response> {
 export async function handleRequest(
   request: Request,
   env: WorkerEnv,
-  _deps: WorkerDeps,
+  deps: WorkerDeps,
 ): Promise<Response> {
   const url = new URL(request.url);
+
+  // Worker가 만들어 내는 경로는 정적 자산 검사보다 **먼저** 가로챈다.
+  // `/sitemap.xml`은 확장자가 있어 `isStaticAssetPath`가 true를 주고, 그대로 ASSETS로
+  // 넘기면 (dist에 그런 파일이 없으므로) index.html이 200으로 나간다.
+  if (url.pathname === "/sitemap.xml") {
+    return handleSitemap(request, env, deps);
+  }
 
   if (isStaticAssetPath(url.pathname)) {
     return env.ASSETS.fetch(request);
@@ -42,8 +50,7 @@ export async function handleRequest(
     return serveAppShell(request, env);
   }
 
-  // sitemap·og 프록시·봇 메타 주입·404 판별이 이 자리에 붙는다(US-004~US-011).
-  // US-002 시점에는 비어 있어야 한다 — 이 스토리의 목표가 "동작 변화 0"이다.
+  // og 프록시·봇 메타 주입·404 판별이 이 자리에 붙는다(US-006~US-011).
 
   return serveAppShell(request, env);
 }

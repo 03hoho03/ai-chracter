@@ -8,6 +8,12 @@ export interface WorkerEnv {
    * 없으면 SEO 경로를 통째로 건너뛴다(`handleRequest` 참고).
    */
   API_BASE_URL?: string;
+  /**
+   * 이 사이트의 정식 오리진(예: `https://ai-character-chat-web.pages.dev`).
+   * sitemap·canonical·og:url이 전부 이 값을 기준으로 만들어진다 — 요청 host를 쓰면
+   * 프리뷰 배포가 색인될 때 프로덕션과 중복 콘텐츠가 된다(`worker/origin.ts` 참고).
+   */
+  PUBLIC_ORIGIN?: string;
 }
 
 /**
