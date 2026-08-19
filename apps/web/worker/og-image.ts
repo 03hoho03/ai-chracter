@@ -1,4 +1,9 @@
-import { fetchApiJson, isRecord } from "./api";
+import {
+  fetchApiJson,
+  isRecord,
+  isUuid,
+  isViewableByCrawler,
+} from "./api";
 import type { WorkerDeps, WorkerEnv } from "./types";
 
 /**
@@ -13,8 +18,6 @@ export const OG_IMAGE_PATH_PREFIX = "/og/";
 
 /** `/og/{content|user}/{uuid}.jpg` */
 const OG_IMAGE_PATH = /^\/og\/(content|user)\/([^/]+)\.jpg$/;
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const CACHE_MAX_AGE_SECONDS = 86400;
 
@@ -43,7 +46,7 @@ export function parseOgImagePath(pathname: string): OgImageTarget | null {
   if (match === null) return null;
 
   const [, kind, id] = match;
-  if (id === undefined || !UUID.test(id)) return null;
+  if (id === undefined || !isUuid(id)) return null;
 
   return { kind: kind === "content" ? "content" : "user", id };
 }
@@ -59,19 +62,6 @@ type ImageSource =
   | { kind: "missing" }
   | { kind: "notFound" }
   | { kind: "unavailable" };
-
-/**
- * 비로그인 크롤러에게 이미지를 보여도 되는 콘텐츠인가.
- *
- * FE의 `canViewDetailPage(access, isOwner = false)`와 같은 규칙이다 — restricted·deleted·
- * private은 막고 public·link는 통과시킨다(링크 공유 미리보기가 이 기능의 목적이다).
- * `GET /contents/{id}`는 비공개 콘텐츠에도 200 + 썸네일 URL을 주므로(접근 판정을 응답
- * 본문으로 내려주는 설계다) 이 검사를 생략하면 비공개 썸네일이 그대로 새어 나간다.
- */
-function isViewableByCrawler(accessStatus: Record<string, unknown>): boolean {
-  if (accessStatus.kind !== "accessible") return false;
-  return accessStatus.visibility !== "private";
-}
 
 function toImageSource(rawUrl: unknown): ImageSource {
   if (typeof rawUrl !== "string" || rawUrl === "") return { kind: "missing" };

@@ -150,6 +150,62 @@ describe("handleRequest", () => {
     expect(env.assetFetch).not.toHaveBeenCalled();
   });
 
+  it("봇 UA의 콘텐츠 상세는 API를 거쳐 메타를 주입한다", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const requestedUrls: string[] = [];
+    vi.stubGlobal("fetch", (input: string | URL | Request) => {
+      requestedUrls.push(String(input));
+      return Promise.resolve(
+        new Response(
+          JSON.stringify({
+            type: "character",
+            name: "루나",
+            oneLiner: "달빛 마녀",
+            accessStatus: { kind: "accessible", visibility: "public" },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+      );
+    });
+    const env = createEnv();
+
+    const response = await handleRequest(
+      new Request(`https://ddona.example/content/character/${id}`, {
+        headers: {
+          "user-agent": "Googlebot/2.1 (+http://www.google.com/bot.html)",
+        },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(response.status).toBe(200);
+    // 주입 결과 자체는 content-meta.test.ts가 본다(이 스텁의 셸에는 <head>가 없다).
+    expect(requestedUrls).toEqual([`https://api.example.com/contents/${id}`]);
+  });
+
+  it("일반 브라우저 UA는 같은 URL에서 API를 부르지 않는다", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const env = createEnv();
+
+    const response = await handleRequest(
+      new Request(`https://ddona.example/content/character/${id}`, {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+        },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("/index.html");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("요청 host가 PUBLIC_ORIGIN과 다르면 SPA 셸에 noindex가 붙는다", async () => {
     const env = createEnv({ PUBLIC_ORIGIN: "https://ddona.production" });
 

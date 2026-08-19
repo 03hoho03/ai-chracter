@@ -1,3 +1,6 @@
+import { serveAppShell } from "./app-shell";
+import { handleContentMeta, parseContentPath } from "./content-meta";
+import { isCrawler } from "./crawler";
 import { applyIndexingPolicy } from "./indexing";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
 import { handleRobots } from "./robots";
@@ -11,18 +14,6 @@ import type { WorkerDeps, WorkerEnv } from "./types";
 function isStaticAssetPath(pathname: string): boolean {
   if (pathname.startsWith("/assets/")) return true;
   return pathname.slice(pathname.lastIndexOf("/") + 1).includes(".");
-}
-
-/**
- * SPA 셸(index.html)을 200으로 돌려준다.
- *
- * `_worker.js`가 있으면 Pages는 모든 요청을 Worker로 보내고 `public/_redirects`의
- * `/* → /index.html 200`을 더 이상 적용하지 않는다. 딥링크·새로고침이 index.html을
- * 받게 하는 일은 이제 Worker의 몫이다.
- */
-function serveAppShell(request: Request, env: WorkerEnv): Promise<Response> {
-  const indexUrl = new URL("/index.html", request.url);
-  return env.ASSETS.fetch(new Request(indexUrl, { headers: request.headers }));
 }
 
 /**
@@ -75,7 +66,11 @@ async function routeRequest(
     return serveAppShell(request, env);
   }
 
-  // 봇 메타 주입·404 판별이 이 자리에 붙는다(US-007~US-011).
+  // 봇에게만 <head>를 채워 준다 — 일반 사용자는 지금과 같은 응답(추가 API 왕복 0회)을 받는다.
+  if (isCrawler(request.headers.get("user-agent"))) {
+    const contentId = parseContentPath(url.pathname);
+    if (contentId !== null) return handleContentMeta(request, env, contentId);
+  }
 
   return serveAppShell(request, env);
 }

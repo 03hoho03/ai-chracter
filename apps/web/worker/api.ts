@@ -54,3 +54,26 @@ export async function fetchApiJson(
     return { kind: "unavailable" };
   }
 }
+
+/** API가 다루는 id는 전부 UUID다. 형식이 아니면 왕복을 만들지 않는다 — 크롤러가 곧 API 부하가 된다. */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuid(value: string): boolean {
+  return UUID.test(value);
+}
+
+/**
+ * 비로그인 크롤러에게 보여도 되는 콘텐츠인가.
+ *
+ * FE의 `canViewDetailPage(access, isOwner = false)`와 같은 규칙이다 — restricted·deleted·
+ * private은 막고 public·link는 통과시킨다(링크 공유 미리보기가 이 기능의 목적이다).
+ * `GET /contents/{id}`는 비공개 콘텐츠에도 200 + 본문을 주므로(접근 판정을 응답 본문의
+ * `accessStatus`로 내려주는 설계다) 이 검사를 생략하면 비공개 콘텐츠의 이름·소개·썸네일이
+ * 그대로 새어 나간다.
+ */
+export function isViewableByCrawler(
+  accessStatus: Record<string, unknown>,
+): boolean {
+  if (accessStatus.kind !== "accessible") return false;
+  return accessStatus.visibility !== "private";
+}
