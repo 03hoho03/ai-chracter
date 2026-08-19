@@ -14,6 +14,7 @@
 | 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
 | 브랜드 자산(파비콘·OG 이미지) | `public/`의 파일을 직접 고치지 말고 `brand/generate.sh`로 재생성 (원본·이유는 `brand/README.md`) |
 | 서버에서만 할 수 있는 일(봇 메타 주입·sitemap·리다이렉트) | `worker/` — Cloudflare Pages Worker. `dist/_worker.js`로 번들된다 |
+| 조회 없이 정해지는 메타(홈 title·description·og·파비콘 link) | `index.html`의 `<head>` — Worker가 아니다 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
 | SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 오프닝 선택지 노출 | `entities/chat-room`의 `shouldShowSuggestedReplies`(replies·turnCount·hasUserMessage) — 인라인 조건 금지 (ChatRoomView·PreviewSessionView 참조) |
@@ -52,6 +53,7 @@
 - **봇에게 줄 HTML 응답은 `worker/app-shell.ts` 두 함수로만 만든다**: 패스스루는 `serveAppShell(request, env, status?)`, 주입은 `readAppShellHtml(request, env)`로 본문을 읽어 `injectHead`한 뒤 새 Response를 만든다. `status`에 404를 주면 본문은 같은 셸이라 **사용자에겐 앱의 NotFound 화면이 그대로 보이고 봇에게만 404가 간다**(soft 404 제거). 주입용 읽기에는 요청 헤더를 넘기지 않는다 — 크롤러의 `accept-encoding`을 그대로 넘기면 자산 서버가 압축 본문을 줘 `text()`가 깨질 수 있다.
 - **상세 메타 주입은 `worker/content-meta.ts`** — `buildContentHead(source, origin)`(순수: 메타 + JSON-LD 문자열)과 `handleContentMeta(request, env, id)`(조회·분기)로 나눠 두고, 프로필·홈 주입도 같은 모양을 따른다. canonical·og:url의 `{type}`은 URL 세그먼트가 아니라 **API 응답의 `type`**으로 만든다 — `/content/story/{캐릭터id}`처럼 어긋난 주소가 들어와도 한 canonical로 모인다(`{type}`은 조회에 쓰이지 않는 가독성용 세그먼트다).
 - **프로필 주입(`worker/profile-meta.ts`)은 `<meta name="robots" content="noindex">`를 함께 넣는다** — 공유 미리보기는 되게 하되 검색 색인은 막는다(사용자가 공개 노출에 동의한 적 없는 개인 페이지라 sitemap에도 넣지 않는다). 색인하지 않으므로 canonical·JSON-LD도 두지 않는다. 브랜드명 `SITE_NAME`과 description 다듬기 `toMetaDescription`(공백 정리 + 160자 절단)은 `worker/meta.ts`에 있으니 페이지별로 다시 만들지 말 것.
+- **홈 메타는 `index.html`이 갖고 Worker(`worker/home-meta.ts`)는 오리진을 알아야 만들 수 있는 canonical·og:url 둘만 더한다** — 조회가 없어 `API_BASE_URL` 가드보다 **위에** 배선한다(환경변수가 빠져도 홈 canonical은 나가야 한다). canonical은 요청 URL이 아니라 항상 `{origin}/`이다 — `?sort=latest`·`?sort=popular`·`?sort=genre&genre={uuid}`가 전부 같은 홈이라 쿼리를 살려 두면 구글이 중복 콘텐츠로 본다. **index.html에 기본 메타를 더할 때는 상세·프로필 주입이 그 키를 전부 덮는지 확인할 것**(일부만 덮으면 남은 홈 문구가 상세 미리보기에 섞인다).
 - **봇 판별은 `worker/crawler.ts`의 `isCrawler(userAgent)`** — UA 토큰 목록 `includes` 검사다. 크롤러를 추가할 일이 생기면 이 목록 한 곳만 고친다.
 - **브라우저 검증은 vite dev가 아니라** `pnpm --filter @ai-character-chat/web build && pnpm --filter @ai-character-chat/web dev:worker`(= `wrangler pages dev dist`) — Worker는 빌드 산출물이라 vite dev 서버에는 없다. 로컬 API(:8000)의 `CORS_ALLOW_ORIGINS`가 `localhost:5173`/`5174`뿐이므로 `--port 5174`로 띄우고, 그 빌드는 `VITE_API_BASE_URL=http://localhost:8000`으로 만든다.
 

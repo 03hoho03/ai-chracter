@@ -1,6 +1,7 @@
 import { serveAppShell } from "./app-shell";
 import { handleContentMeta, parseContentPath } from "./content-meta";
 import { isCrawler } from "./crawler";
+import { handleHomeMeta, HOME_PATH } from "./home-meta";
 import { applyIndexingPolicy } from "./indexing";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
 import { handleProfileMeta, parseProfilePath } from "./profile-meta";
@@ -61,14 +62,22 @@ async function routeRequest(
     return env.ASSETS.fetch(request);
   }
 
+  // 봇에게만 <head>를 채워 준다 — 일반 사용자는 지금과 같은 응답(추가 API 왕복 0회)을 받는다.
+  const isBot = isCrawler(request.headers.get("user-agent"));
+
+  // 홈 메타는 조회에 기대지 않으므로 API_BASE_URL 가드보다 위에 둔다 — 환경변수가 빠져도
+  // 최소한 홈의 canonical은 나간다.
+  if (isBot && url.pathname === HOME_PATH) {
+    return handleHomeMeta(request, env);
+  }
+
   // API_BASE_URL은 Pages 런타임 환경변수라 대시보드에서 빠뜨릴 수 있다. 없으면 API를
   // 두드리는 SEO 경로를 통째로 건너뛴다 — 환경변수 하나가 사이트 전체를 죽이면 안 된다.
   if (!env.API_BASE_URL) {
     return serveAppShell(request, env);
   }
 
-  // 봇에게만 <head>를 채워 준다 — 일반 사용자는 지금과 같은 응답(추가 API 왕복 0회)을 받는다.
-  if (isCrawler(request.headers.get("user-agent"))) {
+  if (isBot) {
     const contentId = parseContentPath(url.pathname);
     if (contentId !== null) return handleContentMeta(request, env, contentId);
 

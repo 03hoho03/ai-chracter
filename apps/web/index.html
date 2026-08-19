@@ -3,7 +3,30 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AI 캐릭터 챗</title>
+    <title>또나 — AI 캐릭터 챗</title>
+    <meta
+      name="description"
+      content="AI 캐릭터 챗 또나 — 취향대로 고른 캐릭터와 밤새 롤플레이하고, 나만의 캐릭터와 스토리를 직접 만들어 공유하세요. 가입 없이 둘러보기."
+    />
+
+    <!-- SVG를 읽는 브라우저는 SVG를, 못 읽는 브라우저는 PNG를 쓴다. 자산 재생성은 brand/generate.sh -->
+    <link rel="icon" href="/favicon-96.png" sizes="96x96" type="image/png" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+
+    <!-- 홈 공유 미리보기. 오리진을 알아야 하는 canonical·og:url만 Worker가 주입한다(worker/home-meta.ts) -->
+    <meta property="og:title" content="또나 — AI 캐릭터 챗" />
+    <meta
+      property="og:description"
+      content="AI 캐릭터 챗 또나 — 취향대로 고른 캐릭터와 밤새 롤플레이하고, 나만의 캐릭터와 스토리를 직접 만들어 공유하세요. 가입 없이 둘러보기."
+    />
+    <meta
+      property="og:image"
+      content="https://ai-character-chat-web.pages.dev/og-default.png"
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="또나" />
+    <meta name="twitter:card" content="summary" />
+
     <script>
       // 첫 페인트 전에 테마 적용 (FOUC 방지) — 규칙은 shared/model/theme.ts와 동일
       if (localStorage.getItem("theme") !== "light") {
