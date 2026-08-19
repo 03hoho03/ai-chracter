@@ -13,6 +13,7 @@
 | 액션/확인 모달 | react-call 2계열 — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
 | 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
 | 브랜드 자산(파비콘·OG 이미지) | `public/`의 파일을 직접 고치지 말고 `brand/generate.sh`로 재생성 (원본·이유는 `brand/README.md`) |
+| 서버에서만 할 수 있는 일(봇 메타 주입·sitemap·리다이렉트) | `worker/` — Cloudflare Pages Worker. `dist/_worker.js`로 번들된다 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
 | SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 오프닝 선택지 노출 | `entities/chat-room`의 `shouldShowSuggestedReplies`(replies·turnCount·hasUserMessage) — 인라인 조건 금지 (ChatRoomView·PreviewSessionView 참조) |
@@ -30,6 +31,15 @@
 - **라우트 파라미터/서치**는 `RouteComponent`가 `Route.useParams()`/`Route.useNavigate()`로 읽어 페이지에 **props/콜백으로** 넘긴다. 페이지가 `routes/*`를 import하면 `routes → pages → routes` 순환이 생긴다.
 - **전역 Header**는 `widgets/header`, `__root`의 `RootComponent`에 1회 마운트한다(개별 페이지가 헤더를 렌더하지 않음). 로그인 분기는 `useSessionQuery().data` 유무. 로그인 전용 하위 컴포넌트(`ProfileMenu` 등)는 `me`를 props로 받고 세션을 재조회하지 않는다.
 - **미구현 화면**은 `shared/ui/ComingSoonPage`(제목/설명 props)로 임시 연결하고, 라우트 파일은 그 스토리의 최종 형태(`beforeLoad: requireSession` 등)로 만들어 나중에 다시 손대지 않게 한다.
+
+## Cloudflare Pages Worker (`worker/`)
+
+- **역할과 위치**: `worker/index.ts`가 esbuild로 `dist/_worker.js`(Pages Advanced Mode)로 번들된다(`build` 스크립트의 `build:worker` 스텝). **서버 코드를 저장소 루트 `functions/`에 두지 말 것** — web·admin Pages 프로젝트가 둘 다 Root directory를 저장소 루트로 두고 있어(pnpm workspace 설치 때문에 필수) admin이 같은 코드를 집어가 SPA 라우팅이 깨진다. `dist/_worker.js`는 web 빌드 출력에만 따라붙는다.
+- **`_worker.js`가 있으면 Pages가 모든 요청을 Worker로 보낸다.** `public/_redirects`의 `/* → /index.html 200`은 더 이상 적용되지 않으므로 **SPA 폴백은 Worker가 직접** 한다(`serveAppShell`). `_redirects`는 배포 실패로 `_worker.js`가 누락될 때의 안전망이라 삭제하지 않는다.
+- **`env.ASSETS.fetch()`는 존재하지 않는 경로에도 `index.html`을 200으로 돌려준다**(Pages 자산 서버의 SPA 처리). 진짜 404를 만들려면 Worker가 명시적으로 404를 반환해야 한다.
+- **런타임 전용 자원은 주입한다**: Cache API는 `WorkerDeps`의 `{ match, put }`(`worker/types.ts`)로만 다루고 진입점(`worker/index.ts`)에서 `createRuntimeCache()`를 넣는다. 핸들러가 `caches.default`를 직접 참조하면 vitest(`environment: "node"`)에서 그 경로 전체가 테스트 불가능해진다. Node 18+에는 `Request`/`Response`/`fetch`가 전역이라 나머지는 핸들러를 그냥 함수로 호출해 테스트한다(`worker/handler.test.ts`).
+- **`API_BASE_URL`은 Pages 런타임 환경변수**다 — 빌드타임 `VITE_API_BASE_URL`과 별개로 대시보드에 넣어야 한다. 없으면 Worker가 SEO 경로를 통째로 건너뛰고 정적 자산만 서빙한다(환경변수 하나가 사이트를 죽이지 않도록).
+- **브라우저 검증은 vite dev가 아니라** `pnpm --filter @ai-character-chat/web build && pnpm --filter @ai-character-chat/web dev:worker`(= `wrangler pages dev dist`) — Worker는 빌드 산출물이라 vite dev 서버에는 없다. 로컬 API(:8000)의 `CORS_ALLOW_ORIGINS`가 `localhost:5173`/`5174`뿐이므로 `--port 5174`로 띄우고, 그 빌드는 `VITE_API_BASE_URL=http://localhost:8000`으로 만든다.
 
 ## 데이터 / 상태
 

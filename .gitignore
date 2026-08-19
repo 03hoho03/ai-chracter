@@ -9,6 +9,8 @@ apps/api/scripts/seed_content/images/
 node_modules/
 dist/
 .turbo/
+# wrangler pages dev 의 로컬 상태 캐시
+.wrangler/
 .env
 .env*.local
 .venv/
