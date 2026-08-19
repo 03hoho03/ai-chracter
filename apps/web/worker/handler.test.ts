@@ -37,6 +37,7 @@ function get(path: string): Request {
 }
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 
@@ -106,6 +107,47 @@ describe("handleRequest", () => {
     expect(response.headers.get("content-type")).toBe(
       "text/plain; charset=utf-8",
     );
+  });
+
+  it("/og/content/{id}.jpg는 ASSETS로 넘기지 않는다 — Worker가 API를 거쳐 만든다", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        new Response("IMAGE", { headers: { "content-type": "image/webp" } }),
+      ),
+    );
+    vi.stubGlobal("fetch", (input: string | URL | Request) =>
+      String(input).includes("/contents/")
+        ? Promise.resolve(
+            new Response(
+              JSON.stringify({
+                thumbnailUrl: "https://r2.example/thumb.webp",
+                accessStatus: { kind: "accessible", visibility: "public" },
+              }),
+              { headers: { "content-type": "application/json" } },
+            ),
+          )
+        : fetchMock(),
+    );
+    const env = createEnv();
+
+    const response = await handleRequest(get(`/og/content/${id}.jpg`), env, {
+      cache: noopCache,
+    });
+
+    expect(env.assetFetch).not.toHaveBeenCalled();
+    expect(response.headers.get("content-type")).toBe("image/webp");
+  });
+
+  it("형식이 틀린 /og/ 경로는 index.html이 아니라 404다", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/og/content/nope.jpg"), env, {
+      cache: noopCache,
+    });
+
+    expect(response.status).toBe(404);
+    expect(env.assetFetch).not.toHaveBeenCalled();
   });
 
   it("요청 host가 PUBLIC_ORIGIN과 다르면 SPA 셸에 noindex가 붙는다", async () => {

@@ -1,4 +1,5 @@
 import { applyIndexingPolicy } from "./indexing";
+import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
 import { handleRobots } from "./robots";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./types";
@@ -58,6 +59,12 @@ async function routeRequest(
     return handleRobots(request, env);
   }
 
+  // `/og/...`는 접두사로 통째로 가로챈다 — 형식이 틀린 것까지 여기서 404로 끝내지 않으면
+  // 확장자가 있는 경로라 ASSETS로 흘러가 og:image 자리에 index.html이 200으로 나간다.
+  if (url.pathname.startsWith(OG_IMAGE_PATH_PREFIX)) {
+    return handleOgImage(request, env, deps);
+  }
+
   if (isStaticAssetPath(url.pathname)) {
     return env.ASSETS.fetch(request);
   }
@@ -68,7 +75,7 @@ async function routeRequest(
     return serveAppShell(request, env);
   }
 
-  // og 프록시·봇 메타 주입·404 판별이 이 자리에 붙는다(US-006~US-011).
+  // 봇 메타 주입·404 판별이 이 자리에 붙는다(US-007~US-011).
 
   return serveAppShell(request, env);
 }

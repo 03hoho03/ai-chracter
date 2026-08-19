@@ -1,3 +1,4 @@
+import { isRecord } from "./api";
 import { escapeHtml } from "./html";
 import { resolvePublicOrigin } from "./origin";
 import type { WorkerDeps, WorkerEnv } from "./types";
@@ -35,10 +36,6 @@ export function buildSitemapXml(locations: string[]): string {
     "</urlset>",
     "",
   ].join("\n");
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 /** `/contents` 응답에서 sitemap이 쓰는 두 가지(id 목록, 다음 커서)만 뽑는다. */
