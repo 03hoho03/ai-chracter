@@ -39,6 +39,8 @@
 - **`env.ASSETS.fetch()`는 존재하지 않는 경로에도 `index.html`을 200으로 돌려준다**(Pages 자산 서버의 SPA 처리). 진짜 404를 만들려면 Worker가 명시적으로 404를 반환해야 한다.
 - **런타임 전용 자원은 주입한다**: Cache API는 `WorkerDeps`의 `{ match, put }`(`worker/types.ts`)로만 다루고 진입점(`worker/index.ts`)에서 `createRuntimeCache()`를 넣는다. 핸들러가 `caches.default`를 직접 참조하면 vitest(`environment: "node"`)에서 그 경로 전체가 테스트 불가능해진다. Node 18+에는 `Request`/`Response`/`fetch`가 전역이라 나머지는 핸들러를 그냥 함수로 호출해 테스트한다(`worker/handler.test.ts`).
 - **`API_BASE_URL`은 Pages 런타임 환경변수**다 — 빌드타임 `VITE_API_BASE_URL`과 별개로 대시보드에 넣어야 한다. 없으면 Worker가 SEO 경로를 통째로 건너뛰고 정적 자산만 서빙한다(환경변수 하나가 사이트를 죽이지 않도록).
+- **봇에게 내려보내는 HTML은 한 경로로만 만든다**: `worker/meta.ts`의 `buildMetaTags(PageMeta)` → `worker/html.ts`의 `injectHead(indexHtml, metaHtml)`. 사용자 입력(캐릭터 이름·소개·닉네임·bio)은 예외 없이 `escapeHtml`을 **정확히 한 번** 통과한다 — 텍스트/속성 컨텍스트를 분기하지 말 것(분기가 곧 누락 지점이고, 두 번 적용하면 `&`가 `&amp;amp;`로 이중 이스케이프된다). `injectHead`는 **주입하는 태그와 같은 키(title·name:*·property:*·canonical)의 기존 태그를 지운 뒤** `</head>` 앞에 넣으므로, index.html에 박아 둔 홈 기본 og와 상세 페이지 주입이 중복되지 않는다(크롤러 대부분이 중복 og 속성에서 앞의 것을 쓴다). JSON-LD는 `buildJsonLd`로만 만든다(`<`를 전부 이스케이프해 `</script>` 탈출을 막는다).
+- **봇 판별은 `worker/crawler.ts`의 `isCrawler(userAgent)`** — UA 토큰 목록 `includes` 검사다. 크롤러를 추가할 일이 생기면 이 목록 한 곳만 고친다.
 - **브라우저 검증은 vite dev가 아니라** `pnpm --filter @ai-character-chat/web build && pnpm --filter @ai-character-chat/web dev:worker`(= `wrangler pages dev dist`) — Worker는 빌드 산출물이라 vite dev 서버에는 없다. 로컬 API(:8000)의 `CORS_ALLOW_ORIGINS`가 `localhost:5173`/`5174`뿐이므로 `--port 5174`로 띄우고, 그 빌드는 `VITE_API_BASE_URL=http://localhost:8000`으로 만든다.
 
 ## 데이터 / 상태
