@@ -278,7 +278,8 @@ curl -s -A "Googlebot/2.1" $ORIGIN/content/character/<id> | grep -o "<title>.*</
    - **봇 요청에서도 이 태그는 살아남는다** — `injectHead`(`worker/html.ts`)는 자기가 주입하는 키(title·description·og:*·canonical·robots)와 같은 키의 태그만 지우고 `name:google-site-verification`은 건드리지 않는다. 확인용 fetch는 `Google-Site-Verification` UA라 애초에 봇 분기에도 안 걸린다.
    - HTML 파일 업로드 방식을 쓰려면 파일을 `apps/web/public/`에 커밋해야 한다(확장자가 있어 정적 자산으로 나간다). 태그 쪽이 파일을 안 남겨 더 낫다.
 3. **sitemap 제출** — 색인 생성 → Sitemaps → `sitemap.xml` 입력 후 제출
-4. **URL 검사로 캐릭터 페이지 1개 색인 요청** — 캐릭터 상세 URL(`/content/character/{id}`) 하나를 URL 검사 → "색인 생성 요청". 전체 크롤을 기다리지 말고, **테스트한 페이지 보기 → HTML**에서 `<title>`에 캐릭터 이름이 들어갔는지 눈으로 확인한다(주입이 실제로 구글에 보이는지 확인하는 가장 빠른 방법).
+4. **URL 검사로 캐릭터 페이지 1개 색인 요청** — 캐릭터 상세 URL(`/content/character/{id}`) 하나를 URL 검사 → **게재된 URL 테스트** → **테스트한 페이지 보기 → HTML**에서 `<title>`에 캐릭터 이름이 들어갔는지 확인한 뒤 "색인 생성 요청". 순서가 중요하다 — "색인 생성 요청"은 구글이 이미 가진 버전을 쓰고, 라이브 HTML을 새로 가져오는 건 "게재된 URL 테스트"뿐이다.
+   - **이 라이브 테스트는 `Googlebot`이 아니라 `Google-InspectionTool` UA로 온다**(리치 결과 테스트도 같다). `worker/crawler.ts`의 토큰 목록에 `google-inspectiontool`이 들어 있어야 주입된 HTML이 보인다 — 빠뜨리면 **실제 색인은 멀쩡한데 확인 도구에서만 주입 전 HTML이 보여** 기능이 고장난 것처럼 읽힌다(2026-08-20에 실제로 겪음).
 
 ### 8-3. 네이버 서치어드바이저
 

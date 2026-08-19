@@ -6,6 +6,9 @@ import { isCrawler } from "./crawler";
 const CRAWLER_USER_AGENTS = {
   googlebot:
     "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+  /** 서치콘솔 `게재된 URL 테스트`·리치 결과 테스트. UA에 googlebot이 없어 따로 잡아야 한다. */
+  googleInspectionTool:
+    "Mozilla/5.0 (Linux; Android 6.0.1; Nexus 5X Build/MMB29P) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36 (compatible; Google-InspectionTool/1.0;)",
   yeti: "Mozilla/5.0 (compatible; Yeti/1.1; +http://naver.me/spd)",
   kakaotalk:
     "Mozilla/5.0 (compatible; kakaotalk-scrap/1.0; +https://devtalk.kakao.com/tags/scrap)",

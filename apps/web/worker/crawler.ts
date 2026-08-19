@@ -4,9 +4,14 @@
  *
  * 앞쪽은 검색엔진(구글·빙·네이버 Yeti·다음·덕덕고·애플·얀덱스),
  * 뒤쪽은 링크 미리보기를 긁는 SNS·메신저 크롤러다.
+ *
+ * `google-inspectiontool`은 색인용 크롤러가 아니라 **서치콘솔의 `게재된 URL 테스트`와
+ * 리치 결과 테스트**가 쓰는 별도 UA다. UA에 `googlebot`이 들어 있지 않아 이게 없으면
+ * 실제 색인은 정상인데 확인 도구에서만 주입 전 HTML이 보인다(2026-08-20 프로덕션에서 관측).
  */
 const CRAWLER_USER_AGENT_TOKENS = [
   "googlebot",
+  "google-inspectiontool",
   "bingbot",
   "yeti",
   "daum",
