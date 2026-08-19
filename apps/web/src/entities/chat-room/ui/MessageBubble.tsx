@@ -125,10 +125,17 @@ export function MessageBubble({
       {message.imageUrl && (
         // US-073/US-014 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). 다만 그 비율을
         // 미리 알 수 없어 이미지가 도착한 뒤에야 높이가 정해지면 읽던 대화가 아래로 밀린다(CLS) →
-        // ContentCard의 썸네일 웰과 같은 고정 비율 자리(`aspect-square bg-muted`)를 먼저 깔고
-        // 그 안에서 `object-contain`으로 축소한다. `max-w-80`은 기존 `max-h-80`이 만들던
-        // 최대 크기를 그대로 옮긴 값이다.
-        <div className="aspect-square w-3/4 max-w-80 overflow-hidden rounded-lg bg-muted">
+        // 고정 비율 자리를 먼저 깔고 그 안에서 `object-contain`으로 맞춘다.
+        //
+        // 비율이 정사각이 아니라 3:4인 이유: 이 자리에 실제로 오는 상황별 이미지는 세로가 길다
+        // (시드·생성물 모두 768x1024). 정사각 웰이면 세로 이미지의 높이가 칼럼 폭에 묶여
+        // 모바일(343px 칼럼)에서 240x320 -> 193x257로 면적이 65%까지 줄었다(실측).
+        //
+        // 폭이 아니라 높이(`h-80`)를 고정한 이유: 폭을 고정하면 칼럼 너비에 따라 웰의 실제 비율이
+        // 흔들려 레터박스가 생긴다. 높이를 기존 상한(max-h-80)과 같은 값으로 못박으면 3:4 웰의
+        // 폭이 240px로 확정돼, 어느 폭에서든 기존과 정확히 같은 240x320이 되고 레터박스도 없다.
+        // `max-w-[75%]`는 칼럼이 320px보다 좁을 때만 걸리는 안전장치(기존 제약과 동일).
+        <div className="aspect-[3/4] h-80 max-w-[75%] overflow-hidden rounded-lg bg-muted">
           <img
             src={message.imageUrl}
             alt="대화 중 노출된 이미지"
