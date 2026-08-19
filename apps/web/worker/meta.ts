@@ -1,5 +1,8 @@
 import { escapeHtml } from "./html";
 
+/** 브랜드명. 한글이 정식 표기다(로마자 ddona는 도메인·식별자에만 쓴다). */
+export const SITE_NAME = "또나";
+
 /**
  * <head>에 넣을 메타. 전부 선택이다 — 상세 페이지는 전 항목을 채우지만
  * 홈은 index.html에 이미 박혀 있는 것 말고 canonical·og:url만 주입한다(US-009).
@@ -57,4 +60,22 @@ export function buildMetaTags(meta: PageMeta): string {
   ];
 
   return tags.filter((tag) => tag !== null).join("\n");
+}
+
+/**
+ * description 최대 길이. 구글은 픽셀 폭으로 자르지만 카카오·페이스북 미리보기는
+ * 문자 수로 자른다 — 어차피 잘릴 뒤쪽을 통째로 실어 보내지 않는다.
+ */
+const DESCRIPTION_MAX_LENGTH = 160;
+
+/**
+ * 사용자 입력을 description 값으로 다듬는다. 줄바꿈을 공백으로 눕히고 160자로 자른다.
+ * 남는 게 없으면 `undefined`를 줘서 빈 description 태그를 만들지 않게 한다.
+ */
+export function toMetaDescription(source: string): string | undefined {
+  const text = source.replace(/\s+/g, " ").trim();
+
+  if (text === "") return undefined;
+  if (text.length <= DESCRIPTION_MAX_LENGTH) return text;
+  return `${text.slice(0, DESCRIPTION_MAX_LENGTH - 1).trimEnd()}…`;
 }

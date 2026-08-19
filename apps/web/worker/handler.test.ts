@@ -184,6 +184,57 @@ describe("handleRequest", () => {
     expect(requestedUrls).toEqual([`https://api.example.com/contents/${id}`]);
   });
 
+  it("봇 UA의 프로필은 프로필 API를 거쳐 메타를 주입한다", async () => {
+    const id = "11111111-2222-4333-8444-555555555555";
+    const requestedUrls: string[] = [];
+    vi.stubGlobal("fetch", (input: string | URL | Request) => {
+      requestedUrls.push(String(input));
+      return Promise.resolve(
+        new Response(JSON.stringify({ nickname: "달빛작가", bio: null }), {
+          headers: { "content-type": "application/json" },
+        }),
+      );
+    });
+    const env = createEnv();
+
+    const response = await handleRequest(
+      new Request(`https://ddona.example/profile/${id}`, {
+        headers: { "user-agent": "facebookexternalhit/1.1" },
+      }),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(response.status).toBe(200);
+    expect(requestedUrls).toEqual([
+      `https://api.example.com/users/${id}/profile`,
+    ]);
+  });
+
+  it("일반 브라우저 UA는 프로필에서도 API를 부르지 않는다", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const env = createEnv();
+
+    const response = await handleRequest(
+      new Request(
+        "https://ddona.example/profile/11111111-2222-4333-8444-555555555555",
+        {
+          headers: {
+            "user-agent":
+              "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36",
+          },
+        },
+      ),
+      env,
+      { cache: noopCache },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("/index.html");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it("일반 브라우저 UA는 같은 URL에서 API를 부르지 않는다", async () => {
     const id = "11111111-2222-4333-8444-555555555555";
     const fetchMock = vi.fn();

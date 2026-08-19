@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildMetaTags } from "./meta";
+import { buildMetaTags, toMetaDescription } from "./meta";
 
 describe("buildMetaTags", () => {
   it("상세 페이지 한 벌을 만든다", () => {
@@ -74,5 +74,20 @@ describe("buildMetaTags", () => {
     expect(buildMetaTags({ robots: "noindex" })).toBe(
       '<meta name="robots" content="noindex" />',
     );
+  });
+});
+
+describe("toMetaDescription", () => {
+  it("줄바꿈과 연속 공백을 한 칸으로 눕힌다", () => {
+    expect(toMetaDescription(" 첫 줄\n\n둘째  줄 ")).toBe("첫 줄 둘째 줄");
+  });
+
+  it("남는 게 없으면 undefined다 — 빈 description 태그를 만들지 않는다", () => {
+    expect(toMetaDescription("   \n ")).toBeUndefined();
+  });
+
+  it("160자를 넘으면 159자 + 말줄임표로 자른다", () => {
+    expect(toMetaDescription("가".repeat(300))).toBe(`${"가".repeat(159)}…`);
+    expect(toMetaDescription("가".repeat(160))).toBe("가".repeat(160));
   });
 });

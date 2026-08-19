@@ -3,6 +3,7 @@ import { handleContentMeta, parseContentPath } from "./content-meta";
 import { isCrawler } from "./crawler";
 import { applyIndexingPolicy } from "./indexing";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./og-image";
+import { handleProfileMeta, parseProfilePath } from "./profile-meta";
 import { handleRobots } from "./robots";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./types";
@@ -70,6 +71,9 @@ async function routeRequest(
   if (isCrawler(request.headers.get("user-agent"))) {
     const contentId = parseContentPath(url.pathname);
     if (contentId !== null) return handleContentMeta(request, env, contentId);
+
+    const userId = parseProfilePath(url.pathname);
+    if (userId !== null) return handleProfileMeta(request, env, userId);
   }
 
   return serveAppShell(request, env);

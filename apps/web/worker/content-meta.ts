@@ -1,12 +1,9 @@
 import { fetchApiJson, isRecord, isUuid, isViewableByCrawler } from "./api";
 import { readAppShellHtml, serveAppShell } from "./app-shell";
 import { buildJsonLd, injectHead } from "./html";
-import { buildMetaTags } from "./meta";
+import { buildMetaTags, SITE_NAME, toMetaDescription } from "./meta";
 import { resolvePublicOrigin } from "./origin";
 import type { WorkerEnv } from "./types";
-
-/** 브랜드명. 한글이 정식 표기다(로마자 ddona는 도메인·식별자에만 쓴다). */
-const SITE_NAME = "또나";
 
 /**
  * `/content/{type}/{id}`. `{type}`은 URL 가독성용 세그먼트일 뿐 조회에 쓰이지 않으므로
@@ -14,12 +11,6 @@ const SITE_NAME = "또나";
  * canonical은 응답의 type으로 만들어 `/content/story/{캐릭터id}` 같은 주소를 한 곳으로 모은다.
  */
 const CONTENT_PATH = /^\/content\/[^/]+\/([^/]+)$/;
-
-/**
- * description 최대 길이. 구글은 픽셀 폭으로 자르지만 카카오·페이스북 미리보기는
- * 문자 수로 자른다 — 어차피 잘릴 뒤쪽을 통째로 실어 보내지 않는다.
- */
-const DESCRIPTION_MAX_LENGTH = 160;
 
 /** 경로 → 콘텐츠 id. 콘텐츠 상세 경로가 아니면 `null`. 순수 함수다. */
 export function parseContentPath(pathname: string): string | null {
@@ -40,17 +31,13 @@ export interface ContentMetaSource {
   creatorNickname: string;
 }
 
-/** 한 줄 소개 우선, 없으면 상세 설명 앞부분. 줄바꿈은 공백으로 눕힌다. */
+/** 한 줄 소개 우선, 없으면 상세 설명 앞부분. */
 function toDescription(content: ContentMetaSource): string | undefined {
-  const source =
+  return toMetaDescription(
     content.oneLiner.trim() === ""
       ? content.detailDescription
-      : content.oneLiner;
-  const text = source.replace(/\s+/g, " ").trim();
-
-  if (text === "") return undefined;
-  if (text.length <= DESCRIPTION_MAX_LENGTH) return text;
-  return `${text.slice(0, DESCRIPTION_MAX_LENGTH - 1).trimEnd()}…`;
+      : content.oneLiner,
+  );
 }
 
 /**
