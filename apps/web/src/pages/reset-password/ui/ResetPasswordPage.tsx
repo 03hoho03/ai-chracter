@@ -12,10 +12,6 @@ export function ResetPasswordPage({ token, isTokenValid }: ResetPasswordPageProp
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center gap-1 text-center">
-          <span className="text-sm font-semibold text-primary">AI 캐릭터 챗</span>
-        </div>
-
         <div className="rounded-xl border border-border bg-card p-8">
           {isTokenValid ? (
             <>
