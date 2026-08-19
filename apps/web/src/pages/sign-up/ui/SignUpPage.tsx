@@ -25,10 +25,6 @@ export function SignUpPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
-        <div className="mb-6 flex flex-col items-center gap-1 text-center">
-          <span className="text-sm font-semibold text-primary">AI 캐릭터 챗</span>
-        </div>
-
         <div className="rounded-xl border border-border bg-card p-8">
           <div className="mb-6 flex flex-col gap-1">
             <h1 className="text-xl font-semibold tracking-tight text-foreground">{title}</h1>
