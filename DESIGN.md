@@ -1,5 +1,5 @@
 ---
-name: AI 캐릭터 챗 서비스
+name: 또나
 description: 내가 만든 AI 캐릭터·스토리로 롤플레이 대화를 나누는 오픈 플랫폼
 colors:
   background: "oklch(0.160 0.000 0)"
@@ -122,7 +122,7 @@ components:
     padding: "24px"
 ---
 
-# Design System: AI 캐릭터 챗 서비스
+# Design System: 또나
 
 ## 1. Overview
 
