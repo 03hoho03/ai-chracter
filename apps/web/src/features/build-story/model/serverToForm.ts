@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import type { StoryDraftContent } from "@/entities/content";
+
 import type {
   EndingValues,
   KeywordNoteValues,
@@ -10,7 +12,6 @@ import type {
   StoryBuilderFormValues,
 } from "./schema";
 
-type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
 type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
@@ -111,8 +112,11 @@ function fromApiStartingSetup(setup: StartingSetupDraftItem): StartingSetupValue
  *
  * endings(US-095)가 startingSetups의 마지막 남은 필드였다 — 이제 전체 `StoryDraftResponse`를 그대로
  * 받으므로 US-092~094가 쓰던 `Pick<...>` 좁히기가 더 필요 없다(`formToServer.ts`와 대칭).
+ *
+ * 받는 타입이 `StoryDraftResponse`가 아니라 id를 뺀 `StoryDraftContent`인 이유는 US-007이다 — 아직
+ * 서버에 없는 초안(`createEmptyDraft`)도 같은 함수로 폼 초기값을 만든다.
  */
-export function serverToForm(data: StoryDraftResponse): StoryBuilderFormValues {
+export function serverToForm(data: StoryDraftContent): StoryBuilderFormValues {
   return {
     profile: {
       name: data.name,

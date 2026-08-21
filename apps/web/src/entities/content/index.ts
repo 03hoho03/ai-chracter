@@ -24,6 +24,12 @@ export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
 export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
+export { createEmptyDraft } from "./model/emptyDraft";
+export type {
+  CharacterDraftContent,
+  ContentDraftContent,
+  StoryDraftContent,
+} from "./model/emptyDraft";
 export {
   canAccessExistingRoom,
   canDiscoverPublicly,

@@ -4,6 +4,8 @@ import type { LucideIcon } from "lucide-react";
 
 import type { ContentType } from "@/entities/content";
 
+import { NEW_DRAFT_SEGMENT } from "../config/newDraftSegment";
+
 type BuilderTypeOption = {
   type: ContentType;
   label: string;
@@ -61,8 +63,8 @@ export function BuilderTypeSelectPage() {
 function BuilderTypeCard({ option }: { option: BuilderTypeOption }) {
   return (
     <Link
-      to="/builder/$type/new"
-      params={{ type: option.type }}
+      to="/builder/$type/$draftId"
+      params={{ type: option.type, draftId: NEW_DRAFT_SEGMENT }}
       className="flex items-start gap-3 rounded-xl border border-border bg-background p-4 outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
     >
       <option.Icon aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
