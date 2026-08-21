@@ -22,14 +22,20 @@ class DraftSummary(CamelModel):
 
 
 class ContentSummary(CamelModel):
+    """`updated_at` is the current published version's `published_at`, not `Content.updated_at`
+    (that column has no `onupdate`, so it never moves off the creation time)."""
+
     id: uuid.UUID
     type: ContentType
     name: str
     thumbnail_asset_id: uuid.UUID
     thumbnail_url: str | None
     view_count: int
+    chat_count: int
+    like_count: int
     visibility: ContentVisibility
     moderation_status: ModerationStatus
+    updated_at: datetime
 
 
 class UserProfileResponse(CamelModel):

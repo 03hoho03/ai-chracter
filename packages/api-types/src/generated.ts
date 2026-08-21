@@ -1876,7 +1876,11 @@ export interface components {
             /** Versionnumber */
             versionNumber: number;
         };
-        /** ContentSummary */
+        /**
+         * ContentSummary
+         * @description `updated_at` is the current published version's `published_at`, not `Content.updated_at`
+         *     (that column has no `onupdate`, so it never moves off the creation time).
+         */
         ContentSummary: {
             /**
              * Id
@@ -1895,8 +1899,17 @@ export interface components {
             thumbnailUrl: string | null;
             /** Viewcount */
             viewCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /** Likecount */
+            likeCount: number;
             visibility: components["schemas"]["ContentVisibility"];
             moderationStatus: components["schemas"]["ModerationStatus"];
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /**
          * ContentTarget

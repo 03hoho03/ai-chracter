@@ -4680,11 +4680,24 @@
             "type": "integer",
             "title": "Viewcount"
           },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
           },
           "moderationStatus": {
             "$ref": "#/components/schemas/ModerationStatus"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
           }
         },
         "type": "object",
@@ -4695,10 +4708,14 @@
           "thumbnailAssetId",
           "thumbnailUrl",
           "viewCount",
+          "chatCount",
+          "likeCount",
           "visibility",
-          "moderationStatus"
+          "moderationStatus",
+          "updatedAt"
         ],
-        "title": "ContentSummary"
+        "title": "ContentSummary",
+        "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time)."
       },
       "ContentTarget": {
         "type": "string",

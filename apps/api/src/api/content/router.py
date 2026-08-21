@@ -360,10 +360,10 @@ async def list_user_contents(
 ) -> list[ContentSummary]:
     is_owner = viewer_user_id is not None and viewer_user_id == id
 
-    query = select(Content).where(
-        Content.creator_user_id == id,
-        Content.type == type,
-        Content.current_published_version_id.is_not(None),
+    query = (
+        select(Content, ContentVersion)
+        .join(ContentVersion, ContentVersion.id == Content.current_published_version_id)
+        .where(Content.creator_user_id == id, Content.type == type)
     )
     if is_owner:
         effective_visibility = visibility or "all"
@@ -380,15 +380,14 @@ async def list_user_contents(
             Content.moderation_status == ModerationStatus.NORMAL,
         )
 
-    contents = (await db.scalars(query)).all()
-    if not contents:
+    # Deterministic order: newest publish first, id as the tiebreaker.
+    rows = (
+        await db.execute(query.order_by(ContentVersion.published_at.desc(), Content.id.desc()))
+    ).all()
+    if not rows:
         return []
 
-    published_version_ids = [
-        content.current_published_version_id
-        for content in contents
-        if content.current_published_version_id is not None
-    ]
+    published_version_ids = [version.id for _, version in rows]
     if type == ContentType.CHARACTER:
         details: dict[uuid.UUID, CharacterVersionDetail | StoryVersionDetail] = {
             detail.content_version_id: detail
@@ -413,16 +412,14 @@ async def list_user_contents(
         }
 
     summaries: list[ContentSummary] = []
-    for content in contents:
-        version_id = content.current_published_version_id
-        if version_id is None:
-            continue
-        detail = details.get(version_id)
+    for content, version in rows:
+        detail = details.get(version.id)
         if detail is None:
             continue
         # Published content's thumbnail is guaranteed set by publish validation (US-083);
         # only drafts (character.py's CharacterVersionDetail docstring) can have it unset.
         assert detail.thumbnail_asset_id is not None
+        assert version.published_at is not None
         summaries.append(
             ContentSummary(
                 id=content.id,
@@ -431,8 +428,11 @@ async def list_user_contents(
                 thumbnail_asset_id=detail.thumbnail_asset_id,
                 thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
                 view_count=content.view_count,
+                chat_count=content.chat_count,
+                like_count=content.like_count,
                 visibility=content.visibility,
                 moderation_status=content.moderation_status,
+                updated_at=version.published_at,
             )
         )
     return summaries

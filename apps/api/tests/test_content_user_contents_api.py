@@ -61,6 +61,9 @@ async def _make_published_content(
     content_type: ContentType = ContentType.CHARACTER,
     visibility: ContentVisibility = ContentVisibility.PUBLIC,
     moderation_status: ModerationStatus = ModerationStatus.NORMAL,
+    published_at: datetime | None = None,
+    chat_count: int = 0,
+    like_count: int = 0,
     name: str,
 ) -> Content:
     content = Content(
@@ -71,6 +74,8 @@ async def _make_published_content(
         hashtags=[],
         visibility=visibility,
         moderation_status=moderation_status,
+        chat_count=chat_count,
+        like_count=like_count,
     )
     db_session.add(content)
     await db_session.flush()
@@ -78,7 +83,7 @@ async def _make_published_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=published_at or datetime.now(timezone.utc),
         detail_description="설명",
     )
     db_session.add(version)
@@ -357,3 +362,127 @@ async def test_list_user_contents_filters_by_type(
     [item] = resp.json()
     assert item["name"] == "스토리"
     assert item["type"] == "story"
+
+
+async def test_list_user_contents_exposes_updated_at_and_counters(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    published_at = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+    await _make_published_content(
+        db_session,
+        creator_user_id=user.id,
+        genre_id=genre.id,
+        published_at=published_at,
+        chat_count=7,
+        like_count=3,
+        name="지표 캐릭터",
+    )
+    await db_session.commit()
+
+    resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    [item] = resp.json()
+    assert item["chatCount"] == 7
+    assert item["likeCount"] == 3
+    assert datetime.fromisoformat(item["updatedAt"]) == published_at
+
+
+async def test_list_user_contents_updated_at_follows_latest_published_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`Content.updated_at` has no `onupdate`, so the response must not fall back to it."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    republished_at = datetime(2026, 5, 20, 9, 0, tzinfo=timezone.utc)
+    content = await _make_published_content(
+        db_session,
+        creator_user_id=user.id,
+        genre_id=genre.id,
+        published_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+        name="재발행 캐릭터",
+    )
+    second_version = ContentVersion(
+        content_id=content.id, version_number=2, published_at=republished_at, detail_description="설명"
+    )
+    db_session.add(second_version)
+    await db_session.flush()
+    thumbnail = await _make_asset(db_session, user.id)
+    db_session.add(
+        CharacterVersionDetail(
+            content_version_id=second_version.id,
+            name="재발행 캐릭터 v2",
+            one_liner="한줄소개",
+            thumbnail_asset_id=thumbnail.id,
+            intro="인트로",
+            example_dialogues=[],
+            character_prompt="프롬프트",
+        )
+    )
+    await db_session.flush()
+    content.current_published_version_id = second_version.id
+    await db_session.commit()
+
+    resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    [item] = resp.json()
+    assert item["name"] == "재발행 캐릭터 v2"
+    assert datetime.fromisoformat(item["updatedAt"]) == republished_at
+
+
+async def test_list_user_contents_orders_by_published_at_desc(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    # Inserted oldest-published last so insertion order can't be what produces the expected order.
+    for name, published_at in [
+        ("중간", datetime(2026, 2, 1, tzinfo=timezone.utc)),
+        ("최신", datetime(2026, 3, 1, tzinfo=timezone.utc)),
+        ("가장 오래됨", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+    ]:
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=published_at,
+            name=name,
+        )
+    await db_session.commit()
+
+    resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    assert [item["name"] for item in resp.json()] == ["최신", "중간", "가장 오래됨"]
+
+
+async def test_list_user_contents_breaks_published_at_ties_by_id_desc(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    published_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    contents = [
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=published_at,
+            name=f"동시 발행 {index}",
+        )
+        for index in range(3)
+    ]
+    await db_session.commit()
+
+    resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    expected = [str(content.id) for content in sorted(contents, key=lambda c: c.id, reverse=True)]
+    assert [item["id"] for item in resp.json()] == expected
