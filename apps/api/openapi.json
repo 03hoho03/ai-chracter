@@ -1415,6 +1415,41 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Delete Content Draft",
+        "description": "US-003. Deletes a never-published content outright (draft version + content row).\n\nDeletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id\nIS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a\nfresh draft version, so a published work always has a draft row too, and throwing that\naway would delete the published work with it. Discarding *edits* to a published work is\n`POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.",
+        "operationId": "delete_content_draft_contents__id__draft_delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/contents/{id}/publish": {

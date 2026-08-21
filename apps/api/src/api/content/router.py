@@ -1077,6 +1077,77 @@ async def update_content_draft(
     return await _story_draft_response(db, content, version)
 
 
+async def _delete_draft_children(db: AsyncSession, content_type: ContentType, version_id: uuid.UUID) -> None:
+    """Deletes every child row hanging off a draft content_version, children-first with a
+    flush between tiers (same reason as `_delete_ending_subtree`: these FKs have no ON
+    DELETE CASCADE). `keyword_notes` go before `starting_setups` because
+    `keyword_notes.starting_setup_id` is a physical FK, not an entity_id reference
+    (techspec-db-schema.md §1 원칙 4) — `_delete_starting_setup_subtree` doesn't know about
+    them since they're scoped to the version, not the setup."""
+    if content_type == ContentType.CHARACTER:
+        images = (
+            await db.scalars(select(SituationalImage).where(SituationalImage.content_version_id == version_id))
+        ).all()
+        for image in images:
+            await db.delete(image)
+        await db.flush()
+        return
+
+    notes = (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version_id))
+    ).all()
+    for note in notes:
+        await db.delete(note)
+    shortcuts = (
+        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version_id))
+    ).all()
+    for shortcut in shortcuts:
+        await db.delete(shortcut)
+    await db.flush()
+
+    setups = (
+        await db.scalars(select(StartingSetup).where(StartingSetup.content_version_id == version_id))
+    ).all()
+    for setup in setups:
+        await _delete_starting_setup_subtree(db, setup)
+    await db.flush()
+
+
+@router.delete("/contents/{id}/draft", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_content_draft(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """US-003. Deletes a never-published content outright (draft version + content row).
+
+    Deletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id
+    IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
+    fresh draft version, so a published work always has a draft row too, and throwing that
+    away would delete the published work with it. Discarding *edits* to a published work is
+    `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.
+    """
+    content, version = await _get_owned_draft_version(
+        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+    )
+    if content.current_published_version_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Published content cannot be deleted"
+        )
+
+    await _delete_draft_children(db, content.type, version.id)
+
+    detail = await db.get(_detail_model(content.type), version.id)
+    assert detail is not None
+    await db.delete(detail)
+    await db.flush()
+
+    await db.delete(version)
+    await db.flush()
+    await db.delete(content)
+    await db.commit()
+
+
 async def _load_publish_filter_images(
     db: AsyncSession, detail: CharacterVersionDetail, version_id: uuid.UUID
 ) -> list[tuple[bytes, str]]:

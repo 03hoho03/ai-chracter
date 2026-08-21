@@ -574,7 +574,17 @@ export interface paths {
         get: operations["get_content_draft_contents__id__draft_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Content Draft
+         * @description US-003. Deletes a never-published content outright (draft version + content row).
+         *
+         *     Deletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id
+         *     IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
+         *     fresh draft version, so a published work always has a draft row too, and throwing that
+         *     away would delete the published work with it. Discarding *edits* to a published work is
+         *     `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.
+         */
+        delete: operations["delete_content_draft_contents__id__draft_delete"];
         options?: never;
         head?: never;
         /**
@@ -3785,6 +3795,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CharacterDraftResponse"] | components["schemas"]["StoryDraftResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_content_draft_contents__id__draft_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
