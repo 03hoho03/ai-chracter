@@ -4,31 +4,33 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { EyeOff, Flag, MoreHorizontal, Share2 } from "lucide-react";
+import { Flag, MoreHorizontal, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { useReportContentMutation, type ContentVisibility } from "../../../entities/content";
-import { MakeContentPrivateModal } from "../../../features/make-content-private";
-import { ReportContentModal } from "../../../features/report-content";
+import { useReportContentMutation, type ContentVisibility } from "@/entities/content";
+import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
+import { ReportContentModal } from "@/features/report-content";
+
+type ContentActionsMenuProps = {
+  contentId: string;
+  creatorUserId: string;
+  isOwner: boolean;
+  /** 현재 공개범위 — 전환 메뉴에서 이 값과 같은 항목을 빼는 데 쓴다. */
+  visibility: ContentVisibility;
+};
 
 /** techspec-content-detail.md §5, US-018/US-048/US-115 — 공유(클립보드 복사)/신고/(본인 소유일 때)
- * 비공개 전환 진입점인 "⋯" 메뉴. */
+ * 공개범위 전환 진입점인 "⋯" 메뉴. */
 export function ContentActionsMenu({
   contentId,
   creatorUserId,
   isOwner,
   visibility,
-}: {
-  contentId: string;
-  creatorUserId: string;
-  isOwner: boolean;
-  visibility: ContentVisibility;
-}) {
+}: ContentActionsMenuProps) {
   const reportMutation = useReportContentMutation(contentId);
-  // US-115(FR-67) — 완전 삭제 액션은 없고 비공개 전환만 허용되며, 이미 비공개인 항목엔 노출하지 않는다.
-  const canMakePrivate = isOwner && visibility !== "private";
 
   const handleShare = async () => {
     await navigator.clipboard.writeText(window.location.href);
@@ -54,10 +56,6 @@ export function ContentActionsMenu({
     });
   };
 
-  const handleMakePrivate = () => {
-    void MakeContentPrivateModal.call({ contentId, creatorUserId });
-  };
-
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -65,7 +63,9 @@ export function ContentActionsMenu({
           <MoreHorizontal aria-hidden />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end">
+      {/* 메뉴 폭은 프리미티브가 트리거 폭에 고정한다(`w-(--radix-dropdown-menu-trigger-width)`).
+          아이콘 트리거라 128px(min-w-32)에 갇혀 "링크공개로 전환"이 두 줄로 깨지므로 내용에 맞춘다. */}
+      <DropdownMenuContent align="end" className="w-auto">
         <DropdownMenuItem onSelect={() => void handleShare()}>
           <Share2 aria-hidden />
           공유
@@ -74,11 +74,17 @@ export function ContentActionsMenu({
           <Flag aria-hidden />
           신고
         </DropdownMenuItem>
-        {canMakePrivate && (
-          <DropdownMenuItem onSelect={handleMakePrivate}>
-            <EyeOff aria-hidden />
-            비공개 전환
-          </DropdownMenuItem>
+
+        {/* US-005 — 완전 삭제는 여전히 없고(US-115/FR-67) 공개범위 전환만 허용된다. */}
+        {isOwner && (
+          <>
+            <DropdownMenuSeparator />
+            <VisibilityTransitionMenuItems
+              contentId={contentId}
+              creatorUserId={creatorUserId}
+              currentVisibility={visibility}
+            />
+          </>
         )}
       </DropdownMenuContent>
     </DropdownMenu>

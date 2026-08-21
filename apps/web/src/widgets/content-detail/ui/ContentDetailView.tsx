@@ -16,8 +16,9 @@ import {
   useToggleFavoriteMutation,
   useToggleLikeMutation,
   type ContentType,
-} from "../../../entities/content";
-import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
+} from "@/entities/content";
+import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
+
 import { CharacterPlayButton } from "./CharacterPlayButton";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
@@ -156,7 +157,9 @@ export function ContentDetailView({ id }: { id: string }) {
 
   const access = toContentAccessStatus(content.accessStatus);
 
-  if (!canViewDetailPage(access, content.isOwner)) {
+  // `kind` 검사는 `canViewDetailPage`가 이미 포함하지만(restricted/deleted면 false) 그 함수는 타입
+  // 술어가 아니다 — 아래에서 `access.visibility`(전환 메뉴의 "현재 값")를 쓰려면 여기서 좁혀야 한다.
+  if (access.kind !== "accessible" || !canViewDetailPage(access, content.isOwner)) {
     return <ContentUnavailableState access={access} />;
   }
 
@@ -192,7 +195,7 @@ export function ContentDetailView({ id }: { id: string }) {
             contentId={content.id}
             creatorUserId={content.creatorUserId}
             isOwner={content.isOwner}
-            visibility={access.kind === "accessible" ? access.visibility : "private"}
+            visibility={access.visibility}
           />
         </div>
 

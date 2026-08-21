@@ -95,7 +95,7 @@
 
 - **react-call 모달 2계열**: 성공 후 동작이 호출부마다 갈리면 `mutationFn` **주입형**(`ReportContentModal` — 컴포넌트는 입력 UI만), 항상 같으면 **자체 mutation 호출형**(`UpdateInfoModal`/`AppealModal`). 입력 없는 확인/취소는 공용 모달(`ConfirmChatRoomActionModal`) 재사용. Callable은 `routes/__root.tsx`에 1회 마운트, `open={!call.ended}` + `onOpenChange={(o) => !o && call.end()}`.
 - **인라인 편집 우선**: 리스트 항목 하나를 즉석 수정하는 액션은 모달 대신 항목 컴포넌트의 `isEditing` 로컬 state로 표시/편집 모드 스위칭(편집 대상 id는 호출부 단일 state).
-- **클릭 카드**: 카드 전체가 클릭 영역인데 안에 다른 동작의 클릭 요소를 넣어야 하면 바깥을 `role="button"` `div`(`tabIndex=0` + Enter/Space `onKeyDown`)로 바꾼다(`<button>` 중첩은 무효 HTML). 공용 `entities/content/ui/ContentCard`가 이 패턴.
+- **클릭 카드**: 카드 전체가 클릭 영역인데 안에 다른 동작의 클릭 요소를 넣어야 하면 바깥을 `role="button"` `div`(`tabIndex=0` + Enter/Space `onKeyDown`)로 바꾼다(`<button>` 중첩은 무효 HTML). 공용 `entities/content/ui/ContentCard`가 이 패턴. **그 안에 Radix 메뉴(Dropdown 등)를 넣으면 트리거와 `DropdownMenuContent` 양쪽에서 `onClick`과 `onKeyDown`을 모두 `stopPropagation` 해야 한다** — 메뉴 콘텐츠는 body로 포털되지만 React 합성 이벤트는 컴포넌트 트리를 그대로 타고 올라오고, 항목을 **키보드로** 고를 때의 Enter는 click이 아니라 keydown으로 카드의 `onKeyDown`에 닿는다(막지 않으면 확인 모달과 카드의 상세 모달이 동시에 열린다 — 실측). click만 막고 끝내지 말 것.
 - **자동완성 드롭다운**: `packages/ui`에 Popover/Command 없이 `relative` 래퍼 + 조건부 `absolute` div로 충분(배경은 `bg-popover ... ring-1 ring-foreground/10` 재사용). 스크롤 컨테이너 **안**이면 `fixed`/포털 필요.
 - **클릭 칩**: 새 컴포넌트 대신 `Button` `variant="secondary" size="sm" className="rounded-full"`(hover/focus/disabled 공짜). 비클릭 뱃지와 혼동 금지.
 - **자기완결 위젯**: 트리거 + Sheet/Dropdown 콘텐츠를 위젯이 통째로 소유(열림 atom도 위젯 내부), 호출부는 컴포넌트 하나만 배치.

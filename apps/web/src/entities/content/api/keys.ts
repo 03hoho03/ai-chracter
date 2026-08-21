@@ -15,7 +15,7 @@ export const contentKeys = {
   all: ["content"] as const,
   list: (userId: string, type: ContentType, visibility?: VisibilityFilter) =>
     [...contentKeys.all, "list", userId, type, visibility ?? "all"] as const,
-  /** US-115 — 비공개 전환 성공 시 유형/공개여부 필터와 무관하게 그 작가의 모든 목록 쿼리를
+  /** US-115 — 공개범위 전환 성공 시 유형/공개여부 필터와 무관하게 그 작가의 모든 목록 쿼리를
    * 무효화하기 위한 공통 접두사(TanStack Query는 배열 접두사로 부분 매칭한다). */
   listByUser: (userId: string) => [...contentKeys.all, "list", userId] as const,
   detail: (id: string) => [...contentKeys.all, "detail", id] as const,

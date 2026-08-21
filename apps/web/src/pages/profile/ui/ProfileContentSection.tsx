@@ -1,7 +1,12 @@
 import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "@ai-character-chat/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { BookOpen, ImageOff, UserRound } from "lucide-react";
+import { BookOpen, ImageOff, MoreHorizontal, UserRound } from "lucide-react";
 
 import {
   resolveAccessStatus,
@@ -9,9 +14,9 @@ import {
   type ContentSummary,
   type ContentType,
   type VisibilityFilter,
-} from "../../../entities/content";
-import { MakeContentPrivateModal } from "../../../features/make-content-private";
-import { useContentDetailModal } from "../../../shared/lib/content-detail-modal/useContentDetailModal";
+} from "@/entities/content";
+import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
+import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
@@ -39,13 +44,7 @@ function ContentTypeIcon({ type }: { type: ContentType }) {
   );
 }
 
-function ContentCard({
-  content,
-  isOwner,
-  ownerUserId,
-  priority = false,
-  isLcpCandidate = false,
-}: {
+type ContentCardProps = {
   content: ContentSummary;
   isOwner: boolean;
   ownerUserId: string;
@@ -55,13 +54,19 @@ function ContentCard({
   priority?: boolean;
   /** LCP 후보 1장(`index === 0`)에만 준다. */
   isLcpCandidate?: boolean;
-}) {
+};
+
+function ContentCard({
+  content,
+  isOwner,
+  ownerUserId,
+  priority = false,
+  isLcpCandidate = false,
+}: ContentCardProps) {
   // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 태그는
   // content.visibility를 그대로 쓴다(restricted 케이스도 두 태그가 함께 노출돼야 하므로).
   const access = resolveAccessStatus(content.visibility, content.moderationStatus);
   const { open } = useContentDetailModal();
-  // US-115(FR-67) — 완전 삭제 액션은 없고 비공개 전환만 허용되며, 이미 비공개인 항목엔 노출하지 않는다.
-  const canMakePrivate = isOwner && content.visibility !== "private";
 
   return (
     <div
@@ -93,7 +98,44 @@ function ContentCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <p className="truncate text-sm font-semibold text-foreground">{content.name}</p>
+        <div className="flex items-center gap-1">
+          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{content.name}</p>
+          {/* US-005 — 카드 전체가 상세 모달을 여는 클릭/키 영역이라 트리거와 메뉴 콘텐츠 **양쪽에서**
+              click과 keydown을 모두 끊는다. Radix 콘텐츠는 body로 포털되지만 React 이벤트는 컴포넌트
+              트리를 타고 올라오고, 메뉴 항목을 키보드로 고를 때의 Enter는 click이 아니라 keydown으로
+              카드에 닿아 확인 모달과 상세 모달이 동시에 열린다(실측). 그리드에 같은 "⋯"가 여러 개
+              놓이므로 aria-label에 작품 이름을 넣는다. */}
+          {isOwner && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={`${content.name} 공개범위 변경`}
+                  onClick={(event) => event.stopPropagation()}
+                  onKeyDown={(event) => event.stopPropagation()}
+                >
+                  <MoreHorizontal aria-hidden />
+                </Button>
+              </DropdownMenuTrigger>
+              {/* 폭을 내용에 맞춘다 — 프리미티브가 트리거 폭(아이콘 32px → min-w-32)에 고정해
+                  "링크공개로 전환"이 두 줄로 깨진다. */}
+              <DropdownMenuContent
+                align="end"
+                className="w-auto"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => event.stopPropagation()}
+              >
+                <VisibilityTransitionMenuItems
+                  contentId={content.id}
+                  creatorUserId={ownerUserId}
+                  currentVisibility={content.visibility}
+                />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
         <p className="text-xs text-muted-foreground">조회수 {content.viewCount.toLocaleString()}</p>
 
         <div className="flex flex-wrap gap-1.5">
@@ -114,25 +156,17 @@ function ContentCard({
             </span>
           )}
         </div>
-
-        {canMakePrivate && (
-          <Button
-            type="button"
-            variant="outline"
-            size="xs"
-            className="w-fit"
-            onClick={(event) => {
-              event.stopPropagation();
-              void MakeContentPrivateModal.call({ contentId: content.id, creatorUserId: ownerUserId });
-            }}
-          >
-            비공개 전환
-          </Button>
-        )}
       </div>
     </div>
   );
 }
+
+type ProfileContentSectionProps = {
+  userId: string;
+  isOwner: boolean;
+  contentType: ContentType;
+  onContentTypeChange: (type: ContentType) => void;
+};
 
 /** techspec-global-nav-profile.md §3.2 — [스토리]/[캐릭터] 유형 토글(부모가 URL search param과
  * 동기화)과, 본인 조회일 때만 노출되는 공개여부 필터(로컬 상태, 기본값 "전체")를 함께 렌더링한다. */
@@ -141,12 +175,7 @@ export function ProfileContentSection({
   isOwner,
   contentType,
   onContentTypeChange,
-}: {
-  userId: string;
-  isOwner: boolean;
-  contentType: ContentType;
-  onContentTypeChange: (type: ContentType) => void;
-}) {
+}: ProfileContentSectionProps) {
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
 
   const contentListQuery = useProfileContentListQuery({

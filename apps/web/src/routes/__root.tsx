@@ -3,11 +3,11 @@ import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { ContentDetailModalOutlet } from "../widgets/content-detail";
 import { Header } from "../widgets/header";
+import { ChangeContentVisibilityModal } from "../features/change-content-visibility";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "../features/change-starting-setup";
 import { EndingCollectionModal } from "../features/ending-collection";
 import { ImageArchiveModal } from "../features/image-archive";
 import { ConfirmChatRoomActionModal } from "../features/manage-chat-room";
-import { MakeContentPrivateModal } from "../features/make-content-private";
 import { PlayGuideModal } from "../features/play-guide";
 import { ReportContentModal } from "../features/report-content";
 import { GeneratedImagePickerModal } from "../features/select-generated-image";
@@ -38,7 +38,7 @@ function RootComponent() {
       <ConfirmStartingSetupChangeModal />
       <GeneratedImagePickerModal />
       <AppealModal />
-      <MakeContentPrivateModal />
+      <ChangeContentVisibilityModal />
     </>
   );
 }
