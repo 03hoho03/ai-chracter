@@ -1148,6 +1148,79 @@ async def delete_content_draft(
     await db.commit()
 
 
+async def _restore_draft_detail(
+    db: AsyncSession, content_type: ContentType, published_version_id: uuid.UUID, draft_version_id: uuid.UUID
+) -> None:
+    """Overwrites the draft's `*_version_details` row in place from the published one.
+
+    In place, not delete-and-reinsert: `content_version_id` is the table's primary key, so
+    the draft row has to keep existing for `PATCH /contents/{id}/draft` to keep working."""
+    if content_type == ContentType.CHARACTER:
+        published_character = await db.get(CharacterVersionDetail, published_version_id)
+        draft_character = await db.get(CharacterVersionDetail, draft_version_id)
+        assert published_character is not None and draft_character is not None
+        draft_character.name = published_character.name
+        draft_character.one_liner = published_character.one_liner
+        draft_character.thumbnail_asset_id = published_character.thumbnail_asset_id
+        draft_character.intro = published_character.intro
+        draft_character.example_dialogues = published_character.example_dialogues
+        draft_character.character_prompt = published_character.character_prompt
+        draft_character.playguide = published_character.playguide
+        return
+
+    published_story = await db.get(StoryVersionDetail, published_version_id)
+    draft_story = await db.get(StoryVersionDetail, draft_version_id)
+    assert published_story is not None and draft_story is not None
+    draft_story.name = published_story.name
+    draft_story.one_liner = published_story.one_liner
+    draft_story.thumbnail_asset_id = published_story.thumbnail_asset_id
+    draft_story.prompt_template = published_story.prompt_template
+    draft_story.setting_text = published_story.setting_text
+    draft_story.development_example = published_story.development_example
+    draft_story.custom_prompt = published_story.custom_prompt
+
+
+@router.post("/contents/{id}/draft/reset", status_code=status.HTTP_204_NO_CONTENT)
+async def reset_content_draft(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with
+    the current published version's content. The published version itself is untouched.
+
+    Deliberately not a delete: publishing auto-clones a draft version, and that clone is the
+    row `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.
+    `DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.
+
+    No dirty check — resetting a draft that already matches the published version succeeds
+    and simply rewrites identical rows.
+    """
+    content, draft_version = await _get_owned_draft_version(
+        db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
+    )
+    if content.current_published_version_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Content has no published version to reset to",
+        )
+
+    published_version = await db.get(ContentVersion, content.current_published_version_id)
+    assert published_version is not None
+
+    await _delete_draft_children(db, content.type, draft_version.id)
+
+    draft_version.detail_description = published_version.detail_description
+    await _restore_draft_detail(db, content.type, published_version.id, draft_version.id)
+
+    if content.type == ContentType.CHARACTER:
+        await _clone_character_children(db, published_version.id, draft_version.id)
+    else:
+        await _clone_story_children(db, published_version.id, draft_version.id)
+
+    await db.commit()
+
+
 async def _load_publish_filter_images(
     db: AsyncSession, detail: CharacterVersionDetail, version_id: uuid.UUID
 ) -> list[tuple[bytes, str]]:
@@ -1195,6 +1268,34 @@ async def publish_content(
     return await _publish_story_content(db, content, version, llm_client)
 
 
+async def _clone_character_children(
+    db: AsyncSession, src_version_id: uuid.UUID, dst_version_id: uuid.UUID
+) -> None:
+    """Copies a character version's child rows onto another version, `entity_id` and all.
+
+    Runs in both directions: publish clones draft -> the fresh draft it opens for the next
+    edit, 편집 취소(`reset_content_draft`, US-004) clones the published version -> the draft.
+    `entity_id` must survive the copy — `character_image_exposures` joins on it, so a
+    regenerated id would silently re-blur images the reader already unlocked
+    (techspec-db-schema.md §1 원칙 4)."""
+    images = (
+        await db.scalars(
+            select(SituationalImage).where(SituationalImage.content_version_id == src_version_id)
+        )
+    ).all()
+    for image in images:
+        db.add(
+            SituationalImage(
+                entity_id=image.entity_id,
+                content_version_id=dst_version_id,
+                image_asset_id=image.image_asset_id,
+                blurred_asset_id=image.blurred_asset_id,
+                trigger_condition=image.trigger_condition,
+                order=image.order,
+            )
+        )
+
+
 async def _publish_character_content(
     db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
 ) -> ContentPublishResponse:
@@ -1225,12 +1326,6 @@ async def _publish_character_content(
             detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
         )
 
-    situational_images = (
-        await db.scalars(
-            select(SituationalImage).where(SituationalImage.content_version_id == version.id)
-        )
-    ).all()
-
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
@@ -1253,17 +1348,7 @@ async def _publish_character_content(
             playguide=detail.playguide,
         )
     )
-    for image in situational_images:
-        db.add(
-            SituationalImage(
-                entity_id=image.entity_id,
-                content_version_id=new_version.id,
-                image_asset_id=image.image_asset_id,
-                blurred_asset_id=image.blurred_asset_id,
-                trigger_condition=image.trigger_condition,
-                order=image.order,
-            )
-        )
+    await _clone_character_children(db, version.id, new_version.id)
 
     content.current_published_version_id = version.id
     await db.commit()
@@ -1333,6 +1418,114 @@ async def _clone_ending_rules(db: AsyncSession, old_ending_id: uuid.UUID, new_en
             )
 
 
+async def _clone_story_children(
+    db: AsyncSession, src_version_id: uuid.UUID, dst_version_id: uuid.UUID
+) -> None:
+    """Copies a story version's whole child tree onto another version, `entity_id` and all.
+
+    Same two directions as `_clone_character_children`: publish (draft -> next draft) and
+    편집 취소(`reset_content_draft`, US-004, published -> draft). Preserving `entity_id` is
+    what keeps `chat_room_stats`/`story_ending_unlocks` joined to the right stat/ending
+    across versions (techspec-db-schema.md §1 원칙 4).
+
+    The one column that can't be copied as-is is `keyword_notes.starting_setup_id`: it's a
+    physical FK, not an entity_id reference, so it goes through an `old -> entity_id -> new`
+    remap. `ending_rules.stat_def_entity_id` is an entity_id reference and needs none."""
+    setups = (
+        await db.scalars(
+            select(StartingSetup)
+            .where(StartingSetup.content_version_id == src_version_id)
+            .order_by(StartingSetup.order)
+        )
+    ).all()
+    old_setup_entity_id_by_physical_id = {setup.id: setup.entity_id for setup in setups}
+    new_setup_physical_id_by_entity_id: dict[uuid.UUID, uuid.UUID] = {}
+
+    for setup in setups:
+        new_setup = StartingSetup(
+            entity_id=setup.entity_id,
+            content_version_id=dst_version_id,
+            name=setup.name,
+            prologue=setup.prologue,
+            opening_message=setup.opening_message,
+            playguide=setup.playguide,
+            suggested_replies=setup.suggested_replies,
+            order=setup.order,
+        )
+        db.add(new_setup)
+        await db.flush()
+        new_setup_physical_id_by_entity_id[setup.entity_id] = new_setup.id
+
+        stat_defs = (
+            await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))
+        ).all()
+        for stat_def in stat_defs:
+            db.add(
+                StatDef(
+                    entity_id=stat_def.entity_id,
+                    starting_setup_id=new_setup.id,
+                    name=stat_def.name,
+                    icon=stat_def.icon,
+                    color=stat_def.color,
+                    min_value=stat_def.min_value,
+                    max_value=stat_def.max_value,
+                    initial_value=stat_def.initial_value,
+                    unit=stat_def.unit,
+                    description=stat_def.description,
+                    per_turn_delta=stat_def.per_turn_delta,
+                    order=stat_def.order,
+                )
+            )
+
+        endings = (await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))).all()
+        for ending in endings:
+            new_ending = Ending(
+                entity_id=ending.entity_id,
+                starting_setup_id=new_setup.id,
+                name=ending.name,
+                turn_count_gate=ending.turn_count_gate,
+                judgment_prompt=ending.judgment_prompt,
+                epilogue=ending.epilogue,
+                hint=ending.hint,
+                order=ending.order,
+            )
+            db.add(new_ending)
+            await db.flush()
+            await _clone_ending_rules(db, ending.id, new_ending.id)
+
+    keyword_notes = (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == src_version_id))
+    ).all()
+    for note in keyword_notes:
+        new_starting_setup_id = None
+        if note.starting_setup_id is not None:
+            old_entity_id = old_setup_entity_id_by_physical_id[note.starting_setup_id]
+            new_starting_setup_id = new_setup_physical_id_by_entity_id[old_entity_id]
+        db.add(
+            KeywordNote(
+                entity_id=note.entity_id,
+                content_version_id=dst_version_id,
+                starting_setup_id=new_starting_setup_id,
+                info_text=note.info_text,
+                trigger_keywords=note.trigger_keywords,
+            )
+        )
+
+    shortcuts = (
+        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == src_version_id))
+    ).all()
+    for shortcut in shortcuts:
+        db.add(
+            Shortcut(
+                entity_id=shortcut.entity_id,
+                content_version_id=dst_version_id,
+                name=shortcut.name,
+                description=shortcut.description,
+                prompt=shortcut.prompt,
+            )
+        )
+
+
 async def _publish_story_content(
     db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
 ) -> ContentPublishResponse:
@@ -1377,13 +1570,6 @@ async def _publish_story_content(
             detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
         )
 
-    keyword_notes = (
-        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
-    ).all()
-    shortcuts = (
-        await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version.id))
-    ).all()
-
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
     )
@@ -1407,85 +1593,7 @@ async def _publish_story_content(
         )
     )
 
-    old_setup_entity_id_by_physical_id = {setup.id: setup.entity_id for setup in starting_setups}
-    new_setup_physical_id_by_entity_id: dict[uuid.UUID, uuid.UUID] = {}
-
-    for setup in starting_setups:
-        new_setup = StartingSetup(
-            entity_id=setup.entity_id,
-            content_version_id=new_version.id,
-            name=setup.name,
-            prologue=setup.prologue,
-            opening_message=setup.opening_message,
-            playguide=setup.playguide,
-            suggested_replies=setup.suggested_replies,
-            order=setup.order,
-        )
-        db.add(new_setup)
-        await db.flush()
-        new_setup_physical_id_by_entity_id[setup.entity_id] = new_setup.id
-
-        stat_defs = (
-            await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))
-        ).all()
-        for stat_def in stat_defs:
-            db.add(
-                StatDef(
-                    entity_id=stat_def.entity_id,
-                    starting_setup_id=new_setup.id,
-                    name=stat_def.name,
-                    icon=stat_def.icon,
-                    color=stat_def.color,
-                    min_value=stat_def.min_value,
-                    max_value=stat_def.max_value,
-                    initial_value=stat_def.initial_value,
-                    unit=stat_def.unit,
-                    description=stat_def.description,
-                    per_turn_delta=stat_def.per_turn_delta,
-                    order=stat_def.order,
-                )
-            )
-
-        for ending in endings_by_setup_id[setup.id]:
-            new_ending = Ending(
-                entity_id=ending.entity_id,
-                starting_setup_id=new_setup.id,
-                name=ending.name,
-                turn_count_gate=ending.turn_count_gate,
-                judgment_prompt=ending.judgment_prompt,
-                epilogue=ending.epilogue,
-                hint=ending.hint,
-                order=ending.order,
-            )
-            db.add(new_ending)
-            await db.flush()
-            await _clone_ending_rules(db, ending.id, new_ending.id)
-
-    for note in keyword_notes:
-        new_starting_setup_id = None
-        if note.starting_setup_id is not None:
-            old_entity_id = old_setup_entity_id_by_physical_id[note.starting_setup_id]
-            new_starting_setup_id = new_setup_physical_id_by_entity_id[old_entity_id]
-        db.add(
-            KeywordNote(
-                entity_id=note.entity_id,
-                content_version_id=new_version.id,
-                starting_setup_id=new_starting_setup_id,
-                info_text=note.info_text,
-                trigger_keywords=note.trigger_keywords,
-            )
-        )
-
-    for shortcut in shortcuts:
-        db.add(
-            Shortcut(
-                entity_id=shortcut.entity_id,
-                content_version_id=new_version.id,
-                name=shortcut.name,
-                description=shortcut.description,
-                prompt=shortcut.prompt,
-            )
-        )
+    await _clone_story_children(db, version.id, new_version.id)
 
     content.current_published_version_id = version.id
     await db.commit()

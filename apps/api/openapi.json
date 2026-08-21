@@ -1452,6 +1452,43 @@
         }
       }
     },
+    "/contents/{id}/draft/reset": {
+      "post": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Reset Content Draft",
+        "description": "US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with\nthe current published version's content. The published version itself is untouched.\n\nDeliberately not a delete: publishing auto-clones a draft version, and that clone is the\nrow `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.\n`DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.\n\nNo dirty check — resetting a draft that already matches the published version succeeds\nand simply rewrites identical rows.",
+        "operationId": "reset_content_draft_contents__id__draft_reset_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/contents/{id}/publish": {
       "post": {
         "tags": [

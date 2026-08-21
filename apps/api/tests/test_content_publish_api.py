@@ -869,3 +869,224 @@ async def test_publish_story_confirms_transaction_and_clones_draft(
     assert old_setup_still_exists is not None
     old_ending_still_exists = await db_session.get(Ending, ending.id)
     assert old_ending_still_exists is not None
+
+
+async def test_reset_draft_after_real_publish_restores_character_edits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """US-004 end to end on the state a real publish leaves behind — the auto-cloned draft is
+    edited through the real autosave endpoint, then 편집 취소 puts the published content back."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, thumbnail, image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json={
+            "name": "고쳐 쓴 이름",
+            "oneLiner": "고쳐 쓴 한 줄",
+            "thumbnailAssetId": None,
+            "intro": "고쳐 쓴 인트로",
+            "exampleDialogues": [],
+            "characterPrompt": "고쳐 쓴 프롬프트",
+            "playguide": None,
+            "situationalImages": [],
+            "description": "고쳐 쓴 설명",
+            "genreId": str(genre.id),
+            "target": "all",
+            "hashtags": ["힐링"],
+            "visibility": "private",
+        },
+    )
+    assert patch_resp.status_code == 200
+    draft_version_id = uuid.UUID(patch_resp.json()["contentVersionId"])
+
+    resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert resp.status_code == 204
+
+    draft_version = await db_session.get(ContentVersion, draft_version_id)
+    assert draft_version is not None
+    assert draft_version.detail_description == "상세 설명"
+
+    draft_detail = await db_session.get(CharacterVersionDetail, draft_version_id)
+    assert draft_detail is not None
+    assert draft_detail.name == "아리아"
+    assert draft_detail.thumbnail_asset_id == thumbnail.id
+    assert draft_detail.character_prompt == "너는 아리아다."
+
+    draft_images = (
+        (
+            await db_session.execute(
+                sa.select(SituationalImage).where(
+                    SituationalImage.content_version_id == draft_version_id
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert [i.entity_id for i in draft_images] == [image.entity_id]
+    assert draft_images[0].image_asset_id == image.image_asset_id
+
+    # the draft row itself survived, so editing still works after the reset
+    reedit_resp = await db_client.get(f"/contents/{content.id}/draft")
+    assert reedit_resp.status_code == 200
+    assert reedit_resp.json()["name"] == "아리아"
+
+    await db_session.refresh(content)
+    assert content.current_published_version_id == version.id
+
+
+async def test_reset_draft_after_real_publish_restores_story_edits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, setup, ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    draft_version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(
+            ContentVersion.content_id == content.id, ContentVersion.published_at.is_(None)
+        )
+    )
+    assert draft_version_id is not None
+    pre_reset_note = await db_session.scalar(
+        sa.select(KeywordNote).where(KeywordNote.content_version_id == draft_version_id)
+    )
+    assert pre_reset_note is not None
+
+    # the editor renames the setup and throws away its stats, endings and the shortcut.
+    # The keyword note is kept pointing at the setup: `_update_story_draft` (US-084) deletes
+    # removed setups before it reconciles keyword_notes, so a payload that drops a setup a
+    # note still references dies on the physical FK — a pre-existing autosave bug, out of
+    # this story's scope.
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json={
+            "name": "고쳐 쓴 제목",
+            "oneLiner": "고쳐 쓴 한 줄",
+            "thumbnailAssetId": None,
+            "promptTemplate": "basic",
+            "settingText": "고쳐 쓴 세계관",
+            "developmentExample": None,
+            "customPrompt": None,
+            "startingSetups": [
+                {
+                    "id": str(setup.entity_id),
+                    "name": "고쳐 쓴 시작설정",
+                    "prologue": "고쳐 쓴 프롤로그",
+                    "openingMessage": None,
+                    "playguide": None,
+                    "suggestedReplies": [],
+                    "statDefs": [],
+                    "endings": [],
+                }
+            ],
+            "keywordNotes": [
+                {
+                    "id": str(pre_reset_note.entity_id),
+                    "infoText": "고쳐 쓴 노트",
+                    "triggerKeywords": ["고침"],
+                    "startingSetupId": str(setup.entity_id),
+                }
+            ],
+            "shortcuts": [],
+            "description": "고쳐 쓴 설명",
+            "genreId": str(genre.id),
+            "target": "all",
+            "hashtags": ["판타지"],
+            "visibility": "private",
+        },
+    )
+    assert patch_resp.status_code == 200
+
+    resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert resp.status_code == 204
+
+    draft_detail = await db_session.get(StoryVersionDetail, draft_version_id)
+    assert draft_detail is not None
+    assert draft_detail.name == "잃어버린 도시"
+    assert draft_detail.setting_text == "세계관 설명"
+
+    draft_setup = await db_session.scalar(
+        sa.select(StartingSetup).where(StartingSetup.content_version_id == draft_version_id)
+    )
+    assert draft_setup is not None
+    assert draft_setup.entity_id == setup.entity_id
+    assert draft_setup.id != setup.id
+    assert draft_setup.name == "시작설정1"
+    assert draft_setup.prologue == "프롤로그"
+
+    draft_stat = await db_session.scalar(
+        sa.select(StatDef).where(StatDef.starting_setup_id == draft_setup.id)
+    )
+    assert draft_stat is not None
+    assert draft_stat.entity_id == stat_def.entity_id
+
+    draft_ending = await db_session.scalar(
+        sa.select(Ending).where(Ending.starting_setup_id == draft_setup.id)
+    )
+    assert draft_ending is not None
+    assert draft_ending.entity_id == ending.entity_id
+
+    draft_top_rules = (
+        (await db_session.execute(sa.select(EndingRule).where(EndingRule.ending_id == draft_ending.id)))
+        .scalars()
+        .all()
+    )
+    assert len(draft_top_rules) == 1
+    assert draft_top_rules[0].stat_def_entity_id == stat_def.entity_id
+
+    draft_groups = (
+        (
+            await db_session.execute(
+                sa.select(EndingRuleGroup).where(EndingRuleGroup.ending_id == draft_ending.id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    assert len(draft_groups) == 1
+
+    draft_note = await db_session.scalar(
+        sa.select(KeywordNote).where(KeywordNote.content_version_id == draft_version_id)
+    )
+    assert draft_note is not None
+    assert draft_note.info_text == "키워드 노트"
+    assert draft_note.trigger_keywords == ["단서"]
+    assert draft_note.starting_setup_id == draft_setup.id
+
+    draft_shortcut = await db_session.scalar(
+        sa.select(Shortcut).where(Shortcut.content_version_id == draft_version_id)
+    )
+    assert draft_shortcut is not None
+    assert draft_shortcut.name == "단축어1"
+
+    await db_session.refresh(content)
+    assert content.current_published_version_id == version.id

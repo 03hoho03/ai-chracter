@@ -599,6 +599,34 @@ export interface paths {
         patch: operations["update_content_draft_contents__id__draft_patch"];
         trace?: never;
     };
+    "/contents/{id}/draft/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Content Draft
+         * @description US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with
+         *     the current published version's content. The published version itself is untouched.
+         *
+         *     Deliberately not a delete: publishing auto-clones a draft version, and that clone is the
+         *     row `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.
+         *     `DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.
+         *
+         *     No dirty check — resetting a draft that already matches the published version succeeds
+         *     and simply rewrites identical rows.
+         */
+        post: operations["reset_content_draft_contents__id__draft_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/contents/{id}/publish": {
         parameters: {
             query?: never;
@@ -3859,6 +3887,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CharacterDraftResponse"] | components["schemas"]["StoryDraftResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_content_draft_contents__id__draft_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
