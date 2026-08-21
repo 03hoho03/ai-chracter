@@ -420,7 +420,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List My Drafts */
+        /**
+         * List My Drafts
+         * @description 한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
+         *
+         *     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
+         *     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
+         *     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
+         *     단위로 `current_published_version_id IS NULL`을 함께 본다.
+         */
         get: operations["list_my_drafts_me_drafts_get"];
         put?: never;
         post?: never;

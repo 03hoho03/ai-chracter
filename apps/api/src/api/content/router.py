@@ -97,8 +97,20 @@ async def list_my_drafts(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[DraftSummary]:
+    """한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
+
+    발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
+    `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
+    `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
+    단위로 `current_published_version_id IS NULL`을 함께 본다.
+    """
     contents = (
-        await db.scalars(select(Content).where(Content.creator_user_id == user_id))
+        await db.scalars(
+            select(Content).where(
+                Content.creator_user_id == user_id,
+                Content.current_published_version_id.is_(None),
+            )
+        )
     ).all()
     if not contents:
         return []

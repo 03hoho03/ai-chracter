@@ -90,6 +90,11 @@ async def _add_version(
     )
     db_session.add(version)
     await db_session.flush()
+    if published:
+        # `_publish_character_content`/`_publish_story_content` also point the content at the
+        # version they just published — the flag US-002's filter reads.
+        content.current_published_version_id = version.id
+        await db_session.flush()
     if created_at is not None:
         await db_session.execute(
             sa.update(ContentVersion)
@@ -211,9 +216,11 @@ async def test_list_drafts_excludes_content_with_no_draft(
     assert resp.json() == []
 
 
-async def test_list_drafts_includes_republish_draft_alongside_published_version(
+async def test_list_drafts_excludes_published_content_with_auto_cloned_draft(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """US-002. 발행하면 다음 편집용 초안이 자동 복제되므로 발행작에도 미발행 버전이 항상 딸려
+    있다 — 그래도 초안 목록에는 나오지 않아야 한다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -230,9 +237,41 @@ async def test_list_drafts_includes_republish_draft_alongside_published_version(
     await _login_as(db_client, user.id)
     resp = await db_client.get("/me/drafts")
     assert resp.status_code == 200
+    assert resp.json() == []
 
-    [draft] = resp.json()
-    assert draft["name"] == "재발행용 초안"
+
+async def test_list_drafts_drops_content_once_it_is_published(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-002. 같은 콘텐츠를 발행 전/후 두 상태에서 본다 — 발행 전에는 초안으로 잡히고,
+    발행하는 순간 목록에서 빠진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    thumbnail = await _make_asset(db_session, user.id)
+
+    content = await _make_content(db_session, creator_user_id=user.id, genre_id=genre.id)
+    first_version = await _add_version(db_session, content, published=False)
+    await _add_character_detail(db_session, first_version, thumbnail, name="작성 중")
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    before = await db_client.get("/me/drafts")
+    assert before.status_code == 200
+    assert [draft["name"] for draft in before.json()] == ["작성 중"]
+
+    # 발행: 이 버전이 발행본이 되고, 다음 편집용 초안이 자동 복제된다.
+    first_version.version_number = 1
+    first_version.published_at = datetime.now(timezone.utc)
+    content.current_published_version_id = first_version.id
+    cloned_draft = await _add_version(db_session, content, published=False)
+    await _add_character_detail(db_session, cloned_draft, thumbnail, name="작성 중")
+    await db_session.commit()
+
+    after = await db_client.get("/me/drafts")
+    assert after.status_code == 200
+    assert after.json() == []
 
 
 async def test_list_drafts_only_returns_own_drafts(

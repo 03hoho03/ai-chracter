@@ -563,6 +563,37 @@ async def test_publish_confirms_transaction_and_clones_draft(
     assert old_images[0].id == image.id
 
 
+async def test_publish_removes_content_from_my_drafts(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """US-002. `/me/drafts`가 거르는 상태를 실제 발행 경로로 만들어 확인한다 — 발행이 남기는
+    자동 복제 초안이 목록에 다시 새어 나오지 않아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    before = await db_client.get("/me/drafts")
+    assert before.status_code == 200
+    assert [draft["id"] for draft in before.json()] == [str(content.id)]
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    after = await db_client.get("/me/drafts")
+    assert after.status_code == 200
+    assert after.json() == []
+
+
 async def test_republish_increments_version_number(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
