@@ -10,14 +10,17 @@ import { isKnownRoute, KNOWN_ROUTES } from "./routes";
  */
 const ROUTE_FILES = import.meta.glob("../src/routes/*.tsx");
 
-/** `builder.$type.new.tsx` → `/builder/$type/new`. TanStack의 파일 라우트 규칙이다. */
+/** `builder.$type.new.tsx` → `/builder/$type/new`, `builder.index.tsx` → `/builder`. TanStack의 파일 라우트 규칙이다. */
 function toRoutePattern(filePath: string): string {
   const fileName = filePath.slice(
     filePath.lastIndexOf("/") + 1,
     -".tsx".length,
   );
-  if (fileName === "index") return "/";
-  return `/${fileName.split(".").join("/")}`;
+  const segments = fileName.split(".");
+  // 끝의 `index`는 부모 경로 그 자체를 가리키는 인덱스 라우트다(`index.tsx` → `/`,
+  // `builder.index.tsx` → `/builder`).
+  if (segments.at(-1) === "index") segments.pop();
+  return `/${segments.join("/")}`;
 }
 
 describe("KNOWN_ROUTES", () => {
@@ -38,6 +41,7 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/mypage")).toBe(true);
     expect(isKnownRoute("/onboarding/google")).toBe(true);
     expect(isKnownRoute("/studio/images")).toBe(true);
+    expect(isKnownRoute("/builder")).toBe(true);
   });
 
   it("파라미터 세그먼트는 아무 값이나 받는다", () => {
@@ -54,6 +58,7 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/content/character")).toBe(false);
     expect(isKnownRoute("/content/character/1/2")).toBe(false);
     expect(isKnownRoute("/onboarding")).toBe(false);
+    expect(isKnownRoute("/builder/character")).toBe(false);
   });
 
   it("빈 파라미터 세그먼트는 라우트가 아니다", () => {

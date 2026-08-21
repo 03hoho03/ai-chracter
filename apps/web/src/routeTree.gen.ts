@@ -18,6 +18,7 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
@@ -71,6 +72,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuilderIndexRoute = BuilderIndexRouteImport.update({
+  id: '/builder/',
+  path: '/builder/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudioImagesRoute = StudioImagesRouteImport.update({
   id: '/studio/images',
   path: '/studio/images',
@@ -121,6 +127,7 @@ export interface FileRoutesByFullPath {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder/': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -139,6 +146,7 @@ export interface FileRoutesByTo {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder/': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -178,6 +187,7 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder/'
     | '/builder/$type/$draftId'
     | '/builder/$type/new'
     | '/content/$type/$id'
@@ -196,6 +206,7 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder'
     | '/builder/$type/$draftId'
     | '/builder/$type/new'
     | '/content/$type/$id'
@@ -214,6 +225,7 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder/'
     | '/builder/$type/$draftId'
     | '/builder/$type/new'
     | '/content/$type/$id'
@@ -233,6 +245,7 @@ export interface RootRouteChildren {
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
+  BuilderIndexRoute: typeof BuilderIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   BuilderTypeNewRoute: typeof BuilderTypeNewRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
@@ -303,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/builder/': {
+      id: '/builder/'
+      path: '/builder'
+      fullPath: '/builder/'
+      preLoaderRoute: typeof BuilderIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/studio/images': {
       id: '/studio/images'
       path: '/studio/images'
@@ -369,6 +389,7 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
+  BuilderIndexRoute: BuilderIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   BuilderTypeNewRoute: BuilderTypeNewRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
