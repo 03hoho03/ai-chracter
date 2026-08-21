@@ -13,6 +13,7 @@ import { Route as UiDemoRouteImport } from './routes/ui-demo'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as MypageRouteImport } from './routes/mypage'
+import { Route as MyRouteImport } from './routes/my'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
@@ -44,6 +45,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const MypageRoute = MypageRouteImport.update({
   id: '/mypage',
   path: '/mypage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MyRoute = MyRouteImport.update({
+  id: '/my',
+  path: '/my',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -170,6 +179,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -225,6 +237,7 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  MyRoute: typeof MyRoute
   MypageRoute: typeof MypageRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
@@ -266,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/mypage'
       fullPath: '/mypage'
       preLoaderRoute: typeof MypageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/my': {
+      id: '/my'
+      path: '/my'
+      fullPath: '/my'
+      preLoaderRoute: typeof MyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -361,6 +381,7 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  MyRoute: MyRoute,
   MypageRoute: MypageRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,

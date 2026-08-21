@@ -11,10 +11,10 @@ import {
   useContentListQuery,
   useGenreListQuery,
   type ContentListSort,
-} from "../../../entities/content";
-import { useContentDetailModal } from "../../../shared/lib/content-detail-modal/useContentDetailModal";
-import { useInfiniteScrollSentinel } from "../../../shared/lib/infinite-scroll/useInfiniteScrollSentinel";
-import { contentTypeToggleAtom } from "../../../shared/model/content-type-toggle";
+} from "@/entities/content";
+import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
+import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
+import { contentTypeToggleAtom } from "@/shared/model/content-type-toggle";
 
 export type HomeSearch = {
   q?: string;
@@ -178,7 +178,7 @@ export function HomePage({
                 key={item.id}
                 thumbnailUrl={item.thumbnailUrl}
                 title={item.name}
-                viewCount={item.viewCount}
+                metrics={{ viewCount: item.viewCount }}
                 author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
                 priority={index < 4}
                 isLcpCandidate={index === 0}

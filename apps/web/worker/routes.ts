@@ -15,6 +15,7 @@ export const KNOWN_ROUTES = [
   "/favorites",
   "/forgot-password",
   "/login",
+  "/my",
   "/mypage",
   "/onboarding/google",
   "/profile/$userId",

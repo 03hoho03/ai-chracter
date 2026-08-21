@@ -209,7 +209,7 @@ components:
 
 ## 4. Elevation
 
-**이 시스템은 사실상 그림자가 없다.** 깊이는 그림자가 아니라 §2의 명도 사다리(tonal layering)로 표현한다 — 다크에서 카드가 배경 위에 있다는 것은 그림자가 아니라 `card`(0.210)가 `background`(0.160)보다 밝다는 사실로 전달된다. 이것이 "불 꺼진 방"에서 옳은 선택이다: 어두운 방에서 드리운 그림자는 보이지도 않고, 보이게 만들려면 배경을 더 어둡게 깎아야 하는데 그럴 여지가 없다.
+**이 시스템은 사실상 그림자가 없다.** 깊이는 그림자가 아니라 §2의 명도 사다리(tonal layering)로 표현한다 — 다크에서 카드가 배경 위에 있다는 것은 그림자가 아니라 `card`(0.210)가 `background`(0.160)보다 밝다는 사실로 전달된다. **예외는 카드 자체가 주 인터랙션인 경우다** — 그때는 hover가 보여야 해서 표면이 `background`로 내려가고 깊이를 `border` 한 줄이 대신한다(§5 Cards). 이것이 "불 꺼진 방"에서 옳은 선택이다: 어두운 방에서 드리운 그림자는 보이지도 않고, 보이게 만들려면 배경을 더 어둡게 깎아야 하는데 그럴 여지가 없다.
 
 앱 전체에 그림자는 **5개뿐이며**, 그중 3개는 화면 위로 떠 있는 팝오버(단축어 자동완성, 컬러 피커, 아이콘 피커)다. 카드·버튼·인풋은 정지 상태에서 그림자를 갖지 않는다.
 
@@ -251,8 +251,9 @@ components:
 - **Corner Style:** radius `xl`(14px).
 - **Background:** `bg-card`, 테두리 `border-border` 한 줄. **그림자 없음.**
 - **Internal Padding:** 12px(콘텐츠 카드) / 16px(초안 카드) / 32px(인증 카드).
-- **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸.
-- **Thumbnail well:** `aspect-square rounded-lg bg-muted`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로.
+- **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸. **단, 이건 정지 표시용 카드에만 유효하다** — 아래 예외를 볼 것.
+- **예외: 카드 자체가 그 화면의 주 인터랙션이면 button-outline 레시피를 카드 크기로 쓴다** — `border-border bg-background` + `hover:bg-muted` + 하우스 focus 레시피 + `active:translate-y-px`. `bg-card` 위에서는 `hover:bg-accent/50`도 `hover:bg-muted`도 **픽셀상 아무것도 그리지 않기** 때문이다(`background-color`는 층으로 쌓이지 않고 `bg-card`를 대체한 뒤 페이지 배경 위에 합성된다 — 스크린샷 픽셀 실측 **다크 1.0000:1 / 라이트 1.0178:1**). 이 예외를 쓰면 rest에서 카드 채움이 페이지 배경과 같아져 §4의 명도 사다리를 벗어나지만, 경계는 `border`가 유지하고 hover는 다크 1.0946 / 라이트 1.0902로 실제로 보인다. 대안인 `bg-card` + `hover:bg-secondary`는 라이트에서 `muted-foreground` 본문이 4.30:1로 AA에 미달해 쓸 수 없다 — 셋(사다리·hover 가시성·본문 AA)을 동시에 만족하는 조합은 현재 토큰에 없다. 적용처: `ContentCard`(홈·즐겨찾기·프로필·내 작품), `BuilderTypeSelectPage`.
+- **Thumbnail well:** `aspect-square rounded-lg bg-secondary`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로. **`bg-muted`가 아닌 이유**: 웰이 `bg-card` 카드 위(rest)에서도, `hover:bg-muted`가 걸린 카드 위(hover)에서도 표면과 같은 값이 되어 사라진다(둘 다 실측 1.0000:1). `secondary`는 두 상태 모두에서 살아남는다(rest 다크 1.2521 / hover 다크 1.1439).
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
@@ -270,7 +271,7 @@ components:
 
 ### Status badges
 - **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다.
-- **중립 상태(공개/링크공개/비공개):** `bg-muted text-muted-foreground`.
+- **중립 상태(공개/링크공개/비공개/미등록):** `border border-border text-muted-foreground` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
 - **이용제한:** `bg-destructive/10 text-destructive` — 틴트, 채움 아님.
 - **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.
 - **삭제:** 배지가 아니라 전체 패널 빈 상태로 표현한다(`ContentUnavailableState`) — 아이콘 + 제목 + 설명.

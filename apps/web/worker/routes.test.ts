@@ -38,6 +38,7 @@ describe("isKnownRoute", () => {
   it("정적 경로를 그대로 알아본다", () => {
     expect(isKnownRoute("/")).toBe(true);
     expect(isKnownRoute("/login")).toBe(true);
+    expect(isKnownRoute("/my")).toBe(true);
     expect(isKnownRoute("/mypage")).toBe(true);
     expect(isKnownRoute("/onboarding/google")).toBe(true);
     expect(isKnownRoute("/studio/images")).toBe(true);
@@ -60,6 +61,8 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/content/character/1/2")).toBe(false);
     expect(isKnownRoute("/onboarding")).toBe(false);
     expect(isKnownRoute("/builder/character")).toBe(false);
+    // `/my`와 `/mypage`는 접두사가 겹칠 뿐 다른 경로다.
+    expect(isKnownRoute("/my/works")).toBe(false);
   });
 
   it("빈 파라미터 세그먼트는 라우트가 아니다", () => {

@@ -45,5 +45,5 @@ export type {
   ModerationStatus,
 } from "./model/content";
 export { ContentCard } from "./ui/ContentCard";
-export type { ContentCardStatusTag } from "./ui/ContentCard";
+export type { ContentCardMetrics, ContentCardTag } from "./ui/ContentCard";
 export { ContentListEmptyState } from "./ui/ContentListEmptyState";
