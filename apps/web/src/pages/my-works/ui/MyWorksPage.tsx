@@ -9,7 +9,7 @@ import {
 } from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
   ContentCard,
@@ -78,10 +78,38 @@ type MyWorksPageProps = {
 export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps) {
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">내 작품</h1>
+      {/* 제목과 버튼은 접지 않고 한 줄에 둔다 — 390px 실측으로 `내 작품` 65.38px + `작품 만들기`
+          85.92px = 151.3px이라 본문 342px의 44%다(최악인 320px에서도 간격 120.7px이 남는다). 버튼은
+          `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고, 제목은 2어절이라 접힐 자리도 없다. */}
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold tracking-tight text-foreground">내 작품</h1>
+        <CreateWorkButton />
+      </div>
 
       <MyWorksBody userId={userId} search={search} onSearchChange={onSearchChange} />
     </main>
+  );
+}
+
+/** US-011 — 만들기 진입점. 페이지 제목 옆과 "작품 0건" 빈 상태 두 곳이 쓰므로 목적지를 한 곳에만
+ * 적는다. `primary` 솔리드는 DESIGN.md §2가 못박은 이 시스템의 **유일한 유채색 솔리드 채움**이라
+ * 이 자리(화면의 유일한 앞길)에 정확히 해당한다.
+ *
+ * **두 자리를 크기가 아니라 라벨로 가른다.** 처음엔 빈 상태 쪽을 `size="lg"`로 올렸는데 (1) `lg`는
+ * `default`와 패딩이 같아 두 버튼 폭이 85.92px로 **완전히 동일**하고 높이만 32→36(+4px)이라 위계가
+ * 아니라 정렬 오차로 읽히고 (2) 앱의 다른 `size="lg"` 11곳은 전부 `h-10`/`h-12`로 높이를 덮어써
+ * 36px은 존재하지 않는 티어이며 (3) 라벨·역할·목적지가 모두 같아 빈 상태 탭 스톱 8개 중 2개가
+ * 스크린리더에 `링크, 작품 만들기`로 연달아 읽혔다(실측). 라벨을 가르면 셋이 한 번에 풀린다.
+ *
+ * 빈 상태 라벨이 `첫`이 아니라 **`새`**인 이유: `첫`은 서수를 주장하는데 이 화면에 도달하는 경로 둘이
+ * 그걸 거짓으로 만든다 — (a) 발행작 두 쿼리가 실패하고 초안만 `[]`로 성공하면 작품 32건을 가진
+ * 사용자가 이 패널을 본다 (b) US-007 지연 생성으로 만든 초안을 전부 지우고 돌아온 사용자도 본다.
+ * `새`는 순수 수식어라 모든 분기에서 참이고, 폭도 101.44px로 `첫`과 픽셀 단위로 같다(실측). */
+function CreateWorkButton({ label = "작품 만들기" }: { label?: string }) {
+  return (
+    <Button asChild>
+      <Link to="/builder">{label}</Link>
+    </Button>
   );
 }
 
@@ -151,7 +179,16 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
     return (
       <div className="flex flex-col gap-6">
         {errorBanner}
-        <ContentListEmptyState message="아직 만든 작품이 없어요." />
+        {/* 이 화면에서 유일하게 할 수 있는 일이 만들기다 — 상태 통보("없어요")로 끝내면 막다른 길이
+            되므로 남은 한 줄은 무엇이 만들어지고 어디에 쌓이는지를 말한다(US-011).
+            제목은 **부분 실패가 없을 때만** 단다: 발행작 두 쿼리가 실패하고 초안만 `[]`로 성공하면
+            여기 도달하는데(위 배너 주석의 그 상황), 그때 "아직 만든 작품이 없어요"는 거짓일 수 있다.
+            한 줄 안내로 남기는 건 몰라도 배너가 반박하는 문장을 굵은 제목으로 승격시키지는 않는다. */}
+        <ContentListEmptyState
+          title={errorBanner ? undefined : "아직 만든 작품이 없어요"}
+          message="캐릭터나 스토리를 만들면 여기에 모여요."
+          action={<CreateWorkButton label="새 작품 만들기" />}
+        />
       </div>
     );
   }
@@ -540,15 +577,21 @@ function MyWorksErrorState({ message, onRetry }: { message: string; onRetry: () 
 }
 
 /** 셋 다 실패해 목록이 통째로 없을 때. 같은 "보여줄 게 없음" 상황인 빈 상태(`ContentListEmptyState`)와
- * 같은 dashed 패널 셸을 써서 한 화면에 빈 상태 어휘가 둘이 되지 않게 한다. */
+ * 같은 dashed 패널 셸을 써서 한 화면에 빈 상태 어휘가 둘이 되지 않게 한다 — **셸 클래스가 손으로
+ * 복사돼 있으므로 저쪽을 고치면 여기도 함께 고쳐야 이 주석이 참으로 남는다**(US-011의 `px-6
+ * break-keep`이 그렇게 갈렸다). 같은 셸의 세 번째 사본이 `GeneratedImageLibraryPanel`에 있다.
+ *
+ * `다시 시도`에 `size="sm"`을 주지 않는 이유는 형제 빈 상태들과 같다 — 이 패널의 유일한 앞길이
+ * 복구인데 28px로 두면 바로 위 32px `primary` 솔리드 `작품 만들기`(목적지가 다른 버튼)보다 약하게
+ * 읽힌다(`apps/web/CLAUDE.md`의 빈 상태 액션 규칙). 한 줄 배너인 `MyWorksErrorState`는 그대로 `sm`이다. */
 function MyWorksFullErrorState({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       role="alert"
-      className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border py-16 text-center"
+      className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center break-keep"
     >
       <p className="text-sm text-destructive">목록을 불러오지 못했어요.</p>
-      <Button type="button" variant="outline" size="sm" onClick={onRetry}>
+      <Button type="button" variant="outline" onClick={onRetry}>
         다시 시도
       </Button>
     </div>

@@ -9,7 +9,15 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/80",
+        /** `focus-visible:ring-ring`(불투명)은 base의 `ring-ring/50`을 덮는다 — **`primary` 솔리드
+         * 채움 위에서는 기본 레시피가 통째로 무너지기 때문이다.** `focus-visible:border-ring`이
+         * `--ring == --primary`라 보더를 채움과 **같은 색**(1.0000:1)으로 칠해 rest의 1px 윤곽을
+         * 지우고, 남는 50% 링은 페이지 배경 대비 2.5757(다크)/2.5511(라이트)로 WCAG 1.4.11의 3:1에
+         * 미달한다(두 스토리에서 독립 측정해 일치). 불투명 링은 7.1768/6.7011. `toggle.tsx`가 선택
+         * 상태에 대해 US-009에서 같은 처방을 이미 했고, 이건 그 나머지 절반이다 — 두 프리미티브가
+         * 같은 채움을 쓰는데 포커스 표시만 갈리면 관습이 나뉜다. 다른 variant는 채움이 무채색이거나
+         * `/10` 틴트라 측정된 결함이 없으므로 base를 건드리지 않고 여기까지만 좁힌다. */
+        default: "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:ring-ring",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         secondary:
