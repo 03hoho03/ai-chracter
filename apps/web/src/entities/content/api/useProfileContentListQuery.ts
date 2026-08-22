@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "../../../shared/lib/api/client";
 import type { ContentType } from "../model/content";
-import { contentKeys, type VisibilityFilter } from "./keys";
+import type { VisibilityFilter } from "../model/visibilityFilter";
+import { contentKeys } from "./keys";
 
 export type ContentSummary = components["schemas"]["ContentSummary"];
 

@@ -1,5 +1,5 @@
 export { contentKeys, favoriteKeys } from "./api/keys";
-export type { ContentBrowseParams, VisibilityFilter } from "./api/keys";
+export type { ContentBrowseParams } from "./api/keys";
 export { useContentDetailQuery } from "./api/useContentDetailQuery";
 export type { ContentDetailResponse } from "./api/useContentDetailQuery";
 export { useContentDraftQuery } from "./api/useContentDraftQuery";
@@ -24,6 +24,13 @@ export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
 export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
+export {
+  VISIBILITY_FILTER_LABEL,
+  VISIBILITY_FILTER_OPTIONS,
+  VISIBILITY_FILTERS,
+  isVisibilityFilter,
+} from "./model/visibilityFilter";
+export type { VisibilityFilter } from "./model/visibilityFilter";
 export { createEmptyDraft } from "./model/emptyDraft";
 export type {
   CharacterDraftContent,

@@ -1,6 +1,6 @@
 import type { ContentListSort, ContentType } from "../model/content";
-
-export type VisibilityFilter = "all" | "public" | "link" | "private";
+// 목록 필터의 단일 소스는 `model/visibilityFilter.ts`다 — 쿼리키가 그 타입을 빌려 쓴다.
+import type { VisibilityFilter } from "../model/visibilityFilter";
 
 export type ContentBrowseParams = {
   type: ContentType;

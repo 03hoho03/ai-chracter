@@ -10,8 +10,10 @@ import { MoreHorizontal } from "lucide-react";
 
 import {
   ContentCard,
+  isVisibilityFilter,
   resolveAccessStatus,
   useProfileContentListQuery,
+  VISIBILITY_FILTER_OPTIONS,
   type ContentCardTag,
   type ContentSummary,
   type ContentType,
@@ -24,13 +26,6 @@ const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
   story: "스토리",
 };
-
-const VISIBILITY_FILTER_OPTIONS: { value: VisibilityFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  { value: "public", label: "공개" },
-  { value: "link", label: "링크공개" },
-  { value: "private", label: "비공개" },
-];
 
 type ProfileContentSectionProps = {
   userId: string;
@@ -82,7 +77,7 @@ export function ProfileContentSection({
             size="sm"
             value={visibilityFilter}
             onValueChange={(value) => {
-              if (value) setVisibilityFilter(value as VisibilityFilter);
+              if (isVisibilityFilter(value)) setVisibilityFilter(value);
             }}
             aria-label="공개여부 필터"
           >

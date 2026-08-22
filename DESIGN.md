@@ -235,7 +235,7 @@ components:
 - **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다.
 - **Link:** `text-primary` + underline-offset-4.
 - **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).
-- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다.
+- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **단, 채움이 `primary`인 요소 위에서는 이 레시피가 무너진다** — 아래 §Toggles를 볼 것.
 
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다.
@@ -246,6 +246,7 @@ components:
 - **`variant="list"` — 넓은 행이 세로로 쌓인 목록형 선택지**(신고 사유 등)**에만 쓴다.** 이 형태에 솔리드 채움을 쓰면 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다(밝기 예산 규칙 — `primary` 채움은 버튼 크기에 머문다). 그래서 `border-primary` + `text-primary` + `bg-primary/10` 틴트로만 표시하고(선택 행 텍스트 대비 **5.24:1**), 솔리드 채움은 CTA에 남긴다.
 - **감사 테스트:** 토글에 새 선택 표시를 만들려 한다면, 그 항목이 버튼만 한 크기인지 자문하라. 그렇다면 기본 채움을 그대로 쓰고, 한 줄을 가득 채우는 크기라면 `list`를 쓴다.
 - **호출부에 선택 상태 클래스를 직접 붙이지 말 것** — 프리미티브에 없는 규칙을 호출부마다 문자열로 붙이면 새로 추가되는 화면이 조용히 빠진다(실제로 17곳 중 2곳만 맞았던 적이 있다).
+- **선택된 토글의 포커스 링은 불투명해야 한다**(`data-[state=on]:focus-visible:ring-ring`). §Buttons의 기본 레시피(`ring-ring/50` + `border-ring`)는 **배경 위에서만** 성립한다 — `primary` 솔리드 채움 위에서는 `border-ring`이 보더를 채움과 **같은 핑크**로 바꿔 rest의 회색 윤곽을 지워 버리고(라이트 **1.0000** / 다크 **1.0437**), 남는 50% 링은 페이지 배경 대비 **2.5757 다크 / 2.5511 라이트**로 WCAG 1.4.11의 3:1에 미달한다(포커스 on/off 픽셀 diff 실측, 두 리뷰어 독립 일치). **이 수치는 포커스가 정착한 뒤 재야 한다** — `transition-all` 0.15s가 box-shadow까지 애니메이션해서 Tab 직후 읽으면 전이 중간값(α≈0.486, 2.4724)이 잡힌다. ToggleGroup은 roving tabindex라 **Tab이 닿는 칩은 언제나 선택된 칩**이므로 이건 엣지가 아니라 기본 포커스 상태다. 불투명 링은 같은 픽셀이 **7.1768 다크 / 6.7011 라이트**가 되고 rest 상태는 1픽셀도 바뀌지 않는다.
 
 ### Cards / Containers
 - **Corner Style:** radius `xl`(14px).

@@ -1,5 +1,7 @@
-import type { ContentSummary } from "@/entities/content";
+import type { ContentSummary, VisibilityFilter } from "@/entities/content";
 import type { DraftSummary } from "@/entities/draft";
+
+import type { MyWorkTypeFilter } from "./myWorksSearch";
 
 /** 내 작품 목록의 한 줄. 발행작(`GET /users/{me}/contents`)과 미발행 초안(`GET /me/drafts`)은 서로 다른
  * 엔드포인트에서 오지만 `id`/`type`/`name`/`thumbnailUrl`/`updatedAt` 다섯 필드를 같은 이름으로 갖고 있어,
@@ -40,5 +42,25 @@ export function mergeMyWorks(published: ContentSummary[], drafts: DraftSummary[]
     const byUpdatedAt = Date.parse(b.updatedAt) - Date.parse(a.updatedAt);
     if (byUpdatedAt !== 0) return byUpdatedAt;
     return b.id.localeCompare(a.id);
+  });
+}
+
+/**
+ * 병합된 목록을 필터 칩 한 축(`type`)과 공개 여부 한 축(`visibility`)으로 좁힌다.
+ *
+ * `미등록`은 초안만, 나머지는 **발행작만** 돌려준다 — FR-18이 "`전체`에는 초안을 포함하지 않는다"로
+ * 못박았다. 초안에는 공개범위가 없으므로 `미등록`에서는 `visibility`를 보지 않는다(호출부가 칩 전환 시
+ * 파라미터를 함께 비우지만, 손으로 URL을 만든 경우까지 여기서 무해하게 만든다).
+ */
+export function filterMyWorks(
+  items: MyWorkItem[],
+  { type, visibility }: { type: MyWorkTypeFilter; visibility: VisibilityFilter },
+): MyWorkItem[] {
+  if (type === "unpublished") return items.filter((item) => item.kind === "draft");
+
+  return items.filter((item) => {
+    if (item.kind !== "published") return false;
+    if (type !== "all" && item.type !== type) return false;
+    return visibility === "all" || item.visibility === visibility;
   });
 }
