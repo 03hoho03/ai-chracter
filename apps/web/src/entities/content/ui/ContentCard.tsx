@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useId, type ReactNode } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { BookOpen, Eye, Heart, ImageOff, MessageCircle, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
@@ -66,8 +66,10 @@ type ContentCardProps = {
   metaLabel?: string;
   author?: { name: string; profileUrl: string };
   tags?: ContentCardTag[];
-  /** 카드 안에서 카드와 다른 동작을 하는 요소(⋯ 메뉴 등). 넣는 쪽이 click·keydown을 모두
-   * `stopPropagation` 해야 한다 — 자세한 이유는 `apps/web/CLAUDE.md`의 "클릭 카드" 항목. */
+  /** 카드 안에서 카드와 다른 동작을 하는 요소. "⋯" 메뉴라면 **직접 만들지 말고 `ContentCardActionMenu`를
+   * 쓴다** — 클릭 카드 안에서 지켜야 할 것(click·keydown 양쪽 stopPropagation, hover 토큰, 메뉴 폭)이
+   * 거기 다 들어 있다. 다른 것을 넣는다면 click과 keydown을 모두 `stopPropagation` 해야 한다
+   * (이유는 `apps/web/CLAUDE.md`의 "클릭 카드" 항목). */
   actions?: ReactNode;
   /** US-013 — 첫 화면에 보이는 카드만 lazy를 풀고 즉시 로드한다. 그리드가
    * `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라 첫 줄이 뷰포트에 따라 2/3/4장으로 갈리므로,
@@ -102,10 +104,32 @@ export function ContentCard({
   onClick,
   onAuthorClick,
 }: ContentCardProps) {
+  const id = useId();
+
+  // 카드 이름을 **내용 계산에 맡기지 않고** 자기 자식들을 직접 가리킨다. 계산에 맡기면 `actions`의 "⋯"
+  // 버튼 라벨까지 이름에 빨려 들어가서, 그 버튼에 작품 이름을 넣는 순간 카드가 제목을 두 번 읽는다
+  // (실측: `"미아 미아 더보기 조회수 …"`). 그렇다고 카드에 `aria-label`을 걸면 지표·배지가 이름에서
+  // 통째로 사라진다(US-008에서 그래서 기각했다). `aria-labelledby`는 **참조한 노드만** 훑으므로 둘 다
+  // 피한다 — 지표·배지는 남고 "⋯"만 빠져서, 버튼 쪽이 `"{제목} 더보기"`로 서로 구별될 수 있게 된다
+  // (그리드에 "더보기" 32개가 놓이면 스크린리더 로터로는 아무것도 못 고른다).
+  //
+  // 렌더되지 않은 자식의 id를 남겨 두면 그 참조만 조용히 버려지는 게 아니라 이름 계산이 어긋나므로,
+  // **실제로 그린 것만** 넣는다.
+  const labelledBy = [
+    `${id}-title`,
+    metrics ? `${id}-metrics` : "",
+    metaLabel ? `${id}-meta` : "",
+    author ? `${id}-author` : "",
+    tags && tags.length > 0 ? `${id}-tags` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <div
       role="button"
       tabIndex={0}
+      aria-labelledby={labelledBy}
       onClick={onClick}
       onKeyDown={(event) => {
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -135,18 +159,30 @@ export function ContentCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <div className="flex items-center gap-1">
-          <p className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">{title}</p>
+        {/* `gap-2`는 잘린 제목의 말줄임 `…`과 `actions`의 "⋯"를 갈라 놓기 위한 것이다
+            (`apps/web/CLAUDE.md`의 "잘린 제목 옆에 ⋯" 항목에 실측치와 함께 있다). */}
+        <div className="flex items-center gap-2">
+          <p
+            id={`${id}-title`}
+            className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground"
+          >
+            {title}
+          </p>
           {actions}
         </div>
 
-        {metrics && <ContentCardMetricList metrics={metrics} />}
+        {metrics && <ContentCardMetricList id={`${id}-metrics`} metrics={metrics} />}
 
-        {metaLabel && <p className="text-xs text-muted-foreground">{metaLabel}</p>}
+        {metaLabel && (
+          <p id={`${id}-meta`} className="text-xs text-muted-foreground">
+            {metaLabel}
+          </p>
+        )}
 
         {author &&
           (onAuthorClick ? (
             <button
+              id={`${id}-author`}
               type="button"
               onClick={(event) => {
                 event.stopPropagation();
@@ -157,11 +193,13 @@ export function ContentCard({
               {author.name}
             </button>
           ) : (
-            <p className="truncate text-xs text-muted-foreground">{author.name}</p>
+            <p id={`${id}-author`} className="truncate text-xs text-muted-foreground">
+              {author.name}
+            </p>
           ))}
 
         {tags && tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div id={`${id}-tags`} className="flex flex-wrap gap-1.5">
             {tags.map((tag) => (
               <ContentCardTagBadge key={tag} tag={tag} />
             ))}
@@ -172,13 +210,20 @@ export function ContentCard({
   );
 }
 
-function ContentCardMetricList({ metrics }: { metrics: ContentCardMetrics }) {
+function ContentCardMetricList({ id, metrics }: { id: string; metrics: ContentCardMetrics }) {
   if (metrics.chatCount === undefined && metrics.likeCount === undefined) {
-    return <p className="text-xs text-muted-foreground">조회수 {metrics.viewCount.toLocaleString()}</p>;
+    return (
+      <p id={id} className="text-xs text-muted-foreground">
+        조회수 {metrics.viewCount.toLocaleString()}
+      </p>
+    );
   }
 
   return (
-    <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground">
+    <div
+      id={id}
+      className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-xs text-muted-foreground"
+    >
       <ContentCardMetric Icon={Eye} label="조회수" value={metrics.viewCount} />
       {metrics.chatCount !== undefined && (
         <ContentCardMetric Icon={MessageCircle} label="대화수" value={metrics.chatCount} />

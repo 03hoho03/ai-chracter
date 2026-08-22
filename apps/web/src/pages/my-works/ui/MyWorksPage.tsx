@@ -35,6 +35,7 @@ import {
   type MyWorksSort,
   type MyWorkTypeFilter,
 } from "../model/myWorksSearch";
+import { MyWorkCardMenu } from "./MyWorkCardMenu";
 
 const TYPE_FILTER_LABEL: Record<MyWorkTypeFilter, string> = {
   all: "전체",
@@ -190,6 +191,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
             <MyWorkCard
               key={`${item.kind}-${item.id}`}
               item={item}
+              userId={userId}
               priority={index < 4}
               isLcpCandidate={index === 0}
             />
@@ -441,6 +443,7 @@ function describeFilter(typeFilter: MyWorkTypeFilter, visibilityFilter: Visibili
 
 type MyWorkCardProps = {
   item: MyWorkItem;
+  userId: string;
   priority: boolean;
   isLcpCandidate: boolean;
 };
@@ -448,17 +451,21 @@ type MyWorkCardProps = {
 /** 발행작은 홈·프로필과 같은 상세 모달로, 초안은 이어 쓰던 빌더로 간다. 초안이 `<Link>`가 아닌 이유는
  * 한 그리드 안에서 발행작 카드가 라우터를 우회하는 모달(`useContentDetailModal`)이라 링크가 될 수 없고,
  * 카드 안에 다른 동작을 넣을 자리(US-010의 ⋯ 메뉴)가 `role="button"` 패턴을 요구하기 때문이다. */
-function MyWorkCard({ item, priority, isLcpCandidate }: MyWorkCardProps) {
+function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps) {
   const navigate = useNavigate();
   const { open } = useContentDetailModal();
+
+  // 초안은 이름이 비어 있는 게 정상 상태다 — US-007의 지연 생성은 사용자가 이름을 넣기 전에도 초안을
+  // 만든다. 폴백을 공용 `ContentCard`가 아니라 여기 두는 이유: 홈·즐겨찾기·프로필에는 이름 없는
+  // 발행작이 올 수 없어서, 공용 쪽에 넣으면 그쪽의 진짜 결함을 조용히 가리게 된다.
+  // 카드와 "⋯"가 **같은** 문자열을 쓰는 이유는 WCAG 2.5.3(보이는 이름과 접근가능 이름 일치)이다 —
+  // 무명 초안끼리의 구별과는 별개 문제다(`MyWorkCardMenu`의 `title` prop 주석 참고).
+  const title = item.kind === "draft" ? item.name || "제목 없는 초안" : item.name;
 
   return (
     <ContentCard
       thumbnailUrl={item.thumbnailUrl}
-      // 초안은 이름이 비어 있는 게 정상 상태다 — US-007의 지연 생성은 사용자가 이름을 넣기 전에도 초안을
-      // 만든다. 폴백을 공용 `ContentCard`가 아니라 여기 두는 이유: 홈·즐겨찾기·프로필에는 이름 없는
-      // 발행작이 올 수 없어서, 공용 쪽에 넣으면 그쪽의 진짜 결함을 조용히 가리게 된다.
-      title={item.kind === "draft" ? item.name || "제목 없는 초안" : item.name}
+      title={title}
       metrics={
         item.kind === "published"
           ? { viewCount: item.viewCount, chatCount: item.chatCount, likeCount: item.likeCount }
@@ -468,6 +475,7 @@ function MyWorkCard({ item, priority, isLcpCandidate }: MyWorkCardProps) {
       // 같은 "수정" 라벨을 붙이면 거짓말이 된다.
       metaLabel={item.kind === "draft" ? `${formatMyWorkUpdatedAt(item.updatedAt)} 수정` : undefined}
       tags={toTags(item)}
+      actions={<MyWorkCardMenu item={item} title={title} userId={userId} />}
       priority={priority}
       isLcpCandidate={isLcpCandidate}
       onClick={() => {
@@ -506,8 +514,10 @@ function MyWorksSkeleton() {
         >
           <div className="aspect-square rounded-lg bg-muted" />
           <div className="flex flex-col gap-1.5">
-            {/* 20 / 16 / 22.5px는 실제 카드의 제목(text-sm) · 한 줄(text-xs) · 배지 행 높이다. */}
-            <div className="h-5 w-3/4 rounded bg-muted" />
+            {/* 28 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
+                20이 아니라 28인 이유는 US-010의 ⋯ 버튼(`size-7`)이 그 행의 높이를 잡기 때문이다 —
+                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측). */}
+            <div className="h-7 w-3/4 rounded bg-muted" />
             <div className="h-4 w-1/2 rounded bg-muted" />
             <div className="h-5.5 w-2/3 rounded-full bg-muted" />
           </div>

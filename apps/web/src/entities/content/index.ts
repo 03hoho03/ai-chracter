@@ -8,6 +8,8 @@ export { useCreateContentDraftMutation } from "./api/useCreateContentDraftMutati
 export type { ContentCreateRequest, ContentCreateResponse } from "./api/useCreateContentDraftMutation";
 export { useUpdateContentDraftMutation } from "./api/useUpdateContentDraftMutation";
 export type { ContentDraftPayload } from "./api/useUpdateContentDraftMutation";
+export { useDeleteContentDraftMutation } from "./api/useDeleteContentDraftMutation";
+export { useResetContentDraftMutation } from "./api/useResetContentDraftMutation";
 export { usePublishContentMutation } from "./api/usePublishContentMutation";
 export type { ContentPublishResponse } from "./api/usePublishContentMutation";
 export { useContentVersionsQuery } from "./api/useContentVersionsQuery";
@@ -53,4 +55,5 @@ export type {
 } from "./model/content";
 export { ContentCard } from "./ui/ContentCard";
 export type { ContentCardMetrics, ContentCardTag } from "./ui/ContentCard";
+export { ContentCardActionMenu } from "./ui/ContentCardActionMenu";
 export { ContentListEmptyState } from "./ui/ContentListEmptyState";

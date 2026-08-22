@@ -1,15 +1,9 @@
 import { useState } from "react";
-import { Button } from "@ai-character-chat/ui/components/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@ai-character-chat/ui/components/dropdown-menu";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { MoreHorizontal } from "lucide-react";
 
 import {
   ContentCard,
+  ContentCardActionMenu,
   isVisibilityFilter,
   resolveAccessStatus,
   useProfileContentListQuery,
@@ -174,39 +168,17 @@ function ProfileContentCard({
   );
 }
 
-/* US-005 — 카드 전체가 상세 모달을 여는 클릭/키 영역이라 트리거와 메뉴 콘텐츠 **양쪽에서** click과
-   keydown을 모두 끊는다. Radix 콘텐츠는 body로 포털되지만 React 이벤트는 컴포넌트 트리를 타고 올라오고,
-   메뉴 항목을 키보드로 고를 때의 Enter는 click이 아니라 keydown으로 카드에 닿아 확인 모달과 상세 모달이
-   동시에 열린다(실측). 그리드에 같은 "⋯"가 여러 개 놓이므로 aria-label에 작품 이름을 넣는다. */
+/* US-005 — 소유자만 보는 공개범위 전환 메뉴. 카드가 클릭 영역이라 지켜야 할 것(click·keydown 양쪽
+   stopPropagation, hover 토큰, 메뉴 폭)은 전부 `ContentCardActionMenu`가 갖고 있다 — US-010이 `/my`에
+   두 번째 "⋯"를 만들면서 같은 셸이 두 벌이 됐고, 그때 이미 두 곳의 `aria-label`이 갈려 있었다. */
 function VisibilityMenu({ content, ownerUserId }: { content: ContentSummary; ownerUserId: string }) {
   return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label={`${content.name} 공개범위 변경`}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-        >
-          <MoreHorizontal aria-hidden />
-        </Button>
-      </DropdownMenuTrigger>
-      {/* 폭을 내용에 맞춘다 — 프리미티브가 트리거 폭(아이콘 32px → min-w-32)에 고정해
-          "링크공개로 전환"이 두 줄로 깨진다. */}
-      <DropdownMenuContent
-        align="end"
-        className="w-auto"
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => event.stopPropagation()}
-      >
-        <VisibilityTransitionMenuItems
-          contentId={content.id}
-          creatorUserId={ownerUserId}
-          currentVisibility={content.visibility}
-        />
-      </DropdownMenuContent>
-    </DropdownMenu>
+    <ContentCardActionMenu title={content.name}>
+      <VisibilityTransitionMenuItems
+        contentId={content.id}
+        creatorUserId={ownerUserId}
+        currentVisibility={content.visibility}
+      />
+    </ContentCardActionMenu>
   );
 }
