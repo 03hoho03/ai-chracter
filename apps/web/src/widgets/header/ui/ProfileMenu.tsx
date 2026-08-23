@@ -141,10 +141,13 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
               내 프로필
             </Link>
           </DropdownMenuItem>
+          {/* US-013이 초안 섹션을 걷어내 이 목적지가 설정 전용이 됐다. 라벨은 페이지 제목(`설정`)과 같은
+              문자열이어야 한다 — 다르면 메뉴에서 고른 이름과 도착한 화면의 h1이 어긋나고, 특히 목적지를
+              제목으로만 확인하는 스크린리더 사용자에게 "다른 데로 왔나"로 읽힌다. */}
           <DropdownMenuItem asChild>
             <Link to="/mypage">
               <Settings2 aria-hidden />
-              마이페이지 · 설정
+              설정
             </Link>
           </DropdownMenuItem>
         </ProfileMenuGroup>

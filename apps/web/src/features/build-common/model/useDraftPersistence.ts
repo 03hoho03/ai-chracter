@@ -59,7 +59,7 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
       queryClient.setQueryData(contentKeys.draft(id), draft);
 
       if (knownId === null) {
-        // 방금 없던 초안이 생겼으니 초안 목록은 낡았다(마이페이지 "작성 중인 초안").
+        // 방금 없던 초안이 생겼으니 초안 목록은 낡았다(내 작품 `/my`의 `미등록`).
         void queryClient.invalidateQueries({ queryKey: draftKeys.list() });
         await navigate({ to: "/builder/$type/$draftId", params: { type, draftId: id }, replace: true });
       }
