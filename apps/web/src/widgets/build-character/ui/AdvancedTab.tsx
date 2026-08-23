@@ -16,30 +16,35 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useFieldArray, type UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { CharacterBuilderFormValues } from "../../../features/build-character";
-import { registerSituationalImage } from "../../../shared/lib/asset/registerSituationalImage";
-import { uploadAsset } from "../../../shared/lib/asset/uploadAsset";
-import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
+import type { CharacterBuilderFormValues } from "@/features/build-character";
+import { registerSituationalImage } from "@/shared/lib/asset/registerSituationalImage";
+import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+
+type SituationalImageRowProps = {
+  id: string;
+  index: number;
+  form: UseFormReturn<CharacterBuilderFormValues>;
+  ensureContentVersionId: () => Promise<string>;
+  onRemove: () => void;
+};
 
 /** 목록 순서가 곧 우선순위(techspec-builder-character.md §2)라 dnd-kit로 재정렬한다 — 순서가
  * 의미 없는 배열(IntroTab의 예시 대화)과 달리 add/remove만으로는 부족하다. 이미지는 업로드
  * 전용(AI 생성 진입점 없음, §3)이라 GeneratedImageField(갤러리 선택 포함)를 재사용하지 않는다.
  * 업로드 완료 시 `PATCH /contents/{id}/draft`가 아니라 `POST /assets/{id}/register-situational-
  * image`로 즉시 등록해야 서버에 반영된다(apps/api CLAUDE.md, formToServer는 이 필드를 보내지
- * 않음) — 그래서 "노출 상황" 텍스트가 비어있으면(서버가 필수로 요구) 업로드를 막는다. */
+ * 않음) — 그래서 "노출 상황" 텍스트가 비어있으면(서버가 필수로 요구) 업로드를 막는다.
+ *
+ * content_version_id를 값이 아니라 `ensureContentVersionId()`로 받는 이유는 US-007이다 — 초안은 첫
+ * 저장 시점에야 만들어지므로, 이 등록이 초안 생성을 먼저 트리거해야 한다. */
 function SituationalImageRow({
   id,
   index,
   form,
-  contentVersionId,
+  ensureContentVersionId,
   onRemove,
-}: {
-  id: string;
-  index: number;
-  form: UseFormReturn<CharacterBuilderFormValues>;
-  contentVersionId: string;
-  onRemove: () => void;
-}) {
+}: SituationalImageRowProps) {
   const { register, getValues, setValue, watch } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -68,6 +73,7 @@ function SituationalImageRow({
 
     setIsUploading(true);
     try {
+      const contentVersionId = await ensureContentVersionId();
       const assetId = await uploadAsset(file, "situational-image");
       await registerSituationalImage(assetId, {
         entityId: getValues(`situationalImages.${index}.id`),
@@ -161,10 +167,10 @@ function SituationalImageRow({
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
 export function AdvancedTab({
   form,
-  contentVersionId,
+  ensureContentVersionId,
 }: {
   form: UseFormReturn<CharacterBuilderFormValues>;
-  contentVersionId: string;
+  ensureContentVersionId: () => Promise<string>;
 }) {
   const { control } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "situationalImages" });
@@ -201,7 +207,7 @@ export function AdvancedTab({
                   id={field.id}
                   index={index}
                   form={form}
-                  contentVersionId={contentVersionId}
+                  ensureContentVersionId={ensureContentVersionId}
                   onRemove={() => remove(index)}
                 />
               ))}

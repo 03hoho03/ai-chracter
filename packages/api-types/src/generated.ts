@@ -420,7 +420,15 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List My Drafts */
+        /**
+         * List My Drafts
+         * @description 한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
+         *
+         *     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
+         *     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
+         *     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
+         *     단위로 `current_published_version_id IS NULL`을 함께 본다.
+         */
         get: operations["list_my_drafts_me_drafts_get"];
         put?: never;
         post?: never;
@@ -566,7 +574,17 @@ export interface paths {
         get: operations["get_content_draft_contents__id__draft_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete Content Draft
+         * @description US-003. Deletes a never-published content outright (draft version + content row).
+         *
+         *     Deletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id
+         *     IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
+         *     fresh draft version, so a published work always has a draft row too, and throwing that
+         *     away would delete the published work with it. Discarding *edits* to a published work is
+         *     `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.
+         */
+        delete: operations["delete_content_draft_contents__id__draft_delete"];
         options?: never;
         head?: never;
         /**
@@ -579,6 +597,34 @@ export interface paths {
          *     not per-version snapshot data (techspec-db-schema.md §3).
          */
         patch: operations["update_content_draft_contents__id__draft_patch"];
+        trace?: never;
+    };
+    "/contents/{id}/draft/reset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reset Content Draft
+         * @description US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with
+         *     the current published version's content. The published version itself is untouched.
+         *
+         *     Deliberately not a delete: publishing auto-clones a draft version, and that clone is the
+         *     row `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.
+         *     `DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.
+         *
+         *     No dirty check — resetting a draft that already matches the published version succeeds
+         *     and simply rewrites identical rows.
+         */
+        post: operations["reset_content_draft_contents__id__draft_reset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/contents/{id}/publish": {
@@ -1876,7 +1922,11 @@ export interface components {
             /** Versionnumber */
             versionNumber: number;
         };
-        /** ContentSummary */
+        /**
+         * ContentSummary
+         * @description `updated_at` is the current published version's `published_at`, not `Content.updated_at`
+         *     (that column has no `onupdate`, so it never moves off the creation time).
+         */
         ContentSummary: {
             /**
              * Id
@@ -1895,8 +1945,17 @@ export interface components {
             thumbnailUrl: string | null;
             /** Viewcount */
             viewCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /** Likecount */
+            likeCount: number;
             visibility: components["schemas"]["ContentVisibility"];
             moderationStatus: components["schemas"]["ModerationStatus"];
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
         };
         /**
          * ContentTarget
@@ -3776,6 +3835,35 @@ export interface operations {
             };
         };
     };
+    delete_content_draft_contents__id__draft_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     update_content_draft_contents__id__draft_patch: {
         parameters: {
             query?: never;
@@ -3799,6 +3887,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CharacterDraftResponse"] | components["schemas"]["StoryDraftResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reset_content_draft_contents__id__draft_reset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

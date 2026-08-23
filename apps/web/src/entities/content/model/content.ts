@@ -34,7 +34,9 @@ export function canAccessExistingRoom(moderationStatus: ModerationStatus): boole
   return moderationStatus !== "restricted" && moderationStatus !== "deleted";
 }
 
-/** 상세화면/신규 진입 가드(US-019) — canAccessExistingRoom과 규칙이 달라 별도 함수로 둔다. */
+/** 상세화면/신규 진입 가드(US-019) — canAccessExistingRoom과 규칙이 달라 별도 함수로 둔다.
+ * 타입 술어로 만들지 말 것 — `accessible + private + 비소유자`도 false라, 거짓 분기를
+ * `restricted | deleted`로 좁히는 술어는 불건전하다(`ContentUnavailableState`가 그 반례를 다룬다). */
 export function canViewDetailPage(access: ContentAccessStatus, isOwner: boolean): boolean {
   if (access.kind === "restricted" || access.kind === "deleted") return false;
   if (access.visibility === "private") return isOwner;

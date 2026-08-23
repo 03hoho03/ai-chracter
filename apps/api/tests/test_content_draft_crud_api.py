@@ -943,3 +943,253 @@ async def test_patch_content_draft_deletes_removed_starting_setup_subtree(
     assert (
         await db_session.scalar(sa.select(EndingRule).where(EndingRule.entity_id == uuid.UUID(rule_id)))
     ) is None
+
+
+async def _mark_published(db_session: AsyncSession, content: Content) -> ContentVersion:
+    """Reproduces the state `_publish_character_content`/`_publish_story_content` leave
+    behind: a published version the content points at, *alongside* the draft version publish
+    auto-clones. Without `current_published_version_id` set, a test would sail through the
+    409 guard while pretending to be published."""
+    published = ContentVersion(
+        content_id=content.id,
+        version_number=1,
+        published_at=datetime.now(timezone.utc),
+        detail_description="발행본",
+    )
+    db_session.add(published)
+    await db_session.flush()
+    content.current_published_version_id = published.id
+    await db_session.flush()
+    return published
+
+
+async def test_delete_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.delete(f"/contents/{uuid.uuid4()}/draft")
+    assert resp.status_code == 401
+
+
+async def test_delete_content_draft_returns_403_for_non_owner(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, other])
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=owner.id)
+    await db_session.commit()
+    await _login_as(db_client, other.id)
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+    assert resp.status_code == 403
+
+    assert (
+        await db_session.scalar(sa.select(Content).where(Content.id == content.id))
+    ) is not None
+
+
+async def test_delete_content_draft_removes_character_draft_with_its_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    image_id = str(uuid.uuid4())
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(situationalImages=[{"id": image_id, "triggerCondition": "조건"}]),
+    )
+    assert patch_resp.status_code == 200
+    version_id = uuid.UUID(patch_resp.json()["contentVersionId"])
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+    assert resp.status_code == 204
+
+    assert (await db_session.scalar(sa.select(Content).where(Content.id == content.id))) is None
+    assert (
+        await db_session.scalar(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(CharacterVersionDetail).where(
+                CharacterVersionDetail.content_version_id == version_id
+            )
+        )
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(SituationalImage).where(SituationalImage.entity_id == uuid.UUID(image_id))
+        )
+    ) is None
+
+
+async def test_delete_content_draft_removes_story_draft_with_its_whole_setup_tree(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """keyword_notes are the interesting part: they hang off the version but carry a physical
+    FK to starting_setups, so deleting setups first would raise an IntegrityError."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    setup_id = str(uuid.uuid4())
+    stat_id = str(uuid.uuid4())
+    ending_id = str(uuid.uuid4())
+    top_rule_id = str(uuid.uuid4())
+    group_id = str(uuid.uuid4())
+    nested_rule_id = str(uuid.uuid4())
+    note_id = str(uuid.uuid4())
+    shortcut_id = str(uuid.uuid4())
+
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                {
+                    "id": setup_id,
+                    "name": "시작설정1",
+                    "prologue": "프롤로그",
+                    "openingMessage": None,
+                    "playguide": None,
+                    "suggestedReplies": [],
+                    "statDefs": [
+                        {
+                            "id": stat_id,
+                            "name": "체력",
+                            "icon": "heart",
+                            "color": "rose",
+                            "minValue": 0,
+                            "maxValue": 100,
+                            "initialValue": 50,
+                            "unit": None,
+                            "description": "체력 스탯",
+                        }
+                    ],
+                    "endings": [
+                        {
+                            "id": ending_id,
+                            "name": "엔딩",
+                            "turnCountGate": 10,
+                            "judgmentPrompt": "판정",
+                            "epilogue": None,
+                            "hint": None,
+                            "statRules": [
+                                {
+                                    "kind": "rule",
+                                    "id": top_rule_id,
+                                    "statId": stat_id,
+                                    "operator": "gte",
+                                    "threshold": 50,
+                                    "nextOp": "and",
+                                },
+                                {
+                                    "kind": "group",
+                                    "id": group_id,
+                                    "nextOp": None,
+                                    "rules": [
+                                        {
+                                            "kind": "rule",
+                                            "id": nested_rule_id,
+                                            "statId": stat_id,
+                                            "operator": "lt",
+                                            "threshold": 10,
+                                            "nextOp": None,
+                                        }
+                                    ],
+                                },
+                            ],
+                        }
+                    ],
+                }
+            ],
+            keywordNotes=[
+                {
+                    "id": note_id,
+                    "infoText": "키워드 노트",
+                    "triggerKeywords": ["단서"],
+                    "startingSetupId": setup_id,
+                }
+            ],
+            shortcuts=[
+                {"id": shortcut_id, "name": "단축어1", "description": "설명", "prompt": "프롬프트"}
+            ],
+        ),
+    )
+    assert patch_resp.status_code == 200
+    # StoryDraftResponse has no contentVersionId (only CharacterDraftResponse does, US-071).
+    version_id = (
+        await db_session.execute(
+            sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+    assert resp.status_code == 204
+
+    assert (await db_session.scalar(sa.select(Content).where(Content.id == content.id))) is None
+    assert (
+        await db_session.scalar(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(StoryVersionDetail).where(StoryVersionDetail.content_version_id == version_id)
+        )
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(KeywordNote).where(KeywordNote.entity_id == uuid.UUID(note_id)))
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(Shortcut).where(Shortcut.entity_id == uuid.UUID(shortcut_id)))
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(StartingSetup).where(StartingSetup.entity_id == uuid.UUID(setup_id))
+        )
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(StatDef).where(StatDef.entity_id == uuid.UUID(stat_id)))
+    ) is None
+    assert (
+        await db_session.scalar(sa.select(Ending).where(Ending.entity_id == uuid.UUID(ending_id)))
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(EndingRuleGroup).where(EndingRuleGroup.entity_id == uuid.UUID(group_id))
+        )
+    ) is None
+    assert (
+        await db_session.scalar(
+            sa.select(EndingRule).where(
+                EndingRule.entity_id.in_([uuid.UUID(top_rule_id), uuid.UUID(nested_rule_id)])
+            )
+        )
+    ) is None
+
+
+async def test_delete_content_draft_returns_409_for_content_with_publish_history(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """Publishing auto-clones a draft version, so a published work always has one — deleting
+    it would take the published work down with it. 편집 취소(`POST /contents/{id}/draft/reset`)가
+    그 경우의 출구다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    published = await _mark_published(db_session, content)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+    assert resp.status_code == 409
+
+    assert (await db_session.scalar(sa.select(Content).where(Content.id == content.id))) is not None
+    assert (
+        await db_session.scalar(sa.select(ContentVersion).where(ContentVersion.id == published.id))
+    ) is not None

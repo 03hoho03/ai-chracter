@@ -196,8 +196,8 @@ components:
 **Character:** 한글 가독성이 검증된 단일 휴머니스트 산세리프를 굵기(weight)만 바꿔 전 화면에 쓴다. 실제로 코드에 존재하는 굵기는 셋뿐이다 — medium(500) / semibold(600) / bold(700). 크기 스케일도 `text-2xl`(1.5rem)에서 멈춘다: 이 제품에는 히어로가 없고, 가장 큰 글자도 페이지 제목이다.
 
 ### Hierarchy
-- **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1)과 마이페이지 섹션 제목. 화면 내 최상위.
-- **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목.
+- **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1) 전용. 화면 내 최상위. **h1이 아닌 곳에 쓰지 않는다 — 예외가 0이다**: 앱의 `text-2xl` 8곳 중 7곳이 h1이고 나머지 하나는 아바타 이니셜 글리프다. (이 줄은 한때 "마이페이지 섹션 제목"을 포함했다. 그건 규칙이 아니라 한 파일의 예외였고 — 그 화면의 h1과 h2는 계산된 속성 580개가 **전부 일치**해 헤딩으로 훑으면 넷이 동일하게 읽혔다 — US-013이 그 h2 셋을 Title로 내리면서 사라졌다.)
+- **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목, **설정 섹션 제목(h2)**. 페이지 제목 아래 한 단계가 필요한 자리는 전부 여기다.
 - **Body** (400, 0.875rem/1.25rem): 본문, 대화 메시지, 설명. 앱에서 압도적으로 가장 많이 쓰이는 크기(122회)이며 **사실상의 기본값**이다. 산문은 65-75자에서 줄바꿈.
 - **Label** (500, 0.75rem/1rem): 폼 라벨, 캡션, 메타(조회수·타임스탬프), 에러 텍스트.
 - **Badge** (500, 11px): 상태 배지 전용. **스케일 밖의 값이며 의도된 예외다** — `text-xs`(12px)는 배지 안에서 너무 크고, 이 한 티어를 위해 스케일을 늘리지 않았다.
@@ -209,7 +209,7 @@ components:
 
 ## 4. Elevation
 
-**이 시스템은 사실상 그림자가 없다.** 깊이는 그림자가 아니라 §2의 명도 사다리(tonal layering)로 표현한다 — 다크에서 카드가 배경 위에 있다는 것은 그림자가 아니라 `card`(0.210)가 `background`(0.160)보다 밝다는 사실로 전달된다. 이것이 "불 꺼진 방"에서 옳은 선택이다: 어두운 방에서 드리운 그림자는 보이지도 않고, 보이게 만들려면 배경을 더 어둡게 깎아야 하는데 그럴 여지가 없다.
+**이 시스템은 사실상 그림자가 없다.** 깊이는 그림자가 아니라 §2의 명도 사다리(tonal layering)로 표현한다 — 다크에서 카드가 배경 위에 있다는 것은 그림자가 아니라 `card`(0.210)가 `background`(0.160)보다 밝다는 사실로 전달된다. **예외는 카드 자체가 주 인터랙션인 경우다** — 그때는 hover가 보여야 해서 표면이 `background`로 내려가고 깊이를 `border` 한 줄이 대신한다(§5 Cards). 이것이 "불 꺼진 방"에서 옳은 선택이다: 어두운 방에서 드리운 그림자는 보이지도 않고, 보이게 만들려면 배경을 더 어둡게 깎아야 하는데 그럴 여지가 없다.
 
 앱 전체에 그림자는 **5개뿐이며**, 그중 3개는 화면 위로 떠 있는 팝오버(단축어 자동완성, 컬러 피커, 아이콘 피커)다. 카드·버튼·인풋은 정지 상태에서 그림자를 갖지 않는다.
 
@@ -235,7 +235,7 @@ components:
 - **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다.
 - **Link:** `text-primary` + underline-offset-4.
 - **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).
-- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다.
+- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **단, 채움이 `primary`인 요소 위에서는 이 레시피가 무너진다** — 아래 §Toggles를 볼 것.
 
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다.
@@ -246,13 +246,15 @@ components:
 - **`variant="list"` — 넓은 행이 세로로 쌓인 목록형 선택지**(신고 사유 등)**에만 쓴다.** 이 형태에 솔리드 채움을 쓰면 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다(밝기 예산 규칙 — `primary` 채움은 버튼 크기에 머문다). 그래서 `border-primary` + `text-primary` + `bg-primary/10` 틴트로만 표시하고(선택 행 텍스트 대비 **5.24:1**), 솔리드 채움은 CTA에 남긴다.
 - **감사 테스트:** 토글에 새 선택 표시를 만들려 한다면, 그 항목이 버튼만 한 크기인지 자문하라. 그렇다면 기본 채움을 그대로 쓰고, 한 줄을 가득 채우는 크기라면 `list`를 쓴다.
 - **호출부에 선택 상태 클래스를 직접 붙이지 말 것** — 프리미티브에 없는 규칙을 호출부마다 문자열로 붙이면 새로 추가되는 화면이 조용히 빠진다(실제로 17곳 중 2곳만 맞았던 적이 있다).
+- **선택된 토글의 포커스 링은 불투명해야 한다**(`data-[state=on]:focus-visible:ring-ring`). §Buttons의 기본 레시피(`ring-ring/50` + `border-ring`)는 **배경 위에서만** 성립한다 — `primary` 솔리드 채움 위에서는 `border-ring`이 보더를 채움과 **같은 핑크**로 바꿔 rest의 회색 윤곽을 지워 버리고(라이트 **1.0000** / 다크 **1.0437**), 남는 50% 링은 페이지 배경 대비 **2.5757 다크 / 2.5511 라이트**로 WCAG 1.4.11의 3:1에 미달한다(포커스 on/off 픽셀 diff 실측, 두 리뷰어 독립 일치). **이 수치는 포커스가 정착한 뒤 재야 한다** — `transition-all` 0.15s가 box-shadow까지 애니메이션해서 Tab 직후 읽으면 전이 중간값(α≈0.486, 2.4724)이 잡힌다. ToggleGroup은 roving tabindex라 **Tab이 닿는 칩은 언제나 선택된 칩**이므로 이건 엣지가 아니라 기본 포커스 상태다. 불투명 링은 같은 픽셀이 **7.1768 다크 / 6.7011 라이트**가 되고 rest 상태는 1픽셀도 바뀌지 않는다.
 
 ### Cards / Containers
 - **Corner Style:** radius `xl`(14px).
 - **Background:** `bg-card`, 테두리 `border-border` 한 줄. **그림자 없음.**
 - **Internal Padding:** 12px(콘텐츠 카드) / 16px(초안 카드) / 32px(인증 카드).
-- **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸.
-- **Thumbnail well:** `aspect-square rounded-lg bg-muted`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로.
+- **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸. **단, 이건 정지 표시용 카드에만 유효하다** — 아래 예외를 볼 것.
+- **예외: 카드 자체가 그 화면의 주 인터랙션이면 button-outline 레시피를 카드 크기로 쓴다** — `border-border bg-background` + `hover:bg-muted` + 하우스 focus 레시피 + `active:translate-y-px`. `bg-card` 위에서는 `hover:bg-accent/50`도 `hover:bg-muted`도 **픽셀상 아무것도 그리지 않기** 때문이다(`background-color`는 층으로 쌓이지 않고 `bg-card`를 대체한 뒤 페이지 배경 위에 합성된다 — 스크린샷 픽셀 실측 **다크 1.0000:1 / 라이트 1.0178:1**). 이 예외를 쓰면 rest에서 카드 채움이 페이지 배경과 같아져 §4의 명도 사다리를 벗어나지만, 경계는 `border`가 유지하고 hover는 다크 1.0946 / 라이트 1.0902로 실제로 보인다. 대안인 `bg-card` + `hover:bg-secondary`는 라이트에서 `muted-foreground` 본문이 4.30:1로 AA에 미달해 쓸 수 없다 — 셋(사다리·hover 가시성·본문 AA)을 동시에 만족하는 조합은 현재 토큰에 없다. 적용처: `ContentCard`(홈·즐겨찾기·프로필·내 작품), `BuilderTypeSelectPage`.
+- **Thumbnail well:** `aspect-square rounded-lg bg-secondary`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로. **`bg-muted`가 아닌 이유**: 웰이 `bg-card` 카드 위(rest)에서도, `hover:bg-muted`가 걸린 카드 위(hover)에서도 표면과 같은 값이 되어 사라진다(둘 다 실측 1.0000:1). `secondary`는 두 상태 모두에서 살아남는다(rest 다크 1.2521 / hover 다크 1.1439).
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
@@ -270,14 +272,16 @@ components:
 
 ### Status badges
 - **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다.
-- **중립 상태(공개/링크공개/비공개):** `bg-muted text-muted-foreground`.
+- **중립 상태(공개/링크공개/비공개/미등록):** `border border-border text-muted-foreground` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
 - **이용제한:** `bg-destructive/10 text-destructive` — 틴트, 채움 아님.
 - **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.
 - **삭제:** 배지가 아니라 전체 패널 빈 상태로 표현한다(`ContentUnavailableState`) — 아이콘 + 제목 + 설명.
 - 상태 배지는 소유자에게만 렌더한다.
 
 ### Layout containers
-페이지 컨테이너의 표준 관용구는 `mx-auto flex max-w-* flex-col gap-* px-6 py-10`이다. max-width는 콘텐츠 밀도에 따라 고른다: 그리드형 목록 `max-w-5xl`, 프로필 `max-w-4xl`, 폼·빌더·상세·채팅 `max-w-2xl`. 인증 화면만 다른 셸을 쓴다(`min-h-screen items-center justify-center px-4 py-12` + `sm:max-w-sm` 카드). **인증 화면에 브랜드 마크를 따로 두지 않는다** — 전역 헤더가 모든 라우트에 마운트되므로 카드 위에 워드마크를 얹으면 같은 단어가 한 화면에 두 번 나온다(§Navigation).
+페이지 컨테이너의 표준 관용구는 `mx-auto flex max-w-* flex-col gap-* px-6 py-10`이다. max-width는 콘텐츠 밀도에 따라 고른다: 그리드형 목록 `max-w-5xl`, 프로필 `max-w-4xl`, 폼·빌더·상세·채팅 `max-w-2xl`, **설정(`/mypage`) `max-w-md`**. 인증 화면만 다른 셸을 쓴다(`min-h-screen items-center justify-center px-4 py-12` + `sm:max-w-sm` 카드). **인증 화면에 브랜드 마크를 따로 두지 않는다** — 전역 헤더가 모든 라우트에 마운트되므로 카드 위에 워드마크를 얹으면 같은 단어가 한 화면에 두 번 나온다(§Navigation).
+
+**컬럼은 그 안에서 가장 넓은 *고대비 잉크*에 맞춘다 — 가장 넓은 컨트롤이 아니다.** 이 시스템에는 카드도 보더도 사이드 레일도 없어 컨테이너 경계가 화면에 그려지지 않는다. 그래서 사용자가 중심을 판정하는 기준은 박스가 아니라 **텍스트**다. `w-full` 컨트롤(인풋·폼)은 컬럼이 얼마나 넓든 컬럼을 채우므로 폭 선택의 근거가 되지 못한다 — **항진명제**이기 때문이다(`/mypage` 비밀번호 인풋은 `max-w-md`에서 400px, `max-w-2xl`에서 624px로 **양쪽 다 콘텐츠 박스를 정확히 채운다**). 근거는 텍스트 쪽인데, 이유는 잉크 폭이 고정이어서가 아니라 **컬럼만큼 빨리 늘지 않아서**다 — 산문은 늘어난 폭을 줄바꿈으로 흡수하고 마지막 줄이 오른쪽에 빈자리를 남긴다. `/mypage`는 콘텐츠 박스를 400→624px(+224)로 늘려도 잉크가 391.13→450.11px(+59)까지만 늘고, 남는 폭이 전부 오른쪽에 쌓여 잉크 중심이 왼쪽으로 밀린다 — 뷰포트 중심 대비 `max-w-md` **−4.44px**, `max-w-2xl` **−86.95px**(1280px A/B 실측). **박스 자체는 두 폭 모두 정확히 중앙이다(drift 0)** — 그런데 그 박스를 그리는 유일한 선인 인풋 보더가 저대비라 눈에 남는 건 텍스트뿐이다. 목록에서 가장 넓은 항목이 사라지면 컬럼도 함께 줄인다.
 
 **간격은 gap 하나로만 만든다** — `space-y-*`와 `divide-*`는 앱 전체에서 **0회** 사용이며, 레이아웃은 100% `flex flex-col gap-*`이다. 가장 많이 쓰이는 값은 `gap-1.5`(6px, 라벨↔인풋)와 `gap-2`(8px, 버튼 행)다.
 

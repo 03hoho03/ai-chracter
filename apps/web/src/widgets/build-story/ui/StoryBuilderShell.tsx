@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import type { ApiError, components } from "@ai-character-chat/api-types";
+import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useNavigate } from "@tanstack/react-router";
@@ -7,11 +7,12 @@ import { useAtom } from "jotai";
 import { useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
-import { usePublishContentMutation, useUpdateContentDraftMutation } from "../../../entities/content";
-import type { PreviewStartPayload } from "../../../entities/preview-session";
-import { storyBuilderSchema, formToServer, serverToForm, type StoryBuilderFormValues } from "../../../features/build-story";
-import { useAutosave } from "../../../features/build-common";
-import { AppealModal } from "../../../features/submit-appeal";
+import { usePublishContentMutation, type StoryDraftContent } from "@/entities/content";
+import type { PreviewStartPayload } from "@/entities/preview-session";
+import { storyBuilderSchema, formToServer, serverToForm, type StoryBuilderFormValues } from "@/features/build-story";
+import { useAutosave, useDraftPersistence } from "@/features/build-common";
+import { AppealModal } from "@/features/submit-appeal";
+
 import { storyBuilderActiveTabAtom, type StoryBuilderTab } from "../model/activeTabAtom";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
@@ -21,8 +22,6 @@ import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
 import { StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
-
-type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 
 const TABS: { id: StoryBuilderTab; label: string }[] = [
   { id: "profile", label: "프로필" },
@@ -66,25 +65,28 @@ function getMissingFieldLabels(error: unknown): string[] | null {
   return fields.map((field) => MISSING_FIELD_LABELS[String(field)] ?? String(field));
 }
 
-/** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 자동저장(US-096)/발행(US-085)/
- * 미리보기(US-088)를 CharacterBuilderShell.tsx(US-105)와 동일한 방식으로 연동한다. */
-export function StoryBuilderShell({
-  data,
-  renderPreview,
-}: {
-  data: StoryDraftResponse;
+type StoryBuilderShellProps = {
+  draft: StoryDraftContent;
+  draftId: string | null;
   renderPreview: (args: { getPayload: () => PreviewStartPayload; onClose: () => void }) => ReactNode;
-}) {
+};
+
+/** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 자동저장(US-096)/발행(US-085)/
+ * 미리보기(US-088)를 CharacterBuilderShell.tsx(US-105)와 동일한 방식으로 연동한다.
+ *
+ * `draftId`는 아직 서버에 없는 초안이면 null이다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
+export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilderShellProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useAtom(storyBuilderActiveTabAtom);
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [isPublishing, setIsPublishing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string | null>(null);
-  const form = useForm<StoryBuilderFormValues>({ defaultValues: serverToForm(data) });
+  const form = useForm<StoryBuilderFormValues>({ defaultValues: serverToForm(draft) });
   const values = useWatch({ control: form.control });
   const canPublish = storyBuilderSchema.safeParse(values).success;
 
-  const updateDraftMutation = useUpdateContentDraftMutation(data.id);
-  const publishMutation = usePublishContentMutation(data.id);
+  const { saveDraft } = useDraftPersistence({ type: "story", draftId });
+  const publishMutation = usePublishContentMutation();
 
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
@@ -92,7 +94,8 @@ export function StoryBuilderShell({
       return () => subscription.unsubscribe();
     },
     formToServer,
-    save: (payload) => updateDraftMutation.mutateAsync(payload).then(() => undefined),
+    save: saveDraft,
+    flushOnUnmount: () => draftId !== null,
   });
 
   async function handleSaveNow() {
@@ -107,9 +110,10 @@ export function StoryBuilderShell({
   async function handlePublish() {
     setRejectionReason(null);
     const payload = formToServer(storyBuilderSchema.parse(form.getValues()));
+    setIsPublishing(true);
     try {
-      await updateDraftMutation.mutateAsync(payload);
-      const result = await publishMutation.mutateAsync();
+      const savedDraft = await saveDraft(payload);
+      const result = await publishMutation.mutateAsync({ id: savedDraft.id });
       void navigate({ to: "/content/$type/$id", params: { type: "story", id: result.contentId } });
     } catch (error) {
       const reason = getFilterRejectionReason(error);
@@ -123,6 +127,8 @@ export function StoryBuilderShell({
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsPublishing(false);
     }
   }
 
@@ -133,26 +139,31 @@ export function StoryBuilderShell({
     });
   }
 
-  const isPublishing = updateDraftMutation.isPending || publishMutation.isPending;
-
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
-      <header className="flex items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">스토리 만들기</h1>
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="outline" onClick={() => setIsPreviewOpen(true)}>
-            미리보기
-          </Button>
-          <Button type="button" variant="outline" onClick={() => void handleSaveNow()}>
-            임시저장
-          </Button>
-          <Button disabled={!canPublish || isPublishing} onClick={() => void handlePublish()}>
-            {isPublishing ? "발행 중..." : "발행"}
-          </Button>
+      {/* 저장 계약을 한 번 말해 둔다 — 자동저장은 성공해도 아무 표시가 없어서, 이 문장이 없으면
+          사용자가 "자동저장"이라는 단어를 처음 만나는 자리가 빨간 실패 토스트다(US-007). */}
+      <header className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-4">
+          <h1 className="text-2xl font-bold break-keep tracking-tight text-foreground">스토리 만들기</h1>
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="outline" onClick={() => setIsPreviewOpen(true)}>
+              미리보기
+            </Button>
+            <Button type="button" variant="outline" onClick={() => void handleSaveNow()}>
+              임시저장
+            </Button>
+            <Button disabled={!canPublish || isPublishing} onClick={() => void handlePublish()}>
+              {isPublishing ? "발행 중..." : "발행"}
+            </Button>
+          </div>
         </div>
+        <p className="text-sm break-keep text-muted-foreground">
+          변경사항은 자동으로 저장돼요.
+        </p>
       </header>
 
-      {rejectionReason && (
+      {rejectionReason !== null && draftId !== null && (
         <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
           <div>
             <p className="text-sm font-medium text-destructive">발행이 거부되었어요</p>
@@ -164,7 +175,7 @@ export function StoryBuilderShell({
             size="sm"
             className="shrink-0"
             onClick={() =>
-              void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: data.id } })
+              void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
             }
           >
             이의제기

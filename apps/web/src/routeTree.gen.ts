@@ -13,17 +13,18 @@ import { Route as UiDemoRouteImport } from './routes/ui-demo'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as MypageRouteImport } from './routes/mypage'
+import { Route as MyRouteImport } from './routes/my'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
-import { Route as BuilderTypeNewRouteImport } from './routes/builder.$type.new'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
 
 const UiDemoRoute = UiDemoRouteImport.update({
@@ -44,6 +45,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const MypageRoute = MypageRouteImport.update({
   id: '/mypage',
   path: '/mypage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MyRoute = MyRouteImport.update({
+  id: '/my',
+  path: '/my',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -71,6 +77,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const BuilderIndexRoute = BuilderIndexRouteImport.update({
+  id: '/builder/',
+  path: '/builder/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudioImagesRoute = StudioImagesRouteImport.update({
   id: '/studio/images',
   path: '/studio/images',
@@ -96,11 +107,6 @@ const ContentTypeIdRoute = ContentTypeIdRouteImport.update({
   path: '/content/$type/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const BuilderTypeNewRoute = BuilderTypeNewRouteImport.update({
-  id: '/builder/$type/new',
-  path: '/builder/$type/new',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const BuilderTypeDraftIdRoute = BuilderTypeDraftIdRouteImport.update({
   id: '/builder/$type/$draftId',
   path: '/builder/$type/$draftId',
@@ -113,6 +119,7 @@ export interface FileRoutesByFullPath {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -121,8 +128,8 @@ export interface FileRoutesByFullPath {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder/': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRoutesByTo {
@@ -131,6 +138,7 @@ export interface FileRoutesByTo {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -139,8 +147,8 @@ export interface FileRoutesByTo {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRoutesById {
@@ -150,6 +158,7 @@ export interface FileRoutesById {
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/login': typeof LoginRoute
+  '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -158,8 +167,8 @@ export interface FileRoutesById {
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
+  '/builder/': typeof BuilderIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
-  '/builder/$type/new': typeof BuilderTypeNewRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
 export interface FileRouteTypes {
@@ -170,6 +179,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -178,8 +188,8 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder/'
     | '/builder/$type/$draftId'
-    | '/builder/$type/new'
     | '/content/$type/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -196,8 +207,8 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder'
     | '/builder/$type/$draftId'
-    | '/builder/$type/new'
     | '/content/$type/$id'
   id:
     | '__root__'
@@ -206,6 +217,7 @@ export interface FileRouteTypes {
     | '/favorites'
     | '/forgot-password'
     | '/login'
+    | '/my'
     | '/mypage'
     | '/reset-password'
     | '/signup'
@@ -214,8 +226,8 @@ export interface FileRouteTypes {
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
+    | '/builder/'
     | '/builder/$type/$draftId'
-    | '/builder/$type/new'
     | '/content/$type/$id'
   fileRoutesById: FileRoutesById
 }
@@ -225,6 +237,7 @@ export interface RootRouteChildren {
   FavoritesRoute: typeof FavoritesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LoginRoute: typeof LoginRoute
+  MyRoute: typeof MyRoute
   MypageRoute: typeof MypageRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
@@ -233,8 +246,8 @@ export interface RootRouteChildren {
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
+  BuilderIndexRoute: typeof BuilderIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
-  BuilderTypeNewRoute: typeof BuilderTypeNewRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
 }
 
@@ -266,6 +279,13 @@ declare module '@tanstack/react-router' {
       path: '/mypage'
       fullPath: '/mypage'
       preLoaderRoute: typeof MypageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/my': {
+      id: '/my'
+      path: '/my'
+      fullPath: '/my'
+      preLoaderRoute: typeof MyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -303,6 +323,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/builder/': {
+      id: '/builder/'
+      path: '/builder'
+      fullPath: '/builder/'
+      preLoaderRoute: typeof BuilderIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/studio/images': {
       id: '/studio/images'
       path: '/studio/images'
@@ -338,13 +365,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContentTypeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/builder/$type/new': {
-      id: '/builder/$type/new'
-      path: '/builder/$type/new'
-      fullPath: '/builder/$type/new'
-      preLoaderRoute: typeof BuilderTypeNewRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/builder/$type/$draftId': {
       id: '/builder/$type/$draftId'
       path: '/builder/$type/$draftId'
@@ -361,6 +381,7 @@ const rootRouteChildren: RootRouteChildren = {
   FavoritesRoute: FavoritesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LoginRoute: LoginRoute,
+  MyRoute: MyRoute,
   MypageRoute: MypageRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
@@ -369,8 +390,8 @@ const rootRouteChildren: RootRouteChildren = {
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
+  BuilderIndexRoute: BuilderIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
-  BuilderTypeNewRoute: BuilderTypeNewRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
 }
 export const routeTree = rootRouteImport
