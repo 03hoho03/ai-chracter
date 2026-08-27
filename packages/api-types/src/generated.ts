@@ -1936,6 +1936,10 @@ export interface components {
          * ContentSummary
          * @description `updated_at` is the current published version's `published_at`, not `Content.updated_at`
          *     (that column has no `onupdate`, so it never moves off the creation time).
+         *
+         *     `has_unpublished_changes` is the explicit `Content` flag, not something derived from the
+         *     draft version's existence — publishing auto-clones a draft, so every published content has
+         *     one (US-002).
          */
         ContentSummary: {
             /**
@@ -1961,6 +1965,8 @@ export interface components {
             likeCount: number;
             visibility: components["schemas"]["ContentVisibility"];
             moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Hasunpublishedchanges */
+            hasUnpublishedChanges: boolean;
             /**
              * Updatedat
              * Format: date-time

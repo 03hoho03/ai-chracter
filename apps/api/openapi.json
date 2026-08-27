@@ -4804,6 +4804,10 @@
           "moderationStatus": {
             "$ref": "#/components/schemas/ModerationStatus"
           },
+          "hasUnpublishedChanges": {
+            "type": "boolean",
+            "title": "Hasunpublishedchanges"
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time",
@@ -4822,10 +4826,11 @@
           "likeCount",
           "visibility",
           "moderationStatus",
+          "hasUnpublishedChanges",
           "updatedAt"
         ],
         "title": "ContentSummary",
-        "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time)."
+        "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time).\n\n`has_unpublished_changes` is the explicit `Content` flag, not something derived from the\ndraft version's existence — publishing auto-clones a draft, so every published content has\none (US-002)."
       },
       "ContentSummaryListResponse": {
         "properties": {

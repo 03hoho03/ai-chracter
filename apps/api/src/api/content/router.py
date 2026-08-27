@@ -484,6 +484,7 @@ async def list_user_contents(
                 like_count=content.like_count,
                 visibility=content.visibility,
                 moderation_status=content.moderation_status,
+                has_unpublished_changes=content.has_unpublished_changes,
                 updated_at=version.published_at,
             )
         )
@@ -1109,6 +1110,9 @@ async def update_content_draft(
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
+    # 자동저장이 곧 "발행본과 달라진 편집분이 생겼다"이다. 아래 두 분기가 각자 끝에서 commit 하고
+    # 페이로드/타입 불일치(422)는 commit 전에 raise 하므로, 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다.
+    content.has_unpublished_changes = True
 
     if isinstance(payload, CharacterDraftPayload):
         if content.type != ContentType.CHARACTER:
@@ -1259,6 +1263,9 @@ async def reset_content_draft(
     published_version = await db.get(ContentVersion, content.current_published_version_id)
     assert published_version is not None
 
+    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다(US-002).
+    content.has_unpublished_changes = False
+
     await _delete_draft_children(db, content.type, draft_version.id)
 
     draft_version.detail_description = published_version.detail_description
@@ -1314,6 +1321,10 @@ async def publish_content(
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
+    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다(US-002). 두 헬퍼는 이 함수만
+    # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
+    # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
+    content.has_unpublished_changes = False
     if content.type == ContentType.CHARACTER:
         return await _publish_character_content(db, content, version, llm_client)
     return await _publish_story_content(db, content, version, llm_client)

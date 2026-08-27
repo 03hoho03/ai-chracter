@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, BigInteger, DateTime, Enum, ForeignKey, Integer, Text, Uuid, func
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Text, Uuid, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -76,6 +76,12 @@ class Content(Base):
             "content_versions.id", use_alter=True, name="fk_contents_current_published_version_id"
         ),
         nullable=True,
+    )
+    # 초안이 현재 발행본과 달라졌는지. 타임스탬프로는 판정할 수 없어 명시적 플래그다 —
+    # `ContentVersion`에 `updated_at`이 없고, 초안의 자식 행들(상황이미지·시작설정 등)은 별도
+    # 테이블이라 편집해도 버전 행을 건드리지 않는다. 자동저장이 세우고 발행·편집취소가 내린다.
+    has_unpublished_changes: Mapped[bool] = mapped_column(
+        Boolean, server_default=false(), nullable=False
     )
     view_count: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     like_count: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)

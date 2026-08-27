@@ -31,7 +31,11 @@ class DraftListResponse(CamelModel):
 
 class ContentSummary(CamelModel):
     """`updated_at` is the current published version's `published_at`, not `Content.updated_at`
-    (that column has no `onupdate`, so it never moves off the creation time)."""
+    (that column has no `onupdate`, so it never moves off the creation time).
+
+    `has_unpublished_changes` is the explicit `Content` flag, not something derived from the
+    draft version's existence — publishing auto-clones a draft, so every published content has
+    one (US-002)."""
 
     id: uuid.UUID
     type: ContentType
@@ -43,6 +47,7 @@ class ContentSummary(CamelModel):
     like_count: int
     visibility: ContentVisibility
     moderation_status: ModerationStatus
+    has_unpublished_changes: bool
     updated_at: datetime
 
 
