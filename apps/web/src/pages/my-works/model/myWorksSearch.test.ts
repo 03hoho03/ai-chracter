@@ -7,14 +7,25 @@ describe("myWorksSearchSchema", () => {
     expect(myWorksSearchSchema.parse({})).toEqual({});
   });
 
-  it("정의된 값만 통과시킨다", () => {
+  it("정의된 값을 그대로 통과시킨다", () => {
     expect(myWorksSearchSchema.parse({ type: "unpublished", visibility: "link", sort: "latest" })).toEqual({
       type: "unpublished",
       visibility: "link",
       sort: "latest",
     });
-    expect(myWorksSearchSchema.safeParse({ type: "all" }).success).toBe(false);
-    expect(myWorksSearchSchema.safeParse({ visibility: "all" }).success).toBe(false);
+  });
+
+  it("모르는 값은 그 축만 부재로 떨어뜨린다 — 던지면 라우터가 페이지를 통째로 죽인다", () => {
+    // 기본값 멤버(`all`)도 `.exclude()` 때문에 '모르는 값'이다 — 부재로 접히므로 결과는 같다.
+    expect(myWorksSearchSchema.parse({ type: "all" })).toEqual({});
+    expect(myWorksSearchSchema.parse({ visibility: "all" })).toEqual({});
+    expect(myWorksSearchSchema.parse({ type: "bogus", sort: "bogus" })).toEqual({});
+    // 값 하나가 어긋나도 나머지 축은 살아남는다.
+    expect(myWorksSearchSchema.parse({ type: "bogus", visibility: "private" })).toEqual({
+      visibility: "private",
+    });
+    // 라우터는 `?type=1`을 숫자로 파싱해 넘긴다(`parseSearchWith(JSON.parse)`) — 타입이 어긋난 값도 같다.
+    expect(myWorksSearchSchema.parse({ type: 1, visibility: null })).toEqual({});
   });
 });
 

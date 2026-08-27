@@ -20,12 +20,14 @@ export type MyWorksSort = (typeof MY_WORKS_SORTS)[number];
  * 기본값(`all` / `latest`)은 파라미터를 **비워서** 표현한다 — `?type=all&sort=latest`가 늘 붙어 있으면
  * 공유 URL이 지저분해지는 데다 "필터가 걸려 있다"는 신호 자체가 죽는다. */
 export const myWorksSearchSchema = z.object({
-  // 기본값 멤버(`all`)는 `.exclude()`로 뺀다 — 스키마가 `all`을 받으면 `?type=all`이 유효해져
-  // "부재가 곧 기본값"이 깨진다. 목록을 손으로 다시 적으면 멤버가 늘 때 그 값이 붙은 링크가
-  // `SearchParamError`로 페이지를 통째로 죽인다(`apps/web/CLAUDE.md`의 `validateSearch` 함정).
-  type: z.enum(MY_WORK_TYPE_FILTERS).exclude(["all"]).optional(),
-  visibility: z.enum(VISIBILITY_FILTERS).exclude(["all"]).optional(),
-  sort: z.enum(MY_WORKS_SORTS).optional(),
+  // 기본값 멤버(`all`)는 `.exclude()`로 뺀다 — 출력 타입에 `all`이 없어야 `navigate`/`<Link>`가
+  // `?type=all`을 쓸 수 없고 "부재가 곧 기본값"이 타입 수준에서 지켜진다.
+  // `.catch(undefined)`는 그 반대편이다 — **읽을 때는** 모르는 값(`?type=all`·`?type=bogus`)을 거부하지
+  // 않고 부재로 떨어뜨려 페이지가 렌더되게 한다. 거부하면 라우터가 `SearchParamError`를 던져 앱 크롬
+  // 없는 영문 에러 상자만 남는다(`apps/web/CLAUDE.md`의 `validateSearch` 규칙, 8곳 공통 처방).
+  type: z.enum(MY_WORK_TYPE_FILTERS).exclude(["all"]).optional().catch(undefined),
+  visibility: z.enum(VISIBILITY_FILTERS).exclude(["all"]).optional().catch(undefined),
+  sort: z.enum(MY_WORKS_SORTS).optional().catch(undefined),
 });
 
 export type MyWorksSearch = z.infer<typeof myWorksSearchSchema>;
