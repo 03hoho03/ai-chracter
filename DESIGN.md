@@ -308,7 +308,10 @@ components:
 ### Motion
 - **모션 라이브러리는 없다.** `tw-animate-css` + Tailwind 유틸리티만 쓴다. 이 시스템에 코레오그래피는 존재하지 않는다.
 - **지속시간은 100-300ms**: 팝오버 100ms, 스텝 전환·검색 확장 200ms, 스탯 게이지 300ms. `ease-out`.
-- **모든 모션은 `motion-safe:` 접두사로 가드한다** — 어두운 방에서 갑작스러운 움직임은 놀람이다. 새 애니메이션을 추가할 때 `motion-safe:`를 빼먹지 말 것.
+- **모든 모션은 `motion-safe:` 접두사로 가드한다** — 어두운 방에서 갑작스러운 움직임은 놀람이다. 새 애니메이션을 추가할 때 `motion-safe:`를 빼먹지 말 것. `packages/ui`의 프리미티브 12개는 US-005에서 전수 게이팅됐고(dialog·alert-dialog·sheet·dropdown-menu·select·button·toggle·switch·tabs·input·textarea·checkbox·table), `reduce`에서 `animation-name: none` · `transition-duration: 0s`가 되는 것이 실측돼 있다.
+  - **`duration-*`도 함께 가드한다.** `duration-100`은 `transition-duration`까지 세팅하는데 CSS의 `transition-property` 초깃값이 `all`이라, 애니메이션만 끄면 `reduce`에서 `transition: all 0.1s`가 살아남는다.
+  - **호출부에서는 못 끈다** — `motion-reduce:animate-none`을 얹어도 `data-open:` 변형의 속성 선택자가 특이도에서 이긴다. 프리미티브에서 가드하는 것 말고 방법이 없다.
+  - **예외는 진행 표시다** — 로딩 스피너(`animate-spin`)와 스켈레톤(`animate-pulse`)은 멈추면 "멈춘 UI"로 읽히므로 가드하지 않는다. 장식·전환은 가드하고 진행 표시는 남긴다.
 - 상태 전달만 한다: 스텝 전환, 팝오버 열림, 게이지 변화, 타이핑 인디케이터. 장식적 등장 연출은 금지.
 
 ## 6. Do's and Don'ts
