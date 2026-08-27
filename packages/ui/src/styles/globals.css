@@ -70,7 +70,12 @@
      C는 이 L의 sRGB 게멋 상한 0.1986 아래라 명도를 더 못 민다 */
   --destructive-text: oklch(0.49 0.19 25);
   --border: oklch(0.89 0 0);
-  --input: oklch(0.89 0 0);
+  /* 컨트롤 식별용 보더 — 구분선(`--border`)과 값을 갈랐다(US-004). 인풋·셀렉트·체크박스·outline 토글은
+     내부 채움이 배경과 1.0000이라 이 보더가 유일한 식별 수단인데, 사다리 값(0.89)으로는 배경 대비
+     1.3845로 WCAG 1.4.11(3:1)에 미달했다. 0.62는 컨트롤이 실제로 앉는 두 표면 모두에서 넘긴다 —
+     `background` 3.6408 / `card`(=popover·muted) 3.3395. `secondary`·`accent`(0.93) 위에서는 2.9714로
+     여전히 미달이니 그 표면에는 보더 컨트롤을 올리지 않는다 */
+  --input: oklch(0.62 0 0);
   --ring: oklch(0.5 0.19 0);
   --radius: 0.625rem;
   color-scheme: light;
@@ -104,7 +109,9 @@
      0.69면 4.6346이다(브라우저 실측). 밝기 천장 foreground(0.930) 아래이고 C는 게멋 상한 0.1995 아래다 */
   --destructive-text: oklch(0.69 0.19 25);
   --border: oklch(0.3 0 0);
-  --input: oklch(0.3 0 0);
+  /* 라이트와 같은 이유로 구분선에서 갈라 낸 값. 사다리 값(0.3)은 배경 대비 1.4312였다.
+     0.52는 `background` 3.5403 / `card`(=popover·muted) 3.2344이고 `secondary`(0.26) 위는 2.8276이다 */
+  --input: oklch(0.52 0 0);
   --ring: oklch(0.72 0.18 0);
   color-scheme: dark;
 }

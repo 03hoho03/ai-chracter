@@ -56,6 +56,20 @@ function DropdownMenuGroup({
   )
 }
 
+/** **포커스 표시는 채움이 아니라 링이 진다**(US-004). 상류 shadcn은 `outline-hidden` + `focus:bg-accent`
+ * 하나로 끝내는데, 이 시스템의 명도 사다리에서 그 채움 변화는 popover 대비 **1.1439 다크 / 1.1239 라이트**
+ * (destructive 항목은 1.1119 / 1.1598)로 WCAG 1.4.11(3:1)의 절반도 안 된다. 사다리로는 못 고친다 —
+ * 최상단 `border`를 채움으로 써도 popover 대비 약 1.3이다. 그래서 `focus:inset-ring-1 focus:inset-ring-ring`을
+ * 얹었다: 링(=`primary`) 대 포커스 채움이 중립 **5.7320 / 5.4691**, destructive **5.8968 / 5.2997**로
+ * 두 variant 모두 한 번에 넘긴다(그래서 링 색을 variant별로 가르지 않는다 — 메뉴 안에서 포커스 어휘가 하나다).
+ *
+ * **`Item`·`CheckboxItem`·`RadioItem`·`SubTrigger` 넷을 함께 고친 것은 의도다** — 넷이 같은
+ * `outline-hidden focus:bg-accent`를 물고 전원 미달이라 "결함 없는 소비처"가 0개고, 한 곳만 고치면
+ * 앱 안에서 포커스 시각 언어가 갈린다. Radix는 `pointermove`에도 focus를 걸므로 이 링은 키보드 전용이 아니다.
+ *
+ * `data-disabled:opacity-65`는 상류 `opacity-50`을 올린 값이다 — 50%면 항목 글자가 popover 위에서
+ * **3.2515 라이트 / 4.4959 다크**로 AA(4.5:1) 아래인데, 이 앱은 비활성 항목에 "왜 못 누르는지"를
+ * 읽혀야 하는 자리가 있다(이용제한 작품 메뉴). 65%면 **5.1882 / 6.7086**이다. */
 function DropdownMenuItem({
   className,
   inset,
@@ -71,7 +85,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
         className
       )}
       {...props}
@@ -93,7 +107,7 @@ function DropdownMenuCheckboxItem({
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       checked={checked}
@@ -137,7 +151,7 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -224,7 +238,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}

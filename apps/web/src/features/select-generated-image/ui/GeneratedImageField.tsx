@@ -109,7 +109,7 @@ export function GeneratedImageField({
             type="button"
             onClick={handleDelete}
             aria-label="이미지 삭제"
-            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-input bg-background text-muted-foreground shadow-sm hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <X aria-hidden className="size-3.5" />
           </button>
@@ -119,7 +119,7 @@ export function GeneratedImageField({
       <div className="flex flex-col gap-2">
         <Label
           htmlFor={inputId}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2.5 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
         >
           <Camera aria-hidden className="size-4" />
           {isUploading ? "업로드 중..." : "파일 업로드"}

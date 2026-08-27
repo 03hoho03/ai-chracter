@@ -28,7 +28,7 @@ export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border text-foreground hover:bg-secondary/50"
+        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input text-foreground hover:bg-secondary/50"
       >
         {SelectedIcon ? (
           <SelectedIcon aria-hidden className="size-5" />
