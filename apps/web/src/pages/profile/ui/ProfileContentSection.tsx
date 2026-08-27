@@ -5,7 +5,7 @@ import {
   ContentCard,
   ContentCardActionMenu,
   isVisibilityFilter,
-  resolveAccessStatus,
+  toContentStatusTags,
   useProfileContentListQuery,
   VISIBILITY_FILTER_OPTIONS,
   type ContentCardTag,
@@ -138,17 +138,12 @@ function ProfileContentCard({
   priority = false,
   isLcpCandidate = false,
 }: ProfileContentCardProps) {
-  // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 배지는
-  // content.visibility를 그대로 쓴다(restricted 케이스도 두 배지가 함께 노출돼야 하므로).
-  const access = resolveAccessStatus(content.visibility, content.moderationStatus);
   const { open } = useContentDetailModal();
 
+  // 상태 배지는 소유자에게만 보인다(DESIGN.md §Status badges). 조합 자체는 `/my`와 **같은 함수**가
+  // 정한다 — 사본이 둘이면 두 화면이 같은 작품에 다른 말을 한다(US-008).
   const tags: ContentCardTag[] = [content.type];
-  // 상태 배지는 소유자에게만 보인다(DESIGN.md §Status badges).
-  if (isOwner) {
-    tags.push(content.visibility);
-    if (access.kind === "restricted") tags.push("restricted");
-  }
+  if (isOwner) tags.push(...toContentStatusTags(content));
 
   return (
     <ContentCard
@@ -178,6 +173,7 @@ function VisibilityMenu({ content, ownerUserId }: { content: ContentSummary; own
         contentId={content.id}
         creatorUserId={ownerUserId}
         currentVisibility={content.visibility}
+        moderationStatus={content.moderationStatus}
       />
     </ContentCardActionMenu>
   );

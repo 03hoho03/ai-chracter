@@ -45,6 +45,7 @@ export {
   canViewDetailPage,
   resolveAccessStatus,
   toContentAccessStatus,
+  toContentStatusTags,
 } from "./model/content";
 export type {
   ContentAccessStatus,

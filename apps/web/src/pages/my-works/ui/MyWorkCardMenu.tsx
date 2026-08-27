@@ -69,6 +69,7 @@ export function MyWorkCardMenu({ item, title, userId }: MyWorkCardMenuProps) {
             contentId={item.id}
             creatorUserId={userId}
             currentVisibility={item.visibility}
+            moderationStatus={item.moderationStatus}
           />
 
           <DropdownMenuSeparator />

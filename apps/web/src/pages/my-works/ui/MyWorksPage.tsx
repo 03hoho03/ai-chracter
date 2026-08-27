@@ -18,13 +18,18 @@ import {
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
-  type ContentCardTag,
   type VisibilityFilter,
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
-import { filterMyWorks, formatMyWorkUpdatedAt, mergeMyWorks, type MyWorkItem } from "../model/myWorkItems";
+import {
+  filterMyWorks,
+  formatMyWorkUpdatedAt,
+  mergeMyWorks,
+  toMyWorkTags,
+  type MyWorkItem,
+} from "../model/myWorkItems";
 import {
   isMyWorksSort,
   isMyWorkTypeFilter,
@@ -511,7 +516,7 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
       // 초안에만 수정일을 단다 — 발행작의 `updatedAt`은 마지막 **발행** 시각이라(확정 결정 1)
       // 같은 "수정" 라벨을 붙이면 거짓말이 된다.
       metaLabel={item.kind === "draft" ? `${formatMyWorkUpdatedAt(item.updatedAt)} 수정` : undefined}
-      tags={toTags(item)}
+      tags={toMyWorkTags(item)}
       actions={<MyWorkCardMenu item={item} title={title} userId={userId} />}
       priority={priority}
       isLcpCandidate={isLcpCandidate}
@@ -524,11 +529,6 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
       }}
     />
   );
-}
-
-function toTags(item: MyWorkItem): ContentCardTag[] {
-  // 초안에는 공개범위가 없다 — 배지는 "미등록" 하나뿐이다(확정 결정 6).
-  return item.kind === "published" ? [item.type, item.visibility] : [item.type, "unpublished"];
 }
 
 /** 실제 카드 구조(썸네일 웰 + 제목 + 한 줄 + 배지)를 그대로 흉내 낸다 — `aspect-[3/4]` 한 장짜리

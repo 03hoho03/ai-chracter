@@ -114,7 +114,14 @@ function DropdownMenuGroup({
  *
  * `data-disabled:opacity-65`는 상류 `opacity-50`을 올린 값이다 — 50%면 항목 글자가 popover 위에서
  * **3.2515 라이트 / 4.4959 다크**로 AA(4.5:1) 아래인데, 이 앱은 비활성 항목에 "왜 못 누르는지"를
- * 읽혀야 하는 자리가 있다(이용제한 작품 메뉴). 65%면 **5.1882 / 6.7086**이다. */
+ * 읽혀야 하는 자리가 있다(이용제한 작품 메뉴). 65%면 **5.1882 / 6.7086**이다.
+ *
+ * **`aria-disabled:`가 같은 값을 함께 받는 것도 그 자리 때문이다**(US-008). Radix는 `disabled` 항목을
+ * `RovingFocusGroup.Item`의 `focusable: !disabled`로 포커스 순회와 타입어헤드에서 통째로 빼므로,
+ * 사유를 읽혀야 하는 비활성 항목은 `disabled` 대신 `aria-disabled` + `onSelect` `preventDefault`로 만든다
+ * (`VisibilityTransitionMenuItems`). 그러면 `data-disabled`가 안 붙어 흐림이 사라지므로 두 선택자가
+ * 같은 값을 물어야 한다. `pointer-events-none`은 일부러 안 걸었다 — 포커스와 hover가 살아 있어야
+ * 그 자리에서 사유가 읽힌다. */
 function DropdownMenuItem({
   className,
   inset,
@@ -130,7 +137,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-65 aria-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
         className
       )}
       {...props}

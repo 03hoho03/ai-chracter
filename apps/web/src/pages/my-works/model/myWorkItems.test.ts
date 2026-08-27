@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { ContentSummary } from "@/entities/content";
 import type { DraftSummary } from "@/entities/draft";
 
-import { filterMyWorks, mergeMyWorks } from "./myWorkItems";
+import { filterMyWorks, mergeMyWorks, toMyWorkTags } from "./myWorkItems";
 
 function makePublished(overrides: Partial<ContentSummary> & Pick<ContentSummary, "id" | "updatedAt">): ContentSummary {
   return {
@@ -136,5 +136,34 @@ describe("filterMyWorks", () => {
       "2026-08-19T00:00:00Z",
       "2026-08-18T00:00:00Z",
     ]);
+  });
+});
+
+describe("toMyWorkTags", () => {
+  it("이용제한 발행작에 이용제한 배지를 단다 — 공개범위 배지와 함께", () => {
+    const restricted = makePublished({
+      id: "c-1",
+      updatedAt: "2026-08-20T00:00:00Z",
+      visibility: "public",
+      moderationStatus: "restricted",
+    });
+
+    expect(toMyWorkTags({ kind: "published", ...restricted })).toEqual(["character", "public", "restricted"]);
+  });
+
+  it("이용제한이 아닌 발행작에는 타입과 공개범위 둘만 단다", () => {
+    const normal = makePublished({
+      id: "c-2",
+      updatedAt: "2026-08-20T00:00:00Z",
+      visibility: "private",
+    });
+
+    expect(toMyWorkTags({ kind: "published", ...normal })).toEqual(["character", "private"]);
+  });
+
+  it("초안은 공개범위가 없어 미등록 하나만 단다", () => {
+    const draft = makeDraft({ id: "d-1", updatedAt: "2026-08-20T00:00:00Z" });
+
+    expect(toMyWorkTags({ kind: "draft", ...draft })).toEqual(["story", "unpublished"]);
   });
 });

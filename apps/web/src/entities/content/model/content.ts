@@ -52,3 +52,17 @@ export function toContentAccessStatus(raw: {
   if (raw.kind !== "accessible") return { kind: raw.kind };
   return { kind: "accessible", visibility: raw.visibility as ContentVisibility };
 }
+
+/** 카드 상태 배지 — 공개범위와 이용제한을 **함께** 낸다(이용제한이어도 공개범위 배지는 남는다).
+ * `/my`와 프로필이 같은 작품에 같은 배지 조합을 보여야 해서 두 화면이 이 함수 하나를 거친다(US-008) —
+ * 원래 결함이 정확히 "같은 데이터를 그리는 두 화면이 서로 다른 말을 한다"였고, 프로필만 이 판정을
+ * 갖고 있었다. 반환 타입은 `ContentCardTag`의 부분집합이라 호출부가 `[type, ...이것]`으로 펼친다.
+ *
+ * `deleted`는 내지 않는다 — 목록 엔드포인트가 소유자에게도 삭제분을 거르므로 카드 자체가 안 온다. */
+export function toContentStatusTags(content: {
+  visibility: ContentVisibility;
+  moderationStatus: ModerationStatus;
+}): (ContentVisibility | "restricted")[] {
+  const access = resolveAccessStatus(content.visibility, content.moderationStatus);
+  return access.kind === "restricted" ? [content.visibility, "restricted"] : [content.visibility];
+}

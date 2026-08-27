@@ -1,4 +1,9 @@
-import type { ContentSummary, VisibilityFilter } from "@/entities/content";
+import {
+  toContentStatusTags,
+  type ContentCardTag,
+  type ContentSummary,
+  type VisibilityFilter,
+} from "@/entities/content";
 import type { DraftSummary } from "@/entities/draft";
 
 import type { MyWorkTypeFilter } from "./myWorksSearch";
@@ -63,4 +68,18 @@ export function filterMyWorks(
     if (type !== "all" && item.type !== type) return false;
     return visibility === "all" || item.visibility === visibility;
   });
+}
+
+/**
+ * 카드에 다는 배지 — 타입 하나 + 상태.
+ *
+ * 발행작의 상태는 `toContentStatusTags`가 정한다. 프로필 카드와 **같은 함수**를 거치게 한 것이 이
+ * 함수의 존재 이유다(US-008) — 원래 여기가 `[type, visibility]`만 반환해서, 이용제한 작품이 프로필에서는
+ * `이용제한`을 달고 `/my`에서는 `공개`를 달았다. 사본이 둘이면 다시 갈라진다.
+ *
+ * 초안에는 공개범위가 없다 — 배지는 `미등록` 하나뿐이다(확정 결정 6).
+ */
+export function toMyWorkTags(item: MyWorkItem): ContentCardTag[] {
+  if (item.kind !== "published") return [item.type, "unpublished"];
+  return [item.type, ...toContentStatusTags(item)];
 }
