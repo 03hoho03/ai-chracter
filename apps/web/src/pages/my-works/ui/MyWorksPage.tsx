@@ -26,8 +26,8 @@ import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useCont
 
 import {
   filterMyWorks,
-  formatMyWorkUpdatedAt,
   mergeMyWorks,
+  toMyWorkMetaLabel,
   toMyWorkPageSources,
   toMyWorkTags,
   type MyWorkItem,
@@ -559,9 +559,10 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
           ? { viewCount: item.viewCount, chatCount: item.chatCount, likeCount: item.likeCount }
           : undefined
       }
-      // 초안에만 수정일을 단다 — 발행작의 `updatedAt`은 마지막 **발행** 시각이라(확정 결정 1)
-      // 같은 "수정" 라벨을 붙이면 거짓말이 된다.
-      metaLabel={item.kind === "draft" ? `${formatMyWorkUpdatedAt(item.updatedAt)} 수정` : undefined}
+      // 초안이면 수정일, 미발행 편집분이 있는 발행작이면 그 사실 + 발행 유도 한 줄, 나머지는 없음.
+      // 판정과 문구는 `toMyWorkMetaLabel`이 갖고 있다 — 이 줄과 "⋯" 메뉴의 `편집한 내용 버리기`가
+      // 어긋나지 않게 두 곳이 같은 model 함수(`hasUnpublishedEdits`)를 거친다.
+      metaLabel={toMyWorkMetaLabel(item)}
       tags={toMyWorkTags(item)}
       actions={<MyWorkCardMenu item={item} title={title} userId={userId} />}
       priority={priority}
@@ -599,7 +600,21 @@ function MyWorksSkeleton() {
           <div className="flex flex-col gap-1.5">
             {/* 28 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
                 20이 아니라 28인 이유는 US-010의 ⋯ 버튼(`size-7`)이 그 행의 높이를 잡기 때문이다 —
-                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측). */}
+                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측).
+
+                **US-010의 마이크로카피 줄은 여기 미러링하지 않는다.** 390px 실측으로 그 줄은 2줄
+                32px + `gap-1.5` 6px = **38.5px**를 더하지만(카드 텍스트 열 78.5 → 116.5), 줄이 뜨는
+                조건이 `hasUnpublishedChanges`라 **소수 카드에만** 붙는다(발행이 플래그를 끄므로 발행
+                직후는 전부 false고, 그 뒤 편집한 것만 true다 — 시드 26장 중 2장). 8칸 전부를 38.5px
+                키우면 지금 0.5px로 맞는 다수(78 대 78.5)가 그만큼 어긋나 목록이 도착할 때 위로
+                튄다 — 오차를 소수에서 다수로 옮기는 것뿐이다. 그래서 이 스켈레톤은 **기본 카드**를
+                미러링한다.
+
+                남은 오차는 카드가 아니라 이 분기 자체에 있다: 로딩 분기는 그리드만 돌려주는데 도착
+                분기는 그리드 **위에** 필터 툴바(64px + `gap-6` 24px)를 얹는다 — 그래서 그리드 top이
+                153 → 241로 **+88px** 밀린다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가 아니라 행 top
+                직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로 센다).
+                이건 조건부인 38.5px보다 2.3배 크고 US-010 이전부터 있던 것이라 US-011로 넘긴다. */}
             <div className="h-7 w-3/4 rounded bg-muted" />
             <div className="h-4 w-1/2 rounded bg-muted" />
             <div className="h-5.5 w-2/3 rounded-full bg-muted" />
