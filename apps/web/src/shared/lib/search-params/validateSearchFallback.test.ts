@@ -11,18 +11,18 @@ import { describe, expect, it } from "vitest";
  * 딸려 오면서 모듈 최상위의 `localStorage` 접근(`shared/model/theme.ts`)에서 죽는다. 그래서 소스를
  * 문자열로 읽어 검사한다.
  */
-const ROUTE_SOURCES = import.meta.glob("../../../routes/*.tsx", {
+const ROUTE_SOURCES = import.meta.glob<string>("../../../routes/*.tsx", {
   query: "?raw",
   import: "default",
   eager: true,
-}) as Record<string, string>;
+});
 
 /** 라우트 밖에 사는 서치 스키마(`/my`의 `myWorksSearchSchema`)를 찾기 위한 두 번째 후보 목록. */
-const MODEL_SOURCES = import.meta.glob("../../../pages/**/model/*.ts", {
+const MODEL_SOURCES = import.meta.glob<string>("../../../pages/**/model/*.ts", {
   query: "?raw",
   import: "default",
   eager: true,
-}) as Record<string, string>;
+});
 
 const ALL_SOURCES = { ...ROUTE_SOURCES, ...MODEL_SOURCES };
 

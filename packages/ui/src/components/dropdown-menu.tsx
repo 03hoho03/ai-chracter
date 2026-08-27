@@ -56,7 +56,7 @@ function DropdownMenuContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
-  const [clippedBelow, setClippedBelow] = React.useState(false)
+  const [isClippedBelow, setIsClippedBelow] = React.useState(false)
 
   // `useEffect`가 아니라 콜백 ref다 — 이 컴포넌트는 메뉴가 **닫혀 있을 때도** 마운트돼 있고
   // (Portal이 열릴 때만 실제 노드를 만든다) 그래서 마운트 시점의 ref는 언제나 null이다.
@@ -65,7 +65,7 @@ function DropdownMenuContent({
     if (!content) return
 
     const update = () =>
-      setClippedBelow(
+      setIsClippedBelow(
         content.scrollHeight - content.scrollTop - content.clientHeight > 1
       )
     // 관찰 시작 시점에 한 번 발화하므로 첫 측정도 이 한 줄이 겸한다.
@@ -83,7 +83,7 @@ function DropdownMenuContent({
       <DropdownMenuPrimitive.Content
         ref={contentRef}
         data-slot="dropdown-menu-content"
-        data-clipped-below={clippedBelow}
+        data-clipped-below={isClippedBelow}
         sideOffset={sideOffset}
         align={align}
         className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[clipped-below=true]:after:pointer-events-none data-[clipped-below=true]:after:sticky data-[clipped-below=true]:after:bottom-0 data-[clipped-below=true]:after:-mt-8 data-[clipped-below=true]:after:block data-[clipped-below=true]:after:h-8 data-[clipped-below=true]:after:bg-linear-to-t data-[clipped-below=true]:after:from-popover data-[state=closed]:overflow-hidden motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}

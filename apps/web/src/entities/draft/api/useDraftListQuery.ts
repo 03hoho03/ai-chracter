@@ -1,4 +1,5 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
+import type { InfiniteData, QueryKey } from "@tanstack/react-query";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
@@ -15,11 +16,18 @@ export type DraftListResponse = components["schemas"]["DraftListResponse"];
  * 뮤테이션이 `draftKeys.list()`를 invalidate하면 **불러 둔 페이지 전부**가 다시 조회된다(TanStack이
  * 무한쿼리를 그렇게 갱신한다). */
 export function useDraftListQuery() {
-  return useInfiniteQuery<DraftListResponse, ApiError>({
+  // 타입인자 명시 규칙은 useProfileContentListQuery와 같다 — TPageParam까지 줘야 pageParam이 unknown이 아니다.
+  return useInfiniteQuery<
+    DraftListResponse,
+    ApiError,
+    InfiniteData<DraftListResponse, string | undefined>,
+    QueryKey,
+    string | undefined
+  >({
     queryKey: draftKeys.list(),
     queryFn: async ({ pageParam }) =>
       (await apiClient.get<DraftListResponse>("/me/drafts", { params: { cursor: pageParam } })).data,
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }

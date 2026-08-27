@@ -1,7 +1,9 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
+import type { InfiniteData, QueryKey } from "@tanstack/react-query";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
+
 import type { ContentType } from "../model/content";
 import type { VisibilityFilter } from "../model/visibilityFilter";
 import { contentKeys } from "./keys";
@@ -25,7 +27,15 @@ export function useProfileContentListQuery({
   type: ContentType;
   visibilityFilter?: VisibilityFilter;
 }) {
-  return useInfiniteQuery<ContentSummaryListResponse, ApiError>({
+  // 타입인자를 하나라도 명시하면 나머지는 추론되지 않고 기본값으로 채워진다 — TPageParam을 빼면
+  // `unknown`으로 굳어 `initialPageParam`의 타입이 queryFn의 `pageParam`에 전달되지 않는다.
+  return useInfiniteQuery<
+    ContentSummaryListResponse,
+    ApiError,
+    InfiniteData<ContentSummaryListResponse, string | undefined>,
+    QueryKey,
+    string | undefined
+  >({
     queryKey: contentKeys.list(userId, type, visibilityFilter),
     queryFn: async ({ pageParam }) =>
       (
@@ -33,7 +43,7 @@ export function useProfileContentListQuery({
           params: { type, visibility: visibilityFilter, cursor: pageParam },
         })
       ).data,
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }

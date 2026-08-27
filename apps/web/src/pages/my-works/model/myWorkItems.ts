@@ -15,7 +15,7 @@ export type MyWorkItem =
   | ({ kind: "published" } & ContentSummary)
   | ({ kind: "draft" } & DraftSummary);
 
-const updatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -24,7 +24,7 @@ const updatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
 /** 초안 카드의 "… 수정" 표기. `MyPagePage`의 `draftUpdatedAtFormatter`와 같은 포맷이다 —
  * US-013이 그쪽 초안 섹션을 걷어내면 이 하나만 남는다. 호출부는 `toMyWorkMetaLabel` 하나다. */
 function formatMyWorkUpdatedAt(updatedAt: string): string {
-  return updatedAtFormatter.format(new Date(updatedAt));
+  return UPDATED_AT_FORMATTER.format(new Date(updatedAt));
 }
 
 /**
