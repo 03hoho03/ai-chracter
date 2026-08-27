@@ -29,19 +29,64 @@ function DropdownMenuTrigger({
   )
 }
 
+/** **아래에 더 있는 동안 콘텐츠 하단을 `::after` 그라디언트로 흐린다(`data-clipped-below`).** `max-h-(--radix-…-available-height)`가
+ * 뷰포트를 넘는 메뉴를 자르는데, macOS·iOS의 오버레이 스크롤바에는 상시 표시가 없어 잘렸다는 신호가
+ * 하나도 없다 — 가로 폰(844×390)에서 368px짜리 헤더 프로필 메뉴가 342px로 잘려 `로그아웃` 글자가
+ * **0/16px**인데 메뉴는 구분선에서 끊겨 **완결된 메뉴처럼 보였다**(`scrollTop: 0` 실측).
+ *
+ * 처방을 고를 때 세 후보를 실측으로 떨어뜨렸다. (1) **상시 스크롤바**: `scrollbar-width`·
+ * `scrollbar-color`만으로는 이 환경에서 오버레이가 안 풀린다(gutter가 계속 0px). `::-webkit-scrollbar`를
+ * 스타일하면 풀리지만(gutter 6px) 그건 iOS Safari에서 무시된다 — **결함이 나는 기기가 바로 폰이다.**
+ * (2) **스크롤 섀도**: 다크(`popover` 0.210)에서 어두운 그림자는 보이지 않는다 — DESIGN.md가 "어두운
+ * 방에서 드리운 그림자는 보이지도 않는다"로 이미 기각해 둔 수단이다. (3) **24px 페이드**: 잘린 자리에
+ * 구분선과 6px 조각밖에 없어서 **바탕만 흐려지고 신호가 안 생겼다**(스크린샷 A/B에서 원본과 구별 불가).
+ * 그래서 32px다 — **마지막 온전한 항목까지 물어야** 글자가 흐려지면서 "아래가 더 있다"가 읽힌다.
+ *
+ * **높이는 대비가 정한다.** 이 페이드는 밴드에 든 글자를 흐리므로 그 글자가 AA 아래로 가면 안 된다.
+ * 위 기하(마지막 온전한 항목의 글리프 하단이 메뉴 바닥에서 22px)에서 40px면 α가 0.45까지 올라
+ * **라이트 3.8286으로 미달**이고 다크는 5.1434로 통과한다 — **두 테마를 다 재야 잡히는 결함이다.**
+ * 32px면 α 0.313에서 **라이트 5.8570 / 다크 7.3803**이다(안 흐린 값 라이트 15.7988 / 다크 14.4917).
+ * 그 아래 24px는 위에서 본 대로 신호가 안 생긴다. 잘리는 위치가 달라 온전한 행의 글자가 밴드에 더
+ * 깊이 들어오면 그 행은 더 흐려진다 — 스크롤로 닿는 행이고, 신호가 아예 없는 쪽보다 낫다고 봤다.
+ *
+ * 위쪽은 안 한다: 위가 잘리는 건 사용자가 **직접 스크롤한 뒤**라 이미 스크롤 가능함을 안다. */
 function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
+  const [clippedBelow, setClippedBelow] = React.useState(false)
+
+  // `useEffect`가 아니라 콜백 ref다 — 이 컴포넌트는 메뉴가 **닫혀 있을 때도** 마운트돼 있고
+  // (Portal이 열릴 때만 실제 노드를 만든다) 그래서 마운트 시점의 ref는 언제나 null이다.
+  // 콜백 ref는 노드가 실제로 붙는 순간 불린다(정리 함수 반환은 React 19).
+  const contentRef = React.useCallback((content: HTMLDivElement | null) => {
+    if (!content) return
+
+    const update = () =>
+      setClippedBelow(
+        content.scrollHeight - content.scrollTop - content.clientHeight > 1
+      )
+    // 관찰 시작 시점에 한 번 발화하므로 첫 측정도 이 한 줄이 겸한다.
+    const observer = new ResizeObserver(update)
+    observer.observe(content)
+    content.addEventListener("scroll", update)
+    return () => {
+      observer.disconnect()
+      content.removeEventListener("scroll", update)
+    }
+  }, [])
+
   return (
     <DropdownMenuPrimitive.Portal>
       <DropdownMenuPrimitive.Content
+        ref={contentRef}
         data-slot="dropdown-menu-content"
+        data-clipped-below={clippedBelow}
         sideOffset={sideOffset}
         align={align}
-        className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:overflow-hidden motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+        className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[clipped-below=true]:after:pointer-events-none data-[clipped-below=true]:after:sticky data-[clipped-below=true]:after:bottom-0 data-[clipped-below=true]:after:-mt-8 data-[clipped-below=true]:after:block data-[clipped-below=true]:after:h-8 data-[clipped-below=true]:after:bg-linear-to-t data-[clipped-below=true]:after:from-popover data-[state=closed]:overflow-hidden motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
         {...props}
       />
     </DropdownMenuPrimitive.Portal>
