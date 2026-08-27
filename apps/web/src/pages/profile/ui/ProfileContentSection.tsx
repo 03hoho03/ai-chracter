@@ -4,6 +4,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import {
   ContentCard,
   ContentCardActionMenu,
+  ContentListLoadMore,
   isVisibilityFilter,
   toContentStatusTags,
   useProfileContentListQuery,
@@ -43,6 +44,10 @@ export function ProfileContentSection({
     type: contentType,
     visibilityFilter: isOwner ? visibilityFilter : undefined,
   });
+
+  // 유형 토글과 공개여부 필터는 둘 다 쿼리키에 들어가 있어(`contentKeys.list`) 바뀌는 순간 **새 쿼리**가
+  // 된다 — 목록도 커서도 첫 페이지로 돌아가므로 이전 필터의 커서가 남아 섞일 자리가 없다(US-009).
+  const items = contentListQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
     <section className="flex flex-col gap-4">
@@ -96,13 +101,13 @@ export function ProfileContentSection({
         <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.items.length === 0 && (
+      {contentListQuery.data && items.length === 0 && (
         <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.items.length > 0 && (
+      {contentListQuery.data && items.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {contentListQuery.data.items.map((content, index) => (
+          {items.map((content, index) => (
             <ProfileContentCard
               key={content.id}
               content={content}
@@ -114,6 +119,16 @@ export function ProfileContentSection({
           ))}
         </div>
       )}
+
+      <ContentListLoadMore
+        hasMore={contentListQuery.hasNextPage}
+        isLoading={contentListQuery.isFetchingNextPage}
+        onLoadMore={() => {
+          if (contentListQuery.hasNextPage && !contentListQuery.isFetchingNextPage) {
+            void contentListQuery.fetchNextPage();
+          }
+        }}
+      />
     </section>
   );
 }

@@ -14,6 +14,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ContentCard,
   ContentListEmptyState,
+  ContentListLoadMore,
   isVisibilityFilter,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
@@ -27,6 +28,7 @@ import {
   filterMyWorks,
   formatMyWorkUpdatedAt,
   mergeMyWorks,
+  toMyWorkPageSources,
   toMyWorkTags,
   type MyWorkItem,
 } from "../model/myWorkItems";
@@ -162,8 +164,11 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   if (queries.some((query) => query.isPending && query.failureCount === 0)) return <MyWorksSkeleton />;
 
   const items = mergeMyWorks(
-    [...(characterQuery.data?.items ?? []), ...(storyQuery.data?.items ?? [])],
-    draftListQuery.data?.items ?? [],
+    [
+      ...(characterQuery.data?.pages.flatMap((page) => page.items) ?? []),
+      ...(storyQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    ],
+    draftListQuery.data?.pages.flatMap((page) => page.items) ?? [],
   );
 
   // 부분 실패 알림은 목록이 0건인 분기에도 똑같이 필요하다 — 빠뜨리면 발행작 32건을 가진 사용자에게
@@ -201,6 +206,25 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   const { type: typeFilter, visibility: visibilityFilter, sort } = resolveMyWorksSearch(search);
   const visibleItems = filterMyWorks(items, { type: typeFilter, visibility: visibilityFilter });
 
+  // "더 보기"는 **지금 칩이 보여주는 스트림만** 진행시킨다(`toMyWorkPageSources`). `전체`가 둘인 게
+  // 핵심이다 — 캐릭터·스토리는 각각 페이징된 뒤 `mergeMyWorks`가 클라이언트에서 합치므로 한쪽만
+  // 당기면 다른 쪽이 24건에서 멈춘 채 목록이 늘어난다.
+  //
+  // 공개여부 축은 서버가 아니라 `filterMyWorks`가 여기서 거른다(US-001이 이 화면에 `visibility`를
+  // 넘기지 않는다) — 그래서 **불러온 24건 중 그 축에 맞는 게 0건인 상태가 존재하고**, 그때도 다음
+  // 페이지에는 있을 수 있다. 빈 결과 패널 아래에도 버튼을 그대로 두는 이유다.
+  const pageQueries = toMyWorkPageSources(typeFilter).map(
+    (source) =>
+      ({ character: characterQuery, story: storyQuery, draft: draftListQuery })[source],
+  );
+  const hasMore = pageQueries.some((query) => query.hasNextPage);
+  const isLoadingMore = pageQueries.some((query) => query.isFetchingNextPage);
+  const handleLoadMore = () => {
+    for (const query of pageQueries) {
+      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {errorBanner}
@@ -211,6 +235,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         visibilityFilter={visibilityFilter}
         sort={sort}
         count={visibleItems.length}
+        hasMore={hasMore}
         onSearchChange={onSearchChange}
       />
 
@@ -218,6 +243,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         <MyWorksEmptyResult
           isFiltered={typeFilter !== "all" || visibilityFilter !== "all"}
           filterLabel={describeFilter(typeFilter, visibilityFilter)}
+          hasMore={hasMore}
           onResetFilter={() => {
             focusTypeFilter("all");
             onSearchChange({ type: undefined, visibility: undefined });
@@ -240,6 +266,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
           ))}
         </div>
       )}
+
+      <ContentListLoadMore hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
     </div>
   );
 }
@@ -247,6 +275,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
 type MyWorksEmptyResultProps = {
   isFiltered: boolean;
   filterLabel: string;
+  /** 아직 안 불러온 페이지가 남아 있는지. 남았으면 "없어요"가 목록 전체에 대한 말이 아니다. */
+  hasMore: boolean;
   onResetFilter: () => void;
   onShowUnpublished: () => void;
 };
@@ -265,6 +295,7 @@ type MyWorksEmptyResultProps = {
 function MyWorksEmptyResult({
   isFiltered,
   filterLabel,
+  hasMore,
   onResetFilter,
   onShowUnpublished,
 }: MyWorksEmptyResultProps) {
@@ -287,9 +318,17 @@ function MyWorksEmptyResult({
 
   // 패널 밖 건수 줄에만 조건이 적혀 있으면, 공유 URL로 이 화면에 바로 도착한 사람에게 패널이
   // "조건"이라는 대명사만 말하게 된다. 같은 문장을 패널 안에서 한 번 더 완결시킨다.
+  //
+  // 남은 페이지가 있으면 그 문장의 범위를 **불러온 만큼**으로 좁힌다(US-009). 공개여부는 서버가 아니라
+  // 화면이 거르므로 첫 24건이 전부 공개작이면 `비공개`가 0건인데, 다음 페이지에는 있을 수 있다 —
+  // 그때 "비공개에 해당하는 작품이 없어요"는 거짓이고 바로 아래 "더 보기" 버튼과도 어긋난다.
   return (
     <ContentListEmptyState
-      message={`${filterLabel}에 해당하는 작품이 없어요.`}
+      message={
+        hasMore
+          ? `지금까지 불러온 작품 중에는 ${filterLabel}에 해당하는 게 없어요.`
+          : `${filterLabel}에 해당하는 작품이 없어요.`
+      }
       action={
         <Button type="button" variant="outline" onClick={onResetFilter}>
           필터 모두 해제
@@ -305,6 +344,7 @@ type MyWorksToolbarProps = {
   visibilityFilter: VisibilityFilter;
   sort: MyWorksSort;
   count: number;
+  hasMore: boolean;
   onSearchChange: (patch: Partial<MyWorksSearch>) => void;
 };
 
@@ -322,6 +362,7 @@ function MyWorksToolbar({
   visibilityFilter,
   sort,
   count,
+  hasMore,
   onSearchChange,
 }: MyWorksToolbarProps) {
   return (
@@ -435,8 +476,13 @@ function MyWorksToolbar({
             (`캐릭터` / ` ` / `2` / `건`)로 쪼개 놓아서, `전체 32건` → `캐릭터 2건` 전환의 뮤테이션은
             `캐릭터`와 `2` 둘뿐이고 단위 `건`은 목록에 없다(MutationObserver 실측). 문장을 통째로
             다시 읽게 해야 "캐릭터 2건"이 된다. */}
+        {/* 커서 페이징이 들어간 뒤(US-001) 이 건수는 **총계가 아니라 지금까지 불러온 수**다. 총계 API를
+            만들지 않기로 했으므로 라벨 문구로 푼다 — 남은 페이지가 있는 동안만 `표시 중`을 달아 문장이
+            총계를 주장하지 않게 하고, 마지막 페이지가 도착해 "더 보기"가 사라지는 순간 그냥 `32건`이
+            된다(그때는 그게 실제로 총계다). 두 문구가 갈리는 지점과 버튼이 사라지는 지점이 같아서
+            사용자에겐 한 가지 상태 변화로 읽힌다. */}
         <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground">
-          {describeFilter(typeFilter, visibilityFilter)} {count}건
+          {describeFilter(typeFilter, visibilityFilter)} {count}건{hasMore ? " 표시 중" : ""}
         </p>
 
         <Select

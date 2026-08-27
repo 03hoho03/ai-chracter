@@ -3,7 +3,15 @@ import { describe, expect, it } from "vitest";
 import type { ContentSummary } from "@/entities/content";
 import type { DraftSummary } from "@/entities/draft";
 
-import { filterMyWorks, mergeMyWorks, toMyWorkTags } from "./myWorkItems";
+import {
+  filterMyWorks,
+  mergeMyWorks,
+  toMyWorkPageSources,
+  toMyWorkTags,
+  type MyWorkItem,
+  type MyWorkPageSource,
+} from "./myWorkItems";
+import { MY_WORK_TYPE_FILTERS } from "./myWorksSearch";
 
 function makePublished(overrides: Partial<ContentSummary> & Pick<ContentSummary, "id" | "updatedAt">): ContentSummary {
   return {
@@ -73,18 +81,20 @@ describe("mergeMyWorks", () => {
   });
 });
 
-describe("filterMyWorks", () => {
-  const published = [
-    makePublished({ id: "c-public", type: "character", visibility: "public", updatedAt: "2026-08-20T00:00:00Z" }),
-    makePublished({ id: "c-private", type: "character", visibility: "private", updatedAt: "2026-08-19T00:00:00Z" }),
-    makePublished({ id: "s-link", type: "story", visibility: "link", updatedAt: "2026-08-18T00:00:00Z" }),
-  ];
-  const drafts = [
-    makeDraft({ id: "d-1", type: "character", updatedAt: "2026-08-21T00:00:00Z" }),
-    makeDraft({ id: "d-2", type: "story", updatedAt: "2026-08-17T00:00:00Z" }),
-  ];
-  const items = mergeMyWorks(published, drafts);
+// 네 칩 전부가 1건 이상을 남기도록 캐릭터 발행작 · 스토리 발행작 · 초안 셋을 모두 담는다 —
+// `filterMyWorks`와 `toMyWorkPageSources` 대조 테스트가 이 커버리지 위에 서 있다.
+const published = [
+  makePublished({ id: "c-public", type: "character", visibility: "public", updatedAt: "2026-08-20T00:00:00Z" }),
+  makePublished({ id: "c-private", type: "character", visibility: "private", updatedAt: "2026-08-19T00:00:00Z" }),
+  makePublished({ id: "s-link", type: "story", visibility: "link", updatedAt: "2026-08-18T00:00:00Z" }),
+];
+const drafts = [
+  makeDraft({ id: "d-1", type: "character", updatedAt: "2026-08-21T00:00:00Z" }),
+  makeDraft({ id: "d-2", type: "story", updatedAt: "2026-08-17T00:00:00Z" }),
+];
+const items = mergeMyWorks(published, drafts);
 
+describe("filterMyWorks", () => {
   it("전체에는 초안이 섞이지 않는다 — FR-18", () => {
     const filtered = filterMyWorks(items, { type: "all", visibility: "all" });
 
@@ -165,5 +175,29 @@ describe("toMyWorkTags", () => {
     const draft = makeDraft({ id: "d-1", updatedAt: "2026-08-20T00:00:00Z" });
 
     expect(toMyWorkTags({ kind: "draft", ...draft })).toEqual(["story", "unpublished"]);
+  });
+});
+
+describe("toMyWorkPageSources", () => {
+  /** 항목 하나가 어느 엔드포인트에서 왔는지 — 초안은 `GET /me/drafts`, 발행작은 유형별
+   * `GET /users/{me}/contents?type=`다. */
+  const sourceOf = (item: MyWorkItem): MyWorkPageSource =>
+    item.kind === "draft" ? "draft" : item.type;
+
+  // "더 보기"가 당기는 스트림과 화면이 실제로 그리는 항목의 출처가 어긋나면, 버튼이 보이지도 않는
+  // 목록을 늘리거나(과다) 남은 페이지를 못 가져온다(과소). 둘 다 화면에서는 "버튼을 눌렀는데
+  // 아무 일도 안 일어난다"로만 보여서, 짝을 여기서 못 박아 둔다.
+  it.each(MY_WORK_TYPE_FILTERS)(
+    "%s 칩이 당기는 스트림이 그 칩에 남는 항목의 출처와 정확히 같다",
+    (type) => {
+      const survived = filterMyWorks(items, { type, visibility: "all" });
+
+      expect(survived.length).toBeGreaterThan(0);
+      expect(new Set(survived.map(sourceOf))).toEqual(new Set(toMyWorkPageSources(type)));
+    },
+  );
+
+  it("전체는 캐릭터·스토리 두 스트림을 함께 진행시킨다 — 한쪽만 당기면 다른 쪽이 첫 페이지에 멈춘다", () => {
+    expect(toMyWorkPageSources("all")).toEqual(["character", "story"]);
   });
 });

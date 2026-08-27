@@ -70,6 +70,25 @@ export function filterMyWorks(
   });
 }
 
+/** 화면 뒤에 있는 페이징 스트림 셋. 발행작은 유형별로 엔드포인트 호출이 갈리고(`GET /users/{me}/contents`의
+ * `type`), 초안은 그 축이 없는 별개 엔드포인트다 — 그래서 커서도 셋이다. */
+export type MyWorkPageSource = "character" | "story" | "draft";
+
+/**
+ * 칩 하나가 "더 보기"에서 **어느 스트림의 다음 페이지를 당기는지**.
+ *
+ * `filterMyWorks`가 그 칩에서 무엇을 남기는지와 짝이 맞아야 한다 — 어긋나면 "더 보기"가 화면에 보이지도
+ * 않는 목록을 늘리거나(과다), 스크롤 끝에서 남은 페이지를 못 가져온다(과소). 그 짝은 테스트가 지킨다.
+ *
+ * `전체`가 둘인 것이 이 함수의 존재 이유다: 캐릭터·스토리는 **각각 페이징된 뒤 `mergeMyWorks`가
+ * 클라이언트에서 합치므로** 한쪽만 진행시키면 다른 쪽이 24건에서 멈춘 채 목록이 늘어난다.
+ */
+export function toMyWorkPageSources(type: MyWorkTypeFilter): MyWorkPageSource[] {
+  if (type === "unpublished") return ["draft"];
+  if (type === "all") return ["character", "story"];
+  return [type];
+}
+
 /**
  * 카드에 다는 배지 — 타입 하나 + 상태.
  *
