@@ -21,6 +21,14 @@ class DraftSummary(CamelModel):
     updated_at: datetime
 
 
+class DraftListResponse(CamelModel):
+    """`/me/drafts`의 커서 페이지네이션 봉투. `ContentListResponse`와 같은 모양이며 `/my`가 두
+    엔드포인트를 같은 방식으로 소비할 수 있도록 항목 타입만 다르게 둔다."""
+
+    items: list[DraftSummary]
+    next_cursor: str | None
+
+
 class ContentSummary(CamelModel):
     """`updated_at` is the current published version's `published_at`, not `Content.updated_at`
     (that column has no `onupdate`, so it never moves off the creation time)."""
@@ -36,6 +44,13 @@ class ContentSummary(CamelModel):
     visibility: ContentVisibility
     moderation_status: ModerationStatus
     updated_at: datetime
+
+
+class ContentSummaryListResponse(CamelModel):
+    """`/users/{id}/contents`의 커서 페이지네이션 봉투. `DraftListResponse`와 같은 모양."""
+
+    items: list[ContentSummary]
+    next_cursor: str | None
 
 
 class UserProfileResponse(CamelModel):

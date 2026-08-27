@@ -580,7 +580,7 @@ async def test_publish_removes_content_from_my_drafts(
 
     before = await db_client.get("/me/drafts")
     assert before.status_code == 200
-    assert [draft["id"] for draft in before.json()] == [str(content.id)]
+    assert [draft["id"] for draft in before.json()["items"]] == [str(content.id)]
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
@@ -591,7 +591,7 @@ async def test_publish_removes_content_from_my_drafts(
 
     after = await db_client.get("/me/drafts")
     assert after.status_code == 200
-    assert after.json() == []
+    assert after.json()["items"] == []
 
 
 async def test_republish_increments_version_number(

@@ -428,6 +428,12 @@ export interface paths {
          *     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
          *     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
          *     단위로 `current_published_version_id IS NULL`을 함께 본다.
+         *
+         *     커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
+         *     `published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는
+         *     `updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을
+         *     그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라
+         *     커서가 가리키는 행이 페이지 사이에 움직이지 않는다는 뜻이기도 하다.
          */
         get: operations["list_my_drafts_me_drafts_get"];
         put?: never;
@@ -503,7 +509,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List User Contents */
+        /**
+         * List User Contents
+         * @description 커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
+         *     두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.
+         */
         get: operations["list_user_contents_users__id__contents_get"];
         put?: never;
         post?: never;
@@ -1958,6 +1968,16 @@ export interface components {
             updatedAt: string;
         };
         /**
+         * ContentSummaryListResponse
+         * @description `/users/{id}/contents`의 커서 페이지네이션 봉투. `DraftListResponse`와 같은 모양.
+         */
+        ContentSummaryListResponse: {
+            /** Items */
+            items: components["schemas"]["ContentSummary"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /**
          * ContentTarget
          * @enum {string}
          */
@@ -1985,6 +2005,17 @@ export interface components {
         /** ContentVisibilityUpdateRequest */
         ContentVisibilityUpdateRequest: {
             visibility: components["schemas"]["ContentVisibility"];
+        };
+        /**
+         * DraftListResponse
+         * @description `/me/drafts`의 커서 페이지네이션 봉투. `ContentListResponse`와 같은 모양이며 `/my`가 두
+         *     엔드포인트를 같은 방식으로 소비할 수 있도록 항목 타입만 다르게 둔다.
+         */
+        DraftListResponse: {
+            /** Items */
+            items: components["schemas"]["DraftSummary"][];
+            /** Nextcursor */
+            nextCursor: string | null;
         };
         /** DraftSummary */
         DraftSummary: {
@@ -3567,7 +3598,9 @@ export interface operations {
     };
     list_my_drafts_me_drafts_get: {
         parameters: {
-            query?: never;
+            query?: {
+                cursor?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -3580,7 +3613,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["DraftSummary"][];
+                    "application/json": components["schemas"]["DraftListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -3685,6 +3727,7 @@ export interface operations {
             query: {
                 type: components["schemas"]["ContentType"];
                 visibility?: ("all" | "public" | "link" | "private") | null;
+                cursor?: string | null;
             };
             header?: never;
             path: {
@@ -3700,7 +3743,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ContentSummary"][];
+                    "application/json": components["schemas"]["ContentSummaryListResponse"];
                 };
             };
             /** @description Validation Error */

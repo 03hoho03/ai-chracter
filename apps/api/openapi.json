@@ -863,19 +863,43 @@
           "content"
         ],
         "summary": "List My Drafts",
-        "description": "한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).\n\n발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /\n`_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.\n`published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠\n단위로 `current_published_version_id IS NULL`을 함께 본다.",
+        "description": "한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).\n\n발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /\n`_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.\n`published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠\n단위로 `current_published_version_id IS NULL`을 함께 본다.\n\n커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는\n`published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는\n`updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을\n그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라\n커서가 가리키는 행이 페이지 사이에 움직이지 않는다는 뜻이기도 하다.",
         "operationId": "list_my_drafts_me_drafts_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/DraftSummary"
-                  },
-                  "type": "array",
-                  "title": "Response List My Drafts Me Drafts Get"
+                  "$ref": "#/components/schemas/DraftListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1023,6 +1047,7 @@
           "content"
         ],
         "summary": "List User Contents",
+        "description": "커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그\n두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.",
         "operationId": "list_user_contents_users__id__contents_get",
         "parameters": [
           {
@@ -1064,6 +1089,22 @@
               ],
               "title": "Visibility"
             }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
           }
         ],
         "responses": {
@@ -1072,11 +1113,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/ContentSummary"
-                  },
-                  "title": "Response List User Contents Users  Id  Contents Get"
+                  "$ref": "#/components/schemas/ContentSummaryListResponse"
                 }
               }
             }
@@ -4790,6 +4827,35 @@
         "title": "ContentSummary",
         "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time)."
       },
+      "ContentSummaryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContentSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "ContentSummaryListResponse",
+        "description": "`/users/{id}/contents`의 커서 페이지네이션 봉투. `DraftListResponse`와 같은 모양."
+      },
       "ContentTarget": {
         "type": "string",
         "enum": [
@@ -4846,6 +4912,35 @@
           "visibility"
         ],
         "title": "ContentVisibilityUpdateRequest"
+      },
+      "DraftListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/DraftSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "DraftListResponse",
+        "description": "`/me/drafts`의 커서 페이지네이션 봉투. `ContentListResponse`와 같은 모양이며 `/my`가 두\n엔드포인트를 같은 방식으로 소비할 수 있도록 항목 타입만 다르게 둔다."
       },
       "DraftSummary": {
         "properties": {

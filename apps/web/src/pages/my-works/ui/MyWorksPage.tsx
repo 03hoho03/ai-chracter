@@ -157,8 +157,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   if (queries.some((query) => query.isPending && query.failureCount === 0)) return <MyWorksSkeleton />;
 
   const items = mergeMyWorks(
-    [...(characterQuery.data ?? []), ...(storyQuery.data ?? [])],
-    draftListQuery.data ?? [],
+    [...(characterQuery.data?.items ?? []), ...(storyQuery.data?.items ?? [])],
+    draftListQuery.data?.items ?? [],
   );
 
   // 부분 실패 알림은 목록이 0건인 분기에도 똑같이 필요하다 — 빠뜨리면 발행작 32건을 가진 사용자에게

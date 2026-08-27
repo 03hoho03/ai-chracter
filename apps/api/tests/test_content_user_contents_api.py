@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import httpx
 import sqlalchemy as sa
@@ -168,7 +168,7 @@ async def test_list_user_contents_excludes_never_published_drafts(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 async def test_list_user_contents_returns_published_content_for_stranger(
@@ -185,7 +185,7 @@ async def test_list_user_contents_returns_published_content_for_stranger(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    [item] = resp.json()
+    [item] = resp.json()["items"]
     assert item["id"] == str(content.id)
     assert item["name"] == "공개 캐릭터"
     assert item["type"] == "character"
@@ -221,7 +221,7 @@ async def test_list_user_contents_hides_link_and_private_from_stranger(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 async def test_list_user_contents_hides_restricted_and_deleted_from_stranger(
@@ -242,7 +242,7 @@ async def test_list_user_contents_hides_restricted_and_deleted_from_stranger(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 async def test_list_user_contents_ignores_visibility_param_for_stranger(
@@ -265,7 +265,7 @@ async def test_list_user_contents_ignores_visibility_param_for_stranger(
         f"/users/{user.id}/contents", params={"type": "character", "visibility": "private"}
     )
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json()["items"] == []
 
 
 async def test_list_user_contents_owner_default_all_includes_restricted_but_not_deleted(
@@ -301,7 +301,7 @@ async def test_list_user_contents_owner_default_all_includes_restricted_but_not_
     await _login_as(db_client, user.id)
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    names = {item["name"] for item in resp.json()}
+    names = {item["name"] for item in resp.json()["items"]}
     assert names == {"비공개", "이용제한"}
 
 
@@ -334,7 +334,7 @@ async def test_list_user_contents_owner_specific_visibility_excludes_restricted(
         f"/users/{user.id}/contents", params={"type": "character", "visibility": "public"}
     )
     assert resp.status_code == 200
-    [item] = resp.json()
+    [item] = resp.json()["items"]
     assert item["name"] == "공개-정상"
 
 
@@ -359,7 +359,7 @@ async def test_list_user_contents_filters_by_type(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "story"})
     assert resp.status_code == 200
-    [item] = resp.json()
+    [item] = resp.json()["items"]
     assert item["name"] == "스토리"
     assert item["type"] == "story"
 
@@ -385,7 +385,7 @@ async def test_list_user_contents_exposes_updated_at_and_counters(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    [item] = resp.json()
+    [item] = resp.json()["items"]
     assert item["chatCount"] == 7
     assert item["likeCount"] == 3
     assert datetime.fromisoformat(item["updatedAt"]) == published_at
@@ -430,7 +430,7 @@ async def test_list_user_contents_updated_at_follows_latest_published_version(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    [item] = resp.json()
+    [item] = resp.json()["items"]
     assert item["name"] == "재발행 캐릭터 v2"
     assert datetime.fromisoformat(item["updatedAt"]) == republished_at
 
@@ -459,7 +459,7 @@ async def test_list_user_contents_orders_by_published_at_desc(
 
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
-    assert [item["name"] for item in resp.json()] == ["최신", "중간", "가장 오래됨"]
+    assert [item["name"] for item in resp.json()["items"]] == ["최신", "중간", "가장 오래됨"]
 
 
 async def test_list_user_contents_breaks_published_at_ties_by_id_desc(
@@ -485,4 +485,106 @@ async def test_list_user_contents_breaks_published_at_ties_by_id_desc(
     resp = await db_client.get(f"/users/{user.id}/contents", params={"type": "character"})
     assert resp.status_code == 200
     expected = [str(content.id) for content in sorted(contents, key=lambda c: c.id, reverse=True)]
-    assert [item["id"] for item in resp.json()] == expected
+    assert [item["id"] for item in resp.json()["items"]] == expected
+
+
+async def _collect_all_pages(
+    client: httpx.AsyncClient, user_id: uuid.UUID, params: dict[str, str]
+) -> tuple[list[list[dict[str, object]]], list[str | None]]:
+    """커서를 따라 끝까지 읽는다. 페이지마다 `items`와 `nextCursor`를 그대로 돌려주므로
+    호출부가 페이지 경계(첫 페이지 크기, 마지막 커서 `None`)까지 검증할 수 있다."""
+    pages: list[list[dict[str, object]]] = []
+    cursors: list[str | None] = []
+    cursor: str | None = None
+    for _ in range(10):
+        page_params = dict(params)
+        if cursor is not None:
+            page_params["cursor"] = cursor
+        resp = await client.get(f"/users/{user_id}/contents", params=page_params)
+        assert resp.status_code == 200
+        body = resp.json()
+        pages.append(body["items"])
+        cursor = body["nextCursor"]
+        cursors.append(cursor)
+        if cursor is None:
+            break
+    else:
+        raise AssertionError("커서가 10페이지 안에 끝나지 않았다")
+    return pages, cursors
+
+
+async def test_list_user_contents_paginates_at_page_size_without_duplicates(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-001. 페이지 크기(24)를 넘기면 첫 페이지가 정확히 24건 + 커서를 주고, 그 커서로 나머지가
+    오면서 커서가 `None`이 된다. 두 페이지의 합집합이 전체와 같고 중복이 0이어야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    total = 25
+    for index in range(total):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            published_at=now - timedelta(minutes=index),
+            name=f"작품-{index:02d}",
+        )
+    await db_session.commit()
+
+    pages, cursors = await _collect_all_pages(db_client, user.id, {"type": "character"})
+
+    assert [len(page) for page in pages] == [24, 1]
+    assert cursors[0] is not None
+    assert cursors[-1] is None
+
+    collected = [item["name"] for page in pages for item in page]
+    assert collected == [f"작품-{index:02d}" for index in range(total)]
+    assert len(set(collected)) == total
+
+
+async def test_list_user_contents_cursor_keeps_visibility_filter_across_pages(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """US-001. 커서에는 정렬 키만 들어 있으므로 필터는 페이지마다 다시 적용돼야 한다. 비공개 25건
+    사이에 공개 작품을 끼워 두고, 페이지 경계를 넘은 뒤에도 공개 작품이 새지 않는지 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    private_total = 25
+    for index in range(private_total):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            visibility=ContentVisibility.PRIVATE,
+            published_at=now - timedelta(minutes=index),
+            name=f"비공개-{index:02d}",
+        )
+    # 하나는 첫 페이지 안(0분 지점)에, 하나는 **페이지 경계 위**(23분 30초 = 비공개-23과 비공개-24
+    # 사이)에 둔다. 경계의 공개 작품은 필터가 페이지마다 다시 걸려야만 두 번째 페이지의 첫 항목이
+    # 비공개-24가 된다 — 필터가 새면 여기서 공개 작품이 끼어들고, 커서가 어긋나면 비공개-24를 건너뛴다.
+    for offset in (0, 23):
+        await _make_published_content(
+            db_session,
+            creator_user_id=user.id,
+            genre_id=genre.id,
+            visibility=ContentVisibility.PUBLIC,
+            published_at=now - timedelta(minutes=offset, seconds=30),
+            name=f"공개-{offset:02d}",
+        )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    pages, cursors = await _collect_all_pages(
+        db_client, user.id, {"type": "character", "visibility": "private"}
+    )
+
+    assert [len(page) for page in pages] == [24, 1]
+    assert cursors[-1] is None
+    collected = [item["name"] for page in pages for item in page]
+    assert collected == [f"비공개-{index:02d}" for index in range(private_total)]

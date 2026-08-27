@@ -96,13 +96,13 @@ export function ProfileContentSection({
         <p className="text-sm text-destructive">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.length === 0 && (
+      {contentListQuery.data && contentListQuery.data.items.length === 0 && (
         <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.length > 0 && (
+      {contentListQuery.data && contentListQuery.data.items.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {contentListQuery.data.map((content, index) => (
+          {contentListQuery.data.items.map((content, index) => (
             <ProfileContentCard
               key={content.id}
               content={content}
