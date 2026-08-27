@@ -16,6 +16,7 @@ function makePublished(overrides: Partial<ContentSummary> & Pick<ContentSummary,
     likeCount: 0,
     visibility: "public",
     moderationStatus: "normal",
+    hasUnpublishedChanges: false,
     ...overrides,
   };
 }
