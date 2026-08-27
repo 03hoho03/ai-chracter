@@ -47,7 +47,7 @@ export function GeneratedImageLibraryPanel({
   if (galleryQuery.isError) {
     return (
       <div className="flex flex-col items-start gap-3 py-4">
-        <p className="text-sm text-destructive">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
         <Button variant="outline" size="sm" onClick={() => void galleryQuery.refetch()}>
           다시 시도
         </Button>

@@ -37,7 +37,7 @@ export const ImageArchiveModal = createCallable<Props, void>(({ call, characterI
             ))}
           </div>
         ) : archiveQuery.isError ? (
-          <p className="py-4 text-center text-sm text-destructive">
+          <p className="py-4 text-center text-sm text-destructive-text">
             불러오지 못했어요. 잠시 후 다시 시도해주세요.
           </p>
         ) : images !== undefined && images.length > 0 ? (

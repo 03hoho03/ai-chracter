@@ -35,7 +35,7 @@ const TAG_CLASS: Record<ContentCardTag, string> = {
   public: "border border-border text-muted-foreground",
   link: "border border-border text-muted-foreground",
   private: "border border-border text-muted-foreground",
-  restricted: "bg-destructive/10 text-destructive",
+  restricted: "bg-destructive/10 text-destructive-text",
   unpublished: "border border-border text-muted-foreground",
 };
 

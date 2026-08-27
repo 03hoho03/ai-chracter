@@ -144,7 +144,7 @@ export function PreviewSessionView({
 
           {error && (
             <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-              <span className="text-xs text-destructive">응답 생성에 실패했습니다.</span>
+              <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
             </div>
           )}
 

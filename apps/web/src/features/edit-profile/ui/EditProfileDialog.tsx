@@ -126,7 +126,7 @@ export function EditProfileDialog({
           }}
         >
           {formError && (
-            <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+            <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
               {formError}
             </p>
           )}
@@ -162,7 +162,7 @@ export function EditProfileDialog({
               {...form.register("nickname")}
             />
             {form.formState.errors.nickname && (
-              <p id="edit-profile-nickname-error" role="alert" className="text-xs text-destructive">
+              <p id="edit-profile-nickname-error" role="alert" className="text-xs text-destructive-text">
                 {form.formState.errors.nickname.message}
               </p>
             )}
@@ -179,7 +179,7 @@ export function EditProfileDialog({
               {...form.register("bio")}
             />
             {form.formState.errors.bio && (
-              <p id="edit-profile-bio-error" role="alert" className="text-xs text-destructive">
+              <p id="edit-profile-bio-error" role="alert" className="text-xs text-destructive-text">
                 {form.formState.errors.bio.message}
               </p>
             )}

@@ -59,7 +59,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       }}
     >
       {formError && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
           {formError}
         </p>
       )}
@@ -76,7 +76,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           {...register("newPassword")}
         />
         {errors.newPassword && (
-          <p id="reset-password-new-error" role="alert" className="text-xs text-destructive">
+          <p id="reset-password-new-error" role="alert" className="text-xs text-destructive-text">
             {errors.newPassword.message}
           </p>
         )}
@@ -94,7 +94,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
           {...register("confirmPassword")}
         />
         {errors.confirmPassword && (
-          <p id="reset-password-confirm-error" role="alert" className="text-xs text-destructive">
+          <p id="reset-password-confirm-error" role="alert" className="text-xs text-destructive-text">
             {errors.confirmPassword.message}
           </p>
         )}

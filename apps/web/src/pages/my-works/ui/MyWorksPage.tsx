@@ -568,7 +568,7 @@ function MyWorksSkeleton() {
 function MyWorksErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3">
-      <p className="text-sm text-destructive">{message}</p>
+      <p className="text-sm text-destructive-text">{message}</p>
       <Button type="button" variant="outline" size="sm" onClick={onRetry}>
         다시 시도
       </Button>
@@ -590,7 +590,7 @@ function MyWorksFullErrorState({ onRetry }: { onRetry: () => void }) {
       role="alert"
       className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center break-keep"
     >
-      <p className="text-sm text-destructive">목록을 불러오지 못했어요.</p>
+      <p className="text-sm text-destructive-text">목록을 불러오지 못했어요.</p>
       <Button type="button" variant="outline" onClick={onRetry}>
         다시 시도
       </Button>

@@ -25,6 +25,7 @@
   --color-accent-foreground: var(--accent-foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-text: var(--destructive-text);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -62,6 +63,12 @@
   --accent-foreground: oklch(0.22 0 0);
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(1 0 0);
+  /* 텍스트·글리프 전용. 채움(`bg-destructive/10`·`/20`, `border-destructive/30`, `ring-destructive/20`)은
+     --destructive를 그대로 쓴다 — 둘을 갈라야 틴트 픽셀을 안 건드리고 텍스트 대비만 올릴 수 있다.
+     0.55로는 틴트가 popover(사다리 한 칸 안쪽) 위에 얹히는 순간 AA가 깨진다(rest 4.2059 / hover 3.6035).
+     0.49면 최악 조합(hover `/20` over popover)이 4.6907이다 — 브라우저 실측이고 여유가 0.19뿐이다.
+     C는 이 L의 sRGB 게멋 상한 0.1986 아래라 명도를 더 못 민다 */
+  --destructive-text: oklch(0.49 0.19 25);
   --border: oklch(0.89 0 0);
   --input: oklch(0.89 0 0);
   --ring: oklch(0.5 0.19 0);
@@ -93,6 +100,9 @@
   /* 어두운 배경에서는 텍스트 대비(≥4.5:1)를 위해 빨강을 밝히고, 채움 위 텍스트는 어둡게 뒤집는다 */
   --destructive: oklch(0.64 0.19 25);
   --destructive-foreground: oklch(0.16 0 0);
+  /* 라이트와 같은 이유로 갈라 둔 텍스트 전용 값. 0.64로는 hover `/20` over popover가 3.8252,
+     0.69면 4.6346이다(브라우저 실측). 밝기 천장 foreground(0.930) 아래이고 C는 게멋 상한 0.1995 아래다 */
+  --destructive-text: oklch(0.69 0.19 25);
   --border: oklch(0.3 0 0);
   --input: oklch(0.3 0 0);
   --ring: oklch(0.72 0.18 0);

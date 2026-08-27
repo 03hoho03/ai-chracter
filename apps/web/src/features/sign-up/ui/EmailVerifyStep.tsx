@@ -91,7 +91,7 @@ export function EmailVerifyStep({ form, onSubmit, isSubmitting }: EmailVerifySte
           <p
             id="signup-verification-code-error"
             role="alert"
-            className="text-xs text-destructive"
+            className="text-xs text-destructive-text"
           >
             {errors.emailVerificationCode.message}
           </p>

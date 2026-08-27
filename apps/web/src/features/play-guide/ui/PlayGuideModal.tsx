@@ -34,7 +34,7 @@ export const PlayGuideModal = createCallable<Props, void>(({ call, roomId }) => 
             <div className="h-4 w-3/4 animate-pulse rounded-md bg-muted" />
           </div>
         ) : playGuideQuery.isError ? (
-          <p className="py-4 text-center text-sm text-destructive">
+          <p className="py-4 text-center text-sm text-destructive-text">
             불러오지 못했어요. 잠시 후 다시 시도해주세요.
           </p>
         ) : playGuide ? (

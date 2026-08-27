@@ -56,7 +56,7 @@ export function ChangePasswordForm() {
       }}
     >
       {formError && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
           {formError}
         </p>
       )}
@@ -72,7 +72,7 @@ export function ChangePasswordForm() {
           {...register("currentPassword")}
         />
         {errors.currentPassword && (
-          <p id="change-password-current-error" role="alert" className="text-xs text-destructive">
+          <p id="change-password-current-error" role="alert" className="text-xs text-destructive-text">
             {errors.currentPassword.message}
           </p>
         )}
@@ -90,7 +90,7 @@ export function ChangePasswordForm() {
           {...register("newPassword")}
         />
         {errors.newPassword && (
-          <p id="change-password-new-error" role="alert" className="text-xs text-destructive">
+          <p id="change-password-new-error" role="alert" className="text-xs text-destructive-text">
             {errors.newPassword.message}
           </p>
         )}
