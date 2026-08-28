@@ -56,3 +56,9 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => Promise.reject(normalizeError(error)),
 );
+
+/** 이 인스턴스의 실패는 위 인터셉터가 전부 ApiError로 정규화해 reject하므로, catch한
+ * `unknown`은 단언 대신 이 가드로 좁힌다(fe-typescript TS-03). apps/web의 동형 구현이다. */
+export function isApiError(error: unknown): error is ApiError {
+  return typeof error === "object" && error !== null && "status" in error && "message" in error;
+}

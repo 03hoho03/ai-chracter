@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -8,6 +7,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
 import { useConfirmPasswordResetMutation } from "../api/mutations";
+import { isApiError } from "@/shared/lib/api/client";
 import {
   resetPasswordDefaultValues,
   resetPasswordSchema,
@@ -40,8 +40,8 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       await confirmMutation.mutateAsync({ token, newPassword: values.newPassword });
       await navigate({ to: "/login" });
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 400) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 400) {
         setFormError("링크가 만료되었거나 유효하지 않아요. 재설정을 다시 요청해주세요.");
       } else {
         setFormError(GENERIC_ERROR_MESSAGE);

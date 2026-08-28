@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -8,6 +7,7 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { useChangePasswordMutation } from "../api/mutations";
+import { isApiError } from "@/shared/lib/api/client";
 import {
   changePasswordDefaultValues,
   changePasswordSchema,
@@ -37,8 +37,8 @@ export function ChangePasswordForm() {
       toast.success("비밀번호가 변경되었어요.");
       reset(changePasswordDefaultValues);
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 400) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 400) {
         setFormError("현재 비밀번호가 올바르지 않아요.");
       } else {
         setFormError(GENERIC_ERROR_MESSAGE);

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -13,6 +12,7 @@ import { sessionKeys } from "@/entities/session";
 import { useLoginMutation } from "../api/mutations";
 import { buildGoogleLoginUrl } from "../lib/googleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -51,10 +51,10 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 401) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 401) {
         setFormError("이메일 또는 비밀번호가 올바르지 않습니다.");
-      } else if (apiError.status === 403) {
+      } else if (apiError?.status === 403) {
         setFormError("이메일 인증이 완료되지 않았거나 법정대리인 동의가 필요한 계정이에요.");
       } else {
         setFormError(GENERIC_ERROR_MESSAGE);

@@ -1,11 +1,11 @@
 import { useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 
 import { useImageJobStatusQuery } from "@/entities/image-job";
 import { useGenerateImagesMutation } from "../api/useGenerateImagesMutation";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { GenerateImagesForm } from "./GenerateImagesForm";
 import { GenerateImagesResultGrid } from "./GenerateImagesResultGrid";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -24,8 +24,8 @@ export function GenerateImagesPanel() {
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
     } catch (error) {
-      const apiError = error as ApiError;
-      setFormError(apiError.status === 422 ? "입력값을 다시 확인해주세요." : GENERIC_ERROR_MESSAGE);
+      const apiError = isApiError(error) ? error : null;
+      setFormError(apiError?.status === 422 ? "입력값을 다시 확인해주세요." : GENERIC_ERROR_MESSAGE);
     }
   }
 

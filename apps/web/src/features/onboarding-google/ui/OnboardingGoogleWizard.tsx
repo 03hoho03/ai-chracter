@@ -1,4 +1,3 @@
-import type { ApiError } from "@ai-character-chat/api-types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -17,6 +16,7 @@ import { sessionKeys } from "@/entities/session";
 import { useOnboardingGoogleMutation } from "../api/mutations";
 import { onboardingGoogleStepAtom } from "../model/atom";
 import { BasicInfoStep } from "./BasicInfoStep";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -63,8 +63,8 @@ export function OnboardingGoogleWizard({ token }: OnboardingGoogleWizardProps) {
 
       await completeOnboarding();
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 400) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 400) {
         toast.error("인증이 만료되었어요. 처음부터 다시 시도해주세요.");
       } else {
         toast.error(GENERIC_ERROR_MESSAGE);

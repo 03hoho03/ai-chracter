@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
@@ -24,6 +23,7 @@ import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { useUpdateProfileMutation } from "../api/mutations";
 import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -95,8 +95,8 @@ export function EditProfileDialog({
       toast.success("프로필이 저장되었어요.");
       setOpen(false);
     } catch (error) {
-      const apiError = error as ApiError;
-      setFormError(apiError.status === 400 ? "프로필 이미지를 다시 업로드한 뒤 시도해주세요." : GENERIC_ERROR_MESSAGE);
+      const apiError = isApiError(error) ? error : null;
+      setFormError(apiError?.status === 400 ? "프로필 이미지를 다시 업로드한 뒤 시도해주세요." : GENERIC_ERROR_MESSAGE);
     }
   }
 

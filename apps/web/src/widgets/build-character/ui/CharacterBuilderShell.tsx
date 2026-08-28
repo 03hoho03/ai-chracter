@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useNavigate } from "@tanstack/react-router";
@@ -24,6 +23,7 @@ import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
+import { isApiError } from "@/shared/lib/api/client";
 
 const TABS: { id: CharacterBuilderTab; label: string }[] = [
   { id: "profile", label: "프로필" },
@@ -37,7 +37,7 @@ const TABS: { id: CharacterBuilderTab; label: string }[] = [
  * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
  * 있는 발행 거부 상태로 보여준다. */
 function getFilterRejectionReason(error: unknown): string | null {
-  const apiError = error as ApiError;
+  const apiError = isApiError(error) ? error : null;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
   if ("reason" in apiError.detail) return String(apiError.detail.reason);
   return null;
@@ -58,7 +58,7 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
 };
 
 function getMissingFieldLabels(error: unknown): string[] | null {
-  const apiError = error as ApiError;
+  const apiError = isApiError(error) ? error : null;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
   const fields = (apiError.detail as { missingFields?: unknown }).missingFields;
   if (!Array.isArray(fields)) return null;

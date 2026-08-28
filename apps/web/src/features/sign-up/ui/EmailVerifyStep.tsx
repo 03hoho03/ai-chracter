@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -8,6 +7,7 @@ import { toast } from "sonner";
 
 import type { SignUpFormValues } from "@/entities/registration";
 import { useResendVerificationCodeMutation } from "../api/mutations";
+import { isApiError } from "@/shared/lib/api/client";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -45,10 +45,10 @@ export function EmailVerifyStep({ form, onSubmit, isSubmitting }: EmailVerifySte
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
       toast.success("인증코드를 다시 보냈어요");
     } catch (error) {
-      const apiError = error as ApiError;
+      const apiError = isApiError(error) ? error : null;
       const retryAfterSeconds =
-        apiError.status === 429 && apiError.detail && typeof apiError.detail === "object"
-          ? apiError.detail.retryAfterSeconds
+        apiError?.status === 429 && apiError?.detail && typeof apiError?.detail === "object"
+          ? apiError?.detail.retryAfterSeconds
           : undefined;
       if (typeof retryAfterSeconds === "number") {
         setSecondsLeft(retryAfterSeconds);

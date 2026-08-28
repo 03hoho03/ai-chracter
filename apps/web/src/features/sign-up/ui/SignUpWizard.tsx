@@ -1,4 +1,3 @@
-import type { ApiError } from "@ai-character-chat/api-types";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
@@ -22,6 +21,7 @@ import {
 import { signUpStepAtom } from "../model/atom";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -59,8 +59,8 @@ export function SignUpWizard() {
       });
       setStep("emailVerify");
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 409) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 409) {
         form.setError("email", { message: "이미 가입된 이메일이에요." });
       } else {
         toast.error(GENERIC_ERROR_MESSAGE);
@@ -86,8 +86,8 @@ export function SignUpWizard() {
       await loginMutation.mutateAsync({ email, password });
       await completeSignUp();
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 400) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 400) {
         form.setError("emailVerificationCode", {
           message: "인증 코드가 올바르지 않거나 만료되었어요.",
         });
