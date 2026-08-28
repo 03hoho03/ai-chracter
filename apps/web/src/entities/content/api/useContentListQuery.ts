@@ -1,4 +1,5 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
+import type { InfiniteData, QueryKey } from "@tanstack/react-query";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
@@ -11,7 +12,13 @@ export type ContentListResponse = components["schemas"]["ContentListResponse"];
  * creator/hashtag/q)는 홈 라우트 search param에서 온다. 정렬/필터가 바뀌면 쿼리키가 바뀌어 첫 페이지부터
  * 다시 로딩된다(US-007 AC의 "로딩 표시"는 별도 상태 없이 이 쿼리의 `isPending`을 그대로 쓴다). */
 export function useContentListQuery(params: ContentBrowseParams) {
-  return useInfiniteQuery<ContentListResponse, ApiError>({
+  return useInfiniteQuery<
+    ContentListResponse,
+    ApiError,
+    InfiniteData<ContentListResponse, string | undefined>,
+    QueryKey,
+    string | undefined
+  >({
     queryKey: contentKeys.browse(params),
     queryFn: async ({ pageParam }) =>
       (
@@ -19,7 +26,7 @@ export function useContentListQuery(params: ContentBrowseParams) {
           params: { ...params, cursor: pageParam },
         })
       ).data,
-    initialPageParam: undefined as string | undefined,
+    initialPageParam: undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
   });
 }
