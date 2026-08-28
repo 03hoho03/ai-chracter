@@ -171,7 +171,9 @@ describe("handleOgImage - 콘텐츠", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toBe("DEFAULT_PNG_BYTES");
     expect(response.headers.get("content-type")).toBe("image/png");
-    const [assetRequest] = env.assetFetch.mock.lastCall ?? [];
+    const lastCall = env.assetFetch.mock.lastCall;
+    if (!lastCall) throw new Error("ASSETS.fetch가 호출되지 않았다");
+    const [assetRequest] = lastCall as [Request];
     expect(new URL(assetRequest.url).pathname).toBe("/og-default.png");
     // 확정된 폴백이라 정상 응답과 같은 수명으로 캐시한다.
     expect(response.headers.get("cache-control")).toBe(

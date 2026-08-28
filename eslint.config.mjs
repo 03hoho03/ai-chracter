@@ -85,6 +85,9 @@ export default tseslint.config(
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
       // COMP-04 · JSX 중첩 삼항 금지 (early return 또는 컴포넌트 분리로)
       "no-nested-ternary": "error",
+      // `_` 접두는 "시그니처상 필요하지만 본문에서 안 쓴다"는 뜻으로 이미 저장소가 쓰는 관례다
+      // (목의 파라미터가 그 예 — 지우면 호출부가 인자를 못 넘긴다).
+      "@typescript-eslint/no-unused-vars": ["error", { argsIgnorePattern: "^_" }],
     },
   },
 

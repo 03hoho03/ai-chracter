@@ -50,7 +50,10 @@ export function toContentAccessStatus(raw: {
   visibility?: ContentVisibility | null;
 }): ContentAccessStatus {
   if (raw.kind !== "accessible") return { kind: raw.kind };
-  return { kind: "accessible", visibility: raw.visibility as ContentVisibility };
+  // BE는 kind==='accessible'이면 visibility를 항상 채워 보낸다. 그래도 단언하지 않는 이유는
+  // 계약이 깨졌을 때 `undefined`가 그대로 흘러 "공개범위 없음"으로 렌더되기 때문이다 —
+  // 가장 제한적인 값으로 떨어뜨려 **덜 보이는 쪽으로** 실패한다.
+  return { kind: "accessible", visibility: raw.visibility ?? "private" };
 }
 
 /** 카드 상태 배지 — 공개범위와 이용제한을 **함께** 낸다(이용제한이어도 공개범위 배지는 남는다).

@@ -10,7 +10,7 @@ const DEBOUNCE_MS = 300;
 
 function extractHomeQuery(search: unknown): string | undefined {
   if (search && typeof search === "object" && "q" in search) {
-    const q = (search as { q?: unknown }).q;
+    const { q } = search;
     return typeof q === "string" ? q : undefined;
   }
   return undefined;
