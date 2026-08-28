@@ -171,9 +171,20 @@ export default tseslint.config(
   {
     // 테스트는 픽스처를 최상위에 두는 관례가 있고(`filterShortcuts.test.ts`가 main의 선례),
     // 타입 단언으로 부분 객체를 만드는 것이 본문 코드보다 정당하다.
+    //
+    // `no-non-null-assertion`을 끄는 근거는 **저장소가 `noUncheckedIndexedAccess`를 켜 두었다는
+    // 것**이다(`packages/config/tsconfig.base.json:12`). 그래서 `payload.startingSetups[0]`이
+    // 항상 `T | undefined`가 되고, 같은 파일의 `baseFormValues()`가 방금 만든 픽스처를 파고들 때도
+    // `!`가 필요하다 — 저장소 규약대로 구조분해를 써도(`const [setup] = ...`) 안 없어진다
+    // (build-story 테스트 두 파일에서 인덱스 뒤 47곳 · 구조분해 뒤 16곳으로 실측).
+    //
+    // **위험 프로파일이 본문과 다르다**: 테스트에서 `!`가 틀리면 그 줄에서 명확한 테스트 실패가 나고,
+    // 본문에서 틀리면 사용자에게 런타임 크래시가 난다. 그래서 본문에서는 켜 둔 채로 둔다 —
+    // 이 예외를 "테스트는 규칙 밖"으로 확대 해석하지 말 것.
     files: ["**/*.test.{ts,tsx}"],
     rules: {
       "@typescript-eslint/consistent-type-assertions": "off",
+      "@typescript-eslint/no-non-null-assertion": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
     },
