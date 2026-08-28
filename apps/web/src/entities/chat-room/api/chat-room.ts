@@ -3,7 +3,7 @@
 
 import type { RuleListItem } from "@/shared/lib/rule-engine/ending-rules";
 
-export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "../../../shared/lib/rule-engine/ending-rules";
+export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "@/shared/lib/rule-engine/ending-rules";
 
 export type ChatMessage = {
   id: string;
