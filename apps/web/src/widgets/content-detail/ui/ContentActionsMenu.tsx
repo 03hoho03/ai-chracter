@@ -10,7 +10,11 @@ import {
 import { Flag, MoreHorizontal, Share2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { useReportContentMutation, type ContentVisibility } from "@/entities/content";
+import {
+  useReportContentMutation,
+  type ContentVisibility,
+  type ModerationStatus,
+} from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
 import { ReportContentModal } from "@/features/report-content";
 
@@ -20,6 +24,10 @@ type ContentActionsMenuProps = {
   isOwner: boolean;
   /** 현재 공개범위 — 전환 메뉴에서 이 값과 같은 항목을 빼는 데 쓴다. */
   visibility: ContentVisibility;
+  /** 이용제한이면 전환 항목이 비활성이 된다(US-008). 이 화면에는 실제로 `normal`만 오지만
+   * (`ContentDetailView`가 `canViewDetailPage`로 restricted/deleted를 이미 걷어낸다) 값을 받아 넘긴다 —
+   * 호출부가 그 근거를 눈에 보이게 적게 하려는 것이다. */
+  moderationStatus: ModerationStatus;
 };
 
 /** techspec-content-detail.md §5, US-018/US-048/US-115 — 공유(클립보드 복사)/신고/(본인 소유일 때)
@@ -29,6 +37,7 @@ export function ContentActionsMenu({
   creatorUserId,
   isOwner,
   visibility,
+  moderationStatus,
 }: ContentActionsMenuProps) {
   const reportMutation = useReportContentMutation(contentId);
 
@@ -83,6 +92,7 @@ export function ContentActionsMenu({
               contentId={contentId}
               creatorUserId={creatorUserId}
               currentVisibility={visibility}
+              moderationStatus={moderationStatus}
             />
           </>
         )}

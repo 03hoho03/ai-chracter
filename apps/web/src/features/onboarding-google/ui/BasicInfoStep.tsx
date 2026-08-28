@@ -48,7 +48,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           {...register("nickname")}
         />
         {errors.nickname && (
-          <p id="onboarding-google-nickname-error" role="alert" className="text-xs text-destructive">
+          <p id="onboarding-google-nickname-error" role="alert" className="text-xs text-destructive-text">
             {errors.nickname.message}
           </p>
         )}
@@ -65,7 +65,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           {...register("birthDate")}
         />
         {errors.birthDate && (
-          <p id="onboarding-google-birth-date-error" role="alert" className="text-xs text-destructive">
+          <p id="onboarding-google-birth-date-error" role="alert" className="text-xs text-destructive-text">
             {errors.birthDate.message}
           </p>
         )}
@@ -100,7 +100,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
             )}
           />
           {errors.termsAgreed && (
-            <p role="alert" className="pl-6 text-xs text-destructive">
+            <p role="alert" className="pl-6 text-xs text-destructive-text">
               {errors.termsAgreed.message}
             </p>
           )}
@@ -120,7 +120,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
             )}
           />
           {errors.privacyAgreed && (
-            <p role="alert" className="pl-6 text-xs text-destructive">
+            <p role="alert" className="pl-6 text-xs text-destructive-text">
               {errors.privacyAgreed.message}
             </p>
           )}

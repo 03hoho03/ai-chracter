@@ -31,8 +31,10 @@ from api.content.schemas import (
     ContentListResponse,
     ContentPublishResponse,
     ContentSummary,
+    ContentSummaryListResponse,
     ContentVersionSummary,
     ContentVisibilityUpdateRequest,
+    DraftListResponse,
     DraftSummary,
     EndingDraftItem,
     EndingRuleDraftItem,
@@ -90,30 +92,51 @@ ContentListSort = Literal["latest", "popular", "genre"]
 
 CONTENT_LIST_PAGE_SIZE = 20
 FAVORITES_PAGE_SIZE = 20
+# `/my`·프로필의 작가 작품 그리드는 `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라 24가 세 열 수
+# 전부에 나누어떨어져 마지막 행이 꽉 찬다(20은 3열에서 빈칸 2개). 홈·즐겨찾기 목록은 그 그리드를
+# 쓰지 않으므로 `CONTENT_LIST_PAGE_SIZE`(20)와 값을 공유하지 않고 별도 상수로 둔다.
+CREATOR_CONTENT_PAGE_SIZE = 24
 
 
 @router.get("/me/drafts")
 async def list_my_drafts(
+    cursor: str | None = None,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
-) -> list[DraftSummary]:
+) -> DraftListResponse:
     """한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
 
     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
     단위로 `current_published_version_id IS NULL`을 함께 본다.
+
+    커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
+    `published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는
+    `updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을
+    그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라
+    커서가 가리키는 행이 페이지 사이에 움직이지 않는다는 뜻이기도 하다.
     """
-    contents = (
-        await db.scalars(
-            select(Content).where(
-                Content.creator_user_id == user_id,
-                Content.current_published_version_id.is_(None),
-            )
+    content_query = (
+        select(Content)
+        .where(
+            Content.creator_user_id == user_id,
+            Content.current_published_version_id.is_(None),
         )
-    ).all()
+        .order_by(Content.updated_at.desc(), Content.id.desc())
+    )
+    if cursor is not None:
+        updated_at, last_content_id = _decode_cursor(cursor)
+        content_query = content_query.where(
+            tuple_(Content.updated_at, Content.id)
+            < (datetime.fromisoformat(updated_at), uuid.UUID(last_content_id))
+        )
+
+    rows = (await db.scalars(content_query.limit(CREATOR_CONTENT_PAGE_SIZE + 1))).all()
+    has_more = len(rows) > CREATOR_CONTENT_PAGE_SIZE
+    contents = rows[:CREATOR_CONTENT_PAGE_SIZE]
     if not contents:
-        return []
+        return DraftListResponse(items=[], next_cursor=None)
 
     # Newest-first, so the first version seen per content_id is its latest draft.
     draft_versions = (
@@ -187,8 +210,14 @@ async def list_my_drafts(
             )
         )
 
-    drafts.sort(key=lambda draft: draft.updated_at, reverse=True)
-    return drafts
+    # 커서는 항목이 아니라 **조회한 마지막 콘텐츠 행**에서 뽑는다 — 위 두 `continue`가 페이지 끝을
+    # 잘라내도 다음 페이지가 그 행을 다시 읽지 않게 하기 위해서다(`/me/favorites`와 같은 규칙).
+    next_cursor: str | None = None
+    if has_more:
+        last_content = contents[-1]
+        next_cursor = _encode_cursor([last_content.updated_at.isoformat(), str(last_content.id)])
+
+    return DraftListResponse(items=drafts, next_cursor=next_cursor)
 
 
 @router.get("/me/favorites")
@@ -367,9 +396,12 @@ async def list_user_contents(
     id: uuid.UUID,
     type: ContentType,
     visibility: VisibilityFilter | None = None,
+    cursor: str | None = None,
     viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
     db: AsyncSession = Depends(get_db_session),
-) -> list[ContentSummary]:
+) -> ContentSummaryListResponse:
+    """커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
+    두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다."""
     is_owner = viewer_user_id is not None and viewer_user_id == id
 
     query = (
@@ -393,13 +425,21 @@ async def list_user_contents(
         )
 
     # Deterministic order: newest publish first, id as the tiebreaker.
-    rows = (
-        await db.execute(query.order_by(ContentVersion.published_at.desc(), Content.id.desc()))
-    ).all()
-    if not rows:
-        return []
+    query = query.order_by(ContentVersion.published_at.desc(), Content.id.desc())
+    if cursor is not None:
+        published_at, last_content_id = _decode_cursor(cursor)
+        query = query.where(
+            tuple_(ContentVersion.published_at, Content.id)
+            < (datetime.fromisoformat(published_at), uuid.UUID(last_content_id))
+        )
 
-    published_version_ids = [version.id for _, version in rows]
+    rows = (await db.execute(query.limit(CREATOR_CONTENT_PAGE_SIZE + 1))).all()
+    has_more = len(rows) > CREATOR_CONTENT_PAGE_SIZE
+    page = rows[:CREATOR_CONTENT_PAGE_SIZE]
+    if not page:
+        return ContentSummaryListResponse(items=[], next_cursor=None)
+
+    published_version_ids = [version.id for _, version in page]
     if type == ContentType.CHARACTER:
         details: dict[uuid.UUID, CharacterVersionDetail | StoryVersionDetail] = {
             detail.content_version_id: detail
@@ -424,7 +464,7 @@ async def list_user_contents(
         }
 
     summaries: list[ContentSummary] = []
-    for content, version in rows:
+    for content, version in page:
         detail = details.get(version.id)
         if detail is None:
             continue
@@ -444,10 +484,22 @@ async def list_user_contents(
                 like_count=content.like_count,
                 visibility=content.visibility,
                 moderation_status=content.moderation_status,
+                has_unpublished_changes=content.has_unpublished_changes,
                 updated_at=version.published_at,
             )
         )
-    return summaries
+
+    # 커서는 항목이 아니라 조회한 마지막 **행**에서 뽑는다 — 위 `continue`가 페이지 끝을 잘라내도
+    # 다음 페이지가 그 행을 다시 읽지 않게 하기 위해서다.
+    next_cursor: str | None = None
+    if has_more:
+        last_content, last_version = page[-1]
+        assert last_version.published_at is not None
+        next_cursor = _encode_cursor(
+            [last_version.published_at.isoformat(), str(last_content.id)]
+        )
+
+    return ContentSummaryListResponse(items=summaries, next_cursor=next_cursor)
 
 
 @router.get("/genres")
@@ -1058,6 +1110,9 @@ async def update_content_draft(
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
+    # 자동저장이 곧 "발행본과 달라진 편집분이 생겼다"이다. 아래 두 분기가 각자 끝에서 commit 하고
+    # 페이로드/타입 불일치(422)는 commit 전에 raise 하므로, 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다.
+    content.has_unpublished_changes = True
 
     if isinstance(payload, CharacterDraftPayload):
         if content.type != ContentType.CHARACTER:
@@ -1208,6 +1263,9 @@ async def reset_content_draft(
     published_version = await db.get(ContentVersion, content.current_published_version_id)
     assert published_version is not None
 
+    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다(US-002).
+    content.has_unpublished_changes = False
+
     await _delete_draft_children(db, content.type, draft_version.id)
 
     draft_version.detail_description = published_version.detail_description
@@ -1263,6 +1321,10 @@ async def publish_content(
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
+    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다(US-002). 두 헬퍼는 이 함수만
+    # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
+    # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
+    content.has_unpublished_changes = False
     if content.type == ContentType.CHARACTER:
         return await _publish_character_content(db, content, version, llm_client)
     return await _publish_story_content(db, content, version, llm_client)

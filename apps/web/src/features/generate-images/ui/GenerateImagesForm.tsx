@@ -79,7 +79,7 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
           {...register("prompt")}
         />
         {errors.prompt && (
-          <p id="generate-images-prompt-error" role="alert" className="text-xs text-destructive">
+          <p id="generate-images-prompt-error" role="alert" className="text-xs text-destructive-text">
             {errors.prompt.message}
           </p>
         )}

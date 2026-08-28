@@ -65,7 +65,7 @@ export function ForgotPasswordForm() {
           {...register("email")}
         />
         {errors.email && (
-          <p id="forgot-password-email-error" role="alert" className="text-xs text-destructive">
+          <p id="forgot-password-email-error" role="alert" className="text-xs text-destructive-text">
             {errors.email.message}
           </p>
         )}

@@ -580,7 +580,7 @@ async def test_publish_removes_content_from_my_drafts(
 
     before = await db_client.get("/me/drafts")
     assert before.status_code == 200
-    assert [draft["id"] for draft in before.json()] == [str(content.id)]
+    assert [draft["id"] for draft in before.json()["items"]] == [str(content.id)]
 
     _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
     try:
@@ -591,7 +591,7 @@ async def test_publish_removes_content_from_my_drafts(
 
     after = await db_client.get("/me/drafts")
     assert after.status_code == 200
-    assert after.json() == []
+    assert after.json()["items"] == []
 
 
 async def test_republish_increments_version_number(
@@ -1090,3 +1090,108 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
 
     await db_session.refresh(content)
     assert content.current_published_version_id == version.id
+
+
+async def _summary_has_unpublished_changes(
+    client: httpx.AsyncClient, *, creator_user_id: uuid.UUID
+) -> bool:
+    """`ContentSummary.hasUnpublishedChanges`를 `/users/{id}/contents`에서 읽어 온다 — 플래그를
+    세팅하는 코드와 그것을 노출하는 스키마를 한 번에 본다(US-002)."""
+    resp = await client.get(f"/users/{creator_user_id}/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    [item] = resp.json()["items"]
+    assert isinstance(item["hasUnpublishedChanges"], bool)
+    return bool(item["hasUnpublishedChanges"])
+
+
+async def test_has_unpublished_changes_follows_draft_lifecycle(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """US-002. 발행 직후 false → 자동저장 후 true → 편집 취소 후 false → 자동저장 후 재발행하면
+    다시 false. `ContentVersion`에는 `updated_at`이 없고 발행이 다음 편집용 초안을 자동 복제하므로
+    이 네 상태는 명시적 플래그로만 구분된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    def _edit_payload(name: str) -> dict[str, object]:
+        """발행 가능한 상태를 유지하는 자동저장 페이로드 — 재발행까지 이어가야 하므로 필수 필드를
+        비우지 않는다."""
+        return {
+            "name": name,
+            "oneLiner": "고쳐 쓴 한 줄",
+            "thumbnailAssetId": str(thumbnail.id),
+            "intro": "고쳐 쓴 인트로",
+            "exampleDialogues": [],
+            "characterPrompt": "너는 아리아다.",
+            "playguide": None,
+            "situationalImages": [],
+            "description": "상세 설명",
+            "genreId": str(genre.id),
+            "target": "all",
+            "hashtags": ["힐링"],
+            "visibility": "private",
+        }
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+        assert publish_resp.status_code == 200
+        assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is False
+
+        patch_resp = await db_client.patch(
+            f"/contents/{content.id}/draft", json=_edit_payload("고쳐 쓴 이름")
+        )
+        assert patch_resp.status_code == 200
+        assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is True
+
+        reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+        assert reset_resp.status_code == 204
+        assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is False
+
+        rewrite_resp = await db_client.patch(
+            f"/contents/{content.id}/draft", json=_edit_payload("다시 고쳐 쓴 이름")
+        )
+        assert rewrite_resp.status_code == 200
+        assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is True
+
+        republish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert republish_resp.status_code == 200
+    assert await _summary_has_unpublished_changes(db_client, creator_user_id=user.id) is False
+
+
+async def test_publish_story_clears_has_unpublished_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """US-002. 스토리 발행도 플래그를 내린다 — 캐릭터와 같은 한 곳(`publish_content`)이 두 경로를
+    덮는지 확인한다. 여기서 플래그를 자동저장이 아니라 직접 세우는 이유는 스토리 자동저장
+    페이로드가 시작설정 트리를 통째로 다시 보내야 해서(빈 배열이면 발행 검증에서 막힌다)다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, _stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    content.has_unpublished_changes = True
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    await db_session.refresh(content)
+    assert content.has_unpublished_changes is False

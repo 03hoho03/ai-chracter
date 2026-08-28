@@ -26,7 +26,7 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
         aria-haspopup="true"
         aria-expanded={open}
         onClick={() => setOpen((prev) => !prev)}
-        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-border hover:bg-secondary/50"
+        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input hover:bg-secondary/50"
       >
         {selected ? (
           <span aria-hidden className="size-5 rounded-full" style={{ backgroundColor: selected.value }} />

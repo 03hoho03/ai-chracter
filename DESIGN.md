@@ -18,8 +18,9 @@ colors:
   accent-foreground: "oklch(0.930 0.000 0)"
   destructive: "oklch(0.640 0.190 25)"
   destructive-foreground: "oklch(0.160 0.000 0)"
+  destructive-text: "oklch(0.690 0.190 25)"
   border: "oklch(0.300 0.000 0)"
-  input: "oklch(0.300 0.000 0)"
+  input: "oklch(0.520 0.000 0)"
   ring: "oklch(0.720 0.180 0)"
 typography:
   display:
@@ -88,7 +89,7 @@ components:
     backgroundColor: "{colors.muted}"
   button-destructive:
     backgroundColor: "oklch(0.640 0.190 25 / 0.1)"
-    textColor: "{colors.destructive}"
+    textColor: "{colors.destructive-text}"
     rounded: "{rounded.lg}"
     height: "32px"
     padding: "0 10px"
@@ -112,7 +113,7 @@ components:
     padding: "2px 8px"
   badge-restricted:
     backgroundColor: "oklch(0.640 0.190 25 / 0.1)"
-    textColor: "{colors.destructive}"
+    textColor: "{colors.destructive-text}"
     rounded: "{rounded.full}"
     padding: "2px 8px"
   dialog:
@@ -164,7 +165,8 @@ components:
 | `background` | oklch(0.160) | oklch(1.000) | 기본 배경 |
 | `card` / `popover` / `muted` | oklch(0.210) | oklch(0.970) | 배경 위 첫 레이어 — 카드, 팝오버, 썸네일 우물 |
 | `secondary` / `accent` | oklch(0.260) | oklch(0.930) | 두 번째 레이어 — hover/선택 배경, 배지, 필터 칩 |
-| `border` / `input` | oklch(0.300) | oklch(0.890) | 구분선, 인풋 테두리 |
+| `border` | oklch(0.300) | oklch(0.890) | **구조 구분선** — 카드 테두리, 헤더 밑줄, 섹션 구분, 점선 빈 상태 |
+| `input` | oklch(0.520) | oklch(0.620) | **컨트롤 식별 보더** — 인풋·텍스트에어리어·셀렉트·체크박스·outline 버튼·선택 안 된 토글, 그리고 스위치의 off 트랙(`bg-input`) |
 | `muted-foreground` | oklch(0.680) | oklch(0.530) | 보조 텍스트 — 캡션, 타임스탬프, 조회수 |
 | `foreground` | oklch(0.930) | oklch(0.220) | 본문 텍스트 |
 
@@ -173,9 +175,18 @@ components:
 - 다크 `muted-foreground` on `background`: **6.74:1**, on `secondary`: **5.39:1** — 두 레이어 모두 AA 통과
 - 라이트 `muted-foreground` on `background`: **5.28:1**, on `card`: **4.84:1** — 통과. 단 **on `accent`(0.930)에서는 4.30:1로 AA 미달**이므로, 라이트에서 `accent` 표면 위에 `muted-foreground`로 본문을 올리지 않는다(배지처럼 큰 텍스트가 아닌 이상).
 
+**`border`와 `input`은 값이 다르다 — 사다리에서 갈라져 나온 유일한 무채색 토큰이다(US-004).** 둘은 규범이 다르다: `border`가 그리는 구분선·카드 테두리는 장식이라 WCAG 대비 요건이 없지만, `input`이 그리는 컨트롤 테두리는 **비텍스트 대비 1.4.11(3:1)**을 진다 — 인풋·outline 버튼·선택 안 된 토글은 내부 채움이 페이지 배경과 `1.0000`이라 그 한 줄이 "여기 컨트롤이 있다"는 **유일한 신호**이기 때문이다. 사다리 값(0.300/0.890)으로는 **1.4312 다크 / 1.3845 라이트**로 절반도 안 됐다.
+- 고친 값의 실측(스크린샷 픽셀 디코드): 인풋 보더 대 `background` **3.5403 다크 / 3.6408 라이트**, 대 `card`(=`popover`·`muted`) **3.2344 / 3.3395**. 스위치 off 트랙(`bg-input`)과 그 위 흰 썸(`bg-background`)도 같은 값을 얻는다(전 1.4312 → 후 3.5403).
+- **`secondary`·`accent`(다크 0.260 / 라이트 0.930) 표면 위에서는 2.8276 / 2.9714로 여전히 미달이다.** 그 두 표면 위에는 보더로만 식별되는 컨트롤을 올리지 않는다 — 올려야 한다면 채움이나 링을 함께 준다.
+- **컨트롤 테두리에 `border-border`를 쓰지 말 것.** 손으로 복사한 셸(파일 업로드 라벨, 아이콘·컬러 피커 트리거, 목록형 선택 행)이 이 규칙을 조용히 새게 만든다 — 인터랙티브하면 `border-input`, 구조면 `border-border`다. 예외는 **클릭 카드**(`ContentCard`, `BuilderTypeSelectPage`)로, 거기서는 썸네일·제목·hover·포커스 링이 함께 식별을 지므로 `border-border`를 유지한다(§5 Cards).
+
 ### Semantic
 - **Destructive (경고 레드)** — 다크 oklch(0.640 0.190 25) / 라이트 oklch(0.550 0.190 25): 삭제/탈퇴/거부/이용제한. `primary`와 함께 시스템 유채색 둘 중 하나이며, 둘은 hue(25 대 0)와 **형태**로 갈린다 — destructive는 언제나 틴트, primary는 솔리드 채움이다. 다크에서 빨강을 밝힌 것은 텍스트 대비를 위해서이며(on `background` **5.27:1**), 그 대가로 **밝힌 빨강 위 흰 텍스트는 3.68:1로 AA에 미달한다** — 그래서 `destructive-foreground`도 함께 어둡게 뒤집는다(0.160, 대비 5.27:1). 토큰을 조정할 때 이 쌍을 반드시 함께 유지할 것.
-- **실제 구현에서 destructive는 채움이 아니라 틴트다**: 버튼도 배지도 `bg-destructive/10 text-destructive`를 쓴다. 어두운 방에서 솔리드 레드 블록은 그 자체로 놀람이다.
+- **실제 구현에서 destructive는 채움이 아니라 틴트다**: 버튼도 배지도 `bg-destructive/10 text-destructive-text`를 쓴다. 어두운 방에서 솔리드 레드 블록은 그 자체로 놀람이다.
+- **Destructive text (경고 레드 · 텍스트 전용)** — 다크 oklch(0.690 0.190 25) / 라이트 oklch(0.490 0.190 25): **틴트 위에 얹는 글자와 글리프는 `--destructive`가 아니라 이 토큰을 쓴다.** 채움 쪽(`bg-destructive/5`·`/10`·`/20`, `border-destructive/30`, `ring-destructive/20`)과 **솔리드 채움 위의 `destructive-foreground` 반전 쌍**은 `--destructive` 그대로다 — 둘을 갈라 둔 이유가 그것이다.
+  - 왜 갈랐나: 한 토큰이 글자와 틴트를 겸하면 대비를 올리는 순간 틴트 색까지 함께 움직인다. `--destructive`(라이트 0.55 / 다크 0.64)는 평평한 `background` 위에서만 AA를 아슬아슬하게 넘겼고(라이트 **4.5672** / 다크 4.8402 — 앞은 이번 런에서 재현한 실측, 뒤는 저장소 공표값), `bg-popover`처럼 **사다리 한 칸 안쪽 표면**에 얹히면 rest 4.2059 / 4.3824, hover(`/20`)에서 **3.6035 / 3.8252**까지 떨어졌다.
+  - 갈라 낸 뒤 실측(canvas `getImageData`, 전이 정착 후): 최악 조합인 **hover `/20` over `popover`가 라이트 4.6907 / 다크 4.6346**, `/10` over `popover`가 5.4748 / 5.3097, 평평한 `background` 위가 5.9451 / 5.9024다. 틴트 픽셀은 전후 동일하다(A/B로 확인 — `/5` `/10` `/20` 합성 결과가 라이트·다크 모두 바이트까지 같다).
+  - 명도는 이 이상 못 민다: 라이트 0.49에서 hue 25의 sRGB 게멋 상한 chroma가 0.1986, 다크 0.69에서 0.1995라 현재 값 0.19가 이미 상한 바로 아래다.
 
 ### Tertiary
 - **스탯 스와치(User-chosen swatches)** — `packages/ui/src/lib/color-palette.ts`의 10색 고정 팔레트(rose/orange/amber/lime/emerald/teal/sky/indigo/violet/fuchsia, 예: oklch(0.62 0.19 350)). **UI 팔레트가 아니라 사용자 데이터다** — 채팅방 스탯 게이지와 컬러 피커에서 사용자가 직접 고른 값이며, 테마에 따라 변하지 않는다. 시스템 토큰으로 승격하지 말 것.
@@ -232,10 +243,10 @@ components:
 - **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
 - **Ghost:** 투명, hover 시 `bg-muted`.
-- **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다.
+- **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive-text`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다. **포커스는 하우스 레시피의 hue만 바꾼다** — `focus-visible:border-destructive` + `ring-destructive/50`. 알파를 낮추지 말 것: 보더 40% · 링 20%였을 때 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 배경 1.2371 다크 / 1.3694 라이트, 링 대 자기 채움 1.1312 / 1.1728 — 이 앱에서 포커스가 사실상 안 보이는 유일한 컨트롤이었다). 불투명 보더는 자기 채움 대비 **4.8431 / 4.5795**, 배경 대비 **5.2933 / 5.3328**이다.
 - **Link:** `text-primary` + underline-offset-4.
 - **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).
-- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **단, 채움이 `primary`인 요소 위에서는 이 레시피가 무너진다** — 아래 §Toggles를 볼 것.
+- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **3:1을 지는 건 50% 링이 아니라 불투명 1px 보더다** — 링은 페이지 배경 대비 2.5757 다크 / 2.5511 라이트지만 보더는 자기 채움 대비 **7.1768 / 6.7011**이다(실측). 그래서 이 레시피는 **보더가 살아 있는 한** 성립한다. **채움이 `primary` 솔리드면 무너진다** — 보더가 채움과 같은 색이 되어 사라지므로 링을 불투명으로 올린다(아래 §Toggles). `/10` 틴트 채움(destructive, `toggle` `list`)은 보더가 남으므로 hue만 갈아끼우면 된다.
 
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다.
@@ -258,9 +269,16 @@ components:
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
-- **Style:** radius `md`(8px), `border-input` 테두리, 투명 배경.
-- **Focus:** `ring-3 ring-ring/50` — 버튼과 동일한 포커스 언어.
-- **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive`.
+- **Style:** radius `md`(8px), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 §2 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
+- **Focus:** `ring-3 ring-ring/50` + `border-ring` — 버튼과 동일한 포커스 언어.
+- **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive-text`(글자는 텍스트 전용 토큰, 보더·링은 `--destructive`).
+
+### Menus / Popover lists (드롭다운 · 셀렉트 · 자동완성)
+- **포커스 표시는 채움이 아니라 링이 진다** — `focus:inset-ring-1 focus:inset-ring-ring`, `bg-accent`는 보조로 남긴다. 채움만으로는 못 고친다: 포커스 배경(`accent`)이 팝오버 표면 대비 **1.1439 다크 / 1.1239 라이트**(destructive 항목은 `bg-destructive/10`이라 1.1119 / 1.1598)이고, **사다리 최상단 `border`를 채움으로 써도 약 1.3**이다. 링은 팝오버 대비 **6.5567 / 6.1465**, 포커스 채움 대비 중립 **5.7320 / 5.4691** · destructive **5.8968 / 5.2997**이다.
+- **링 색은 variant별로 가르지 않는다** — 하나(`ring`)로 중립·destructive 둘 다 3:1을 넘기므로, 한 메뉴 안에서 포커스 어휘가 갈릴 이유가 없다. 심각도는 링이 아니라 글자·글리프 색(`destructive-text`)이 진다.
+- **이 규칙은 팝오버 리스트 전체에 건다** — `DropdownMenuItem`(default·destructive)·`CheckboxItem`·`RadioItem`·`SubTrigger`·`SelectItem`, 그리고 손으로 만든 옵션 리스트(채팅 단축어 자동완성). 한 곳만 고치면 같은 모양의 목록에서 포커스 표시가 갈린다.
+- **`outline-hidden`을 쓴 리스트를 새로 만들면 링을 함께 넣는다.** 그 유틸리티가 UA 아웃라인을 지우므로, 넣지 않으면 남는 신호가 1.1:1짜리 배경 변화 하나뿐이다.
+- **비활성 항목은 `opacity-65`다**(상류 shadcn은 `opacity-50`). 50%면 항목 글자가 팝오버 위에서 **3.2515 라이트 / 4.4959 다크**로 AA 아래고, 이 앱은 "왜 못 누르는지"를 읽혀야 하는 비활성 항목이 있다. 65%면 **5.1882 / 6.7086**이다. Radix가 비활성 항목을 키보드 이동에서 건너뛰고 `pointer-events: none`이라 링은 그려지지 않는다(실측).
 
 ### Navigation
 - **크롬은 sticky 헤더 하나뿐이다.** `sticky top-0 z-30 h-14 border-b border-border bg-background`, 내부는 `mx-auto max-w-6xl px-4 sm:px-6`. 하단 탭바·사이드 레일·푸터는 **존재하지 않으며, 추가하지 않는다** — 크롬은 얇고 항상 동일해야 한다.
@@ -273,7 +291,7 @@ components:
 ### Status badges
 - **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다.
 - **중립 상태(공개/링크공개/비공개/미등록):** `border border-border text-muted-foreground` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
-- **이용제한:** `bg-destructive/10 text-destructive` — 틴트, 채움 아님.
+- **이용제한:** `bg-destructive/10 text-destructive-text` — 틴트, 채움 아님.
 - **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.
 - **삭제:** 배지가 아니라 전체 패널 빈 상태로 표현한다(`ContentUnavailableState`) — 아이콘 + 제목 + 설명.
 - 상태 배지는 소유자에게만 렌더한다.
@@ -290,7 +308,10 @@ components:
 ### Motion
 - **모션 라이브러리는 없다.** `tw-animate-css` + Tailwind 유틸리티만 쓴다. 이 시스템에 코레오그래피는 존재하지 않는다.
 - **지속시간은 100-300ms**: 팝오버 100ms, 스텝 전환·검색 확장 200ms, 스탯 게이지 300ms. `ease-out`.
-- **모든 모션은 `motion-safe:` 접두사로 가드한다** — 어두운 방에서 갑작스러운 움직임은 놀람이다. 새 애니메이션을 추가할 때 `motion-safe:`를 빼먹지 말 것.
+- **모든 모션은 `motion-safe:` 접두사로 가드한다** — 어두운 방에서 갑작스러운 움직임은 놀람이다. 새 애니메이션을 추가할 때 `motion-safe:`를 빼먹지 말 것. `packages/ui`의 프리미티브 12개는 US-005에서 전수 게이팅됐고(dialog·alert-dialog·sheet·dropdown-menu·select·button·toggle·switch·tabs·input·textarea·checkbox·table), `reduce`에서 `animation-name: none` · `transition-duration: 0s`가 되는 것이 실측돼 있다.
+  - **`duration-*`도 함께 가드한다.** `duration-100`은 `transition-duration`까지 세팅하는데 CSS의 `transition-property` 초깃값이 `all`이라, 애니메이션만 끄면 `reduce`에서 `transition: all 0.1s`가 살아남는다.
+  - **호출부에서는 못 끈다** — `motion-reduce:animate-none`을 얹어도 `data-open:` 변형의 속성 선택자가 특이도에서 이긴다. 프리미티브에서 가드하는 것 말고 방법이 없다.
+  - **예외는 진행 표시다** — 로딩 스피너(`animate-spin`)와 스켈레톤(`animate-pulse`)은 멈추면 "멈춘 UI"로 읽히므로 가드하지 않는다. 장식·전환은 가드하고 진행 표시는 남긴다.
 - 상태 전달만 한다: 스텝 전환, 팝오버 열림, 게이지 변화, 타이핑 인디케이터. 장식적 등장 연출은 금지.
 
 ## 6. Do's and Don'ts

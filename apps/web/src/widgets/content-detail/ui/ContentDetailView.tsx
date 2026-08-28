@@ -147,7 +147,7 @@ export function ContentDetailView({ id }: { id: string }) {
 
   if (detailQuery.isError) {
     return (
-      <p className="p-6 text-center text-sm text-destructive">
+      <p className="p-6 text-center text-sm text-destructive-text">
         불러오지 못했어요. 잠시 후 다시 시도해주세요.
       </p>
     );
@@ -191,11 +191,15 @@ export function ContentDetailView({ id }: { id: string }) {
             {TYPE_LABEL[content.type]}
           </span>
 
+          {/* `access.kind === "accessible"`로 이미 좁혀진 자리다(위 early return) — 그래서 여기 오는
+              콘텐츠의 모더레이션 상태는 `normal`이다. 상세 응답은 `moderationStatus`를 따로 내려주지 않고
+              `accessStatus`로 접어 주므로 이 좁힘이 그 값의 유일한 출처다. */}
           <ContentActionsMenu
             contentId={content.id}
             creatorUserId={content.creatorUserId}
             isOwner={content.isOwner}
             visibility={access.visibility}
+            moderationStatus="normal"
           />
         </div>
 

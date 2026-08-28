@@ -62,7 +62,7 @@ export function ReportsListPage({ page, status, onPageChange, onStatusChange }: 
       {reportListQuery.isPending && <div className="h-64 animate-pulse rounded-xl bg-muted" />}
 
       {reportListQuery.isError && (
-        <p className="text-sm text-destructive">신고 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">신고 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
       {reportListQuery.data && reportListQuery.data.items.length === 0 && (

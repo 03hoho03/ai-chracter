@@ -34,3 +34,12 @@ export const VISIBILITY_TRANSITION_COPY: Record<
 export function listVisibilityTransitions(current: ContentVisibility): ContentVisibility[] {
   return VISIBILITY_ORDER.filter((visibility) => visibility !== current);
 }
+
+/** 이용제한 작품에서 전환 항목을 비활성으로 두는 **이유** — 숨기지 않고 메뉴 안에 그대로 적는다(US-008).
+ * 숨기면 같은 메뉴가 작품마다 달라 보이는데 왜인지 알 길이 없어 작가가 버그로 읽는다.
+ *
+ * 문장이 "바꿀 수 없어요"가 아니라 "바꿔도 노출되지 않아요"인 이유: `PATCH /contents/{id}/visibility`는
+ * 이용제한 작품에도 200을 주고 값을 실제로 바꾼다. 막는 건 서버가 아니라 **노출 쿼리**다 —
+ * 홈·검색·타인 프로필이 `moderation_status == NORMAL`을 함께 걸어서(`content/router.py`의 `list_contents`)
+ * 공개로 바꿔도 남들에겐 안 보인다. 비활성은 그 헛수고를 막는 FE 정책이므로 사유도 그렇게 적는다. */
+export const VISIBILITY_TRANSITION_BLOCKED_REASON = "이용제한 중에는 공개범위를 바꿔도 노출되지 않아요.";

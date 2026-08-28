@@ -3,7 +3,17 @@ import { describe, expect, it } from "vitest";
 import type { ContentSummary } from "@/entities/content";
 import type { DraftSummary } from "@/entities/draft";
 
-import { filterMyWorks, mergeMyWorks } from "./myWorkItems";
+import {
+  filterMyWorks,
+  hasUnpublishedEdits,
+  mergeMyWorks,
+  toMyWorkMetaLabel,
+  toMyWorkPageSources,
+  toMyWorkTags,
+  type MyWorkItem,
+  type MyWorkPageSource,
+} from "./myWorkItems";
+import { MY_WORK_TYPE_FILTERS } from "./myWorksSearch";
 
 function makePublished(overrides: Partial<ContentSummary> & Pick<ContentSummary, "id" | "updatedAt">): ContentSummary {
   return {
@@ -16,6 +26,7 @@ function makePublished(overrides: Partial<ContentSummary> & Pick<ContentSummary,
     likeCount: 0,
     visibility: "public",
     moderationStatus: "normal",
+    hasUnpublishedChanges: false,
     ...overrides,
   };
 }
@@ -72,18 +83,20 @@ describe("mergeMyWorks", () => {
   });
 });
 
-describe("filterMyWorks", () => {
-  const published = [
-    makePublished({ id: "c-public", type: "character", visibility: "public", updatedAt: "2026-08-20T00:00:00Z" }),
-    makePublished({ id: "c-private", type: "character", visibility: "private", updatedAt: "2026-08-19T00:00:00Z" }),
-    makePublished({ id: "s-link", type: "story", visibility: "link", updatedAt: "2026-08-18T00:00:00Z" }),
-  ];
-  const drafts = [
-    makeDraft({ id: "d-1", type: "character", updatedAt: "2026-08-21T00:00:00Z" }),
-    makeDraft({ id: "d-2", type: "story", updatedAt: "2026-08-17T00:00:00Z" }),
-  ];
-  const items = mergeMyWorks(published, drafts);
+// 네 칩 전부가 1건 이상을 남기도록 캐릭터 발행작 · 스토리 발행작 · 초안 셋을 모두 담는다 —
+// `filterMyWorks`와 `toMyWorkPageSources` 대조 테스트가 이 커버리지 위에 서 있다.
+const published = [
+  makePublished({ id: "c-public", type: "character", visibility: "public", updatedAt: "2026-08-20T00:00:00Z" }),
+  makePublished({ id: "c-private", type: "character", visibility: "private", updatedAt: "2026-08-19T00:00:00Z" }),
+  makePublished({ id: "s-link", type: "story", visibility: "link", updatedAt: "2026-08-18T00:00:00Z" }),
+];
+const drafts = [
+  makeDraft({ id: "d-1", type: "character", updatedAt: "2026-08-21T00:00:00Z" }),
+  makeDraft({ id: "d-2", type: "story", updatedAt: "2026-08-17T00:00:00Z" }),
+];
+const items = mergeMyWorks(published, drafts);
 
+describe("filterMyWorks", () => {
   it("전체에는 초안이 섞이지 않는다 — FR-18", () => {
     const filtered = filterMyWorks(items, { type: "all", visibility: "all" });
 
@@ -135,5 +148,98 @@ describe("filterMyWorks", () => {
       "2026-08-19T00:00:00Z",
       "2026-08-18T00:00:00Z",
     ]);
+  });
+});
+
+describe("toMyWorkTags", () => {
+  it("이용제한 발행작에 이용제한 배지를 단다 — 공개범위 배지와 함께", () => {
+    const restricted = makePublished({
+      id: "c-1",
+      updatedAt: "2026-08-20T00:00:00Z",
+      visibility: "public",
+      moderationStatus: "restricted",
+    });
+
+    expect(toMyWorkTags({ kind: "published", ...restricted })).toEqual(["character", "public", "restricted"]);
+  });
+
+  it("이용제한이 아닌 발행작에는 타입과 공개범위 둘만 단다", () => {
+    const normal = makePublished({
+      id: "c-2",
+      updatedAt: "2026-08-20T00:00:00Z",
+      visibility: "private",
+    });
+
+    expect(toMyWorkTags({ kind: "published", ...normal })).toEqual(["character", "private"]);
+  });
+
+  it("초안은 공개범위가 없어 미등록 하나만 단다", () => {
+    const draft = makeDraft({ id: "d-1", updatedAt: "2026-08-20T00:00:00Z" });
+
+    expect(toMyWorkTags({ kind: "draft", ...draft })).toEqual(["story", "unpublished"]);
+  });
+});
+
+describe("toMyWorkPageSources", () => {
+  /** 항목 하나가 어느 엔드포인트에서 왔는지 — 초안은 `GET /me/drafts`, 발행작은 유형별
+   * `GET /users/{me}/contents?type=`다. */
+  const sourceOf = (item: MyWorkItem): MyWorkPageSource =>
+    item.kind === "draft" ? "draft" : item.type;
+
+  // "더 보기"가 당기는 스트림과 화면이 실제로 그리는 항목의 출처가 어긋나면, 버튼이 보이지도 않는
+  // 목록을 늘리거나(과다) 남은 페이지를 못 가져온다(과소). 둘 다 화면에서는 "버튼을 눌렀는데
+  // 아무 일도 안 일어난다"로만 보여서, 짝을 여기서 못 박아 둔다.
+  it.each(MY_WORK_TYPE_FILTERS)(
+    "%s 칩이 당기는 스트림이 그 칩에 남는 항목의 출처와 정확히 같다",
+    (type) => {
+      const survived = filterMyWorks(items, { type, visibility: "all" });
+
+      expect(survived.length).toBeGreaterThan(0);
+      expect(new Set(survived.map(sourceOf))).toEqual(new Set(toMyWorkPageSources(type)));
+    },
+  );
+
+  it("전체는 캐릭터·스토리 두 스트림을 함께 진행시킨다 — 한쪽만 당기면 다른 쪽이 첫 페이지에 멈춘다", () => {
+    expect(toMyWorkPageSources("all")).toEqual(["character", "story"]);
+  });
+});
+
+describe("hasUnpublishedEdits", () => {
+  // `/my` 카드의 마이크로카피 줄과 "⋯" 메뉴의 `편집한 내용 버리기`가 **이 함수 하나**에 걸려 있다.
+  // 사본이 둘이면 카드는 버릴 게 없다고 말하는데 메뉴는 버리라고 권하는 상태가 생긴다.
+  it("서버 플래그가 켜진 발행작에만 참이다", () => {
+    const dirty = makePublished({ id: "c-1", updatedAt: "2026-08-20T00:00:00Z", hasUnpublishedChanges: true });
+    const clean = makePublished({ id: "c-2", updatedAt: "2026-08-20T00:00:00Z", hasUnpublishedChanges: false });
+
+    expect(hasUnpublishedEdits({ kind: "published", ...dirty })).toBe(true);
+    expect(hasUnpublishedEdits({ kind: "published", ...clean })).toBe(false);
+  });
+
+  // 초안은 통째로 미발행이라 "발행분과의 차이"가 없다 — 여기서 참이 되면 초안 메뉴에 발행작 전용
+  // 항목이 새로 뜬다(초안에는 `삭제하기`만 있어야 한다).
+  it("초안은 발행분이 없으므로 거짓이다", () => {
+    const draft = makeDraft({ id: "d-1", updatedAt: "2026-08-20T00:00:00Z" });
+
+    expect(hasUnpublishedEdits({ kind: "draft", ...draft })).toBe(false);
+  });
+});
+
+describe("toMyWorkMetaLabel", () => {
+  it("미발행 편집분이 있는 발행작에만 발행을 가리키는 한 줄이 붙는다", () => {
+    const dirty = makePublished({ id: "c-1", updatedAt: "2026-08-20T00:00:00Z", hasUnpublishedChanges: true });
+    const clean = makePublished({ id: "c-2", updatedAt: "2026-08-20T00:00:00Z", hasUnpublishedChanges: false });
+
+    // 문구를 여기 그대로 박아 두는 이유: 이 줄의 값은 "편집분이 있다"는 통보가 아니라 **다음 행동을
+    // 가리키는 것**이라(이 PRD의 성공지표가 발행 완료율이다) 상태 통보로 되돌아가면 조용히 목적을 잃는다.
+    expect(toMyWorkMetaLabel({ kind: "published", ...dirty })).toBe("편집한 내용은 발행해야 반영돼요");
+    expect(toMyWorkMetaLabel({ kind: "published", ...clean })).toBeUndefined();
+  });
+
+  // 발행작의 `updatedAt`은 마지막 **발행** 시각이라 초안과 같은 "수정" 라벨을 붙이면 거짓말이 된다 —
+  // 그래서 이 줄은 두 종류에서 서로 다른 것을 말한다.
+  it("초안에는 플래그와 무관하게 수정일이 붙는다", () => {
+    const draft = makeDraft({ id: "d-1", updatedAt: "2026-08-20T00:00:00Z" });
+
+    expect(toMyWorkMetaLabel({ kind: "draft", ...draft })).toBe("2026. 08. 20. 수정");
   });
 });

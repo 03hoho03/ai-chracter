@@ -159,8 +159,9 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             앱의 나머지 `DropdownMenuItem variant="destructive"`는 3파일 4항목이고 전부 사용자 데이터를
             지운다(`MyWorkCardMenu`의 `삭제하기`·`편집한 내용 버리기`, `ChatRoomListItemRow`, `MessageBubble`
             — 글리프는 `Trash2` 셋에 `RotateCcw` 하나다) — 여기만 예외로 두면 그 신호가 묽어진다.
-            대비도 이쪽이 낫다: destructive 행은 focus에서 `bg-destructive/10`이 얹혀 텍스트가 다크 4.3492 /
-            라이트 4.2176으로 AA 미달인데(rest 4.8359/4.8914에서 떨어진다), 중립 행은 focus에서 12.6689/14.0576다.
+            대비도 이쪽이 낫지만 **AA 논거는 US-003에서 사라졌다** — `--destructive-text`가 갈라져 나오면서
+            destructive 행의 focus 대비가 다크 5.3097 / 라이트 5.4748로 올라갔다(고치기 전 4.3824/4.2059).
+            중립 행의 12.6689/14.0576은 여전히 두 배 이상이라, 이건 이제 접근성 근거가 아니라 위계 근거다.
             Radix는 `pointermove`에도 focus를 걸므로 이건 키보드 사용자만의 상태가 아니다.
             셋째, 앱의 **다른** 로그아웃 자리(`MyPagePage`)가 이미 `Button variant="outline"`(중립)이라 이 변경이
             두 자리의 시각 언어를 일치시킨다.

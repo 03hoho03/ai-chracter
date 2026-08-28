@@ -18,7 +18,7 @@ export function GenerateImagesResultGrid({
 }: GenerateImagesResultGridProps) {
   if (isQueryError) {
     return (
-      <p role="alert" className="text-sm text-destructive">
+      <p role="alert" className="text-sm text-destructive-text">
         진행 상황을 불러오지 못했어요. 잠시 후 다시 시도해주세요.
       </p>
     );
@@ -42,7 +42,7 @@ export function GenerateImagesResultGrid({
 
   if (job.status === "failed") {
     return (
-      <p role="alert" className="text-sm text-destructive">
+      <p role="alert" className="text-sm text-destructive-text">
         {job.error ?? "이미지 생성에 실패했어요. 잠시 후 다시 시도해주세요."}
       </p>
     );

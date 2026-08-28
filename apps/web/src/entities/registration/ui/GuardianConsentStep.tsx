@@ -53,7 +53,7 @@ export function GuardianConsentStep({ form, onSubmit, isSubmitting }: GuardianCo
           {...register("guardian.name")}
         />
         {errors.guardian?.name && (
-          <p id="signup-guardian-name-error" role="alert" className="text-xs text-destructive">
+          <p id="signup-guardian-name-error" role="alert" className="text-xs text-destructive-text">
             {errors.guardian.name.message}
           </p>
         )}
@@ -75,7 +75,7 @@ export function GuardianConsentStep({ form, onSubmit, isSubmitting }: GuardianCo
           <p
             id="signup-guardian-contact-error"
             role="alert"
-            className="text-xs text-destructive"
+            className="text-xs text-destructive-text"
           >
             {errors.guardian.contact.message}
           </p>
@@ -98,7 +98,7 @@ export function GuardianConsentStep({ form, onSubmit, isSubmitting }: GuardianCo
           )}
         />
         {errors.guardian?.consentAgreed && (
-          <p role="alert" className="pl-6 text-xs text-destructive">
+          <p role="alert" className="pl-6 text-xs text-destructive-text">
             {errors.guardian.consentAgreed.message}
           </p>
         )}

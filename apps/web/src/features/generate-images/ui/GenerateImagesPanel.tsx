@@ -32,7 +32,7 @@ export function GenerateImagesPanel() {
   return (
     <div className="flex flex-col gap-8">
       {formError && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
           {formError}
         </p>
       )}

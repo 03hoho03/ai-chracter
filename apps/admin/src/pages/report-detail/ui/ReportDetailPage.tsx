@@ -36,7 +36,7 @@ export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
       {reportDetailQuery.isPending && <div className="h-64 animate-pulse rounded-xl bg-muted" />}
 
       {reportDetailQuery.isError && (
-        <p className="text-sm text-destructive">신고 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">신고 정보를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
       {reportDetailQuery.data && (

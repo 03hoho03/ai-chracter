@@ -74,7 +74,7 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
       )}
 
       {usageMetricsQuery.isError && (
-        <p className="text-sm text-destructive">
+        <p className="text-sm text-destructive-text">
           사용량 지표를 불러오지 못했어요. 기간을 확인한 뒤 다시 시도해주세요.
         </p>
       )}

@@ -55,7 +55,7 @@ export function ChatRoomListView({
       {listQuery.isPending && <ChatRoomListSkeleton />}
 
       {listQuery.isError && (
-        <p className="text-sm text-destructive">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
       {listQuery.data && listQuery.data.length === 0 && (

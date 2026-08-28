@@ -6,6 +6,7 @@ import {
   canViewDetailPage,
   resolveAccessStatus,
   toContentAccessStatus,
+  toContentStatusTags,
 } from "./content";
 
 describe("resolveAccessStatus", () => {
@@ -83,5 +84,24 @@ describe("toContentAccessStatus", () => {
   it("drops visibility for restricted and deleted", () => {
     expect(toContentAccessStatus({ kind: "restricted", visibility: null })).toEqual({ kind: "restricted" });
     expect(toContentAccessStatus({ kind: "deleted" })).toEqual({ kind: "deleted" });
+  });
+});
+
+describe("toContentStatusTags", () => {
+  it("공개범위 배지 하나만 낸다 — moderationStatus가 normal이면", () => {
+    expect(toContentStatusTags({ visibility: "public", moderationStatus: "normal" })).toEqual(["public"]);
+    expect(toContentStatusTags({ visibility: "link", moderationStatus: "normal" })).toEqual(["link"]);
+    expect(toContentStatusTags({ visibility: "private", moderationStatus: "normal" })).toEqual(["private"]);
+  });
+
+  it("이용제한이면 공개범위 배지와 restricted를 함께 낸다", () => {
+    expect(toContentStatusTags({ visibility: "public", moderationStatus: "restricted" })).toEqual([
+      "public",
+      "restricted",
+    ]);
+    expect(toContentStatusTags({ visibility: "private", moderationStatus: "restricted" })).toEqual([
+      "private",
+      "restricted",
+    ]);
   });
 });

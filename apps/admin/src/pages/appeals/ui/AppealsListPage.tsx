@@ -62,7 +62,7 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
       {appealListQuery.isPending && <div className="h-64 animate-pulse rounded-xl bg-muted" />}
 
       {appealListQuery.isError && (
-        <p className="text-sm text-destructive">이의제기 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">이의제기 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
       {appealListQuery.data && appealListQuery.data.items.length === 0 && (

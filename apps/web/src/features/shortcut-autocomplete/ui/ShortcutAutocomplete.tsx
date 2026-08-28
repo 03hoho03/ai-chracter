@@ -32,7 +32,7 @@ export function ShortcutAutocomplete({ shortcuts, query, onSelect }: ShortcutAut
             role="option"
             aria-selected={false}
             onClick={() => onSelect(shortcut)}
-            className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left outline-hidden hover:bg-accent focus-visible:bg-accent"
+            className="flex w-full flex-col gap-0.5 rounded-md px-2.5 py-2 text-left outline-hidden hover:bg-accent focus-visible:inset-ring-1 focus-visible:inset-ring-ring focus-visible:bg-accent"
           >
             <span className="text-sm font-medium text-foreground">{shortcut.name}</span>
             <span className="line-clamp-1 text-xs text-muted-foreground">{shortcut.description}</span>

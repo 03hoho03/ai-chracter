@@ -36,7 +36,7 @@ export function ProfilePage({
       {profileQuery.isPending && <ProfileHeaderSkeleton />}
 
       {profileQuery.isError && (
-        <p className="text-sm text-destructive">
+        <p className="text-sm text-destructive-text">
           {profileQuery.error.status === 404
             ? "존재하지 않거나 탈퇴한 사용자예요."
             : "프로필을 불러오지 못했어요. 잠시 후 다시 시도해주세요."}

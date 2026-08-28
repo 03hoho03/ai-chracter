@@ -60,7 +60,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           {...register("email")}
         />
         {errors.email && (
-          <p id="signup-email-error" role="alert" className="text-xs text-destructive">
+          <p id="signup-email-error" role="alert" className="text-xs text-destructive-text">
             {errors.email.message}
           </p>
         )}
@@ -93,7 +93,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           </button>
         </div>
         {errors.password && (
-          <p id="signup-password-error" role="alert" className="text-xs text-destructive">
+          <p id="signup-password-error" role="alert" className="text-xs text-destructive-text">
             {errors.password.message}
           </p>
         )}
@@ -109,7 +109,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           {...register("nickname")}
         />
         {errors.nickname && (
-          <p id="signup-nickname-error" role="alert" className="text-xs text-destructive">
+          <p id="signup-nickname-error" role="alert" className="text-xs text-destructive-text">
             {errors.nickname.message}
           </p>
         )}
@@ -126,7 +126,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           {...register("birthDate")}
         />
         {errors.birthDate && (
-          <p id="signup-birth-date-error" role="alert" className="text-xs text-destructive">
+          <p id="signup-birth-date-error" role="alert" className="text-xs text-destructive-text">
             {errors.birthDate.message}
           </p>
         )}
@@ -161,7 +161,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
             )}
           />
           {errors.termsAgreed && (
-            <p role="alert" className="pl-6 text-xs text-destructive">
+            <p role="alert" className="pl-6 text-xs text-destructive-text">
               {errors.termsAgreed.message}
             </p>
           )}
@@ -181,7 +181,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
             )}
           />
           {errors.privacyAgreed && (
-            <p role="alert" className="pl-6 text-xs text-destructive">
+            <p role="alert" className="pl-6 text-xs text-destructive-text">
               {errors.privacyAgreed.message}
             </p>
           )}

@@ -4,8 +4,9 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import {
   ContentCard,
   ContentCardActionMenu,
+  ContentListLoadMore,
   isVisibilityFilter,
-  resolveAccessStatus,
+  toContentStatusTags,
   useProfileContentListQuery,
   VISIBILITY_FILTER_OPTIONS,
   type ContentCardTag,
@@ -43,6 +44,10 @@ export function ProfileContentSection({
     type: contentType,
     visibilityFilter: isOwner ? visibilityFilter : undefined,
   });
+
+  // 유형 토글과 공개여부 필터는 둘 다 쿼리키에 들어가 있어(`contentKeys.list`) 바뀌는 순간 **새 쿼리**가
+  // 된다 — 목록도 커서도 첫 페이지로 돌아가므로 이전 필터의 커서가 남아 섞일 자리가 없다(US-009).
+  const items = contentListQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
   return (
     <section className="flex flex-col gap-4">
@@ -93,16 +98,16 @@ export function ProfileContentSection({
       )}
 
       {contentListQuery.isError && (
-        <p className="text-sm text-destructive">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.length === 0 && (
+      {contentListQuery.data && items.length === 0 && (
         <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>
       )}
 
-      {contentListQuery.data && contentListQuery.data.length > 0 && (
+      {contentListQuery.data && items.length > 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-          {contentListQuery.data.map((content, index) => (
+          {items.map((content, index) => (
             <ProfileContentCard
               key={content.id}
               content={content}
@@ -114,6 +119,16 @@ export function ProfileContentSection({
           ))}
         </div>
       )}
+
+      <ContentListLoadMore
+        hasMore={contentListQuery.hasNextPage}
+        isLoading={contentListQuery.isFetchingNextPage}
+        onLoadMore={() => {
+          if (contentListQuery.hasNextPage && !contentListQuery.isFetchingNextPage) {
+            void contentListQuery.fetchNextPage();
+          }
+        }}
+      />
     </section>
   );
 }
@@ -138,17 +153,12 @@ function ProfileContentCard({
   priority = false,
   isLcpCandidate = false,
 }: ProfileContentCardProps) {
-  // techspec-content-versioning.md §1 — restricted 여부만 이 함수로 판정하고, 공개범위 배지는
-  // content.visibility를 그대로 쓴다(restricted 케이스도 두 배지가 함께 노출돼야 하므로).
-  const access = resolveAccessStatus(content.visibility, content.moderationStatus);
   const { open } = useContentDetailModal();
 
+  // 상태 배지는 소유자에게만 보인다(DESIGN.md §Status badges). 조합 자체는 `/my`와 **같은 함수**가
+  // 정한다 — 사본이 둘이면 두 화면이 같은 작품에 다른 말을 한다(US-008).
   const tags: ContentCardTag[] = [content.type];
-  // 상태 배지는 소유자에게만 보인다(DESIGN.md §Status badges).
-  if (isOwner) {
-    tags.push(content.visibility);
-    if (access.kind === "restricted") tags.push("restricted");
-  }
+  if (isOwner) tags.push(...toContentStatusTags(content));
 
   return (
     <ContentCard
@@ -178,6 +188,7 @@ function VisibilityMenu({ content, ownerUserId }: { content: ContentSummary; own
         contentId={content.id}
         creatorUserId={ownerUserId}
         currentVisibility={content.visibility}
+        moderationStatus={content.moderationStatus}
       />
     </ContentCardActionMenu>
   );

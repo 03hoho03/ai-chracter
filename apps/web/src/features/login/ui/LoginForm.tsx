@@ -73,7 +73,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         }}
       >
         {formError && (
-          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+          <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
             {formError}
           </p>
         )}
@@ -90,7 +90,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
             {...register("email")}
           />
           {errors.email && (
-            <p id="login-email-error" role="alert" className="text-xs text-destructive">
+            <p id="login-email-error" role="alert" className="text-xs text-destructive-text">
               {errors.email.message}
             </p>
           )}
@@ -123,7 +123,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
             </button>
           </div>
           {errors.password && (
-            <p id="login-password-error" role="alert" className="text-xs text-destructive">
+            <p id="login-password-error" role="alert" className="text-xs text-destructive-text">
               {errors.password.message}
             </p>
           )}

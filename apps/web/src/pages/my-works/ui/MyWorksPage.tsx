@@ -14,17 +14,24 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ContentCard,
   ContentListEmptyState,
+  ContentListLoadMore,
   isVisibilityFilter,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
-  type ContentCardTag,
   type VisibilityFilter,
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
-import { filterMyWorks, formatMyWorkUpdatedAt, mergeMyWorks, type MyWorkItem } from "../model/myWorkItems";
+import {
+  filterMyWorks,
+  mergeMyWorks,
+  toMyWorkMetaLabel,
+  toMyWorkPageSources,
+  toMyWorkTags,
+  type MyWorkItem,
+} from "../model/myWorkItems";
 import {
   isMyWorksSort,
   isMyWorkTypeFilter,
@@ -157,8 +164,11 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   if (queries.some((query) => query.isPending && query.failureCount === 0)) return <MyWorksSkeleton />;
 
   const items = mergeMyWorks(
-    [...(characterQuery.data ?? []), ...(storyQuery.data ?? [])],
-    draftListQuery.data ?? [],
+    [
+      ...(characterQuery.data?.pages.flatMap((page) => page.items) ?? []),
+      ...(storyQuery.data?.pages.flatMap((page) => page.items) ?? []),
+    ],
+    draftListQuery.data?.pages.flatMap((page) => page.items) ?? [],
   );
 
   // 부분 실패 알림은 목록이 0건인 분기에도 똑같이 필요하다 — 빠뜨리면 발행작 32건을 가진 사용자에게
@@ -196,6 +206,25 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   const { type: typeFilter, visibility: visibilityFilter, sort } = resolveMyWorksSearch(search);
   const visibleItems = filterMyWorks(items, { type: typeFilter, visibility: visibilityFilter });
 
+  // "더 보기"는 **지금 칩이 보여주는 스트림만** 진행시킨다(`toMyWorkPageSources`). `전체`가 둘인 게
+  // 핵심이다 — 캐릭터·스토리는 각각 페이징된 뒤 `mergeMyWorks`가 클라이언트에서 합치므로 한쪽만
+  // 당기면 다른 쪽이 24건에서 멈춘 채 목록이 늘어난다.
+  //
+  // 공개여부 축은 서버가 아니라 `filterMyWorks`가 여기서 거른다(US-001이 이 화면에 `visibility`를
+  // 넘기지 않는다) — 그래서 **불러온 24건 중 그 축에 맞는 게 0건인 상태가 존재하고**, 그때도 다음
+  // 페이지에는 있을 수 있다. 빈 결과 패널 아래에도 버튼을 그대로 두는 이유다.
+  const pageQueries = toMyWorkPageSources(typeFilter).map(
+    (source) =>
+      ({ character: characterQuery, story: storyQuery, draft: draftListQuery })[source],
+  );
+  const hasMore = pageQueries.some((query) => query.hasNextPage);
+  const isLoadingMore = pageQueries.some((query) => query.isFetchingNextPage);
+  const handleLoadMore = () => {
+    for (const query of pageQueries) {
+      if (query.hasNextPage && !query.isFetchingNextPage) void query.fetchNextPage();
+    }
+  };
+
   return (
     <div className="flex flex-col gap-6">
       {errorBanner}
@@ -206,6 +235,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         visibilityFilter={visibilityFilter}
         sort={sort}
         count={visibleItems.length}
+        hasMore={hasMore}
         onSearchChange={onSearchChange}
       />
 
@@ -213,6 +243,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         <MyWorksEmptyResult
           isFiltered={typeFilter !== "all" || visibilityFilter !== "all"}
           filterLabel={describeFilter(typeFilter, visibilityFilter)}
+          hasMore={hasMore}
           onResetFilter={() => {
             focusTypeFilter("all");
             onSearchChange({ type: undefined, visibility: undefined });
@@ -235,6 +266,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
           ))}
         </div>
       )}
+
+      <ContentListLoadMore hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
     </div>
   );
 }
@@ -242,6 +275,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
 type MyWorksEmptyResultProps = {
   isFiltered: boolean;
   filterLabel: string;
+  /** 아직 안 불러온 페이지가 남아 있는지. 남았으면 "없어요"가 목록 전체에 대한 말이 아니다. */
+  hasMore: boolean;
   onResetFilter: () => void;
   onShowUnpublished: () => void;
 };
@@ -260,6 +295,7 @@ type MyWorksEmptyResultProps = {
 function MyWorksEmptyResult({
   isFiltered,
   filterLabel,
+  hasMore,
   onResetFilter,
   onShowUnpublished,
 }: MyWorksEmptyResultProps) {
@@ -282,9 +318,17 @@ function MyWorksEmptyResult({
 
   // 패널 밖 건수 줄에만 조건이 적혀 있으면, 공유 URL로 이 화면에 바로 도착한 사람에게 패널이
   // "조건"이라는 대명사만 말하게 된다. 같은 문장을 패널 안에서 한 번 더 완결시킨다.
+  //
+  // 남은 페이지가 있으면 그 문장의 범위를 **불러온 만큼**으로 좁힌다(US-009). 공개여부는 서버가 아니라
+  // 화면이 거르므로 첫 24건이 전부 공개작이면 `비공개`가 0건인데, 다음 페이지에는 있을 수 있다 —
+  // 그때 "비공개에 해당하는 작품이 없어요"는 거짓이고 바로 아래 "더 보기" 버튼과도 어긋난다.
   return (
     <ContentListEmptyState
-      message={`${filterLabel}에 해당하는 작품이 없어요.`}
+      message={
+        hasMore
+          ? `지금까지 불러온 작품 중에는 ${filterLabel}에 해당하는 게 없어요.`
+          : `${filterLabel}에 해당하는 작품이 없어요.`
+      }
       action={
         <Button type="button" variant="outline" onClick={onResetFilter}>
           필터 모두 해제
@@ -300,6 +344,7 @@ type MyWorksToolbarProps = {
   visibilityFilter: VisibilityFilter;
   sort: MyWorksSort;
   count: number;
+  hasMore: boolean;
   onSearchChange: (patch: Partial<MyWorksSearch>) => void;
 };
 
@@ -317,6 +362,7 @@ function MyWorksToolbar({
   visibilityFilter,
   sort,
   count,
+  hasMore,
   onSearchChange,
 }: MyWorksToolbarProps) {
   return (
@@ -430,8 +476,13 @@ function MyWorksToolbar({
             (`캐릭터` / ` ` / `2` / `건`)로 쪼개 놓아서, `전체 32건` → `캐릭터 2건` 전환의 뮤테이션은
             `캐릭터`와 `2` 둘뿐이고 단위 `건`은 목록에 없다(MutationObserver 실측). 문장을 통째로
             다시 읽게 해야 "캐릭터 2건"이 된다. */}
+        {/* 커서 페이징이 들어간 뒤(US-001) 이 건수는 **총계가 아니라 지금까지 불러온 수**다. 총계 API를
+            만들지 않기로 했으므로 라벨 문구로 푼다 — 남은 페이지가 있는 동안만 `표시 중`을 달아 문장이
+            총계를 주장하지 않게 하고, 마지막 페이지가 도착해 "더 보기"가 사라지는 순간 그냥 `32건`이
+            된다(그때는 그게 실제로 총계다). 두 문구가 갈리는 지점과 버튼이 사라지는 지점이 같아서
+            사용자에겐 한 가지 상태 변화로 읽힌다. */}
         <p aria-live="polite" aria-atomic className="text-sm text-muted-foreground">
-          {describeFilter(typeFilter, visibilityFilter)} {count}건
+          {describeFilter(typeFilter, visibilityFilter)} {count}건{hasMore ? " 표시 중" : ""}
         </p>
 
         <Select
@@ -508,10 +559,11 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
           ? { viewCount: item.viewCount, chatCount: item.chatCount, likeCount: item.likeCount }
           : undefined
       }
-      // 초안에만 수정일을 단다 — 발행작의 `updatedAt`은 마지막 **발행** 시각이라(확정 결정 1)
-      // 같은 "수정" 라벨을 붙이면 거짓말이 된다.
-      metaLabel={item.kind === "draft" ? `${formatMyWorkUpdatedAt(item.updatedAt)} 수정` : undefined}
-      tags={toTags(item)}
+      // 초안이면 수정일, 미발행 편집분이 있는 발행작이면 그 사실 + 발행 유도 한 줄, 나머지는 없음.
+      // 판정과 문구는 `toMyWorkMetaLabel`이 갖고 있다 — 이 줄과 "⋯" 메뉴의 `편집한 내용 버리기`가
+      // 어긋나지 않게 두 곳이 같은 model 함수(`hasUnpublishedEdits`)를 거친다.
+      metaLabel={toMyWorkMetaLabel(item)}
+      tags={toMyWorkTags(item)}
       actions={<MyWorkCardMenu item={item} title={title} userId={userId} />}
       priority={priority}
       isLcpCandidate={isLcpCandidate}
@@ -524,11 +576,6 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
       }}
     />
   );
-}
-
-function toTags(item: MyWorkItem): ContentCardTag[] {
-  // 초안에는 공개범위가 없다 — 배지는 "미등록" 하나뿐이다(확정 결정 6).
-  return item.kind === "published" ? [item.type, item.visibility] : [item.type, "unpublished"];
 }
 
 /** 실제 카드 구조(썸네일 웰 + 제목 + 한 줄 + 배지)를 그대로 흉내 낸다 — `aspect-[3/4]` 한 장짜리
@@ -553,7 +600,21 @@ function MyWorksSkeleton() {
           <div className="flex flex-col gap-1.5">
             {/* 28 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
                 20이 아니라 28인 이유는 US-010의 ⋯ 버튼(`size-7`)이 그 행의 높이를 잡기 때문이다 —
-                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측). */}
+                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측).
+
+                **US-010의 마이크로카피 줄은 여기 미러링하지 않는다.** 390px 실측으로 그 줄은 2줄
+                32px + `gap-1.5` 6px = **38.5px**를 더하지만(카드 텍스트 열 78.5 → 116.5), 줄이 뜨는
+                조건이 `hasUnpublishedChanges`라 **소수 카드에만** 붙는다(발행이 플래그를 끄므로 발행
+                직후는 전부 false고, 그 뒤 편집한 것만 true다 — 시드 26장 중 2장). 8칸 전부를 38.5px
+                키우면 지금 0.5px로 맞는 다수(78 대 78.5)가 그만큼 어긋나 목록이 도착할 때 위로
+                튄다 — 오차를 소수에서 다수로 옮기는 것뿐이다. 그래서 이 스켈레톤은 **기본 카드**를
+                미러링한다.
+
+                남은 오차는 카드가 아니라 이 분기 자체에 있다: 로딩 분기는 그리드만 돌려주는데 도착
+                분기는 그리드 **위에** 필터 툴바(64px + `gap-6` 24px)를 얹는다 — 그래서 그리드 top이
+                153 → 241로 **+88px** 밀린다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가 아니라 행 top
+                직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로 센다).
+                이건 조건부인 38.5px보다 2.3배 크고 US-010 이전부터 있던 것이라 US-011로 넘긴다. */}
             <div className="h-7 w-3/4 rounded bg-muted" />
             <div className="h-4 w-1/2 rounded bg-muted" />
             <div className="h-5.5 w-2/3 rounded-full bg-muted" />
@@ -568,7 +629,7 @@ function MyWorksSkeleton() {
 function MyWorksErrorState({ message, onRetry }: { message: string; onRetry: () => void }) {
   return (
     <div role="alert" className="flex flex-wrap items-center gap-3">
-      <p className="text-sm text-destructive">{message}</p>
+      <p className="text-sm text-destructive-text">{message}</p>
       <Button type="button" variant="outline" size="sm" onClick={onRetry}>
         다시 시도
       </Button>
@@ -590,7 +651,7 @@ function MyWorksFullErrorState({ onRetry }: { onRetry: () => void }) {
       role="alert"
       className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center break-keep"
     >
-      <p className="text-sm text-destructive">목록을 불러오지 못했어요.</p>
+      <p className="text-sm text-destructive-text">목록을 불러오지 못했어요.</p>
       <Button type="button" variant="outline" onClick={onRetry}>
         다시 시도
       </Button>

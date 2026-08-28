@@ -111,7 +111,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   if (roomQuery.isError || !room) {
     return (
       <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6">
-        <p className="text-sm text-destructive">대화방을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+        <p className="text-sm text-destructive-text">대화방을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </div>
     );
   }
@@ -194,7 +194,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
               {error && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-                  <span className="text-xs text-destructive">응답 생성에 실패했습니다 · 다시 시도</span>
+                  <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
                   <Button variant="destructive" size="sm" onClick={retry}>
                     <RotateCw aria-hidden className="size-3.5" />
                     다시 시도

@@ -35,7 +35,7 @@ const TAG_CLASS: Record<ContentCardTag, string> = {
   public: "border border-border text-muted-foreground",
   link: "border border-border text-muted-foreground",
   private: "border border-border text-muted-foreground",
-  restricted: "bg-destructive/10 text-destructive",
+  restricted: "bg-destructive/10 text-destructive-text",
   unpublished: "border border-border text-muted-foreground",
 };
 
@@ -173,8 +173,13 @@ export function ContentCard({
 
         {metrics && <ContentCardMetricList id={`${id}-metrics`} metrics={metrics} />}
 
+        {/* `break-keep`이 여기(프리미티브)에 있는 이유: 이 줄은 호출부가 **문자열로만** 넘기는 자리라
+            다이얼로그 본문처럼 호출부에서 클래스를 얹을 수가 없다. 없으면 390px 카드(내부폭 139px)에서
+            `편집한 내용은 발행해야 반영` / `돼요`로 어절 한가운데가 갈렸다(US-010 실측) — 하필 무엇을
+            해야 하는지를 말하는 그 동사다. 붙인 뒤 `편집한 내용은` / `발행해야 반영돼요`로 어절 경계에서
+            접힌다. `truncate`인 제목·작가명과 달리 이 줄만 여러 줄이 될 수 있어 이 줄에만 건다. */}
         {metaLabel && (
-          <p id={`${id}-meta`} className="text-xs text-muted-foreground">
+          <p id={`${id}-meta`} className="text-xs break-keep text-muted-foreground">
             {metaLabel}
           </p>
         )}

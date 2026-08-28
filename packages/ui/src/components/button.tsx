@@ -5,7 +5,7 @@ import { Slot } from "radix-ui"
 import { cn } from "@ai-character-chat/ui/lib/utils"
 
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap motion-safe:transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
@@ -19,13 +19,22 @@ const buttonVariants = cva(
          * `/10` 틴트라 측정된 결함이 없으므로 base를 건드리지 않고 여기까지만 좁힌다. */
         default: "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:ring-ring",
         outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
+          "border-input bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
+        /** `destructive`는 하우스 레시피의 **알파만** 되돌린다(US-004) — base의 `border-ring`·`ring-ring/50`을
+         * destructive hue로 갈아끼우되 보더는 불투명, 링은 50%다. 고치기 전에는 보더 40% · 링 20%라
+         * 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 페이지 배경 1.2371 다크 / 1.3694 라이트, 링 대
+         * 자기 채움 1.1312 / 1.1728). 불투명 보더는 자기 채움(`bg-destructive/10`) 대비 **4.8431 / 4.5795**,
+         * 페이지 배경 대비 **5.2933 / 5.3328**로 WCAG 1.4.11(3:1)을 넘는다 — 3:1을 지는 건 링이 아니라
+         * 이 1px 보더이고, 그건 `로그아웃`·인풋·제출 버튼이 이미 쓰는 것과 **같은 구조**다.
+         * `/10` 틴트 채움이라 `default`처럼 불투명 링까지 갈 필요가 없다(`toggle.tsx`의 `list`가 같은 이유로
+         * 기본 레시피를 그대로 쓴다) — 불투명 링이 필요한 건 보더가 채움에 먹히는 **솔리드 채움**뿐이다.
+         * 참고로 50% 링 자체는 페이지 배경 대비 2.1017 / 2.2862로, 하우스 레시피의 링과 같은 등급이다. */
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20",
+          "bg-destructive/10 text-destructive-text hover:bg-destructive/20 focus-visible:border-destructive focus-visible:ring-destructive/50",
         link: "text-primary underline-offset-4 hover:underline",
       },
       size: {
