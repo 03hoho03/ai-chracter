@@ -184,7 +184,14 @@ export default tseslint.config(
     // `Register`가 그 자리라, 자동 수정이 두 앱의 `app/router.tsx`를 동시에 망가뜨렸다(TS2300
     // Duplicate identifier + 라우터 타입이 통째로 any로 무너져 `prev` 파라미터가 implicit any가 됐다).
     // 파일 단위로 끄는 대신 그 두 파일만 좁힌다 — 같은 파일의 다른 선언은 계속 검사받아야 한다.
-    files: ["apps/web/src/app/router.tsx", "apps/admin/src/app/router.tsx"],
+    //
+    // `vite-env.d.ts`도 같은 이유다: `ImportMetaEnv`는 Vite가 이미 선언한 인터페이스에 **병합**해야
+    // 커스텀 `VITE_*` 키가 좁혀진다. `type`으로 쓰면 병합이 아니라 충돌이다.
+    files: [
+      "apps/web/src/app/router.tsx",
+      "apps/admin/src/app/router.tsx",
+      "apps/*/src/vite-env.d.ts",
+    ],
     rules: { "@typescript-eslint/consistent-type-definitions": "off" },
   },
 
