@@ -9,6 +9,13 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
  * `lint` 스크립트가 없어 `pnpm run lint`가 통과하는 것처럼 보이면서 아무것도 실행하지 않았다. 그래서
  * 컨벤션 위반이 408파일 중 119파일에 쌓였다(상대경로 158 · 타입단언 33 · interface Props 25).
  *
+ * **`turbo.json`에 `lint` 태스크를 두지 않는 것은 의도다.** 되살려 보고 실측했더니 패키지에 `lint`
+ * 스크립트가 없어 `turbo run lint`가 `0 successful, 0 total` + `exit 0`으로 **조용히 통과**했다 —
+ * 이 저장소가 원래 앓던 그 병이다. 지금은 `Could not find task 'lint'`로 **큰 소리로 실패**한다.
+ * 패키지별 스크립트로 돌리는 것도 안 된다: `no-relative-import-paths`의 `rootDir`가 cwd 기준이라
+ * 패키지 안에서 돌면 IMP-01 157건이 통째로 빠진다(합계 210 vs 루트 368으로 실측). 진입점은
+ * 루트 `pnpm run lint` 하나다.
+ *
  * 규칙은 `hojeong-plugin-fe` 컨벤션 스킬의 rule-id에 대응시킨다 — 사람이 리뷰로 잡던 것을 기계로 옮기는
  * 것이 목적이라, **자동 검사가 가능한 것만** 넣는다. 렌더 단위 분리(COMP-07)처럼 판단이 필요한 규칙은
  * 서브에이전트 리뷰(`hojeong-architect`)의 몫으로 남긴다.
