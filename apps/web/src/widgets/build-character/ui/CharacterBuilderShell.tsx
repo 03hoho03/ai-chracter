@@ -33,6 +33,12 @@ const TABS: { id: CharacterBuilderTab; label: string }[] = [
   { id: "detail", label: "상세" },
 ];
 
+/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+ * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
+function isCharacterBuilderTab(value: string): value is CharacterBuilderTab {
+  return TABS.some((tab) => tab.id === value);
+}
+
 /** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
  * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
  * 있는 발행 거부 상태로 보여준다. */
@@ -60,7 +66,7 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
 function getMissingFieldLabels(error: unknown): string[] | null {
   const apiError = isApiError(error) ? error : null;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  const fields = (apiError.detail as { missingFields?: unknown }).missingFields;
+  const fields = apiError.detail.missingFields;
   if (!Array.isArray(fields)) return null;
   return fields.map((field) => MISSING_FIELD_LABELS[String(field)] ?? String(field));
 }
@@ -90,7 +96,9 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
 
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
-      const subscription = form.watch((formValues) => cb(formValues as CharacterBuilderFormValues));
+      // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
+      // 신호**로만 쓰고 값은 `getValues()`로 읽는다 — 단언 없이 완전한 폼 타입이 나온다.
+      const subscription = form.watch(() => cb(form.getValues()));
       return () => subscription.unsubscribe();
     },
     formToServer,
@@ -192,7 +200,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as CharacterBuilderTab)}>
+      <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
         <TabsList variant="line">
           {TABS.map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>
