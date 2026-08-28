@@ -164,7 +164,7 @@ export function ContentDetailView({ id }: { id: string }) {
   }
 
   const isLiked = desiredLiked ?? content.isLiked;
-  const likeCount = content.likeCount + (isLiked === content.isLiked ? 0 : isLiked ? 1 : -1);
+  const likeCount = content.likeCount + optimisticDelta(isLiked, content.isLiked);
   const isFavorited = desiredFavorited ?? content.isFavorited;
 
   return (
@@ -296,4 +296,11 @@ export function ContentDetailView({ id }: { id: string }) {
       />
     </article>
   );
+}
+
+/** 낙관적 토글이 서버 값과 갈릴 때만 카운트를 ±1 한다 — 서버 카운트를 다시 받기 전까지 화면만
+ * 앞서간다. 중첩 삼항으로 쓰면 "같으면 0"과 "다르면 방향"이라는 두 질문이 한 줄에 겹친다(COMP-04). */
+function optimisticDelta(optimistic: boolean, server: boolean): number {
+  if (optimistic === server) return 0;
+  return optimistic ? 1 : -1;
 }
