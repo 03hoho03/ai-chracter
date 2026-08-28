@@ -7,7 +7,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useFieldArray, type UseFormReturn } from "react-hook-form";
 
-import type { CharacterBuilderFormValues } from "../../../features/build-character";
+import type { CharacterBuilderFormValues } from "@/features/build-character";
 
 /** techspec-builder-character.md §4 — 인트로는 단일 필드, 예시 대화는 고급설정 뒤에 숨겨진 add/remove 전용
  * 목록(순서가 판정에 영향 없어 dnd-kit 불필요), 플레이가이드는 선택 입력. */

@@ -1,4 +1,4 @@
-interface ComingSoonPageProps {
+type ComingSoonPageProps = {
   title: string;
   description: string;
 }

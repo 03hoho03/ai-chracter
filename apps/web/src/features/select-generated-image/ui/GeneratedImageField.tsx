@@ -4,8 +4,8 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { uploadAsset, type AssetPurpose } from "../../../shared/lib/asset/uploadAsset";
-import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
+import { uploadAsset, type AssetPurpose } from "@/shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { GeneratedImagePickerModal } from "./GeneratedImagePickerModal";
 
 export type SelectedImageValue = { assetId: string } | null;

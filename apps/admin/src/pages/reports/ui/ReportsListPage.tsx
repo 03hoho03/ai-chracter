@@ -9,7 +9,7 @@ import {
   REPORT_STATUS_LABELS,
   useReportListQuery,
   type ReportStatusFilter,
-} from "../../../entities/report";
+} from "@/entities/report";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -17,6 +17,12 @@ const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string 
   { value: "resolved", label: REPORT_STATUS_LABELS.resolved },
   { value: "rejected", label: REPORT_STATUS_LABELS.rejected },
 ];
+
+/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03).
+ * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다. AppealsListPage 동형. */
+function isReportStatus(value: string): value is ReportStatusFilter {
+  return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
+}
 
 const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
@@ -26,7 +32,7 @@ const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-interface ReportsListPageProps {
+type ReportsListPageProps = {
   page: number;
   status?: ReportStatusFilter;
   onPageChange: (page: number) => void;
@@ -44,7 +50,7 @@ export function ReportsListPage({ page, status, onPageChange, onStatusChange }: 
 
         <Select
           value={status ?? "all"}
-          onValueChange={(value) => onStatusChange(value === "all" ? undefined : (value as ReportStatusFilter))}
+          onValueChange={(value) => onStatusChange(isReportStatus(value) ? value : undefined)}
         >
           <SelectTrigger size="sm" aria-label="처리상태 필터" className="w-32">
             <SelectValue />

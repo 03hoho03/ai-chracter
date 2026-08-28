@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 
-import type { ReportReasonCategory } from "../../../entities/content";
+import type { ReportReasonCategory } from "@/entities/content";
 
 const REPORT_REASON_OPTIONS: { value: ReportReasonCategory; label: string }[] = [
   { value: "adult", label: "성인/선정적 콘텐츠" },
@@ -21,6 +21,13 @@ const REPORT_REASON_OPTIONS: { value: ReportReasonCategory; label: string }[] = 
   { value: "spam", label: "스팸" },
   { value: "other", label: "기타" },
 ];
+
+/** Radix 단일선택 토글은 선택된 항목을 다시 누르면 빈 문자열을 흘려보내고 `ToggleGroupItem`의 value도
+ * `string`이라, 화면에서 돌아오는 값에는 좁힘이 필요하다. `as` 단언 대신 술어를 쓴다(TS-03).
+ * 화면이 실제로 그리는 목록을 근거로 삼으므로 옵션과 술어가 어긋날 수 없다. */
+function isReportReason(value: string): value is ReportReasonCategory {
+  return REPORT_REASON_OPTIONS.some((option) => option.value === value);
+}
 
 type Props = {
   mutationFn: MutationFn<void, ReportReasonCategory>;
@@ -46,7 +53,7 @@ export const ReportContentModal = createCallable<Props, void>(({ call, mutationF
           variant="list"
           orientation="vertical"
           value={reason ?? ""}
-          onValueChange={(value) => setReason(value ? (value as ReportReasonCategory) : undefined)}
+          onValueChange={(value) => setReason(isReportReason(value) ? value : undefined)}
           aria-label="신고 사유 선택"
           className="w-full"
         >

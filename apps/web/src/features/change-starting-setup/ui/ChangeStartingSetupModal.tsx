@@ -10,8 +10,8 @@ import { Check } from "lucide-react";
 import { createCallable } from "react-call";
 import { toast } from "sonner";
 
-import { useChangeStartingSetupMutation, useChatRoomQuery } from "../../../entities/chat-room";
-import { useContentDetailQuery } from "../../../entities/content";
+import { useChangeStartingSetupMutation, useChatRoomQuery } from "@/entities/chat-room";
+import { useContentDetailQuery } from "@/entities/content";
 import { ConfirmStartingSetupChangeModal } from "./ConfirmStartingSetupChangeModal";
 
 type Props = {

@@ -1,9 +1,9 @@
 import type { components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { profileKeys } from "../../../entities/profile";
-import { sessionKeys } from "../../../entities/session";
-import { apiClient } from "../../../shared/lib/api/client";
+import { profileKeys } from "@/entities/profile";
+import { sessionKeys } from "@/entities/session";
+import { apiClient } from "@/shared/lib/api/client";
 
 type UpdateProfileRequest = components["schemas"]["UpdateProfileRequest"];
 type UserProfileResponse = components["schemas"]["UserProfileResponse"];

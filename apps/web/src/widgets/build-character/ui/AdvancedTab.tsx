@@ -109,23 +109,7 @@ function SituationalImageRow({
       </button>
 
       <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
-        {objectPreviewUrl ? (
-          <img
-            src={objectPreviewUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="size-full object-cover"
-          />
-        ) : hasRegisteredImage ? (
-          <div className="flex size-full items-center justify-center text-center text-xs text-muted-foreground">
-            등록됨
-          </div>
-        ) : (
-          <div className="flex size-full items-center justify-center text-muted-foreground">
-            <ImageOff aria-hidden />
-          </div>
-        )}
+        <SituationalImageThumb objectPreviewUrl={objectPreviewUrl} hasRegisteredImage={hasRegisteredImage} />
         {isUploading && (
           <div className="absolute inset-0 flex items-center justify-center bg-background/70">
             <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
@@ -225,5 +209,40 @@ export function AdvancedTab({
         상황별 이미지 추가
       </Button>
     </div>
+  );
+}
+
+/** 세 갈래(로컬 미리보기·등록된 이미지·없음)가 배타적이라 early return으로 편다(COMP-04). */
+function SituationalImageThumb({
+  objectPreviewUrl,
+  hasRegisteredImage,
+}: {
+  objectPreviewUrl: string | null;
+  hasRegisteredImage: boolean;
+}) {
+  if (objectPreviewUrl) {
+    return (
+      <img
+        src={objectPreviewUrl}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="size-full object-cover"
+      />
+    );
+  }
+
+  if (hasRegisteredImage) {
+    return (
+      <div className="flex size-full items-center justify-center text-center text-xs text-muted-foreground">
+        등록됨
+      </div>
+    );
+  }
+
+  return (
+      <div className="flex size-full items-center justify-center text-muted-foreground">
+        <ImageOff aria-hidden />
+      </div>
   );
 }

@@ -23,9 +23,27 @@ import type {
   SingleRuleValues,
   StatDefValues,
   StoryBuilderFormValues,
-} from "../../../features/build-story";
+} from "@/features/build-story";
 
 const COMPARISON_OPERATORS: SingleRuleValues["operator"][] = [">", ">=", "<", "<=", "=="];
+
+/** 그룹 내부 규칙을 잇는 접속사. 화면이 이 목록으로 항목을 그리므로 술어와 어긋날 수 없다. */
+const GROUP_OPERATORS = ["and", "or"] as const;
+
+const GROUP_OPERATOR_LABEL: Record<(typeof GROUP_OPERATORS)[number], string> = {
+  and: "그리고",
+  or: "또는",
+};
+
+/** Radix 토글·셀렉트는 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
+ * `as` 대신 술어를 쓴다(TS-03) — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
+function isGroupOperator(value: string): value is (typeof GROUP_OPERATORS)[number] {
+  return GROUP_OPERATORS.some((op) => op === value);
+}
+
+function isComparisonOperator(value: string): value is SingleRuleValues["operator"] {
+  return COMPARISON_OPERATORS.some((op) => op === value);
+}
 
 /** 목록 위에서 인접한 두 항목 사이의 and/or 관계. 마지막 항목의 nextOp는 평가에서 무시되므로
  * (shared/lib/rule-engine) 마지막 항목 뒤에는 렌더링하지 않는다. */
@@ -37,11 +55,14 @@ function LogicOpToggle({ value, onChange }: { value: "and" | "or"; onChange: (op
       size="sm"
       className="ml-7 w-fit"
       value={value}
-      onValueChange={(next) => next && onChange(next as "and" | "or")}
+      onValueChange={(next) => isGroupOperator(next) && onChange(next)}
       aria-label="다음 규칙과의 관계"
     >
-      <ToggleGroupItem value="and">그리고</ToggleGroupItem>
-      <ToggleGroupItem value="or">또는</ToggleGroupItem>
+      {GROUP_OPERATORS.map((op) => (
+        <ToggleGroupItem key={op} value={op}>
+          {GROUP_OPERATOR_LABEL[op]}
+        </ToggleGroupItem>
+      ))}
     </ToggleGroup>
   );
 }
@@ -91,7 +112,7 @@ function SingleRuleRow({
 
       <Select
         value={rule.operator}
-        onValueChange={(value) => onChange({ ...rule, operator: value as SingleRuleValues["operator"] })}
+        onValueChange={(value) => isComparisonOperator(value) && onChange({ ...rule, operator: value })}
       >
         <SelectTrigger className="w-20" aria-label="연산자 선택">
           <SelectValue />

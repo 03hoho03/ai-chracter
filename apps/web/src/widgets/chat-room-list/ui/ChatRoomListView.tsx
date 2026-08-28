@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import { useChatRoomListQuery, useStartChatMutation } from "../../../entities/chat-room";
+import { useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room";
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
 function ChatRoomListSkeleton() {

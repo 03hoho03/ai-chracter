@@ -4,7 +4,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 
-import { useModerationActionMutation, type ModerationActionType } from "../../../entities/report";
+import { useModerationActionMutation, type ModerationActionType } from "@/entities/report";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 
 type ProcessAction = Extract<ModerationActionType, "restrict" | "delete" | "reject">;
@@ -14,6 +14,12 @@ const PROCESS_OPTIONS: { value: ProcessAction; label: string }[] = [
   { value: "delete", label: "삭제" },
   { value: "reject", label: "조치 없음(반려)" },
 ];
+
+/** Radix 토글은 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
+ * `as` 대신 술어를 쓰고(TS-03), 화면이 실제로 그리는 목록을 근거로 삼아 둘이 어긋날 수 없게 한다. */
+function isProcessAction(value: string): value is ProcessAction {
+  return PROCESS_OPTIONS.some((option) => option.value === value);
+}
 
 const SUCCESS_MESSAGE: Record<ProcessAction, string> = {
   restrict: "이용제한을 부과했어요.",
@@ -107,7 +113,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
             type="single"
             variant="outline"
             value={action ?? ""}
-            onValueChange={(value) => setAction(value ? (value as ProcessAction) : undefined)}
+            onValueChange={(value) => setAction(isProcessAction(value) ? value : undefined)}
             aria-label="처리 방식 선택"
             className="w-full"
           >

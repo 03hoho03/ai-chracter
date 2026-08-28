@@ -1,7 +1,7 @@
-import { getIconByName } from "../../../shared/ui/color-icon-picker";
+import { getIconByName } from "@/shared/ui/color-icon-picker";
 import type { StatDef } from "../api/chat-room";
 
-interface StatGaugePanelProps {
+type StatGaugePanelProps = {
   stats: StatDef[];
   values: Record<string, number>;
 }

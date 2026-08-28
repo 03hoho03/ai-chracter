@@ -5,7 +5,7 @@ import {
   APPEAL_VERDICT_LABELS,
   useResolveAppealMutation,
   type AdminAppealListItem,
-} from "../../../entities/appeal";
+} from "@/entities/appeal";
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
 

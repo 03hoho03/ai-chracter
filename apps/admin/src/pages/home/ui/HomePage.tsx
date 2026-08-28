@@ -1,8 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 
-import { useSessionQuery } from "../../../entities/session";
-import { useLogoutMutation } from "../../../features/logout";
+import { useSessionQuery } from "@/entities/session";
+import { useLogoutMutation } from "@/features/logout";
 
 export function HomePage() {
   const session = useSessionQuery();
@@ -33,7 +33,7 @@ export function HomePage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             disabled={logoutMutation.isPending}
           >
             로그아웃

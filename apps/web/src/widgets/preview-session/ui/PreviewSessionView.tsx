@@ -112,7 +112,7 @@ export function PreviewSessionView({
           )}
           <span className="text-sm font-semibold text-foreground">미리보기</span>
         </div>
-        <Button variant="outline" size="sm" onClick={startPreview} disabled={isStarting}>
+        <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>
           <RotateCw aria-hidden className="size-3.5" />
           미리보기 초기화
         </Button>

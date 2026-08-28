@@ -8,7 +8,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
-import { useUsageMetricsQuery } from "../../../entities/usage-metrics";
+import { useUsageMetricsQuery } from "@/entities/usage-metrics";
 
 const chartConfig = {
   messageCount: {
@@ -26,7 +26,7 @@ function formatTickDate(date: string) {
   return `${month}/${day}`;
 }
 
-interface UsageMetricsPageProps {
+type UsageMetricsPageProps = {
   from: string;
   to: string;
   onRangeChange: (range: Partial<{ from: string; to: string }>) => void;

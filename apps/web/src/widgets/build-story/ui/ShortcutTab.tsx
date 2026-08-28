@@ -5,7 +5,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { Trash2 } from "lucide-react";
 import { useFieldArray, type UseFormReturn } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "../../../features/build-story";
+import type { StoryBuilderFormValues } from "@/features/build-story";
 
 /** techspec-builder-story.md §1.4 — 이름/설명/실행될 프롬프트(전부 필수), 작품 전역 적용이라
  * 스코프 선택 UI가 없다(KeywordNoteTab과 달리 순서/재정렬도 의미가 없어 StatTab과 동일하게

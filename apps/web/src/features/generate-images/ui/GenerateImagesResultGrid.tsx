@@ -1,8 +1,8 @@
 import { Loader2 } from "lucide-react";
 
-import type { ImageJobStatusResponse } from "../../../entities/image-job";
+import type { ImageJobStatusResponse } from "@/entities/image-job";
 
-interface GenerateImagesResultGridProps {
+type GenerateImagesResultGridProps = {
   job: ImageJobStatusResponse | undefined;
   requestedCount: number;
   isQueryError: boolean;

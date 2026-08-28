@@ -7,8 +7,8 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Controller, useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "../../../features/build-story";
-import { ColorPicker, IconPicker } from "../../../shared/ui/color-icon-picker";
+import type { StoryBuilderFormValues } from "@/features/build-story";
+import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 /** 스탯 하나(이름/아이콘/색상/최소·최대·초기값/단위/설명). 순서 우선순위가 없어 dnd-kit 없이
  * add/remove만 지원한다(IntroTab의 예시 대화와 동일한 판단, US-101). */

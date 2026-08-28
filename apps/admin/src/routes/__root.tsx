@@ -3,7 +3,7 @@ import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
 
 import { DeleteConfirmModal } from "../features/act-on-report";
 
-export interface RouterContext {
+export type RouterContext = {
   queryClient: QueryClient;
 }
 

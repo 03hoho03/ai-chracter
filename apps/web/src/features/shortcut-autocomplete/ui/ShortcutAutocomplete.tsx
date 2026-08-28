@@ -1,9 +1,9 @@
 import { useMemo } from "react";
 
-import type { Shortcut } from "../../../entities/chat-room";
+import type { Shortcut } from "@/entities/chat-room";
 import { filterShortcuts } from "../model/filterShortcuts";
 
-interface ShortcutAutocompleteProps {
+type ShortcutAutocompleteProps = {
   shortcuts: Shortcut[];
   query: string;
   onSelect: (shortcut: Shortcut) => void;

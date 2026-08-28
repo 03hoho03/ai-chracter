@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -8,13 +7,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys } from "../../../entities/session";
+import { sessionKeys } from "@/entities/session";
 import { useLoginMutation } from "../api/mutations";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
-interface LoginFormProps {
+type LoginFormProps = {
   redirectTo?: string;
 }
 
@@ -40,8 +40,8 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = error as ApiError;
-      if (apiError.status === 401) {
+      const apiError = isApiError(error) ? error : null;
+      if (apiError?.status === 401) {
         setFormError("이메일 또는 비밀번호가 올바르지 않습니다.");
       } else {
         setFormError(GENERIC_ERROR_MESSAGE);

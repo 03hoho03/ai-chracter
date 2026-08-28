@@ -1,7 +1,7 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 
 /** techspec-builder-common.md §5.1 */
 export type AppealTarget =

@@ -14,8 +14,8 @@ import { X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 
-import { useGenreListQuery } from "../../../entities/content";
-import type { CharacterBuilderFormValues } from "../../../features/build-character";
+import { useGenreListQuery } from "@/entities/content";
+import type { CharacterBuilderFormValues } from "@/features/build-character";
 
 const TARGET_OPTIONS: { value: "female" | "male" | "all"; label: string }[] = [
   { value: "female", label: "여성향" },

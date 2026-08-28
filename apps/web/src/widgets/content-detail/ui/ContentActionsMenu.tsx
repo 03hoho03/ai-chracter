@@ -1,4 +1,3 @@
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   DropdownMenu,
@@ -17,6 +16,7 @@ import {
 } from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
 import { ReportContentModal } from "@/features/report-content";
+import { isApiError } from "@/shared/lib/api/client";
 
 type ContentActionsMenuProps = {
   contentId: string;
@@ -54,9 +54,9 @@ export function ContentActionsMenu({
           toast.success("신고가 접수되었어요.");
           call.end();
         } catch (error) {
-          const apiError = error as ApiError;
+          const apiError = isApiError(error) ? error : null;
           toast.error(
-            apiError.status === 401
+            apiError?.status === 401
               ? "로그인 후 신고할 수 있어요."
               : "신고 접수에 실패했어요. 잠시 후 다시 시도해주세요.",
           );

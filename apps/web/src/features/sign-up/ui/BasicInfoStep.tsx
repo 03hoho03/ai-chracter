@@ -6,7 +6,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
-import type { SignUpFormValues } from "../../../entities/registration";
+import type { SignUpFormValues } from "@/entities/registration";
 
 const BASIC_INFO_FIELDS = [
   "email",
@@ -17,7 +17,7 @@ const BASIC_INFO_FIELDS = [
   "privacyAgreed",
 ] as const;
 
-interface BasicInfoStepProps {
+type BasicInfoStepProps = {
   form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;

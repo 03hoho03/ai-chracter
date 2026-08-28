@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { handleRequest } from "./handler";
 import type { CacheLike, WorkerEnv } from "./workerRuntime";
+import { fetchUrlOf } from "./testSupport";
 
 const NOOP_CACHE: CacheLike = {
   match: () => Promise.resolve(undefined),
@@ -158,7 +159,7 @@ describe("handleRequest", () => {
       ),
     );
     vi.stubGlobal("fetch", (input: string | URL | Request) =>
-      String(input).includes("/contents/")
+      fetchUrlOf(input).includes("/contents/")
         ? Promise.resolve(
             new Response(
               JSON.stringify({
@@ -247,7 +248,7 @@ describe("handleRequest", () => {
     const id = "11111111-2222-4333-8444-555555555555";
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", (input: string | URL | Request) => {
-      requestedUrls.push(String(input));
+      requestedUrls.push(fetchUrlOf(input));
       return Promise.resolve(
         new Response(
           JSON.stringify({
@@ -281,7 +282,7 @@ describe("handleRequest", () => {
     const id = "11111111-2222-4333-8444-555555555555";
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", (input: string | URL | Request) => {
-      requestedUrls.push(String(input));
+      requestedUrls.push(fetchUrlOf(input));
       return Promise.resolve(
         new Response(JSON.stringify({ nickname: "달빛작가", bio: null }), {
           headers: { "content-type": "application/json" },
@@ -384,7 +385,7 @@ describe("handleRequest", () => {
     const id = "11111111-2222-4333-8444-555555555555";
     const requestedUrls: string[] = [];
     vi.stubGlobal("fetch", (input: string | URL | Request) => {
-      requestedUrls.push(String(input));
+      requestedUrls.push(fetchUrlOf(input));
       return Promise.resolve(
         new Response(JSON.stringify({ detail: "Not Found" }), {
           status: 404,

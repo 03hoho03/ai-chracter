@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { ImagePlus } from "lucide-react";
 
-import { useSessionQuery } from "../../../entities/session";
+import { useSessionQuery } from "@/entities/session";
 import { ContentTypeToggle } from "./ContentTypeToggle";
 import { NotificationBell } from "./NotificationBell";
 import { ProfileMenu } from "./ProfileMenu";

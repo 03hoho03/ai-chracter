@@ -2,8 +2,8 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, type UseFormReturn } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "../../../features/build-story";
-import { GeneratedImageField } from "../../../features/select-generated-image";
+import type { StoryBuilderFormValues } from "@/features/build-story";
+import { GeneratedImageField } from "@/features/select-generated-image";
 
 /** techspec-builder-story.md §0 AC — 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택). */
 export function ProfileTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {

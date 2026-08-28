@@ -1,5 +1,4 @@
 import { useState, type ReactNode } from "react";
-import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useNavigate } from "@tanstack/react-router";
@@ -22,6 +21,7 @@ import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
 import { StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
+import { isApiError } from "@/shared/lib/api/client";
 
 const TABS: { id: StoryBuilderTab; label: string }[] = [
   { id: "profile", label: "프로필" },
@@ -34,10 +34,16 @@ const TABS: { id: StoryBuilderTab; label: string }[] = [
   { id: "registration", label: "등록" },
 ];
 
+/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+ * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
+function isStoryBuilderTab(value: string): value is StoryBuilderTab {
+  return TABS.some((tab) => tab.id === value);
+}
+
 /** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
  * (techspec-backend-content.md §1.2/§1.3, CharacterBuilderShell.tsx와 동일 판별). */
 function getFilterRejectionReason(error: unknown): string | null {
-  const apiError = error as ApiError;
+  const apiError = isApiError(error) ? error : null;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
   if ("reason" in apiError.detail) return String(apiError.detail.reason);
   return null;
@@ -58,9 +64,9 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
 };
 
 function getMissingFieldLabels(error: unknown): string[] | null {
-  const apiError = error as ApiError;
+  const apiError = isApiError(error) ? error : null;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  const fields = (apiError.detail as { missingFields?: unknown }).missingFields;
+  const fields = apiError.detail.missingFields;
   if (!Array.isArray(fields)) return null;
   return fields.map((field) => MISSING_FIELD_LABELS[String(field)] ?? String(field));
 }
@@ -90,7 +96,9 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
 
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
-      const subscription = form.watch((formValues) => cb(formValues as StoryBuilderFormValues));
+      // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
+      // 신호**로만 쓰고 값은 `getValues()`로 읽는다 — 단언 없이 완전한 폼 타입이 나온다.
+      const subscription = form.watch(() => cb(form.getValues()));
       return () => subscription.unsubscribe();
     },
     formToServer,
@@ -183,7 +191,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         </div>
       )}
 
-      <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as StoryBuilderTab)}>
+      <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
         <TabsList variant="line">
           {TABS.map((tab) => (
             <TabsTrigger key={tab.id} value={tab.id}>

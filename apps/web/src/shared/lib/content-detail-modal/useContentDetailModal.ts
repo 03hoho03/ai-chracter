@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { useAtom } from "jotai";
 
-import { contentDetailModalAtom } from "../../model/content-detail-modal";
+import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
 /**
  * techspec-content-detail.md §1 — 카드 클릭 시 페이지 전환 없이 모달로 여는 훅. `open()`은

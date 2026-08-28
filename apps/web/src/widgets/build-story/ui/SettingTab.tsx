@@ -3,7 +3,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "../../../features/build-story";
+import type { StoryBuilderFormValues } from "@/features/build-story";
 
 const PROMPT_TEMPLATE_OPTIONS: { value: "basic" | "emotional" | "simulation" | "custom"; label: string }[] = [
   { value: "basic", label: "기본" },

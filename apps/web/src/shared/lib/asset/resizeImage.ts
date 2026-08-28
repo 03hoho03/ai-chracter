@@ -17,7 +17,7 @@ export class ResizeImageError extends Error {
   }
 }
 
-export interface ResizeSpec {
+export type ResizeSpec = {
   /** 결과물의 긴 변 최대 픽셀 */
   maxEdge: number;
   /** WebP 인코딩 품질 (0~1) */

@@ -15,7 +15,7 @@ import { UpdateInfoModal } from "@/features/update-info";
 import { ContentDetailModalOutlet } from "@/widgets/content-detail";
 import { Header } from "@/widgets/header";
 
-export interface RouterContext {
+export type RouterContext = {
   queryClient: QueryClient;
 }
 

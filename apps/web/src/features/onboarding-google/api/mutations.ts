@@ -1,7 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 import { useMutation } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 
 type OnboardingGoogleRequest = components["schemas"]["OnboardingGoogleRequest"];
 type OnboardingGoogleResponse = components["schemas"]["OnboardingGoogleResponse"];

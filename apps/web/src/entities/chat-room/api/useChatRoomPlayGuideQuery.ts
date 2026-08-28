@@ -1,7 +1,7 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 import { chatRoomKeys } from "./keys";
 
 type PlayGuideResponseDto = components["schemas"]["PlayGuideResponse"];

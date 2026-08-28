@@ -8,14 +8,21 @@ import {
   APPEAL_TARGET_KIND_LABELS,
   useAppealListQuery,
   type AppealStatusFilter,
-} from "../../../entities/appeal";
-import { AppealResolvePanel } from "../../../features/resolve-appeal";
+} from "@/entities/appeal";
+import { AppealResolvePanel } from "@/features/resolve-appeal";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | AppealStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
   { value: "pending", label: APPEAL_STATUS_LABELS.pending },
   { value: "resolved", label: APPEAL_STATUS_LABELS.resolved },
 ];
+
+/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03).
+ * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다 — 술어가 false면 호출부가
+ * `undefined`를 넘긴다. */
+function isAppealStatus(value: string): value is AppealStatusFilter {
+  return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
+}
 
 const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
@@ -25,7 +32,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-interface AppealsListPageProps {
+type AppealsListPageProps = {
   page: number;
   status?: AppealStatusFilter;
   onPageChange: (page: number) => void;
@@ -44,7 +51,7 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
 
         <Select
           value={status ?? "all"}
-          onValueChange={(value) => onStatusChange(value === "all" ? undefined : (value as AppealStatusFilter))}
+          onValueChange={(value) => onStatusChange(isAppealStatus(value) ? value : undefined)}
         >
           <SelectTrigger size="sm" aria-label="처리상태 필터" className="w-32">
             <SelectValue />

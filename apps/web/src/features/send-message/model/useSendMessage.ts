@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { characterImageArchiveKeys } from "../../../entities/character-image-archive";
+import { characterImageArchiveKeys } from "@/entities/character-image-archive";
 import {
   applyStreamEvent,
   buildEditPayload,
@@ -9,9 +9,9 @@ import {
   buildSendPayload,
   chatRoomKeys,
   truncateAndEdit,
-} from "../../../entities/chat-room";
-import type { ChatMessage, ChatRoomState, ChatStreamEvent, ChatStreamRequest } from "../../../entities/chat-room";
-import { openChatStream } from "../../../shared/lib/sse/openChatStream";
+} from "@/entities/chat-room";
+import type { ChatMessage, ChatRoomState, ChatStreamEvent, ChatStreamRequest } from "@/entities/chat-room";
+import { openChatStream } from "@/shared/lib/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLast" };
 type SendMessageError = { retryPayload: PendingRequest };
@@ -46,7 +46,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
           mode: pending.mode,
           onDone: (message) => {
             if (message.imageId && characterId) {
-              queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
+              void queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
             }
           },
         });
