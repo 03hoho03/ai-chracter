@@ -159,6 +159,26 @@ export default tseslint.config(
   },
 
   {
+    // `chart.tsx`는 shadcn 레지스트리에서 그대로 들여온 파일이다(세미콜론 없는 상류 스타일이
+    // 저장소 자체 파일과 다르다). 14건 전부 **recharts의 상류 타입**에서 흘러나온다 —
+    // `TooltipNameType`이 `number | string | ((obj: any) => any)`이고 `payload`가 `any`다.
+    //
+    // 손으로 좁히면 `shadcn add chart`가 되돌리고, 상류와 diff가 생겨 다음 업데이트가 충돌한다.
+    // NAME-01(kebab 파일명)을 프로젝트 단위 결정으로 남긴 것과 같은 자리다 — 규칙과 도구가
+    // 싸우면 도구를 이긴 쪽이 아니라 **경계를 긋는 쪽**이 맞다.
+    //
+    // 파일 하나에 다섯 규칙만 좁힌다. 이 파일의 다른 규칙(중첩 삼항·상대경로 등)은 계속 검사받는다.
+    files: ["packages/ui/src/components/chart.tsx"],
+    rules: {
+      "@typescript-eslint/consistent-type-assertions": "off",
+      "@typescript-eslint/restrict-template-expressions": "off",
+      "@typescript-eslint/no-unsafe-assignment": "off",
+      "@typescript-eslint/no-unsafe-member-access": "off",
+      "@typescript-eslint/no-unsafe-argument": "off",
+    },
+  },
+
+  {
     // TS-06의 예외는 "확장·선언 병합이 필요할 때"인데 `consistent-type-definitions`는 그걸 못 본다 —
     // `declare module` 안의 `interface`를 `type`으로 바꾸면 **선언 병합이 깨진다**. TanStack Router의
     // `Register`가 그 자리라, 자동 수정이 두 앱의 `app/router.tsx`를 동시에 망가뜨렸다(TS2300
