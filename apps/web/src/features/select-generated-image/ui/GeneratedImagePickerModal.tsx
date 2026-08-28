@@ -21,7 +21,6 @@ export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedIma
   ({ call }) => {
     const open = !call.ended;
     const galleryQuery = useGeneratedImagesQuery(open);
-    const images = galleryQuery.data;
 
     return (
       <Dialog open={open} onOpenChange={(next) => !next && call.end(null)}>
@@ -38,42 +37,66 @@ export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedIma
             </a>
           </Button>
 
-          {galleryQuery.isPending ? (
-            <div className="grid grid-cols-3 gap-2">
-              {[0, 1, 2, 3, 4, 5].map((i) => (
-                <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
-              ))}
-            </div>
-          ) : galleryQuery.isError ? (
-            <p className="py-4 text-center text-sm text-destructive-text">
-              불러오지 못했어요. 잠시 후 다시 시도해주세요.
-            </p>
-          ) : images !== undefined && images.length > 0 ? (
-            <div className="grid grid-cols-3 gap-2">
-              {images.map((image) => (
-                <button
-                  key={image.assetId}
-                  type="button"
-                  onClick={() => call.end({ assetId: image.assetId, imageUrl: image.imageUrl })}
-                  className="aspect-square overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-                >
-                  {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
-                  <img src={image.imageUrl} alt="" decoding="async" className="size-full object-cover" />
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-2 py-6 text-center">
-              <Images aria-hidden className="size-8 text-muted-foreground" />
-              <p className="text-sm text-muted-foreground">
-                아직 생성한 이미지가 없어요.
-                <br />
-                새로 생성하고 다시 열어보면 여기에 나타나요.
-              </p>
-            </div>
-          )}
+          <GeneratedImageGridBody query={galleryQuery} onPick={call.end} />
         </DialogContent>
       </Dialog>
     );
   },
 );
+
+/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다(COMP-04). */
+function GeneratedImageGridBody({
+  query,
+  onPick,
+}: {
+  query: ReturnType<typeof useGeneratedImagesQuery>;
+  onPick: (picked: { assetId: string; imageUrl: string }) => void;
+}) {
+  if (query.isPending) {
+    return (
+      <div className="grid grid-cols-3 gap-2">
+        {[0, 1, 2, 3, 4, 5].map((i) => (
+          <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
+        ))}
+      </div>
+    );
+  }
+
+  if (query.isError) {
+    return (
+      <p className="py-4 text-center text-sm text-destructive-text">
+        불러오지 못했어요. 잠시 후 다시 시도해주세요.
+      </p>
+    );
+  }
+
+  const images = query.data;
+  if (images === undefined || images.length === 0) {
+    return (
+      <div className="flex flex-col items-center gap-2 py-6 text-center">
+        <Images aria-hidden className="size-8 text-muted-foreground" />
+        <p className="text-sm text-muted-foreground">
+          아직 생성한 이미지가 없어요.
+          <br />
+          새로 생성하고 다시 열어보면 여기에 나타나요.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {images.map((image) => (
+        <button
+          key={image.assetId}
+          type="button"
+          onClick={() => onPick({ assetId: image.assetId, imageUrl: image.imageUrl })}
+          className="aspect-square overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
+          <img src={image.imageUrl} alt="" decoding="async" className="size-full object-cover" />
+        </button>
+      ))}
+    </div>
+  );
+}
