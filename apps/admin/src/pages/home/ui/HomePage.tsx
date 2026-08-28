@@ -33,7 +33,7 @@ export function HomePage() {
             type="button"
             variant="outline"
             size="sm"
-            onClick={handleLogout}
+            onClick={() => void handleLogout()}
             disabled={logoutMutation.isPending}
           >
             로그아웃

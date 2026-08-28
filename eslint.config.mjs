@@ -182,6 +182,25 @@ export default tseslint.config(
   },
 
   {
+    // TanStack Router의 `redirect()`는 **던지는 것이 정상 흐름**이다 — 라우터가 그 객체를 잡아
+    // 이동시킨다. `Error`가 아니라서 규칙에 걸리지만 위험 신호가 아니다(라이브러리가 정한 관용).
+    // 두 앱의 `requireSession`이 전부라 파일을 명시한다 — 다른 곳의 비-Error throw는 계속 잡힌다.
+    files: [
+      "apps/web/src/entities/session/lib/requireSession.ts",
+      "apps/admin/src/entities/session/lib/requireSession.ts",
+    ],
+    rules: { "@typescript-eslint/only-throw-error": "off" },
+  },
+
+  {
+    // CSS 커스텀 프로퍼티(`--gap` 등)는 `React.CSSProperties`로 표현할 수 없다 — 타입에 인덱스
+    // 시그니처가 없어서다. 두 파일 다 shadcn 상류 코드이고 처방이 `as` 말고 없다(TS의 한계지
+    // 이 저장소의 느슨함이 아니다). chart.tsx와 같은 이유로 경계를 긋는다.
+    files: ["packages/ui/src/components/sonner.tsx", "packages/ui/src/components/toggle-group.tsx"],
+    rules: { "@typescript-eslint/consistent-type-assertions": "off" },
+  },
+
+  {
     // TS-06의 예외는 "확장·선언 병합이 필요할 때"인데 `consistent-type-definitions`는 그걸 못 본다 —
     // `declare module` 안의 `interface`를 `type`으로 바꾸면 **선언 병합이 깨진다**. TanStack Router의
     // `Register`가 그 자리라, 자동 수정이 두 앱의 `app/router.tsx`를 동시에 망가뜨렸다(TS2300
