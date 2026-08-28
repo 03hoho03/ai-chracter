@@ -10,7 +10,7 @@ export function useWithdrawAccountMutation() {
   return useMutation({
     mutationFn: () => apiClient.delete<void>("/me").then((res) => res.data),
     onSuccess: () => {
-      queryClient.resetQueries({ queryKey: sessionKeys.current() });
+      void queryClient.resetQueries({ queryKey: sessionKeys.current() });
     },
   });
 }

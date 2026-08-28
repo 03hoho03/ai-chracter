@@ -46,7 +46,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
           mode: pending.mode,
           onDone: (message) => {
             if (message.imageId && characterId) {
-              queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
+              void queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
             }
           },
         });

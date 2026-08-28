@@ -17,7 +17,7 @@ export function useLogoutMutation() {
       // holds, so `useSessionQuery()` keeps rendering the stale data too. resetQueries is the one that
       // actually clears `state.data` on the live Query object and synchronously notifies observers,
       // so every mounted `useSessionQuery()` re-renders as logged-out right away.
-      queryClient.resetQueries({ queryKey: sessionKeys.current() });
+      void queryClient.resetQueries({ queryKey: sessionKeys.current() });
     },
   });
 }

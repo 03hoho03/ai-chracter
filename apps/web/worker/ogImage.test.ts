@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleOgImage, parseOgImagePath } from "./ogImage";
 import type { CacheLike, WorkerEnv } from "./workerRuntime";
+import { fetchUrlOf } from "./testSupport";
 
 const CONTENT_ID = "11111111-2222-4333-8444-555555555555";
 const USER_ID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
@@ -105,7 +106,7 @@ describe("handleOgImage - 콘텐츠", () => {
   it("썸네일을 스트리밍하고 원본 Content-Type을 따른다", async () => {
     const fetchMock = vi.fn((input: string | URL | Request) =>
       Promise.resolve(
-        String(input).startsWith(THUMBNAIL_URL)
+        fetchUrlOf(input).startsWith(THUMBNAIL_URL)
           ? imageResponse()
           : jsonResponse(contentDetail()),
       ),
@@ -133,7 +134,7 @@ describe("handleOgImage - 콘텐츠", () => {
       "fetch",
       vi.fn((input: string | URL | Request) =>
         Promise.resolve(
-          String(input).startsWith(THUMBNAIL_URL)
+          fetchUrlOf(input).startsWith(THUMBNAIL_URL)
             ? imageResponse()
             : jsonResponse(contentDetail()),
         ),
@@ -225,7 +226,7 @@ describe("handleOgImage - 콘텐츠", () => {
       "fetch",
       vi.fn((input: string | URL | Request) =>
         Promise.resolve(
-          String(input).startsWith(THUMBNAIL_URL)
+          fetchUrlOf(input).startsWith(THUMBNAIL_URL)
             ? imageResponse()
             : jsonResponse(
                 contentDetail({
@@ -291,7 +292,7 @@ describe("handleOgImage - 콘텐츠", () => {
       "fetch",
       vi.fn((input: string | URL | Request) =>
         Promise.resolve(
-          String(input).startsWith(THUMBNAIL_URL)
+          fetchUrlOf(input).startsWith(THUMBNAIL_URL)
             ? new Response("gone", { status: 403 })
             : jsonResponse(contentDetail()),
         ),
@@ -316,7 +317,7 @@ describe("handleOgImage - 사용자", () => {
   it("프로필 이미지를 스트리밍한다", async () => {
     const fetchMock = vi.fn((input: string | URL | Request) =>
       Promise.resolve(
-        String(input).startsWith(THUMBNAIL_URL)
+        fetchUrlOf(input).startsWith(THUMBNAIL_URL)
           ? imageResponse()
           : jsonResponse({ nickname: "또나", profileImageUrl: THUMBNAIL_URL }),
       ),
@@ -329,8 +330,12 @@ describe("handleOgImage - 사용자", () => {
       { cache: createCache() },
     );
 
-    const [apiUrl] = fetchMock.mock.calls[0] ?? [];
-    expect(String(apiUrl)).toBe(
+    // 호출 자체가 없으면 여기서 끊는다 — 예전엔 `String(undefined)`가 `"undefined"`를 만들어
+    // "fetch가 안 불렸다"가 "URL이 다르다"로 보고됐다.
+    const firstCall = fetchMock.mock.calls[0];
+    if (!firstCall) throw new Error("fetch가 호출되지 않았다");
+
+    expect(fetchUrlOf(firstCall[0])).toBe(
       `https://api.example.com/users/${USER_ID}/profile`,
     );
     expect(await response.text()).toBe("WEBP_BYTES");

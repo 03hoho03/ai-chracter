@@ -142,7 +142,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   const failedQueries = queries.filter((query) => query.isError);
 
   const handleRetryFailed = () => {
-    for (const query of failedQueries) query.refetch();
+    for (const query of failedQueries) void query.refetch();
   };
 
   // 빈 상태의 버튼들은 **자기가 속한 패널을 언마운트시킨다**. 먼저 포커스를 툴바로 옮겨 두지 않으면

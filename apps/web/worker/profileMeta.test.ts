@@ -7,6 +7,7 @@ import {
   type ProfileMetaSource,
 } from "./profileMeta";
 import type { WorkerEnv } from "./workerRuntime";
+import { fetchUrlOf } from "./testSupport";
 
 const ID = "11111111-2222-4333-8444-555555555555";
 
@@ -198,7 +199,7 @@ describe("handleProfileMeta", () => {
   it("API를 `/users/{id}/profile`로 부른다", async () => {
     const urls: string[] = [];
     vi.stubGlobal("fetch", (input: string | URL | Request) => {
-      urls.push(String(input));
+      urls.push(fetchUrlOf(input));
       return Promise.resolve(
         new Response(JSON.stringify(createProfileBody()), {
           headers: { "content-type": "application/json" },
