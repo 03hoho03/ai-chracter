@@ -1,7 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 import { queryOptions } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 import { sessionKeys } from "./keys";
 
 export type AdminMeResponse = components["schemas"]["AdminMeResponse"];

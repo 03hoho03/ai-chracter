@@ -1,6 +1,6 @@
-import { LoginForm } from "../../../features/login";
+import { LoginForm } from "@/features/login";
 
-interface LoginPageProps {
+type LoginPageProps = {
   redirectTo?: string;
   errorCode?: string;
 }

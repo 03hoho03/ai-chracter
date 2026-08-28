@@ -1,9 +1,9 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 
-import { ResetPasswordForm } from "../../../features/reset-password";
+import { ResetPasswordForm } from "@/features/reset-password";
 
-interface ResetPasswordPageProps {
+type ResetPasswordPageProps = {
   token: string;
   isTokenValid: boolean;
 }

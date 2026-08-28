@@ -10,8 +10,8 @@ import {
 import { ArrowLeft, ChevronRight, Lock, Sparkles } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { useEndingCollectionQuery } from "../../../entities/chat-room";
-import type { EndingCollectionItem } from "../../../entities/chat-room";
+import { useEndingCollectionQuery } from "@/entities/chat-room";
+import type { EndingCollectionItem } from "@/entities/chat-room";
 
 type Props = {
   startingSetupId: string;

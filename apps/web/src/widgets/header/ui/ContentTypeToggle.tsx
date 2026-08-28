@@ -3,7 +3,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { BookOpen, UserRound } from "lucide-react";
 
-import { contentTypeToggleAtom, type ContentTypeToggleValue } from "../../../shared/model/content-type-toggle";
+import { contentTypeToggleAtom, type ContentTypeToggleValue } from "@/shared/model/content-type-toggle";
 
 function isContentTypeToggleValue(value: string): value is ContentTypeToggleValue {
   return value === "character" || value === "story";

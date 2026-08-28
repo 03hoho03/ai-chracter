@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import type { UserProfileResponse } from "../../../entities/profile";
+import type { UserProfileResponse } from "@/entities/profile";
 
 /** techspec-global-nav-profile.md §3.1 — 필드 3개뿐인 단순 폼이라 formToServer/serverToForm 분리 없이
  * 구현한다(마이페이지 비밀번호 변경과 동일한 판단). 프로필 이미지는 텍스트 필드가 아니라 별도 업로드

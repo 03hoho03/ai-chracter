@@ -1,7 +1,7 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 import { buildPreviewStartState } from "../model/buildPreviewStartState";
 import { previewSessionKeys } from "./keys";
 import type { PreviewSessionState, PreviewStartPayload } from "./preview-session";

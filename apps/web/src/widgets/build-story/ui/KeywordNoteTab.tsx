@@ -7,7 +7,7 @@ import { Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
 
-import type { StartingSetupValues, StoryBuilderFormValues } from "../../../features/build-story";
+import type { StartingSetupValues, StoryBuilderFormValues } from "@/features/build-story";
 
 /** techspec-builder-story.md §1.3 — 정보(필수)/트리거 키워드(필수, 태그 입력)/적용 대상(필수,
  * 스토리 전체 또는 특정 시작설정). 트리거 키워드 칩은 StartingSetupTab의 추천 답변 칩 패턴을,

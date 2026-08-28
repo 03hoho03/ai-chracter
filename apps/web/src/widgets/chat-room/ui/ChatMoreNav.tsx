@@ -1,11 +1,11 @@
 import { useSetAtom } from "jotai";
 import { BookOpen, History, Images, Repeat, Sparkles } from "lucide-react";
 
-import { ChangeStartingSetupModal } from "../../../features/change-starting-setup";
-import { EndingCollectionModal } from "../../../features/ending-collection";
-import { ImageArchiveModal } from "../../../features/image-archive";
-import { PlayGuideModal } from "../../../features/play-guide";
-import { UpdateInfoModal } from "../../../features/update-info";
+import { ChangeStartingSetupModal } from "@/features/change-starting-setup";
+import { EndingCollectionModal } from "@/features/ending-collection";
+import { ImageArchiveModal } from "@/features/image-archive";
+import { PlayGuideModal } from "@/features/play-guide";
+import { UpdateInfoModal } from "@/features/update-info";
 import { chatMorePanelOpenAtom } from "../model/atom";
 
 type MorePanelItem = {

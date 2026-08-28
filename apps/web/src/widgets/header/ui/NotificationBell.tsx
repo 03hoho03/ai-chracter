@@ -10,7 +10,7 @@ import {
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Bell } from "lucide-react";
 
-import { useMarkNotificationReadMutation, useNotificationListQuery } from "../../../entities/notification";
+import { useMarkNotificationReadMutation, useNotificationListQuery } from "@/entities/notification";
 
 const REASON_CATEGORY_LABELS: Record<string, string> = {
   adult: "선정성",

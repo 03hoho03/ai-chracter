@@ -11,7 +11,7 @@ import { CheckCircle2 } from "lucide-react";
 import { createCallable } from "react-call";
 import { toast } from "sonner";
 
-import { useChatRoomQuery, usePinLatestVersionMutation } from "../../../entities/chat-room";
+import { useChatRoomQuery, usePinLatestVersionMutation } from "@/entities/chat-room";
 
 type Props = {
   roomId: string;

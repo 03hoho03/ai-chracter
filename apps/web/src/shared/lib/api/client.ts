@@ -26,7 +26,7 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler | null): voi
   unauthorizedHandler = handler;
 }
 
-interface ValidationErrorItem {
+type ValidationErrorItem = {
   loc?: unknown[];
   msg?: string;
 }

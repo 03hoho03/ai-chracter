@@ -6,7 +6,7 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 
-import { useContentVersionsQuery } from "../../../entities/content";
+import { useContentVersionsQuery } from "@/entities/content";
 
 const versionDateFormatter = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",

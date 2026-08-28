@@ -1,7 +1,7 @@
 // techspec-chat-story.md §1.1/§1.2, techspec-content-versioning.md §2 — 캐릭터/스토리 챗 공용 상태 모델.
 // StatDef/Shortcut/Ending은 techspec-builder-story.md §1.2/§1.4/§1.5의 스키마를 그대로 반영한다.
 
-import type { RuleListItem } from "../../../shared/lib/rule-engine/ending-rules";
+import type { RuleListItem } from "@/shared/lib/rule-engine/ending-rules";
 
 export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "../../../shared/lib/rule-engine/ending-rules";
 

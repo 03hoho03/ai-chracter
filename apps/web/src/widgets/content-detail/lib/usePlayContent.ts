@@ -3,13 +3,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { toast } from "sonner";
 
-import type { ContentType } from "../../../entities/content";
-import { useStartChatMutation } from "../../../entities/chat-room";
-import { useSessionQuery } from "../../../entities/session";
-import { useRawSearchParams } from "../../../shared/lib/search-params/useRawSearchParams";
-import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
+import type { ContentType } from "@/entities/content";
+import { useStartChatMutation } from "@/entities/chat-room";
+import { useSessionQuery } from "@/entities/session";
+import { useRawSearchParams } from "@/shared/lib/search-params/useRawSearchParams";
+import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
-interface UsePlayContentOptions {
+type UsePlayContentOptions = {
   /** 스토리 전용 — 로그인 복귀 후 자동 재생 시 로컬 선택 state도 복원값으로 맞춘다. */
   onRestoreSetup?: (startingSetupId: string) => void;
 }

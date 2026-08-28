@@ -10,7 +10,7 @@ export type { components, operations, paths } from "./generated";
  * 구조화된 dict — 예: 429 응답의 `{"retryAfterSeconds": n}`)를 그대로 반영한다.
  * OpenAPI 코드젠 대상이 아니다 — 계속 수동으로 관리한다.
  */
-export interface ApiError {
+export type ApiError = {
   status: number;
   /** HTTPException(status_code, detail=...)의 detail이 string이면 그대로, dict(예: retryAfterSeconds)면 그 객체, 없으면 undefined. */
   detail: string | Record<string, unknown> | undefined;

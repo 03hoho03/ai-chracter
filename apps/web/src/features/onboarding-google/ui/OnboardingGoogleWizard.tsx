@@ -12,15 +12,15 @@ import {
   signUpSchema,
   useGuardianConsentMutation,
   type SignUpFormValues,
-} from "../../../entities/registration";
-import { sessionKeys } from "../../../entities/session";
+} from "@/entities/registration";
+import { sessionKeys } from "@/entities/session";
 import { useOnboardingGoogleMutation } from "../api/mutations";
 import { onboardingGoogleStepAtom } from "../model/atom";
 import { BasicInfoStep } from "./BasicInfoStep";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
-interface OnboardingGoogleWizardProps {
+type OnboardingGoogleWizardProps = {
   token: string;
 }
 

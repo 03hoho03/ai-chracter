@@ -11,7 +11,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
-import { useImageModelsQuery } from "../../../entities/image-model";
+import { useImageModelsQuery } from "@/entities/image-model";
 import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_COUNT_OPTIONS,
@@ -21,7 +21,7 @@ import {
   type GenerateImagesFormValues,
 } from "../model/schema";
 
-interface GenerateImagesFormProps {
+type GenerateImagesFormProps = {
   onSubmit: (values: GenerateImagesFormValues) => void | Promise<void>;
 }
 

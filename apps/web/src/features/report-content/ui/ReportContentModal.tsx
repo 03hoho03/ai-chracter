@@ -12,7 +12,7 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 
-import type { ReportReasonCategory } from "../../../entities/content";
+import type { ReportReasonCategory } from "@/entities/content";
 
 const REPORT_REASON_OPTIONS: { value: ReportReasonCategory; label: string }[] = [
   { value: "adult", label: "성인/선정적 콘텐츠" },

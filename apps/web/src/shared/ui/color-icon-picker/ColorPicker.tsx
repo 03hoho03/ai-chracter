@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { useRef, useState } from "react";
 import { useClickAway } from "react-use";
 
-interface ColorPickerProps {
+type ColorPickerProps = {
   value: string;
   onChange: (value: string) => void;
   triggerLabel: string;

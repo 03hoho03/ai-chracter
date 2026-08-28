@@ -3,11 +3,11 @@ import { Link } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { MessagesSquare, Play } from "lucide-react";
 
-import { useSessionQuery } from "../../../entities/session";
-import { contentDetailModalAtom } from "../../../shared/model/content-detail-modal";
+import { useSessionQuery } from "@/entities/session";
+import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 import { usePlayContent } from "../lib/usePlayContent";
 
-interface CharacterPlayButtonProps {
+type CharacterPlayButtonProps = {
   contentId: string;
 }
 

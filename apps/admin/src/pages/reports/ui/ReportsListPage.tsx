@@ -9,7 +9,7 @@ import {
   REPORT_STATUS_LABELS,
   useReportListQuery,
   type ReportStatusFilter,
-} from "../../../entities/report";
+} from "@/entities/report";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -26,7 +26,7 @@ const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-interface ReportsListPageProps {
+type ReportsListPageProps = {
   page: number;
   status?: ReportStatusFilter;
   onPageChange: (page: number) => void;

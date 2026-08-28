@@ -6,12 +6,12 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import type { UseFormReturn } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { SignUpFormValues } from "../../../entities/registration";
+import type { SignUpFormValues } from "@/entities/registration";
 import { useResendVerificationCodeMutation } from "../api/mutations";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
-interface EmailVerifyStepProps {
+type EmailVerifyStepProps = {
   form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;

@@ -1,6 +1,6 @@
 import { Ban, EyeOff, Trash2 } from "lucide-react";
 
-import type { ContentAccessStatus } from "../../../entities/content";
+import type { ContentAccessStatus } from "@/entities/content";
 
 type UnavailableReason = "restricted" | "deleted" | "private";
 

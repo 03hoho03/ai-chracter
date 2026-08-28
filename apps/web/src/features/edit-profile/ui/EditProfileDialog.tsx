@@ -19,9 +19,9 @@ import { Camera, Pencil } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { UserProfileResponse } from "../../../entities/profile";
-import { uploadAsset } from "../../../shared/lib/asset/uploadAsset";
-import { uploadAssetErrorMessage } from "../../../shared/lib/asset/uploadAssetErrorMessage";
+import type { UserProfileResponse } from "@/entities/profile";
+import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
+import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { useUpdateProfileMutation } from "../api/mutations";
 import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
 

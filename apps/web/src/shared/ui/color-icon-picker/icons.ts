@@ -14,7 +14,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 
-export interface IconPickerOption {
+export type IconPickerOption = {
   name: string;
   label: string;
   Icon: LucideIcon;

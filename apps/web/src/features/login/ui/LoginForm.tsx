@@ -9,7 +9,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys } from "../../../entities/session";
+import { sessionKeys } from "@/entities/session";
 import { useLoginMutation } from "../api/mutations";
 import { buildGoogleLoginUrl } from "../lib/googleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
@@ -21,7 +21,7 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   google_state: "구글 로그인 요청이 만료되었어요. 다시 시도해주세요.",
 };
 
-interface LoginFormProps {
+type LoginFormProps = {
   redirectTo?: string;
   errorCode?: string;
 }

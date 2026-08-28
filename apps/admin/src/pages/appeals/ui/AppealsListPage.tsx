@@ -8,8 +8,8 @@ import {
   APPEAL_TARGET_KIND_LABELS,
   useAppealListQuery,
   type AppealStatusFilter,
-} from "../../../entities/appeal";
-import { AppealResolvePanel } from "../../../features/resolve-appeal";
+} from "@/entities/appeal";
+import { AppealResolvePanel } from "@/features/resolve-appeal";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | AppealStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -25,7 +25,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-interface AppealsListPageProps {
+type AppealsListPageProps = {
   page: number;
   status?: AppealStatusFilter;
   onPageChange: (page: number) => void;

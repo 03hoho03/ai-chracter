@@ -8,13 +8,13 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys } from "../../../entities/session";
+import { sessionKeys } from "@/entities/session";
 import { useLoginMutation } from "../api/mutations";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
-interface LoginFormProps {
+type LoginFormProps = {
   redirectTo?: string;
 }
 

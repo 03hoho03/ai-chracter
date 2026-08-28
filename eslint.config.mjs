@@ -159,6 +159,16 @@ export default tseslint.config(
   },
 
   {
+    // TS-06의 예외는 "확장·선언 병합이 필요할 때"인데 `consistent-type-definitions`는 그걸 못 본다 —
+    // `declare module` 안의 `interface`를 `type`으로 바꾸면 **선언 병합이 깨진다**. TanStack Router의
+    // `Register`가 그 자리라, 자동 수정이 두 앱의 `app/router.tsx`를 동시에 망가뜨렸다(TS2300
+    // Duplicate identifier + 라우터 타입이 통째로 any로 무너져 `prev` 파라미터가 implicit any가 됐다).
+    // 파일 단위로 끄는 대신 그 두 파일만 좁힌다 — 같은 파일의 다른 선언은 계속 검사받아야 한다.
+    files: ["apps/web/src/app/router.tsx", "apps/admin/src/app/router.tsx"],
+    rules: { "@typescript-eslint/consistent-type-definitions": "off" },
+  },
+
+  {
     // 테스트는 픽스처를 최상위에 두는 관례가 있고(`filterShortcuts.test.ts`가 main의 선례),
     // 타입 단언으로 부분 객체를 만드는 것이 본문 코드보다 정당하다.
     files: ["**/*.test.{ts,tsx}"],

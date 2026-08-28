@@ -1,14 +1,14 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 
-import { ReportActionPanel } from "../../../features/act-on-report";
+import { ReportActionPanel } from "@/features/act-on-report";
 import {
   CONTENT_TYPE_LABELS,
   MODERATION_STATUS_LABELS,
   REPORT_REASON_LABELS,
   REPORT_STATUS_LABELS,
   useReportDetailQuery,
-} from "../../../entities/report";
+} from "@/entities/report";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
@@ -18,7 +18,7 @@ const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-interface ReportDetailPageProps {
+type ReportDetailPageProps = {
   reportId: string;
 }
 

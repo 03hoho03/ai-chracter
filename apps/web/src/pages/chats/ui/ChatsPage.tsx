@@ -1,4 +1,4 @@
-import { ChatRoomListView } from "../../../widgets/chat-room-list";
+import { ChatRoomListView } from "@/widgets/chat-room-list";
 
 // techspec-chat-common.md §3 — 목록은 콘텐츠(캐릭터/스토리) 단위로 스코프된다. 콘텐츠 상세화면의
 // "내 대화 목록" 진입점(widgets/content-detail)이 contentId/contentType을 search param으로 넘겨준다.

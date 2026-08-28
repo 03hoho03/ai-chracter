@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ApiError } from "@ai-character-chat/api-types";
 
-import { useImageJobStatusQuery } from "../../../entities/image-job";
+import { useImageJobStatusQuery } from "@/entities/image-job";
 import { useGenerateImagesMutation } from "../api/useGenerateImagesMutation";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { GenerateImagesForm } from "./GenerateImagesForm";

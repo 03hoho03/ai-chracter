@@ -17,7 +17,7 @@ export const apiClient = axios.create({
   },
 });
 
-interface ValidationErrorItem {
+type ValidationErrorItem = {
   loc?: unknown[];
   msg?: string;
 }

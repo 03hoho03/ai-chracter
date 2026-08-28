@@ -23,7 +23,7 @@ import type {
   SingleRuleValues,
   StatDefValues,
   StoryBuilderFormValues,
-} from "../../../features/build-story";
+} from "@/features/build-story";
 
 const COMPARISON_OPERATORS: SingleRuleValues["operator"][] = [">", ">=", "<", "<=", "=="];
 

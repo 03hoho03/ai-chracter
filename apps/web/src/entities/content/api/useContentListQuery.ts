@@ -1,7 +1,7 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-import { apiClient } from "../../../shared/lib/api/client";
+import { apiClient } from "@/shared/lib/api/client";
 import { contentKeys, type ContentBrowseParams } from "./keys";
 
 export type ContentListItem = components["schemas"]["ContentListItem"];

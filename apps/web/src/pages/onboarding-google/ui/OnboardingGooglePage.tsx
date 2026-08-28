@@ -1,6 +1,6 @@
 import { useAtomValue } from "jotai";
 
-import { OnboardingGoogleWizard, onboardingGoogleStepAtom } from "../../../features/onboarding-google";
+import { OnboardingGoogleWizard, onboardingGoogleStepAtom } from "@/features/onboarding-google";
 
 const STEP_COPY = {
   basicInfo: {
@@ -13,7 +13,7 @@ const STEP_COPY = {
   },
 } as const;
 
-interface OnboardingGooglePageProps {
+type OnboardingGooglePageProps = {
   token: string;
 }
 

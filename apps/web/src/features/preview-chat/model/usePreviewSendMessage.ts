@@ -5,9 +5,9 @@ import {
   applyPreviewStreamEvent,
   buildPreviewSendPayload,
   previewSessionKeys,
-} from "../../../entities/preview-session";
-import type { PreviewChatMessage, PreviewSessionState, PreviewStreamEvent } from "../../../entities/preview-session";
-import { openChatStream } from "../../../shared/lib/sse/openChatStream";
+} from "@/entities/preview-session";
+import type { PreviewChatMessage, PreviewSessionState, PreviewStreamEvent } from "@/entities/preview-session";
+import { openChatStream } from "@/shared/lib/sse/openChatStream";
 
 /**
  * features/send-message의 useSendMessage(techspec-chat-common.md §1)와 동일한 낙관적 업데이트+SSE

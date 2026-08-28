@@ -8,7 +8,7 @@ import {
 import { Lock } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { useCharacterImageArchiveQuery } from "../../../entities/character-image-archive";
+import { useCharacterImageArchiveQuery } from "@/entities/character-image-archive";
 
 type Props = {
   characterId: string;

@@ -19,8 +19,8 @@ import {
   useRenameChatRoomMutation,
   useResetChatRoomMutation,
   type ChatRoomListItem,
-} from "../../../entities/chat-room";
-import { ConfirmChatRoomActionModal } from "../../../features/manage-chat-room";
+} from "@/entities/chat-room";
+import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 
 const RENAME_DEBOUNCE_MS = 500;
 

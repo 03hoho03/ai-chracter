@@ -12,8 +12,8 @@ import {
   signUpSchema,
   useGuardianConsentMutation,
   type SignUpFormValues,
-} from "../../../entities/registration";
-import { sessionKeys } from "../../../entities/session";
+} from "@/entities/registration";
+import { sessionKeys } from "@/entities/session";
 import {
   useSignUpLoginMutation,
   useSignUpMutation,

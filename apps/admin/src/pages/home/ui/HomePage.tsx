@@ -1,8 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 
-import { useSessionQuery } from "../../../entities/session";
-import { useLogoutMutation } from "../../../features/logout";
+import { useSessionQuery } from "@/entities/session";
+import { useLogoutMutation } from "@/features/logout";
 
 export function HomePage() {
   const session = useSessionQuery();

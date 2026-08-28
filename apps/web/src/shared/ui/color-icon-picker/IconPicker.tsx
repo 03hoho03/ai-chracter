@@ -5,7 +5,7 @@ import { useClickAway } from "react-use";
 
 import { ICON_OPTIONS } from "./icons";
 
-interface IconPickerProps {
+type IconPickerProps = {
   value: string;
   onChange: (value: string) => void;
   triggerLabel: string;

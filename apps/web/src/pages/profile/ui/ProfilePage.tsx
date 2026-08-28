@@ -1,9 +1,9 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 
-import type { ContentType } from "../../../entities/content";
-import { useProfileQuery } from "../../../entities/profile";
-import { useSessionQuery } from "../../../entities/session";
-import { EditProfileDialog } from "../../../features/edit-profile";
+import type { ContentType } from "@/entities/content";
+import { useProfileQuery } from "@/entities/profile";
+import { useSessionQuery } from "@/entities/session";
+import { EditProfileDialog } from "@/features/edit-profile";
 import { ProfileContentSection } from "./ProfileContentSection";
 
 function ProfileHeaderSkeleton() {

@@ -12,7 +12,7 @@ const GUARDIAN_FIELDS = [
   "guardian.consentAgreed",
 ] as const;
 
-interface GuardianConsentStepProps {
+type GuardianConsentStepProps = {
   form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;

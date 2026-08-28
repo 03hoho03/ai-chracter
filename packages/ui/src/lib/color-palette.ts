@@ -1,4 +1,4 @@
-export interface ColorPaletteSwatch {
+export type ColorPaletteSwatch = {
   name: string;
   label: string;
   /** CSS `color` 값(oklch) — 소비처가 별도 변환 없이 `style={{ backgroundColor: value }}`로 바로 쓸 수 있다. */

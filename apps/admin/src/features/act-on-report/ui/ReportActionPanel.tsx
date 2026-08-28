@@ -4,7 +4,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 
-import { useModerationActionMutation, type ModerationActionType } from "../../../entities/report";
+import { useModerationActionMutation, type ModerationActionType } from "@/entities/report";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
 
 type ProcessAction = Extract<ModerationActionType, "restrict" | "delete" | "reject">;
