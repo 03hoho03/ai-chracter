@@ -187,6 +187,11 @@ export default tseslint.config(
       "@typescript-eslint/no-non-null-assertion": "off",
       "@typescript-eslint/no-unsafe-assignment": "off",
       "@typescript-eslint/no-unsafe-member-access": "off",
+      // `expect(cache.put).toHaveBeenCalled()`는 메서드를 **호출하지 않고** 목을 들여다볼 뿐이라
+      // 잃을 `this`가 없다. 그런데 규칙은 타입만 보고 판단해서, 객체 리터럴 위의 `vi.fn()`이
+      // 인터페이스의 메서드 시그니처(`CacheLike.put`)에 맞으면 언바운드 참조로 읽는다 —
+      // 위험 트레이드오프가 아니라 **순수 오탐**이다(worker 테스트 7곳이 전부 이 형태였다).
+      "@typescript-eslint/unbound-method": "off",
     },
   },
 );
