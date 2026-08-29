@@ -24,7 +24,7 @@ function isAppealStatus(value: string): value is AppealStatusFilter {
   return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
 }
 
-const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -104,7 +104,7 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
                     }}
                   >
                     <TableCell>{APPEAL_TARGET_KIND_LABELS[item.targetKind]}</TableCell>
-                    <TableCell>{dateTimeFormatter.format(new Date(item.createdAt))}</TableCell>
+                    <TableCell>{DATE_TIME_FORMATTER.format(new Date(item.createdAt))}</TableCell>
                     <TableCell>{APPEAL_STATUS_LABELS[item.status]}</TableCell>
                   </TableRow>
                 ))}
@@ -146,7 +146,7 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
               {APPEAL_STATUS_LABELS[selectedAppeal.status]}
             </span>
             <span className="text-sm text-muted-foreground">
-              {dateTimeFormatter.format(new Date(selectedAppeal.createdAt))} 접수
+              {DATE_TIME_FORMATTER.format(new Date(selectedAppeal.createdAt))} 접수
             </span>
           </div>
 

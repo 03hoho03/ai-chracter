@@ -25,7 +25,7 @@ import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { VersionHistoryModal } from "./VersionHistoryModal";
 
-const updatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -275,7 +275,7 @@ export function ContentDetailView({ id }: { id: string }) {
           className="ml-auto inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground"
         >
           <History aria-hidden className="size-4" />
-          최근 업데이트 {updatedAtFormatter.format(new Date(content.updatedAt))} · v{content.versionNumber}
+          최근 업데이트 {UPDATED_AT_FORMATTER.format(new Date(content.updatedAt))} · v{content.versionNumber}
         </button>
       </div>
 

@@ -24,7 +24,7 @@ function isReportStatus(value: string): value is ReportStatusFilter {
   return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
 }
 
-const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -107,7 +107,7 @@ export function ReportsListPage({ page, status, onPageChange, onStatusChange }: 
                       <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.contentType]}</span>{" "}
                       {item.contentName || "(이름 없음)"}
                     </TableCell>
-                    <TableCell>{createdAtFormatter.format(new Date(item.createdAt))}</TableCell>
+                    <TableCell>{CREATED_AT_FORMATTER.format(new Date(item.createdAt))}</TableCell>
                     <TableCell>{REPORT_STATUS_LABELS[item.status]}</TableCell>
                   </TableRow>
                 ))}
