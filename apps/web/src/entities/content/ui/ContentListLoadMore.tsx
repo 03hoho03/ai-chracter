@@ -1,11 +1,16 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Loader2 } from "lucide-react";
+import { useEffect, useRef } from "react";
 
 type ContentListLoadMoreProps = {
   /** 서버가 다음 커서를 줬을 때만 true. false면 이 컴포넌트는 아무것도 그리지 않는다. */
   hasMore: boolean;
   isLoading: boolean;
   onLoadMore: () => void;
+  /** 마지막 페이지가 도착해 이 버튼이 사라질 때, **버튼이 포커스를 갖고 있었을 때만** 불린다.
+   * 호출부는 목록 컨테이너(`tabIndex={-1}`)로 포커스를 옮긴다 — 그래야 키보드 사용자가 헤더부터
+   * Tab을 다시 시작하지 않는다. */
+  onExhausted?: () => void;
 };
 
 /** US-009 — `/my`·프로필 목록의 "더 보기". 홈·즐겨찾기의 sentinel 무한스크롤과 **일부러 다르다**:
@@ -29,13 +34,30 @@ type ContentListLoadMoreProps = {
  * 호출부의 `isFetchingNextPage` 가드 양쪽이 막는다(호출부 가드만으로는 버튼이 눌리는 것처럼 보이고
  * 아무 일도 안 일어난다).
  *
- * **남은 결함 — 마지막 페이지의 포커스 이관.** 마지막 페이지가 도착하면 이 버튼이 스스로 언마운트되므로
- * 그 순간 `activeElement`가 `<body>`로 떨어진다(실측: 26→32건 도착 시 `isBody: true`). 위 `disabled`
- * 결함과 달리 이건 목록당 딱 한 번이고, 고치려면 (a) US-009 AC가 못박은 "마지막 페이지에서 버튼이
- * 사라진다"를 바꾸거나 (b) 새로 붙은 첫 카드로 포커스를 넘기도록 호출부 둘에 타깃을 배선해야 한다 —
- * 둘 다 설계 결정이라 측정만 남기고 다음 런으로 넘긴다. `MyWorksBody`의 `focusTypeFilter`가 같은
- * 부류의 결함을 "언마운트되지 않는 컨트롤로 미리 옮긴다"로 푼 선례다. */
-export function ContentListLoadMore({ hasMore, isLoading, onLoadMore }: ContentListLoadMoreProps) {
+ * **마지막 페이지의 포커스 이관(해소).** 마지막 페이지가 도착하면 이 버튼이 스스로 언마운트되므로
+ * 그 순간 `activeElement`가 `<body>`로 떨어졌다(실측: 26→32건 도착 시 `isBody: true`). 위 `disabled`
+ * 결함과 달리 목록당 딱 한 번이지만, 키보드 사용자에겐 "끝까지 봤더니 처음으로 돌아감"이다.
+ * US-009 AC("마지막 페이지에서 버튼이 사라진다")는 그대로 두고 **포커스만** 호출부가 준 타깃으로
+ * 넘긴다. `MyWorksBody`의 `focusTypeFilter`가 같은 부류를 "언마운트되지 않는 컨트롤로 옮긴다"로
+ * 푼 선례다.
+ *
+ * 포커스 보유를 `document.activeElement` 대신 `onFocus`/`onBlur`로 추적하는 이유: 언마운트 시점엔
+ * 이미 늦고(참조가 끊긴다), 렌더 중 `activeElement`를 읽는 것은 렌더를 부수효과로 만든다. */
+export function ContentListLoadMore({
+  hasMore,
+  isLoading,
+  onLoadMore,
+  onExhausted,
+}: ContentListLoadMoreProps) {
+  const hadFocusRef = useRef(false);
+
+  // `hasMore`가 false로 뒤집히는 순간 = 이 버튼이 사라지는 순간. 훅은 early return **위**에 둔다.
+  useEffect(() => {
+    if (hasMore || !hadFocusRef.current) return;
+    hadFocusRef.current = false;
+    onExhausted?.();
+  }, [hasMore, onExhausted]);
+
   if (!hasMore) return null;
 
   const handleClick = () => {
@@ -50,6 +72,8 @@ export function ContentListLoadMore({ hasMore, isLoading, onLoadMore }: ContentL
         variant="outline"
         aria-disabled={isLoading}
         onClick={handleClick}
+        onFocus={() => (hadFocusRef.current = true)}
+        onBlur={() => (hadFocusRef.current = false)}
         className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
       >
         {isLoading && <Loader2 aria-hidden className="motion-safe:animate-spin" />}

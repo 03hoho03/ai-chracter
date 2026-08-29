@@ -137,6 +137,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   const storyQuery = useProfileContentListQuery({ userId, type: "story" });
   const draftListQuery = useDraftListQuery();
   const typeFilterRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const queries = [characterQuery, storyQuery, draftListQuery];
   const failedQueries = queries.filter((query) => query.isError);
@@ -254,7 +255,13 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
           }}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
+        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2).
+        <div
+          ref={gridRef}
+          tabIndex={-1}
+          className="grid grid-cols-2 gap-3 outline-none sm:grid-cols-3 md:grid-cols-4"
+        >
           {visibleItems.map((item, index) => (
             <MyWorkCard
               key={`${item.kind}-${item.id}`}
@@ -267,7 +274,12 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         </div>
       )}
 
-      <ContentListLoadMore hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
+      <ContentListLoadMore
+        hasMore={hasMore}
+        isLoading={isLoadingMore}
+        onLoadMore={handleLoadMore}
+        onExhausted={() => gridRef.current?.focus()}
+      />
     </div>
   );
 }
@@ -585,12 +597,19 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
  * 금지하는 조합이라 스크린리더가 대개 무시한다(a11y 트리 실측). */
 function MyWorksSkeleton() {
   return (
-    <div
-      role="status"
-      aria-busy
-      aria-label="내 작품 목록 불러오는 중"
-      className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
-    >
+    <div role="status" aria-busy aria-label="내 작품 목록 불러오는 중" className="flex flex-col gap-6">
+      {/* 도착 분기는 그리드 **위에** 필터 툴바를 얹는데 로딩 분기엔 그게 없어서, 목록이 도착할 때
+          그리드 top이 153 → 241로 **+88px** 밀렸다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가
+          아니라 행 top 직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로
+          센다). 여기서 자리만 비워 시프트를 0으로 만든다.
+
+          `h-16`(64px)은 툴바의 실측 높이다. 카드 스켈레톤의 28/16/22.5px와 같은 성격의 상수라
+          **툴바 구성이 바뀌면 여기도 함께 재야 한다** — 안 그러면 이 주석이 거짓이 된다.
+          툴바를 흐리게 렌더하지 않고 빈 공간으로 둔 이유: 누를 수 없는 컨트롤을 보여주면
+          비활성 상태 표시(대비·커서)를 새로 정해야 하는데, 시프트를 없애는 데 그게 필요하지 않다. */}
+      <div className="h-16" aria-hidden />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
         <div
           key={key}
@@ -621,6 +640,7 @@ function MyWorksSkeleton() {
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }
