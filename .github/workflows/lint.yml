@@ -1,0 +1,43 @@
+name: lint
+
+# eslint는 루트에서 **한 번만** 돈다 — 패키지별로 돌리면 `no-relative-import-paths`의 `rootDir`가
+# cwd 기준이라 IMP-01 검사가 통째로 빠진다(합계 210 vs 루트 368으로 실측). 그래서 web/admin
+# 워크플로에 끼워 넣지 않고 별도 워크플로로 뒀다 — 저장소 전체가 대상이라 앱별로 나눌 이유도 없다.
+#
+# `eslint.config.mjs`가 경로 필터에 있는 이유: 규칙만 바뀐 커밋도 검사돼야 한다. web/admin
+# 워크플로의 필터에는 그 파일이 없어서, 여기에 없으면 규칙 변경이 아무 검사도 안 받는다.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/web/**"
+      - "apps/admin/**"
+      - "packages/**"
+      - "eslint.config.mjs"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  pull_request:
+    paths:
+      - "apps/web/**"
+      - "apps/admin/**"
+      - "packages/**"
+      - "eslint.config.mjs"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
