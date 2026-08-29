@@ -137,6 +137,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   const storyQuery = useProfileContentListQuery({ userId, type: "story" });
   const draftListQuery = useDraftListQuery();
   const typeFilterRef = useRef<HTMLDivElement>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const queries = [characterQuery, storyQuery, draftListQuery];
   const failedQueries = queries.filter((query) => query.isError);
@@ -254,7 +255,13 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
           }}
         />
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+        // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
+        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2).
+        <div
+          ref={gridRef}
+          tabIndex={-1}
+          className="grid grid-cols-2 gap-3 outline-none sm:grid-cols-3 md:grid-cols-4"
+        >
           {visibleItems.map((item, index) => (
             <MyWorkCard
               key={`${item.kind}-${item.id}`}
@@ -267,7 +274,12 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         </div>
       )}
 
-      <ContentListLoadMore hasMore={hasMore} isLoading={isLoadingMore} onLoadMore={handleLoadMore} />
+      <ContentListLoadMore
+        hasMore={hasMore}
+        isLoading={isLoadingMore}
+        onLoadMore={handleLoadMore}
+        onExhausted={() => gridRef.current?.focus()}
+      />
     </div>
   );
 }
@@ -439,15 +451,23 @@ function MyWorksToolbar({
             {/* 트리거 안에는 반드시 `SelectValue`가 있어야 한다 — 직접 텍스트를 넣으면 Radix가 열린
                 콘텐츠로 포커스를 옮기지 못해 키보드로도 마우스로도 항목을 고를 수 없다(브라우저 실측).
                 축 이름은 `aria-label`로 함께 넘긴다(`aria-label`이 내용을 덮으므로 값도 같이 담는다). */}
-            {/* 값이 걸리면 채움을 준다. 안 그러면 이 트리거는 **미선택 칩과 픽셀상 같아서**(높이·radius·
+            {/* 값이 걸리면 강조를 준다. 안 그러면 이 트리거는 **미선택 칩과 픽셀상 같아서**(높이·radius·
                 보더·배경 전부 Δ0.0000 — 실측) 목록을 32→1건으로 줄인 축이 꺼진 칩처럼 보이고, 정작
-                아무것도 안 거른 `전체` 칩만 핑크로 켜져 활성 표현이 뒤집힌다. `secondary`인 이유:
-                DESIGN.md §Neutral이 이 토큰의 쓰임을 "hover/선택 배경, 배지, 필터 칩"으로 명시했고,
-                무채색이라 화면의 유일한 유채색 솔리드 채움(활성 칩)을 늘리지 않는다. 칩과 형태로도
-                갈린다 — 칩은 핑크 채움, 이쪽은 무채색 채움 + 셰브론. */}
+                아무것도 안 거른 `전체` 칩만 핑크로 켜져 활성 표현이 뒤집힌다.
+
+                **채움이 아니라 보더인 이유(2026-08-29 교체).** 원래는 `bg-secondary` 채움이었는데,
+                픽셀 실측에서 `border-input` 대 그 채움이 **라이트 2.9714 / 다크 2.8276**으로 WCAG
+                1.4.11(3:1)에 미달했다 — 게다가 hover가 아니라 필터가 켜져 있는 **내내 유지되는
+                상태**다. `bg-muted`로 낮추는 안은 대비는 넘기지만(3.3395/3.2344) 다크에서 활성 신호가
+                1.2521 → 1.0946으로 사실상 사라져 이 강조가 존재하는 이유 자체를 없앤다.
+
+                `ring`(=`primary`)은 DESIGN.md가 "색은 강조 지점(primary/ring)에만"으로 이미 허용한
+                축이고, **채움이 아니라서** "유채색 솔리드 채움을 늘리지 않는다"는 원래 근거와도
+                부딪히지 않는다. 칩과의 형태 구분도 유지된다 — 칩은 핑크 **채움**, 이쪽은 핑크 **윤곽**
+                + 셰브론. 포커스와도 갈린다: 포커스는 base가 3px `ring-ring/50` 헤일로를 얹는다. */}
             <SelectTrigger
               size="sm"
-              className={cn("shrink-0", visibilityFilter !== "all" && "bg-secondary")}
+              className={cn("shrink-0", visibilityFilter !== "all" && "border-ring")}
               aria-label={
                 visibilityFilter === "all"
                   ? VISIBILITY_AXIS_LABEL
@@ -585,12 +605,19 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
  * 금지하는 조합이라 스크린리더가 대개 무시한다(a11y 트리 실측). */
 function MyWorksSkeleton() {
   return (
-    <div
-      role="status"
-      aria-busy
-      aria-label="내 작품 목록 불러오는 중"
-      className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4"
-    >
+    <div role="status" aria-busy aria-label="내 작품 목록 불러오는 중" className="flex flex-col gap-6">
+      {/* 도착 분기는 그리드 **위에** 필터 툴바를 얹는데 로딩 분기엔 그게 없어서, 목록이 도착할 때
+          그리드 top이 153 → 241로 **+88px** 밀렸다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가
+          아니라 행 top 직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로
+          센다). 여기서 자리만 비워 시프트를 0으로 만든다.
+
+          `h-16`(64px)은 툴바의 실측 높이다. 카드 스켈레톤의 28/16/22.5px와 같은 성격의 상수라
+          **툴바 구성이 바뀌면 여기도 함께 재야 한다** — 안 그러면 이 주석이 거짓이 된다.
+          툴바를 흐리게 렌더하지 않고 빈 공간으로 둔 이유: 누를 수 없는 컨트롤을 보여주면
+          비활성 상태 표시(대비·커서)를 새로 정해야 하는데, 시프트를 없애는 데 그게 필요하지 않다. */}
+      <div className="h-16" aria-hidden />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
         <div
           key={key}
@@ -621,6 +648,7 @@ function MyWorksSkeleton() {
           </div>
         </div>
       ))}
+      </div>
     </div>
   );
 }

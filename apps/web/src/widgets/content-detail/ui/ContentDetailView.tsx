@@ -25,7 +25,7 @@ import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { VersionHistoryModal } from "./VersionHistoryModal";
 
-const updatedAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -247,7 +247,7 @@ export function ContentDetailView({ id }: { id: string }) {
           aria-pressed={isLiked}
           onClick={() => setDesiredLiked((current) => !(current ?? content.isLiked))}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground",
+            "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
             isLiked && "text-primary hover:text-primary",
           )}
         >
@@ -261,7 +261,7 @@ export function ContentDetailView({ id }: { id: string }) {
           aria-pressed={isFavorited}
           onClick={() => setDesiredFavorited((current) => !(current ?? content.isFavorited))}
           className={cn(
-            "inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground",
+            "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
             isFavorited && "text-primary hover:text-primary",
           )}
         >
@@ -272,10 +272,10 @@ export function ContentDetailView({ id }: { id: string }) {
         <button
           type="button"
           onClick={() => setIsVersionHistoryOpen(true)}
-          className="ml-auto inline-flex items-center gap-1.5 rounded-md transition-colors hover:text-foreground"
+          className="ml-auto inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground"
         >
           <History aria-hidden className="size-4" />
-          최근 업데이트 {updatedAtFormatter.format(new Date(content.updatedAt))} · v{content.versionNumber}
+          최근 업데이트 {UPDATED_AT_FORMATTER.format(new Date(content.updatedAt))} · v{content.versionNumber}
         </button>
       </div>
 

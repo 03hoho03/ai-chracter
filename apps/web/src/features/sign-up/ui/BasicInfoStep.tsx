@@ -82,7 +82,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
           <button
             type="button"
             onClick={() => setIsPasswordVisible((prev) => !prev)}
-            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
             aria-label={isPasswordVisible ? "비밀번호 숨기기" : "비밀번호 표시"}
           >
             {isPasswordVisible ? (

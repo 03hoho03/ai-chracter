@@ -91,7 +91,7 @@ function GeneratedImageGridBody({
           key={image.assetId}
           type="button"
           onClick={() => onPick({ assetId: image.assetId, imageUrl: image.imageUrl })}
-          className="aspect-square overflow-hidden rounded-md bg-muted transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="aspect-square overflow-hidden rounded-md bg-muted motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
           <img src={image.imageUrl} alt="" decoding="async" className="size-full object-cover" />

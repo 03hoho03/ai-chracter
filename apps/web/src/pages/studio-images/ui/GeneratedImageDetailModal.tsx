@@ -20,7 +20,7 @@ import {
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 import { isApiError } from "@/shared/lib/api/client";
 
-const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -81,7 +81,7 @@ export function GeneratedImageDetailModal({
           <DialogTitle>생성 이미지</DialogTitle>
           <DialogDescription>
             <time dateTime={image.createdAt}>
-              {createdAtFormatter.format(new Date(image.createdAt))}
+              {CREATED_AT_FORMATTER.format(new Date(image.createdAt))}
             </time>{" "}
             생성
           </DialogDescription>

@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 
 import {
@@ -38,6 +39,7 @@ export function ProfileContentSection({
   onContentTypeChange,
 }: ProfileContentSectionProps) {
   const [visibilityFilter, setVisibilityFilter] = useState<VisibilityFilter>("all");
+  const gridRef = useRef<HTMLDivElement>(null);
 
   const contentListQuery = useProfileContentListQuery({
     userId,
@@ -89,7 +91,13 @@ export function ProfileContentSection({
         )}
       </div>
 
-      {contentListQuery.isPending && (
+      {/* 네 상태가 배타적이지 않아 순서를 명시적으로 만든다(COMP-04) — `isError`와 `data`는 **동시에
+          참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다).
+          예전엔 그래서 에러 문단과 목록이 함께 렌더됐다.
+
+          `isPending && failureCount === 0`인 이유는 `/my`(MyWorksPage)와 같다: 재시도 백오프 중에도
+          `isPending`이라, 그것만 보면 이미 도착한 목록이 최대 7초(3회 1s→2s→4s) 스켈레톤에 갇힌다. */}
+      {contentListQuery.isPending && contentListQuery.failureCount === 0 && (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
           {[0, 1, 2, 3].map((key) => (
             <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
@@ -97,16 +105,34 @@ export function ProfileContentSection({
         </div>
       )}
 
-      {contentListQuery.isError && (
+      {/* 보여줄 목록이 없을 때만 전면 에러다 — 있으면 아래 배너로 알리고 목록을 살린다(/my 선례). */}
+      {contentListQuery.isError && items.length === 0 && (
         <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       )}
 
-      {contentListQuery.data && items.length === 0 && (
+      {contentListQuery.isError && items.length > 0 && (
+        <div role="alert" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-destructive-text">
+            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void contentListQuery.refetch()}>
+            다시 시도
+          </Button>
+        </div>
+      )}
+
+      {!contentListQuery.isPending && !contentListQuery.isError && items.length === 0 && (
         <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>
       )}
 
-      {contentListQuery.data && items.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      {items.length > 0 && (
+        // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
+        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2).
+        <div
+          ref={gridRef}
+          tabIndex={-1}
+          className="grid grid-cols-2 gap-3 outline-none sm:grid-cols-3 md:grid-cols-4"
+        >
           {items.map((content, index) => (
             <ProfileContentCard
               key={content.id}
@@ -128,6 +154,7 @@ export function ProfileContentSection({
             void contentListQuery.fetchNextPage();
           }
         }}
+        onExhausted={() => gridRef.current?.focus()}
       />
     </section>
   );

@@ -65,7 +65,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
           type="button"
           disabled={!item.active}
           onClick={() => handleItemClick(item)}
-          className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground transition-colors enabled:hover:bg-secondary/50 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
+          className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors enabled:hover:bg-secondary/50 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
         >
           <item.icon aria-hidden className="size-4 shrink-0" />
           <span className="flex-1">{item.label}</span>

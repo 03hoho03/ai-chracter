@@ -65,7 +65,7 @@ export const ChangeStartingSetupModal = createCallable<Props, void>(({ call, roo
                 disabled={isCurrent || changeMutation.isPending}
                 onClick={() => void handleSelect(setup.id)}
                 className={cn(
-                  "flex items-center justify-between gap-2 rounded-md border border-input px-3.5 py-3 text-left text-sm transition-colors",
+                  "flex items-center justify-between gap-2 rounded-md border border-input px-3.5 py-3 text-left text-sm motion-safe:transition-colors",
                   isCurrent
                     ? "cursor-default bg-secondary/50 font-semibold text-foreground"
                     : "text-foreground enabled:hover:bg-secondary/50",

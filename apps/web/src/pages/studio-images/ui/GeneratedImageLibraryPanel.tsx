@@ -6,7 +6,7 @@ import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 import { GeneratedImageDetailModal } from "./GeneratedImageDetailModal";
 
-const createdAtFormatter = new Intl.DateTimeFormat("ko-KR", {
+const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -75,7 +75,7 @@ export function GeneratedImageLibraryPanel({
     <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
         {images.map((image) => {
-          const createdAtLabel = createdAtFormatter.format(new Date(image.createdAt));
+          const createdAtLabel = CREATED_AT_FORMATTER.format(new Date(image.createdAt));
           return (
             <figure key={image.assetId} className="flex flex-col gap-1.5">
               <button

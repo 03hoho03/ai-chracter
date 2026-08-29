@@ -10,7 +10,7 @@ import {
   useReportDetailQuery,
 } from "@/entities/report";
 
-const dateTimeFormatter = new Intl.DateTimeFormat("ko-KR", {
+const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -47,7 +47,7 @@ export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
                 {REPORT_STATUS_LABELS[reportDetailQuery.data.status]}
               </span>
               <span className="text-sm text-muted-foreground">
-                {dateTimeFormatter.format(new Date(reportDetailQuery.data.createdAt))} 접수
+                {DATE_TIME_FORMATTER.format(new Date(reportDetailQuery.data.createdAt))} 접수
               </span>
             </div>
             <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
@@ -59,7 +59,7 @@ export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
                 <div>
                   <dt className="text-muted-foreground">처리일시</dt>
                   <dd className="text-foreground">
-                    {dateTimeFormatter.format(new Date(reportDetailQuery.data.resolvedAt))}
+                    {DATE_TIME_FORMATTER.format(new Date(reportDetailQuery.data.resolvedAt))}
                   </dd>
                 </div>
               )}

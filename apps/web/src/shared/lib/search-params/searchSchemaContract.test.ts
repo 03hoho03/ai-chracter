@@ -48,9 +48,24 @@ function findSchemaBody(name: string): string | null {
   return null;
 }
 
-/** 스키마 본문에서 최상위 필드 선언 줄만 고른다(`  type: z.enum(...)...,`). */
+/** 스키마 본문에서 최상위 필드 선언 줄만 고른다(`  type: z.enum(...)...,`).
+ *
+ * 들여쓰기 폭을 고정하지 않는 이유: `/^\s{2}/`로 두면 포매팅이 조금만 달라진 필드가 **검사에서
+ * 조용히 빠진다**(가드가 "필드 ≥1개"라 나머지가 통과해 버린다). 대신 중첩 객체 안쪽을 걸러야
+ * 하므로, 여는 중괄호로 들어간 깊이를 세어 **깊이 0의 줄만** 고른다. */
 function fieldLines(body: string): string[] {
-  return body.split("\n").filter((line) => /^\s{2}\w+:\s*z\./.test(line));
+  const lines: string[] = [];
+  let depth = 0;
+
+  for (const line of body.split("\n")) {
+    if (depth === 0 && /^\s*\w+:\s*z\./.test(line)) lines.push(line);
+    for (const char of line) {
+      if (char === "{" || char === "(" || char === "[") depth += 1;
+      if (char === "}" || char === ")" || char === "]") depth -= 1;
+    }
+  }
+
+  return lines;
 }
 
 const routesWithValidateSearch = Object.entries(ROUTE_SOURCES)

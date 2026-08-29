@@ -8,7 +8,7 @@ import {
 
 import { useContentVersionsQuery } from "@/entities/content";
 
-const versionDateFormatter = new Intl.DateTimeFormat("ko-KR", {
+const VERSION_DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
   month: "2-digit",
   day: "2-digit",
@@ -81,7 +81,7 @@ function VersionHistoryBody({
         >
           <span className="font-medium text-foreground">v{version.versionNumber}</span>
           <span className="text-muted-foreground">
-            {versionDateFormatter.format(new Date(version.publishedAt))}
+            {VERSION_DATE_FORMATTER.format(new Date(version.publishedAt))}
           </span>
         </li>
       ))}
