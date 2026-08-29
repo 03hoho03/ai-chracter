@@ -115,7 +115,7 @@ function EndingListBody({
               <button
                 type="button"
                 onClick={() => onSelect(ending)}
-                className="flex w-full items-center gap-2.5 rounded-md py-2.5 text-left transition-colors hover:bg-secondary/50"
+                className="flex w-full items-center gap-2.5 rounded-md py-2.5 text-left motion-safe:transition-colors hover:bg-secondary/50"
               >
                 <Sparkles aria-hidden className="size-4 shrink-0 text-foreground" />
                 <span className="flex-1 text-sm font-medium text-foreground">{ending.name}</span>
