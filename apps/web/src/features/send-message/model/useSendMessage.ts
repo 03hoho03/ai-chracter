@@ -10,7 +10,8 @@ import {
   chatRoomKeys,
   truncateAndEdit,
 } from "@/entities/chat-room";
-import type { ChatMessage, ChatRoomState, ChatStreamEvent, ChatStreamRequest } from "@/entities/chat-room";
+import { chatStreamEventSchema } from "@/entities/chat-room";
+import type { ChatMessage, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
 import { openChatStream } from "@/shared/lib/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLast" };
@@ -34,7 +35,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
     setStreamingText("");
 
     try {
-      for await (const event of openChatStream<ChatStreamEvent>(pending.payload)) {
+      for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
         } else if (event.type === "policyWarning") {
