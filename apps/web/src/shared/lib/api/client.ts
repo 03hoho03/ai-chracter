@@ -47,6 +47,34 @@ export const errorEnvelopeSchema = z.object({
 /** FastAPI는 에러를 항상 `{"detail": ...}` 하나의 키로 내려준다 — HTTPException은 string,
  * 422 검증 실패는 `ValidationErrorItem[]`, 일부 엔드포인트는 구조화된 dict(예: 429의
  * retryAfterSeconds)를 detail로 쓴다. 셋 다 여기서 ApiError로 정규화한다. */
+/**
+ * `ApiError` 모양을 그대로 가지면서 `Error`이기도 한 클래스.
+ *
+ * plain 객체를 reject하면 **스택 트레이스가 없다** — 어느 호출부에서 난 실패인지 콘솔에서
+ * 추적할 수 없고, unhandled rejection이 났을 때 브라우저가 위치를 못 찍는다. 필드 구성은
+ * `ApiError`와 동일하므로 catch에서 `.status`/`.detail`/`.fields`를 읽는 16곳은 그대로다.
+ *
+ * `isApiError`는 계속 **구조적으로** 검사한다 — `instanceof`로 바꾸면 번들이 갈리거나
+ * 프레임을 넘어온 에러에서 false가 되는데, 여기서 얻을 게 없다.
+ *
+ * plain 객체와 딱 하나 다른 점: 클래스 필드는 선언만으로 정의되므로 422가 아닐 때도
+ * `fields` 키가 `undefined`로 **존재한다**(이전엔 키 자체가 없었다). `fields`를 읽는 코드가
+ * 저장소에 없고 `isApiError`도 `status`/`message`만 보므로 무해하지만, 사실이라 적어 둔다.
+ */
+export class ApiErrorObject extends Error implements ApiError {
+  readonly status: number;
+  readonly detail: ApiError["detail"];
+  readonly fields?: ApiError["fields"];
+
+  constructor(shape: ApiError) {
+    super(shape.message);
+    this.name = "ApiError";
+    this.status = shape.status;
+    this.detail = shape.detail;
+    this.fields = shape.fields;
+  }
+}
+
 function normalizeError(error: AxiosError): ApiError {
   const status = error.response?.status ?? 0;
   const parsed = errorEnvelopeSchema.safeParse(error.response?.data);
@@ -83,7 +111,7 @@ apiClient.interceptors.response.use(
       unauthorizedHandler?.();
     }
 
-    return Promise.reject(normalized);
+    return Promise.reject(new ApiErrorObject(normalized));
   },
 );
 
