@@ -1,18 +1,44 @@
 // techspec-chat-story.md §1.1/§1.2, techspec-content-versioning.md §2 — 캐릭터/스토리 챗 공용 상태 모델.
 // StatDef/Shortcut/Ending은 techspec-builder-story.md §1.2/§1.4/§1.5의 스키마를 그대로 반영한다.
 
+import { z } from "zod";
 import type { RuleListItem } from "@/shared/lib/rule-engine/ending-rules";
 
 export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "@/shared/lib/rule-engine/ending-rules";
 
-export type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  imageId?: string; // 상황별 이미지 매칭 결과(캐릭터 챗 전용) — 스토리 챗에서는 항상 undefined
-  imageUrl?: string; // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정)
-  createdAt: string;
-};
+/** SSE 이벤트는 **스키마가 단일 소스**다 — 타입을 따로 쓰고 스키마를 덧붙이면 둘이 갈린다
+ * (fe-typescript TS-09). `openChatStream`이 이 스키마로 파싱하므로 서버가 모양을 바꾸면
+ * 소비처가 아니라 여기서 걸린다. */
+const chatMessageSchema = z.object({
+  id: z.string(),
+  role: z.union([z.literal("user"), z.literal("assistant")]),
+  content: z.string(),
+  // 상황별 이미지 매칭 결과(캐릭터 챗 전용) — 스토리 챗에서는 항상 undefined
+  imageId: z.string().optional(),
+  // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정)
+  imageUrl: z.string().optional(),
+  createdAt: z.string(),
+});
+
+export const chatStreamEventSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("token"), delta: z.string() }),
+  z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),
+  z.object({
+    type: z.literal("endingReached"),
+    endingId: z.string(),
+    epilogue: z.string().nullable(),
+  }),
+  // 캐시 변경 없음(techspec-chat-common.md §5)
+  z.object({ type: z.literal("policyWarning"), message: z.string() }),
+  z.object({ type: z.literal("done"), finalMessage: chatMessageSchema }),
+  // 캐시 변경 없음(techspec-chat-common.md §1)
+  z.object({ type: z.literal("error"), message: z.string() }),
+]);
+
+export type ChatStreamEvent = z.infer<typeof chatStreamEventSchema>;
+
+/** SSE `done` 이벤트가 실어 나르므로 스키마에서 도출한다 — 타입을 따로 쓰면 스키마와 갈린다. */
+export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
 export type StatDef = {
   id: string;
@@ -69,13 +95,7 @@ export type ChatRoomState = {
 };
 
 // SSE 이벤트 스키마 [확정] — BE가 이 스키마를 그대로 채택(techspec-overview-backend.md §3)
-export type ChatStreamEvent =
-  | { type: "token"; delta: string }
-  | { type: "statChange"; statId: string; newValue: number }
-  | { type: "endingReached"; endingId: string; epilogue: string | null }
-  | { type: "policyWarning"; message: string } // 캐시 변경 없음(techspec-chat-common.md §5)
-  | { type: "done"; finalMessage: ChatMessage }
-  | { type: "error"; message: string }; // 캐시 변경 없음(techspec-chat-common.md §1)
+
 
 export type SendMessageRequest = {
   kind: "send";

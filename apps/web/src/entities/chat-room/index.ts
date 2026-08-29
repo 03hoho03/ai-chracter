@@ -37,3 +37,4 @@ export { buildSendPayload } from "./model/buildSendPayload";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { toChatRoomState } from "./model/toChatRoomState";
 export { truncateAndEdit } from "./model/truncateAndEdit";
+export { chatStreamEventSchema } from "./api/chat-room";

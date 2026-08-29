@@ -6,7 +6,8 @@ import {
   buildPreviewSendPayload,
   previewSessionKeys,
 } from "@/entities/preview-session";
-import type { PreviewChatMessage, PreviewSessionState, PreviewStreamEvent } from "@/entities/preview-session";
+import { previewStreamEventSchema } from "@/entities/preview-session";
+import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
 import { openChatStream } from "@/shared/lib/sse/openChatStream";
 
 /**
@@ -41,8 +42,9 @@ export function usePreviewSendMessage(previewSessionId: string | undefined) {
     setStreamingText("");
 
     try {
-      for await (const event of openChatStream<PreviewStreamEvent>(
+      for await (const event of openChatStream(
         buildPreviewSendPayload({ previewSessionId, text, shortcutId }),
+        previewStreamEventSchema,
       )) {
         if (event.type === "token") {
           setStreamingText((prev) => prev + event.delta);
