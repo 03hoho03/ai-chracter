@@ -235,7 +235,10 @@ Neon은 SSL 필수지만, `DATABASE_URL`을 `postgresql+asyncpg://...?ssl=requir
 - **스테이징 환경 없음**: main push → 바로 prod 자동배포(§3-4). 대신 Cloud Run 리비전/Pages 배포 둘 다 즉시 롤백 가능(트래픽 스위칭만, 재빌드 불필요) → 문제 발생 시 1순위는 롤백, fix는 그 다음.
 - **Pages 프리뷰 배포는 API 연동 확인 불가**: BE `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해서 PR 프리뷰(랜덤 서브도메인)에서 API 호출이 CORS로 막힘. 필요해지면 CORS 완화.
 - **Cloud Run 요청 타임아웃**: SSE 채팅 응답은 짧아 무관하나, 장시간 스트림이 생기면 재확인.
-- **Cloud Run 콜드스타트**: 0으로 스케일다운 → 첫 요청 수 초 지연. 필요 시 min-instances=1(무료 벗어남).
+- **Cloud Run 콜드스타트**: min-instances가 0이라(minScale 어노테이션 없음) 트래픽이 뜸하면 20~30분 만에도 스케일다운되고, 하루에 여러 번 콜드스타트가 난다. 필요 시 min-instances=1(무료 벗어남 — `cpu-throttling=false`라 idle 시간도 전부 과금).
+  - **비용은 이미지 pull이 아니라 `import api.main`에 있다**(2026-09-01 실측, 같은 이미지로 임시 probe 서비스를 띄워 컨테이너 진입 시각을 찍어 확인): 컨테이너 생성+pull은 **0.13~0.19초**뿐이고 나머지 전부가 python 부팅+import다. Cloud Run이 이미지를 **lazy loading으로 스트리밍**하기 때문에 pull 비용이 사라진 게 아니라 import가 실제로 읽는 파일에만, 그 시점에 네트워크 페치로 지불된다. **그래서 이미지 크기(353MB)를 깎는 건 효과가 없고, "import가 읽는 바이트/모듈 수"를 줄이는 것만 효과가 있다** — 같은 import가 로컬 1 vCPU 컨테이너(페이지캐시 있음)에선 1.6초, Cloud Run에선 11.6초였다.
+  - 실측 개선: `google.genai`와 Pillow를 기동 경로에서 들어내(`llm/gemini_image.py` 분리 + `get_llm_client()`/`image_processing.py`/`cloudflare_image.py`의 함수 내 import) import가 읽는 양이 72.6MB/1534모듈 → 46.6MB/960모듈로 줄었고, 콜드스타트 중앙값이 **11.6초 → 6.9초**가 됐다(각 3회, 범위 10.5~14.2 → 6.0~7.0). 남은 몫은 sqlalchemy 12MB·asyncpg 10.5MB·pydantic_core 4.3MB로 전부 기동에 실제로 필요한 것들이다.
+  - 진단이 다시 필요하면 이 방법을 재사용할 것: 프로덕션 이미지 그대로 `gcloud run deploy <probe> --command=sh --args='^|^-c|echo "[boot] container-entry"; exec uvicorn api.main:app --host 0.0.0.0 --port 8000'`로 비공개 probe 서비스를 띄우면, 로그의 `Starting new instance` → `[boot] container-entry` → `Started server process` 세 줄이 pull/import를 갈라준다. 리비전을 새로 올릴 때마다(`--update-env-vars`로 충분) 콜드스타트를 강제할 수 있다.
 
 ---
 

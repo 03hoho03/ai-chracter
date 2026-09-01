@@ -9,7 +9,6 @@ import base64
 import io
 
 import httpx
-from PIL import Image
 
 from api.core.config import settings
 from api.llm.client import LLMClientError
@@ -32,6 +31,11 @@ def _is_blank_image(data: bytes) -> bool:
     case so it surfaces as a failure rather than a "successful" empty result. Any decode
     failure is left to the normal image-handling path, not treated as blank.
     """
+    # import이 함수 안에 있는 이유는 `assets/image_processing.py`와 같다 — Pillow는
+    # import에만 3.7MB를 읽는데 이 모듈은 `llm/dependencies.py`를 타고 모든 기동
+    # 경로에 걸려 있다. 최상단으로 올리지 말 것.
+    from PIL import Image
+
     try:
         with Image.open(io.BytesIO(data)) as img:
             colors = img.convert("RGB").getcolors(maxcolors=2)
