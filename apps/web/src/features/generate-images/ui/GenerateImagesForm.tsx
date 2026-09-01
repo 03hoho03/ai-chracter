@@ -13,6 +13,10 @@ import { Controller, useForm, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 import {
+  IMAGE_GENERATION_SUSPENDED_NOTICE,
+  IS_IMAGE_GENERATION_SUSPENDED,
+} from "../model/availability";
+import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_COUNT_OPTIONS,
   IMAGE_STYLE_PRESET_OPTIONS,
@@ -20,6 +24,8 @@ import {
   generateImagesSchema,
   type GenerateImagesFormValues,
 } from "../model/schema";
+
+const SUSPENDED_NOTICE_ID = "generate-images-suspended-notice";
 
 type GenerateImagesFormProps = {
   onSubmit: (values: GenerateImagesFormValues) => void | Promise<void>;
@@ -65,6 +71,10 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
+        // 제출 버튼이 `disabled`가 아니라 `aria-disabled`라 포커스가 남고, 포커스가 남으면
+        // Enter가 실제로 여기까지 온다(`pointer-events-none`은 포인터만 막는다). 중단 중에는
+        // 여기서 한 번 더 끊어야 키보드로 잡이 걸리지 않는다 — `ContentListLoadMore`와 같은 짝.
+        if (IS_IMAGE_GENERATION_SUSPENDED) return;
         void handleSubmit(onSubmit)(event);
       }}
     >
@@ -189,9 +199,26 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
         </div>
       </div>
 
-      <Button type="submit" className="self-start" disabled={isSubmitting}>
-        이미지 생성
-      </Button>
+      {/* 중단 중에는 버튼을 `disabled`가 아니라 `aria-disabled`로 죽인다 — `disabled`면 브라우저가
+          포커스 순회에서 통째로 빼서 "왜 못 누르는지"가 키보드·스크린리더에 영영 닿지 않는다
+          (`packages/ui/CLAUDE.md`의 드롭다운 항목 처방과 같은 이유, 흐림 65%도 그 값 그대로).
+          사유는 버튼 옆에 두고 `aria-describedby`로 묶어 보이는 자리와 접근성 트리를 일치시킨다. */}
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Button
+          type="submit"
+          disabled={isSubmitting}
+          aria-disabled={IS_IMAGE_GENERATION_SUSPENDED || undefined}
+          aria-describedby={IS_IMAGE_GENERATION_SUSPENDED ? SUSPENDED_NOTICE_ID : undefined}
+          className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+        >
+          이미지 생성
+        </Button>
+        {IS_IMAGE_GENERATION_SUSPENDED && (
+          <p id={SUSPENDED_NOTICE_ID} className="min-w-0 text-sm break-keep text-muted-foreground">
+            {IMAGE_GENERATION_SUSPENDED_NOTICE}
+          </p>
+        )}
+      </div>
     </form>
   );
 }
