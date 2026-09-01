@@ -7,7 +7,8 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 
 from api.llm.client import LLMClientError, LLMPolicyViolationError
-from api.llm.image import GeminiImageClient, ImageStylePreset
+from api.llm.gemini_image import GeminiImageClient
+from api.llm.image import ImageStylePreset
 
 
 def _make_client(monkeypatch: pytest.MonkeyPatch, generate_content: Any) -> GeminiImageClient:

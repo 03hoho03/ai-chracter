@@ -20,7 +20,7 @@ from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.dependencies import get_image_client
-from api.llm.image import GeminiImageClient
+from api.llm.gemini_image import GeminiImageClient
 from api.main import app
 
 
