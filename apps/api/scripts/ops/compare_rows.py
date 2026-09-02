@@ -47,12 +47,21 @@ def counts(url: str) -> dict[str, int]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
+    # 접속 문자열에는 비밀번호가 들어 있고 argv 는 같은 호스트의 다른 프로세스에게 `ps` 로 보인다.
+    # 그래서 둘 다 env 로 넘길 수 있게 두고, 플래그는 편의용으로만 남긴다(`restore_db` 와 같은 규약).
     parser.add_argument("--source", default=os.environ.get("DATABASE_URL"), help="원본(기본 $DATABASE_URL)")
-    parser.add_argument("--target", required=True, help="대조 대상(복원본)")
+    parser.add_argument(
+        "--target",
+        default=os.environ.get("TARGET_DATABASE_URL"),
+        help="대조 대상(기본 $TARGET_DATABASE_URL)",
+    )
     args = parser.parse_args()
 
     if not args.source:
         print("원본이 없다: --source 또는 $DATABASE_URL", file=sys.stderr)
+        return 1
+    if not args.target:
+        print("대상이 없다: --target 또는 $TARGET_DATABASE_URL", file=sys.stderr)
         return 1
 
     source_url, target_url = to_libpq_url(args.source), to_libpq_url(args.target)

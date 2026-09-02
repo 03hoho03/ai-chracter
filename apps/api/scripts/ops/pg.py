@@ -30,12 +30,19 @@ def run_sh(
     stdin/stdout 을 그대로 파이프하므로 덤프 파일을 호스트에 두고도 볼륨 마운트가 필요 없다.
     실패해도 예외를 던지지 않는다 — 호출부가 stderr 를 사람이 읽을 형태로 요약해야 하기 때문이다.
     """
+    # 운영 스택의 Postgres 는 포트를 호스트에 게시하지 않는다(`docker-compose.prod.yml`) — 그래서
+    # 기본 bridge 로 띄운 컨테이너에서는 닿지 않는다. `PG_DOCKER_NETWORK` 로 compose 네트워크
+    # (`ddona_default`)를 지정하면 같은 망에 붙어 `postgres` 라는 이름으로 접속된다.
+    # VM 의 백업 크론이 로컬 DB 를 덤프할 때도 이 값이 필요하다. 원격 DB(Neon)에는 무관하다.
+    network = os.environ.get("PG_DOCKER_NETWORK")
+
     # os.environ 을 통째로 물려준다 — docker CLI 는 컨텍스트/소켓을 `DOCKER_HOST`·`HOME` 에서
     # 찾으므로 env 를 갈아끼우면 데몬을 못 찾는다. PGURL 만 덧씌운다.
     return subprocess.run(
         [
             "docker", "run", "--rm", "--interactive",
             "-e", "PGURL",  # 이름만. 값은 아래 env 로 들어가고 argv 에는 안 남는다.
+            *(["--network", network] if network else []),
             PG_IMAGE,
             "sh", "-c", script,
         ],
