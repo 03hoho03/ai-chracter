@@ -1,20 +1,42 @@
-# 배포 런북 — 무료 티어 (Cloud Run + Neon + Upstash + R2 + Cloudflare Pages)
+# 배포 런북 — GCE VM (BE) + Cloudflare Pages (FE) + R2
 
-> 상태: 배포 완료 + CI/CD 구축 완료(2026-08-04). main push 시 자동배포(§3-4).
-> 근거·대안 분석은 옵시디언 노트 "AI 캐릭터 챗 - 추천 무료 배포 스택" 참고.
+> **상태: 2026-09-02 GCE 이전 완료.** BE는 `https://api.ddona.site`(서울 GCE VM)이고
+> Cloud Run·Neon·Upstash는 **살아 있되 쓰이지 않는다**(§0-1). main push 자동배포는 §3-4.
+>
+> ⚠️ **§1·§2-1·§3-1·§7 등 "Cloud Run" 서술은 이전 전 기록이다** — 롤백·대조용으로 남겼다.
+> 지금 프로덕션을 다루려면 §0-1과 §3-1을 볼 것.
 
 ## 0. 확정 스택
 
-| 컴포넌트 | 서비스 | 도메인(1차) |
+| 컴포넌트 | 서비스 | 주소 |
 |---|---|---|
-| BE 컨테이너 (FastAPI) | **Google Cloud Run** | `https://<svc>-<hash>.run.app` |
-| PostgreSQL | **Neon** | — |
-| Redis (세션·인증코드·OAuth state·미리보기) | **Upstash** | `rediss://...` |
-| 오브젝트 스토리지 (자산·생성 이미지) | **Cloudflare R2** | `https://<accountid>.r2.cloudflarestorage.com` |
+| BE (FastAPI + Postgres + Redis + Caddy) | **GCE VM** `ddona-api` (`asia-northeast3-a`, e2-medium) | `https://api.ddona.site` |
+| PostgreSQL 18 | VM 컨테이너 (볼륨 `pgdata`) | 내부 전용 |
+| Redis 8 | VM 컨테이너 (AOF, 볼륨 `redisdata`) | 내부 전용 |
+| 오브젝트 스토리지 (자산·생성 이미지·**DB 백업**) | **Cloudflare R2** | `https://<accountid>.r2.cloudflarestorage.com` |
 | FE web / admin (정적 SPA) | **Cloudflare Pages** | `https://<proj>.pages.dev` |
 
-**도메인 전략(1차): 각 서비스 무료 서브도메인.** 커스텀 도메인은 나중에. 이 선택이
-아래 §4의 "크로스사이트 쿠키" 코드 변경을 **필수**로 만든다(BE와 FE 도메인이 다르기 때문).
+**FE는 아직 `*.pages.dev`다.** BE만 커스텀 도메인으로 옮겼으므로 여전히 크로스사이트이고,
+그래서 §4의 `SESSION_COOKIE_SAMESITE=none`은 **계속 필요하다**. FE까지 `ddona.site`로 모으면
+`lax`로 되돌릴 수 있다(별건, §8-5).
+
+### 0-1. GCE 이전 후 실제 값 (2026-09-02)
+
+| 구성 | 값 |
+|---|---|
+| GCP 프로젝트 | `ddona-ai-character-chat` (번호 377499972563, 계정 `ghwjd321@gmail.com`) |
+| VM | `ddona-api` / `asia-northeast3-a` / e2-medium / Ubuntu 24.04 / 30GB |
+| 고정 IP | `34.64.43.39` (`ddona-api-ip`) |
+| DNS | 가비아. `api.ddona.site` A → 위 IP, TTL 600 |
+| HTTPS | Caddy 자동 발급(Let's Encrypt). `Caddyfile`은 저장소 루트 |
+| 이미지 저장소 | `asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api` |
+| VM 상의 형상 | `/opt/ddona/app`(git checkout) · `/opt/ddona/.env`(0600) · **전부 root 소유** |
+| 방화벽 | 80·443 공개 / 22는 IAP 대역(`35.235.240.0/20`)만 |
+| 백업 | 매일 18:00 UTC → `s3://ai-chracter-chat/backup/daily/`, 7일 + 4주 보관 |
+
+**옛 스택은 지우지 않았다**: Cloud Run(`ai-character-chat-api`)은 `allUsers` 인보커를 떼어 **403**
+상태로 남아 있고, Neon·Upstash도 그대로다. Cloud Build 트리거 `ai-chat-deploy`는 비활성화했다.
+⚠️ **롤백하면 컷오버(2026-09-02 08:45 UTC) 이후 VM에 쌓인 데이터는 없다** — Neon은 그 시점에 멈춰 있다.
 
 ---
 
@@ -87,7 +109,23 @@
 
 ## 2. 시크릿 / 환경변수 레퍼런스
 
-### 2-1. 백엔드 런타임 (Cloud Run env vars)
+### 2-1. 백엔드 런타임 env
+
+**현행 위치는 VM의 `/opt/ddona/.env`(root 소유, 0600)이고 22개 키다** — 아래 17개 + compose용 5개
+(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`).
+이전으로 바뀐 건 셋뿐이고 나머지 14개는 Cloud Run 값 그대로다:
+
+| 변수 | 이전 후 값 |
+|---|---|
+| `DATABASE_URL` | `postgresql+asyncpg://postgres:…@postgres:5432/ai_character_chat` (VM 컨테이너) |
+| `REDIS_URL` | `redis://redis:6379/0` (VM 컨테이너) |
+| `API_BASE_URL` | `https://api.ddona.site` |
+
+⚠️ **`apps/api/.env`는 로컬 개발용이다**(localhost DB/Redis + Tailscale 호스트). 예전에 이 문서가
+"env 주입 소스는 로컬 `apps/api/.env`"라고 적었는데 **지금은 사실이 아니다** — 2026-09-02 확인.
+Cloud Run 시절 값이 필요하면 `gcloud run services describe … --format=export`가 유일한 소스다.
+
+아래 표는 **이전 전 Cloud Run 기준 원본**이다(값 자체는 대부분 그대로 쓰인다).
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -125,7 +163,55 @@
 
 ## 3. 배포 절차
 
-### 3-1. BE → Cloud Run (Dockerfile 기반, 이미 `:8000` 준비됨)
+### 3-1. BE → GCE VM (현행)
+
+**자동배포가 정상 경로다.** `main`에 push하면 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
+Artifact Registry push → IAP SSH로 VM 교체 → 인터넷 쪽 `/health` 확인까지 한다(실측 1분 35초).
+GitHub Secrets에 넣는 값은 **없다** — Workload Identity Federation이라 키를 저장하지 않는다.
+
+```sh
+# VM 접속 (22번은 인터넷에 안 열려 있다)
+gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap
+
+# 스택 상태 · 로그
+cd /opt/ddona/app
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env ps
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env logs -f api
+```
+
+**롤백**(실측 확인) — `.env`의 태그 한 줄을 되돌리고 다시 올린다:
+```sh
+sudo sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:<이전SHA>|" /opt/ddona/.env
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+```
+과거 태그는 `gcloud artifacts docker tags list asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api`로 본다.
+
+**백업 · 복원**(둘 다 실제로 돌려본 절차다):
+```sh
+# 백업은 크론이 매일 돈다. 수동 실행:
+sudo /opt/ddona/backup.sh
+
+# 복원 — 대상 DB를 비우고 넣는다(restore_db 는 빈 DB 를 전제한다).
+#   운영 DB 를 실수로 덮어쓰지 않도록 대상은 항상 명시적으로 만든다.
+cd /opt/ddona/app
+C="sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+$C stop api
+$C exec -T postgres psql -U postgres -d postgres -c "DROP DATABASE ai_character_chat WITH (FORCE);"
+$C exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE ai_character_chat;"
+cd /opt/ddona/scripts
+sudo TARGET_DATABASE_URL="$(sudo grep ^DATABASE_URL= /opt/ddona/.env | cut -d= -f2-)" \
+     PG_DOCKER_NETWORK=ddona_default PYTHONPATH=. python3 -m ops.restore_db /경로/백업.dump
+cd /opt/ddona/app && $C up -d --wait api
+```
+R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
+(`--endpoint-url`은 `S3_ENDPOINT_URL`).
+
+⚠️ **`PG_DOCKER_NETWORK=ddona_default`가 없으면 안 된다** — 운영 Postgres는 포트를 게시하지
+않으므로 기본 bridge로 뜬 `pg_dump`/`psql` 컨테이너에서 닿지 않는다.
+
+---
+
+### 3-1-old. BE → Cloud Run (이전 전 기록 · 롤백용)
 
 **수동 배포**(로컬에서 즉시 재배포하고 싶을 때):
 ```bash
@@ -172,7 +258,16 @@ DATABASE_URL="postgresql+asyncpg://...neon..." uv run alembic upgrade head
 - 감지 경로(Included files filter): `apps/api/**`
 - 빌드 레시피 `apps/api/cloudbuild.yaml`: docker build → Artifact Registry push(`cloud-run-source-deploy` repo, 태그=커밋 SHORT_SHA) → `gcloud run deploy --image=...`(env-vars 미지정이라 기존 설정 유지)
 - 사전 조건: Secret Manager API 활성화, Cloud Build P4SA(`service-{num}@gcp-sa-cloudbuild...`)에 `roles/secretmanager.admin`, 레거시 Cloud Build SA(`{num}@cloudbuild.gserviceaccount.com`)에 `roles/run.developer` + `roles/iam.serviceAccountUser` + `roles/artifactregistry.writer`.
-- **⚠️ `gcloud builds triggers create/update github`가 API에서 원인불명 400(`INVALID_ARGUMENT`)** — 리전 무관, 최소 payload에도 재현. **Cloud Console UI(`console.cloud.google.com/cloud-build/triggers`)로 생성/수정하고, CLI는 조회·수동실행·삭제만**(`describe`/`run`/`delete`는 정상). Console에서 만든 트리거는 기본으로 `{project-num}-compute@developer.gserviceaccount.com`(Editor 롤)을 실행 SA로 씀 — 레거시 Cloud Build SA와 별개라 권한도 따로 부여해야 함.
+- **⚠️ `gcloud builds triggers create/update github`가 400(`INVALID_ARGUMENT`)** — **2026-09-02에 원인을 밝혔다**: 이 트리거는 **2세대**(`repositoryEventConfig` 필드, `github` 필드 없음)인데 그 CLI 경로는 1세대 `github` 필드를 가정한다. REST의 부분 PATCH(`?updateMask=disabled`)도 같은 이유로 실패한다. **전체 리소스를 updateMask 없이 PATCH하면 통과한다**:
+  ```sh
+  T=$(gcloud auth print-access-token); P=ai-character-chat-501906; R=asia-southeast1
+  curl -s -H "Authorization: Bearer $T" \
+    "https://cloudbuild.googleapis.com/v1/projects/$P/locations/$R/triggers/ai-chat-deploy" > t.json
+  python3 -c "import json;d=json.load(open('t.json'));d['disabled']=True;[d.pop(k,None) for k in ('id','createTime','resourceName')];json.dump(d,open('t2.json','w'))"
+  curl -s -X PATCH -H "Authorization: Bearer $T" -H "Content-Type: application/json" \
+    "https://cloudbuild.googleapis.com/v1/projects/$P/locations/$R/triggers/ai-chat-deploy" -d @t2.json
+  ```
+  Console UI로도 된다. **이 트리거는 현재 `disabled: true`다**(GCE 이전으로 대체됨, §0-1). Console에서 만든 트리거는 기본으로 `{project-num}-compute@developer.gserviceaccount.com`(Editor 롤)을 실행 SA로 씀 — 레거시 Cloud Build SA와 별개라 권한도 따로 부여해야 함.
 - 수동 재실행: `gcloud builds triggers run ai-chat-deploy --branch=main --region=asia-southeast1`
 
 **web/admin — Cloudflare Pages Git 연동**
@@ -235,7 +330,8 @@ Neon은 SSL 필수지만, `DATABASE_URL`을 `postgresql+asyncpg://...?ssl=requir
 - **스테이징 환경 없음**: main push → 바로 prod 자동배포(§3-4). 대신 Cloud Run 리비전/Pages 배포 둘 다 즉시 롤백 가능(트래픽 스위칭만, 재빌드 불필요) → 문제 발생 시 1순위는 롤백, fix는 그 다음.
 - **Pages 프리뷰 배포는 API 연동 확인 불가**: BE `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해서 PR 프리뷰(랜덤 서브도메인)에서 API 호출이 CORS로 막힘. 필요해지면 CORS 완화.
 - **Cloud Run 요청 타임아웃**: SSE 채팅 응답은 짧아 무관하나, 장시간 스트림이 생기면 재확인.
-- **Cloud Run 콜드스타트**: min-instances가 0이라(minScale 어노테이션 없음) 트래픽이 뜸하면 20~30분 만에도 스케일다운되고, 하루에 여러 번 콜드스타트가 난다. 필요 시 min-instances=1(무료 벗어남 — `cpu-throttling=false`라 idle 시간도 전부 과금).
+- **~~Cloud Run 콜드스타트~~ → 2026-09-02 GCE 이전으로 해소됐다.** 이전 후 `https://api.ddona.site/health`가 연속 5회 **0.134~0.141초로 균일**하다(Cloud Run 중앙값 6.9초). 아래는 그때의 진단 기록이며, 같은 방법이 다른 콜드스타트 조사에 재사용 가능하다.
+- **(옛 기록) Cloud Run 콜드스타트**: min-instances가 0이라(minScale 어노테이션 없음) 트래픽이 뜸하면 20~30분 만에도 스케일다운되고, 하루에 여러 번 콜드스타트가 난다. 필요 시 min-instances=1(무료 벗어남 — `cpu-throttling=false`라 idle 시간도 전부 과금).
   - **비용은 이미지 pull이 아니라 `import api.main`에 있다**(2026-09-01 실측, 같은 이미지로 임시 probe 서비스를 띄워 컨테이너 진입 시각을 찍어 확인): 컨테이너 생성+pull은 **0.13~0.19초**뿐이고 나머지 전부가 python 부팅+import다. Cloud Run이 이미지를 **lazy loading으로 스트리밍**하기 때문에 pull 비용이 사라진 게 아니라 import가 실제로 읽는 파일에만, 그 시점에 네트워크 페치로 지불된다. **그래서 이미지 크기(353MB)를 깎는 건 효과가 없고, "import가 읽는 바이트/모듈 수"를 줄이는 것만 효과가 있다** — 같은 import가 로컬 1 vCPU 컨테이너(페이지캐시 있음)에선 1.6초, Cloud Run에선 11.6초였다.
   - 실측 개선: `google.genai`와 Pillow를 기동 경로에서 들어내(`llm/gemini_image.py` 분리 + `get_llm_client()`/`image_processing.py`/`cloudflare_image.py`의 함수 내 import) import가 읽는 양이 72.6MB/1534모듈 → 46.6MB/960모듈로 줄었고, 콜드스타트 중앙값이 **11.6초 → 6.9초**가 됐다(각 3회, 범위 10.5~14.2 → 6.0~7.0). 남은 몫은 sqlalchemy 12MB·asyncpg 10.5MB·pydantic_core 4.3MB로 전부 기동에 실제로 필요한 것들이다.
   - 진단이 다시 필요하면 이 방법을 재사용할 것: 프로덕션 이미지 그대로 `gcloud run deploy <probe> --command=sh --args='^|^-c|echo "[boot] container-entry"; exec uvicorn api.main:app --host 0.0.0.0 --port 8000'`로 비공개 probe 서비스를 띄우면, 로그의 `Starting new instance` → `[boot] container-entry` → `Started server process` 세 줄이 pull/import를 갈라준다. 리비전을 새로 올릴 때마다(`--update-env-vars`로 충분) 콜드스타트를 강제할 수 있다.
@@ -244,6 +340,12 @@ Neon은 SSL 필수지만, `DATABASE_URL`을 `postgresql+asyncpg://...?ssl=requir
 
 ## 7. image-gen 병합 (완료, 2026-07-28)
 main 병합 + 배포 완료. Gemini 이미지 모델은 무료 티어 quota 0이라 **Cloudflare Workers AI**(FLUX.1-schnell/SDXL)로 교체해서 씀 — `GEMINI_IMAGE_MODEL_NAME`은 더 이상 안 쓰임, `CLOUDFLARE_ACCOUNT_ID`/`CLOUDFLARE_API_TOKEN`이 대신 필요(§2-1에 추가함). 생성 이미지는 R2에 저장.
+
+**2026-09-01 UI 차단 → 2026-09-02 해제.** Cloud Run의 request-based 과금(`--cpu-throttling`)에서는
+응답 뒤 `asyncio.create_task`로 도는 생성 잡이 CPU 회수 구간에 걸려 `running`에 멈췄고, 그래서
+프론트에서 버튼을 한시적으로 막았었다(`apps/web/.../generate-images/model/availability.ts`).
+**GCE 이전으로 스로틀링이 사라져 잡이 완주하는 것을 실측 확인**(status `succeeded`, R2에 283KB
+JPEG 저장)한 뒤 그 플래그 파일과 소비처 분기를 **삭제**했다 — 되돌릴 스위치가 아니라 없어진 문제다.
 
 ---
 

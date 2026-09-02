@@ -19,6 +19,12 @@
 
 이게 하는 일: `docker-compose.dev.yml`(Postgres·Redis·moto S3 + 버킷/CORS 자동 생성) 기동 → 없으면 `.env` 생성 → `uv sync` → `alembic upgrade head` → 샘플 캐릭터 시드.
 
+> ⚠️ **Postgres 16 → 18로 올린 뒤 처음 받았다면 볼륨을 한 번 지워야 합니다**(2026-09-02, 운영 GCE VM과 메이저를 맞춘 변경). 메이저가 다르면 기존 `pgdata`를 그대로 못 읽고, 18부터는 데이터 위치도 `/var/lib/postgresql/data`에서 버전별 하위 디렉터리로 바뀌었습니다.
+> ```sh
+> docker compose -f docker-compose.dev.yml down -v && ./dev-up.sh
+> ```
+> 로컬 개발 DB만 사라지고 시드는 `dev-up.sh`가 다시 채웁니다. **손으로 만든 대화방·업로드는 복구되지 않으니** 남길 게 있으면 먼저 덤프하세요. Redis도 8로 올렸지만 볼륨이 없어 아무 조치가 필요 없습니다.
+
 > 처음이라면 `apps/api/.env`를 열어 `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `GEMINI_API_KEY`를 채운 뒤 `./dev-up.sh`를 한 번 더 실행하세요. (나머지 값 — DB/Redis/S3/AWS 더미 자격증명 — 은 로컬 기본값으로 이미 채워져 있습니다.)
 
 ## 2) 서버 기동 (각각 별도 터미널)
@@ -179,8 +185,8 @@ uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rd
 
 | 서비스 | 포트 | 비고 |
 |---|---|---|
-| Postgres | 5432 | 볼륨(`pgdata`)으로 데이터 유지 |
-| Redis | 6379 | 세션·이메일코드·미리보기세션(휘발성) |
+| Postgres 18 | 5432 | 볼륨(`pgdata`)으로 데이터 유지. 운영 GCE VM과 같은 메이저다 |
+| Redis 8 | 6379 | 세션·이메일코드·미리보기세션(휘발성). 볼륨 없음 |
 | moto (S3 호환) | 5001 | **인메모리** — 컨테이너 재생성 시 업로드 객체 소실 (macOS 5000=AirPlay 회피) |
 | API | 8000 | `uv run --env-file .env uvicorn ...` |
 | web | 5173 | 기본 다크 |

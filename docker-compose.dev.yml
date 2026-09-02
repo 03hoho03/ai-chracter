@@ -8,14 +8,19 @@ name: ai-character-chat-dev
 
 services:
   postgres:
-    image: postgres:16-alpine
+    # 운영(GCE VM)과 같은 메이저여야 한다 — 운영 덤프를 로컬에서 복원해 볼 수 있어야 하고,
+    # pg_dump 는 자기보다 높은 버전의 서버를 거부한다.
+    image: postgres:18-alpine
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: ai_character_chat
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # ⚠️ 18+ 는 `/var/lib/postgresql/data` 가 아니라 버전별 하위 디렉터리
+      # (`/var/lib/postgresql/18/docker`)를 쓴다. 17 이하 관례대로 `/data` 에 걸면 이미지가
+      # 그걸 "쓰이지 않는 마운트"로 보고 기동을 거부한다(실측).
+      - pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d ai_character_chat"]
       interval: 3s
@@ -23,7 +28,8 @@ services:
       retries: 20
 
   redis:
-    image: redis:7-alpine
+    # 운영과 같은 메이저. dev Redis 에는 볼륨이 없어(데이터 휘발) 올리는 비용이 0이다.
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     healthcheck:
