@@ -1,0 +1,97 @@
+# GCE VM 운영 스택 — Caddy(HTTPS) + API + Postgres 18 + Redis 8.
+#
+#   docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d
+#
+# `docker-compose.dev.yml` 과 목적이 다르다: dev 는 인프라만 띄우고 앱은 호스트에서 돌리지만,
+# 여기서는 **앱까지 컨테이너로** 올리고 외부에 열리는 포트는 Caddy 의 80/443 뿐이다.
+#
+# 필요한 env(전부 `/opt/ddona/.env`):
+#   API_IMAGE            배포할 이미지(태그는 커밋 SHA). 롤백은 이 한 줄을 되돌리고 `up -d`.
+#   SITE_ADDRESS         `api.ddona.site` (로컬 검증은 `http://localhost`)
+#   POSTGRES_PASSWORD    아래 postgres 와 DATABASE_URL 양쪽이 같은 값을 봐야 한다
+#   POSTGRES_DB
+#   그리고 앱 런타임 env 17개(Cloud Run 에서 그대로 옮긴 것) — `env_file` 로 api 에 주입된다.
+name: ddona
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # ⚠️ 이 볼륨이 없으면 재시작마다 인증서를 새로 발급받다가 Let's Encrypt 레이트리밋에 걸린다.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+
+  api:
+    image: ${API_IMAGE}
+    restart: unless-stopped
+    # 포트를 게시하지 않는다 — Caddy 만 이 서비스에 닿는다.
+    env_file:
+      - ${DDONA_ENV_FILE:-/opt/ddona/.env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      # 이미지에 curl/wget 이 없다(python slim). 파이썬으로 직접 찌른다.
+      # `/health` 는 DB·Redis 를 건드리지 않으므로 이 체크는 앱 프로세스 생존만 본다.
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+
+  postgres:
+    # Neon 이 18.6(실측)이라 18 미만이면 덤프 복원이 거부된다.
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      # ⚠️ 18+ 는 `/var/lib/postgresql/data` 가 아니라 **버전별 하위 디렉터리**
+      # (`/var/lib/postgresql/18/docker`)에 데이터를 둔다. 17 이하의 관례대로 `/data` 에 볼륨을
+      # 걸면 이미지가 그걸 "쓰이지 않는 마운트"로 보고 기동을 거부한다(실측). 부모에 걸어야
+      # 버전 디렉터리째 볼륨 안에 들어가고, 나중에 pg_upgrade 도 마운트 경계에 걸리지 않는다.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    # Upstash 가 8.4.0 이고 그게 만든 DUMP 는 redis 7 에서 거부된다(실측) — 백업 스냅샷을
+    # 되살릴 여지를 남기려면 8 이어야 한다.
+    image: redis:8-alpine
+    restart: unless-stopped
+    # 세션이 여기 산다. 기본 RDB 스냅샷만으로는 VM 재부팅 때 마지막 몇 분이 날아가
+    # 사용자가 로그아웃된다 — AOF 를 켜서 재시작을 넘겨 살아남게 한다.
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  pgdata:
+  redisdata:
+  caddy_data:
+  caddy_config:
