@@ -34,9 +34,25 @@
 | 방화벽 | 80·443 공개 / 22는 IAP 대역(`35.235.240.0/20`)만 |
 | 백업 | 매일 18:00 UTC → `s3://ai-chracter-chat/backup/daily/`, 7일 + 4주 보관 |
 
-**옛 스택은 지우지 않았다**: Cloud Run(`ai-character-chat-api`)은 `allUsers` 인보커를 떼어 **403**
-상태로 남아 있고, Neon·Upstash도 그대로다. Cloud Build 트리거 `ai-chat-deploy`는 비활성화했다.
-⚠️ **롤백하면 컷오버(2026-09-02 08:45 UTC) 이후 VM에 쌓인 데이터는 없다** — Neon은 그 시점에 멈춰 있다.
+**옛 스택은 정리했다(2026-09-02).** Cloud Run 서비스 `ai-character-chat-api`와 옛 프로젝트의
+Artifact Registry(`cloud-run-source-deploy`, 1.36GB)를 삭제했고, Neon·Upstash도 콘솔에서 지웠다.
+Cloud Build 트리거 `ai-chat-deploy`는 비활성화 상태로 남아 있다(실행 대상이 없어 무해).
+
+⚠️ **즉시 롤백 스위치는 이제 없다.** 삭제 전 최종본을 R2에 박아뒀고 그게 유일한 복구 경로다:
+```
+s3://ai-chracter-chat/backup/archive/neon-final-20260902.dump      # 29테이블 1,732행
+s3://ai-chracter-chat/backup/archive/upstash-final-20260902.jsonl  # 세션 7키
+```
+`archive/` 는 **7일/4주 순환 대상이 아니다**(`backup_db.py` 의 prune 은 `daily/`·`weekly/` 만 본다).
+복구는 "VM 재구축 → compose → 복원"이며 시간이 걸린다 — 상시 백업은 `backup/daily/` 쪽이다.
+
+### 0-2. 안 쓰는데 남아 있는 것
+
+| 대상 | 상태 | 비고 |
+|---|---|---|
+| GCP 프로젝트 `ai-character-chat-501906` | 유지 | **Google OAuth 클라이언트가 여기 있다**(§1-5) — 지우면 로그인이 죽는다 |
+| Cloud Build 트리거 `ai-chat-deploy` | 비활성화 | 대상이 사라져 무해. 되살리려면 §3-4의 PATCH 방법 |
+| Cloudflare Pages web/admin | **현역** | FE는 여전히 `*.pages.dev`다 |
 
 ---
 
