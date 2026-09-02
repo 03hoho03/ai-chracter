@@ -13,10 +13,15 @@ const chatMessageSchema = z.object({
   id: z.string(),
   role: z.union([z.literal("user"), z.literal("assistant")]),
   content: z.string(),
-  // 상황별 이미지 매칭 결과(캐릭터 챗 전용) — 스토리 챗에서는 항상 undefined
-  imageId: z.string().optional(),
-  // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정)
-  imageUrl: z.string().optional(),
+  // 상황별 이미지 매칭 결과(캐릭터 챗 전용). **`.nullish()`여야 한다** — 매칭이 없을 때 서버는
+  // 키를 빼는 게 아니라 `null`을 실어 보낸다(`ChatMessageResponse.image_id`의 기본값이 `None`이고
+  // pydantic이 그대로 직렬화한다). `.optional()`이면 `done` 이벤트가 통째로 파싱에 실패해
+  // **답변이 화면에 찍히다가 사라진다** — token은 통과해 글자가 흐르는데 done이 튕겨
+  // finalMessage가 커밋되지 않고 스트리밍 버퍼만 비워지기 때문이다(2026-09-02 프로덕션 실측).
+  // `packages/api-types`의 codegen은 처음부터 `imageId?: string | null`이라고 적고 있었다.
+  imageId: z.string().nullish(),
+  // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정). 같은 이유로 nullish.
+  imageUrl: z.string().nullish(),
   createdAt: z.string(),
 });
 
