@@ -1,0 +1,92 @@
+# BE 자동배포 — main push → 이미지 빌드/푸시 → GCE VM에서 교체.
+#
+# Cloud Run 시절의 Cloud Build 트리거(`apps/api/cloudbuild.yaml`)를 대체한다. 그 트리거는
+# 비활성화해 뒀고 삭제하지는 않았다.
+#
+# **비밀값이 없다.** Workload Identity Federation 으로 GitHub 이 발급한 OIDC 토큰을 GCP 가 직접
+# 검증하므로 서비스계정 키를 GitHub 에 저장하지 않는다(애초에 조직 정책
+# `iam.disableServiceAccountKeyCreation` 이 키 발급 자체를 막는다). 아래 두 값은 비밀이 아니라
+# 식별자라 그대로 커밋한다. 저장소가 public 이어도 무방하다 — 신뢰 경계는 GCP 쪽
+# `attribute-condition`(`assertion.repository == '03hoho03/ai-chracter'`)이 잡는다.
+
+name: deploy-api
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/api/**"
+      # VM 은 compose·Caddyfile 을 git 에서 받아가므로 이 둘도 배포 트리거다.
+      - "docker-compose.prod.yml"
+      - "Caddyfile"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch: # 롤백·재배포용 수동 실행
+
+# `pull_request` 를 트리거에 넣지 않는다 — 저장소가 public 이라 포크 PR 이 배포 권한을 얻으면 안 된다.
+concurrency:
+  group: deploy-api
+  cancel-in-progress: false # 배포 도중 취소하면 VM 이 어중간한 상태로 남는다
+
+env:
+  PROJECT_ID: ddona-ai-character-chat
+  REGION: asia-northeast3
+  ZONE: asia-northeast3-a
+  INSTANCE: ddona-api
+  IMAGE: asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # OIDC 토큰 발급에 필요하다. 없으면 WIF 인증이 실패한다.
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: projects/377499972563/locations/global/workloadIdentityPools/github/providers/github-oidc
+          service_account: ddona-deployer@ddona-ai-character-chat.iam.gserviceaccount.com
+
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Artifact Registry 인증
+        run: gcloud auth configure-docker ${{ env.REGION }}-docker.pkg.dev --quiet
+
+      - name: 이미지 빌드 · 푸시
+        working-directory: apps/api
+        # 러너가 amd64 라 VM 과 아키텍처가 같다 — 크로스 빌드가 필요 없다(맥에서 손으로 밀 때만 필요).
+        # SHA 태그가 롤백 단위이고, latest 는 사람이 최신을 찾을 때만 쓴다.
+        run: |
+          docker build -t "$IMAGE:${GITHUB_SHA::7}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${GITHUB_SHA::7}"
+          docker push "$IMAGE:latest"
+
+      - name: VM 에 배포
+        # IAP 터널로 들어간다 — VM 의 22번은 인터넷에 열려 있지 않다(IAP 대역만 허용).
+        # `--command` 안에서 태그를 확장하지 않도록 env 로 넘긴다.
+        run: |
+          gcloud compute ssh "$INSTANCE" --zone="$ZONE" --tunnel-through-iap --quiet \
+            --command="TAG='${GITHUB_SHA::7}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/ddona/app
+          # compose·Caddyfile 변경을 받아온다. 로컬 수정본은 버린다 — 형상은 git 이 단일 소스다.
+          git fetch --depth=1 origin main
+          git reset --hard origin/main
+          # 이미지 태그만 갈아끼운다. 롤백은 이 줄을 예전 SHA 로 되돌리고 다시 up 하면 끝이다.
+          sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:${TAG}|" /opt/ddona/.env
+          C="docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
+          $C pull api
+          $C up -d --wait api caddy
+          $C ps --format 'table {{.Service}}\t{{.Status}}'
+          REMOTE
+
+      - name: 배포 검증
+        # 컨테이너가 떴다는 것과 인터넷에서 응답한다는 것은 다른 주장이다. 밖에서 확인한다.
+        run: |
+          for i in $(seq 1 12); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 https://api.ddona.site/health || true)
+            [ "$code" = "200" ] && echo "✅ /health 200" && exit 0
+            echo "  대기 ${i}/12 (HTTP ${code})"; sleep 5
+          done
+          echo "::error::배포 후 /health 가 200 이 아니다"; exit 1
