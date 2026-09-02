@@ -64,10 +64,15 @@ jobs:
 
       - name: VM 에 배포
         # IAP 터널로 들어간다 — VM 의 22번은 인터넷에 열려 있지 않다(IAP 대역만 허용).
-        # `--command` 안에서 태그를 확장하지 않도록 env 로 넘긴다.
+        #
+        # **전부 sudo 로 돈다.** OS Login 은 접속 주체마다 별도 POSIX 사용자를 만들기 때문에,
+        # `/opt/ddona` 를 특정 사람 계정 소유로 두면 배포 서비스계정이 git("dubious ownership")·
+        # docker·`.env`(0600) 어느 것에도 손대지 못한다. 그래서 운영 상태는 root 소유로 두고
+        # 배포는 sudo 로 한다 — 어차피 배포 주체는 실행 중인 이미지를 갈아끼울 수 있으므로
+        # 여기서 root 를 주는 것이 권한을 실질적으로 넓히지는 않는다.
         run: |
           gcloud compute ssh "$INSTANCE" --zone="$ZONE" --tunnel-through-iap --quiet \
-            --command="TAG='${GITHUB_SHA::7}' bash -s" <<'REMOTE'
+            --command="sudo TAG='${GITHUB_SHA::7}' bash -s" <<'REMOTE'
           set -euo pipefail
           cd /opt/ddona/app
           # compose·Caddyfile 변경을 받아온다. 로컬 수정본은 버린다 — 형상은 git 이 단일 소스다.
