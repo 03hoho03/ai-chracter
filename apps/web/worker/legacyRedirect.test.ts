@@ -18,7 +18,7 @@ describe("buildLegacyRedirect", () => {
   it("옛 프로덕션 host의 루트를 새 오리진으로 넘긴다", () => {
     const response = buildLegacyRedirect(new Request(`https://${LEGACY_HOST}/`), createEnv());
 
-    expect(response?.status).toBe(302);
+    expect(response?.status).toBe(301);
     expect(response?.headers.get("location")).toBe("https://ddona.site/");
   });
 
@@ -33,10 +33,12 @@ describe("buildLegacyRedirect", () => {
     );
   });
 
-  it("302에는 no-store를 붙인다 — 301로 올리기 전까지 되돌릴 수 있어야 한다", () => {
+  // 302 단계에서는 `no-store`가 "되돌릴 수 있다"를 보장했다. 301로 올린 지금은 캐시되는 것이
+  // 목적이므로(서치콘솔 주소 변경이 301을 요구한다) 그 헤더가 남아 있으면 안 된다.
+  it("301에는 no-store를 붙이지 않는다 — 캐시되는 것이 목적이다", () => {
     const response = buildLegacyRedirect(new Request(`https://${LEGACY_HOST}/`), createEnv());
 
-    expect(response?.headers.get("cache-control")).toBe("no-store");
+    expect(response?.headers.get("cache-control")).toBeNull();
   });
 
   it("HEAD 요청도 넘긴다 — 크롤러가 HEAD를 보낸다", () => {
@@ -45,7 +47,7 @@ describe("buildLegacyRedirect", () => {
       createEnv(),
     );
 
-    expect(response?.status).toBe(302);
+    expect(response?.status).toBe(301);
   });
 
   it("프리뷰 배포는 넘기지 않는다 — 접미사가 같아도 host가 다르다", () => {

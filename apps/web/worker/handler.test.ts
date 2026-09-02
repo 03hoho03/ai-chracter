@@ -485,7 +485,7 @@ describe("handleRequest", () => {
         cache: NOOP_CACHE,
       });
 
-      expect(response.status).toBe(302);
+      expect(response.status).toBe(301);
       expect(response.headers.get("location")).toBe("https://ddona.example/assets/app.js");
       expect(env.assetFetch).not.toHaveBeenCalled();
     });
@@ -495,7 +495,7 @@ describe("handleRequest", () => {
         cache: NOOP_CACHE,
       });
 
-      expect(response.status).toBe(302);
+      expect(response.status).toBe(301);
       expect(response.headers.get("location")).toBe("https://ddona.example/sitemap.xml");
     });
 
@@ -504,7 +504,7 @@ describe("handleRequest", () => {
         cache: NOOP_CACHE,
       });
 
-      expect(response.status).toBe(302);
+      expect(response.status).toBe(301);
     });
 
     it("프리뷰 배포는 평소대로 서빙한다", async () => {

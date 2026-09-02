@@ -18,8 +18,13 @@ const LEGACY_PRODUCTION_HOST = "ai-character-chat-web.pages.dev";
  * 폴백하므로 여기서 쓰면 **자기 자신으로 리다이렉트하는 무한 루프**가 된다. 그래서 환경변수를
  * 직접 읽고, 목적지가 다시 옛 host가 되는 두 경우(미설정 · 교체 전 값)에는 리다이렉트하지 않는다.
  *
- * 상태코드가 302인 동안에는 `Cache-Control: no-store`를 함께 준다 — 301로 올리기 전에
- * host 매칭을 실측할 수 있어야 하고, 브라우저가 302를 캐시해 버리면 그 되돌림 가능성이 사라진다.
+ * **301이다.** 처음엔 302 + `Cache-Control: no-store`로 배포해 host 매칭을 프로덕션에서 실측한 뒤
+ * (프로덕션 host만 302, 살아 있는 프리뷰 배포는 200) 2026-09-02에 승격했다. 서치콘솔의 주소 변경
+ * 도구가 301을 요구하는 것이 승격의 직접 이유다.
+ *
+ * ⚠️ **이제 되돌리기 어렵다.** 브라우저는 301을 오래 캐시하므로 분기를 지워도 이미 방문한
+ * 브라우저는 한동안 새 도메인으로 간다. 되돌려야 한다면 코드를 지우는 것만으로는 부족하고,
+ * 새 도메인을 계속 살려 두는 것이 유일한 실질적 복구 경로다.
  */
 export function buildLegacyRedirect(request: Request, env: WorkerEnv): Response | undefined {
   const url = new URL(request.url);
@@ -37,8 +42,5 @@ export function buildLegacyRedirect(request: Request, env: WorkerEnv): Response 
   }
   if (target.host === LEGACY_PRODUCTION_HOST) return undefined;
 
-  return new Response(null, {
-    status: 302,
-    headers: { location: target.href, "cache-control": "no-store" },
-  });
+  return new Response(null, { status: 301, headers: { location: target.href } });
 }
