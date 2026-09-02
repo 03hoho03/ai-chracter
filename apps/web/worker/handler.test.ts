@@ -469,4 +469,53 @@ describe("handleRequest", () => {
     expect(await shell.text()).toBe("/index.html");
     expect(await asset.text()).toBe("/assets/app.js");
   });
+
+  // 배선 위치 검사다. 판별 규칙 자체는 legacyRedirect.test.ts가 본다.
+  describe("옛 도메인 리다이렉트", () => {
+    const LEGACY = "https://ai-character-chat-web.pages.dev";
+
+    function legacyEnv() {
+      return createEnv({ PUBLIC_ORIGIN: "https://ddona.example" });
+    }
+
+    it("정적 자산도 넘긴다 — 자산 검사보다 앞에 있어야 한다", async () => {
+      const env = legacyEnv();
+
+      const response = await handleRequest(new Request(`${LEGACY}/assets/app.js`), env, {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("https://ddona.example/assets/app.js");
+      expect(env.assetFetch).not.toHaveBeenCalled();
+    });
+
+    it("Worker가 만드는 경로(/sitemap.xml)도 넘긴다", async () => {
+      const response = await handleRequest(new Request(`${LEGACY}/sitemap.xml`), legacyEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe("https://ddona.example/sitemap.xml");
+    });
+
+    it("앱에 없는 경로도 404가 아니라 리다이렉트다", async () => {
+      const response = await handleRequest(new Request(`${LEGACY}/없는경로`), legacyEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(302);
+    });
+
+    it("프리뷰 배포는 평소대로 서빙한다", async () => {
+      const response = await handleRequest(
+        new Request(`https://a1b2c3d4.ai-character-chat-web.pages.dev/login`),
+        legacyEnv(),
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("/index.html");
+    });
+  });
 });
