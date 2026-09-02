@@ -469,7 +469,7 @@ curl -s -A "Googlebot/2.1" $ORIGIN/content/character/<id> | grep -o "<title>.*</
 1. **속성 추가** — [search.google.com/search-console](https://search.google.com/search-console) → 속성 추가 → **URL 접두어**에 `https://ai-character-chat-web.pages.dev` (`pages.dev`는 DNS를 우리가 못 만지므로 도메인 속성은 불가)
 2. **소유권 확인 — HTML 태그** — 발급된 `<meta name="google-site-verification" content="..." />`를 `apps/web/index.html`의 `<head>`에 넣고 커밋 → main push로 배포된 뒤 "확인" 클릭
    - **봇 요청에서도 이 태그는 살아남는다** — `injectHead`(`worker/html.ts`)는 자기가 주입하는 키(title·description·og:*·canonical·robots)와 같은 키의 태그만 지우고 `name:google-site-verification`은 건드리지 않는다. 확인용 fetch는 `Google-Site-Verification` UA라 애초에 봇 분기에도 안 걸린다.
-   - HTML 파일 업로드 방식을 쓰려면 파일을 `apps/web/public/`에 커밋해야 한다(확장자가 있어 정적 자산으로 나간다). 태그 쪽이 파일을 안 남겨 더 낫다.
+   - ⚠️ **HTML 파일 업로드 방식은 `apps/web/public/`에 커밋해도 동작하지 않는다.** 이 문서가 오랫동안 "확장자가 있어 정적 자산으로 나간다"고 적어 뒀는데 **틀렸다**(2026-09-02 실측). `dist/`까지는 복사되지만 Pages 자산 서버가 클린 URL 정책으로 `/foo.html` → `/foo`를 **308**로 돌려주고(`env.ASSETS.fetch()`가 그 308을 그대로 준다), 확장자가 사라진 경로는 `KNOWN_ROUTES`에 없어 우리 Worker가 **404**를 준다. 검증기는 `.html` URL을 치므로 실패한다. **파일 방식이 필요하면 `worker/siteVerification.ts`에 경로와 본문을 등록한다**(자산 검사보다 앞에서 Worker가 직접 응답한다).
 3. **sitemap 제출** — 색인 생성 → Sitemaps → `sitemap.xml` 입력 후 제출
 4. **URL 검사로 캐릭터 페이지 1개 색인 요청** — 캐릭터 상세 URL(`/content/character/{id}`) 하나를 URL 검사 → **게재된 URL 테스트** → **테스트한 페이지 보기 → HTML**에서 `<title>`에 캐릭터 이름이 들어갔는지 확인한 뒤 "색인 생성 요청". 순서가 중요하다 — "색인 생성 요청"은 구글이 이미 가진 버전을 쓰고, 라이브 HTML을 새로 가져오는 건 "게재된 URL 테스트"뿐이다.
    - **이 라이브 테스트는 `Googlebot`이 아니라 `Google-InspectionTool` UA로 온다**(리치 결과 테스트도 같다). `worker/crawler.ts`의 토큰 목록에 `google-inspectiontool`이 들어 있어야 주입된 HTML이 보인다 — 빠뜨리면 **실제 색인은 멀쩡한데 확인 도구에서만 주입 전 HTML이 보여** 기능이 고장난 것처럼 읽힌다(2026-08-20에 실제로 겪음).

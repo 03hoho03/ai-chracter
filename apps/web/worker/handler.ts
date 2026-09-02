@@ -8,6 +8,7 @@ import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
 import { handleProfileMeta, parseProfilePath } from "./profileMeta";
 import { handleRobots } from "./robots";
 import { isKnownRoute } from "./routes";
+import { handleSiteVerification } from "./siteVerification";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./workerRuntime";
 
@@ -65,6 +66,11 @@ async function routeRequest(
   if (url.pathname.startsWith(OG_IMAGE_PATH_PREFIX)) {
     return handleOgImage(request, env, deps);
   }
+
+  // 소유확인 파일도 자산 검사보다 앞이다 — ASSETS로 넘기면 Pages가 `.html`을 떼는 308을 주고
+  // 확장자가 사라진 경로는 KNOWN_ROUTES 밖이라 404가 된다(`siteVerification.ts` 참고).
+  const verification = handleSiteVerification(url.pathname);
+  if (verification !== undefined) return verification;
 
   if (isStaticAssetPath(url.pathname)) {
     return env.ASSETS.fetch(request);
