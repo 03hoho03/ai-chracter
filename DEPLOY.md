@@ -14,11 +14,18 @@
 | PostgreSQL 18 | VM 컨테이너 (볼륨 `pgdata`) | 내부 전용 |
 | Redis 8 | VM 컨테이너 (AOF, 볼륨 `redisdata`) | 내부 전용 |
 | 오브젝트 스토리지 (자산·생성 이미지·**DB 백업**) | **Cloudflare R2** | `https://<accountid>.r2.cloudflarestorage.com` |
-| FE web / admin (정적 SPA) | **Cloudflare Pages** | `https://<proj>.pages.dev` |
+| FE web (정적 SPA) | **Cloudflare Pages** | `https://ddona.site` |
+| FE admin (정적 SPA) | **Cloudflare Pages** | `https://admin.ddona.site` |
 
-**FE는 아직 `*.pages.dev`다.** BE만 커스텀 도메인으로 옮겼으므로 여전히 크로스사이트이고,
-그래서 §4의 `SESSION_COOKIE_SAMESITE=none`은 **계속 필요하다**. FE까지 `ddona.site`로 모으면
-`lax`로 되돌릴 수 있다(별건, §8-5).
+**FE도 `ddona.site`로 모였다(2026-09-02).** 존은 Cloudflare, 등록은 가비아 그대로다.
+옛 `*.pages.dev`는 계속 살아 있고, web은 Worker가 새 도메인으로 넘긴다
+(`apps/web/worker/legacyRedirect.ts` — **지금은 302다**, 전수 검증 후 301로 올린다).
+**admin의 옛 주소는 넘기지 않는다** — admin은 `_worker.js`가 없는 정적 SPA라 host 조건을 걸 자리가
+없다(`_redirects`는 경로만 본다).
+
+FE·BE가 같은 등록가능 도메인(`ddona.site`)에 모였으므로 §4의 `SESSION_COOKIE_SAMESITE`를
+`lax`로 되돌릴 수 있다 — **아직 `none`이다.** 옛 `pages.dev` 두 곳이 살아 있는 동안 바꾸면
+그쪽 로그인이 즉시 죽는다. 절차와 순서는 `tasks/plan-domain-cutover-ddona.md`.
 
 ### 0-1. GCE 이전 후 실제 값 (2026-09-02)
 
@@ -27,7 +34,7 @@
 | GCP 프로젝트 | `ddona-ai-character-chat` (번호 377499972563, 계정 `ghwjd321@gmail.com`) |
 | VM | `ddona-api` / `asia-northeast3-a` / e2-medium / Ubuntu 24.04 / 30GB |
 | 고정 IP | `34.64.43.39` (`ddona-api-ip`) |
-| DNS | 가비아. `api.ddona.site` A → 위 IP, TTL 600 |
+| DNS | **Cloudflare**(2026-09-02 가비아에서 NS 이관, 등록기관은 가비아 그대로). `api` A → 위 IP, **DNS only(회색 구름)** |
 | HTTPS | Caddy 자동 발급(Let's Encrypt). `Caddyfile`은 저장소 루트 |
 | 이미지 저장소 | `asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api` |
 | VM 상의 형상 | `/opt/ddona/app`(git checkout) · `/opt/ddona/.env`(0600) · **전부 root 소유** |
@@ -46,13 +53,31 @@ s3://ai-chracter-chat/backup/archive/upstash-final-20260902.jsonl  # 세션 7키
 `archive/` 는 **7일/4주 순환 대상이 아니다**(`backup_db.py` 의 prune 은 `daily/`·`weekly/` 만 본다).
 복구는 "VM 재구축 → compose → 복원"이며 시간이 걸린다 — 상시 백업은 `backup/daily/` 쪽이다.
 
+### 0-1-1. 이전 때 고른 것과 그 이유 (2026-09-02)
+
+되짚을 일이 반드시 생기므로 남긴다. **결과가 아니라 근거**다 — 값이 궁금하면 §0-1을 본다.
+
+| 갈림길 | 고른 것 | 근거 |
+|---|---|---|
+| HTTPS | **Caddy + 도메인** | Let's Encrypt 자동 갱신. Tailscale Funnel은 검증 단계용이라 최종형을 두 번 만들게 된다 |
+| DB·Redis 위치 | **둘 다 VM 컨테이너** | 앱↔DB 네트워크 홉 0(전엔 서울↔싱가포르). 대가로 백업이 전적으로 우리 책임이 되어 **백업을 1단계로 앞당겼다** |
+| **Redis 데이터** | **옮기지 않음** | 전부 TTL 있는 휘발성이고, 이관하면 버전 호환·TTL 보존 등 실패 지점이 늘어난다. 대가는 **컷오버 시 전원 로그아웃**(예정된 동작이지 버그가 아니다). 스냅샷만 R2에 남겼다 |
+| 컷오버 | **짧은 계획 다운타임** | 쓰기 차단 → 최종 덤프 → 복원 순서라 **유실 창이 구조적으로 0**이다. 논리 복제는 이 규모에 과하다 |
+| 배포 인증 | **Workload Identity Federation** | 원래 계획은 SA 키였는데 조직 정책이 키 발급을 막았다. 결과적으로 낫다 — **GitHub에 만료 없는 자격증명이 없다** |
+| VM 파일 소유 | **root + sudo 배포** | OS Login은 접속 주체마다 POSIX 사용자가 달라, 사람 계정 소유로 두면 배포 SA가 git·docker·`.env` 셋 다 막힌다 |
+| 백업 위치 | **자산 버킷의 `backup/`** | 기존 R2 토큰이 그 버킷 전용이라 새 토큰 없이 쓰려면 이 방법뿐. 대신 prune이 백업 파일명 형태에 **정확히** 맞는 것만 지우게 해 자산과 격리했다 |
+| `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·배포 검증이 의존). 자원 장애 감지는 `/ready`가 맡는다 |
+
+**기각한 것**: Caddy `flush_interval -1`(있으나 없으나 SSE 도착 간격이 같아 근거가 성립하지 않았다) ·
+전용 백업 버킷(토큰 비용 대비 이득이 작았고, CORS 우려는 애초에 틀린 근거였다 — R2 CORS는 읽기 권한을 주지 않는다).
+
 ### 0-2. 안 쓰는데 남아 있는 것
 
 | 대상 | 상태 | 비고 |
 |---|---|---|
 | GCP 프로젝트 `ai-character-chat-501906` | 유지 | **Google OAuth 클라이언트가 여기 있다**(§1-5) — 지우면 로그인이 죽는다 |
 | Cloud Build 트리거 `ai-chat-deploy` | 비활성화 | 대상이 사라져 무해. 되살리려면 §3-4의 PATCH 방법 |
-| Cloudflare Pages web/admin | **현역** | FE는 여전히 `*.pages.dev`다 |
+| Cloudflare Pages web/admin | **현역** | 커스텀 도메인은 `ddona.site`/`admin.ddona.site`. 배포 대상은 그대로 Pages다 |
 
 ---
 
@@ -375,17 +400,24 @@ web 프로젝트 → Settings → Environment variables. **Production과 Preview
 
 | 변수 | 값 | 없으면 |
 |---|---|---|
-| `PUBLIC_ORIGIN` | `https://ai-character-chat-web.pages.dev` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 프로덕션과 중복 콘텐츠가 된다 |
-| `API_BASE_URL` | `https://ai-character-chat-api-612311629427.asia-southeast1.run.app` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
+| `PUBLIC_ORIGIN` | `https://ddona.site` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 프로덕션과 중복 콘텐츠가 된다. **`legacyRedirect`의 목적지이기도 하다** — 비어 있으면 옛 도메인 리다이렉트가 통째로 꺼진다(자기 자신으로 가는 루프를 막는 가드다) |
+| `API_BASE_URL` | `https://api.ddona.site` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
 
 - **`VITE_API_BASE_URL`(§2-2)과 별개다** — 저건 빌드타임에 번들에 박히는 값이고 이건 Worker가 런타임에 읽는다. **둘 다** 필요하다.
 - **Preview에도 `PUBLIC_ORIGIN`은 프로덕션 오리진**을 넣는다(프리뷰 URL이 아니라). Worker는 `요청 host ≠ PUBLIC_ORIGIN host`일 때만 `X-Robots-Tag: noindex`를 붙이므로(`worker/indexing.ts`), Preview에서 비어 있으면 프리뷰 색인 차단이 함께 꺼진다.
 - 런타임 변수는 **저장만으로 반영되지 않는다** — 저장 후 재배포(또는 Deployments → 최신 배포 Retry)해야 Worker가 읽는다.
 
 **반영 확인**(재배포 후):
+
+> ⚠️ **`robots.txt`에는 캐시버스터를 붙여야 한다.** `handleRobots`는 캐시 헤더를 안 붙이는데
+> (`worker/robots.ts`) **Cloudflare 엣지가 `.txt`를 기본 4시간 캐시한다**(실측
+> `cf-cache-status: HIT` / `cache-control: max-age=14400`). 그냥 `curl`하면 환경변수 교체 **전**
+> 값이 나와 **검증이 거짓말을 한다** — 2026-09-02 도메인 전환 때 실제로 이걸로 오진했다.
+> 아래처럼 `?cb=$RANDOM`을 붙이거나 Caching → Configuration → Purge Everything을 먼저 누른다.
+
 ```bash
-ORIGIN=https://ai-character-chat-web.pages.dev
-curl -s $ORIGIN/robots.txt | tail -2                          # Sitemap: $ORIGIN/sitemap.xml
+ORIGIN=https://ddona.site
+curl -s "$ORIGIN/robots.txt?cb=$RANDOM" | tail -2             # Sitemap: $ORIGIN/sitemap.xml
 curl -s $ORIGIN/sitemap.xml | grep -c "<loc>"                 # 1 이상
 curl -s -A "Googlebot/2.1" $ORIGIN/ | grep -c 'rel="canonical"'   # 1 (PUBLIC_ORIGIN 확인)
 curl -s -A "Googlebot/2.1" $ORIGIN/content/character/<id> | grep -o "<title>.*</title>"   # 캐릭터 이름 (API_BASE_URL 확인)
@@ -415,10 +447,52 @@ curl -s -A "Googlebot/2.1" $ORIGIN/content/character/<id> | grep -o "<title>.*</
 
 ### 8-5. 커스텀 도메인 전환 체크리스트
 
-1. Pages web 프로젝트에 커스텀 도메인 연결 → **`PUBLIC_ORIGIN`을 새 도메인으로 교체(Production·Preview 양쪽) → 재배포**
-2. **`apps/web/index.html`의 `og:image` 절대 URL을 새 도메인으로 교체** — 홈 og:image만 하드코딩이다(상세·프로필은 Worker가 `PUBLIC_ORIGIN`으로 만든다). 빠뜨리면 홈 공유 미리보기 이미지만 옛 도메인을 가리킨 채 남는다.
-3. BE `CORS_ALLOW_ORIGINS`(§2-1) · Google OAuth redirect URI(§1-5) · R2 CORS(§1-3)에 새 도메인 추가 — 안 하면 로그인·업로드가 죽는다.
-4. 서치콘솔에 **새 속성 추가** + 소유권 확인 → 옛 속성에서 **설정 → 주소 변경**으로 이전 신고.
-   - ⚠️ 주소 변경 도구는 **옛 URL이 새 URL로 301**이어야 통과한다. 커스텀 도메인을 붙여도 `*.pages.dev`는 계속 살아 있으므로 리다이렉트를 따로 걸어야 하고, 지금 Worker에는 그 코드가 없다(별건 작업). **프리뷰 배포까지 같이 301로 날려버리지 않게** 프로덕션 pages.dev host에서만 걸 것.
-5. **sitemap 재제출**(새 속성) + 네이버도 새 사이트로 등록·사이트맵 재제출.
-6. 확인: `curl -s https://<새도메인>/robots.txt`의 `Sitemap:` 줄과 `curl -s -A "Googlebot/2.1" https://<새도메인>/ | grep canonical`이 둘 다 새 도메인이어야 한다.
+**2026-09-02에 `ddona.site`로 실행했다.** 진행 상태와 남은 절차는
+`tasks/plan-domain-cutover-ddona.md` / `tasks/preview-progress.md`에 있고, 여기에는 **다시 하게 될 때
+알아야 할 것**만 남긴다.
+
+1. **DNS: apex를 쓰려면 NS 이관이 사실상 필수다.** Pages의 apex 커스텀 도메인은 존이 Cloudflare에
+   있어야 붙고, 가비아 DNS는 apex CNAME/ALIAS를 주지 않는다. 도메인 등록기관은 가비아 그대로 두는
+   **NS 이관**이면 되고 무료다(레지스트라 이전이 아니다).
+   - ⚠️ **NS를 옮기기 전에 Cloudflare 존에 `api` A 레코드를 먼저 만든다.** 양쪽 NS가 같은 답을 하게
+     해 두면 전환 순간에 BE가 안 끊긴다. 순서를 뒤집으면 NXDOMAIN 구간이 생긴다.
+   - ⚠️ **구름 색이 레코드마다 다르다**: `api`는 **회색(DNS only)** — 주황이면 ACME 챌린지가 막혀
+     Caddy 인증서 **갱신**이 실패한다(발급된 인증서가 살아 있어 **두 달 뒤에** 죽는다).
+     apex·`www`·`admin`은 Pages가 만드는 **주황**이 정답이다.
+   - 프록시 상태는 대시보드 표시가 아니라 **응답으로 확인한다** — `api`가 Cloudflare 애니캐스트
+     IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 그대로 답하면 회색이다.
+2. `PUBLIC_ORIGIN`을 새 도메인으로 교체(**Production·Preview 양쪽**) → **재배포**(저장만으로는 반영 안 됨).
+3. **`apps/web/index.html`의 `og:image` 절대 URL 교체** — 홈 og:image만 하드코딩이다(상세·프로필은
+   Worker가 `PUBLIC_ORIGIN`으로 만든다). 빠뜨리면 홈 공유 미리보기만 옛 도메인을 가리킨 채 남는다.
+4. BE `CORS_ALLOW_ORIGINS`(§2-1)와 R2 CORS(§1-3)에 새 오리진 **추가**(옛 것은 컷오버가 끝날 때까지
+   유지), BE `FRONTEND_BASE_URL`을 새 도메인으로 **교체**.
+   - ⚠️ **Google OAuth 콘솔은 손대지 않는다.** 이 문서가 오랫동안 "OAuth redirect URI에 새 도메인을
+     추가하지 않으면 로그인이 죽는다"고 적어 뒀는데 **근거가 틀렸다** — `redirect_uri`는
+     `api_base_url`에서만 만들어지고(`auth/google_oauth.py`의 `callback_redirect_uri`), FE는 Google에
+     직접 요청하지 않으므로 Authorized JavaScript origins도 필요 없다. **FE 도메인은 OAuth 설정에
+     등장하지 않는다.** 실제로 바꿔야 하는 건 콜백 뒤 되돌려보낼 목적지인 `FRONTEND_BASE_URL`이다.
+   - 검증은 **허용되면 안 되는 오리진까지 함께** 쏜다. 네 오리진 전부 통과했다는 것만으로는
+     검사가 판별하는지 알 수 없다(대조군이 헤더를 못 받아야 비로소 증거가 된다).
+5. **옛 `*.pages.dev` → 새 도메인 리다이렉트는 web Worker가 한다**(`worker/legacyRedirect.ts`).
+   커스텀 도메인을 붙여도 `*.pages.dev`는 계속 살아 있고, 이력서에 낸 링크가 그것이다.
+   - ⚠️ **프로덕션 host 정확 일치로만 건다.** `endsWith`/`includes`는 프리뷰
+     (`<hash>.…pages.dev`)와 브랜치 별칭까지 날려 PR에서 변경분을 볼 수 없게 만든다.
+   - ⚠️ 목적지는 `env.PUBLIC_ORIGIN`을 **직접** 읽는다. `resolvePublicOrigin()`은 값이 없을 때
+     요청 오리진으로 폴백하므로 쓰면 **자기 자신으로 가는 무한 루프**가 된다.
+   - **302로 먼저 배포하고(`Cache-Control: no-store` 동반) 실측한 뒤 301로 올린다.** 301은 브라우저가
+     오래 캐시해 되돌릴 수 없고, no-store가 302 단계의 되돌림 가능성을 가정이 아니라 사실로 만든다.
+   - **admin은 리다이렉트할 자리가 없다** — `_worker.js`가 없는 정적 SPA이고 `_redirects`는 host를
+     못 본다. 옛 admin 주소는 그대로 남고, `SameSite=lax`로 되돌린 뒤에는 거기서 로그인이 안 된다
+     (의도된 결과다).
+6. 서치콘솔 **새 속성 추가** → 옛 속성에서 **설정 → 주소 변경**. 주소 변경 도구는 **301**을 요구하므로
+   5의 승격 뒤에 한다. sitemap 재제출 + 네이버 새 사이트 등록·사이트맵 재제출.
+   - ⚠️ **소유확인 태그를 `index.html`에 하나 더 넣지 말 것.** 같은 `name`의 meta가 둘이 되면 크롤러
+     대부분이 앞의 것만 읽어 **새 속성 확인이 조용히 실패한다**. 구글은 DNS를 이제 우리가 통제하므로
+     **도메인 속성 + DNS TXT**로 확인하면 하위 URL 접두어 속성이 자동 확인된다. 네이버는 DNS 확인이
+     없으므로 **HTML 파일 업로드**(`apps/web/public/`에 커밋)를 쓴다 — 파일명이 달라 충돌하지 않는다.
+     기존 태그는 **지우지 않는다**(옛 속성이 이전 기간 동안 살아 있어야 한다).
+7. FE·BE가 같은 등록가능 도메인에 모였으므로 `SESSION_COOKIE_SAMESITE`를 `lax`로 되돌린다(§4).
+   **코드 변경 0줄** — VM env만 바꾸고 재기동한다. 옛 도메인들이 정리된 **뒤에** 한다.
+8. 확인: `curl -s "https://<새도메인>/robots.txt?cb=$RANDOM"`의 `Sitemap:` 줄과
+   `curl -s -A "Googlebot/2.1" https://<새도메인>/ | grep canonical`이 둘 다 새 도메인이어야 한다
+   (캐시버스터를 빼면 안 되는 이유는 §8-1).

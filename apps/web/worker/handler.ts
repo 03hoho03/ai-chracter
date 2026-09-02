@@ -3,6 +3,7 @@ import { handleContentMeta, parseContentPath } from "./contentMeta";
 import { isCrawler } from "./crawler";
 import { handleHomeMeta, HOME_PATH } from "./homeMeta";
 import { applyIndexingPolicy } from "./indexing";
+import { buildLegacyRedirect } from "./legacyRedirect";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
 import { handleProfileMeta, parseProfilePath } from "./profileMeta";
 import { handleRobots } from "./robots";
@@ -40,6 +41,12 @@ async function routeRequest(
   env: WorkerEnv,
   deps: WorkerDeps,
 ): Promise<Response> {
+  // 옛 도메인은 경로를 가리지 않고 통째로 넘긴다 — 정적 자산 검사보다 **앞**이라야
+  // `/assets/*`·`/sitemap.xml`까지 새 도메인으로 간다. `handleRequest`가 아니라 여기 두는 건
+  // "모든 응답은 applyIndexingPolicy를 통과한다"는 불변식을 깨지 않기 위해서다.
+  const legacyRedirect = buildLegacyRedirect(request, env);
+  if (legacyRedirect !== undefined) return legacyRedirect;
+
   const url = new URL(request.url);
 
   // Worker가 만들어 내는 경로는 정적 자산 검사보다 **먼저** 가로챈다.
