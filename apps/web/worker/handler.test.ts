@@ -470,6 +470,18 @@ describe("handleRequest", () => {
     expect(await asset.text()).toBe("/assets/app.js");
   });
 
+  it("소유확인 파일은 ASSETS로 넘기지 않는다 — 넘기면 Pages가 .html을 떼는 308을 준다", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/naver51990167ef24f88190ab863b33dae806.html"), env, {
+      cache: NOOP_CACHE,
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain("naver-site-verification:");
+    expect(env.assetFetch).not.toHaveBeenCalled();
+  });
+
   // 배선 위치 검사다. 판별 규칙 자체는 legacyRedirect.test.ts가 본다.
   describe("옛 도메인 리다이렉트", () => {
     const LEGACY = "https://ai-character-chat-web.pages.dev";
