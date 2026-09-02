@@ -132,6 +132,21 @@ s3://ai-chracter-chat/backup/archive/upstash-final-20260902.jsonl  # 세션 7키
    ```
 5. 주의: R2 무료 10GB. **생성 이미지(image-gen 기능)가 붙으면 여기부터 병목** — 용량 모니터.
 
+> **현행 CORS 오리진은 `https://ddona.site` · `https://admin.ddona.site` 둘뿐이다**(2026-09-02
+> 도메인 전환 후 옛 `*.pages.dev` 둘 제거). 확인·변경은 대시보드 없이도 된다:
+> ```sh
+> pnpm exec wrangler r2 bucket cors list ai-chracter-chat
+> pnpm exec wrangler r2 bucket cors set ai-chracter-chat --file cors.json
+> ```
+> ⚠️ **wrangler의 파일 형식은 위 대시보드용 JSON과 다르다.** 공식 문서가 예시로 주는
+> `[{"AllowedOrigins":…}]`(S3 스타일)을 넘기면 *"must contain a 'rules' array"* 로 거부된다.
+> wrangler가 읽는 건 R2 API 형식이다(`cli.js`의 `rule.allowed?.origins` 접근으로 확인):
+> ```json
+> { "rules": [ { "allowed": { "origins": [...], "methods": [...], "headers": ["*"] },
+>                "maxAgeSeconds": 3600 } ] }
+> ```
+> 거부될 때 기존 설정은 **건드리지 않는다**(실측) — 형식을 틀려도 CORS가 날아가지는 않는다.
+
 ### 1-4. Google Cloud (Cloud Run) + Gemini
 1. Google Cloud 프로젝트 생성, billing 계정 연결(무료 한도 내 과금 0, 카드 등록은 필요).
 2. `gcloud` CLI 설치 & 인증: 세션에서 `! gcloud auth login` 입력해 직접 로그인.
@@ -161,7 +176,7 @@ s3://ai-chracter-chat/backup/archive/upstash-final-20260902.jsonl  # 세션 7키
 | `REDIS_URL` | `redis://redis:6379/0` (VM 컨테이너) |
 | `API_BASE_URL` | `https://api.ddona.site` |
 | `FRONTEND_BASE_URL` | `https://ddona.site` — 도메인 전환. OAuth 콜백 뒤 돌려보낼 목적지다(§8-5) |
-| `CORS_ALLOW_ORIGINS` | 새 두 오리진 + 옛 `*.pages.dev` 두 개. **옛 것은 컷오버 정리 때 뺀다** |
+| `CORS_ALLOW_ORIGINS` | `["https://ddona.site","https://admin.ddona.site"]` — 옛 `*.pages.dev` 둘은 컷오버 후 뺐다 |
 | `SESSION_COOKIE_SAMESITE` | `lax` — §4-1 |
 
 ⚠️ **`apps/api/.env`는 로컬 개발용이다**(localhost DB/Redis + Tailscale 호스트). 예전에 이 문서가
