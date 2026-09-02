@@ -23,9 +23,8 @@
 **admin의 옛 주소는 넘기지 않는다** — admin은 `_worker.js`가 없는 정적 SPA라 host 조건을 걸 자리가
 없다(`_redirects`는 경로만 본다).
 
-FE·BE가 같은 등록가능 도메인(`ddona.site`)에 모였으므로 §4의 `SESSION_COOKIE_SAMESITE`를
-`lax`로 되돌릴 수 있다 — **아직 `none`이다.** 옛 `pages.dev` 두 곳이 살아 있는 동안 바꾸면
-그쪽 로그인이 즉시 죽는다. 절차와 순서는 `tasks/plan-domain-cutover-ddona.md`.
+FE·BE가 같은 등록가능 도메인(`ddona.site`)에 모였으므로 `SESSION_COOKIE_SAMESITE`를
+**`lax`로 되돌렸다(2026-09-02, 백로그 G-5 완료)** — §4-1.
 
 ### 0-1. GCE 이전 후 실제 값 (2026-09-02)
 
@@ -154,13 +153,16 @@ s3://ai-chracter-chat/backup/archive/upstash-final-20260902.jsonl  # 세션 7키
 
 **현행 위치는 VM의 `/opt/ddona/.env`(root 소유, 0600)이고 22개 키다** — 아래 17개 + compose용 5개
 (`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`).
-이전으로 바뀐 건 셋뿐이고 나머지 14개는 Cloud Run 값 그대로다:
+**GCE 이전(2026-09-02 오전)으로 셋**, **도메인 전환(같은 날 오후)으로 셋** 더 바뀌었다:
 
 | 변수 | 이전 후 값 |
 |---|---|
 | `DATABASE_URL` | `postgresql+asyncpg://postgres:…@postgres:5432/ai_character_chat` (VM 컨테이너) |
 | `REDIS_URL` | `redis://redis:6379/0` (VM 컨테이너) |
 | `API_BASE_URL` | `https://api.ddona.site` |
+| `FRONTEND_BASE_URL` | `https://ddona.site` — 도메인 전환. OAuth 콜백 뒤 돌려보낼 목적지다(§8-5) |
+| `CORS_ALLOW_ORIGINS` | 새 두 오리진 + 옛 `*.pages.dev` 두 개. **옛 것은 컷오버 정리 때 뺀다** |
+| `SESSION_COOKIE_SAMESITE` | `lax` — §4-1 |
 
 ⚠️ **`apps/api/.env`는 로컬 개발용이다**(localhost DB/Redis + Tailscale 호스트). 예전에 이 문서가
 "env 주입 소스는 로컬 `apps/api/.env`"라고 적었는데 **지금은 사실이 아니다** — 2026-09-02 확인.
@@ -181,7 +183,7 @@ Cloud Run 시절 값이 필요하면 `gcloud run services describe … --format=
 | `FRONTEND_BASE_URL` | `https://<web>.pages.dev` | |
 | `CORS_ALLOW_ORIGINS` | `["https://<web>.pages.dev","https://<admin>.pages.dev"]` | **JSON 배열 문자열**(pydantic `list[str]` 파싱) |
 | `SESSION_COOKIE_SECURE` | `true` | HTTPS 필수 |
-| `SESSION_COOKIE_SAMESITE` | `none` | §4 코드 변경 후 유효. 크로스도메인 필수 |
+| `SESSION_COOKIE_SAMESITE` | ~~`none`~~ → **현행 `lax`** | 2026-09-02 도메인 통합으로 되돌렸다(§4-1). 이 표의 나머지는 Cloud Run 시절 원본이다 |
 | `S3_ENDPOINT_URL` | `https://<accountid>.r2.cloudflarestorage.com` | R2 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | R2 API 토큰 키쌍 | boto3가 프로세스 env로 읽음 |
 | `AWS_REGION` | `auto` | R2 규약 |
@@ -327,9 +329,32 @@ DATABASE_URL="postgresql+asyncpg://...neon..." uv run alembic upgrade head
 무료 서브도메인 토폴로지(BE≠FE 도메인)에서 **없으면 로그인이 아예 동작 안 하는** 쿠키 변경 1개.
 (DB SSL은 코드 변경 없이 `DATABASE_URL`의 `?ssl=require`로 해결됨 — 실연결 검증 완료, §4-2.)
 
-### 4-1. 세션 쿠키 SameSite — 크로스사이트 필수 (⚠️ 보안 트레이드오프)
-현재 `apps/api/src/api/session/cookies.py` / `admin/cookies.py`가 `samesite="lax"` **하드코딩**.
-lax 쿠키는 크로스사이트 XHR(fetch)에 실리지 않아 `*.pages.dev` → `*.run.app` 로그인이 깨진다.
+### 4-1. 세션 쿠키 SameSite — **`lax`로 되돌렸다 (2026-09-02)**
+
+**현재 프로덕션은 `SESSION_COOKIE_SAMESITE=lax`다.** FE가 `ddona.site`/`admin.ddona.site`로,
+BE가 `api.ddona.site`로 **같은 등록가능 도메인**에 모여 크로스사이트가 아니게 됐다(백로그 G-5 완료).
+아래는 그 전 기록이다.
+
+되돌리며 실측한 것:
+- **기존 로그인 사용자는 로그아웃되지 않는다** — 설정은 *새로 발급되는* 쿠키에만 걸리고, 브라우저에
+  이미 있는 `SameSite=None` 쿠키는 same-site 요청에도 그대로 실린다(`/me` 200 확인).
+- **새 로그인도 완주한다** — Google → `api.ddona.site/auth/google/callback`은 크로스사이트
+  **최상위 GET 내비게이션**이라 `lax`가 쿠키 발급을 허용하고, 그 뒤 `ddona.site` → `api.ddona.site`
+  XHR은 same-site라 쿠키가 실린다(로그아웃 → 재로그인 → `/me` 200 실측).
+- OAuth state는 쿠키가 아니라 **Redis**에 있어(`store_oauth_state`) 크로스사이트 쿠키가 필요한
+  지점이 애초에 없다.
+- **코드 변경 0줄** — `session_cookie_samesite`가 이미 설정값이다. VM `.env` 한 줄 + 재기동뿐.
+
+⚠️ 대가: **옛 `ai-character-chat-admin.pages.dev`에서는 로그인이 안 된다.** admin은 `_worker.js`가
+없어 옛 주소를 리다이렉트할 자리가 없고, 거기서는 여전히 크로스사이트다. **의도된 결과**이며
+`admin.ddona.site`를 쓴다.
+
+---
+
+**아래는 크로스사이트 시절 기록이다(2026-08-04, 롤백·대조용).**
+
+당시 `apps/api/src/api/session/cookies.py` / `admin/cookies.py`가 `samesite="lax"` **하드코딩**이었다.
+lax 쿠키는 크로스사이트 XHR(fetch)에 실리지 않아 `*.pages.dev` → `*.run.app` 로그인이 깨졌다.
 
 - **트레이드오프**: `SameSite=None`은 크로스사이트 요청에 쿠키를 실어보내므로 CSRF 표면이 넓어진다.
   단, `Secure`(HTTPS 전용) + `HttpOnly`는 유지되고, CORS `allow_origins`가 우리 FE 두 도메인으로
