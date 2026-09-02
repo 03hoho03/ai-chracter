@@ -19,7 +19,7 @@
 
 **FE도 `ddona.site`로 모였다(2026-09-02).** 존은 Cloudflare, 등록은 가비아 그대로다.
 옛 `*.pages.dev`는 계속 살아 있고, web은 Worker가 새 도메인으로 넘긴다
-(`apps/web/worker/legacyRedirect.ts` — **지금은 302다**, 전수 검증 후 301로 올린다).
+(`apps/web/worker/legacyRedirect.ts` — 302로 배포해 실측한 뒤 **2026-09-02에 301로 승격**했다).
 **admin의 옛 주소는 넘기지 않는다** — admin은 `_worker.js`가 없는 정적 SPA라 host 조건을 걸 자리가
 없다(`_redirects`는 경로만 본다).
 
