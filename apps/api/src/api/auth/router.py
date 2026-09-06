@@ -164,6 +164,9 @@ async def guardian_consent(
     db.add(consent)
     await db.commit()
 
+    if user.suspended_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
+
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
     return None
@@ -222,6 +225,17 @@ async def google_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
+    # 탈퇴(deleted_at)한 계정은 비밀번호 로그인(US-024)부터 막혀 있었지만 구글 로그인은
+    # 이 확인이 없던 기존 갭이었다 — 정지 확인을 넣는 김에 같이 메운다. 비밀번호 로그인과
+    # 달리 탈퇴 여부를 숨기지 않는다: 여긴 실제 자격증명(비밀번호) 추측 공격 표면이 없다
+    # (호출자가 이미 그 구글 계정을 실제로 소유하고 있어야 여기 도달한다).
+    if user.deleted_at is not None or user.suspended_at is not None:
+        error_code = "account_deleted" if user.deleted_at is not None else "account_suspended"
+        return RedirectResponse(
+            f"{settings.frontend_base_url}/login?error={error_code}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
     session_id = await create_session({"user_id": str(user.id)})
     response = RedirectResponse(
         f"{settings.frontend_base_url}{redirect_target}", status_code=status.HTTP_302_FOUND
@@ -262,6 +276,9 @@ async def onboarding_google(
     if is_guardian_consent_required(user.birth_date, now.date()):
         return OnboardingGoogleResponse(is_minor_guardian_required=True, email=user.email)
 
+    if user.suspended_at is not None:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
+
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
     return OnboardingGoogleResponse(is_minor_guardian_required=False, email=user.email)
@@ -295,6 +312,13 @@ async def login(
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN, detail="Guardian consent required"
             )
+
+    if user.suspended_at is not None:
+        # deleted_at과 달리 숨기지 않는다 — 탈퇴는 "이메일 또는 비밀번호가 올바르지 않음"에
+        # 묻어 탈퇴 사실 자체를 노출하지 않지만, 정지는 사용자가 알아야 이의를 제기할 수
+        # 있다(techspec §2가 정지를 "요청 차단"으로 설계한 것과 짝을 이루는 판단 — 세션이
+        # 살아있는 채 막히는 것과 로그인 시도가 막히는 것이 같은 메시지를 줘야 일관적이다).
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)

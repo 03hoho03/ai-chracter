@@ -516,6 +516,274 @@
         }
       }
     },
+    "/admin/users": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Users",
+        "description": "techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는\n제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해\n한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +\n본 조회 1개, 총 2개로 끝난다.",
+        "operationId": "list_admin_users_admin_users_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "suspended",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Suspended"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin User Detail",
+        "operationId": "get_admin_user_detail_admin_users__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/warn": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Warn User",
+        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 아래에서\n만드는 `Notification.reason_category`가 NOT NULL이기 때문(T-2).\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
+        "operationId": "warn_user_admin_users__user_id__warn_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserWarnRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/suspend": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Suspend User",
+        "description": "techspec.md §2-2의 6단계를 정확한 순서로 수행한다.\n\n```\n1. users.suspended_at = now()\n2. 그 유저의 contents.moderation_status = 'restricted' (visibility는 불변, T-1)\n3. Notification(type='user-suspended', content_id=None, action_id=None)\n4. record_admin_action(action_type='user-suspend')\n5. db.commit()                  ← 여기까지 원자적\n6. mark_user_suspended(user_id) ← Redis. 실패하면 500\n```\n\n**순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도\ntry/except 없이 그대로 예외가 전파돼 500이 된다) \"DB엔 정지인데 마커가 없는\" 상태로\n끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시\n시도된다.\n\n**이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위\n재시도 시나리오(6 실패 후 재호출)가 정확히 \"이미 `suspended_at`이 있는 유저에 대한\n두 번째 suspend 호출\"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은\n멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가\n`moderation_status == NORMAL`인 작품만 내리므로 이미 내려간 작품은 다시 세지 않아\n재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.",
+        "operationId": "suspend_user_admin_users__user_id__suspend_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserSuspendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminUserSuspendResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/unsuspend": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Unsuspend User",
+        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로\n`Notification.reason_category` NOT NULL을 근거로 필수화할 이유가 없다(경고/정지가\n카테고리를 요구하는 것과 반대). 대신 2단계 `lift-restriction`과 같은 규칙으로\n`admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
+        "operationId": "unsuspend_user_admin_users__user_id__unsuspend_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserUnsuspendRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -4609,6 +4877,473 @@
           "totalCount"
         ],
         "title": "AdminReportListResponse"
+      },
+      "AdminUserActionLogItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "actionType": {
+            "type": "string",
+            "title": "Actiontype"
+          },
+          "targetContentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetcontentid"
+          },
+          "contentName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contentname"
+          },
+          "reasonCategory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasoncategory"
+          },
+          "reasonText": {
+            "type": "string",
+            "title": "Reasontext"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "actionType",
+          "targetContentId",
+          "contentName",
+          "reasonCategory",
+          "reasonText",
+          "createdAt"
+        ],
+        "title": "AdminUserActionLogItem"
+      },
+      "AdminUserChatRoomItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "turnCount": {
+            "type": "integer",
+            "title": "Turncount"
+          },
+          "messageCount": {
+            "type": "integer",
+            "title": "Messagecount"
+          },
+          "lastMessageAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastmessageat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "contentId",
+          "contentName",
+          "name",
+          "turnCount",
+          "messageCount",
+          "lastMessageAt",
+          "createdAt"
+        ],
+        "title": "AdminUserChatRoomItem"
+      },
+      "AdminUserDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "bio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bio"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "suspendedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspendedat"
+          },
+          "emailVerifiedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emailverifiedat"
+          },
+          "signupMethod": {
+            "type": "string",
+            "enum": [
+              "google",
+              "email"
+            ],
+            "title": "Signupmethod"
+          },
+          "contentCount": {
+            "type": "integer",
+            "title": "Contentcount"
+          },
+          "restrictableContentCount": {
+            "type": "integer",
+            "title": "Restrictablecontentcount"
+          },
+          "chatRoomCount": {
+            "type": "integer",
+            "title": "Chatroomcount"
+          },
+          "messageCount": {
+            "type": "integer",
+            "title": "Messagecount"
+          },
+          "lastActiveAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastactiveat"
+          },
+          "reports": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserReportItem"
+            },
+            "type": "array",
+            "title": "Reports"
+          },
+          "actionLogs": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserActionLogItem"
+            },
+            "type": "array",
+            "title": "Actionlogs"
+          },
+          "chatRooms": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserChatRoomItem"
+            },
+            "type": "array",
+            "title": "Chatrooms"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "bio",
+          "createdAt",
+          "suspendedAt",
+          "emailVerifiedAt",
+          "signupMethod",
+          "contentCount",
+          "restrictableContentCount",
+          "chatRoomCount",
+          "messageCount",
+          "lastActiveAt",
+          "reports",
+          "actionLogs",
+          "chatRooms"
+        ],
+        "title": "AdminUserDetailResponse"
+      },
+      "AdminUserListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "suspendedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Suspendedat"
+          },
+          "contentCount": {
+            "type": "integer",
+            "title": "Contentcount"
+          },
+          "chatRoomCount": {
+            "type": "integer",
+            "title": "Chatroomcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "createdAt",
+          "suspendedAt",
+          "contentCount",
+          "chatRoomCount"
+        ],
+        "title": "AdminUserListItem"
+      },
+      "AdminUserListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminUserListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminUserListResponse"
+      },
+      "AdminUserReportItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reasonCategory",
+          "status",
+          "contentId",
+          "contentName",
+          "createdAt"
+        ],
+        "title": "AdminUserReportItem"
+      },
+      "AdminUserSuspendRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "AdminUserSuspendRequest"
+      },
+      "AdminUserSuspendResponse": {
+        "properties": {
+          "restrictedContentCount": {
+            "type": "integer",
+            "title": "Restrictedcontentcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "restrictedContentCount"
+        ],
+        "title": "AdminUserSuspendResponse"
+      },
+      "AdminUserUnsuspendRequest": {
+        "properties": {
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "title": "AdminUserUnsuspendRequest",
+        "description": "`reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는\n알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring\n참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은\n규칙)."
+      },
+      "AdminUserWarnRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "AdminUserWarnRequest"
       },
       "AppealCreateRequest": {
         "properties": {

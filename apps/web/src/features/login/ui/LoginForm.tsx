@@ -16,9 +16,14 @@ import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
+const SUSPENDED_ERROR_MESSAGE =
+  "이용정지된 계정이에요. 문의사항은 ghwjd32123@gmail.com으로 연락해주세요.";
+
 /** 구글 콜백이 `?error=` 로 되돌려 보낸 코드 → 사용자용 문구. */
 const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   google_state: "구글 로그인 요청이 만료되었어요. 다시 시도해주세요.",
+  account_suspended: SUSPENDED_ERROR_MESSAGE,
+  account_deleted: "탈퇴한 계정이에요.",
 };
 
 type LoginFormProps = {
@@ -54,6 +59,8 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 401) {
         setFormError("이메일 또는 비밀번호가 올바르지 않습니다.");
+      } else if (apiError?.status === 403 && apiError.detail === "Account suspended") {
+        setFormError(SUSPENDED_ERROR_MESSAGE);
       } else if (apiError?.status === 403) {
         setFormError("이메일 인증이 완료되지 않았거나 법정대리인 동의가 필요한 계정이에요.");
       } else {

@@ -55,6 +55,18 @@ export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
                 <dt className="text-muted-foreground">신고 사유</dt>
                 <dd className="text-foreground">{REPORT_REASON_LABELS[reportDetailQuery.data.reasonCategory]}</dd>
               </div>
+              <div>
+                <dt className="text-muted-foreground">신고자</dt>
+                <dd className="text-foreground">
+                  <Link
+                    to="/users/$userId"
+                    params={{ userId: reportDetailQuery.data.reporterUserId }}
+                    className="font-medium text-primary hover:underline"
+                  >
+                    유저 상세 보기
+                  </Link>
+                </dd>
+              </div>
               {reportDetailQuery.data.resolvedAt && (
                 <div>
                   <dt className="text-muted-foreground">처리일시</dt>

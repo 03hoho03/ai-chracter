@@ -20,8 +20,15 @@ const REASON_CATEGORY_LABELS: Record<string, string> = {
   other: "기타",
 };
 
-/** techspec-global-nav-profile.md §1.3, techspec-builder-common.md §5.2 — 알림 종류는 현재 이용제한/삭제
- * 조치 통지(US-055) 하나뿐이라 범용 알림 프레임워크로 만들지 않는다. */
+/** techspec.md §1-2 — 이용제한/삭제 조치 통지(moderation-action, US-055)에 계정 경고(user-warned)·
+ * 계정 정지(user-suspended)가 더해져 `type`이 셋이 됐다. type별로 제목 문구만 가르는 최소 구현이고,
+ * 모르는 type은 이용제한 문구로 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
+const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {
+  "moderation-action": "콘텐츠 이용제한 안내",
+  "user-warned": "계정 경고 안내",
+  "user-suspended": "계정 이용정지 안내",
+};
+
 export function NotificationBell() {
   const { data: notifications = [] } = useNotificationListQuery();
   const markAsRead = useMarkNotificationReadMutation();
@@ -62,7 +69,7 @@ export function NotificationBell() {
               }}
             >
               <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
-                콘텐츠 이용제한 안내 ·{" "}
+                {NOTIFICATION_TITLE_BY_TYPE[notification.type] ?? NOTIFICATION_TITLE_BY_TYPE["moderation-action"]} ·{" "}
                 {REASON_CATEGORY_LABELS[notification.reasonCategory] ?? notification.reasonCategory}
               </span>
               <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>

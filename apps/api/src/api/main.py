@@ -1,4 +1,6 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status as status_module
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,18 +9,36 @@ from sqlalchemy import text
 from api.admin.contents import router as admin_contents_router
 from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.router import me_router as admin_me_router, router as admin_router
+from api.admin.users import router as admin_users_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
 from api.auth.router import me_router, router as auth_router
 from api.chat.router import characters_router, preview_router, router as chat_router, stories_router
 from api.content.router import router as content_router
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.db.session import engine
+from api.db.session import engine, get_session_factory
 from api.images.router import router as images_router
 from api.moderation.router import router as moderation_router
 from api.session.router import router as session_router
+from api.session.suspension import rebuild_suspended_user_markers
 
-app = FastAPI(title="AI 캐릭터 챗 API")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """TS-4: DB의 `suspended_at`을 진실로 삼아 Redis 정지 마커를 기동 시 재구축한다 —
+    Redis 볼륨이 날아가도(재시작 등) 정지가 조용히 풀리지 않게 하는 안전장치다. 요청을
+    받기 시작하기 전에 끝나야 하므로 백그라운드 태스크가 아니라 여기서 기다린다.
+
+    ⚠️ 테스트 클라이언트(`tests/conftest.py`의 `api_client`)는 `httpx.ASGITransport`를
+    쓰는데, 이 트랜스포트는 HTTP 스코프만 보내고 ASGI lifespan 프로토콜 자체를 보내지
+    않는다(httpx 0.28.1 소스로 확인) — 그래서 이 훅은 테스트 세션 동안 전혀 실행되지
+    않고, 기존 테스트에 영향이 없다.
+    """
+    await rebuild_suspended_user_markers(get_session_factory())
+    yield
+
+
+app = FastAPI(title="AI 캐릭터 챗 API", lifespan=lifespan)
 
 # `/ready` 의 자원별 검사 상한. 모니터가 5분 간격이라 넉넉할 이유가 없고, 길면 죽은 자원이
 # 실패가 아니라 타임아웃으로 보여 원인이 흐려진다.
@@ -37,6 +57,7 @@ app.include_router(admin_router)
 app.include_router(admin_me_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_contents_router)
+app.include_router(admin_users_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)

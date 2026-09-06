@@ -227,6 +227,146 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Users
+         * @description techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는
+         *     제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
+         *     한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
+         *     본 조회 1개, 총 2개로 끝난다.
+         */
+        get: operations["list_admin_users_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin User Detail */
+        get: operations["get_admin_user_detail_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/warn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Warn User
+         * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 아래에서
+         *     만드는 `Notification.reason_category`가 NOT NULL이기 때문(T-2).
+         *
+         *     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
+         *     다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로
+         *     주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.
+         */
+        post: operations["warn_user_admin_users__user_id__warn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend User
+         * @description techspec.md §2-2의 6단계를 정확한 순서로 수행한다.
+         *
+         *     ```
+         *     1. users.suspended_at = now()
+         *     2. 그 유저의 contents.moderation_status = 'restricted' (visibility는 불변, T-1)
+         *     3. Notification(type='user-suspended', content_id=None, action_id=None)
+         *     4. record_admin_action(action_type='user-suspend')
+         *     5. db.commit()                  ← 여기까지 원자적
+         *     6. mark_user_suspended(user_id) ← Redis. 실패하면 500
+         *     ```
+         *
+         *     **순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도
+         *     try/except 없이 그대로 예외가 전파돼 500이 된다) "DB엔 정지인데 마커가 없는" 상태로
+         *     끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시
+         *     시도된다.
+         *
+         *     **이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위
+         *     재시도 시나리오(6 실패 후 재호출)가 정확히 "이미 `suspended_at`이 있는 유저에 대한
+         *     두 번째 suspend 호출"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은
+         *     멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가
+         *     `moderation_status == NORMAL`인 작품만 내리므로 이미 내려간 작품은 다시 세지 않아
+         *     재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
+         */
+        post: operations["suspend_user_admin_users__user_id__suspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsuspend User
+         * @description 계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,
+         *     관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
+         *     한다.
+         *
+         *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로
+         *     `Notification.reason_category` NOT NULL을 근거로 필수화할 이유가 없다(경고/정지가
+         *     카테고리를 요구하는 것과 반대). 대신 2단계 `lift-restriction`과 같은 규칙으로
+         *     `admin_comment`를 필수로 받는다 — 비어 있으면 422.
+         *
+         *     **해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을
+         *     명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+         *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
+         *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
+         *
+         *     순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
+         */
+        post: operations["unsuspend_user_admin_users__user_id__unsuspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -1916,6 +2056,185 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /** AdminUserActionLogItem */
+        AdminUserActionLogItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Actiontype */
+            actionType: string;
+            /** Targetcontentid */
+            targetContentId: string | null;
+            /** Contentname */
+            contentName: string | null;
+            /** Reasoncategory */
+            reasonCategory: string | null;
+            /** Reasontext */
+            reasonText: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserChatRoomItem */
+        AdminUserChatRoomItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            /** Name */
+            name: string | null;
+            /** Turncount */
+            turnCount: number;
+            /** Messagecount */
+            messageCount: number;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserDetailResponse */
+        AdminUserDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /** Bio */
+            bio: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Suspendedat */
+            suspendedAt: string | null;
+            /** Emailverifiedat */
+            emailVerifiedAt: string | null;
+            /**
+             * Signupmethod
+             * @enum {string}
+             */
+            signupMethod: "google" | "email";
+            /** Contentcount */
+            contentCount: number;
+            /** Restrictablecontentcount */
+            restrictableContentCount: number;
+            /** Chatroomcount */
+            chatRoomCount: number;
+            /** Messagecount */
+            messageCount: number;
+            /** Lastactiveat */
+            lastActiveAt: string | null;
+            /** Reports */
+            reports: components["schemas"]["AdminUserReportItem"][];
+            /** Actionlogs */
+            actionLogs: components["schemas"]["AdminUserActionLogItem"][];
+            /** Chatrooms */
+            chatRooms: components["schemas"]["AdminUserChatRoomItem"][];
+        };
+        /** AdminUserListItem */
+        AdminUserListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Suspendedat */
+            suspendedAt: string | null;
+            /** Contentcount */
+            contentCount: number;
+            /** Chatroomcount */
+            chatRoomCount: number;
+        };
+        /** AdminUserListResponse */
+        AdminUserListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminUserListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminUserReportItem */
+        AdminUserReportItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserSuspendRequest */
+        AdminUserSuspendRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminUserSuspendResponse */
+        AdminUserSuspendResponse: {
+            /** Restrictedcontentcount */
+            restrictedContentCount: number;
+        };
+        /**
+         * AdminUserUnsuspendRequest
+         * @description `reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는
+         *     알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring
+         *     참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은
+         *     규칙).
+         */
+        AdminUserUnsuspendRequest: {
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminUserWarnRequest */
+        AdminUserWarnRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /** AppealCreateRequest */
         AppealCreateRequest: {
@@ -3621,6 +3940,171 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminContentDetailResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_users_admin_users_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                q?: string | null;
+                suspended?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_user_detail_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    warn_user_admin_users__user_id__warn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserWarnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspend_user_admin_users__user_id__suspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserSuspendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserSuspendResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsuspend_user_admin_users__user_id__unsuspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUnsuspendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

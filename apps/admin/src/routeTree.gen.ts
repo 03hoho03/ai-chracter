@@ -13,8 +13,10 @@ import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
+import { Route as UsersUserIdRouteImport } from './routes/users.$userId'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 
@@ -38,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsersIndexRoute = UsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsIndexRoute = ReportsIndexRouteImport.update({
   id: '/reports/',
   path: '/reports/',
@@ -46,6 +53,11 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
 const ContentsIndexRoute = ContentsIndexRouteImport.update({
   id: '/contents/',
   path: '/contents/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersUserIdRoute = UsersUserIdRouteImport.update({
+  id: '/users/$userId',
+  path: '/users/$userId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
@@ -66,8 +78,10 @@ export interface FileRoutesByFullPath {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/users/$userId': typeof UsersUserIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
+  '/users/': typeof UsersIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -76,8 +90,10 @@ export interface FileRoutesByTo {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/users/$userId': typeof UsersUserIdRoute
   '/contents': typeof ContentsIndexRoute
   '/reports': typeof ReportsIndexRoute
+  '/users': typeof UsersIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -87,8 +103,10 @@ export interface FileRoutesById {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/users/$userId': typeof UsersUserIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
+  '/users/': typeof UsersIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -99,8 +117,10 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/users/$userId'
     | '/contents/'
     | '/reports/'
+    | '/users/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,8 +129,10 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/users/$userId'
     | '/contents'
     | '/reports'
+    | '/users'
   id:
     | '__root__'
     | '/'
@@ -119,8 +141,10 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/users/$userId'
     | '/contents/'
     | '/reports/'
+    | '/users/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -130,8 +154,10 @@ export interface RootRouteChildren {
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
+  UsersUserIdRoute: typeof UsersUserIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
+  UsersIndexRoute: typeof UsersIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -164,6 +190,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users/': {
+      id: '/users/'
+      path: '/users'
+      fullPath: '/users/'
+      preLoaderRoute: typeof UsersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/': {
       id: '/reports/'
       path: '/reports'
@@ -176,6 +209,13 @@ declare module '@tanstack/react-router' {
       path: '/contents'
       fullPath: '/contents/'
       preLoaderRoute: typeof ContentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users/$userId': {
+      id: '/users/$userId'
+      path: '/users/$userId'
+      fullPath: '/users/$userId'
+      preLoaderRoute: typeof UsersUserIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/reports/$reportId': {
@@ -202,8 +242,10 @@ const rootRouteChildren: RootRouteChildren = {
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
+  UsersUserIdRoute: UsersUserIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
+  UsersIndexRoute: UsersIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
