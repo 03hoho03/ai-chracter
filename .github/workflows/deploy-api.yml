@@ -82,6 +82,14 @@ jobs:
           sed -i "s|^API_IMAGE=.*|API_IMAGE=asia-northeast3-docker.pkg.dev/ddona-ai-character-chat/ddona/api:${TAG}|" /opt/ddona/.env
           C="docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env"
           $C pull api
+          # up -d 보다 반드시 먼저다: main.py 의 lifespan 훅이 기동마다 users.suspended_at 을
+          # SELECT 하는데(rebuild_suspended_user_markers), 마이그레이션 전에 새 이미지가 뜨면
+          # UndefinedColumnError 로 죽어 API 가 내려간 채로 남는다. --no-deps 를 안 쓴 이유는
+          # postgres/redis 가 이미 떠 있어 depends_on 검사가 사실상 즉시 통과하면서도, 혹시
+          # 안 떠 있는 경우엔 기다려주는 안전판이 되기 때문이다. -T 는 이 SSH 세션에 TTY 가
+          # 없어 필요하다(run 은 기본으로 TTY 할당을 시도한다). 위 set -euo pipefail 때문에
+          # 이 줄이 실패하면 스크립트가 여기서 멈추고 아래 up -d 는 돌지 않는다.
+          $C run --rm -T api alembic upgrade head
           $C up -d --wait api caddy
           $C ps --format 'table {{.Service}}\t{{.Status}}'
           REMOTE

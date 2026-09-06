@@ -4,6 +4,8 @@
 > Cloud Run·Neon·Upstash는 **살아 있되 쓰이지 않는다**(§0-1). main push 자동배포는 §3-4.
 >
 > ⚠️ **§1·§2-1·§3-1·§7 등 "Cloud Run" 서술은 이전 전 기록이다** — 롤백·대조용으로 남겼다.
+> §3-2(DB 마이그레이션)도 대상 DB(Neon)가 삭제돼 실행 불능인 채로 이 목록에서 빠져 있었다 —
+> 2026-09-06에 현재 절차로 갱신했다.
 > 지금 프로덕션을 다루려면 §0-1과 §3-1을 볼 것.
 
 ## 0. 확정 스택
@@ -291,13 +293,35 @@ gcloud run deploy ai-character-chat-api \
 
 **자동 배포**는 main push로 트리거된다 — §3-4 참고. 수동 배포는 긴급 hotfix나 트리거 우회가 필요할 때만.
 
-### 3-2. DB 마이그레이션 (Neon 대상, 최초 1회 + 스키마 변경 시)
+### 3-2. DB 마이그레이션
+
+**기본 절차는 파이프라인이 자동으로 처리한다.** `deploy-api.yml`이 `docker compose pull api` 직후,
+`up -d` 직전에 새로 pull한 이미지로 `docker compose run --rm -T api alembic upgrade head`를 돌린다
+(§3-4). 사람이 따로 돌릴 일은 원칙적으로 없다.
+
+**수동으로 먼저 적용해야 할 때**(파이프라인 밖에서 미리 스키마를 올려두는 경우) — 아래는
+2026-09-06에 실제로 성공시킨 절차다:
 ```bash
-cd apps/api
-DATABASE_URL="postgresql+asyncpg://...neon..." uv run alembic upgrade head
+# VM 접속
+gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap --project=ddona-ai-character-chat
+
+# 백업
+sudo /opt/ddona/backup.sh
+
+# 현재 리비전
+sudo docker compose -f /opt/ddona/app/docker-compose.prod.yml --env-file /opt/ddona/.env \
+  exec -T postgres psql -U postgres -d ai_character_chat -c 'SELECT version_num FROM alembic_version;'
+
+# 적용 (배포된 이미지로. 아직 배포 안 된 마이그레이션은 파일을 /tmp에 올려 bind-mount 한다)
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
+  <IMAGE>:<TAG> alembic upgrade head
 ```
-- 로컬에서 Neon을 향해 실행하면 된다(별도 마이그레이션 잡 불필요).
-- 시드가 필요하면 `scripts/`의 시드 스크립트를 같은 `DATABASE_URL`로.
+
+⚠️ **순서 고정: 마이그레이션은 반드시 `up -d`보다 먼저 돈다.** `apps/api/src/api/main.py`의 lifespan
+훅이 기동마다 `rebuild_suspended_user_markers()`를 불러 `users.suspended_at`을 SELECT 한다 —
+스키마가 아직 없는 채로 새 이미지가 뜨면 `UndefinedColumnError`로 죽고 healthcheck·배포 검증이
+함께 실패해 API가 내려간 채로 남는다. 위 절차로 미리 적용해 두면 파이프라인의 자동 마이그레이션은
+그 다음엔 실질적으로 no-op(멱등)이 된다.
 
 ### 3-3. FE → Cloudflare Pages (web, admin 각각)
 - Pages 프로젝트 2개 생성(web, admin). 빌드 설정:

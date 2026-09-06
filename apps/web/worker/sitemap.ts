@@ -102,7 +102,8 @@ async function collectLocations(
   apiBaseUrl: string,
   origin: string,
 ): Promise<string[]> {
-  const locations = [`${origin}/`];
+  // 약관·개인정보처리방침은 조회 없이 정해지는 정적 경로다.
+  const locations = [`${origin}/`, `${origin}/terms`, `${origin}/privacy`];
 
   for (const type of CONTENT_TYPES) {
     const ids = await fetchPublicContentIds(apiBaseUrl, type);

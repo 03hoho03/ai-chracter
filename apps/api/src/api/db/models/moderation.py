@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Text, Uuid, false, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -90,8 +90,10 @@ class Notification(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     type: Mapped[str] = mapped_column(Text, server_default="moderation-action", nullable=False)
-    content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), nullable=False)
-    action_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("moderation_actions.id"), nullable=False)
+    content_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("contents.id"), nullable=True)
+    action_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("moderation_actions.id"), nullable=True
+    )
     reason_category: Mapped[str] = mapped_column(Text, nullable=False)
     admin_comment: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -121,3 +123,36 @@ class Appeal(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AdminActionLog(Base):
+    """techspec.md §1-3, goal-prompt.md §3-2. 콘텐츠 조치는 `moderation_actions`와 이 테이블
+    양쪽에 기록된다 — 중복이 아니라 계층이다. `moderation_actions`는 콘텐츠 조치의 실체
+    레코드이자 `Notification.action_id`의 FK 대상이라 없앨 수 없고, 이 테이블은 콘텐츠
+    조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다."""
+
+    __tablename__ = "admin_action_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
+    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    target_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    target_content_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("contents.id"), nullable=True
+    )
+    target_chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_rooms.id"), nullable=True
+    )
+    reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # `created_at.desc()` 참조는 위 컬럼 정의가 먼저 실행돼 클래스 바디 네임스페이스에
+    # 바인딩된 뒤라야 동작한다 — 그래서 __table_args__를 컬럼들 다음에 둔다.
+    __table_args__ = (
+        Index("ix_admin_action_logs_created_at", created_at.desc()),
+        Index("ix_admin_action_logs_target_user_id", "target_user_id"),
+        Index("ix_admin_action_logs_target_content_id", "target_content_id"),
+    )

@@ -43,6 +43,8 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/onboarding/google")).toBe(true);
     expect(isKnownRoute("/studio/images")).toBe(true);
     expect(isKnownRoute("/builder")).toBe(true);
+    expect(isKnownRoute("/terms")).toBe(true);
+    expect(isKnownRoute("/privacy")).toBe(true);
   });
 
   it("파라미터 세그먼트는 아무 값이나 받는다", () => {

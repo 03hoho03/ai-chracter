@@ -18,10 +18,12 @@ export const KNOWN_ROUTES = [
   "/my",
   "/mypage",
   "/onboarding/google",
+  "/privacy",
   "/profile/$userId",
   "/reset-password",
   "/signup",
   "/studio/images",
+  "/terms",
   "/ui-demo",
 ];
 

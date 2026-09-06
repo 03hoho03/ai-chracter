@@ -100,6 +100,24 @@ async def _make_notification(
     return notification
 
 
+async def _make_account_notification(
+    db_session: AsyncSession, *, user_id: uuid.UUID, notification_type: str = "user-warned"
+) -> Notification:
+    """techspec.md §1-2 완화 회귀 — 콘텐츠와 무관한 계정 단위 알림(경고/정지)은
+    content_id/action_id가 둘 다 null이다."""
+    notification = Notification(
+        user_id=user_id,
+        type=notification_type,
+        content_id=None,
+        action_id=None,
+        reason_category="other",
+        admin_comment="이용 규칙 위반으로 경고 처리되었습니다.",
+    )
+    db_session.add(notification)
+    await db_session.flush()
+    return notification
+
+
 async def test_list_notifications_requires_login(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.get("/notifications")
     assert resp.status_code == 401
@@ -226,3 +244,46 @@ async def test_mark_notification_read_unknown_id_returns_404(
     await _login_as(db_client, user.id)
     resp = await db_client.patch(f"/notifications/{uuid.uuid4()}/read")
     assert resp.status_code == 404
+
+
+async def test_list_notifications_includes_null_content_notification(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """회귀(techspec.md §1-2/§9): content_id/action_id가 null인 알림도 `GET /notifications`가
+    500 대신 200으로 내려줘야 한다 — 계정 단위 조치(경고/정지)는 콘텐츠와 무관하다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    notification = await _make_account_notification(db_session, user_id=user.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/notifications")
+    assert resp.status_code == 200
+
+    body = resp.json()
+    assert len(body) == 1
+    assert body[0]["id"] == str(notification.id)
+    assert body[0]["type"] == "user-warned"
+    assert body[0]["contentId"] is None
+    assert body[0]["actionId"] is None
+
+
+async def test_mark_notification_read_works_for_null_content_notification(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """회귀(techspec.md §1-2/§9): `PATCH /notifications/{id}/read`도 content_id/action_id가
+    null인 행에서 깨지지 않아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    notification = await _make_account_notification(db_session, user_id=user.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.patch(f"/notifications/{notification.id}/read")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["read"] is True
+    assert body["contentId"] is None
+    assert body["actionId"] is None

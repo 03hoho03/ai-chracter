@@ -98,3 +98,5 @@ class MeResponse(CamelModel):
     nickname: str
     bio: str | None
     profile_image_asset_id: uuid.UUID | None
+    terms_reconsent_required: bool
+    privacy_reconsent_required: bool

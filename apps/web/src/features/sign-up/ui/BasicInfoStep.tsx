@@ -156,7 +156,21 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
                   onCheckedChange={(checked) => field.onChange(checked === true)}
                   aria-invalid={!!errors.termsAgreed}
                 />
-                (필수) 이용약관 동의
+                <span>
+                  (필수){" "}
+                  <a
+                    href="/terms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    // 링크가 체크박스 라벨 안에 있으면 클릭이 label까지 버블링해 체크박스도 함께
+                    // 토글된다 — stopPropagation으로 링크 클릭과 체크박스 토글을 분리한다.
+                    onClick={(event) => event.stopPropagation()}
+                    className="font-medium text-primary hover:underline focus-visible:underline"
+                  >
+                    이용약관
+                  </a>{" "}
+                  동의
+                </span>
               </label>
             )}
           />
@@ -176,7 +190,19 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
                   onCheckedChange={(checked) => field.onChange(checked === true)}
                   aria-invalid={!!errors.privacyAgreed}
                 />
-                (필수) 개인정보처리방침 동의
+                <span>
+                  (필수){" "}
+                  <a
+                    href="/privacy"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    className="font-medium text-primary hover:underline focus-visible:underline"
+                  >
+                    개인정보처리방침
+                  </a>{" "}
+                  동의
+                </span>
               </label>
             )}
           />

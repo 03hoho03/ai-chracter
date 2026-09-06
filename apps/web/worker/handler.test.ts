@@ -244,6 +244,51 @@ describe("handleRequest", () => {
     expect(await response.text()).toBe("/index.html");
   });
 
+  it("봇 UA의 약관 페이지는 API 없이 title·canonical을 주입한다", async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    // 이 파일의 기본 스텁 셸에는 <head>가 없어 주입 결과가 보이지 않는다(내용은 legalMeta.test.ts).
+    const env = createEnv({
+      ASSETS: {
+        fetch: () =>
+          Promise.resolve(
+            new Response("<html><head></head><body></body></html>", {
+              headers: { "content-type": "text/html; charset=utf-8" },
+            }),
+          ),
+      },
+      // API_BASE_URL이 없어도 약관 메타는 나가야 한다 — 조회에 기대지 않는 페이지다.
+      API_BASE_URL: undefined,
+      PUBLIC_ORIGIN: "https://ddona.example",
+    });
+
+    const response = await handleRequest(
+      new Request("https://ddona.example/terms", {
+        headers: {
+          "user-agent": "Googlebot/2.1 (+http://www.google.com/bot.html)",
+        },
+      }),
+      env,
+      { cache: NOOP_CACHE },
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toContain(
+      '<link rel="canonical" href="https://ddona.example/terms" />',
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("일반 브라우저 UA의 약관 페이지에는 주입하지 않는다", async () => {
+    const env = createEnv();
+
+    const response = await handleRequest(get("/privacy"), env, {
+      cache: NOOP_CACHE,
+    });
+
+    expect(await response.text()).toBe("/index.html");
+  });
+
   it("봇 UA의 콘텐츠 상세는 API를 거쳐 메타를 주입한다", async () => {
     const id = "11111111-2222-4333-8444-555555555555";
     const requestedUrls: string[] = [];

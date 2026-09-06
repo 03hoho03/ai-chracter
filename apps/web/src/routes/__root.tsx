@@ -8,6 +8,7 @@ import { ImageArchiveModal } from "@/features/image-archive";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 import { DeleteContentDraftModal, ResetContentDraftModal } from "@/features/manage-content-draft";
 import { PlayGuideModal } from "@/features/play-guide";
+import { ReconsentModal } from "@/features/reconsent-legal";
 import { ReportContentModal } from "@/features/report-content";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { AppealModal } from "@/features/submit-appeal";
@@ -42,6 +43,7 @@ function RootComponent() {
       <ChangeContentVisibilityModal />
       <DeleteContentDraftModal />
       <ResetContentDraftModal />
+      <ReconsentModal />
     </>
   );
 }

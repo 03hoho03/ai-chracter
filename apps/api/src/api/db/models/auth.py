@@ -37,6 +37,9 @@ class User(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    privacy_version: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class GuardianConsent(Base):

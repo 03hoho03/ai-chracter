@@ -18,8 +18,8 @@ from api.db.models.moderation import (
 class NotificationResponse(CamelModel):
     id: uuid.UUID
     type: str
-    content_id: uuid.UUID
-    action_id: uuid.UUID
+    content_id: uuid.UUID | None
+    action_id: uuid.UUID | None
     reason_category: str
     admin_comment: str
     created_at: datetime

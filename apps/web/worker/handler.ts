@@ -4,6 +4,7 @@ import { isCrawler } from "./crawler";
 import { handleHomeMeta, HOME_PATH } from "./homeMeta";
 import { applyIndexingPolicy } from "./indexing";
 import { buildLegacyRedirect } from "./legacyRedirect";
+import { handleLegalMeta, parseLegalPath } from "./legalMeta";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
 import { handleProfileMeta, parseProfilePath } from "./profileMeta";
 import { handleRobots } from "./robots";
@@ -90,6 +91,13 @@ async function routeRequest(
   // 최소한 홈의 canonical은 나간다.
   if (isBot && url.pathname === HOME_PATH) {
     return handleHomeMeta(request, env);
+  }
+
+  // 약관 페이지도 홈과 같은 이유로 API_BASE_URL 가드보다 위에 둔다 — 정적 title·description·
+  // canonical뿐이라 조회에 기대지 않는다.
+  if (isBot) {
+    const legalKind = parseLegalPath(url.pathname);
+    if (legalKind !== undefined) return handleLegalMeta(request, env, legalKind);
   }
 
   // API_BASE_URL은 Pages 런타임 환경변수라 대시보드에서 빠뜨릴 수 있다. 없으면 API를

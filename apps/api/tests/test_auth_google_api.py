@@ -1,5 +1,5 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 import httpx
 from sqlalchemy import select
@@ -223,6 +223,36 @@ async def test_google_callback_links_existing_password_account_by_email(
     user = await db_session.scalar(select(User).where(User.email == signup_payload["email"]))
     assert user is not None
     assert user.google_sub == google_sub
+
+
+async def test_google_callback_redirects_suspended_existing_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """정지 확인을 넣는 김에 메운 기존 갭(deleted_at 미확인)과 짝을 이루는 경로 —
+    구글 로그인은 리다이렉트 응답이라 HTTPException이 아니라 `?error=`로 로그인
+    화면에 되돌린다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+    db_client.cookies.clear()
+
+    user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
+    assert user is not None
+    user.suspended_at = datetime.now(UTC)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=account_suspended"
+    assert settings.session_cookie_name not in resp.cookies
 
 
 async def test_google_callback_minor_without_consent_redirects_to_onboarding_again(

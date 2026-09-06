@@ -74,6 +74,392 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/dashboard/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Counts
+         * @description `total_contents`는 `moderation_status`로 거르지 않는다 — 이용제한·삭제 조치된
+         *     작품도 존재하는 작품이므로 전체 행 수를 그대로 센다.
+         */
+        get: operations["get_dashboard_counts_admin_dashboard_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Trend
+         * @description 일별 신규가입·신규작품·메시지 3축을 각각 group-by 쿼리로 뽑아 빈 날은 0으로
+         *     채운다(`get_usage_metrics`의 `while day <= to_date` 패턴). `signups`는 `deleted_at`
+         *     필터를 걸지 않는다 — 그날 가입한 사실은 나중에 탈퇴해도 그대로 사실이다.
+         */
+        get: operations["get_dashboard_trend_admin_dashboard_trend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/popular": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Popular
+         * @description 조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —
+         *     presigned URL 서명이 행마다 붙어 비용만 늘어난다. `chat_count`만으로는 신규 등록작
+         *     (전부 0)이 11개 이상이면 매 호출마다 Top 10 구성·순서가 바뀌므로, `created_at DESC`
+         *     다음 `id`까지 더해 완전히 결정적인 정렬을 만든다.
+         */
+        get: operations["get_dashboard_popular_admin_dashboard_popular_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard Activity */
+        get: operations["get_dashboard_activity_admin_dashboard_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Contents
+         * @description techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이
+         *     `contents`가 아니라 `character_version_details`/`story_version_details`에 있어
+         *     `current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는
+         *     (초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만
+         *     (이름이 없으니 맞는 동작), `q` 없이 목록을 볼 땐 outer join이라 그대로 나온다.
+         */
+        get: operations["list_admin_contents_admin_contents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{content_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Content Detail */
+        get: operations["get_admin_content_detail_admin_contents__content_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{content_id}/action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Content
+         * @description 신고 없이 내리는 직접 조치. `reject`는 "신고를 반려한다"는 뜻이라, 애초에 신고가
+         *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).
+         *
+         *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
+         *     만들고 그 `reason_category` 컬럼이 NOT NULL이므로(goal-prompt.md §3-1, techspec
+         *     §1-2) 신고 사유 5종 중 하나가 필수다(없으면 422). 반면 `lift-restriction`은
+         *     `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를 강제할 근거가 없다 —
+         *     관리자가 의미 없는 값을 고르게 될 뿐이다. 대신 T-10(위험 조치 확인 다이얼로그 +
+         *     사유 필수)을 만족시키는 건 `admin_comment`(자유 텍스트, `admin_action_logs.reason_text`
+         *     로 그대로 남는다) 쪽이라 이걸 필수로 바꿨다(비어 있으면 422).
+         */
+        post: operations["act_on_content_admin_contents__content_id__action_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Users
+         * @description techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는
+         *     제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
+         *     한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
+         *     본 조회 1개, 총 2개로 끝난다.
+         */
+        get: operations["list_admin_users_admin_users_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin User Detail */
+        get: operations["get_admin_user_detail_admin_users__user_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/warn": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Warn User
+         * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 아래에서
+         *     만드는 `Notification.reason_category`가 NOT NULL이기 때문(T-2).
+         *
+         *     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
+         *     다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로
+         *     주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.
+         */
+        post: operations["warn_user_admin_users__user_id__warn_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/suspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suspend User
+         * @description techspec.md §2-2의 6단계를 정확한 순서로 수행한다.
+         *
+         *     ```
+         *     1. users.suspended_at = now()
+         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
+         *        (visibility는 불변, T-1; PRIVATE는 제외 — D-6)
+         *     3. Notification(type='user-suspended', content_id=None, action_id=None)
+         *     4. record_admin_action(action_type='user-suspend')
+         *     5. db.commit()                  ← 여기까지 원자적
+         *     6. mark_user_suspended(user_id) ← Redis. 실패하면 500
+         *     ```
+         *
+         *     **순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도
+         *     try/except 없이 그대로 예외가 전파돼 500이 된다) "DB엔 정지인데 마커가 없는" 상태로
+         *     끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시
+         *     시도된다.
+         *
+         *     **이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위
+         *     재시도 시나리오(6 실패 후 재호출)가 정확히 "이미 `suspended_at`이 있는 유저에 대한
+         *     두 번째 suspend 호출"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은
+         *     멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가
+         *     `_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은
+         *     다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
+         */
+        post: operations["suspend_user_admin_users__user_id__suspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/unsuspend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Unsuspend User
+         * @description 계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,
+         *     관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
+         *     한다.
+         *
+         *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로
+         *     `Notification.reason_category` NOT NULL을 근거로 필수화할 이유가 없다(경고/정지가
+         *     카테고리를 요구하는 것과 반대). 대신 2단계 `lift-restriction`과 같은 규칙으로
+         *     `admin_comment`를 필수로 받는다 — 비어 있으면 422.
+         *
+         *     **해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을
+         *     명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+         *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
+         *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
+         *
+         *     순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
+         */
+        post: operations["unsuspend_user_admin_users__user_id__unsuspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Legal Document */
+        get: operations["get_admin_legal_document_admin_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Legal Draft
+         * @description 초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만
+         *     upsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.
+         *
+         *     `_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면
+         *     부분 유니크 인덱스(`ix_legal_documents_kind_draft`)에 걸린다.
+         *     `publish_legal_document`와 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다.
+         *     다만 이 엔드포인트는 게시(발행)와 달리 upsert이므로, 경쟁에서 진 요청을 409로
+         *     거부하지 않는다 — "초안이 이 내용이 되게 하라"는 upsert의 의미는 먼저 커밋된 게
+         *     자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시
+         *     읽어 이 요청의 내용으로 덮어쓴다.
+         */
+        put: operations["upsert_legal_draft_admin_legal__kind__draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Legal Document
+         * @description 게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —
+         *     초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다
+         *     (버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).
+         *
+         *     **게시 후에도 초안 행은 지우지 않고 그대로 둔다.** "초안 저장 → 게시 → 다시 초안
+         *     저장"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만
+         *     제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금
+         *     편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:
+         *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
+         *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
+         */
+        post: operations["publish_legal_document_admin_legal__kind__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Legal Document Versions */
+        get: operations["list_legal_document_versions_admin_legal__kind__versions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -411,6 +797,54 @@ export interface paths {
         head?: never;
         /** Change Password */
         patch: operations["change_password_me_password_patch"];
+        trace?: never;
+    };
+    "/legal/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Legal Document
+         * @description 공개 조회 — 인증 없음. web `/terms`가 최신 게시본을 그대로 보여주는 데 쓴다.
+         */
+        get: operations["get_legal_document_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consent Legal Document
+         * @description 재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
+         *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
+         *     재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만
+         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 "현재 최신 게시본"의 것이다.
+         *
+         *     ⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지
+         *     중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로
+         *     "서비스 이용"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시
+         *     알려주므로 동의 자체를 영영 놓치는 것도 아니다.
+         */
+        post: operations["consent_legal_document_legal_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me/drafts": {
@@ -1359,8 +1793,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description 프로세스가 살아 있는지만 본다 — 의존 자원을 건드리지 않는다.
+         *
+         *     Caddy 헬스체크와 배포 검증(`.github/workflows/deploy-api.yml`)이 이 얕음에 의존한다:
+         *     DB 가 잠깐 흔들린다고 배포가 실패하거나 리버스 프록시가 백엔드를 빼면 안 된다.
+         *     "의존 자원까지 살아 있는가"는 `/ready` 가 답한다.
+         */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**
+         *
+         *     `/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가
+         *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
+         *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
+         *
+         *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
+         *     본문에 담아 사람이 로그 없이도 구분하게 한다.
+         *
+         *     각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,
+         *     그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.
+         */
+        get: operations["ready_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1403,6 +1874,304 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminContentActionRequest
+         * @description `reason_category`는 `restrict`/`delete`에만 필수다(`api/admin/contents.py`의
+         *     `act_on_content`가 조치별로 조건부 검증한다) — `lift-restriction`은 `Notification`을
+         *     만들지 않아 신고 사유 카테고리를 강제할 근거가 없다.
+         */
+        AdminContentActionRequest: {
+            action: components["schemas"]["ModerationActionType"];
+            reasonCategory?: components["schemas"]["ReportReasonCategory"] | null;
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminContentCreator */
+        AdminContentCreator: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+        };
+        /** AdminContentDetailResponse */
+        AdminContentDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            creator: components["schemas"]["AdminContentCreator"];
+            /** Prompt */
+            prompt: string | null;
+            /** Detaildescription */
+            detailDescription: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Hasunpublishedchanges */
+            hasUnpublishedChanges: boolean;
+            /** Versions */
+            versions: components["schemas"]["AdminContentVersionItem"][];
+        };
+        /** AdminContentListItem */
+        AdminContentListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Creatoruserid
+             * Format: uuid
+             */
+            creatorUserId: string;
+        };
+        /** AdminContentListResponse */
+        AdminContentListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminContentListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminContentVersionItem */
+        AdminContentVersionItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Versionnumber */
+            versionNumber: number | null;
+            /** Publishedat */
+            publishedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Isdraft */
+            isDraft: boolean;
+            /** Name */
+            name: string;
+        };
+        /** AdminDashboardActivityResponse */
+        AdminDashboardActivityResponse: {
+            /** Recentusers */
+            recentUsers: components["schemas"]["AdminDashboardRecentUser"][];
+            /** Recentcontents */
+            recentContents: components["schemas"]["AdminDashboardRecentContent"][];
+            /** Recentreports */
+            recentReports: components["schemas"]["AdminDashboardRecentReport"][];
+        };
+        /** AdminDashboardCountsResponse */
+        AdminDashboardCountsResponse: {
+            /** Totalusers */
+            totalUsers: number;
+            /** Totalcontents */
+            totalContents: number;
+            /** Todaymessages */
+            todayMessages: number;
+            /** Pendingreports */
+            pendingReports: number;
+        };
+        /** AdminDashboardPopularItem */
+        AdminDashboardPopularItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Chatcount */
+            chatCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+        };
+        /** AdminDashboardRecentContent */
+        AdminDashboardRecentContent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardRecentReport */
+        AdminDashboardRecentReport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardRecentUser */
+        AdminDashboardRecentUser: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardTrendPoint */
+        AdminDashboardTrendPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Signups */
+            signups: number;
+            /** Contents */
+            contents: number;
+            /** Messages */
+            messages: number;
+        };
+        /** AdminLegalDocumentResponse */
+        AdminLegalDocumentResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            draft: components["schemas"]["AdminLegalDraftItem"] | null;
+            published: components["schemas"]["AdminLegalPublishedItem"] | null;
+        };
+        /** AdminLegalDraftItem */
+        AdminLegalDraftItem: {
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminLegalDraftUpsertRequest */
+        AdminLegalDraftUpsertRequest: {
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+        };
+        /**
+         * AdminLegalPublishRequest
+         * @description `version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
+         *     (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
+         *     비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
+         *     (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
+         *     재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
+         *     않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
+         *     전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다.
+         */
+        AdminLegalPublishRequest: {
+            /** Version */
+            version: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalPublishedItem */
+        AdminLegalPublishedItem: {
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalVersionItem */
+        AdminLegalVersionItem: {
+            /** Version */
+            version: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalVersionsResponse */
+        AdminLegalVersionsResponse: {
+            /** Items */
+            items: components["schemas"]["AdminLegalVersionItem"][];
         };
         /** AdminLoginRequest */
         AdminLoginRequest: {
@@ -1500,6 +2269,185 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /** AdminUserActionLogItem */
+        AdminUserActionLogItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Actiontype */
+            actionType: string;
+            /** Targetcontentid */
+            targetContentId: string | null;
+            /** Contentname */
+            contentName: string | null;
+            /** Reasoncategory */
+            reasonCategory: string | null;
+            /** Reasontext */
+            reasonText: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserChatRoomItem */
+        AdminUserChatRoomItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            /** Name */
+            name: string | null;
+            /** Turncount */
+            turnCount: number;
+            /** Messagecount */
+            messageCount: number;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserDetailResponse */
+        AdminUserDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /** Bio */
+            bio: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Suspendedat */
+            suspendedAt: string | null;
+            /** Emailverifiedat */
+            emailVerifiedAt: string | null;
+            /**
+             * Signupmethod
+             * @enum {string}
+             */
+            signupMethod: "google" | "email";
+            /** Contentcount */
+            contentCount: number;
+            /** Restrictablecontentcount */
+            restrictableContentCount: number;
+            /** Chatroomcount */
+            chatRoomCount: number;
+            /** Messagecount */
+            messageCount: number;
+            /** Lastactiveat */
+            lastActiveAt: string | null;
+            /** Reports */
+            reports: components["schemas"]["AdminUserReportItem"][];
+            /** Actionlogs */
+            actionLogs: components["schemas"]["AdminUserActionLogItem"][];
+            /** Chatrooms */
+            chatRooms: components["schemas"]["AdminUserChatRoomItem"][];
+        };
+        /** AdminUserListItem */
+        AdminUserListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Suspendedat */
+            suspendedAt: string | null;
+            /** Contentcount */
+            contentCount: number;
+            /** Chatroomcount */
+            chatRoomCount: number;
+        };
+        /** AdminUserListResponse */
+        AdminUserListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminUserListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminUserReportItem */
+        AdminUserReportItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminUserSuspendRequest */
+        AdminUserSuspendRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminUserSuspendResponse */
+        AdminUserSuspendResponse: {
+            /** Restrictedcontentcount */
+            restrictedContentCount: number;
+        };
+        /**
+         * AdminUserUnsuspendRequest
+         * @description `reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는
+         *     알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring
+         *     참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은
+         *     규칙).
+         */
+        AdminUserUnsuspendRequest: {
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminUserWarnRequest */
+        AdminUserWarnRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /** AppealCreateRequest */
         AppealCreateRequest: {
@@ -2367,6 +3315,33 @@ export interface components {
             /** Startingsetupid */
             startingSetupId: string | null;
         };
+        /** LegalConsentRequest */
+        LegalConsentRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            /** Version */
+            version: string;
+        };
+        /** LegalDocumentPublicResponse */
+        LegalDocumentPublicResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
         /**
          * LogicalOp
          * @enum {string}
@@ -2397,6 +3372,10 @@ export interface components {
             bio: string | null;
             /** Profileimageassetid */
             profileImageAssetId: string | null;
+            /** Termsreconsentrequired */
+            termsReconsentRequired: boolean;
+            /** Privacyreconsentrequired */
+            privacyReconsentRequired: boolean;
         };
         /**
          * ModerationActionType
@@ -2417,16 +3396,10 @@ export interface components {
             id: string;
             /** Type */
             type: string;
-            /**
-             * Contentid
-             * Format: uuid
-             */
-            contentId: string;
-            /**
-             * Actionid
-             * Format: uuid
-             */
-            actionId: string;
+            /** Contentid */
+            contentId: string | null;
+            /** Actionid */
+            actionId: string | null;
             /** Reasoncategory */
             reasonCategory: string;
             /** Admincomment */
@@ -3019,6 +3992,507 @@ export interface operations {
             };
         };
     };
+    get_dashboard_counts_admin_dashboard_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardCountsResponse"];
+                };
+            };
+        };
+    };
+    get_dashboard_trend_admin_dashboard_trend_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardTrendPoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_popular_admin_dashboard_popular_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardPopularItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_activity_admin_dashboard_activity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardActivityResponse"];
+                };
+            };
+        };
+    };
+    list_admin_contents_admin_contents_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                type?: components["schemas"]["ContentType"] | null;
+                visibility?: components["schemas"]["ContentVisibility"] | null;
+                moderationStatus?: components["schemas"]["ModerationStatus"] | null;
+                q?: string | null;
+                sort?: "recent" | "views" | "chats";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_content_detail_admin_contents__content_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_content_admin_contents__content_id__action_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminContentActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_users_admin_users_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                q?: string | null;
+                suspended?: boolean | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_user_detail_admin_users__user_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    warn_user_admin_users__user_id__warn_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserWarnRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suspend_user_admin_users__user_id__suspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserSuspendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminUserSuspendResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unsuspend_user_admin_users__user_id__unsuspend_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserUnsuspendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_legal_document_admin_legal__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_legal_draft_admin_legal__kind__draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLegalDraftUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_legal_document_admin_legal__kind__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLegalPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_legal_document_versions_admin_legal__kind__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalVersionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_presigned_upload_assets_presigned_upload_post: {
         parameters: {
             query?: never;
@@ -3581,6 +5055,68 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_legal_document_legal__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalDocumentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    consent_legal_document_legal_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalConsentRequest"];
             };
         };
         responses: {
@@ -5214,6 +6750,28 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    ready_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };
