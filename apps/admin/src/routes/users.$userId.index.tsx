@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { requireSession } from "../entities/session";
 import { UserDetailPage } from "../pages/user-detail";
 
-export const Route = createFileRoute("/users/$userId")({
+export const Route = createFileRoute("/users/$userId/")({
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),
   component: RouteComponent,
 });

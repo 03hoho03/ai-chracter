@@ -6,6 +6,7 @@ from fastapi import FastAPI, Response, status as status_module
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
+from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
 from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.legal import router as admin_legal_router
@@ -61,6 +62,7 @@ app.include_router(admin_dashboard_router)
 app.include_router(admin_contents_router)
 app.include_router(admin_users_router)
 app.include_router(admin_legal_router)
+app.include_router(admin_chat_view_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)

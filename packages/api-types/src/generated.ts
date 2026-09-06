@@ -460,6 +460,48 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/chat-rooms/{room_id}/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * View Chat Room
+         * @description techspec §4-5. **열람 1회 = 로그 1행**(T-6) — 로그는 이 엔드포인트에서만 쌓는다.
+         *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.
+         */
+        post: operations["view_chat_room_admin_chat_rooms__room_id__view_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/chat-rooms/{room_id}/messages": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Chat Room Messages
+         * @description 더보기 — **로그를 절대 쌓지 않는다**(T-6): "열람 1회 = 로그 1행"을 메서드로
+         *     보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다.
+         */
+        get: operations["list_chat_room_messages_admin_chat_rooms__room_id__messages_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -1875,6 +1917,47 @@ export interface components {
             /** Totalcount */
             totalCount: number;
         };
+        /** AdminChatMessageItem */
+        AdminChatMessageItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            role: components["schemas"]["ChatMessageRole"];
+            /** Content */
+            content: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * AdminChatMessagesResponse
+         * @description `POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다
+         *     같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`
+         *     평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null.
+         */
+        AdminChatMessagesResponse: {
+            /** Items */
+            items: components["schemas"]["AdminChatMessageItem"][];
+            /** Beforecreatedat */
+            beforeCreatedAt: string | null;
+            /** Beforeid */
+            beforeId: string | null;
+        };
+        /**
+         * AdminChatRoomViewRequest
+         * @description `reason_text`는 공백만이면 422 — `admin/chat_view.py`가 `unsuspend_user`의
+         *     `admin_comment` 검증 선례를 그대로 따라 수동으로 확인한다(둘 다 필수라 여기선
+         *     optional로 두지 않는다).
+         */
+        AdminChatRoomViewRequest: {
+            reasonCategory: components["schemas"]["ChatViewReasonCategory"];
+            /** Reasontext */
+            reasonText: string;
+        };
         /**
          * AdminContentActionRequest
          * @description `reason_category`는 `restrict`/`delete`에만 필수다(`api/admin/contents.py`의
@@ -2756,6 +2839,13 @@ export interface components {
              */
             updatedAt: string;
         };
+        /**
+         * ChatViewReasonCategory
+         * @description techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+         *     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다.
+         * @enum {string}
+         */
+        ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
         /**
          * ContentAccessStatus
          * @description Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:
@@ -4480,6 +4570,76 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminLegalVersionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_chat_room_admin_chat_rooms__room_id__view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminChatRoomViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminChatMessagesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_room_messages_admin_chat_rooms__room_id__messages_get: {
+        parameters: {
+            query?: {
+                beforeCreatedAt?: string | null;
+                beforeId?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminChatMessagesResponse"];
                 };
             };
             /** @description Validation Error */
