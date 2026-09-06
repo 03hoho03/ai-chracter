@@ -530,6 +530,40 @@ async def test_user_detail_restrictable_content_count_excludes_already_restricte
     assert body["restrictableContentCount"] == 1
 
 
+async def test_user_detail_restrictable_content_count_excludes_private_visibility(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """D-6: 정지 대상은 공개 작품(PUBLIC/LINK)뿐이라, `visibility=PRIVATE`인 NORMAL
+    작품은 정지해도 내려가지 않는다 — `restrictableContentCount`도 그 작품을 빼고 세야
+    한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _make_content(
+        db_session,
+        creator_user_id=user.id,
+        moderation_status=ModerationStatus.NORMAL,
+        visibility=ContentVisibility.PRIVATE,
+    )
+    await _make_content(
+        db_session,
+        creator_user_id=user.id,
+        moderation_status=ModerationStatus.NORMAL,
+        visibility=ContentVisibility.PUBLIC,
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/users/{user.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["contentCount"] == 2
+    assert body["restrictableContentCount"] == 1
+
+
 async def test_user_detail_google_signup_method(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -776,6 +810,45 @@ async def test_suspend_sets_suspended_at_restricts_content_notifies_logs_and_mar
     assert await is_user_suspended(user.id) is True
 
 
+async def test_suspend_excludes_private_content_from_restriction(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """D-6: 정지는 그 유저의 공개 작품(PUBLIC/LINK) 전부를 비공개 처리하되, 한 번도
+    공개한 적 없는 PRIVATE 초안은 건드리지 않는다 — `content/router.py`의
+    `create_content_draft`가 새 초안을 PRIVATE+NORMAL로 만들기 때문에, 이 조건이
+    없으면 미공개 초안까지 restricted가 된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    private_content = await _make_content(
+        db_session, creator_user_id=user.id, visibility=ContentVisibility.PRIVATE
+    )
+    public_content = await _make_content(
+        db_session, creator_user_id=user.id, visibility=ContentVisibility.PUBLIC
+    )
+    link_content = await _make_content(
+        db_session, creator_user_id=user.id, visibility=ContentVisibility.LINK
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/users/{user.id}/suspend", json={"reasonCategory": "spam"})
+    assert resp.status_code == 200
+    assert resp.json()["restrictedContentCount"] == 2
+
+    await db_session.refresh(private_content)
+    assert private_content.moderation_status == ModerationStatus.NORMAL
+
+    await db_session.refresh(public_content)
+    assert public_content.moderation_status == ModerationStatus.RESTRICTED
+
+    await db_session.refresh(link_content)
+    assert link_content.moderation_status == ModerationStatus.RESTRICTED
+
+
 async def test_suspend_missing_reason_category_returns_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -844,12 +917,19 @@ async def test_suspend_restricted_content_count_matches_detail_preview(
 ) -> None:
     """정지 확인 다이얼로그가 상세 응답의 `restrictableContentCount`로 예고한 개수는
     실제 suspend 응답의 `restrictedContentCount`와 정확히 일치해야 한다 — 이미
-    restricted인 작품이 섞여 있어도(`contentCount`와는 값이 갈리는 상황) 어긋나면 안 된다."""
+    restricted인 작품과 PRIVATE(한 번도 공개한 적 없는 초안)인 작품이 섞여 있어도
+    (`contentCount`와는 값이 갈리는 상황) 어긋나면 안 된다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     await _make_content(db_session, creator_user_id=user.id, moderation_status=ModerationStatus.NORMAL)
     await _make_content(db_session, creator_user_id=user.id, moderation_status=ModerationStatus.RESTRICTED)
+    await _make_content(
+        db_session,
+        creator_user_id=user.id,
+        moderation_status=ModerationStatus.NORMAL,
+        visibility=ContentVisibility.PRIVATE,
+    )
     await db_session.commit()
 
     admin_payload = await _create_admin(db_session)

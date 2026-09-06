@@ -3,7 +3,7 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import ColumnElement, func, or_, select, update
+from sqlalchemy import ColumnElement, and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
@@ -23,7 +23,7 @@ from api.admin.schemas import (
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
-from api.db.models.content import Content, ContentType, ModerationStatus
+from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import AdminActionLog, Notification, Report
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
@@ -32,6 +32,18 @@ from api.session.suspension import mark_user_suspended, unmark_user_suspended
 router = APIRouter(tags=["admin"])
 
 ADMIN_USER_PAGE_SIZE = 20
+
+# 정지 시 restricted로 내려갈 작품의 판정 조건(D-6: 그 유저의 공개 작품 전부 비공개 —
+# PUBLIC과 LINK 둘 다 내리고 PRIVATE만 제외한다. LINK는 링크를 아는 사람이 열람할 수
+# 있어 정지된 사용자의 콘텐츠가 계속 노출되기 때문이다). 한 번도 공개한 적 없는 PRIVATE
+# 초안까지 내리면 정지 해제 후(D-7: 자동 복구 없음) 관리자가 그 초안까지 하나씩 되돌려야
+# 하는 부담이 생긴다. `suspend_user`의 UPDATE WHERE와 `_build_user_detail_response`의
+# `restrictable_content_count` 계산이 반드시 같은 조건을 써야 하므로(어긋나면 정지 확인
+# 다이얼로그의 예고와 실제 결과가 갈린다) 이 한 곳에만 정의해 두 곳에서 공유한다.
+_RESTRICTABLE_CONTENT_CONDITION: ColumnElement[bool] = and_(
+    Content.moderation_status == ModerationStatus.NORMAL,
+    Content.visibility != ContentVisibility.PRIVATE,
+)
 
 
 async def _content_names_by_id(db: AsyncSession, content_ids: Iterable[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -159,19 +171,18 @@ async def list_admin_users(
 async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUserDetailResponse:
     """`GET /admin/users/{id}`의 조립 로직. 이름 채우기는 전부 벌크 조회이고, 방마다
     쿼리를 돌리지 않는다 — 채팅방 메시지 수·마지막 시각은 GROUP BY 벌크로 한 번에 붙인다."""
-    # `moderation_status`도 같은 조회에 함께 실어 `restrictable_content_count`를 파생시킨다
-    # (새 쿼리를 늘리지 않기 위함) — 이 필드의 정의(NORMAL인 것만 셈)는 `suspend_user()`의
-    # UPDATE WHERE(`creator_user_id == user.id AND moderation_status == NORMAL`)와 정확히
-    # 같아야 한다. 두 곳이 어긋나면 정지 확인 다이얼로그의 예고와 실제 결과가 다시 갈린다.
+    # `restrictable_content_count`는 `_RESTRICTABLE_CONTENT_CONDITION`을 같은 조회에
+    # boolean 컬럼으로 함께 실어 파생시킨다(새 쿼리를 늘리지 않기 위함) — `suspend_user()`의
+    # UPDATE WHERE와 정확히 같은 조건 객체를 재사용하므로 두 곳이 어긋날 수 없다.
     user_contents = (
         await db.execute(
-            select(Content.id, Content.moderation_status).where(Content.creator_user_id == user.id)
+            select(Content.id, _RESTRICTABLE_CONTENT_CONDITION.label("restrictable")).where(
+                Content.creator_user_id == user.id
+            )
         )
     ).all()
     user_content_ids = [content_id for content_id, _ in user_contents]
-    restrictable_content_count = sum(
-        1 for _, moderation_status in user_contents if moderation_status == ModerationStatus.NORMAL
-    )
+    restrictable_content_count = sum(1 for _, restrictable in user_contents if restrictable)
 
     chat_room_count = (
         await db.scalar(select(func.count()).select_from(ChatRoom).where(ChatRoom.user_id == user.id))
@@ -357,7 +368,8 @@ async def suspend_user(
 
     ```
     1. users.suspended_at = now()
-    2. 그 유저의 contents.moderation_status = 'restricted' (visibility는 불변, T-1)
+    2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
+       (visibility는 불변, T-1; PRIVATE는 제외 — D-6)
     3. Notification(type='user-suspended', content_id=None, action_id=None)
     4. record_admin_action(action_type='user-suspend')
     5. db.commit()                  ← 여기까지 원자적
@@ -373,8 +385,8 @@ async def suspend_user(
     재시도 시나리오(6 실패 후 재호출)가 정확히 "이미 `suspended_at`이 있는 유저에 대한
     두 번째 suspend 호출"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은
     멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가
-    `moderation_status == NORMAL`인 작품만 내리므로 이미 내려간 작품은 다시 세지 않아
-    재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
+    `_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은
+    다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
     """
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
@@ -383,17 +395,19 @@ async def suspend_user(
     # 1.
     user.suspended_at = datetime.now(UTC)
 
-    # 2. 이미 restricted거나 deleted인 작품은 건드리지 않는다 — NORMAL인 것만 내린다.
-    # 안 그러면 이미 삭제 처리된 작품이 restricted로 되살아나거나(T-1과 같은 종류의
-    # 사고), 재호출마다 restricted_content_count가 실제로 안 내려간 작품까지 센다.
+    # 2. `_RESTRICTABLE_CONTENT_CONDITION`(NORMAL이면서 PRIVATE가 아닌 것)만 내린다.
+    # 이미 restricted/deleted인 작품은 건드리지 않는다 — 안 그러면 이미 삭제 처리된
+    # 작품이 restricted로 되살아나거나(T-1과 같은 종류의 사고), 재호출마다
+    # restricted_content_count가 실제로 안 내려간 작품까지 센다.
     # `.rowcount`(mypy strict에서 `Result[Any]`가 노출하지 않는 속성) 대신 `.returning()`
     # + `.scalars()`로 실제 변경된 행을 세어 이 코드베이스의 기존 조회 패턴을 유지한다.
     # 이 WHERE 조건은 `_build_user_detail_response`의 `restrictable_content_count`
-    # 계산과 정확히 같아야 한다(그쪽이 이 정지가 내릴 작품 수를 미리 예고하는 값이라서다).
+    # 계산과 정확히 같은 `_RESTRICTABLE_CONTENT_CONDITION`을 쓴다(그쪽이 이 정지가
+    # 내릴 작품 수를 미리 예고하는 값이라서다).
     restricted_content_ids = (
         await db.scalars(
             update(Content)
-            .where(Content.creator_user_id == user_id, Content.moderation_status == ModerationStatus.NORMAL)
+            .where(Content.creator_user_id == user_id, _RESTRICTABLE_CONTENT_CONDITION)
             .values(moderation_status=ModerationStatus.RESTRICTED)
             .returning(Content.id)
         )
