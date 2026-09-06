@@ -74,6 +74,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/dashboard/counts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Counts
+         * @description `total_contents`는 `moderation_status`로 거르지 않는다 — 이용제한·삭제 조치된
+         *     작품도 존재하는 작품이므로 전체 행 수를 그대로 센다.
+         */
+        get: operations["get_dashboard_counts_admin_dashboard_counts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/trend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Trend
+         * @description 일별 신규가입·신규작품·메시지 3축을 각각 group-by 쿼리로 뽑아 빈 날은 0으로
+         *     채운다(`get_usage_metrics`의 `while day <= to_date` 패턴). `signups`는 `deleted_at`
+         *     필터를 걸지 않는다 — 그날 가입한 사실은 나중에 탈퇴해도 그대로 사실이다.
+         */
+        get: operations["get_dashboard_trend_admin_dashboard_trend_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/popular": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Popular
+         * @description 조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —
+         *     presigned URL 서명이 행마다 붙어 비용만 늘어난다.
+         */
+        get: operations["get_dashboard_popular_admin_dashboard_popular_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/dashboard/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Dashboard Activity */
+        get: operations["get_dashboard_activity_admin_dashboard_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -1359,8 +1440,45 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Health */
+        /**
+         * Health
+         * @description 프로세스가 살아 있는지만 본다 — 의존 자원을 건드리지 않는다.
+         *
+         *     Caddy 헬스체크와 배포 검증(`.github/workflows/deploy-api.yml`)이 이 얕음에 의존한다:
+         *     DB 가 잠깐 흔들린다고 배포가 실패하거나 리버스 프록시가 백엔드를 빼면 안 된다.
+         *     "의존 자원까지 살아 있는가"는 `/ready` 가 답한다.
+         */
         get: operations["health_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ready": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ready
+         * @description DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**
+         *
+         *     `/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가
+         *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
+         *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
+         *
+         *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
+         *     본문에 담아 사람이 로그 없이도 구분하게 한다.
+         *
+         *     각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,
+         *     그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.
+         */
+        get: operations["ready_ready_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1403,6 +1521,112 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /** AdminDashboardActivityResponse */
+        AdminDashboardActivityResponse: {
+            /** Recentusers */
+            recentUsers: components["schemas"]["AdminDashboardRecentUser"][];
+            /** Recentcontents */
+            recentContents: components["schemas"]["AdminDashboardRecentContent"][];
+            /** Recentreports */
+            recentReports: components["schemas"]["AdminDashboardRecentReport"][];
+        };
+        /** AdminDashboardCountsResponse */
+        AdminDashboardCountsResponse: {
+            /** Totalusers */
+            totalUsers: number;
+            /** Totalcontents */
+            totalContents: number;
+            /** Todaymessages */
+            todayMessages: number;
+            /** Pendingreports */
+            pendingReports: number;
+        };
+        /** AdminDashboardPopularItem */
+        AdminDashboardPopularItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Chatcount */
+            chatCount: number;
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+        };
+        /** AdminDashboardRecentContent */
+        AdminDashboardRecentContent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardRecentReport */
+        AdminDashboardRecentReport: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Contentname */
+            contentName: string;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardRecentUser */
+        AdminDashboardRecentUser: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminDashboardTrendPoint */
+        AdminDashboardTrendPoint: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Signups */
+            signups: number;
+            /** Contents */
+            contents: number;
+            /** Messages */
+            messages: number;
         };
         /** AdminLoginRequest */
         AdminLoginRequest: {
@@ -3015,6 +3239,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminMeResponse"];
+                };
+            };
+        };
+    };
+    get_dashboard_counts_admin_dashboard_counts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardCountsResponse"];
+                };
+            };
+        };
+    };
+    get_dashboard_trend_admin_dashboard_trend_get: {
+        parameters: {
+            query?: {
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardTrendPoint"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_popular_admin_dashboard_popular_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardPopularItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_dashboard_activity_admin_dashboard_activity_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardActivityResponse"];
                 };
             };
         };
@@ -5214,6 +5540,28 @@ export interface operations {
                 content: {
                     "application/json": {
                         [key: string]: string;
+                    };
+                };
+            };
+        };
+    };
+    ready_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
                     };
                 };
             };

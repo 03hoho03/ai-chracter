@@ -152,6 +152,149 @@
         }
       }
     },
+    "/admin/dashboard/counts": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Dashboard Counts",
+        "description": "`total_contents`는 `moderation_status`로 거르지 않는다 — 이용제한·삭제 조치된\n작품도 존재하는 작품이므로 전체 행 수를 그대로 센다.",
+        "operationId": "get_dashboard_counts_admin_dashboard_counts_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardCountsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dashboard/trend": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Dashboard Trend",
+        "description": "일별 신규가입·신규작품·메시지 3축을 각각 group-by 쿼리로 뽑아 빈 날은 0으로\n채운다(`get_usage_metrics`의 `while day <= to_date` 패턴). `signups`는 `deleted_at`\n필터를 걸지 않는다 — 그날 가입한 사실은 나중에 탈퇴해도 그대로 사실이다.",
+        "operationId": "get_dashboard_trend_admin_dashboard_trend_get",
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 365,
+              "minimum": 1,
+              "default": 30,
+              "title": "Days"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminDashboardTrendPoint"
+                  },
+                  "title": "Response Get Dashboard Trend Admin Dashboard Trend Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dashboard/popular": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Dashboard Popular",
+        "description": "조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —\npresigned URL 서명이 행마다 붙어 비용만 늘어난다.",
+        "operationId": "get_dashboard_popular_admin_dashboard_popular_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "default": 10,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AdminDashboardPopularItem"
+                  },
+                  "title": "Response Get Dashboard Popular Admin Dashboard Popular Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/dashboard/activity": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Dashboard Activity",
+        "operationId": "get_dashboard_activity_admin_dashboard_activity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardActivityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -3357,6 +3500,7 @@
     "/health": {
       "get": {
         "summary": "Health",
+        "description": "프로세스가 살아 있는지만 본다 — 의존 자원을 건드리지 않는다.\n\nCaddy 헬스체크와 배포 검증(`.github/workflows/deploy-api.yml`)이 이 얕음에 의존한다:\nDB 가 잠깐 흔들린다고 배포가 실패하거나 리버스 프록시가 백엔드를 빼면 안 된다.\n\"의존 자원까지 살아 있는가\"는 `/ready` 가 답한다.",
         "operationId": "health_health_get",
         "responses": {
           "200": {
@@ -3369,6 +3513,27 @@
                   },
                   "type": "object",
                   "title": "Response Health Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "summary": "Ready",
+        "description": "DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**\n\n`/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가\n죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).\nUptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.\n\n하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는\n본문에 담아 사람이 로그 없이도 구분하게 한다.\n\n각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,\n그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.",
+        "operationId": "ready_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Ready Ready Get"
                 }
               }
             }
@@ -3466,6 +3631,231 @@
           "totalCount"
         ],
         "title": "AdminAppealListResponse"
+      },
+      "AdminDashboardActivityResponse": {
+        "properties": {
+          "recentUsers": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardRecentUser"
+            },
+            "type": "array",
+            "title": "Recentusers"
+          },
+          "recentContents": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardRecentContent"
+            },
+            "type": "array",
+            "title": "Recentcontents"
+          },
+          "recentReports": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardRecentReport"
+            },
+            "type": "array",
+            "title": "Recentreports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "recentUsers",
+          "recentContents",
+          "recentReports"
+        ],
+        "title": "AdminDashboardActivityResponse"
+      },
+      "AdminDashboardCountsResponse": {
+        "properties": {
+          "totalUsers": {
+            "type": "integer",
+            "title": "Totalusers"
+          },
+          "totalContents": {
+            "type": "integer",
+            "title": "Totalcontents"
+          },
+          "todayMessages": {
+            "type": "integer",
+            "title": "Todaymessages"
+          },
+          "pendingReports": {
+            "type": "integer",
+            "title": "Pendingreports"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalUsers",
+          "totalContents",
+          "todayMessages",
+          "pendingReports"
+        ],
+        "title": "AdminDashboardCountsResponse"
+      },
+      "AdminDashboardPopularItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "chatCount",
+          "viewCount",
+          "likeCount"
+        ],
+        "title": "AdminDashboardPopularItem"
+      },
+      "AdminDashboardRecentContent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "createdAt"
+        ],
+        "title": "AdminDashboardRecentContent"
+      },
+      "AdminDashboardRecentReport": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reasonCategory",
+          "contentId",
+          "contentName",
+          "status",
+          "createdAt"
+        ],
+        "title": "AdminDashboardRecentReport"
+      },
+      "AdminDashboardRecentUser": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "nickname",
+          "createdAt"
+        ],
+        "title": "AdminDashboardRecentUser"
+      },
+      "AdminDashboardTrendPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "Date"
+          },
+          "signups": {
+            "type": "integer",
+            "title": "Signups"
+          },
+          "contents": {
+            "type": "integer",
+            "title": "Contents"
+          },
+          "messages": {
+            "type": "integer",
+            "title": "Messages"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "signups",
+          "contents",
+          "messages"
+        ],
+        "title": "AdminDashboardTrendPoint"
       },
       "AdminLoginRequest": {
         "properties": {
