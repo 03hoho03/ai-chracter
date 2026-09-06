@@ -8,4 +8,9 @@ export {
   type AdminUserSuspendResponse,
 } from "./api/useSuspendUserMutation";
 export { useUnsuspendUserMutation, type AdminUserUnsuspendRequest } from "./api/useUnsuspendUserMutation";
-export { SIGNUP_METHOD_LABELS, ACTION_TYPE_LABELS } from "./model/labels";
+export {
+  SIGNUP_METHOD_LABELS,
+  ACTION_TYPE_LABELS,
+  CHAT_VIEW_REASON_CATEGORY_LABELS,
+  type ChatViewReasonCategory,
+} from "./model/labels";

@@ -1,3 +1,4 @@
+import enum
 import uuid
 from datetime import date, datetime
 from typing import Literal
@@ -5,6 +6,7 @@ from typing import Literal
 from pydantic import EmailStr, Field
 
 from api.core.schema import CamelModel
+from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import ModerationActionType, ReportReasonCategory, ReportStatus
 from api.legal.schemas import LegalDocumentKind
@@ -270,3 +272,39 @@ class AdminLegalVersionItem(CamelModel):
 
 class AdminLegalVersionsResponse(CamelModel):
     items: list[AdminLegalVersionItem]
+
+
+class ChatViewReasonCategory(str, enum.Enum):
+    """techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+    다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."""
+
+    REPORT_INVESTIGATION = "report-investigation"
+    APPEAL_REVIEW = "appeal-review"
+    LEGAL_REQUEST = "legal-request"
+    OTHER = "other"
+
+
+class AdminChatRoomViewRequest(CamelModel):
+    """`reason_text`는 공백만이면 422 — `admin/chat_view.py`가 `unsuspend_user`의
+    `admin_comment` 검증 선례를 그대로 따라 수동으로 확인한다(둘 다 필수라 여기선
+    optional로 두지 않는다)."""
+
+    reason_category: ChatViewReasonCategory
+    reason_text: str
+
+
+class AdminChatMessageItem(CamelModel):
+    id: uuid.UUID
+    role: ChatMessageRole
+    content: str
+    created_at: datetime
+
+
+class AdminChatMessagesResponse(CamelModel):
+    """`POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다
+    같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`
+    평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null."""
+
+    items: list[AdminChatMessageItem]
+    before_created_at: datetime | None
+    before_id: uuid.UUID | None

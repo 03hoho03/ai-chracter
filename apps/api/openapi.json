@@ -990,6 +990,150 @@
         }
       }
     },
+    "/admin/chat-rooms/{room_id}/view": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "View Chat Room",
+        "description": "techspec §4-5. **열람 1회 = 로그 1행**(T-6) — 로그는 이 엔드포인트에서만 쌓는다.\n더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.",
+        "operationId": "view_chat_room_admin_chat_rooms__room_id__view_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminChatRoomViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChatMessagesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/chat-rooms/{room_id}/messages": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Chat Room Messages",
+        "description": "더보기 — **로그를 절대 쌓지 않는다**(T-6): \"열람 1회 = 로그 1행\"을 메서드로\n보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다.",
+        "operationId": "list_chat_room_messages_admin_chat_rooms__room_id__messages_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          },
+          {
+            "name": "beforeCreatedAt",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Beforecreatedat"
+            }
+          },
+          {
+            "name": "beforeId",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Beforeid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminChatMessagesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -4409,6 +4553,96 @@
         ],
         "title": "AdminAppealListResponse"
       },
+      "AdminChatMessageItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/ChatMessageRole"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ],
+        "title": "AdminChatMessageItem"
+      },
+      "AdminChatMessagesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminChatMessageItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "beforeCreatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforecreatedat"
+          },
+          "beforeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Beforeid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "beforeCreatedAt",
+          "beforeId"
+        ],
+        "title": "AdminChatMessagesResponse",
+        "description": "`POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다\n같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`\n평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null."
+      },
+      "AdminChatRoomViewRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ChatViewReasonCategory"
+          },
+          "reasonText": {
+            "type": "string",
+            "title": "Reasontext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory",
+          "reasonText"
+        ],
+        "title": "AdminChatRoomViewRequest",
+        "description": "`reason_text`는 공백만이면 422 — `admin/chat_view.py`가 `unsuspend_user`의\n`admin_comment` 검증 선례를 그대로 따라 수동으로 확인한다(둘 다 필수라 여기선\noptional로 두지 않는다)."
+      },
       "AdminContentActionRequest": {
         "properties": {
           "action": {
@@ -6561,6 +6795,17 @@
           "updatedAt"
         ],
         "title": "ChatRoomResponse"
+      },
+      "ChatViewReasonCategory": {
+        "type": "string",
+        "enum": [
+          "report-investigation",
+          "appeal-review",
+          "legal-request",
+          "other"
+        ],
+        "title": "ChatViewReasonCategory",
+        "description": "techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
       },
       "ContentAccessStatus": {
         "properties": {
