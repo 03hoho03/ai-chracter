@@ -2,11 +2,12 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import EmailStr
+from pydantic import EmailStr, Field
 
 from api.core.schema import CamelModel
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import ModerationActionType, ReportReasonCategory, ReportStatus
+from api.legal.schemas import LegalDocumentKind
 
 
 class AdminLoginRequest(CamelModel):
@@ -224,3 +225,48 @@ class AdminUserUnsuspendRequest(CamelModel):
     규칙)."""
 
     admin_comment: str | None = None
+
+
+class AdminLegalDraftItem(CamelModel):
+    body_markdown: str
+    created_at: datetime
+
+
+class AdminLegalPublishedItem(CamelModel):
+    version: str
+    body_markdown: str
+    published_at: datetime
+    requires_reconsent: bool
+
+
+class AdminLegalDocumentResponse(CamelModel):
+    kind: LegalDocumentKind
+    draft: AdminLegalDraftItem | None
+    published: AdminLegalPublishedItem | None
+
+
+class AdminLegalDraftUpsertRequest(CamelModel):
+    body_markdown: str
+
+
+class AdminLegalPublishRequest(CamelModel):
+    """`version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
+    (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
+    비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
+    (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
+    재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
+    않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
+    전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다."""
+
+    version: str = Field(min_length=1, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    requires_reconsent: bool
+
+
+class AdminLegalVersionItem(CamelModel):
+    version: str
+    published_at: datetime
+    requires_reconsent: bool
+
+
+class AdminLegalVersionsResponse(CamelModel):
+    items: list[AdminLegalVersionItem]

@@ -307,7 +307,8 @@ export interface paths {
          *
          *     ```
          *     1. users.suspended_at = now()
-         *     2. 그 유저의 contents.moderation_status = 'restricted' (visibility는 불변, T-1)
+         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
+         *        (visibility는 불변, T-1; PRIVATE는 제외 — D-6)
          *     3. Notification(type='user-suspended', content_id=None, action_id=None)
          *     4. record_admin_action(action_type='user-suspend')
          *     5. db.commit()                  ← 여기까지 원자적
@@ -323,8 +324,8 @@ export interface paths {
          *     재시도 시나리오(6 실패 후 재호출)가 정확히 "이미 `suspended_at`이 있는 유저에 대한
          *     두 번째 suspend 호출"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은
          *     멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가
-         *     `moderation_status == NORMAL`인 작품만 내리므로 이미 내려간 작품은 다시 세지 않아
-         *     재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
+         *     `_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은
+         *     다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.
          */
         post: operations["suspend_user_admin_users__user_id__suspend_post"];
         delete?: never;
@@ -361,6 +362,98 @@ export interface paths {
          *     순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
          */
         post: operations["unsuspend_user_admin_users__user_id__unsuspend_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Legal Document */
+        get: operations["get_admin_legal_document_admin_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Upsert Legal Draft
+         * @description 초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만
+         *     upsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.
+         *
+         *     `_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면
+         *     부분 유니크 인덱스(`ix_legal_documents_kind_draft`)에 걸린다.
+         *     `publish_legal_document`와 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다.
+         *     다만 이 엔드포인트는 게시(발행)와 달리 upsert이므로, 경쟁에서 진 요청을 409로
+         *     거부하지 않는다 — "초안이 이 내용이 되게 하라"는 upsert의 의미는 먼저 커밋된 게
+         *     자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시
+         *     읽어 이 요청의 내용으로 덮어쓴다.
+         */
+        put: operations["upsert_legal_draft_admin_legal__kind__draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Legal Document
+         * @description 게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —
+         *     초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다
+         *     (버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).
+         *
+         *     **게시 후에도 초안 행은 지우지 않고 그대로 둔다.** "초안 저장 → 게시 → 다시 초안
+         *     저장"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만
+         *     제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금
+         *     편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:
+         *     오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게
+         *     되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.
+         */
+        post: operations["publish_legal_document_admin_legal__kind__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/legal/{kind}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Legal Document Versions */
+        get: operations["list_legal_document_versions_admin_legal__kind__versions_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -704,6 +797,54 @@ export interface paths {
         head?: never;
         /** Change Password */
         patch: operations["change_password_me_password_patch"];
+        trace?: never;
+    };
+    "/legal/{kind}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Legal Document
+         * @description 공개 조회 — 인증 없음. web `/terms`가 최신 게시본을 그대로 보여주는 데 쓴다.
+         */
+        get: operations["get_legal_document_legal__kind__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/legal/consent": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Consent Legal Document
+         * @description 재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해
+         *     보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의
+         *     재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만
+         *     받고, 실제로 기록하는 version은 서버가 다시 조회한 "현재 최신 게시본"의 것이다.
+         *
+         *     ⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지
+         *     중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로
+         *     "서비스 이용"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시
+         *     알려주므로 동의 자체를 영영 놓치는 것도 아니다.
+         */
+        post: operations["consent_legal_document_legal_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/me/drafts": {
@@ -1960,6 +2101,78 @@ export interface components {
             /** Messages */
             messages: number;
         };
+        /** AdminLegalDocumentResponse */
+        AdminLegalDocumentResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            draft: components["schemas"]["AdminLegalDraftItem"] | null;
+            published: components["schemas"]["AdminLegalPublishedItem"] | null;
+        };
+        /** AdminLegalDraftItem */
+        AdminLegalDraftItem: {
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminLegalDraftUpsertRequest */
+        AdminLegalDraftUpsertRequest: {
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+        };
+        /**
+         * AdminLegalPublishRequest
+         * @description `version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`
+         *     (`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그
+         *     비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다
+         *     (그렇지 않으면 예: `"2026-9-6" < "2026-10-01"`이 문자열 비교로는 `False`가 되어
+         *     재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지
+         *     않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는
+         *     전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다.
+         */
+        AdminLegalPublishRequest: {
+            /** Version */
+            version: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalPublishedItem */
+        AdminLegalPublishedItem: {
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalVersionItem */
+        AdminLegalVersionItem: {
+            /** Version */
+            version: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+            /** Requiresreconsent */
+            requiresReconsent: boolean;
+        };
+        /** AdminLegalVersionsResponse */
+        AdminLegalVersionsResponse: {
+            /** Items */
+            items: components["schemas"]["AdminLegalVersionItem"][];
+        };
         /** AdminLoginRequest */
         AdminLoginRequest: {
             /**
@@ -3102,6 +3315,33 @@ export interface components {
             /** Startingsetupid */
             startingSetupId: string | null;
         };
+        /** LegalConsentRequest */
+        LegalConsentRequest: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            /** Version */
+            version: string;
+        };
+        /** LegalDocumentPublicResponse */
+        LegalDocumentPublicResponse: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "terms" | "privacy";
+            /** Version */
+            version: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
         /**
          * LogicalOp
          * @enum {string}
@@ -3132,6 +3372,10 @@ export interface components {
             bio: string | null;
             /** Profileimageassetid */
             profileImageAssetId: string | null;
+            /** Termsreconsentrequired */
+            termsReconsentRequired: boolean;
+            /** Privacyreconsentrequired */
+            privacyReconsentRequired: boolean;
         };
         /**
          * ModerationActionType
@@ -4117,6 +4361,138 @@ export interface operations {
             };
         };
     };
+    get_admin_legal_document_admin_legal__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upsert_legal_draft_admin_legal__kind__draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLegalDraftUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_legal_document_admin_legal__kind__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminLegalPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalDocumentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_legal_document_versions_admin_legal__kind__versions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLegalVersionsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     create_presigned_upload_assets_presigned_upload_post: {
         parameters: {
             query?: never;
@@ -4679,6 +5055,68 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ChangePasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_legal_document_legal__kind__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                kind: "terms" | "privacy";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LegalDocumentPublicResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    consent_legal_document_legal_consent_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LegalConsentRequest"];
             };
         };
         responses: {

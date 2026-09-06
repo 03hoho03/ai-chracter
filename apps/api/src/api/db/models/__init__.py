@@ -21,6 +21,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
+from api.db.models.legal import LegalDocument
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import (
     AdminActionLog,
@@ -78,6 +79,7 @@ __all__ = [
     "Genre",
     "GuardianConsent",
     "KeywordNote",
+    "LegalDocument",
     "Like",
     "LogicalOp",
     "ModerationAction",

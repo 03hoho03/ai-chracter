@@ -112,8 +112,11 @@ describe("handleSitemap", () => {
     expect(response.headers.get("cache-control")).toBe(
       "public, max-age=3600",
     );
-    expect(xml.match(/<loc>/g)).toHaveLength(5);
+    // 홈 1 + 정적 2(약관·개인정보처리방침) + 캐릭터 3 + 스토리 1.
+    expect(xml.match(/<loc>/g)).toHaveLength(7);
     expect(xml).toContain("<loc>https://ddona.example/</loc>");
+    expect(xml).toContain("<loc>https://ddona.example/terms</loc>");
+    expect(xml).toContain("<loc>https://ddona.example/privacy</loc>");
     expect(xml).toContain(
       "<loc>https://ddona.example/content/character/c3</loc>",
     );
@@ -145,8 +148,8 @@ describe("handleSitemap", () => {
     });
     const xml = await response.text();
 
-    // 홈 1 + 캐릭터 50페이지 × 1건.
-    expect(xml.match(/<loc>/g)).toHaveLength(51);
+    // 홈 1 + 정적 2 + 캐릭터 50페이지 × 1건.
+    expect(xml.match(/<loc>/g)).toHaveLength(53);
     expect(xml).toContain("/content/character/c49");
     expect(xml).not.toContain("/content/character/c50");
     expect(console.warn).toHaveBeenCalledWith(

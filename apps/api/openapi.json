@@ -689,7 +689,7 @@
           "admin"
         ],
         "summary": "Suspend User",
-        "description": "techspec.md §2-2의 6단계를 정확한 순서로 수행한다.\n\n```\n1. users.suspended_at = now()\n2. 그 유저의 contents.moderation_status = 'restricted' (visibility는 불변, T-1)\n3. Notification(type='user-suspended', content_id=None, action_id=None)\n4. record_admin_action(action_type='user-suspend')\n5. db.commit()                  ← 여기까지 원자적\n6. mark_user_suspended(user_id) ← Redis. 실패하면 500\n```\n\n**순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도\ntry/except 없이 그대로 예외가 전파돼 500이 된다) \"DB엔 정지인데 마커가 없는\" 상태로\n끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시\n시도된다.\n\n**이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위\n재시도 시나리오(6 실패 후 재호출)가 정확히 \"이미 `suspended_at`이 있는 유저에 대한\n두 번째 suspend 호출\"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은\n멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가\n`moderation_status == NORMAL`인 작품만 내리므로 이미 내려간 작품은 다시 세지 않아\n재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.",
+        "description": "techspec.md §2-2의 6단계를 정확한 순서로 수행한다.\n\n```\n1. users.suspended_at = now()\n2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'\n   (visibility는 불변, T-1; PRIVATE는 제외 — D-6)\n3. Notification(type='user-suspended', content_id=None, action_id=None)\n4. record_admin_action(action_type='user-suspend')\n5. db.commit()                  ← 여기까지 원자적\n6. mark_user_suspended(user_id) ← Redis. 실패하면 500\n```\n\n**순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도\ntry/except 없이 그대로 예외가 전파돼 500이 된다) \"DB엔 정지인데 마커가 없는\" 상태로\n끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시\n시도된다.\n\n**이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위\n재시도 시나리오(6 실패 후 재호출)가 정확히 \"이미 `suspended_at`이 있는 유저에 대한\n두 번째 suspend 호출\"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은\n멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가\n`_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은\n다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.",
         "operationId": "suspend_user_admin_users__user_id__suspend_post",
         "parameters": [
           {
@@ -770,6 +770,212 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/legal/{kind}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Legal Document",
+        "operationId": "get_admin_legal_document_admin_legal__kind__get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "terms",
+                "privacy"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLegalDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/legal/{kind}/draft": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Upsert Legal Draft",
+        "description": "초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만\nupsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.\n\n`_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면\n부분 유니크 인덱스(`ix_legal_documents_kind_draft`)에 걸린다.\n`publish_legal_document`와 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다.\n다만 이 엔드포인트는 게시(발행)와 달리 upsert이므로, 경쟁에서 진 요청을 409로\n거부하지 않는다 — \"초안이 이 내용이 되게 하라\"는 upsert의 의미는 먼저 커밋된 게\n자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시\n읽어 이 요청의 내용으로 덮어쓴다.",
+        "operationId": "upsert_legal_draft_admin_legal__kind__draft_put",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "terms",
+                "privacy"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLegalDraftUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLegalDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/legal/{kind}/publish": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Publish Legal Document",
+        "description": "게시는 현재 초안의 `body_markdown`을 그대로 복제해 새 published 행을 만든다 —\n초안 행 자체를 published로 전환하는 게 아니라 내용을 새 행으로 하나 더 만든다\n(버전마다 별도 행으로 남아야 `GET .../versions` 이력 조회가 가능하기 때문).\n\n**게시 후에도 초안 행은 지우지 않고 그대로 둔다.** \"초안 저장 → 게시 → 다시 초안\n저장\"은 지우든 남기든 둘 다 성립한다(부분 유니크 인덱스는 draft 행의 개수만\n제한할 뿐 내용과 무관하다) — 그래도 남기는 쪽을 골랐다. 남기면 게시 직후에도 방금\n편집하던 내용이 초안 조회에 그대로 남아 관리자가 바로 이어서 다듬을 수 있다(예:\n오타 하나만 고쳐 재게시). 지우는 쪽을 골랐다면 매번 원고를 통째로 다시 붙여넣게\n되어 더 불편해질 뿐, 더 안전해지는 지점이 없다.",
+        "operationId": "publish_legal_document_admin_legal__kind__publish_post",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "terms",
+                "privacy"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminLegalPublishRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLegalDocumentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/legal/{kind}/versions": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Legal Document Versions",
+        "operationId": "list_legal_document_versions_admin_legal__kind__versions_get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "terms",
+                "privacy"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLegalVersionsResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -1467,6 +1673,88 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/legal/{kind}": {
+      "get": {
+        "tags": [
+          "legal"
+        ],
+        "summary": "Get Legal Document",
+        "description": "공개 조회 — 인증 없음. web `/terms`가 최신 게시본을 그대로 보여주는 데 쓴다.",
+        "operationId": "get_legal_document_legal__kind__get",
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "enum": [
+                "terms",
+                "privacy"
+              ],
+              "type": "string",
+              "title": "Kind"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LegalDocumentPublicResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/legal/consent": {
+      "post": {
+        "tags": [
+          "legal"
+        ],
+        "summary": "Consent Legal Document",
+        "description": "재동의 기록. **요청의 `version`은 신뢰하지 않는다** — 클라이언트가 값을 조작해\n보내면 실제로 게시된 적 없는 버전이 `users.terms_version`에 남아 `GET /me`의\n재동의 판정을 영구히 우회할 수 있다. 그래서 body의 `kind`로 어떤 문서에 동의했는지만\n받고, 실제로 기록하는 version은 서버가 다시 조회한 \"현재 최신 게시본\"의 것이다.\n\n⚠️ 정지된 유저는 `get_current_user_id`가 403으로 막아 여기 도달하지 못한다. 정지\n중에도 통과시켜야 할 이유는 없다고 판단했다 — 재동의도 다른 유저 행위와 마찬가지로\n\"서비스 이용\"의 일부고, 정지가 풀리면 다음 로그인 때 `/me`가 재동의 필요를 다시\n알려주므로 동의 자체를 영영 놓치는 것도 아니다.",
+        "operationId": "consent_legal_document_legal_consent_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LegalConsentRequest"
               }
             }
           },
@@ -4646,6 +4934,167 @@
         ],
         "title": "AdminDashboardTrendPoint"
       },
+      "AdminLegalDocumentResponse": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy"
+            ],
+            "title": "Kind"
+          },
+          "draft": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminLegalDraftItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "published": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminLegalPublishedItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "draft",
+          "published"
+        ],
+        "title": "AdminLegalDocumentResponse"
+      },
+      "AdminLegalDraftItem": {
+        "properties": {
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bodyMarkdown",
+          "createdAt"
+        ],
+        "title": "AdminLegalDraftItem"
+      },
+      "AdminLegalDraftUpsertRequest": {
+        "properties": {
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "bodyMarkdown"
+        ],
+        "title": "AdminLegalDraftUpsertRequest"
+      },
+      "AdminLegalPublishRequest": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Version"
+          },
+          "requiresReconsent": {
+            "type": "boolean",
+            "title": "Requiresreconsent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "requiresReconsent"
+        ],
+        "title": "AdminLegalPublishRequest",
+        "description": "`version`은 zero-padded ISO 날짜(`YYYY-MM-DD`)로 강제한다 — `_reconsent_required`\n(`api/auth/router.py`)가 이 값을 문자열째로 비교해 재동의 필요 여부를 판정하고, 그\n비교가 시간순과 일치하려면 모든 버전이 같은 자릿수로 zero-padding돼 있어야 한다\n(그렇지 않으면 예: `\"2026-9-6\" < \"2026-10-01\"`이 문자열 비교로는 `False`가 되어\n재동의가 영원히 뜨지 않는다). 달력상 유효한 날짜인지(`2026-13-45` 등)는 검사하지\n않는다 — 자릿수 고정 포맷만 지키면 무효한 날짜라도 문자열 비교의 시간순 일치라는\n전제 자체는 깨지지 않으므로, 이 정규식만으로 방어 목적은 충분하다고 판단했다."
+      },
+      "AdminLegalPublishedItem": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          },
+          "requiresReconsent": {
+            "type": "boolean",
+            "title": "Requiresreconsent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "bodyMarkdown",
+          "publishedAt",
+          "requiresReconsent"
+        ],
+        "title": "AdminLegalPublishedItem"
+      },
+      "AdminLegalVersionItem": {
+        "properties": {
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          },
+          "requiresReconsent": {
+            "type": "boolean",
+            "title": "Requiresreconsent"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version",
+          "publishedAt",
+          "requiresReconsent"
+        ],
+        "title": "AdminLegalVersionItem"
+      },
+      "AdminLegalVersionsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLegalVersionItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminLegalVersionsResponse"
+      },
       "AdminLoginRequest": {
         "properties": {
           "email": {
@@ -7424,6 +7873,61 @@
         ],
         "title": "KeywordNoteDraftItem"
       },
+      "LegalConsentRequest": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy"
+            ],
+            "title": "Kind"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "version"
+        ],
+        "title": "LegalConsentRequest"
+      },
+      "LegalDocumentPublicResponse": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "terms",
+              "privacy"
+            ],
+            "title": "Kind"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          },
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "version",
+          "bodyMarkdown",
+          "publishedAt"
+        ],
+        "title": "LegalDocumentPublicResponse"
+      },
       "LogicalOp": {
         "type": "string",
         "enum": [
@@ -7488,6 +7992,14 @@
               }
             ],
             "title": "Profileimageassetid"
+          },
+          "termsReconsentRequired": {
+            "type": "boolean",
+            "title": "Termsreconsentrequired"
+          },
+          "privacyReconsentRequired": {
+            "type": "boolean",
+            "title": "Privacyreconsentrequired"
           }
         },
         "type": "object",
@@ -7496,7 +8008,9 @@
           "email",
           "nickname",
           "bio",
-          "profileImageAssetId"
+          "profileImageAssetId",
+          "termsReconsentRequired",
+          "privacyReconsentRequired"
         ],
         "title": "MeResponse"
       },

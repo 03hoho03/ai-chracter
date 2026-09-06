@@ -261,6 +261,8 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "nickname": user.nickname,
         "bio": None,
         "profileImageAssetId": None,
+        "termsReconsentRequired": False,
+        "privacyReconsentRequired": False,
     }
 
 
