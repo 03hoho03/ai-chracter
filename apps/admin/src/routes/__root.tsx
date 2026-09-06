@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { DeleteConfirmModal } from "../features/act-on-report";
+import { ContentActionConfirmModal } from "../pages/content-detail";
 import { AdminSidebar } from "../widgets/admin-sidebar";
 
 export type RouterContext = {
@@ -31,6 +32,7 @@ function RootComponent() {
         </div>
       )}
       <DeleteConfirmModal />
+      <ContentActionConfirmModal />
     </>
   );
 }

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { Button } from "@ai-character-chat/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
 
@@ -10,6 +9,7 @@ import {
   type AppealStatusFilter,
 } from "@/entities/appeal";
 import { AppealResolvePanel } from "@/features/resolve-appeal";
+import { Pagination } from "@/shared/ui/Pagination";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | AppealStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -112,30 +112,12 @@ export function AppealsListPage({ page, status, onPageChange, onStatusChange }: 
             </Table>
           </div>
 
-          <div className="flex items-center justify-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
-            >
-              이전
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              {appealListQuery.data.page} / {appealListQuery.data.totalPages} 페이지 (총{" "}
-              {appealListQuery.data.totalCount}건)
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page >= appealListQuery.data.totalPages}
-              onClick={() => onPageChange(page + 1)}
-            >
-              다음
-            </Button>
-          </div>
+          <Pagination
+            page={appealListQuery.data.page}
+            totalPages={appealListQuery.data.totalPages}
+            totalCount={appealListQuery.data.totalCount}
+            onPageChange={onPageChange}
+          />
         </>
       )}
 

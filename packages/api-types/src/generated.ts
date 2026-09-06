@@ -127,7 +127,9 @@ export interface paths {
         /**
          * Get Dashboard Popular
          * @description 조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —
-         *     presigned URL 서명이 행마다 붙어 비용만 늘어난다.
+         *     presigned URL 서명이 행마다 붙어 비용만 늘어난다. `chat_count`만으로는 신규 등록작
+         *     (전부 0)이 11개 이상이면 매 호출마다 Top 10 구성·순서가 바뀌므로, `created_at DESC`
+         *     다음 `id`까지 더해 완전히 결정적인 정렬을 만든다.
          */
         get: operations["get_dashboard_popular_admin_dashboard_popular_get"];
         put?: never;
@@ -149,6 +151,76 @@ export interface paths {
         get: operations["get_dashboard_activity_admin_dashboard_activity_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Contents
+         * @description techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이
+         *     `contents`가 아니라 `character_version_details`/`story_version_details`에 있어
+         *     `current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는
+         *     (초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만
+         *     (이름이 없으니 맞는 동작), `q` 없이 목록을 볼 땐 outer join이라 그대로 나온다.
+         */
+        get: operations["list_admin_contents_admin_contents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{content_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Content Detail */
+        get: operations["get_admin_content_detail_admin_contents__content_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/contents/{content_id}/action": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Content
+         * @description 신고 없이 내리는 직접 조치. `reject`는 "신고를 반려한다"는 뜻이라, 애초에 신고가
+         *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).
+         *
+         *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
+         *     만들고 그 `reason_category` 컬럼이 NOT NULL이므로(goal-prompt.md §3-1, techspec
+         *     §1-2) 신고 사유 5종 중 하나가 필수다(없으면 422). 반면 `lift-restriction`은
+         *     `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를 강제할 근거가 없다 —
+         *     관리자가 의미 없는 값을 고르게 될 뿐이다. 대신 T-10(위험 조치 확인 다이얼로그 +
+         *     사유 필수)을 만족시키는 건 `admin_comment`(자유 텍스트, `admin_action_logs.reason_text`
+         *     로 그대로 남는다) 쪽이라 이걸 필수로 바꿨다(비어 있으면 422).
+         */
+        post: operations["act_on_content_admin_contents__content_id__action_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1522,6 +1594,126 @@ export interface components {
             /** Totalcount */
             totalCount: number;
         };
+        /**
+         * AdminContentActionRequest
+         * @description `reason_category`는 `restrict`/`delete`에만 필수다(`api/admin/contents.py`의
+         *     `act_on_content`가 조치별로 조건부 검증한다) — `lift-restriction`은 `Notification`을
+         *     만들지 않아 신고 사유 카테고리를 강제할 근거가 없다.
+         */
+        AdminContentActionRequest: {
+            action: components["schemas"]["ModerationActionType"];
+            reasonCategory?: components["schemas"]["ReportReasonCategory"] | null;
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminContentCreator */
+        AdminContentCreator: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Email */
+            email: string;
+            /** Nickname */
+            nickname: string;
+        };
+        /** AdminContentDetailResponse */
+        AdminContentDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            creator: components["schemas"]["AdminContentCreator"];
+            /** Prompt */
+            prompt: string | null;
+            /** Detaildescription */
+            detailDescription: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Hasunpublishedchanges */
+            hasUnpublishedChanges: boolean;
+            /** Versions */
+            versions: components["schemas"]["AdminContentVersionItem"][];
+        };
+        /** AdminContentListItem */
+        AdminContentListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+            /** Viewcount */
+            viewCount: number;
+            /** Likecount */
+            likeCount: number;
+            /** Chatcount */
+            chatCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Creatoruserid
+             * Format: uuid
+             */
+            creatorUserId: string;
+        };
+        /** AdminContentListResponse */
+        AdminContentListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminContentListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminContentVersionItem */
+        AdminContentVersionItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Versionnumber */
+            versionNumber: number | null;
+            /** Publishedat */
+            publishedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Isdraft */
+            isDraft: boolean;
+            /** Name */
+            name: string;
+        };
         /** AdminDashboardActivityResponse */
         AdminDashboardActivityResponse: {
             /** Recentusers */
@@ -2641,16 +2833,10 @@ export interface components {
             id: string;
             /** Type */
             type: string;
-            /**
-             * Contentid
-             * Format: uuid
-             */
-            contentId: string;
-            /**
-             * Actionid
-             * Format: uuid
-             */
-            actionId: string;
+            /** Contentid */
+            contentId: string | null;
+            /** Actionid */
+            actionId: string | null;
             /** Reasoncategory */
             reasonCategory: string;
             /** Admincomment */
@@ -3341,6 +3527,108 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminDashboardActivityResponse"];
+                };
+            };
+        };
+    };
+    list_admin_contents_admin_contents_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                type?: components["schemas"]["ContentType"] | null;
+                visibility?: components["schemas"]["ContentVisibility"] | null;
+                moderationStatus?: components["schemas"]["ModerationStatus"] | null;
+                q?: string | null;
+                sort?: "recent" | "views" | "chats";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_content_detail_admin_contents__content_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_content_admin_contents__content_id__action_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminContentActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminContentDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

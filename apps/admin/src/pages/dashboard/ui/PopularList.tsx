@@ -1,4 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { useNavigate } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/report";
 
@@ -11,6 +12,7 @@ function formatCount(value: number) {
 /** `chat_count` 내림차순 Top 10. */
 export function PopularList() {
   const popularQuery = usePopularQuery();
+  const navigate = useNavigate();
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
@@ -42,8 +44,19 @@ export function PopularList() {
             </TableHeader>
             <TableBody>
               {popularQuery.data.map((item) => (
-                // 작품 상세 화면은 2단계에서 생긴다 — 그때 이 행에 <Link to="/contents/$contentId">를 건다.
-                <TableRow key={item.id}>
+                <TableRow
+                  key={item.id}
+                  tabIndex={0}
+                  role="button"
+                  className="cursor-pointer"
+                  onClick={() => void navigate({ to: "/contents/$contentId", params: { contentId: item.id } })}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      void navigate({ to: "/contents/$contentId", params: { contentId: item.id } });
+                    }
+                  }}
+                >
                   <TableCell>{item.name || "(이름 없음)"}</TableCell>
                   <TableCell className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.type]}</TableCell>
                   <TableCell className="text-right tabular-nums">{formatCount(item.chatCount)}</TableCell>

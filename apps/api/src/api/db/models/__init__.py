@@ -23,6 +23,7 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import (
+    AdminActionLog,
     Appeal,
     AppealStatus,
     AppealTargetKind,
@@ -49,6 +50,7 @@ from api.db.models.story import (
 )
 
 __all__ = [
+    "AdminActionLog",
     "AdminUser",
     "Appeal",
     "AppealStatus",

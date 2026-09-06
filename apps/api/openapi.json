@@ -230,7 +230,7 @@
           "admin"
         ],
         "summary": "Get Dashboard Popular",
-        "description": "조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —\npresigned URL 서명이 행마다 붙어 비용만 늘어난다.",
+        "description": "조인 없이 `chat_count` 컬럼 그대로 내림차순 정렬한다. 썸네일은 넣지 않는다 —\npresigned URL 서명이 행마다 붙어 비용만 늘어난다. `chat_count`만으로는 신규 등록작\n(전부 0)이 11개 이상이면 매 호출마다 Top 10 구성·순서가 바뀌므로, `created_at DESC`\n다음 `id`까지 더해 완전히 결정적인 정렬을 만든다.",
         "operationId": "get_dashboard_popular_admin_dashboard_popular_get",
         "parameters": [
           {
@@ -288,6 +288,227 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminDashboardActivityResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/contents": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Contents",
+        "description": "techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이\n`contents`가 아니라 `character_version_details`/`story_version_details`에 있어\n`current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는\n(초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만\n(이름이 없으니 맞는 동작), `q` 없이 목록을 볼 땐 outer join이라 그대로 나온다.",
+        "operationId": "list_admin_contents_admin_contents_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "name": "visibility",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentVisibility"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Visibility"
+            }
+          },
+          {
+            "name": "moderationStatus",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ModerationStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Moderationstatus"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "recent",
+                "views",
+                "chats"
+              ],
+              "type": "string",
+              "default": "recent",
+              "title": "Sort"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminContentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/contents/{content_id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Content Detail",
+        "operationId": "get_admin_content_detail_admin_contents__content_id__get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminContentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/contents/{content_id}/action": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Act On Content",
+        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 `reason_category` 컬럼이 NOT NULL이므로(goal-prompt.md §3-1, techspec\n§1-2) 신고 사유 5종 중 하나가 필수다(없으면 422). 반면 `lift-restriction`은\n`Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를 강제할 근거가 없다 —\n관리자가 의미 없는 값을 고르게 될 뿐이다. 대신 T-10(위험 조치 확인 다이얼로그 +\n사유 필수)을 만족시키는 건 `admin_comment`(자유 텍스트, `admin_action_logs.reason_text`\n로 그대로 남는다) 쪽이라 이걸 필수로 바꿨다(비어 있으면 422).",
+        "operationId": "act_on_content_admin_contents__content_id__action_post",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminContentActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminContentDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -3632,6 +3853,306 @@
         ],
         "title": "AdminAppealListResponse"
       },
+      "AdminContentActionRequest": {
+        "properties": {
+          "action": {
+            "$ref": "#/components/schemas/ModerationActionType"
+          },
+          "reasonCategory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReportReasonCategory"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "AdminContentActionRequest",
+        "description": "`reason_category`는 `restrict`/`delete`에만 필수다(`api/admin/contents.py`의\n`act_on_content`가 조치별로 조건부 검증한다) — `lift-restriction`은 `Notification`을\n만들지 않아 신고 사유 카테고리를 강제할 근거가 없다."
+      },
+      "AdminContentCreator": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "email",
+          "nickname"
+        ],
+        "title": "AdminContentCreator"
+      },
+      "AdminContentDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "creator": {
+            "$ref": "#/components/schemas/AdminContentCreator"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "detailDescription": {
+            "type": "string",
+            "title": "Detaildescription"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "hasUnpublishedChanges": {
+            "type": "boolean",
+            "title": "Hasunpublishedchanges"
+          },
+          "versions": {
+            "items": {
+              "$ref": "#/components/schemas/AdminContentVersionItem"
+            },
+            "type": "array",
+            "title": "Versions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "visibility",
+          "moderationStatus",
+          "viewCount",
+          "likeCount",
+          "chatCount",
+          "createdAt",
+          "creator",
+          "prompt",
+          "detailDescription",
+          "thumbnailUrl",
+          "hasUnpublishedChanges",
+          "versions"
+        ],
+        "title": "AdminContentDetailResponse"
+      },
+      "AdminContentListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          },
+          "viewCount": {
+            "type": "integer",
+            "title": "Viewcount"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "chatCount": {
+            "type": "integer",
+            "title": "Chatcount"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "creatorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Creatoruserid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "visibility",
+          "moderationStatus",
+          "viewCount",
+          "likeCount",
+          "chatCount",
+          "createdAt",
+          "creatorUserId"
+        ],
+        "title": "AdminContentListItem"
+      },
+      "AdminContentListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminContentListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminContentListResponse"
+      },
+      "AdminContentVersionItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "versionNumber": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Versionnumber"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "isDraft": {
+            "type": "boolean",
+            "title": "Isdraft"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "versionNumber",
+          "publishedAt",
+          "createdAt",
+          "isDraft",
+          "name"
+        ],
+        "title": "AdminContentVersionItem"
+      },
       "AdminDashboardActivityResponse": {
         "properties": {
           "recentUsers": {
@@ -6275,13 +6796,27 @@
             "title": "Type"
           },
           "contentId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Contentid"
           },
           "actionId": {
-            "type": "string",
-            "format": "uuid",
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Actionid"
           },
           "reasonCategory": {

@@ -11,8 +11,8 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   minute: "2-digit",
 });
 
-/** 최근 가입 유저 / 최근 등록 작품 / 최근 신고 각 5건. 신고 항목만 상세로 링크한다 —
- * 유저·작품 상세 화면은 2·3단계에서 생긴다. */
+/** 최근 가입 유저 / 최근 등록 작품 / 최근 신고 각 5건. 작품·신고 항목은 상세로 링크한다 —
+ * 유저 상세 화면은 3단계에서 생긴다. */
 export function ActivityFeed() {
   const activityQuery = useActivityQuery();
 
@@ -56,15 +56,20 @@ export function ActivityFeed() {
             ) : (
               <ul className="flex flex-col gap-1.5">
                 {activityQuery.data.recentContents.map((content) => (
-                  // 작품 상세 화면은 2단계에서 생긴다 — 그때 이 항목에 링크를 건다.
-                  <li key={content.id} className="flex items-center justify-between gap-2 text-sm">
-                    <span className="truncate text-foreground">
-                      <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[content.type]}</span>{" "}
-                      {content.name || "(이름 없음)"}
-                    </span>
-                    <span className="shrink-0 text-xs text-muted-foreground">
-                      {CREATED_AT_FORMATTER.format(new Date(content.createdAt))}
-                    </span>
+                  <li key={content.id}>
+                    <Link
+                      to="/contents/$contentId"
+                      params={{ contentId: content.id }}
+                      className="-mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <span className="truncate text-foreground">
+                        <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[content.type]}</span>{" "}
+                        {content.name || "(이름 없음)"}
+                      </span>
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {CREATED_AT_FORMATTER.format(new Date(content.createdAt))}
+                      </span>
+                    </Link>
                   </li>
                 ))}
               </ul>

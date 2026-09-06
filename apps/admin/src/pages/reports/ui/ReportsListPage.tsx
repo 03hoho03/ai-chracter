@@ -1,4 +1,3 @@
-import { Button } from "@ai-character-chat/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
 import { useNavigate } from "@tanstack/react-router";
@@ -10,6 +9,7 @@ import {
   useReportListQuery,
   type ReportStatusFilter,
 } from "@/entities/report";
+import { Pagination } from "@/shared/ui/Pagination";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -115,29 +115,12 @@ export function ReportsListPage({ page, status, onPageChange, onStatusChange }: 
             </Table>
           </div>
 
-          <div className="flex items-center justify-center gap-3">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => onPageChange(page - 1)}
-            >
-              이전
-            </Button>
-            <span className="text-sm text-muted-foreground">
-              {reportListQuery.data.page} / {reportListQuery.data.totalPages} 페이지 (총 {reportListQuery.data.totalCount}건)
-            </span>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={page >= reportListQuery.data.totalPages}
-              onClick={() => onPageChange(page + 1)}
-            >
-              다음
-            </Button>
-          </div>
+          <Pagination
+            page={reportListQuery.data.page}
+            totalPages={reportListQuery.data.totalPages}
+            totalCount={reportListQuery.data.totalCount}
+            onPageChange={onPageChange}
+          />
         </>
       )}
     </main>

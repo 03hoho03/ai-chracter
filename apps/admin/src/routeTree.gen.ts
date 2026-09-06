@@ -14,7 +14,9 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
+import { Route as ContentsIndexRouteImport } from './routes/contents.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
+import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 
 const UsageMetricsRoute = UsageMetricsRouteImport.update({
   id: '/usage-metrics',
@@ -41,9 +43,19 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ContentsIndexRoute = ContentsIndexRouteImport.update({
+  id: '/contents/',
+  path: '/contents/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
   id: '/reports/$reportId',
   path: '/reports/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ContentsContentIdRoute = ContentsContentIdRouteImport.update({
+  id: '/contents/$contentId',
+  path: '/contents/$contentId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -52,7 +64,9 @@ export interface FileRoutesByFullPath {
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
+  '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -60,7 +74,9 @@ export interface FileRoutesByTo {
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
+  '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/contents': typeof ContentsIndexRoute
   '/reports': typeof ReportsIndexRoute
 }
 export interface FileRoutesById {
@@ -69,7 +85,9 @@ export interface FileRoutesById {
   '/appeals': typeof AppealsRoute
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
+  '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
+  '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
 }
 export interface FileRouteTypes {
@@ -79,7 +97,9 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/login'
     | '/usage-metrics'
+    | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/contents/'
     | '/reports/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -87,7 +107,9 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/login'
     | '/usage-metrics'
+    | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/contents'
     | '/reports'
   id:
     | '__root__'
@@ -95,7 +117,9 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/login'
     | '/usage-metrics'
+    | '/contents/$contentId'
     | '/reports/$reportId'
+    | '/contents/'
     | '/reports/'
   fileRoutesById: FileRoutesById
 }
@@ -104,7 +128,9 @@ export interface RootRouteChildren {
   AppealsRoute: typeof AppealsRoute
   LoginRoute: typeof LoginRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
+  ContentsContentIdRoute: typeof ContentsContentIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
+  ContentsIndexRoute: typeof ContentsIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
 }
 
@@ -145,11 +171,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/contents/': {
+      id: '/contents/'
+      path: '/contents'
+      fullPath: '/contents/'
+      preLoaderRoute: typeof ContentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/reports/$reportId': {
       id: '/reports/$reportId'
       path: '/reports/$reportId'
       fullPath: '/reports/$reportId'
       preLoaderRoute: typeof ReportsReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/contents/$contentId': {
+      id: '/contents/$contentId'
+      path: '/contents/$contentId'
+      fullPath: '/contents/$contentId'
+      preLoaderRoute: typeof ContentsContentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -160,7 +200,9 @@ const rootRouteChildren: RootRouteChildren = {
   AppealsRoute: AppealsRoute,
   LoginRoute: LoginRoute,
   UsageMetricsRoute: UsageMetricsRoute,
+  ContentsContentIdRoute: ContentsContentIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
+  ContentsIndexRoute: ContentsIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
 }
 export const routeTree = rootRouteImport
