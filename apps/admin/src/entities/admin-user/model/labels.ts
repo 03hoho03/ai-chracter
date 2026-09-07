@@ -32,3 +32,19 @@ export const CHAT_VIEW_REASON_CATEGORY_LABELS: Record<ChatViewReasonCategory, st
   "legal-request": "법적 요청",
   other: "기타",
 };
+
+export function isChatViewReasonCategory(value: string): value is ChatViewReasonCategory {
+  return value in CHAT_VIEW_REASON_CATEGORY_LABELS;
+}
+
+/** 사유가 늘면 `CHAT_VIEW_REASON_CATEGORY_LABELS`(Record)가 컴파일 에러로 잡는다 — 목록·옵션을
+ * 손으로 또 적으면 그 강제가 목록에는 걸리지 않아 새 사유가 조용히 빠진다. 그래서 둘 다 키에서
+ * 도출한다(entities/report의 REPORT_REASON_VALUES와 동형). */
+export const CHAT_VIEW_REASON_CATEGORY_VALUES = Object.keys(CHAT_VIEW_REASON_CATEGORY_LABELS).filter(
+  isChatViewReasonCategory,
+);
+
+export const CHAT_VIEW_REASON_CATEGORY_OPTIONS = CHAT_VIEW_REASON_CATEGORY_VALUES.map((value) => ({
+  value,
+  label: CHAT_VIEW_REASON_CATEGORY_LABELS[value],
+}));

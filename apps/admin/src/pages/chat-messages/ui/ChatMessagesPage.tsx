@@ -1,59 +1,20 @@
 import { useState } from "react";
-import type { components } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { useChatMessagesQuery } from "../api/useChatMessagesQuery";
+import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+
+import { useChatMessagesPager } from "../api/useChatMessagesPager";
 import type { ChatMessagesCursor } from "../api/keys";
-import type { AdminChatMessagesResponse } from "../api/useViewChatMutation";
+import type { AdminChatMessageItem, AdminChatMessagesResponse } from "../api/useViewChatMutation";
 import { ViewReasonDialog } from "./ViewReasonDialog";
-
-type AdminChatMessageItem = components["schemas"]["AdminChatMessageItem"];
-
-const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-});
 
 const ROLE_LABELS: Record<AdminChatMessageItem["role"], string> = {
   user: "사용자",
   assistant: "AI",
 };
-
-function nextCursor(page: AdminChatMessagesResponse): ChatMessagesCursor | null {
-  return page.beforeCreatedAt && page.beforeId
-    ? { beforeCreatedAt: page.beforeCreatedAt, beforeId: page.beforeId }
-    : null;
-}
-
-function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
-  const isUser = item.role === "user";
-  return (
-    <li className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
-      <span className="text-xs font-medium text-muted-foreground">
-        {ROLE_LABELS[item.role]} · {DATE_TIME_FORMATTER.format(new Date(item.createdAt))}
-      </span>
-      {/* 관리자가 남의 대화를 읽는 화면이라 web(MessageBubble)의 `primary` 말풍선을 그대로 옮기지
-       * 않는다 — `primary`는 "지금 누를 수 있는 것"과 "지금 내가 한 말"에만 쓰는데, 여기서 admin은
-       * 어느 쪽 화자도 아니다. 정렬(사용자 오른쪽/AI 왼쪽)은 두 화면 사용자에게 익숙한 채팅 관습을
-       * 그대로 따르되, 색은 둘 다 무채색으로 두고 배경 톤 차이(`secondary` vs `card`+border)로만
-       * 구분한다. */}
-      <p
-        className={cn(
-          "max-w-[75%] whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm text-foreground",
-          isUser ? "bg-secondary" : "border border-border bg-card",
-        )}
-      >
-        {item.content}
-      </p>
-    </li>
-  );
-}
 
 type ChatMessagesPageProps = {
   userId: string;
@@ -66,13 +27,13 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   const [olderItems, setOlderItems] = useState<AdminChatMessageItem[]>([]);
   const [cursor, setCursor] = useState<ChatMessagesCursor | null>(null);
 
-  const messagesQuery = useChatMessagesQuery(roomId);
+  const messagesPager = useChatMessagesPager(roomId);
   const goToUserDetail = () => void navigate({ to: "/users/$userId", params: { userId } });
 
   const handleLoadMore = async () => {
     if (!cursor) return;
     try {
-      const page = await messagesQuery.fetchPage(cursor);
+      const page = await messagesPager.fetchPage(cursor);
       setOlderItems((prev) => [...prev, ...page.items]);
       setCursor(nextCursor(page));
     } catch {
@@ -129,13 +90,13 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
                 type="button"
                 variant="outline"
                 size="sm"
-                aria-disabled={messagesQuery.isFetching}
+                aria-disabled={messagesPager.isFetching}
                 onClick={() => {
-                  if (!messagesQuery.isFetching) void handleLoadMore();
+                  if (!messagesPager.isFetching) void handleLoadMore();
                 }}
                 className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
               >
-                {messagesQuery.isFetching ? "불러오는 중..." : "더 보기"}
+                {messagesPager.isFetching ? "불러오는 중..." : "더 보기"}
               </Button>
             </div>
           )}
@@ -148,5 +109,35 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
         </div>
       )}
     </main>
+  );
+}
+
+function nextCursor(page: AdminChatMessagesResponse): ChatMessagesCursor | null {
+  return page.beforeCreatedAt && page.beforeId
+    ? { beforeCreatedAt: page.beforeCreatedAt, beforeId: page.beforeId }
+    : null;
+}
+
+function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
+  const isUser = item.role === "user";
+  return (
+    <li className={cn("flex flex-col gap-1", isUser ? "items-end" : "items-start")}>
+      <span className="text-xs font-medium text-muted-foreground">
+        {ROLE_LABELS[item.role]} · {formatDateTime(item.createdAt)}
+      </span>
+      {/* 관리자가 남의 대화를 읽는 화면이라 web(MessageBubble)의 `primary` 말풍선을 그대로 옮기지
+       * 않는다 — `primary`는 "지금 누를 수 있는 것"과 "지금 내가 한 말"에만 쓰는데, 여기서 admin은
+       * 어느 쪽 화자도 아니다. 정렬(사용자 오른쪽/AI 왼쪽)은 두 화면 사용자에게 익숙한 채팅 관습을
+       * 그대로 따르되, 색은 둘 다 무채색으로 두고 배경 톤 차이(`secondary` vs `card`+border)로만
+       * 구분한다. */}
+      <p
+        className={cn(
+          "max-w-[75%] whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm text-foreground",
+          isUser ? "bg-secondary" : "border border-border bg-card",
+        )}
+      >
+        {item.content}
+      </p>
+    </li>
   );
 }
