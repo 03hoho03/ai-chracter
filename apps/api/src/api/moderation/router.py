@@ -12,6 +12,7 @@ from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
+from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset
 from api.db.models.moderation import (
     Appeal,
@@ -51,15 +52,25 @@ ADMIN_APPEAL_PAGE_SIZE = 20
 
 
 def _to_response(
-    notification: Notification, notice_titles: dict[uuid.UUID, str]
+    notification: Notification,
+    notice_titles: dict[uuid.UUID, str],
+    inquiry_titles: dict[uuid.UUID, str],
 ) -> NotificationResponse:
+    if notification.notice_id is not None:
+        title = notice_titles.get(notification.notice_id)
+    elif notification.inquiry_id is not None:
+        title = inquiry_titles.get(notification.inquiry_id)
+    else:
+        title = None
+
     return NotificationResponse(
         id=notification.id,
         type=notification.type,
         content_id=notification.content_id,
         action_id=notification.action_id,
         notice_id=notification.notice_id,
-        title=notice_titles.get(notification.notice_id) if notification.notice_id is not None else None,
+        inquiry_id=notification.inquiry_id,
+        title=title,
         reason_category=notification.reason_category,
         admin_comment=notification.admin_comment,
         created_at=notification.created_at,
@@ -80,14 +91,20 @@ async def list_my_notifications(
         )
     ).all()
 
-    # notice 알림의 제목을 IN 조회 한 번으로 가져온다 — 행마다 조회하면 N+1이다.
+    # notice/inquiry 알림의 제목을 각각 IN 조회 한 번으로 가져온다 — 행마다 조회하면 N+1이다.
     notice_ids = {n.notice_id for n in notifications if n.notice_id is not None}
     notice_titles: dict[uuid.UUID, str] = {}
     if notice_ids:
         rows = await db.execute(select(Notice.id, Notice.title).where(Notice.id.in_(notice_ids)))
         notice_titles = {notice_id: title for notice_id, title in rows}
 
-    return [_to_response(notification, notice_titles) for notification in notifications]
+    inquiry_ids = {n.inquiry_id for n in notifications if n.inquiry_id is not None}
+    inquiry_titles: dict[uuid.UUID, str] = {}
+    if inquiry_ids:
+        rows = await db.execute(select(Inquiry.id, Inquiry.title).where(Inquiry.id.in_(inquiry_ids)))
+        inquiry_titles = {inquiry_id: title for inquiry_id, title in rows}
+
+    return [_to_response(notification, notice_titles, inquiry_titles) for notification in notifications]
 
 
 @router.patch("/notifications/{notification_id}/read")
@@ -114,7 +131,13 @@ async def mark_notification_read(
         if notice is not None:
             notice_titles[notice.id] = notice.title
 
-    return _to_response(notification, notice_titles)
+    inquiry_titles: dict[uuid.UUID, str] = {}
+    if notification.inquiry_id is not None:
+        inquiry = await db.get(Inquiry, notification.inquiry_id)
+        if inquiry is not None:
+            inquiry_titles[inquiry.id] = inquiry.title
+
+    return _to_response(notification, notice_titles, inquiry_titles)
 
 
 @router.post("/appeals", status_code=status.HTTP_201_CREATED)

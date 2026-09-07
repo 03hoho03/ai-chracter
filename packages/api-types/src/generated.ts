@@ -215,7 +215,7 @@ export interface paths {
          *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
          *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
          *     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
-         *     근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11b에서 그 컬럼이 nullable로
+         *     근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로
          *     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
          *     `lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를
          *     강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신
@@ -284,7 +284,7 @@ export interface paths {
          * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지
          *     문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는
          *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),
-         *     T-11b에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
+         *     T-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
          *     사라졌다.
          *
          *     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
@@ -357,7 +357,7 @@ export interface paths {
          *
          *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
          *     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
-         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11b에서
+         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서
          *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은
          *     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
          *
@@ -477,7 +477,7 @@ export interface paths {
         /**
          * List Admin Notices
          * @description 어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
-         *     (`moderation/router.py:195`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가
+         *     (`moderation/router.py:216`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가
          *     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
          *     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.
          */
@@ -560,6 +560,68 @@ export interface paths {
         put?: never;
         /** Unpublish Admin Notice */
         post: operations["unpublish_admin_notice_admin_notices__id__unpublish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Inquiries
+         * @description offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.
+         */
+        get: operations["list_admin_inquiries_admin_inquiries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/inquiries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Inquiry */
+        get: operations["get_admin_inquiry_admin_inquiries__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/inquiries/{id}/reply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Reply To Inquiry
+         * @description 한 트랜잭션: 답변 기록 → 알림 1건(대상 1명이라 fan-out이 아니다) → 감사 로그 →
+         *     commit.
+         *
+         *     이미 `ANSWERED`인 문의에 다시 답변하면 본문은 덮어쓰되 알림은 추가로 만들지
+         *     않는다(오타 수정 경로) — 매 재답변마다 알림이 쌓이면 유저가 같은 건으로 여러 번
+         *     울리는 알림을 받게 된다.
+         */
+        post: operations["reply_to_inquiry_admin_inquiries__id__reply_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1035,6 +1097,64 @@ export interface paths {
          *     URL 추측으로 미게시 초안의 존재 자체가 새면 안 된다는 것이 목적이다.
          */
         get: operations["get_notice_notices__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Inquiry */
+        post: operations["create_inquiry_inquiries_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/inquiries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Inquiries
+         * @description 페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다.
+         */
+        get: operations["list_my_inquiries_me_inquiries_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/inquiries/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get My Inquiry
+         * @description 남의 문의 상세는 404 — 403이 아니다. `notice/router.py`의 `get_notice`와 같은
+         *     이유로, URL 추측으로 존재 자체가 새면 안 된다.
+         */
+        get: operations["get_my_inquiry_me_inquiries__id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2360,6 +2480,68 @@ export interface components {
             /** Messages */
             messages: number;
         };
+        /** AdminInquiryDetailResponse */
+        AdminInquiryDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            category: components["schemas"]["InquiryCategory"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Attachmenturl */
+            attachmentUrl: string | null;
+            status: components["schemas"]["InquiryStatus"];
+            /** Authornickname */
+            authorNickname: string;
+            /** Authoremail */
+            authorEmail: string;
+            /** Replybody */
+            replyBody: string | null;
+            /** Answeredat */
+            answeredAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminInquiryListItem */
+        AdminInquiryListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            category: components["schemas"]["InquiryCategory"];
+            /** Title */
+            title: string;
+            status: components["schemas"]["InquiryStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminInquiryListResponse */
+        AdminInquiryListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminInquiryListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminInquiryReplyRequest */
+        AdminInquiryReplyRequest: {
+            /** Replybody */
+            replyBody: string;
+        };
         /** AdminLegalDocumentResponse */
         AdminLegalDocumentResponse: {
             /**
@@ -2826,7 +3008,7 @@ export interface components {
          * @description techspec-backend-media.md §1. Extend as new upload flows need a purpose.
          * @enum {string}
          */
-        AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image";
+        AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image" | "inquiry-attachment";
         /**
          * AssetStatus
          * @description techspec-backend-media.md §1: row is created pending at presigned-upload
@@ -3632,6 +3814,34 @@ export interface components {
          * @enum {string}
          */
         ImageStylePreset: "realistic" | "anime" | "illustration" | "render3d" | "none";
+        /**
+         * InquiryCategory
+         * @enum {string}
+         */
+        InquiryCategory: "account" | "bug" | "content" | "suggestion" | "other";
+        /** InquiryCreateRequest */
+        InquiryCreateRequest: {
+            category: components["schemas"]["InquiryCategory"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Attachmentassetid */
+            attachmentAssetId?: string | null;
+        };
+        /** InquiryCreateResponse */
+        InquiryCreateResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+        };
+        /**
+         * InquiryStatus
+         * @enum {string}
+         */
+        InquiryStatus: "pending" | "answered";
         /** KeywordNoteDraftItem */
         KeywordNoteDraftItem: {
             /**
@@ -3747,6 +3957,53 @@ export interface components {
              */
             createdAt: string;
         };
+        /** MyInquiryDetailResponse */
+        MyInquiryDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            category: components["schemas"]["InquiryCategory"];
+            /** Title */
+            title: string;
+            /** Body */
+            body: string;
+            /** Attachmenturl */
+            attachmentUrl: string | null;
+            status: components["schemas"]["InquiryStatus"];
+            /** Replybody */
+            replyBody: string | null;
+            /** Answeredat */
+            answeredAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** MyInquiryListItem */
+        MyInquiryListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            category: components["schemas"]["InquiryCategory"];
+            /** Title */
+            title: string;
+            status: components["schemas"]["InquiryStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** MyInquiryListResponse */
+        MyInquiryListResponse: {
+            /** Items */
+            items: components["schemas"]["MyInquiryListItem"][];
+        };
         /** NoticeDetailResponse */
         NoticeDetailResponse: {
             /**
@@ -3799,6 +4056,8 @@ export interface components {
             actionId: string | null;
             /** Noticeid */
             noticeId: string | null;
+            /** Inquiryid */
+            inquiryId: string | null;
             /** Title */
             title: string | null;
             /** Reasoncategory */
@@ -5086,6 +5345,105 @@ export interface operations {
             };
         };
     };
+    list_admin_inquiries_admin_inquiries_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["InquiryStatus"] | null;
+                category?: components["schemas"]["InquiryCategory"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInquiryListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_inquiry_admin_inquiries__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInquiryDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reply_to_inquiry_admin_inquiries__id__reply_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminInquiryReplyRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminInquiryDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     view_chat_room_admin_chat_rooms__room_id__view_post: {
         parameters: {
             query?: never;
@@ -5839,6 +6197,90 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_inquiry_inquiries_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InquiryCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InquiryCreateResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_inquiries_me_inquiries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyInquiryListResponse"];
+                };
+            };
+        };
+    };
+    get_my_inquiry_me_inquiries__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyInquiryDetailResponse"];
                 };
             };
             /** @description Validation Error */

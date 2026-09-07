@@ -468,7 +468,7 @@
           "admin"
         ],
         "summary": "Act On Content",
-        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11b에서 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\nT-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
+        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\nT-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
         "operationId": "act_on_content_admin_contents__content_id__action_post",
         "parameters": [
           {
@@ -642,7 +642,7 @@
           "admin"
         ],
         "summary": "Warn User",
-        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지\n문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),\nT-11b에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가\n사라졌다.\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
+        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지\n문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),\nT-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가\n사라졌다.\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
         "operationId": "warn_user_admin_users__user_id__warn_post",
         "parameters": [
           {
@@ -743,7 +743,7 @@
           "admin"
         ],
         "summary": "Unsuspend User",
-        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11b에서\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
+        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
         "operationId": "unsuspend_user_admin_users__user_id__unsuspend_post",
         "parameters": [
           {
@@ -996,7 +996,7 @@
           "admin"
         ],
         "summary": "List Admin Notices",
-        "description": "어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`\n(`moderation/router.py:195`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가\n커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정\n페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.",
+        "description": "어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`\n(`moderation/router.py:216`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가\n커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정\n페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.",
         "operationId": "list_admin_notices_admin_notices_get",
         "parameters": [
           {
@@ -1238,6 +1238,180 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminNoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/inquiries": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Inquiries",
+        "description": "offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.",
+        "operationId": "list_admin_inquiries_admin_inquiries_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InquiryStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/InquiryCategory"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Category"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInquiryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/inquiries/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Inquiry",
+        "operationId": "get_admin_inquiry_admin_inquiries__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInquiryDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/inquiries/{id}/reply": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Reply To Inquiry",
+        "description": "한 트랜잭션: 답변 기록 → 알림 1건(대상 1명이라 fan-out이 아니다) → 감사 로그 →\ncommit.\n\n이미 `ANSWERED`인 문의에 다시 답변하면 본문은 덮어쓰되 알림은 추가로 만들지\n않는다(오타 수정 경로) — 매 재답변마다 알림이 쌓이면 유저가 같은 건으로 여러 번\n울리는 알림을 받게 된다.",
+        "operationId": "reply_to_inquiry_admin_inquiries__id__reply_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminInquiryReplyRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminInquiryDetailResponse"
                 }
               }
             }
@@ -2235,6 +2409,113 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/inquiries": {
+      "post": {
+        "tags": [
+          "inquiry"
+        ],
+        "summary": "Create Inquiry",
+        "operationId": "create_inquiry_inquiries_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InquiryCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InquiryCreateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/inquiries": {
+      "get": {
+        "tags": [
+          "inquiry"
+        ],
+        "summary": "List My Inquiries",
+        "description": "페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다.",
+        "operationId": "list_my_inquiries_me_inquiries_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyInquiryListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/inquiries/{id}": {
+      "get": {
+        "tags": [
+          "inquiry"
+        ],
+        "summary": "Get My Inquiry",
+        "description": "남의 문의 상세는 404 — 403이 아니다. `notice/router.py`의 `get_notice`와 같은\n이유로, URL 추측으로 존재 자체가 새면 안 된다.",
+        "operationId": "get_my_inquiry_me_inquiries__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyInquiryDetailResponse"
                 }
               }
             }
@@ -5525,6 +5806,169 @@
         ],
         "title": "AdminDashboardTrendPoint"
       },
+      "AdminInquiryDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "category": {
+            "$ref": "#/components/schemas/InquiryCategory"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "attachmentUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachmenturl"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InquiryStatus"
+          },
+          "authorNickname": {
+            "type": "string",
+            "title": "Authornickname"
+          },
+          "authorEmail": {
+            "type": "string",
+            "title": "Authoremail"
+          },
+          "replyBody": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replybody"
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answeredat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title",
+          "body",
+          "attachmentUrl",
+          "status",
+          "authorNickname",
+          "authorEmail",
+          "replyBody",
+          "answeredAt",
+          "createdAt"
+        ],
+        "title": "AdminInquiryDetailResponse"
+      },
+      "AdminInquiryListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "category": {
+            "$ref": "#/components/schemas/InquiryCategory"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InquiryStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title",
+          "status",
+          "createdAt"
+        ],
+        "title": "AdminInquiryListItem"
+      },
+      "AdminInquiryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminInquiryListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminInquiryListResponse"
+      },
+      "AdminInquiryReplyRequest": {
+        "properties": {
+          "replyBody": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Replybody"
+          }
+        },
+        "type": "object",
+        "required": [
+          "replyBody"
+        ],
+        "title": "AdminInquiryReplyRequest"
+      },
       "AdminLegalDocumentResponse": {
         "properties": {
           "kind": {
@@ -6654,7 +7098,8 @@
         "enum": [
           "profile-image",
           "content-thumbnail",
-          "situational-image"
+          "situational-image",
+          "inquiry-attachment"
         ],
         "title": "AssetPurpose",
         "description": "techspec-backend-media.md §1. Extend as new upload flows need a purpose."
@@ -8603,6 +9048,77 @@
         ],
         "title": "ImageStylePreset"
       },
+      "InquiryCategory": {
+        "type": "string",
+        "enum": [
+          "account",
+          "bug",
+          "content",
+          "suggestion",
+          "other"
+        ],
+        "title": "InquiryCategory"
+      },
+      "InquiryCreateRequest": {
+        "properties": {
+          "category": {
+            "$ref": "#/components/schemas/InquiryCategory"
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Body"
+          },
+          "attachmentAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachmentassetid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "category",
+          "title",
+          "body"
+        ],
+        "title": "InquiryCreateRequest"
+      },
+      "InquiryCreateResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id"
+        ],
+        "title": "InquiryCreateResponse"
+      },
+      "InquiryStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "answered"
+        ],
+        "title": "InquiryStatus"
+      },
       "KeywordNoteDraftItem": {
         "properties": {
           "id": {
@@ -8873,6 +9389,130 @@
         ],
         "title": "MyChatRoomListItem"
       },
+      "MyInquiryDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "category": {
+            "$ref": "#/components/schemas/InquiryCategory"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "attachmentUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Attachmenturl"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InquiryStatus"
+          },
+          "replyBody": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replybody"
+          },
+          "answeredAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Answeredat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title",
+          "body",
+          "attachmentUrl",
+          "status",
+          "replyBody",
+          "answeredAt",
+          "createdAt"
+        ],
+        "title": "MyInquiryDetailResponse"
+      },
+      "MyInquiryListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "category": {
+            "$ref": "#/components/schemas/InquiryCategory"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "$ref": "#/components/schemas/InquiryStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "category",
+          "title",
+          "status",
+          "createdAt"
+        ],
+        "title": "MyInquiryListItem"
+      },
+      "MyInquiryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MyInquiryListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "MyInquiryListResponse"
+      },
       "NoticeDetailResponse": {
         "properties": {
           "id": {
@@ -8991,6 +9631,18 @@
             ],
             "title": "Noticeid"
           },
+          "inquiryId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inquiryid"
+          },
           "title": {
             "anyOf": [
               {
@@ -9041,6 +9693,7 @@
           "contentId",
           "actionId",
           "noticeId",
+          "inquiryId",
           "title",
           "reasonCategory",
           "adminComment",
