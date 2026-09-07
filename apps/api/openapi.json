@@ -4095,6 +4095,32 @@
         }
       }
     },
+    "/me/chat-rooms": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "List My Chat Rooms",
+        "description": "헤더 \"내 채팅목록\"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.\n콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —\n여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).",
+        "operationId": "list_my_chat_rooms_me_chat_rooms_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/MyChatRoomListItem"
+                  },
+                  "type": "array",
+                  "title": "Response List My Chat Rooms Me Chat Rooms Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
       "get": {
         "tags": [
@@ -8277,6 +8303,76 @@
           "deleted"
         ],
         "title": "ModerationStatus"
+      },
+      "MyChatRoomListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "lastMessagePreview": {
+            "type": "string",
+            "title": "Lastmessagepreview"
+          },
+          "lastMessageAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastmessageat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "contentId",
+          "contentType",
+          "contentName",
+          "thumbnailUrl",
+          "lastMessagePreview",
+          "lastMessageAt",
+          "createdAt"
+        ],
+        "title": "MyChatRoomListItem"
       },
       "NotificationResponse": {
         "properties": {

@@ -14,7 +14,13 @@ from api.admin.router import me_router as admin_me_router, router as admin_route
 from api.admin.users import router as admin_users_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
 from api.auth.router import me_router, router as auth_router
-from api.chat.router import characters_router, preview_router, router as chat_router, stories_router
+from api.chat.router import (
+    characters_router,
+    me_router as chat_me_router,
+    preview_router,
+    router as chat_router,
+    stories_router,
+)
 from api.content.router import router as content_router
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -71,6 +77,7 @@ app.include_router(legal_router)
 app.include_router(content_router)
 app.include_router(moderation_router)
 app.include_router(chat_router)
+app.include_router(chat_me_router)
 app.include_router(stories_router)
 app.include_router(characters_router)
 app.include_router(preview_router)

@@ -46,6 +46,7 @@ from api.chat.schemas import (
     EndingRuleListItem,
     EndingSnapshot,
     ImageArchiveItem,
+    MyChatRoomListItem,
     PlayGuideResponse,
     PreviewSessionStartResponse,
     PreviewSessionState,
@@ -102,6 +103,10 @@ router = APIRouter(prefix="/chat-rooms", tags=["chat"])
 stories_router = APIRouter(prefix="/stories", tags=["chat"])
 characters_router = APIRouter(prefix="/characters", tags=["chat"])
 preview_router = APIRouter(prefix="/preview-sessions", tags=["chat"])
+# `router`의 prefix가 `/chat-rooms`라 여기 얹으면 `/chat-rooms/me/...`가 되므로 별도 라우터가
+# 필요하다 — 위 stories_router/characters_router와 동일 이유. `api.auth.router.me_router`가
+# 이미 그 이름을 쓰므로 main.py에서 반드시 별칭으로 import한다.
+me_router = APIRouter(prefix="/me", tags=["chat"])
 
 
 async def _get_owned_room(db: AsyncSession, room_id: uuid.UUID, user_id: uuid.UUID) -> ChatRoom:
@@ -939,6 +944,144 @@ async def list_chat_rooms(
         )
         for ordinal, room in enumerate(rooms, start=1)
     ]
+
+
+@me_router.get("/chat-rooms")
+async def list_my_chat_rooms(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[MyChatRoomListItem]:
+    """헤더 "내 채팅목록"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.
+    콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —
+    여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다)."""
+    rooms = list(
+        (
+            await db.scalars(
+                select(ChatRoom)
+                .where(ChatRoom.user_id == user_id)
+                .order_by(ChatRoom.created_at.asc(), ChatRoom.id.asc())
+            )
+        ).all()
+    )
+    if not rooms:
+        return []
+
+    # "대화 N"의 N은 콘텐츠별 생성순 순번(`_room_siblings`와 같은 정렬 기준) — 위 쿼리가
+    # 이미 전체를 created_at asc, id asc로 가져왔으므로, 콘텐츠별 부분열도 같은 순서를
+    # 유지한다. `_room_siblings`를 방마다 호출하면 N 쿼리가 되므로 메모리에서 직접 센다.
+    ordinals: dict[uuid.UUID, int] = {}
+    content_room_counts: dict[uuid.UUID, int] = {}
+    for room in rooms:
+        content_room_counts[room.content_id] = content_room_counts.get(room.content_id, 0) + 1
+        ordinals[room.id] = content_room_counts[room.content_id]
+
+    room_ids = [room.id for room in rooms]
+
+    # 방당 최신 메시지 1건만 가져온다. 기존 list_chat_rooms(위)는 "전체 스캔 + setdefault"를
+    # 쓰지만 그 범위는 한 콘텐츠의 방들이라 작다 — 여기서는 사용자가 지금까지 주고받은
+    # 모든 메시지를 메모리로 끌어오게 되므로(로컬 dev DB에도 한 방에 250건 이상 있다)
+    # 일부러 Postgres DISTINCT ON으로 바꾼다.
+    last_messages: dict[uuid.UUID, ChatMessage] = {
+        message.chat_room_id: message
+        for message in (
+            await db.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.chat_room_id.in_(room_ids))
+                .distinct(ChatMessage.chat_room_id)
+                .order_by(
+                    ChatMessage.chat_room_id, ChatMessage.created_at.desc(), ChatMessage.id.desc()
+                )
+            )
+        ).all()
+    }
+
+    # 작품명·썸네일은 방이 고정한 content_version_id 기준(현재 발행 버전이 아니다) —
+    # list_my_favorites(content/router.py)와 같은 "type별 배치 조회 → dict 매핑" 패턴.
+    content_ids = {room.content_id for room in rooms}
+    contents = {
+        content.id: content
+        for content in (await db.scalars(select(Content).where(Content.id.in_(content_ids)))).all()
+    }
+
+    version_ids = [room.content_version_id for room in rooms]
+    character_details = {
+        detail.content_version_id: detail
+        for detail in (
+            await db.scalars(
+                select(CharacterVersionDetail).where(
+                    CharacterVersionDetail.content_version_id.in_(version_ids)
+                )
+            )
+        ).all()
+    }
+    story_details = {
+        detail.content_version_id: detail
+        for detail in (
+            await db.scalars(
+                select(StoryVersionDetail).where(
+                    StoryVersionDetail.content_version_id.in_(version_ids)
+                )
+            )
+        ).all()
+    }
+
+    all_details: list[CharacterVersionDetail | StoryVersionDetail] = [
+        *character_details.values(),
+        *story_details.values(),
+    ]
+    thumbnail_asset_ids = {
+        detail.thumbnail_asset_id for detail in all_details if detail.thumbnail_asset_id is not None
+    }
+    assets = {
+        asset.id: asset
+        for asset in (
+            await db.scalars(select(Asset).where(Asset.id.in_(thumbnail_asset_ids)))
+        ).all()
+    }
+
+    items: list[MyChatRoomListItem] = []
+    for room in rooms:
+        content = contents.get(room.content_id)
+        if content is None:
+            continue
+        detail: CharacterVersionDetail | StoryVersionDetail | None
+        if content.type == ContentType.CHARACTER:
+            detail = character_details.get(room.content_version_id)
+        else:
+            detail = story_details.get(room.content_version_id)
+        if detail is None:
+            continue
+
+        thumbnail_url: str | None = None
+        if detail.thumbnail_asset_id is not None:
+            asset = assets.get(detail.thumbnail_asset_id)
+            if asset is not None:
+                thumbnail_url = await run_in_threadpool(
+                    generate_presigned_get_url, build_thumbnail_key(asset.storage_key)
+                )
+
+        last_message = last_messages.get(room.id)
+        items.append(
+            MyChatRoomListItem(
+                id=room.id,
+                name=_display_name(room, ordinals[room.id]),
+                content_id=room.content_id,
+                content_type=content.type,
+                content_name=detail.name,
+                thumbnail_url=thumbnail_url,
+                last_message_preview=last_message.content if last_message is not None else "",
+                last_message_at=last_message.created_at if last_message is not None else None,
+                created_at=room.created_at,
+            )
+        )
+
+    # (last_message_at ?? created_at) DESC -> created_at DESC -> id DESC. NULLS LAST로
+    # 빈 방을 몰지 않는다 — 메시지 없는 방의 활동 시각은 생성 시각으로 폴백한다.
+    items.sort(
+        key=lambda item: (item.last_message_at or item.created_at, item.created_at, item.id),
+        reverse=True,
+    )
+    return items
 
 
 @router.patch("/{room_id}")

@@ -974,3 +974,193 @@ async def test_get_play_guide_requires_ownership(db_client: httpx.AsyncClient, d
 
     resp = await db_client.get(f"/chat-rooms/{uuid.uuid4()}/play-guide")
     assert resp.status_code == 404
+
+
+async def test_my_chat_rooms_excludes_other_users_and_orders_by_last_message_recency(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    owner = _make_user()
+    other = _make_user()
+    db_session.add_all([owner, other])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content_a = await _make_published_character(db_session, creator_user_id=owner.id, genre_id=genre.id)
+    content_b = await _make_published_character(db_session, creator_user_id=owner.id, genre_id=genre.id)
+    other_content = await _make_published_character(db_session, creator_user_id=other.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, owner.id)
+    room_a_id = uuid.UUID((await _create_room_via_api(db_client, content_a.id)).json()["id"])
+    room_b_id = uuid.UUID((await _create_room_via_api(db_client, content_b.id)).json()["id"])
+
+    await _login_as(db_client, other.id)
+    await _create_room_via_api(db_client, other_content.id)
+
+    room_a = await db_session.get(ChatRoom, room_a_id)
+    assert room_a is not None
+    t0 = room_a.created_at
+    # room_a를 room_b보다 "나중에 생성된 것"처럼 만들되(생성순으로는 room_a가 위) 마지막
+    # 메시지는 room_b가 더 최근이게 한다 — 정렬이 생성순이 아니라 마지막 메시지 기준임을
+    # 실제로 가른다(양쪽에서 같은 순서가 나오는 데이터로는 아무것도 증명하지 못한다).
+    room_a.created_at = t0 + timedelta(minutes=10)
+    db_session.add(
+        ChatMessage(
+            chat_room_id=room_b_id,
+            role=ChatMessageRole.USER,
+            content="room B 최신 답장",
+            created_at=t0 + timedelta(minutes=5),
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, owner.id)
+    resp = await db_client.get("/me/chat-rooms")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 2
+    ids = [item["id"] for item in items]
+    assert ids == [str(room_b_id), str(room_a_id)]
+    assert items[0]["lastMessagePreview"] == "room B 최신 답장"
+
+
+async def test_my_chat_rooms_includes_empty_room_with_blank_preview(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    create_resp = await _create_room_via_api(db_client, content.id)
+    room_id = create_resp.json()["id"]
+    message_id = create_resp.json()["messages"][0]["id"]
+
+    # 오프닝 메시지를 지워 메시지 0개인 방을 만든다 — delete_message는 오프닝 메시지도
+    # 가드 없이 지운다(US-005가 고치는 500과 같은 도달 경로, goal-prompt.md 참조).
+    del_resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{message_id}")
+    assert del_resp.status_code == 204
+
+    resp = await db_client.get("/me/chat-rooms")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["id"] == room_id
+    assert items[0]["lastMessagePreview"] == ""
+    assert items[0]["lastMessageAt"] is None
+
+
+async def test_my_chat_rooms_name_ordinal_matches_content_scoped_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    first_room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    second_room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    first_room = await db_session.get(ChatRoom, first_room_id)
+    assert first_room is not None
+    first_room.created_at = first_room.created_at - timedelta(minutes=1)
+    await db_session.commit()
+
+    scoped_resp = await db_client.get("/chat-rooms", params={"contentId": str(content.id)})
+    my_resp = await db_client.get("/me/chat-rooms")
+    assert scoped_resp.status_code == 200
+    assert my_resp.status_code == 200
+
+    scoped_by_id = {item["id"]: item for item in scoped_resp.json()}
+    my_by_id = {item["id"]: item for item in my_resp.json()}
+    assert scoped_by_id[str(first_room_id)]["name"] == my_by_id[str(first_room_id)]["name"] == "대화 1"
+    assert scoped_by_id[str(second_room_id)]["name"] == my_by_id[str(second_room_id)]["name"] == "대화 2"
+
+
+async def test_my_chat_rooms_mixed_content_types_thumbnail_and_moderation(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+
+    character = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    deleted_character = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+
+    # 썸네일 없는 스토리 콘텐츠 — _make_published_story는 항상 썸네일을 채우므로 직접 구성한다.
+    story = Content(
+        creator_user_id=user.id,
+        type=ContentType.STORY,
+        genre_id=genre.id,
+        target=ContentTarget.ALL,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(story)
+    await db_session.flush()
+    story_version = ContentVersion(
+        content_id=story.id, version_number=1, published_at=datetime.now(timezone.utc), detail_description="설명"
+    )
+    db_session.add(story_version)
+    await db_session.flush()
+    db_session.add(
+        StoryVersionDetail(
+            content_version_id=story_version.id,
+            name="썸네일 없는 스토리",
+            one_liner="한줄소개",
+            thumbnail_asset_id=None,
+            prompt_template=StoryPromptTemplate.BASIC,
+        )
+    )
+    await db_session.flush()
+    story.current_published_version_id = story_version.id
+    await db_session.flush()
+    setup = await _add_starting_setup(db_session, story)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    character_room_id = uuid.UUID((await _create_room_via_api(db_client, character.id)).json()["id"])
+    story_room_id = uuid.UUID(
+        (
+            await _create_room_via_api(
+                db_client, story.id, content_type="story", starting_setup_id=setup.id
+            )
+        ).json()["id"]
+    )
+    deleted_room_id = uuid.UUID(
+        (await _create_room_via_api(db_client, deleted_character.id)).json()["id"]
+    )
+
+    # 발행 이후 이용제한/삭제로 바뀌어도 대화방 상세는 그대로 보이므로(채팅 라우터는
+    # moderation_status를 보지 않는다) 목록에서도 감추지 않는다.
+    story.moderation_status = ModerationStatus.RESTRICTED
+    deleted_character.moderation_status = ModerationStatus.DELETED
+    await db_session.commit()
+
+    resp = await db_client.get("/me/chat-rooms")
+    assert resp.status_code == 200
+    items = {item["id"]: item for item in resp.json()}
+    assert len(items) == 3
+
+    character_item = items[str(character_room_id)]
+    assert character_item["contentType"] == "character"
+    assert character_item["contentName"] == "캐릭터"
+    assert character_item["thumbnailUrl"] is not None
+    assert "_thumb.webp" in character_item["thumbnailUrl"]
+
+    story_item = items[str(story_room_id)]
+    assert story_item["contentType"] == "story"
+    assert story_item["contentName"] == "썸네일 없는 스토리"
+    assert story_item["thumbnailUrl"] is None
+
+    deleted_item = items[str(deleted_room_id)]
+    assert deleted_item["contentType"] == "character"
+    assert deleted_item["contentName"] == "캐릭터"
+    assert deleted_item["thumbnailUrl"] is not None

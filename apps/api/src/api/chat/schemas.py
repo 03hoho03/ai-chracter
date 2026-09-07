@@ -138,6 +138,18 @@ class ChatRoomListItem(CamelModel):
     created_at: datetime
 
 
+class MyChatRoomListItem(CamelModel):
+    id: uuid.UUID
+    name: str
+    content_id: uuid.UUID
+    content_type: ContentType
+    content_name: str
+    thumbnail_url: str | None
+    last_message_preview: str
+    last_message_at: datetime | None
+    created_at: datetime
+
+
 class EndingCollectionItem(CamelModel):
     id: uuid.UUID
     name: str
