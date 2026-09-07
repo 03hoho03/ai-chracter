@@ -1683,6 +1683,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/chat-rooms": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List My Chat Rooms
+         * @description 헤더 "내 채팅목록"용 — 콘텐츠 스코프 없이 사용자의 모든 방을 한 번에 내려준다.
+         *     콘텐츠의 공개범위·이용제한·삭제 상태는 보지 않는다(`list_chat_rooms`도 그렇다 —
+         *     여기서만 감추면 방 안에서는 보이는 대화가 목록에서만 사라지는 것처럼 보인다).
+         */
+        get: operations["list_my_chat_rooms_me_chat_rooms_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
         parameters: {
             query?: never;
@@ -3477,6 +3499,35 @@ export interface components {
          * @enum {string}
          */
         ModerationStatus: "normal" | "restricted" | "deleted";
+        /** MyChatRoomListItem */
+        MyChatRoomListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Contentname */
+            contentName: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Lastmessagepreview */
+            lastMessagePreview: string;
+            /** Lastmessageat */
+            lastMessageAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
         /** NotificationResponse */
         NotificationResponse: {
             /**
@@ -6675,6 +6726,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_chat_rooms_me_chat_rooms_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyChatRoomListItem"][];
                 };
             };
         };

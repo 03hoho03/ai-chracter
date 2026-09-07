@@ -20,6 +20,7 @@ export { useChatRoomQuery } from "./api/useChatRoomQuery";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
 export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";
+export { useMyChatRoomListQuery, type MyChatRoomListItem } from "./api/useMyChatRoomListQuery";
 export { useAcknowledgeVersionUpgradeMutation } from "./api/useAcknowledgeVersionUpgradeMutation";
 export { useChangeStartingSetupMutation } from "./api/useChangeStartingSetupMutation";
 export { useDeleteChatRoomMutation } from "./api/useDeleteChatRoomMutation";
