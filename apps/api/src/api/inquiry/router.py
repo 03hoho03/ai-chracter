@@ -23,7 +23,7 @@ me_router = APIRouter(prefix="/me", tags=["inquiry"])
 
 
 async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
-    """`moderation/router.py`의 같은 이름 헬퍼(:121)와 같은 모양 — 파일 간 헬퍼를
+    """`moderation/router.py`의 같은 이름 헬퍼(:164)와 같은 모양 — 파일 간 헬퍼를
     공유하지 않는 이 저장소 관례(`apps/api/CLAUDE.md`)에 따라 이 파일에도 복제한다."""
     if asset_id is None:
         return None
