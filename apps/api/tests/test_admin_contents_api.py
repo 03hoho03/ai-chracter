@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -32,8 +32,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -73,7 +73,7 @@ async def _make_published_character(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명입니다",
     )
     db_session.add(version)
@@ -131,7 +131,7 @@ async def _make_published_story(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="스토리 설명",
     )
     db_session.add(version)
@@ -519,7 +519,7 @@ async def test_content_list_pagination_second_page_has_no_duplicate_rows(
             db_session,
             creator_user_id=creator.id,
             genre_id=genre.id,
-            created_at=datetime.now(timezone.utc) - timedelta(minutes=i),
+            created_at=datetime.now(UTC) - timedelta(minutes=i),
         )
     await db_session.commit()
 
@@ -832,7 +832,7 @@ async def test_content_action_lift_restriction_migrates_chat_rooms_to_latest_ver
     new_version = ContentVersion(
         content_id=character.id,
         version_number=2,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명 v2",
     )
     db_session.add(new_version)

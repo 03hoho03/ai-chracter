@@ -26,14 +26,14 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
-from sqlalchemy import select  # noqa: E402
-from sqlalchemy.ext.asyncio import AsyncSession  # noqa: E402
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.s3 import build_object_key, upload_object  # noqa: E402
-from api.core.security import hash_password  # noqa: E402
-from api.db.models.auth import User  # noqa: E402
-from api.db.models.character import CharacterVersionDetail  # noqa: E402
-from api.db.models.content import (  # noqa: E402
+from api.core.s3 import build_object_key, upload_object
+from api.core.security import hash_password
+from api.db.models.auth import User
+from api.db.models.character import CharacterVersionDetail
+from api.db.models.content import (
     Content,
     ContentTarget,
     ContentType,
@@ -42,12 +42,12 @@ from api.db.models.content import (  # noqa: E402
     Genre,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetKind, AssetStatus  # noqa: E402
-from api.db.session import async_session_factory  # noqa: E402
-from seed_content.ids import MIA_THUMBNAIL_ASSET_ID, SEED_AUTHOR_USER_ID  # noqa: E402
-from seed_content.images import ensure_asset, read_image  # noqa: E402
-from seed_content.loader import load_characters, load_stories  # noqa: E402
-from seed_content.upsert import upsert_character, upsert_story  # noqa: E402
+from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.session import async_session_factory
+from seed_content.ids import MIA_THUMBNAIL_ASSET_ID, SEED_AUTHOR_USER_ID
+from seed_content.images import ensure_asset, read_image
+from seed_content.loader import load_characters, load_stories
+from seed_content.upsert import upsert_character, upsert_story
 
 # 고정 UUID (재실행 시 중복 방지). 실사용자 UUID 와 겹치지 않도록 5eed... 프리픽스 사용.
 # 시드 콘텐츠 전체의 작가 계정. 이 UUID 는 절대 바꾸지 않는다 — 기존 시드 콘텐츠의
@@ -123,7 +123,7 @@ async def main() -> None:
     try:
         upload_object(THUMBNAIL_KEY, read_image("mia"), "image/png")
         print(f"  ✓ 미아 썸네일 업로드: {THUMBNAIL_KEY}")
-    except Exception as exc:  # noqa: BLE001 - moto 미기동 등 어떤 실패든 시드 자체는 계속
+    except Exception as exc:
         print(f"  ! 썸네일 업로드 건너뜀 ({exc!r}) — moto 기동 후 seed 재실행하면 채워짐")
 
     # 2) DB 로우 (고정 UUID upsert)

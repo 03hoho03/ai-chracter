@@ -224,7 +224,8 @@ def main() -> None:
                 "per_story": s.per_story,
                 "defects": s.defects,
             }
-            for path, s in zip(paths, summaries)
+            # summaries 는 paths 위의 리스트 컴프리헨션이라 길이가 항상 같다.
+            for path, s in zip(paths, summaries, strict=True)
         ]
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return
@@ -233,7 +234,8 @@ def main() -> None:
     _row("", [s.label for s in summaries], width)
     _row("턴 수", [str(s.scored) for s in summaries], width)
     _row("유실 턴 수", [str(s.empty_replies) for s in summaries], width)
-    for window, label in zip(WINDOWS, ("되받기 앞250자", "되받기 앞2문장", "되받기 앞30%")):
+    # WINDOWS 와 라벨은 짝을 이루는 상수라 길이가 어긋나면 그 자체가 버그다.
+    for window, label in zip(WINDOWS, ("되받기 앞250자", "되받기 앞2문장", "되받기 앞30%"), strict=True):
         _row(label, [s.rate(window) for s in summaries], width)
     _row("길이 중앙값", [f"{s.median_len:.0f}자" for s in summaries], width)
     _row("문장 수 중앙값", [f"{s.median_sentences:.0f}" for s in summaries], width)

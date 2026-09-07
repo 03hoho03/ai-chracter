@@ -21,7 +21,8 @@ postgresql_where=...)`로 별도 생성해야 한다. `downgrade()`의 `drop_tab
 2개·문서당 버전 몇 개 규모에서 순차 스캔이면 충분하고, 이 저장소는 이 규모의 테이블에
 조회 전용 인덱스를 미리 얹지 않는 관례를 이미 갖고 있다(`chat_messages` 등).
 """
-from typing import Sequence, Union
+from typing import Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
@@ -29,9 +30,9 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '5bef71fc8f50'
-down_revision: Union[str, Sequence[str], None] = '0741a91285ed'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '0741a91285ed'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

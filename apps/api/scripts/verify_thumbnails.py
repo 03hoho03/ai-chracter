@@ -28,15 +28,15 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
-import asyncio  # noqa: E402
+import asyncio
 
-from PIL import Image  # noqa: E402
-from sqlalchemy import select  # noqa: E402
+from PIL import Image
+from sqlalchemy import select
 
-from api.core.config import settings  # noqa: E402
-from api.core.s3 import build_thumbnail_key, download_object, s3_client  # noqa: E402
-from api.db.models.media import Asset, AssetStatus  # noqa: E402
-from api.db.session import async_session_factory  # noqa: E402
+from api.core.config import settings
+from api.core.s3 import build_thumbnail_key, download_object, s3_client
+from api.db.models.media import Asset, AssetStatus
+from api.db.session import async_session_factory
 
 THUMBNAIL_SUFFIX = "_thumb.webp"
 
@@ -66,7 +66,7 @@ def _describe_dimensions(key: str) -> str:
     try:
         with Image.open(io.BytesIO(download_object(key))) as image:
             return f"{image.width}x{image.height} {image.format}"
-    except Exception as exc:  # noqa: BLE001 - 한 건의 디코드 실패로 감사를 멈추지 않는다
+    except Exception as exc:
         return f"<decode failed: {type(exc).__name__}>"
 
 

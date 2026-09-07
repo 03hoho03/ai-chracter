@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest_asyncio
@@ -64,8 +64,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -96,7 +96,7 @@ async def _make_content(
         version = ContentVersion(
             content_id=content.id,
             version_number=1,
-            published_at=datetime.now(timezone.utc),
+            published_at=datetime.now(UTC),
             detail_description="",
         )
         db_session.add(version)
@@ -318,7 +318,7 @@ async def test_list_users_search_by_nickname_case_insensitive(
 async def test_list_users_filters_by_suspended(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    suspended_user = _make_user(suspended_at=datetime.now(timezone.utc))
+    suspended_user = _make_user(suspended_at=datetime.now(UTC))
     active_user = _make_user()
     db_session.add_all([suspended_user, active_user])
     await db_session.commit()
@@ -342,7 +342,7 @@ async def test_list_users_filters_by_suspended(
 async def test_list_users_excludes_deleted_users(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    deleted_user = _make_user(deleted_at=datetime.now(timezone.utc))
+    deleted_user = _make_user(deleted_at=datetime.now(UTC))
     active_user = _make_user()
     db_session.add_all([deleted_user, active_user])
     await db_session.commit()
@@ -387,7 +387,7 @@ async def test_list_users_pagination_second_page_has_no_duplicate_rows(
 ) -> None:
     for i in range(25):
         db_session.add(
-            _make_user(created_at=datetime.now(timezone.utc) - timedelta(minutes=i))
+            _make_user(created_at=datetime.now(UTC) - timedelta(minutes=i))
         )
     await db_session.commit()
 
@@ -416,7 +416,7 @@ async def test_list_users_query_count_stays_bounded(
     """goal-prompt.md 3단계 검증 기준: 20행 조회에 쿼리 1~3개(T-8, N+1 금지) — 코드
     읽기가 아니라 SQLAlchemy `before_cursor_execute` 이벤트로 실측한다."""
     for i in range(20):
-        user = _make_user(created_at=datetime.now(timezone.utc) - timedelta(minutes=i))
+        user = _make_user(created_at=datetime.now(UTC) - timedelta(minutes=i))
         db_session.add(user)
         await db_session.flush()
         content = await _make_content(db_session, creator_user_id=user.id)
@@ -451,7 +451,7 @@ async def test_user_detail_unknown_id_returns_404(
 async def test_user_detail_deleted_user_returns_404(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(deleted_at=datetime.now(timezone.utc))
+    user = _make_user(deleted_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.commit()
 
@@ -478,13 +478,13 @@ async def test_user_detail_stats_match_actual_values(
         db_session,
         chat_room_id=room.id,
         role=ChatMessageRole.USER,
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+        created_at=datetime.now(UTC) - timedelta(minutes=10),
     )
     last_user_message = await _add_chat_message(
         db_session,
         chat_room_id=room.id,
         role=ChatMessageRole.USER,
-        created_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        created_at=datetime.now(UTC) - timedelta(minutes=1),
     )
     # 마지막 메시지가 ASSISTANT여도 last_active_at은 USER 메시지 기준이어야 한다.
     await _add_chat_message(db_session, chat_room_id=room.id, role=ChatMessageRole.ASSISTANT)
@@ -771,7 +771,7 @@ async def test_warn_allowed_on_already_suspended_user(
 ) -> None:
     """경고(알림)와 정지(접근 차단)는 서로 다른 축이라 정지 중에도 경고를 보낼 수
     있어야 한다 — `api/admin/users.py`의 `warn_user` docstring 참고."""
-    user = _make_user(suspended_at=datetime.now(timezone.utc))
+    user = _make_user(suspended_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.commit()
 
@@ -1062,7 +1062,7 @@ async def test_unsuspend_clears_suspended_at_removes_marker_and_keeps_content_re
 async def test_unsuspend_missing_admin_comment_returns_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(suspended_at=datetime.now(timezone.utc))
+    user = _make_user(suspended_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.commit()
 
@@ -1077,7 +1077,7 @@ async def test_unsuspend_missing_admin_comment_returns_422(
 async def test_unsuspend_blank_admin_comment_returns_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(suspended_at=datetime.now(timezone.utc))
+    user = _make_user(suspended_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.commit()
 

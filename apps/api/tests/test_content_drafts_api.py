@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -27,8 +27,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -85,7 +85,7 @@ async def _add_version(
     version = ContentVersion(
         content_id=content.id,
         version_number=1 if published else None,
-        published_at=datetime.now(timezone.utc) if published else None,
+        published_at=datetime.now(UTC) if published else None,
         detail_description="설명",
     )
     db_session.add(version)
@@ -263,7 +263,7 @@ async def test_list_drafts_drops_content_once_it_is_published(
 
     # 발행: 이 버전이 발행본이 되고, 다음 편집용 초안이 자동 복제된다.
     first_version.version_number = 1
-    first_version.published_at = datetime.now(timezone.utc)
+    first_version.published_at = datetime.now(UTC)
     content.current_published_version_id = first_version.id
     cloned_draft = await _add_version(db_session, content, published=False)
     await _add_character_detail(db_session, cloned_draft, thumbnail, name="작성 중")
@@ -305,7 +305,7 @@ async def test_list_drafts_uses_latest_draft_row_when_multiple_exist(
     thumbnail = await _make_asset(db_session, user.id)
 
     content = await _make_content(db_session, creator_user_id=user.id, genre_id=genre.id)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     older_version = await _add_version(
         db_session, content, published=False, created_at=now - timedelta(hours=1)
     )

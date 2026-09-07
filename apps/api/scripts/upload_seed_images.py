@@ -103,7 +103,7 @@ def main() -> int:
     for upload in uploads:
         try:
             upload_object(upload.key, upload.body, upload.content_type)
-        except Exception as exc:  # noqa: BLE001 - 한 건의 실패로 나머지를 멈추지 않는다
+        except Exception as exc:
             print(f"  ✗ {upload.slug}: {exc!r}")
             failed.append(upload.slug)
             continue

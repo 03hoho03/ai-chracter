@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from decimal import Decimal
 
 import httpx
@@ -36,8 +36,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -83,7 +83,7 @@ async def _add_version(
     version = ContentVersion(content_id=content.id, detail_description=detail_description)
     if published:
         version.version_number = 1
-        version.published_at = datetime.now(timezone.utc)
+        version.published_at = datetime.now(UTC)
     db_session.add(version)
     await db_session.flush()
     if published:

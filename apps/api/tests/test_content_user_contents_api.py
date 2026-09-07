@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -27,8 +27,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -83,7 +83,7 @@ async def _make_published_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=published_at or datetime.now(timezone.utc),
+        published_at=published_at or datetime.now(UTC),
         detail_description="설명",
     )
     db_session.add(version)
@@ -371,7 +371,7 @@ async def test_list_user_contents_exposes_updated_at_and_counters(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    published_at = datetime(2026, 3, 1, 12, 0, tzinfo=timezone.utc)
+    published_at = datetime(2026, 3, 1, 12, 0, tzinfo=UTC)
     await _make_published_content(
         db_session,
         creator_user_id=user.id,
@@ -399,12 +399,12 @@ async def test_list_user_contents_updated_at_follows_latest_published_version(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    republished_at = datetime(2026, 5, 20, 9, 0, tzinfo=timezone.utc)
+    republished_at = datetime(2026, 5, 20, 9, 0, tzinfo=UTC)
     content = await _make_published_content(
         db_session,
         creator_user_id=user.id,
         genre_id=genre.id,
-        published_at=datetime(2026, 1, 1, 0, 0, tzinfo=timezone.utc),
+        published_at=datetime(2026, 1, 1, 0, 0, tzinfo=UTC),
         name="재발행 캐릭터",
     )
     second_version = ContentVersion(
@@ -444,9 +444,9 @@ async def test_list_user_contents_orders_by_published_at_desc(
     genre = await _get_genre(db_session)
     # Inserted oldest-published last so insertion order can't be what produces the expected order.
     for name, published_at in [
-        ("중간", datetime(2026, 2, 1, tzinfo=timezone.utc)),
-        ("최신", datetime(2026, 3, 1, tzinfo=timezone.utc)),
-        ("가장 오래됨", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+        ("중간", datetime(2026, 2, 1, tzinfo=UTC)),
+        ("최신", datetime(2026, 3, 1, tzinfo=UTC)),
+        ("가장 오래됨", datetime(2026, 1, 1, tzinfo=UTC)),
     ]:
         await _make_published_content(
             db_session,
@@ -469,7 +469,7 @@ async def test_list_user_contents_breaks_published_at_ties_by_id_desc(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    published_at = datetime(2026, 4, 1, tzinfo=timezone.utc)
+    published_at = datetime(2026, 4, 1, tzinfo=UTC)
     contents = [
         await _make_published_content(
             db_session,
@@ -522,7 +522,7 @@ async def test_list_user_contents_paginates_at_page_size_without_duplicates(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    now = datetime(2026, 6, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 6, 1, tzinfo=UTC)
     total = 25
     for index in range(total):
         await _make_published_content(
@@ -554,7 +554,7 @@ async def test_list_user_contents_cursor_keeps_visibility_filter_across_pages(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    now = datetime(2026, 7, 1, tzinfo=timezone.utc)
+    now = datetime(2026, 7, 1, tzinfo=UTC)
     private_total = 25
     for index in range(private_total):
         await _make_published_content(

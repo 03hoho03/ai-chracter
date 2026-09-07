@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import boto3
 import httpx
@@ -24,8 +24,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -65,7 +65,7 @@ async def test_generated_images_lists_own_ready_generated_assets_newest_first(
     await db_session.commit()
     await _login_as(db_client, owner.id)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     older_id = uuid.uuid4()
     newer_id = uuid.uuid4()
     db_session.add_all(
@@ -118,7 +118,7 @@ async def test_generated_images_lists_own_ready_generated_assets_newest_first(
     assert resp.status_code == 200
     body = resp.json()
     assert [item["assetId"] for item in body] == [str(newer_id), str(older_id)]
-    for item, asset_id in zip(body, [newer_id, older_id]):
+    for item, asset_id in zip(body, [newer_id, older_id], strict=True):
         assert item["imageUrl"].startswith("http")
         # 갤러리 그리드는 원본이 아니라 썸네일 변형을 서명한다(US-009).
         assert f"assets/generated/{asset_id}_thumb.webp" in item["imageUrl"]
@@ -159,7 +159,7 @@ async def _make_character_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1 if published else None,
-        published_at=datetime.now(timezone.utc) if published else None,
+        published_at=datetime.now(UTC) if published else None,
         detail_description="",
     )
     db_session.add(version)
@@ -198,7 +198,7 @@ async def _make_story_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="",
     )
     db_session.add(version)

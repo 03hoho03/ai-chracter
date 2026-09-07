@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, UTC
 
 import httpx
 from sqlalchemy import delete, select
@@ -55,7 +55,7 @@ async def _make_published(
         body_markdown=body_markdown,
         status="published",
         requires_reconsent=requires_reconsent,
-        published_at=published_at or datetime.now(timezone.utc),
+        published_at=published_at or datetime.now(UTC),
     )
     db_session.add(document)
     await db_session.flush()

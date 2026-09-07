@@ -161,7 +161,7 @@ async def ensure_asset(
 
     try:
         upload_object(storage_key, body, CONTENT_TYPE)
-    except Exception as exc:  # noqa: BLE001 - moto 미기동 등 어떤 실패든 시드 자체는 계속
+    except Exception as exc:
         print(f"  ! 이미지 업로드 건너뜀({slug}, {exc!r}) — moto 기동 후 재시드하면 채워짐")
 
     await session.merge(

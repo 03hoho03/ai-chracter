@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,8 +28,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -61,7 +61,7 @@ def _message(room_id: uuid.UUID, *, day: date, role: ChatMessageRole = ChatMessa
         chat_room_id=room_id,
         role=role,
         content="메시지",
-        created_at=datetime.combine(day, datetime.min.time(), tzinfo=timezone.utc),
+        created_at=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
     )
 
 

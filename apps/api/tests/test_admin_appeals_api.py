@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -33,8 +33,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -63,7 +63,7 @@ async def _make_published_character(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명입니다",
     )
     db_session.add(version)
@@ -369,7 +369,7 @@ async def test_resolve_appeal_accepted_moderation_action_reverts_content_and_mig
     new_version = ContentVersion(
         content_id=character.id,
         version_number=2,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명 v2",
     )
     db_session.add(new_version)

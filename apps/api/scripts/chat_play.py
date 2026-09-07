@@ -20,7 +20,7 @@ from typing import Any
 import httpx
 
 sys.path.insert(0, "/Users/janghojeong/Projects/work/ai-chracter/apps/api/scripts")
-from seed_content.upsert import story_content_id  # noqa: E402
+from seed_content.upsert import story_content_id
 
 BASE = "http://localhost:8000"
 EMAIL, PASSWORD = "test@example.com", "password1234"

@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 from decimal import Decimal
 
 import httpx
@@ -40,8 +40,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -85,7 +85,7 @@ async def _make_published_character(
     await db_session.flush()
 
     version = ContentVersion(
-        content_id=content.id, version_number=1, published_at=datetime.now(timezone.utc), detail_description="설명"
+        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
     )
     db_session.add(version)
     await db_session.flush()
@@ -114,7 +114,7 @@ async def _publish_new_character_version(
     db_session: AsyncSession, content: Content, *, intro: str = "새 인트로"
 ) -> ContentVersion:
     version = ContentVersion(
-        content_id=content.id, version_number=2, published_at=datetime.now(timezone.utc), detail_description="설명 v2"
+        content_id=content.id, version_number=2, published_at=datetime.now(UTC), detail_description="설명 v2"
     )
     db_session.add(version)
     await db_session.flush()
@@ -152,7 +152,7 @@ async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uu
     await db_session.flush()
 
     version = ContentVersion(
-        content_id=content.id, version_number=1, published_at=datetime.now(timezone.utc), detail_description="설명"
+        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
     )
     db_session.add(version)
     await db_session.flush()
@@ -1133,7 +1133,7 @@ async def test_my_chat_rooms_mixed_content_types_thumbnail_and_moderation(
     db_session.add(story)
     await db_session.flush()
     story_version = ContentVersion(
-        content_id=story.id, version_number=1, published_at=datetime.now(timezone.utc), detail_description="설명"
+        content_id=story.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
     )
     db_session.add(story_version)
     await db_session.flush()

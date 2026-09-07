@@ -39,7 +39,7 @@ def _is_blank_image(data: bytes) -> bool:
     try:
         with Image.open(io.BytesIO(data)) as img:
             colors = img.convert("RGB").getcolors(maxcolors=2)
-    except Exception:  # noqa: BLE001 - decode failure isn't this function's concern
+    except Exception:
         return False
     return colors is not None and len(colors) == 1
 

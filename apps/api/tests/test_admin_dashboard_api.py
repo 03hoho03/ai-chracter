@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -34,8 +34,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -64,7 +64,7 @@ async def _make_published_character(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명입니다",
     )
     db_session.add(version)
@@ -112,7 +112,7 @@ async def _make_published_story(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="스토리 설명",
     )
     db_session.add(version)
@@ -211,7 +211,7 @@ async def test_dashboard_counts_returns_accurate_numbers(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     active_user = _make_user()
-    deleted_user = _make_user(deleted_at=datetime.now(timezone.utc))
+    deleted_user = _make_user(deleted_at=datetime.now(UTC))
     creator = _make_user()
     db_session.add_all([active_user, deleted_user, creator])
     await db_session.flush()
@@ -226,7 +226,7 @@ async def test_dashboard_counts_returns_accurate_numbers(
     db_session.add(room)
     await db_session.flush()
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     db_session.add_all(
         [
             ChatMessage(
@@ -298,9 +298,9 @@ async def test_dashboard_trend_fills_empty_days_with_zero(
 async def test_dashboard_trend_counts_seeded_data_on_correct_day(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    target_day = datetime.now(timezone.utc) - timedelta(days=5)
+    target_day = datetime.now(UTC) - timedelta(days=5)
     user = _make_user(created_at=target_day)
-    creator = _make_user(created_at=datetime.now(timezone.utc) - timedelta(days=60))
+    creator = _make_user(created_at=datetime.now(UTC) - timedelta(days=60))
     db_session.add_all([user, creator])
     await db_session.flush()
     genre = await _get_genre(db_session)
@@ -395,7 +395,7 @@ async def test_dashboard_popular_tie_breaker_is_deterministic(
     await db_session.flush()
     genre = await _get_genre(db_session)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     older = await _make_published_character(
         db_session, creator_user_id=creator.id, genre_id=genre.id, name="오래된작품"
     )
@@ -440,7 +440,7 @@ async def test_dashboard_popular_tie_breaker_is_deterministic(
 async def test_dashboard_activity_returns_latest_five_each(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     users = [_make_user(nickname=f"유저{i}", created_at=now - timedelta(minutes=i)) for i in range(6)]
     db_session.add_all(users)

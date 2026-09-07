@@ -1,6 +1,7 @@
 """`scripts/seed_content` 의 결정적 UUID 헬퍼와 데이터 파일 로더 (US-002)."""
 
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any
@@ -226,7 +227,7 @@ def test_load_story_reports_unknown_stat_name(tmp_path: Path) -> None:
     raw["startingSetups"][0]["endings"][0]["statRules"][0]["rules"][0]["stat"] = "없는스탯"
     path = _write(tmp_path, "dangling-story", raw)
 
-    with pytest.raises(SeedContentError, match="dangling-story.json"):
+    with pytest.raises(SeedContentError, match=re.escape("dangling-story.json")):
         load_story(path)
 
 
@@ -246,7 +247,7 @@ def test_load_story_reports_file_name_on_schema_mismatch(tmp_path: Path) -> None
     del raw["oneLiner"]
     path = _write(tmp_path, "broken-story", raw)
 
-    with pytest.raises(SeedContentError, match="broken-story.json"):
+    with pytest.raises(SeedContentError, match=re.escape("broken-story.json")):
         load_story(path)
 
 
@@ -254,14 +255,14 @@ def test_load_story_reports_file_name_on_invalid_json(tmp_path: Path) -> None:
     path = tmp_path / "not-json.json"
     path.write_text("{ nope", encoding="utf-8")
 
-    with pytest.raises(SeedContentError, match="not-json.json"):
+    with pytest.raises(SeedContentError, match=re.escape("not-json.json")):
         load_story(path)
 
 
 def test_load_story_reports_file_name_when_top_level_is_not_object(tmp_path: Path) -> None:
     path = _write(tmp_path, "list-story", [_story_payload()])
 
-    with pytest.raises(SeedContentError, match="list-story.json"):
+    with pytest.raises(SeedContentError, match=re.escape("list-story.json")):
         load_story(path)
 
 

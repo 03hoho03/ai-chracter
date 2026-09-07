@@ -13,7 +13,7 @@ from httpx import AsyncClient
 from api import main
 
 
-async def test_자원이_모두_살아있으면_200에_ready다(api_client: AsyncClient) -> None:
+async def test_returns_200_ready_when_all_resources_are_alive(api_client: AsyncClient) -> None:
     response = await api_client.get("/ready")
 
     assert response.status_code == 200
@@ -22,7 +22,7 @@ async def test_자원이_모두_살아있으면_200에_ready다(api_client: Asyn
     assert body["checks"] == {"database": "ok", "redis": "ok"}
 
 
-async def test_health는_의존자원을_보지_않는다(api_client: AsyncClient) -> None:
+async def test_health_does_not_check_dependent_resources(api_client: AsyncClient) -> None:
     """`/health` 가 얕다는 것 자체가 계약이다 — Caddy 헬스체크와 배포 검증이 여기 의존한다."""
     response = await api_client.get("/health")
 
@@ -34,7 +34,7 @@ async def test_health는_의존자원을_보지_않는다(api_client: AsyncClien
     ("broken", "healthy"),
     [("database", "redis"), ("redis", "database")],
 )
-async def test_한_자원만_죽어도_503이다(
+async def test_returns_503_when_only_one_resource_is_dead(
     api_client: AsyncClient, monkeypatch: pytest.MonkeyPatch, broken: str, healthy: str
 ) -> None:
     """모니터가 HTTP 상태만 봐도 알아채야 한다. 어느 쪽이 죽었는지는 본문으로 구분한다."""

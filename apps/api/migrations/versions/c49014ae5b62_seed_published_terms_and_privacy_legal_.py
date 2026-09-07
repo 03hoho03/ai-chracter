@@ -24,8 +24,9 @@ import하지 않고 이 파일에 그대로 인라인한다 — 이후 관리자
 PK는 작성 시점에 하드코딩한 리터럴 UUID다(`uuid.uuid4()`를 런타임에 호출하지 않음).
 """
 import uuid
-from datetime import datetime, timezone
-from typing import Sequence, Union
+from datetime import datetime, timezone, UTC
+from typing import Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
@@ -33,9 +34,9 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'c49014ae5b62'
-down_revision: Union[str, Sequence[str], None] = '5bef71fc8f50'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '5bef71fc8f50'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 TERMS_ID = uuid.UUID("1f4d45f2-19bb-4cca-9a31-8b95aae65172")
 PRIVACY_ID = uuid.UUID("ac8a98e4-92aa-4085-a63e-bccb50d0eaea")
@@ -296,7 +297,7 @@ legal_documents = sa.table(
 
 def upgrade() -> None:
     """Upgrade schema."""
-    published_at = datetime.now(timezone.utc)
+    published_at = datetime.now(UTC)
     op.bulk_insert(
         legal_documents,
         [

@@ -12,7 +12,8 @@ Create Date: 2026-09-06 14:49:28.905116
 콘텐츠 조치·유저 제재(경고/정지/해제)·채팅 열람을 `action_type`(TEXT, 늘어날 값이라
 Postgres enum을 만들지 않았다) 하나로 한데 담는다.
 """
-from typing import Sequence, Union
+from typing import Union
+from collections.abc import Sequence
 
 from alembic import op
 import sqlalchemy as sa
@@ -20,9 +21,9 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '0741a91285ed'
-down_revision: Union[str, Sequence[str], None] = '63ede9a03614'
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | Sequence[str] | None = '63ede9a03614'
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

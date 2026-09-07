@@ -37,7 +37,7 @@ os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
 # Must start (and know its port) BEFORE importing `api.main` below, since
 # `api.core.s3`'s module-level `s3_client` reads `settings.s3_endpoint_url` at
 # import time.
-from moto.server import ThreadedMotoServer  # noqa: E402
+from moto.server import ThreadedMotoServer
 
 _moto_server = ThreadedMotoServer(port=0)
 _moto_server.start()
@@ -66,10 +66,10 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
-from api.core.config import settings  # noqa: E402
-from api.db.session import engine  # noqa: E402
-from api.db.session import get_db_session, get_session_factory  # noqa: E402
-from api.main import app  # noqa: E402
+from api.core.config import settings
+from api.db.session import engine
+from api.db.session import get_db_session, get_session_factory
+from api.main import app
 
 APPS_API_DIR = Path(__file__).resolve().parents[1]
 

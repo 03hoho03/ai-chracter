@@ -1,7 +1,7 @@
 import base64
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -31,8 +31,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -90,7 +90,7 @@ async def _make_published_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description=detail_description,
     )
     db_session.add(version)
@@ -434,7 +434,7 @@ async def test_list_contents_sort_genre_orders_by_genre_master_sort_order(
     db_session.add(user)
     await db_session.flush()
     genres = await _get_genres(db_session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Older content in the earlier-sort_order genre should still rank first.
     await _make_published_content(
@@ -595,7 +595,7 @@ async def test_list_contents_cursor_pagination_covers_all_items_without_duplicat
     db_session.add(user)
     await db_session.flush()
     genre = (await _get_genres(db_session))[0]
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     expected_names = [f"항목-{i}" for i in range(5)]
     for i, name in enumerate(expected_names):

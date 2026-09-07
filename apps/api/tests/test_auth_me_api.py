@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -124,7 +124,7 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
     published_version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명",
     )
     draft_version = ContentVersion(
@@ -152,8 +152,8 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
         email=f"viewer-{uuid.uuid4()}@example.com",
         nickname="뷰어",
         birth_date=date(2000, 1, 1),
-        terms_agreed_at=datetime.now(timezone.utc),
-        privacy_agreed_at=datetime.now(timezone.utc),
+        terms_agreed_at=datetime.now(UTC),
+        privacy_agreed_at=datetime.now(UTC),
     )
     db_session.add(other_user)
     await db_session.flush()

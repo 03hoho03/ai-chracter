@@ -34,8 +34,41 @@ dev = [
     "mypy>=2.1.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "ruff",
     "types-PyYAML>=6.0.0",
 ]
+
+[tool.ruff]
+line-length = 120
+src = ["src", "scripts"]
+
+[tool.ruff.lint]
+select = ["N", "ASYNC", "UP", "B", "TID", "RUF"]
+# 문서화된 예외 — select 를 줄이는 것과는 다르다(select 는 그대로 두고, 각 룰이 이 저장소에
+# 안 맞는 구체적 이유를 남긴 채 개별적으로 끈다).
+#
+# UP042: `class X(str, Enum)` → `enum.StrEnum` 제안. Python 3.11+ 에서 `str(member)`/f-string
+# 결과가 다르다 — `str, Enum` 믹스인은 "ClassName.MEMBER"(apps/api/CLAUDE.md 의 "plain Text
+# 컬럼엔 .value 명시" 규약과 "Postgres ENUM 컬럼엔 .name(대문자) 저장" 규약이 바로 이 차이를
+# 전제한다), `StrEnum` 은 순수 값을 준다. 린터 도입 김에 DB 모델 Enum 12개의 직렬화 의미를
+# 바꾸는 건 부수효과가 너무 크다 — 하려면 f-string·로깅·json·raw SQL 직렬화 경로를 전수
+# 검증하는 별도 작업이어야 한다.
+#
+# RUF001/002/003: 식별자에 숨은 동형이의 글자(예: 라틴 'a' 대신 키릴 'а') 공격을 잡는 게
+# 목적인데, 이 저장소에서 걸린 건 전부 한국어 산문 주석/문자열의 정상 타이포그래피(커브
+# 따옴표 ‘’, ×, ℹ)다. 주석이 길고 한국어인 저장소라 앞으로도 계속 새로 걸릴 것이라 꺼둔다.
+ignore = ["UP042", "RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+  "fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body",
+  "fastapi.Header", "fastapi.Form", "fastapi.File", "fastapi.Security",
+]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"fastapi.testclient.TestClient".msg = "httpx.AsyncClient(ASGITransport) 를 쓸 것 — conftest 의 api_client/db_client"
+"moto.mock_aws".msg = "ThreadedMotoServer 를 쓸 것 — mock_aws 는 run_in_threadpool 워커에 패치가 안 걸린다"
+"sqlalchemy.orm.relationship".msg = "relationship() 금지 — 순수 FK 컬럼만 쓴다"
 
 [tool.mypy]
 python_version = "3.11"

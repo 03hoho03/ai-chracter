@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -30,8 +30,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -82,7 +82,7 @@ async def _make_published_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=1,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명",
     )
     db_session.add(version)
@@ -249,7 +249,7 @@ async def test_list_favorites_returns_favorited_contents_most_recently_favorited
     db_session.add_all([user, creator])
     await db_session.flush()
     genre = await _get_genre(db_session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     character = await _make_published_content(
         db_session,
@@ -337,7 +337,7 @@ async def test_list_favorites_cursor_pagination_covers_all_items_without_duplica
     db_session.add_all([user, creator])
     await db_session.flush()
     genre = await _get_genre(db_session)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     expected_names = [f"즐겨찾기-{i}" for i in range(5)]
     contents = []

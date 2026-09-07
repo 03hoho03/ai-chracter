@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import httpx
 import pytest
@@ -34,8 +34,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -93,7 +93,7 @@ async def _make_published_content(
     version = ContentVersion(
         content_id=content.id,
         version_number=version_number,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description=detail_description,
     )
     db_session.add(version)
@@ -152,7 +152,7 @@ async def test_get_content_detail_returns_meta_metrics_and_version_fields(
     await db_session.flush()
     genre = await _get_genre(db_session)
 
-    content, version = await _make_published_content(
+    content, _version = await _make_published_content(
         db_session,
         creator_user_id=user.id,
         genre_id=genre.id,
@@ -391,7 +391,7 @@ async def test_list_content_versions_returns_only_published_ordered_desc(
     v2 = ContentVersion(
         content_id=content.id,
         version_number=2,
-        published_at=datetime.now(timezone.utc),
+        published_at=datetime.now(UTC),
         detail_description="설명2",
     )
     db_session.add(v2)

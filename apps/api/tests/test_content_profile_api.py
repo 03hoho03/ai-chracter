@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +12,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -80,7 +80,7 @@ async def test_get_user_profile_returns_404_for_unknown_user(db_client: httpx.As
 async def test_get_user_profile_returns_404_for_deleted_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    user = _make_user(deleted_at=datetime.now(timezone.utc))
+    user = _make_user(deleted_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.commit()
 

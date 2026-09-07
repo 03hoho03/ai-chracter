@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import pytest
 import sqlalchemy as sa
@@ -25,8 +25,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -107,7 +107,7 @@ async def test_content_version_pins_to_content_and_updates_current_published(
     assert draft.version_number is None
 
     draft.version_number = 1
-    draft.published_at = datetime.now(timezone.utc)
+    draft.published_at = datetime.now(UTC)
     content.current_published_version_id = draft.id
     await db_session.flush()
 

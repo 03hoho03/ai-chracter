@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -30,8 +30,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -339,7 +339,7 @@ async def test_get_more_five_times_still_one_log_row(
 ) -> None:
     """T-6 검증 기준의 핵심 — 더보기(GET)를 몇 번 불러도 로그는 늘지 않는다."""
     room = await _setup_room(db_session)
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 1, 1, tzinfo=UTC)
     await _seed_messages(db_session, chat_room_id=room.id, count=210, start=start)
     await db_session.commit()
 
@@ -383,7 +383,7 @@ async def test_view_returns_most_recent_100_messages_newest_first(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     room = await _setup_room(db_session)
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 1, 1, tzinfo=UTC)
     messages = await _seed_messages(db_session, chat_room_id=room.id, count=105, start=start)
     await db_session.commit()
 
@@ -408,7 +408,7 @@ async def test_cursor_load_more_continues_without_overlap(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     room = await _setup_room(db_session)
-    start = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    start = datetime(2026, 1, 1, tzinfo=UTC)
     messages = await _seed_messages(db_session, chat_room_id=room.id, count=30, start=start)
     await db_session.commit()
 
@@ -448,9 +448,9 @@ async def test_cursor_boundary_with_duplicate_created_at_not_lost_or_duplicated(
     `created_at`이 같을 수 있다 — `created_at`만으로 커서를 비교하면 경계에서 그 중
     하나가 유실되거나 중복된다. `(created_at, id)` 튜플 비교라야 안전하다."""
     room = await _setup_room(db_session)
-    t0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    t1 = datetime(2026, 1, 1, 0, 0, 1, tzinfo=timezone.utc)  # m2, m3 공유
-    t2 = datetime(2026, 1, 1, 0, 0, 2, tzinfo=timezone.utc)
+    t0 = datetime(2026, 1, 1, 0, 0, 0, tzinfo=UTC)
+    t1 = datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC)  # m2, m3 공유
+    t2 = datetime(2026, 1, 1, 0, 0, 2, tzinfo=UTC)
 
     m1 = await _add_chat_message(db_session, chat_room_id=room.id, created_at=t0)
     m2 = await _add_chat_message(db_session, chat_room_id=room.id, created_at=t1)

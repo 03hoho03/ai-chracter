@@ -67,7 +67,7 @@ async def _generate_and_store_one(
         return True
     except LLMClientError:
         return False
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에
         # 영원히 멈추는 것을 방지한다(uvicorn이 root logger 핸들러를 안 붙여서 print로 남긴다).
         print(f"[imggen] job={job_id} unexpected generation error: {type(exc).__name__}: {exc}", flush=True)

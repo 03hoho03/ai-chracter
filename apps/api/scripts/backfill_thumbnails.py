@@ -28,18 +28,18 @@ os.environ.setdefault("AWS_ACCESS_KEY_ID", "testing")
 os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "testing")
 os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 
-from sqlalchemy import select  # noqa: E402
+from sqlalchemy import select
 
-from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail  # noqa: E402
-from api.core.config import settings  # noqa: E402
-from api.core.s3 import (  # noqa: E402
+from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
+from api.core.config import settings
+from api.core.s3 import (
     build_thumbnail_key,
     download_object,
     get_object_size,
     upload_object,
 )
-from api.db.models.media import Asset, AssetStatus  # noqa: E402
-from api.db.session import async_session_factory  # noqa: E402
+from api.db.models.media import Asset, AssetStatus
+from api.db.session import async_session_factory
 
 
 async def _load_ready_assets() -> list[Asset]:
@@ -76,7 +76,7 @@ def main() -> int:
         try:
             original = download_object(asset.storage_key)
             upload_object(thumbnail_key, generate_thumbnail(original), THUMBNAIL_CONTENT_TYPE)
-        except Exception as exc:  # noqa: BLE001 - 한 건의 실패로 나머지를 멈추지 않는다
+        except Exception as exc:
             print(f"  ✗ {asset.storage_key}: {exc!r}")
             failed.append(asset.storage_key)
             continue

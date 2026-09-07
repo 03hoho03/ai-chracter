@@ -2,7 +2,7 @@
 
 import io
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 from pathlib import Path
 
 import pytest
@@ -58,8 +58,8 @@ async def _seed_author(db_session: AsyncSession) -> None:
             email="seed-creator@example.com",
             nickname="시드 작가",
             birth_date=date(1995, 1, 1),
-            terms_agreed_at=datetime.now(timezone.utc),
-            privacy_agreed_at=datetime.now(timezone.utc),
+            terms_agreed_at=datetime.now(UTC),
+            privacy_agreed_at=datetime.now(UTC),
         )
     )
     await db_session.flush()

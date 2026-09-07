@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timezone, UTC
 
 import pytest
 from sqlalchemy.exc import IntegrityError
@@ -13,8 +13,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -63,7 +63,7 @@ async def test_guardian_consent_requires_existing_user(db_session: AsyncSession)
         user_id=user.id,
         guardian_name="보호자",
         guardian_contact="010-0000-0000",
-        consent_agreed_at=datetime.now(timezone.utc),
+        consent_agreed_at=datetime.now(UTC),
         ip_address="127.0.0.1",
     )
     db_session.add(consent)
@@ -77,7 +77,7 @@ async def test_guardian_consent_rejects_unknown_user(db_session: AsyncSession) -
         user_id=uuid.uuid4(),
         guardian_name="보호자",
         guardian_contact="010-0000-0000",
-        consent_agreed_at=datetime.now(timezone.utc),
+        consent_agreed_at=datetime.now(UTC),
     )
     db_session.add(consent)
 

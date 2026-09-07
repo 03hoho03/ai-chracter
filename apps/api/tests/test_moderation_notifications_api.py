@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -25,8 +25,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -146,7 +146,7 @@ async def test_list_notifications_returns_own_notifications_newest_first(
     content = await _make_content(db_session, user.id)
     action = await _make_action(db_session, content)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     older = await _make_notification(
         db_session, user_id=user.id, content=content, action=action, created_at=now - timedelta(hours=1)
     )

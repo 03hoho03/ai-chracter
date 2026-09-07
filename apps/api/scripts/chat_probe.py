@@ -34,7 +34,7 @@ from typing import TypedDict
 import httpx
 
 sys.path.insert(0, str(Path(__file__).parent))
-from seed_content.upsert import story_content_id  # noqa: E402
+from seed_content.upsert import story_content_id
 
 BASE = "http://localhost:8000"
 EMAIL, PASSWORD = "test@example.com", "password1234"
@@ -209,7 +209,7 @@ async def main() -> None:
             async with sem:
                 try:
                     return await _run_story(client, slug, setup_index, label, args.turns, pacer)
-                except Exception as exc:  # noqa: BLE001 - 한 회차 실패가 나머지를 막지 않게
+                except Exception as exc:
                     return {"slug": slug, "label": label, "error": f"{type(exc).__name__}: {exc}"}
 
         results = await asyncio.gather(*(one(*job) for job in jobs))
@@ -222,7 +222,9 @@ async def main() -> None:
         "collectedAt": datetime.now().isoformat(timespec="seconds"),
         "results": results,
     }
-    Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    await asyncio.to_thread(
+        Path(args.out).write_text, json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
     ok = [r for r in results if "error" not in r]
     print(f"완료 {len(ok)}/{len(jobs)} — {time.monotonic() - started:.0f}초, 출력 {args.out}")
     for r in results:

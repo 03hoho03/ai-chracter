@@ -4,7 +4,9 @@
 `validate_matrix()` 가 규칙 위반을 실제로 잡아내는지 보는 테스트.
 """
 
+import itertools
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -131,7 +133,7 @@ def test_forbidden_accumulates_earlier_slots_of_the_same_genre(slots: list[Matri
     """앞 슬롯의 금지 목록(= 장르 클리셰 + 그 앞 슬롯 소재)이 뒤 슬롯에 그대로 포함된다."""
     for genre in EXPECTED_GENRE_IDS:
         group = _same_genre(slots, genre)
-        for earlier, later in zip(group, group[1:], strict=False):
+        for earlier, later in itertools.pairwise(group):
             assert set(earlier.forbidden) < set(later.forbidden), f"{genre}: {later.slug}"
 
 
@@ -177,7 +179,7 @@ def test_load_matrix_reports_the_file_name_on_bad_json(tmp_path: Path) -> None:
     path = tmp_path / "diversity_matrix.json"
     path.write_text("{ not json", encoding="utf-8")
 
-    with pytest.raises(SeedContentError, match="diversity_matrix.json"):
+    with pytest.raises(SeedContentError, match=re.escape("diversity_matrix.json")):
         load_matrix(path)
 
 
@@ -189,5 +191,5 @@ def test_load_matrix_reports_the_file_name_on_unknown_axis_value(
     path = tmp_path / "diversity_matrix.json"
     path.write_text(json.dumps(raw, ensure_ascii=False), encoding="utf-8")
 
-    with pytest.raises(SeedContentError, match="diversity_matrix.json"):
+    with pytest.raises(SeedContentError, match=re.escape("diversity_matrix.json")):
         load_matrix(path)

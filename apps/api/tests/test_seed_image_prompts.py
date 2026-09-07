@@ -6,6 +6,7 @@ Cloudflare 호출 자체는 테스트하지 않는다 — 손으로 쓰는 `imag
 
 import io
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -82,7 +83,7 @@ def test_rejects_duplicate_slugs(tmp_path: Path) -> None:
 
 
 def test_missing_file_names_the_file(tmp_path: Path) -> None:
-    with pytest.raises(SeedContentError, match="image_prompts.json"):
+    with pytest.raises(SeedContentError, match=re.escape("image_prompts.json")):
         load_prompt_specs(tmp_path / "image_prompts.json")
 
 

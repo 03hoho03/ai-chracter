@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -16,8 +16,8 @@ def _make_user(**overrides: object) -> User:
         "email": f"user-{uuid.uuid4()}@example.com",
         "nickname": "테스터",
         "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(timezone.utc),
-        "privacy_agreed_at": datetime.now(timezone.utc),
+        "terms_agreed_at": datetime.now(UTC),
+        "privacy_agreed_at": datetime.now(UTC),
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -65,7 +65,7 @@ async def _make_published(
         body_markdown=body_markdown,
         status="published",
         requires_reconsent=requires_reconsent,
-        published_at=published_at or datetime.now(timezone.utc),
+        published_at=published_at or datetime.now(UTC),
     )
     db_session.add(document)
     await db_session.flush()
@@ -191,7 +191,7 @@ async def test_get_document_returns_draft_and_published_together(
 async def test_get_document_published_picks_latest_by_published_at(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     await _make_published(
         db_session, kind="terms", version="2024-01-01", published_at=now - timedelta(days=10)
     )
@@ -464,7 +464,7 @@ async def test_versions_lists_published_history_ordered_by_recency(
     # migration c49014ae5b62 seeds a published terms document — clear it so the
     # ordering assertion below reflects only what this test creates.
     await db_session.execute(sa.delete(LegalDocument).where(LegalDocument.kind == "terms"))
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     await _make_published(
         db_session,
         kind="terms",

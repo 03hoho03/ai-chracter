@@ -116,14 +116,14 @@ async def ready(response: Response) -> dict[str, object]:
             async with engine.connect() as connection:
                 await connection.execute(text("SELECT 1"))
         checks["database"] = "ok"
-    except Exception:  # noqa: BLE001 — 원인을 가리지 않는다. 어떤 실패든 "준비 안 됨"이다.
+    except Exception:
         checks["database"] = "error"
 
     try:
         async with asyncio.timeout(_READY_CHECK_TIMEOUT_SECONDS):
             await redis_client.ping()
         checks["redis"] = "ok"
-    except Exception:  # noqa: BLE001
+    except Exception:
         checks["redis"] = "error"
 
     ready = all(status == "ok" for status in checks.values())
