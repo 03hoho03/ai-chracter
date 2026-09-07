@@ -17,7 +17,7 @@ class ImageStylePreset(str, enum.Enum):
     NONE = "none"
 
 
-# tasks/prd-image-generation.md §3: 프리셋별 프롬프트 부착 문구 (영어). NONE은 부착하지 않는다.
+# tasks/archive/prd-image-generation.md §3: 프리셋별 프롬프트 부착 문구 (영어). NONE은 부착하지 않는다.
 STYLE_PRESET_PROMPT_SUFFIXES: dict[ImageStylePreset, str] = {
     ImageStylePreset.REALISTIC: "photorealistic, realistic lighting, high detail",
     ImageStylePreset.ANIME: "anime style, cel shading, clean lineart",

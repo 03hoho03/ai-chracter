@@ -234,7 +234,7 @@ async def register_situational_image(
 async def collect_asset_usages(
     db: AsyncSession, asset_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[GeneratedImageUsage]]:
-    """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다 (US-001, tasks/prd-image-library.md).
+    """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다 (US-001, tasks/archive/prd-image-library.md).
 
     assets.id를 참조하는 4개 컬럼(character/story thumbnail_asset_id,
     situational_images.image/blurred_asset_id)을 컬럼별 일괄 select로 훑는다 —
@@ -347,7 +347,7 @@ async def delete_generated_image(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.
+    """US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.
 
     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아

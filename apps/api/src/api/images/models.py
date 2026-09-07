@@ -1,4 +1,4 @@
-"""이미지 생성 모델 레지스트리 (tasks/prd-image-generation.md 확장 — 다중 모델 선택).
+"""이미지 생성 모델 레지스트리 (tasks/archive/prd-image-generation.md 확장 — 다중 모델 선택).
 
 모델마다 지원 종횡비(capability)가 달라, FE가 이 목록을 받아 모델 선택 시 미지원
 종횡비를 비활성화한다. BE도 `POST /images/generate`에서 같은 집합으로 방어 검증한다.

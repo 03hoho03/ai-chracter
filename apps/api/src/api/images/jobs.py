@@ -19,7 +19,7 @@ class ImageGenerationJobStatus(str, enum.Enum):
 
 
 class ImageGenerationJob(BaseModel):
-    """Redis에 그대로 직렬화되는 생성 잡 레코드 (tasks/prd-image-generation.md §3/US-003)."""
+    """Redis에 그대로 직렬화되는 생성 잡 레코드 (tasks/archive/prd-image-generation.md §3/US-003)."""
 
     job_id: str
     owner_user_id: uuid.UUID
@@ -110,7 +110,7 @@ _background_tasks: set[asyncio.Task[None]] = set()
 
 
 async def enqueue_generation(handler: Callable[..., Coroutine[Any, Any, None]], *args: Any) -> None:
-    """생성 잡 실행 인터페이스 (tasks/prd-image-generation.md §8).
+    """생성 잡 실행 인터페이스 (tasks/archive/prd-image-generation.md §8).
 
     인프로세스 asyncio 구현: `handler(*args)`를 백그라운드 태스크로 즉시 실행하고
     반환한다. 호출부(US-004의 POST /images/generate)는 이 함수만 호출하면 되므로,

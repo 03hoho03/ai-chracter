@@ -590,7 +590,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Generated Image
-         * @description US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.
+         * @description US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.
          *
          *     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
          *     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
@@ -3284,7 +3284,7 @@ export interface components {
         };
         /**
          * GeneratedImageUsage
-         * @description One content referencing a generated asset (US-001, tasks/prd-image-library.md).
+         * @description One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).
          *
          *     Draft and published versions both count as "in use"; versions of the same
          *     content referencing the asset with the same field are merged into one entry.

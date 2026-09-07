@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-/** tasks/prd-image-generation.md §3 — 스타일 프리셋 5종(값은 백엔드 ImageStylePreset과 동일 키). */
+/** tasks/archive/prd-image-generation.md §3 — 스타일 프리셋 5종(값은 백엔드 ImageStylePreset과 동일 키). */
 export const IMAGE_STYLE_PRESET_OPTIONS = [
   { value: "realistic", label: "사실적" },
   { value: "anime", label: "애니메이션" },
@@ -9,7 +9,7 @@ export const IMAGE_STYLE_PRESET_OPTIONS = [
   { value: "none", label: "없음" },
 ] as const;
 
-/** tasks/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. */
+/** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. */
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { value: "1:1", label: "1:1 · 정사각형" },
   { value: "4:3", label: "4:3 · 가로" },

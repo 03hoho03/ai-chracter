@@ -154,7 +154,7 @@ v1 로 되돌린다.
 apps/api/scripts/seed_content/data/
 ├── stories/{slug}.json        # 스토리 30개 (파일명 = slug)
 ├── characters/{slug}.json     # 캐릭터
-├── diversity_matrix.json      # 30개 콘셉트 원본 (tasks/prd-genre-seed-content.md §7의 전사본)
+├── diversity_matrix.json      # 30개 콘셉트 원본 (tasks/archive/prd-genre-seed-content.md §7의 전사본)
 └── image_prompts.json         # 이미지 생성 프롬프트
 ```
 

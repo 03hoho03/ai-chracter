@@ -1,4 +1,4 @@
-"""Viewer identity and 24h dedup for content view counting (tasks/prd-view-count.md).
+"""Viewer identity and 24h dedup for content view counting (tasks/archive/prd-view-count.md).
 
 Guest cookies follow the same policy family as session cookies (see
 api/session/cookies.py) but are not sessions, so this module keeps its own

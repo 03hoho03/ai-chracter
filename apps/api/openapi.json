@@ -1304,7 +1304,7 @@
           "assets"
         ],
         "summary": "Delete Generated Image",
-        "description": "US-002 (tasks/prd-image-library.md): 생성 이미지 삭제.\n\n존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset\n존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아\n발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.",
+        "description": "US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.\n\n존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset\n존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아\n발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.",
         "operationId": "delete_generated_image_me_generated_images__asset_id__delete",
         "parameters": [
           {
@@ -7865,7 +7865,7 @@
           "field"
         ],
         "title": "GeneratedImageUsage",
-        "description": "One content referencing a generated asset (US-001, tasks/prd-image-library.md).\n\nDraft and published versions both count as \"in use\"; versions of the same\ncontent referencing the asset with the same field are merged into one entry."
+        "description": "One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).\n\nDraft and published versions both count as \"in use\"; versions of the same\ncontent referencing the asset with the same field are merged into one entry."
       },
       "GenreResponse": {
         "properties": {
