@@ -12,5 +12,8 @@ export {
   SIGNUP_METHOD_LABELS,
   ACTION_TYPE_LABELS,
   CHAT_VIEW_REASON_CATEGORY_LABELS,
+  CHAT_VIEW_REASON_CATEGORY_VALUES,
+  CHAT_VIEW_REASON_CATEGORY_OPTIONS,
+  isChatViewReasonCategory,
   type ChatViewReasonCategory,
 } from "./model/labels";

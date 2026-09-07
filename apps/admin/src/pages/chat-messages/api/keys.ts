@@ -4,7 +4,7 @@ export type ChatMessagesCursor = {
 };
 
 export const chatMessagesKeys = {
-  all: (roomId: string) => ["chat-messages", roomId] as const,
+  all: ["chat-messages"] as const,
   list: (roomId: string, cursor: ChatMessagesCursor) =>
-    [...chatMessagesKeys.all(roomId), "list", cursor.beforeCreatedAt, cursor.beforeId] as const,
+    [...chatMessagesKeys.all, "list", roomId, cursor.beforeCreatedAt, cursor.beforeId] as const,
 };
