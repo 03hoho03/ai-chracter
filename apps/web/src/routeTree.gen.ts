@@ -22,11 +22,14 @@ import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
+import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
+import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
+import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
@@ -96,6 +99,11 @@ const NoticesIndexRoute = NoticesIndexRouteImport.update({
   path: '/notices/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
+  id: '/inquiries/',
+  path: '/inquiries/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BuilderIndexRoute = BuilderIndexRouteImport.update({
   id: '/builder/',
   path: '/builder/',
@@ -119,6 +127,16 @@ const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
 const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
   id: '/notices/$noticeId',
   path: '/notices/$noticeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InquiriesNewRoute = InquiriesNewRouteImport.update({
+  id: '/inquiries/new',
+  path: '/inquiries/new',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
+  id: '/inquiries/$inquiryId',
+  path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
@@ -151,11 +169,14 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
+  '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -174,11 +195,14 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
+  '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder': typeof BuilderIndexRoute
+  '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -198,11 +222,14 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
+  '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
@@ -223,11 +250,14 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/inquiries/$inquiryId'
+    | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -246,11 +276,14 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/inquiries/$inquiryId'
+    | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder'
+    | '/inquiries'
     | '/notices'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -269,11 +302,14 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/inquiries/$inquiryId'
+    | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
@@ -293,11 +329,14 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UiDemoRoute: typeof UiDemoRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
+  InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
+  InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
+  InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
@@ -396,6 +435,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NoticesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inquiries/': {
+      id: '/inquiries/'
+      path: '/inquiries'
+      fullPath: '/inquiries/'
+      preLoaderRoute: typeof InquiriesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/builder/': {
       id: '/builder/'
       path: '/builder'
@@ -429,6 +475,20 @@ declare module '@tanstack/react-router' {
       path: '/notices/$noticeId'
       fullPath: '/notices/$noticeId'
       preLoaderRoute: typeof NoticesNoticeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inquiries/new': {
+      id: '/inquiries/new'
+      path: '/inquiries/new'
+      fullPath: '/inquiries/new'
+      preLoaderRoute: typeof InquiriesNewRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inquiries/$inquiryId': {
+      id: '/inquiries/$inquiryId'
+      path: '/inquiries/$inquiryId'
+      fullPath: '/inquiries/$inquiryId'
+      preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat/$roomId': {
@@ -469,11 +529,14 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UiDemoRoute: UiDemoRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
+  InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
+  InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
   BuilderIndexRoute: BuilderIndexRoute,
+  InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,

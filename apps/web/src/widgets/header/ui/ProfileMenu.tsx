@@ -12,6 +12,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import {
   ImagePlus,
   LayoutGrid,
+  LifeBuoy,
   LogOut,
   Megaphone,
   MessagesSquare,
@@ -168,6 +169,14 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             <Link to="/notices">
               <Megaphone aria-hidden />
               공지사항
+            </Link>
+          </DropdownMenuItem>
+          {/* h1이 `문의하기`인 `/inquiries/new`로 간다(D-12) — `/inquiries`(목록, h1 `내 문의 내역`)로
+              가면 라벨과 도착 페이지 h1이 어긋난다. 목록은 그 폼 본문의 링크로 간다(`MyPagePage` 관용구). */}
+          <DropdownMenuItem asChild>
+            <Link to="/inquiries/new">
+              <LifeBuoy aria-hidden />
+              문의하기
             </Link>
           </DropdownMenuItem>
         </ProfileMenuGroup>
