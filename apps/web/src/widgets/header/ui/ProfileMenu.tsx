@@ -13,6 +13,7 @@ import {
   ImagePlus,
   LayoutGrid,
   LogOut,
+  Megaphone,
   MessagesSquare,
   Plus,
   Settings2,
@@ -26,13 +27,15 @@ import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 
 /** prd-creator-entry-and-my-works.md US-012 — 창작 / 활동 / 계정 세 그룹 + 로그아웃.
+ * techspec.md §5-7(D-4)이 `계정` 아래에 `고객센터` 그룹을 얹었다(T-12, 지금은 `공지사항` 한 항목뿐).
  *
  * 최상단이 `작품 만들기`인 건 FR-13이 정한 세 진입점(`/my` 상단 · `/my` 빈 상태 · 여기) 중 **화면과
  * 무관하게 항상 닿는 유일한 자리**라서다. 헤더에는 만들기를 더하지 않는다(FR-14) — 크롬은 h-14 한 줄뿐이고
  * 이미 아이콘 넷이 앉아 있다.
  *
- * 미구현 기능(구독함·활동배지·차단관리·크리에이터·혜택)은 넣지 않는다(결정 11). 그래서 항목이 8개로
- * 유지되고 390×844에서 스크롤 없이 들어간다.
+ * 미구현 기능(구독함·활동배지·차단관리·크리에이터·혜택)은 넣지 않는다(결정 11) — 이 판단은 그대로다.
+ * `고객센터`는 그 목록 밖의 새 그룹이라 항목이 8→9개, 구분선이 4→5개로 늘었다. 390×844에서는 여전히
+ * 스크롤 없이 들어간다(`scrollHeight` 429px, `max-h` 796px 대비 여유 367px 실측 — T-12 이전엔 428px였다).
  */
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
@@ -53,7 +56,7 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        {/* `계정 메뉴`가 아니라 `메뉴`다 — 여덟 항목 중 일곱이 목적지고 첫 그룹이 `창작`이라, 스크린리더가
+        {/* `계정 메뉴`가 아니라 `메뉴`다 — 아홉 항목 중 여덟이 목적지고 첫 그룹이 `창작`이라, 스크린리더가
             "계정 메뉴"를 읽고 연 다음 첫 announce가 `그룹 창작 · 작품 만들기`가 되면 이름과 내용이 어긋난다.
             눈으로 보는 사용자에겐 안 보이는 자리라 이 어긋남은 AT 사용자만 겪는다. */}
         <Button type="button" variant="ghost" size="icon" aria-label={`${me.nickname}님 메뉴`}>
@@ -68,16 +71,23 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
           `작품 만들기` ↔ `내 작품`도 4+4=**8px**로 **완전히 같다**. 근접성 축이 경계에 기여하는 게 0이라
           유사성 축(12px/500/muted vs 14px/400/foreground) 혼자 일하고 있었다. 이 저장소는 이미
           `apps/web/CLAUDE.md`에서 필터 축 간격 1.5배를 Gestalt 임계 미달로 판정했다 — 여기는 1.0배였다.
-          높이 비용은 18px(350→368)이다. 세로 390×844에서는 `max-h` 796px 대비 **여유 428px**로 무해하다.
-          **가로로 눕힌 폰(844×390)에서는 대가가 있고, 그건 이 결정이 만든 회귀다** — 프리미티브의
+          높이 비용은 그때 18px(350→368)이었고, T-12가 `고객센터` 그룹(구분선 1 + 항목 1)을 얹으며
+          61px(368→429)이 더 붙었다. 세로 390×844에서는 `max-h` 796px 대비 **여유 367px**(T-12 이전 428px)로
+          여전히 무해하다.
+          **가로로 눕힌 폰(844×390)에서는 대가가 있고, 그건 각 결정이 만든 회귀다** — 프리미티브의
           `max-h-(--radix-…-available-height)`가 342px로 자르는데, 구분선 둘일 때는 넘치는 8px이 `로그아웃`
           **아래 여백**이라 글자가 16/16px 온전히 보였고, 넷일 때는 넘치는 26px이 `로그아웃` **행 자체**라
-          글자가 **0/16px**로 한 픽셀도 안 보인다(행 박스도 6/28px, `scrollTop: 0` 실측 A/B).
-          `overflow-y-auto`라 스크롤·End로 닿지만 macOS 오버레이 스크롤바에는 상시 표시가 없어 **포인터·터치
-          사용자에게는 잘렸다는 신호가 아예 없다** — 메뉴가 구분선에서 끊겨 완결돼 보인다.
+          글자가 **0/16px**로 한 픽셀도 안 보이되 행 박스는 6/28px 남아 있었다. **T-12로 다섯이 된 지금은
+          넘치는 87px** — 행 박스째로 화면 밖이라 `로그아웃`이 **0/28px**, 글자는 0/17px로 그 6px 여백마저
+          사라졌다(`scrollTop: 0` 실측 A/B, 9항목 기준).
+          **여기 한때 "포인터·터치 사용자에게는 잘렸다는 신호가 아예 없다"고 적혀 있었는데, 그건 이제
+          거짓이다.** 그 뒤 프리미티브에 하단 페이드가 들어갔다 — `dropdown-menu.tsx`가 콜백 ref로
+          `scrollHeight - scrollTop - clientHeight > 1`을 재서 `data-clipped-below`를 세우고, 그때만
+          `::after` 스티키 그라디언트(`h-8`, `from-popover`)가 얹힌다. 9항목 상태의 844×390에서 실측하면
+          `data-clipped-below="true"`, `::after`가 32px sticky로 실제 렌더되고, 스크롤 끝(87px)에서
+          `로그아웃`이 **28/28px 온전히** 보인다. 잘렸다는 사실과 도달 경로가 둘 다 화면에 있다.
           그래도 구분선을 되돌리지 않는다: 위의 1.0배 결함은 **모든 폭·모든 기기에서 항상** 켜져 있는 반면
-          이건 가로 폰 한 곳이고 스크롤·키보드라는 탈출구가 있다. 잘림을 **보이게** 만드는 건 `overflow-y-auto`를
-          쥔 프리미티브 소관이라 `packages/ui/CLAUDE.md`의 dropdown 일괄 항목에 등재해 뒀다.
+          이건 가로 폰 한 곳이고 페이드·스크롤·키보드라는 탈출구가 있다.
           뷰포트를 **넘어가는** 일은 이 프리미티브에서 구조적으로 불가능하다(잘릴 뿐이다). */}
       <DropdownMenuContent align="end" className="w-56">
         {/* 닉네임은 그룹 이름이 아니라 "누구의 메뉴인가"다. 기본 Label 스타일(text-xs muted)을 그대로 두면
@@ -148,6 +158,16 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             <Link to="/mypage">
               <Settings2 aria-hidden />
               설정
+            </Link>
+          </DropdownMenuItem>
+        </ProfileMenuGroup>
+        <DropdownMenuSeparator />
+
+        <ProfileMenuGroup label="고객센터">
+          <DropdownMenuItem asChild>
+            <Link to="/notices">
+              <Megaphone aria-hidden />
+              공지사항
             </Link>
           </DropdownMenuItem>
         </ProfileMenuGroup>
