@@ -375,6 +375,33 @@ async def test_list_chat_rooms_returns_auto_and_custom_names_with_last_message_p
     assert by_id[str(second_room_id)]["name"] == "나만의 대화방"
 
 
+async def test_list_chat_rooms_with_no_messages_returns_200_with_blank_preview(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """오프닝 메시지까지 지워 메시지가 0개인 방이 있으면 `last_messages[room.id]`가
+    KeyError -> 500이었다(delete_message가 오프닝 메시지도 가드 없이 지운다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    create_resp = await _create_room_via_api(db_client, content.id)
+    room_id = create_resp.json()["id"]
+    message_id = create_resp.json()["messages"][0]["id"]
+
+    del_resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{message_id}")
+    assert del_resp.status_code == 204
+
+    resp = await db_client.get("/chat-rooms", params={"contentId": str(content.id)})
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1
+    assert items[0]["lastMessagePreview"] == ""
+
+
 async def test_reset_chat_room_clears_messages_and_turn_count(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

@@ -935,15 +935,18 @@ async def list_chat_rooms(
     ).all():
         last_messages.setdefault(message.chat_room_id, message)
 
-    return [
-        ChatRoomListItem(
-            id=room.id,
-            name=_display_name(room, ordinal),
-            last_message_preview=last_messages[room.id].content,
-            created_at=room.created_at,
+    items = []
+    for ordinal, room in enumerate(rooms, start=1):
+        last_message = last_messages.get(room.id)
+        items.append(
+            ChatRoomListItem(
+                id=room.id,
+                name=_display_name(room, ordinal),
+                last_message_preview=last_message.content if last_message is not None else "",
+                created_at=room.created_at,
+            )
         )
-        for ordinal, room in enumerate(rooms, start=1)
-    ]
+    return items
 
 
 @me_router.get("/chat-rooms")
