@@ -16,8 +16,10 @@ import { Route as AppealsRouteImport } from './routes/appeals'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
+import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
+import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 import { Route as UsersUserIdIndexRouteImport } from './routes/users.$userId.index'
 import { Route as UsersUserIdChatsRoomIdRouteImport } from './routes/users.$userId.chats.$roomId'
@@ -57,6 +59,11 @@ const ReportsIndexRoute = ReportsIndexRouteImport.update({
   path: '/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NoticesIndexRoute = NoticesIndexRouteImport.update({
+  id: '/notices/',
+  path: '/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContentsIndexRoute = ContentsIndexRouteImport.update({
   id: '/contents/',
   path: '/contents/',
@@ -65,6 +72,11 @@ const ContentsIndexRoute = ContentsIndexRouteImport.update({
 const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
   id: '/reports/$reportId',
   path: '/reports/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
+  id: '/notices/$noticeId',
+  path: '/notices/$noticeId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContentsContentIdRoute = ContentsContentIdRouteImport.update({
@@ -90,8 +102,10 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/users/$userId/': typeof UsersUserIdIndexRoute
@@ -104,8 +118,10 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents': typeof ContentsIndexRoute
+  '/notices': typeof NoticesIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/users': typeof UsersIndexRoute
   '/users/$userId': typeof UsersUserIdIndexRoute
@@ -119,8 +135,10 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/users/$userId/': typeof UsersUserIdIndexRoute
@@ -135,8 +153,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/notices/'
     | '/reports/'
     | '/users/'
     | '/users/$userId/'
@@ -149,8 +169,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents'
+    | '/notices'
     | '/reports'
     | '/users'
     | '/users/$userId'
@@ -163,8 +185,10 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/notices/'
     | '/reports/'
     | '/users/'
     | '/users/$userId/'
@@ -178,8 +202,10 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
+  NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
+  NoticesIndexRoute: typeof NoticesIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   UsersUserIdIndexRoute: typeof UsersUserIdIndexRoute
@@ -237,6 +263,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notices/': {
+      id: '/notices/'
+      path: '/notices'
+      fullPath: '/notices/'
+      preLoaderRoute: typeof NoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contents/': {
       id: '/contents/'
       path: '/contents'
@@ -249,6 +282,13 @@ declare module '@tanstack/react-router' {
       path: '/reports/$reportId'
       fullPath: '/reports/$reportId'
       preLoaderRoute: typeof ReportsReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notices/$noticeId': {
+      id: '/notices/$noticeId'
+      path: '/notices/$noticeId'
+      fullPath: '/notices/$noticeId'
+      preLoaderRoute: typeof NoticesNoticeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contents/$contentId': {
@@ -282,8 +322,10 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
+  NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
+  NoticesIndexRoute: NoticesIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   UsersUserIdIndexRoute: UsersUserIdIndexRoute,
