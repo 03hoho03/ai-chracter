@@ -329,7 +329,7 @@ async def warn_user(
     """알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지
     문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는
     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),
-    T-11b에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
+    T-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
     사라졌다.
 
     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
@@ -461,7 +461,7 @@ async def unsuspend_user(
 
     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
-    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11b에서
+    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서
     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은
     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
 

@@ -303,7 +303,7 @@ async def act_on_content(
     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
-    근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11b에서 그 컬럼이 nullable로
+    근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로
     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
     `lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를
     강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신
