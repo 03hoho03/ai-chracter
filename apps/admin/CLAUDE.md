@@ -1,13 +1,41 @@
 # apps/admin
 
-- 관리자 전용 별도 배포 앱. `apps/web`과 동일 스택(Vite/React/TanStack Router+Query/Jotai, `packages/ui`)을 재사용하되, `techspec-overview.md` §2에 따라 FSD 레이어 수를 단순하게 유지한다: `widgets`는 여러 화면이 실제로 공유하는 것이 생겼을 때만 추가한다 — apps/web처럼 미리 빈 `.gitkeep` 레이어를 만들지 않는다. 그 조건을 처음 충족한 것이 (0단계) `widgets/admin-sidebar`다 — 모든 보호 라우트가 공유하는 레이아웃 셸이라 여러 화면 공유 기준을 넘겼다.
-- 개발 서버 포트는 5174로 고정(`vite.config.ts`의 `server.port`)해서 `apps/web`(5173, 기본값)과 동시에 띄울 수 있게 한다.
-- `src/routeTree.gen.ts` 커밋 정책과 갱신 방법은 `apps/web/CLAUDE.md` 참고(동일하게 적용됨).
-- **(US-118, 첫 실제 화면 — 관리자 로그인) `shared/lib/api/client.ts`/`entities/session`/`features/login`/`features/logout`가 apps/web의 동형 구현을 완전히 별도의 관리자 인증 엔드포인트(`POST /admin/auth/login`, `GET /admin/me`, `POST /admin/auth/logout`, US-117)로 그대로 복제한 것이다** — 코드 모양(쿼리 옵션 공유, `resetQueries`로 즉시 로그아웃 반영, `beforeLoad: requireSession` 라우터 가드)은 `apps/web/CLAUDE.md`의 대응 항목과 동일하니 그쪽을 먼저 참고할 것. `apps/web`의 `setUnauthorizedHandler`/구글 로그인/비밀번호 표시토글은 관리자 로그인에 해당 기능이 없어(내부 발급 계정, 소셜 로그인 없음) 가져오지 않았다.
-- `app/router.tsx`/`routes/__root.tsx`가 이제 `createRootRouteWithContext<{queryClient}>`를 쓴다(apps/web과 동일한 이유 — `requireSession`이 라우터 컨텍스트의 `queryClient`를 필요로 함). 새 보호 라우트는 `beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href)`만 추가하면 된다.
-- **(0단계, 사이드바 셸) 전역 좌측 사이드바가 생겼다** — `widgets/admin-sidebar`(`ui/AdminSidebar.tsx` + `config/nav.ts`)가 `routes/__root.tsx`에 마운트되어 로그인 화면을 제외한 모든 라우트를 감싼다. **새 화면을 추가하면 `config/nav.ts`의 `ADMIN_NAV_ITEMS`에도 항목을 더해야 한다** — 안 하면 라우트는 있어도 사이드바로는 도달할 수 없다. `ADMIN_NAV_ITEMS`가 `as const`라 각 `to`가 리터럴로 좁혀지고, 그 값이 사이드바의 `<Link to={item.to}>`에서 라우터가 생성한 경로 유니온과 대조된다 — 없는 라우트를 넣으면 타입 에러로 걸리되, 에러는 `config/nav.ts`가 아니라 `ui/AdminSidebar.tsx`에 뜬다(`AdminNavItem` 타입은 이 목록에서 도출된 것이라 제약을 걸지 않는다). `/login`은 세션이 없는 유일한 비보호 라우트라 `routes/__root.tsx`가 `pathname === "/login"`으로 분기해 사이드바를 그리지 않는다 — pathless layout route를 쓰지 않은 이유는 로그인을 제외한 라우트 파일 5개를 옮기고 레이아웃 파일을 새로 만들어야 해서다(총 6개 변경). 로그아웃 버튼은 `pages/home`에서 이 사이드바로 옮겨졌다.
-- **(US-120) `routes/reports.tsx`(실제 경로 `/reports`를 갖는 파일) + `routes/reports.$reportId.tsx`를 나란히 두면, TanStack Router가 `reports.$reportId`를 `reports`의 *자식 라우트*로 중첩시킨다** — `reports.tsx`가 실제 컴포넌트를 가진 라우트라서다(apps/web의 `builder.$type.new.tsx`/`builder.$type.$draftId.tsx` 사례와 다른 점: 그쪽은 `builder.$type.tsx` 파일 자체가 없어 공유 프리픽스가 암묵적 pathless 레이아웃이 되고, 이 레이아웃은 자동으로 `<Outlet/>`만 렌더링한다). 부모 라우트 컴포넌트에 `<Outlet/>`이 없으면 자식 라우트로 네비게이션해도 URL만 바뀌고 화면은 그대로 부모 것이 보인다(브라우저로 실측 — 콘솔 에러 없음, 조용한 실패). 목록 라우트를 `reports.index.tsx`로 이름을 바꾸면 `reports`가 다시 암묵적 pathless 레이아웃이 되어 `reports.index`/`reports.$reportId`가 형제로 정상 분리된다 — "정적 세그먼트가 있는 실제 라우트"와 "그 밑에 동적 자식 라우트"를 같은 depth의 별도 화면(형제)으로 만들고 싶다면 목록/기본 화면 쪽을 `.index.tsx`로 명명할 것. 파일 rename 직후엔 `vite dev`가 띄워둔 상태에서 `routeTree.gen.ts`가 깨진(참조 없는 심볼을 남긴) 채로 재생성되는 경우가 있었다 — dev 서버를 죽이고 `routeTree.gen.ts`를 지운 뒤 `vite build`로 처음부터 재생성하면 해결된다.
-- **(US-122, 첫 react-call/sonner 도입) apps/web의 `react-call`(액션형 확인 모달)·`sonner`(토스트) 관례를 apps/admin에도 그대로 들여왔다** — `package.json`에 두 의존성을 직접 추가(`sonner`는 `packages/ui/CLAUDE.md`가 명시한 대로 간접 의존성이 자동으로 안 끌려오므로 필수), `main.tsx`에 `<Toaster />` 마운트, `routes/__root.tsx`를 `component: () => <Outlet />` 대신 `RootComponent`(`<Outlet /><DeleteConfirmModal /></>`)로 바꿔 react-call 콜러블을 여기서 한 번만 마운트한다(apps/web의 `routes/__root.tsx` 패턴과 동일). 콘텐츠명 직접 입력 강한 확인이 필요한 삭제류 액션이 apps/admin에 또 생기면 `features/act-on-report/ui/DeleteConfirmModal.tsx`(`{contentName, mutationFn}` props, 입력값이 `contentName`과 정확히 일치해야 확정 버튼 활성화)를 참고할 것 — 도메인이 다르면 새 컴포넌트로 만들되 이 검증 패턴(문자열 완전 일치)을 재사용한다.
-- **(US-122) 신고 상세 화면의 "처리" 섹션(`features/act-on-report/ui/ReportActionPanel.tsx`)은 `report.status`와 `content.moderationStatus` 두 축을 독립적으로 판단해 UI를 나눈다**: `report.status === 'pending'`이면 3택 처리 폼(이용제한 부과/삭제/반려)을, `content.moderationStatus === 'restricted'`이면 (report 상태와 무관하게) "이용제한 해제" 버튼을 보여준다 — 이미 처리된 신고라도 콘텐츠가 여전히 restricted라면 해제 버튼은 계속 노출돼야 하고, 반대로 지금 이 신고가 pending이어도 콘텐츠가 restricted가 아니면 이용제한 해제 버튼은 의미가 없다(BE `POST /admin/reports/{id}/action`도 report.status를 가드하지 않는다, `apps/api/CLAUDE.md`의 US-121 노트 참고). 두 블록 모두 안 보이는 조건(`!reportPending && !contentRestricted`)이면 패널 자체를 렌더링하지 않는다.
-- **(US-124) 목록 항목에 이미 상세 정보 전부가 들어있어 별도 detail API가 없는 리소스는, 신고 화면처럼 별도 라우트(`/xxx/$id`)로 분리하지 말고 한 페이지 안에서 로컬 `useState`로 선택된 행의 상세를 렌더링한다** — `pages/appeals/ui/AppealsListPage.tsx`가 첫 사례: 테이블 아래에 `selectedAppealId`로 고른 항목을 `query.data.items.find(...)`로 그냥 찾아 상세 섹션을 붙인다. 별도 상세 쿼리도, 별도 라우트도 필요 없다 — 필터/페이지 변경 후 선택된 id가 새 목록에 없으면 상세 섹션이 자연히 사라진다(추가 정리 코드 불필요). 이 리소스에 실제 detail 엔드포인트가 생기면 그때 reports 패턴(형제 라우트 + `useXDetailQuery`)으로 옮겨갈 것.
-- **admin은 검색 색인을 전면 차단한다** — `public/robots.txt`(`User-agent: *` / `Disallow: /`)가 Vite 빌드로 `dist/`에 복사된다. apps/web의 robots.txt는 Pages Worker가 런타임에 만들므로(`apps/web/worker/robots.ts`) 이 파일과 무관하다 — **web 쪽을 고쳐도 admin에는 아무 영향이 없다**(별도 Pages 프로젝트). 등록 런북은 `DEPLOY.md` §8-4.
+관리자 전용 **별도 배포 앱**. `apps/web`과 동일 스택(Vite/React/TanStack Router+Query/Jotai, `packages/ui`)이다.
+
+**이 문서는 `apps/web`과 다른 점만 담는다.** 같은 것(FSD 의존 방향, `@/` alias, 라우터 컨텍스트, `apiClient`·쿼리키 규약, 폼, 검증 워크플로)은 [`apps/web/CLAUDE.md`](../web/CLAUDE.md)를 보고, 프리미티브는 `packages/ui/CLAUDE.md`, 비주얼 규범은 `DESIGN.md`다.
+
+## web과 다른 점
+
+| | apps/web | apps/admin |
+|---|---|---|
+| 테마 | 다크 기본 + 토글 | **라이트 고정** — `.dark`를 절대 붙이지 않는다 |
+| dev 포트 | 5173 | **5174**(`vite.config.ts`의 `server.port`, 동시 기동용) |
+| FSD 레이어 | 빈 레이어를 `.gitkeep`으로 미리 만든다 | **실제로 여러 화면이 공유할 때만 추가한다** |
+| 서버 렌더 보조 | `worker/`(봇 메타·sitemap) | **없다** — `_worker.js`가 없는 정적 SPA다 |
+| 색인 | Worker가 `robots.txt`를 만든다 | `public/robots.txt`로 **전면 차단**(`Disallow: /`) |
+| 인증 | 세션 쿠키 + 구글 로그인 | 같은 모양, **다른 엔드포인트**(아래) |
+
+- **라이트 고정이라 다크에서만 드러나는 문제를 여기서는 못 본다.** 반대로 `packages/ui`를 고칠 때 다크만 확인하면 admin이 깨진다.
+- **`_worker.js`가 없어서 host 조건을 걸 자리가 없다** — 옛 `*.pages.dev` 주소를 새 도메인으로 넘기지 못하고(`_redirects`는 경로만 본다), `SameSite=lax` 쿠키라 거기서는 로그인도 안 된다. 의도된 결과이며 `admin.ddona.site`를 쓴다(`DEPLOY.md` §0).
+- **색인 차단은 web과 완전히 무관하다** — 별도 Pages 프로젝트라 web의 `robots.txt`(Worker 생성)를 고쳐도 admin에는 아무 영향이 없다. 등록 정책은 `DEPLOY.md` §7-4.
+
+## 인증
+
+- **`shared/lib/api/client.ts`·`entities/session`·`features/login`·`features/logout`은 web 동형 구현의 복제다** — 쿼리 옵션 공유, `resetQueries`로 즉시 로그아웃 반영, `beforeLoad: requireSession` 가드까지 모양이 같으니 **그 규약은 `apps/web/CLAUDE.md`를 먼저 볼 것.**
+- 다른 것은 **엔드포인트뿐**이다: `POST /admin/auth/login` · `GET /admin/me` · `POST /admin/auth/logout`. 서버 쪽도 쿠키 이름(`admin_session_id`)과 Redis 프리픽스가 완전히 분리돼 있어 교차 인증이 구조적으로 불가능하다.
+- **web에 있는데 가져오지 않은 것 셋**: `setUnauthorizedHandler` · 구글 로그인 · 비밀번호 표시 토글(내부 발급 계정이라 소셜 로그인이 없다).
+- 새 보호 라우트는 `beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href)` 한 줄만 추가하면 된다.
+
+## 라우팅
+
+- **새 화면을 추가하면 `widgets/admin-sidebar/config/nav.ts`의 `ADMIN_NAV_ITEMS`에도 항목을 더해야 한다** — 안 하면 라우트는 있어도 **사이드바로는 도달할 수 없다**. 목록이 `as const`라 각 `to`가 리터럴로 좁혀져 라우터가 만든 경로 유니온과 대조되므로 없는 라우트는 타입 에러로 걸리는데, **에러는 `config/nav.ts`가 아니라 `ui/AdminSidebar.tsx`에 뜬다**(`AdminNavItem` 타입이 이 목록에서 도출된 것이라 제약을 걸지 않는다).
+- **사이드바는 `routes/__root.tsx`가 마운트해 로그인 화면을 제외한 모든 라우트를 감싼다.** `/login`이 세션 없는 유일한 비보호 라우트라 `pathname === "/login"`으로 분기한다(pathless layout route를 쓰지 않은 이유는 라우트 파일 5개를 옮기고 레이아웃 파일을 새로 만들어야 해서다).
+- **목록과 그 상세를 형제 화면으로 두려면 목록 쪽을 `.index.tsx`로 명명한다.** `reports.tsx`(실제 경로를 가진 라우트) 옆에 `reports.$reportId.tsx`를 두면 TanStack Router가 상세를 **`reports`의 자식으로 중첩**시키고, 부모에 `<Outlet/>`이 없으면 **URL만 바뀌고 화면은 그대로 부모가 보인다**(콘솔 에러 없는 조용한 실패). `reports.index.tsx`로 두면 `reports`가 암묵적 pathless 레이아웃이 되어 둘이 형제로 분리된다 — 지금 `contents`·`users`·`reports` 셋 다 이 모양이다.
+  - `apps/web`의 `builder.$type.*`가 이 함정에 안 걸리는 건 `builder.$type.tsx` 파일 자체가 없어 공유 프리픽스가 처음부터 암묵적 레이아웃이기 때문이다.
+  - **라우트 파일을 rename한 직후 `routeTree.gen.ts`가 깨진 채(참조 없는 심볼이 남은 채) 재생성되는 경우가 있다** — dev 서버를 죽이고 `routeTree.gen.ts`를 지운 뒤 `vite build`로 처음부터 다시 만든다.
+
+## UI
+
+- **`react-call`(확인 모달)·`sonner`(토스트)는 web과 같은 관례다** — Callable은 `routes/__root.tsx`에 1회 마운트하고 `<Toaster />`는 `main.tsx`에 둔다. **두 의존성은 admin `package.json`에 직접 넣어야 한다**(pnpm 워크스페이스가 간접 의존성을 안 끌어온다).
+- **되돌릴 수 없는 삭제는 이름 완전 일치로 확인받는다** — `features/act-on-report/ui/DeleteConfirmModal.tsx`(`{contentName, mutationFn}`, 입력값이 `contentName`과 정확히 같아야 확정 버튼 활성화). 도메인이 다르면 새 컴포넌트로 만들되 이 검증 패턴을 재사용한다.
+- **목록 항목에 상세 정보가 이미 다 들어 있으면 별도 라우트로 분리하지 말고 한 페이지 안에서 로컬 `useState`로 렌더한다**(`pages/appeals`가 그 사례 — 선택된 id로 `items.find(...)`). 별도 상세 쿼리도 라우트도 필요 없고, 필터·페이지가 바뀌어 선택된 id가 목록에서 사라지면 상세 섹션도 자연히 사라진다(정리 코드 불필요). **실제 detail 엔드포인트가 생기면** 그때 `reports` 패턴(형제 라우트 + 상세 쿼리)으로 옮긴다.
