@@ -1,6 +1,6 @@
 """다양성 매트릭스 — 30개 스토리 슬롯의 좌표 스펙.
 
-`data/diversity_matrix.json` 은 `tasks/prd-genre-seed-content.md` §7 을 기계가 읽는 형태로
+`data/diversity_matrix.json` 은 `tasks/archive/prd-genre-seed-content.md` §7 을 기계가 읽는 형태로
 전사한 것이다. 콘셉트(제목·한줄·세계관·좌표·스탯 축·target)는 여기서 확정이고, 배치
 생성기(US-013)는 이 좌표를 입력으로 받아 **본문만** 채운다 — 생성기가 콘셉트를 새로
 발명하지 않아야 같은 장르 3개의 겹침을 생성 후가 아니라 생성 전에 막을 수 있다.

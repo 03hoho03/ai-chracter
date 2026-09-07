@@ -19,7 +19,7 @@ from seed_content.matrix import (
     validate_matrix,
 )
 
-# tasks/prd-genre-seed-content.md §7 의 30개 슬러그를 장르·슬롯 순서 그대로 옮긴 것.
+# tasks/archive/prd-genre-seed-content.md §7 의 30개 슬러그를 장르·슬롯 순서 그대로 옮긴 것.
 # 전사 과정에서 슬러그가 빠지거나 오타가 나면 여기서 걸린다.
 EXPECTED_SLUGS = [
     "romance-3rdloop",

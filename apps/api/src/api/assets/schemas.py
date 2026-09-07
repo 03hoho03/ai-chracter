@@ -19,7 +19,7 @@ class AssetPurpose(str, enum.Enum):
 
 
 # Per-purpose upload size limits in bytes, applied to the *resized* result the FE
-# uploads (tasks/prd-image-delivery-optimization.md) — the normal path stays far
+# uploads (tasks/archive/prd-image-delivery-optimization.md) — the normal path stays far
 # below these, so the server-side check is purely a bypass safety net.
 UPLOAD_SIZE_LIMIT_BYTES: dict[AssetPurpose, int] = {
     AssetPurpose.PROFILE_IMAGE: 2 * 1024 * 1024,
@@ -63,7 +63,7 @@ GeneratedImageUsageField = Literal["thumbnail", "situationalImage"]
 
 
 class GeneratedImageUsage(CamelModel):
-    """One content referencing a generated asset (US-001, tasks/prd-image-library.md).
+    """One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).
 
     Draft and published versions both count as "in use"; versions of the same
     content referencing the asset with the same field are merged into one entry.

@@ -23,7 +23,7 @@ _POLICY_FINISH_REASONS = frozenset(
 
 
 class GeminiImageClient(ImageClient):
-    """이미지 생성 전용 Gemini 클라이언트 (tasks/prd-image-generation.md §3/§8).
+    """이미지 생성 전용 Gemini 클라이언트 (tasks/archive/prd-image-generation.md §3/§8).
 
     채팅용 GeminiLLMClient(gemini.py)와 같은 API 키를 쓰지만, 스트리밍 대화/판단
     호출과 섞이지 않도록 독립된 클래스로 분리했다(향후 이미지 전용 키 분리 시

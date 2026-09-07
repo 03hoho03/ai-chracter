@@ -40,4 +40,4 @@ product
 - 전연령 서비스 특성상 폭넓은 연령대(미성년자 포함)가 사용하므로, 텍스트 크기·터치 타겟·명확한 라벨을 특히 신경 쓴다.
 - 모션은 절제되게 사용하고 `prefers-reduced-motion`을 존중한다(장시간 채팅 화면에서 과도한 모션은 피로를 유발할 수 있음).
 
-<!-- impeccable:note 최초 작성은 자율 Ralph 루프(US-003) 중 tasks/prd-ai-character-chat.md, tasks/techspec-overview.md를 근거로 인터뷰 없이 이루어졌습니다. 2026-07-17 `/impeccable init`에서 실사용자 인터뷰로 재확인하며 다음을 갱신했습니다: (1) Brand Personality를 "캐주얼·친근"에서 "차분·집중"으로 교체 — 무채색 팔레트+다크 기본(US-127~131) 도입 이후 기존 성격이 구현과 모순되었기 때문. (2) anti-reference "차분한 네이비/그레이 일변도를 피한다" 삭제 — 제품이 의도적으로 무채색이 되면서 이 항목이 제품 자신을 가리키게 됨. (3) "화면의 색은 사용자 콘텐츠에서만 나온다" 원칙 추가. Users/Product Purpose/Accessibility는 PRD 확정 사항이라 유지했습니다. -->
+<!-- impeccable:note 최초 작성은 자율 Ralph 루프(US-003) 중 tasks/archive/prd-ai-character-chat.md, tasks/techspec-overview.md를 근거로 인터뷰 없이 이루어졌습니다. 2026-07-17 `/impeccable init`에서 실사용자 인터뷰로 재확인하며 다음을 갱신했습니다: (1) Brand Personality를 "캐주얼·친근"에서 "차분·집중"으로 교체 — 무채색 팔레트+다크 기본(US-127~131) 도입 이후 기존 성격이 구현과 모순되었기 때문. (2) anti-reference "차분한 네이비/그레이 일변도를 피한다" 삭제 — 제품이 의도적으로 무채색이 되면서 이 항목이 제품 자신을 가리키게 됨. (3) "화면의 색은 사용자 콘텐츠에서만 나온다" 원칙 추가. Users/Product Purpose/Accessibility는 PRD 확정 사항이라 유지했습니다. -->

@@ -72,9 +72,9 @@ class Settings(BaseSettings):
     # 0 = 사고 끔, 양수 = 그 토큰까지 허용. 세 상태가 서로 다른 동작이라 bool 로 합치지
     # 않는다.
     gemini_thinking_budget: int | None = None
-    # tasks/prd-image-generation.md §3: 이미지 생성 전용 모델(채팅과 같은 키를 공유).
+    # tasks/archive/prd-image-generation.md §3: 이미지 생성 전용 모델(채팅과 같은 키를 공유).
     gemini_image_model_name: str = "gemini-2.5-flash-image"
-    # tasks/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).
+    # tasks/archive/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 
     # Cloudflare Workers AI 이미지 생성(FLUX.1-schnell / SDXL, 무료 티어). account_id는
@@ -86,7 +86,7 @@ class Settings(BaseSettings):
     # 마지막 활동 기준 TTL — 확정값 24시간.
     preview_session_ttl_seconds: int = 60 * 60 * 24
 
-    # tasks/prd-view-count.md: 조회수 중복 제거용 게스트 뷰어 쿠키. 쿠키 수명은
+    # tasks/archive/prd-view-count.md: 조회수 중복 제거용 게스트 뷰어 쿠키. 쿠키 수명은
     # 중복 제거 TTL보다 반드시 길어야 한다(짧으면 쿠키 재발급 = 새 뷰어로 잡혀
     # TTL 창 안에서 같은 사람이 두 번 세어진다).
     guest_viewer_cookie_name: str = "guest_viewer_id"
