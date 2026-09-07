@@ -36,6 +36,7 @@ from api.db.models.moderation import (
     ReportReasonCategory,
     ReportStatus,
 )
+from api.db.models.notice import Notice
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -85,6 +86,7 @@ __all__ = [
     "ModerationAction",
     "ModerationActionType",
     "ModerationStatus",
+    "Notice",
     "Notification",
     "Report",
     "ReportReasonCategory",
