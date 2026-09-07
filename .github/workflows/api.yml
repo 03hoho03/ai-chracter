@@ -89,7 +89,9 @@ jobs:
 
       # PR 에서만 빌드한다 — main push 의 빌드는 `deploy-api.yml` 이 같은 Dockerfile 로
       # 수행하고 푸시까지 하므로(트리거도 동일하게 `apps/api/**`) 여기서 또 하면 같은
-      # 이미지를 두 번 만드는 셈이다(실측 36초). PR 에서는 배포가 돌지 않으니
-      # "빌드가 깨지지 않는지"를 여기서 확인하는 게 맞다.
+      # 이미지를 두 번 만드는 셈이다. 아끼는 건 이 스텝의 실측 13초다(deploy-api 쪽
+      # "빌드+푸시 2회"가 36초인데 그건 그대로 남는다). 캐시는 두 워크플로 모두 없다 —
+      # 러너가 매번 새 VM 이라 레이어 캐시가 비어 있고, buildx/`cache-from` 도 쓰지 않는다.
+      # PR 에서는 배포가 돌지 않으니 "빌드가 깨지지 않는지"를 여기서 확인하는 게 맞다.
       - if: github.event_name == 'pull_request'
         run: docker build -t ai-character-chat-api:ci .
