@@ -24,6 +24,7 @@ from api.db.models.moderation import (
     Report,
     ReportStatus,
 )
+from api.db.models.notice import Notice
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
 from api.moderation.schemas import (
@@ -49,12 +50,16 @@ ADMIN_REPORT_PAGE_SIZE = 20
 ADMIN_APPEAL_PAGE_SIZE = 20
 
 
-def _to_response(notification: Notification) -> NotificationResponse:
+def _to_response(
+    notification: Notification, notice_titles: dict[uuid.UUID, str]
+) -> NotificationResponse:
     return NotificationResponse(
         id=notification.id,
         type=notification.type,
         content_id=notification.content_id,
         action_id=notification.action_id,
+        notice_id=notification.notice_id,
+        title=notice_titles.get(notification.notice_id) if notification.notice_id is not None else None,
         reason_category=notification.reason_category,
         admin_comment=notification.admin_comment,
         created_at=notification.created_at,
@@ -74,7 +79,15 @@ async def list_my_notifications(
             .order_by(Notification.created_at.desc())
         )
     ).all()
-    return [_to_response(notification) for notification in notifications]
+
+    # notice 알림의 제목을 IN 조회 한 번으로 가져온다 — 행마다 조회하면 N+1이다.
+    notice_ids = {n.notice_id for n in notifications if n.notice_id is not None}
+    notice_titles: dict[uuid.UUID, str] = {}
+    if notice_ids:
+        rows = await db.execute(select(Notice.id, Notice.title).where(Notice.id.in_(notice_ids)))
+        notice_titles = {notice_id: title for notice_id, title in rows}
+
+    return [_to_response(notification, notice_titles) for notification in notifications]
 
 
 @router.patch("/notifications/{notification_id}/read")
@@ -94,7 +107,14 @@ async def mark_notification_read(
     notification.read = True
     await db.commit()
 
-    return _to_response(notification)
+    # 단건이라 맵이 하나짜리다 — list_my_notifications와 같은 _to_response를 쓰기 위함.
+    notice_titles: dict[uuid.UUID, str] = {}
+    if notification.notice_id is not None:
+        notice = await db.get(Notice, notification.notice_id)
+        if notice is not None:
+            notice_titles[notice.id] = notice.title
+
+    return _to_response(notification, notice_titles)
 
 
 @router.post("/appeals", status_code=status.HTTP_201_CREATED)

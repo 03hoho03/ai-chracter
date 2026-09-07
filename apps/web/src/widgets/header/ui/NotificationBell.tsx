@@ -8,7 +8,8 @@ import {
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Bell } from "lucide-react";
+import { Link } from "@tanstack/react-router";
+import { Bell, ChevronRight } from "lucide-react";
 
 import { useMarkNotificationReadMutation, useNotificationListQuery } from "@/entities/notification";
 
@@ -21,12 +22,13 @@ const REASON_CATEGORY_LABELS: Record<string, string> = {
 };
 
 /** techspec.md §1-2 — 이용제한/삭제 조치 통지(moderation-action, US-055)에 계정 경고(user-warned)·
- * 계정 정지(user-suspended)가 더해져 `type`이 셋이 됐다. type별로 제목 문구만 가르는 최소 구현이고,
- * 모르는 type은 이용제한 문구로 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
+ * 계정 정지(user-suspended)·공지(notice, T-11b)가 더해져 `type`이 넷이 됐다. type별로 제목 문구만
+ * 가르는 최소 구현이고, 모르는 type은 이용제한 문구로 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
 const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {
   "moderation-action": "콘텐츠 이용제한 안내",
   "user-warned": "계정 경고 안내",
   "user-suspended": "계정 이용정지 안내",
+  notice: "공지사항",
 };
 
 export function NotificationBell() {
@@ -58,23 +60,47 @@ export function NotificationBell() {
         {notifications.length === 0 ? (
           <p className="px-1.5 py-4 text-center text-sm text-muted-foreground">아직 알림이 없어요.</p>
         ) : (
-          notifications.map((notification) => (
-            <DropdownMenuItem
-              key={notification.id}
-              className="flex flex-col items-start gap-0.5 py-2 whitespace-normal"
-              onSelect={(event) => {
-                // 여러 알림을 이어서 확인할 수 있도록 클릭 후에도 드롭다운을 열어둔다.
-                event.preventDefault();
-                if (!notification.read) markAsRead.mutate(notification.id);
-              }}
-            >
-              <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
-                {NOTIFICATION_TITLE_BY_TYPE[notification.type] ?? NOTIFICATION_TITLE_BY_TYPE["moderation-action"]} ·{" "}
-                {REASON_CATEGORY_LABELS[notification.reasonCategory] ?? notification.reasonCategory}
-              </span>
-              <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>
-            </DropdownMenuItem>
-          ))
+          // 이 목록은 항목마다 동작이 갈린다(D-17): 공지는 목적지(`/notices/$noticeId`)가 있어
+          // 링크지만, 조치 통지 3종은 경고·정지가 content_id 없이 갈 곳이 없고 이용제한 콘텐츠로
+          // 보내면 오류 화면이라 갈 곳이 없다 — 읽음 처리만 하고 드롭다운을 열어둔다.
+          notifications.map((notification) =>
+            notification.type === "notice" && notification.noticeId ? (
+              <DropdownMenuItem
+                key={notification.id}
+                asChild
+                className="py-2"
+                onSelect={() => {
+                  if (!notification.read) markAsRead.mutate(notification.id);
+                }}
+              >
+                <Link to="/notices/$noticeId" params={{ noticeId: notification.noticeId }}>
+                  <span className="flex w-full items-center justify-between gap-2">
+                    <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
+                      {NOTIFICATION_TITLE_BY_TYPE.notice} · {notification.title}
+                    </span>
+                    <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                  </span>
+                </Link>
+              </DropdownMenuItem>
+            ) : (
+              <DropdownMenuItem
+                key={notification.id}
+                className="flex flex-col items-start gap-0.5 py-2 whitespace-normal"
+                onSelect={(event) => {
+                  // 여러 알림을 이어서 확인할 수 있도록 클릭 후에도 드롭다운을 열어둔다.
+                  event.preventDefault();
+                  if (!notification.read) markAsRead.mutate(notification.id);
+                }}
+              >
+                <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
+                  {NOTIFICATION_TITLE_BY_TYPE[notification.type] ?? NOTIFICATION_TITLE_BY_TYPE["moderation-action"]}
+                  {notification.reasonCategory != null &&
+                    ` · ${REASON_CATEGORY_LABELS[notification.reasonCategory] ?? notification.reasonCategory}`}
+                </span>
+                <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>
+              </DropdownMenuItem>
+            ),
+          )
         )}
       </DropdownMenuContent>
     </DropdownMenu>

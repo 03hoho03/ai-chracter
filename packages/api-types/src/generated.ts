@@ -213,12 +213,15 @@ export interface paths {
          *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).
          *
          *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
-         *     만들고 그 `reason_category` 컬럼이 NOT NULL이므로(goal-prompt.md §3-1, techspec
-         *     §1-2) 신고 사유 5종 중 하나가 필수다(없으면 422). 반면 `lift-restriction`은
-         *     `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를 강제할 근거가 없다 —
-         *     관리자가 의미 없는 값을 고르게 될 뿐이다. 대신 T-10(위험 조치 확인 다이얼로그 +
-         *     사유 필수)을 만족시키는 건 `admin_comment`(자유 텍스트, `admin_action_logs.reason_text`
-         *     로 그대로 남는다) 쪽이라 이걸 필수로 바꿨다(비어 있으면 422).
+         *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
+         *     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
+         *     근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11b에서 그 컬럼이 nullable로
+         *     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
+         *     `lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를
+         *     강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신
+         *     T-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유
+         *     텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로
+         *     바꿨다(비어 있으면 422).
          */
         post: operations["act_on_content_admin_contents__content_id__action_post"];
         delete?: never;
@@ -278,8 +281,11 @@ export interface paths {
         put?: never;
         /**
          * Warn User
-         * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 아래에서
-         *     만드는 `Notification.reason_category`가 NOT NULL이기 때문(T-2).
+         * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지
+         *     문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는
+         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),
+         *     T-11b에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
+         *     사라졌다.
          *
          *     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
          *     다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로
@@ -349,10 +355,11 @@ export interface paths {
          *     관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
          *     한다.
          *
-         *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로
-         *     `Notification.reason_category` NOT NULL을 근거로 필수화할 이유가 없다(경고/정지가
-         *     카테고리를 요구하는 것과 반대). 대신 2단계 `lift-restriction`과 같은 규칙으로
-         *     `admin_comment`를 필수로 받는다 — 비어 있으면 422.
+         *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
+         *     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
+         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11b에서
+         *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은
+         *     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
          *
          *     **해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을
          *     명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
@@ -454,6 +461,105 @@ export interface paths {
         get: operations["list_legal_document_versions_admin_legal__kind__versions_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Notices
+         * @description 어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
+         *     (`moderation/router.py:195`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가
+         *     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
+         *     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.
+         */
+        get: operations["list_admin_notices_admin_notices_get"];
+        put?: never;
+        /** Create Admin Notice */
+        post: operations["create_admin_notice_admin_notices_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/notices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Admin Notice */
+        get: operations["get_admin_notice_admin_notices__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update Admin Notice */
+        patch: operations["update_admin_notice_admin_notices__id__patch"];
+        trace?: never;
+    };
+    "/admin/notices/{id}/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Publish Admin Notice
+         * @description 게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다(techspec.md §4-3, D-16).
+         *
+         *     - `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.
+         *     - `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이
+         *       있으므로 원래 게시일이 유지된다(`db/models/notice.py`의 모델 docstring 근거와
+         *       같다).
+         *     - **`already_sent` 선행 확인 + `ux_notifications_notice_user` 부분 유니크
+         *       인덱스로 2중 방어한다.** 전자가 숨김 → 재게시 경로에서 알림을 또 안 만들게
+         *       막고, 후자는 경쟁 상황에서도 DB 제약으로 같은 결론을 보장한다.
+         *     - **`gen_random_uuid()`는 이 저장소에서 여기가 유일하다.** 다른 모든 PK는
+         *       파이썬 쪽 `default=uuid.uuid4`로 채워지는데, `INSERT ... SELECT`는 ORM을
+         *       거치지 않아 그 default를 우회한다 — Postgres 18이라 내장 함수라서 확장 설치가
+         *       따로 필요 없다(`docker-compose.{dev,prod}.yml`이 postgres:18).
+         *     - 생존 유저 판정은 `User.deleted_at IS NULL`이다 — `session/suspension.py`의
+         *       `rebuild_suspended_user_markers`가 같은 조건을 쓰는 선례다.
+         *     - **알려진 대가**: 게시 후 가입한 유저는 이 fan-out의 대상이 아니라 그 공지의
+         *       알림을 받지 못한다. 목록 `/notices`에는 항상 보이므로 알림만 못 받는 것이다.
+         *     - fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE
+         *       deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 "동기 실행이 프로덕션
+         *       규모에서도 감당 가능하다"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이
+         *       가정(D-16)을 다시 실측해 재검증할 것.
+         */
+        post: operations["publish_admin_notice_admin_notices__id__publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/notices/{id}/unpublish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Unpublish Admin Notice */
+        post: operations["unpublish_admin_notice_admin_notices__id__unpublish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -883,6 +989,54 @@ export interface paths {
          *     알려주므로 동의 자체를 영영 놓치는 것도 아니다.
          */
         post: operations["consent_legal_document_legal_consent_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Notices
+         * @description 공개 목록 — 인증 없음(techspec.md §4-1, D-5). `legal/router.py`의
+         *     `GET /legal/{kind}`와 같은 취급.
+         *
+         *     **페이징하지 않는다**(D-13) — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
+         *     인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서
+         *     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/
+         *     :1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지
+         *     않는 추가라 지금 미리 만들어 둘 이유가 없다.
+         */
+        get: operations["list_notices_notices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notices/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Notice
+         * @description 미게시 공지는 404 — 403이 아니다. 403은 "여기 뭔가 있다"를 알려주지만, 이건
+         *     URL 추측으로 미게시 초안의 존재 자체가 새면 안 된다는 것이 목적이다.
+         */
+        get: operations["get_notice_notices__id__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2298,6 +2452,71 @@ export interface components {
             /** Email */
             email: string;
         };
+        /** AdminNoticeCreateRequest */
+        AdminNoticeCreateRequest: {
+            /** Title */
+            title: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+        };
+        /** AdminNoticeDetailResponse */
+        AdminNoticeDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /** Published */
+            published: boolean;
+            /** Publishedat */
+            publishedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminNoticeListItem */
+        AdminNoticeListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Published */
+            published: boolean;
+            /** Publishedat */
+            publishedAt: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminNoticeListResponse */
+        AdminNoticeListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminNoticeListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminNoticeUpdateRequest */
+        AdminNoticeUpdateRequest: {
+            /** Title */
+            title?: string | null;
+            /** Bodymarkdown */
+            bodyMarkdown?: string | null;
+        };
         /** AdminReportContentDetail */
         AdminReportContentDetail: {
             /**
@@ -3528,6 +3747,43 @@ export interface components {
              */
             createdAt: string;
         };
+        /** NoticeDetailResponse */
+        NoticeDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Bodymarkdown */
+            bodyMarkdown: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
+        /** NoticeListItem */
+        NoticeListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /**
+             * Publishedat
+             * Format: date-time
+             */
+            publishedAt: string;
+        };
+        /** NoticeListResponse */
+        NoticeListResponse: {
+            /** Items */
+            items: components["schemas"]["NoticeListItem"][];
+        };
         /** NotificationResponse */
         NotificationResponse: {
             /**
@@ -3541,10 +3797,14 @@ export interface components {
             contentId: string | null;
             /** Actionid */
             actionId: string | null;
+            /** Noticeid */
+            noticeId: string | null;
+            /** Title */
+            title: string | null;
             /** Reasoncategory */
-            reasonCategory: string;
+            reasonCategory: string | null;
             /** Admincomment */
-            adminComment: string;
+            adminComment: string | null;
             /**
              * Createdat
              * Format: date-time
@@ -4634,6 +4894,198 @@ export interface operations {
             };
         };
     };
+    list_admin_notices_admin_notices_get: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_admin_notice_admin_notices_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNoticeCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_admin_notice_admin_notices__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_admin_notice_admin_notices__id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminNoticeUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    publish_admin_notice_admin_notices__id__publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpublish_admin_notice_admin_notices__id__unpublish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminNoticeDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     view_chat_room_admin_chat_rooms__room_id__view_post: {
         parameters: {
             query?: never;
@@ -5337,6 +5789,57 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_notices_notices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeListResponse"];
+                };
+            };
+        };
+    };
+    get_notice_notices__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NoticeDetailResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

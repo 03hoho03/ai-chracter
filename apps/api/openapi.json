@@ -468,7 +468,7 @@
           "admin"
         ],
         "summary": "Act On Content",
-        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 `reason_category` 컬럼이 NOT NULL이므로(goal-prompt.md §3-1, techspec\n§1-2) 신고 사유 5종 중 하나가 필수다(없으면 422). 반면 `lift-restriction`은\n`Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를 강제할 근거가 없다 —\n관리자가 의미 없는 값을 고르게 될 뿐이다. 대신 T-10(위험 조치 확인 다이얼로그 +\n사유 필수)을 만족시키는 건 `admin_comment`(자유 텍스트, `admin_action_logs.reason_text`\n로 그대로 남는다) 쪽이라 이걸 필수로 바꿨다(비어 있으면 422).",
+        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11b에서 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\nT-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
         "operationId": "act_on_content_admin_contents__content_id__action_post",
         "parameters": [
           {
@@ -642,7 +642,7 @@
           "admin"
         ],
         "summary": "Warn User",
-        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 아래에서\n만드는 `Notification.reason_category`가 NOT NULL이기 때문(T-2).\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
+        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지\n문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),\nT-11b에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가\n사라졌다.\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
         "operationId": "warn_user_admin_users__user_id__warn_post",
         "parameters": [
           {
@@ -743,7 +743,7 @@
           "admin"
         ],
         "summary": "Unsuspend User",
-        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로\n`Notification.reason_category` NOT NULL을 근거로 필수화할 이유가 없다(경고/정지가\n카테고리를 요구하는 것과 반대). 대신 2단계 `lift-restriction`과 같은 규칙으로\n`admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
+        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11b에서\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
         "operationId": "unsuspend_user_admin_users__user_id__unsuspend_post",
         "parameters": [
           {
@@ -973,6 +973,271 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/AdminLegalVersionsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/notices": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Notices",
+        "description": "어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`\n(`moderation/router.py:195`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가\n커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정\n페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.",
+        "operationId": "list_admin_notices_admin_notices_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Create Admin Notice",
+        "operationId": "create_admin_notice_admin_notices_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNoticeCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/notices/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Admin Notice",
+        "operationId": "get_admin_notice_admin_notices__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Update Admin Notice",
+        "operationId": "update_admin_notice_admin_notices__id__patch",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminNoticeUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/notices/{id}/publish": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Publish Admin Notice",
+        "description": "게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다(techspec.md §4-3, D-16).\n\n- `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.\n- `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이\n  있으므로 원래 게시일이 유지된다(`db/models/notice.py`의 모델 docstring 근거와\n  같다).\n- **`already_sent` 선행 확인 + `ux_notifications_notice_user` 부분 유니크\n  인덱스로 2중 방어한다.** 전자가 숨김 → 재게시 경로에서 알림을 또 안 만들게\n  막고, 후자는 경쟁 상황에서도 DB 제약으로 같은 결론을 보장한다.\n- **`gen_random_uuid()`는 이 저장소에서 여기가 유일하다.** 다른 모든 PK는\n  파이썬 쪽 `default=uuid.uuid4`로 채워지는데, `INSERT ... SELECT`는 ORM을\n  거치지 않아 그 default를 우회한다 — Postgres 18이라 내장 함수라서 확장 설치가\n  따로 필요 없다(`docker-compose.{dev,prod}.yml`이 postgres:18).\n- 생존 유저 판정은 `User.deleted_at IS NULL`이다 — `session/suspension.py`의\n  `rebuild_suspended_user_markers`가 같은 조건을 쓰는 선례다.\n- **알려진 대가**: 게시 후 가입한 유저는 이 fan-out의 대상이 아니라 그 공지의\n  알림을 받지 못한다. 목록 `/notices`에는 항상 보이므로 알림만 못 받는 것이다.\n- fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE\n  deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 \"동기 실행이 프로덕션\n  규모에서도 감당 가능하다\"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이\n  가정(D-16)을 다시 실측해 재검증할 것.",
+        "operationId": "publish_admin_notice_admin_notices__id__publish_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/notices/{id}/unpublish": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Unpublish Admin Notice",
+        "operationId": "unpublish_admin_notice_admin_notices__id__unpublish_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminNoticeDetailResponse"
                 }
               }
             }
@@ -1907,6 +2172,72 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notices": {
+      "get": {
+        "tags": [
+          "notice"
+        ],
+        "summary": "List Notices",
+        "description": "공개 목록 — 인증 없음(techspec.md §4-1, D-5). `legal/router.py`의\n`GET /legal/{kind}`와 같은 취급.\n\n**페이징하지 않는다**(D-13) — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서\n인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서\n페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/\n:1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지\n않는 추가라 지금 미리 만들어 둘 이유가 없다.",
+        "operationId": "list_notices_notices_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notices/{id}": {
+      "get": {
+        "tags": [
+          "notice"
+        ],
+        "summary": "Get Notice",
+        "description": "미게시 공지는 404 — 403이 아니다. 403은 \"여기 뭔가 있다\"를 알려주지만, 이건\nURL 추측으로 미게시 초안의 존재 자체가 새면 안 된다는 것이 목적이다.",
+        "operationId": "get_notice_notices__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NoticeDetailResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -5393,6 +5724,174 @@
         ],
         "title": "AdminMeResponse"
       },
+      "AdminNoticeCreateRequest": {
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          }
+        },
+        "type": "object",
+        "required": [
+          "title",
+          "bodyMarkdown"
+        ],
+        "title": "AdminNoticeCreateRequest"
+      },
+      "AdminNoticeDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          },
+          "published": {
+            "type": "boolean",
+            "title": "Published"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "bodyMarkdown",
+          "published",
+          "publishedAt",
+          "createdAt"
+        ],
+        "title": "AdminNoticeDetailResponse"
+      },
+      "AdminNoticeListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "published": {
+            "type": "boolean",
+            "title": "Published"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "published",
+          "publishedAt",
+          "createdAt"
+        ],
+        "title": "AdminNoticeListItem"
+      },
+      "AdminNoticeListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminNoticeListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminNoticeListResponse"
+      },
+      "AdminNoticeUpdateRequest": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "bodyMarkdown": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodymarkdown"
+          }
+        },
+        "type": "object",
+        "title": "AdminNoticeUpdateRequest"
+      },
       "AdminReportContentDetail": {
         "properties": {
           "id": {
@@ -8374,6 +8873,77 @@
         ],
         "title": "MyChatRoomListItem"
       },
+      "NoticeDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "bodyMarkdown": {
+            "type": "string",
+            "title": "Bodymarkdown"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "bodyMarkdown",
+          "publishedAt"
+        ],
+        "title": "NoticeDetailResponse"
+      },
+      "NoticeListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "publishedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Publishedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "title",
+          "publishedAt"
+        ],
+        "title": "NoticeListItem"
+      },
+      "NoticeListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NoticeListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "NoticeListResponse"
+      },
       "NotificationResponse": {
         "properties": {
           "id": {
@@ -8409,12 +8979,49 @@
             ],
             "title": "Actionid"
           },
+          "noticeId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Noticeid"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
           "reasonCategory": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Reasoncategory"
           },
           "adminComment": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Admincomment"
           },
           "createdAt": {
@@ -8433,6 +9040,8 @@
           "type",
           "contentId",
           "actionId",
+          "noticeId",
+          "title",
           "reasonCategory",
           "adminComment",
           "createdAt",
