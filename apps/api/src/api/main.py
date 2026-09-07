@@ -10,6 +10,7 @@ from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
 from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.legal import router as admin_legal_router
+from api.admin.notices import router as admin_notices_router
 from api.admin.router import me_router as admin_me_router, router as admin_router
 from api.admin.users import router as admin_users_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
@@ -28,6 +29,7 @@ from api.db.session import engine, get_session_factory
 from api.images.router import router as images_router
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
+from api.notice.router import router as notice_router
 from api.session.router import router as session_router
 from api.session.suspension import rebuild_suspended_user_markers
 
@@ -68,12 +70,14 @@ app.include_router(admin_dashboard_router)
 app.include_router(admin_contents_router)
 app.include_router(admin_users_router)
 app.include_router(admin_legal_router)
+app.include_router(admin_notices_router)
 app.include_router(admin_chat_view_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)
 app.include_router(me_router)
 app.include_router(legal_router)
+app.include_router(notice_router)
 app.include_router(content_router)
 app.include_router(moderation_router)
 app.include_router(chat_router)
