@@ -95,7 +95,7 @@ export function PreviewSessionView({
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3">
         <div className="flex items-center gap-2">
           {onClose && (
             <Button variant="ghost" size="icon-sm" aria-label="미리보기 닫기" onClick={onClose}>
@@ -112,7 +112,7 @@ export function PreviewSessionView({
 
       {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
         <div className="flex flex-col gap-3">
           {state.messages.map((message) => (
             <MessageBubble key={message.id} message={message} />
@@ -151,7 +151,7 @@ export function PreviewSessionView({
         </div>
       </div>
 
-      <div className="shrink-0 border-t border-border bg-background p-3">
+      <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
         {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
             사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
             동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}
@@ -213,7 +213,7 @@ export function PreviewSessionView({
 
 function PreviewSkeleton() {
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6">
+    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-4 sm:px-6">
       <p className="text-sm text-muted-foreground">미리보기 세션을 여는 중이에요...</p>
     </div>
   );

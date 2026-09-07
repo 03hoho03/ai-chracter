@@ -100,7 +100,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   if (roomQuery.isError || !room) {
     return (
-      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6">
+      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-4 sm:px-6">
         <p className="text-sm text-destructive-text">대화방을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </div>
     );
@@ -108,7 +108,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3">
+      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 sm:px-6 py-3">
         <Button variant="ghost" size="icon" aria-label="뒤로가기" onClick={() => window.history.back()}>
           <ArrowLeft aria-hidden className="size-4" />
         </Button>
@@ -133,7 +133,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {versionUpgradeBannerVisible && (
-            <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+            <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 sm:px-6 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
               <History aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">최신 버전으로 자동 전환되었어요.</span>
             </div>
@@ -141,7 +141,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
           {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
 
-          <div className="flex-1 overflow-y-auto px-4 py-4">
+          <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             <div className="flex flex-col gap-3">
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
@@ -203,7 +203,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-border bg-background p-3">
+          <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
             {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르지만,
                 사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
                 구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로(FR-88) 칩은 되살아나지
@@ -276,7 +276,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
 function ChatRoomSkeleton() {
   return (
-    <div className="flex flex-col gap-3 p-4">
+    <div className="flex flex-col gap-3 px-4 sm:px-6 py-4">
       <div className="h-16 w-2/3 animate-pulse rounded-lg bg-muted" />
       <div className="ml-auto h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
       <div className="h-12 w-3/5 animate-pulse rounded-lg bg-muted" />

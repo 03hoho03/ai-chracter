@@ -125,7 +125,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   }
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
       {/* 저장 계약을 한 번 말해 둔다 — 자동저장은 성공해도 아무 표시가 없어서, 이 문장이 없으면
           사용자가 "자동저장"이라는 단어를 처음 만나는 자리가 빨간 실패 토스트다(US-007). */}
       <header className="flex flex-col gap-1.5">

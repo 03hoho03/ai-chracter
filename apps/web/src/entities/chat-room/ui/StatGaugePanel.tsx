@@ -19,7 +19,7 @@ export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
       role="group"
       aria-label="스탯"
       tabIndex={0}
-      className="flex shrink-0 gap-4 overflow-x-auto border-b border-border px-4 py-2.5 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      className="flex shrink-0 gap-4 overflow-x-auto border-b border-border px-4 sm:px-6 py-2.5 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
     >
       {stats.map((stat) => {
         const value = values[stat.id] ?? stat.initial;

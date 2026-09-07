@@ -37,7 +37,7 @@ const BUILDER_TYPE_OPTIONS: BuilderTypeOption[] = [
  * 각 빌더로 들어간다. 카드는 `<Link>`라 새 탭 열기·가운데 클릭이 그대로 동작한다(버튼 + navigate가 아니라). */
 export function BuilderTypeSelectPage() {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">작품 만들기</h1>
 
       {/* 2열 전환이 `sm`(640px)이 아니라 `md`(768px)인 건 실측이다 — 640px에서 2열은 카드를 290px로 만들어

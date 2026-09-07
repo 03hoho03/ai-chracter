@@ -17,7 +17,7 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-30 border-b border-border bg-background">
-      <div className="mx-auto flex h-14 max-w-6xl items-center gap-2 px-4 sm:px-6">
+      <div className="mx-auto flex h-14 max-w-5xl items-center gap-2 px-4 sm:px-6">
         {/* 워드마크는 sm: 미만에서도 숨기지 않는다 — "또나" 2자는 30.2px로 자리를 대신하던 아이콘(20px + gap 6px)
             보다 4px 넓을 뿐이고(390px·320px에서 scrollWidth === clientWidth 실측), 숨기면 홈 링크에 접근 가능한
             이름이 남지 않는다. 브랜드 마크는 파비콘·OG와 같은 타이포그래픽 마크 하나로 통일한다(apps/web/brand/). */}

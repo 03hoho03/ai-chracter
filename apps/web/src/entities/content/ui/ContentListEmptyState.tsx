@@ -24,9 +24,17 @@ export function ContentListEmptyState({
   action,
 }: ContentListEmptyStateProps) {
   return (
-    // `px-6`은 이 패널이 390px에서 본문 342px를 통째로 쓰기 때문이다 — 없으면 두 줄로 접히는 문장이
-    // 점선 테두리에 붙는다. 컨테이너 `px-6`(페이지 여백)과 같은 값이라 안쪽 여백이 바깥과 이어져 읽힌다.
-    // 기존 소비처(홈·즐겨찾기)의 줄 수와 패널 높이는 그대로다(320/390/428 실측 3·2·2줄, 190·170·170px).
+    // `px-6`은 이 패널이 390px에서 본문을 통째로 쓰기 때문이다 — 없으면 두 줄로 접히는 문장이
+    // 점선 테두리에 붙는다. **한때 여기 "컨테이너 `px-6`(페이지 여백)과 같은 값이라 안쪽 여백이
+    // 바깥과 이어져 읽힌다"고 적혀 있었는데, 페이지 컨테이너가 `px-4 sm:px-6`이 되면서 거짓이 됐다** —
+    // `sm` 미만에서 바깥은 16px, 여기는 24px다. 그래도 낮추지 않는다: 패널은 컨테이너 **안**에 중첩된
+    // 상자라 바깥과 같을 이유가 없고, 이 dashed 셸은 손으로 복사된 사본이 셋이라(`MyWorksPage`의
+    // `MyWorksFullErrorState`, `GeneratedImageLibraryPanel` — `apps/web/CLAUDE.md`가 추적 중이다)
+    // 하나만 낮추면 셋이 갈린다. 테두리 없이 같은 `px-6 py-16 text-center` 레시피를 쓰는 곳이 둘 더
+    // 있다(`LegalDocumentPage`의 404, `ContentUnavailableState`) — 그쪽은 별개 계열이지만 낮출 때
+    // 함께 보게 될 자리다.
+    // 이 패널의 폭 자체는 안 바뀌었으므로 아래 실측은 그대로 유효하다 — 소비처(홈·즐겨찾기)의 줄 수와
+    // 패널 높이는 320/390/428에서 3·2·2줄, 190·170·170px.
     // `break-keep`은 한국어 본문이 어절 중간에서 갈리는 걸 막는다 — 없으면 320px에서
     // `…여기에 모여` / `요.`(US-011 문구), `…즐겨` / `찾기에`(즐겨찾기 문구)로 끊긴다(실측).
     <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center break-keep">

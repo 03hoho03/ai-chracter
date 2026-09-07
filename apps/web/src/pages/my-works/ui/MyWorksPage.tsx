@@ -84,7 +84,7 @@ type MyWorksPageProps = {
  * 초안(`GET /me/drafts`)을 각각 받아 클라이언트에서 병합한다(확정 결정 9). */
 export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps) {
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10">
       {/* 제목과 버튼은 접지 않고 한 줄에 둔다 — 390px 실측으로 `내 작품` 65.38px + `작품 만들기`
           85.92px = 151.3px이라 본문 342px의 44%다(최악인 320px에서도 간격 120.7px이 남는다). 버튼은
           `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고, 제목은 2어절이라 접힐 자리도 없다. */}

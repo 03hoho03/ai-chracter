@@ -53,7 +53,7 @@ export function MyPagePage() {
     // 1.5배를 Gestalt 임계 미달로 판정해 뒀다 — `apps/web/CLAUDE.md` 필터 축). 뷰포트를 못 채우는 것은
     // 간격을 좁힐 근거가 아니다 — 좁히면 그 여백만 늘어난다. 채우려면 카드·패널이 필요한데 DESIGN.md가
     // 금지하고, 설정 화면은 원래 짧다.
-    <main className="mx-auto flex max-w-md flex-col gap-10 px-6 py-10">
+    <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       {/* h1과 설명을 6px(`gap-1.5`)로 묶어 설명이 제목의 일부로 읽히게 한다 — 바깥 40px과 6.67배 차이다.
           **바깥 간격은 여기서 위계를 지지 않는다**: 헤더 블록→첫 섹션도 섹션↔섹션도 실측 40.0px으로 같다.
           한때 이 주석은 묶기가 그 비대칭을 만들었다고 적었는데 **거짓이었다** — 묶기가 바꾼 건 설명의

@@ -23,7 +23,7 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
 
   if (draftQuery.isError) {
     return (
-      <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center gap-2 px-6 text-center">
+      <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center">
         <p className="text-sm text-destructive-text">초안을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </main>
     );
@@ -52,7 +52,7 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
 
 function BuilderSkeleton() {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
       <div className="h-9 w-40 animate-pulse rounded-lg bg-muted" />
       <div className="h-8 w-full animate-pulse rounded-lg bg-muted" />
       <div className="h-64 w-full animate-pulse rounded-xl bg-muted" />

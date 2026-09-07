@@ -13,7 +13,7 @@ export function MyChatRoomListView() {
   const listQuery = useMyChatRoomListQuery();
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 sm:px-6 py-10">
       <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
 
       {listQuery.isPending && <MyChatRoomListSkeleton />}

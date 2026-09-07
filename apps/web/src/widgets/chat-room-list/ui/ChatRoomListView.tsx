@@ -30,7 +30,7 @@ export function ChatRoomListView({
   };
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-10">
+    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-4 sm:px-6 py-10">
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
 
