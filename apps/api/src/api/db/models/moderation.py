@@ -84,11 +84,11 @@ class ModerationAction(Base):
 class Notification(Base):
     """techspec-db-schema.md §8, tasks/techspec.md §3-3.
 
-    `type`은 지금 3종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
+    `type`은 지금 4종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
     처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
-    (`admin/users.py`의 정지). 공지·문의답변(T-11b/T-13)이 더해지면 5종이 된다.
-    `type`이 Postgres enum이 아니라 `Text`인 이유가 그것이다 — 값이 늘어날 여지가 있어
-    새 값을 추가해도 마이그레이션이 필요 없다.
+    (`admin/users.py`의 정지), `notice`(공지 게시 fan-out). `inquiry-reply`(T-13/T-15
+    답변 알림)가 더해지면 5종이 된다. `type`이 Postgres enum이 아니라 `Text`인 이유가
+    그것이다 — 값이 늘어날 여지가 있어 새 값을 추가해도 마이그레이션이 필요 없다.
 
     그래도 범용 알림 프레임워크는 아니다 — type이 코드에 열거된 소수이고 임의 알림을
     만들 수는 없다.
@@ -109,6 +109,7 @@ class Notification(Base):
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     admin_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     notice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("notices.id"), nullable=True)
+    inquiry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("inquiries.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

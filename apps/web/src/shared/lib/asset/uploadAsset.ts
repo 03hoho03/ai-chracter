@@ -12,11 +12,19 @@ type PresignedUploadResponse = components["schemas"]["PresignedUploadResponse"];
 type AssetCompleteResponse = components["schemas"]["AssetCompleteResponse"];
 export type AssetPurpose = components["schemas"]["AssetPurpose"];
 
-/** purpose별 리사이즈 규격 — 아바타/카드는 작은 슬롯에만 그려지고, 채팅에 크게 뜨는 상황별 이미지만 길게 남긴다. */
+/**
+ * purpose별 리사이즈 규격 — 아바타/카드는 작은 슬롯에만 그려지고, 채팅에 크게 뜨는 상황별 이미지만 길게 남긴다.
+ * `inquiry-attachment`의 2048/0.90은 이 저장소의 새 최대치다(기존 최대 1536, 최고 품질 0.82) — D-14:
+ * 문의 첨부(버그 신고 스크린샷)의 가치는 작은 글자를 읽는 데 있어 다른 용도보다 원본을 더 많이 남긴다.
+ * 이 dict는 `Record<AssetPurpose, ...>`라 값 추가를 빠뜨리면 컴파일 에러로 잡힌다 — BE의
+ * `UPLOAD_SIZE_LIMIT_BYTES`(`dict[AssetPurpose, int]`)는 mypy가 이 전수성을 검사하지 않아 사람이 지켜야 한다
+ * (apps/api/src/api/assets/schemas.py 주석 참고).
+ */
 const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
   "profile-image": { maxEdge: 512, quality: 0.82 },
   "content-thumbnail": { maxEdge: 1024, quality: 0.82 },
   "situational-image": { maxEdge: 1536, quality: 0.82 },
+  "inquiry-attachment": { maxEdge: 2048, quality: 0.9 },
 };
 
 /** 서버의 `UPLOAD_SIZE_LIMIT_BYTES`(apps/api/src/api/assets/schemas.py)와 같은 값 — 리사이즈 *결과물*에 건다. */
@@ -24,6 +32,7 @@ const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "profile-image": 2 * 1024 * 1024,
   "content-thumbnail": 5 * 1024 * 1024,
   "situational-image": 5 * 1024 * 1024,
+  "inquiry-attachment": 5 * 1024 * 1024,
 };
 
 export type UploadAssetErrorCode =

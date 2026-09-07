@@ -21,6 +21,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
+from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import (
@@ -79,6 +80,9 @@ __all__ = [
     "Favorite",
     "Genre",
     "GuardianConsent",
+    "Inquiry",
+    "InquiryCategory",
+    "InquiryStatus",
     "KeywordNote",
     "LegalDocument",
     "Like",

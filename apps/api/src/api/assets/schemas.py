@@ -16,15 +16,24 @@ class AssetPurpose(str, enum.Enum):
     PROFILE_IMAGE = "profile-image"
     CONTENT_THUMBNAIL = "content-thumbnail"
     SITUATIONAL_IMAGE = "situational-image"
+    INQUIRY_ATTACHMENT = "inquiry-attachment"
 
 
 # Per-purpose upload size limits in bytes, applied to the *resized* result the FE
 # uploads (tasks/archive/prd-image-delivery-optimization.md) — the normal path stays far
 # below these, so the server-side check is purely a bypass safety net.
+#
+# ⚠️ This dict is `dict[AssetPurpose, int]`, not `Record<AssetPurpose, ...>` — mypy does
+# NOT check dict-literal enum exhaustiveness here (verified with `uv run mypy --strict` on
+# equivalent code: `Success: no issues found`). A missing key is a runtime KeyError → 500 in
+# `assets/router.py`'s `_upload_size_limit` (it indexes directly, not `.get()`). The FE's two
+# `Record<AssetPurpose, ...>` maps (`shared/lib/asset/uploadAsset.ts`) DO get compile-time
+# exhaustiveness — this is the one spot only a human keeps in sync.
 UPLOAD_SIZE_LIMIT_BYTES: dict[AssetPurpose, int] = {
     AssetPurpose.PROFILE_IMAGE: 2 * 1024 * 1024,
     AssetPurpose.CONTENT_THUMBNAIL: 5 * 1024 * 1024,
     AssetPurpose.SITUATIONAL_IMAGE: 5 * 1024 * 1024,
+    AssetPurpose.INQUIRY_ATTACHMENT: 5 * 1024 * 1024,
 }
 
 
