@@ -19,8 +19,9 @@ function MyChatRoomListSkeleton() {
 /** 전체 목록에서는 같은 콘텐츠에 방이 여러 개일 수 있고 이름 없는 방은 전부 `대화 N`이라, 작품명 없이는
  * 구분이 안 된다(실제 dev 데이터에 서로 다른 두 작품의 `대화 1`이 동시에 존재). 그래서 작품명을 1차
  * 식별자로 크게(`text-sm font-semibold`, `ContentCard` 제목과 같은 레시피), 방 이름은 시각과 함께
- * 메타(`text-xs text-muted-foreground`)로 묶어 한 줄에 둔다 — 두 줄(제목 줄 + 미리보기 줄)로 끝나
- * 스켈레톤 `h-16`과 실측상 거의 같은 높이가 된다. */
+ * 메타(`text-xs text-muted-foreground`)로 묶어 한 줄에 둔다. 행 높이(66px)는 텍스트 줄 수가 아니라
+ * 썸네일 40px + `p-3` + 보더가 정한다 — 텍스트 열은 38px로 그 아래에 들어가고, 그래서 스켈레톤 `h-16`
+ * (64px)과 2px 차이로 맞는다. */
 function MyChatRoomListItemRow({ item }: { item: MyChatRoomListItem }) {
   const relativeTime = formatRelativeTime(item.lastMessageAt ?? item.createdAt, new Date());
 
@@ -56,8 +57,11 @@ function MyChatRoomListItemRow({ item }: { item: MyChatRoomListItem }) {
           </p>
           <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{relativeTime}</span>
         </div>
-        {/* 메시지 0개인 방은 lastMessagePreview가 빈 문자열이다 — 빈 텍스트 노드는 줄 높이가 접혀
-            행마다 높이가 들쭉날쭉해지므로 공백으로 채워 둔다. */}
+        {/* 메시지 0개인 방은 lastMessagePreview가 빈 문자열이다. 리터럴 공백으로 이 줄의 라인박스를
+            살려 둔다 — 행 높이가 달라지기 때문이 아니다(썸네일 40px + `p-3`가 지배해 양쪽 다 66px
+            실측). 빈 문자열이면 텍스트 열이 38→22px로 줄고 `items-center` 정렬이 제목 줄을 14→22px로
+            밀어 다른 행들과 8px 어긋난다(실측 A/B). `truncate`의 `white-space: nowrap`에서는 홀로
+            남은 공백이 축약되지 않아 16px 라인박스가 유지된다. */}
         <p className="truncate text-xs break-keep text-muted-foreground">
           {item.lastMessagePreview || " "}
         </p>
