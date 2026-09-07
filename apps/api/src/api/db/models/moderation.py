@@ -82,8 +82,20 @@ class ModerationAction(Base):
 
 
 class Notification(Base):
-    """techspec-db-schema.md §8. `type` 하나(moderation-action)만 존재 — 범용 알림 프레임워크 아님
-    (techspec-builder-common.md §5.2)."""
+    """techspec-db-schema.md §8, tasks/techspec.md §3-3.
+
+    `type`은 지금 3종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
+    처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
+    (`admin/users.py`의 정지). 공지·문의답변(T-11b/T-13)이 더해지면 5종이 된다.
+    `type`이 Postgres enum이 아니라 `Text`인 이유가 그것이다 — 값이 늘어날 여지가 있어
+    새 값을 추가해도 마이그레이션이 필요 없다.
+
+    그래도 범용 알림 프레임워크는 아니다 — type이 코드에 열거된 소수이고 임의 알림을
+    만들 수는 없다.
+
+    `reason_category`/`admin_comment`는 nullable이다. 위 조치 통지 3종은 앞으로도 두
+    컬럼을 계속 채우지만, 공지·문의답변은 인용할 사유가 없어 채울 것이 없다.
+    """
 
     __tablename__ = "notifications"
 
@@ -94,12 +106,28 @@ class Notification(Base):
     action_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("moderation_actions.id"), nullable=True
     )
-    reason_category: Mapped[str] = mapped_column(Text, nullable=False)
-    admin_comment: Mapped[str] = mapped_column(Text, nullable=False)
+    reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
+    admin_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    notice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("notices.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     read: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+
+    # notice_id 참조는 위 컬럼 정의가 먼저 실행돼 클래스 바디 네임스페이스에 바인딩된
+    # 뒤라야 동작한다 — 그래서 __table_args__를 컬럼들 다음에 둔다(`AdminActionLog` 참고).
+    # postgresql_where=notice_id(bare 컬럼 참조)는 autogenerate가 `MappedColumn` 객체의
+    # repr을 마이그레이션 소스에 그대로 박아 SyntaxError를 낸다(T-6에서 실측 재현,
+    # `apps/api/CLAUDE.md` §마이그레이션) — `.is_not(None)`로 식을 만들어야 한다.
+    __table_args__ = (
+        Index(
+            "ux_notifications_notice_user",
+            "notice_id",
+            "user_id",
+            unique=True,
+            postgresql_where=notice_id.is_not(None),
+        ),
+    )
 
 
 class Appeal(Base):

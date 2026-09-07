@@ -20,8 +20,10 @@ class NotificationResponse(CamelModel):
     type: str
     content_id: uuid.UUID | None
     action_id: uuid.UUID | None
-    reason_category: str
-    admin_comment: str
+    # 조치 통지 3종(moderation-action/user-warned/user-suspended)은 계속 채우지만,
+    # 공지·문의답변은 인용할 사유가 없어 nullable이다(tasks/techspec.md §3-3).
+    reason_category: str | None
+    admin_comment: str | None
     created_at: datetime
     read: bool
 
