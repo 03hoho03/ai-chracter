@@ -21,10 +21,12 @@ import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
+import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
@@ -89,6 +91,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const NoticesIndexRoute = NoticesIndexRouteImport.update({
+  id: '/notices/',
+  path: '/notices/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BuilderIndexRoute = BuilderIndexRouteImport.update({
   id: '/builder/',
   path: '/builder/',
@@ -107,6 +114,11 @@ const ProfileUserIdRoute = ProfileUserIdRouteImport.update({
 const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
   id: '/onboarding/google',
   path: '/onboarding/google',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
+  id: '/notices/$noticeId',
+  path: '/notices/$noticeId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
@@ -139,10 +151,12 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -160,10 +174,12 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder': typeof BuilderIndexRoute
+  '/notices': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -182,10 +198,12 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
   '/content/$type/$id': typeof ContentTypeIdRoute
 }
@@ -205,10 +223,12 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -226,10 +246,12 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder'
+    | '/notices'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   id:
@@ -247,10 +269,12 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/notices/$noticeId'
     | '/onboarding/google'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/notices/'
     | '/builder/$type/$draftId'
     | '/content/$type/$id'
   fileRoutesById: FileRoutesById
@@ -269,10 +293,12 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UiDemoRoute: typeof UiDemoRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
+  NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
+  NoticesIndexRoute: typeof NoticesIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
   ContentTypeIdRoute: typeof ContentTypeIdRoute
 }
@@ -363,6 +389,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/notices/': {
+      id: '/notices/'
+      path: '/notices'
+      fullPath: '/notices/'
+      preLoaderRoute: typeof NoticesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/builder/': {
       id: '/builder/'
       path: '/builder'
@@ -389,6 +422,13 @@ declare module '@tanstack/react-router' {
       path: '/onboarding/google'
       fullPath: '/onboarding/google'
       preLoaderRoute: typeof OnboardingGoogleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notices/$noticeId': {
+      id: '/notices/$noticeId'
+      path: '/notices/$noticeId'
+      fullPath: '/notices/$noticeId'
+      preLoaderRoute: typeof NoticesNoticeIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat/$roomId': {
@@ -429,10 +469,12 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UiDemoRoute: UiDemoRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
+  NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
   BuilderIndexRoute: BuilderIndexRoute,
+  NoticesIndexRoute: NoticesIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,
   ContentTypeIdRoute: ContentTypeIdRoute,
 }
