@@ -17,9 +17,11 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
+import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
+import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 import { Route as UsersUserIdIndexRouteImport } from './routes/users.$userId.index'
 import { Route as UsersUserIdChatsRoomIdRouteImport } from './routes/users.$userId.chats.$roomId'
@@ -64,6 +66,11 @@ const NoticesIndexRoute = NoticesIndexRouteImport.update({
   path: '/notices/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
+  id: '/inquiries/',
+  path: '/inquiries/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ContentsIndexRoute = ContentsIndexRouteImport.update({
   id: '/contents/',
   path: '/contents/',
@@ -77,6 +84,11 @@ const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
 const NoticesNoticeIdRoute = NoticesNoticeIdRouteImport.update({
   id: '/notices/$noticeId',
   path: '/notices/$noticeId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
+  id: '/inquiries/$inquiryId',
+  path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContentsContentIdRoute = ContentsContentIdRouteImport.update({
@@ -102,9 +114,11 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
@@ -118,9 +132,11 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents': typeof ContentsIndexRoute
+  '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/users': typeof UsersIndexRoute
@@ -135,9 +151,11 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
+  '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/contents/': typeof ContentsIndexRoute
+  '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
@@ -153,9 +171,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/inquiries/'
     | '/notices/'
     | '/reports/'
     | '/users/'
@@ -169,9 +189,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents'
+    | '/inquiries'
     | '/notices'
     | '/reports'
     | '/users'
@@ -185,9 +207,11 @@ export interface FileRouteTypes {
     | '/login'
     | '/usage-metrics'
     | '/contents/$contentId'
+    | '/inquiries/$inquiryId'
     | '/notices/$noticeId'
     | '/reports/$reportId'
     | '/contents/'
+    | '/inquiries/'
     | '/notices/'
     | '/reports/'
     | '/users/'
@@ -202,9 +226,11 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
+  InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
+  InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
@@ -270,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof NoticesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/inquiries/': {
+      id: '/inquiries/'
+      path: '/inquiries'
+      fullPath: '/inquiries/'
+      preLoaderRoute: typeof InquiriesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/contents/': {
       id: '/contents/'
       path: '/contents'
@@ -289,6 +322,13 @@ declare module '@tanstack/react-router' {
       path: '/notices/$noticeId'
       fullPath: '/notices/$noticeId'
       preLoaderRoute: typeof NoticesNoticeIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inquiries/$inquiryId': {
+      id: '/inquiries/$inquiryId'
+      path: '/inquiries/$inquiryId'
+      fullPath: '/inquiries/$inquiryId'
+      preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contents/$contentId': {
@@ -322,9 +362,11 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
+  InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
+  InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
