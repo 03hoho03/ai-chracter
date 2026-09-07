@@ -1,39 +1,20 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
-import { LEGAL_KIND_LABELS, type LegalKind } from "../api/keys";
+import { isLegalKind, LEGAL_KIND_LABELS, LEGAL_KINDS, type LegalKind } from "../model/legalKind";
 import { useLegalDocumentQuery } from "../api/useLegalDocumentQuery";
 import { LegalEditor } from "./LegalEditor";
-
-const LEGAL_KINDS: LegalKind[] = ["terms", "privacy"];
-
-function isLegalKind(value: string): value is LegalKind {
-  return value === "terms" || value === "privacy";
-}
 
 /** 두 탭의 데이터는 항상 함께 불러온다(문서 2개뿐이라 비용이 작다) — 탭을 바꿔도 안 보이는
  * `TabsContent`가 언마운트될 뿐, 로컬 편집 버퍼(`draftBodyByKind`)는 이 컴포넌트에 있어 살아남는다.
  * 그래서 "저장 안 한 편집 내용이 있는데 탭을 바꾸면 잃는다"는 별도 경고 없이 자연히 해결된다. */
 export function LegalPage() {
   const [activeKind, setActiveKind] = useState<LegalKind>("terms");
+  // 사용자가 아직 손대지 않은 kind는 키가 없다 — 그때는 렌더 중에 서버 초안을 그대로 읽는다.
   const [draftBodyByKind, setDraftBodyByKind] = useState<Partial<Record<LegalKind, string>>>({});
 
   const termsQuery = useLegalDocumentQuery("terms");
   const privacyQuery = useLegalDocumentQuery("privacy");
-
-  // 서버 초안은 kind당 한 번만 로컬 버퍼로 옮긴다 — 이후엔 사용자가 타이핑한 값이 우선이다.
-  useEffect(() => {
-    if (termsQuery.data && draftBodyByKind.terms === undefined) {
-      setDraftBodyByKind((prev) => ({ ...prev, terms: termsQuery.data.draft?.bodyMarkdown ?? "" }));
-    }
-  }, [termsQuery.data, draftBodyByKind.terms]);
-
-  useEffect(() => {
-    if (privacyQuery.data && draftBodyByKind.privacy === undefined) {
-      setDraftBodyByKind((prev) => ({ ...prev, privacy: privacyQuery.data.draft?.bodyMarkdown ?? "" }));
-    }
-  }, [privacyQuery.data, draftBodyByKind.privacy]);
-
   const queryByKind = { terms: termsQuery, privacy: privacyQuery };
 
   return (
@@ -58,10 +39,8 @@ export function LegalPage() {
           <TabsContent key={kind} value={kind} className="pt-4">
             <LegalEditor
               kind={kind}
-              document={queryByKind[kind].data}
-              isPending={queryByKind[kind].isPending}
-              isError={queryByKind[kind].isError}
-              draftBody={draftBodyByKind[kind] ?? ""}
+              documentQuery={queryByKind[kind]}
+              draftBody={draftBodyByKind[kind] ?? queryByKind[kind].data?.draft?.bodyMarkdown ?? ""}
               onDraftBodyChange={(next) => setDraftBodyByKind((prev) => ({ ...prev, [kind]: next }))}
             />
           </TabsContent>

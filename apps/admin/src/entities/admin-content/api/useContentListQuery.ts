@@ -2,6 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
+
 import { adminContentKeys, type AdminContentListParams } from "./keys";
 
 export type AdminContentListResponse = components["schemas"]["AdminContentListResponse"];

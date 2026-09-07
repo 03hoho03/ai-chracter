@@ -3,7 +3,8 @@ import type { components } from "@ai-character-chat/api-types";
 export type ContentTypeFilter = components["schemas"]["ContentType"];
 export type ContentVisibilityFilter = components["schemas"]["ContentVisibility"];
 export type ContentModerationStatusFilter = components["schemas"]["ModerationStatus"];
-export type ContentSortOption = "recent" | "views" | "chats";
+export const CONTENT_SORT_OPTIONS = ["recent", "views", "chats"] as const;
+export type ContentSortOption = (typeof CONTENT_SORT_OPTIONS)[number];
 
 export type AdminContentListParams = {
   page: number;

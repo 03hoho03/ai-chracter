@@ -2,17 +2,15 @@ import { Button } from "@ai-character-chat/ui/components/button";
 
 import { UserActionConfirmModal } from "./UserActionConfirmModal";
 
-type Props = {
+type UserActionPanelProps = {
   userId: string;
-  suspendedAt: string | null;
+  isSuspended: boolean;
   restrictableContentCount: number;
 };
 
-/** ContentActionPanel과 같은 결 — `suspendedAt` 하나로 분기한다: null이면 [경고][정지],
- * not-null이면 [경고][정지 해제]. 경고는 정지 중에도 BE가 허용한다. */
-export function UserActionPanel({ userId, suspendedAt, restrictableContentCount }: Props) {
-  const isSuspended = suspendedAt !== null;
-
+/** ContentActionPanel과 같은 결 — 정지 여부 하나로 분기한다: 정상이면 [경고][정지],
+ * 정지 중이면 [경고][정지 해제]. 경고는 정지 중에도 BE가 허용한다. */
+export function UserActionPanel({ userId, isSuspended, restrictableContentCount }: UserActionPanelProps) {
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold text-foreground">조치</h2>

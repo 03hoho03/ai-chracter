@@ -2,7 +2,9 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
-import { legalKeys, type LegalKind } from "./keys";
+
+import type { LegalKind } from "../model/legalKind";
+import { legalKeys } from "./keys";
 import type { AdminLegalDocumentResponse } from "./useLegalDocumentQuery";
 
 export type AdminLegalDraftUpsertRequest = components["schemas"]["AdminLegalDraftUpsertRequest"];

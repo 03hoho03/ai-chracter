@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
+import { CONTENT_SORT_OPTIONS } from "../entities/admin-content";
 import { requireSession } from "../entities/session";
 import { ContentsListPage } from "../pages/contents";
 
@@ -12,7 +13,7 @@ const contentsSearchSchema = z.object({
   visibility: z.enum(["public", "link", "private"]).optional().catch(undefined),
   moderationStatus: z.enum(["normal", "restricted", "deleted"]).optional().catch(undefined),
   q: z.string().optional().catch(undefined),
-  sort: z.enum(["recent", "views", "chats"]).optional().catch(undefined),
+  sort: z.enum(CONTENT_SORT_OPTIONS).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/contents/")({

@@ -14,6 +14,48 @@ import {
   TableRow,
 } from "./table"
 
+type MarkdownProps = {
+  content: string
+  className?: string
+}
+
+function Markdown({ content, className }: MarkdownProps) {
+  return (
+    <div
+      data-slot="markdown"
+      className={cn(
+        "flex flex-col gap-3 break-keep text-sm text-foreground",
+        className
+      )}
+    >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  )
+}
+
+const markdownComponents: Components = {
+  h1: MarkdownH1,
+  h2: MarkdownH2,
+  h3: MarkdownH3,
+  h4: MarkdownH4,
+  p: MarkdownParagraph,
+  ul: MarkdownUl,
+  ol: MarkdownOl,
+  a: MarkdownLink,
+  strong: MarkdownStrong,
+  blockquote: MarkdownBlockquote,
+  hr: MarkdownHr,
+  code: MarkdownCode,
+  table: Table,
+  thead: TableHeader,
+  tbody: TableBody,
+  tr: TableRow,
+  th: TableHead,
+  td: TableCell,
+}
+
 function MarkdownH1({
   className,
   node: _node,
@@ -159,48 +201,6 @@ function MarkdownCode({
       className={cn("rounded-sm bg-muted px-1 py-0.5 text-sm", className)}
       {...props}
     />
-  )
-}
-
-const markdownComponents: Components = {
-  h1: MarkdownH1,
-  h2: MarkdownH2,
-  h3: MarkdownH3,
-  h4: MarkdownH4,
-  p: MarkdownParagraph,
-  ul: MarkdownUl,
-  ol: MarkdownOl,
-  a: MarkdownLink,
-  strong: MarkdownStrong,
-  blockquote: MarkdownBlockquote,
-  hr: MarkdownHr,
-  code: MarkdownCode,
-  table: Table,
-  thead: TableHeader,
-  tbody: TableBody,
-  tr: TableRow,
-  th: TableHead,
-  td: TableCell,
-}
-
-type MarkdownProps = {
-  content: string
-  className?: string
-}
-
-function Markdown({ content, className }: MarkdownProps) {
-  return (
-    <div
-      data-slot="markdown"
-      className={cn(
-        "flex flex-col gap-3 break-keep text-sm text-foreground",
-        className
-      )}
-    >
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {content}
-      </ReactMarkdown>
-    </div>
   )
 }
 
