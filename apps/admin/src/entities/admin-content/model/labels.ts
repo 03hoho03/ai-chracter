@@ -16,11 +16,3 @@ export const MODERATION_STATUS_LABELS: Record<components["schemas"]["ModerationS
   restricted: "이용제한",
   deleted: "삭제됨",
 };
-
-export const REASON_CATEGORY_LABELS: Record<components["schemas"]["ReportReasonCategory"], string> = {
-  adult: "성인물",
-  copyright: "저작권 침해",
-  hate: "혐오/차별",
-  spam: "스팸",
-  other: "기타",
-};

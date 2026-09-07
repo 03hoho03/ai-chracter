@@ -14,9 +14,4 @@ export {
   type AdminContentActionType,
   type ContentActionReasonCategory,
 } from "./api/useContentActionMutation";
-export {
-  CONTENT_TYPE_LABELS,
-  CONTENT_VISIBILITY_LABELS,
-  MODERATION_STATUS_LABELS,
-  REASON_CATEGORY_LABELS,
-} from "./model/labels";
+export { CONTENT_TYPE_LABELS, CONTENT_VISIBILITY_LABELS, MODERATION_STATUS_LABELS } from "./model/labels";
