@@ -56,10 +56,17 @@ function DialogContent({
   return (
     <DialogPortal>
       <DialogOverlay />
+      {/* `[&>*]:min-w-0` — grid item의 기본 `min-width:auto`는 min-content로 작동해서, 표처럼
+          넓은 콘텐츠가 든 자식이 그리드 트랙 자체를 부풀린다(`max-w-*`는 바깥 박스만 묶을 뿐 안쪽
+          트랙엔 안 걸린다). 대안인 `grid-cols-[minmax(0,1fr)]`(트랙에 직접 `min:0`)도 같은 폭에서
+          동일하게 고쳤지만(1280px·390px 실측 scrollWidth 2500→clientWidth와 동일), `cn()`이
+          tailwind-merge를 쓰는 탓에 호출부가 `grid-cols-*`를 얹으면 그 기저 클래스를 통째로
+          지워 버그가 조용히 되살아난다(twMerge 실측: `grid-cols-[minmax(0,1fr)]` + 호출부
+          `grid-cols-2` → 전자가 삭제됨). 자식 선택자는 그런 충돌이 없어 이쪽을 택했다. */}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 motion-safe:duration-100 outline-none sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 motion-safe:duration-100 outline-none sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [&>*]:min-w-0",
           className
         )}
         {...props}

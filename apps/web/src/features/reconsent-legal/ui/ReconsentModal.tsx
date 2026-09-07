@@ -76,7 +76,10 @@ export function ReconsentModal() {
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-lg">
+      {/* 제목과 동의 버튼은 항상 보여야 하므로(약관 전문이 합쳐 약 1만 8천 자라 다이얼로그 전체를
+          스크롤하면 동의 버튼이 화면 밖으로 밀린다), DialogContent를 3행 그리드(헤더/본문/푸터)로
+          바꾸고 본문 행만 `minmax(0,1fr)` + `overflow-y-auto`로 스크롤시킨다. */}
+      <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>
             {pendingKinds.map((kind) => LEGAL_DOCUMENT_LABEL[kind]).join(" · ")} 개정 안내
@@ -86,7 +89,9 @@ export function ReconsentModal() {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-6">
+        {/* 위쪽 테두리로 스크롤 영역의 경계를 긋는다(아래쪽은 DialogFooter의 기존 border-t가
+            맡는다) — 커스텀 스크롤바 없이도 "여기부터 스크롤된다"가 읽히게. */}
+        <div className="flex min-h-0 flex-col gap-6 overflow-y-auto border-t border-border pt-4">
           {pendingKinds.map((kind) => (
             <section key={kind} className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold text-foreground">{LEGAL_DOCUMENT_LABEL[kind]}</h3>

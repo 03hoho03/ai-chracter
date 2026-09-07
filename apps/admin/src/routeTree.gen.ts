@@ -17,9 +17,10 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users.index'
 import { Route as ReportsIndexRouteImport } from './routes/reports.index'
 import { Route as ContentsIndexRouteImport } from './routes/contents.index'
-import { Route as UsersUserIdRouteImport } from './routes/users.$userId'
 import { Route as ReportsReportIdRouteImport } from './routes/reports.$reportId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
+import { Route as UsersUserIdIndexRouteImport } from './routes/users.$userId.index'
+import { Route as UsersUserIdChatsRoomIdRouteImport } from './routes/users.$userId.chats.$roomId'
 
 const UsageMetricsRoute = UsageMetricsRouteImport.update({
   id: '/usage-metrics',
@@ -61,11 +62,6 @@ const ContentsIndexRoute = ContentsIndexRouteImport.update({
   path: '/contents/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const UsersUserIdRoute = UsersUserIdRouteImport.update({
-  id: '/users/$userId',
-  path: '/users/$userId',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
   id: '/reports/$reportId',
   path: '/reports/$reportId',
@@ -74,6 +70,16 @@ const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
 const ContentsContentIdRoute = ContentsContentIdRouteImport.update({
   id: '/contents/$contentId',
   path: '/contents/$contentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersUserIdIndexRoute = UsersUserIdIndexRouteImport.update({
+  id: '/users/$userId/',
+  path: '/users/$userId/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsersUserIdChatsRoomIdRoute = UsersUserIdChatsRoomIdRouteImport.update({
+  id: '/users/$userId/chats/$roomId',
+  path: '/users/$userId/chats/$roomId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -85,10 +91,11 @@ export interface FileRoutesByFullPath {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/users/$userId/': typeof UsersUserIdIndexRoute
+  '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -98,10 +105,11 @@ export interface FileRoutesByTo {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
   '/contents': typeof ContentsIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/users': typeof UsersIndexRoute
+  '/users/$userId': typeof UsersUserIdIndexRoute
+  '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -112,10 +120,11 @@ export interface FileRoutesById {
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/reports/$reportId': typeof ReportsReportIdRoute
-  '/users/$userId': typeof UsersUserIdRoute
   '/contents/': typeof ContentsIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/users/$userId/': typeof UsersUserIdIndexRoute
+  '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -127,10 +136,11 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
-    | '/users/$userId'
     | '/contents/'
     | '/reports/'
     | '/users/'
+    | '/users/$userId/'
+    | '/users/$userId/chats/$roomId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -140,10 +150,11 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
-    | '/users/$userId'
     | '/contents'
     | '/reports'
     | '/users'
+    | '/users/$userId'
+    | '/users/$userId/chats/$roomId'
   id:
     | '__root__'
     | '/'
@@ -153,10 +164,11 @@ export interface FileRouteTypes {
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/reports/$reportId'
-    | '/users/$userId'
     | '/contents/'
     | '/reports/'
     | '/users/'
+    | '/users/$userId/'
+    | '/users/$userId/chats/$roomId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -167,10 +179,11 @@ export interface RootRouteChildren {
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
   ReportsReportIdRoute: typeof ReportsReportIdRoute
-  UsersUserIdRoute: typeof UsersUserIdRoute
   ContentsIndexRoute: typeof ContentsIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  UsersUserIdIndexRoute: typeof UsersUserIdIndexRoute
+  UsersUserIdChatsRoomIdRoute: typeof UsersUserIdChatsRoomIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -231,13 +244,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContentsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/users/$userId': {
-      id: '/users/$userId'
-      path: '/users/$userId'
-      fullPath: '/users/$userId'
-      preLoaderRoute: typeof UsersUserIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/reports/$reportId': {
       id: '/reports/$reportId'
       path: '/reports/$reportId'
@@ -252,6 +258,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ContentsContentIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users/$userId/': {
+      id: '/users/$userId/'
+      path: '/users/$userId'
+      fullPath: '/users/$userId/'
+      preLoaderRoute: typeof UsersUserIdIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/users/$userId/chats/$roomId': {
+      id: '/users/$userId/chats/$roomId'
+      path: '/users/$userId/chats/$roomId'
+      fullPath: '/users/$userId/chats/$roomId'
+      preLoaderRoute: typeof UsersUserIdChatsRoomIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -263,10 +283,11 @@ const rootRouteChildren: RootRouteChildren = {
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
   ReportsReportIdRoute: ReportsReportIdRoute,
-  UsersUserIdRoute: UsersUserIdRoute,
   ContentsIndexRoute: ContentsIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  UsersUserIdIndexRoute: UsersUserIdIndexRoute,
+  UsersUserIdChatsRoomIdRoute: UsersUserIdChatsRoomIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

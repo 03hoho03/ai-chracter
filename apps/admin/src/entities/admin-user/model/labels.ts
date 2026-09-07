@@ -17,4 +17,18 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   delete: "삭제",
   "lift-restriction": "이용제한 해제",
   reject: "반려",
+  "chat-view": "채팅 열람",
+};
+
+export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];
+
+/** 신고 사유(5종, entities/report의 REPORT_REASON_LABELS)와는 다른 enum이다 — 채팅 열람은
+ * "왜 이 대화를 봐야 했는가"를 남기는 별도 사유 체계다. `pages/chat-messages`(열람 사유 다이얼로그)와
+ * `pages/user-detail`(조치 이력 표, AdminActionLog.reason_category에 이 4종이 섞여 들어옴) 둘 다
+ * 이 라벨을 쓴다 — pages 간 직접 import는 FSD 역방향이라 여기 entities로 내려 공유한다. */
+export const CHAT_VIEW_REASON_CATEGORY_LABELS: Record<ChatViewReasonCategory, string> = {
+  "report-investigation": "신고 조사",
+  "appeal-review": "이의제기 검토",
+  "legal-request": "법적 요청",
+  other: "기타",
 };

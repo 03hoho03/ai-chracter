@@ -2,8 +2,13 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
 import { Link } from "@tanstack/react-router";
 
-import { ACTION_TYPE_LABELS, SIGNUP_METHOD_LABELS, useUserDetailQuery } from "@/entities/admin-user";
-import { isReportReasonCategory, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
+import {
+  ACTION_TYPE_LABELS,
+  CHAT_VIEW_REASON_CATEGORY_LABELS,
+  SIGNUP_METHOD_LABELS,
+  useUserDetailQuery,
+} from "@/entities/admin-user";
+import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
@@ -191,6 +196,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                   <TableHead className="text-right">메시지수</TableHead>
                   <TableHead>최근 대화</TableHead>
                   <TableHead>생성일시</TableHead>
+                  <TableHead>채팅 내용</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -210,6 +216,15 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                     <TableCell className="text-right tabular-nums">{formatCount(chatRoom.messageCount)}</TableCell>
                     <TableCell>{formatDateTime(chatRoom.lastMessageAt)}</TableCell>
                     <TableCell>{formatDateTime(chatRoom.createdAt)}</TableCell>
+                    <TableCell>
+                      <Link
+                        to="/users/$userId/chats/$roomId"
+                        params={{ userId, roomId: chatRoom.id }}
+                        className={INLINE_LINK_CLASS}
+                      >
+                        열람
+                      </Link>
+                    </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -227,9 +242,19 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
   );
 }
 
-/** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다(작품 직접
- * 조치 로그와 같은 테이블을 써서 값이 섞인다) — 아는 값에만 라벨을 입히고 나머지는 원문을 낸다. */
+/** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
+ * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS)와 채팅 열람 로그(별도 사유 4종,
+ * CHAT_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 두 사유 체계가 섞여 들어온다. `other`는
+ * 두 집합 모두에 있지만 한글 라벨이 둘 다 "기타"로 같으므로(entities/report, entities/admin-user
+ * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
+ * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(ACTION_TYPE_LABELS와
+ * 동일한 관례). */
+const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
+  ...REPORT_REASON_LABELS,
+  ...CHAT_VIEW_REASON_CATEGORY_LABELS,
+};
+
 function reasonCategoryLabel(reasonCategory: string | null) {
   if (!reasonCategory) return "-";
-  return isReportReasonCategory(reasonCategory) ? REPORT_REASON_LABELS[reasonCategory] : reasonCategory;
+  return REASON_CATEGORY_LABELS_ALL[reasonCategory] ?? reasonCategory;
 }

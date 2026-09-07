@@ -647,6 +647,37 @@ async def test_user_detail_includes_action_logs_targeting_user_or_their_content(
     assert content_log["contentName"] == "조치대상작품"
 
 
+async def test_user_detail_includes_chat_view_action_log(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`POST /admin/chat-rooms/{id}/view`(chat_view.py)가 남기는 열람 로그가 실제로
+    유저 상세의 `actionLogs`에 걸리는지 증명한다 — target_user_id를 채우지 않으면
+    이 경로가 조용히 실패한다(로그는 DB에 남지만 화면엔 안 보임)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, name="채팅열람대상작품")
+    room = await _make_chat_room(db_session, user_id=user.id, content=content)
+    await _add_chat_message(db_session, chat_room_id=room.id, role=ChatMessageRole.USER)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    view_resp = await db_client.post(
+        f"/admin/chat-rooms/{room.id}/view",
+        json={"reasonCategory": "report-investigation", "reasonText": "신고 확인차 열람"},
+    )
+    assert view_resp.status_code == 200
+
+    resp = await db_client.get(f"/admin/users/{user.id}")
+    assert resp.status_code == 200
+    action_logs = resp.json()["actionLogs"]
+    chat_view_log = next(log for log in action_logs if log["actionType"] == "chat-view")
+    assert chat_view_log["reasonCategory"] == "report-investigation"
+
+
 async def test_user_detail_includes_chat_rooms_with_message_stats(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
