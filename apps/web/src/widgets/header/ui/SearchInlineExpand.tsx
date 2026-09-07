@@ -8,14 +8,6 @@ import { useDebounce } from "react-use";
 
 const DEBOUNCE_MS = 300;
 
-function extractHomeQuery(search: unknown): string | undefined {
-  if (search && typeof search === "object" && "q" in search) {
-    const { q } = search;
-    return typeof q === "string" ? q : undefined;
-  }
-  return undefined;
-}
-
 /**
  * techspec-global-nav-profile.md §1.2 — 검색 결과 자체는 홈 화면의 일부이므로 별도 라우트 없이
  * 인라인 익스팬드만 구현한다. 홈이 아닌 화면에서 검색을 시작해도 항상 `/`로 이동 + `?q=` 반영.
@@ -85,4 +77,12 @@ export function SearchInlineExpand() {
       )}
     </div>
   );
+}
+
+function extractHomeQuery(search: unknown): string | undefined {
+  if (search && typeof search === "object" && "q" in search) {
+    const { q } = search;
+    return typeof q === "string" ? q : undefined;
+  }
+  return undefined;
 }

@@ -5,16 +5,6 @@ import { ContentCard, ContentListEmptyState, useFavoriteListQuery } from "@/enti
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 
-function ContentGridSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-        <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
-      ))}
-    </div>
-  );
-}
-
 /** techspec-home-discovery.md §4 — 즐겨찾기 목록. §1 홈 무한스크롤과 동일한 구조(`ContentCard`/
  * `ContentListEmptyState`/sentinel)를 재사용하되, 정렬·장르·검색 필터 UI는 없다. */
 export function FavoritesPage() {
@@ -69,5 +59,15 @@ export function FavoritesPage() {
         </>
       )}
     </main>
+  );
+}
+
+function ContentGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
+        <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
+      ))}
+    </div>
   );
 }

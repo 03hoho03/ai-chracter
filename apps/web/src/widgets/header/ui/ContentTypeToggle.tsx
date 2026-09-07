@@ -5,10 +5,6 @@ import { BookOpen, UserRound } from "lucide-react";
 
 import { contentTypeToggleAtom, type ContentTypeToggleValue } from "@/shared/model/content-type-toggle";
 
-function isContentTypeToggleValue(value: string): value is ContentTypeToggleValue {
-  return value === "character" || value === "story";
-}
-
 /** techspec-global-nav-profile.md §1.1 — 클릭 시 전역 atom을 갱신하고 홈으로 이동한다(FR-10). */
 export function ContentTypeToggle() {
   const [contentType, setContentType] = useAtom(contentTypeToggleAtom);
@@ -41,4 +37,8 @@ export function ContentTypeToggle() {
       </ToggleGroupItem>
     </ToggleGroup>
   );
+}
+
+function isContentTypeToggleValue(value: string): value is ContentTypeToggleValue {
+  return value === "character" || value === "story";
 }

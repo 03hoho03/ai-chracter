@@ -16,14 +16,6 @@ import { usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/prev
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
-function PreviewSkeleton() {
-  return (
-    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6">
-      <p className="text-sm text-muted-foreground">미리보기 세션을 여는 중이에요...</p>
-    </div>
-  );
-}
-
 // techspec-builder-common.md §3 — 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
 // 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지)는 entities/chat-room, 단축어 자동완성은
 // features/shortcut-autocomplete에서 그대로 재사용하되, 데이터 레이어(entities/preview-session)는
@@ -215,6 +207,14 @@ export function PreviewSessionView({
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function PreviewSkeleton() {
+  return (
+    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-6">
+      <p className="text-sm text-muted-foreground">미리보기 세션을 여는 중이에요...</p>
     </div>
   );
 }

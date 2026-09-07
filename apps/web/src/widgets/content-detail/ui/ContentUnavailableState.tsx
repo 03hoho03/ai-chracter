@@ -4,12 +4,6 @@ import type { ContentAccessStatus } from "@/entities/content";
 
 type UnavailableReason = "restricted" | "deleted" | "private";
 
-function resolveUnavailableReason(access: ContentAccessStatus): UnavailableReason {
-  if (access.kind === "restricted") return "restricted";
-  if (access.kind === "deleted") return "deleted";
-  return "private"; // canViewDetailPage가 false인 나머지 경우: accessible + private + 비소유자
-}
-
 const COPY: Record<UnavailableReason, { icon: typeof Ban; title: string; description: string }> = {
   restricted: {
     icon: Ban,
@@ -40,4 +34,10 @@ export function ContentUnavailableState({ access }: { access: ContentAccessStatu
       <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );
+}
+
+function resolveUnavailableReason(access: ContentAccessStatus): UnavailableReason {
+  if (access.kind === "restricted") return "restricted";
+  if (access.kind === "deleted") return "deleted";
+  return "private"; // canViewDetailPage가 false인 나머지 경우: accessible + private + 비소유자
 }

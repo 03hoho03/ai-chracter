@@ -35,6 +35,53 @@ const GROUP_OPERATOR_LABEL: Record<(typeof GROUP_OPERATORS)[number], string> = {
   or: "또는",
 };
 
+/** techspec-builder-story.md §1.5 AC — 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
+ * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). */
+export function EndingTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+  const { control } = form;
+  const startingSetups = useWatch({ control, name: "startingSetups" });
+  const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
+
+  if (startingSetups.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
+        <p className="text-sm text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
+      </div>
+    );
+  }
+
+  const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);
+  const effectiveIndex = selectedIndex !== -1 ? selectedIndex : 0;
+  const effectiveSetup = startingSetups[effectiveIndex];
+
+  return (
+    <div className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-1.5">
+        <span className="text-sm leading-none font-medium">시작설정 선택 (선택)</span>
+        <p className="text-sm text-muted-foreground">
+          엔딩은 시작설정마다 독립적으로 구성돼요. 엔딩을 0개 등록해도 발행할 수 있어요(열린 결말).
+        </p>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          className="flex-wrap"
+          value={effectiveSetup?.id ?? ""}
+          onValueChange={(value) => value && setSelectedSetupId(value)}
+          aria-label="시작설정 선택"
+        >
+          {startingSetups.map((setup, index) => (
+            <ToggleGroupItem key={setup.id} value={setup.id} aria-label={setup.name || `시작설정 ${index + 1}`}>
+              {setup.name || `시작설정 ${index + 1}`}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
+
+      {effectiveSetup && <EndingSection key={effectiveSetup.id} form={form} startingSetupIndex={effectiveIndex} />}
+    </div>
+  );
+}
+
 /** Radix 토글·셀렉트는 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
  * `as` 대신 술어를 쓴다(TS-03) — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
 function isGroupOperator(value: string): value is (typeof GROUP_OPERATORS)[number] {
@@ -485,53 +532,6 @@ function EndingSection({
       >
         엔딩 추가
       </Button>
-    </div>
-  );
-}
-
-/** techspec-builder-story.md §1.5 AC — 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
- * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). */
-export function EndingTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
-  const { control } = form;
-  const startingSetups = useWatch({ control, name: "startingSetups" });
-  const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
-
-  if (startingSetups.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-        <p className="text-sm text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
-      </div>
-    );
-  }
-
-  const selectedIndex = startingSetups.findIndex((setup) => setup.id === selectedSetupId);
-  const effectiveIndex = selectedIndex !== -1 ? selectedIndex : 0;
-  const effectiveSetup = startingSetups[effectiveIndex];
-
-  return (
-    <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">시작설정 선택 (선택)</span>
-        <p className="text-sm text-muted-foreground">
-          엔딩은 시작설정마다 독립적으로 구성돼요. 엔딩을 0개 등록해도 발행할 수 있어요(열린 결말).
-        </p>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          className="flex-wrap"
-          value={effectiveSetup?.id ?? ""}
-          onValueChange={(value) => value && setSelectedSetupId(value)}
-          aria-label="시작설정 선택"
-        >
-          {startingSetups.map((setup, index) => (
-            <ToggleGroupItem key={setup.id} value={setup.id} aria-label={setup.name || `시작설정 ${index + 1}`}>
-              {setup.name || `시작설정 ${index + 1}`}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-
-      {effectiveSetup && <EndingSection key={effectiveSetup.id} form={form} startingSetupIndex={effectiveIndex} />}
     </div>
   );
 }

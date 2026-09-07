@@ -22,6 +22,84 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
+/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
+ * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
+export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+  const { control, getValues, setValue } = form;
+  const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  function handleRemove(index: number) {
+    const removedId = getValues(`startingSetups.${index}.id`);
+    setValue(
+      "keywordNotes",
+      reconcileKeywordNotesOnStartingSetupRemoval(getValues("keywordNotes"), removedId),
+      { shouldDirty: true },
+    );
+    remove(index);
+  }
+
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const oldIndex = fields.findIndex((field) => field.id === active.id);
+    const newIndex = fields.findIndex((field) => field.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
+  }
+
+  return (
+    <div className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-1">
+        <Label>시작설정 *</Label>
+        <p className="text-sm text-muted-foreground">
+          여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
+        </p>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
+          <p className="text-sm text-muted-foreground">아직 등록된 시작설정이 없어요.</p>
+        </div>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+            <div className="flex flex-col gap-4">
+              {fields.map((field, index) => (
+                <StartingSetupRow
+                  key={field.id}
+                  id={field.id}
+                  index={index}
+                  form={form}
+                  onRemove={() => handleRemove(index)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-fit"
+        onClick={() =>
+          append({
+            id: crypto.randomUUID(),
+            name: "",
+            prologue: "",
+            openingSituation: "",
+            playGuide: "",
+            suggestedReplies: [],
+            stats: [],
+            endings: [],
+          })
+        }
+      >
+        설정 추가
+      </Button>
+    </div>
+  );
+}
+
 /** techspec-builder-story.md §1.1 — 이름/프롤로그(필수), 시작상황(선택, 비어있으면 프롤로그가 첫
  * 메시지로 노출됨을 안내), 고급설정 뒤의 플레이가이드/추천 답변(선택). 목록 순서가 곧 기본 선택
  * 우선순위라 dnd-kit로 재정렬한다(AdvancedTab의 situationalImages와 동일 패턴). */
@@ -186,84 +264,6 @@ function StartingSetupRow({
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
- * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
-export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
-  const { control, getValues, setValue } = form;
-  const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
-  const sensors = useSensors(useSensor(PointerSensor));
-
-  function handleRemove(index: number) {
-    const removedId = getValues(`startingSetups.${index}.id`);
-    setValue(
-      "keywordNotes",
-      reconcileKeywordNotesOnStartingSetupRemoval(getValues("keywordNotes"), removedId),
-      { shouldDirty: true },
-    );
-    remove(index);
-  }
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
-
-  return (
-    <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1">
-        <Label>시작설정 *</Label>
-        <p className="text-sm text-muted-foreground">
-          여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
-        </p>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
-          <p className="text-sm text-muted-foreground">아직 등록된 시작설정이 없어요.</p>
-        </div>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
-            <div className="flex flex-col gap-4">
-              {fields.map((field, index) => (
-                <StartingSetupRow
-                  key={field.id}
-                  id={field.id}
-                  index={index}
-                  form={form}
-                  onRemove={() => handleRemove(index)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() =>
-          append({
-            id: crypto.randomUUID(),
-            name: "",
-            prologue: "",
-            openingSituation: "",
-            playGuide: "",
-            suggestedReplies: [],
-            stats: [],
-            endings: [],
-          })
-        }
-      >
-        설정 추가
-      </Button>
     </div>
   );
 }

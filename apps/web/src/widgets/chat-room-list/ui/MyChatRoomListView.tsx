@@ -6,6 +6,44 @@ import { useMyChatRoomListQuery, type MyChatRoomListItem } from "@/entities/chat
 import { ContentListEmptyState } from "@/entities/content";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
+/** 헤더 "내 채팅목록"(파라미터 없이 진입)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
+ * 받는다(`GET /me/chat-rooms`). 이름변경·초기화·삭제는 다루지 않는다(읽기+열기만) — 그 조작은
+ * 콘텐츠 스코프 목록(`ChatRoomListView`, `/chats?contentId=`)의 몫으로 남는다. */
+export function MyChatRoomListView() {
+  const listQuery = useMyChatRoomListQuery();
+
+  return (
+    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-10">
+      <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
+
+      {listQuery.isPending && <MyChatRoomListSkeleton />}
+
+      {listQuery.isError && (
+        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+      )}
+
+      {listQuery.data && listQuery.data.length === 0 && (
+        <ContentListEmptyState
+          message="아직 시작한 대화가 없어요."
+          action={
+            <Button asChild>
+              <Link to="/">홈으로 가기</Link>
+            </Button>
+          }
+        />
+      )}
+
+      {listQuery.data && listQuery.data.length > 0 && (
+        <div className="flex flex-col gap-2">
+          {listQuery.data.map((item) => (
+            <MyChatRoomListItemRow key={item.id} item={item} />
+          ))}
+        </div>
+      )}
+    </main>
+  );
+}
+
 function MyChatRoomListSkeleton() {
   return (
     <div className="flex flex-col gap-2">
@@ -67,43 +105,5 @@ function MyChatRoomListItemRow({ item }: { item: MyChatRoomListItem }) {
         </p>
       </div>
     </Link>
-  );
-}
-
-/** 헤더 "내 채팅목록"(파라미터 없이 진입)에서 보이는 전체 대화방 목록 — 콘텐츠 스코프 없이 한 번에
- * 받는다(`GET /me/chat-rooms`). 이름변경·초기화·삭제는 다루지 않는다(읽기+열기만) — 그 조작은
- * 콘텐츠 스코프 목록(`ChatRoomListView`, `/chats?contentId=`)의 몫으로 남는다. */
-export function MyChatRoomListView() {
-  const listQuery = useMyChatRoomListQuery();
-
-  return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-4 px-6 py-10">
-      <h1 className="text-xl font-bold tracking-tight text-foreground">내 채팅목록</h1>
-
-      {listQuery.isPending && <MyChatRoomListSkeleton />}
-
-      {listQuery.isError && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
-
-      {listQuery.data && listQuery.data.length === 0 && (
-        <ContentListEmptyState
-          message="아직 시작한 대화가 없어요."
-          action={
-            <Button asChild>
-              <Link to="/">홈으로 가기</Link>
-            </Button>
-          }
-        />
-      )}
-
-      {listQuery.data && listQuery.data.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {listQuery.data.map((item) => (
-            <MyChatRoomListItemRow key={item.id} item={item} />
-          ))}
-        </div>
-      )}
-    </main>
   );
 }

@@ -22,16 +22,6 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
 
-function ChatRoomSkeleton() {
-  return (
-    <div className="flex flex-col gap-3 p-4">
-      <div className="h-16 w-2/3 animate-pulse rounded-lg bg-muted" />
-      <div className="ml-auto h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
-      <div className="h-12 w-3/5 animate-pulse rounded-lg bg-muted" />
-    </div>
-  );
-}
-
 // techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
 // 스토리 챗은 room.contentSnapshot이 있을 때만 스탯 게이지가 추가로 붙는다(캐릭터 챗은 undefined).
@@ -280,6 +270,16 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           characterId={characterId}
         />
       </div>
+    </div>
+  );
+}
+
+function ChatRoomSkeleton() {
+  return (
+    <div className="flex flex-col gap-3 p-4">
+      <div className="h-16 w-2/3 animate-pulse rounded-lg bg-muted" />
+      <div className="ml-auto h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
+      <div className="h-12 w-3/5 animate-pulse rounded-lg bg-muted" />
     </div>
   );
 }

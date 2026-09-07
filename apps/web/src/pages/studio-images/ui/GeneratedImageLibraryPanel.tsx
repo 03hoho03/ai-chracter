@@ -12,19 +12,6 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
-function LibraryGridSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-        <div key={key} className="flex flex-col gap-1.5">
-          <div className="aspect-square motion-safe:animate-pulse rounded-lg bg-muted" />
-          <div className="h-3 w-16 motion-safe:animate-pulse rounded bg-muted" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
 /** prd-image-library US-004/US-005/US-006 — '내 이미지' 탭. 생성 이미지를 최신순 그리드로
  * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,
  * 셀을 누르면 사용처 목록·삭제가 있는 상세 모달을 연다. */
@@ -112,5 +99,18 @@ export function GeneratedImageLibraryPanel({
         />
       )}
     </>
+  );
+}
+
+function LibraryGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
+        <div key={key} className="flex flex-col gap-1.5">
+          <div className="aspect-square motion-safe:animate-pulse rounded-lg bg-muted" />
+          <div className="h-3 w-16 motion-safe:animate-pulse rounded bg-muted" />
+        </div>
+      ))}
+    </div>
   );
 }

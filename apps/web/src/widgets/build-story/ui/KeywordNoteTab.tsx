@@ -9,6 +9,59 @@ import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
 
 import type { StartingSetupValues, StoryBuilderFormValues } from "@/features/build-story";
 
+/** techspec-builder-story.md §1.3 AC — 탭 전체가 선택사항(0개도 발행 가능). */
+export function KeywordNoteTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+  const { control } = form;
+  const { fields, append, remove } = useFieldArray({ control, name: "keywordNotes" });
+  const startingSetups = useWatch({ control, name: "startingSetups" });
+
+  return (
+    <div className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-1">
+        <Label>키워드북</Label>
+        <p className="text-sm text-muted-foreground">
+          특정 단어가 언급되면 자동으로 참고할 설정 정보를 등록해요. 등록하지 않아도 발행할 수 있어요.
+        </p>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
+          <p className="text-sm text-muted-foreground">아직 등록된 키워드 노트가 없어요.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {fields.map((field, index) => (
+            <KeywordNoteRow
+              key={field.id}
+              id={field.id}
+              index={index}
+              form={form}
+              startingSetups={startingSetups}
+              onRemove={() => remove(index)}
+            />
+          ))}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-fit"
+        onClick={() =>
+          append({
+            id: crypto.randomUUID(),
+            content: "",
+            triggerKeywords: [],
+            scope: { kind: "global" },
+          })
+        }
+      >
+        노트 추가
+      </Button>
+    </div>
+  );
+}
+
 /** techspec-builder-story.md §1.3 — 정보(필수)/트리거 키워드(필수, 태그 입력)/적용 대상(필수,
  * 스토리 전체 또는 특정 시작설정). 트리거 키워드 칩은 StartingSetupTab의 추천 답변 칩 패턴을,
  * 시작설정 선택은 StatTab의 ToggleGroup 패턴을 재사용한다. */
@@ -161,59 +214,6 @@ function KeywordNoteRow({
           </ToggleGroup>
         )}
       </div>
-    </div>
-  );
-}
-
-/** techspec-builder-story.md §1.3 AC — 탭 전체가 선택사항(0개도 발행 가능). */
-export function KeywordNoteTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
-  const { control } = form;
-  const { fields, append, remove } = useFieldArray({ control, name: "keywordNotes" });
-  const startingSetups = useWatch({ control, name: "startingSetups" });
-
-  return (
-    <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1">
-        <Label>키워드북</Label>
-        <p className="text-sm text-muted-foreground">
-          특정 단어가 언급되면 자동으로 참고할 설정 정보를 등록해요. 등록하지 않아도 발행할 수 있어요.
-        </p>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
-          <p className="text-sm text-muted-foreground">아직 등록된 키워드 노트가 없어요.</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {fields.map((field, index) => (
-            <KeywordNoteRow
-              key={field.id}
-              id={field.id}
-              index={index}
-              form={form}
-              startingSetups={startingSetups}
-              onRemove={() => remove(index)}
-            />
-          ))}
-        </div>
-      )}
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() =>
-          append({
-            id: crypto.randomUUID(),
-            content: "",
-            triggerKeywords: [],
-            scope: { kind: "global" },
-          })
-        }
-      >
-        노트 추가
-      </Button>
     </div>
   );
 }

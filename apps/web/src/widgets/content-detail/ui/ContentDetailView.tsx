@@ -40,17 +40,6 @@ const TYPE_LABEL: Record<ContentType, string> = {
 // 화면 표시는 desiredLiked/desiredFavorited로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
-function ContentDetailSkeleton() {
-  return (
-    <div className="flex flex-col gap-4 p-1">
-      <div className="aspect-video w-full animate-pulse rounded-lg bg-muted" />
-      <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
-      <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
-      <div className="h-20 w-full animate-pulse rounded bg-muted" />
-    </div>
-  );
-}
-
 /** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다. */
 export function ContentDetailView({ id }: { id: string }) {
@@ -295,6 +284,17 @@ export function ContentDetailView({ id }: { id: string }) {
         onOpenChange={setIsVersionHistoryOpen}
       />
     </article>
+  );
+}
+
+function ContentDetailSkeleton() {
+  return (
+    <div className="flex flex-col gap-4 p-1">
+      <div className="aspect-video w-full animate-pulse rounded-lg bg-muted" />
+      <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
+      <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+      <div className="h-20 w-full animate-pulse rounded bg-muted" />
+    </div>
   );
 }
 

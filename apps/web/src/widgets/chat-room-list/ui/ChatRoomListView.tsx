@@ -6,16 +6,6 @@ import { toast } from "sonner";
 import { useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room";
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
-function ChatRoomListSkeleton() {
-  return (
-    <div className="flex flex-col gap-2">
-      {[0, 1, 2].map((key) => (
-        <div key={key} className="h-16 animate-pulse rounded-lg bg-muted" />
-      ))}
-    </div>
-  );
-}
-
 /** techspec-chat-common.md §3, US-024/US-049(원본 PRD 번호) — 같은 콘텐츠에 대한 내 대화방 목록:
  * 이름 변경/초기화/삭제(entities/chat-room)와 "새 대화 시작"을 한 화면에서 다룬다. */
 export function ChatRoomListView({
@@ -70,5 +60,15 @@ export function ChatRoomListView({
         </div>
       )}
     </main>
+  );
+}
+
+function ChatRoomListSkeleton() {
+  return (
+    <div className="flex flex-col gap-2">
+      {[0, 1, 2].map((key) => (
+        <div key={key} className="h-16 animate-pulse rounded-lg bg-muted" />
+      ))}
+    </div>
   );
 }

@@ -6,18 +6,6 @@ import { useSessionQuery } from "@/entities/session";
 import { EditProfileDialog } from "@/features/edit-profile";
 import { ProfileContentSection } from "./ProfileContentSection";
 
-function ProfileHeaderSkeleton() {
-  return (
-    <div className="flex items-center gap-4">
-      <div className="size-20 shrink-0 animate-pulse rounded-full bg-muted" />
-      <div className="flex flex-col gap-2">
-        <div className="h-7 w-32 animate-pulse rounded bg-muted" />
-        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
-      </div>
-    </div>
-  );
-}
-
 export function ProfilePage({
   userId,
   contentType,
@@ -73,5 +61,17 @@ export function ProfilePage({
         </>
       )}
     </main>
+  );
+}
+
+function ProfileHeaderSkeleton() {
+  return (
+    <div className="flex items-center gap-4">
+      <div className="size-20 shrink-0 animate-pulse rounded-full bg-muted" />
+      <div className="flex flex-col gap-2">
+        <div className="h-7 w-32 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-48 animate-pulse rounded bg-muted" />
+      </div>
+    </div>
   );
 }

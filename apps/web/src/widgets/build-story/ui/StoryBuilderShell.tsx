@@ -34,21 +34,6 @@ const TABS: { id: StoryBuilderTab; label: string }[] = [
   { id: "registration", label: "등록" },
 ];
 
-/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
- * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
-function isStoryBuilderTab(value: string): value is StoryBuilderTab {
-  return TABS.some((tab) => tab.id === value);
-}
-
-/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
- * (techspec-backend-content.md §1.2/§1.3, CharacterBuilderShell.tsx와 동일 판별). */
-function getFilterRejectionReason(error: unknown): string | null {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  if ("reason" in apiError.detail) return String(apiError.detail.reason);
-  return null;
-}
-
 // storyBuilderSchema의 profile.image/registration.genre/target은 초안 상태를 표현하기 위해
 // nullable이라(US-092/095), 발행 버튼의 safeParse 가드를 통과해도 서버(validate_story_publish)가
 // 요구하는 값이 비어 있을 수 있다(CharacterBuilderShell.tsx와 동일한 간극 — customPrompt/settingText/
@@ -62,14 +47,6 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
   genreId: "장르",
   target: "타겟",
 };
-
-function getMissingFieldLabels(error: unknown): string[] | null {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  const fields = apiError.detail.missingFields;
-  if (!Array.isArray(fields)) return null;
-  return fields.map((field) => MISSING_FIELD_LABELS[String(field)] ?? String(field));
-}
 
 type StoryBuilderShellProps = {
   draft: StoryDraftContent;
@@ -227,4 +204,27 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       </Tabs>
     </main>
   );
+}
+
+/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+ * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
+function isStoryBuilderTab(value: string): value is StoryBuilderTab {
+  return TABS.some((tab) => tab.id === value);
+}
+
+/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
+ * (techspec-backend-content.md §1.2/§1.3, CharacterBuilderShell.tsx와 동일 판별). */
+function getFilterRejectionReason(error: unknown): string | null {
+  const apiError = isApiError(error) ? error : null;
+  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
+  if ("reason" in apiError.detail) return String(apiError.detail.reason);
+  return null;
+}
+
+function getMissingFieldLabels(error: unknown): string[] | null {
+  const apiError = isApiError(error) ? error : null;
+  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
+  const fields = apiError.detail.missingFields;
+  if (!Array.isArray(fields)) return null;
+  return fields.map((field) => MISSING_FIELD_LABELS[String(field)] ?? String(field));
 }

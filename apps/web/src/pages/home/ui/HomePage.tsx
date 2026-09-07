@@ -30,21 +30,7 @@ const SORT_OPTIONS: { value: ContentListSort; label: string }[] = [
   { value: "genre", label: "장르별" },
 ];
 
-function isContentListSort(value: string): value is ContentListSort {
-  return value === "latest" || value === "popular" || value === "genre";
-}
-
 const ALL_GENRES_VALUE = "all";
-
-function ContentGridSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-        <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
-      ))}
-    </div>
-  );
-}
 
 /** techspec-home-discovery.md — 헤더 전역 [캐릭터]/[스토리] 토글(§0)에 따른 유형별 무한스크롤 리스트(§1),
  * URL search param으로 관리되는 정렬/장르/검색어/크리에이터/해시태그 필터(§2), 공용 `ContentCard`(§3)를
@@ -196,5 +182,19 @@ export function HomePage({
         </>
       )}
     </main>
+  );
+}
+
+function isContentListSort(value: string): value is ContentListSort {
+  return value === "latest" || value === "popular" || value === "genre";
+}
+
+function ContentGridSkeleton() {
+  return (
+    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
+        <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
+      ))}
+    </div>
   );
 }

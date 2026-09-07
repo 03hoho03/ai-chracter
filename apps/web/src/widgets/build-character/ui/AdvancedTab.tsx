@@ -29,6 +29,71 @@ type SituationalImageRowProps = {
   onRemove: () => void;
 };
 
+/** techspec-builder-character.md §2 AC — 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
+ * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
+export function AdvancedTab({
+  form,
+  ensureContentVersionId,
+}: {
+  form: UseFormReturn<CharacterBuilderFormValues>;
+  ensureContentVersionId: () => Promise<string>;
+}) {
+  const { control } = form;
+  const { fields, append, remove, move } = useFieldArray({ control, name: "situationalImages" });
+  const sensors = useSensors(useSensor(PointerSensor));
+
+  function handleDragEnd({ active, over }: DragEndEvent) {
+    if (!over || active.id === over.id) return;
+    const oldIndex = fields.findIndex((field) => field.id === active.id);
+    const newIndex = fields.findIndex((field) => field.id === over.id);
+    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
+  }
+
+  return (
+    <div className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-1">
+        <Label>상황별 이미지 (선택)</Label>
+        <p className="text-sm text-muted-foreground">
+          특정 대화 상황에서 노출할 이미지를 등록해요. 여러 이미지가 동시에 조건을 만족하면
+          목록에서 가장 위에 있는 항목 하나만 노출돼요.
+        </p>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
+          <p className="text-sm text-muted-foreground">아직 등록된 상황별 이미지가 없어요.</p>
+        </div>
+      ) : (
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
+            <div className="flex flex-col gap-3">
+              {fields.map((field, index) => (
+                <SituationalImageRow
+                  key={field.id}
+                  id={field.id}
+                  index={index}
+                  form={form}
+                  ensureContentVersionId={ensureContentVersionId}
+                  onRemove={() => remove(index)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
+      )}
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-fit"
+        onClick={() => append({ id: crypto.randomUUID(), image: null, situationDescription: "" })}
+      >
+        상황별 이미지 추가
+      </Button>
+    </div>
+  );
+}
+
 /** 목록 순서가 곧 우선순위(techspec-builder-character.md §2)라 dnd-kit로 재정렬한다 — 순서가
  * 의미 없는 배열(IntroTab의 예시 대화)과 달리 add/remove만으로는 부족하다. 이미지는 업로드
  * 전용(AI 생성 진입점 없음, §3)이라 GeneratedImageField(갤러리 선택 포함)를 재사용하지 않는다.
@@ -142,71 +207,6 @@ function SituationalImageRow({
 
       <Button type="button" variant="ghost" size="icon" aria-label="상황별 이미지 삭제" onClick={onRemove}>
         <Trash2 aria-hidden />
-      </Button>
-    </div>
-  );
-}
-
-/** techspec-builder-character.md §2 AC — 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
- * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
-export function AdvancedTab({
-  form,
-  ensureContentVersionId,
-}: {
-  form: UseFormReturn<CharacterBuilderFormValues>;
-  ensureContentVersionId: () => Promise<string>;
-}) {
-  const { control } = form;
-  const { fields, append, remove, move } = useFieldArray({ control, name: "situationalImages" });
-  const sensors = useSensors(useSensor(PointerSensor));
-
-  function handleDragEnd({ active, over }: DragEndEvent) {
-    if (!over || active.id === over.id) return;
-    const oldIndex = fields.findIndex((field) => field.id === active.id);
-    const newIndex = fields.findIndex((field) => field.id === over.id);
-    if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
-  }
-
-  return (
-    <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1">
-        <Label>상황별 이미지 (선택)</Label>
-        <p className="text-sm text-muted-foreground">
-          특정 대화 상황에서 노출할 이미지를 등록해요. 여러 이미지가 동시에 조건을 만족하면
-          목록에서 가장 위에 있는 항목 하나만 노출돼요.
-        </p>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
-          <p className="text-sm text-muted-foreground">아직 등록된 상황별 이미지가 없어요.</p>
-        </div>
-      ) : (
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          <SortableContext items={fields.map((field) => field.id)} strategy={verticalListSortingStrategy}>
-            <div className="flex flex-col gap-3">
-              {fields.map((field, index) => (
-                <SituationalImageRow
-                  key={field.id}
-                  id={field.id}
-                  index={index}
-                  form={form}
-                  ensureContentVersionId={ensureContentVersionId}
-                  onRemove={() => remove(index)}
-                />
-              ))}
-            </div>
-          </SortableContext>
-        </DndContext>
-      )}
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() => append({ id: crypto.randomUUID(), image: null, situationDescription: "" })}
-      >
-        상황별 이미지 추가
       </Button>
     </div>
   );

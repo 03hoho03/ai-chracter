@@ -7,6 +7,52 @@ import { useFieldArray, type UseFormReturn } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
+/** techspec-builder-story.md §1.4 AC — 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
+ * 단축어 목록을 조회/수정/삭제 가능. */
+export function ShortcutTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+  const { control } = form;
+  const { fields, append, remove } = useFieldArray({ control, name: "shortcuts" });
+
+  return (
+    <div className="flex flex-col gap-6 py-6">
+      <div className="flex flex-col gap-1">
+        <Label>단축어</Label>
+        <p className="text-sm text-muted-foreground">
+          사용자가 채팅 중 짧은 명령어로 특정 동작을 실행할 수 있게 해요. 등록하지 않아도 발행할 수 있어요.
+        </p>
+      </div>
+
+      {fields.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
+          <p className="text-sm text-muted-foreground">아직 등록된 단축어가 없어요.</p>
+        </div>
+      ) : (
+        <div className="flex flex-col gap-4">
+          {fields.map((field, index) => (
+            <ShortcutRow key={field.id} id={field.id} index={index} form={form} onRemove={() => remove(index)} />
+          ))}
+        </div>
+      )}
+
+      <Button
+        type="button"
+        variant="secondary"
+        className="w-fit"
+        onClick={() =>
+          append({
+            id: crypto.randomUUID(),
+            name: "",
+            description: "",
+            prompt: "",
+          })
+        }
+      >
+        단축어 추가
+      </Button>
+    </div>
+  );
+}
+
 /** techspec-builder-story.md §1.4 — 이름/설명/실행될 프롬프트(전부 필수), 작품 전역 적용이라
  * 스코프 선택 UI가 없다(KeywordNoteTab과 달리 순서/재정렬도 의미가 없어 StatTab과 동일하게
  * add/remove만 지원). */
@@ -58,52 +104,6 @@ function ShortcutRow({
           {...register(`shortcuts.${index}.prompt`)}
         />
       </div>
-    </div>
-  );
-}
-
-/** techspec-builder-story.md §1.4 AC — 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
- * 단축어 목록을 조회/수정/삭제 가능. */
-export function ShortcutTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
-  const { control } = form;
-  const { fields, append, remove } = useFieldArray({ control, name: "shortcuts" });
-
-  return (
-    <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1">
-        <Label>단축어</Label>
-        <p className="text-sm text-muted-foreground">
-          사용자가 채팅 중 짧은 명령어로 특정 동작을 실행할 수 있게 해요. 등록하지 않아도 발행할 수 있어요.
-        </p>
-      </div>
-
-      {fields.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-10 text-center">
-          <p className="text-sm text-muted-foreground">아직 등록된 단축어가 없어요.</p>
-        </div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {fields.map((field, index) => (
-            <ShortcutRow key={field.id} id={field.id} index={index} form={form} onRemove={() => remove(index)} />
-          ))}
-        </div>
-      )}
-
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() =>
-          append({
-            id: crypto.randomUUID(),
-            name: "",
-            description: "",
-            prompt: "",
-          })
-        }
-      >
-        단축어 추가
-      </Button>
     </div>
   );
 }
