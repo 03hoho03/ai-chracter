@@ -6,7 +6,9 @@ import {
   INQUIRY_CATEGORY_LABELS,
   INQUIRY_CATEGORY_OPTIONS,
   INQUIRY_STATUS_LABELS,
+  INQUIRY_STATUS_OPTIONS,
   isInquiryCategory,
+  isInquiryStatus,
   useInquiryListQuery,
   type InquiryCategory,
   type InquiryStatusFilter,
@@ -14,10 +16,13 @@ import {
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+/** 두 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
+ * 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다. `SelectItem`의 value가 `string`이라
+ * 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다(TS-03, `ReportsListPage` 동형).
+ * `"all"`은 애초에 유효한 멤버가 아니라 술어에서 자연히 걸러진다. */
 const STATUS_FILTER_OPTIONS: { value: "all" | InquiryStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "pending", label: INQUIRY_STATUS_LABELS.pending },
-  { value: "answered", label: INQUIRY_STATUS_LABELS.answered },
+  ...INQUIRY_STATUS_OPTIONS,
 ];
 
 const CATEGORY_FILTER_OPTIONS: { value: "all" | InquiryCategory; label: string }[] = [
@@ -158,11 +163,4 @@ function InquiriesTable({ page, status, category, onPageChange }: InquiriesTable
       />
     </>
   );
-}
-
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03, `ReportsListPage`의
- * `isReportStatus` 동형). 카테고리 쪽은 `isInquiryCategory`(entities)를 그대로 재사용한다 — `"all"`은
- * 애초에 유효한 카테고리가 아니라 자연히 걸러진다. */
-function isInquiryStatus(value: string): value is InquiryStatusFilter {
-  return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
 }

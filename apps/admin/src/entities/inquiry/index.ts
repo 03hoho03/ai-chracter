@@ -7,6 +7,10 @@ export {
   INQUIRY_CATEGORY_OPTIONS,
   INQUIRY_CATEGORY_VALUES,
   INQUIRY_STATUS_LABELS,
+  INQUIRY_STATUS_OPTIONS,
+  INQUIRY_STATUS_VALUES,
   isInquiryCategory,
+  isInquiryStatus,
   type InquiryCategory,
+  type InquiryStatus,
 } from "./model/labels";
