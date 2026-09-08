@@ -16,6 +16,7 @@ import { Controller, useForm } from "react-hook-form";
 import type { ReportReasonCategory } from "@/entities/content";
 
 import {
+  isReportReason,
   REPORT_REASON_OPTIONS,
   reportContentSchema,
   type ReportContentFormValues,
@@ -43,7 +44,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
 
   const submit = useMutationFlow(call, mutationFn);
 
-  function onSubmit(values: ReportContentFormValues) {
+  function handleValidSubmit(values: ReportContentFormValues) {
     if (submit.pending) return;
     submit(values.reason);
   }
@@ -61,7 +62,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit(onSubmit)(event);
+            void handleSubmit(handleValidSubmit)(event);
           }}
         >
           <div className="flex flex-col gap-1.5">
@@ -109,8 +110,3 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
     </Dialog>
   );
 });
-
-/** `ToggleGroupItem`의 value가 `string`이라 좁힘이 필요하다. `as` 단언 대신 술어를 쓴다(TS-03). */
-function isReportReason(value: string): value is ReportReasonCategory {
-  return REPORT_REASON_OPTIONS.some((option) => option.value === value);
-}

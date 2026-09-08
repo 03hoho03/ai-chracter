@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { useModerationActionMutation } from "@/entities/report";
 
 import {
+  isProcessAction,
   PROCESS_OPTIONS,
   reportActionSchema,
   type ProcessAction,
@@ -54,7 +55,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
     return null;
   }
 
-  async function onSubmit(values: ReportActionFormValues) {
+  async function handleValidSubmit(values: ReportActionFormValues) {
     if (moderationAction.isPending) return;
 
     // 코멘트는 `restrict`/`delete`에서만 입력창이 열린다 — `reject`로 바꿔 제출하면 이전에 적어 둔
@@ -122,7 +123,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit(onSubmit)(event);
+            void handleSubmit(handleValidSubmit)(event);
           }}
         >
           <div className="flex flex-col gap-1.5">
@@ -170,10 +171,4 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
       )}
     </section>
   );
-}
-
-/** Radix 토글은 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
- * `as` 대신 술어를 쓰고(TS-03), 화면이 실제로 그리는 목록을 근거로 삼아 둘이 어긋날 수 없게 한다. */
-function isProcessAction(value: string): value is ProcessAction {
-  return PROCESS_OPTIONS.some((option) => option.value === value);
 }

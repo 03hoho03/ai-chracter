@@ -4,14 +4,24 @@ import type { ModerationActionType } from "@/entities/report";
 
 export type ProcessAction = Extract<ModerationActionType, "restrict" | "delete" | "reject">;
 
-export const PROCESS_OPTIONS: { value: ProcessAction; label: string }[] = [
-  { value: "restrict", label: "이용제한 부과" },
-  { value: "delete", label: "삭제" },
-  { value: "reject", label: "조치 없음(반려)" },
-];
+export const PROCESS_LABELS: Record<ProcessAction, string> = {
+  restrict: "이용제한 부과",
+  delete: "삭제",
+  reject: "조치 없음(반려)",
+};
 
-/** 화면이 실제로 그리는 목록을 스키마의 근거로 삼아 옵션과 검증이 어긋날 수 없게 한다. */
-export const PROCESS_ACTION_VALUES = PROCESS_OPTIONS.map((option) => option.value);
+export function isProcessAction(value: string): value is ProcessAction {
+  return value in PROCESS_LABELS;
+}
+
+/** `ProcessAction`에 멤버가 늘면 `PROCESS_LABELS`(Record)가 컴파일 에러로 잡는다 — 목록·옵션을
+ * 손으로 또 적으면 바로 위 `Extract<...>`의 리터럴을 두 번 적는 셈이라 둘이 갈릴 수 있다. */
+export const PROCESS_ACTION_VALUES = Object.keys(PROCESS_LABELS).filter(isProcessAction);
+
+export const PROCESS_OPTIONS = PROCESS_ACTION_VALUES.map((value) => ({
+  value,
+  label: PROCESS_LABELS[value],
+}));
 
 /** `adminComment`는 서버가 `str | None`이라 빈 문자열도 받지만, 빈 코멘트를 저장하지 않도록
  * 제출 직전에 트림해 비었으면 `undefined`로 떨군다(호출부의 `?? undefined` 대신 여기서 진다). */
