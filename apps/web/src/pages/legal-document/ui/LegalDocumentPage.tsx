@@ -2,6 +2,7 @@ import { Markdown } from "@ai-character-chat/ui/components/markdown";
 import { FileQuestion } from "lucide-react";
 
 import { LEGAL_DOCUMENT_LABEL, type LegalDocumentKind, useLegalDocumentQuery } from "@/entities/legal";
+import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/terms`·`/privacy` 공용 페이지 — 두 라우트가 `kind`만 다를 뿐 조회·렌더 로직이 완전히 같아
  * 페이지를 하나로 두고 라우트 파일에서 kind만 주입한다(routes/terms.tsx, routes/privacy.tsx). */
@@ -47,7 +48,7 @@ function LegalDocumentBody({ kind }: LegalDocumentBodyProps) {
   return (
     <>
       <p className="text-xs text-muted-foreground">
-        최종 개정일 {formatPublishedAt(documentQuery.data.publishedAt)}
+        최종 개정일 {formatDate(documentQuery.data.publishedAt)}
       </p>
       <Markdown content={documentQuery.data.bodyMarkdown} />
     </>
@@ -62,9 +63,4 @@ function LegalDocumentSkeleton() {
       <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
     </div>
   );
-}
-
-function formatPublishedAt(publishedAt: string): string {
-  const date = new Date(publishedAt);
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }

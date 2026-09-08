@@ -6,6 +6,7 @@ import {
   type MyInquiryListItem,
   useMyInquiryListQuery,
 } from "@/entities/inquiry";
+import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/inquiries` — 내 문의 내역. `requireSession`으로 로그인 사용자만 접근한다(D-6). */
 export function InquiriesPage() {
@@ -59,7 +60,7 @@ function InquiryListItemRow({ item }: { item: MyInquiryListItem }) {
         </span>
       </span>
       <span className="text-sm text-muted-foreground">
-        {INQUIRY_CATEGORY_LABEL[item.category]} · {formatCreatedAt(item.createdAt)}
+        {INQUIRY_CATEGORY_LABEL[item.category]} · {formatDate(item.createdAt)}
       </span>
     </Link>
   );
@@ -73,9 +74,4 @@ function InquiryListSkeleton() {
       <div className="h-16 w-full animate-pulse rounded-xl bg-muted" />
     </div>
   );
-}
-
-function formatCreatedAt(createdAt: string): string {
-  const date = new Date(createdAt);
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }

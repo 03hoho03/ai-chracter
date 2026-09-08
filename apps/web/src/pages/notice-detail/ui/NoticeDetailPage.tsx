@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { FileQuestion } from "lucide-react";
 
 import { useNoticeDetailQuery } from "@/entities/notice";
+import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/notices/$noticeId` — 공지 상세. 로그인 여부와 무관하게 접근 가능(D-5). h1이 공지 제목 자체라
  * 데이터 도착 전에는 보여줄 게 없으므로 `pages/legal-document`와 달리 제목까지 함께 상태별로 가른다. */
@@ -52,7 +53,7 @@ function NoticeDetailBody({ noticeId }: { noticeId: string }) {
         {noticeDetailQuery.data.title}
       </h1>
       <p className="text-xs text-muted-foreground">
-        게시일 {formatPublishedAt(noticeDetailQuery.data.publishedAt)}
+        게시일 {formatDate(noticeDetailQuery.data.publishedAt)}
       </p>
       <Markdown content={noticeDetailQuery.data.bodyMarkdown} />
       <Link to="/notices" className="text-sm font-medium text-primary hover:underline focus-visible:underline">
@@ -71,9 +72,4 @@ function NoticeDetailSkeleton() {
       <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
     </div>
   );
-}
-
-function formatPublishedAt(publishedAt: string): string {
-  const date = new Date(publishedAt);
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }

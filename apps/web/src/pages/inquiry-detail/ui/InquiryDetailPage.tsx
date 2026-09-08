@@ -7,6 +7,7 @@ import {
   type MyInquiryDetailResponse,
   useMyInquiryDetailQuery,
 } from "@/entities/inquiry";
+import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/inquiries/$inquiryId` — 내가 쓴 문의 + 답변. `requireSession`으로 로그인 사용자만 접근하고,
  * 남의 문의는 서버가 404를 준다(403이 아니라 — 존재 여부를 흘리지 않는다, techspec.md §4-4). */
@@ -64,7 +65,7 @@ function InquiryDetailContent({ inquiry }: { inquiry: MyInquiryDetailResponse })
           </span>
         </div>
         <p className="text-xs text-muted-foreground">
-          {INQUIRY_CATEGORY_LABEL[inquiry.category]} · {formatCreatedAt(inquiry.createdAt)}
+          {INQUIRY_CATEGORY_LABEL[inquiry.category]} · {formatDate(inquiry.createdAt)}
         </p>
       </div>
 
@@ -90,7 +91,7 @@ function InquiryDetailContent({ inquiry }: { inquiry: MyInquiryDetailResponse })
           <>
             <p className="whitespace-pre-wrap break-keep text-sm text-foreground">{inquiry.replyBody}</p>
             {inquiry.answeredAt && (
-              <p className="text-xs text-muted-foreground">{formatCreatedAt(inquiry.answeredAt)} 답변</p>
+              <p className="text-xs text-muted-foreground">{formatDate(inquiry.answeredAt)} 답변</p>
             )}
           </>
         ) : (
@@ -110,9 +111,4 @@ function InquiryDetailSkeleton() {
       <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
     </div>
   );
-}
-
-function formatCreatedAt(value: string): string {
-  const date = new Date(value);
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }

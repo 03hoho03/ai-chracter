@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 
 import { type NoticeListItem, useNoticeListQuery } from "@/entities/notice";
+import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/notices` — 공지사항 목록. 로그인 여부와 무관하게 접근 가능(D-5). 제목은 쿼리와 무관하게
  * 상시 렌더하고 본문만 로딩·에러·빈 상태로 가른다(`pages/legal-document`의 관용구). */
@@ -49,7 +50,7 @@ function NoticeListItemRow({ item }: { item: NoticeListItem }) {
       className="flex flex-col gap-1 rounded-xl border border-border bg-background p-4 outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
     >
       <span className="break-keep text-base font-semibold text-foreground">{item.title}</span>
-      <span className="text-sm text-muted-foreground">{formatPublishedAt(item.publishedAt)}</span>
+      <span className="text-sm text-muted-foreground">{formatDate(item.publishedAt)}</span>
     </Link>
   );
 }
@@ -62,9 +63,4 @@ function NoticeListSkeleton() {
       <div className="h-16 w-full animate-pulse rounded-xl bg-muted" />
     </div>
   );
-}
-
-function formatPublishedAt(publishedAt: string): string {
-  const date = new Date(publishedAt);
-  return `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, "0")}.${String(date.getDate()).padStart(2, "0")}`;
 }
