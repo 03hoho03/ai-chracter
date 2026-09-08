@@ -10,6 +10,7 @@ import { useForm } from "react-hook-form";
 
 import { sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/lib/api/client";
+
 import { useLoginMutation } from "../api/mutations";
 import { buildGoogleLoginUrl } from "../lib/googleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
@@ -35,22 +36,27 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   const {
     register,
     handleSubmit,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
     defaultValues: loginDefaultValues,
   });
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  const [formError, setFormError] = useState<string | null>(
-    errorCode ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : null,
-  );
+  // 구글 리다이렉트 실패는 이 폼의 제출 결과가 아니라 진입 시점에 URL이 물고 온 상태라
+  // `errors.root`(제출 실패)와 같은 자리에 그릴 뿐 출처를 섞지 않는다. 첫 제출에 지워진다.
+  // 메시지 자체는 `errorCode`에서 계산 가능하므로 state에 담지 않는다(STATE-08) — 진짜 상태는
+  // "이미 지웠나" 한 비트뿐이다.
+  const [isGoogleErrorDismissed, setIsGoogleErrorDismissed] = useState(false);
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
 
   async function onSubmit(values: LoginFormValues) {
-    setFormError(null);
+    clearErrors("root");
+    setIsGoogleErrorDismissed(true);
     try {
       await loginMutation.mutateAsync(values);
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
@@ -58,16 +64,20 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 401) {
-        setFormError("이메일 또는 비밀번호가 올바르지 않습니다.");
+        setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
       } else if (apiError?.status === 403 && apiError.detail === "Account suspended") {
-        setFormError(SUSPENDED_ERROR_MESSAGE);
+        setError("root", { message: SUSPENDED_ERROR_MESSAGE });
       } else if (apiError?.status === 403) {
-        setFormError("이메일 인증이 완료되지 않았거나 법정대리인 동의가 필요한 계정이에요.");
+        setError("root", { message: "이메일 인증이 완료되지 않았거나 법정대리인 동의가 필요한 계정이에요." });
       } else {
-        setFormError(GENERIC_ERROR_MESSAGE);
+        setError("root", { message: GENERIC_ERROR_MESSAGE });
       }
     }
   }
+
+  const googleErrorMessage =
+    errorCode && !isGoogleErrorDismissed ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : null;
+  const bannerMessage = errors.root?.message ?? googleErrorMessage;
 
   return (
     <div className="flex flex-col gap-5">
@@ -79,9 +89,9 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
           void handleSubmit(onSubmit)(event);
         }}
       >
-        {formError && (
+        {bannerMessage && (
           <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-            {formError}
+            {bannerMessage}
           </p>
         )}
 

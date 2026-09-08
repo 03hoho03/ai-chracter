@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -6,45 +5,47 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
-import { useConfirmPasswordResetMutation } from "../api/mutations";
 import { isApiError } from "@/shared/lib/api/client";
+
+import { useConfirmPasswordResetMutation } from "../api/mutations";
 import {
   resetPasswordDefaultValues,
   resetPasswordSchema,
   type ResetPasswordFormValues,
 } from "../model/schema";
 
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
-
 type ResetPasswordFormProps = {
   token: string;
-}
+};
+
+const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const {
     register,
     handleSubmit,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
     defaultValues: resetPasswordDefaultValues,
   });
-  const [formError, setFormError] = useState<string | null>(null);
 
   const navigate = useNavigate();
   const confirmMutation = useConfirmPasswordResetMutation();
 
   async function onSubmit(values: ResetPasswordFormValues) {
-    setFormError(null);
+    clearErrors("root");
     try {
       await confirmMutation.mutateAsync({ token, newPassword: values.newPassword });
       await navigate({ to: "/login" });
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 400) {
-        setFormError("링크가 만료되었거나 유효하지 않아요. 재설정을 다시 요청해주세요.");
+        setError("root", { message: "링크가 만료되었거나 유효하지 않아요. 재설정을 다시 요청해주세요." });
       } else {
-        setFormError(GENERIC_ERROR_MESSAGE);
+        setError("root", { message: GENERIC_ERROR_MESSAGE });
       }
     }
   }
@@ -58,9 +59,9 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         void handleSubmit(onSubmit)(event);
       }}
     >
-      {formError && (
+      {errors.root && (
         <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-          {formError}
+          {errors.root.message}
         </p>
       )}
 

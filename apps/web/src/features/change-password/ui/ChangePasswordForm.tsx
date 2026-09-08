@@ -1,4 +1,3 @@
-import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
@@ -6,8 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { useChangePasswordMutation } from "../api/mutations";
 import { isApiError } from "@/shared/lib/api/client";
+
+import { useChangePasswordMutation } from "../api/mutations";
 import {
   changePasswordDefaultValues,
   changePasswordSchema,
@@ -21,17 +21,18 @@ export function ChangePasswordForm() {
     register,
     handleSubmit,
     reset,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<ChangePasswordFormValues>({
     resolver: zodResolver(changePasswordSchema),
     defaultValues: changePasswordDefaultValues,
   });
-  const [formError, setFormError] = useState<string | null>(null);
 
   const changePasswordMutation = useChangePasswordMutation();
 
   async function onSubmit(values: ChangePasswordFormValues) {
-    setFormError(null);
+    clearErrors("root");
     try {
       await changePasswordMutation.mutateAsync(values);
       toast.success("비밀번호가 변경되었어요.");
@@ -39,9 +40,9 @@ export function ChangePasswordForm() {
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 400) {
-        setFormError("현재 비밀번호가 올바르지 않아요.");
+        setError("root", { message: "현재 비밀번호가 올바르지 않아요." });
       } else {
-        setFormError(GENERIC_ERROR_MESSAGE);
+        setError("root", { message: GENERIC_ERROR_MESSAGE });
       }
     }
   }
@@ -55,9 +56,9 @@ export function ChangePasswordForm() {
         void handleSubmit(onSubmit)(event);
       }}
     >
-      {formError && (
+      {errors.root && (
         <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-          {formError}
+          {errors.root.message}
         </p>
       )}
 
