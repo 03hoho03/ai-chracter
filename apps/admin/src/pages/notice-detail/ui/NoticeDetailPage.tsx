@@ -53,7 +53,8 @@ function ExistingNotice({ noticeId }: ExistingNoticeProps) {
     return <p className="text-sm text-destructive-text">공지를 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
   }
 
-  // `key`로 공지 사이 이동 시 편집 버퍼(`NoticeEditor`의 title/body state)를 강제로 초기화한다 —
-  // 같은 라우트(`/notices/$noticeId`)라 id만 바뀌면 컴포넌트가 재마운트되지 않는다.
+  // `key`로 공지 사이 이동 시 편집 버퍼(`NoticeEditor`의 RHF `defaultValues`)를 강제로 초기화한다 —
+  // 같은 라우트(`/notices/$noticeId`)라 id만 바뀌면 컴포넌트가 재마운트되지 않고,
+  // `defaultValues`는 마운트 시점 값이라 스스로는 새 공지를 따라가지 않는다.
   return <NoticeEditor key={noticeDetailQuery.data.id} notice={noticeDetailQuery.data} />;
 }
