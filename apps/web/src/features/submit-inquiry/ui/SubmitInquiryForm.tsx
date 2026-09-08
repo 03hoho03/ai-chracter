@@ -19,7 +19,9 @@ import { toast } from "sonner";
 import { INQUIRY_CATEGORIES, INQUIRY_CATEGORY_LABEL } from "@/entities/inquiry";
 import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+
 import { useCreateInquiryMutation } from "../api/useCreateInquiryMutation";
+import { formToServer } from "../model/formToServer";
 import {
   submitInquiryDefaultValues,
   submitInquirySchema,
@@ -30,13 +32,14 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 
 export function SubmitInquiryForm() {
   const navigate = useNavigate();
-  const [formError, setFormError] = useState<string | null>(null);
   const [isAttachmentUploading, setIsAttachmentUploading] = useState(false);
 
   const {
     register,
     handleSubmit,
     control,
+    setError,
+    clearErrors,
     formState: { errors, isSubmitting },
   } = useForm<SubmitInquiryFormValues>({
     resolver: zodResolver(submitInquirySchema),
@@ -46,13 +49,13 @@ export function SubmitInquiryForm() {
   const createInquiryMutation = useCreateInquiryMutation();
 
   async function onSubmit(values: SubmitInquiryFormValues) {
-    setFormError(null);
+    clearErrors("root");
     try {
-      const created = await createInquiryMutation.mutateAsync(values);
+      const created = await createInquiryMutation.mutateAsync(formToServer(values));
       toast.success("문의가 접수되었어요.");
       void navigate({ to: "/inquiries/$inquiryId", params: { inquiryId: created.id } });
     } catch {
-      setFormError(GENERIC_ERROR_MESSAGE);
+      setError("root", { message: GENERIC_ERROR_MESSAGE });
     }
   }
 
@@ -67,9 +70,9 @@ export function SubmitInquiryForm() {
         void handleSubmit(onSubmit)(event);
       }}
     >
-      {formError && (
+      {errors.root && (
         <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-          {formError}
+          {errors.root.message}
         </p>
       )}
 
@@ -158,6 +161,12 @@ export function SubmitInquiryForm() {
   );
 }
 
+type InquiryAttachmentFieldProps = {
+  value: string | undefined;
+  onChange: (value: string | undefined) => void;
+  onUploadingChange: (isUploading: boolean) => void;
+};
+
 /** `select-generated-image/ui/GeneratedImageField.tsx`에서 갈래질 선례 — 여기는 생성한 이미지
  * 갤러리 선택이 필요 없으므로 파일 업로드+미리보기+제거만 가져왔다. `value`/`onChange`가
  * `attachmentAssetId?: string`을 그대로 다뤄 RHF `field`에 바로 꽂힌다. */
@@ -165,11 +174,7 @@ function InquiryAttachmentField({
   value,
   onChange,
   onUploadingChange,
-}: {
-  value: string | undefined;
-  onChange: (value: string | undefined) => void;
-  onUploadingChange: (isUploading: boolean) => void;
-}) {
+}: InquiryAttachmentFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
 

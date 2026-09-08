@@ -21,9 +21,11 @@ import { toast } from "sonner";
 import type { UserProfileResponse } from "@/entities/profile";
 import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
-import { useUpdateProfileMutation } from "../api/mutations";
-import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
 import { isApiError } from "@/shared/lib/api/client";
+
+import { useUpdateProfileMutation } from "../api/mutations";
+import { formToServer } from "../model/formToServer";
+import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -36,9 +38,7 @@ export function EditProfileDialog({
 }) {
   const [open, setOpen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [profileImageAssetId, setProfileImageAssetId] = useState(profile.profileImageAssetId);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
 
   const form = useForm<EditProfileFormValues>({
     resolver: zodResolver(editProfileSchema),
@@ -59,10 +59,9 @@ export function EditProfileDialog({
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
     if (nextOpen) {
+      // `reset`이 업로드해 둔 `profileImageAssetId`와 `errors.root`(직전 제출 실패)까지 함께 되돌린다.
       form.reset(editProfileDefaultValues(profile));
       setSelectedFile(null);
-      setProfileImageAssetId(profile.profileImageAssetId);
-      setFormError(null);
     }
   }
 
@@ -75,7 +74,7 @@ export function EditProfileDialog({
     setIsUploadingImage(true);
     try {
       const assetId = await uploadAsset(file, "profile-image");
-      setProfileImageAssetId(assetId);
+      form.setValue("profileImageAssetId", assetId, { shouldDirty: true });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
       setSelectedFile(null);
@@ -85,18 +84,16 @@ export function EditProfileDialog({
   }
 
   async function onSubmit(values: EditProfileFormValues) {
-    setFormError(null);
+    form.clearErrors("root");
     try {
-      await updateProfileMutation.mutateAsync({
-        nickname: values.nickname,
-        bio: values.bio.trim() === "" ? null : values.bio,
-        profileImageAssetId,
-      });
+      await updateProfileMutation.mutateAsync(formToServer(values));
       toast.success("프로필이 저장되었어요.");
       setOpen(false);
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
-      setFormError(apiError?.status === 400 ? "프로필 이미지를 다시 업로드한 뒤 시도해주세요." : GENERIC_ERROR_MESSAGE);
+      form.setError("root", {
+        message: apiError?.status === 400 ? "프로필 이미지를 다시 업로드한 뒤 시도해주세요." : GENERIC_ERROR_MESSAGE,
+      });
     }
   }
 
@@ -125,9 +122,9 @@ export function EditProfileDialog({
             void form.handleSubmit(onSubmit)(event);
           }}
         >
-          {formError && (
+          {form.formState.errors.root && (
             <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-              {formError}
+              {form.formState.errors.root.message}
             </p>
           )}
 
