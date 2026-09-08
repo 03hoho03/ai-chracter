@@ -3,6 +3,7 @@ from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
+import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -176,48 +177,26 @@ async def _assert_requires_admin_session(
     assert resp.status_code == 401
 
 
-async def test_list_users_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+_ADMIN_SESSION_GUARD_CASES = [
+    pytest.param("get", "/admin/users?page=1", None, id="list"),
+    pytest.param("get", f"/admin/users/{uuid.uuid4()}", None, id="detail"),
+    pytest.param("post", f"/admin/users/{uuid.uuid4()}/warn", {"reasonCategory": "spam"}, id="warn"),
+    pytest.param("post", f"/admin/users/{uuid.uuid4()}/suspend", {"reasonCategory": "spam"}, id="suspend"),
+    pytest.param(
+        "post", f"/admin/users/{uuid.uuid4()}/unsuspend", {"adminComment": "해제합니다"}, id="unsuspend"
+    ),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "json"), _ADMIN_SESSION_GUARD_CASES)
+async def test_requires_admin_session(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    method: str,
+    path: str,
+    json: dict[str, object] | None,
 ) -> None:
-    await _assert_requires_admin_session(db_client, db_session, "get", "/admin/users?page=1")
-
-
-async def test_user_detail_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(db_client, db_session, "get", f"/admin/users/{uuid.uuid4()}")
-
-
-async def test_warn_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client, db_session, "post", f"/admin/users/{uuid.uuid4()}/warn", json={"reasonCategory": "spam"}
-    )
-
-
-async def test_suspend_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client,
-        db_session,
-        "post",
-        f"/admin/users/{uuid.uuid4()}/suspend",
-        json={"reasonCategory": "spam"},
-    )
-
-
-async def test_unsuspend_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client,
-        db_session,
-        "post",
-        f"/admin/users/{uuid.uuid4()}/unsuspend",
-        json={"adminComment": "해제합니다"},
-    )
+    await _assert_requires_admin_session(db_client, db_session, method, path, json=json)
 
 
 # ---- 목록 --------------------------------------------------------------------

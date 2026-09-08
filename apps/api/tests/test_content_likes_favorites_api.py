@@ -102,8 +102,16 @@ async def _count_favorites(db_session: AsyncSession, user_id: uuid.UUID, content
     return result.scalar_one()
 
 
-async def test_like_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post(f"/contents/{uuid.uuid4()}/like")
+_CONTENT_LIKE_FAVORITE_REQUIRES_LOGIN_CASES = [
+    pytest.param("post", f"/contents/{uuid.uuid4()}/like", id="like"),
+    pytest.param("post", f"/contents/{uuid.uuid4()}/favorite", id="favorite"),
+    pytest.param("get", "/me/favorites", id="list_favorites"),
+]
+
+
+@pytest.mark.parametrize(("method", "path"), _CONTENT_LIKE_FAVORITE_REQUIRES_LOGIN_CASES)
+async def test_requires_login(db_client: httpx.AsyncClient, method: str, path: str) -> None:
+    resp = await db_client.request(method.upper(), path)
     assert resp.status_code == 401
 
 
@@ -154,11 +162,6 @@ async def test_like_then_unlike_updates_count_and_is_idempotent(
     assert await _count_likes(db_session, user.id, content.id) == 0
 
 
-async def test_favorite_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post(f"/contents/{uuid.uuid4()}/favorite")
-    assert resp.status_code == 401
-
-
 async def test_favorite_unknown_content_returns_404(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -196,11 +199,6 @@ async def test_favorite_then_unfavorite_is_idempotent(
     resp = await db_client.delete(f"/contents/{content.id}/favorite")
     assert resp.status_code == 204
     assert await _count_favorites(db_session, user.id, content.id) == 0
-
-
-async def test_list_favorites_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.get("/me/favorites")
-    assert resp.status_code == 401
 
 
 async def test_list_favorites_returns_favorited_contents_most_recently_favorited_first(
