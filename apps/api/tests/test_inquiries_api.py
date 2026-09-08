@@ -4,19 +4,8 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import Asset, AssetKind, Inquiry, InquiryCategory, InquiryStatus
-from factories import _login_as, _make_user
-
-
-async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id,
-        storage_key=f"assets/inquiry-attachment/{uuid.uuid4()}",
-        kind=AssetKind.ORIGINAL,
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from api.db.models import Inquiry, InquiryCategory, InquiryStatus
+from factories import _login_as, _make_asset, _make_user
 
 
 async def _make_inquiry(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Inquiry:
@@ -64,7 +53,7 @@ async def test_create_inquiry_with_own_attachment_succeeds(
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    asset = await _make_asset(db_session, owner_user_id=user.id)
+    asset = await _make_asset(db_session, owner_user_id=user.id, storage_key_prefix="assets/inquiry-attachment/")
     await db_session.commit()
 
     await _login_as(db_client, user.id)
@@ -87,7 +76,9 @@ async def test_create_inquiry_with_other_users_attachment_is_rejected(
     other = _make_user()
     db_session.add_all([user, other])
     await db_session.flush()
-    other_asset = await _make_asset(db_session, owner_user_id=other.id)
+    other_asset = await _make_asset(
+        db_session, owner_user_id=other.id, storage_key_prefix="assets/inquiry-attachment/"
+    )
     await db_session.commit()
 
     await _login_as(db_client, user.id)

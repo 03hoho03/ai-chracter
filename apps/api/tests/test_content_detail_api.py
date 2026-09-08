@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.redis import redis_client
 
 from api.db.models import (
-    Asset,
-    AssetKind,
     CharacterVersionDetail,
     Content,
     ContentTarget,
@@ -19,7 +17,6 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Favorite,
-    Genre,
     Like,
     ModerationStatus,
     StartingSetup,
@@ -27,21 +24,7 @@ from api.db.models import (
     StoryVersionDetail,
     User,
 )
-from factories import _login_as, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
-
-
-async def _make_asset(db_session: AsyncSession, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from factories import _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_published_content(

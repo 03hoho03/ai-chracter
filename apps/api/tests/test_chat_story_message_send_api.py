@@ -11,8 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import StatChangeJudgment, StatJudgmentResult
 from api.db.models import (
-    Asset,
-    AssetKind,
     CharacterVersionDetail,
     ChatRoomStat,
     Content,
@@ -20,7 +18,6 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     KeywordNote,
     ModerationStatus,
     Shortcut,
@@ -33,19 +30,7 @@ from api.db.models import (
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _login_as, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
-
-
-async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL)
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from factories import _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_published_story(

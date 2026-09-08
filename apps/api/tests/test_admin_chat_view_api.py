@@ -5,10 +5,8 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
 from api.db.models import (
     AdminActionLog,
-    AdminUser,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -19,10 +17,7 @@ from api.db.models import (
     ModerationStatus,
     Notification,
 )
-from factories import _login_as_admin, _make_user
-
-# 파일 간 헬퍼 비공유 관례(apps/api/CLAUDE.md) — test_admin_users_api.py의 팩토리
-# 패턴을 그대로 본떠 이 파일 안에 다시 만든다.
+from factories import _create_admin, _login_as_admin, _make_user
 
 
 async def _make_content(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> Content:
@@ -85,20 +80,6 @@ async def _seed_messages(
     db_session.add_all(messages)
     await db_session.flush()
     return messages
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 async def _assert_requires_admin_session(

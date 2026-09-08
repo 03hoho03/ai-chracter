@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.content.router import CONTENT_LIST_PAGE_SIZE
 from api.db.models import (
     Asset,
-    AssetKind,
     CharacterVersionDetail,
     Content,
     ContentTarget,
@@ -23,21 +22,12 @@ from api.db.models import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _make_user
+from factories import _make_asset, _make_user
 
 
 async def _get_genres(db_session: AsyncSession) -> list[Genre]:
     result = await db_session.execute(sa.select(Genre).order_by(Genre.sort_order))
     return list(result.scalars().all())
-
-
-async def _make_asset(db_session: AsyncSession, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
 
 
 async def _make_published_content(

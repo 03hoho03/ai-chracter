@@ -20,7 +20,6 @@ from api.db.models.content import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -40,12 +39,7 @@ from api.db.models.story import (
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _login_as, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 def _upload_test_image(storage_key: str) -> None:

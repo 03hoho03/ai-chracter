@@ -5,9 +5,8 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
-from api.db.models import AdminUser, Inquiry, InquiryCategory, InquiryStatus, Notification
-from factories import _login_as, _login_as_admin, _make_user
+from api.db.models import Inquiry, InquiryCategory, InquiryStatus, Notification
+from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
 
 async def _make_inquiry(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Inquiry:
@@ -23,20 +22,6 @@ async def _make_inquiry(db_session: AsyncSession, *, user_id: uuid.UUID, **overr
     db_session.add(inquiry)
     await db_session.flush()
     return inquiry
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 async def test_admin_inquiries_requires_admin_session(db_client: httpx.AsyncClient) -> None:

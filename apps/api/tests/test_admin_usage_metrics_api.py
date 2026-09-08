@@ -4,9 +4,7 @@ from datetime import date, datetime, timedelta, timezone, UTC
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
 from api.db.models import (
-    AdminUser,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -16,7 +14,7 @@ from api.db.models import (
     ContentVisibility,
     ModerationStatus,
 )
-from factories import _login_as_admin, _make_user
+from factories import _create_admin, _login_as_admin, _make_user
 
 DAY0 = date(2030, 3, 10)
 DAY1 = DAY0 + timedelta(days=1)
@@ -51,20 +49,6 @@ def _message(room_id: uuid.UUID, *, day: date, role: ChatMessageRole = ChatMessa
         content="메시지",
         created_at=datetime.combine(day, datetime.min.time(), tzinfo=UTC),
     )
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 async def test_usage_metrics_requires_admin_session(db_client: httpx.AsyncClient) -> None:

@@ -16,7 +16,6 @@ from api.db.models.content import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -31,12 +30,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _login_as, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 async def _make_empty_character_draft(

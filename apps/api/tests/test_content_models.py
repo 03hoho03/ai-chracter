@@ -18,13 +18,7 @@ from api.db.models import (
     ModerationStatus,
     User,
 )
-from factories import _make_user
-
-
-async def _get_genre(db_session: AsyncSession, name: str) -> Genre:
-    result = await db_session.execute(sa.select(Genre).where(Genre.name == name))
-    genre = result.scalar_one()
-    return genre
+from factories import _get_genre, _make_user
 
 
 def _make_content(user: User, genre: Genre, **overrides: object) -> Content:

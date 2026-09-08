@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
@@ -7,23 +6,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import legal as admin_legal
-from api.core.security import hash_password
-from api.db.models import AdminActionLog, AdminUser, LegalDocument
-from factories import _login_as_admin, _make_user
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
+from api.db.models import AdminActionLog, LegalDocument
+from factories import _create_admin, _login_as_admin, _make_user
 
 
 async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

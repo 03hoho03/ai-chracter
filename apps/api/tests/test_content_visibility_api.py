@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime, timezone, UTC
 
 import httpx
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
@@ -14,10 +13,9 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
 )
-from factories import _login_as, _make_user
+from factories import _get_genre, _login_as, _make_user
 
 
 async def _make_published_character(
@@ -66,11 +64,6 @@ async def _make_published_character(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
 
 
 async def test_update_visibility_requires_login(db_client: httpx.AsyncClient) -> None:

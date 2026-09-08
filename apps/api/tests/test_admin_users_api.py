@@ -8,10 +8,8 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.redis import redis_client
-from api.core.security import hash_password
 from api.db.models import (
     AdminActionLog,
-    AdminUser,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -27,7 +25,7 @@ from api.db.models import (
     ReportStatus,
 )
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
-from factories import _count_queries, _login_as_admin, _make_user
+from factories import _count_queries, _create_admin, _login_as_admin, _make_user
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -151,20 +149,6 @@ async def _make_report(
     db_session.add(report)
     await db_session.flush()
     return report
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 # ---- 인증 -------------------------------------------------------------------

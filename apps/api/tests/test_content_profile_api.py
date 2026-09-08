@@ -4,22 +4,8 @@ from datetime import datetime, timezone, UTC
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import Asset, AssetKind, AssetStatus
-from factories import _login_as, _make_user
-
-
-async def _make_asset(
-    db_session: AsyncSession, owner_user_id: uuid.UUID, *, status: AssetStatus = AssetStatus.READY
-) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id,
-        storage_key=f"assets/test/{uuid.uuid4()}",
-        kind=AssetKind.ORIGINAL,
-        status=status,
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from api.db.models import AssetStatus
+from factories import _login_as, _make_asset, _make_user
 
 
 async def test_get_user_profile_returns_nickname_bio_and_image(
@@ -28,7 +14,7 @@ async def test_get_user_profile_returns_nickname_bio_and_image(
     user = _make_user(bio="안녕하세요")
     db_session.add(user)
     await db_session.flush()
-    asset = await _make_asset(db_session, user.id)
+    asset = await _make_asset(db_session, user.id, status=AssetStatus.READY)
     user.profile_image_asset_id = asset.id
     await db_session.commit()
 
@@ -84,7 +70,7 @@ async def test_update_my_profile_updates_own_fields(
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    asset = await _make_asset(db_session, user.id)
+    asset = await _make_asset(db_session, user.id, status=AssetStatus.READY)
     await db_session.commit()
 
     await _login_as(db_client, user.id)
@@ -112,7 +98,7 @@ async def test_update_my_profile_rejects_asset_owned_by_another_user(
     other = _make_user()
     db_session.add_all([user, other])
     await db_session.flush()
-    other_asset = await _make_asset(db_session, other.id)
+    other_asset = await _make_asset(db_session, other.id, status=AssetStatus.READY)
     await db_session.commit()
 
     await _login_as(db_client, user.id)

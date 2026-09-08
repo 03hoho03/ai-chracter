@@ -5,9 +5,8 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
-from api.db.models import AdminUser, Notice, Notification
-from factories import _login_as_admin, _make_user
+from api.db.models import Notice, Notification
+from factories import _create_admin, _login_as_admin, _make_user
 
 
 async def _make_notice(
@@ -29,20 +28,6 @@ async def _make_notice(
     db_session.add(notice)
     await db_session.flush()
     return notice
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 async def _notification_count(db_session: AsyncSession, notice_id: uuid.UUID) -> int:

@@ -2,12 +2,9 @@ import uuid
 from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
-import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
 from api.db.models import (
-    AdminUser,
     Asset,
     AssetKind,
     CharacterVersionDetail,
@@ -19,19 +16,13 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
     Report,
     ReportReasonCategory,
     ReportStatus,
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _login_as_admin, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _create_admin, _get_genre, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -142,20 +133,6 @@ async def _make_report(
     db_session.add(report)
     await db_session.flush()
     return report
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
 
 
 async def test_dashboard_endpoints_require_admin_session(db_client: httpx.AsyncClient) -> None:

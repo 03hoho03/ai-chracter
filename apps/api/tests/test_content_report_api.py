@@ -14,18 +14,12 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
     Report,
     ReportReasonCategory,
     ReportStatus,
 )
-from factories import _login_as, _make_user
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 async def _make_published_content(
