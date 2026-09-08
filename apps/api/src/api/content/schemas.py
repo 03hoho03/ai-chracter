@@ -314,7 +314,10 @@ class StoryDraftPayload(CamelModel):
     thumbnail_asset_id: uuid.UUID | None
     prompt_template: StoryPromptTemplate
     setting_text: str | None
-    development_example: str | None
+    # chat-techspec.md D-13: FE가 더 이상 이 필드를 폼에서 관리하지 않는다. 안 보내면(리비전②가
+    # 컬럼을 드롭할 때까지) 롤백 안전망인 구 컬럼 값을 그대로 둬야 하므로, 값을 지우려는 명시적
+    # `null`과 "안 보냄"을 구분해야 한다 — router.py가 `model_fields_set`으로 그 둘을 가른다.
+    development_example: str | None = None
     custom_prompt: str | None
     # chat-goal-prompt.md §8 (D-9/D-10): 필수화하지 않는다 — 기존 33건이 비어 있는 채로
     # 발행돼 있다. 시드도 이 기본값 덕에 JSON에 새 키를 추가하지 않고 통과한다(D-2).

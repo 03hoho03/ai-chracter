@@ -9,7 +9,9 @@ function baseFormValues(): StoryBuilderFormValues {
     storySetting: {
       promptTemplate: "basic",
       worldSetting: "근미래 해양 도시",
-      developmentExample: "폭풍우로 배가 좌초된다",
+      developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
+      userGoal: "표류에서 살아남아 무사히 귀환한다",
+      rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: undefined,
     },
     startingSetups: [
@@ -66,7 +68,9 @@ describe("formToServer", () => {
       thumbnailAssetId: "asset-thumbnail",
       promptTemplate: "basic",
       settingText: "근미래 해양 도시",
-      developmentExample: "폭풍우로 배가 좌초된다",
+      developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
+      userGoal: "표류에서 살아남아 무사히 귀환한다",
+      rules: "선원들 앞에서 약한 모습을 보이지 않는다",
       customPrompt: null,
       startingSetups: [
         {
@@ -115,20 +119,39 @@ describe("formToServer", () => {
   it("maps a null profile image and unset optional storySetting fields to null", () => {
     const values = baseFormValues();
     values.profile.image = null;
-    values.storySetting.developmentExample = undefined;
+    values.storySetting.userGoal = undefined;
+    values.storySetting.rules = undefined;
 
     const payload = formToServer(values);
 
     expect(payload.thumbnailAssetId).toBeNull();
-    expect(payload.developmentExample).toBeNull();
+    expect(payload.userGoal).toBeNull();
+    expect(payload.rules).toBeNull();
   });
 
-  it("preserves worldSetting/developmentExample values even when promptTemplate is custom", () => {
+  it("never sends developmentExample — the old free-text field is retired FE-side, and the key must stay absent (not null) so the server keeps the old column as a rollback safety net until migration revision②(chat-techspec.md §6-2, D-13)", () => {
+    const payload = formToServer(baseFormValues());
+
+    expect(payload).not.toHaveProperty("developmentExample");
+  });
+
+  it("maps an empty developmentExamples array through unchanged (existing 33 contents are all in this state)", () => {
+    const values = baseFormValues();
+    values.storySetting.developmentExamples = [];
+
+    const payload = formToServer(values);
+
+    expect(payload.developmentExamples).toEqual([]);
+  });
+
+  it("preserves worldSetting even when promptTemplate is custom, and always includes rules/userGoal/developmentExamples (chat-techspec.md §6-3, D-16 — template-independent)", () => {
     const values = baseFormValues();
     values.storySetting = {
       promptTemplate: "custom",
       worldSetting: "남겨둔 이전 세계관 텍스트",
-      developmentExample: "남겨둔 전개 예시",
+      developmentExamples: [{ userLine: "사용자 메시지 예시", assistantLine: "스토리 응답 예시" }],
+      userGoal: "커스텀 목표",
+      rules: "커스텀 규칙",
       customPrompt: "커스텀 프롬프트 본문",
     };
 
@@ -136,7 +159,9 @@ describe("formToServer", () => {
 
     expect(payload.promptTemplate).toBe("custom");
     expect(payload.settingText).toBe("남겨둔 이전 세계관 텍스트");
-    expect(payload.developmentExample).toBe("남겨둔 전개 예시");
+    expect(payload.developmentExamples).toEqual([{ userLine: "사용자 메시지 예시", assistantLine: "스토리 응답 예시" }]);
+    expect(payload.userGoal).toBe("커스텀 목표");
+    expect(payload.rules).toBe("커스텀 규칙");
     expect(payload.customPrompt).toBe("커스텀 프롬프트 본문");
   });
 

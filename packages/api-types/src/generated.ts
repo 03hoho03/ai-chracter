@@ -3474,6 +3474,18 @@ export interface components {
             visibility: components["schemas"]["ContentVisibility"];
         };
         /**
+         * DevelopmentExampleItem
+         * @description chat-goal-prompt.md §8-3/D-10, chat-techspec.md §6-1 (D-12). `ExampleDialogueItem`의
+         *     입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고
+         *     순서가 곧 정체성이다.
+         */
+        DevelopmentExampleItem: {
+            /** Userline */
+            userLine: string;
+            /** Assistantline */
+            assistantLine: string;
+        };
+        /**
          * DraftListResponse
          * @description `/me/drafts`의 커서 페이지네이션 봉투. `ContentListResponse`와 같은 모양이며 `/my`가 두
          *     엔드포인트를 같은 방식으로 소비할 수 있도록 항목 타입만 다르게 둔다.
@@ -4368,9 +4380,15 @@ export interface components {
             /** Settingtext */
             settingText: string | null;
             /** Developmentexample */
-            developmentExample: string | null;
+            developmentExample?: string | null;
             /** Customprompt */
             customPrompt: string | null;
+            /** Developmentexamples */
+            developmentExamples?: components["schemas"]["DevelopmentExampleItem"][];
+            /** Usergoal */
+            userGoal?: string | null;
+            /** Rules */
+            rules?: string | null;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */
@@ -4412,6 +4430,12 @@ export interface components {
             developmentExample: string | null;
             /** Customprompt */
             customPrompt: string | null;
+            /** Developmentexamples */
+            developmentExamples: components["schemas"]["DevelopmentExampleItem"][];
+            /** Usergoal */
+            userGoal: string | null;
+            /** Rules */
+            rules: string | null;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */

@@ -16,6 +16,9 @@ function baseDraftResponse(): StoryDraftResponse {
     promptTemplate: "basic",
     settingText: "근미래 해양 도시",
     developmentExample: "폭풍우로 배가 좌초된다",
+    developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
+    userGoal: "표류에서 살아남아 무사히 귀환한다",
+    rules: "선원들 앞에서 약한 모습을 보이지 않는다",
     customPrompt: null,
     startingSetups: [
       {
@@ -63,7 +66,9 @@ describe("serverToForm", () => {
       storySetting: {
         promptTemplate: "basic",
         worldSetting: "근미래 해양 도시",
-        developmentExample: "폭풍우로 배가 좌초된다",
+        developmentExamples: [{ userLine: "무슨 일이 있었는지 설명해주세요", assistantLine: "폭풍우로 배가 좌초된다" }],
+        userGoal: "표류에서 살아남아 무사히 귀환한다",
+        rules: "선원들 앞에서 약한 모습을 보이지 않는다",
         customPrompt: undefined,
       },
       startingSetups: [
@@ -116,15 +121,19 @@ describe("serverToForm", () => {
     const data = baseDraftResponse();
     data.thumbnailAssetId = null;
     data.settingText = null;
-    data.developmentExample = null;
     data.customPrompt = null;
+    data.userGoal = null;
+    data.rules = null;
+    data.developmentExamples = [];
 
     const form = serverToForm(data);
 
     expect(form.profile.image).toBeNull();
     expect(form.storySetting.worldSetting).toBeUndefined();
-    expect(form.storySetting.developmentExample).toBeUndefined();
     expect(form.storySetting.customPrompt).toBeUndefined();
+    expect(form.storySetting.userGoal).toBeUndefined();
+    expect(form.storySetting.rules).toBeUndefined();
+    expect(form.storySetting.developmentExamples).toEqual([]);
   });
 
   it("restores an unselected draft's null genre/target as-is", () => {
@@ -138,7 +147,7 @@ describe("serverToForm", () => {
     expect(form.registration.target).toBeNull();
   });
 
-  it("restores a custom-template draft's settingText/developmentExample values even though they're unvalidated", () => {
+  it("restores a custom-template draft's settingText value even though it's unvalidated", () => {
     const data = baseDraftResponse();
     data.promptTemplate = "custom";
     data.customPrompt = "커스텀 프롬프트 본문";
@@ -294,7 +303,13 @@ describe("serverToForm", () => {
     expect(payload.thumbnailAssetId).toBe(response.thumbnailAssetId);
     expect(payload.promptTemplate).toBe(response.promptTemplate);
     expect(payload.settingText).toBe(response.settingText);
-    expect(payload.developmentExample).toBe(response.developmentExample);
+    // chat-techspec.md §6-2(D-13): 구 필드는 폼이 더 이상 관리하지 않으므로 아예 안 보낸다(안 보내야
+    // 서버가 롤백 안전망인 구 컬럼 값을 그대로 둔다) — formToServer.test.ts의 전용 테스트가 이 계약을
+    // 못박는다.
+    expect(payload).not.toHaveProperty("developmentExample");
+    expect(payload.developmentExamples).toEqual(response.developmentExamples);
+    expect(payload.userGoal).toBe(response.userGoal);
+    expect(payload.rules).toBe(response.rules);
     expect(payload.customPrompt).toBe(response.customPrompt);
     expect(payload.startingSetups).toEqual(response.startingSetups);
     expect(payload.keywordNotes).toEqual(response.keywordNotes);
@@ -303,5 +318,31 @@ describe("serverToForm", () => {
     expect(payload.target).toBe(response.target);
     expect(payload.hashtags).toEqual(response.hashtags);
     expect(payload.visibility).toBe(response.visibility);
+  });
+
+  it("round-trips empty userGoal/rules/developmentExamples losslessly (existing 33 contents are all in this state)", () => {
+    const response = baseDraftResponse();
+    response.userGoal = null;
+    response.rules = null;
+    response.developmentExamples = [];
+
+    const payload = formToServer(serverToForm(response));
+
+    expect(payload.userGoal).toBeNull();
+    expect(payload.rules).toBeNull();
+    expect(payload.developmentExamples).toEqual([]);
+  });
+
+  it("round-trips up to 3 development example pairs losslessly", () => {
+    const response = baseDraftResponse();
+    response.developmentExamples = [
+      { userLine: "안녕하세요", assistantLine: "어서 오세요" },
+      { userLine: "여기 앉아도 될까요", assistantLine: "그럼요, 편히 앉으세요" },
+      { userLine: "메뉴 추천해주세요", assistantLine: "오늘의 스튜를 추천해요" },
+    ];
+
+    const payload = formToServer(serverToForm(response));
+
+    expect(payload.developmentExamples).toEqual(response.developmentExamples);
   });
 });

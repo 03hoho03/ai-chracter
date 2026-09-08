@@ -958,7 +958,10 @@ async def _update_story_draft(
     detail.thumbnail_asset_id = payload.thumbnail_asset_id
     detail.prompt_template = payload.prompt_template
     detail.setting_text = payload.setting_text
-    detail.development_example = payload.development_example
+    # chat-techspec.md D-13: FE는 이 필드를 더 이상 보내지 않는다 — 안 보내면 구 컬럼(롤백
+    # 안전망)을 그대로 둔다. 명시적 `null`은 여전히 지운다(model_fields_set으로 구분).
+    if "development_example" in payload.model_fields_set:
+        detail.development_example = payload.development_example
     detail.custom_prompt = payload.custom_prompt
     detail.development_examples = [
         item.model_dump(by_alias=True) for item in payload.development_examples

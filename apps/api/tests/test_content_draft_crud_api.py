@@ -673,6 +673,72 @@ async def test_patch_content_draft_round_trips_rules_user_goal_and_development_e
     assert get_body["developmentExamples"] == development_examples
 
 
+async def test_patch_content_draft_preserves_development_example_when_key_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """chat-techspec.md D-13: 구 컬럼 `developmentExample`은 마이그레이션 리비전②(구 컬럼 드롭)
+    전까지 롤백 안전망으로 살아 있어야 한다. FE는 이 필드를 더 이상 폼에서 관리하지 않아 PATCH에
+    아예 안 보내므로, "안 보냄"을 서버가 명시적 `null`과 구분하지 못하면 창작자가 다른 필드만
+    고쳐도 원본 값이 조용히 지워진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.development_example = "사용자: 안녕\n서술자: 어서오세요"
+    await db_session.commit()
+
+    payload = _story_draft_payload(name="새 이름")
+    del payload["developmentExample"]
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=payload)
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "새 이름"
+
+    await db_session.refresh(detail)
+    assert detail.development_example == "사용자: 안녕\n서술자: 어서오세요"
+
+
+async def test_patch_content_draft_clears_development_example_when_sent_explicit_null(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """위 테스트의 반대쪽 방어: 명시적 `null`은 여전히 지워야 한다 — "안 보냄"과 뭉치면 위 보존
+    동작 자체가 필드를 영영 못 지우는 결함으로 뒤집힌다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.development_example = "사용자: 안녕\n서술자: 어서오세요"
+    await db_session.commit()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(developmentExample=None)
+    )
+    assert resp.status_code == 200
+
+    await db_session.refresh(detail)
+    assert detail.development_example is None
+
+
 def _starting_setup_item(**overrides: object) -> dict[str, object]:
     item: dict[str, object] = {
         "id": str(uuid.uuid4()),
