@@ -22,6 +22,7 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    system_instruction_for,
 )
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
@@ -549,12 +550,16 @@ async def _build_prompt(
 
 
 async def _stream_generated_tokens(
-    llm_client: LLMClient, prompt: str, chunks: list[str]
+    llm_client: LLMClient, prompt: str, chunks: list[str], system_instruction: str
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
-    텍스트를 이 out-param으로 호출부에 넘긴다."""
-    async for delta in llm_client.generate(prompt):
+    텍스트를 이 out-param으로 호출부에 넘긴다.
+
+    바닥 지시문은 호출부가 골라 넘긴다(`system_instruction_for`) — 여기서 고를 수 없다.
+    스토리/캐릭터 구분이 실제 방·미리보기에서 서로 다른 값(`setup`/`payload` 타입)으로
+    드러나기 때문이다."""
+    async for delta in llm_client.generate(prompt, system_instruction):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -583,7 +588,9 @@ async def _stream_new_turn(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client, prompt, chunks, system_instruction_for(is_story_chat=setup is not None)
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -814,7 +821,9 @@ async def regenerate_message(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client, prompt, chunks, system_instruction_for(is_story_chat=setup is not None)
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -1456,7 +1465,12 @@ async def _stream_preview_turn(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload)),
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)

@@ -32,12 +32,13 @@ class GeminiLLMClient(LLMClient):
         self._client = genai.Client(api_key=api_key if api_key is not None else settings.gemini_api_key)
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         # 출력 상한이 사고 토큰과 응답이 나눠 쓰는 예산이라는 점과 기본값의 근거는
         # core/config.py 의 gemini_max_output_tokens 주석 참고.
         config = genai_types.GenerateContentConfig(
             max_output_tokens=settings.gemini_max_output_tokens,
             stop_sequences=_STOP_SEQUENCES,
+            system_instruction=system_instruction,
         )
         if settings.gemini_thinking_budget is not None:
             # None 이면 thinking_config 를 아예 넘기지 않아야 한다(모델 기본 사고 동작) —
