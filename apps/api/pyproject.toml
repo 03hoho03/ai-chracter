@@ -34,6 +34,7 @@ dev = [
     "mypy>=2.1.0",
     "pytest>=9.1.1",
     "pytest-asyncio>=1.4.0",
+    "pytest-cov>=7.1.0",
     "ruff",
     "types-PyYAML>=6.0.0",
 ]
@@ -86,3 +87,21 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "session"
 asyncio_default_test_loop_scope = "session"
 testpaths = ["tests"]
+
+[tool.coverage.run]
+source = ["api"]
+# `--cov=src/api` 같은 경로 형태는 `module-not-imported` 경고와 함께 조용히 어긋난다 —
+# 패키지 이름이어야 한다.
+#
+# concurrency: SQLAlchemy 의 asyncio 는 greenlet 위에서 돈다. 이 설정이 없으면 FastAPI
+# 라우트 핸들러 본문이 통째로 미커버로 찍힌다 — 2026-09-08 에 이 줄만 빼고 같은 스위트를
+# 돌린 A/B 실측(둘 다 870 passed):
+#
+#     없음: auth/router.py 62% (230문 중 88 미커버) · 전체 83% (843 미커버) · 100% 파일 58개
+#     있음: auth/router.py 96% (          9 미커버) · 전체 97% (128 미커버) · 100% 파일 63개
+#
+# 통과하는 테스트가 분명히 있는데 그 경로가 미커버로 나오면 이 설정부터 의심할 것 —
+# test_login_rejects_suspended_account 가 403 을 단언하며 통과하는데도 login() 본문이
+# 통째로 미커버로 찍히는 것이 이 함정의 서명이다.
+# greenlet 은 sqlalchemy[asyncio] 가 이미 끌어오므로 별도 의존성이 아니다.
+concurrency = ["thread", "greenlet"]
