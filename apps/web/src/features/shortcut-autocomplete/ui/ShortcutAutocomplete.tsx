@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 
 import type { Shortcut } from "@/entities/chat-room";
+
 import { filterShortcuts } from "../model/filterShortcuts";
 
 type ShortcutAutocompleteProps = {

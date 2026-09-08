@@ -1,4 +1,5 @@
 import type { components } from "@ai-character-chat/api-types";
+
 import type { InquiryCategory } from "../model/labels";
 
 export type InquiryStatusFilter = components["schemas"]["InquiryStatus"];

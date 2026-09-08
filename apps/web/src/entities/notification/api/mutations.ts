@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
+
 import { notificationKeys } from "./keys";
 import type { NotificationResponse } from "./useNotificationListQuery";
 

@@ -6,6 +6,7 @@ import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal } from "@/features/image-archive";
 import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
+
 import { chatMorePanelOpenAtom } from "../model/atom";
 
 type MorePanelItem = {

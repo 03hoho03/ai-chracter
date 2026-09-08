@@ -2,6 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
+
 import { inquiryKeys } from "./keys";
 import type { AdminInquiryDetailResponse } from "./useInquiryDetailQuery";
 

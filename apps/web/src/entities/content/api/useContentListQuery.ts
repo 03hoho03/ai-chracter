@@ -3,6 +3,7 @@ import type { InfiniteData, QueryKey } from "@tanstack/react-query";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
+
 import { contentKeys, type ContentBrowseParams } from "./keys";
 
 export type ContentListItem = components["schemas"]["ContentListItem"];

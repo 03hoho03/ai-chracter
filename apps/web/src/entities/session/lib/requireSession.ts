@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 
 import { isApiError } from "@/shared/lib/api/client";
+
 import type { MeResponse } from "../api/session-query-options";
 import { sessionQueryOptions } from "../api/session-query-options";
 

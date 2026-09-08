@@ -1,6 +1,7 @@
 import { Dialog, DialogContent, DialogTitle } from "@ai-character-chat/ui/components/dialog";
 
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
+
 import { ContentDetailView } from "./ContentDetailView";
 
 /**

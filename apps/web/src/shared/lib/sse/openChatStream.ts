@@ -1,4 +1,5 @@
 import type { ZodType } from "zod";
+
 import { apiBaseUrl } from "../api/client";
 
 /** techspec-overview.md §7 — 메시지 전송/재생성/수정은 모두 본문이 있는 POST/PATCH라 네이티브

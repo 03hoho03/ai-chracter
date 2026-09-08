@@ -5,6 +5,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronDown, Play } from "lucide-react";
 
 import type { ContentDetailResponse } from "@/entities/content";
+
 import { usePlayContent } from "../lib/usePlayContent";
 
 type StoryDetailBodyProps = {

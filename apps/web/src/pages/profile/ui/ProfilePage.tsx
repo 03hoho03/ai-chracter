@@ -4,6 +4,7 @@ import type { ContentType } from "@/entities/content";
 import { useProfileQuery } from "@/entities/profile";
 import { useSessionQuery } from "@/entities/session";
 import { EditProfileDialog } from "@/features/edit-profile";
+
 import { ProfileContentSection } from "./ProfileContentSection";
 
 export function ProfilePage({

@@ -2,6 +2,7 @@
 // StatDef/Shortcut/Ending은 techspec-builder-story.md §1.2/§1.4/§1.5의 스키마를 그대로 반영한다.
 
 import { z } from "zod";
+
 import type { RuleListItem } from "@/shared/lib/rule-engine/ending-rules";
 
 export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "@/shared/lib/rule-engine/ending-rules";

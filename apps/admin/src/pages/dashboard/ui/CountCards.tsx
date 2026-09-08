@@ -1,9 +1,9 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 
-import { useCountsQuery } from "../api/useCountsQuery";
-
 import { formatCount } from "@/shared/lib/format/formatCount";
+
+import { useCountsQuery } from "../api/useCountsQuery";
 
 const CARD_CLASS = "flex flex-1 flex-col gap-2 rounded-xl border border-border bg-card p-6";
 const NUMBER_CLASS = "text-xl font-bold tabular-nums text-foreground";

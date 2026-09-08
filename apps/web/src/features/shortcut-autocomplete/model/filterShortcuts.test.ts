@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { Shortcut } from "@/entities/chat-room";
+
 import { filterShortcuts } from "./filterShortcuts";
 
 const shortcuts: Shortcut[] = [

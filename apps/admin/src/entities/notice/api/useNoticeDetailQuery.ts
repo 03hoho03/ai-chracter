@@ -2,6 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/lib/api/client";
+
 import { noticeKeys } from "./keys";
 
 // `updatedAt`이 없는 것은 누락이 아니다: `Notice.updated_at`은 `onupdate=func.now()`(SQL 표현식)
