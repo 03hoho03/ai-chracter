@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -63,6 +64,7 @@ from api.content.schemas import (
     StatDefDraftItem,
     StoryDraftPayload,
 )
+from api.core.config import settings
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
@@ -548,12 +550,40 @@ async def _build_prompt(
     )
 
 
+def _dump_prompt(*, room_id: uuid.UUID | None, turn: int, prompt: str) -> None:
+    """tasks/chat-techspec.md §3-5(D-21·D-22): 회차 재현용으로 조립된 프롬프트를 JSONL 한
+    줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다."""
+    record = {
+        "roomId": str(room_id) if room_id is not None else None,
+        "turn": turn,
+        "model": settings.gemini_model_name,
+        "seed": settings.gemini_seed,
+        # 바닥 지시문(system_instruction)은 이 브랜치에 아직 없다(feat/chat-base-system-instruction
+        # 미병합, chat-techspec.md §4-2가 그 기능을 전제한다) — 들어오면 이 자리를 채운다.
+        "systemInstruction": None,
+        "prompt": prompt,
+    }
+    assert settings.prompt_dump_path is not None
+    with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 async def _stream_generated_tokens(
-    llm_client: LLMClient, prompt: str, chunks: list[str]
+    llm_client: LLMClient, prompt: str, chunks: list[str], *, room_id: uuid.UUID | None, turn: int
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
-    텍스트를 이 out-param으로 호출부에 넘긴다."""
+    텍스트를 이 out-param으로 호출부에 넘긴다.
+
+    진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
+    프롬프트를 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을 막지 않는다** —
+    SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼 무관한 다른
+    요청까지 500이 된다(apps/api/CLAUDE.md §SSE 스트리밍)."""
+    if settings.prompt_dump_path is not None:
+        try:
+            _dump_prompt(room_id=room_id, turn=turn, prompt=prompt)
+        except Exception:
+            logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", room_id, turn, exc_info=True)
     async for delta in llm_client.generate(prompt):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
@@ -583,7 +613,9 @@ async def _stream_new_turn(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client, prompt, chunks, room_id=room.id, turn=room.turn_count + 1
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -814,7 +846,9 @@ async def regenerate_message(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client, prompt, chunks, room_id=room.id, turn=room.turn_count
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -1456,7 +1490,9 @@ async def _stream_preview_turn(
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client, prompt, chunks, room_id=None, turn=state.turn_count + 1
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)

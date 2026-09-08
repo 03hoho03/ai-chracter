@@ -25,6 +25,7 @@ RPM)이고 스토리 챗 1턴 = LLM 2회(생성 + 스탯 판단)라, 전체 합�
 import argparse
 import asyncio
 import json
+import os
 import sys
 import time
 from datetime import datetime
@@ -36,19 +37,34 @@ import httpx
 sys.path.insert(0, str(Path(__file__).parent))
 from seed_content.upsert import story_content_id
 
-BASE = "http://localhost:8000"
+# chat-techspec.md D-14 처럼 서버 재기동으로 정해지는 값과 달리, 이건 이 스크립트를 실행하는
+# 사람이 매번 바꿀 수 있어야 한다 — `--base`가 우선, 없으면 CHAT_PROBE_BASE 환경변수, 그것도
+# 없으면 지금까지의 기본값을 그대로 쓴다.
+DEFAULT_BASE = os.environ.get("CHAT_PROBE_BASE", "http://localhost:8000")
 EMAIL, PASSWORD = "test@example.com", "password1234"
 
 # 앵무새 패턴은 "사용자 말을 되받는" 자리에서 드러나므로, 짧은 반응·의견·질문·감정 표현을
 # 섞는다. 어느 스토리에나 말이 되도록 세계관 고유명사를 쓰지 않는다.
-TURNS = [
-    "일단 상황부터 좀 알려줘요",
-    "그건 별로 좋은 생각이 아닌 것 같은데요",
-    "왜 그렇게 생각하세요?",
-    "그냥 제 느낌을 말한 거예요",
-    "좀 무섭네요 솔직히",
-    "그럼 이제 어떻게 하면 되죠?",
-]
+#
+# `--script`(기본 default)로 고른다. 대본과 스토리는 짝이다 — guildkitchen-closing은 밥집
+# 방 a435d603의 실제 사용자 입력 4개(chat-goal-prompt.md §3-4)라 요리 맥락이고,
+# fantasy-guildkitchen 재현 전용이다. 다른 스토리에 쓰지 않는다.
+SCRIPTS: dict[str, list[str]] = {
+    "default": [
+        "일단 상황부터 좀 알려줘요",
+        "그건 별로 좋은 생각이 아닌 것 같은데요",
+        "왜 그렇게 생각하세요?",
+        "그냥 제 느낌을 말한 거예요",
+        "좀 무섭네요 솔직히",
+        "그럼 이제 어떻게 하면 되죠?",
+    ],
+    "guildkitchen-closing": [
+        "지친 몸과 마음을 달래줄 따뜻한 채소 스튜를 끓여 드리겠습니다.",
+        "하하. 간은 약해도 맛은 맛있죠? 그래도 정성을 다한거랍니다",
+        "밥을 맛있게 먹는걸 보니 저도 따뜻해지는군요. 열심히 해야겠습니다.",
+        "편히 쉬십시요.",
+    ],
+}
 
 
 class _Pacer:
@@ -111,7 +127,13 @@ async def _send(client: httpx.AsyncClient, room_id: str, text: str) -> _Turn:
 
 
 async def _run_story(
-    client: httpx.AsyncClient, slug: str, setup_index: int, label: str, turns: int, pacer: _Pacer
+    client: httpx.AsyncClient,
+    slug: str,
+    setup_index: int,
+    label: str,
+    turns: int,
+    pacer: _Pacer,
+    script: list[str],
 ) -> dict[str, object]:
     cid = str(story_content_id(slug))
     detail = await client.get(f"/contents/{cid}")
@@ -133,7 +155,7 @@ async def _run_story(
         {"role": "진행자", "text": m["content"]} for m in (room.get("messages") or [])
     ]
     empty, failed = 0, 0
-    for text in TURNS[:turns]:
+    for text in script[:turns]:
         await pacer.wait()
         transcript.append({"role": "사용자", "text": text})
         got = await _send(client, room["id"], text)
@@ -180,8 +202,16 @@ async def main() -> None:
     ap.add_argument(
         "--interval", type=float, default=10.0, help="턴 시작 간격의 하한(초). 1턴=LLM 2회 기준"
     )
+    ap.add_argument(
+        "--script",
+        default="default",
+        choices=sorted(SCRIPTS),
+        help="사용자 턴 대본 (대본과 스토리는 짝이다 — 상단 SCRIPTS 주석 참고)",
+    )
+    ap.add_argument("--base", default=DEFAULT_BASE, help="API 서버 base URL")
     args = ap.parse_args()
 
+    script = SCRIPTS[args.script]
     slugs = [s.strip() for s in args.slugs.split(",") if s.strip()]
     setup_indexes = [int(s) for s in args.setups.split(",") if s.strip()]
     # 표본을 늘리는 축이 스토리 수가 아니라 (시작설정 × 회차)다 — 모델 비교는 스토리 하나를
@@ -201,14 +231,14 @@ async def main() -> None:
         flush=True,
     )
 
-    async with httpx.AsyncClient(base_url=BASE, timeout=300) as client:
+    async with httpx.AsyncClient(base_url=args.base, timeout=300) as client:
         await _login(client)
 
         async def one(slug: str, setup_index: int, run_no: int) -> dict[str, object]:
             label = f"{slug}#s{setup_index}r{run_no}"
             async with sem:
                 try:
-                    return await _run_story(client, slug, setup_index, label, args.turns, pacer)
+                    return await _run_story(client, slug, setup_index, label, args.turns, pacer, script)
                 except Exception as exc:
                     return {"slug": slug, "label": label, "error": f"{type(exc).__name__}: {exc}"}
 

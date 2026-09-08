@@ -223,6 +223,35 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
     assert captured["config"].max_output_tokens == 4242
 
 
+async def test_generate_omits_seed_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`gemini_seed` 기본값 None 이면 config.seed 가 아예 안 실려야 한다(호출 페이로드가
+    지금과 동일해야 하는 것이 이 필드의 성공 기준, chat-techspec.md §3-1)."""
+    captured: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured.update(kwargs)
+        return _chunks("네")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    assert [token async for token in client.generate("hi")] == ["네"]
+    assert captured["config"].seed is None
+
+
+async def test_generate_sets_seed_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured.update(kwargs)
+        return _chunks("네")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+    monkeypatch.setattr(settings, "gemini_seed", 42)
+
+    assert [token async for token in client.generate("hi")] == ["네"]
+    assert captured["config"].seed == 42
+
+
 async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

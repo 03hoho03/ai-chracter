@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     # 0 = 사고 끔, 양수 = 그 토큰까지 허용. 세 상태가 서로 다른 동작이라 bool 로 합치지
     # 않는다.
     gemini_thinking_budget: int | None = None
+    # tasks/chat-techspec.md §3-1: 회차 재현성을 위한 결정적 시드. None = seed 를 아예 안
+    # 넘김(현재와 동일한 매 회차 난수 동작). generate()에만 붙인다 — generate_structured()
+    # (판단 호출)는 이 런의 측정 대상이 아니다.
+    gemini_seed: int | None = None
+    # tasks/chat-techspec.md §3-5(D-21·D-22): 조립된 프롬프트를 회차 재현용으로 JSONL에
+    # 남길 파일 경로. None = 아무 일도 안 함(프로덕션 기본값이자 방어) — 프롬프트에는
+    # 창작자의 비공개 설정이 들어 있어 기본으로 켜지면 안 된다.
+    prompt_dump_path: str | None = None
     # tasks/archive/prd-image-generation.md §3: 이미지 생성 전용 모델(채팅과 같은 키를 공유).
     gemini_image_model_name: str = "gemini-2.5-flash-image"
     # tasks/archive/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).

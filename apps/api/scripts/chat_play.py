@@ -11,6 +11,7 @@
 
 import argparse
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -22,7 +23,8 @@ import httpx
 sys.path.insert(0, "/Users/janghojeong/Projects/work/ai-chracter/apps/api/scripts")
 from seed_content.upsert import story_content_id
 
-BASE = "http://localhost:8000"
+# chat_probe.py와 같은 우선순위: --base > CHAT_PROBE_BASE 환경변수 > 지금까지의 기본값.
+DEFAULT_BASE = os.environ.get("CHAT_PROBE_BASE", "http://localhost:8000")
 EMAIL, PASSWORD = "test@example.com", "password1234"
 STAMP = Path(__file__).parent / ".last_turn"
 MIN_GAP = 9.0
@@ -36,10 +38,10 @@ def _pace() -> None:
     STAMP.write_text(str(time.time()))
 
 
-def _client() -> httpx.Client:
+def _client(base: str) -> httpx.Client:
     """로그인까지 마친 클라이언트. 첫 요청이 `__enter__` 전에 나가면 httpx가 재진입으로
     막으므로, 호출부는 `with` 없이 그대로 받아 쓴다."""
-    client = httpx.Client(base_url=BASE, timeout=300)
+    client = httpx.Client(base_url=base, timeout=300)
     client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD}).raise_for_status()
     return client
 
@@ -61,9 +63,10 @@ def main() -> None:
     ap.add_argument("--room")
     ap.add_argument("--say")
     ap.add_argument("--state", action="store_true")
+    ap.add_argument("--base", default=DEFAULT_BASE, help="API 서버 base URL")
     args = ap.parse_args()
 
-    client = _client()
+    client = _client(args.base)
     if args.new:
         cid = str(story_content_id(args.new))
         detail = client.get(f"/contents/{cid}").json()

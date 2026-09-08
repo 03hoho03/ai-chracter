@@ -2,13 +2,16 @@ import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import date, datetime, timezone, UTC
+from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult
+from api.core.config import settings
 from api.db.models import (
     Asset,
     AssetKind,
@@ -603,3 +606,70 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
         )
     ).scalars().all()
     assert exposures == []
+
+
+async def test_send_message_does_not_dump_prompt_by_default(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """chat-techspec.md §3-5(D-21·D-22): `prompt_dump_path`의 기본값 None이 프로덕션 방어다 —
+    설정 안 하면 지금과 동일하게 아무것도 남기지 않아야 한다."""
+    assert settings.prompt_dump_path is None
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+
+
+async def test_send_message_dumps_prompt_when_configured(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """`prompt_dump_path`가 설정되면 그 턴에 조립된 프롬프트가 JSONL 한 줄로 남는다."""
+    dump_path = tmp_path / "prompts.jsonl"
+    monkeypatch.setattr(settings, "prompt_dump_path", str(dump_path))
+    monkeypatch.setattr(settings, "gemini_seed", 42)
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    lines = dump_path.read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 1
+    record = json.loads(lines[0])
+    assert record["roomId"] == str(room_id)
+    assert record["turn"] == 1
+    assert record["model"] == settings.gemini_model_name
+    assert record["seed"] == 42
+    assert record["systemInstruction"] is None
+    assert record["prompt"] == fake.received_prompt
