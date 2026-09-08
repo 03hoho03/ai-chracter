@@ -377,7 +377,7 @@ def test_base_system_instruction_covers_only_the_measured_gaps() -> None:
     응답 중앙값이 18문장이라 임의의 상한이 30개의 연출을 통째로 바꾼다.
     """
     for text in (STORY_CHAT_SYSTEM_INSTRUCTION, CHARACTER_CHAT_SYSTEM_INSTRUCTION):
-        assert "라벨" in text  # 29/30 이 각자 적던 것 — 여기로 모은다
+        assert "역할 표시로 시작하지 않는다" in text  # 29/30 이 각자 적던 것 — 여기로 모은다
         assert "대신 쓰지 않는다" in text  # 1/30
         assert "전연령" in text  # 6/30
 
@@ -393,11 +393,12 @@ def test_base_system_instruction_frames_each_chat_kind_as_its_own_speaker() -> N
     그래서 갈린다 — 캐릭터 챗에서 새는 라벨은 "진행자:" 가 아니라 자기 이름이다.
     """
     assert "화자" in STORY_CHAT_SYSTEM_INSTRUCTION
-    assert "진행자:" in STORY_CHAT_SYSTEM_INSTRUCTION
-
     assert "캐릭터 본인" in CHARACTER_CHAT_SYSTEM_INSTRUCTION
-    assert "자기 이름" in CHARACTER_CHAT_SYSTEM_INSTRUCTION
-    assert "진행자:" not in CHARACTER_CHAT_SYSTEM_INSTRUCTION
+
+    # 금지할 라벨을 예시로 적으면 그 토큰이 출력에 유도된다 — 2026-09-08 실측(아래 주석).
+    for text in (STORY_CHAT_SYSTEM_INSTRUCTION, CHARACTER_CHAT_SYSTEM_INSTRUCTION):
+        assert "진행자:" not in text
+        assert "서술자:" not in text
 
     assert system_instruction_for(is_story_chat=True) == STORY_CHAT_SYSTEM_INSTRUCTION
     assert system_instruction_for(is_story_chat=False) == CHARACTER_CHAT_SYSTEM_INSTRUCTION
