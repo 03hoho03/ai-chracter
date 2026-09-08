@@ -85,7 +85,7 @@ jobs:
           uv run alembic upgrade head
           uv run alembic check
 
-      - run: uv run pytest
+      - run: uv run pytest --cov --cov-report=term-missing:skip-covered --cov-fail-under=95
 
       # PR 에서만 빌드한다 — main push 의 빌드는 `deploy-api.yml` 이 같은 Dockerfile 로
       # 수행하고 푸시까지 하므로(트리거도 동일하게 `apps/api/**`) 여기서 또 하면 같은

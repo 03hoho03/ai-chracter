@@ -4,7 +4,7 @@ FastAPI + SQLAlchemy 2.0(async) + Alembic + Postgres/Redis. `uv`로 관리되는
 
 ```sh
 uv run mypy src migrations scripts   # strict. 경로 3개는 .github/workflows/api.yml과 동일하게 유지
-uv run pytest                        # 로컬 Postgres/Redis 필요 (docker compose -f docker-compose.dev.yml up -d)
+uv run pytest --cov --cov-report=term-missing:skip-covered --cov-fail-under=95  # 로컬 Postgres/Redis 필요 (docker compose -f docker-compose.dev.yml up -d)
 uv run alembic check                 # 모델과 마이그레이션이 정확히 일치하는지
 ```
 
