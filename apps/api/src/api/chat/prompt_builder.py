@@ -96,7 +96,9 @@ def build_story_generation_prompt(
     *,
     prompt_template: StoryPromptTemplate,
     setting_text: str | None,
-    development_example: str | None,
+    development_examples: list[dict[str, Any]],
+    user_goal: str | None,
+    rules: str | None,
     custom_prompt: str | None,
     prologue: str,
     history: list[ChatMessage],
@@ -109,6 +111,15 @@ def build_story_generation_prompt(
     "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 매칭된 키워드북 정보(사용자에게는
     비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), 최근 히스토리, (단축어
     실행 시) 단축어 프롬프트, 이번 턴의 사용자 메시지 순으로 마무리한다.
+
+    chat-goal-prompt.md §8 / chat-techspec.md §6-3 (D-16): `rules`·`user_goal`·
+    `development_examples`는 L1 작품 층이라 설정 텍스트 바로 뒤, [시작 상황] 앞에 붙는다.
+    셋 다 비어 있으면(현재 시드 30개가 전부 이 상태다 — D-2) 이 함수는 이 인자들을
+    추가하기 전과 바이트 단위로 같은 프롬프트를 낸다 — 각 섹션이 `if 값:` 으로 감싸여
+    있어 헤더조차 나타나지 않기 때문이다(`keyword_note_texts`/`shortcut_prompt`와 같은
+    패턴). `development_examples`는 옛 자유 텍스트 컬럼(`development_example`)을 대신한다
+    — 마이그레이션이 그 텍스트를 이 쌍 목록으로 백필하므로, 이 함수가 만드는 [전개 예시]
+    문자열이 옛 자유 텍스트와 같아야 기존 시드의 프롬프트가 안 바뀐다.
     """
     sections: list[str] = []
 
@@ -116,10 +127,17 @@ def build_story_generation_prompt(
         if custom_prompt:
             sections.append(custom_prompt)
     elif setting_text:
-        setting_section = setting_text
-        if development_example:
-            setting_section = f"{setting_section}\n\n[전개 예시]\n{development_example}"
-        sections.append(setting_section)
+        sections.append(setting_text)
+
+    if rules:
+        sections.append(f"[규칙]\n{rules}")
+    if user_goal:
+        sections.append(f"[사용자의 역할과 목표]\n{user_goal}")
+    if development_examples:
+        example_lines = "\n".join(
+            f"사용자: {pair['userLine']}\n서술자: {pair['assistantLine']}" for pair in development_examples
+        )
+        sections.append(f"[전개 예시]\n{example_lines}")
 
     sections.append(f"[시작 상황]\n{prologue}")
 

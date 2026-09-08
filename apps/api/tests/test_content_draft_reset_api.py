@@ -150,6 +150,9 @@ async def _add_story_version_rows(
             prompt_template=StoryPromptTemplate.BASIC,
             setting_text=f"{name} 세계관",
             development_example=f"{name} 전개 예시",
+            development_examples=[{"userLine": f"{name} 사용자", "assistantLine": f"{name} 진행자"}],
+            user_goal=f"{name} 목표",
+            rules=f"{name} 규칙",
         )
     )
 
@@ -568,6 +571,11 @@ async def test_reset_content_draft_restores_story_draft_with_remapped_children(
     assert draft_detail.name == "발행본"
     assert draft_detail.setting_text == "발행본 세계관"
     assert draft_detail.development_example == "발행본 전개 예시"
+    assert draft_detail.development_examples == [
+        {"userLine": "발행본 사용자", "assistantLine": "발행본 진행자"}
+    ]
+    assert draft_detail.user_goal == "발행본 목표"
+    assert draft_detail.rules == "발행본 규칙"
 
     draft_setups = (
         await db_session.scalars(

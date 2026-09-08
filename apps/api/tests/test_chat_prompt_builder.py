@@ -109,7 +109,9 @@ def test_build_story_generation_prompt_uses_setting_text_and_prologue() -> None:
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="옛날 옛적 낯선 마을에 도착했다.",
         history=[],
@@ -121,25 +123,177 @@ def test_build_story_generation_prompt_uses_setting_text_and_prologue() -> None:
     assert prompt.endswith("사용자: 안녕!\n진행자:")
 
 
-def test_build_story_generation_prompt_includes_development_example_when_present() -> None:
+def test_build_story_generation_prompt_includes_development_examples_when_present() -> None:
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example="전개 예시 텍스트",
+        development_examples=[{"userLine": "안녕", "assistantLine": "어서오세요"}],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="프롤로그",
         history=[],
         user_message="메시지",
     )
 
-    assert "[전개 예시]\n전개 예시 텍스트" in prompt
+    assert "[전개 예시]\n사용자: 안녕\n서술자: 어서오세요" in prompt
+
+
+def test_build_story_generation_prompt_joins_multiple_development_example_pairs() -> None:
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_examples=[
+            {"userLine": "첫 인사", "assistantLine": "첫 응답"},
+            {"userLine": "둘째 인사", "assistantLine": "둘째 응답"},
+        ],
+        user_goal=None,
+        rules=None,
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+    )
+
+    assert (
+        "[전개 예시]\n사용자: 첫 인사\n서술자: 첫 응답\n사용자: 둘째 인사\n서술자: 둘째 응답" in prompt
+    )
+
+
+def test_build_story_generation_prompt_includes_rules_and_user_goal_between_setting_and_examples() -> None:
+    """chat-techspec.md §6-3: L1 배치 순서는 setting_text → [규칙] → [사용자의 역할과 목표] →
+    [전개 예시] → [시작 상황]이다."""
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_examples=[{"userLine": "안녕", "assistantLine": "어서오세요"}],
+        user_goal="용을 물리친다",
+        rules="폭력 묘사는 암시로만 한다",
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+    )
+
+    assert "[규칙]\n폭력 묘사는 암시로만 한다" in prompt
+    assert "[사용자의 역할과 목표]\n용을 물리친다" in prompt
+    assert (
+        prompt.index("세계관 설정")
+        < prompt.index("[규칙]")
+        < prompt.index("[사용자의 역할과 목표]")
+        < prompt.index("[전개 예시]")
+        < prompt.index("[시작 상황]")
+    )
+
+
+def test_build_story_generation_prompt_is_byte_identical_when_new_fields_are_empty() -> None:
+    """chat-goal-prompt.md §8 '가장 중요한 제약': `rules`/`userGoal`/`developmentExamples`가
+    비어 있으면(현재 시드 30개가 이 상태 — D-2) 이 함수의 출력은 그 필드들이 생기기 전과
+    바이트 단위로 같아야 한다 — 아직 기준선 측정을 못 한 실험의 프롬프트를 건드리면 안 된다."""
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_examples=[],
+        user_goal=None,
+        rules=None,
+        custom_prompt=None,
+        prologue="옛날 옛적 낯선 마을에 도착했다.",
+        history=[],
+        user_message="안녕!",
+    )
+
+    assert prompt == (
+        "세계관 설정\n\n"
+        "[시작 상황]\n옛날 옛적 낯선 마을에 도착했다.\n\n"
+        "사용자: 안녕!\n진행자:"
+    )
+    assert "[규칙]" not in prompt
+    assert "[사용자의 역할과 목표]" not in prompt
+    assert "[전개 예시]" not in prompt
+
+
+def test_migrated_development_example_pairs_reconstruct_to_the_original_free_text() -> None:
+    """chat-goal-prompt.md §8 '가장 중요한 제약': 마이그레이션(리비전 ①)이 옛 자유 텍스트
+    `development_example`을 쪼갠 쌍을, `build_story_generation_prompt`가 다시 조립했을 때
+    원래 문자열이 나와야 한다 — 그래야 기존 시드 30개의 프롬프트가 안 바뀐다. 실측(발행 30개
+    중 21개)으로 확인된 흔한 형식(단일 개행, `서술자:` 라벨)으로 이 성질이 성립함을 마이그레이션
+    파일의 실제 파서로 못박는다. 나머지 9개는 창작자가 빈 줄(문단 구분)을 섞어 썼거나(5개) 안팎
+    개행을 혼용했거나(3개) 순서가 뒤섞여(1개) 이 형식에서 벗어나 있고, 그 값들은 손실 없이
+    보존되지만 재조립 결과가 원문과 바이트 단위로 같지는 않다(직접 DB 검증으로 확인, 42/60행)."""
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "45c1a3d8b69e_story_development_examples_user_goal_.py"
+    )
+    spec = importlib.util.spec_from_file_location("_migration_45c1a3d8b69e", migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    original = (
+        "사용자: 따뜻한 감자 스튜에 로즈마리를 살짝 얹어 하칸의 테이블에 내려놓는다.\n"
+        "서술자: 하칸은 묵직한 김이 피어오르는 그릇을 멍하니 바라봅니다.\n"
+        "사용자: 속이 편하셨다니 다행입니다.\n"
+        "서술자: 아니, 이거면 됐다."
+    )
+
+    pairs = migration._parse_development_example(original)
+
+    prompt = build_story_generation_prompt(
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="세계관 설정",
+        development_examples=pairs,
+        user_goal=None,
+        rules=None,
+        custom_prompt=None,
+        prologue="프롤로그",
+        history=[],
+        user_message="메시지",
+    )
+
+    reconstructed = prompt.split("[전개 예시]\n", 1)[1].split("\n\n[시작 상황]", 1)[0]
+    assert reconstructed == original
+
+
+def test_migrated_development_example_pairs_preserve_narration_before_the_first_user_label() -> None:
+    """마이그레이션 파서는 첫 라벨의 *종류*가 아니라 텍스트가 사용자 라벨로 *시작하는지*를
+    봐야 한다(모듈 docstring, chat-techspec.md §6-2). 첫 라벨이 `사용자:`라도 그 앞에 서술
+    텍스트가 있으면 안전하게 재구성할 수 없으므로 원문 전체를 손실 없이 보존해야 한다."""
+    import importlib.util
+    from pathlib import Path
+
+    migration_path = (
+        Path(__file__).resolve().parents[1]
+        / "migrations"
+        / "versions"
+        / "45c1a3d8b69e_story_development_examples_user_goal_.py"
+    )
+    spec = importlib.util.spec_from_file_location("_migration_45c1a3d8b69e", migration_path)
+    assert spec is not None and spec.loader is not None
+    migration = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(migration)
+
+    original = (
+        "이것은 도입부 서술입니다. 배경 설명이 여기 들어갑니다.\n\n"
+        "사용자: 안녕\n서술자: 반가워요"
+    )
+
+    pairs = migration._parse_development_example(original)
+
+    assert pairs == [{"userLine": "", "assistantLine": original.strip()}]
 
 
 def test_build_story_generation_prompt_custom_template_uses_custom_prompt_only() -> None:
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.CUSTOM,
         setting_text="세계관 설정(무시되어야 함)",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt="커스텀 프롬프트",
         prologue="프롤로그",
         history=[],
@@ -154,7 +308,9 @@ def test_build_story_generation_prompt_includes_matched_keyword_notes() -> None:
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="프롤로그",
         history=[],
@@ -169,7 +325,9 @@ def test_build_story_generation_prompt_omits_keyword_note_section_when_no_match(
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="프롤로그",
         history=[],
@@ -184,7 +342,9 @@ def test_build_story_generation_prompt_includes_shortcut_prompt_before_final_tur
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="프롤로그",
         history=[],
@@ -205,7 +365,9 @@ def test_build_story_generation_prompt_includes_history_in_order() -> None:
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
-        development_example=None,
+        development_examples=[],
+        user_goal=None,
+        rules=None,
         custom_prompt=None,
         prologue="프롤로그",
         history=history,

@@ -532,7 +532,9 @@ async def _build_prompt(
         return build_story_generation_prompt(
             prompt_template=story_detail.prompt_template,
             setting_text=story_detail.setting_text,
-            development_example=story_detail.development_example,
+            development_examples=story_detail.development_examples,
+            user_goal=story_detail.user_goal,
+            rules=story_detail.rules,
             custom_prompt=story_detail.custom_prompt,
             prologue=setup.prologue,
             history=history,
@@ -1490,7 +1492,11 @@ def _build_preview_prompt(
     return build_story_generation_prompt(
         prompt_template=payload.prompt_template,
         setting_text=payload.setting_text,
-        development_example=payload.development_example,
+        development_examples=[
+            example.model_dump(by_alias=True) for example in payload.development_examples
+        ],
+        user_goal=payload.user_goal,
+        rules=payload.rules,
         custom_prompt=payload.custom_prompt,
         prologue=setup.prologue if setup is not None else "",
         history=history,

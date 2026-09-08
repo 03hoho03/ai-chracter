@@ -135,12 +135,19 @@ def build_story_publish_filter_prompt(
     setting_text: str | None,
     development_example: str | None,
     custom_prompt: str | None,
+    development_examples: list[dict[str, Any]],
+    user_goal: str | None,
+    rules: str | None,
     detail_description: str,
     starting_setups: Sequence[StartingSetup],
 ) -> str:
     """techspec-backend-content.md §1.3. 스토리는 상황별 이미지가 없어 첨부 이미지는 대표
     이미지 하나뿐이다(techspec-db-schema.md §5) — 그 이미지는 호출부가 같은 `generate_structured`
-    호출의 `images` 인자로 함께 전달한다."""
+    호출의 `images` 인자로 함께 전달한다.
+
+    chat-goal-prompt.md §8: `developmentExamples`/`userGoal`/`rules`도 창작자가 적는 텍스트라
+    `development_example`과 함께 심사 대상에 넣는다(D-19의 발행 필수화 제외와는 별개 — 값이
+    있으면 걸러야 한다)."""
     sections = [
         "다음은 사용자가 발행하려는 스토리 콘텐츠의 등록 정보다. 아래 텍스트와 함께 첨부된 "
         "이미지(대표 이미지)를 모두 심사해, 선정성/폭력성/혐오 표현/불법 콘텐츠 등 서비스에 부적절한 "
@@ -155,6 +162,15 @@ def build_story_publish_filter_prompt(
         sections.append(f"[전개 예시]\n{development_example}")
     if custom_prompt:
         sections.append(f"[커스텀 프롬프트]\n{custom_prompt}")
+    if rules:
+        sections.append(f"[규칙]\n{rules}")
+    if user_goal:
+        sections.append(f"[사용자의 역할과 목표]\n{user_goal}")
+    if development_examples:
+        example_lines = "\n".join(
+            f"사용자: {pair['userLine']}\n서술자: {pair['assistantLine']}" for pair in development_examples
+        )
+        sections.append(f"[전개 예시(쌍)]\n{example_lines}")
 
     sections.append(f"[상세 설명]\n{detail_description}")
 

@@ -238,6 +238,9 @@ async def test_create_content_draft_creates_empty_story_draft(
     assert detail.setting_text is None
     assert detail.development_example is None
     assert detail.custom_prompt is None
+    assert detail.development_examples == []
+    assert detail.user_goal is None
+    assert detail.rules is None
 
 
 async def test_get_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
@@ -295,6 +298,9 @@ async def test_get_content_draft_returns_newly_created_empty_story_draft(
     assert body["settingText"] is None
     assert body["developmentExample"] is None
     assert body["customPrompt"] is None
+    assert body["developmentExamples"] == []
+    assert body["userGoal"] is None
+    assert body["rules"] is None
     assert body["startingSetups"] == []
     assert body["keywordNotes"] == []
     assert body["shortcuts"] == []
@@ -627,6 +633,44 @@ async def test_patch_content_draft_updates_story_fields_without_validation(
     detail = await db_session.get(StoryVersionDetail, version.id)
     assert detail is not None
     assert detail.setting_text == "세계관 설명"
+
+
+async def test_patch_content_draft_round_trips_rules_user_goal_and_development_examples(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """chat-goal-prompt.md §8-1/§8-2/§8-3 (D-9/D-10): 새 필드 셋이 PATCH -> GET 왕복에서
+    손실 없이 돈다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    development_examples = [
+        {"userLine": "안녕", "assistantLine": "어서오세요"},
+        {"userLine": "잘 지내?", "assistantLine": "그럭저럭요"},
+    ]
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            rules="폭력 묘사는 암시로만 한다",
+            userGoal="용을 물리친다",
+            developmentExamples=development_examples,
+        ),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["rules"] == "폭력 묘사는 암시로만 한다"
+    assert body["userGoal"] == "용을 물리친다"
+    assert body["developmentExamples"] == development_examples
+
+    get_resp = await db_client.get(f"/contents/{content.id}/draft")
+    assert get_resp.status_code == 200
+    get_body = get_resp.json()
+    assert get_body["rules"] == "폭력 묘사는 암시로만 한다"
+    assert get_body["userGoal"] == "용을 물리친다"
+    assert get_body["developmentExamples"] == development_examples
 
 
 def _starting_setup_item(**overrides: object) -> dict[str, object]:

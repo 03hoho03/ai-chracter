@@ -1,8 +1,9 @@
 import enum
 import uuid
 from decimal import Decimal
+from typing import Any
 
-from sqlalchemy import ARRAY, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, Uuid
+from sqlalchemy import ARRAY, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, Uuid, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,6 +54,16 @@ class StoryVersionDetail(Base):
     setting_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     development_example: Mapped[str | None] = mapped_column(Text, nullable=True)
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # chat-goal-prompt.md §8-3/D-10: `development_example`(자유 텍스트)의 후속 — 입출력 쌍
+    # 목록으로 받는다. 마이그레이션 리비전 ①이 기존 33건을 파싱해 채우고, `development_example`
+    # 컬럼 자체는 리비전 ②(이 런 범위 밖)까지 그대로 살아 있다.
+    development_examples: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+    # chat-goal-prompt.md §8-1/§8-2, D-9: 크랙의 `user's role and goal:`/`Rule:`에 대응.
+    # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
+    user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rules: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StartingSetup(Base):
