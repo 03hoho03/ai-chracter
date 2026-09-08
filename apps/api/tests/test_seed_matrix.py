@@ -7,6 +7,7 @@
 import itertools
 import json
 import re
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -106,7 +107,9 @@ def test_every_slot_carries_the_generator_inputs(slots: list[MatrixSlot]) -> Non
 
 def test_axis_distribution_matches_the_spec_table(slots: list[MatrixSlot]) -> None:
     """§7 말미 검증 표: 5개 축과 target 모두 값별로 정확히 10개."""
-    axes = {
+    # 값이 서로 다른 Literal 타입(Tone/Relation/…/Target)이라 dict 리터럴만으로는 mypy가
+    # 공통 타입을 "object"로 좁혀 .count()/set()을 잃는다 — Sequence[str]은 공변이라 명시하면 된다.
+    axes: dict[str, Sequence[str]] = {
         "tone": [s.axes.tone for s in slots],
         "relation": [s.axes.relation for s in slots],
         "verb": [s.axes.verb for s in slots],

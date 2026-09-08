@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import legal as admin_legal
 from api.db.models import AdminActionLog, LegalDocument
+from api.legal.schemas import LegalDocumentKind
 from factories import _create_admin, _login_as_admin, _make_user
 
 
@@ -258,7 +259,9 @@ async def test_draft_upsert_concurrent_insert_race_falls_back_to_update_not_500(
     real_get_draft = admin_legal._get_draft
     call_count = 0
 
-    async def _get_draft_missing_once(db: AsyncSession, kind: str) -> LegalDocument | None:
+    async def _get_draft_missing_once(
+        db: AsyncSession, kind: LegalDocumentKind
+    ) -> LegalDocument | None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

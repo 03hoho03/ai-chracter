@@ -3,7 +3,7 @@
 FastAPI + SQLAlchemy 2.0(async) + Alembic + Postgres/Redis. `uv`로 관리되는 **독립 파이썬 프로젝트**라 pnpm workspace/turborepo 범위 밖이다 — 품질 체크는 항상 `apps/api` 안에서 따로 돌린다:
 
 ```sh
-uv run mypy src migrations scripts   # strict. 경로 3개는 .github/workflows/api.yml과 동일하게 유지
+uv run mypy src migrations scripts tests   # strict. 경로 4개는 .github/workflows/api.yml과 동일하게 유지
 uv run pytest --cov --cov-report=term-missing:skip-covered --cov-fail-under=95  # 로컬 Postgres/Redis 필요 (docker compose -f docker-compose.dev.yml up -d)
 uv run alembic check                 # 모델과 마이그레이션이 정확히 일치하는지
 ```
@@ -31,6 +31,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 - src-layout: 패키지명은 `api`(`src/api/`), `import api.main` 식. `uv sync`가 editable로 설치한다.
 - **`scripts/`는 설치되지 않는다**(src-layout 밖). `pyproject.toml`의 `[tool.mypy] mypy_path`와 `[tool.pytest.ini_options] pythonpath`에 둘 다 `"scripts"`가 있어야 하고, **`scripts/__init__.py`를 만들면 안 된다**(모듈 경로가 `scripts.x`로 바뀌어 mypy/pytest 양쪽이 어긋난다).
+- **`tests/`는 `mypy_path`에만 있고 `pythonpath`에는 없다** — 비대칭이 맞다. `tests/factories.py`를 옆 파일들이 절대 import 하는데, pytest 는 `__init__.py` 없는 테스트 디렉터리를 알아서 `sys.path`에 넣어 주므로 `pythonpath`가 필요 없고, mypy 는 그런 장치가 없어 `mypy_path`가 필요하다. **`tests/__init__.py`는 만들지 않는다**(`scripts/`와 같은 이유 — 모듈 경로가 바뀌어 양쪽이 어긋난다).
 - **DB URL의 단일 소스는 `api.core.config.settings.database_url`이다.** `alembic.ini`의 `sqlalchemy.url`은 플레이스홀더이고 `migrations/env.py`가 기동 시 덮어쓴다 — 마이그레이션용 URL을 따로 관리하지 않는다.
 - 새 모델은 `db/models/{domain}.py`에 두고 **`db/models/__init__.py`에 import**해야 한다. 빠뜨리면 `Base.metadata`가 비어 autogenerate가 조용히 빈 diff를 낸다.
 - **Dockerfile**은 uv 멀티스테이지. `uv:` 이미지 태그를 `[build-system] uv_build` 버전과 맞춰 고정한다(어긋나면 빌드 백엔드 호환성 문제).
@@ -172,10 +173,6 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 - **`pgrep -f pytest`만으로는 부족하다.** 잡힌 프로세스의 실행 경로를 `ps -o command= -p <pid>`로 봐야 한다. `.claude/worktrees/` 아래에서 도는 pytest는 그 워크트리 자신의 `.env`에 있는 `TEST_DATABASE_URL`/`TEST_REDIS_URL`을 쓰므로 **다른 자원이라 기다릴 필요가 없다.** 같은 `apps/api/.venv`에서 도는 것만 진짜 충돌이다.
 - 저장소를 여러 세션이 공유하니 **자기 실행도 `TEST_DATABASE_URL`/`TEST_REDIS_URL`로 격리**해서 다른 세션의 실행과 부딪히지 않게 할 것.
-
-### 알려진 갭 — `tests/`는 mypy 대상이 아니다
-
-- **CI는 `tests/`를 mypy로 검사하지 않는다** (`mypy src migrations scripts`). 2026-09-08 기준 `uv run mypy tests`는 **11개 에러 / 7개 파일**을 낸다. 아래 `## 테스트 인프라`의 "LLM 페이크 시그니처가 어긋나면 `[override]` mypy 에러가 여러 테스트 파일에서 동시에 난다"는 **로컬에서 `mypy .`을 돌렸을 때만 참이다** — CI 는 그걸 잡지 못한다.
 
 ## 테스트 인프라
 

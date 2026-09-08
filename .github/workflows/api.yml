@@ -56,7 +56,7 @@ jobs:
 
       - run: uv run ruff check src migrations scripts tests
 
-      - run: uv run mypy src migrations scripts
+      - run: uv run mypy src migrations scripts tests
 
       # alembic 이 쓰는 URL 의 단일 소스는 api.core.config.settings.database_url(= DATABASE_URL
       # env) 이지 TEST_DATABASE_URL 이 아니다 — alembic.ini 의 값은 플레이스홀더고

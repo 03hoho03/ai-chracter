@@ -66,5 +66,9 @@ def test_generate_thumbnail_preserves_transparency_from_a_non_alpha_source() -> 
     """
     result = _open(generate_thumbnail(_rgb_color_key_transparent_png_bytes(100, 100)))
     assert result.mode == "RGBA"
-    assert result.getpixel((0, 0))[3] == 0  # tRNS 로 지정한 색 영역은 완전 투명이어야 한다
-    assert result.getpixel((90, 0))[3] == 255  # 나머지는 불투명이어야 한다
+    transparent_pixel = result.getpixel((0, 0))
+    opaque_pixel = result.getpixel((90, 0))
+    assert isinstance(transparent_pixel, tuple)
+    assert isinstance(opaque_pixel, tuple)
+    assert transparent_pixel[3] == 0  # tRNS 로 지정한 색 영역은 완전 투명이어야 한다
+    assert opaque_pixel[3] == 255  # 나머지는 불투명이어야 한다

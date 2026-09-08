@@ -37,7 +37,12 @@ def _colors(png: bytes) -> list[tuple[int, int, int]]:
     with Image.open(io.BytesIO(png)) as image:
         counts = image.convert("RGB").getcolors(maxcolors=1_000_000)
     assert counts is not None
-    return [color for _count, color in counts]
+    colors = []
+    for _count, color in counts:
+        assert isinstance(color, tuple)  # "RGB" 모드로 변환했으니 항상 3채널 튜플이다
+        r, g, b = color
+        colors.append((r, g, b))
+    return colors
 
 
 def _brightest(png: bytes) -> tuple[int, int, int]:

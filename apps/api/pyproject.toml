@@ -29,6 +29,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+    "asyncpg-stubs>=0.31.3",
     "boto3-stubs[s3]>=1.40.0",
     "moto[server]>=5.1.0",
     "mypy>=2.1.0",
@@ -75,7 +76,10 @@ extend-immutable-calls = [
 python_version = "3.11"
 # `scripts/` 는 설치되지 않는 CLI 모음이라 여기 없으면 스크립트끼리의 절대 import
 # (`from seed_content.ids import ...`)를 mypy 가 못 찾는다 — pytest 의 pythonpath 와 같은 짝.
-mypy_path = ["src", "scripts"]
+# `tests/` 도 같은 이유로 필요하다 — 테스트 파일들이 `from factories import ...`로
+# 옆 파일(tests/factories.py)을 절대 import 하는데, __init__.py 가 없어 mypy_path 없이는
+# 그 디렉터리가 검색 경로에 안 잡힌다.
+mypy_path = ["src", "scripts", "tests"]
 explicit_package_bases = true
 strict = true
 
