@@ -14,17 +14,19 @@ const VERSION_DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
+type VersionHistoryModalProps = {
+  contentId: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+};
+
 /** techspec-content-detail.md §6, US-017 — 조회 전용 버전 이력. 전환 액션은 없다(그건
  * techspec-chat-story.md §6의 UpdateInfoModal이 대화방 화면에서 별도로 담당). */
 export function VersionHistoryModal({
   contentId,
   open,
   onOpenChange,
-}: {
-  contentId: string;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
+}: VersionHistoryModalProps) {
   const versionsQuery = useContentVersionsQuery(contentId, open);
 
   return (

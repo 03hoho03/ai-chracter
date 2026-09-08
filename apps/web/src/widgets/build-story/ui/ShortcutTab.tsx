@@ -55,6 +55,12 @@ export function ShortcutTab() {
   );
 }
 
+type ShortcutRowProps = {
+  id: string;
+  index: number;
+  onRemove: () => void;
+};
+
 /** techspec-builder-story.md §1.4 — 이름/설명/실행될 프롬프트(전부 필수), 작품 전역 적용이라
  * 스코프 선택 UI가 없다(KeywordNoteTab과 달리 순서/재정렬도 의미가 없어 StatTab과 동일하게
  * add/remove만 지원). */
@@ -62,11 +68,7 @@ function ShortcutRow({
   id,
   index,
   onRemove,
-}: {
-  id: string;
-  index: number;
-  onRemove: () => void;
-}) {
+}: ShortcutRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { register } = form;

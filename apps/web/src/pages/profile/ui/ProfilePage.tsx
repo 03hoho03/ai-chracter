@@ -7,15 +7,17 @@ import { EditProfileDialog } from "@/features/edit-profile";
 
 import { ProfileContentSection } from "./ProfileContentSection";
 
+type ProfilePageProps = {
+  userId: string;
+  contentType: ContentType;
+  onContentTypeChange: (type: ContentType) => void;
+};
+
 export function ProfilePage({
   userId,
   contentType,
   onContentTypeChange,
-}: {
-  userId: string;
-  contentType: ContentType;
-  onContentTypeChange: (type: ContentType) => void;
-}) {
+}: ProfilePageProps) {
   const profileQuery = useProfileQuery(userId);
   const sessionQuery = useSessionQuery();
   const isOwner = sessionQuery.data?.id === userId;

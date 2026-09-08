@@ -11,6 +11,14 @@ import { GeneratedImagePickerModal } from "./GeneratedImagePickerModal";
 
 export type SelectedImageValue = { assetId: string } | null;
 
+type GeneratedImageFieldProps = {
+  value: SelectedImageValue;
+  onChange: (value: SelectedImageValue) => void;
+  purpose: AssetPurpose;
+  previewUrl?: string | null;
+  label?: string;
+};
+
 /**
  * techspec-builder-story.md §2 — 캐릭터/스토리 빌더가 공유하는 이미지 필드. 업로드/갤러리선택/삭제
  * 세 경로 모두 `{assetId}`(또는 삭제 시 null) 하나로 수렴하므로, 이 컴포넌트를 쓰는 zod 폼 필드는
@@ -26,13 +34,7 @@ export function GeneratedImageField({
   purpose,
   previewUrl = null,
   label = "이미지",
-}: {
-  value: SelectedImageValue;
-  onChange: (value: SelectedImageValue) => void;
-  purpose: AssetPurpose;
-  previewUrl?: string | null;
-  label?: string;
-}) {
+}: GeneratedImageFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string | null>(null);
   const [isUploading, setIsUploading] = useState(false);

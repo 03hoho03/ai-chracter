@@ -59,6 +59,13 @@ export function StatTab() {
   );
 }
 
+type StatRowProps = {
+  id: string;
+  startingSetupIndex: number;
+  statIndex: number;
+  onRemove: () => void;
+};
+
 /** 스탯 하나(이름/아이콘/색상/최소·최대·초기값/단위/설명). 순서 우선순위가 없어 dnd-kit 없이
  * add/remove만 지원한다(IntroTab의 예시 대화와 동일한 판단, US-101). */
 function StatRow({
@@ -66,12 +73,7 @@ function StatRow({
   startingSetupIndex,
   statIndex,
   onRemove,
-}: {
-  id: string;
-  startingSetupIndex: number;
-  statIndex: number;
-  onRemove: () => void;
-}) {
+}: StatRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { register, control } = form;

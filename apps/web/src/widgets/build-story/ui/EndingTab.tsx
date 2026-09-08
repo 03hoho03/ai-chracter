@@ -116,18 +116,20 @@ function LogicOpToggle({ value, onChange }: { value: "and" | "or"; onChange: (op
   );
 }
 
+type SingleRuleRowProps = {
+  rule: SingleRuleValues;
+  stats: StatDefValues[];
+  onChange: (rule: SingleRuleValues) => void;
+  onRemove: () => void;
+};
+
 /** 단일 규칙 한 줄(스탯/연산자/기준값). 그룹 내부와 최상위 목록 양쪽에서 재사용된다. */
 function SingleRuleRow({
   rule,
   stats,
   onChange,
   onRemove,
-}: {
-  rule: SingleRuleValues;
-  stats: StatDefValues[];
-  onChange: (rule: SingleRuleValues) => void;
-  onRemove: () => void;
-}) {
+}: SingleRuleRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: rule.id });
 
   return (
@@ -240,6 +242,13 @@ function RuleGroupRow({
   );
 }
 
+type RuleListEditorProps = {
+  items: RuleListItemValues[];
+  stats: StatDefValues[];
+  allowGroups: boolean;
+  onChange: (items: RuleListItemValues[]) => void;
+};
+
 /** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 dnd-kit로 재정렬한다.
  * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다(techspec-builder-story.md §1.5). */
 function RuleListEditor({
@@ -247,12 +256,7 @@ function RuleListEditor({
   stats,
   allowGroups,
   onChange,
-}: {
-  items: RuleListItemValues[];
-  stats: StatDefValues[];
-  allowGroups: boolean;
-  onChange: (items: RuleListItemValues[]) => void;
-}) {
+}: RuleListEditorProps) {
   const sensors = useSensors(useSensor(PointerSensor));
 
   function updateItem(id: string, next: RuleListItemValues) {
@@ -347,6 +351,14 @@ function RuleListEditor({
   );
 }
 
+type EndingRowProps = {
+  id: string;
+  startingSetupIndex: number;
+  endingIndex: number;
+  stats: StatDefValues[];
+  onRemove: () => void;
+};
+
 /** 엔딩 하나(이름/엔딩조건/판단 프롬프트 필수, 에필로그/엔딩힌트 선택 + 스탯 기반 규칙). */
 function EndingRow({
   id,
@@ -354,13 +366,7 @@ function EndingRow({
   endingIndex,
   stats,
   onRemove,
-}: {
-  id: string;
-  startingSetupIndex: number;
-  endingIndex: number;
-  stats: StatDefValues[];
-  onRemove: () => void;
-}) {
+}: EndingRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { register, control, setValue } = form;

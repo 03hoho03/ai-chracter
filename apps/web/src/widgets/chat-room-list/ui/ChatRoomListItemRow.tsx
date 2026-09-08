@@ -24,15 +24,17 @@ import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 
 const RENAME_DEBOUNCE_MS = 500;
 
+type ChatRoomListItemRowProps = {
+  item: ChatRoomListItem;
+  contentId: string;
+  contentType: "character" | "story";
+};
+
 export function ChatRoomListItemRow({
   item,
   contentId,
   contentType,
-}: {
-  item: ChatRoomListItem;
-  contentId: string;
-  contentType: "character" | "story";
-}) {
+}: ChatRoomListItemRowProps) {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (state) => state.location.pathname });

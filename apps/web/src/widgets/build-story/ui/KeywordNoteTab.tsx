@@ -63,6 +63,13 @@ export function KeywordNoteTab() {
   );
 }
 
+type KeywordNoteRowProps = {
+  id: string;
+  index: number;
+  startingSetups: StartingSetupValues[];
+  onRemove: () => void;
+};
+
 /** techspec-builder-story.md §1.3 — 정보(필수)/트리거 키워드(필수, 태그 입력)/적용 대상(필수,
  * 스토리 전체 또는 특정 시작설정). 트리거 키워드 칩은 StartingSetupTab의 추천 답변 칩 패턴을,
  * 시작설정 선택은 StatTab의 ToggleGroup 패턴을 재사용한다. */
@@ -71,12 +78,7 @@ function KeywordNoteRow({
   index,
   startingSetups,
   onRemove,
-}: {
-  id: string;
-  index: number;
-  startingSetups: StartingSetupValues[];
-  onRemove: () => void;
-}) {
+}: KeywordNoteRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const { register, control, setValue, getValues } = form;
