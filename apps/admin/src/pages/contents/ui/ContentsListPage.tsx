@@ -7,8 +7,14 @@ import { useForm } from "react-hook-form";
 
 import {
   CONTENT_TYPE_LABELS,
+  CONTENT_TYPE_OPTIONS,
   CONTENT_VISIBILITY_LABELS,
+  CONTENT_VISIBILITY_OPTIONS,
   MODERATION_STATUS_LABELS,
+  MODERATION_STATUS_OPTIONS,
+  isContentType,
+  isContentVisibility,
+  isModerationStatus,
   useContentListQuery,
   type AdminContentListParams,
   type ContentModerationStatusFilter,
@@ -20,24 +26,23 @@ import { Pagination } from "@/shared/ui/Pagination";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+/** 세 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
+ * 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다. `SelectItem`의 value가 `string`이라
+ * 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다(TS-03, `ReportsListPage` 동형).
+ * `"all"`은 애초에 유효한 멤버가 아니라 술어에서 자연히 걸러진다. */
 const TYPE_FILTER_OPTIONS: { value: "all" | ContentTypeFilter; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "character", label: CONTENT_TYPE_LABELS.character },
-  { value: "story", label: CONTENT_TYPE_LABELS.story },
+  ...CONTENT_TYPE_OPTIONS,
 ];
 
 const VISIBILITY_FILTER_OPTIONS: { value: "all" | ContentVisibilityFilter; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "public", label: CONTENT_VISIBILITY_LABELS.public },
-  { value: "link", label: CONTENT_VISIBILITY_LABELS.link },
-  { value: "private", label: CONTENT_VISIBILITY_LABELS.private },
+  ...CONTENT_VISIBILITY_OPTIONS,
 ];
 
 const MODERATION_FILTER_OPTIONS: { value: "all" | ContentModerationStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
-  { value: "normal", label: MODERATION_STATUS_LABELS.normal },
-  { value: "restricted", label: MODERATION_STATUS_LABELS.restricted },
-  { value: "deleted", label: MODERATION_STATUS_LABELS.deleted },
+  ...MODERATION_STATUS_OPTIONS,
 ];
 
 const SORT_OPTIONS: { value: ContentSortOption; label: string }[] = [
@@ -269,16 +274,8 @@ function ContentsTable({ params, onPageChange }: ContentsTableProps) {
   );
 }
 
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03, ReportsListPage 동형). */
-function isContentType(value: string): value is ContentTypeFilter {
-  return TYPE_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
-}
-function isContentVisibility(value: string): value is ContentVisibilityFilter {
-  return VISIBILITY_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
-}
-function isModerationStatus(value: string): value is ContentModerationStatusFilter {
-  return MODERATION_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
-}
+/** 정렬만 도메인 라벨이 아니라 화면 전용 목록이라 술어가 여기 남는다(`CONTENT_SORT_OPTIONS`는
+ * 서버 스키마가 아니라 admin이 정한 값이다). 나머지 셋은 entities의 술어를 그대로 쓴다. */
 function isSortOption(value: string): value is ContentSortOption {
   return SORT_OPTIONS.some((option) => option.value === value);
 }
