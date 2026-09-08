@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 from typing import Any
 
 import httpx
@@ -27,28 +27,11 @@ from api.db.models import (
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
-    User,
 )
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
+from factories import _login_as, _make_user
 
 
 async def _get_genre(db_session: AsyncSession) -> Genre:

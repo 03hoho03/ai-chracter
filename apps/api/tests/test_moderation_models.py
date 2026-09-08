@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import timezone
 
 import pytest
 import sqlalchemy as sa
@@ -25,18 +25,7 @@ from api.db.models import (
     ReportStatus,
     User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
+from factories import _make_user
 
 
 def _make_admin(**overrides: object) -> AdminUser:

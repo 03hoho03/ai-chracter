@@ -15,24 +15,12 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     ModerationStatus,
-    User,
 )
+from factories import _login_as_admin, _make_user
 
 DAY0 = date(2030, 3, 10)
 DAY1 = DAY0 + timedelta(days=1)
 DAY2 = DAY0 + timedelta(days=2)
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
 
 
 async def _make_chat_room(db_session: AsyncSession, *, user_id: uuid.UUID) -> ChatRoom:
@@ -77,13 +65,6 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     db_session.add(admin)
     await db_session.flush()
     return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
 
 
 async def test_usage_metrics_requires_admin_session(db_client: httpx.AsyncClient) -> None:

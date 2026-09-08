@@ -13,11 +13,7 @@ from api.db.models.chat import ChatRoom
 from api.llm.client import LLMClient, LLMClientError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
+from factories import _login_as
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:

@@ -1,28 +1,11 @@
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import Asset, AssetKind, AssetStatus, User
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    """Logs in via the existing dev session-echo endpoint (same pattern as test_content_drafts_api.py)."""
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
+from api.db.models import Asset, AssetKind, AssetStatus
+from factories import _login_as, _make_user
 
 
 async def _make_asset(

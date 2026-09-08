@@ -1,7 +1,7 @@
 import base64
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -22,20 +22,8 @@ from api.db.models import (
     ModerationStatus,
     StoryPromptTemplate,
     StoryVersionDetail,
-    User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
+from factories import _make_user
 
 
 async def _get_genres(db_session: AsyncSession) -> list[Genre]:

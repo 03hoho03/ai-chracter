@@ -1,7 +1,6 @@
 import uuid
-from collections.abc import AsyncGenerator, Callable, Generator
-from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone, UTC
+from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest_asyncio
@@ -26,10 +25,9 @@ from api.db.models import (
     Report,
     ReportReasonCategory,
     ReportStatus,
-    User,
 )
-from api.db.session import engine
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
+from factories import _count_queries, _login_as_admin, _make_user
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -40,35 +38,6 @@ async def _cleanup_suspension_markers() -> AsyncGenerator[None, None]:
     yield
     async for key in redis_client.scan_iter(match=f"{SUSPENDED_USER_KEY_PREFIX}*"):
         await redis_client.delete(key)
-
-
-@contextmanager
-def _count_queries() -> Generator[Callable[[], int], None, None]:
-    """`before_cursor_execute` 이벤트로 실행된 SQL 문 개수를 센다 — goal-prompt.md 3단계
-    검증 기준("20행 조회에 쿼리 1~3개")을 코드 읽기가 아니라 실측으로 확인하기 위함."""
-    count = 0
-
-    def _before_cursor_execute(*_args: object, **_kwargs: object) -> None:
-        nonlocal count
-        count += 1
-
-    sa.event.listen(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
-    try:
-        yield lambda: count
-    finally:
-        sa.event.remove(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
 
 
 async def _make_content(
@@ -196,13 +165,6 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     db_session.add(admin)
     await db_session.flush()
     return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
 
 
 # ---- 인증 -------------------------------------------------------------------

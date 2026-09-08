@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -18,23 +18,11 @@ from api.db.models import (
     ContentVisibility,
     ModerationStatus,
     Notification,
-    User,
 )
+from factories import _login_as_admin, _make_user
 
 # 파일 간 헬퍼 비공유 관례(apps/api/CLAUDE.md) — test_admin_users_api.py의 팩토리
 # 패턴을 그대로 본떠 이 파일 안에 다시 만든다.
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
 
 
 async def _make_content(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> Content:
@@ -111,13 +99,6 @@ async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[s
     db_session.add(admin)
     await db_session.flush()
     return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
 
 
 async def _assert_requires_admin_session(

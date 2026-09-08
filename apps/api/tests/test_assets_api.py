@@ -1,6 +1,6 @@
 import io
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import timezone
 
 import boto3
 import httpx
@@ -12,32 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.assets.schemas import UPLOAD_SIZE_LIMIT_BYTES, AssetPurpose
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
-from api.db.models.auth import User
 from api.db.models.media import Asset, AssetStatus
+from factories import _login_as, _make_user
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (width, height), color=(120, 40, 200)).save(output, format="PNG")
     return output.getvalue()
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    """Logs in via the existing dev session-echo endpoint (no real /auth/login yet)."""
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
 
 
 async def test_presigned_upload_requires_login(db_client: httpx.AsyncClient) -> None:
