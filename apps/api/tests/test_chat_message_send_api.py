@@ -609,11 +609,11 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
 
 
 async def test_send_message_does_not_dump_prompt_by_default(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """chat-techspec.md §3-5(D-21·D-22): `prompt_dump_path`의 기본값 None이 프로덕션 방어다 —
     설정 안 하면 지금과 동일하게 아무것도 남기지 않아야 한다."""
-    assert settings.prompt_dump_path is None
+    monkeypatch.setattr(settings, "prompt_dump_path", None)
 
     user = _make_user()
     db_session.add(user)

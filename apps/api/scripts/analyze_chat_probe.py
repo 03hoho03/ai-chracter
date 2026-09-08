@@ -128,7 +128,9 @@ class Summary:
     median_len: float = 0.0
     median_sentences: float = 0.0
     spread: float = 0.0
-    per_story: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # (되받기 히트, 길이 중앙값, 채점된 턴 수) — 턴 수는 대본마다 다르므로(4턴/5턴) 항목별
+    # 출력에서 분모로 써야 한다("/5" 하드코딩은 4턴 대본에서 거짓 정보가 된다).
+    per_story: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     defects: list[str] = field(default_factory=list)
 
     def rate(self, window: str) -> str:
@@ -211,7 +213,11 @@ def summarize(path: str) -> Summary:
             for token in _BRACKET.findall(reply):
                 out.defects.append(f"{key} t{index + 1}: 대괄호 출력 {token}")
         if scored_lengths:
-            out.per_story[key] = (story_hits, int(statistics.median(scored_lengths)))
+            out.per_story[key] = (
+                story_hits,
+                int(statistics.median(scored_lengths)),
+                len(scored_lengths),
+            )
             out.total_rooms += 1
             if all(b <= a for a, b in pairwise(scored_lengths)):
                 out.monotonic_rooms += 1
@@ -290,8 +296,10 @@ def main() -> None:
 
     for s in summaries:
         print(f"\n[{s.label}] 항목별 되받기(앞250자) / 길이 중앙값")
-        for key, (hit, length) in sorted(s.per_story.items(), key=lambda item: -item[1][0]):
-            print(f"  {key:24} {hit}/5   {length:>5}자")
+        for key, (hit, length, scored) in sorted(
+            s.per_story.items(), key=lambda item: -item[1][0]
+        ):
+            print(f"  {key:24} {hit}/{scored}   {length:>5}자")
         if s.defects:
             print(f"  결함 후보 {len(s.defects)}건")
             for line in s.defects:

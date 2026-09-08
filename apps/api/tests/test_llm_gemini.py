@@ -255,6 +255,7 @@ async def test_generate_omits_seed_by_default(monkeypatch: pytest.MonkeyPatch) -
         return _chunks("네")
 
     client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+    monkeypatch.setattr(settings, "gemini_seed", None)
 
     assert [token async for token in client.generate("hi")] == ["네"]
     assert captured["config"].seed is None
