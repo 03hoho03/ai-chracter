@@ -12,9 +12,10 @@ import { toast } from "sonner";
 
 import { useChangeStartingSetupMutation, useChatRoomQuery } from "@/entities/chat-room";
 import { useContentDetailQuery } from "@/entities/content";
+
 import { ConfirmStartingSetupChangeModal } from "./ConfirmStartingSetupChangeModal";
 
-type Props = {
+type ChangeStartingSetupModalProps = {
   roomId: string;
 };
 
@@ -22,7 +23,7 @@ type Props = {
 // (ChatRoomView)가 이미 채워둔 chatRoomKeys.detail 캐시를 자체 구독한다. 현재 사용 중인 시작설정은
 // room.contentSnapshot.pinnedStartingSetupId(물리적 PK, US-070)로 판정 — room.startingSetupId는
 // entity_id라 GET /contents/{id}가 내려주는 startingSetups[].id(물리적 PK)와 비교할 수 없다.
-export const ChangeStartingSetupModal = createCallable<Props, void>(({ call, roomId }) => {
+export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalProps, void>(({ call, roomId }) => {
   const open = !call.ended;
   const room = useChatRoomQuery(roomId).data;
   const contentQuery = useContentDetailQuery(room?.contentId ?? "", open && room !== undefined);

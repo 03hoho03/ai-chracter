@@ -10,14 +10,14 @@ import { createCallable } from "react-call";
 
 import { useCharacterImageArchiveQuery } from "@/entities/character-image-archive";
 
-type Props = {
+type ImageArchiveModalProps = {
   characterId: string;
 };
 
 // techspec-chat-character.md §2, US-074/075 — "더보기 > 이미지 보관함"에서 여는 읽기 전용 react-call
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). exposed=false 항목은 서버가
 // 내려준 블러 imageUrl 위에 자물쇠 아이콘만 오버레이하고 클라이언트 사이드 블러 처리는 하지 않는다.
-export const ImageArchiveModal = createCallable<Props, void>(({ call, characterId }) => {
+export const ImageArchiveModal = createCallable<ImageArchiveModalProps, void>(({ call, characterId }) => {
   const open = !call.ended;
   const archiveQuery = useCharacterImageArchiveQuery(characterId, open);
 

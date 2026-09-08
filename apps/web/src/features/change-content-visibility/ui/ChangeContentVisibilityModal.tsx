@@ -19,7 +19,7 @@ import {
 
 import { VISIBILITY_TRANSITION_COPY } from "../model/visibilityTransition";
 
-type Props = {
+type ChangeContentVisibilityModalProps = {
   contentId: string;
   creatorUserId: string;
   /** 전환하려는 공개범위. 현재 값과 같은 항목은 호출부(`listVisibilityTransitions`)가 걸러 낸다. */
@@ -31,7 +31,7 @@ type Props = {
  * 카드/상세화면 액션 메뉴)와 무관하게 성공 후 동작(토스트+캐시 무효화+닫기)이 항상 동일해
  * UpdateInfoModal/AppealModal과 같은 "자체 mutation 직접 호출" 계열로 만들었다
  * (ConfirmChatRoomActionModal처럼 호출부가 mutationFn을 주입하는 계열이 아님). */
-export const ChangeContentVisibilityModal = createCallable<Props, void>(
+export const ChangeContentVisibilityModal = createCallable<ChangeContentVisibilityModalProps, void>(
   ({ call, contentId, creatorUserId, targetVisibility }) => {
     const queryClient = useQueryClient();
     const mutation = useUpdateContentVisibilityMutation(contentId);

@@ -13,14 +13,14 @@ import { createCallable } from "react-call";
 import { useEndingCollectionQuery } from "@/entities/chat-room";
 import type { EndingCollectionItem } from "@/entities/chat-room";
 
-type Props = {
+type EndingCollectionModalProps = {
   startingSetupId: string;
 };
 
 // techspec-chat-story.md §6, US-069/070 — "더보기 > 엔딩 컬렉션"에서 여는 읽기 전용 react-call
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). 목록↔에필로그 상세는 로컬
 // state(selectedEnding)로 같은 Dialog 안에서 전환한다 — 새 Dialog를 중첩하지 않는다.
-export const EndingCollectionModal = createCallable<Props, void>(({ call, startingSetupId }) => {
+export const EndingCollectionModal = createCallable<EndingCollectionModalProps, void>(({ call, startingSetupId }) => {
   const open = !call.ended;
   const [selectedEnding, setSelectedEnding] = useState<EndingCollectionItem | null>(null);
   const endingsQuery = useEndingCollectionQuery(startingSetupId, open);

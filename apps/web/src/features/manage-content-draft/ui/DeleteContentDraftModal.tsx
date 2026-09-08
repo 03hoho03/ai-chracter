@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { contentKeys, useDeleteContentDraftMutation } from "@/entities/content";
 import { draftKeys } from "@/entities/draft";
 
-type Props = {
+type DeleteContentDraftModalProps = {
   /** 지울 초안의 콘텐츠 id. 한 번도 발행된 적 없는 콘텐츠만 올 수 있다(호출부가 `kind`로 거른다). */
   contentId: string;
 };
@@ -27,7 +27,7 @@ type Props = {
  * 호출부와 무관하게 성공 후 동작(토스트 + `draftKeys.list()` 무효화 + 닫기)이 항상 같아
  * `ChangeContentVisibilityModal`과 같은 "자체 mutation 직접 호출" 계열이다
  * (`ConfirmChatRoomActionModal`처럼 호출부가 mutationFn을 주입하는 계열이 아님). */
-export const DeleteContentDraftModal = createCallable<Props, void>(({ call, contentId }) => {
+export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalProps, void>(({ call, contentId }) => {
   const queryClient = useQueryClient();
   const mutation = useDeleteContentDraftMutation(contentId);
 

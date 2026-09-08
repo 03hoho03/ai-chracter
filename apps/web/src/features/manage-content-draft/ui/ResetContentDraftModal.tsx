@@ -13,7 +13,7 @@ import { toast } from "sonner";
 
 import { contentKeys, useResetContentDraftMutation } from "@/entities/content";
 
-type Props = {
+type ResetContentDraftModalProps = {
   /** 편집 변경분을 버릴 콘텐츠 id. 발행 이력이 있는 콘텐츠만 올 수 있다(호출부가 `kind`로 거른다). */
   contentId: string;
   /** 이 작품의 작가 = 언제나 나. 성공 시 무효화할 목록 쿼리 키를 만드는 데 쓴다
@@ -43,7 +43,7 @@ type Props = {
  * — 편집 취소가 조용히 취소된다(브라우저로 재현: 취소 성공 → 서버 `이도윤` → 빌더 재진입 시 폼은
  * `재현-US010-스테일2` → 한 글자 입력하니 서버가 `재현-US010-스테일2`로 되돌아갔다).
  * 지워 두면 다음 진입이 스켈레톤 한 번을 거쳐 반드시 서버 값으로 시작한다. */
-export const ResetContentDraftModal = createCallable<Props, void>(({ call, contentId, creatorUserId }) => {
+export const ResetContentDraftModal = createCallable<ResetContentDraftModalProps, void>(({ call, contentId, creatorUserId }) => {
   const queryClient = useQueryClient();
   const mutation = useResetContentDraftMutation(contentId);
 

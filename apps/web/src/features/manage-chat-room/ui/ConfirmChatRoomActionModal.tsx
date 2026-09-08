@@ -10,7 +10,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 
-type Props = {
+type ConfirmChatRoomActionModalProps = {
   title: string;
   description: string;
   confirmLabel: string;
@@ -21,7 +21,7 @@ type Props = {
  * 사례 — 둘 다 입력 없이 확인/취소만 있는 동일 구조라 하나의 컴포넌트로 공유한다. ReportContentModal과
  * 동일하게 실제 API 호출/토스트는 호출부의 mutationFn이 담당하고, 이 컴포넌트는 확인 UI + 제출 상태
  * 표시만 책임진다. */
-export const ConfirmChatRoomActionModal = createCallable<Props, void>(
+export const ConfirmChatRoomActionModal = createCallable<ConfirmChatRoomActionModalProps, void>(
   ({ call, title, description, confirmLabel, mutationFn }) => {
     const submit = useMutationFlow(call, mutationFn);
 
