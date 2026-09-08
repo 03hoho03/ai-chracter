@@ -3,4 +3,5 @@ export { useNoticeListQuery, type AdminNoticeListItem, type AdminNoticeListRespo
 export { useNoticeDetailQuery, type AdminNoticeDetailResponse } from "./api/useNoticeDetailQuery";
 export { useCreateNoticeMutation, type AdminNoticeCreateRequest } from "./api/useCreateNoticeMutation";
 export { useUpdateNoticeMutation, type AdminNoticeUpdateRequest } from "./api/useUpdateNoticeMutation";
-export { usePublishNoticeMutation, useUnpublishNoticeMutation } from "./api/usePublishNoticeMutation";
+export { usePublishNoticeMutation } from "./api/usePublishNoticeMutation";
+export { useUnpublishNoticeMutation } from "./api/useUnpublishNoticeMutation";
