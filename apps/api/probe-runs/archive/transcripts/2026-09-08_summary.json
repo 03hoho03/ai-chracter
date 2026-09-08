@@ -1,0 +1,87 @@
+[
+  {
+    "path": "probe-runs/archive/transcripts/2026-09-08_flash-lite_no-instruction.json",
+    "label": "gemini-3.5-flash-lite",
+    "scored": 10,
+    "empty_replies": 0,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 4,
+      "sent2": 4,
+      "pct30": 4
+    },
+    "median_len": 628.5,
+    "median_sentences": 13.5,
+    "spread": 2.195876288659794,
+    "per_story": {
+      "daily-lastorder#s0r1": [
+        4,
+        852
+      ],
+      "wuxia-oneform#s0r1": [
+        0,
+        388
+      ]
+    },
+    "defects": []
+  },
+  {
+    "path": "probe-runs/archive/transcripts/2026-09-08_flash-lite_instruction-with-label-examples.json",
+    "label": "gemini-3.5-flash-lite",
+    "scored": 10,
+    "empty_replies": 0,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 4,
+      "sent2": 4,
+      "pct30": 4
+    },
+    "median_len": 401.5,
+    "median_sentences": 10.5,
+    "spread": 1.6337579617834395,
+    "per_story": {
+      "daily-lastorder#s0r1": [
+        4,
+        513
+      ],
+      "wuxia-oneform#s0r1": [
+        0,
+        314
+      ]
+    },
+    "defects": [
+      "daily-lastorder#s0r1 t2: 한글깨짐 후보 '찾A'"
+    ]
+  },
+  {
+    "path": "probe-runs/archive/transcripts/2026-09-08_flash-lite_instruction-no-label-examples.json",
+    "label": "gemini-3.5-flash-lite",
+    "scored": 10,
+    "empty_replies": 0,
+    "truncated": 0,
+    "self_copies": 0,
+    "parrot_hits": {
+      "chars250": 8,
+      "sent2": 5,
+      "pct30": 8
+    },
+    "median_len": 528.0,
+    "median_sentences": 13.0,
+    "spread": 1.8085106382978724,
+    "per_story": {
+      "daily-lastorder#s0r1": [
+        5,
+        595
+      ],
+      "wuxia-oneform#s0r1": [
+        3,
+        329
+      ]
+    },
+    "defects": [
+      "daily-lastorder#s0r1 t5: 한글깨짐 후보 'X이'"
+    ]
+  }
+]
