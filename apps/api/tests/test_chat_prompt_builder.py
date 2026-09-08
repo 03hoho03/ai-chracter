@@ -564,3 +564,22 @@ def test_base_system_instruction_frames_each_chat_kind_as_its_own_speaker() -> N
 
     assert system_instruction_for(is_story_chat=True) == STORY_CHAT_SYSTEM_INSTRUCTION
     assert system_instruction_for(is_story_chat=False) == CHARACTER_CHAT_SYSTEM_INSTRUCTION
+
+
+def test_base_system_instruction_keeps_the_turn_open() -> None:
+    """[턴을 열어 둔다] — chat-goal-prompt.md §5. 프로덕션에서 관측된 "장면 닫기"(사용자
+    발화 무시·길이 단조감소·인물 상태가 한 방향으로만 감)에 대한 처방으로, 스토리·캐릭터
+    두 지시문이 공유하는 `_COMMON_RULES`에 들어간다.
+
+    D-5: 금지 대상(닫는 행동)을 예시로 나열하지 않는다 — 2026-09-08 실측에서 라벨 금지에
+    예시를 달았더니 없던 라벨이 새로 나타났다. 같은 위험이 있는 닫는 행동(잠들·자리를
+    뜨·눈을 감)도 이름으로 적지 않는다. D-4: 길이·문장 수 상한도 넣지 않는다.
+    """
+    for text in (STORY_CHAT_SYSTEM_INSTRUCTION, CHARACTER_CHAT_SYSTEM_INSTRUCTION):
+        assert "[턴을 열어 둔다]" in text
+
+        assert "잠들" not in text
+        assert "자리를 뜨" not in text
+        assert "눈을 감" not in text
+
+        assert "문장" not in text
