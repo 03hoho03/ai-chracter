@@ -13,9 +13,10 @@ import { ChatMoreNav } from "./ChatMoreNav";
 // 깊이는 그림자가 아니라 명도로 만든다(DESIGN.md Flat-at-Rest) — bg-card가 background 위 반 칸이고
 // 경계는 border-l 한 줄이다. 닫기는 헤더 ⋮ 재클릭 / 이 안의 닫기 버튼 / ESC 셋 다 동작한다.
 //
-// slide-in을 뺀 이유 — 이 <aside>는 오버레이가 아니라 부모 flex 행의 in-flow 아이템이고, 그 행이
-// 뷰포트 폭 전체를 쓴다. 그래서 motion-safe:slide-in-from-right-10(translateX(2.5rem) 진입)이
-// 문서를 넘치게 한다 — 포털되는 Sheet였다면 없었을 문제다. 1440×900 실측: 더보기 클릭 후
+// slide-in을 뺀 이유 — 이 <aside>는 오버레이가 아니라 부모 flex 행의 in-flow 아이템이다. 아래 실측
+// 당시엔 그 행에 컬럼 제한이 없어 뷰포트 폭 전체를 썼다(지금은 행 자체에 max-w-5xl이 붙어 있다 —
+// ChatRoomView 참고). 그래서 motion-safe:slide-in-from-right-10(translateX(2.5rem) 진입)이
+// 문서를 넘치게 했다 — 포털되는 Sheet였다면 없었을 문제다. 1440×900 실측: 더보기 클릭 후
 // documentElement.scrollWidth - clientWidth가 8프레임 동안 양수, 관측 최대 14px, 약 70ms에 0으로
 // 수렴했다. 조상(ChatRoomView의 flex 행)에 overflow-x-hidden을 걸어 넘침만 가리는 대안도 시도했지만
 // 같은 행에 사는 ShortcutAutocomplete(absolute bottom-full max-h-60)가 잘려버렸다 — 844×390 가로

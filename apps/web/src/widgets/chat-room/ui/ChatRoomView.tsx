@@ -109,29 +109,43 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 sm:px-6 py-3">
-        <Button variant="ghost" size="icon" aria-label="뒤로가기" onClick={() => window.history.back()}>
-          <ArrowLeft aria-hidden className="size-4" />
-        </Button>
-        <Avatar>
-          <AvatarImage src={content?.thumbnailUrl ?? undefined} alt="" />
-          <AvatarFallback>{content?.name.slice(0, 1) ?? "?"}</AvatarFallback>
-        </Avatar>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
-          <span className="truncate text-xs text-muted-foreground">{room.name}</span>
+      {/* border-b를 <header>가 아니라 안쪽 컬럼 div에 건다 — 뷰포트를 가로지르는 선은 전역 헤더의
+          border-b 하나뿐이어야 한다(DESIGN.md §Navigation "크롬은 sticky 헤더 하나뿐이다"). <header>에
+          걸면 이 선만 전폭이 되어 바로 아래 StatGaugePanel·버전 배너의 border-b, 입력창의 border-t와
+          길이가 크게 벌어진다. 옮기면 선이 뷰포트가 아니라 컬럼 경계를 따른다 — 1425px 실측에서
+          전역 헤더 1425 / 채팅 헤더 1024 / 입력창 1024px다.
+          단 "전부 같은 길이"가 되는 건 사이드바가 닫혀 있을 때뿐이다: 열면 채팅 헤더 선은 행 전체를
+          (1024), 아래 선들은 채팅 컬럼만(736) 덮는다. 헤더가 채팅 컬럼과 사이드바 **둘 다** 위에
+          있으니 이건 맞는 동작이다 — 옮기기 전에는 같은 상태에서 1425 vs 736이었다. */}
+      <header className="shrink-0">
+        <div className="mx-auto flex max-w-5xl items-center gap-3 border-b border-border px-4 sm:px-6 py-3">
+          <Button variant="ghost" size="icon" aria-label="뒤로가기" onClick={() => window.history.back()}>
+            <ArrowLeft aria-hidden className="size-4" />
+          </Button>
+          <Avatar>
+            <AvatarImage src={content?.thumbnailUrl ?? undefined} alt="" />
+            <AvatarFallback>{content?.name.slice(0, 1) ?? "?"}</AvatarFallback>
+          </Avatar>
+          <div className="flex min-w-0 flex-1 flex-col">
+            <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
+            <span className="truncate text-xs text-muted-foreground">{room.name}</span>
+          </div>
+          <ChatMorePanel
+            roomId={roomId}
+            contentType={room.contentType}
+            startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
+            characterId={characterId}
+          />
         </div>
-        <ChatMorePanel
-          roomId={roomId}
-          contentType={room.contentType}
-          startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
-          characterId={characterId}
-        />
       </header>
 
       {/* US-004 — 더보기 사이드바는 채팅 헤더 아래부터 바닥까지 채우고 채팅 컬럼과 폭을 나눠 갖는다.
-          min-h-0/min-w-0이 없으면 flex 아이템의 기본 min-*:auto가 메시지 영역의 스크롤과 축소를 막는다. */}
-      <div className="flex min-h-0 flex-1">
+          min-h-0/min-w-0이 없으면 flex 아이템의 기본 min-*:auto가 메시지 영역의 스크롤과 축소를 막는다.
+          max-w-5xl은 셸이 아니라 이 행에 건다 — 채팅 컬럼이 중앙 정렬된 행의 첫 flex 아이템이라
+          사이드바를 여닫아도(오른쪽에서만 폭을 가져가므로) 좌측 콘텐츠 시작점이 움직이지 않는다.
+          w-full이 없으면 flex 컬럼 자식의 auto 마진 때문에 stretch가 꺼져 폭이 shrink-to-fit으로
+          붕괴한다. */}
+      <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
           {versionUpgradeBannerVisible && (
             <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 sm:px-6 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
@@ -277,7 +291,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
 function ChatRoomSkeleton() {
   return (
-    <div className="flex flex-col gap-3 px-4 sm:px-6 py-4">
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 sm:px-6 py-4">
       <div className="h-16 w-2/3 animate-pulse rounded-lg bg-muted" />
       <div className="ml-auto h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
       <div className="h-12 w-3/5 animate-pulse rounded-lg bg-muted" />

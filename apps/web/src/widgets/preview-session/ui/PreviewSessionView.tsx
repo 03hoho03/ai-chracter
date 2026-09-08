@@ -95,116 +95,120 @@ export function PreviewSessionView({
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3">
-        <div className="flex items-center gap-2">
-          {onClose && (
-            <Button variant="ghost" size="icon-sm" aria-label="미리보기 닫기" onClick={onClose}>
-              <ChevronLeft aria-hidden className="size-4" />
-            </Button>
-          )}
-          <span className="text-sm font-semibold text-foreground">미리보기</span>
+      <header className="shrink-0">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3">
+          <div className="flex items-center gap-2">
+            {onClose && (
+              <Button variant="ghost" size="icon-sm" aria-label="미리보기 닫기" onClick={onClose}>
+                <ChevronLeft aria-hidden className="size-4" />
+              </Button>
+            )}
+            <span className="text-sm font-semibold text-foreground">미리보기</span>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>
+            <RotateCw aria-hidden className="size-3.5" />
+            미리보기 초기화
+          </Button>
         </div>
-        <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>
-          <RotateCw aria-hidden className="size-3.5" />
-          미리보기 초기화
-        </Button>
       </header>
 
-      {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}
+      <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col">
+        {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}
 
-      <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-        <div className="flex flex-col gap-3">
-          {state.messages.map((message) => (
-            <MessageBubble key={message.id} message={message} />
-          ))}
-
-          {state.endingStatus.reached && state.endingStatus.epilogue && (
-            <>
-              <EndingDivider />
-              <MessageBubble
-                message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
-              />
-            </>
-          )}
-
-          {isSending &&
-            (streamingText ? (
-              <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText, createdAt: "" }} />
-            ) : (
-              <TypingIndicator />
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col gap-3">
+            {state.messages.map((message) => (
+              <MessageBubble key={message.id} message={message} />
             ))}
 
-          {error && (
-            <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-              <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
-            </div>
-          )}
-
-          {policyWarning && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
-              <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{policyWarning}</span>
-            </div>
-          )}
-
-          <div ref={bottomRef} />
-        </div>
-      </div>
-
-      <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
-        {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
-            사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
-            동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}
-        {shouldShowSuggestedReplies(
-          state.suggestedReplies,
-          state.turnCount,
-          state.messages.some((message) => message.role === "user"),
-        ) && (
-          <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
-            {state.suggestedReplies.map((reply) => (
-              <Button
-                key={reply}
-                type="button"
-                variant="secondary"
-                size="sm"
-                disabled={isSending}
-                onClick={() => handleSuggestedReplyClick(reply)}
-                className="shrink-0 rounded-full"
-              >
-                {reply}
-              </Button>
-            ))}
-          </div>
-        )}
-
-        <div className="flex items-end gap-2">
-          <div className="relative flex-1">
-            <Textarea
-              ref={inputRef}
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  handleSend();
-                }
-              }}
-              placeholder="메시지를 입력하세요"
-              disabled={isSending}
-              rows={1}
-              className="max-h-40 resize-none"
-            />
-            {state.shortcuts.length > 0 && text.startsWith("/") && (
-              <ShortcutAutocomplete
-                shortcuts={state.shortcuts}
-                query={text.slice(1)}
-                onSelect={handleShortcutSelect}
-              />
+            {state.endingStatus.reached && state.endingStatus.epilogue && (
+              <>
+                <EndingDivider />
+                <MessageBubble
+                  message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
+                />
+              </>
             )}
+
+            {isSending &&
+              (streamingText ? (
+                <MessageBubble message={{ id: "streaming", role: "assistant", content: streamingText, createdAt: "" }} />
+              ) : (
+                <TypingIndicator />
+              ))}
+
+            {error && (
+              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+                <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
+              </div>
+            )}
+
+            {policyWarning && (
+              <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
+                <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <span className="text-xs text-muted-foreground">{policyWarning}</span>
+              </div>
+            )}
+
+            <div ref={bottomRef} />
           </div>
-          <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
-            <Send aria-hidden className="size-4" />
-          </Button>
+        </div>
+
+        <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
+          {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
+              사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
+              동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}
+          {shouldShowSuggestedReplies(
+            state.suggestedReplies,
+            state.turnCount,
+            state.messages.some((message) => message.role === "user"),
+          ) && (
+            <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
+              {state.suggestedReplies.map((reply) => (
+                <Button
+                  key={reply}
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isSending}
+                  onClick={() => handleSuggestedReplyClick(reply)}
+                  className="shrink-0 rounded-full"
+                >
+                  {reply}
+                </Button>
+              ))}
+            </div>
+          )}
+
+          <div className="flex items-end gap-2">
+            <div className="relative flex-1">
+              <Textarea
+                ref={inputRef}
+                value={text}
+                onChange={(event) => setText(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && !event.shiftKey) {
+                    event.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="메시지를 입력하세요"
+                disabled={isSending}
+                rows={1}
+                className="max-h-40 resize-none"
+              />
+              {state.shortcuts.length > 0 && text.startsWith("/") && (
+                <ShortcutAutocomplete
+                  shortcuts={state.shortcuts}
+                  query={text.slice(1)}
+                  onSelect={handleShortcutSelect}
+                />
+              )}
+            </div>
+            <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
+              <Send aria-hidden className="size-4" />
+            </Button>
+          </div>
         </div>
       </div>
     </div>
