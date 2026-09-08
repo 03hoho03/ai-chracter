@@ -1,7 +1,9 @@
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 
 import {
   INQUIRY_CATEGORY_LABEL,
+  INQUIRY_STATUS_BADGE_INK,
   INQUIRY_STATUS_LABEL,
   type MyInquiryListItem,
   useMyInquiryListQuery,
@@ -55,7 +57,12 @@ function InquiryListItemRow({ item }: { item: MyInquiryListItem }) {
     >
       <span className="flex items-center justify-between gap-2">
         <span className="break-keep text-base font-semibold text-foreground">{item.title}</span>
-        <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium",
+            INQUIRY_STATUS_BADGE_INK[item.status],
+          )}
+        >
           {INQUIRY_STATUS_LABEL[item.status]}
         </span>
       </span>

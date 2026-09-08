@@ -1,8 +1,10 @@
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { FileQuestion } from "lucide-react";
 
 import {
   INQUIRY_CATEGORY_LABEL,
+  INQUIRY_STATUS_BADGE_INK,
   INQUIRY_STATUS_LABEL,
   type MyInquiryDetailResponse,
   useMyInquiryDetailQuery,
@@ -60,7 +62,12 @@ function InquiryDetailContent({ inquiry }: { inquiry: MyInquiryDetailResponse })
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center gap-2">
           <h1 className="break-keep text-2xl font-bold tracking-tight text-foreground">{inquiry.title}</h1>
-          <span className="inline-flex shrink-0 items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium",
+              INQUIRY_STATUS_BADGE_INK[inquiry.status],
+            )}
+          >
             {INQUIRY_STATUS_LABEL[inquiry.status]}
           </span>
         </div>

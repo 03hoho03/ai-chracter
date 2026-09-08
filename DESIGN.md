@@ -291,7 +291,8 @@ components:
 
 ### Status badges
 - **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-badge font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다(크기만 토큰이다 — §Typography의 Badge 티어).
-- **중립 상태(공개/링크공개/비공개/미등록):** `border border-border text-muted-foreground` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
+- **중립 상태(공개/링크공개/비공개/미등록, 문의 대기/답변완료):** `border border-border` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
+- **중립 상태 안의 위계는 잉크 명도로 만든다.** 기본은 `text-muted-foreground`(다크 6.74:1 / 라이트 5.28:1)이고, **사용자가 읽을 게 생긴 상태만** 밝기 천장 `text-foreground`로 올린다(15.79:1 / 17.31:1) — 지금은 문의의 `답변완료` 하나뿐이다(`entities/inquiry/model/inquiryStatus.ts`의 `INQUIRY_STATUS_BADGE_INK`). 색으로 가르지 않는 것은 PRODUCT.md가 "UI 자체(배경/텍스트/버튼/배지)는 무채색"으로 못박았기 때문이고, 이 시스템의 깊이는 원래 명도 사다리가 만든다.
 - **이용제한:** `bg-destructive/10 text-destructive-text` — 틴트, 채움 아님.
 - **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.
 - **삭제:** 배지가 아니라 전체 패널 빈 상태로 표현한다(`ContentUnavailableState`) — 아이콘 + 제목 + 설명.
