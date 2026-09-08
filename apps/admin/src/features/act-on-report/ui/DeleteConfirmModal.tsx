@@ -12,7 +12,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useMemo } from "react";
 import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
-import { useForm, useWatch } from "react-hook-form";
+import { useForm } from "react-hook-form";
 
 import { createDeleteConfirmSchema, type DeleteConfirmFormValues } from "../model/schema";
 
@@ -24,21 +24,26 @@ type DeleteConfirmModalProps = {
 /** techspec-admin.md §1/§4 — 삭제는 되돌릴 수 없으므로, 콘텐츠명을 정확히 입력해야만 확정 버튼이 활성화된다.
  * 관리자 코멘트는 호출부가 이미 받아 mutationFn 클로저에 담아 넘기므로 이 모달은 입력을 다시 받지 않는다.
  *
- * "일치해야 활성화"는 `apps/admin/CLAUDE.md`가 정한 규약이라 버튼 게이트를 그대로 두고, 폼 검증은
- * 그 게이트를 뚫는 유일한 경로인 **입력창 Enter**를 막는다(같은 기준을 zod가 한 번 더 진다). */
+ * "일치해야 활성화"는 `apps/admin/CLAUDE.md`가 정한 규약이라 버튼 게이트를 그대로 두되, 그 판정을
+ * 컴포넌트에서 다시 계산하지 않고 `mode: "onChange"` + `formState.isValid`로 **스키마에서 도출한다** —
+ * 일치 술어가 두 곳에 있으면 갈린다. 게이트를 뚫는 유일한 경로인 입력창 Enter는 `handleSubmit`이 막는다. */
 export const DeleteConfirmModal = createCallable<DeleteConfirmModalProps, void>(({ call, contentName, mutationFn }) => {
   const schema = useMemo(() => createDeleteConfirmSchema(contentName), [contentName]);
-  const { register, control, handleSubmit } = useForm<DeleteConfirmFormValues>({
+  const {
+    register,
+    handleSubmit,
+    formState: { isValid },
+  } = useForm<DeleteConfirmFormValues>({
     resolver: zodResolver(schema),
     defaultValues: { confirmText: "" },
+    mode: "onChange",
   });
 
   const submit = useMutationFlow(call, mutationFn);
 
-  const confirmText = useWatch({ control, name: "confirmText" });
-  const isConfirmBlocked = confirmText.trim() !== contentName || submit.pending;
+  const isConfirmBlocked = !isValid || submit.pending;
 
-  function onSubmit() {
+  function handleValidSubmit() {
     if (isConfirmBlocked) return;
     submit();
   }
@@ -59,7 +64,7 @@ export const DeleteConfirmModal = createCallable<DeleteConfirmModalProps, void>(
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit(onSubmit)(event);
+            void handleSubmit(handleValidSubmit)(event);
           }}
         >
           <Input placeholder={contentName} autoFocus aria-label="콘텐츠명 확인" {...register("confirmText")} />
