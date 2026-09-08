@@ -223,6 +223,28 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
     assert captured["config"].max_output_tokens == 4242
 
 
+async def test_generate_forwards_the_system_instruction_to_the_config(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """바닥 지시문은 프롬프트 본문이 아니라 `system_instruction` 으로 가야 한다 — 본문에 이어
+    붙이면 작품 설정과 같은 층에 놓여 우선순위(수위 항목이 작품 설정을 이긴다)가 사라진다.
+    넘기지 않으면 None 이 그대로 실려 예전 호출 페이로드와 같아야 한다."""
+    captured: dict[str, Any] = {}
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        captured.update(kwargs)
+        return _chunks("네")
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    assert [token async for token in client.generate("hi", "너는 화자다")] == ["네"]
+    assert captured["config"].system_instruction == "너는 화자다"
+    assert captured["contents"] == "hi", "지시문이 프롬프트 본문에 섞이면 안 된다"
+
+    assert [token async for token in client.generate("hi")] == ["네"]
+    assert captured["config"].system_instruction is None
+
+
 async def test_generate_omits_seed_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """`gemini_seed` 기본값 None 이면 config.seed 가 아예 안 실려야 한다(호출 페이로드가
     지금과 동일해야 하는 것이 이 필드의 성공 기준, chat-techspec.md §3-1)."""

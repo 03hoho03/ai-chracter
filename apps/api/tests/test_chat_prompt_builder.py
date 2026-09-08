@@ -1,11 +1,14 @@
 import uuid
 
 from api.chat.prompt_builder import (
+    CHARACTER_CHAT_SYSTEM_INSTRUCTION,
+    STORY_CHAT_SYSTEM_INSTRUCTION,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    system_instruction_for,
 )
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
@@ -363,3 +366,39 @@ def test_build_stat_judgment_prompt_marks_system_managed_counters() -> None:
     trust_line = next(line for line in prompt.splitlines() if "이름=상호 신뢰" in line)
     assert "statChanges에 넣지 마라" in oxygen_line
     assert "statChanges에 넣지 마라" not in trust_line
+
+
+def test_base_system_instruction_covers_only_the_measured_gaps() -> None:
+    """바닥 지시문은 "여러 작품이 똑같이 반복해 적는 것"(라벨 금지 29/30)과 "아무도 안 적어서
+    서비스 기준이 어디에도 없는 것"(사용자 대사 대신쓰기 1/30, 수위 6/30)만 담는다.
+
+    되받기 금지는 넣지 않는다 — 2026-08-11 에 90턴 전후 측정으로 세 기준 모두 노이즈
+    범위였다. 톤·시점·길이도 넣지 않는다: 작품마다 정당하게 달라야 하고, 특히 길이는
+    응답 중앙값이 18문장이라 임의의 상한이 30개의 연출을 통째로 바꾼다.
+    """
+    for text in (STORY_CHAT_SYSTEM_INSTRUCTION, CHARACTER_CHAT_SYSTEM_INSTRUCTION):
+        assert "역할 표시로 시작하지 않는다" in text  # 29/30 이 각자 적던 것 — 여기로 모은다
+        assert "대신 쓰지 않는다" in text  # 1/30
+        assert "전연령" in text  # 6/30
+
+        assert "되받" not in text, "되받기 금지는 무효로 측정됐다 — 되살리기 전에 재측정할 것"
+        assert "문장" not in text, "문장 수 상한은 작품 연출을 침범한다 — 넣지 말 것"
+        assert "인칭" not in text, "시점은 작품마다 다르다(wuxia-oneform 은 2인칭을 금지한다)"
+
+
+def test_base_system_instruction_frames_each_chat_kind_as_its_own_speaker() -> None:
+    """스토리 챗의 모델은 장면을 서술하는 화자이고, 캐릭터 챗의 모델은 캐릭터 본인이다.
+
+    하나를 양쪽에 쓰면 캐릭터 챗의 모델이 자기를 해설자로 규정하게 된다. 금지할 라벨도
+    그래서 갈린다 — 캐릭터 챗에서 새는 라벨은 "진행자:" 가 아니라 자기 이름이다.
+    """
+    assert "화자" in STORY_CHAT_SYSTEM_INSTRUCTION
+    assert "캐릭터 본인" in CHARACTER_CHAT_SYSTEM_INSTRUCTION
+
+    # 금지할 라벨을 예시로 적으면 그 토큰이 출력에 유도된다 — 2026-09-08 실측(아래 주석).
+    for text in (STORY_CHAT_SYSTEM_INSTRUCTION, CHARACTER_CHAT_SYSTEM_INSTRUCTION):
+        assert "진행자:" not in text
+        assert "서술자:" not in text
+
+    assert system_instruction_for(is_story_chat=True) == STORY_CHAT_SYSTEM_INSTRUCTION
+    assert system_instruction_for(is_story_chat=False) == CHARACTER_CHAT_SYSTEM_INSTRUCTION

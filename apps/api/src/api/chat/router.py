@@ -23,6 +23,7 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    system_instruction_for,
 )
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
@@ -550,17 +551,20 @@ async def _build_prompt(
     )
 
 
-def _dump_prompt(*, room_id: uuid.UUID | None, turn: int, prompt: str) -> None:
+def _dump_prompt(
+    *, room_id: uuid.UUID | None, turn: int, prompt: str, system_instruction: str
+) -> None:
     """tasks/chat-techspec.md §3-5(D-21·D-22): 회차 재현용으로 조립된 프롬프트를 JSONL 한
-    줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다."""
+    줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
+
+    바닥 지시문도 함께 남긴다 — 이 런이 바꾸는 것이 바로 그것이라, 대화록만 남고 그때
+    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
         "turn": turn,
         "model": settings.gemini_model_name,
         "seed": settings.gemini_seed,
-        # 바닥 지시문(system_instruction)은 이 브랜치에 아직 없다(feat/chat-base-system-instruction
-        # 미병합, chat-techspec.md §4-2가 그 기능을 전제한다) — 들어오면 이 자리를 채운다.
-        "systemInstruction": None,
+        "systemInstruction": system_instruction,
         "prompt": prompt,
     }
     assert settings.prompt_dump_path is not None
@@ -569,22 +573,34 @@ def _dump_prompt(*, room_id: uuid.UUID | None, turn: int, prompt: str) -> None:
 
 
 async def _stream_generated_tokens(
-    llm_client: LLMClient, prompt: str, chunks: list[str], *, room_id: uuid.UUID | None, turn: int
+    llm_client: LLMClient,
+    prompt: str,
+    chunks: list[str],
+    system_instruction: str,
+    *,
+    room_id: uuid.UUID | None,
+    turn: int,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
     텍스트를 이 out-param으로 호출부에 넘긴다.
 
+    바닥 지시문은 호출부가 골라 넘긴다(`system_instruction_for`) — 여기서 고를 수 없다.
+    스토리/캐릭터 구분이 실제 방·미리보기에서 서로 다른 값(`setup`/`payload` 타입)으로
+    드러나기 때문이다.
+
     진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
-    프롬프트를 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을 막지 않는다** —
-    SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼 무관한 다른
-    요청까지 500이 된다(apps/api/CLAUDE.md §SSE 스트리밍)."""
+    프롬프트와 그때 실린 지시문을 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을
+    막지 않는다** — SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼
+    무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md §SSE 스트리밍)."""
     if settings.prompt_dump_path is not None:
         try:
-            _dump_prompt(room_id=room_id, turn=turn, prompt=prompt)
+            _dump_prompt(
+                room_id=room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
+            )
         except Exception:
             logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", room_id, turn, exc_info=True)
-    async for delta in llm_client.generate(prompt):
+    async for delta in llm_client.generate(prompt, system_instruction):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -614,7 +630,12 @@ async def _stream_new_turn(
     chunks: list[str] = []
     try:
         async for token_event in _stream_generated_tokens(
-            llm_client, prompt, chunks, room_id=room.id, turn=room.turn_count + 1
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction_for(is_story_chat=setup is not None),
+            room_id=room.id,
+            turn=room.turn_count + 1,
         ):
             yield token_event
     except LLMPolicyViolationError:
@@ -847,7 +868,13 @@ async def regenerate_message(
     chunks: list[str] = []
     try:
         async for token_event in _stream_generated_tokens(
-            llm_client, prompt, chunks, room_id=room.id, turn=room.turn_count
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction_for(is_story_chat=setup is not None),
+            room_id=room.id,
+            # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
+            turn=room.turn_count,
         ):
             yield token_event
     except LLMPolicyViolationError:
@@ -1491,7 +1518,13 @@ async def _stream_preview_turn(
     chunks: list[str] = []
     try:
         async for token_event in _stream_generated_tokens(
-            llm_client, prompt, chunks, room_id=None, turn=state.turn_count + 1
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload)),
+            # 미리보기는 DB 방이 없다(Redis 세션).
+            room_id=None,
+            turn=state.turn_count + 1,
         ):
             yield token_event
     except LLMPolicyViolationError:

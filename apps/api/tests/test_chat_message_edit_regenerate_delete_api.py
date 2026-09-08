@@ -196,7 +196,7 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.generate_structured_called = False
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         self.received_prompt = prompt
         if self.error is not None:
             raise self.error
@@ -219,7 +219,7 @@ class _QueuedFakeLLMClient(LLMClient):
         self._structured_results = list(structured_results)
         self.generate_structured_calls: list[Any] = []
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         for token in self.tokens:
             yield token
 
