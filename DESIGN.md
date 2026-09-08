@@ -211,7 +211,7 @@ components:
 - **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목, **설정 섹션 제목(h2)**. 페이지 제목 아래 한 단계가 필요한 자리는 전부 여기다.
 - **Body** (400, 0.875rem/1.25rem): 본문, 대화 메시지, 설명. 앱에서 압도적으로 가장 많이 쓰이는 크기(122회)이며 **사실상의 기본값**이다. 산문은 65-75자에서 줄바꿈.
 - **Label** (500, 0.75rem/1rem): 폼 라벨, 캡션, 메타(조회수·타임스탬프), 에러 텍스트.
-- **Badge** (500, 11px): 상태 배지 전용. **스케일 밖의 값이며 의도된 예외다** — `text-xs`(12px)는 배지 안에서 너무 크고, 이 한 티어를 위해 스케일을 늘리지 않았다.
+- **Badge** (500, 0.6875rem = 11px): 상태 배지 전용. `text-xs`(12px)는 배지 안에서 너무 크다. **Tailwind 숫자 사다리(xs/sm/base…) 밖의 값이지만 임의값이 아니라 토큰이다** — `globals.css`의 `--text-badge`로 두고 호출부는 `text-badge`를 쓴다. (한때 호출부 6곳이 `text-[11px]`를 손으로 적었고 이 줄은 "이 한 티어를 위해 스케일을 늘리지 않았다"로 그걸 정당화했다. 같은 임의값이 6번 반복되면 승격이 규칙이고, 사다리에 칸을 끼우는 것과 **이미 이름 붙은 티어를 시맨틱 토큰으로 실체화하는 것**은 다르다 — `text-2xs`가 아니라 `text-badge`인 이유다. 줄높이는 짝으로 두지 않았다: 이전 `text-[11px]`도 font-size만 설정했으므로 여기서 정하면 6곳의 렌더가 바뀐다.)
 
 ### Named Rules
 **The Single Family Rule (단일 서체 규칙).** 새 화면에 다른 서체 패밀리를 추가하지 않는다. 위계는 굵기·크기·자간으로만 만든다. `font-medium` / `font-semibold` / `font-bold` 셋 밖의 굵기를 도입하지 말 것.
@@ -290,7 +290,7 @@ components:
 - **1024px 미만에서 같은 패널은 바닥에서 올라오는 드롭업이다**(`Sheet side="bottom"` + `top-[118px]` + `rounded-t-xl`). 우측 시트가 아니라 드롭업인 이유는 **누구와 대화 중인지가 계속 보여야** 하기 때문이다 — 시트 상단을 채팅 헤더 바로 아래에 붙여 아바타·캐릭터명·방 이름을 남긴다. 그 `118px`는 전역 헤더 `h-14`(56) + border 1 + 채팅 헤더 60 + border 1을 실측한 값으로, 위의 `calc(100dvh-3.5rem)`와 같은 계열의 수동 미러링이다(헤더 높이를 바꾸면 여기도 함께 고친다). 전역 헤더는 채팅 헤더 위에 있으므로 함께 남는다 — 둘을 따로 고를 수 없다. 오버레이 스크림은 그 위를 덮으므로 헤더는 보이되 흐려진다(의도된 모달 표현).
 
 ### Status badges
-- **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다.
+- **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-badge font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다(크기만 토큰이다 — §Typography의 Badge 티어).
 - **중립 상태(공개/링크공개/비공개/미등록):** `border border-border text-muted-foreground` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
 - **이용제한:** `bg-destructive/10 text-destructive-text` — 틴트, 채움 아님.
 - **타입(캐릭터/스토리):** `bg-secondary text-secondary-foreground` + 14px 아이콘.

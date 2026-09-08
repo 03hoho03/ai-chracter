@@ -84,7 +84,7 @@ function NoticesTable({ page, onPageChange }: NoticesTableProps) {
               >
                 <TableCell>{item.title}</TableCell>
                 <TableCell>
-                  <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
                     {item.published ? "게시" : "숨김"}
                   </span>
                 </TableCell>

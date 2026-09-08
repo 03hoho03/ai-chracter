@@ -171,7 +171,7 @@ export function ContentDetailView({ id }: { id: string }) {
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+          <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-badge font-medium text-secondary-foreground">
             {content.type === "character" ? (
               <UserRound aria-hidden className="size-3.5" />
             ) : (

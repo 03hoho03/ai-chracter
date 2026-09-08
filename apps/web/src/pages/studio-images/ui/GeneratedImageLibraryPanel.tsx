@@ -82,7 +82,7 @@ export function GeneratedImageLibraryPanel({
               <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
                 <time dateTime={image.createdAt}>{createdAtLabel}</time>
                 {image.usages.length > 0 && (
-                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-badge font-medium text-muted-foreground">
                     {image.usages.length}곳에서 사용 중
                   </span>
                 )}
