@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -9,20 +8,40 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useMemo } from "react";
 import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
+import { useForm, useWatch } from "react-hook-form";
 
-type Props = {
+import { createDeleteConfirmSchema, type DeleteConfirmFormValues } from "../model/schema";
+
+type DeleteConfirmModalProps = {
   contentName: string;
   mutationFn: MutationFn<void>;
 };
 
 /** techspec-admin.md §1/§4 — 삭제는 되돌릴 수 없으므로, 콘텐츠명을 정확히 입력해야만 확정 버튼이 활성화된다.
- * 관리자 코멘트는 호출부가 이미 받아 mutationFn 클로저에 담아 넘기므로 이 모달은 입력을 다시 받지 않는다. */
-export const DeleteConfirmModal = createCallable<Props, void>(({ call, contentName, mutationFn }) => {
-  const [confirmText, setConfirmText] = useState("");
+ * 관리자 코멘트는 호출부가 이미 받아 mutationFn 클로저에 담아 넘기므로 이 모달은 입력을 다시 받지 않는다.
+ *
+ * "일치해야 활성화"는 `apps/admin/CLAUDE.md`가 정한 규약이라 버튼 게이트를 그대로 두고, 폼 검증은
+ * 그 게이트를 뚫는 유일한 경로인 **입력창 Enter**를 막는다(같은 기준을 zod가 한 번 더 진다). */
+export const DeleteConfirmModal = createCallable<DeleteConfirmModalProps, void>(({ call, contentName, mutationFn }) => {
+  const schema = useMemo(() => createDeleteConfirmSchema(contentName), [contentName]);
+  const { register, control, handleSubmit } = useForm<DeleteConfirmFormValues>({
+    resolver: zodResolver(schema),
+    defaultValues: { confirmText: "" },
+  });
+
   const submit = useMutationFlow(call, mutationFn);
-  const canConfirm = confirmText.trim() === contentName;
+
+  const confirmText = useWatch({ control, name: "confirmText" });
+  const isConfirmBlocked = confirmText.trim() !== contentName || submit.pending;
+
+  function onSubmit() {
+    if (isConfirmBlocked) return;
+    submit();
+  }
 
   return (
     <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
@@ -35,26 +54,30 @@ export const DeleteConfirmModal = createCallable<Props, void>(({ call, contentNa
           </DialogDescription>
         </DialogHeader>
 
-        <Input
-          value={confirmText}
-          onChange={(event) => setConfirmText(event.target.value)}
-          placeholder={contentName}
-          autoFocus
-        />
+        <form
+          className="flex flex-col gap-4"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            void handleSubmit(onSubmit)(event);
+          }}
+        >
+          <Input placeholder={contentName} autoFocus aria-label="콘텐츠명 확인" {...register("confirmText")} />
 
-        <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => call.end()}>
-            취소
-          </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={!canConfirm || submit.pending}
-            onClick={() => submit()}
-          >
-            {submit.pending ? "삭제 중..." : "삭제 확정"}
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => call.end()}>
+              취소
+            </Button>
+            <Button
+              type="submit"
+              variant="destructive"
+              aria-disabled={isConfirmBlocked}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+            >
+              {submit.pending ? "삭제 중..." : "삭제 확정"}
+            </Button>
+          </DialogFooter>
+        </form>
       </DialogContent>
     </Dialog>
   );
