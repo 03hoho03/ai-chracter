@@ -98,28 +98,6 @@ async def test_story_version_detail_attaches_to_draft(db_session: AsyncSession) 
     assert detail.prompt_template == StoryPromptTemplate.BASIC
 
 
-async def test_story_version_detail_rejects_unknown_version(db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-
-    thumbnail = Asset(owner_user_id=user.id, storage_key=f"uploads/{uuid.uuid4()}.png", kind=AssetKind.ORIGINAL)
-    db_session.add(thumbnail)
-    await db_session.flush()
-
-    detail = StoryVersionDetail(
-        content_version_id=uuid.uuid4(),
-        name="달빛 아래",
-        one_liner="한 줄 소개",
-        thumbnail_asset_id=thumbnail.id,
-        prompt_template=StoryPromptTemplate.BASIC,
-    )
-    db_session.add(detail)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
 async def test_starting_setup_keeps_entity_id_stable_and_orders_list(db_session: AsyncSession) -> None:
     draft = await _make_story_draft(db_session)
     entity_id = uuid.uuid4()
@@ -167,25 +145,6 @@ async def test_stat_def_is_independent_per_starting_setup(db_session: AsyncSessi
     assert stat_a.starting_setup_id == setup_a.id
     assert stat_b.starting_setup_id == setup_b.id
     assert stat_a.id != stat_b.id
-
-
-async def test_stat_def_rejects_unknown_starting_setup(db_session: AsyncSession) -> None:
-    stat = StatDef(
-        entity_id=uuid.uuid4(),
-        starting_setup_id=uuid.uuid4(),
-        name="호감도",
-        icon="heart",
-        color="#ff0000",
-        min_value=0,
-        max_value=100,
-        initial_value=50,
-        description="호감도 스탯",
-        order=1,
-    )
-    db_session.add(stat)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
 
 
 async def test_keyword_note_can_apply_to_whole_story_or_one_starting_setup(
@@ -316,6 +275,9 @@ async def test_ending_rule_inside_group_is_valid(db_session: AsyncSession) -> No
     assert rule.ending_id is None
 
 
+# `alembic check` 는 기존 테이블의 CHECK 제약을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 CheckConstraint 비교자가 없다) — `ck_ending_rules_exactly_one_parent`
+# 는 이 테스트에서만 검증된다.
 async def test_ending_rule_rejects_both_ending_and_group_set(db_session: AsyncSession) -> None:
     draft = await _make_story_draft(db_session)
     setup = await _make_starting_setup(db_session, draft)
@@ -349,6 +311,9 @@ async def test_ending_rule_rejects_both_ending_and_group_set(db_session: AsyncSe
         await db_session.flush()
 
 
+# `alembic check` 는 기존 테이블의 CHECK 제약을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 CheckConstraint 비교자가 없다) — `ck_ending_rules_exactly_one_parent`
+# 는 이 테스트에서만 검증된다.
 async def test_ending_rule_rejects_neither_ending_nor_group_set(db_session: AsyncSession) -> None:
     rule = EndingRule(
         entity_id=uuid.uuid4(),

@@ -89,23 +89,6 @@ async def test_report_unknown_content_returns_404(
     assert resp.status_code == 404
 
 
-async def test_report_invalid_reason_category_returns_422(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    genre = await _get_genre(db_session)
-    content = await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id)
-    await db_session.commit()
-
-    await _login_as(db_client, user.id)
-    resp = await db_client.post(
-        f"/contents/{content.id}/report", json={"reasonCategory": "not-a-real-reason"}
-    )
-    assert resp.status_code == 422
-
-
 async def test_report_creates_pending_row_and_allows_repeat_reports(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

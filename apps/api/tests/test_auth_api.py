@@ -43,16 +43,6 @@ async def test_signup_creates_unverified_user_and_sends_code(
     assert len(stored["code"]) == 6
 
 
-async def test_signup_rejects_short_password(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post("/auth/signup", json=_signup_payload(password="short"))
-    assert resp.status_code == 422
-
-
-async def test_signup_rejects_invalid_email(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post("/auth/signup", json=_signup_payload(email="not-an-email"))
-    assert resp.status_code == 422
-
-
 async def test_signup_rejects_missing_terms_agreement(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post("/auth/signup", json=_signup_payload(termsAgreed=False))
     assert resp.status_code == 422

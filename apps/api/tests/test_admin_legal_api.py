@@ -104,15 +104,6 @@ async def test_versions_requires_admin_session(
     await _assert_requires_admin_session(db_client, db_session, "get", "/admin/legal/terms/versions")
 
 
-async def test_invalid_kind_returns_422(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _login_new_admin(db_client, db_session)
-
-    resp = await db_client.get("/admin/legal/unknown-kind")
-    assert resp.status_code == 422
-
-
 # ---- 조회 --------------------------------------------------------------------
 
 

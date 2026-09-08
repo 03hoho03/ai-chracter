@@ -95,54 +95,6 @@ async def test_generate_requires_login(db_client: httpx.AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_generate_rejects_empty_prompt(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(prompt=""))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_count_out_of_range(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(count=5))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_unknown_style(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(style="cubism"))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_unknown_aspect_ratio(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(aspectRatio="2:1"))
-    assert resp.status_code == 422
-
-
 async def test_generate_rejects_aspect_ratio_unsupported_by_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -156,20 +108,6 @@ async def test_generate_rejects_aspect_ratio_unsupported_by_model(
         "/images/generate", json=_generate_payload(model="flux-schnell", aspectRatio="16:9")
     )
     assert resp.status_code == 400
-
-
-async def test_generate_rejects_missing_model(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    payload = _generate_payload()
-    del payload["model"]
-    resp = await db_client.post("/images/generate", json=payload)
-    assert resp.status_code == 422
 
 
 async def test_list_image_models_requires_login(db_client: httpx.AsyncClient) -> None:

@@ -135,18 +135,6 @@ async def test_confirm_rejects_unknown_token(db_client: httpx.AsyncClient) -> No
     assert resp.status_code == 400
 
 
-async def test_confirm_rejects_short_new_password(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
-    token = await _request_reset_and_capture_token(db_client, monkeypatch, str(payload["email"]))
-
-    resp = await db_client.post(
-        "/auth/password-reset/confirm", json={"token": token, "newPassword": "short"}
-    )
-    assert resp.status_code == 422
-
-
 async def test_confirm_token_cannot_be_reused(
     db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

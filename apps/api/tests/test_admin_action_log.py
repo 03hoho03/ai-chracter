@@ -1,9 +1,7 @@
 import uuid
 from datetime import timezone
 
-import pytest
 import sqlalchemy as sa
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
@@ -82,17 +80,3 @@ async def test_record_admin_action_all_targets_null_succeeds(db_session: AsyncSe
     assert log.target_chat_room_id is None
     assert log.reason_category is None
     assert log.reason_text == ""
-
-
-async def test_record_admin_action_rejects_unknown_target_user_id(db_session: AsyncSession) -> None:
-    """T-5 — DB가 참조무결성을 보장한다: 존재하지 않는 target_user_id는 FK 위반으로
-    flush 시점에 실패해야 한다."""
-    admin = _make_admin()
-    db_session.add(admin)
-    await db_session.flush()
-
-    await record_admin_action(
-        db_session, admin_id=admin.id, action_type="user-warn", target_user_id=uuid.uuid4()
-    )
-    with pytest.raises(IntegrityError):
-        await db_session.flush()

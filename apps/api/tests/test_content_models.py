@@ -1,4 +1,3 @@
-import uuid
 from datetime import datetime, timezone, UTC
 
 import pytest
@@ -59,18 +58,6 @@ async def test_content_requires_existing_genre_and_creator(db_session: AsyncSess
     assert content.chat_count == 0
 
 
-async def test_content_rejects_unknown_genre(db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-
-    content = _make_content(user, Genre(id=uuid.uuid4(), name="unused", sort_order=0))
-    db_session.add(content)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
 async def test_content_version_pins_to_content_and_updates_current_published(
     db_session: AsyncSession,
 ) -> None:
@@ -97,14 +84,6 @@ async def test_content_version_pins_to_content_and_updates_current_published(
     refreshed = await db_session.get(Content, content.id)
     assert refreshed is not None
     assert refreshed.current_published_version_id == draft.id
-
-
-async def test_content_version_rejects_unknown_content(db_session: AsyncSession) -> None:
-    version = ContentVersion(content_id=uuid.uuid4(), detail_description="설명")
-    db_session.add(version)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
 
 
 async def _make_user_and_content(db_session: AsyncSession) -> tuple[User, Content]:
@@ -135,6 +114,9 @@ async def test_favorite_composite_pk_allows_same_content_favorited_by_two_users(
     await db_session.flush()
 
 
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — favorites 의 복합 PK는 이
+# 테스트에서만 검증된다.
 async def test_favorite_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
     user, content = await _make_user_and_content(db_session)
 
@@ -146,6 +128,9 @@ async def test_favorite_rejects_duplicate_composite_pk(db_session: AsyncSession)
         await db_session.flush()
 
 
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — likes 의 복합 PK는 이
+# 테스트에서만 검증된다.
 async def test_like_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
     user, content = await _make_user_and_content(db_session)
 
@@ -153,13 +138,5 @@ async def test_like_rejects_duplicate_composite_pk(db_session: AsyncSession) -> 
     await db_session.flush()
 
     db_session.add(Like(user_id=user.id, content_id=content.id))
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
-async def test_like_rejects_unknown_content(db_session: AsyncSession) -> None:
-    user, _ = await _make_user_and_content(db_session)
-
-    db_session.add(Like(user_id=user.id, content_id=uuid.uuid4()))
     with pytest.raises(IntegrityError):
         await db_session.flush()

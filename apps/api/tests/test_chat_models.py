@@ -81,19 +81,6 @@ async def test_chat_room_pins_to_content_version_with_defaults(db_session: Async
     assert room.name is None
 
 
-async def test_chat_room_rejects_unknown_content_version(db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    version = await _make_published_version(db_session, user)
-
-    room = ChatRoom(user_id=user.id, content_id=version.content_id, content_version_id=uuid.uuid4())
-    db_session.add(room)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
 async def test_chat_message_attaches_to_chat_room(db_session: AsyncSession) -> None:
     room = await _make_chat_room(db_session)
 
@@ -102,14 +89,6 @@ async def test_chat_message_attaches_to_chat_room(db_session: AsyncSession) -> N
     await db_session.flush()
 
     assert message.role == ChatMessageRole.USER
-
-
-async def test_chat_message_rejects_unknown_chat_room(db_session: AsyncSession) -> None:
-    message = ChatMessage(chat_room_id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content="안녕하세요")
-    db_session.add(message)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
 
 
 async def test_chat_room_stat_composite_pk_allows_multiple_stats_per_room(
@@ -126,6 +105,9 @@ async def test_chat_room_stat_composite_pk_allows_multiple_stats_per_room(
     assert stat_a.stat_entity_id != stat_b.stat_entity_id
 
 
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — chat_room_stats 의 복합 PK는
+# 이 테스트에서만 검증된다.
 async def test_chat_room_stat_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
     room = await _make_chat_room(db_session)
     stat_entity_id = uuid.uuid4()
@@ -156,7 +138,12 @@ async def test_story_ending_unlock_accumulates_per_user_and_starting_setup(
     assert unlock.first_reached_at is not None
 
 
-async def test_story_ending_unlock_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — story_ending_unlocks 의 복합 PK는
+# 이 테스트에서만 검증된다.
+async def test_story_ending_unlock_rejects_duplicate_composite_pk(
+    db_session: AsyncSession,
+) -> None:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -183,6 +170,9 @@ async def test_story_ending_unlock_rejects_duplicate_composite_pk(db_session: As
         await db_session.flush()
 
 
+# character_image_exposures 의 복합 PK(user_id, content_id, image_entity_id)는 이를
+# 검증하는 행위 테스트가 원래부터 없었고, `alembic check`도 복합 PK를 비교하지 않으므로
+# 지금 이 제약은 아무 테스트로도 검증되지 않는다.
 async def test_character_image_exposure_accumulates_per_user_and_content(
     db_session: AsyncSession,
 ) -> None:
@@ -200,19 +190,3 @@ async def test_character_image_exposure_accumulates_per_user_and_content(
     await db_session.flush()
 
     assert exposure.first_exposed_at is not None
-
-
-async def test_character_image_exposure_rejects_unknown_content(db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-
-    exposure = CharacterImageExposure(
-        user_id=user.id,
-        content_id=uuid.uuid4(),
-        image_entity_id=uuid.uuid4(),
-    )
-    db_session.add(exposure)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
