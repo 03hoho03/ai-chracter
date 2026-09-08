@@ -2,22 +2,24 @@ import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import type { UseFormReturn } from "react-hook-form";
+import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import type { SignUpFormValues } from "@/entities/registration";
-import { useResendVerificationCodeMutation } from "../api/mutations";
 import { isApiError } from "@/shared/lib/api/client";
+
+import { useResendVerificationCodeMutation } from "../api/mutations";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
 type EmailVerifyStepProps = {
-  form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;
 }
 
-export function EmailVerifyStep({ form, onSubmit, isSubmitting }: EmailVerifyStepProps) {
+export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps) {
+  const form = useFormContext<SignUpFormValues>();
+
   const {
     register,
     trigger,

@@ -3,13 +3,15 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { Trash2 } from "lucide-react";
-import { useFieldArray, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormContext } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
 /** techspec-builder-story.md §1.4 AC — 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
  * 단축어 목록을 조회/수정/삭제 가능. */
-export function ShortcutTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function ShortcutTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "shortcuts" });
 
@@ -29,7 +31,7 @@ export function ShortcutTab({ form }: { form: UseFormReturn<StoryBuilderFormValu
       ) : (
         <div className="flex flex-col gap-4">
           {fields.map((field, index) => (
-            <ShortcutRow key={field.id} id={field.id} index={index} form={form} onRemove={() => remove(index)} />
+            <ShortcutRow key={field.id} id={field.id} index={index} onRemove={() => remove(index)} />
           ))}
         </div>
       )}
@@ -59,14 +61,14 @@ export function ShortcutTab({ form }: { form: UseFormReturn<StoryBuilderFormValu
 function ShortcutRow({
   id,
   index,
-  form,
   onRemove,
 }: {
   id: string;
   index: number;
-  form: UseFormReturn<StoryBuilderFormValues>;
   onRemove: () => void;
 }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register } = form;
 
   return (

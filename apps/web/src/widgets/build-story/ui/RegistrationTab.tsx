@@ -12,7 +12,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { X } from "lucide-react";
 import { useState } from "react";
-import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useGenreListQuery } from "@/entities/content";
 import type { StoryBuilderFormValues } from "@/features/build-story";
@@ -32,7 +32,9 @@ const VISIBILITY_OPTIONS: { value: "public" | "link" | "private"; label: string 
 /** techspec-builder-story.md §1.6 — 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 캐릭터 빌더
  * `DetailTab`(US-093)과 동일한 필드/UI 구성(`registration` 스키마가 이미 US-092에서 공유 모양으로
  * 구현돼 있다) — 장르 목록은 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
-export function RegistrationTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function RegistrationTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control, setValue } = form;
   const genreListQuery = useGenreListQuery();
   const hashtags = useWatch({ control, name: "registration.hashtags" });

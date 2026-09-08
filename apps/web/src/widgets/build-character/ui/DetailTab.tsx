@@ -12,7 +12,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { X } from "lucide-react";
 import { useState } from "react";
-import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useGenreListQuery } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
@@ -31,7 +31,9 @@ const VISIBILITY_OPTIONS: { value: "public" | "link" | "private"; label: string 
 
 /** techspec-builder-character.md §5 — 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 장르 목록은
  * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다(techspec-builder-story.md §3). */
-export function DetailTab({ form }: { form: UseFormReturn<CharacterBuilderFormValues> }) {
+export function DetailTab() {
+  const form = useFormContext<CharacterBuilderFormValues>();
+
   const { register, control, setValue } = form;
   const genreListQuery = useGenreListQuery();
   const hashtags = useWatch({ control, name: "registration.hashtags" });

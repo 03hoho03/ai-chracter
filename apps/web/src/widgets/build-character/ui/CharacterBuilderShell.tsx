@@ -3,7 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { useForm, useWatch } from "react-hook-form";
+import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { usePublishContentMutation, type CharacterDraftContent } from "@/entities/content";
@@ -16,6 +16,7 @@ import {
 } from "@/features/build-character";
 import { useAutosave, useDraftPersistence } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
+import { isApiError } from "@/shared/lib/api/client";
 
 import { characterBuilderActiveTabAtom, type CharacterBuilderTab } from "../model/activeTabAtom";
 import { AdvancedTab } from "./AdvancedTab";
@@ -23,7 +24,6 @@ import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
-import { isApiError } from "@/shared/lib/api/client";
 
 const TABS: { id: CharacterBuilderTab; label: string }[] = [
   { id: "profile", label: "프로필" },
@@ -133,75 +133,77 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   }
 
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
-      {/* 저장 계약을 한 번 말해 둔다 — 자동저장은 성공해도 아무 표시가 없어서, 이 문장이 없으면
-          사용자가 "자동저장"이라는 단어를 처음 만나는 자리가 빨간 실패 토스트다(US-007). */}
-      <header className="flex flex-col gap-1.5">
-        <div className="flex items-center justify-between gap-4">
-          <h1 className="text-2xl font-bold break-keep tracking-tight text-foreground">캐릭터 만들기</h1>
-          <div className="flex items-center gap-2">
-            <Button type="button" variant="outline" onClick={() => setIsPreviewOpen(true)}>
-              미리보기
-            </Button>
-            <Button type="button" variant="outline" onClick={() => void handleSaveNow()}>
-              임시저장
-            </Button>
-            <Button disabled={!canPublish || isPublishing} onClick={() => void handlePublish()}>
-              {isPublishing ? "발행 중..." : "발행"}
+    <FormProvider {...form}>
+      <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
+        {/* 저장 계약을 한 번 말해 둔다 — 자동저장은 성공해도 아무 표시가 없어서, 이 문장이 없으면
+            사용자가 "자동저장"이라는 단어를 처음 만나는 자리가 빨간 실패 토스트다(US-007). */}
+        <header className="flex flex-col gap-1.5">
+          <div className="flex items-center justify-between gap-4">
+            <h1 className="text-2xl font-bold break-keep tracking-tight text-foreground">캐릭터 만들기</h1>
+            <div className="flex items-center gap-2">
+              <Button type="button" variant="outline" onClick={() => setIsPreviewOpen(true)}>
+                미리보기
+              </Button>
+              <Button type="button" variant="outline" onClick={() => void handleSaveNow()}>
+                임시저장
+              </Button>
+              <Button disabled={!canPublish || isPublishing} onClick={() => void handlePublish()}>
+                {isPublishing ? "발행 중..." : "발행"}
+              </Button>
+            </div>
+          </div>
+          <p className="text-sm break-keep text-muted-foreground">
+            변경사항은 자동으로 저장돼요.
+          </p>
+        </header>
+
+        {rejectionReason !== null && draftId !== null && (
+          <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
+              <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() =>
+                void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
+              }
+            >
+              이의제기
             </Button>
           </div>
-        </div>
-        <p className="text-sm break-keep text-muted-foreground">
-          변경사항은 자동으로 저장돼요.
-        </p>
-      </header>
+        )}
 
-      {rejectionReason !== null && draftId !== null && (
-        <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-          <div>
-            <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
-            <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
-          </div>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="shrink-0"
-            onClick={() =>
-              void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
-            }
-          >
-            이의제기
-          </Button>
-        </div>
-      )}
+        <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
+          <TabsList variant="line">
+            {TABS.map((tab) => (
+              <TabsTrigger key={tab.id} value={tab.id}>
+                {tab.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
 
-      <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
-        <TabsList variant="line">
-          {TABS.map((tab) => (
-            <TabsTrigger key={tab.id} value={tab.id}>
-              {tab.label}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-
-        <TabsContent value="profile">
-          <ProfileTab form={form} />
-        </TabsContent>
-        <TabsContent value="intro">
-          <IntroTab form={form} />
-        </TabsContent>
-        <TabsContent value="prompt">
-          <PromptTab form={form} />
-        </TabsContent>
-        <TabsContent value="advanced">
-          <AdvancedTab form={form} ensureContentVersionId={ensureContentVersionId} />
-        </TabsContent>
-        <TabsContent value="detail">
-          <DetailTab form={form} />
-        </TabsContent>
-      </Tabs>
-    </main>
+          <TabsContent value="profile">
+            <ProfileTab />
+          </TabsContent>
+          <TabsContent value="intro">
+            <IntroTab />
+          </TabsContent>
+          <TabsContent value="prompt">
+            <PromptTab />
+          </TabsContent>
+          <TabsContent value="advanced">
+            <AdvancedTab ensureContentVersionId={ensureContentVersionId} />
+          </TabsContent>
+          <TabsContent value="detail">
+            <DetailTab />
+          </TabsContent>
+        </Tabs>
+      </main>
+    </FormProvider>
   );
 }
 

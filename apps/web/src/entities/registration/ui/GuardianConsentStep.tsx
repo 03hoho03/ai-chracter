@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Checkbox } from "@ai-character-chat/ui/components/checkbox";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
-import { Controller, type UseFormReturn } from "react-hook-form";
+import { Controller, useFormContext } from "react-hook-form";
 
 import type { SignUpFormValues } from "../model/schema";
 
@@ -13,12 +13,13 @@ const GUARDIAN_FIELDS = [
 ] as const;
 
 type GuardianConsentStepProps = {
-  form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;
 }
 
-export function GuardianConsentStep({ form, onSubmit, isSubmitting }: GuardianConsentStepProps) {
+export function GuardianConsentStep({ onSubmit, isSubmitting }: GuardianConsentStepProps) {
+  const form = useFormContext<SignUpFormValues>();
+
   const {
     register,
     control,

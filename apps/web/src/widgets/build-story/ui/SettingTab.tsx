@@ -1,7 +1,7 @@
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { Controller, useWatch, type UseFormReturn } from "react-hook-form";
+import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
@@ -15,7 +15,9 @@ const PROMPT_TEMPLATE_OPTIONS: { value: "basic" | "emotional" | "simulation" | "
 /** techspec-builder-story.md §1 — 프롬프트 템플릿(필수, 기본값 "기본") 선택에 따라 세계관/전개예시
  * 또는 커스텀 프롬프트 입력 폼을 전환한다. 숨겨진 필드는 RHF 기본 동작(shouldUnregister: false)대로
  * 언마운트돼도 값이 폼 상태에 그대로 보존된다. */
-export function SettingTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function SettingTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control } = form;
   const promptTemplate = useWatch({ control, name: "storySetting.promptTemplate" });
   const isCustom = promptTemplate === "custom";

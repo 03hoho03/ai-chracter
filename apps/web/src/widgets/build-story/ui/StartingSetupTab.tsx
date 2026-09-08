@@ -15,7 +15,7 @@ import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { GripVertical, Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
   reconcileKeywordNotesOnStartingSetupRemoval,
@@ -24,7 +24,9 @@ import {
 
 /** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
  * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
-export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function StartingSetupTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control, getValues, setValue } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
   const sensors = useSensors(useSensor(PointerSensor));
@@ -68,7 +70,6 @@ export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFor
                   key={field.id}
                   id={field.id}
                   index={index}
-                  form={form}
                   onRemove={() => handleRemove(index)}
                 />
               ))}
@@ -106,14 +107,14 @@ export function StartingSetupTab({ form }: { form: UseFormReturn<StoryBuilderFor
 function StartingSetupRow({
   id,
   index,
-  form,
   onRemove,
 }: {
   id: string;
   index: number;
-  form: UseFormReturn<StoryBuilderFormValues>;
   onRemove: () => void;
 }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control, setValue, getValues } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });

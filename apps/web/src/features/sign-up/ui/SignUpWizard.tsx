@@ -2,7 +2,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { useForm } from "react-hook-form";
+import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import {
@@ -13,6 +13,8 @@ import {
   type SignUpFormValues,
 } from "@/entities/registration";
 import { sessionKeys } from "@/entities/session";
+import { isApiError } from "@/shared/lib/api/client";
+
 import {
   useSignUpLoginMutation,
   useSignUpMutation,
@@ -21,7 +23,6 @@ import {
 import { signUpStepAtom } from "../model/atom";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
-import { isApiError } from "@/shared/lib/api/client";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -112,31 +113,29 @@ export function SignUpWizard() {
     }
   }
 
-  if (step === "emailVerify") {
-    return (
-      <EmailVerifyStep
-        form={form}
-        onSubmit={() => void handleEmailVerifySubmit()}
-        isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
-      />
-    );
+  // 스텝 분기를 평범한 함수로 뽑아 `FormProvider`가 세 갈래 모두를 한 번에 감싸게 한다
+  // (컴포넌트가 아니라 함수라 호출부에서 새 identity가 생기지 않는다 — 스텝 전환에 리마운트 없음).
+  function renderStep() {
+    if (step === "emailVerify") {
+      return (
+        <EmailVerifyStep
+          onSubmit={() => void handleEmailVerifySubmit()}
+          isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
+        />
+      );
+    }
+
+    if (step === "guardianConsent") {
+      return (
+        <GuardianConsentStep
+          onSubmit={() => void handleGuardianConsentSubmit()}
+          isSubmitting={guardianConsentMutation.isPending}
+        />
+      );
+    }
+
+    return <BasicInfoStep onSubmit={() => void handleBasicInfoSubmit()} isSubmitting={signUpMutation.isPending} />;
   }
 
-  if (step === "guardianConsent") {
-    return (
-      <GuardianConsentStep
-        form={form}
-        onSubmit={() => void handleGuardianConsentSubmit()}
-        isSubmitting={guardianConsentMutation.isPending}
-      />
-    );
-  }
-
-  return (
-    <BasicInfoStep
-      form={form}
-      onSubmit={() => void handleBasicInfoSubmit()}
-      isSubmitting={signUpMutation.isPending}
-    />
-  );
+  return <FormProvider {...form}>{renderStep()}</FormProvider>;
 }

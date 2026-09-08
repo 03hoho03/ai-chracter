@@ -5,14 +5,16 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Trash2 } from "lucide-react";
 import { useState } from "react";
-import { Controller, useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
+import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 /** techspec-builder-story.md §1.2 AC — 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
  * 독립이라 이 탭은 먼저 시작설정을 고른 뒤 그 시작설정의 스탯만 편집한다. */
-export function StatTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function StatTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
@@ -52,7 +54,7 @@ export function StatTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> 
         </ToggleGroup>
       </div>
 
-      {effectiveSetup && <StatSection key={effectiveSetup.id} form={form} startingSetupIndex={effectiveIndex} />}
+      {effectiveSetup && <StatSection key={effectiveSetup.id} startingSetupIndex={effectiveIndex} />}
     </div>
   );
 }
@@ -63,15 +65,15 @@ function StatRow({
   id,
   startingSetupIndex,
   statIndex,
-  form,
   onRemove,
 }: {
   id: string;
   startingSetupIndex: number;
   statIndex: number;
-  form: UseFormReturn<StoryBuilderFormValues>;
   onRemove: () => void;
 }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control } = form;
 
   return (
@@ -175,13 +177,9 @@ function StatRow({
 /** 선택된 시작설정 하나의 스탯 목록. `key={시작설정 id}`로 감싸 시작설정을 전환할 때마다
  * useFieldArray가 새 index로 완전히 새로 마운트되게 한다(name의 인덱스만 바뀌는 걸 이 훅이
  * 안정적으로 재구독하지 않아서, 상위 StatTab이 이 컴포넌트 자체를 remount하는 방식으로 우회). */
-function StatSection({
-  form,
-  startingSetupIndex,
-}: {
-  form: UseFormReturn<StoryBuilderFormValues>;
-  startingSetupIndex: number;
-}) {
+function StatSection({ startingSetupIndex }: { startingSetupIndex: number }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const { fields, append, remove } = useFieldArray({
     control,
@@ -199,7 +197,6 @@ function StatSection({
           <StatRow
             key={field.id}
             id={field.id}
-            form={form}
             startingSetupIndex={startingSetupIndex}
             statIndex={statIndex}
             onRemove={() => remove(statIndex)}

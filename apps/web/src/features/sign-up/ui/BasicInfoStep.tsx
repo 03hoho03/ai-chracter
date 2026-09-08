@@ -3,7 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
-import type { UseFormReturn } from "react-hook-form";
+import { useFormContext } from "react-hook-form";
 
 import { LegalConsentFields, type SignUpFormValues } from "@/entities/registration";
 
@@ -17,12 +17,13 @@ const BASIC_INFO_FIELDS = [
 ] as const;
 
 type BasicInfoStepProps = {
-  form: UseFormReturn<SignUpFormValues>;
   onSubmit: () => void;
   isSubmitting: boolean;
 }
 
-export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepProps) {
+export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
+  const form = useFormContext<SignUpFormValues>();
+
   const {
     register,
     trigger,
@@ -128,7 +129,7 @@ export function BasicInfoStep({ form, onSubmit, isSubmitting }: BasicInfoStepPro
         )}
       </div>
 
-      <LegalConsentFields form={form} />
+      <LegalConsentFields />
 
       <Button type="submit" size="lg" className="h-10" disabled={isSubmitting}>
         {isSubmitting ? "처리 중..." : "다음"}

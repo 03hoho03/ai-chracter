@@ -16,7 +16,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { GripVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
-import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import type {
   RuleListItemValues,
@@ -37,7 +37,9 @@ const GROUP_OPERATOR_LABEL: Record<(typeof GROUP_OPERATORS)[number], string> = {
 
 /** techspec-builder-story.md §1.5 AC — 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
  * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). */
-export function EndingTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function EndingTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
   const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
@@ -77,7 +79,7 @@ export function EndingTab({ form }: { form: UseFormReturn<StoryBuilderFormValues
         </ToggleGroup>
       </div>
 
-      {effectiveSetup && <EndingSection key={effectiveSetup.id} form={form} startingSetupIndex={effectiveIndex} />}
+      {effectiveSetup && <EndingSection key={effectiveSetup.id} startingSetupIndex={effectiveIndex} />}
     </div>
   );
 }
@@ -348,19 +350,19 @@ function RuleListEditor({
 /** 엔딩 하나(이름/엔딩조건/판단 프롬프트 필수, 에필로그/엔딩힌트 선택 + 스탯 기반 규칙). */
 function EndingRow({
   id,
-  form,
   startingSetupIndex,
   endingIndex,
   stats,
   onRemove,
 }: {
   id: string;
-  form: UseFormReturn<StoryBuilderFormValues>;
   startingSetupIndex: number;
   endingIndex: number;
   stats: StatDefValues[];
   onRemove: () => void;
 }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control, setValue } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const statRules = useWatch({
@@ -462,13 +464,9 @@ function EndingRow({
 
 /** 선택된 시작설정 하나의 엔딩 목록. `key={시작설정 id}`로 감싸 StatSection과 동일하게 시작설정
  * 전환마다 useFieldArray를 완전히 새로 마운트한다(US-109 패턴). */
-function EndingSection({
-  form,
-  startingSetupIndex,
-}: {
-  form: UseFormReturn<StoryBuilderFormValues>;
-  startingSetupIndex: number;
-}) {
+function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const { fields, append, remove, move } = useFieldArray({
     control,
@@ -502,7 +500,6 @@ function EndingSection({
                 <EndingRow
                   key={field.id}
                   id={field.id}
-                  form={form}
                   startingSetupIndex={startingSetupIndex}
                   endingIndex={index}
                   stats={stats}

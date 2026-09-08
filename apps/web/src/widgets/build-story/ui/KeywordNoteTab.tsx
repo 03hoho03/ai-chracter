@@ -5,12 +5,14 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Trash2, X } from "lucide-react";
 import { useState } from "react";
-import { useFieldArray, useWatch, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import type { StartingSetupValues, StoryBuilderFormValues } from "@/features/build-story";
 
 /** techspec-builder-story.md §1.3 AC — 탭 전체가 선택사항(0개도 발행 가능). */
-export function KeywordNoteTab({ form }: { form: UseFormReturn<StoryBuilderFormValues> }) {
+export function KeywordNoteTab() {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { control } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "keywordNotes" });
   const startingSetups = useWatch({ control, name: "startingSetups" });
@@ -35,7 +37,6 @@ export function KeywordNoteTab({ form }: { form: UseFormReturn<StoryBuilderFormV
               key={field.id}
               id={field.id}
               index={index}
-              form={form}
               startingSetups={startingSetups}
               onRemove={() => remove(index)}
             />
@@ -68,16 +69,16 @@ export function KeywordNoteTab({ form }: { form: UseFormReturn<StoryBuilderFormV
 function KeywordNoteRow({
   id,
   index,
-  form,
   startingSetups,
   onRemove,
 }: {
   id: string;
   index: number;
-  form: UseFormReturn<StoryBuilderFormValues>;
   startingSetups: StartingSetupValues[];
   onRemove: () => void;
 }) {
+  const form = useFormContext<StoryBuilderFormValues>();
+
   const { register, control, setValue, getValues } = form;
   const triggerKeywords = useWatch({ control, name: `keywordNotes.${index}.triggerKeywords` });
   const scope = useWatch({ control, name: `keywordNotes.${index}.scope` });

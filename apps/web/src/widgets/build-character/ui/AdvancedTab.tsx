@@ -13,7 +13,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { Camera, GripVertical, ImageOff, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { useFieldArray, type UseFormReturn } from "react-hook-form";
+import { useFieldArray, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import type { CharacterBuilderFormValues } from "@/features/build-character";
@@ -24,20 +24,15 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 type SituationalImageRowProps = {
   id: string;
   index: number;
-  form: UseFormReturn<CharacterBuilderFormValues>;
   ensureContentVersionId: () => Promise<string>;
   onRemove: () => void;
 };
 
 /** techspec-builder-character.md §2 AC — 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
-export function AdvancedTab({
-  form,
-  ensureContentVersionId,
-}: {
-  form: UseFormReturn<CharacterBuilderFormValues>;
-  ensureContentVersionId: () => Promise<string>;
-}) {
+export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId: () => Promise<string> }) {
+  const form = useFormContext<CharacterBuilderFormValues>();
+
   const { control } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "situationalImages" });
   const sensors = useSensors(useSensor(PointerSensor));
@@ -72,7 +67,6 @@ export function AdvancedTab({
                   key={field.id}
                   id={field.id}
                   index={index}
-                  form={form}
                   ensureContentVersionId={ensureContentVersionId}
                   onRemove={() => remove(index)}
                 />
@@ -106,10 +100,11 @@ export function AdvancedTab({
 function SituationalImageRow({
   id,
   index,
-  form,
   ensureContentVersionId,
   onRemove,
 }: SituationalImageRowProps) {
+  const form = useFormContext<CharacterBuilderFormValues>();
+
   const { register, getValues, setValue, watch } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
