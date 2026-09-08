@@ -170,9 +170,6 @@ async def test_story_ending_unlock_rejects_duplicate_composite_pk(
         await db_session.flush()
 
 
-# character_image_exposures 의 복합 PK(user_id, content_id, image_entity_id)는 이를
-# 검증하는 행위 테스트가 원래부터 없었고, `alembic check`도 복합 PK를 비교하지 않으므로
-# 지금 이 제약은 아무 테스트로도 검증되지 않는다.
 async def test_character_image_exposure_accumulates_per_user_and_content(
     db_session: AsyncSession,
 ) -> None:
@@ -190,3 +187,35 @@ async def test_character_image_exposure_accumulates_per_user_and_content(
     await db_session.flush()
 
     assert exposure.first_exposed_at is not None
+
+
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — character_image_exposures 의
+# 복합 PK는 이 테스트에서만 검증된다.
+async def test_character_image_exposure_rejects_duplicate_composite_pk(
+    db_session: AsyncSession,
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_published_version(db_session, user)
+    image_entity_id = uuid.uuid4()
+
+    db_session.add(
+        CharacterImageExposure(
+            user_id=user.id,
+            content_id=version.content_id,
+            image_entity_id=image_entity_id,
+        )
+    )
+    await db_session.flush()
+
+    db_session.add(
+        CharacterImageExposure(
+            user_id=user.id,
+            content_id=version.content_id,
+            image_entity_id=image_entity_id,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
