@@ -35,7 +35,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   const navigate = useNavigate();
   const confirmMutation = useConfirmPasswordResetMutation();
 
-  async function onSubmit(values: ResetPasswordFormValues) {
+  async function handleValidSubmit(values: ResetPasswordFormValues) {
     clearErrors("root");
     try {
       await confirmMutation.mutateAsync({ token, newPassword: values.newPassword });
@@ -56,7 +56,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       {errors.root && (

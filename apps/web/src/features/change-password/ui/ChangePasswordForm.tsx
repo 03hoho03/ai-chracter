@@ -31,7 +31,7 @@ export function ChangePasswordForm() {
 
   const changePasswordMutation = useChangePasswordMutation();
 
-  async function onSubmit(values: ChangePasswordFormValues) {
+  async function handleValidSubmit(values: ChangePasswordFormValues) {
     clearErrors("root");
     try {
       await changePasswordMutation.mutateAsync(values);
@@ -53,7 +53,7 @@ export function ChangePasswordForm() {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       {errors.root && (

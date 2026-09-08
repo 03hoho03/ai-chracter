@@ -40,7 +40,7 @@ export const AppealModal = createCallable<AppealModalProps, void>(({ call, targe
 
   const submitAppeal = useSubmitAppealMutation();
 
-  async function onSubmit(values: SubmitAppealFormValues) {
+  async function handleValidSubmit(values: SubmitAppealFormValues) {
     if (isSubmitting) return;
 
     try {
@@ -65,7 +65,7 @@ export const AppealModal = createCallable<AppealModalProps, void>(({ call, targe
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit(onSubmit)(event);
+            void handleSubmit(handleValidSubmit)(event);
           }}
         >
           <div className="flex flex-col gap-1.5">

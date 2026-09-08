@@ -83,7 +83,7 @@ export function EditProfileDialog({
     }
   }
 
-  async function onSubmit(values: EditProfileFormValues) {
+  async function handleValidSubmit(values: EditProfileFormValues) {
     form.clearErrors("root");
     try {
       await updateProfileMutation.mutateAsync(formToServer(values));
@@ -119,7 +119,7 @@ export function EditProfileDialog({
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void form.handleSubmit(onSubmit)(event);
+            void form.handleSubmit(handleValidSubmit)(event);
           }}
         >
           {form.formState.errors.root && (

@@ -54,7 +54,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
 
-  async function onSubmit(values: LoginFormValues) {
+  async function handleValidSubmit(values: LoginFormValues) {
     clearErrors("root");
     setIsGoogleErrorDismissed(true);
     try {
@@ -86,7 +86,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         noValidate
         onSubmit={(event) => {
           event.preventDefault();
-          void handleSubmit(onSubmit)(event);
+          void handleSubmit(handleValidSubmit)(event);
         }}
       >
         {bannerMessage && (

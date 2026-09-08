@@ -26,7 +26,7 @@ export function ForgotPasswordForm() {
   const [isRequested, setIsRequested] = useState(false);
   const requestMutation = useRequestPasswordResetMutation();
 
-  async function onSubmit(values: ForgotPasswordFormValues) {
+  async function handleValidSubmit(values: ForgotPasswordFormValues) {
     try {
       await requestMutation.mutateAsync(values);
       setIsRequested(true);
@@ -50,7 +50,7 @@ export function ForgotPasswordForm() {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       <div className="flex flex-col gap-1.5">

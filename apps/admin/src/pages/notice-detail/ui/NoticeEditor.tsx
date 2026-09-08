@@ -63,7 +63,7 @@ export function NoticeEditor({ notice, onCreated }: NoticeEditorProps) {
   const isSaving = createMutation.isPending || updateMutation.isPending;
   const isSaveBlocked = !isDirty || isSaving;
 
-  async function onSubmit(values: NoticeEditorFormValues) {
+  async function handleValidSubmit(values: NoticeEditorFormValues) {
     if (isSaveBlocked) return;
 
     try {
@@ -88,7 +88,7 @@ export function NoticeEditor({ notice, onCreated }: NoticeEditorProps) {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       <div className="flex flex-col gap-1.5">

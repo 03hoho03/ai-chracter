@@ -34,7 +34,7 @@ export function InquiryReplyPanel({ inquiryId, initialReplyBody }: InquiryReplyP
 
   const replyInquiry = useReplyInquiryMutation(inquiryId);
 
-  async function onSubmit(values: ReplyInquiryFormValues) {
+  async function handleValidSubmit(values: ReplyInquiryFormValues) {
     if (isSubmitting) return;
 
     try {
@@ -51,7 +51,7 @@ export function InquiryReplyPanel({ inquiryId, initialReplyBody }: InquiryReplyP
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       <h2 className="text-lg font-semibold text-foreground">답변</h2>

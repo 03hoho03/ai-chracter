@@ -48,7 +48,7 @@ export function SubmitInquiryForm() {
 
   const createInquiryMutation = useCreateInquiryMutation();
 
-  async function onSubmit(values: SubmitInquiryFormValues) {
+  async function handleValidSubmit(values: SubmitInquiryFormValues) {
     clearErrors("root");
     try {
       const created = await createInquiryMutation.mutateAsync(formToServer(values));
@@ -67,7 +67,7 @@ export function SubmitInquiryForm() {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       {errors.root && (

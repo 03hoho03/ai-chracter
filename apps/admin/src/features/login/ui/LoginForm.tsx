@@ -34,7 +34,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
   const navigate = useNavigate();
   const loginMutation = useLoginMutation();
 
-  async function onSubmit(values: LoginFormValues) {
+  async function handleValidSubmit(values: LoginFormValues) {
     clearErrors("root");
     try {
       await loginMutation.mutateAsync(values);
@@ -56,7 +56,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
       noValidate
       onSubmit={(event) => {
         event.preventDefault();
-        void handleSubmit(onSubmit)(event);
+        void handleSubmit(handleValidSubmit)(event);
       }}
     >
       {errors.root && (
