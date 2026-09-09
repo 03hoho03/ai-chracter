@@ -151,6 +151,26 @@ def test_render_prompt_channel_falls_back_to_default_variant_when_requested_vari
     assert custom == "CUSTOM"
 
 
+def test_render_prompt_channel_default_variant_fallback_drops_section_when_value_is_empty() -> None:
+    """§9-2 R-2 사각지대(적대적 리뷰가 시드 body로 재현) — `base_content`처럼 기본
+    (`variant=''`) 행이 있는 슬롯도, 요청한 variant(`custom`)가 없어 그 기본 행으로
+    폴백했는데 기본 행이 참조하는 값이 비어 있으면 `conditional=True`인 이 섹션은
+    통째로 드롭된다. CUSTOM 템플릿 스토리는 `setting_text`가 비어 있는 게 정상이라
+    이 경로가 실제로 도달 가능하다 — "다른 문안으로 대체"가 아니라 "슬롯 소실"이라는
+    뜻이다(위 폴백 테스트는 `setting_text`를 채운 값으로만 확인해 이 사각지대를
+    못 잡았다)."""
+    sections = [
+        _section(
+            channel="generation", scope="story", slot="base_content",
+            body="{setting_text}", conditional=True, order=1, variant="",
+        ),
+    ]
+    values = {"setting_text": "", "custom_prompt": "CUSTOM"}
+    rendered = render_prompt_channel(sections, channel="generation", scope="story", variant="custom", values=values)
+
+    assert rendered == ""
+
+
 # ---- system_instruction_for — scope/variant 배선 ---------------------------
 
 

@@ -29,6 +29,65 @@ class PromptRenderError(RuntimeError):
     `except LLMClientError`가 못 잡아 태스크 취소 → 커넥션 강제종료로 번진다(실측)."""
 
 
+# prompt-db-goal-prompt.md §9-2 R-4. `(channel, slot)` -> 그 슬롯의 `body`가 쓸 수 있는
+# `{name}` 플레이스홀더 전체 — 이 아래 `build_*`/`content/publish.py`의 `build_*_filter_prompt`
+# 호출부가 각자 만드는 `values` 딕셔너리 키를 그대로 옮긴 것이다(지금까지는 그 딕셔너리
+# 리터럴에만 암묵적으로 있었다). 어드민 게시 검증(R-4)이 이 목록 밖의 이름을 거부하려면
+# "허용되는 이름이 뭔지" 코드 어딘가에 명시적으로 있어야 하는데, 그 정의를 여기 하나로만
+# 두고 `admin/prompts.py`가 이 상수를 그대로 import해서 쓴다 — 값을 다시 나열하면 둘 중
+# 하나가 바뀔 때 나머지가 조용히 갈린다. `variant`별로 다른 슬롯(`base_content`)은 두
+# variant가 쓰는 이름의 합집합이다 — 어느 variant든 같은 `values` 딕셔너리를 받으므로
+# 실제로 크래시 나지 않는 이름 전부가 여기 있어야 한다. `system` 채널은 전부 빈 집합이다
+# — `system_instruction_for`가 `render_prompt_channel`을 `values={}`로 호출하기 때문에
+# 플레이스홀더가 하나라도 있으면 그 자리에서 반드시 `PromptRenderError`가 난다.
+ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
+    ("system", "self_definition"): frozenset(),
+    ("system", "rule_response_format"): frozenset(),
+    ("system", "rule_user_agency"): frozenset(),
+    ("system", "rule_open_turn"): frozenset(),
+    ("system", "rule_rating"): frozenset(),
+    ("system", "template_instruction"): frozenset(),
+    ("system", "priority_tail"): frozenset(),
+    ("generation", "character_prompt"): frozenset({"character_prompt"}),
+    ("generation", "base_content"): frozenset({"setting_text", "custom_prompt"}),
+    ("generation", "example_dialogues"): frozenset({"example_lines"}),
+    ("generation", "rules"): frozenset({"rules"}),
+    ("generation", "user_goal"): frozenset({"user_goal"}),
+    ("generation", "development_examples"): frozenset({"example_lines"}),
+    ("generation", "prologue"): frozenset({"prologue"}),
+    ("generation", "history"): frozenset({"history_lines"}),
+    ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
+    ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
+    ("generation", "final_frame"): frozenset({"user_label", "user_message", "assistant_label"}),
+    ("stat_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
+    ("stat_judgment", "turn_context"): frozenset(
+        {"user_label", "user_message", "assistant_label", "assistant_message"}
+    ),
+    ("stat_judgment", "judgment_instruction"): frozenset(),
+    ("ending_judgment", "history_header"): frozenset(),
+    ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
+    ("ending_judgment", "criteria"): frozenset({"judgment_prompt"}),
+    ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
+    ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
+    ("image_judgment", "judgment_instruction"): frozenset(),
+    ("publish_filter", "intro_instruction"): frozenset(),
+    ("publish_filter", "name"): frozenset({"name"}),
+    ("publish_filter", "one_liner"): frozenset({"one_liner"}),
+    ("publish_filter", "intro"): frozenset({"intro"}),
+    ("publish_filter", "setting_text"): frozenset({"setting_text"}),
+    ("publish_filter", "development_example_legacy"): frozenset({"development_example"}),
+    ("publish_filter", "custom_prompt"): frozenset({"custom_prompt"}),
+    ("publish_filter", "rules"): frozenset({"rules"}),
+    ("publish_filter", "user_goal"): frozenset({"user_goal"}),
+    ("publish_filter", "development_examples_pairs"): frozenset({"example_lines"}),
+    ("publish_filter", "example_dialogues"): frozenset({"dialogue_lines"}),
+    ("publish_filter", "character_prompt"): frozenset({"character_prompt"}),
+    ("publish_filter", "detail_description"): frozenset({"detail_description"}),
+    ("publish_filter", "starting_setups"): frozenset({"setup_lines"}),
+    ("publish_filter", "verdict_instruction"): frozenset(),
+}
+
+
 async def load_active_prompt_set(db: AsyncSession) -> tuple[PromptSet, list[PromptSection]]:
     """활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를 읽는다.
     `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면

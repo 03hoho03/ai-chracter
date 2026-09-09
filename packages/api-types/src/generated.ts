@@ -670,6 +670,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/prompt-sets/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Prompt Draft
+         * @description `/admin/prompt-sets/{id}`보다 반드시 먼저 등록한다 — 둘 다 `GET`이고 경로 깊이가
+         *     같아 "draft"가 문자 그대로 `{id}`에도 매치된다. Starlette은 등록 순서대로 첫 매치를
+         *     쓰므로, `{id}`가 먼저면 이 라우트는 영원히 도달하지 못한다.
+         */
+        get: operations["get_prompt_draft_admin_prompt_sets_draft_get"];
+        /** Upsert Prompt Draft */
+        put: operations["upsert_prompt_draft_admin_prompt_sets_draft_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-sets/draft/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Prompt Draft
+         * @description T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
+         *     LLM은 부르지 않는다. 초안이 없으면 활성 세트로 미리보기한다(`GET .../draft`와 같은
+         *     폴백).
+         */
+        post: operations["preview_prompt_draft_admin_prompt_sets_draft_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-sets/publish": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Publish Prompt Set */
+        post: operations["publish_prompt_set_admin_prompt_sets_publish_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-sets/{id}/restore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Restore Prompt Set
+         * @description 옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
+         *     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
+         */
+        post: operations["restore_prompt_set_admin_prompt_sets__id__restore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-sets/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Prompt Set */
+        get: operations["get_prompt_set_admin_prompt_sets__id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/prompt-sets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Prompt Sets */
+        get: operations["list_prompt_sets_admin_prompt_sets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -2060,7 +2177,9 @@ export interface paths {
          * Send Preview Message
          * @description 미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
          *     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
-         *     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신).
+         *     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
+         *     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
+         *     때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2).
          */
         post: operations["send_preview_message_preview_sessions__id__messages_post"];
         delete?: never;
@@ -2698,6 +2817,161 @@ export interface components {
             title?: string | null;
             /** Bodymarkdown */
             bodyMarkdown?: string | null;
+        };
+        /**
+         * AdminPromptDraftResponse
+         * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
+         *     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
+         *     조회, prompt-db-goal-prompt.md §9-1).
+         */
+        AdminPromptDraftResponse: {
+            /** Id */
+            id: string | null;
+            labels: components["schemas"]["AdminPromptLabels"];
+            /** Sections */
+            sections: components["schemas"]["AdminPromptSectionItem"][];
+        };
+        /**
+         * AdminPromptDraftUpsertRequest
+         * @description 섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다.
+         */
+        AdminPromptDraftUpsertRequest: {
+            labels: components["schemas"]["AdminPromptLabels"];
+            /** Sections */
+            sections: components["schemas"]["AdminPromptSectionInput"][];
+        };
+        /** AdminPromptLabels */
+        AdminPromptLabels: {
+            /** Userlabel */
+            userLabel: string;
+            /** Storyassistantlabel */
+            storyAssistantLabel: string;
+            /** Storyexamplelabel */
+            storyExampleLabel: string;
+            /** Characterassistantlabel */
+            characterAssistantLabel: string;
+        };
+        /** AdminPromptPreviewItem */
+        AdminPromptPreviewItem: {
+            /** Channel */
+            channel: string;
+            /** Label */
+            label: string;
+            /** Text */
+            text: string;
+        };
+        /** AdminPromptPreviewResponse */
+        AdminPromptPreviewResponse: {
+            /** Items */
+            items: components["schemas"]["AdminPromptPreviewItem"][];
+        };
+        /**
+         * AdminPromptPublishRequest
+         * @description `version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
+         *     바꿨나"를 대신 받는다.
+         */
+        AdminPromptPublishRequest: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** AdminPromptSectionInput */
+        AdminPromptSectionInput: {
+            /** Channel */
+            channel: string;
+            /** Scope */
+            scope: string;
+            /** Slot */
+            slot: string;
+            /**
+             * Variant
+             * @default
+             */
+            variant: string;
+            /** Body */
+            body: string;
+            /** Conditional */
+            conditional: boolean;
+            /** Order */
+            order: number;
+        };
+        /** AdminPromptSectionItem */
+        AdminPromptSectionItem: {
+            /** Channel */
+            channel: string;
+            /** Scope */
+            scope: string;
+            /** Slot */
+            slot: string;
+            /** Variant */
+            variant: string;
+            /** Body */
+            body: string;
+            /** Conditional */
+            conditional: boolean;
+            /** Order */
+            order: number;
+        };
+        /**
+         * AdminPromptSetDetailResponse
+         * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16).
+         */
+        AdminPromptSetDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: string | null;
+            /** Status */
+            status: string;
+            /** Note */
+            note: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Publishedat */
+            publishedAt: string | null;
+            labels: components["schemas"]["AdminPromptLabels"];
+            /** Sections */
+            sections: components["schemas"]["AdminPromptSectionItem"][];
+        };
+        /** AdminPromptSetListResponse */
+        AdminPromptSetListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminPromptSetSummary"][];
+        };
+        /**
+         * AdminPromptSetSummary
+         * @description prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은
+         *     `GET /admin/prompt-sets/{id}`로 뺀다.
+         */
+        AdminPromptSetSummary: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Version */
+            version: string | null;
+            /** Status */
+            status: string;
+            /** Note */
+            note: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Publishedat */
+            publishedAt: string | null;
+            /** Isactive */
+            isActive: boolean;
         };
         /** AdminReportContentDetail */
         AdminReportContentDetail: {
@@ -5534,6 +5808,194 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_draft_admin_prompt_sets_draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptDraftResponse"];
+                };
+            };
+        };
+    };
+    upsert_prompt_draft_admin_prompt_sets_draft_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptDraftUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_prompt_draft_admin_prompt_sets_draft_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptPreviewResponse"];
+                };
+            };
+        };
+    };
+    publish_prompt_set_admin_prompt_sets_publish_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminPromptPublishRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptSetDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_prompt_set_admin_prompt_sets__id__restore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptDraftResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prompt_set_admin_prompt_sets__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptSetDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_prompt_sets_admin_prompt_sets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminPromptSetListResponse"];
                 };
             };
         };

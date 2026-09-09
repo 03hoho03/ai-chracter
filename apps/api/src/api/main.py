@@ -12,6 +12,7 @@ from api.admin.dashboard import router as admin_dashboard_router
 from api.admin.inquiries import router as admin_inquiries_router
 from api.admin.legal import router as admin_legal_router
 from api.admin.notices import router as admin_notices_router
+from api.admin.prompts import router as admin_prompts_router
 from api.admin.router import me_router as admin_me_router, router as admin_router
 from api.admin.users import router as admin_users_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
@@ -75,6 +76,7 @@ app.include_router(admin_legal_router)
 app.include_router(admin_notices_router)
 app.include_router(admin_inquiries_router)
 app.include_router(admin_chat_view_router)
+app.include_router(admin_prompts_router)
 app.include_router(assets_router)
 app.include_router(assets_me_router)
 app.include_router(auth_router)
