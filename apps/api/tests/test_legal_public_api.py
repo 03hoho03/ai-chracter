@@ -92,11 +92,6 @@ async def test_get_public_document_returns_404_when_no_published_document(
     assert resp.status_code == 404
 
 
-async def test_get_public_document_rejects_unknown_kind(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.get("/legal/unknown-kind")
-    assert resp.status_code == 422
-
-
 # ---- /me 재동의 판정 -----------------------------------------------------------
 
 

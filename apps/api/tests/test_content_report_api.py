@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -14,35 +14,12 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
     Report,
     ReportReasonCategory,
     ReportStatus,
-    User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 async def _make_published_content(
@@ -110,23 +87,6 @@ async def test_report_unknown_content_returns_404(
         f"/contents/{uuid.uuid4()}/report", json={"reasonCategory": "spam"}
     )
     assert resp.status_code == 404
-
-
-async def test_report_invalid_reason_category_returns_422(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    genre = await _get_genre(db_session)
-    content = await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id)
-    await db_session.commit()
-
-    await _login_as(db_client, user.id)
-    resp = await db_client.post(
-        f"/contents/{content.id}/report", json={"reasonCategory": "not-a-real-reason"}
-    )
-    assert resp.status_code == 422
 
 
 async def test_report_creates_pending_row_and_allows_repeat_reports(

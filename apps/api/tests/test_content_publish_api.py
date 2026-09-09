@@ -1,7 +1,7 @@
 import io
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone, UTC
+from datetime import timezone
 from decimal import Decimal
 from typing import Any
 
@@ -13,7 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.content.publish import PublishFilterResult
 from api.core.config import settings
-from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -21,7 +20,6 @@ from api.db.models.content import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -41,28 +39,7 @@ from api.db.models.story import (
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 def _upload_test_image(storage_key: str) -> None:

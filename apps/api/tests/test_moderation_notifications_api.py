@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -17,21 +17,8 @@ from api.db.models import (
     ModerationStatus,
     Notice,
     Notification,
-    User,
 )
-from test_admin_users_api import _count_queries
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
+from factories import _count_queries, _login_as, _make_user
 
 
 def _make_admin(**overrides: object) -> AdminUser:
@@ -41,12 +28,6 @@ def _make_admin(**overrides: object) -> AdminUser:
     }
     defaults.update(overrides)
     return AdminUser(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    """Logs in via the existing dev session-echo endpoint (no real /auth/login yet)."""
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
 
 
 async def _make_content(db_session: AsyncSession, creator_user_id: uuid.UUID) -> Content:

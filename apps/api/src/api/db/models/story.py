@@ -152,7 +152,13 @@ class Ending(Base):
 
 class EndingRuleGroup(Base):
     """techspec-db-schema.md §5. Only one level of nesting is allowed: this table has no
-    self-referential FK, so a group can never contain another group."""
+    self-referential FK, so a group can never contain another group.
+
+    이 결정을 검증하던 `test_migrations.py`의 `test_ending_rule_groups_has_no_self_referential_fk`는
+    2026-09-08에 삭제했다 — FK 존재 여부는 `alembic check`가 모델↔마이그레이션 일치로 비교하므로,
+    모델에 자기참조 FK가 생기면 마이그레이션과의 drift로 잡힌다. 다만 그건 model↔migration
+    일치를 지키는 것뿐이고 "1단만 허용"이라는 설계 규칙 자체를 앞으로도 못 바꾸게 잠그는 건 아니다.
+    """
 
     __tablename__ = "ending_rule_groups"
 
@@ -165,9 +171,19 @@ class EndingRuleGroup(Base):
 
 class EndingRule(Base):
     """techspec-db-schema.md §5. A rule belongs to an ending directly (top-level) or to a
-    rule group, never both/neither — enforced by a CHECK constraint rather than app-level
-    validation alone. `stat_def_entity_id` references a stat_def's entity_id (§1 원칙 4),
-    not its physical id, so the reference survives republish-cloning across versions."""
+    rule group, never both/neither — enforced by `ck_ending_rules_exactly_one_parent`
+    (a CHECK constraint) rather than app-level validation alone. `stat_def_entity_id`
+    references a stat_def's entity_id (§1 원칙 4), not its physical id, so the reference
+    survives republish-cloning across versions.
+
+    이 결정을 검증하던 `test_migrations.py`의
+    `test_ending_rules_has_exactly_one_parent_check_constraint`는 2026-09-08에
+    `alembic check` 중복이라 삭제했었다 — 그런데 alembic 1.18.5의 autogenerate/compare 에는
+    CHECK 제약 비교자가 없어(`CheckConstraint`를 아예 다루지 않는다) `alembic check`는
+    이 제약을 검증하지 못한다. 지금 `ck_ending_rules_exactly_one_parent`를 검증하는 건
+    `tests/test_story_models.py`의 `test_ending_rule_rejects_both_ending_and_group_set`과
+    `test_ending_rule_rejects_neither_ending_nor_group_set` 두 개뿐이다.
+    """
 
     __tablename__ = "ending_rules"
     __table_args__ = (

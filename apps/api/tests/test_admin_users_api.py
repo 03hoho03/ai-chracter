@@ -1,18 +1,16 @@
 import uuid
-from collections.abc import AsyncGenerator, Callable, Generator
-from contextlib import contextmanager
-from datetime import date, datetime, timedelta, timezone, UTC
+from collections.abc import AsyncGenerator
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
+import pytest
 import pytest_asyncio
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.redis import redis_client
-from api.core.security import hash_password
 from api.db.models import (
     AdminActionLog,
-    AdminUser,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -26,10 +24,9 @@ from api.db.models import (
     Report,
     ReportReasonCategory,
     ReportStatus,
-    User,
 )
-from api.db.session import engine
 from api.session.suspension import SUSPENDED_USER_KEY_PREFIX, is_user_suspended
+from factories import _count_queries, _create_admin, _login_as_admin, _make_user
 
 
 @pytest_asyncio.fixture(autouse=True)
@@ -40,35 +37,6 @@ async def _cleanup_suspension_markers() -> AsyncGenerator[None, None]:
     yield
     async for key in redis_client.scan_iter(match=f"{SUSPENDED_USER_KEY_PREFIX}*"):
         await redis_client.delete(key)
-
-
-@contextmanager
-def _count_queries() -> Generator[Callable[[], int], None, None]:
-    """`before_cursor_execute` 이벤트로 실행된 SQL 문 개수를 센다 — goal-prompt.md 3단계
-    검증 기준("20행 조회에 쿼리 1~3개")을 코드 읽기가 아니라 실측으로 확인하기 위함."""
-    count = 0
-
-    def _before_cursor_execute(*_args: object, **_kwargs: object) -> None:
-        nonlocal count
-        count += 1
-
-    sa.event.listen(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
-    try:
-        yield lambda: count
-    finally:
-        sa.event.remove(engine.sync_engine, "before_cursor_execute", _before_cursor_execute)
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
 
 
 async def _make_content(
@@ -184,27 +152,6 @@ async def _make_report(
     return report
 
 
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
-
-
 # ---- 인증 -------------------------------------------------------------------
 
 
@@ -230,48 +177,26 @@ async def _assert_requires_admin_session(
     assert resp.status_code == 401
 
 
-async def test_list_users_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+_ADMIN_SESSION_GUARD_CASES = [
+    pytest.param("get", "/admin/users?page=1", None, id="list"),
+    pytest.param("get", f"/admin/users/{uuid.uuid4()}", None, id="detail"),
+    pytest.param("post", f"/admin/users/{uuid.uuid4()}/warn", {"reasonCategory": "spam"}, id="warn"),
+    pytest.param("post", f"/admin/users/{uuid.uuid4()}/suspend", {"reasonCategory": "spam"}, id="suspend"),
+    pytest.param(
+        "post", f"/admin/users/{uuid.uuid4()}/unsuspend", {"adminComment": "해제합니다"}, id="unsuspend"
+    ),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "json"), _ADMIN_SESSION_GUARD_CASES)
+async def test_requires_admin_session(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    method: str,
+    path: str,
+    json: dict[str, object] | None,
 ) -> None:
-    await _assert_requires_admin_session(db_client, db_session, "get", "/admin/users?page=1")
-
-
-async def test_user_detail_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(db_client, db_session, "get", f"/admin/users/{uuid.uuid4()}")
-
-
-async def test_warn_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client, db_session, "post", f"/admin/users/{uuid.uuid4()}/warn", json={"reasonCategory": "spam"}
-    )
-
-
-async def test_suspend_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client,
-        db_session,
-        "post",
-        f"/admin/users/{uuid.uuid4()}/suspend",
-        json={"reasonCategory": "spam"},
-    )
-
-
-async def test_unsuspend_user_requires_admin_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _assert_requires_admin_session(
-        db_client,
-        db_session,
-        "post",
-        f"/admin/users/{uuid.uuid4()}/unsuspend",
-        json={"adminComment": "해제합니다"},
-    )
+    await _assert_requires_admin_session(db_client, db_session, method, path, json=json)
 
 
 # ---- 목록 --------------------------------------------------------------------

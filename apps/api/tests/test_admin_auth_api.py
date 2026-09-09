@@ -6,27 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
 from api.core.config import settings
-from api.core.security import hash_password
 from api.db.models.auth import AdminUser
-
-
-def _admin_payload(**overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    payload = _admin_payload(**overrides)
-    admin = AdminUser(
-        email=str(payload["email"]), password_hash=hash_password(str(payload["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return payload
+from factories import _create_admin
 
 
 async def _signup_and_login_user(db_client: httpx.AsyncClient, **overrides: object) -> dict[str, object]:

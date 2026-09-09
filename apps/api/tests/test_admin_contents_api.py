@@ -1,14 +1,12 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.security import hash_password
 from api.db.models import (
     AdminActionLog,
-    AdminUser,
     Asset,
     AssetKind,
     CharacterVersionDetail,
@@ -18,30 +16,12 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationAction,
     ModerationStatus,
     Notification,
-    User,
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _create_admin, _get_genre, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -194,27 +174,6 @@ async def _make_draft_only_character(
     )
     await db_session.flush()
     return content
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
 
 
 # ---- 인증 ----------------------------------------------------------------

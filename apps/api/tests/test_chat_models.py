@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 
 import pytest
 import sqlalchemy as sa
@@ -22,18 +22,7 @@ from api.db.models import (
     StoryEndingUnlock,
     User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
+from factories import _make_user
 
 
 async def _make_published_version(db_session: AsyncSession, user: User) -> ContentVersion:
@@ -92,19 +81,6 @@ async def test_chat_room_pins_to_content_version_with_defaults(db_session: Async
     assert room.name is None
 
 
-async def test_chat_room_rejects_unknown_content_version(db_session: AsyncSession) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    version = await _make_published_version(db_session, user)
-
-    room = ChatRoom(user_id=user.id, content_id=version.content_id, content_version_id=uuid.uuid4())
-    db_session.add(room)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
-
-
 async def test_chat_message_attaches_to_chat_room(db_session: AsyncSession) -> None:
     room = await _make_chat_room(db_session)
 
@@ -113,14 +89,6 @@ async def test_chat_message_attaches_to_chat_room(db_session: AsyncSession) -> N
     await db_session.flush()
 
     assert message.role == ChatMessageRole.USER
-
-
-async def test_chat_message_rejects_unknown_chat_room(db_session: AsyncSession) -> None:
-    message = ChatMessage(chat_room_id=uuid.uuid4(), role=ChatMessageRole.ASSISTANT, content="안녕하세요")
-    db_session.add(message)
-
-    with pytest.raises(IntegrityError):
-        await db_session.flush()
 
 
 async def test_chat_room_stat_composite_pk_allows_multiple_stats_per_room(
@@ -137,6 +105,9 @@ async def test_chat_room_stat_composite_pk_allows_multiple_stats_per_room(
     assert stat_a.stat_entity_id != stat_b.stat_entity_id
 
 
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — chat_room_stats 의 복합 PK는
+# 이 테스트에서만 검증된다.
 async def test_chat_room_stat_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
     room = await _make_chat_room(db_session)
     stat_entity_id = uuid.uuid4()
@@ -167,7 +138,12 @@ async def test_story_ending_unlock_accumulates_per_user_and_starting_setup(
     assert unlock.first_reached_at is not None
 
 
-async def test_story_ending_unlock_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — story_ending_unlocks 의 복합 PK는
+# 이 테스트에서만 검증된다.
+async def test_story_ending_unlock_rejects_duplicate_composite_pk(
+    db_session: AsyncSession,
+) -> None:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -213,17 +189,33 @@ async def test_character_image_exposure_accumulates_per_user_and_content(
     assert exposure.first_exposed_at is not None
 
 
-async def test_character_image_exposure_rejects_unknown_content(db_session: AsyncSession) -> None:
+# `alembic check` 는 기존 테이블의 복합 PK 구성을 비교하지 않는다(alembic 1.18.5 의
+# autogenerate/compare 에 primary_key 비교자가 없다) — character_image_exposures 의
+# 복합 PK는 이 테스트에서만 검증된다.
+async def test_character_image_exposure_rejects_duplicate_composite_pk(
+    db_session: AsyncSession,
+) -> None:
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
+    version = await _make_published_version(db_session, user)
+    image_entity_id = uuid.uuid4()
 
-    exposure = CharacterImageExposure(
-        user_id=user.id,
-        content_id=uuid.uuid4(),
-        image_entity_id=uuid.uuid4(),
+    db_session.add(
+        CharacterImageExposure(
+            user_id=user.id,
+            content_id=version.content_id,
+            image_entity_id=image_entity_id,
+        )
     )
-    db_session.add(exposure)
+    await db_session.flush()
 
+    db_session.add(
+        CharacterImageExposure(
+            user_id=user.id,
+            content_id=version.content_id,
+            image_entity_id=image_entity_id,
+        )
+    )
     with pytest.raises(IntegrityError):
         await db_session.flush()

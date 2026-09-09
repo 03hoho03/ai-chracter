@@ -248,7 +248,14 @@ def test_build_stat_judgment_prompt_falls_back_to_initial_value_when_stat_not_se
 
 
 def test_build_stat_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+    # 뮤테이션(8단계 T-13 #6): history 에 USER 메시지만 있으면 역할 라벨 삼항의 else 분기
+    # ('진행자' 라벨)를 아무도 안 타 그 문자열이 깨져도 테스트가 안 죽는다 — 형제 함수
+    # build_generation_prompt/build_story_generation_prompt 의 픽스처처럼 ASSISTANT 메시지를
+    # 섞는다.
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "이전 응답"),
+        _message(ChatMessageRole.USER, "이전 메시지"),
+    ]
 
     prompt = build_stat_judgment_prompt(
         stat_defs=[],
@@ -259,7 +266,12 @@ def test_build_stat_judgment_prompt_includes_history_before_this_turn() -> None:
     )
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+    assert history_section.splitlines()[:4] == [
+        "진행자: 이전 응답",
+        "사용자: 이전 메시지",
+        "사용자: 이번 메시지",
+        "진행자: 이번 응답",
+    ]
 
 
 def test_build_image_judgment_prompt_lists_images_in_order_with_trigger_conditions() -> None:
@@ -282,7 +294,13 @@ def test_build_image_judgment_prompt_lists_images_in_order_with_trigger_conditio
 
 
 def test_build_image_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+    # 뮤테이션(8단계 T-13 #8): history 에 USER 메시지만 있으면 역할 라벨 삼항의 else 분기
+    # ('캐릭터' 라벨)를 아무도 안 타 그 문자열이 깨져도 테스트가 안 죽는다 — 형제 함수
+    # build_generation_prompt 의 픽스처처럼 ASSISTANT 메시지를 섞는다.
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "이전 응답"),
+        _message(ChatMessageRole.USER, "이전 메시지"),
+    ]
 
     prompt = build_image_judgment_prompt(
         situational_images=[_situational_image()],
@@ -292,7 +310,12 @@ def test_build_image_judgment_prompt_includes_history_before_this_turn() -> None
     )
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "캐릭터: 이번 응답"]
+    assert history_section.splitlines()[:4] == [
+        "캐릭터: 이전 응답",
+        "사용자: 이전 메시지",
+        "사용자: 이번 메시지",
+        "캐릭터: 이번 응답",
+    ]
 
 
 def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:
@@ -309,7 +332,13 @@ def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:
 
 
 def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+    # 뮤테이션(8단계 T-13 #7): history 에 USER 메시지만 있으면 역할 라벨 삼항의 else 분기
+    # ('진행자' 라벨)를 아무도 안 타 그 문자열이 깨져도 테스트가 안 죽는다 — 형제 함수
+    # build_story_generation_prompt 의 픽스처처럼 ASSISTANT 메시지를 섞는다.
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "이전 응답"),
+        _message(ChatMessageRole.USER, "이전 메시지"),
+    ]
 
     prompt = build_ending_judgment_prompt(
         judgment_prompt="기준",
@@ -319,7 +348,12 @@ def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> Non
     )
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+    assert history_section.splitlines()[:4] == [
+        "진행자: 이전 응답",
+        "사용자: 이전 메시지",
+        "사용자: 이번 메시지",
+        "진행자: 이번 응답",
+    ]
 
 
 def test_build_stat_judgment_prompt_binds_the_direction_constraints_in_descriptions() -> None:
