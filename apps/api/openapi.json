@@ -8228,6 +8228,25 @@
         ],
         "title": "ContentVisibilityUpdateRequest"
       },
+      "DevelopmentExampleItem": {
+        "properties": {
+          "userLine": {
+            "type": "string",
+            "title": "Userline"
+          },
+          "assistantLine": {
+            "type": "string",
+            "title": "Assistantline"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userLine",
+          "assistantLine"
+        ],
+        "title": "DevelopmentExampleItem",
+        "description": "chat-goal-prompt.md §8-3/D-10, chat-techspec.md §6-1 (D-12). `ExampleDialogueItem`의\n입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고\n순서가 곧 정체성이다."
+      },
       "DraftListResponse": {
         "properties": {
           "items": {
@@ -10412,6 +10431,35 @@
             ],
             "title": "Customprompt"
           },
+          "developmentExamples": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopmentExampleItem"
+            },
+            "type": "array",
+            "title": "Developmentexamples"
+          },
+          "userGoal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usergoal"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
+          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -10477,7 +10525,6 @@
           "thumbnailAssetId",
           "promptTemplate",
           "settingText",
-          "developmentExample",
           "customPrompt",
           "startingSetups",
           "keywordNotes",
@@ -10559,6 +10606,35 @@
             ],
             "title": "Customprompt"
           },
+          "developmentExamples": {
+            "items": {
+              "$ref": "#/components/schemas/DevelopmentExampleItem"
+            },
+            "type": "array",
+            "title": "Developmentexamples"
+          },
+          "userGoal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Usergoal"
+          },
+          "rules": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rules"
+          },
           "startingSetups": {
             "items": {
               "$ref": "#/components/schemas/StartingSetupDraftItem"
@@ -10627,6 +10703,9 @@
           "settingText",
           "developmentExample",
           "customPrompt",
+          "developmentExamples",
+          "userGoal",
+          "rules",
           "startingSetups",
           "keywordNotes",
           "shortcuts",

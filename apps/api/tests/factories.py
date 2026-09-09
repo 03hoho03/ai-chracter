@@ -110,7 +110,11 @@ async def _make_asset(
 
 
 async def _make_published_story(
-    db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID
+    db_session: AsyncSession,
+    *,
+    creator_user_id: uuid.UUID,
+    genre_id: uuid.UUID,
+    prompt_template: StoryPromptTemplate = StoryPromptTemplate.BASIC,
 ) -> Content:
     content = Content(
         creator_user_id=creator_user_id,
@@ -137,7 +141,7 @@ async def _make_published_story(
             name="스토리",
             one_liner="한줄소개",
             thumbnail_asset_id=thumbnail.id,
-            prompt_template=StoryPromptTemplate.BASIC,
+            prompt_template=prompt_template,
             setting_text="세계관 설정",
         )
     )

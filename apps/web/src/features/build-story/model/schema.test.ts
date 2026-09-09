@@ -51,7 +51,7 @@ describe("storySettingSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("never requires developmentExample regardless of promptTemplate", () => {
+  it("never requires developmentExamples/userGoal/rules regardless of promptTemplate", () => {
     const basic = storySettingSchema.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
@@ -72,6 +72,61 @@ describe("storySettingSchema", () => {
     expect(missingWorldSetting.success).toBe(false);
     expect(withWorldSetting.success).toBe(true);
     expect(withWorldSetting.success && withWorldSetting.data.promptTemplate).toBe("basic");
+  });
+
+  it("accepts userGoal/rules as optional free text (chat-goal-prompt.md §8-1/8-2, D-9)", () => {
+    const result = storySettingSchema.safeParse({
+      promptTemplate: "basic",
+      worldSetting: "세계관 설명",
+      userGoal: "사용자는 새로 부임한 주방장이다. 손님들의 신뢰를 얻는 것이 목표다.",
+      rules: "손님의 정체는 먼저 밝히지 않는다.",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.userGoal).toBe(
+      "사용자는 새로 부임한 주방장이다. 손님들의 신뢰를 얻는 것이 목표다.",
+    );
+    expect(result.success && result.data.rules).toBe("손님의 정체는 먼저 밝히지 않는다.");
+  });
+
+  it("defaults developmentExamples to an empty array when omitted", () => {
+    const result = storySettingSchema.safeParse({
+      promptTemplate: "basic",
+      worldSetting: "세계관 설명",
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data.developmentExamples).toEqual([]);
+  });
+
+  it("accepts up to 3 development example pairs (chat-goal-prompt.md §8-3, D-10)", () => {
+    const threePairs = Array.from({ length: 3 }, (_, i) => ({
+      userLine: `사용자 메시지 ${i}`,
+      assistantLine: `스토리 응답 ${i}`,
+    }));
+
+    const result = storySettingSchema.safeParse({
+      promptTemplate: "basic",
+      worldSetting: "세계관 설명",
+      developmentExamples: threePairs,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a 4th development example pair", () => {
+    const fourPairs = Array.from({ length: 4 }, (_, i) => ({
+      userLine: `사용자 메시지 ${i}`,
+      assistantLine: `스토리 응답 ${i}`,
+    }));
+
+    const result = storySettingSchema.safeParse({
+      promptTemplate: "basic",
+      worldSetting: "세계관 설명",
+      developmentExamples: fourPairs,
+    });
+
+    expect(result.success).toBe(false);
   });
 });
 

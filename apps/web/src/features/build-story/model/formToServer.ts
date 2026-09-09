@@ -1,6 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
 import type {
+  DevelopmentExampleValues,
   EndingValues,
   KeywordNoteValues,
   RuleListItemValues,
@@ -11,6 +12,7 @@ import type {
 } from "./schema";
 
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
+type DevelopmentExampleItem = components["schemas"]["DevelopmentExampleItem"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
 type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
@@ -80,6 +82,12 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
   };
 }
 
+// chat-techspec.md §6-1(D-12): 서버 계약(`DevelopmentExampleItem`)엔 id가 없다 — 폼 쌍이 이미 그
+// 모양이라 필드명만 그대로 옮긴다.
+function toApiDevelopmentExample(item: DevelopmentExampleValues): DevelopmentExampleItem {
+  return { userLine: item.userLine, assistantLine: item.assistantLine };
+}
+
 // scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다(techspec §1.3 [확정] 매핑).
 function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
   return {
@@ -115,7 +123,13 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     thumbnailAssetId: values.profile.image?.assetId ?? null,
     promptTemplate: values.storySetting.promptTemplate,
     settingText: values.storySetting.worldSetting ?? null,
-    developmentExample: values.storySetting.developmentExample ?? null,
+    // chat-techspec.md §6-2(D-13): 구 컬럼(`developmentExample`)은 리비전②가 드롭하기 전까지
+    // 롤백 안전망으로 남아 있어야 한다. FE는 더 이상 이 필드를 폼에서 관리하지 않으므로 아예
+    // 보내지 않는다 — BE가 "안 보냄"과 명시적 null을 구분해, 안 보내면 기존 값을 그대로 둔다.
+    // 전개 예시의 출처는 이제 developmentExamples 하나뿐이다.
+    developmentExamples: values.storySetting.developmentExamples.map(toApiDevelopmentExample),
+    userGoal: values.storySetting.userGoal ?? null,
+    rules: values.storySetting.rules ?? null,
     customPrompt: values.storySetting.customPrompt ?? null,
     startingSetups: values.startingSetups.map(toApiStartingSetup),
     keywordNotes: values.keywordNotes.map(toApiKeywordNote),

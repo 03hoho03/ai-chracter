@@ -1,16 +1,32 @@
 import { z } from "zod";
 
 /**
- * techspec-builder-story.md §1 — `promptTemplate`이 'custom'일 때 `worldSetting`/`developmentExample`은
- * 화면 전환처럼 값은 폼 상태에 보존하되 검증에서만 제외하고, customPrompt를 필수로 요구한다.
+ * chat-goal-prompt.md §8-3(D-10), chat-techspec.md §6-1(D-12) — 전개 예시 한 쌍. build-character의
+ * `exampleDialogueSchema`와 같은 입출력 쌍 모양이지만 `id`는 두지 않는다 — 서버 계약
+ * (`DevelopmentExampleItem`)에 id가 없고(다른 레코드가 참조하지 않고 순서가 곧 정체성), id를 넣으면
+ * `serverToForm`이 매번 새 id를 발급해야 해서 순수 함수가 아니게 된다. 위젯에서 목록 key가 필요하면
+ * RHF가 `useFieldArray`에 자동으로 붙여주는 `field.id`를 쓴다(등록된 폼 필드가 아니라 값에 섞이지 않는다).
+ */
+export const developmentExampleSchema = z.object({
+  userLine: z.string(),
+  assistantLine: z.string(),
+});
+
+/**
+ * techspec-builder-story.md §1 — `promptTemplate`이 'custom'일 때 `worldSetting`은 화면 전환처럼
+ * 값은 폼 상태에 보존하되 검증에서만 제외하고, customPrompt를 필수로 요구한다.
  * 'basic'/'emotional'/'simulation'일 때는 반대로 worldSetting을 필수로 요구하고 customPrompt는 제외한다.
- * developmentExample(고급설정)은 어느 템플릿에서도 필수가 아니다.
+ * `developmentExamples`/`userGoal`/`rules`는 chat-techspec.md §6-3(D-16)에 따라 템플릿과 무관하게
+ * 항상 적용되는 L1 작품 층이라 이 분기 대상이 아니고, 어느 템플릿에서도 필수가 아니다
+ * (chat-goal-prompt.md §8, D-19 — 기존 33건이 비어 있는 채로 발행돼 있다).
  */
 export const storySettingSchema = z
   .object({
     promptTemplate: z.enum(["basic", "emotional", "simulation", "custom"]).default("basic"),
     worldSetting: z.string().optional(),
-    developmentExample: z.string().optional(),
+    developmentExamples: z.array(developmentExampleSchema).max(3).default([]),
+    userGoal: z.string().optional(),
+    rules: z.string().optional(),
     customPrompt: z.string().optional(),
   })
   .superRefine((value, ctx) => {
@@ -145,6 +161,7 @@ export const storyBuilderSchema = z.object({
 });
 
 export type StorySettingValues = z.infer<typeof storySettingSchema>;
+export type DevelopmentExampleValues = z.infer<typeof developmentExampleSchema>;
 export type StatDefValues = z.infer<typeof statDefSchema>;
 export type RuleListItemValues = z.infer<typeof ruleListItemSchema>;
 export type SingleRuleValues = Extract<RuleListItemValues, { kind: "rule" }>;

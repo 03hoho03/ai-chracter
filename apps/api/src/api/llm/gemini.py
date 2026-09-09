@@ -32,12 +32,13 @@ class GeminiLLMClient(LLMClient):
         self._client = genai.Client(api_key=api_key if api_key is not None else settings.gemini_api_key)
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         # 출력 상한이 사고 토큰과 응답이 나눠 쓰는 예산이라는 점과 기본값의 근거는
         # core/config.py 의 gemini_max_output_tokens 주석 참고.
         config = genai_types.GenerateContentConfig(
             max_output_tokens=settings.gemini_max_output_tokens,
             stop_sequences=_STOP_SEQUENCES,
+            system_instruction=system_instruction,
         )
         if settings.gemini_thinking_budget is not None:
             # None 이면 thinking_config 를 아예 넘기지 않아야 한다(모델 기본 사고 동작) —
@@ -45,6 +46,10 @@ class GeminiLLMClient(LLMClient):
             config.thinking_config = genai_types.ThinkingConfig(
                 thinking_budget=settings.gemini_thinking_budget
             )
+        if settings.gemini_seed is not None:
+            # None 이면 seed 를 아예 넘기지 않아 지금과 같은 매 회차 난수 동작을 유지한다
+            # (chat-techspec.md §3-1). generate_structured()에는 붙이지 않는다.
+            config.seed = settings.gemini_seed
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,

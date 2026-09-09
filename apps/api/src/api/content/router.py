@@ -34,6 +34,7 @@ from api.content.schemas import (
     ContentSummaryListResponse,
     ContentVersionSummary,
     ContentVisibilityUpdateRequest,
+    DevelopmentExampleItem,
     DraftListResponse,
     DraftSummary,
     EndingDraftItem,
@@ -755,6 +756,11 @@ async def _story_draft_response(
         setting_text=detail.setting_text,
         development_example=detail.development_example,
         custom_prompt=detail.custom_prompt,
+        development_examples=[
+            DevelopmentExampleItem.model_validate(item) for item in detail.development_examples
+        ],
+        user_goal=detail.user_goal,
+        rules=detail.rules,
         starting_setups=starting_setups,
         keyword_notes=[
             KeywordNoteDraftItem(
@@ -952,8 +958,16 @@ async def _update_story_draft(
     detail.thumbnail_asset_id = payload.thumbnail_asset_id
     detail.prompt_template = payload.prompt_template
     detail.setting_text = payload.setting_text
-    detail.development_example = payload.development_example
+    # chat-techspec.md D-13: FE는 이 필드를 더 이상 보내지 않는다 — 안 보내면 구 컬럼(롤백
+    # 안전망)을 그대로 둔다. 명시적 `null`은 여전히 지운다(model_fields_set으로 구분).
+    if "development_example" in payload.model_fields_set:
+        detail.development_example = payload.development_example
     detail.custom_prompt = payload.custom_prompt
+    detail.development_examples = [
+        item.model_dump(by_alias=True) for item in payload.development_examples
+    ]
+    detail.user_goal = payload.user_goal
+    detail.rules = payload.rules
     version.detail_description = payload.description
     content.genre_id = payload.genre_id
     content.target = payload.target
@@ -1233,6 +1247,9 @@ async def _restore_draft_detail(
     draft_story.setting_text = published_story.setting_text
     draft_story.development_example = published_story.development_example
     draft_story.custom_prompt = published_story.custom_prompt
+    draft_story.development_examples = published_story.development_examples
+    draft_story.user_goal = published_story.user_goal
+    draft_story.rules = published_story.rules
 
 
 @router.post("/contents/{id}/draft/reset", status_code=status.HTTP_204_NO_CONTENT)
@@ -1620,6 +1637,9 @@ async def _publish_story_content(
         setting_text=detail.setting_text,
         development_example=detail.development_example,
         custom_prompt=detail.custom_prompt,
+        development_examples=detail.development_examples,
+        user_goal=detail.user_goal,
+        rules=detail.rules,
         detail_description=version.detail_description,
         starting_setups=starting_setups,
     )
@@ -1652,6 +1672,9 @@ async def _publish_story_content(
             setting_text=detail.setting_text,
             development_example=detail.development_example,
             custom_prompt=detail.custom_prompt,
+            development_examples=detail.development_examples,
+            user_goal=detail.user_goal,
+            rules=detail.rules,
         )
     )
 

@@ -1,3 +1,4 @@
+import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
@@ -22,6 +23,7 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    system_instruction_for,
 )
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
@@ -63,6 +65,7 @@ from api.content.schemas import (
     StatDefDraftItem,
     StoryDraftPayload,
 )
+from api.core.config import settings
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
@@ -510,10 +513,15 @@ async def _build_prompt(
     history: list[ChatMessage],
     user_content: str,
     shortcut: Shortcut | None,
-) -> str:
+) -> tuple[str, str]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
-    (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다."""
+    (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
+
+    `(prompt, system_instruction)` 튜플을 돌려준다 — 스토리 챗의 L0.5 템플릿별 지시
+    (`system_instruction_for`)를 고르려면 `story_detail.prompt_template`이 필요한데, 그 조회가
+    이 함수 안에서만 일어나 호출부는 모른다(chat-techspec.md §4-2). 조회를 한 번 더 하는 대신
+    여기서 함께 고른다."""
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
         assert story_detail is not None
@@ -526,10 +534,12 @@ async def _build_prompt(
             )
         ).all()
         matched_notes = match_keyword_notes(user_content, list(notes))
-        return build_story_generation_prompt(
+        prompt = build_story_generation_prompt(
             prompt_template=story_detail.prompt_template,
             setting_text=story_detail.setting_text,
-            development_example=story_detail.development_example,
+            development_examples=story_detail.development_examples,
+            user_goal=story_detail.user_goal,
+            rules=story_detail.rules,
             custom_prompt=story_detail.custom_prompt,
             prologue=setup.prologue,
             history=history,
@@ -537,24 +547,69 @@ async def _build_prompt(
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
+        return prompt, system_instruction_for(is_story_chat=True, template=story_detail.prompt_template)
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
-    return build_generation_prompt(
+    prompt = build_generation_prompt(
         character_prompt=detail.character_prompt,
         example_dialogues=detail.example_dialogues,
         history=history,
         user_message=user_content,
     )
+    return prompt, system_instruction_for(is_story_chat=False)
+
+
+def _dump_prompt(
+    *, room_id: uuid.UUID | None, turn: int, prompt: str, system_instruction: str
+) -> None:
+    """tasks/chat-techspec.md §3-5(D-21·D-22): 회차 재현용으로 조립된 프롬프트를 JSONL 한
+    줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
+
+    바닥 지시문도 함께 남긴다 — 이 런이 바꾸는 것이 바로 그것이라, 대화록만 남고 그때
+    어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다."""
+    record = {
+        "roomId": str(room_id) if room_id is not None else None,
+        "turn": turn,
+        "model": settings.gemini_model_name,
+        "seed": settings.gemini_seed,
+        "systemInstruction": system_instruction,
+        "prompt": prompt,
+    }
+    assert settings.prompt_dump_path is not None
+    with open(settings.prompt_dump_path, "a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 async def _stream_generated_tokens(
-    llm_client: LLMClient, prompt: str, chunks: list[str]
+    llm_client: LLMClient,
+    prompt: str,
+    chunks: list[str],
+    system_instruction: str,
+    *,
+    room_id: uuid.UUID | None,
+    turn: int,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
     누적한다 — 제너레이터는 반환값과 yield를 동시에 쓸 수 없어, 스트림 종료 후 조립할 전체
-    텍스트를 이 out-param으로 호출부에 넘긴다."""
-    async for delta in llm_client.generate(prompt):
+    텍스트를 이 out-param으로 호출부에 넘긴다.
+
+    바닥 지시문은 호출부가 골라 넘긴다(`system_instruction_for`) — 여기서 고를 수 없다.
+    스토리/캐릭터 구분이 실제 방·미리보기에서 서로 다른 값(`setup`/`payload` 타입)으로
+    드러나기 때문이다.
+
+    진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
+    프롬프트와 그때 실린 지시문을 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을
+    막지 않는다** — SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼
+    무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md §SSE 스트리밍)."""
+    if settings.prompt_dump_path is not None:
+        try:
+            _dump_prompt(
+                room_id=room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
+            )
+        except Exception:
+            logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", room_id, turn, exc_info=True)
+    async for delta in llm_client.generate(prompt, system_instruction):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -579,11 +634,18 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
     않는다 — 그 라우트의 docstring 참고.
     """
-    prompt = await _build_prompt(db, room, setup, history, user_content, shortcut)
+    prompt, system_instruction = await _build_prompt(db, room, setup, history, user_content, shortcut)
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction,
+            room_id=room.id,
+            turn=room.turn_count + 1,
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -625,7 +687,6 @@ async def _stream_new_turn(
             judgment_prompt = build_stat_judgment_prompt(
                 stat_defs=stat_defs,
                 current_stats=current_stats,
-                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
@@ -810,11 +871,19 @@ async def regenerate_message(
         ).all()
     )
     user_content = history[-1].content
-    prompt = await _build_prompt(db, room, setup, history[:-1], user_content, None)
+    prompt, system_instruction = await _build_prompt(db, room, setup, history[:-1], user_content, None)
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction,
+            room_id=room.id,
+            # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
+            turn=room.turn_count,
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -1429,7 +1498,11 @@ def _build_preview_prompt(
     return build_story_generation_prompt(
         prompt_template=payload.prompt_template,
         setting_text=payload.setting_text,
-        development_example=payload.development_example,
+        development_examples=[
+            example.model_dump(by_alias=True) for example in payload.development_examples
+        ],
+        user_goal=payload.user_goal,
+        rules=payload.rules,
         custom_prompt=payload.custom_prompt,
         prologue=setup.prologue if setup is not None else "",
         history=history,
@@ -1453,10 +1526,21 @@ async def _stream_preview_turn(
     실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — DB에 결합된 조회/커밋 부분만
     Redis 상태 갱신으로 대체했다."""
     prompt = _build_preview_prompt(state.payload, history, user_content, shortcut)
+    # `_build_prompt`(실제 방)와 달리 `payload`가 이미 이 스코프에 있어(DB 조회가 아니다)
+    # 튜플 반환으로 우회할 필요가 없다 — template을 여기서 바로 뽑는다.
+    template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
 
     chunks: list[str] = []
     try:
-        async for token_event in _stream_generated_tokens(llm_client, prompt, chunks):
+        async for token_event in _stream_generated_tokens(
+            llm_client,
+            prompt,
+            chunks,
+            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template),
+            # 미리보기는 DB 방이 없다(Redis 세션).
+            room_id=None,
+            turn=state.turn_count + 1,
+        ):
             yield token_event
     except LLMPolicyViolationError:
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
@@ -1491,7 +1575,6 @@ async def _stream_preview_turn(
             judgment_prompt = build_stat_judgment_prompt(
                 stat_defs=stat_defs,
                 current_stats=current_stats,
-                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )

@@ -201,6 +201,9 @@ async def _make_publishable_story_draft(
             thumbnail_asset_id=thumbnail.id,
             prompt_template=StoryPromptTemplate.BASIC,
             setting_text="세계관 설명",
+            development_examples=[{"userLine": "안녕", "assistantLine": "어서오세요"}],
+            user_goal="용을 물리친다",
+            rules="폭력 묘사는 암시로만 한다",
         )
     )
     await db_session.flush()
@@ -296,7 +299,7 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.received_images: list[tuple[bytes, str]] | None = None
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         raise NotImplementedError
         yield ""  # pragma: no cover - unreachable, keeps this an async generator
 
@@ -771,6 +774,9 @@ async def test_publish_story_confirms_transaction_and_clones_draft(
     assert new_detail.name == "잃어버린 도시"
     assert new_detail.thumbnail_asset_id == thumbnail.id
     assert new_detail.setting_text == "세계관 설명"
+    assert new_detail.development_examples == [{"userLine": "안녕", "assistantLine": "어서오세요"}]
+    assert new_detail.user_goal == "용을 물리친다"
+    assert new_detail.rules == "폭력 묘사는 암시로만 한다"
 
     new_setup = await db_session.scalar(
         sa.select(StartingSetup).where(

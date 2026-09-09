@@ -7,7 +7,12 @@ import httpx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.prompt_builder import (
+    CHARACTER_CHAT_SYSTEM_INSTRUCTION,
+    EndingJudgmentResult,
+    StatChangeJudgment,
+    StatJudgmentResult,
+)
 from api.chat.preview_session import get_preview_session
 from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
@@ -117,10 +122,12 @@ class _FakeLLMClient(LLMClient):
         self._structured_results = list(structured_results or [])
         self.generate_structured_calls: list[Any] = []
         self.received_prompt: str | None = None
+        self.received_system_instruction: str | None = None
         self.error = error
 
-    async def generate(self, prompt: str) -> AsyncIterator[str]:
+    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         self.received_prompt = prompt
+        self.received_system_instruction = system_instruction
         if self.error is not None:
             raise self.error
         for token in self.tokens:
@@ -202,6 +209,30 @@ async def test_send_preview_message_character_streams_and_appends(api_client: ht
     assert state is not None
     assert [m.content for m in state.messages] == ["안녕하세요, 아리아예요", "안녕!", "안녕"]
     assert state.turn_count == 1
+    # 캐릭터 챗은 template 없이 동작한다(D-17) — L0.5가 붙지 않는다.
+    assert fake.received_system_instruction == CHARACTER_CHAT_SYSTEM_INSTRUCTION
+
+
+async def test_send_preview_message_story_selects_template_instruction(api_client: httpx.AsyncClient) -> None:
+    """chat-techspec.md §4-2 — `_stream_preview_turn` 호출부는 `payload.prompt_template`을
+    골라 시스템 지시문(L0.5)에 잇는다."""
+    api_client.cookies.clear()
+    await _login_as(api_client, uuid.uuid4())
+    session_id = await _start_session(api_client, _story_payload(promptTemplate="emotional"))
+
+    fake = _FakeLLMClient(tokens=["이야기"])
+    _override_llm_client(fake)
+    try:
+        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_system_instruction is not None
+    assert (
+        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
+        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다." in fake.received_system_instruction
+    )
 
 
 async def test_send_preview_message_policy_violation_emits_policy_warning(

@@ -36,6 +36,7 @@ import statistics
 import sys
 from collections import Counter
 from dataclasses import dataclass, field
+from itertools import pairwise
 from pathlib import Path
 
 # `chat_probe.TURNS` 의 고정 사용자 턴마다, 그 턴을 "되받았다"고 볼 표지.
@@ -51,8 +52,32 @@ TURN_KEYWORDS = [
 WINDOWS = ("chars250", "sent2", "pct30")
 
 _SENTENCE = re.compile(r'(?<=[.!?…”"\'])\s+|\n+')
-_LABEL = re.compile(r"(^|\n)\s*(사용자|서술자|진행자|캐릭터)\s*:")
+# 여는 괄호·따옴표·별표를 허용한다 — 줄머리만 보던 이전 버전은 `(서술자: 낡은 스테인리스…`
+# 처럼 여는 괄호 뒤에 오는 라벨을 놓쳤다(2026-09-08 실측, chat-techspec.md §3-3).
+_LABEL = re.compile(r"(^|\n)[\s(\[\"“'*]*(사용자|서술자|진행자|캐릭터)\s*:")
 _USER_TURN = re.compile(r"(^|\n)\s*사용자\s*:")
+# 턴 열기 지표 4종(chat-techspec.md §3-2) — 밥집(닫힘)·이도윤(열림) 두 방 실측으로 판정력을
+# 확인한 것만 담는다. 물음표·따옴표 대사 후보는 항진명제/역방향으로 판정력이 없어 버렸다
+# (tasks/fixtures/README.md).
+_SOLICIT = re.compile(
+    r"(까요|나요|ㄹ까|을까|는지요|습니까|십시오|세요|주세요|보실|하실|드릴까)[.?…\"”\s]*(?:$|[.\"?…”])",
+    re.M,
+)
+# 사용자 발화를 명시적으로 무시하는 표현 — 응답 앞 120자에서만 본다(호출부에서 슬라이스).
+_IGNORE = re.compile(r"(대꾸 없이|대답(을)? (하지|않)|답하지 않|반응하지 않|아무 말(도)? 없)")
+# 장면 이동형 열기 — 의문·청유(질문 형태)가 못 잡는 나머지 두 갈래(상황 변화·사실 노출)를
+# "마지막 문장이 정적·종결 어휘로 끝나는가"의 반대로 잡는다. "진행 중" 을 직접 정의하려 하면
+# `스쳐 지나가는 듯합니다` 처럼 여닫힘 양쪽에 다 나오는 표현이 섞여 판정력이 없다 — 종결
+# 어휘를 걸러내는 쪽이 실측에서 갈렸다. 3단계 A세트(밥집 재현, 09-09 아카이브) 마지막 문장
+# 기준: 기준선은 4/12 가 "정적만이 가득하며"·"침묵합니다"·"눈치채지 못한"·"기대하지 않는"
+# 로 끝나 닫힘, 처방(L0)은 0/12. 정답지(밥집 4턴·이도윤 6턴)도 같은 방향(3/4 vs 6/6).
+_SCENE_CLOSE = re.compile(
+    r"정적(만|이|은|을)?|고요(함|만|이|은)?|침묵(합니다|한다|을 지킵니다|이|만)?|"
+    r"잠(이 )?(듭니다|들었|든|들어)|눈을 감|"
+    r"(녹아|스며|잦아|가라앉)(듭니다|든다|들며|들어)|"
+    r"아무(것도|말도) ?(없|남지 않|하지 않)|"
+    r"기대하지 않|눈치채지 못"
+)
 _BRACKET = re.compile(r"\[[^\]]{2,12}\]")
 # 한글 낱말 안에 라틴 문자가 섞인 것 = 모델이 한국어를 깨뜨린 자리(`길as`, `자C리`).
 # 의도된 외래어(`지옥 CPU가`)도 걸리므로 눈으로 확인할 후보 목록으로만 쓴다.
@@ -106,19 +131,37 @@ class Summary:
     truncated: int = 0
     self_copies: int = 0
     hits: Counter[str] = field(default_factory=Counter)
+    # 턴 열기 지표 4종(chat-techspec.md §3-2 · D-18). solicit/ignored/scene_open은 턴 단위라
+    # scored로 나눈다. monotonic_rooms/total_rooms는 **방 단위**(길이 수열이 끝까지 비증가인가)라
+    # scored를 분모로 섞지 않는다 — 별도 분모를 갖는다.
+    solicit: int = 0
+    ignored: int = 0
+    # 마지막 문장이 정적·종결 어휘(_SCENE_CLOSE)로 끝나지 **않은** 턴의 수 — 장면 이동형 열기.
+    scene_open: int = 0
+    monotonic_rooms: int = 0
+    total_rooms: int = 0
     median_len: float = 0.0
     median_sentences: float = 0.0
     spread: float = 0.0
-    per_story: dict[str, tuple[int, int]] = field(default_factory=dict)
+    # (되받기 히트, 길이 중앙값, 채점된 턴 수) — 턴 수는 대본마다 다르므로(4턴/5턴) 항목별
+    # 출력에서 분모로 써야 한다("/5" 하드코딩은 4턴 대본에서 거짓 정보가 된다).
+    per_story: dict[str, tuple[int, int, int]] = field(default_factory=dict)
     defects: list[str] = field(default_factory=list)
 
     def rate(self, window: str) -> str:
         hit = self.hits[window]
         return f"{hit}/{self.scored} ({round(100 * hit / max(1, self.scored))}%)"
 
-    # rate() 와 같은 표기 — 되받기 창 밖의 카운터(절단·자기복제)용.
+    # rate() 와 같은 표기 — 되받기 창 밖의 카운터(절단·자기복제·솔직청유·무시)용.
     def ratio(self, hit: int) -> str:
         return f"{hit}/{self.scored} ({round(100 * hit / max(1, self.scored))}%)"
+
+    # ratio()와 달리 분모가 scored(턴 수)가 아니라 total_rooms(방 수)다 — D-18.
+    def room_ratio(self) -> str:
+        return (
+            f"{self.monotonic_rooms}/{self.total_rooms} "
+            f"({round(100 * self.monotonic_rooms / max(1, self.total_rooms))}%)"
+        )
 
 
 def summarize(path: str) -> Summary:
@@ -159,9 +202,17 @@ def summarize(path: str) -> Summary:
             out.scored += 1
             lengths.append(len(reply))
             scored_lengths.append(len(reply))
-            sentence_counts.append(len(_sentences(reply)))
+            reply_sentences = _sentences(reply)
+            sentence_counts.append(len(reply_sentences))
             if _is_truncated(reply):
                 out.truncated += 1
+            if _SOLICIT.search(reply):
+                out.solicit += 1
+            if _IGNORE.search(reply[:120]):
+                out.ignored += 1
+            last_sentence = reply_sentences[-1] if reply_sentences else reply
+            if not _SCENE_CLOSE.search(last_sentence):
+                out.scene_open += 1
             prev_head = previous.strip()[:_SELF_COPY_PREFIX]
             if len(prev_head) == _SELF_COPY_PREFIX and reply.strip().startswith(prev_head):
                 out.self_copies += 1
@@ -181,7 +232,14 @@ def summarize(path: str) -> Summary:
             for token in _BRACKET.findall(reply):
                 out.defects.append(f"{key} t{index + 1}: 대괄호 출력 {token}")
         if scored_lengths:
-            out.per_story[key] = (story_hits, int(statistics.median(scored_lengths)))
+            out.per_story[key] = (
+                story_hits,
+                int(statistics.median(scored_lengths)),
+                len(scored_lengths),
+            )
+            out.total_rooms += 1
+            if all(b <= a for a, b in pairwise(scored_lengths)):
+                out.monotonic_rooms += 1
 
     if lengths:
         out.median_len = statistics.median(lengths)
@@ -214,6 +272,13 @@ def main() -> None:
                 "empty_replies": s.empty_replies,
                 "truncated": s.truncated,
                 "self_copies": s.self_copies,
+                # 턴 열기 지표(D-18): solicit/ignored/scene_open은 scored(턴 단위) 분모,
+                # monotonic_rooms는 total_rooms(방 단위) 분모 — 서로 섞지 않는다.
+                "solicit": s.solicit,
+                "ignored": s.ignored,
+                "scene_open": s.scene_open,
+                "monotonic_rooms": s.monotonic_rooms,
+                "total_rooms": s.total_rooms,
                 # Counter 는 0인 키를 안 담으므로 세 창을 항상 전부 채워서 낸다.
                 "parrot_hits": {window: s.hits[window] for window in WINDOWS},
                 "median_len": s.median_len,
@@ -241,14 +306,21 @@ def main() -> None:
     _row("문장 수 중앙값", [f"{s.median_sentences:.0f}" for s in summaries], width)
     _row("절단(문장 미종결)", [s.ratio(s.truncated) for s in summaries], width)
     _row("자기복제(직전 복사)", [s.ratio(s.self_copies) for s in summaries], width)
+    _row("의문·청유 어미", [s.ratio(s.solicit) for s in summaries], width)
+    _row("무시 표현(앞120자)", [s.ratio(s.ignored) for s in summaries], width)
+    _row("장면 이동형 열기", [s.ratio(s.scene_open) for s in summaries], width)
+    # 턴 단위가 아니라 방 단위(길이 수열이 끝까지 비증가인가) — 분모가 다르다(D-18).
+    _row("길이 단조감소(방 단위)", [s.room_ratio() for s in summaries], width)
     # 스토리 하나를 여러 회차로 돌리는 실험부터 "스토리 간"이 아니라 "항목 간"(스토리 ×
     # 시작설정 × 회차) 편차다. 항목이 1개면 항상 1.0 이라 표시하지 않는다.
     _row("항목 간 길이 편차", [f"{s.spread:.1f}배" if s.spread else "-" for s in summaries], width)
 
     for s in summaries:
         print(f"\n[{s.label}] 항목별 되받기(앞250자) / 길이 중앙값")
-        for key, (hit, length) in sorted(s.per_story.items(), key=lambda item: -item[1][0]):
-            print(f"  {key:24} {hit}/5   {length:>5}자")
+        for key, (hit, length, scored) in sorted(
+            s.per_story.items(), key=lambda item: -item[1][0]
+        ):
+            print(f"  {key:24} {hit}/{scored}   {length:>5}자")
         if s.defects:
             print(f"  결함 후보 {len(s.defects)}건")
             for line in s.defects:
