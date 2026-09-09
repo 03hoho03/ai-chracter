@@ -444,7 +444,8 @@ def test_build_stat_judgment_prompt_only_includes_this_turn() -> None:
     """chat-goal-prompt.md §7-2 / chat-techspec.md §5-2: 스탯 판단은 이전 턴 히스토리를
     받지 않는다(`history` 인자가 아예 없다) — `[대화 기록]` 블록은 이번 턴 2줄만 남는다.
     `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다(그쪽 테스트가 대칭으로
-    존재한다)."""
+    존재한다). main의 T-13 #6(역할 라벨 삼항에 ASSISTANT를 섞어야 한다)은 이 함수에서
+    그 삼항 자체가 사라져 더 이상 해당하지 않는다."""
     prompt = build_stat_judgment_prompt(
         stat_defs=[],
         current_stats={},
@@ -476,7 +477,13 @@ def test_build_image_judgment_prompt_lists_images_in_order_with_trigger_conditio
 
 
 def test_build_image_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+    # 뮤테이션(8단계 T-13 #8): history 에 USER 메시지만 있으면 역할 라벨 삼항의 else 분기
+    # ('캐릭터' 라벨)를 아무도 안 타 그 문자열이 깨져도 테스트가 안 죽는다 — 형제 함수
+    # build_generation_prompt 의 픽스처처럼 ASSISTANT 메시지를 섞는다.
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "이전 응답"),
+        _message(ChatMessageRole.USER, "이전 메시지"),
+    ]
 
     prompt = build_image_judgment_prompt(
         situational_images=[_situational_image()],
@@ -486,7 +493,12 @@ def test_build_image_judgment_prompt_includes_history_before_this_turn() -> None
     )
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "캐릭터: 이번 응답"]
+    assert history_section.splitlines()[:4] == [
+        "캐릭터: 이전 응답",
+        "사용자: 이전 메시지",
+        "사용자: 이번 메시지",
+        "캐릭터: 이번 응답",
+    ]
 
 
 def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:
@@ -503,7 +515,13 @@ def test_build_ending_judgment_prompt_includes_criteria_and_this_turn() -> None:
 
 
 def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
+    # 뮤테이션(8단계 T-13 #7): history 에 USER 메시지만 있으면 역할 라벨 삼항의 else 분기
+    # ('진행자' 라벨)를 아무도 안 타 그 문자열이 깨져도 테스트가 안 죽는다 — 형제 함수
+    # build_story_generation_prompt 의 픽스처처럼 ASSISTANT 메시지를 섞는다.
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "이전 응답"),
+        _message(ChatMessageRole.USER, "이전 메시지"),
+    ]
 
     prompt = build_ending_judgment_prompt(
         judgment_prompt="기준",
@@ -513,7 +531,12 @@ def test_build_ending_judgment_prompt_includes_history_before_this_turn() -> Non
     )
 
     history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+    assert history_section.splitlines()[:4] == [
+        "진행자: 이전 응답",
+        "사용자: 이전 메시지",
+        "사용자: 이번 메시지",
+        "진행자: 이번 응답",
+    ]
 
 
 def test_build_stat_judgment_prompt_binds_the_direction_constraints_in_descriptions() -> None:

@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import sqlalchemy as sa
@@ -7,51 +7,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
     Asset,
-    AssetKind,
     CharacterVersionDetail,
     Content,
     ContentTarget,
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
     StoryPromptTemplate,
     StoryVersionDetail,
-    User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    """Logs in via the existing dev session-echo endpoint (same pattern as test_assets_api.py)."""
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
-
-
-async def _make_asset(db_session: AsyncSession, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from factories import _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_content(

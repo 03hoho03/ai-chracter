@@ -100,14 +100,16 @@ async def test_seed_content_files_publishes_every_data_file(
             story.slug,
         )
     for character in characters:
-        detail = await db_session.get(CharacterVersionDetail, character_version_id(character.slug))
-        assert detail is not None and detail.name == character.payload.name
+        character_detail = await db_session.get(
+            CharacterVersionDetail, character_version_id(character.slug)
+        )
+        assert character_detail is not None and character_detail.name == character.payload.name
         await _assert_published(
             db_session,
             character_content_id(character.slug),
             character_version_id(character.slug),
             ContentType.CHARACTER,
-            detail.thumbnail_asset_id,
+            character_detail.thumbnail_asset_id,
             character.slug,
         )
 

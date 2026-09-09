@@ -1,12 +1,11 @@
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 from decimal import Decimal
 
 import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -15,7 +14,7 @@ from api.db.models.content import (
     ContentVisibility,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import AssetStatus
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -29,35 +28,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id,
-        storage_key=f"assets/original/{uuid.uuid4()}.png",
-        kind=AssetKind.ORIGINAL,
-        status=AssetStatus.READY,
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from factories import _login_as, _make_asset, _make_user
 
 
 async def _make_content(
@@ -343,10 +314,18 @@ async def test_reset_content_draft_restores_character_draft(
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    published_thumbnail = await _make_asset(db_session, owner_user_id=user.id)
-    published_image = await _make_asset(db_session, owner_user_id=user.id)
-    published_blurred = await _make_asset(db_session, owner_user_id=user.id)
-    draft_thumbnail = await _make_asset(db_session, owner_user_id=user.id)
+    published_thumbnail = await _make_asset(
+        db_session, owner_user_id=user.id, storage_key_prefix="assets/original/", status=AssetStatus.READY
+    )
+    published_image = await _make_asset(
+        db_session, owner_user_id=user.id, storage_key_prefix="assets/original/", status=AssetStatus.READY
+    )
+    published_blurred = await _make_asset(
+        db_session, owner_user_id=user.id, storage_key_prefix="assets/original/", status=AssetStatus.READY
+    )
+    draft_thumbnail = await _make_asset(
+        db_session, owner_user_id=user.id, storage_key_prefix="assets/original/", status=AssetStatus.READY
+    )
 
     content = await _make_content(
         db_session, creator_user_id=user.id, content_type=ContentType.CHARACTER

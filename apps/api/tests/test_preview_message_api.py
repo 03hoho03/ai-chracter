@@ -14,15 +14,11 @@ from api.chat.prompt_builder import (
     StatJudgmentResult,
 )
 from api.chat.preview_session import get_preview_session
-from api.db.models.chat import ChatRoom
-from api.llm.client import LLMClient, LLMClientError
+from api.db.models.chat import ChatMessageRole, ChatRoom
+from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
+from factories import _login_as
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:
@@ -116,16 +112,24 @@ class _FakeLLMClient(LLMClient):
     """호출 순서대로 소비되는 구조화 응답 큐 + 마지막 생성 프롬프트 캡처 —
     test_chat_ending_pipeline_api.py의 큐 기반 fake와 동일한 모양."""
 
-    def __init__(self, tokens: list[str], structured_results: list[Any] | None = None) -> None:
+    def __init__(
+        self,
+        tokens: list[str],
+        structured_results: list[Any] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.tokens = tokens
         self._structured_results = list(structured_results or [])
         self.generate_structured_calls: list[Any] = []
         self.received_prompt: str | None = None
         self.received_system_instruction: str | None = None
+        self.error = error
 
     async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         self.received_prompt = prompt
         self.received_system_instruction = system_instruction
+        if self.error is not None:
+            raise self.error
         for token in self.tokens:
             yield token
 
@@ -229,6 +233,61 @@ async def test_send_preview_message_story_selects_template_instruction(api_clien
         "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
         "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다." in fake.received_system_instruction
     )
+
+
+async def test_send_preview_message_policy_violation_emits_policy_warning(
+    api_client: httpx.AsyncClient,
+) -> None:
+    """`chat/router.py`의 `_stream_preview_turn`은 본 채팅·재생성과 글자 그대로 같은
+    `except LLMPolicyViolationError` 핸들러를 갖지만 여태 이 경로만 테스트가 없었다."""
+    api_client.cookies.clear()
+    await _login_as(api_client, uuid.uuid4())
+    session_id = await _start_session(api_client, _character_payload())
+
+    fake = _FakeLLMClient(tokens=[], error=LLMPolicyViolationError("blocked"))
+    _override_llm_client(fake)
+    try:
+        resp = await api_client.post(
+            f"/preview-sessions/{session_id}/messages", json={"content": "부적절한 메시지"}
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["policyWarning"]
+
+    state = await get_preview_session(session_id)
+    assert state is not None
+    # 유저 메시지는 남지만 AI 응답은 저장되지 않고, 실패한 턴은 turn_count에 반영되지 않는다.
+    assert state.messages[-1].role == ChatMessageRole.USER
+    assert state.messages[-1].content == "부적절한 메시지"
+    assert state.turn_count == 0
+
+
+async def test_send_preview_message_llm_error_emits_error_event(
+    api_client: httpx.AsyncClient,
+) -> None:
+    api_client.cookies.clear()
+    await _login_as(api_client, uuid.uuid4())
+    session_id = await _start_session(api_client, _character_payload())
+
+    fake = _FakeLLMClient(tokens=[], error=LLMClientError("network down"))
+    _override_llm_client(fake)
+    try:
+        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["error"]
+
+    state = await get_preview_session(session_id)
+    assert state is not None
+    assert state.messages[-1].role == ChatMessageRole.USER
+    assert state.messages[-1].content == "안녕"
+    assert state.turn_count == 0
 
 
 async def test_send_preview_message_story_stat_change(api_client: httpx.AsyncClient) -> None:

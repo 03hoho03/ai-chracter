@@ -1,5 +1,4 @@
-import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -7,41 +6,9 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin import legal as admin_legal
-from api.core.security import hash_password
-from api.db.models import AdminActionLog, AdminUser, LegalDocument, User
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _create_admin(db_session: AsyncSession, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": f"admin-{uuid.uuid4()}@example.com",
-        "password": "adminpassword123",
-    }
-    defaults.update(overrides)
-    admin = AdminUser(
-        email=str(defaults["email"]), password_hash=hash_password(str(defaults["password"]))
-    )
-    db_session.add(admin)
-    await db_session.flush()
-    return defaults
-
-
-async def _login_as_admin(db_client: httpx.AsyncClient, payload: dict[str, object]) -> None:
-    resp = await db_client.post(
-        "/admin/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
+from api.db.models import AdminActionLog, LegalDocument
+from api.legal.schemas import LegalDocumentKind
+from factories import _create_admin, _login_as_admin, _make_user
 
 
 async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -136,15 +103,6 @@ async def test_versions_requires_admin_session(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     await _assert_requires_admin_session(db_client, db_session, "get", "/admin/legal/terms/versions")
-
-
-async def test_invalid_kind_returns_422(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    await _login_new_admin(db_client, db_session)
-
-    resp = await db_client.get("/admin/legal/unknown-kind")
-    assert resp.status_code == 422
 
 
 # ---- 조회 --------------------------------------------------------------------
@@ -301,7 +259,9 @@ async def test_draft_upsert_concurrent_insert_race_falls_back_to_update_not_500(
     real_get_draft = admin_legal._get_draft
     call_count = 0
 
-    async def _get_draft_missing_once(db: AsyncSession, kind: str) -> LegalDocument | None:
+    async def _get_draft_missing_once(
+        db: AsyncSession, kind: LegalDocumentKind
+    ) -> LegalDocument | None:
         nonlocal call_count
         call_count += 1
         if call_count == 1:

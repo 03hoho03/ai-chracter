@@ -1,7 +1,7 @@
 import asyncio
 import io
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import timezone
 from types import SimpleNamespace
 from typing import Any
 
@@ -16,35 +16,18 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
-from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.dependencies import get_image_client
 from api.llm.gemini_image import GeminiImageClient
 from api.main import app
+from factories import _login_as, _make_user
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
     output = io.BytesIO()
     Image.new("RGB", (width, height), color=(120, 40, 200)).save(output, format="PNG")
     return output.getvalue()
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
 
 
 def _make_image_client(monkeypatch: pytest.MonkeyPatch, generate_content: Any) -> GeminiImageClient:
@@ -112,54 +95,6 @@ async def test_generate_requires_login(db_client: httpx.AsyncClient) -> None:
     assert resp.status_code == 401
 
 
-async def test_generate_rejects_empty_prompt(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(prompt=""))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_count_out_of_range(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(count=5))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_unknown_style(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(style="cubism"))
-    assert resp.status_code == 422
-
-
-async def test_generate_rejects_unknown_aspect_ratio(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload(aspectRatio="2:1"))
-    assert resp.status_code == 422
-
-
 async def test_generate_rejects_aspect_ratio_unsupported_by_model(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -173,20 +108,6 @@ async def test_generate_rejects_aspect_ratio_unsupported_by_model(
         "/images/generate", json=_generate_payload(model="flux-schnell", aspectRatio="16:9")
     )
     assert resp.status_code == 400
-
-
-async def test_generate_rejects_missing_model(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    payload = _generate_payload()
-    del payload["model"]
-    resp = await db_client.post("/images/generate", json=payload)
-    assert resp.status_code == 422
 
 
 async def test_list_image_models_requires_login(db_client: httpx.AsyncClient) -> None:

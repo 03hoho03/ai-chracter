@@ -192,7 +192,9 @@ def test_load_story_resolves_flat_stat_reference_by_name(tmp_path: Path) -> None
     payload = load_story(path)
 
     setup = payload.starting_setups[0]
-    assert setup.endings[0].stat_rules[0].stat_id == setup.stat_defs[0].id
+    rule = setup.endings[0].stat_rules[0]
+    assert rule.kind == "rule"
+    assert rule.stat_id == setup.stat_defs[0].id
 
 
 def test_load_story_resolves_stat_names_within_each_starting_setup(tmp_path: Path) -> None:
@@ -205,8 +207,12 @@ def test_load_story_resolves_stat_names_within_each_starting_setup(tmp_path: Pat
 
     first, second = payload.starting_setups
     assert first.stat_defs[0].id != second.stat_defs[0].id
-    assert first.endings[0].stat_rules[0].rules[0].stat_id == first.stat_defs[0].id
-    assert second.endings[0].stat_rules[0].rules[0].stat_id == second.stat_defs[0].id
+    first_group = first.endings[0].stat_rules[0]
+    second_group = second.endings[0].stat_rules[0]
+    assert first_group.kind == "group"
+    assert second_group.kind == "group"
+    assert first_group.rules[0].stat_id == first.stat_defs[0].id
+    assert second_group.rules[0].stat_id == second.stat_defs[0].id
 
 
 def test_load_story_keeps_explicit_stat_id(tmp_path: Path) -> None:
@@ -217,9 +223,9 @@ def test_load_story_keeps_explicit_stat_id(tmp_path: Path) -> None:
 
     payload = load_story(path)
 
-    assert payload.starting_setups[0].endings[0].stat_rules[0].rules[0].stat_id == uuid.UUID(
-        explicit
-    )
+    group = payload.starting_setups[0].endings[0].stat_rules[0]
+    assert group.kind == "group"
+    assert group.rules[0].stat_id == uuid.UUID(explicit)
 
 
 def test_load_story_reports_unknown_stat_name(tmp_path: Path) -> None:

@@ -1,7 +1,7 @@
 import json
 import uuid
 from collections.abc import AsyncIterator
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 from typing import Any
 
 import httpx
@@ -10,8 +10,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import StatJudgmentResult
 from api.db.models import (
-    Asset,
-    AssetKind,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -21,46 +19,15 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
-    StoryVersionDetail,
-    User,
 )
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
-
-
-async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL)
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
+from factories import _get_genre, _login_as, _make_asset, _make_published_story, _make_user
 
 
 async def _make_published_character(
@@ -94,49 +61,6 @@ async def _make_published_character(
             intro=intro,
             example_dialogues=[],
             character_prompt="프롬프트",
-        )
-    )
-    await db_session.flush()
-
-    content.current_published_version_id = version.id
-    await db_session.flush()
-    return content
-
-
-async def _make_published_story(
-    db_session: AsyncSession,
-    *,
-    creator_user_id: uuid.UUID,
-    genre_id: uuid.UUID,
-    prompt_template: StoryPromptTemplate = StoryPromptTemplate.BASIC,
-) -> Content:
-    content = Content(
-        creator_user_id=creator_user_id,
-        type=ContentType.STORY,
-        genre_id=genre_id,
-        target=ContentTarget.ALL,
-        hashtags=[],
-        visibility=ContentVisibility.PUBLIC,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db_session.add(content)
-    await db_session.flush()
-
-    version = ContentVersion(
-        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
-    )
-    db_session.add(version)
-    await db_session.flush()
-
-    thumbnail = await _make_asset(db_session, owner_user_id=creator_user_id)
-    db_session.add(
-        StoryVersionDetail(
-            content_version_id=version.id,
-            name="스토리",
-            one_liner="한줄소개",
-            thumbnail_asset_id=thumbnail.id,
-            prompt_template=prompt_template,
-            setting_text="세계관 설정",
         )
     )
     await db_session.flush()

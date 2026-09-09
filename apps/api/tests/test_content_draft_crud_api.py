@@ -1,15 +1,15 @@
 import io
 import uuid
-from datetime import date, datetime, timezone, UTC
+from datetime import datetime, timezone, UTC
 
 import boto3
 import httpx
+import pytest
 import sqlalchemy as sa
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -17,7 +17,6 @@ from api.db.models.content import (
     ContentType,
     ContentVersion,
     ContentVisibility,
-    Genre,
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -32,28 +31,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
-
-
-async def _get_genre(db_session: AsyncSession) -> Genre:
-    result = await db_session.execute(sa.select(Genre).limit(1))
-    return result.scalars().one()
+from factories import _get_genre, _login_as, _make_user
 
 
 async def _make_empty_character_draft(
@@ -156,8 +134,19 @@ def _story_draft_payload(**overrides: object) -> dict[str, object]:
     return payload
 
 
-async def test_create_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post("/contents", json={"type": "character"})
+_CONTENT_DRAFT_REQUIRES_LOGIN_CASES = [
+    pytest.param("post", "/contents", {"type": "character"}, id="create"),
+    pytest.param("get", f"/contents/{uuid.uuid4()}/draft", None, id="get"),
+    pytest.param("patch", f"/contents/{uuid.uuid4()}/draft", _draft_payload(), id="patch"),
+    pytest.param("delete", f"/contents/{uuid.uuid4()}/draft", None, id="delete"),
+]
+
+
+@pytest.mark.parametrize(("method", "path", "json"), _CONTENT_DRAFT_REQUIRES_LOGIN_CASES)
+async def test_content_draft_requires_login(
+    db_client: httpx.AsyncClient, method: str, path: str, json: dict[str, object] | None
+) -> None:
+    resp = await db_client.request(method.upper(), path, json=json)
     assert resp.status_code == 401
 
 
@@ -243,11 +232,6 @@ async def test_create_content_draft_creates_empty_story_draft(
     assert detail.rules is None
 
 
-async def test_get_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.get(f"/contents/{uuid.uuid4()}/draft")
-    assert resp.status_code == 401
-
-
 async def test_get_content_draft_returns_404_for_missing_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -260,8 +244,18 @@ async def test_get_content_draft_returns_404_for_missing_content(
     assert resp.status_code == 404
 
 
-async def test_get_content_draft_returns_403_for_non_owner(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+_CONTENT_DRAFT_NON_OWNER_CASES = [
+    pytest.param("get", None, id="get"),
+    pytest.param("patch", _draft_payload(), id="patch"),
+]
+
+
+@pytest.mark.parametrize(("method", "json"), _CONTENT_DRAFT_NON_OWNER_CASES)
+async def test_content_draft_returns_403_for_non_owner(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    method: str,
+    json: dict[str, object] | None,
 ) -> None:
     owner = _make_user()
     other = _make_user()
@@ -271,7 +265,7 @@ async def test_get_content_draft_returns_403_for_non_owner(
     await db_session.commit()
     await _login_as(db_client, other.id)
 
-    resp = await db_client.get(f"/contents/{content.id}/draft")
+    resp = await db_client.request(method.upper(), f"/contents/{content.id}/draft", json=json)
     assert resp.status_code == 403
 
 
@@ -346,26 +340,6 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
     assert body["target"] is None
     assert body["hashtags"] == []
     assert body["visibility"] == "private"
-
-
-async def test_patch_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.patch(f"/contents/{uuid.uuid4()}/draft", json=_draft_payload())
-    assert resp.status_code == 401
-
-
-async def test_patch_content_draft_returns_403_for_non_owner(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    owner = _make_user()
-    other = _make_user()
-    db_session.add_all([owner, other])
-    await db_session.flush()
-    content = await _make_empty_character_draft(db_session, creator_user_id=owner.id)
-    await db_session.commit()
-    await _login_as(db_client, other.id)
-
-    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_draft_payload())
-    assert resp.status_code == 403
 
 
 async def test_patch_content_draft_updates_fields_without_validation(
@@ -1071,11 +1045,6 @@ async def _mark_published(db_session: AsyncSession, content: Content) -> Content
     content.current_published_version_id = published.id
     await db_session.flush()
     return published
-
-
-async def test_delete_content_draft_requires_login(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.delete(f"/contents/{uuid.uuid4()}/draft")
-    assert resp.status_code == 401
 
 
 async def test_delete_content_draft_returns_403_for_non_owner(

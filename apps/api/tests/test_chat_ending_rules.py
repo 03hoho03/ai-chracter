@@ -139,3 +139,14 @@ def test_is_ending_check_due_every_five_turns_after_gate() -> None:
 def test_is_ending_check_due_off_cycle_turns_after_gate_are_false() -> None:
     assert is_ending_check_due(11, 10) is False
     assert is_ending_check_due(14, 10) is False
+
+
+def test_is_ending_check_due_with_gate_not_a_multiple_of_five() -> None:
+    """뮤테이션(8단계 T-13 #4): ending_rules.py:40 의 `(turn - gate) % 5`를 `(turn + gate) % 5`로
+    바꿔도 기존 4개 테스트가 전부 통과했다 — 전부 `gate=10`이고 `2×10 mod 5 == 0`이라 `-`와
+    `+`가 모든 turn에서 같은 값을 냈다(항진명제). 5의 배수가 아닌 gate(12)로 구분한다.
+    """
+    assert is_ending_check_due(11, 12) is False
+    assert is_ending_check_due(12, 12) is True
+    assert is_ending_check_due(17, 12) is True
+    assert is_ending_check_due(13, 12) is False

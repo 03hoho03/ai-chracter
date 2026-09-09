@@ -1,12 +1,11 @@
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import boto3
 import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
-from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -17,23 +16,7 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
-
-
-async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
-    resp = await client.post("/dev/session-echo", json={"data": {"user_id": str(user_id)}})
-    assert resp.status_code == 201
+from factories import _login_as, _make_user
 
 
 async def test_generated_images_requires_login(api_client: httpx.AsyncClient) -> None:

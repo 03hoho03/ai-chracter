@@ -1,7 +1,7 @@
 import base64
 import json
 import uuid
-from datetime import date, datetime, timedelta, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -11,7 +11,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.content.router import CONTENT_LIST_PAGE_SIZE
 from api.db.models import (
     Asset,
-    AssetKind,
     CharacterVersionDetail,
     Content,
     ContentTarget,
@@ -22,34 +21,13 @@ from api.db.models import (
     ModerationStatus,
     StoryPromptTemplate,
     StoryVersionDetail,
-    User,
 )
-
-
-def _make_user(**overrides: object) -> User:
-    defaults: dict[str, object] = {
-        "email": f"user-{uuid.uuid4()}@example.com",
-        "nickname": "테스터",
-        "birth_date": date(2000, 1, 1),
-        "terms_agreed_at": datetime.now(UTC),
-        "privacy_agreed_at": datetime.now(UTC),
-    }
-    defaults.update(overrides)
-    return User(**defaults)
+from factories import _make_asset, _make_user
 
 
 async def _get_genres(db_session: AsyncSession) -> list[Genre]:
     result = await db_session.execute(sa.select(Genre).order_by(Genre.sort_order))
     return list(result.scalars().all())
-
-
-async def _make_asset(db_session: AsyncSession, owner_user_id: uuid.UUID) -> Asset:
-    asset = Asset(
-        owner_user_id=owner_user_id, storage_key=f"assets/test/{uuid.uuid4()}", kind=AssetKind.ORIGINAL
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    return asset
 
 
 async def _make_published_content(
