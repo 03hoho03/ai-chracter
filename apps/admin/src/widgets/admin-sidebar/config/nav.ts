@@ -8,6 +8,7 @@ export const ADMIN_NAV_ITEMS = [
   { label: "약관 관리", to: "/legal" },
   { label: "공지 관리", to: "/notices" },
   { label: "문의 관리", to: "/inquiries" },
+  { label: "프롬프트 관리", to: "/prompt-sets" },
 ] as const;
 
 export type AdminNavItem = (typeof ADMIN_NAV_ITEMS)[number];
