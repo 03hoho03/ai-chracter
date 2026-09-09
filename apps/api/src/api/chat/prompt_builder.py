@@ -160,9 +160,16 @@ def build_story_generation_prompt(
 ) -> str:
     """techspec-backend-chat.md §3.1 buildGenerationPrompt — 스토리 챗 전용.
 
-    "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 매칭된 키워드북 정보(사용자에게는
-    비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), 최근 히스토리, (단축어
+    "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리, 매칭된 키워드북 정보
+    (사용자에게는 비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), (단축어
     실행 시) 단축어 프롬프트, 이번 턴의 사용자 메시지 순으로 마무리한다.
+
+    chat-goal-prompt.md §7-1 / chat-techspec.md §5-1: `[키워드북]`은 `[대화 기록]`
+    **뒤**에 온다. 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
+    안정된다 — 키워드북은 매 턴 매칭 결과가 통째로 바뀌는데 히스토리보다 앞에 있으면
+    뒤따르는 히스토리 전체가 캐시 불가가 된다. 이 런에서 캐싱 자체를 켜지는 않는다
+    (D-1) — 켤 수 있는 배치만 만든다. 부수 효과로 위치적 의미도 맞아진다: 키워드북은
+    "이번 입력에 걸린 정보"라 사용자 입력 옆이 자연스럽다.
 
     chat-goal-prompt.md §8 / chat-techspec.md §6-3 (D-16): `rules`·`user_goal`·
     `development_examples`는 L1 작품 층이라 설정 텍스트 바로 뒤, [시작 상황] 앞에 붙는다.
@@ -193,15 +200,15 @@ def build_story_generation_prompt(
 
     sections.append(f"[시작 상황]\n{prologue}")
 
-    if keyword_note_texts:
-        sections.append("[키워드북]\n" + "\n".join(keyword_note_texts))
-
     if history:
         history_lines = "\n".join(
             f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
             for message in history
         )
         sections.append(f"[대화 기록]\n{history_lines}")
+
+    if keyword_note_texts:
+        sections.append("[키워드북]\n" + "\n".join(keyword_note_texts))
 
     if shortcut_prompt:
         sections.append(f"[단축어]\n{shortcut_prompt}")
@@ -215,14 +222,20 @@ def build_stat_judgment_prompt(
     *,
     stat_defs: list[StatDef],
     current_stats: dict[str, float],
-    history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
 ) -> str:
     """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 스탯 변경 판단(스토리 챗 전용).
 
-    스탯 정의(설명/범위/현재값)와 이번 턴까지의 대화를 근거로 LLMClient.generateStructured()가
+    스탯 정의(설명/범위/현재값)와 **이번 턴만**을 근거로 LLMClient.generateStructured()가
     StatJudgmentResult(구조화 출력)로 각 스탯의 변경 여부를 판단하게 한다.
+
+    chat-goal-prompt.md §7-2 / chat-techspec.md §5-2: 히스토리 전체를 안 싣는다. 스탯
+    변화는 "이번 턴에" 무엇이 일어났는지의 함수이지 누적 서사가 아니다 — 아래 지시
+    문구가 이미 "마지막 사용자 행동과 그에 대한 응답"만 근거로 명시하고 있었으니 실제
+    입력도 거기 맞춘다. `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다 —
+    엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴만으로는
+    판정할 수 없다. 이 비대칭이 이 변경의 핵심이다.
     """
     # `per_turn_delta`가 있는 스탯은 `apply_stat_changes`가 매 턴 결정적으로 굴리고 LLM 판단은
     # 무시된다. 그래도 현재값은 서사 판단의 근거이므로 목록에는 남기고, 판단 대상이 아니라는
@@ -235,12 +248,7 @@ def build_stat_judgment_prompt(
         for stat_def in stat_defs
     )
 
-    turn_lines = [
-        f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
-        for message in history
-    ]
-    turn_lines.append(f"사용자: {user_message}")
-    turn_lines.append(f"진행자: {assistant_message}")
+    turn_lines = [f"사용자: {user_message}", f"진행자: {assistant_message}"]
 
     return (
         "다음은 스토리 챗의 스탯 정의와 현재 값이다.\n"
@@ -282,6 +290,11 @@ def build_ending_judgment_prompt(
     엔딩 하나의 judgment_prompt(판정 기준)와 이번 턴까지의 대화를 근거로
     LLMClient.generateStructured()가 EndingJudgmentResult(구조화 출력)로 그 엔딩의
     발동 조건 충족 여부를 판단하게 한다. 여러 엔딩이 있으면 이 함수를 엔딩별로 호출한다.
+
+    여긴 `history`를 싣는다 — `build_stat_judgment_prompt`는 뺐다(chat-goal-prompt.md
+    §7-2). 엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴
+    만으로는 판정할 수 없지만, 스탯 변화는 이번 턴에 무엇이 일어났는지의 함수라 히스토리가
+    필요 없다. 이 비대칭이 그 변경의 핵심이다.
     """
     turn_lines = [
         f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"

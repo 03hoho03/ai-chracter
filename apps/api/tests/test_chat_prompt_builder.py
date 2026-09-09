@@ -305,6 +305,14 @@ def test_build_story_generation_prompt_custom_template_uses_custom_prompt_only()
 
 
 def test_build_story_generation_prompt_includes_matched_keyword_notes() -> None:
+    """chat-goal-prompt.md §7-1 / chat-techspec.md §5-1: 키워드북은 대화 기록 **뒤**, 단축어
+    **앞**에 온다 — 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가 안정된다.
+    문자열 포함만 보면 순서 위반을 못 잡으므로 인덱스로 못박는다."""
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "안녕하세요"),
+        _message(ChatMessageRole.USER, "반가워요"),
+    ]
+
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
@@ -313,15 +321,31 @@ def test_build_story_generation_prompt_includes_matched_keyword_notes() -> None:
         rules=None,
         custom_prompt=None,
         prologue="프롤로그",
-        history=[],
+        history=history,
         user_message="메시지",
         keyword_note_texts=["마법사는 사실 왕자다"],
+        shortcut_prompt="주변을 수색한다",
     )
 
     assert "[키워드북]\n마법사는 사실 왕자다" in prompt
+    assert (
+        prompt.index("[시작 상황]")
+        < prompt.index("[대화 기록]")
+        < prompt.index("[키워드북]")
+        < prompt.index("[단축어]")
+        < prompt.index("사용자: 메시지\n진행자:")
+    )
 
 
 def test_build_story_generation_prompt_omits_keyword_note_section_when_no_match() -> None:
+    """매칭 노트가 0개면(현재 프로덕션과 모든 측정 회차의 상태다) 이 함수의 출력은 키워드북
+    재배치 전과 바이트 단위로 같아야 한다 — 나중에 누가 순서를 또 바꿔도 '노트 없을 때'의
+    출력은 안 변한다는 것을 리터럴로 못박는다."""
+    history = [
+        _message(ChatMessageRole.ASSISTANT, "안녕하세요"),
+        _message(ChatMessageRole.USER, "반가워요"),
+    ]
+
     prompt = build_story_generation_prompt(
         prompt_template=StoryPromptTemplate.BASIC,
         setting_text="세계관 설정",
@@ -330,11 +354,17 @@ def test_build_story_generation_prompt_omits_keyword_note_section_when_no_match(
         rules=None,
         custom_prompt=None,
         prologue="프롤로그",
-        history=[],
+        history=history,
         user_message="메시지",
         keyword_note_texts=[],
     )
 
+    assert prompt == (
+        "세계관 설정\n\n"
+        "[시작 상황]\n프롤로그\n\n"
+        "[대화 기록]\n진행자: 안녕하세요\n사용자: 반가워요\n\n"
+        "사용자: 메시지\n진행자:"
+    )
     assert "[키워드북]" not in prompt
 
 
@@ -384,7 +414,6 @@ def test_build_stat_judgment_prompt_includes_stat_definitions_and_current_values
     prompt = build_stat_judgment_prompt(
         stat_defs=[stat_def],
         current_stats={str(stat_def.entity_id): 50.0},
-        history=[],
         user_message="칭찬했다",
         assistant_message="기뻐했다",
     )
@@ -404,7 +433,6 @@ def test_build_stat_judgment_prompt_falls_back_to_initial_value_when_stat_not_se
     prompt = build_stat_judgment_prompt(
         stat_defs=[stat_def],
         current_stats={},
-        history=[],
         user_message="메시지",
         assistant_message="응답",
     )
@@ -412,19 +440,20 @@ def test_build_stat_judgment_prompt_falls_back_to_initial_value_when_stat_not_se
     assert "현재값=30" in prompt
 
 
-def test_build_stat_judgment_prompt_includes_history_before_this_turn() -> None:
-    history = [_message(ChatMessageRole.USER, "이전 메시지")]
-
+def test_build_stat_judgment_prompt_only_includes_this_turn() -> None:
+    """chat-goal-prompt.md §7-2 / chat-techspec.md §5-2: 스탯 판단은 이전 턴 히스토리를
+    받지 않는다(`history` 인자가 아예 없다) — `[대화 기록]` 블록은 이번 턴 2줄만 남는다.
+    `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다(그쪽 테스트가 대칭으로
+    존재한다)."""
     prompt = build_stat_judgment_prompt(
         stat_defs=[],
         current_stats={},
-        history=history,
         user_message="이번 메시지",
         assistant_message="이번 응답",
     )
 
-    history_section = prompt.split("[대화 기록]\n", 1)[1]
-    assert history_section.splitlines()[:3] == ["사용자: 이전 메시지", "사용자: 이번 메시지", "진행자: 이번 응답"]
+    history_section = prompt.split("[대화 기록]\n", 1)[1].split("\n\n", 1)[0]
+    assert history_section.splitlines() == ["사용자: 이번 메시지", "진행자: 이번 응답"]
 
 
 def test_build_image_judgment_prompt_lists_images_in_order_with_trigger_conditions() -> None:
@@ -500,7 +529,6 @@ def test_build_stat_judgment_prompt_binds_the_direction_constraints_in_descripti
     prompt = build_stat_judgment_prompt(
         stat_defs=[_stat_def(name="남은 날", description="매 턴 반드시 1일씩 줄어들며 절대 늘어나지 않는다")],
         current_stats={},
-        history=[],
         user_message="수련한다",
         assistant_message="뼈가 부서진다",
     )
@@ -519,7 +547,6 @@ def test_build_stat_judgment_prompt_marks_system_managed_counters() -> None:
     prompt = build_stat_judgment_prompt(
         stat_defs=[counter, judged],
         current_stats={},
-        history=[],
         user_message="문을 두드린다",
         assistant_message="아무도 답하지 않는다",
     )

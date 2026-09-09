@@ -687,7 +687,6 @@ async def _stream_new_turn(
             judgment_prompt = build_stat_judgment_prompt(
                 stat_defs=stat_defs,
                 current_stats=current_stats,
-                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
@@ -1576,7 +1575,6 @@ async def _stream_preview_turn(
             judgment_prompt = build_stat_judgment_prompt(
                 stat_defs=stat_defs,
                 current_stats=current_stats,
-                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
