@@ -620,13 +620,26 @@ def test_template_instructions_match_the_confirmed_wording() -> None:
 
     assert "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다." in basic
     assert (
-        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
-        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다." in emotional
+        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
+        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다." in emotional
     )
     assert (
-        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+        "이번 턴에 무엇이 변했는지 장면 안에 명시하고, 지금 손댈 수 있는 것이 장면 안에 놓여 있다."
         in simulation
     )
+
+
+def test_template_instructions_do_not_address_the_user_as_the_recipient() -> None:
+    """2026-09-09 측정: 문안이 "사용자에게 읽히는"·"사용자가 조작할 수 있는"처럼 사용자를
+    수신자로 지목하면, 모델이 그 요구를 장면 밖에서 사용자에게 직접 물어 만족시켰다(서술자
+    직접 질문 3/180 → 12/180). EMOTIONAL·SIMULATION 문안은 그래서 `사용자`라는 낱말을
+    쓰지 않는다 — 나중에 문안이 되돌아가면 이 테스트가 잡아야 한다."""
+    for template in (StoryPromptTemplate.EMOTIONAL, StoryPromptTemplate.SIMULATION):
+        text = system_instruction_for(is_story_chat=True, template=template)
+        # L0.5 문안만이 아니라 완성된 지시문 전체에서도 성립해야 한다(L0은 이미 "사용자"를
+        # 쓰므로 L0.5 구간, 즉 확정된 템플릿 문안 자체만 잘라 검사한다).
+        assert "사용자" not in _TEMPLATE_WORDING[template]
+        assert _TEMPLATE_WORDING[template] in text
 
 
 def test_template_instructions_are_appended_after_the_common_l0_blocks() -> None:
@@ -648,11 +661,11 @@ _SPECIFICITY_TAIL = "작품별 설정이 위 규칙보다 구체적인 지시를
 _TEMPLATE_WORDING = {
     StoryPromptTemplate.BASIC: "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다.",
     StoryPromptTemplate.EMOTIONAL: (
-        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
-        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다."
+        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
+        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다."
     ),
     StoryPromptTemplate.SIMULATION: (
-        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+        "이번 턴에 무엇이 변했는지 장면 안에 명시하고, 지금 손댈 수 있는 것이 장면 안에 놓여 있다."
     ),
     StoryPromptTemplate.CUSTOM: "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다.",
 }

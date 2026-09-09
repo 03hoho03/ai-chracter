@@ -68,16 +68,23 @@ CHARACTER_CHAT_SYSTEM_INSTRUCTION = (
 # 작품 설정)이 아니라 system_instruction에 두는 이유는 D-6: 본문에 이어 붙이면 작품 설정과
 # 같은 층에 놓여 우선순위가 사라진다(`d6b726d`). 문안은 §6 표 그대로다 — 지어내지 않는다.
 # `CUSTOM`은 `BASIC`과 같다(D-7: 커스텀은 *내용*의 전권이지 *형식*의 예외가 아니다).
+#
+# EMOTIONAL·SIMULATION 문안은 사용자를 수신자로 지목하지 않는다. 문안이 "사용자에게 읽히는",
+# "사용자가 조작할 수 있는" 처럼 사용자를 수신자로 지목하면 모델이 그 요구를 장면 밖에서
+# 사용자에게 직접 물어 만족시켰다(2026-09-09 측정: 서술자 직접 질문 3/180 → 12/180). 그래서
+# 요구를 장면 안에서 해결하도록 고쳤다 — 이 인과는 확립되지 않았다: 악화가 3 seed 중
+# 2개에서만 나타났고, `사용자`가 없는 기본 템플릿의 스토리들은 원래 이 결함이 0이라 스토리
+# 성향과 분리되지 않는다.
 _TEMPLATE_BASIC_INSTRUCTION = "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다."
 
 _TEMPLATE_INSTRUCTIONS: dict[StoryPromptTemplate, str] = {
     StoryPromptTemplate.BASIC: _TEMPLATE_BASIC_INSTRUCTION,
     StoryPromptTemplate.EMOTIONAL: (
-        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
-        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다."
+        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
+        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다."
     ),
     StoryPromptTemplate.SIMULATION: (
-        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+        "이번 턴에 무엇이 변했는지 장면 안에 명시하고, 지금 손댈 수 있는 것이 장면 안에 놓여 있다."
     ),
     StoryPromptTemplate.CUSTOM: _TEMPLATE_BASIC_INSTRUCTION,
 }

@@ -226,8 +226,8 @@ async def test_send_preview_message_story_selects_template_instruction(api_clien
     assert resp.status_code == 200
     assert fake.received_system_instruction is not None
     assert (
-        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
-        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다." in fake.received_system_instruction
+        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
+        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다." in fake.received_system_instruction
     )
 
 

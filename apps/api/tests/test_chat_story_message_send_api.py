@@ -404,7 +404,7 @@ async def test_send_message_story_room_selects_template_instruction(
 
     assert resp.status_code == 200
     assert fake.received_system_instruction is not None
-    assert "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다" in (
+    assert "이번 턴에 무엇이 변했는지 장면 안에 명시하고, 지금 손댈 수 있는 것이 장면 안에 놓여 있다" in (
         fake.received_system_instruction
     )
 
