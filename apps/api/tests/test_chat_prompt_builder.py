@@ -633,13 +633,18 @@ def test_template_instructions_do_not_address_the_user_as_the_recipient() -> Non
     """2026-09-09 측정: 문안이 "사용자에게 읽히는"·"사용자가 조작할 수 있는"처럼 사용자를
     수신자로 지목하면, 모델이 그 요구를 장면 밖에서 사용자에게 직접 물어 만족시켰다(서술자
     직접 질문 3/180 → 12/180). EMOTIONAL·SIMULATION 문안은 그래서 `사용자`라는 낱말을
-    쓰지 않는다 — 나중에 문안이 되돌아가면 이 테스트가 잡아야 한다."""
+    쓰지 않는다 — 나중에 문안이 되돌아가거나(전체 교체), 뒤에 그 낱말이 든 문장이
+    덧붙어도(부분 회귀) 이 테스트가 잡아야 한다.
+
+    실제 요청 경로로 나가는 문자열(`system_instruction_for`의 출력)을 직접 검사한다 —
+    내부 자료구조(`_TEMPLATE_INSTRUCTIONS`)의 사본을 보면 그 사본과만 비교하게 돼 프로덕션
+    문안이 바뀌어도 통과해버린다. `system_instruction_for`는
+    `rules + "\n\n" + L0.5 + "\n\n" + tail`로 조립하므로, 빈 줄로 가른 블록 중 끝에서
+    두 번째가 L0.5다(L0은 이미 "사용자"를 쓰므로 L0.5 구간만 잘라 검사해야 한다)."""
     for template in (StoryPromptTemplate.EMOTIONAL, StoryPromptTemplate.SIMULATION):
         text = system_instruction_for(is_story_chat=True, template=template)
-        # L0.5 문안만이 아니라 완성된 지시문 전체에서도 성립해야 한다(L0은 이미 "사용자"를
-        # 쓰므로 L0.5 구간, 즉 확정된 템플릿 문안 자체만 잘라 검사한다).
-        assert "사용자" not in _TEMPLATE_WORDING[template]
-        assert _TEMPLATE_WORDING[template] in text
+        blocks = [block for block in text.split("\n\n") if block.strip()]
+        assert "사용자" not in blocks[-2]
 
 
 def test_template_instructions_are_appended_after_the_common_l0_blocks() -> None:
