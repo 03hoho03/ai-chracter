@@ -26,6 +26,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import PromptSetNotFoundError, StatJudgmentResult
+from api.chat.prompt_set_cache import invalidate_active_prompt_set
 from api.db.models import (
     CharacterVersionDetail,
     ChatMessage,
@@ -159,6 +160,11 @@ async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot:
         .values(body=_BROKEN_BODY)
     )
     await db_session.flush()
+    # 3단계(prompt-db-goal-prompt.md §8-1)가 활성 세트 앞에 캐시를 얹었다 — 이 테스트들 중
+    # 일부(regenerate/edit)는 그 전에 이미 정상 메시지를 한 번 보내 캐시를 데워 둔다. 이
+    # 무효화가 없으면 다음 요청이 캐시 히트로 이 손상을 못 보고 지나가 테스트 의도(렌더
+    # 실패 재현)가 캐시 여부에 우연히 좌우된다.
+    await invalidate_active_prompt_set()
 
 
 class _FakeLLMClient(LLMClient):

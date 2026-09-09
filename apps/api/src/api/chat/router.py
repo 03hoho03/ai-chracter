@@ -27,6 +27,7 @@ from api.chat.prompt_builder import (
     load_active_prompt_set,
     system_instruction_for,
 )
+from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
     ChatDoneEvent,
@@ -162,21 +163,35 @@ async def _active_prompt_set_dependency(
 ) -> tuple[PromptSet, list[PromptSection]]:
     """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (prompt-db-goal-prompt.md §7 — 미리보기의 `_preview_prompt_set_dependency`와 달리
-    세션을 짧게 여닫을 이유가 없다). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE
-    제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다."""
-    return await load_active_prompt_set(db)
+    세션을 짧게 여닫을 이유가 없다). 캐시 히트면 `db`를 조회하지 않고 그대로 반환한다
+    (§8-1, 3단계). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE 제너레이터 본문이
+    시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지 않는다(negative
+    caching 금지)."""
+    cached = await get_cached_active_prompt_set()
+    if cached is not None:
+        return cached
+    prompt_set, sections = await load_active_prompt_set(db)
+    await set_cached_active_prompt_set(prompt_set, sections)
+    return prompt_set, sections
 
 
 async def _preview_prompt_set_dependency(
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> tuple[PromptSet, list[PromptSection]]:
     """prompt-db-goal-prompt.md §8-2. 미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
-    세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 이번
-    단계에는 캐시가 없어(3단계 일) 매 요청 DB를 직접 읽는다 — 3단계가 이 함수 안에
-    캐시를 넣는다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
+    세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다.
+
+    캐시 히트면 `session_factory()`를 아예 호출하지 않는다 — DB 세션을 열지 않는 것이
+    이 함수의 핵심이다(3단계, §8-1). 캐시 미스일 때만 짧게 열고 즉시 닫은 뒤 다음 조회를
+    위해 캐시를 채운다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
     대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(§8-2 실측)."""
+    cached = await get_cached_active_prompt_set()
+    if cached is not None:
+        return cached
     async with session_factory() as session:
-        return await load_active_prompt_set(session)
+        prompt_set, sections = await load_active_prompt_set(session)
+    await set_cached_active_prompt_set(prompt_set, sections)
+    return prompt_set, sections
 
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
@@ -1734,8 +1749,8 @@ async def send_preview_message(
     """미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
-    세트만은 예외다 — `_preview_prompt_set_dependency`가 짧게 연 세션으로 DB에서 활성 세트를
-    읽는다(§8-2, 3단계에서 이 자리에 캐시가 들어간다)."""
+    세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
+    때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2)."""
     prompt_set, prompt_sections = prompt_set_data
     history = [_preview_chat_message(message) for message in state.messages]
     state.messages.append(
