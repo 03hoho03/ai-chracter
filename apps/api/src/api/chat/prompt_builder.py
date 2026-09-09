@@ -61,13 +61,48 @@ CHARACTER_CHAT_SYSTEM_INSTRUCTION = (
 )
 
 
-def system_instruction_for(*, is_story_chat: bool) -> str:
-    """생성 호출에 붙일 바닥 지시문을 챗 종류로 고른다.
+# L0.5 — 템플릿별 지시(chat-goal-prompt.md §6, D-6·D-7). L0(`_COMMON_RULES`)의 꼬리 문장
+# ("작품별 설정이 위 규칙보다 구체적인 지시를 하면 그 지시를 따른다") **앞에** 끼워 넣는다 —
+# 뒤에 붙이면 그 꼬리의 "위 규칙" 범위 밖에 놓여, 연출 지침인 템플릿 지시가 작품 설정보다
+# 센 것으로 읽힌다(§5 설계 원칙: 작품 설정보다 약하되 형식은 강제한다). 프롬프트 본문(L1,
+# 작품 설정)이 아니라 system_instruction에 두는 이유는 D-6: 본문에 이어 붙이면 작품 설정과
+# 같은 층에 놓여 우선순위가 사라진다(`d6b726d`). 문안은 §6 표 그대로다 — 지어내지 않는다.
+# `CUSTOM`은 `BASIC`과 같다(D-7: 커스텀은 *내용*의 전권이지 *형식*의 예외가 아니다).
+_TEMPLATE_BASIC_INSTRUCTION = "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다."
+
+_TEMPLATE_INSTRUCTIONS: dict[StoryPromptTemplate, str] = {
+    StoryPromptTemplate.BASIC: _TEMPLATE_BASIC_INSTRUCTION,
+    StoryPromptTemplate.EMOTIONAL: (
+        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
+        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다."
+    ),
+    StoryPromptTemplate.SIMULATION: (
+        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+    ),
+    StoryPromptTemplate.CUSTOM: _TEMPLATE_BASIC_INSTRUCTION,
+}
+
+
+def system_instruction_for(
+    *, is_story_chat: bool, template: StoryPromptTemplate | None = None
+) -> str:
+    """생성 호출에 붙일 바닥 지시문을 챗 종류로 고르고, 스토리 챗이면 템플릿별 L0.5를 잇는다.
 
     스토리 챗의 모델은 장면 밖에서 서술하는 화자이고 캐릭터 챗의 모델은 캐릭터 본인이라,
     공통 규칙이 같아도 첫 줄의 자기 규정과 금지할 라벨이 다르다.
+
+    `template`은 스토리 챗에서만 의미가 있다(D-17) — 캐릭터 챗은 템플릿 개념이 없으므로
+    호출부가 넘기지 않는다(기본값 `None`). 스토리 챗 호출부가 `template`을 안 넘기면(기본값)
+    L0.5 없이 L0까지만 반환한다.
     """
-    return STORY_CHAT_SYSTEM_INSTRUCTION if is_story_chat else CHARACTER_CHAT_SYSTEM_INSTRUCTION
+    base = STORY_CHAT_SYSTEM_INSTRUCTION if is_story_chat else CHARACTER_CHAT_SYSTEM_INSTRUCTION
+    if template is None:
+        return base
+    # `base`는 `_COMMON_RULES`의 꼬리 문장으로 끝난다. 템플릿 지시를 그 꼬리 문장 뒤에
+    # 이어 붙이면 "위 규칙"의 적용 범위 밖에 놓인다 — 꼬리 문장 앞(마지막 "\n\n" 앞)에
+    # 끼워 넣어 다시 마지막 줄이 꼬리 문장이 되게 한다.
+    rules, _, tail = base.rpartition("\n\n")
+    return rules + "\n\n" + _TEMPLATE_INSTRUCTIONS[template] + "\n\n" + tail
 
 
 def build_generation_prompt(

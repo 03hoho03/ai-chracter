@@ -103,7 +103,13 @@ async def _make_published_character(
     return content
 
 
-async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID) -> Content:
+async def _make_published_story(
+    db_session: AsyncSession,
+    *,
+    creator_user_id: uuid.UUID,
+    genre_id: uuid.UUID,
+    prompt_template: StoryPromptTemplate = StoryPromptTemplate.BASIC,
+) -> Content:
     content = Content(
         creator_user_id=creator_user_id,
         type=ContentType.STORY,
@@ -129,7 +135,7 @@ async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uu
             name="스토리",
             one_liner="한줄소개",
             thumbnail_asset_id=thumbnail.id,
-            prompt_template=StoryPromptTemplate.BASIC,
+            prompt_template=prompt_template,
             setting_text="세계관 설정",
         )
     )
@@ -194,10 +200,12 @@ class _FakeLLMClient(LLMClient):
         self.tokens = tokens or []
         self.error = error
         self.received_prompt: str | None = None
+        self.received_system_instruction: str | None = None
         self.generate_structured_called = False
 
     async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         self.received_prompt = prompt
+        self.received_system_instruction = system_instruction
         if self.error is not None:
             raise self.error
         for token in self.tokens:
@@ -408,6 +416,48 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
     assert messages[1].content == "반가워"
     assert messages[2].role == ChatMessageRole.ASSISTANT
     assert messages[2].content == "새로운응답"
+
+
+async def test_regenerate_story_room_selects_template_instruction(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """chat-techspec.md §4-2 — `regenerate_message`(`_build_prompt` 경유) 호출부도 `_stream_new_turn`과
+    같은 `story_detail.prompt_template`을 골라야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(
+        db_session, creator_user_id=user.id, genre_id=genre.id, prompt_template=StoryPromptTemplate.EMOTIONAL
+    )
+    setup = await _add_starting_setup(db_session, content)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    _override_llm_client(
+        _QueuedFakeLLMClient(tokens=["원래", "응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    fake = _FakeLLMClient(tokens=["새로운", "응답"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_system_instruction is not None
+    assert (
+        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
+        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다." in fake.received_system_instruction
+    )
 
 
 async def test_regenerate_policy_violation_keeps_original_message(

@@ -513,10 +513,15 @@ async def _build_prompt(
     history: list[ChatMessage],
     user_content: str,
     shortcut: Shortcut | None,
-) -> str:
+) -> tuple[str, str]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
-    (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다."""
+    (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
+
+    `(prompt, system_instruction)` 튜플을 돌려준다 — 스토리 챗의 L0.5 템플릿별 지시
+    (`system_instruction_for`)를 고르려면 `story_detail.prompt_template`이 필요한데, 그 조회가
+    이 함수 안에서만 일어나 호출부는 모른다(chat-techspec.md §4-2). 조회를 한 번 더 하는 대신
+    여기서 함께 고른다."""
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
         assert story_detail is not None
@@ -529,7 +534,7 @@ async def _build_prompt(
             )
         ).all()
         matched_notes = match_keyword_notes(user_content, list(notes))
-        return build_story_generation_prompt(
+        prompt = build_story_generation_prompt(
             prompt_template=story_detail.prompt_template,
             setting_text=story_detail.setting_text,
             development_examples=story_detail.development_examples,
@@ -542,15 +547,17 @@ async def _build_prompt(
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
+        return prompt, system_instruction_for(is_story_chat=True, template=story_detail.prompt_template)
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
-    return build_generation_prompt(
+    prompt = build_generation_prompt(
         character_prompt=detail.character_prompt,
         example_dialogues=detail.example_dialogues,
         history=history,
         user_message=user_content,
     )
+    return prompt, system_instruction_for(is_story_chat=False)
 
 
 def _dump_prompt(
@@ -627,7 +634,7 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
     않는다 — 그 라우트의 docstring 참고.
     """
-    prompt = await _build_prompt(db, room, setup, history, user_content, shortcut)
+    prompt, system_instruction = await _build_prompt(db, room, setup, history, user_content, shortcut)
 
     chunks: list[str] = []
     try:
@@ -635,7 +642,7 @@ async def _stream_new_turn(
             llm_client,
             prompt,
             chunks,
-            system_instruction_for(is_story_chat=setup is not None),
+            system_instruction,
             room_id=room.id,
             turn=room.turn_count + 1,
         ):
@@ -865,7 +872,7 @@ async def regenerate_message(
         ).all()
     )
     user_content = history[-1].content
-    prompt = await _build_prompt(db, room, setup, history[:-1], user_content, None)
+    prompt, system_instruction = await _build_prompt(db, room, setup, history[:-1], user_content, None)
 
     chunks: list[str] = []
     try:
@@ -873,7 +880,7 @@ async def regenerate_message(
             llm_client,
             prompt,
             chunks,
-            system_instruction_for(is_story_chat=setup is not None),
+            system_instruction,
             room_id=room.id,
             # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
             turn=room.turn_count,
@@ -1520,6 +1527,9 @@ async def _stream_preview_turn(
     실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — DB에 결합된 조회/커밋 부분만
     Redis 상태 갱신으로 대체했다."""
     prompt = _build_preview_prompt(state.payload, history, user_content, shortcut)
+    # `_build_prompt`(실제 방)와 달리 `payload`가 이미 이 스코프에 있어(DB 조회가 아니다)
+    # 튜플 반환으로 우회할 필요가 없다 — template을 여기서 바로 뽑는다.
+    template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
 
     chunks: list[str] = []
     try:
@@ -1527,7 +1537,7 @@ async def _stream_preview_turn(
             llm_client,
             prompt,
             chunks,
-            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload)),
+            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template),
             # 미리보기는 DB 방이 없다(Redis 세션).
             room_id=None,
             turn=state.turn_count + 1,

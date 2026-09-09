@@ -66,7 +66,12 @@ async def _make_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> 
 
 
 async def _make_published_story(
-    db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID, setting_text: str = "세계관 설정"
+    db_session: AsyncSession,
+    *,
+    creator_user_id: uuid.UUID,
+    genre_id: uuid.UUID,
+    setting_text: str = "세계관 설정",
+    prompt_template: StoryPromptTemplate = StoryPromptTemplate.BASIC,
 ) -> Content:
     content = Content(
         creator_user_id=creator_user_id,
@@ -93,7 +98,7 @@ async def _make_published_story(
             name="스토리",
             one_liner="한줄소개",
             thumbnail_asset_id=thumbnail.id,
-            prompt_template=StoryPromptTemplate.BASIC,
+            prompt_template=prompt_template,
             setting_text=setting_text,
         )
     )
@@ -158,12 +163,14 @@ class _FakeLLMClient(LLMClient):
         self.tokens = tokens or []
         self.structured_result = structured_result
         self.received_prompt: str | None = None
+        self.received_system_instruction: str | None = None
         self.received_judgment_prompt: str | None = None
         self.generate_structured_called = False
         self.generate_structured_calls: list[Any] = []
 
     async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
         self.received_prompt = prompt
+        self.received_system_instruction = system_instruction
         for token in self.tokens:
             yield token
 
@@ -368,6 +375,38 @@ async def test_send_message_story_room_builds_generation_prompt_from_story_setti
     assert "옛날 옛적, 낯선 마을에 도착했다." in fake.received_prompt
     assert "다시 만났네요!" in fake.received_prompt
     assert "모험을 시작한다" in fake.received_prompt
+
+
+async def test_send_message_story_room_selects_template_instruction(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """chat-techspec.md §4-2 — `_stream_new_turn`(`_build_prompt` 경유) 호출부는
+    `story_detail.prompt_template`을 골라 시스템 지시문(L0.5)에 잇는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(
+        db_session, creator_user_id=user.id, genre_id=genre.id, prompt_template=StoryPromptTemplate.SIMULATION
+    )
+    setup = await _add_starting_setup(db_session, content)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_system_instruction is not None
+    assert "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다" in (
+        fake.received_system_instruction
+    )
 
 
 async def test_send_message_story_room_injects_matched_keyword_note_hidden_from_client(

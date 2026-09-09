@@ -583,3 +583,105 @@ def test_base_system_instruction_keeps_the_turn_open() -> None:
         assert "눈을 감" not in text
 
         assert "문장" not in text
+
+
+def test_character_chat_works_without_a_template() -> None:
+    """D-17: 캐릭터 챗은 템플릿 개념이 없으므로 `template`을 넘기지 않아도(기본값 `None`)
+    동작한다 — L0.5 없이 L0까지만 반환한다."""
+    assert system_instruction_for(is_story_chat=False) == CHARACTER_CHAT_SYSTEM_INSTRUCTION
+
+
+def test_story_chat_without_a_template_returns_l0_only() -> None:
+    """스토리 챗도 `template`을 안 넘기면(기본값 `None`) L0.5를 잇지 않고 L0까지만 반환한다 —
+    실제 호출부 3곳은 항상 template을 넘기지만, 이 기본 동작이 안전망이다."""
+    assert system_instruction_for(is_story_chat=True) == STORY_CHAT_SYSTEM_INSTRUCTION
+
+
+def test_template_instructions_differ_and_custom_matches_basic() -> None:
+    """chat-goal-prompt.md §6: L0.5가 템플릿 3종(`basic`/`emotional`/`simulation`)을 처음으로
+    실제로 가른다. `CUSTOM`은 `BASIC`과 같다(D-7) — 커스텀은 작품 *내용*의 전권이지 *형식*의
+    예외가 아니다."""
+    basic = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.BASIC)
+    emotional = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.EMOTIONAL)
+    simulation = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.SIMULATION)
+    custom = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.CUSTOM)
+
+    assert basic != emotional
+    assert basic != simulation
+    assert emotional != simulation
+    assert custom == basic
+
+
+def test_template_instructions_match_the_confirmed_wording() -> None:
+    """문안은 chat-goal-prompt.md §6 표에 확정돼 있다 — 그대로 쓴다, 지어내지 않는다."""
+    basic = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.BASIC)
+    emotional = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.EMOTIONAL)
+    simulation = system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.SIMULATION)
+
+    assert "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다." in basic
+    assert (
+        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
+        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다." in emotional
+    )
+    assert (
+        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+        in simulation
+    )
+
+
+def test_template_instructions_are_appended_after_the_common_l0_blocks() -> None:
+    """템플릿별 지시(L0.5)가 L0 뒤에 이어 붙어도, L0의 네 블록([응답 형식]/[사용자의 몫은
+    사용자가 정한다]/[턴을 열어 둔다]/[수위])이 전부 그대로 남아 있어야 한다 — 대체가 아니라
+    이어붙이는 것이다."""
+    for template in StoryPromptTemplate:
+        text = system_instruction_for(is_story_chat=True, template=template)
+        assert "[응답 형식]" in text
+        assert "[사용자의 몫은 사용자가 정한다]" in text
+        assert "[턴을 열어 둔다]" in text
+        assert "[수위]" in text
+
+
+_SPECIFICITY_TAIL = "작품별 설정이 위 규칙보다 구체적인 지시를 하면 그 지시를 따른다(수위 항목은 예외)."
+
+# chat-goal-prompt.md §6 표의 문안 그대로 — test_template_instructions_match_the_confirmed_wording
+# 와 같은 리터럴이다.
+_TEMPLATE_WORDING = {
+    StoryPromptTemplate.BASIC: "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다.",
+    StoryPromptTemplate.EMOTIONAL: (
+        "인물의 감정 변화가 사용자에게 읽히는 단서로 드러난다. 침묵도 반응이지만, "
+        "그 침묵이 무엇을 뜻하는지 사용자가 짐작할 수 있어야 한다."
+    ),
+    StoryPromptTemplate.SIMULATION: (
+        "이번 턴에 무엇이 변했는지 명시하고, 지금 사용자가 조작할 수 있는 것이 무엇인지 드러난다."
+    ),
+    StoryPromptTemplate.CUSTOM: "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다.",
+}
+
+
+def test_specificity_tail_stays_last_so_it_covers_the_template_instruction() -> None:
+    """`_COMMON_RULES`의 꼬리 문장("작품별 설정이 위 규칙보다…")은 언제나 지시문의 맨
+    마지막 줄이어야 한다 — 템플릿 지시(L0.5)가 그 뒤에 붙으면 "위 규칙"의 적용 범위 밖에
+    놓여, 연출 지침일 뿐인 템플릿 지시가 작품 설정보다 센 것으로 읽힌다(§5 설계 원칙: 작품
+    설정보다 약하되 형식은 강제한다)."""
+    for template in StoryPromptTemplate:
+        text = system_instruction_for(is_story_chat=True, template=template)
+        lines = [line for line in text.splitlines() if line]
+        assert lines[-1] == _SPECIFICITY_TAIL
+
+        template_instruction_index = text.index(_TEMPLATE_WORDING[template])
+        tail_index = text.index(_SPECIFICITY_TAIL)
+        assert template_instruction_index < tail_index
+
+    character_chat_text = system_instruction_for(is_story_chat=False)
+    assert [line for line in character_chat_text.splitlines() if line][-1] == _SPECIFICITY_TAIL
+
+
+def test_template_instructions_have_no_length_wording_or_banned_action_examples() -> None:
+    """D-4 재확인: 새로 넣은 템플릿 문안에도 길이·문장 수 상한 문구가 없다. D-5 재확인: 금지
+    대상(닫는 행동)을 구체적 예시로 나열하지 않는다."""
+    for template in StoryPromptTemplate:
+        text = system_instruction_for(is_story_chat=True, template=template)
+        assert "문장" not in text
+        assert "잠들" not in text
+        assert "자리를 뜨" not in text
+        assert "눈을 감" not in text
