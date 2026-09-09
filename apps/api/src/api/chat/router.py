@@ -8,7 +8,7 @@ from decimal import Decimal
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from sqlalchemy import delete, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
@@ -17,12 +17,14 @@ from api.chat.preview_session import create_preview_session, get_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    PromptRenderError,
     StatJudgmentResult,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    load_active_prompt_set,
     system_instruction_for,
 )
 from api.chat.schemas import (
@@ -78,6 +80,7 @@ from api.db.models.chat import (
 )
 from api.db.models.content import Content, ContentType
 from api.db.models.media import Asset
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -88,7 +91,7 @@ from api.db.models.story import (
     StatDef,
     StoryVersionDetail,
 )
-from api.db.session import get_db_session
+from api.db.session import get_db_session, get_session_factory
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
@@ -152,6 +155,28 @@ async def _validate_shortcut(
     if shortcut is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid shortcutId")
     return shortcut
+
+
+async def _active_prompt_set_dependency(
+    db: AsyncSession = Depends(get_db_session),
+) -> tuple[PromptSet, list[PromptSection]]:
+    """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
+    (prompt-db-goal-prompt.md §7 — 미리보기의 `_preview_prompt_set_dependency`와 달리
+    세션을 짧게 여닫을 이유가 없다). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE
+    제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다."""
+    return await load_active_prompt_set(db)
+
+
+async def _preview_prompt_set_dependency(
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> tuple[PromptSet, list[PromptSection]]:
+    """prompt-db-goal-prompt.md §8-2. 미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
+    세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 이번
+    단계에는 캐시가 없어(3단계 일) 매 요청 DB를 직접 읽는다 — 3단계가 이 함수 안에
+    캐시를 넣는다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
+    대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(§8-2 실측)."""
+    async with session_factory() as session:
+        return await load_active_prompt_set(session)
 
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
@@ -295,6 +320,8 @@ async def _match_situational_image(
     room: ChatRoom,
     llm_client: LLMClient,
     *,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
@@ -318,6 +345,8 @@ async def _match_situational_image(
         return None
 
     judgment_prompt = build_image_judgment_prompt(
+        prompt_set=prompt_set,
+        sections=prompt_sections,
         situational_images=situational_images,
         history=history,
         user_message=user_message,
@@ -513,6 +542,8 @@ async def _build_prompt(
     history: list[ChatMessage],
     user_content: str,
     shortcut: Shortcut | None,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> tuple[str, str]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
@@ -535,6 +566,8 @@ async def _build_prompt(
         ).all()
         matched_notes = match_keyword_notes(user_content, list(notes))
         prompt = build_story_generation_prompt(
+            prompt_set=prompt_set,
+            sections=prompt_sections,
             prompt_template=story_detail.prompt_template,
             setting_text=story_detail.setting_text,
             development_examples=story_detail.development_examples,
@@ -547,17 +580,21 @@ async def _build_prompt(
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
-        return prompt, system_instruction_for(is_story_chat=True, template=story_detail.prompt_template)
+        return prompt, system_instruction_for(
+            prompt_sections, is_story_chat=True, template=story_detail.prompt_template
+        )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
     prompt = build_generation_prompt(
+        prompt_set=prompt_set,
+        sections=prompt_sections,
         character_prompt=detail.character_prompt,
         example_dialogues=detail.example_dialogues,
         history=history,
         user_message=user_content,
     )
-    return prompt, system_instruction_for(is_story_chat=False)
+    return prompt, system_instruction_for(prompt_sections, is_story_chat=False)
 
 
 def _dump_prompt(
@@ -586,6 +623,7 @@ async def _stream_generated_tokens(
     prompt: str,
     chunks: list[str],
     system_instruction: str,
+    user_label: str,
     *,
     room_id: uuid.UUID | None,
     turn: int,
@@ -596,7 +634,8 @@ async def _stream_generated_tokens(
 
     바닥 지시문은 호출부가 골라 넘긴다(`system_instruction_for`) — 여기서 고를 수 없다.
     스토리/캐릭터 구분이 실제 방·미리보기에서 서로 다른 값(`setup`/`payload` 타입)으로
-    드러나기 때문이다.
+    드러나기 때문이다. `stop_sequences`는 `user_label`에서 파생한다(prompt-db-goal-prompt.md
+    §4-5) — 이 함수가 실채팅·미리보기 공용이라 한 번만 고치면 둘 다 덮인다.
 
     진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
     프롬프트와 그때 실린 지시문을 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을
@@ -609,7 +648,7 @@ async def _stream_generated_tokens(
             )
         except Exception:
             logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", room_id, turn, exc_info=True)
-    async for delta in llm_client.generate(prompt, system_instruction):
+    async for delta in llm_client.generate(prompt, system_instruction, stop_sequences=[f"\n{user_label}:"]):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -622,6 +661,8 @@ async def _stream_new_turn(
     history: list[ChatMessage],
     user_content: str,
     shortcut: Shortcut | None,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> AsyncIterator[ChatStreamEvent]:
     """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
@@ -634,7 +675,17 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
     않는다 — 그 라우트의 docstring 참고.
     """
-    prompt, system_instruction = await _build_prompt(db, room, setup, history, user_content, shortcut)
+    try:
+        prompt, system_instruction = await _build_prompt(
+            db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
+        )
+    except PromptRenderError as exc:
+        # apps/api/CLAUDE.md §SSE: 이 예외를 여기서 흡수하지 않으면 제너레이터 본문을 뚫고
+        # 나가 태스크 취소 → 커넥션 강제종료로 번진다. LLM 호출 전이므로 흡수해도 잃는
+        # 게 없다 — 아직 아무 것도 스트리밍되지 않았다.
+        logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
+        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+        return
 
     chunks: list[str] = []
     try:
@@ -643,6 +694,7 @@ async def _stream_new_turn(
             prompt,
             chunks,
             system_instruction,
+            prompt_set.user_label,
             room_id=room.id,
             turn=room.turn_count + 1,
         ):
@@ -685,6 +737,8 @@ async def _stream_new_turn(
             current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
 
             judgment_prompt = build_stat_judgment_prompt(
+                prompt_set=prompt_set,
+                sections=prompt_sections,
                 stat_defs=stat_defs,
                 current_stats=current_stats,
                 user_message=user_content,
@@ -713,6 +767,8 @@ async def _stream_new_turn(
                 if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
                     continue
                 ending_judgment_prompt = build_ending_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=prompt_sections,
                     judgment_prompt=ending.judgment_prompt,
                     history=history,
                     user_message=user_content,
@@ -753,11 +809,13 @@ async def _stream_new_turn(
                 db,
                 room,
                 llm_client,
+                prompt_set=prompt_set,
+                prompt_sections=prompt_sections,
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-    except LLMClientError as exc:
+    except (LLMClientError, PromptRenderError) as exc:
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
 
     await db.commit()
@@ -796,9 +854,11 @@ async def send_message(
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
+    prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
+    prompt_set, prompt_sections = prompt_set_data
     setup = await _resolve_starting_setup(db, room)
 
     history = list(
@@ -817,7 +877,9 @@ async def send_message(
     db.add(user_message)
     await db.commit()
 
-    async for event in _stream_new_turn(db, room, llm_client, setup, history, payload.content, shortcut):
+    async for event in _stream_new_turn(
+        db, room, llm_client, setup, history, payload.content, shortcut, prompt_set, prompt_sections
+    ):
         yield event
 
 
@@ -851,6 +913,7 @@ async def regenerate_message(
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
+    prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
@@ -859,6 +922,7 @@ async def regenerate_message(
     되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만
     교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
+    prompt_set, prompt_sections = prompt_set_data
     setup = await _resolve_starting_setup(db, room)
 
     history = list(
@@ -871,7 +935,14 @@ async def regenerate_message(
         ).all()
     )
     user_content = history[-1].content
-    prompt, system_instruction = await _build_prompt(db, room, setup, history[:-1], user_content, None)
+    try:
+        prompt, system_instruction = await _build_prompt(
+            db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
+        )
+    except PromptRenderError as exc:
+        logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
+        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+        return
 
     chunks: list[str] = []
     try:
@@ -880,6 +951,7 @@ async def regenerate_message(
             prompt,
             chunks,
             system_instruction,
+            prompt_set.user_label,
             room_id=room.id,
             # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
             turn=room.turn_count,
@@ -929,6 +1001,7 @@ async def edit_message(
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
+    prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
     생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
@@ -941,6 +1014,7 @@ async def edit_message(
     건 이번 스토리 범위 밖이다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
     (알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.
     """
+    prompt_set, prompt_sections = prompt_set_data
     setup = await _resolve_starting_setup(db, room)
 
     all_messages = list(
@@ -964,7 +1038,9 @@ async def edit_message(
     message.content = payload.content
     await db.commit()
 
-    async for event in _stream_new_turn(db, room, llm_client, setup, history, payload.content, None):
+    async for event in _stream_new_turn(
+        db, room, llm_client, setup, history, payload.content, None, prompt_set, prompt_sections
+    ):
         yield event
 
 
@@ -1480,12 +1556,16 @@ def _build_preview_prompt(
     history: list[ChatMessage],
     user_content: str,
     shortcut: ShortcutDraftItem | None,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> str:
     """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
     읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면(US-088과 동일한
     "미완성 상태에서도 테스트 가능" 원칙) 빈 프롤로그로 진행한다."""
     if isinstance(payload, CharacterDraftPayload):
         return build_generation_prompt(
+            prompt_set=prompt_set,
+            sections=prompt_sections,
             character_prompt=payload.character_prompt,
             example_dialogues=[dialogue.model_dump(by_alias=True) for dialogue in payload.example_dialogues],
             history=history,
@@ -1496,6 +1576,8 @@ def _build_preview_prompt(
     notes = _preview_keyword_notes(payload, setup.id if setup is not None else None)
     matched_notes = match_keyword_notes(user_content, notes)
     return build_story_generation_prompt(
+        prompt_set=prompt_set,
+        sections=prompt_sections,
         prompt_template=payload.prompt_template,
         setting_text=payload.setting_text,
         development_examples=[
@@ -1518,17 +1600,30 @@ async def _stream_preview_turn(
     history: list[ChatMessage],
     user_content: str,
     shortcut: ShortcutDraftItem | None,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
     클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
     (`is_ending_check_due`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
-    실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — DB에 결합된 조회/커밋 부분만
-    Redis 상태 갱신으로 대체했다."""
-    prompt = _build_preview_prompt(state.payload, history, user_content, shortcut)
+    실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — `ChatRoom`/`chat_room_stats` 등 방
+    상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
+    호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다(§8-2) — 이
+    함수 자체는 세션을 열지 않는다."""
     # `_build_prompt`(실제 방)와 달리 `payload`가 이미 이 스코프에 있어(DB 조회가 아니다)
     # 튜플 반환으로 우회할 필요가 없다 — template을 여기서 바로 뽑는다.
     template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
+    try:
+        prompt = _build_preview_prompt(state.payload, history, user_content, shortcut, prompt_set, prompt_sections)
+        system_instruction = system_instruction_for(
+            prompt_sections, is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template
+        )
+    except PromptRenderError as exc:
+        # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
+        logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
+        yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
+        return
 
     chunks: list[str] = []
     try:
@@ -1536,7 +1631,8 @@ async def _stream_preview_turn(
             llm_client,
             prompt,
             chunks,
-            system_instruction_for(is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template),
+            system_instruction,
+            prompt_set.user_label,
             # 미리보기는 DB 방이 없다(Redis 세션).
             room_id=None,
             turn=state.turn_count + 1,
@@ -1560,8 +1656,9 @@ async def _stream_preview_turn(
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
 
-    # 실제 채팅(`_stream_new_turn`)과 같은 이유로 판정 실패를 여기서 흡수한다 — 미리보기는 DB를
-    # 쓰지 않지만, 예외가 SSE 제너레이터 밖으로 새면 커넥션이 깨지는 것은 동일하다.
+    # 실제 채팅(`_stream_new_turn`)과 같은 이유로 판정 실패를 여기서 흡수한다 — 미리보기는
+    # `ChatRoom` 등 방 상태를 DB에 쓰지 않지만, 예외가 SSE 제너레이터 밖으로 새면 커넥션이
+    # 깨지는 것은 동일하다.
     try:
         if (
             isinstance(state.payload, StoryDraftPayload)
@@ -1573,6 +1670,8 @@ async def _stream_preview_turn(
             current_stats = dict(state.stats)
 
             judgment_prompt = build_stat_judgment_prompt(
+                prompt_set=prompt_set,
+                sections=prompt_sections,
                 stat_defs=stat_defs,
                 current_stats=current_stats,
                 user_message=user_content,
@@ -1591,6 +1690,8 @@ async def _stream_preview_turn(
                 if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
                     continue
                 ending_judgment_prompt = build_ending_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=prompt_sections,
                     judgment_prompt=ending.judgment_prompt,
                     history=history,
                     user_message=user_content,
@@ -1610,7 +1711,7 @@ async def _stream_preview_turn(
                 state.ending_reached = True
                 ending_reached_event = ChatEndingReachedEvent(ending_id=ending.id, epilogue=ending.epilogue)
                 break
-    except LLMClientError as exc:
+    except (LLMClientError, PromptRenderError) as exc:
         logger.warning("미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", exc)
 
     for stat_change_event in stat_change_events:
@@ -1628,10 +1729,14 @@ async def send_preview_message(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
+    prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
-    이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신)."""
+    이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
+    세트만은 예외다 — `_preview_prompt_set_dependency`가 짧게 연 세션으로 DB에서 활성 세트를
+    읽는다(§8-2, 3단계에서 이 자리에 캐시가 들어간다)."""
+    prompt_set, prompt_sections = prompt_set_data
     history = [_preview_chat_message(message) for message in state.messages]
     state.messages.append(
         ChatMessageResponse(
@@ -1639,7 +1744,9 @@ async def send_preview_message(
         )
     )
 
-    async for event in _stream_preview_turn(state, llm_client, history, payload.content, shortcut):
+    async for event in _stream_preview_turn(
+        state, llm_client, history, payload.content, shortcut, prompt_set, prompt_sections
+    ):
         yield event
 
     await update_preview_session(id, state)

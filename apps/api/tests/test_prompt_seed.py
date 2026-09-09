@@ -160,7 +160,7 @@ async def test_system_channel_reconstruction_matches_current_code(
     reconstructed = _reconstruct_system_instruction(
         sections, is_story_chat=is_story_chat, template=template
     )
-    expected = system_instruction_for(is_story_chat=is_story_chat, template=template)
+    expected = system_instruction_for(sections, is_story_chat=is_story_chat, template=template)
     assert reconstructed == expected
 
 

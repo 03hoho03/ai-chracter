@@ -4,8 +4,10 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from api.chat.prompt_builder import render_prompt_channel
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import Ending, StartingSetup, StoryPromptTemplate, StoryVersionDetail
 
 
@@ -46,6 +48,8 @@ class PublishFilterResult(BaseModel):
 
 def build_character_publish_filter_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     name: str,
     one_liner: str,
     intro: str,
@@ -56,31 +60,24 @@ def build_character_publish_filter_prompt(
     """techspec-backend-content.md §1.3. 텍스트 검열 지시문 — 첨부된 이미지(대표이미지/
     상황별이미지)는 같은 LLMClient.generate_structured() 호출의 멀티모달 파트로 함께
     전달되므로(images 인자), 이 프롬프트가 그 이미지들도 함께 심사하도록 명시한다.
+
+    `[예시 대화]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다
+    (prompt-db-goal-prompt.md §4-4).
     """
-    sections = [
-        "다음은 사용자가 발행하려는 AI 캐릭터의 등록 정보다. 아래 텍스트와 함께 첨부된 "
-        "이미지(대표 이미지 및 상황별 이미지가 있다면 그것들도 포함)를 모두 심사해, 선정성/"
-        "폭력성/혐오 표현/불법 콘텐츠 등 서비스에 부적절한 내용이 있는지 판단하라.",
-        f"[이름]\n{name}",
-        f"[한줄소개]\n{one_liner}",
-        f"[인트로]\n{intro}",
-    ]
-
-    if example_dialogues:
-        dialogue_lines = "\n".join(
-            f"- 사용자: {pair['userLine']} / 캐릭터: {pair['characterLine']}"
-            for pair in example_dialogues
-        )
-        sections.append(f"[예시 대화]\n{dialogue_lines}")
-
-    sections.append(f"[캐릭터 프롬프트]\n{character_prompt}")
-    sections.append(f"[상세 설명]\n{detail_description}")
-    sections.append(
-        "부적절한 내용이 없으면 passed=true, reason은 null로 응답하라. 부적절한 내용이 있으면 "
-        "passed=false와 함께 어떤 부분이 어떤 이유로 문제인지 reason에 한국어로 간결히 설명하라."
+    dialogue_lines = "\n".join(
+        f"- {prompt_set.user_label}: {pair['userLine']} / {prompt_set.character_assistant_label}: "
+        f"{pair['characterLine']}"
+        for pair in example_dialogues
     )
-
-    return "\n\n".join(sections)
+    values = {
+        "name": name,
+        "one_liner": one_liner,
+        "intro": intro,
+        "dialogue_lines": dialogue_lines,
+        "character_prompt": character_prompt,
+        "detail_description": detail_description,
+    }
+    return render_prompt_channel(sections, channel="publish_filter", scope="character", values=values)
 
 
 def validate_story_publish(
@@ -130,6 +127,8 @@ def validate_story_publish(
 
 def build_story_publish_filter_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     name: str,
     one_liner: str,
     setting_text: str | None,
@@ -147,40 +146,24 @@ def build_story_publish_filter_prompt(
 
     chat-goal-prompt.md §8: `developmentExamples`/`userGoal`/`rules`도 창작자가 적는 텍스트라
     `development_example`과 함께 심사 대상에 넣는다(D-19의 발행 필수화 제외와는 별개 — 값이
-    있으면 걸러야 한다)."""
-    sections = [
-        "다음은 사용자가 발행하려는 스토리 콘텐츠의 등록 정보다. 아래 텍스트와 함께 첨부된 "
-        "이미지(대표 이미지)를 모두 심사해, 선정성/폭력성/혐오 표현/불법 콘텐츠 등 서비스에 부적절한 "
-        "내용이 있는지 판단하라.",
-        f"[이름]\n{name}",
-        f"[한줄소개]\n{one_liner}",
-    ]
-
-    if setting_text:
-        sections.append(f"[세계관/설정]\n{setting_text}")
-    if development_example:
-        sections.append(f"[전개 예시]\n{development_example}")
-    if custom_prompt:
-        sections.append(f"[커스텀 프롬프트]\n{custom_prompt}")
-    if rules:
-        sections.append(f"[규칙]\n{rules}")
-    if user_goal:
-        sections.append(f"[사용자의 역할과 목표]\n{user_goal}")
-    if development_examples:
-        example_lines = "\n".join(
-            f"사용자: {pair['userLine']}\n서술자: {pair['assistantLine']}" for pair in development_examples
-        )
-        sections.append(f"[전개 예시(쌍)]\n{example_lines}")
-
-    sections.append(f"[상세 설명]\n{detail_description}")
-
-    if starting_setups:
-        setup_lines = "\n".join(f"- {setup.name}: {setup.prologue}" for setup in starting_setups)
-        sections.append(f"[시작 설정]\n{setup_lines}")
-
-    sections.append(
-        "부적절한 내용이 없으면 passed=true, reason은 null로 응답하라. 부적절한 내용이 있으면 "
-        "passed=false와 함께 어떤 부분이 어떤 이유로 문제인지 reason에 한국어로 간결히 설명하라."
+    있으면 걸러야 한다). `[전개 예시(쌍)]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도
+    `prompt_set`에서 읽는다(§4-4) — 전개 예시 자리는 `story_example_label`("서술자")을 쓴다(§1-1).
+    """
+    example_lines = "\n".join(
+        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
+        for pair in development_examples
     )
-
-    return "\n\n".join(sections)
+    setup_lines = "\n".join(f"- {setup.name}: {setup.prologue}" for setup in starting_setups)
+    values = {
+        "name": name,
+        "one_liner": one_liner,
+        "setting_text": setting_text or "",
+        "development_example": development_example or "",
+        "custom_prompt": custom_prompt or "",
+        "rules": rules or "",
+        "user_goal": user_goal or "",
+        "example_lines": example_lines,
+        "detail_description": detail_description,
+        "setup_lines": setup_lines,
+    }
+    return render_prompt_channel(sections, channel="publish_filter", scope="story", values=values)

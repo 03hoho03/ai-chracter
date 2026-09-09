@@ -24,7 +24,15 @@ class LLMClient(abc.ABC):
     """
 
     @abc.abstractmethod
-    def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        """`stop_sequences`는 호출부가 넘긴다 — prompt-db-goal-prompt.md §4-5: 대본 프레임의
+        화자 라벨(`{user_label}:`)에서 파생된 값이라 라벨과 정지 시퀀스가 따로 편집될 수
+        없다(어긋나면 모델이 사용자 턴까지 지어낸다)."""
         raise NotImplementedError
 
     @abc.abstractmethod

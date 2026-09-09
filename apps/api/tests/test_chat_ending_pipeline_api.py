@@ -100,7 +100,12 @@ class _FakeLLMClient(LLMClient):
         self._structured_results = list(structured_results)
         self.generate_structured_calls: list[Any] = []
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         for token in self.tokens:
             yield token
 

@@ -10,7 +10,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import CHARACTER_CHAT_SYSTEM_INSTRUCTION, ImageMatchJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
 from api.db.models import (
     CharacterImageExposure,
@@ -29,7 +29,7 @@ from api.db.models import (
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _get_genre, _login_as, _make_asset, _make_user, _read_golden_prompt
 
 
 async def _make_published_character(
@@ -115,7 +115,12 @@ class _FakeLLMClient(LLMClient):
         self.received_judgment_prompt: str | None = None
         self.generate_structured_called = False
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         self.received_prompt = prompt
         if self.error is not None:
             raise self.error
@@ -641,5 +646,5 @@ async def test_send_message_dumps_prompt_when_configured(
     assert record["seed"] == 42
     # 지시문도 함께 남는다 — 이 런이 바꾸는 것이 바로 그것이라, 프롬프트만 남고 그때 어떤
     # 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다(chat-techspec.md §3-5).
-    assert record["systemInstruction"] == CHARACTER_CHAT_SYSTEM_INSTRUCTION
+    assert record["systemInstruction"] == _read_golden_prompt("system_instruction_character.txt")
     assert record["prompt"] == fake.received_prompt

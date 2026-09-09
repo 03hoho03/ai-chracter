@@ -1,17 +1,27 @@
-"""프롬프트 DB 이관 0단계 — 이관 전 코드가 실제로 내는 프롬프트 전문을 골든 파일로 뜬다.
+"""프롬프트 DB 이관 0단계 — 이관 전 코드가 실제로 내는 프롬프트 전문을 골든 파일로 뜬 스크립트.
 
-여기서 만드는 파일들은 나중 단계에서 렌더러를 갈아엎은 뒤 바이트 단위로 비교해 "품질이
-안 변했다"를 증명하는 기준선이다. `tests/test_prompt_goldens.py`가 아래 `GOLDEN_CASES`를
-그대로 재사용해 지금 코드의 출력과 골든 파일을 대조한다 — 픽스처가 두 곳에서 갈리면 그
-대조는 무의미해지므로 이 모듈이 픽스처의 유일한 정의처다.
+여기서 만든 파일들(`tests/golden/prompts/*.txt`)은 이관 전후 바이트 동일을 증명하는
+기준선이다(D-13). `tests/test_prompt_goldens.py`가 아래 `GOLDEN_CASES`를 그대로
+재사용해 지금 렌더러의 출력과 골든 파일을 대조한다 — 픽스처가 두 곳에서 갈리면 그
+대조는 무의미해지므로 이 모듈이 픽스처의 유일한 정의처다("자기 사본 함정" 방지,
+`25a6ae1`이 겪은 것과 같은 종류의 실수를 물리적으로 막는다).
 
-DB·네트워크·LLM을 쓰지 않는다. 대상 함수는 전부 순수 함수이고, ORM 모델은 DB 세션 없이
-생성자로만 채운다(`nullable=False`는 DB 제약일 뿐이라 프롬프트 조립에 안 쓰는 필드는 생략).
+**2단계(렌더러 교체) 이후: `main()`은 더 이상 DB 없이 못 돈다.** `build_*` 함수들이
+`PromptSet`/`PromptSection`을 받게 바뀌어서, 이 스크립트도 활성 세트를 DB에서 읽어야
+호출할 수 있다. `GOLDEN_CASES`의 각 콜러블 자체는 여전히 `(prompt_set, sections)`를
+받는 순수 함수 호출일 뿐이라 import 시점에는 DB가 필요 없다 — DB가 필요한 것은
+`main()`을 실제로 실행할 때뿐이다.
 
-실행:
+⚠️ **`main()`을 다시 실행해 골든 파일을 덮어쓰지 마라.** 골든은 이관 *전* 코드가 낸
+문자열을 영구 보존한 기준선이다(D-13) — 지금 렌더러로 다시 뜨면 렌더러의 버그까지
+"정답"으로 덮어써 버려 이 대조가 원리적으로 무력화된다. 이 파일이 남아 있는 이유는
+오직 `GOLDEN_CASES`/픽스처 리터럴을 테스트와 공유하기 위해서다.
+
+실행(위 경고를 무릅쓰고 재현 검증 등으로 정말 필요할 때만):
     cd apps/api && uv run python scripts/dump_prompt_goldens.py
 """
 
+import asyncio
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -23,6 +33,7 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    load_active_prompt_set,
     system_instruction_for,
 )
 from api.content.publish import (
@@ -31,7 +42,9 @@ from api.content.publish import (
 )
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StartingSetup, StatDef, StoryPromptTemplate
+from api.db.session import async_session_factory
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "tests" / "golden" / "prompts"
 
@@ -129,39 +142,53 @@ def _starting_setup() -> StartingSetup:
 
 # ---- 골든 케이스 ------------------------------------------------------------
 #
-# (파일명, 인자 없이 프롬프트 문자열을 내는 콜러블) 쌍의 목록. `test_prompt_goldens.py`가
-# 이 목록을 그대로 import해서 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다.
+# (파일명, (prompt_set, sections) -> 프롬프트 문자열인 콜러블) 쌍의 목록. `build_*`가
+# 이제 `PromptSet`/`PromptSection` 목록을 받으므로 콜러블도 그 둘을 인자로 받는다 —
+# `tests/test_prompt_goldens.py`가 이 목록을 그대로 import해서, DB에서 읽은 활성
+# 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다.
 
-GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
+GoldenBuilder = Callable[[PromptSet, list[PromptSection]], str]
+
+GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     # -- system_instruction: 캐릭터 / 스토리×템플릿 4종 / 스토리-무템플릿 = 6 --
     (
         "system_instruction_character.txt",
-        lambda: system_instruction_for(is_story_chat=False),
+        lambda ps, sections: system_instruction_for(sections, is_story_chat=False),
     ),
     (
         "system_instruction_story_basic.txt",
-        lambda: system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.BASIC),
+        lambda ps, sections: system_instruction_for(
+            sections, is_story_chat=True, template=StoryPromptTemplate.BASIC
+        ),
     ),
     (
         "system_instruction_story_emotional.txt",
-        lambda: system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.EMOTIONAL),
+        lambda ps, sections: system_instruction_for(
+            sections, is_story_chat=True, template=StoryPromptTemplate.EMOTIONAL
+        ),
     ),
     (
         "system_instruction_story_simulation.txt",
-        lambda: system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.SIMULATION),
+        lambda ps, sections: system_instruction_for(
+            sections, is_story_chat=True, template=StoryPromptTemplate.SIMULATION
+        ),
     ),
     (
         "system_instruction_story_custom.txt",
-        lambda: system_instruction_for(is_story_chat=True, template=StoryPromptTemplate.CUSTOM),
+        lambda ps, sections: system_instruction_for(
+            sections, is_story_chat=True, template=StoryPromptTemplate.CUSTOM
+        ),
     ),
     (
         "system_instruction_story_no_template.txt",
-        lambda: system_instruction_for(is_story_chat=True, template=None),
+        lambda ps, sections: system_instruction_for(sections, is_story_chat=True, template=None),
     ),
     # -- 생성 프롬프트: 캐릭터 1 × filled/empty + 경계(character_prompt="") --
     (
         "generation_character_filled.txt",
-        lambda: build_generation_prompt(
+        lambda ps, sections: build_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             character_prompt=CHARACTER_PROMPT,
             example_dialogues=[EXAMPLE_DIALOGUE],
             history=_character_history(),
@@ -170,7 +197,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "generation_character_empty.txt",
-        lambda: build_generation_prompt(
+        lambda ps, sections: build_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             character_prompt=CHARACTER_PROMPT,
             example_dialogues=[],
             history=[],
@@ -179,7 +208,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "generation_character_empty_prompt.txt",
-        lambda: build_generation_prompt(
+        lambda ps, sections: build_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             character_prompt="",
             example_dialogues=[EXAMPLE_DIALOGUE],
             history=_character_history(),
@@ -189,7 +220,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     # -- 생성 프롬프트: 스토리 CUSTOM/비-CUSTOM(BASIC 대표) × filled/empty --
     (
         "generation_story_custom_filled.txt",
-        lambda: build_story_generation_prompt(
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             prompt_template=StoryPromptTemplate.CUSTOM,
             setting_text=None,
             development_examples=[DEVELOPMENT_EXAMPLE],
@@ -205,7 +238,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "generation_story_custom_empty.txt",
-        lambda: build_story_generation_prompt(
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             prompt_template=StoryPromptTemplate.CUSTOM,
             setting_text=None,
             development_examples=[],
@@ -221,7 +256,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "generation_story_basic_filled.txt",
-        lambda: build_story_generation_prompt(
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             prompt_template=StoryPromptTemplate.BASIC,
             setting_text=STORY_SETTING_TEXT,
             development_examples=[DEVELOPMENT_EXAMPLE],
@@ -237,7 +274,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "generation_story_basic_empty.txt",
-        lambda: build_story_generation_prompt(
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
             prompt_template=StoryPromptTemplate.BASIC,
             setting_text=None,
             development_examples=[],
@@ -254,7 +293,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
     (
         "judgment_stat_filled.txt",
-        lambda: build_stat_judgment_prompt(
+        lambda ps, sections: build_stat_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             stat_defs=_stat_defs(),
             current_stats={str(_AFFECTION_ENTITY_ID): 62.0},
             user_message=USER_MESSAGE,
@@ -263,7 +304,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "judgment_stat_empty.txt",
-        lambda: build_stat_judgment_prompt(
+        lambda ps, sections: build_stat_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             stat_defs=[],
             current_stats={},
             user_message=USER_MESSAGE,
@@ -272,7 +315,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "judgment_ending_filled.txt",
-        lambda: build_ending_judgment_prompt(
+        lambda ps, sections: build_ending_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             judgment_prompt=ENDING_JUDGMENT_PROMPT,
             history=_story_history(),
             user_message=USER_MESSAGE,
@@ -281,7 +326,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "judgment_ending_empty.txt",
-        lambda: build_ending_judgment_prompt(
+        lambda ps, sections: build_ending_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             judgment_prompt=ENDING_JUDGMENT_PROMPT,
             history=[],
             user_message=USER_MESSAGE,
@@ -290,7 +337,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "judgment_image_filled.txt",
-        lambda: build_image_judgment_prompt(
+        lambda ps, sections: build_image_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             situational_images=_situational_images(),
             history=_character_history(),
             user_message=USER_MESSAGE,
@@ -299,7 +348,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "judgment_image_empty.txt",
-        lambda: build_image_judgment_prompt(
+        lambda ps, sections: build_image_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
             situational_images=[],
             history=[],
             user_message=USER_MESSAGE,
@@ -309,7 +360,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     # -- 발행 검열: 캐릭터/스토리 × filled/empty --
     (
         "publish_filter_character_filled.txt",
-        lambda: build_character_publish_filter_prompt(
+        lambda ps, sections: build_character_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=CHARACTER_NAME,
             one_liner=CHARACTER_ONE_LINER,
             intro=CHARACTER_INTRO,
@@ -320,7 +373,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "publish_filter_character_empty.txt",
-        lambda: build_character_publish_filter_prompt(
+        lambda ps, sections: build_character_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=CHARACTER_NAME,
             one_liner=CHARACTER_ONE_LINER,
             intro=CHARACTER_INTRO,
@@ -331,7 +386,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "publish_filter_story_filled.txt",
-        lambda: build_story_publish_filter_prompt(
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=STORY_NAME,
             one_liner=STORY_ONE_LINER,
             setting_text=STORY_SETTING_TEXT,
@@ -346,7 +403,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "publish_filter_story_empty.txt",
-        lambda: build_story_publish_filter_prompt(
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=STORY_NAME,
             one_liner=STORY_ONE_LINER,
             setting_text=None,
@@ -367,7 +426,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     # 비워짐"도 사용자가 쌍을 전부 지우면 그대로 도달한다.
     (
         "publish_filter_story_pairs_only.txt",
-        lambda: build_story_publish_filter_prompt(
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=STORY_NAME,
             one_liner=STORY_ONE_LINER,
             setting_text=STORY_SETTING_TEXT,
@@ -382,7 +443,9 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
     ),
     (
         "publish_filter_story_legacy_only.txt",
-        lambda: build_story_publish_filter_prompt(
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
             name=STORY_NAME,
             one_liner=STORY_ONE_LINER,
             setting_text=STORY_SETTING_TEXT,
@@ -398,10 +461,16 @@ GOLDEN_CASES: list[tuple[str, Callable[[], str]]] = [
 ]
 
 
+async def _load_active_prompt_set() -> tuple[PromptSet, list[PromptSection]]:
+    async with async_session_factory() as session:
+        return await load_active_prompt_set(session)
+
+
 def main() -> None:
+    prompt_set, sections = asyncio.run(_load_active_prompt_set())
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
     for filename, build in GOLDEN_CASES:
-        (GOLDEN_DIR / filename).write_text(build(), encoding="utf-8")
+        (GOLDEN_DIR / filename).write_text(build(prompt_set, sections), encoding="utf-8")
     print(f"{len(GOLDEN_CASES)}개 골든 파일을 {GOLDEN_DIR}에 썼다.")
 
 

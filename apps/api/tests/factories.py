@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from datetime import date, datetime, UTC
+from pathlib import Path
 
 import httpx
 import sqlalchemy as sa
@@ -150,3 +151,13 @@ async def _make_published_story(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
+
+
+_GOLDEN_PROMPTS_DIR = Path(__file__).parent / "golden" / "prompts"
+
+
+def _read_golden_prompt(filename: str) -> str:
+    """`CHARACTER_CHAT_SYSTEM_INSTRUCTION` 같은 삭제된 프롬프트 상수 대신, 실제로 나가는
+    문안과 바이트 단위로 같음이 이미 증명된 골든 파일에서 기대값을 읽는다
+    (prompt-db-goal-prompt.md D-13, tests/test_prompt_goldens.py)."""
+    return (_GOLDEN_PROMPTS_DIR / filename).read_text(encoding="utf-8")
