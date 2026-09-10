@@ -427,8 +427,12 @@ async def test_send_message_without_an_active_prompt_set_fails_before_streaming_
     await db_session.execute(sa.update(PromptSet).where(PromptSet.status == "published").values(status="archived"))
     await db_session.flush()
 
-    with pytest.raises(PromptSetNotFoundError):
-        await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm(_NeverCalledLLMClient())
+    try:
+        with pytest.raises(PromptSetNotFoundError):
+            await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     # 본문이 시작되지 않았다 — 사용자 메시지가 커밋되지 않았다(오프닝 메시지 하나뿐).
     message_count = await db_session.scalar(
