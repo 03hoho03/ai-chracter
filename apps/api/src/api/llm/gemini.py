@@ -19,11 +19,6 @@ _POLICY_FINISH_REASONS = frozenset(
     {genai_types.FinishReason.SAFETY, genai_types.FinishReason.PROHIBITED_CONTENT}
 )
 
-# 생성 프롬프트가 `사용자: {입력}\n진행자:` 라는 대본 프레임으로 끝나서, 모델이 이어서
-# 사용자의 다음 턴까지 지어낼 수 있는 구조다(실측 90턴에서는 발현되지 않았지만 구조적 위험은
-# 남아 있다). 캐릭터 챗도 같은 프레임(`\n캐릭터:`)이라 이 하나로 양쪽이 덮인다.
-_STOP_SEQUENCES = ["\n사용자:"]
-
 logger = logging.getLogger(__name__)
 
 
@@ -32,12 +27,20 @@ class GeminiLLMClient(LLMClient):
         self._client = genai.Client(api_key=api_key if api_key is not None else settings.gemini_api_key)
         self._model_name = model_name if model_name is not None else settings.gemini_model_name
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         # 출력 상한이 사고 토큰과 응답이 나눠 쓰는 예산이라는 점과 기본값의 근거는
-        # core/config.py 의 gemini_max_output_tokens 주석 참고.
+        # core/config.py 의 gemini_max_output_tokens 주석 참고. stop_sequences 는 호출부가
+        # 화자 라벨(prompt_set.user_label)에서 파생시켜 넘긴다(prompt-db-goal-prompt.md §4-5) —
+        # 프롬프트가 `{user_label}: {입력}\n{assistant_label}:` 라는 대본 프레임으로 끝나서
+        # 모델이 이어서 사용자의 다음 턴까지 지어낼 수 있는 구조이기 때문이다.
         config = genai_types.GenerateContentConfig(
             max_output_tokens=settings.gemini_max_output_tokens,
-            stop_sequences=_STOP_SEQUENCES,
+            stop_sequences=stop_sequences,
             system_instruction=system_instruction,
         )
         if settings.gemini_thinking_budget is not None:

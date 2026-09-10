@@ -94,7 +94,12 @@ class _ImageMatchingLLMClient(LLMClient):
     def __init__(self, matched_entity_id: uuid.UUID) -> None:
         self.matched_entity_id = matched_entity_id
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         yield "그럼요."
 
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:

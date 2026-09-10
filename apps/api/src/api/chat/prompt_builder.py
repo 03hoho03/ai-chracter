@@ -1,119 +1,186 @@
+from collections.abc import Sequence
+from string import Formatter
 from typing import Any
 
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
 
 
-# 스토리·캐릭터 공통으로 생성 호출에 붙는 바닥 지시문(`LLMClient.generate(system_instruction=...)`).
-#
-# 이 자리가 비어 있던 동안 행동 규정은 100% 작가가 쓴 텍스트였고, 그 결과가 실측으로 갈렸다
-# (2026-08-07, 시드 30개 settingText 전수 조사):
-#   · 작가가 적은 규칙은 지켜진다 — 라벨 금지를 29/30이 각자 적었고 라벨 누출은 90턴 중 0건.
-#   · 아무도 안 적은 규칙만 무너진다 — 사용자 대사 대신쓰기 금지 1/30, 수위 6/30.
-# 그래서 여기 담는 것은 "여러 작품이 똑같이 반복해 적고 있는 것"(중복 제거)과 "아무도 안 적어서
-# 서비스 기준이 어디에도 없는 것"(수위)뿐이다. 톤·시점·길이처럼 작품마다 정당하게 달라야 하는
-# 것은 넣지 않는다 — 특히 길이는 응답 중앙값이 18문장이라, 임의의 문장 수 상한을 두면 30개의
-# 연출을 통째로 바꾼다.
-#
-# 금지할 라벨을 예시로 나열하지 않는다("예: \"진행자:\", \"서술자:\"" 식). 2026-09-08 프로브에서
-# 그 예시를 달았더니 지시문 없는 회차에는 없던 `(서술자: …)` 가 출력 첫 줄에 나타났다(10턴 중
-# 1건, OFF 회차 0건) — 금지 대상을 적는 행위가 그 토큰을 프롬프트에 들여놓는다.
-#
-# 되받기 금지 규칙은 **의도적으로 빼 두었다.** 2026-08-11 에 같은 모델·대본으로 90턴을 전후
-# 측정한 결과 세 기준 모두 노이즈 범위였다(앞 250자 70→73% / 앞 2문장 31→28% / 앞 30% 66→67%).
-# 되받기는 프롬프트 문구가 아니라 매 턴 방 전체를 다시 붙이는 히스토리 구조 쪽에서 다시 본다.
-#
-# [턴을 열어 둔다]는 별개 문제의 처방이다(chat-goal-prompt.md §1-1~§1-3, §5). 프로덕션
-# 대화록에서 모델이 매 턴 장면을 닫는 것(사용자 발화 무시·길이 단조감소·인물 상태가 한
-# 방향으로만 감)이 관측됐고, 그 원인은 작품의 `settingText`/전개 예시였다 — 시스템 층에
-# "턴을 열어 두라"는 규칙이 어디에도 없었다. D-5: 닫는 행동(잠들·자리를 뜨·눈을 감 등)을
-# 예시로 나열하지 않는다 — 2026-09-08 실측에서 라벨 금지에 예시를 달았더니 없던 라벨이
-# 새로 나타났다(위 문단). D-4: 길이·문장 수 상한은 넣지 않는다.
-_COMMON_RULES = """[응답 형식]
-응답을 화자 이름이나 역할 표시로 시작하지 않는다. 첫 글자부터 바로 서술이거나 대사다.
-
-[사용자의 몫은 사용자가 정한다]
-사용자의 대사·행동·선택·감정을 대신 쓰지 않는다. 사용자가 하지 않은 말을 인용하거나 했다고 단정하지 않는다.
-
-[턴을 열어 둔다]
-매 턴은 사용자가 다음에 할 수 있는 것을 최소 하나 남긴다 — 인물이 원하는 것, 방금 변한 상황, 새로 드러난 사실 중 하나면 된다. 인물이 냉담하거나 말을 아끼는 것은 작품의 자유다. 그 경우에도 장면은 움직인다: 다른 인물, 배경, 사용자가 손댈 수 있는 무언가 중 하나가 반응한다. 장면은 항상 사용자의 다음 행동을 기다리는 상태로 끝난다.
-
-[수위]
-전연령 서비스다. 선정적 묘사, 노골적인 신체 훼손, 자해 방법 묘사를 하지 않는다. 이 항목은 작품 설정보다 우선한다.
-
-작품별 설정이 위 규칙보다 구체적인 지시를 하면 그 지시를 따른다(수위 항목은 예외)."""
+class PromptSetNotFoundError(RuntimeError):
+    """prompt-db-goal-prompt.md D-5. 활성(published) 프롬프트 세트가 없을 때 조용히 빈
+    프롬프트를 내는 대신 명시적으로 실패한다."""
 
 
-STORY_CHAT_SYSTEM_INSTRUCTION = (
-    "너는 사용자와 함께 이야기를 만들어 가는 화자다. 장면을 서술하고 그 안의 인물들을 연기한다.\n"
-    "아래는 어떤 작품에서도 지켜야 하는 공통 규칙이다.\n\n"
-    + _COMMON_RULES
-)
+class PromptRenderError(RuntimeError):
+    """`PromptSection.body`(DB 값)를 `values`로 채우다가 실패했을 때 던진다.
+
+    이전 코드(f-string 리터럴 조립, 4-멤버 enum을 전수 커버하는 dict lookup)에는 이 실패
+    경로가 아예 없었다 — "DB 값을 신뢰하고 `.format()` 한다"는 이 런이 처음 연 것이다.
+    `LLMClientError`를 재사용하지 않는다 — 원인이 LLM이 아니라 운영자가 편집한 문안이라
+    성격이 다르고, 호출부가 "이 턴만 포기"할지 "생성 자체를 포기"할지 다르게 판단해야
+    한다. `KeyError`/`ValueError`/`IndexError`를 그대로 두지 않고 여기로 정규화하는 이유는
+    apps/api/CLAUDE.md §SSE — 정규화 안 된 원시 예외가 SSE 제너레이터 본문에서 새면
+    `except LLMClientError`가 못 잡아 태스크 취소 → 커넥션 강제종료로 번진다(실측)."""
 
 
-CHARACTER_CHAT_SYSTEM_INSTRUCTION = (
-    "너는 아래 설정으로 주어진 캐릭터 본인이다. 해설자가 아니라 그 인물로서 사용자와 일대일로 대화한다.\n"
-    "아래는 어떤 캐릭터에게나 적용되는 공통 규칙이다.\n\n"
-    + _COMMON_RULES
-)
-
-
-# L0.5 — 템플릿별 지시(chat-goal-prompt.md §6, D-6·D-7). L0(`_COMMON_RULES`)의 꼬리 문장
-# ("작품별 설정이 위 규칙보다 구체적인 지시를 하면 그 지시를 따른다") **앞에** 끼워 넣는다 —
-# 뒤에 붙이면 그 꼬리의 "위 규칙" 범위 밖에 놓여, 연출 지침인 템플릿 지시가 작품 설정보다
-# 센 것으로 읽힌다(§5 설계 원칙: 작품 설정보다 약하되 형식은 강제한다). 프롬프트 본문(L1,
-# 작품 설정)이 아니라 system_instruction에 두는 이유는 D-6: 본문에 이어 붙이면 작품 설정과
-# 같은 층에 놓여 우선순위가 사라진다(`d6b726d`). 문안은 §6 표 그대로다 — 지어내지 않는다.
-# `CUSTOM`은 `BASIC`과 같다(D-7: 커스텀은 *내용*의 전권이지 *형식*의 예외가 아니다).
-#
-# EMOTIONAL·SIMULATION 문안은 사용자를 수신자로 지목하지 않는다. 문안이 "사용자에게 읽히는",
-# "사용자가 조작할 수 있는" 처럼 사용자를 수신자로 지목하면 모델이 그 요구를 장면 밖에서
-# 사용자에게 직접 물어 만족시켰다(2026-09-09 측정: 서술자 직접 질문 3/180 → 12/180). 그래서
-# 요구를 장면 안에서 해결하도록 고쳤다 — 이 인과는 확립되지 않았다: 악화가 3 seed 중
-# 2개에서만 나타났고, `사용자`가 없는 기본 템플릿의 스토리들은 원래 이 결함이 0이라 스토리
-# 성향과 분리되지 않는다.
-_TEMPLATE_BASIC_INSTRUCTION = "매 턴 상황이 한 걸음 움직이고, 다음 장면으로 이어질 실마리를 남긴다."
-
-_TEMPLATE_INSTRUCTIONS: dict[StoryPromptTemplate, str] = {
-    StoryPromptTemplate.BASIC: _TEMPLATE_BASIC_INSTRUCTION,
-    StoryPromptTemplate.EMOTIONAL: (
-        "인물의 감정 변화는 장면 안의 단서로 드러난다 — 표정, 손짓, 목소리의 결. "
-        "침묵도 반응이며, 그 침묵이 무엇을 뜻하는지 장면이 알려 준다."
+# prompt-db-goal-prompt.md §9-2 R-4. `(channel, slot)` -> 그 슬롯의 `body`가 쓸 수 있는
+# `{name}` 플레이스홀더 전체 — 이 아래 `build_*`/`content/publish.py`의 `build_*_filter_prompt`
+# 호출부가 각자 만드는 `values` 딕셔너리 키를 그대로 옮긴 것이다(지금까지는 그 딕셔너리
+# 리터럴에만 암묵적으로 있었다). 어드민 게시 검증(R-4)이 이 목록 밖의 이름을 거부하려면
+# "허용되는 이름이 뭔지" 코드 어딘가에 명시적으로 있어야 하는데, 그 정의를 여기 하나로만
+# 두고 `admin/prompts.py`가 이 상수를 그대로 import해서 쓴다 — 값을 다시 나열하면 둘 중
+# 하나가 바뀔 때 나머지가 조용히 갈린다. `variant`별로 다른 슬롯(`base_content`)은 두
+# variant가 쓰는 이름의 합집합이다 — 어느 variant든 같은 `values` 딕셔너리를 받으므로
+# 실제로 크래시 나지 않는 이름 전부가 여기 있어야 한다. `system` 채널은 전부 빈 집합이다
+# — `system_instruction_for`가 `render_prompt_channel`을 `values={}`로 호출하기 때문에
+# 플레이스홀더가 하나라도 있으면 그 자리에서 반드시 `PromptRenderError`가 난다.
+ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
+    ("system", "self_definition"): frozenset(),
+    ("system", "rule_response_format"): frozenset(),
+    ("system", "rule_user_agency"): frozenset(),
+    ("system", "rule_open_turn"): frozenset(),
+    ("system", "rule_rating"): frozenset(),
+    ("system", "template_instruction"): frozenset(),
+    ("system", "priority_tail"): frozenset(),
+    ("generation", "character_prompt"): frozenset({"character_prompt"}),
+    ("generation", "base_content"): frozenset({"setting_text", "custom_prompt"}),
+    ("generation", "example_dialogues"): frozenset({"example_lines"}),
+    ("generation", "rules"): frozenset({"rules"}),
+    ("generation", "user_goal"): frozenset({"user_goal"}),
+    ("generation", "development_examples"): frozenset({"example_lines"}),
+    ("generation", "prologue"): frozenset({"prologue"}),
+    ("generation", "history"): frozenset({"history_lines"}),
+    ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
+    ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
+    ("generation", "final_frame"): frozenset({"user_label", "user_message", "assistant_label"}),
+    ("stat_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
+    ("stat_judgment", "turn_context"): frozenset(
+        {"user_label", "user_message", "assistant_label", "assistant_message"}
     ),
-    StoryPromptTemplate.SIMULATION: (
-        "이번 턴에 무엇이 변했는지 장면 안에 명시하고, 지금 손댈 수 있는 것이 장면 안에 놓여 있다."
-    ),
-    StoryPromptTemplate.CUSTOM: _TEMPLATE_BASIC_INSTRUCTION,
+    ("stat_judgment", "judgment_instruction"): frozenset(),
+    ("ending_judgment", "history_header"): frozenset(),
+    ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
+    ("ending_judgment", "criteria"): frozenset({"judgment_prompt"}),
+    ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
+    ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
+    ("image_judgment", "judgment_instruction"): frozenset(),
+    ("publish_filter", "intro_instruction"): frozenset(),
+    ("publish_filter", "name"): frozenset({"name"}),
+    ("publish_filter", "one_liner"): frozenset({"one_liner"}),
+    ("publish_filter", "intro"): frozenset({"intro"}),
+    ("publish_filter", "setting_text"): frozenset({"setting_text"}),
+    ("publish_filter", "development_example_legacy"): frozenset({"development_example"}),
+    ("publish_filter", "custom_prompt"): frozenset({"custom_prompt"}),
+    ("publish_filter", "rules"): frozenset({"rules"}),
+    ("publish_filter", "user_goal"): frozenset({"user_goal"}),
+    ("publish_filter", "development_examples_pairs"): frozenset({"example_lines"}),
+    ("publish_filter", "example_dialogues"): frozenset({"dialogue_lines"}),
+    ("publish_filter", "character_prompt"): frozenset({"character_prompt"}),
+    ("publish_filter", "detail_description"): frozenset({"detail_description"}),
+    ("publish_filter", "starting_setups"): frozenset({"setup_lines"}),
+    ("publish_filter", "verdict_instruction"): frozenset(),
 }
 
 
+async def load_active_prompt_set(db: AsyncSession) -> tuple[PromptSet, list[PromptSection]]:
+    """활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를 읽는다.
+    `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+    `PromptSetNotFoundError`(D-5) — downgrade 직후처럼 테이블 자체가 없는 게 아니라
+    행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다."""
+    prompt_set = await db.scalar(
+        select(PromptSet)
+        .where(PromptSet.status == "published")
+        .order_by(PromptSet.published_at.desc())
+        .limit(1)
+    )
+    if prompt_set is None:
+        raise PromptSetNotFoundError("활성 프롬프트 세트가 없다")
+    sections = list(
+        (await db.scalars(select(PromptSection).where(PromptSection.prompt_set_id == prompt_set.id))).all()
+    )
+    return prompt_set, sections
+
+
+def render_prompt_channel(
+    sections: Sequence[PromptSection],
+    *,
+    channel: str,
+    scope: str,
+    variant: str = "",
+    values: dict[str, str],
+) -> str:
+    """prompt-db-goal-prompt.md §4-3 렌더링 규약을 구현하는 순수 함수 — DB에 닿지 않는다.
+
+    1. `channel`이 같고 `scope ∈ {both, 요청한 scope}`인 섹션만 후보로 남긴다.
+    2. 같은 `slot`끼리 묶어 `variant`가 일치하는 행을 고르고, 없으면 기본(`variant=""`)
+       행으로 대체한다 — `variant`별 행만 있는 슬롯(`template_instruction`)은 요청한
+       `variant`가 없으면 그 슬롯 자체가 통째로 빠진다(L0.5 없는 `system_instruction_for`).
+    3. `order`로 정렬한다.
+    4. `conditional=True`인 슬롯은 body가 참조하는 플레이스홀더 값이 전부 비어 있으면
+       (`values`에서 falsy) 섹션째 드롭한다. `conditional=False`는 값이 비어도 유지한다
+       — "비어 있으면 드롭"만으로는 재현되지 않는다(`generation_character_empty_prompt`
+       골든이 그 증거, §4-3).
+    5. 남은 섹션의 body를 `values`로 채우고 `"\\n\\n"`으로 잇는다.
+    """
+    candidates = [s for s in sections if s.channel == channel and s.scope in ("both", scope)]
+
+    by_slot: dict[str, list[PromptSection]] = {}
+    for section in candidates:
+        by_slot.setdefault(section.slot, []).append(section)
+
+    selected: list[PromptSection] = []
+    for group in by_slot.values():
+        chosen = next((s for s in group if s.variant == variant), None)
+        if chosen is None:
+            chosen = next((s for s in group if s.variant == ""), None)
+        if chosen is not None:
+            selected.append(chosen)
+    selected.sort(key=lambda s: s.order)
+
+    rendered: list[str] = []
+    for section in selected:
+        fields = [name for _, name, _, _ in Formatter().parse(section.body) if name]
+        is_empty = bool(fields) and all(not values.get(name) for name in fields)
+        if section.conditional and is_empty:
+            continue
+        try:
+            rendered.append(section.body.format(**values))
+        except (KeyError, ValueError, IndexError) as exc:
+            raise PromptRenderError(
+                f"channel={channel!r} slot={section.slot!r} variant={section.variant!r} body 렌더 실패: {exc!r}"
+            ) from exc
+    return "\n\n".join(rendered)
+
+
 def system_instruction_for(
-    *, is_story_chat: bool, template: StoryPromptTemplate | None = None
+    sections: Sequence[PromptSection], *, is_story_chat: bool, template: StoryPromptTemplate | None = None
 ) -> str:
     """생성 호출에 붙일 바닥 지시문을 챗 종류로 고르고, 스토리 챗이면 템플릿별 L0.5를 잇는다.
 
     스토리 챗의 모델은 장면 밖에서 서술하는 화자이고 캐릭터 챗의 모델은 캐릭터 본인이라,
-    공통 규칙이 같아도 첫 줄의 자기 규정과 금지할 라벨이 다르다.
+    공통 규칙이 같아도 첫 줄의 자기 규정과 금지할 라벨이 다르다(`system` 채널의
+    `self_definition` 슬롯이 scope별로 두 행을 갖는 이유).
 
-    `template`은 스토리 챗에서만 의미가 있다(D-17) — 캐릭터 챗은 템플릿 개념이 없으므로
-    호출부가 넘기지 않는다(기본값 `None`). 스토리 챗 호출부가 `template`을 안 넘기면(기본값)
-    L0.5 없이 L0까지만 반환한다.
+    `template`은 스토리 챗에서만 의미가 있다 — 캐릭터 챗은 템플릿 개념이 없으므로
+    호출부가 넘기지 않는다(기본값 `None`). 스토리 챗 호출부가 `template`을 안 넘기면
+    `template_instruction` 슬롯에 `variant=""` 행이 없어 그 슬롯 자체가 빠진다(L0.5 없이
+    L0까지만 반환, `render_prompt_channel` 참고).
     """
-    base = STORY_CHAT_SYSTEM_INSTRUCTION if is_story_chat else CHARACTER_CHAT_SYSTEM_INSTRUCTION
-    if template is None:
-        return base
-    # `base`는 `_COMMON_RULES`의 꼬리 문장으로 끝난다. 템플릿 지시를 그 꼬리 문장 뒤에
-    # 이어 붙이면 "위 규칙"의 적용 범위 밖에 놓인다 — 꼬리 문장 앞(마지막 "\n\n" 앞)에
-    # 끼워 넣어 다시 마지막 줄이 꼬리 문장이 되게 한다.
-    rules, _, tail = base.rpartition("\n\n")
-    return rules + "\n\n" + _TEMPLATE_INSTRUCTIONS[template] + "\n\n" + tail
+    scope = "story" if is_story_chat else "character"
+    variant = template.value if template is not None else ""
+    return render_prompt_channel(sections, channel="system", scope=scope, variant=variant, values={})
 
 
 def build_generation_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     character_prompt: str,
     example_dialogues: list[dict[str, Any]],
     history: list[ChatMessage],
@@ -122,30 +189,33 @@ def build_generation_prompt(
     """techspec-backend-chat.md §3.1 buildGenerationPrompt — 캐릭터 챗 전용.
 
     캐릭터 프롬프트 뒤에 예시 대화("말투 예시")를 매 턴 포함하고, 최근 메시지
-    히스토리와 이번 턴의 사용자 메시지로 마무리한다.
+    히스토리와 이번 턴의 사용자 메시지로 마무리한다. 화자 라벨(`사용자`/`캐릭터`)은
+    코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다(prompt-db-goal-prompt.md §4-4).
     """
-    sections = [character_prompt]
-
-    if example_dialogues:
-        example_lines = "\n".join(
-            f"사용자: {pair['userLine']}\n캐릭터: {pair['characterLine']}" for pair in example_dialogues
-        )
-        sections.append(f"[말투 예시]\n{example_lines}")
-
-    if history:
-        history_lines = "\n".join(
-            f"{'사용자' if message.role == ChatMessageRole.USER else '캐릭터'}: {message.content}"
-            for message in history
-        )
-        sections.append(f"[대화 기록]\n{history_lines}")
-
-    sections.append(f"사용자: {user_message}\n캐릭터:")
-
-    return "\n\n".join(sections)
+    example_lines = "\n".join(
+        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.character_assistant_label}: {pair['characterLine']}"
+        for pair in example_dialogues
+    )
+    history_lines = "\n".join(
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.character_assistant_label}: "
+        f"{message.content}"
+        for message in history
+    )
+    values = {
+        "character_prompt": character_prompt,
+        "example_lines": example_lines,
+        "history_lines": history_lines,
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.character_assistant_label,
+    }
+    return render_prompt_channel(sections, channel="generation", scope="character", values=values)
 
 
 def build_story_generation_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     prompt_template: StoryPromptTemplate,
     setting_text: str | None,
     development_examples: list[dict[str, Any]],
@@ -165,61 +235,45 @@ def build_story_generation_prompt(
     실행 시) 단축어 프롬프트, 이번 턴의 사용자 메시지 순으로 마무리한다.
 
     chat-goal-prompt.md §7-1 / chat-techspec.md §5-1: `[키워드북]`은 `[대화 기록]`
-    **뒤**에 온다. 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
-    안정된다 — 키워드북은 매 턴 매칭 결과가 통째로 바뀌는데 히스토리보다 앞에 있으면
-    뒤따르는 히스토리 전체가 캐시 불가가 된다. 이 런에서 캐싱 자체를 켜지는 않는다
-    (D-1) — 켤 수 있는 배치만 만든다. 부수 효과로 위치적 의미도 맞아진다: 키워드북은
-    "이번 입력에 걸린 정보"라 사용자 입력 옆이 자연스럽다.
+    **뒤**에 온다 — 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
+    안정된다는 이유는 `prompt_sections.order` 시드값이 이미 반영하고 있다.
 
-    chat-goal-prompt.md §8 / chat-techspec.md §6-3 (D-16): `rules`·`user_goal`·
-    `development_examples`는 L1 작품 층이라 설정 텍스트 바로 뒤, [시작 상황] 앞에 붙는다.
-    셋 다 비어 있으면(현재 시드 30개가 전부 이 상태다 — D-2) 이 함수는 이 인자들을
-    추가하기 전과 바이트 단위로 같은 프롬프트를 낸다 — 각 섹션이 `if 값:` 으로 감싸여
-    있어 헤더조차 나타나지 않기 때문이다(`keyword_note_texts`/`shortcut_prompt`와 같은
-    패턴). `development_examples`는 옛 자유 텍스트 컬럼(`development_example`)을 대신한다
-    — 마이그레이션이 그 텍스트를 이 쌍 목록으로 백필하므로, 이 함수가 만드는 [전개 예시]
-    문자열이 옛 자유 텍스트와 같아야 기존 시드의 프롬프트가 안 바뀐다.
+    전개 예시(`development_examples`)는 `story_example_label`("서술자")을, 그 외
+    자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다(§1-1) —
+    같은 스토리 챗인데 자리마다 라벨이 다른 것은 표류가 아니라 실측된 현재 동작이라
+    이 런에서 통일하지 않는다.
     """
-    sections: list[str] = []
-
-    if prompt_template == StoryPromptTemplate.CUSTOM:
-        if custom_prompt:
-            sections.append(custom_prompt)
-    elif setting_text:
-        sections.append(setting_text)
-
-    if rules:
-        sections.append(f"[규칙]\n{rules}")
-    if user_goal:
-        sections.append(f"[사용자의 역할과 목표]\n{user_goal}")
-    if development_examples:
-        example_lines = "\n".join(
-            f"사용자: {pair['userLine']}\n서술자: {pair['assistantLine']}" for pair in development_examples
-        )
-        sections.append(f"[전개 예시]\n{example_lines}")
-
-    sections.append(f"[시작 상황]\n{prologue}")
-
-    if history:
-        history_lines = "\n".join(
-            f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
-            for message in history
-        )
-        sections.append(f"[대화 기록]\n{history_lines}")
-
-    if keyword_note_texts:
-        sections.append("[키워드북]\n" + "\n".join(keyword_note_texts))
-
-    if shortcut_prompt:
-        sections.append(f"[단축어]\n{shortcut_prompt}")
-
-    sections.append(f"사용자: {user_message}\n진행자:")
-
-    return "\n\n".join(sections)
+    example_lines = "\n".join(
+        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
+        for pair in development_examples
+    )
+    history_lines = "\n".join(
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
+        f"{message.content}"
+        for message in history
+    )
+    values = {
+        "setting_text": setting_text or "",
+        "custom_prompt": custom_prompt or "",
+        "rules": rules or "",
+        "user_goal": user_goal or "",
+        "example_lines": example_lines,
+        "prologue": prologue,
+        "history_lines": history_lines,
+        "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
+        "shortcut_prompt": shortcut_prompt or "",
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.story_assistant_label,
+    }
+    variant = "custom" if prompt_template == StoryPromptTemplate.CUSTOM else ""
+    return render_prompt_channel(sections, channel="generation", scope="story", variant=variant, values=values)
 
 
 def build_stat_judgment_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     stat_defs: list[StatDef],
     current_stats: dict[str, float],
     user_message: str,
@@ -247,24 +301,14 @@ def build_stat_judgment_prompt(
         + ("  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라." if stat_def.per_turn_delta is not None else "")
         for stat_def in stat_defs
     )
-
-    turn_lines = [f"사용자: {user_message}", f"진행자: {assistant_message}"]
-
-    return (
-        "다음은 스토리 챗의 스탯 정의와 현재 값이다.\n"
-        f"{stat_lines}\n\n"
-        "[대화 기록]\n" + "\n".join(turn_lines) + "\n\n"
-        "위 대화, 특히 마지막 사용자 행동과 그에 대한 응답을 근거로 각 스탯이 이번 턴에 "
-        "어떻게 변해야 하는지 판단하라. 변화가 없는 스탯은 statChanges에 포함하지 않아도 된다. "
-        "newValue는 항상 그 스탯의 최종 절대값으로 응답하라. "
-        # "매 턴 반드시 N씩" 카운터는 `per_turn_delta`로 코드가 굴리므로 여기서 지시하지
-        # 않는다. 남는 건 "사건이 일어날 때만 한 방향으로 움직이는" 스탯(몸 손상, 남은 씨앗
-        # 등)인데, 그 제약은 여전히 description 산문뿐이라 코드가 막지 못한다 — 최소한
-        # 연출 지침이 아니라 규칙이라는 것만 못박아 둔다(강제가 아니라 완화).
-        "각 스탯 설명에 적힌 증감 제약은 연출 지침이 아니라 반드시 지켜야 하는 규칙이다. "
-        "'절대 늘어나지 않는다'고 적힌 스탯은 현재값보다 큰 값을 내지 말고, "
-        "'절대 감소하지 않는다'고 적힌 스탯은 현재값보다 작은 값을 내지 마라."
-    )
+    values = {
+        "stat_lines": stat_lines,
+        "user_label": prompt_set.user_label,
+        "user_message": user_message,
+        "assistant_label": prompt_set.story_assistant_label,
+        "assistant_message": assistant_message,
+    }
+    return render_prompt_channel(sections, channel="stat_judgment", scope="story", values=values)
 
 
 class StatChangeJudgment(BaseModel):
@@ -280,6 +324,8 @@ class StatJudgmentResult(BaseModel):
 
 def build_ending_judgment_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     judgment_prompt: str,
     history: list[ChatMessage],
     user_message: str,
@@ -295,21 +341,25 @@ def build_ending_judgment_prompt(
     §7-2). 엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴
     만으로는 판정할 수 없지만, 스탯 변화는 이번 턴에 무엇이 일어났는지의 함수라 히스토리가
     필요 없다. 이 비대칭이 그 변경의 핵심이다.
+
+    `turn_lines`는 히스토리와 이번 턴을 한 블롭으로 만들어 라벨을 플레이스홀더로 뽑을 수
+    없다(히스토리가 비면 개행 아티팩트가 낀다) — 그래도 그 블롭을 만드는 이 코드가
+    `prompt_set.story_assistant_label`을 읽으므로 라벨은 여전히 DB에서 온다
+    (prompt-db-goal-prompt.md §4-4·§4-5).
     """
     turn_lines = [
-        f"{'사용자' if message.role == ChatMessageRole.USER else '진행자'}: {message.content}"
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
+        f"{message.content}"
         for message in history
     ]
-    turn_lines.append(f"사용자: {user_message}")
-    turn_lines.append(f"진행자: {assistant_message}")
+    turn_lines.append(f"{prompt_set.user_label}: {user_message}")
+    turn_lines.append(f"{prompt_set.story_assistant_label}: {assistant_message}")
 
-    return (
-        "다음은 스토리 챗의 대화 기록이다.\n\n"
-        "[대화 기록]\n" + "\n".join(turn_lines) + "\n\n"
-        "아래는 하나의 엔딩이 발동하기 위한 판정 기준이다. 지금까지의 대화가 이 기준을 "
-        "충족하는지 판단하라.\n"
-        f"[판정 기준]\n{judgment_prompt}"
-    )
+    values = {
+        "turn_lines": "\n".join(turn_lines),
+        "judgment_prompt": judgment_prompt,
+    }
+    return render_prompt_channel(sections, channel="ending_judgment", scope="story", values=values)
 
 
 class EndingJudgmentResult(BaseModel):
@@ -320,6 +370,8 @@ class EndingJudgmentResult(BaseModel):
 
 def build_image_judgment_prompt(
     *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
     situational_images: list[SituationalImage],
     history: list[ChatMessage],
     user_message: str,
@@ -337,23 +389,19 @@ def build_image_judgment_prompt(
         f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}"
         for image in situational_images
     )
-
     turn_lines = [
-        f"{'사용자' if message.role == ChatMessageRole.USER else '캐릭터'}: {message.content}"
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.character_assistant_label}: "
+        f"{message.content}"
         for message in history
     ]
-    turn_lines.append(f"사용자: {user_message}")
-    turn_lines.append(f"캐릭터: {assistant_message}")
+    turn_lines.append(f"{prompt_set.user_label}: {user_message}")
+    turn_lines.append(f"{prompt_set.character_assistant_label}: {assistant_message}")
 
-    return (
-        "다음은 이 캐릭터에 등록된 상황별 이미지 목록이다(우선순위가 높은 순서로 나열됨).\n"
-        f"{image_lines}\n\n"
-        "[대화 기록]\n" + "\n".join(turn_lines) + "\n\n"
-        "위 대화, 특히 마지막 사용자 행동과 그에 대한 캐릭터의 응답을 근거로 이번 턴에 노출 "
-        "조건이 충족된 이미지가 있는지 판단하라. 여러 이미지의 조건이 동시에 충족되면 목록에서 "
-        "더 앞에 있는(우선순위가 높은) 이미지 하나만 선택하라. 조건을 충족하는 이미지가 없으면 "
-        "matchedImageEntityId를 null로 응답하라."
-    )
+    values = {
+        "image_lines": image_lines,
+        "turn_lines": "\n".join(turn_lines),
+    }
+    return render_prompt_channel(sections, channel="image_judgment", scope="character", values=values)
 
 
 class ImageMatchJudgmentResult(BaseModel):

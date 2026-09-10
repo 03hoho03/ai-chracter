@@ -308,3 +308,94 @@ class AdminChatMessagesResponse(CamelModel):
     items: list[AdminChatMessageItem]
     before_created_at: datetime | None
     before_id: uuid.UUID | None
+
+
+class AdminPromptSetSummary(CamelModel):
+    """prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은
+    `GET /admin/prompt-sets/{id}`로 뺀다."""
+
+    id: uuid.UUID
+    version: str | None
+    status: str
+    note: str
+    created_at: datetime
+    published_at: datetime | None
+    is_active: bool
+
+
+class AdminPromptSetListResponse(CamelModel):
+    items: list[AdminPromptSetSummary]
+
+
+class AdminPromptLabels(CamelModel):
+    user_label: str
+    story_assistant_label: str
+    story_example_label: str
+    character_assistant_label: str
+
+
+class AdminPromptSectionItem(CamelModel):
+    channel: str
+    scope: str
+    slot: str
+    variant: str
+    body: str
+    conditional: bool
+    order: int
+
+
+class AdminPromptSetDetailResponse(CamelModel):
+    """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16)."""
+
+    id: uuid.UUID
+    version: str | None
+    status: str
+    note: str
+    created_at: datetime
+    published_at: datetime | None
+    labels: AdminPromptLabels
+    sections: list[AdminPromptSectionItem]
+
+
+class AdminPromptDraftResponse(CamelModel):
+    """`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
+    세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
+    조회, prompt-db-goal-prompt.md §9-1)."""
+
+    id: uuid.UUID | None
+    labels: AdminPromptLabels
+    sections: list[AdminPromptSectionItem]
+
+
+class AdminPromptSectionInput(CamelModel):
+    channel: str
+    scope: str
+    slot: str
+    variant: str = ""
+    body: str
+    conditional: bool
+    order: int
+
+
+class AdminPromptDraftUpsertRequest(CamelModel):
+    """섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다."""
+
+    labels: AdminPromptLabels
+    sections: list[AdminPromptSectionInput]
+
+
+class AdminPromptPublishRequest(CamelModel):
+    """`version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
+    바꿨나"를 대신 받는다."""
+
+    note: str = ""
+
+
+class AdminPromptPreviewItem(CamelModel):
+    channel: str
+    label: str
+    text: str
+
+
+class AdminPromptPreviewResponse(CamelModel):
+    items: list[AdminPromptPreviewItem]

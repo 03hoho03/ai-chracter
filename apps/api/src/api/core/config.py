@@ -101,5 +101,12 @@ class Settings(BaseSettings):
     guest_viewer_cookie_max_age_seconds: int = 60 * 60 * 24 * 365
     content_view_dedup_ttl_seconds: int = 60 * 60 * 24
 
+    # prompt-db-goal-prompt.md §8-1: 활성 프롬프트 세트 캐시(`prompt_set:active`)의 TTL.
+    # `invalidate_active_prompt_set()`의 명시적 DEL이 무효화의 정공법이라 이 값은 주 수단이
+    # 아니라 그 DEL이 누락되는 경로가 생겼을 때의 상한이다. 게시는 드문 관리자 작업이라 짧을
+    # 이유가 없고, 반대로 DEL이 어떤 이유로든 안 불리면 옛 문안이 그만큼 오래 남으므로 무한정
+    # 길게 둘 수도 없다 — 5분이면 무효화가 깨져도 운영자가 재게시 확인을 오래 기다리지 않는다.
+    prompt_set_cache_ttl_seconds: int = 60 * 5
+
 
 settings = Settings()

@@ -1,5 +1,6 @@
 import asyncio
 import atexit
+import logging
 import os
 from collections.abc import AsyncGenerator, Generator
 from pathlib import Path
@@ -66,7 +67,9 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
+from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.db.session import engine
 from api.db.session import get_db_session, get_session_factory
 from api.main import app
@@ -121,8 +124,33 @@ def _migrated_schema() -> Generator[None, None, None]:
     _create_test_database_if_missing()
     config = Config(str(APPS_API_DIR / "alembic.ini"))
     command.upgrade(config, "head")
+    # `migrations/env.py` calls `fileConfig(alembic.ini)`, whose default
+    # `disable_existing_loggers=True` disables every *already-created* logger not
+    # explicitly named in alembic.ini's `[loggers]` (root/sqlalchemy/alembic only) —
+    # a classic stdlib logging gotcha. By this point `from api.main import app` above
+    # has already imported every `src/api/**` module, so every one of their
+    # `logging.getLogger(__name__)` loggers already exists and just got silently
+    # disabled (`Logger.disabled = True`, which makes `.warning()`/`.info()` complete
+    # no-ops — confirmed empirically, not just theoretically). This never bites
+    # production (there, migrations run as a separate one-off process, not inside the
+    # long-lived server), but inside this single test process it would otherwise mean
+    # `caplog`-based assertions on any app-code `logger.warning(...)` (e.g. this diff's
+    # Redis-failure warnings) silently see nothing. Re-enabling here undoes only that
+    # side effect.
+    for existing_logger in logging.Logger.manager.loggerDict.values():
+        if isinstance(existing_logger, logging.Logger):
+            existing_logger.disabled = False
     yield
     command.downgrade(config, "base")
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_prompt_set_cache() -> None:
+    """`prompt_set:active`(prompt-db-goal-prompt.md §8-1)는 고정 키라 나머지 Redis 모듈과
+    달리 세션ID/잡ID 같은 랜덤 값으로 테스트끼리 격리되지 않는다 — `db_session`은 테스트마다
+    롤백되지만 Redis는 그대로다. 한 테스트가 캐싱한 세트를 다음 테스트가 그대로 보게 되므로
+    매 테스트 전에 지운다."""
+    await redis_client.delete(ACTIVE_PROMPT_SET_KEY)
 
 
 @pytest_asyncio.fixture(scope="session")

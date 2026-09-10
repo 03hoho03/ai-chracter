@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageMetricsRouteImport } from './routes/usage-metrics'
+import { Route as PromptSetsRouteImport } from './routes/prompt-sets'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LegalRouteImport } from './routes/legal'
 import { Route as AppealsRouteImport } from './routes/appeals'
@@ -29,6 +30,11 @@ import { Route as UsersUserIdChatsRoomIdRouteImport } from './routes/users.$user
 const UsageMetricsRoute = UsageMetricsRouteImport.update({
   id: '/usage-metrics',
   path: '/usage-metrics',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PromptSetsRoute = PromptSetsRouteImport.update({
+  id: '/prompt-sets',
+  path: '/prompt-sets',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -112,6 +118,7 @@ export interface FileRoutesByFullPath {
   '/appeals': typeof AppealsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -130,6 +137,7 @@ export interface FileRoutesByTo {
   '/appeals': typeof AppealsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -149,6 +157,7 @@ export interface FileRoutesById {
   '/appeals': typeof AppealsRoute
   '/legal': typeof LegalRoute
   '/login': typeof LoginRoute
+  '/prompt-sets': typeof PromptSetsRoute
   '/usage-metrics': typeof UsageMetricsRoute
   '/contents/$contentId': typeof ContentsContentIdRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
@@ -169,6 +178,7 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/legal'
     | '/login'
+    | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
@@ -187,6 +197,7 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/legal'
     | '/login'
+    | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '/appeals'
     | '/legal'
     | '/login'
+    | '/prompt-sets'
     | '/usage-metrics'
     | '/contents/$contentId'
     | '/inquiries/$inquiryId'
@@ -224,6 +236,7 @@ export interface RootRouteChildren {
   AppealsRoute: typeof AppealsRoute
   LegalRoute: typeof LegalRoute
   LoginRoute: typeof LoginRoute
+  PromptSetsRoute: typeof PromptSetsRoute
   UsageMetricsRoute: typeof UsageMetricsRoute
   ContentsContentIdRoute: typeof ContentsContentIdRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
@@ -245,6 +258,13 @@ declare module '@tanstack/react-router' {
       path: '/usage-metrics'
       fullPath: '/usage-metrics'
       preLoaderRoute: typeof UsageMetricsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/prompt-sets': {
+      id: '/prompt-sets'
+      path: '/prompt-sets'
+      fullPath: '/prompt-sets'
+      preLoaderRoute: typeof PromptSetsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -360,6 +380,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppealsRoute: AppealsRoute,
   LegalRoute: LegalRoute,
   LoginRoute: LoginRoute,
+  PromptSetsRoute: PromptSetsRoute,
   UsageMetricsRoute: UsageMetricsRoute,
   ContentsContentIdRoute: ContentsContentIdRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,

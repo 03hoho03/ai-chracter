@@ -38,6 +38,7 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.db.models.notice import Notice
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -92,6 +93,8 @@ __all__ = [
     "ModerationStatus",
     "Notice",
     "Notification",
+    "PromptSection",
+    "PromptSet",
     "Report",
     "ReportReasonCategory",
     "ReportStatus",

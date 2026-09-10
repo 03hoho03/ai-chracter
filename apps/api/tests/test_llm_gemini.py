@@ -197,12 +197,13 @@ async def test_generate_structured_with_images_sends_multimodal_parts(
     assert contents[2].inline_data.mime_type == "image/jpeg"
 
 
-async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
+async def test_generate_sends_a_runaway_backstop_and_forwards_the_stop_sequence(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """대화 생성에는 오랫동안 `GenerateContentConfig` 가 전혀 붙지 않아 출력 상한도 정지
-    조건도 없었다 — 폭주 응답에 천장이 없고, 프롬프트가 `사용자: …\\n진행자:` 대본 프레임으로
-    끝나서 모델이 사용자의 다음 턴까지 이어 쓸 수 있는 구조였다."""
+    """대화 생성에는 오랫동안 `GenerateContentConfig` 가 전혀 붙지 않아 출력 상한이 없었다 —
+    폭주 응답에 천장이 없는 구조였다. `stop_sequences`는 이제 호출부가 화자 라벨에서
+    파생시켜 넘긴다(prompt-db-goal-prompt.md §4-5) — 이 계층은 그 값을 그대로
+    `GenerateContentConfig`에 전달하는지만 본다(넘기지 않으면 `None`)."""
     captured: dict[str, Any] = {}
 
     async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
@@ -211,7 +212,7 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
 
     client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
 
-    assert [token async for token in client.generate("hi")] == ["네"]
+    assert [token async for token in client.generate("hi", stop_sequences=["\n사용자:"])] == ["네"]
 
     config = captured["config"]
     assert config.max_output_tokens == settings.gemini_max_output_tokens
@@ -219,7 +220,10 @@ async def test_generate_sends_a_runaway_backstop_and_transcript_stop_sequence(
     # 상한이 설정에서 온다는 것까지 봐야 한다 — 리터럴을 그대로 두면 값을 올린 커밋이
     # 테스트만 깨고 배선이 끊긴 것은 못 잡는다(사고형 모델에서는 이 값이 절단을 가른다).
     monkeypatch.setattr(settings, "gemini_max_output_tokens", 4242)
+    assert [token async for token in client.generate("hi", stop_sequences=["\n사용자:"])] == ["네"]
+
     assert [token async for token in client.generate("hi")] == ["네"]
+    assert captured["config"].stop_sequences is None
     assert captured["config"].max_output_tokens == 4242
 
 

@@ -118,7 +118,12 @@ class FakeLLMClient(LLMClient):
         self.results = results
         self.prompts: list[str] = []
 
-    def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:  # pragma: no cover - 미사용
+    def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:  # pragma: no cover - 미사용
         raise NotImplementedError
 
     async def generate_structured(

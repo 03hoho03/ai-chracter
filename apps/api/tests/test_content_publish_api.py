@@ -299,7 +299,12 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.received_images: list[tuple[bytes, str]] | None = None
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         raise NotImplementedError
         yield ""  # pragma: no cover - unreachable, keeps this an async generator
 

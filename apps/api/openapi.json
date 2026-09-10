@@ -1573,6 +1573,238 @@
         }
       }
     },
+    "/admin/prompt-sets/draft": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Prompt Draft",
+        "description": "`/admin/prompt-sets/{id}`보다 반드시 먼저 등록한다 — 둘 다 `GET`이고 경로 깊이가\n같아 \"draft\"가 문자 그대로 `{id}`에도 매치된다. Starlette은 등록 순서대로 첫 매치를\n쓰므로, `{id}`가 먼저면 이 라우트는 영원히 도달하지 못한다.",
+        "operationId": "get_prompt_draft_admin_prompt_sets_draft_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptDraftResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Upsert Prompt Draft",
+        "operationId": "upsert_prompt_draft_admin_prompt_sets_draft_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPromptDraftUpsertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-sets/draft/preview": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Preview Prompt Draft",
+        "description": "T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.\nLLM은 부르지 않는다. 초안이 없으면 활성 세트로 미리보기한다(`GET .../draft`와 같은\n폴백).",
+        "operationId": "preview_prompt_draft_admin_prompt_sets_draft_preview_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptPreviewResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-sets/publish": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Publish Prompt Set",
+        "operationId": "publish_prompt_set_admin_prompt_sets_publish_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminPromptPublishRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptSetDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-sets/{id}/restore": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Restore Prompt Set",
+        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.",
+        "operationId": "restore_prompt_set_admin_prompt_sets__id__restore_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptDraftResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-sets/{id}": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Prompt Set",
+        "operationId": "get_prompt_set_admin_prompt_sets__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptSetDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/prompt-sets": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Prompt Sets",
+        "operationId": "list_prompt_sets_admin_prompt_sets_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminPromptSetListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -4885,7 +5117,7 @@
           "chat"
         ],
         "summary": "Send Preview Message",
-        "description": "미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이\n실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도\n이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신).",
+        "description": "미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이\n실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도\n이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트\n세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일\n때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2).",
         "operationId": "send_preview_message_preview_sessions__id__messages_post",
         "parameters": [
           {
@@ -6335,6 +6567,371 @@
         },
         "type": "object",
         "title": "AdminNoticeUpdateRequest"
+      },
+      "AdminPromptDraftResponse": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "labels": {
+            "$ref": "#/components/schemas/AdminPromptLabels"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptSectionItem"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "labels",
+          "sections"
+        ],
+        "title": "AdminPromptDraftResponse",
+        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회, prompt-db-goal-prompt.md §9-1)."
+      },
+      "AdminPromptDraftUpsertRequest": {
+        "properties": {
+          "labels": {
+            "$ref": "#/components/schemas/AdminPromptLabels"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptSectionInput"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "labels",
+          "sections"
+        ],
+        "title": "AdminPromptDraftUpsertRequest",
+        "description": "섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다."
+      },
+      "AdminPromptLabels": {
+        "properties": {
+          "userLabel": {
+            "type": "string",
+            "title": "Userlabel"
+          },
+          "storyAssistantLabel": {
+            "type": "string",
+            "title": "Storyassistantlabel"
+          },
+          "storyExampleLabel": {
+            "type": "string",
+            "title": "Storyexamplelabel"
+          },
+          "characterAssistantLabel": {
+            "type": "string",
+            "title": "Characterassistantlabel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "userLabel",
+          "storyAssistantLabel",
+          "storyExampleLabel",
+          "characterAssistantLabel"
+        ],
+        "title": "AdminPromptLabels"
+      },
+      "AdminPromptPreviewItem": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "text": {
+            "type": "string",
+            "title": "Text"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "label",
+          "text"
+        ],
+        "title": "AdminPromptPreviewItem"
+      },
+      "AdminPromptPreviewResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptPreviewItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminPromptPreviewResponse"
+      },
+      "AdminPromptPublishRequest": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "title": "Note",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "title": "AdminPromptPublishRequest",
+        "description": "`version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 \"왜\n바꿨나\"를 대신 받는다."
+      },
+      "AdminPromptSectionInput": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "variant": {
+            "type": "string",
+            "title": "Variant",
+            "default": ""
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "conditional": {
+            "type": "boolean",
+            "title": "Conditional"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "scope",
+          "slot",
+          "body",
+          "conditional",
+          "order"
+        ],
+        "title": "AdminPromptSectionInput"
+      },
+      "AdminPromptSectionItem": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope"
+          },
+          "slot": {
+            "type": "string",
+            "title": "Slot"
+          },
+          "variant": {
+            "type": "string",
+            "title": "Variant"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "conditional": {
+            "type": "boolean",
+            "title": "Conditional"
+          },
+          "order": {
+            "type": "integer",
+            "title": "Order"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "scope",
+          "slot",
+          "variant",
+          "body",
+          "conditional",
+          "order"
+        ],
+        "title": "AdminPromptSectionItem"
+      },
+      "AdminPromptSetDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          },
+          "labels": {
+            "$ref": "#/components/schemas/AdminPromptLabels"
+          },
+          "sections": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptSectionItem"
+            },
+            "type": "array",
+            "title": "Sections"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "status",
+          "note",
+          "createdAt",
+          "publishedAt",
+          "labels",
+          "sections"
+        ],
+        "title": "AdminPromptSetDetailResponse",
+        "description": "`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16)."
+      },
+      "AdminPromptSetListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminPromptSetSummary"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminPromptSetListResponse"
+      },
+      "AdminPromptSetSummary": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Version"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "publishedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Publishedat"
+          },
+          "isActive": {
+            "type": "boolean",
+            "title": "Isactive"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "version",
+          "status",
+          "note",
+          "createdAt",
+          "publishedAt",
+          "isActive"
+        ],
+        "title": "AdminPromptSetSummary",
+        "description": "prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은\n`GET /admin/prompt-sets/{id}`로 뺀다."
       },
       "AdminReportContentDetail": {
         "properties": {

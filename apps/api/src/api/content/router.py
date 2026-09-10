@@ -12,6 +12,7 @@ from sqlalchemy import and_, any_, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from api.chat.prompt_builder import load_active_prompt_set
 from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
@@ -71,6 +72,7 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -1342,9 +1344,10 @@ async def publish_content(
     # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
     # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
     content.has_unpublished_changes = False
+    prompt_set, prompt_sections = await load_active_prompt_set(db)
     if content.type == ContentType.CHARACTER:
-        return await _publish_character_content(db, content, version, llm_client)
-    return await _publish_story_content(db, content, version, llm_client)
+        return await _publish_character_content(db, content, version, llm_client, prompt_set, prompt_sections)
+    return await _publish_story_content(db, content, version, llm_client, prompt_set, prompt_sections)
 
 
 async def _clone_character_children(
@@ -1376,7 +1379,12 @@ async def _clone_character_children(
 
 
 async def _publish_character_content(
-    db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
+    db: AsyncSession,
+    content: Content,
+    version: ContentVersion,
+    llm_client: LLMClient,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> ContentPublishResponse:
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
@@ -1389,6 +1397,8 @@ async def _publish_character_content(
 
     filter_images = await _load_publish_filter_images(db, detail, version.id)
     filter_prompt = build_character_publish_filter_prompt(
+        prompt_set=prompt_set,
+        sections=prompt_sections,
         name=detail.name,
         one_liner=detail.one_liner,
         intro=detail.intro,
@@ -1606,7 +1616,12 @@ async def _clone_story_children(
 
 
 async def _publish_story_content(
-    db: AsyncSession, content: Content, version: ContentVersion, llm_client: LLMClient
+    db: AsyncSession,
+    content: Content,
+    version: ContentVersion,
+    llm_client: LLMClient,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
 ) -> ContentPublishResponse:
     detail = await db.get(StoryVersionDetail, version.id)
     assert detail is not None
@@ -1632,6 +1647,8 @@ async def _publish_story_content(
 
     filter_images = await _load_story_publish_filter_images(db, detail)
     filter_prompt = build_story_publish_filter_prompt(
+        prompt_set=prompt_set,
+        sections=prompt_sections,
         name=detail.name,
         one_liner=detail.one_liner,
         setting_text=detail.setting_text,

@@ -8,7 +8,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import (
-    CHARACTER_CHAT_SYSTEM_INSTRUCTION,
     EndingJudgmentResult,
     StatChangeJudgment,
     StatJudgmentResult,
@@ -18,7 +17,7 @@ from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _login_as
+from factories import _login_as, _read_golden_prompt
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:
@@ -125,7 +124,12 @@ class _FakeLLMClient(LLMClient):
         self.received_system_instruction: str | None = None
         self.error = error
 
-    async def generate(self, prompt: str, system_instruction: str | None = None) -> AsyncIterator[str]:
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
         self.received_prompt = prompt
         self.received_system_instruction = system_instruction
         if self.error is not None:
@@ -210,7 +214,7 @@ async def test_send_preview_message_character_streams_and_appends(api_client: ht
     assert [m.content for m in state.messages] == ["안녕하세요, 아리아예요", "안녕!", "안녕"]
     assert state.turn_count == 1
     # 캐릭터 챗은 template 없이 동작한다(D-17) — L0.5가 붙지 않는다.
-    assert fake.received_system_instruction == CHARACTER_CHAT_SYSTEM_INSTRUCTION
+    assert fake.received_system_instruction == _read_golden_prompt("system_instruction_character.txt")
 
 
 async def test_send_preview_message_story_selects_template_instruction(api_client: httpx.AsyncClient) -> None:

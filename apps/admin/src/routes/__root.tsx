@@ -5,6 +5,7 @@ import { DeleteConfirmModal } from "../features/act-on-report";
 import { ContentActionConfirmModal } from "../pages/content-detail";
 import { PublishDialog } from "../pages/legal";
 import { PublishNoticeDialog } from "../pages/notice-detail";
+import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
 import { UserActionConfirmModal } from "../pages/user-detail";
 import { AdminSidebar } from "../widgets/admin-sidebar";
 
@@ -39,6 +40,8 @@ function RootComponent() {
       <UserActionConfirmModal />
       <PublishDialog />
       <PublishNoticeDialog />
+      <PublishPromptSetDialog />
+      <RestorePromptSetDialog />
     </>
   );
 }
