@@ -33,8 +33,15 @@ function toShortcut(item: ShortcutDraftItem): PreviewShortcut {
  * 초기값)는 내려주지 않는다 — BE의 `_build_preview_start_state`(apps/api/src/api/chat/router.py)와
  * 동일한 계산을 FE가 그대로 재현한다. 이미 formToServer(getValues()) 결과인 payload 자체에 계산에
  * 필요한 값이 전부 들어있어(오프닝 메시지, 스탯 초기값 등) 별도 API 왕복 없이 순수 함수로 충분하다.
+ *
+ * `previewSessionId`는 옵셔널이다(D-7, builder-techspec.md §6-2) — 첫 전송 전에는 서버 세션이 없어
+ * `PreviewSessionView`가 이 함수를 `undefined`로 호출해 로컬 플레이스홀더 상태만 그린다. placeholder
+ * 문자열을 대신 넘기지 않는 이유는 그 값이 실제 전송 요청에 새어나갈 여지를 없애기 위해서다.
  */
-export function buildPreviewStartState(previewSessionId: string, payload: PreviewStartPayload): PreviewSessionState {
+export function buildPreviewStartState(
+  previewSessionId: string | undefined,
+  payload: PreviewStartPayload,
+): PreviewSessionState {
   const now = new Date().toISOString();
 
   if (isCharacterPayload(payload)) {

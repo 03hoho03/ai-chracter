@@ -207,6 +207,9 @@ class CharacterDraftResponse(CamelModel):
     name: str
     one_liner: str
     thumbnail_asset_id: uuid.UUID | None
+    # builder-techspec.md §7: same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
+    # not a new generation rule.
+    thumbnail_url: str | None
     intro: str
     example_dialogues: list[ExampleDialogueItem]
     character_prompt: str
@@ -340,6 +343,9 @@ class StoryDraftResponse(CamelModel):
     name: str
     one_liner: str
     thumbnail_asset_id: uuid.UUID | None
+    # builder-techspec.md §7: same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
+    # not a new generation rule.
+    thumbnail_url: str | None
     prompt_template: StoryPromptTemplate
     setting_text: str | None
     development_example: str | None

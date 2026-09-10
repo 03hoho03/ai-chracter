@@ -27,7 +27,12 @@ import {
 export function StartingSetupTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { control, getValues, setValue } = form;
+  const {
+    control,
+    getValues,
+    setValue,
+    formState: { errors },
+  } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
   const sensors = useSensors(useSensor(PointerSensor));
 
@@ -50,11 +55,16 @@ export function StartingSetupTab() {
 
   return (
     <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-1" data-field-path="startingSetups">
         <Label>시작설정 *</Label>
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
+        {errors.startingSetups?.message && (
+          <p id="story-starting-setups-error" role="alert" className="text-xs text-destructive-text">
+            {errors.startingSetups.message}
+          </p>
+        )}
       </div>
 
       {fields.length === 0 ? (
@@ -117,7 +127,14 @@ function StartingSetupRow({
 }: StartingSetupRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control, setValue, getValues } = form;
+  const {
+    register,
+    control,
+    setValue,
+    getValues,
+    formState: { errors },
+  } = form;
+  const rowErrors = errors.startingSetups?.[index];
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
   const [replyInput, setReplyInput] = useState("");
@@ -167,8 +184,15 @@ function StartingSetupRow({
             <Input
               id={`starting-setup-${id}-name`}
               placeholder="시작설정 이름을 입력해주세요"
+              aria-invalid={!!rowErrors?.name}
+              aria-describedby={rowErrors?.name ? `starting-setup-${id}-name-error` : undefined}
               {...register(`startingSetups.${index}.name`)}
             />
+            {rowErrors?.name && (
+              <p id={`starting-setup-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
+                {rowErrors.name.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -177,8 +201,15 @@ function StartingSetupRow({
               id={`starting-setup-${id}-prologue`}
               placeholder="이 시작설정의 도입부를 입력해주세요"
               rows={3}
+              aria-invalid={!!rowErrors?.prologue}
+              aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
               {...register(`startingSetups.${index}.prologue`)}
             />
+            {rowErrors?.prologue && (
+              <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
+                {rowErrors.prologue.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -187,11 +218,22 @@ function StartingSetupRow({
               id={`starting-setup-${id}-opening-situation`}
               placeholder="채팅 시작 시 상황을 입력해주세요"
               rows={2}
+              aria-invalid={!!rowErrors?.openingSituation}
+              aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
               {...register(`startingSetups.${index}.openingSituation`)}
             />
             <p className="text-xs text-muted-foreground">
               비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
             </p>
+            {rowErrors?.openingSituation && (
+              <p
+                id={`starting-setup-${id}-opening-situation-error`}
+                role="alert"
+                className="text-xs text-destructive-text"
+              >
+                {rowErrors.openingSituation.message}
+              </p>
+            )}
           </div>
         </div>
 
@@ -220,8 +262,15 @@ function StartingSetupRow({
               id={`starting-setup-${id}-play-guide`}
               placeholder="사용자에게 노출할 플레이 안내를 입력해주세요"
               rows={3}
+              aria-invalid={!!rowErrors?.playGuide}
+              aria-describedby={rowErrors?.playGuide ? `starting-setup-${id}-play-guide-error` : undefined}
               {...register(`startingSetups.${index}.playGuide`)}
             />
+            {rowErrors?.playGuide && (
+              <p id={`starting-setup-${id}-play-guide-error`} role="alert" className="text-xs text-destructive-text">
+                {rowErrors.playGuide.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">

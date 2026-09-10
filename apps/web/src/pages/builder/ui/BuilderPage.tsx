@@ -1,9 +1,11 @@
 import { useMemo } from "react";
 
 import { createEmptyDraft, useContentDraftQuery, type ContentType } from "@/entities/content";
+import { formToCard as characterFormToCard } from "@/features/build-character";
+import { formToCard as storyFormToCard } from "@/features/build-story";
 import { CharacterBuilderShell } from "@/widgets/build-character";
 import { StoryBuilderShell } from "@/widgets/build-story";
-import { PreviewSessionView } from "@/widgets/preview-session";
+import { BuilderPreview } from "@/widgets/builder-preview";
 
 /**
  * techspec-builder-common.md §2 — 초안 만들기(`draftId === null`)와 이어쓰기 양쪽의 화면.
@@ -36,7 +38,14 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
       <CharacterBuilderShell
         draft={draft}
         draftId={draftId}
-        renderPreview={(previewProps) => <PreviewSessionView {...previewProps} />}
+        renderPreview={(previewProps) => (
+          <BuilderPreview
+            {...previewProps}
+            contentType="character"
+            thumbnailUrl={draft.thumbnailUrl}
+            formToCard={characterFormToCard}
+          />
+        )}
       />
     );
   }
@@ -45,7 +54,14 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
     <StoryBuilderShell
       draft={draft}
       draftId={draftId}
-      renderPreview={(previewProps) => <PreviewSessionView {...previewProps} />}
+      renderPreview={(previewProps) => (
+        <BuilderPreview
+          {...previewProps}
+          contentType="story"
+          thumbnailUrl={draft.thumbnailUrl}
+          formToCard={storyFormToCard}
+        />
+      )}
     />
   );
 }

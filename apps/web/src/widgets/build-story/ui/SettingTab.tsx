@@ -49,7 +49,11 @@ const MAX_DEVELOPMENT_EXAMPLES = 3;
 export function SettingTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control } = form;
+  const {
+    register,
+    control,
+    formState: { errors },
+  } = form;
   const promptTemplate = useWatch({ control, name: "storySetting.promptTemplate" });
   const isCustom = promptTemplate === "custom";
   const selectedTemplate = PROMPT_TEMPLATE_OPTIONS.find((option) => option.value === promptTemplate);
@@ -64,19 +68,38 @@ export function SettingTab() {
           control={control}
           name="storySetting.promptTemplate"
           render={({ field }) => (
-            <ToggleGroup
-              type="single"
-              variant="outline"
-              value={field.value}
-              onValueChange={(value) => value && field.onChange(value)}
-              aria-label="프롬프트 템플릿"
-            >
-              {PROMPT_TEMPLATE_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
-                  {option.label}
-                </ToggleGroupItem>
-              ))}
-            </ToggleGroup>
+            <>
+              <ToggleGroup
+                type="single"
+                variant="outline"
+                ref={field.ref}
+                value={field.value}
+                onValueChange={(value) => value && field.onChange(value)}
+                aria-label="프롬프트 템플릿"
+                aria-invalid={!!errors.storySetting?.promptTemplate}
+                aria-describedby={
+                  errors.storySetting?.promptTemplate ? "story-setting-prompt-template-error" : undefined
+                }
+              >
+                {PROMPT_TEMPLATE_OPTIONS.map((option) => (
+                  <ToggleGroupItem
+                    key={option.value}
+                    value={option.value}
+                    aria-label={option.label}
+                    className={
+                      errors.storySetting?.promptTemplate ? "border-destructive ring-3 ring-destructive/20" : undefined
+                    }
+                  >
+                    {option.label}
+                  </ToggleGroupItem>
+                ))}
+              </ToggleGroup>
+              {errors.storySetting?.promptTemplate && (
+                <p id="story-setting-prompt-template-error" role="alert" className="text-xs text-destructive-text">
+                  {errors.storySetting.promptTemplate.message}
+                </p>
+              )}
+            </>
           )}
         />
         {selectedTemplate ? <p className="text-sm text-muted-foreground">{selectedTemplate.description}</p> : null}
@@ -89,8 +112,15 @@ export function SettingTab() {
             id="story-setting-custom-prompt"
             placeholder="AI에게 지시할 프롬프트를 자유롭게 작성해주세요"
             rows={12}
+            aria-invalid={!!errors.storySetting?.customPrompt}
+            aria-describedby={errors.storySetting?.customPrompt ? "story-setting-custom-prompt-error" : undefined}
             {...register("storySetting.customPrompt")}
           />
+          {errors.storySetting?.customPrompt && (
+            <p id="story-setting-custom-prompt-error" role="alert" className="text-xs text-destructive-text">
+              {errors.storySetting.customPrompt.message}
+            </p>
+          )}
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
@@ -99,8 +129,15 @@ export function SettingTab() {
             id="story-setting-world"
             placeholder="스토리의 세계관과 설정을 입력해주세요"
             rows={8}
+            aria-invalid={!!errors.storySetting?.worldSetting}
+            aria-describedby={errors.storySetting?.worldSetting ? "story-setting-world-error" : undefined}
             {...register("storySetting.worldSetting")}
           />
+          {errors.storySetting?.worldSetting && (
+            <p id="story-setting-world-error" role="alert" className="text-xs text-destructive-text">
+              {errors.storySetting.worldSetting.message}
+            </p>
+          )}
         </div>
       )}
 
@@ -110,8 +147,15 @@ export function SettingTab() {
           id="story-setting-rules"
           placeholder="진행 중 지켜야 할 규칙을 입력해주세요"
           rows={4}
+          aria-invalid={!!errors.storySetting?.rules}
+          aria-describedby={errors.storySetting?.rules ? "story-setting-rules-error" : undefined}
           {...register("storySetting.rules")}
         />
+        {errors.storySetting?.rules && (
+          <p id="story-setting-rules-error" role="alert" className="text-xs text-destructive-text">
+            {errors.storySetting.rules.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -120,31 +164,62 @@ export function SettingTab() {
           id="story-setting-user-goal"
           placeholder="사용자가 이 이야기에서 맡는 역할과 이루고자 하는 목표를 입력해주세요"
           rows={4}
+          aria-invalid={!!errors.storySetting?.userGoal}
+          aria-describedby={errors.storySetting?.userGoal ? "story-setting-user-goal-error" : undefined}
           {...register("storySetting.userGoal")}
         />
+        {errors.storySetting?.userGoal && (
+          <p id="story-setting-user-goal-error" role="alert" className="text-xs text-destructive-text">
+            {errors.storySetting.userGoal.message}
+          </p>
+        )}
       </div>
 
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-4" data-field-path="storySetting.developmentExamples">
         <Label>전개 예시 (고급설정, 최대 {MAX_DEVELOPMENT_EXAMPLES}개)</Label>
-        {fields.map((field, index) => (
-          <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
-            <div className="flex items-start gap-2">
-              <div className="flex flex-1 flex-col gap-2">
-                <Input
-                  placeholder="사용자 메시지"
-                  {...register(`storySetting.developmentExamples.${index}.userLine`)}
-                />
-                <Input
-                  placeholder="스토리 응답"
-                  {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
-                />
+        {errors.storySetting?.developmentExamples?.message && (
+          <p id="story-setting-development-examples-error" role="alert" className="text-xs text-destructive-text">
+            {errors.storySetting.developmentExamples.message}
+          </p>
+        )}
+        {fields.map((field, index) => {
+          const exampleErrors = errors.storySetting?.developmentExamples?.[index];
+          const userLineErrorId = `story-setting-example-${field.id}-user-line-error`;
+          const assistantLineErrorId = `story-setting-example-${field.id}-assistant-line-error`;
+          return (
+            <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
+              <div className="flex items-start gap-2">
+                <div className="flex flex-1 flex-col gap-2">
+                  <Input
+                    placeholder="사용자 메시지"
+                    aria-invalid={!!exampleErrors?.userLine}
+                    aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
+                    {...register(`storySetting.developmentExamples.${index}.userLine`)}
+                  />
+                  {exampleErrors?.userLine && (
+                    <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
+                      {exampleErrors.userLine.message}
+                    </p>
+                  )}
+                  <Input
+                    placeholder="스토리 응답"
+                    aria-invalid={!!exampleErrors?.assistantLine}
+                    aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
+                    {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
+                  />
+                  {exampleErrors?.assistantLine && (
+                    <p id={assistantLineErrorId} role="alert" className="text-xs text-destructive-text">
+                      {exampleErrors.assistantLine.message}
+                    </p>
+                  )}
+                </div>
+                <Button type="button" variant="ghost" size="icon" aria-label="전개 예시 삭제" onClick={() => remove(index)}>
+                  <Trash2 />
+                </Button>
               </div>
-              <Button type="button" variant="ghost" size="icon" aria-label="전개 예시 삭제" onClick={() => remove(index)}>
-                <Trash2 />
-              </Button>
             </div>
-          </div>
-        ))}
+          );
+        })}
         {fields.length < MAX_DEVELOPMENT_EXAMPLES ? (
           <Button type="button" variant="secondary" onClick={() => append({ userLine: "", assistantLine: "" })}>
             전개 예시 추가

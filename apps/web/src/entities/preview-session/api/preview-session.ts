@@ -38,7 +38,9 @@ export type PreviewShortcut = {
 };
 
 export type PreviewSessionState = {
-  previewSessionId: string;
+  // 첫 전송 전에는 서버 세션이 없다(D-7, builder-techspec.md §6-2) — buildPreviewStartState가
+  // 이 필드 없이 로컬 플레이스홀더 상태를 만들 수 있어야 해서 옵셔널이다.
+  previewSessionId?: string;
   contentType: "character" | "story";
   messages: PreviewChatMessage[];
   stats: Record<string, number>;

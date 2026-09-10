@@ -76,7 +76,12 @@ function StatRow({
 }: StatRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control } = form;
+  const {
+    register,
+    control,
+    formState: { errors },
+  } = form;
+  const statErrors = errors.startingSetups?.[startingSetupIndex]?.stats?.[statIndex];
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-background p-4">
@@ -84,20 +89,51 @@ function StatRow({
         <Controller
           control={control}
           name={`startingSetups.${startingSetupIndex}.stats.${statIndex}.icon`}
-          render={({ field }) => <IconPicker value={field.value} onChange={field.onChange} triggerLabel="아이콘 선택 *" />}
+          render={({ field }) => (
+            <div
+              className="flex flex-col gap-1"
+              data-field-path={`startingSetups.${startingSetupIndex}.stats.${statIndex}.icon`}
+            >
+              <IconPicker value={field.value} onChange={field.onChange} triggerLabel="아이콘 선택 *" />
+              {statErrors?.icon && (
+                <p id={`stat-${id}-icon-error`} role="alert" className="text-xs text-destructive-text">
+                  {statErrors.icon.message}
+                </p>
+              )}
+            </div>
+          )}
         />
         <Controller
           control={control}
           name={`startingSetups.${startingSetupIndex}.stats.${statIndex}.color`}
-          render={({ field }) => <ColorPicker value={field.value} onChange={field.onChange} triggerLabel="색상 선택 *" />}
+          render={({ field }) => (
+            <div
+              className="flex flex-col gap-1"
+              data-field-path={`startingSetups.${startingSetupIndex}.stats.${statIndex}.color`}
+            >
+              <ColorPicker value={field.value} onChange={field.onChange} triggerLabel="색상 선택 *" />
+              {statErrors?.color && (
+                <p id={`stat-${id}-color-error`} role="alert" className="text-xs text-destructive-text">
+                  {statErrors.color.message}
+                </p>
+              )}
+            </div>
+          )}
         />
         <div className="flex flex-1 flex-col gap-1.5">
           <Label htmlFor={`stat-${id}-name`}>이름 *</Label>
           <Input
             id={`stat-${id}-name`}
             placeholder="스탯 이름을 입력해주세요"
+            aria-invalid={!!statErrors?.name}
+            aria-describedby={statErrors?.name ? `stat-${id}-name-error` : undefined}
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.name`)}
           />
+          {statErrors?.name && (
+            <p id={`stat-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.name.message}
+            </p>
+          )}
         </div>
         <Button type="button" variant="ghost" size="icon" aria-label="스탯 삭제" onClick={onRemove}>
           <Trash2 aria-hidden />
@@ -110,26 +146,47 @@ function StatRow({
           <Input
             id={`stat-${id}-min`}
             type="number"
+            aria-invalid={!!statErrors?.min}
+            aria-describedby={statErrors?.min ? `stat-${id}-min-error` : undefined}
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.min`, { valueAsNumber: true })}
           />
+          {statErrors?.min && (
+            <p id={`stat-${id}-min-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.min.message}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`stat-${id}-max`}>최대값 *</Label>
           <Input
             id={`stat-${id}-max`}
             type="number"
+            aria-invalid={!!statErrors?.max}
+            aria-describedby={statErrors?.max ? `stat-${id}-max-error` : undefined}
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.max`, { valueAsNumber: true })}
           />
+          {statErrors?.max && (
+            <p id={`stat-${id}-max-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.max.message}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`stat-${id}-initial`}>초기값 *</Label>
           <Input
             id={`stat-${id}-initial`}
             type="number"
+            aria-invalid={!!statErrors?.initial}
+            aria-describedby={statErrors?.initial ? `stat-${id}-initial-error` : undefined}
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.initial`, {
               valueAsNumber: true,
             })}
           />
+          {statErrors?.initial && (
+            <p id={`stat-${id}-initial-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.initial.message}
+            </p>
+          )}
         </div>
       </div>
 
@@ -141,8 +198,15 @@ function StatRow({
           <Input
             id={`stat-${id}-unit`}
             placeholder="예: pt, %"
+            aria-invalid={!!statErrors?.unit}
+            aria-describedby={statErrors?.unit ? `stat-${id}-unit-error` : undefined}
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.unit`)}
           />
+          {statErrors?.unit && (
+            <p id={`stat-${id}-unit-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.unit.message}
+            </p>
+          )}
         </div>
         <div className="flex flex-col gap-1.5">
           <Label htmlFor={`stat-${id}-per-turn-delta`}>턴당 자동 변화</Label>
@@ -151,7 +215,13 @@ function StatRow({
             type="number"
             step={1}
             placeholder="예: -1"
-            aria-describedby={`stat-${id}-per-turn-delta-hint`}
+            aria-invalid={!!statErrors?.perTurnDelta}
+            aria-describedby={[
+              `stat-${id}-per-turn-delta-hint`,
+              statErrors?.perTurnDelta ? `stat-${id}-per-turn-delta-error` : null,
+            ]
+              .filter(Boolean)
+              .join(" ")}
             // 빈 칸에 valueAsNumber를 쓰면 NaN이 들어가 zod가 막는다 — 빈 칸은 undefined로 되돌린다.
             {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.perTurnDelta`, {
               setValueAs: (value) => (value === "" || value === null ? undefined : Number(value)),
@@ -160,6 +230,11 @@ function StatRow({
           <p id={`stat-${id}-per-turn-delta-hint`} className="text-xs text-muted-foreground">
             매 턴 이만큼 자동으로 변해요(줄어들면 -1처럼 음수). 비워두면 AI가 대화를 보고 판단해요.
           </p>
+          {statErrors?.perTurnDelta && (
+            <p id={`stat-${id}-per-turn-delta-error`} role="alert" className="text-xs text-destructive-text">
+              {statErrors.perTurnDelta.message}
+            </p>
+          )}
         </div>
       </div>
 
@@ -169,8 +244,15 @@ function StatRow({
           id={`stat-${id}-description`}
           placeholder="스탯에 대한 설명을 입력해주세요"
           rows={2}
+          aria-invalid={!!statErrors?.description}
+          aria-describedby={statErrors?.description ? `stat-${id}-description-error` : undefined}
           {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.description`)}
         />
+        {statErrors?.description && (
+          <p id={`stat-${id}-description-error`} role="alert" className="text-xs text-destructive-text">
+            {statErrors.description.message}
+          </p>
+        )}
       </div>
     </div>
   );

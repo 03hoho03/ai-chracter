@@ -105,11 +105,19 @@ function SituationalImageRow({
 }: SituationalImageRowProps) {
   const form = useFormContext<CharacterBuilderFormValues>();
 
-  const { register, getValues, setValue, watch } = form;
+  const {
+    register,
+    getValues,
+    setValue,
+    watch,
+    formState: { errors },
+  } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const hasRegisteredImage = watch(`situationalImages.${index}.image`) !== null;
+  const situationDescriptionError = errors.situationalImages?.[index]?.situationDescription;
+  const situationDescriptionErrorId = `situational-image-${id}-description-error`;
 
   const objectPreviewUrl = useMemo(
     () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
@@ -196,8 +204,15 @@ function SituationalImageRow({
         <Textarea
           placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"
           rows={2}
+          aria-invalid={!!situationDescriptionError}
+          aria-describedby={situationDescriptionError ? situationDescriptionErrorId : undefined}
           {...register(`situationalImages.${index}.situationDescription`)}
         />
+        {situationDescriptionError && (
+          <p id={situationDescriptionErrorId} role="alert" className="text-xs text-destructive-text">
+            {situationDescriptionError.message}
+          </p>
+        )}
       </div>
 
       <Button type="button" variant="ghost" size="icon" aria-label="상황별 이미지 삭제" onClick={onRemove}>

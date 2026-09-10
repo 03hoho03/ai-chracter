@@ -3357,6 +3357,8 @@ export interface components {
             oneLiner: string;
             /** Thumbnailassetid */
             thumbnailAssetId: string | null;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
             /** Intro */
             intro: string;
             /** Exampledialogues */
@@ -4697,6 +4699,8 @@ export interface components {
             oneLiner: string;
             /** Thumbnailassetid */
             thumbnailAssetId: string | null;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
             promptTemplate: components["schemas"]["StoryPromptTemplate"];
             /** Settingtext */
             settingText: string | null;

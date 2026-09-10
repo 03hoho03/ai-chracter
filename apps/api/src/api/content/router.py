@@ -603,6 +603,7 @@ async def _character_draft_response(
         name=detail.name,
         one_liner=detail.one_liner,
         thumbnail_asset_id=detail.thumbnail_asset_id,
+        thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
         intro=detail.intro,
         example_dialogues=[
             ExampleDialogueItem.model_validate(item) for item in detail.example_dialogues
@@ -754,6 +755,7 @@ async def _story_draft_response(
         name=detail.name,
         one_liner=detail.one_liner,
         thumbnail_asset_id=detail.thumbnail_asset_id,
+        thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
         prompt_template=detail.prompt_template,
         setting_text=detail.setting_text,
         development_example=detail.development_example,

@@ -56,7 +56,7 @@ export type ContentCardMetrics = {
   likeCount?: number;
 };
 
-type ContentCardProps = {
+export type ContentCardProps = {
   thumbnailUrl: string | null;
   title: string;
   metrics?: ContentCardMetrics;

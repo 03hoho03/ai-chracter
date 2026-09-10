@@ -14,6 +14,7 @@ function baseDraftResponse(): CharacterDraftResponse {
     name: "루나",
     oneLiner: "달빛 마법사",
     thumbnailAssetId: "asset-thumbnail",
+    thumbnailUrl: "https://example.com/asset-thumbnail.webp",
     intro: "안녕, 나는 루나야.",
     exampleDialogues: [{ id: "dlg-1", userLine: "안녕?", characterLine: "반가워!" }],
     characterPrompt: "너는 상냥한 달빛 마법사다.",

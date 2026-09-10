@@ -369,12 +369,18 @@ function EndingRow({
 }: EndingRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control, setValue } = form;
+  const {
+    register,
+    control,
+    setValue,
+    formState: { errors },
+  } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const statRules = useWatch({
     control,
     name: `startingSetups.${startingSetupIndex}.endings.${endingIndex}.statRules`,
   });
+  const endingErrors = errors.startingSetups?.[startingSetupIndex]?.endings?.[endingIndex];
 
   return (
     <div
@@ -399,8 +405,15 @@ function EndingRow({
             <Input
               id={`ending-${id}-name`}
               placeholder="엔딩 이름을 입력해주세요"
+              aria-invalid={!!endingErrors?.name}
+              aria-describedby={endingErrors?.name ? `ending-${id}-name-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.name`)}
             />
+            {endingErrors?.name && (
+              <p id={`ending-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
+                {endingErrors.name.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -409,11 +422,18 @@ function EndingRow({
               id={`ending-${id}-turn-gate`}
               type="number"
               min={10}
+              aria-invalid={!!endingErrors?.turnGate}
+              aria-describedby={endingErrors?.turnGate ? `ending-${id}-turn-gate-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.turnGate`, {
                 valueAsNumber: true,
               })}
             />
             <p className="text-xs text-muted-foreground">최소 10턴 이상 진행돼야 이 엔딩을 판정해요.</p>
+            {endingErrors?.turnGate && (
+              <p id={`ending-${id}-turn-gate-error`} role="alert" className="text-xs text-destructive-text">
+                {endingErrors.turnGate.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -422,8 +442,15 @@ function EndingRow({
               id={`ending-${id}-judge-prompt`}
               placeholder="이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"
               rows={3}
+              aria-invalid={!!endingErrors?.judgePrompt}
+              aria-describedby={endingErrors?.judgePrompt ? `ending-${id}-judge-prompt-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.judgePrompt`)}
             />
+            {endingErrors?.judgePrompt && (
+              <p id={`ending-${id}-judge-prompt-error`} role="alert" className="text-xs text-destructive-text">
+                {endingErrors.judgePrompt.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -432,8 +459,15 @@ function EndingRow({
               id={`ending-${id}-epilogue`}
               placeholder="엔딩 도달 시 보여줄 에필로그를 입력해주세요"
               rows={3}
+              aria-invalid={!!endingErrors?.epilogue}
+              aria-describedby={endingErrors?.epilogue ? `ending-${id}-epilogue-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.epilogue`)}
             />
+            {endingErrors?.epilogue && (
+              <p id={`ending-${id}-epilogue-error`} role="alert" className="text-xs text-destructive-text">
+                {endingErrors.epilogue.message}
+              </p>
+            )}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -441,8 +475,15 @@ function EndingRow({
             <Input
               id={`ending-${id}-hint`}
               placeholder="엔딩 힌트를 입력해주세요"
+              aria-invalid={!!endingErrors?.hint}
+              aria-describedby={endingErrors?.hint ? `ending-${id}-hint-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.hint`)}
             />
+            {endingErrors?.hint && (
+              <p id={`ending-${id}-hint-error`} role="alert" className="text-xs text-destructive-text">
+                {endingErrors.hint.message}
+              </p>
+            )}
           </div>
         </div>
 

@@ -35,7 +35,12 @@ const VISIBILITY_OPTIONS: { value: "public" | "link" | "private"; label: string 
 export function RegistrationTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control, setValue } = form;
+  const {
+    register,
+    control,
+    setValue,
+    formState: { errors },
+  } = form;
   const genreListQuery = useGenreListQuery();
   const hashtags = useWatch({ control, name: "registration.hashtags" });
   const [hashtagInput, setHashtagInput] = useState("");
@@ -63,8 +68,15 @@ export function RegistrationTab() {
           id="story-registration-description"
           placeholder="스토리를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
+          aria-invalid={!!errors.registration?.description}
+          aria-describedby={errors.registration?.description ? "story-registration-description-error" : undefined}
           {...register("registration.description")}
         />
+        {errors.registration?.description && (
+          <p id="story-registration-description-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.description.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -74,7 +86,13 @@ export function RegistrationTab() {
           name="registration.genre"
           render={({ field }) => (
             <Select value={field.value ?? ""} onValueChange={field.onChange}>
-              <SelectTrigger id="story-registration-genre" className="w-full">
+              <SelectTrigger
+                id="story-registration-genre"
+                ref={field.ref}
+                className="w-full"
+                aria-invalid={!!errors.registration?.genre}
+                aria-describedby={errors.registration?.genre ? "story-registration-genre-error" : undefined}
+              >
                 <SelectValue placeholder="장르를 선택해주세요" />
               </SelectTrigger>
               <SelectContent>
@@ -87,6 +105,11 @@ export function RegistrationTab() {
             </Select>
           )}
         />
+        {errors.registration?.genre && (
+          <p id="story-registration-genre-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.genre.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -98,18 +121,31 @@ export function RegistrationTab() {
             <ToggleGroup
               type="single"
               variant="outline"
+              ref={field.ref}
               value={field.value ?? ""}
               onValueChange={(value) => value && field.onChange(value)}
               aria-label="타겟"
+              aria-invalid={!!errors.registration?.target}
+              aria-describedby={errors.registration?.target ? "story-registration-target-error" : undefined}
             >
               {TARGET_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  className={errors.registration?.target ? "border-destructive ring-3 ring-destructive/20" : undefined}
+                >
                   {option.label}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
           )}
         />
+        {errors.registration?.target && (
+          <p id="story-registration-target-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.target.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -163,18 +199,33 @@ export function RegistrationTab() {
             <ToggleGroup
               type="single"
               variant="outline"
+              ref={field.ref}
               value={field.value}
               onValueChange={(value) => value && field.onChange(value)}
               aria-label="공개범위"
+              aria-invalid={!!errors.registration?.visibility}
+              aria-describedby={errors.registration?.visibility ? "story-registration-visibility-error" : undefined}
             >
               {VISIBILITY_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  className={
+                    errors.registration?.visibility ? "border-destructive ring-3 ring-destructive/20" : undefined
+                  }
+                >
                   {option.label}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
           )}
         />
+        {errors.registration?.visibility && (
+          <p id="story-registration-visibility-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.visibility.message}
+          </p>
+        )}
       </div>
     </div>
   );

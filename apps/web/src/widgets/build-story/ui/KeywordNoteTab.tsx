@@ -81,10 +81,17 @@ function KeywordNoteRow({
 }: KeywordNoteRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register, control, setValue, getValues } = form;
+  const {
+    register,
+    control,
+    setValue,
+    getValues,
+    formState: { errors },
+  } = form;
   const triggerKeywords = useWatch({ control, name: `keywordNotes.${index}.triggerKeywords` });
   const scope = useWatch({ control, name: `keywordNotes.${index}.scope` });
   const [keywordInput, setKeywordInput] = useState("");
+  const noteErrors = errors.keywordNotes?.[index];
 
   function addKeyword() {
     const trimmed = keywordInput.trim();
@@ -126,15 +133,22 @@ function KeywordNoteRow({
             id={`keyword-note-${id}-content`}
             placeholder="트리거 키워드가 언급되면 참고할 설정 정보를 입력해주세요"
             rows={3}
+            aria-invalid={!!noteErrors?.content}
+            aria-describedby={noteErrors?.content ? `keyword-note-${id}-content-error` : undefined}
             {...register(`keywordNotes.${index}.content`)}
           />
+          {noteErrors?.content && (
+            <p id={`keyword-note-${id}-content-error`} role="alert" className="text-xs text-destructive-text">
+              {noteErrors.content.message}
+            </p>
+          )}
         </div>
         <Button type="button" variant="ghost" size="icon" aria-label="키워드 노트 삭제" onClick={onRemove}>
           <Trash2 aria-hidden />
         </Button>
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5" data-field-path={`keywordNotes.${index}.triggerKeywords`}>
         <Label htmlFor={`keyword-note-${id}-keyword-input`}>트리거 키워드 *</Label>
         <div className="flex gap-2">
           <Input
@@ -174,6 +188,11 @@ function KeywordNoteRow({
             ))}
           </div>
         )}
+        {noteErrors?.triggerKeywords?.message && (
+          <p id={`keyword-note-${id}-trigger-keywords-error`} role="alert" className="text-xs text-destructive-text">
+            {noteErrors.triggerKeywords.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -184,14 +203,30 @@ function KeywordNoteRow({
           value={scope.kind}
           onValueChange={handleScopeKindChange}
           aria-label="적용 대상"
+          aria-invalid={!!noteErrors?.scope}
+          aria-describedby={noteErrors?.scope ? `keyword-note-${id}-scope-error` : undefined}
         >
-          <ToggleGroupItem value="global" aria-label="스토리 전체">
+          <ToggleGroupItem
+            value="global"
+            aria-label="스토리 전체"
+            className={noteErrors?.scope ? "border-destructive ring-3 ring-destructive/20" : undefined}
+          >
             스토리 전체
           </ToggleGroupItem>
-          <ToggleGroupItem value="startingSetup" aria-label="특정 시작설정" disabled={startingSetups.length === 0}>
+          <ToggleGroupItem
+            value="startingSetup"
+            aria-label="특정 시작설정"
+            disabled={startingSetups.length === 0}
+            className={noteErrors?.scope ? "border-destructive ring-3 ring-destructive/20" : undefined}
+          >
             특정 시작설정
           </ToggleGroupItem>
         </ToggleGroup>
+        {noteErrors?.scope && (
+          <p id={`keyword-note-${id}-scope-error`} role="alert" className="text-xs text-destructive-text">
+            {noteErrors.scope.message}
+          </p>
+        )}
 
         {scope.kind === "startingSetup" && (
           <ToggleGroup

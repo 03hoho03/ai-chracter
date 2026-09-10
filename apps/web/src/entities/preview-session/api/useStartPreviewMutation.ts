@@ -24,7 +24,12 @@ export function useStartPreviewMutation() {
       return buildPreviewStartState(data.previewSessionId, payload);
     },
     onSuccess: (state) => {
-      queryClient.setQueryData(previewSessionKeys.detail(state.previewSessionId), state);
+      // 이 훅이 만드는 state는 항상 서버가 내려준 실제 id로 계산된다(buildPreviewStartState의
+      // previewSessionId가 옵셔널인 건 PreviewSessionView의 로컬 플레이스홀더용이라 이 경로와는
+      // 무관하다) — 타입만 옵셔널이라 좁혀서 캐시 키를 만든다.
+      if (state.previewSessionId) {
+        queryClient.setQueryData(previewSessionKeys.detail(state.previewSessionId), state);
+      }
     },
   });
 }

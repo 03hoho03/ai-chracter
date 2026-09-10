@@ -71,7 +71,11 @@ function ShortcutRow({
 }: ShortcutRowProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { register } = form;
+  const {
+    register,
+    formState: { errors },
+  } = form;
+  const shortcutErrors = errors.shortcuts?.[index];
 
   return (
     <div className="flex flex-col gap-4 rounded-xl border border-border bg-background p-4">
@@ -81,8 +85,15 @@ function ShortcutRow({
           <Input
             id={`shortcut-${id}-name`}
             placeholder="단축어 이름을 입력해주세요"
+            aria-invalid={!!shortcutErrors?.name}
+            aria-describedby={shortcutErrors?.name ? `shortcut-${id}-name-error` : undefined}
             {...register(`shortcuts.${index}.name`)}
           />
+          {shortcutErrors?.name && (
+            <p id={`shortcut-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
+              {shortcutErrors.name.message}
+            </p>
+          )}
         </div>
         <Button type="button" variant="ghost" size="icon" aria-label="단축어 삭제" onClick={onRemove}>
           <Trash2 aria-hidden />
@@ -95,8 +106,15 @@ function ShortcutRow({
           id={`shortcut-${id}-description`}
           placeholder="이 단축어가 어떤 동작을 하는지 설명해주세요"
           rows={2}
+          aria-invalid={!!shortcutErrors?.description}
+          aria-describedby={shortcutErrors?.description ? `shortcut-${id}-description-error` : undefined}
           {...register(`shortcuts.${index}.description`)}
         />
+        {shortcutErrors?.description && (
+          <p id={`shortcut-${id}-description-error`} role="alert" className="text-xs text-destructive-text">
+            {shortcutErrors.description.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -105,8 +123,15 @@ function ShortcutRow({
           id={`shortcut-${id}-prompt`}
           placeholder="단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"
           rows={3}
+          aria-invalid={!!shortcutErrors?.prompt}
+          aria-describedby={shortcutErrors?.prompt ? `shortcut-${id}-prompt-error` : undefined}
           {...register(`shortcuts.${index}.prompt`)}
         />
+        {shortcutErrors?.prompt && (
+          <p id={`shortcut-${id}-prompt-error`} role="alert" className="text-xs text-destructive-text">
+            {shortcutErrors.prompt.message}
+          </p>
+        )}
       </div>
     </div>
   );

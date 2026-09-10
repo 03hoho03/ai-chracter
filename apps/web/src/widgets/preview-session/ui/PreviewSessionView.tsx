@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { ChevronLeft, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
@@ -12,9 +12,11 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
-import { usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
+import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
+
+import { PreviewCloseHeader } from "./PreviewCloseHeader";
 
 // techspec-builder-common.md §3 — 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
 // 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지)는 entities/chat-room, 단축어 자동완성은
@@ -23,6 +25,11 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 // 그대로 처리하고 이 화면은 그 결과만 반영한다. getPayload는 호출 시점의 최신 폼 값
 // (formToServer(getValues()))을 돌려주는 함수로, "미리보기 초기화"도 이 함수를 다시 호출해
 // 최신 폼 값 기준 새 세션을 연다.
+//
+// D-7(builder-techspec.md §6-2) — 서버 세션은 마운트가 아니라 첫 전송 때 생긴다. 그 전까지는
+// buildPreviewStartState로 계산한 로컬 플레이스홀더만 그린다(BE의 _build_preview_start_state를
+// 그대로 재현하므로 화면은 세션이 있을 때와 같다). 입력창·단축어·추천답변 세 전송 경로가 전부
+// ensurePreviewSession()을 거쳐 세션을 보장한 뒤에야 usePreviewSendMessage의 send()를 부른다.
 export function PreviewSessionView({
   getPayload,
   onClose,
@@ -33,78 +40,81 @@ export function PreviewSessionView({
   const startMutation = useStartPreviewMutation();
   const [previewSessionId, setPreviewSessionId] = useState<string>();
   const stateQuery = usePreviewSessionQuery(previewSessionId);
-  const state = stateQuery.data;
+  // A-8(builder-progress.md) — usePreviewSessionQuery는 enabled:false라 캐시는 오직
+  // useStartPreviewMutation의 성공 콜백으로만 채워진다. 지연 시작 이후 첫 전송 전에는 그 캐시가
+  // 비어 있으므로, 세션 id 없이 계산한 로컬 상태로 대신한다 — 안 그러면 첫 전송 전까지 영구
+  // 스켈레톤이 된다.
+  const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload());
 
-  const { send, isSending, error, policyWarning, streamingText } = usePreviewSendMessage(previewSessionId);
+  const { send, isSending, error, policyWarning, streamingText } = usePreviewSendMessage();
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const startedRef = useRef(false);
 
   // mutate()의 콜백 인자(onSuccess) 대신 mutateAsync()를 쓰고, 로딩 상태도 startMutation.isPending이
-  // 아니라 로컬 isStarting으로 직접 관리한다 — 이 함수는 마운트 시 useEffect에서 곧바로 호출되는데,
-  // React StrictMode의 마운트→언마운트→재마운트 시뮬레이션과 겹치면 그 첫 호출의 MutationObserver
-  // 구독이 순간적으로 해제됐다가 재구독되면서 원래 뮤테이션 알림(콜백·isPending·data 전부)에서 영구히
-  // 떨어져나간다(개발 모드에서만 재현, 실측 — widgets/content-detail/lib/usePlayContent.ts의 start()가
-  // 이미 mutateAsync를 쓰는 것과 같은 이유). mutateAsync()가 반환하는 프로미스 자체는 그 알림 경로와
-  // 무관하게 정상적으로 settle되므로, 결과 처리를 전부 이 함수 안에서 직접 끝낸다.
-  async function startPreview() {
+  // 아니라 로컬 isStarting으로 직접 관리한다 — apps/web/CLAUDE.md "마운트 시 뮤테이션은
+  // mutateAsync+await+로컬 로딩 state"와 같은 이유(widgets/content-detail/lib/usePlayContent.ts의
+  // start()도 동일)로, 이 함수는 이제 마운트가 아니라 첫 전송 시점에 호출되지만 StrictMode
+  // 마운트→언마운트→재마운트 취약성은 뮤테이션 훅 자체의 성질이라 여전히 적용된다.
+  async function startPreview(): Promise<string | undefined> {
     setIsStarting(true);
     try {
       const nextState = await startMutation.mutateAsync(getPayload());
       setPreviewSessionId(nextState.previewSessionId);
+      return nextState.previewSessionId;
     } catch {
       toast.error("미리보기 세션을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+      return undefined;
     } finally {
       setIsStarting(false);
     }
   }
 
-  useEffect(() => {
-    if (startedRef.current) return;
-    startedRef.current = true;
-    void startPreview();
-  }, []);
+  // 세 전송 경로(입력창·단축어·추천답변) 공통 "세션 보장" 함수 — 이미 세션이 있으면 그대로 쓰고,
+  // 없으면 이 시점의 getPayload()로 새로 만든다.
+  async function ensurePreviewSession(): Promise<string | undefined> {
+    if (previewSessionId) return previewSessionId;
+    return startPreview();
+  }
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "end" });
-  }, [state?.messages.length, streamingText]);
+  }, [state.messages.length, streamingText]);
+
+  // ensurePreviewSession()이 돌려준 id를 send()에 직접 태운다 — usePreviewSendMessage가 훅 레벨
+  // 파라미터 대신 호출마다 id를 받는 이유(features/preview-chat/model/usePreviewSendMessage.ts 참고)가
+  // 바로 이 지점: 세션을 막 만든 직후엔 컴포넌트가 아직 그 id로 재렌더되지 않아 previewSessionId
+  // state를 참조하면 stale한 undefined를 잡는다.
+  async function sendWithSession(content: string, shortcutId?: string) {
+    const id = await ensurePreviewSession();
+    if (!id) return;
+    void send(id, content, shortcutId);
+  }
 
   function handleSend() {
     const trimmed = text.trim();
-    if (!trimmed || isSending) return;
-    void send(trimmed);
+    if (!trimmed || isSending || isStarting) return;
     setText("");
+    void sendWithSession(trimmed);
   }
 
   function handleShortcutSelect(shortcut: PreviewShortcut) {
-    if (isSending) return;
-    void send(shortcut.prompt, shortcut.id);
+    if (isSending || isStarting) return;
     setText("");
+    void sendWithSession(shortcut.prompt, shortcut.id);
   }
 
   function handleSuggestedReplyClick(reply: string) {
-    if (isSending) return;
-    void send(reply);
-  }
-
-  if (!state) {
-    return <PreviewSkeleton />;
+    if (isSending || isStarting) return;
+    void sendWithSession(reply);
   }
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
       <header className="shrink-0">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3">
-          <div className="flex items-center gap-2">
-            {onClose && (
-              <Button variant="ghost" size="icon-sm" aria-label="미리보기 닫기" onClick={onClose}>
-                <ChevronLeft aria-hidden className="size-4" />
-              </Button>
-            )}
-            <span className="text-sm font-semibold text-foreground">미리보기</span>
-          </div>
+          <PreviewCloseHeader onClose={onClose} />
           <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>
             <RotateCw aria-hidden className="size-3.5" />
             미리보기 초기화
@@ -170,7 +180,7 @@ export function PreviewSessionView({
                   type="button"
                   variant="secondary"
                   size="sm"
-                  disabled={isSending}
+                  disabled={isSending || isStarting}
                   onClick={() => handleSuggestedReplyClick(reply)}
                   className="shrink-0 rounded-full"
                 >
@@ -205,20 +215,17 @@ export function PreviewSessionView({
                 />
               )}
             </div>
-            <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
+            <Button
+              size="icon"
+              aria-label="전송"
+              disabled={isSending || isStarting || !text.trim()}
+              onClick={handleSend}
+            >
               <Send aria-hidden className="size-4" />
             </Button>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function PreviewSkeleton() {
-  return (
-    <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-4 sm:px-6">
-      <p className="text-sm text-muted-foreground">미리보기 세션을 여는 중이에요...</p>
     </div>
   );
 }

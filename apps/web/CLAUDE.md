@@ -89,7 +89,7 @@
 - **반복 발화하는 시스템 주도 토스트는 `id` 고정 + `duration: Infinity` + `closeButton`이 한 세트다.** id가 없으면 실패 횟수만큼 쌓이고(600px 이하에선 전체 폭 바닥 고정이라 입력 필드를 가린다), 기본 4초면 "마지막 편집이 서버에 없다"는 **지속 상태**가 눈을 뗀 사이 사라진다. 해제는 다음 저장 성공·닫기·이탈 셋이고 언마운트에서도 같은 id를 dismiss한다. **성공 토스트는 띄우지 않는다**(1.5초마다 초록 토스트는 재앙).
 - **`QueryClient`가 기본 `networkMode: "online"`이라 진짜 오프라인에서는 뮤테이션이 실패하지 않고 pause된다**(재접속 시 큐가 한꺼번에 발사된다 — 실측 9건 동시). "오프라인이면 실패 토스트가 뜬다"는 틀린 가정이다. **"저장 중/저장됨" 인디케이터를 만들 거라면 이 pause 구간에서 거짓말을 하지 않는지부터 확인할 것.**
 - **빌더 초안은 첫 자동저장 시점에 만들어진다.** `useDraftPersistence`가 그 경로(없으면 생성 → PATCH → URL 교체)를 소유하고, 생성 1회 보장은 순수 헬퍼 `runOnce`가 맡는다. 초안 id가 필요한 액션은 값이 아니라 **함수**(`ensureContentVersionId()`)를 받아 생성을 먼저 트리거한다. `createEmptyDraft(type)`가 서버 기본값을 흉내 내므로 서버가 바뀌면 여기도 바꾼다.
-- **발행 가능 여부는 `formState.isValid`가 아니라 `builderSchema.safeParse(useWatch({control}))`**로 판단한다(미구현 탭의 필수 필드가 자연스럽게 버튼을 비활성으로 유지).
+- **발행 버튼은 비활성화하지 않는다** — `disabled`는 왜 못 누르는지 알려주지 않는다. 대신 `zodResolver` + `form.handleSubmit(handlePublish, handlePublishInvalid)`로 검증해 실패를 탭·필드 에러로 보여준다(builder-goal-prompt.md §5-2/§5-4, D-3 — 이전엔 `builderSchema.safeParse(useWatch({control}))`로 버튼을 비활성했었다).
 - **발행은 `parse()` → `formToServer()` → draft PATCH → `publish()` 순서다**(`publish`가 무바디라 중간 debounce 미반영 값이 누락된다). 400 `detail`은 `{missingFields}`(토스트)와 `{reason}`(이의제기 배너) 두 모양 — `"reason" in detail`로 먼저 판별한다. nullable draft 스키마는 `safeParse`를 통과해도 서버 필수값이 빌 수 있어 `missingFields`→한국어 라벨 매핑이 필요하다.
 - **`useFieldArray`**: 순서 없는 배열은 `fields.map(key={field.id})` + `append({id: crypto.randomUUID()})`. 순서=우선순위면 `@dnd-kit/sortable` + `move`(listeners는 드래그 핸들에만). 부모의 동적 인덱스에 `name`이 의존하는 중첩 배열은 **부모 안정 `id`로 key**를 줘 통째로 remount(인덱스로 key 금지). 재귀 트리는 `useFieldArray` 대신 `items`/`onChange` 순수 제어 컴포넌트로.
 

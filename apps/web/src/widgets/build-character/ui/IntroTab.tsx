@@ -14,7 +14,11 @@ import type { CharacterBuilderFormValues } from "@/features/build-character";
 export function IntroTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 
-  const { register, control } = form;
+  const {
+    register,
+    control,
+    formState: { errors },
+  } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "intro.exampleDialogues" });
   const [showAdvanced, setShowAdvanced] = useState(() => fields.length > 0);
 
@@ -26,8 +30,15 @@ export function IntroTab() {
           id="character-intro-first-message"
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
           rows={4}
+          aria-invalid={!!errors.intro?.firstMessage}
+          aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-error" : undefined}
           {...register("intro.firstMessage")}
         />
+        {errors.intro?.firstMessage && (
+          <p id="character-intro-first-message-error" role="alert" className="text-xs text-destructive-text">
+            {errors.intro.firstMessage.message}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
@@ -45,31 +56,56 @@ export function IntroTab() {
       {showAdvanced && (
         <div className="flex flex-col gap-4">
           <Label>예시 대화</Label>
-          {fields.map((field, index) => (
-            <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
-              <div className="flex items-start gap-2">
-                <div className="flex flex-1 flex-col gap-2">
-                  <Input
-                    placeholder="사용자 대사"
-                    {...register(`intro.exampleDialogues.${index}.userLine`)}
-                  />
-                  <Input
-                    placeholder="캐릭터 대사"
-                    {...register(`intro.exampleDialogues.${index}.characterLine`)}
-                  />
+          {fields.map((field, index) => {
+            const userLineError = errors.intro?.exampleDialogues?.[index]?.userLine;
+            const userLineErrorId = `character-intro-dialogue-${field.id}-user-line-error`;
+            const characterLineError = errors.intro?.exampleDialogues?.[index]?.characterLine;
+            const characterLineErrorId = `character-intro-dialogue-${field.id}-character-line-error`;
+
+            return (
+              <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
+                <div className="flex items-start gap-2">
+                  <div className="flex flex-1 flex-col gap-2">
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        placeholder="사용자 대사"
+                        aria-invalid={!!userLineError}
+                        aria-describedby={userLineError ? userLineErrorId : undefined}
+                        {...register(`intro.exampleDialogues.${index}.userLine`)}
+                      />
+                      {userLineError && (
+                        <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
+                          {userLineError.message}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex flex-col gap-1">
+                      <Input
+                        placeholder="캐릭터 대사"
+                        aria-invalid={!!characterLineError}
+                        aria-describedby={characterLineError ? characterLineErrorId : undefined}
+                        {...register(`intro.exampleDialogues.${index}.characterLine`)}
+                      />
+                      {characterLineError && (
+                        <p id={characterLineErrorId} role="alert" className="text-xs text-destructive-text">
+                          {characterLineError.message}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label="예시 대화 삭제"
+                    onClick={() => remove(index)}
+                  >
+                    <Trash2 />
+                  </Button>
                 </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  aria-label="예시 대화 삭제"
-                  onClick={() => remove(index)}
-                >
-                  <Trash2 />
-                </Button>
               </div>
-            </div>
-          ))}
+            );
+          })}
           <Button
             type="button"
             variant="secondary"

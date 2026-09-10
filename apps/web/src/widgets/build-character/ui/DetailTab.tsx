@@ -34,7 +34,12 @@ const VISIBILITY_OPTIONS: { value: "public" | "link" | "private"; label: string 
 export function DetailTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 
-  const { register, control, setValue } = form;
+  const {
+    register,
+    control,
+    setValue,
+    formState: { errors },
+  } = form;
   const genreListQuery = useGenreListQuery();
   const hashtags = useWatch({ control, name: "registration.hashtags" });
   const [hashtagInput, setHashtagInput] = useState("");
@@ -62,8 +67,15 @@ export function DetailTab() {
           id="character-detail-description"
           placeholder="캐릭터를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
+          aria-invalid={!!errors.registration?.description}
+          aria-describedby={errors.registration?.description ? "character-detail-description-error" : undefined}
           {...register("registration.description")}
         />
+        {errors.registration?.description && (
+          <p id="character-detail-description-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.description.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -73,7 +85,13 @@ export function DetailTab() {
           name="registration.genre"
           render={({ field }) => (
             <Select value={field.value ?? ""} onValueChange={field.onChange}>
-              <SelectTrigger id="character-detail-genre" className="w-full">
+              <SelectTrigger
+                id="character-detail-genre"
+                ref={field.ref}
+                className="w-full"
+                aria-invalid={!!errors.registration?.genre}
+                aria-describedby={errors.registration?.genre ? "character-detail-genre-error" : undefined}
+              >
                 <SelectValue placeholder="장르를 선택해주세요" />
               </SelectTrigger>
               <SelectContent>
@@ -86,6 +104,11 @@ export function DetailTab() {
             </Select>
           )}
         />
+        {errors.registration?.genre && (
+          <p id="character-detail-genre-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.genre.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -97,18 +120,31 @@ export function DetailTab() {
             <ToggleGroup
               type="single"
               variant="outline"
+              ref={field.ref}
               value={field.value ?? ""}
               onValueChange={(value) => value && field.onChange(value)}
               aria-label="타겟"
+              aria-invalid={!!errors.registration?.target}
+              aria-describedby={errors.registration?.target ? "character-detail-target-error" : undefined}
             >
               {TARGET_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  className={errors.registration?.target ? "border-destructive ring-3 ring-destructive/20" : undefined}
+                >
                   {option.label}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
           )}
         />
+        {errors.registration?.target && (
+          <p id="character-detail-target-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.target.message}
+          </p>
+        )}
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -162,18 +198,33 @@ export function DetailTab() {
             <ToggleGroup
               type="single"
               variant="outline"
+              ref={field.ref}
               value={field.value}
               onValueChange={(value) => value && field.onChange(value)}
               aria-label="공개범위"
+              aria-invalid={!!errors.registration?.visibility}
+              aria-describedby={errors.registration?.visibility ? "character-detail-visibility-error" : undefined}
             >
               {VISIBILITY_OPTIONS.map((option) => (
-                <ToggleGroupItem key={option.value} value={option.value} aria-label={option.label}>
+                <ToggleGroupItem
+                  key={option.value}
+                  value={option.value}
+                  aria-label={option.label}
+                  className={
+                    errors.registration?.visibility ? "border-destructive ring-3 ring-destructive/20" : undefined
+                  }
+                >
                   {option.label}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
           )}
         />
+        {errors.registration?.visibility && (
+          <p id="character-detail-visibility-error" role="alert" className="text-xs text-destructive-text">
+            {errors.registration.visibility.message}
+          </p>
+        )}
       </div>
     </div>
   );

@@ -7891,6 +7891,17 @@
             ],
             "title": "Thumbnailassetid"
           },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
           "intro": {
             "type": "string",
             "title": "Intro"
@@ -7968,6 +7979,7 @@
           "name",
           "oneLiner",
           "thumbnailAssetId",
+          "thumbnailUrl",
           "intro",
           "exampleDialogues",
           "characterPrompt",
@@ -11167,6 +11179,17 @@
             ],
             "title": "Thumbnailassetid"
           },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
           "promptTemplate": {
             "$ref": "#/components/schemas/StoryPromptTemplate"
           },
@@ -11296,6 +11319,7 @@
           "name",
           "oneLiner",
           "thumbnailAssetId",
+          "thumbnailUrl",
           "promptTemplate",
           "settingText",
           "developmentExample",

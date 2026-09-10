@@ -13,6 +13,7 @@ function baseDraftResponse(): StoryDraftResponse {
     name: "여름밤의 항해",
     oneLiner: "바다 위 표류기",
     thumbnailAssetId: "asset-thumbnail",
+    thumbnailUrl: "https://example.com/asset-thumbnail.webp",
     promptTemplate: "basic",
     settingText: "근미래 해양 도시",
     developmentExample: "폭풍우로 배가 좌초된다",

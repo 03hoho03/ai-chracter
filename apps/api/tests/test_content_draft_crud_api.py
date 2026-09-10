@@ -31,7 +31,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _get_genre, _login_as, _make_user
+from factories import _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_empty_character_draft(
@@ -288,6 +288,7 @@ async def test_get_content_draft_returns_newly_created_empty_story_draft(
     assert body["name"] == ""
     assert body["oneLiner"] == ""
     assert body["thumbnailAssetId"] is None
+    assert body["thumbnailUrl"] is None
     assert body["promptTemplate"] == "basic"
     assert body["settingText"] is None
     assert body["developmentExample"] is None
@@ -330,6 +331,7 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
     assert body["name"] == ""
     assert body["oneLiner"] == ""
     assert body["thumbnailAssetId"] is None
+    assert body["thumbnailUrl"] is None
     assert body["intro"] == ""
     assert body["exampleDialogues"] == []
     assert body["characterPrompt"] == ""
@@ -340,6 +342,61 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
     assert body["target"] is None
     assert body["hashtags"] == []
     assert body["visibility"] == "private"
+
+
+async def test_get_content_draft_returns_thumbnail_url_for_character(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """builder-techspec.md §7: draft GET resolves a renderable URL for thumbnailAssetId
+    via the same `_resolve_thumbnail_url` path DraftSummary already uses."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    thumbnail = await _make_asset(db_session, user.id)
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    detail = await db_session.get(CharacterVersionDetail, version.id)
+    assert detail is not None
+    detail.thumbnail_asset_id = thumbnail.id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["thumbnailAssetId"] == str(thumbnail.id)
+    assert body["thumbnailUrl"]
+
+
+async def test_get_content_draft_returns_thumbnail_url_for_story(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """builder-techspec.md §7 — same as the character case, story side."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    thumbnail = await _make_asset(db_session, user.id)
+    version = (
+        await db_session.execute(
+            sa.select(ContentVersion).where(ContentVersion.content_id == content.id)
+        )
+    ).scalar_one()
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.thumbnail_asset_id = thumbnail.id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["thumbnailAssetId"] == str(thumbnail.id)
+    assert body["thumbnailUrl"]
 
 
 async def test_patch_content_draft_updates_fields_without_validation(
@@ -361,6 +418,7 @@ async def test_patch_content_draft_updates_fields_without_validation(
     body = resp.json()
     assert body["name"] == ""
     assert body["characterPrompt"] == ""
+    assert body["thumbnailUrl"] is None
     assert body["exampleDialogues"] == [
         {"id": "d1", "userLine": "안녕", "characterLine": "반가워"}
     ]
@@ -593,6 +651,7 @@ async def test_patch_content_draft_updates_story_fields_without_validation(
     assert body["name"] == ""
     assert body["promptTemplate"] == "custom"
     assert body["customPrompt"] == ""
+    assert body["thumbnailUrl"] is None
     assert body["description"] == "상세 설명입니다"
     assert body["genreId"] == str(genre.id)
     assert body["target"] == "all"
@@ -607,6 +666,50 @@ async def test_patch_content_draft_updates_story_fields_without_validation(
     detail = await db_session.get(StoryVersionDetail, version.id)
     assert detail is not None
     assert detail.setting_text == "세계관 설명"
+
+
+async def test_patch_content_draft_returns_thumbnail_url_for_character(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """builder-techspec.md §7 — PATCH response resolves thumbnailUrl the same way GET does."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    thumbnail = await _make_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(thumbnailAssetId=str(thumbnail.id)),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["thumbnailAssetId"] == str(thumbnail.id)
+    assert body["thumbnailUrl"]
+
+
+async def test_patch_content_draft_returns_thumbnail_url_for_story(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """builder-techspec.md §7 — story side of the same PATCH behavior."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    thumbnail = await _make_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(thumbnailAssetId=str(thumbnail.id)),
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["thumbnailAssetId"] == str(thumbnail.id)
+    assert body["thumbnailUrl"]
 
 
 async def test_patch_content_draft_round_trips_rules_user_goal_and_development_examples(

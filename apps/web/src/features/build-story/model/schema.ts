@@ -24,7 +24,10 @@ export const storySettingSchema = z
   .object({
     promptTemplate: z.enum(["basic", "emotional", "simulation", "custom"]).default("basic"),
     worldSetting: z.string().optional(),
-    developmentExamples: z.array(developmentExampleSchema).max(3).default([]),
+    developmentExamples: z
+      .array(developmentExampleSchema)
+      .max(3, "전개 예시는 최대 3개까지만 추가할 수 있습니다")
+      .default([]),
     userGoal: z.string().optional(),
     rules: z.string().optional(),
     customPrompt: z.string().optional(),
@@ -52,14 +55,14 @@ export const storySettingSchema = z
 /** techspec-builder-story.md §1.2 — 시작설정별 독립 스탯. */
 export const statDefSchema = z.object({
   id: z.string(),
-  name: z.string().min(1),
-  icon: z.string().min(1),
-  color: z.string().min(1),
+  name: z.string().min(1, "스탯 이름을 입력해주세요"),
+  icon: z.string().min(1, "아이콘을 선택해주세요"),
+  color: z.string().min(1, "색상을 선택해주세요"),
   min: z.number(),
   max: z.number(),
   initial: z.number(),
   unit: z.string().optional(),
-  description: z.string().min(1),
+  description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
   /** 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다. */
   perTurnDelta: z.number().int().optional(),
 });
@@ -96,9 +99,9 @@ export const ruleListItemSchema = z.discriminatedUnion("kind", [singleRuleSchema
 /** techspec-builder-story.md §1.5 — turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다(FR-58). */
 export const endingSchema = z.object({
   id: z.string(),
-  name: z.string().min(1),
-  turnGate: z.number().min(10),
-  judgePrompt: z.string().min(1),
+  name: z.string().min(1, "엔딩 이름을 입력해주세요"),
+  turnGate: z.number().min(10, "엔딩조건은 10턴 이상이어야 합니다"),
+  judgePrompt: z.string().min(1, "이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"),
   statRules: z.array(ruleListItemSchema).default([]),
   epilogue: z.string().optional(),
   hint: z.string().optional(),
@@ -110,8 +113,8 @@ export const endingSchema = z.object({
  */
 export const startingSetupSchema = z.object({
   id: z.string(),
-  name: z.string().min(1),
-  prologue: z.string().min(1),
+  name: z.string().min(1, "시작설정 이름을 입력해주세요"),
+  prologue: z.string().min(1, "이 시작설정의 도입부를 입력해주세요"),
   openingSituation: z.string().optional(),
   playGuide: z.string().optional(),
   suggestedReplies: z.array(z.string()).default([]),
@@ -122,8 +125,10 @@ export const startingSetupSchema = z.object({
 /** techspec-builder-story.md §1.3 — scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
 export const keywordNoteSchema = z.object({
   id: z.string(),
-  content: z.string().min(1),
-  triggerKeywords: z.array(z.string().min(1)).min(1),
+  content: z.string().min(1, "정보를 입력해주세요"),
+  triggerKeywords: z
+    .array(z.string().min(1, "키워드를 입력해주세요"))
+    .min(1, "트리거 키워드를 1개 이상 추가해주세요"),
   scope: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("global") }),
     z.object({ kind: z.literal("startingSetup"), startingSetupId: z.string() }),
@@ -133,23 +138,23 @@ export const keywordNoteSchema = z.object({
 /** techspec-builder-story.md §1.4. */
 export const shortcutSchema = z.object({
   id: z.string(),
-  name: z.string().min(1),
-  description: z.string().min(1),
-  prompt: z.string().min(1),
+  name: z.string().min(1, "단축어 이름을 입력해주세요"),
+  description: z.string().min(1, "이 단축어가 어떤 동작을 하는지 설명해주세요"),
+  prompt: z.string().min(1, "단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"),
 });
 
 export const storyBuilderSchema = z.object({
   profile: z.object({
-    name: z.string().min(1),
-    oneLiner: z.string().min(1),
+    name: z.string().min(1, "스토리 이름을 입력해주세요"),
+    oneLiner: z.string().min(1, "스토리를 한 줄로 소개해주세요"),
     image: z.object({ assetId: z.string() }).nullable(),
   }),
   storySetting: storySettingSchema,
-  startingSetups: z.array(startingSetupSchema).min(1),
+  startingSetups: z.array(startingSetupSchema).min(1, "시작설정을 1개 이상 추가해주세요"),
   keywordNotes: z.array(keywordNoteSchema).default([]),
   shortcuts: z.array(shortcutSchema).default([]),
   registration: z.object({
-    description: z.string().min(1),
+    description: z.string().min(1, "스토리를 목록에서 소개할 설명을 입력해주세요"),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
     // profile.image와 동일한 이유로 nullable로 둔다(US-091 캐릭터 빌더와 동일한 판단 — 초안 상태에선
     // 아직 선택 전일 수 있고, 발행 시 필수 검증은 이 스키마를 쓰는 이후 빌더 UI 스토리의 몫이다).
