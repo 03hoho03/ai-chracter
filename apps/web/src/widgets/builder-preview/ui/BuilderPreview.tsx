@@ -116,9 +116,7 @@ function CardPreview<TFieldValues extends FieldValues>({
     // 늘려 닫기 버튼이 스크롤 밖으로 사라졌다. `PreviewSessionView`가 쓰는 패턴대로 조상에 기대지
     // 않고 자기 높이를 직접 확정한다.
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="shrink-0 border-b border-border px-4 sm:px-6 py-3">
-        <PreviewCloseHeader onClose={onClose} />
-      </header>
+      <PreviewCloseHeader onClose={onClose} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 py-4">
         {/* 목록 로딩·실패·빈 응답이어도 내 카드는 반드시 그린다(D-8) — 프리뷰의 주인공은 내 카드이고

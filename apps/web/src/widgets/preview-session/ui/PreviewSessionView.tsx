@@ -112,15 +112,15 @@ export function PreviewSessionView({
 
   return (
     <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
-      <header className="shrink-0">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 border-b border-border px-4 sm:px-6 py-3">
-          <PreviewCloseHeader onClose={onClose} />
+      <PreviewCloseHeader
+        onClose={onClose}
+        action={
           <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>
             <RotateCw aria-hidden className="size-3.5" />
             미리보기 초기화
           </Button>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col">
         {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}

@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { TriangleAlert } from "lucide-react";
+import { Eye, Save, TriangleAlert } from "lucide-react";
 import { FormProvider, useForm, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -23,6 +23,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { isApiError } from "@/shared/lib/api/client";
 import {
   BuilderLayout,
+  BuilderTopBar,
   errorTabs,
   firstErrorLocation,
   useFocusFirstError,
@@ -204,37 +205,48 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
 
   return (
     <FormProvider {...form}>
+      {/* builder-preview-validation(피드백 2) — 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
+          56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
+          여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
+          토스트다(US-007). */}
+      <BuilderTopBar
+        title="스토리 만들기"
+        autosaveNotice="변경사항은 자동으로 저장돼요."
+        isPreviewOpen={isPreviewOpen}
+        actions={
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="미리보기"
+              className="lg:hidden"
+              onClick={() => setIsPreviewOpen(true)}
+            >
+              <Eye aria-hidden className="size-3.5" />
+              <span className="hidden sm:inline">미리보기</span>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              aria-label="임시저장"
+              onClick={() => void handleSaveNow()}
+            >
+              <Save aria-hidden className="size-3.5" />
+              <span className="hidden sm:inline">임시저장</span>
+            </Button>
+            <Button
+              size="sm"
+              disabled={isPublishing}
+              onClick={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
+            >
+              {isPublishing ? "발행 중..." : "발행"}
+            </Button>
+          </>
+        }
+      />
       <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {/* 저장 계약을 한 번 말해 둔다 — 자동저장은 성공해도 아무 표시가 없어서, 이 문장이 없으면
-            사용자가 "자동저장"이라는 단어를 처음 만나는 자리가 빨간 실패 토스트다(US-007). */}
-        <header className="flex flex-col gap-1.5">
-          <div className="flex items-center justify-between gap-4">
-            <h1 className="text-2xl font-bold break-keep tracking-tight text-foreground">스토리 만들기</h1>
-            <div className="flex items-center gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                className="lg:hidden"
-                onClick={() => setIsPreviewOpen(true)}
-              >
-                미리보기
-              </Button>
-              <Button type="button" variant="outline" onClick={() => void handleSaveNow()}>
-                임시저장
-              </Button>
-              <Button
-                disabled={isPublishing}
-                onClick={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
-              >
-                {isPublishing ? "발행 중..." : "발행"}
-              </Button>
-            </div>
-          </div>
-          <p className="text-sm break-keep text-muted-foreground">
-            변경사항은 자동으로 저장돼요.
-          </p>
-        </header>
-
         {rejectionReason !== null && draftId !== null && (
           <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
             <div>

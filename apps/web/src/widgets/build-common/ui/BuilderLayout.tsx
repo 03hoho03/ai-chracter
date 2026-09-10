@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
+import { builderMainMaxWidth } from "../lib/builderMainMaxWidth";
+
 type BuilderLayoutProps = {
   /** 폼 열 콘텐츠(헤더·탭 등 — 기존 Shell이 `<main>`에 직접 그리던 것 전부). */
   children: ReactNode;
@@ -33,8 +35,8 @@ export function BuilderLayout({ children, preview, isPreviewOpen }: BuilderLayou
   return (
     <main
       className={cn(
-        "mx-auto lg:grid lg:h-[calc(100dvh-3.5rem)] lg:max-w-7xl lg:grid-cols-[minmax(0,42rem)_1fr] lg:gap-6",
-        !isPreviewOpen && "max-w-2xl",
+        "mx-auto lg:grid lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-[minmax(0,42rem)_1fr] lg:gap-6",
+        builderMainMaxWidth(isPreviewOpen),
       )}
     >
       <div
