@@ -10,6 +10,7 @@ import {
   ContentListLoadMore,
   isVisibilityFilter,
   toContentStatusTags,
+  toPriorityCount,
   toThumbnailAspect,
   useProfileContentListQuery,
   VISIBILITY_FILTER_OPTIONS,
@@ -147,7 +148,7 @@ export function ProfileContentSection({
               isOwner={isOwner}
               ownerUserId={userId}
               thumbnailAspect={thumbnailAspect}
-              priority={index < 4}
+              priority={index < toPriorityCount(thumbnailAspect)}
               isLcpCandidate={index === 0}
             />
           ))}

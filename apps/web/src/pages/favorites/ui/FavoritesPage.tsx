@@ -12,6 +12,7 @@ import {
   ContentCardSkeleton,
   ContentListEmptyState,
   isContentType,
+  toPriorityCount,
   toThumbnailAspect,
   useFavoriteListQuery,
   type ContentListItem,
@@ -157,7 +158,7 @@ function FavoritesBody({
             title={item.name}
             metrics={{ viewCount: item.viewCount }}
             author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
-            priority={index < 4}
+            priority={index < toPriorityCount(thumbnailAspect)}
             isLcpCandidate={index === 0}
             onClick={() => onOpenContent(item.type, item.id)}
           />

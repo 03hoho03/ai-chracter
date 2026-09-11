@@ -18,6 +18,7 @@ import {
   ContentListEmptyState,
   ContentListLoadMore,
   isVisibilityFilter,
+  toPriorityCount,
   toThumbnailAspect,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
@@ -275,7 +276,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
               key={`${item.kind}-${item.id}`}
               item={item}
               userId={userId}
-              priority={index < 4}
+              priority={index < toPriorityCount("mixed")}
               isLcpCandidate={index === 0}
             />
           ))}
