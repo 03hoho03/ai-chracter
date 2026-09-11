@@ -10,6 +10,7 @@ import {
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListEmptyState,
+  toPriorityCount,
   toThumbnailAspect,
   useContentListQuery,
   useGenreListQuery,
@@ -188,7 +189,7 @@ export function HomePage({
                 title={item.name}
                 metrics={{ viewCount: item.viewCount }}
                 author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
-                priority={index < 4}
+                priority={index < toPriorityCount(thumbnailAspect)}
                 isLcpCandidate={index === 0}
                 onClick={() => open(item.type, item.id)}
                 onAuthorClick={() => onSearchChange({ creator: item.creatorUserId })}

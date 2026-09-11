@@ -38,11 +38,11 @@ export function ContentCardSkeleton({ thumbnailAspect, metrics, tags, actions }:
         actions={actions}
         onClick={() => {}}
       />
-      <div aria-hidden className="absolute inset-0 flex flex-col overflow-hidden rounded-xl">
+      <div aria-hidden className="absolute inset-0 flex flex-col gap-2">
         <div
-          className={cn(toThumbnailAspectClass(thumbnailAspect), "bg-muted animate-pulse")}
+          className={cn(toThumbnailAspectClass(thumbnailAspect), "rounded-xl bg-muted animate-pulse")}
         />
-        <div className="flex-1 bg-muted animate-pulse" />
+        <div className="flex-1 rounded-md bg-muted animate-pulse" />
       </div>
     </div>
   );

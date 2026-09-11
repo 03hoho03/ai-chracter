@@ -17,8 +17,8 @@ describe("toGridColumns", () => {
     expect(toGridColumns("square")).toBe("grid-cols-2 sm:grid-cols-3 md:grid-cols-4");
   });
 
-  it("portrait만 lg 단계(5열)를 갖는다 — 390px 3열은 작가명 공간 부족으로 기각(D-5)", () => {
-    expect(toGridColumns("portrait")).toBe("grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5");
+  it("portrait은 390px부터 3열이다 — 카드 껍데기가 걷혀 작가명 공간 부족 근거가 사라졌다(D-5 갱신)", () => {
+    expect(toGridColumns("portrait")).toBe("grid-cols-3 sm:grid-cols-4 md:grid-cols-5");
   });
 
   it("mixed는 square와 같은 열 수에 items-start를 더한다", () => {

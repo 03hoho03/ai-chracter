@@ -39,11 +39,14 @@ export function toThumbnailAspectClass(aspect: ThumbnailAspect): string {
 
 const SQUARE_COLUMNS = "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
 
-// `portrait`만 `lg:` 단계를 갖는 이유(card-grid-goal-prompt.md D-5) — 390px 3열이면 카드 폭이 111.3px로
-// 줄어 텍스트 가용폭이 85.3px, 작가명에는 21.9px(한글 1.8자)만 남는다. **카드 폭 ≥ 138px**이 작가명
-// 4자의 하한이고 이 사다리는 전 구간에서 이를 넘는다(390:173 · 640:189 · 768:171 · 1024:186px, canvas
-// 실측 — 한글 1자 ≈ 12.1px @14px Pretendard).
-const PORTRAIT_COLUMNS = "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5";
+// `portrait`이 390px부터 3열인 이유(card-grid-goal-prompt.md D-5 갱신, 2026-09-11) — 예전엔 "패딩을
+// 남기기로 해서 3열을 못 쓴다"였는데, 카드 껍데기(border+텍스트 영역 p-3)가 걷히며 그 전제가 사라졌다.
+// 텍스트가 이제 카드 폭 전체를 쓴다: 고정비용(Eye 14 + gap 4 + `1,234` 34.8 + ` · ` 10.6 = 63.4px)을
+// 뺀 나머지가 작가명 몫이고, 한글 1자 ≈ 12.1px @14px Pretendard(canvas 실측)다. 390:3열(카드 폭=텍스트
+// 폭 111.33px, 작가명 47.9px=3.96자) · 640:4열(139px, 75.6px=6.2자) · 768:5열(134.4px, 71px=5.9자) ·
+// 1024:5열(185.6px, 122.2px=10자) — 전 구간에서 작가명이 최소 3.96자를 유지한다. **이 숫자를 다시
+// 인용하기 전에 카드에 패딩이 없다는 전제부터 확인할 것** — 패딩이 돌아오면 3열은 다시 못 쓴다.
+const PORTRAIT_COLUMNS = "grid-cols-3 sm:grid-cols-4 md:grid-cols-5";
 
 // `mixed`의 `items-start` — 없으면 grid 기본 `stretch`가 짧은 카드(캐릭터 245px)를 긴 카드
 // (스토리 331px) 높이까지 늘려 **빈 border 상자**가 생긴다(card-grid-goal-prompt.md D-6).
@@ -59,4 +62,22 @@ const GRID_COLUMNS: Record<GridAspect, string> = {
  * 열 클래스를 정한다. */
 export function toGridColumns(aspect: GridAspect): string {
   return GRID_COLUMNS[aspect];
+}
+
+/** 첫 줄에 놓이는 카드 수 = 그 사다리의 **최대 열 수**. 호출부가 `priority`(eager 로드)를 줄 개수다.
+ *
+ * 열 사다리와 같은 파일에 두는 이유는 **실제로 어긋났기 때문이다** — 2026-09-11 에 portrait 를
+ * 3/4/5 로 바꿨는데 호출부 4곳의 `index < 4` 가 그대로 남아 **md 이상에서 첫 줄 마지막(5번째)
+ * 카드가 lazy 로 빠졌다.** 손으로 맞춘 값은 사다리를 바꿀 때 따라오지 않는다.
+ *
+ * `square`·`mixed` 가 4인 것은 그 사다리의 최대가 `md:grid-cols-4` 이기 때문이다. 좁은 화면에서는
+ * 실제 열 수보다 많이 당겨지지만(2열이면 2장이 과하게) 그건 원래 감수하던 오차다. */
+const MAX_COLUMNS: Record<GridAspect, number> = {
+  square: 4,
+  portrait: 5,
+  mixed: 4,
+};
+
+export function toPriorityCount(aspect: GridAspect): number {
+  return MAX_COLUMNS[aspect];
 }
