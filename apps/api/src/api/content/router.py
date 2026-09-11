@@ -226,11 +226,12 @@ async def list_my_drafts(
 @router.get("/me/favorites")
 async def list_my_favorites(
     cursor: str | None = None,
+    type: ContentType | None = None,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentListResponse:
-    """techspec-backend-content.md §1.1, US-039. Mixes character/story types (no `type`
-    filter), so details are resolved per-type like `/me/drafts` rather than joined against
+    """techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story
+    types, so details are resolved per-type like `/me/drafts` rather than joined against
     a single `_detail_model`. Excludes moderation_status=deleted content (same precedent as
     `/users/{id}/contents`'s owner "all" filter) since that's the fully-hidden equivalent of
     non-existence; otherwise still shows the bookmark regardless of visibility/restriction."""
@@ -245,6 +246,8 @@ async def list_my_favorites(
         )
         .order_by(Favorite.created_at.desc(), Favorite.content_id.desc())
     )
+    if type is not None:
+        query = query.where(Content.type == type)
     if cursor is not None:
         favorited_at, last_content_id = _decode_cursor(cursor)
         query = query.where(

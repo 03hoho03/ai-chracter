@@ -9,14 +9,30 @@ export const IMAGE_STYLE_PRESET_OPTIONS = [
   { value: "none", label: "없음" },
 ] as const;
 
-/** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. */
-export const IMAGE_ASPECT_RATIO_OPTIONS = [
-  { value: "1:1", label: "1:1 · 정사각형" },
-  { value: "4:3", label: "4:3 · 가로" },
-  { value: "3:4", label: "3:4 · 세로" },
-  { value: "16:9", label: "16:9 · 와이드" },
-  { value: "9:16", label: "9:16 · 세로 와이드" },
-] as const;
+/** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. **이 배열이 단일 소스다** —
+ * 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서 도출된다(TS-09).
+ *
+ * 한때 배열과 enum이 손으로 유지되는 두 소스였고 "둘 다 고쳐야 한다"는 경고 주석이 달려 있었다.
+ * 경고는 실제 위험을 정확히 적었지만 **경고로는 못 막는다** — enum만 고쳐도 타입은 통과하고 선택지만
+ * 조용히 빠진다. `2:3`을 더할 때 실제로 두 곳에 각각 손으로 넣었다.
+ *
+ * `2:3`의 배경(card-grid-goal-prompt.md D-3): 스토리 카드 슬롯이 2:3이고 실제 생성 치수는
+ * 832×1216(Animagine XL 4.0 권장 버킷 · NovelAI 기본값)이다. 세로 셋의 순서는 비율순(3:4 → 2:3 → 9:16)이다. */
+export const IMAGE_ASPECT_RATIOS = ["1:1", "4:3", "3:4", "2:3", "16:9", "9:16"] as const;
+
+const IMAGE_ASPECT_RATIO_LABEL: Record<(typeof IMAGE_ASPECT_RATIOS)[number], string> = {
+  "1:1": "1:1 · 정사각형",
+  "4:3": "4:3 · 가로",
+  "3:4": "3:4 · 세로",
+  "2:3": "2:3 · 세로 포스터",
+  "16:9": "16:9 · 와이드",
+  "9:16": "9:16 · 세로 와이드",
+};
+
+export const IMAGE_ASPECT_RATIO_OPTIONS = IMAGE_ASPECT_RATIOS.map((value) => ({
+  value,
+  label: IMAGE_ASPECT_RATIO_LABEL[value],
+}));
 
 export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 
@@ -28,7 +44,7 @@ export const generateImagesSchema = z.object({
   prompt: z.string().trim().min(1, { message: "프롬프트를 입력해주세요" }),
   model: z.enum(["flux-schnell", "sdxl"]),
   style: z.enum(["realistic", "anime", "illustration", "render3d", "none"]),
-  aspectRatio: z.enum(["1:1", "4:3", "3:4", "16:9", "9:16"]),
+  aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
   count: z.number().int().min(1).max(4),
 });
 

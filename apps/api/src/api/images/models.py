@@ -8,7 +8,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
-AspectRatio = Literal["1:1", "4:3", "3:4", "16:9", "9:16"]
+AspectRatio = Literal["1:1", "4:3", "3:4", "16:9", "9:16", "2:3"]
 ImageModelId = Literal["flux-schnell", "sdxl"]
 
 
@@ -26,7 +26,7 @@ IMAGE_MODELS: tuple[ImageModelSpec, ...] = (
     ImageModelSpec(
         id="sdxl",
         name="Stable Diffusion XL",
-        supported_aspect_ratios=("1:1", "4:3", "3:4", "16:9", "9:16"),
+        supported_aspect_ratios=("1:1", "4:3", "3:4", "16:9", "9:16", "2:3"),
     ),
 )
 

@@ -130,7 +130,9 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
         onSettled: () => {
           setDesiredFavorited((current) => (current === syncingFavorited ? undefined : current));
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
-          void queryClient.invalidateQueries({ queryKey: favoriteKeys.list() });
+          // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다(card-grid-techspec.md T-1) — 접두사로
+          // 두 타입 모두 무효화한다. 한쪽만 지우면 반대 타입 즐겨찾기 목록이 stale로 남는다.
+          void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
         },
       });
     },

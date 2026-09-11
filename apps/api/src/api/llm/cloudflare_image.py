@@ -14,14 +14,24 @@ from api.core.config import settings
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient, ImageStylePreset, apply_style_preset
 
-# SDXL은 width/height를 직접 받는다(256~2048). 각 종횡비를 1024 기준 변으로 매핑.
+# SDXL은 width/height를 직접 받는다(256~2048). 예전 값은 긴 변을 1024로 고정해 매핑했는데
+# 그러면 9:16 같은 세로 비율이 576×1024=0.59M px로 SDXL 학습 면적(≈1.05M)의 56%에 그쳐
+# 품질이 떨어졌다. 아래 값은 비율을 정확히 유지한 채 면적을 ≈1.05M로 올린 것이며 전부 8의
+# 배수다. `2:3`만 예외로 832×1216(=13:19)을 쓴다 — Animagine XL 4.0 모델카드 권장
+# 버킷이자 NovelAI 기본값이라 학습치 일치를 비율 정확도보다 위에 뒀다(의도된 근사치다).
+# CSS 표시 슬롯은 정확한 2:3이고, object-cover가 높이를 맞추므로 생성물에서 가로
+# **2.56%**(832px 중 21.3px)가 잘린다 = 1 - (2/3)/(832/1216).
+# ⚠️ 이 수치를 `832/1216 ÷ 2/3 - 1 = 2.63%`로 "고치지 말 것" — 그건 슬롯 대비 **초과분**이지
+# 원본에서 잘려 나가는 몫이 아니다(적대적 리뷰가 실제로 이 둘을 혼동했다).
+# 근거: card-grid-goal-prompt.md D-2 · card-grid-techspec.md T-7.
 # ImageClient.generate_image의 aspect_ratio가 str이라 str 키로 둔다(미지원 값은 기본 정사각).
 _ASPECT_TO_WH: dict[str, tuple[int, int]] = {
     "1:1": (1024, 1024),
-    "4:3": (1024, 768),
-    "3:4": (768, 1024),
-    "16:9": (1024, 576),
-    "9:16": (576, 1024),
+    "4:3": (1184, 888),
+    "3:4": (888, 1184),
+    "16:9": (1408, 792),
+    "9:16": (792, 1408),
+    "2:3": (832, 1216),
 }
 
 

@@ -107,7 +107,7 @@ components:
     height: "36px"
     padding: "0 12px"
   badge-status:
-    backgroundColor: "{colors.muted}"
+    backgroundColor: "transparent"
     textColor: "{colors.muted-foreground}"
     rounded: "{rounded.full}"
     padding: "2px 8px"
@@ -267,10 +267,19 @@ components:
 ### Cards / Containers
 - **Corner Style:** radius `xl`(11.2px).
 - **Background:** `bg-card`, 테두리 `border-border` 한 줄. **그림자 없음.**
-- **Internal Padding:** 12px(콘텐츠 카드) / 16px(초안 카드) / 32px(인증 카드).
+- **Internal Padding:** **콘텐츠 카드(`ContentCard`)는 0이다** — 썸네일이 border 안쪽 가장자리에 닿고 **텍스트 영역만 12px**를 갖는다(2026-09-11, `card-grid-goal-prompt.md` D-1). 그 밖: 16px(초안 카드) / 32px(인증 카드).
+  - **패딩을 걷은 이유**는 썸네일이 그 화면의 콘텐츠 자체이기 때문이다 — 레퍼런스 둘(크랙·케이브덕)은 카드에 border·padding·배경이 **전혀 없고** 썸네일이 곧 카드다(실측: `padding: 0px`, `rgba(0,0,0,0)`, 썸네일 `rect.left == 카드 rect.left`). 390px 2열에서 카드 내부폭이 149px → **173px(+16%)**가 된다.
+  - **그럼에도 border는 남긴다.** 이 카드는 `bg-card`가 아니라 button-outline 레시피(`bg-background`)라 rest에서 카드 채움이 페이지 배경과 같고, **경계를 지는 것이 `border` 한 줄뿐**이다(아래 예외 항목). border까지 빼면 hover 표면과 focus 대상이 동시에 사라진다.
+  - **hover는 이제 텍스트 영역에서만 보인다** — 표면이 줄어든 게 아니라 신호가 또렷해진 것이다. focus 링은 `overflow-hidden`에 잘리지 않는다(자기 자신의 `box-shadow`는 자기 overflow의 클립 대상이 아니다 — 실측).
 - **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸. **단, 이건 정지 표시용 카드에만 유효하다** — 아래 예외를 볼 것.
 - **예외: 카드 자체가 그 화면의 주 인터랙션이면 button-outline 레시피를 카드 크기로 쓴다** — `border-border bg-background` + `hover:bg-muted` + 하우스 focus 레시피 + `active:translate-y-px`. `bg-card` 위에서는 `hover:bg-accent/50`도 `hover:bg-muted`도 **픽셀상 아무것도 그리지 않기** 때문이다(`background-color`는 층으로 쌓이지 않고 `bg-card`를 대체한 뒤 페이지 배경 위에 합성된다 — 스크린샷 픽셀 실측 **다크 1.0000:1 / 라이트 1.0178:1**). 이 예외를 쓰면 rest에서 카드 채움이 페이지 배경과 같아져 §4의 명도 사다리를 벗어나지만, 경계는 `border`가 유지하고 hover는 다크 1.0946 / 라이트 1.0902로 실제로 보인다. 대안인 `bg-card` + `hover:bg-secondary`는 라이트에서 `muted-foreground` 본문이 4.30:1로 AA에 미달해 쓸 수 없다 — 셋(사다리·hover 가시성·본문 AA)을 동시에 만족하는 조합은 현재 토큰에 없다. 적용처: `ContentCard`(홈·즐겨찾기·프로필·내 작품), `BuilderTypeSelectPage`.
-- **Thumbnail well:** `aspect-square rounded-lg bg-secondary`, 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로. **`bg-muted`가 아닌 이유**: 웰이 `bg-card` 카드 위(rest)에서도, `hover:bg-muted`가 걸린 카드 위(hover)에서도 표면과 같은 값이 되어 사라진다(둘 다 실측 1.0000:1). `secondary`는 두 상태 모두에서 살아남는다(rest 다크 1.2521 / hover 다크 1.1439).
+- **Thumbnail well:** **비율은 콘텐츠 타입이 정한다** — 캐릭터 `aspect-square`(1:1), 스토리 `aspect-story`(2:3, `globals.css`의 `--aspect-story` 토큰). 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로.
+  - **`rounded-lg`를 두지 않는다** — 카드의 `rounded-xl`이 `overflow-hidden`으로 썸네일을 직접 자른다. 안쪽에 별도 반경을 두면 border 1px 안쪽 곡률과 어긋난다.
+  - **두 비율은 레퍼런스 실측에서 왔다**(2026-09-11): 크랙 캐릭터 표시·원본 **1.000**(400×400, 크롭 0) / 크랙 스토리 표시 0.669·원본 **0.667**(400×600, 크롭 0). 케이브덕은 캐릭터 4:5(0.8)·세계관 **5:4 가로**(1.25)로 갈라 "스토리는 세로"가 업계 합의가 아님을 보여준다 — 크랙 스토리는 웹소설 표지, 케이브덕 세계관은 배경 이미지라서다.
+  - **CSS 슬롯은 정확한 2:3이고 생성 치수는 832×1216(=13:19)이다** — 일부러 다르다. 832×1216은 Animagine XL 4.0 권장 버킷이자 NovelAI 기본값이라 학습치 일치를 비율 정확도보다 위에 뒀고, 그 대가로 생성물에서 가로 **2.56%**(832px 중 21.3px)가 잘린다(`card-grid-goal-prompt.md` D-2·D-3). **`bg-muted`가 아닌 이유**: 웰이 `bg-card` 카드 위(rest)에서도, `hover:bg-muted`가 걸린 카드 위(hover)에서도 표면과 같은 값이 되어 사라진다(둘 다 실측 1.0000:1). `secondary`는 두 상태 모두에서 살아남는다(rest 다크 1.2521 / hover 다크 1.1439).
+- **카드 그리드의 열 수는 썸네일 비율이 정한다**(`ContentCardGrid`, `card-grid-techspec.md` T-4): `square` 2/3/4 · `portrait` 2/3/4/**5**(`lg`에서 한 칸 더) · 섞인 목록 2/3/4 + `items-start`. gap은 셋 다 `gap-3`이다.
+  - **`portrait`이 390px에서 3열이 아닌 이유**: 3열이면 카드 폭 111.3px → 텍스트 가용폭 85.3px라 `조회수 · 작가명` 줄에서 작가명에 **21.9px(한글 1.8자)** 밖에 안 남는다(canvas 실측, 한글 1자 ≈ 12.1px @14px). **카드 폭 ≥ 138px**이 작가명 4자의 하한이고 위 사다리는 전 구간에서 넘는다(390:173 · 640:189 · 768:171 · 1024:186). **크랙은 390px에서 3열을 쓰지만 그건 카드 패딩이 0이라 텍스트가 카드 폭 전체를 쓰기 때문이다** — 우리는 패딩을 남기기로 했으므로(위) 같은 열 수를 감당할 수 없다. 레퍼런스의 수치를 베낄 때는 그 수치를 성립시키는 조건까지 같은지 볼 것.
+  - **섞인 목록에 `items-start`가 필요한 이유**: 없으면 grid 기본 `stretch`가 짧은 카드(캐릭터 245px)를 긴 카드(스토리 331px) 높이까지 늘려 **빈 border 상자**가 생긴다.
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
@@ -291,13 +300,14 @@ components:
 - **이 규칙은 `apps/web` 전용이다. `apps/admin`은 예외로 좌측 사이드바를 쓴다**(D-9, `widgets/admin-sidebar`). web은 콘텐츠 몰입이 전제라 크롬이 얇고 고정돼야 하지만, admin은 화면 전환 자체가 주 동작인 운영 콘솔이라 사이드바가 맞는 크롬이다 — "불 꺼진 방" 북극성이 애초에 admin에는 적용되지 않는다(admin은 라이트 고정, §1).
 - **워드마크는 아이콘 없는 타이포그래픽 마크 하나다**(`또나`, `text-lg font-bold tracking-tight text-foreground`). 파비콘(Pretendard Bold `또` 글리프)·OG 이미지(`또나` 워드마크)와 같은 계보이며, 로고에 심볼 아이콘을 붙이지 않는다 — 마크가 둘이면 브랜드가 둘이다. 색도 없다: 로고는 강조 지점이 아니므로 `primary`가 아니라 `foreground`다(§2 One-Accent Rule).
 - **모바일 대응은 레이아웃 분기가 아니라 라벨 숨김이다**: 토글 라벨이 `sm:` 미만에서 사라지고 아이콘만 남는다. **워드마크는 예외로 항상 노출한다** — 2자(≈36px)라 숨겨서 아낄 폭이 없고, 숨기면 홈 링크에 접근 가능한 이름이 남지 않는다. 검색은 `w-8`에서 `w-40 sm:w-64`로 펼쳐진다 — 다만 이 값은 선호 폭이지 하한이 아니다. 우측 아이콘 그룹과 펼친 검색은 `min-w-0`을 갖고 있어, 폭이 모자라면(390px에서 아이콘 4개 + 펼친 검색) 아이콘(`shrink-0`)이 아니라 검색만 줄어든다. 헤더에 아이콘을 더 추가할 땐 이 상태에서 `bar.scrollWidth === bar.clientWidth`를 실측할 것.
-- **채팅 화면은 뷰포트 고정이다**: `h-[calc(100dvh-3.5rem)]`. 이 `3.5rem`은 헤더의 `h-14`를 수동으로 미러링한 값이므로 **헤더 높이를 바꾸면 5곳을 함께 고쳐야 한다.**
+- **채팅 화면은 뷰포트 고정이다**: `h-[calc(100dvh-3.5rem)]`. 이 `3.5rem`은 헤더의 `h-14`를 수동으로 미러링한 값이므로 **헤더 높이를 바꾸면 6곳을 함께 고쳐야 한다**(`ChatRoomView` 3 · `PreviewSessionView` · `BuilderLayout` · `BuilderPreview`). 2026-09-11 재측정 — 그 전까지 이 줄은 "5곳"이라 적혀 `BuilderPreview`를 빠뜨리고 있었다.
 - **채팅 더보기 패널은 1024px 이상에서 인라인 사이드바다**(`w-72`, `border-l border-border`, `bg-card`, 채팅 헤더 아래부터 바닥까지). 이것은 사이드 레일이 아니다 — 기본이 닫힘이고 채팅 라우트에만 있으며 ⋮로 여는 일시적 패널이다(크롬은 여전히 `h-14` 헤더 하나뿐이다). 오버레이가 아니라 채팅 컬럼과 폭을 나눠 갖는 이유는 **열어둔 채로 대화를 계속 읽고 보낼 수 있어야** 하기 때문이다. 분기는 `lg:` 클래스가 아니라 JS(`useMedia`)로 한다 — `Sheet`는 body로 포털돼 부모 클래스가 닿지 않고, 열린 `Sheet`는 포커스 트랩까지 걸어 인라인 패널과 공존할 수 없다.
 - **1024px 미만에서 같은 패널은 바닥에서 올라오는 드롭업이다**(`Sheet side="bottom"` + `top-[118px]` + `rounded-t-xl`). 우측 시트가 아니라 드롭업인 이유는 **누구와 대화 중인지가 계속 보여야** 하기 때문이다 — 시트 상단을 채팅 헤더 바로 아래에 붙여 아바타·캐릭터명·방 이름을 남긴다. 그 `118px`는 전역 헤더 `h-14`(56) + border 1 + 채팅 헤더 60 + border 1을 실측한 값으로, 위의 `calc(100dvh-3.5rem)`와 같은 계열의 수동 미러링이다(헤더 높이를 바꾸면 여기도 함께 고친다). 전역 헤더는 채팅 헤더 위에 있으므로 함께 남는다 — 둘을 따로 고를 수 없다. 오버레이 스크림은 그 위를 덮으므로 헤더는 보이되 흐려진다(의도된 모달 표현).
 
 ### Status badges
 - **Shape:** `inline-flex items-center rounded-full px-2 py-0.5 text-badge font-medium`. 전용 `Badge` 프리미티브는 없고 각 자리에서 손으로 조립한다(크기만 토큰이다 — §Typography의 Badge 티어).
 - **중립 상태(공개/링크공개/비공개/미등록, 문의 대기/답변완료):** `border border-border` — **채움이 아니라 윤곽이다**. `bg-muted` 채움은 카드 표면과 같은 값이 되는 순간이 반드시 있어(정지 `bg-card` 카드 위에서, 또는 `hover:bg-muted`가 걸린 카드의 hover에서 — 둘 다 실측 1.0000:1) 알약이 통째로 사라진다. 윤곽은 hover에서도 살아남는다(다크 1.3076 / 라이트 1.2699). 결과적으로 **타입=채움 / 상태=윤곽**으로 형태가 갈려 위계가 생긴다.
+- ⚠️ **프론트매터의 `badge-status`는 이 사실을 온전히 표현하지 못한다**(2026-09-11, backlog B-21). 한때 `backgroundColor: "{colors.muted}"`로 적혀 있어 **실제 구현과 정면으로 달랐고**(실제는 채움 없는 윤곽), 지금은 `"transparent"`로 고쳤다. 다만 그 스키마에 `borderColor` 슬롯이 없어 **윤곽 자체는 여전히 적을 수 없다** — 이 절의 산문이 단일 진실이다. 프론트매터만 보고 배지를 재현하지 말 것.
 - **중립 상태 안의 위계는 잉크 명도로 만든다.** 기본은 `text-muted-foreground`, **사용자가 읽을 게 생긴 상태만** 밝기 천장 `text-foreground`로 올린다 — 지금은 문의의 `답변완료` 하나뿐이다(`entities/inquiry/model/inquiryStatus.ts`의 `INQUIRY_STATUS_BADGE_INK`). 색으로 가르지 않는 것은 PRODUCT.md가 "UI 자체(배경/텍스트/버튼/배지)는 무채색"으로 못박았기 때문이고, 이 시스템의 깊이는 원래 명도 사다리가 만든다.
   - **`hover:bg-muted` 카드 위가 최악이고, 라이트의 `대기`가 AA 경계에 가장 가깝다**(스크린샷 픽셀 디코드 실측, `/ui-demo`): `대기` 다크 6.7374→**6.1553**, 라이트 5.2511→**4.8165**(AA 여유 0.32뿐 — hover 표면을 더 어둡게 하거나 `muted-foreground`를 더 밝히면 깨진다). `답변완료`는 다크 15.8622→14.4917, 라이트 17.2244→15.7988로 여유가 크다. 윤곽 자체는 다크 1.4312→1.3076, 라이트 1.3845→1.2699다.
 - **이용제한:** `bg-destructive/10 text-destructive-text` — 틴트, 채움 아님.

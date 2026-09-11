@@ -335,3 +335,152 @@ async def test_list_favorites_cursor_pagination_covers_all_items_without_duplica
             break
 
     assert collected == expected_names
+
+
+async def test_list_favorites_type_filter_excludes_other_type(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    creator = _make_user()
+    db_session.add_all([user, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+
+    character = await _make_published_content(
+        db_session,
+        creator_user_id=creator.id,
+        genre_id=genre.id,
+        content_type=ContentType.CHARACTER,
+        name="즐겨찾기 캐릭터",
+    )
+    story = await _make_published_content(
+        db_session,
+        creator_user_id=creator.id,
+        genre_id=genre.id,
+        content_type=ContentType.STORY,
+        name="즐겨찾기 스토리",
+    )
+    db_session.add_all(
+        [
+            Favorite(user_id=user.id, content_id=character.id, created_at=now - timedelta(minutes=1)),
+            Favorite(user_id=user.id, content_id=story.id, created_at=now),
+        ]
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/me/favorites", params={"type": "story"})
+    assert resp.status_code == 200
+    names = [item["name"] for item in resp.json()["items"]]
+    assert names == ["즐겨찾기 스토리"]
+
+
+async def test_list_favorites_type_filter_cursor_pagination_covers_all_items(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The real risk of a `type` filter is that it breaks cursor continuation across pages
+    # (see card-grid-techspec.md T-1). Character favorites are interleaved by created_at
+    # between the story favorites so a filter applied inconsistently across pages would
+    # either leak a character into the results or skip/duplicate a story.
+    monkeypatch.setattr("api.content.router.FAVORITES_PAGE_SIZE", 2)
+
+    user = _make_user()
+    creator = _make_user()
+    db_session.add_all([user, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+
+    expected_story_names = [f"스토리-{i}" for i in range(5)]
+    stories = [
+        await _make_published_content(
+            db_session,
+            creator_user_id=creator.id,
+            genre_id=genre.id,
+            content_type=ContentType.STORY,
+            name=name,
+        )
+        for name in expected_story_names
+    ]
+    characters = [
+        await _make_published_content(
+            db_session,
+            creator_user_id=creator.id,
+            genre_id=genre.id,
+            content_type=ContentType.CHARACTER,
+            name=f"캐릭터-{i}",
+        )
+        for i in range(2)
+    ]
+    await db_session.flush()
+
+    db_session.add_all(
+        [
+            Favorite(user_id=user.id, content_id=characters[0].id, created_at=now),
+            Favorite(user_id=user.id, content_id=stories[0].id, created_at=now - timedelta(minutes=1)),
+            Favorite(user_id=user.id, content_id=characters[1].id, created_at=now - timedelta(minutes=2)),
+            Favorite(user_id=user.id, content_id=stories[1].id, created_at=now - timedelta(minutes=3)),
+            Favorite(user_id=user.id, content_id=stories[2].id, created_at=now - timedelta(minutes=4)),
+            Favorite(user_id=user.id, content_id=stories[3].id, created_at=now - timedelta(minutes=5)),
+            Favorite(user_id=user.id, content_id=stories[4].id, created_at=now - timedelta(minutes=6)),
+        ]
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+
+    collected: list[str] = []
+    cursor: str | None = None
+    for _ in range(10):
+        params: dict[str, str] = {"type": "story"}
+        if cursor is not None:
+            params["cursor"] = cursor
+        resp = await db_client.get("/me/favorites", params=params)
+        assert resp.status_code == 200
+        body = resp.json()
+        collected.extend(item["name"] for item in body["items"])
+        cursor = body["nextCursor"]
+        if cursor is None:
+            break
+
+    assert collected == expected_story_names
+
+
+async def test_list_favorites_type_omitted_returns_mixed_results(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    creator = _make_user()
+    db_session.add_all([user, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+
+    character = await _make_published_content(
+        db_session,
+        creator_user_id=creator.id,
+        genre_id=genre.id,
+        content_type=ContentType.CHARACTER,
+        name="즐겨찾기 캐릭터",
+    )
+    story = await _make_published_content(
+        db_session,
+        creator_user_id=creator.id,
+        genre_id=genre.id,
+        content_type=ContentType.STORY,
+        name="즐겨찾기 스토리",
+    )
+    db_session.add_all(
+        [
+            Favorite(user_id=user.id, content_id=character.id, created_at=now - timedelta(minutes=1)),
+            Favorite(user_id=user.id, content_id=story.id, created_at=now),
+        ]
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/me/favorites")
+    assert resp.status_code == 200
+    names = [item["name"] for item in resp.json()["items"]]
+    assert names == ["즐겨찾기 스토리", "즐겨찾기 캐릭터"]

@@ -1,14 +1,14 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext, useWatch, type FieldValues } from "react-hook-form";
 
-import { ContentCard, useContentListQuery } from "@/entities/content";
+import { ContentCard, toThumbnailAspect, useContentListQuery } from "@/entities/content";
 import type { ContentCardProps, ContentType } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import { useSessionQuery } from "@/entities/session";
 import { PreviewCloseHeader, PreviewSessionView } from "@/widgets/preview-session";
 
 /** 배경으로 까는 목록 카드 최대 개수. 내 카드(1장) + 7장 = 8장 — 이 앱의 그리드 스켈레톤들
- * (`ContentGridSkeleton` 등)이 이미 쓰는 "4열 기준 2행" 관례와 맞췄다. 목록이 이보다 적게 오면
+ * (`ContentCardSkeleton` 등)이 이미 쓰는 "4열 기준 2행" 관례와 맞췄다. 목록이 이보다 적게 오면
  * 그만큼만 그린다 — 개수를 채우는 건 이 위젯의 책임이 아니다(D-8, 배경은 맥락일 뿐이다). */
 const BACKGROUND_CARD_LIMIT = 7;
 
@@ -122,9 +122,10 @@ function CardPreview<TFieldValues extends FieldValues>({
         {/* 목록 로딩·실패·빈 응답이어도 내 카드는 반드시 그린다(D-8) — 프리뷰의 주인공은 내 카드이고
             둘러싼 카드는 맥락일 뿐이다. 그래서 목록 상태에 대한 별도 에러/빈 상태 분기를 두지 않고
             `backgroundItems`가 빈 배열로 조용히 접히게 둔다. */}
-        {/* `entities/content`의 `ContentCardGrid`(`sm:`/`md:` 뷰포트 브레이크포인트)를 여기서는 쓰지
-            않는다 — 이 그리드는 폭 전체가 아니라 `BuilderLayout`의 2단 그리드가 남긴 프리뷰 열(`1fr`)
-            안에 있어서, 뷰포트가 아무리 넓어도 열 자체는 좁을 수 있다(1024~1150px 실측: 열 폭
+        {/* `entities/content`의 `ContentCardGrid`(card-grid-techspec.md T-4, `sm:`/`md:` 뷰포트
+            브레이크포인트)를 여기서는 쓰지 않는다 — 이 그리드는 폭 전체가 아니라 `BuilderLayout`의
+            2단 그리드가 남긴 프리뷰 열(`1fr`) 안에 있어서, 뷰포트가 아무리 넓어도 열 자체는 좁을 수
+            있다(1024~1150px 실측: 열 폭
             300~350px인데 뷰포트 기준으론 이미 `md:grid-cols-4`가 걸려 카드가 78px까지 눌리고 배지
             글자가 세로로 깨졌다). `ContentCardGrid`를 이 사례에 맞게 고치면 뷰포트 전체 폭에서 쓰는
             홈·즐겨찾기·프로필·내작품 쪽 계약이 깨지므로 손대지 않는다(A-5) — 대신 이 열 전용으로
@@ -139,6 +140,7 @@ function CardPreview<TFieldValues extends FieldValues>({
             <ContentCard
               key={item.id}
               thumbnailUrl={item.thumbnailUrl}
+              thumbnailAspect={toThumbnailAspect(contentType)}
               title={item.name}
               metrics={{ viewCount: item.viewCount }}
               author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}

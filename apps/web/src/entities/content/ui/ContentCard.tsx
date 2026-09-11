@@ -3,6 +3,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { BookOpen, Eye, Heart, ImageOff, MessageCircle, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
+import { toThumbnailAspectClass, type ThumbnailAspect } from "../model/cardLayout";
 import type { ContentType, ContentVisibility } from "../model/content";
 
 /** 카드에 다는 배지. 타입(무엇인지)과 상태(어디에 놓여 있는지)를 한 배열로 받아 순서는 호출부가 정한다.
@@ -44,8 +45,9 @@ const TAG_ICON: Partial<Record<ContentCardTag, LucideIcon>> = {
   story: BookOpen,
 };
 
-/** 카드에 얹는 지표. `viewCount` 하나만 오면 홈·즐겨찾기·프로필이 원래 쓰던 `조회수 {n}` 평문 그대로 두고,
- * 셋이 다 오면(`/my`) 라벨을 아이콘으로 바꿔 스크린리더에만 한국어 이름을 남긴다.
+/** 카드에 얹는 지표. `viewCount` 하나만 오고 `author`가 없으면(프로필) `조회수 {n}` 평문 그대로 두고,
+ * `author`가 함께 오면(홈·즐겨찾기) `Eye` 아이콘 + `·` + 작가명을 한 줄로 합친다(card-grid-goal-prompt.md
+ * D-4). 셋이 다 오면(`/my`) 라벨을 아이콘으로 바꿔 스크린리더에만 한국어 이름을 남긴다.
  *
  * 셋을 아이콘으로 바꾼 이유는 공간이 아니다 — 390px 2열(카드 내부폭 139px)에서 세 지표는 **아이콘으로 줄여도
  * 203px가 필요해 어차피 두 줄로 접힌다**(실측). 접히는 것 자체는 파손이 아니라서 그대로 두고, 아이콘을 고른
@@ -58,6 +60,9 @@ export type ContentCardMetrics = {
 
 export type ContentCardProps = {
   thumbnailUrl: string | null;
+  /** card-grid-techspec.md T-3 — 표시 비율. **기본값을 두지 않는다**: 두면 빠뜨린 호출부가 조용히
+   * `square`가 된다. 도메인(`ContentType`) → 표현 매핑은 카드가 아니라 `toThumbnailAspect`가 진다. */
+  thumbnailAspect: ThumbnailAspect;
   title: string;
   metrics?: ContentCardMetrics;
   /** 지표 대신(또는 지표가 없을 때) 그 자리에 놓는 한 줄. `/my`의 초안 카드가 "… 수정"을 여기 넣는다 —
@@ -77,6 +82,11 @@ export type ContentCardProps = {
   priority?: boolean;
   /** LCP 후보 1장(`index === 0`)에만 준다 — 여러 장에 주면 우선순위 신호가 희석돼 의미가 없다. */
   isLcpCandidate?: boolean;
+  /** card-grid-techspec.md T-5 — `ContentCardSkeleton`이 "보이지 않는 실제 카드"를 `invisible`로
+   * 겹칠 때만 쓴다. 그 외 호출부는 쓰지 않는다. */
+  className?: string;
+  /** 위와 같은 용도 — 스켈레톤의 더미 카드를 포커스·a11y 트리에서 뺀다. */
+  inert?: boolean;
   onClick: () => void;
   onAuthorClick?: () => void;
 };
@@ -93,6 +103,7 @@ export type ContentCardProps = {
  * "`--muted`와 `--card`는 같은 값이다" 항목. */
 export function ContentCard({
   thumbnailUrl,
+  thumbnailAspect,
   title,
   metrics,
   metaLabel,
@@ -101,10 +112,21 @@ export function ContentCard({
   actions,
   priority = false,
   isLcpCandidate = false,
+  className,
+  inert,
   onClick,
   onAuthorClick,
 }: ContentCardProps) {
   const id = useId();
+
+  // card-grid-goal-prompt.md D-4 — `viewCount` 단일 지표(대화수·좋아요 없음) + `author` 조합일 때만
+  // 조회수·작가명을 한 줄로 합친다. 프로필은 `author`를 안 넘기고(`ContentSummary`에 작가 필드 자체가
+  // 없다), `/my`는 지표 3개라 이 조건에 걸리지 않아 둘 다 현행 동작 그대로다.
+  const isCombinedMetaLine =
+    metrics !== undefined &&
+    metrics.chatCount === undefined &&
+    metrics.likeCount === undefined &&
+    author !== undefined;
 
   // 카드 이름을 **내용 계산에 맡기지 않고** 자기 자식들을 직접 가리킨다. 계산에 맡기면 `actions`의 "⋯"
   // 버튼 라벨까지 이름에 빨려 들어가서, 그 버튼에 작품 이름을 넣는 순간 카드가 제목을 두 번 읽는다
@@ -136,12 +158,20 @@ export function ContentCard({
         event.preventDefault();
         onClick();
       }}
-      className="flex w-full cursor-pointer flex-col gap-3 rounded-xl border border-border bg-background p-3 text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors"
+      inert={inert}
+      className={cn(
+        // card-grid-goal-prompt.md D-1 — 컨테이너는 패딩·gap을 갖지 않는다(썸네일이 카드 가장자리에
+        // 닿아야 한다). `overflow-hidden`이 `rounded-xl`로 썸네일 모서리를 직접 자른다. 텍스트 영역은
+        // 자기 `p-3`을 갖는다(아래).
+        "flex w-full cursor-pointer flex-col overflow-hidden rounded-xl border border-border bg-background text-left outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors",
+        className,
+      )}
     >
       {/* 웰은 `bg-muted`가 아니라 `bg-secondary`다 — 카드의 `hover:bg-muted`가 카드 표면을 웰과 같은
           값으로 만들어, `bg-muted` 웰은 hover에서 정확히 1.0000:1로 사라진다(실측). 썸네일이 아직 없는
-          초안 카드(US-007의 지연 생성이 만드는 정상 상태)에서만 보이는 자리라 그때가 곧 전부다. */}
-      <div className="aspect-square overflow-hidden rounded-lg bg-secondary">
+          초안 카드(US-007의 지연 생성이 만드는 정상 상태)에서만 보이는 자리라 그때가 곧 전부다.
+          `rounded-lg`는 두지 않는다 — 카드의 `rounded-xl`이 `overflow-hidden`으로 직접 자른다(D-1). */}
+      <div className={cn(toThumbnailAspectClass(thumbnailAspect), "overflow-hidden bg-secondary")}>
         {thumbnailUrl ? (
           <img
             src={thumbnailUrl}
@@ -158,7 +188,7 @@ export function ContentCard({
         )}
       </div>
 
-      <div className="flex flex-col gap-1.5">
+      <div className="flex flex-col gap-1.5 p-3">
         {/* `gap-2`는 잘린 제목의 말줄임 `…`과 `actions`의 "⋯"를 갈라 놓기 위한 것이다
             (`apps/web/CLAUDE.md`의 "잘린 제목 옆에 ⋯" 항목에 실측치와 함께 있다). */}
         <div className="flex items-center gap-2">
@@ -171,7 +201,16 @@ export function ContentCard({
           {actions}
         </div>
 
-        {metrics && <ContentCardMetricList id={`${id}-metrics`} metrics={metrics} />}
+        {isCombinedMetaLine && metrics && author ? (
+          <ContentCardViewsAndAuthor
+            id={id}
+            viewCount={metrics.viewCount}
+            author={author}
+            onAuthorClick={onAuthorClick}
+          />
+        ) : (
+          metrics && <ContentCardMetricList id={`${id}-metrics`} metrics={metrics} />
+        )}
 
         {/* `break-keep`이 여기(프리미티브)에 있는 이유: 이 줄은 호출부가 **문자열로만** 넘기는 자리라
             다이얼로그 본문처럼 호출부에서 클래스를 얹을 수가 없다. 없으면 390px 카드(내부폭 139px)에서
@@ -184,7 +223,8 @@ export function ContentCard({
           </p>
         )}
 
-        {author &&
+        {!isCombinedMetaLine &&
+          author &&
           (onAuthorClick ? (
             <button
               id={`${id}-author`}
@@ -211,6 +251,46 @@ export function ContentCard({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+type ContentCardViewsAndAuthorProps = {
+  id: string;
+  viewCount: number;
+  author: { name: string; profileUrl: string };
+  onAuthorClick?: () => void;
+};
+
+/** card-grid-goal-prompt.md D-4 — 조회수·작가명 한 줄. `-metrics`/`-author` 두 id를 그대로 유지한다
+ * (labelledBy 계약, `ContentCard` 상단 주석). 조회수 묶음은 `shrink-0`, 작가명이 `min-w-0` + `truncate`를
+ * 진다 — 긴 쪽은 작가명이어야 한다. */
+function ContentCardViewsAndAuthor({ id, viewCount, author, onAuthorClick }: ContentCardViewsAndAuthorProps) {
+  return (
+    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span id={`${id}-metrics`} className="inline-flex shrink-0 items-center gap-1">
+        <Eye aria-hidden className="size-3.5" />
+        <span className="sr-only">조회수</span>
+        {viewCount.toLocaleString()}
+      </span>
+      <span aria-hidden>·</span>
+      {onAuthorClick ? (
+        <button
+          id={`${id}-author`}
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onAuthorClick();
+          }}
+          className="min-w-0 truncate text-left hover:underline"
+        >
+          {author.name}
+        </button>
+      ) : (
+        <span id={`${id}-author`} className="min-w-0 truncate">
+          {author.name}
+        </span>
+      )}
     </div>
   );
 }
