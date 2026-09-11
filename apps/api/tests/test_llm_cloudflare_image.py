@@ -61,8 +61,8 @@ async def test_sdxl_returns_binary_and_sends_dimensions(monkeypatch: pytest.Monk
     assert mime == "image/png"
     body = captured["body"]
     assert isinstance(body, dict)
-    assert body["width"] == 1024
-    assert body["height"] == 576
+    assert body["width"] == 1408
+    assert body["height"] == 792
 
 
 async def test_flux_omits_dimensions(monkeypatch: pytest.MonkeyPatch) -> None:

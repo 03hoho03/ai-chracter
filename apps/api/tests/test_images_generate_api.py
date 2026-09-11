@@ -127,7 +127,7 @@ async def test_list_image_models_returns_capabilities(
     assert resp.status_code == 200
     models = {m["id"]: m for m in resp.json()}
     assert models["flux-schnell"]["supportedAspectRatios"] == ["1:1"]
-    assert set(models["sdxl"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16"}
+    assert set(models["sdxl"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
 
 
 async def test_generate_creates_assets_and_completes_job(
