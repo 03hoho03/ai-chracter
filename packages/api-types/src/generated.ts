@@ -1320,8 +1320,8 @@ export interface paths {
         };
         /**
          * List My Favorites
-         * @description techspec-backend-content.md §1.1, US-039. Mixes character/story types (no `type`
-         *     filter), so details are resolved per-type like `/me/drafts` rather than joined against
+         * @description techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story
+         *     types, so details are resolved per-type like `/me/drafts` rather than joined against
          *     a single `_detail_model`. Excludes moderation_status=deleted content (same precedent as
          *     `/users/{id}/contents`'s owner "all" filter) since that's the fully-hidden equivalent of
          *     non-existence; otherwise still shows the bookmark regardless of visibility/restriction.
@@ -3961,7 +3961,7 @@ export interface components {
              * Aspectratio
              * @enum {string}
              */
-            aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
+            aspectRatio: "1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "2:3";
             /**
              * Count
              * @default 1
@@ -4095,7 +4095,7 @@ export interface components {
             /** Name */
             name: string;
             /** Supportedaspectratios */
-            supportedAspectRatios: ("1:1" | "4:3" | "3:4" | "16:9" | "9:16")[];
+            supportedAspectRatios: ("1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "2:3")[];
         };
         /**
          * ImageStylePreset
@@ -6819,6 +6819,7 @@ export interface operations {
         parameters: {
             query?: {
                 cursor?: string | null;
+                type?: components["schemas"]["ContentType"] | null;
             };
             header?: never;
             path?: never;

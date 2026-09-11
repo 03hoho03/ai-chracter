@@ -2821,7 +2821,7 @@
           "content"
         ],
         "summary": "List My Favorites",
-        "description": "techspec-backend-content.md §1.1, US-039. Mixes character/story types (no `type`\nfilter), so details are resolved per-type like `/me/drafts` rather than joined against\na single `_detail_model`. Excludes moderation_status=deleted content (same precedent as\n`/users/{id}/contents`'s owner \"all\" filter) since that's the fully-hidden equivalent of\nnon-existence; otherwise still shows the bookmark regardless of visibility/restriction.",
+        "description": "techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story\ntypes, so details are resolved per-type like `/me/drafts` rather than joined against\na single `_detail_model`. Excludes moderation_status=deleted content (same precedent as\n`/users/{id}/contents`'s owner \"all\" filter) since that's the fully-hidden equivalent of\nnon-existence; otherwise still shows the bookmark regardless of visibility/restriction.",
         "operationId": "list_my_favorites_me_favorites_get",
         "parameters": [
           {
@@ -2838,6 +2838,22 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContentType"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
             }
           }
         ],
@@ -9364,7 +9380,8 @@
               "4:3",
               "3:4",
               "16:9",
-              "9:16"
+              "9:16",
+              "2:3"
             ],
             "title": "Aspectratio"
           },
@@ -9650,7 +9667,8 @@
                 "4:3",
                 "3:4",
                 "16:9",
-                "9:16"
+                "9:16",
+                "2:3"
               ]
             },
             "type": "array",
