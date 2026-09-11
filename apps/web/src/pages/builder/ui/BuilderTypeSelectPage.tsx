@@ -74,7 +74,7 @@ function BuilderTypeCard({ option }: { option: BuilderTypeOption }) {
     >
       <option.Icon aria-hidden className="mt-0.5 size-5 shrink-0 text-muted-foreground" />
       <span className="flex min-w-0 flex-col gap-1 break-keep">
-        <span className="text-base font-semibold text-foreground">{option.label}</span>
+        <span className="text-lg font-semibold text-foreground">{option.label}</span>
         <span className="text-sm text-muted-foreground">{option.summary}</span>
         <span className="text-sm text-muted-foreground">{option.exposure}</span>
       </span>

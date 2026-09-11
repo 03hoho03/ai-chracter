@@ -32,7 +32,7 @@ function LegalDocumentBody({ kind }: LegalDocumentBodyProps) {
       return (
         <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
           <FileQuestion aria-hidden className="size-8 text-muted-foreground" />
-          <p className="text-base font-semibold text-foreground">아직 게시된 문서가 없어요</p>
+          <p className="text-lg font-semibold text-foreground">아직 게시된 문서가 없어요</p>
           <p className="text-sm text-muted-foreground">잠시 후 다시 확인해주세요.</p>
         </div>
       );

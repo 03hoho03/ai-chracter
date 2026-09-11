@@ -29,7 +29,7 @@ type ContentCardActionMenuProps = {
  * - **`hover:bg-secondary aria-expanded:bg-secondary`**: 포인터가 이 버튼 위에 있으면 카드도 동시에
  *   hover라 카드가 `bg-muted`가 되는데 `ghost`의 hover도 `bg-muted`라 정확히 1.0000:1로 사라진다.
  *   `secondary`는 카드의 두 표면(`background`/`muted`) 양쪽에서 살아남는다(실측 다크 1.1439 / 라이트 1.1239).
- * - **`w-auto`**: `DropdownMenuContent`의 폭이 트리거 폭(28px → `min-w-32`)에 고정돼 있어 조금만 긴
+ * - **`w-auto`**: `DropdownMenuContent`의 폭이 트리거 폭(32px → `min-w-32`)에 고정돼 있어 조금만 긴
  *   라벨이 두 줄로 깨진다. 프리미티브를 고치면 헤더·알림 메뉴 폭이 함께 바뀌므로 call-site 처방이다.
  * - **`collisionPadding`**: Radix 기본값이 0이라, 좌측 열 카드의 `align="end"` 메뉴가 뷰포트를 넘칠 때
  *   충돌 보정이 딱 `x=0`에 붙여 놓는다(320px 실측 — 여백 0px). 카드 그리드는 뷰포트 가장자리까지 가는

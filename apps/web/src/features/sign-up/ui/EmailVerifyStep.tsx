@@ -113,7 +113,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
         </Button>
       </div>
 
-      <Button type="submit" size="lg" className="h-10" disabled={isSubmitting}>
+      <Button type="submit" size="lg" disabled={isSubmitting}>
         {isSubmitting ? "확인 중..." : "인증하기"}
       </Button>
     </form>

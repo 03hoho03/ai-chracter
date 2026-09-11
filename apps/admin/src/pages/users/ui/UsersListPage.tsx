@@ -90,7 +90,8 @@ function UserSearchForm({ defaultQuery, onSearch }: UserSearchFormProps) {
       }}
       className="flex items-center gap-2"
     >
-      <Input placeholder="이메일 또는 닉네임 검색" aria-label="이메일 또는 닉네임 검색" className="h-7 w-48 sm:w-64" {...register("q")} />
+      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다(design-system-progress.md P-3-8). */}
+      <Input placeholder="이메일 또는 닉네임 검색" aria-label="이메일 또는 닉네임 검색" className="h-8 w-48 sm:w-64" {...register("q")} />
       <Button type="submit" variant="outline" size="sm">
         검색
       </Button>

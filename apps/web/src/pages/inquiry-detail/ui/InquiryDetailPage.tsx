@@ -33,7 +33,7 @@ function InquiryDetailBody({ inquiryId }: { inquiryId: string }) {
       return (
         <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
           <FileQuestion aria-hidden className="size-8 text-muted-foreground" />
-          <p className="text-base font-semibold text-foreground">찾을 수 없는 문의예요</p>
+          <p className="text-lg font-semibold text-foreground">찾을 수 없는 문의예요</p>
           <p className="text-sm break-keep text-muted-foreground">
             삭제되었거나 잘못된 주소예요.{" "}
             <Link

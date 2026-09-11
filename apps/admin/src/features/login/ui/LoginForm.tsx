@@ -101,7 +101,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
         )}
       </div>
 
-      <Button type="submit" size="lg" className="h-10" disabled={loginMutation.isPending}>
+      <Button type="submit" size="lg" disabled={loginMutation.isPending}>
         {loginMutation.isPending ? "로그인 중..." : "로그인"}
       </Button>
     </form>

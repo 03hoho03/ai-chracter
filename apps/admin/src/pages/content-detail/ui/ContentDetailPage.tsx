@@ -59,7 +59,7 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
               <span aria-hidden>·</span>
               <span>{MODERATION_STATUS_LABELS[contentDetailQuery.data.moderationStatus]}</span>
             </div>
-            <p className="truncate text-base font-semibold text-foreground">
+            <p className="truncate text-lg font-semibold text-foreground">
               {contentDetailQuery.data.name || "(이름 없음)"}
             </p>
             <p className="text-xs text-muted-foreground">

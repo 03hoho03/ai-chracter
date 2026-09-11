@@ -8,9 +8,10 @@ import {
 } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { Button } from "@ai-character-chat/ui/components/button";
+import { Button, buttonVariants } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, GripVertical, ImageOff, Loader2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
@@ -186,9 +187,16 @@ function SituationalImageRow({
       </div>
 
       <div className="flex flex-1 flex-col gap-2">
+        {/* 같은 행의 삭제 Button(variant="ghost" size="icon", 36px)과 하단 "상황별 이미지 추가"
+            Button(variant="secondary" size="default", 36px)이 모두 36px라 default로 맞춘다.
+            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
+            (design-system-progress.md P-2-9). */}
         <Label
           htmlFor={inputId}
-          className="inline-flex h-8 w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
+          className={cn(
+            buttonVariants({ variant: "outline", size: "default" }),
+            "w-fit cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50"
+          )}
         >
           <Camera aria-hidden className="size-4" />
           {isUploading ? "업로드 중..." : "파일 업로드"}

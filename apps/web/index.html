@@ -2,7 +2,9 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- viewport-fit=cover — design-system-progress.md P-5(D-12). 이게 없으면 env(safe-area-inset-*)가
+         항상 0으로 계산된다(저장소 최초의 safe-area 처리). -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>또나 — AI 캐릭터 챗</title>
     <meta
       name="description"

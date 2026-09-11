@@ -36,6 +36,15 @@
   --font-sans: "Pretendard Variable", -apple-system, BlinkMacSystemFont,
     system-ui, Roboto, "Malgun Gothic", sans-serif;
   --font-heading: var(--font-sans);
+  /* 본문 사다리 상향 — Tailwind v4 기본값(0.875rem/0.75rem)을 오버라이드한다.
+     Body 16px(기존 14px) · Label/메타 14px(기존 12px) · Badge 12px(기존 11px, 아래 --text-badge).
+     근거: design-system-goal-prompt.md D-5/D-8.
+
+     줄높이는 여기 적지 않는다 — Tailwind v4는 줄높이를 font-size 대비 비율로 정의하므로
+     (`--text-sm--line-height: calc(1.25 / 0.875)`) font-size만 바꾸면 자동으로 따라온다
+     (16px에서 --text-sm의 줄높이는 약 22.9px). */
+  --text-sm: 1rem;
+  --text-xs: 0.875rem;
   /* 배지 전용 티어. DESIGN.md §Typography Hierarchy가 Badge를 다섯 번째 티어로 이미 선언해 뒀는데
      앞의 넷(Display/Title/Body/Label)만 유틸리티로 실체가 있고 이 티어만 호출부 6곳에서 `text-[11px]`로
      손조립돼 있었다 — 같은 임의값이 2회 이상 반복되면 토큰으로 승격한다(fe-styling STYLE-02).
@@ -47,9 +56,9 @@
      설정했으므로 줄높이를 여기서 정하면 6곳의 렌더가 바뀐다.
 
      px가 아니라 rem인 것은 "모든 크기는 고정 rem"(DESIGN.md, The No-Hero Rule)을 따른 것이고,
-     기본 루트(16px)에서 정확히 11px이라 렌더는 그대로이면서 사용자가 브라우저 기본 글자 크기를
-     키웠을 때 함께 커진다. */
-  --text-badge: 0.6875rem;
+     기본 루트(16px)에서 정확히 12px(D-8 사다리의 새 값)이 나오면서 사용자가 브라우저 기본
+     글자 크기를 키웠을 때 함께 커진다. */
+  --text-badge: 0.75rem;
 }
 
 :root {
@@ -100,7 +109,19 @@
      부모만 훑는 감사는 그 자리를 놓친다. */
   --input: oklch(0.62 0 0);
   --ring: oklch(0.5 0.19 0);
-  --radius: 0.625rem;
+  /* D-4가 32px 이상 티어 반경을 10px로 통일했는데, 레퍼런스와 나란히 재보니 또나가 뚜렷하게 더
+     둥글다. 판단 기준은 radius ÷ 반높이(1.0이면 완전한 pill) — 레퍼런스(케이브덕 사이드 홈
+     56px/6px=0.21, 크랙 자동정리 24px/4px=0.33, 크랙 전체보기 44px/8px=0.36, 케이브덕 더보기
+     40px/8px=0.40, 케이브덕 추천칩 36px/8px=0.44)는 0.21~0.44인데 또나(lg 40px/10px=0.50,
+     default 36px/10px=0.56, sm 32px/10px=0.63, xs 24px/8px=0.67)는 0.50~0.67로 겹치는 구간이
+     없다. 서체는 변인이 아니다 — 셋 다 Pretendard, body 16px/24px로 같고 또나 칩(weight 500)이
+     오히려 케이브덕(600)보다 가볍다. 그래서 사다리 전체를 8px로 낮춰 옮긴다 — 아래 파생 정의
+     (×0.6/0.8/1.4)는 그대로 둬 비율 관계를 보존하고, 그래서 생기는 소수점(md 6.4px, xl 11.2px)은
+     의도된 것이다(정수보다 비율 유지가 우선). `xs`의 반경 캡(`button.tsx`의
+     `rounded-[min(var(--radius-md),10px)]`)은 손대지 않아도 저절로 해소된다 — `md`가 6.4px로
+     내려가 캡(10px) 아래로 들어가므로 `min(6.4,10)`=6.4px, 비율 0.53.
+     출처: design-system-goal-prompt.md D-14 */
+  --radius: 0.5rem;
   color-scheme: light;
 }
 
@@ -116,7 +137,11 @@
      규칙으로 뒤집는다 — 0.16 텍스트 7.18:1, hover(bg-primary/80)에서도 4.90:1. L 0.72는 밝기 천장
      foreground(0.930) 아래이고, 라이트(0.5)와 명도 차를 크게 둔 것은 primary만이 유일한 '솔리드 채움'
      이라 양쪽 테마 모두 채움 자체가 자기 텍스트와 4.5:1을 져야 하기 때문이다(destructive는 /10 틴트라
-     텍스트 대비만 맞추면 되어 0.55→0.64로 조금만 밝힌다) */
+     텍스트 대비만 맞추면 되어 0.55→0.64로 조금만 밝힌다).
+     **라이트·다크 단일값은 검토했고 기각했다**(design-system-goal-prompt.md D-15). 네 조건을 전부
+     만족하는 단일값 대역은 oklch(L 0.52~0.54)로 존재하지만, 그 값을 쓰면 다크에서 채움이 배경에서
+     떨어져 나오는 정도가 7.18:1 → 3.44:1(카드 위 CTA는 3.14:1)로 반토막 나고 칩의 상대 휘도가
+     0.327 → 0.130으로 떨어진다 — A/B 렌더로 확인. 이 값을 하나로 합치려는 시도는 D-15를 먼저 읽을 것 */
   --primary: oklch(0.72 0.18 0);
   --primary-foreground: oklch(0.16 0 0);
   --secondary: oklch(0.26 0 0);

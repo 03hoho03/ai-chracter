@@ -64,7 +64,8 @@ export function SearchInlineExpand() {
             }}
             placeholder="캐릭터·스토리 검색"
             aria-label="캐릭터·스토리 검색"
-            className="h-8 min-w-0"
+            // 옆 Button(size="icon")이 36px라 Input 기본값(D-4로 h-9=36px)과 이미 맞는다 — 오버라이드 제거.
+            className="min-w-0"
           />
           <Button type="button" variant="ghost" size="icon" aria-label="검색 닫기" onClick={collapse}>
             <X aria-hidden />

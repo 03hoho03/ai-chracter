@@ -19,10 +19,10 @@ import {
 } from "@/entities/content";
 import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
-import { CharacterPlayButton } from "./CharacterPlayButton";
+import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayButton";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
-import { StoryDetailBody } from "./StoryDetailBody";
+import { StoryDetailBody, StoryPlayBar } from "./StoryDetailBody";
 import { VersionHistoryModal } from "./VersionHistoryModal";
 
 const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
@@ -41,8 +41,10 @@ const TYPE_LABEL: Record<ContentType, string> = {
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
 /** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
- * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다. */
-export function ContentDetailView({ id }: { id: string }) {
+ * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
+ * `variant`는 design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 하단에 고정하는 방식이
+ * 모달(카드 안 flex)과 풀페이지(lg 미만 fixed)에서 구조 자체가 달라 호출부가 명시한다. */
+export function ContentDetailView({ id, variant }: { id: string; variant: "modal" | "page" }) {
   const detailQuery = useContentDetailQuery(id);
   const setModalState = useSetAtom(contentDetailModalAtom);
   const navigate = useNavigate();
@@ -52,6 +54,10 @@ export function ContentDetailView({ id }: { id: string }) {
   const [desiredLiked, setDesiredLiked] = useState<boolean | undefined>(undefined);
   const [desiredFavorited, setDesiredFavorited] = useState<boolean | undefined>(undefined);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
+  // 스토리 전용 — 시작설정 선택. `StoryDetailBody`(스크롤 영역의 선택기)와 `StoryPlayBar`(하단
+  // 고정 바)가 형제로 갈라지면서(P-5) 상태를 여기서 들고 있어야 서로 공유할 수 있다. 캐릭터는 쓰지
+  // 않지만 다른 optimistic override들과 같은 이유로 무조건 호출한다(hooks 규칙).
+  const [selectedSetupIdOverride, setSelectedSetupIdOverride] = useState<string | undefined>(undefined);
   const content = detailQuery.data;
 
   // 상세 GET이 백그라운드로 조회수를 올리므로 홈 목록을 무효화해야 한다 — 모달 경로는 홈 리스트가
@@ -155,8 +161,21 @@ export function ContentDetailView({ id }: { id: string }) {
   const isLiked = desiredLiked ?? content.isLiked;
   const likeCount = content.likeCount + optimisticDelta(isLiked, content.isLiked);
   const isFavorited = desiredFavorited ?? content.isFavorited;
+  const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
 
-  return (
+  const footer =
+    content.type === "story" ? (
+      <StoryPlayBar
+        contentId={content.id}
+        startingSetups={content.startingSetups ?? []}
+        selectedSetupId={selectedSetupId}
+        onRestoreSetup={setSelectedSetupIdOverride}
+      />
+    ) : (
+      <CharacterPlayBar contentId={content.id} />
+    );
+
+  const body = (
     <article className="flex flex-col gap-5 p-1">
       <div className="aspect-video w-full overflow-hidden rounded-lg bg-muted">
         {/* US-013 — 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
@@ -272,11 +291,14 @@ export function ContentDetailView({ id }: { id: string }) {
 
       <p className="whitespace-pre-wrap text-sm text-muted-foreground">{content.detailDescription}</p>
 
-      {content.type === "story" ? (
-        <StoryDetailBody contentId={content.id} startingSetups={content.startingSetups ?? []} />
-      ) : (
-        <CharacterPlayButton contentId={content.id} />
+      {content.type === "story" && (
+        <StoryDetailBody
+          startingSetups={content.startingSetups ?? []}
+          selectedSetupId={selectedSetupId}
+          onSelectedSetupIdChange={setSelectedSetupIdOverride}
+        />
       )}
+      {content.type === "character" && <CharacterChatHistoryLink contentId={content.id} />}
 
       <VersionHistoryModal
         contentId={content.id}
@@ -284,6 +306,35 @@ export function ContentDetailView({ id }: { id: string }) {
         onOpenChange={setIsVersionHistoryOpen}
       />
     </article>
+  );
+
+  // design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 스크롤 영역 밖으로 뽑아 하단에 고정한다.
+  if (variant === "modal") {
+    // 모달은 폭과 무관하게 전 폭에서 고정한다(분기 없음) — `DialogContent`가 이 컴포넌트의 호출부에서
+    // 이미 `flex flex-col`이라, 여기서는 그 두 flex 아이템만 내놓는다. 카드 안 flex 배치라 겹칠
+    // 다른 fixed/absolute 레이어가 없으므로 z-index 경쟁이 없다.
+    return (
+      <>
+        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
+        <div className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+          {footer}
+        </div>
+      </>
+    );
+  }
+
+  return (
+    <>
+      {body}
+      {/* 풀페이지는 자연 문서 스크롤이라 모달과 같은 flex 트릭을 못 쓴다(P-0-3-⑤) — `lg` 미만에서만
+          뷰포트 기준 `fixed` 바로, `lg` 이상은 지금처럼 본문 안 인라인으로 되돌아간다(넓은 화면의
+          전폭 고정 바는 DESIGN.md가 경계하는 "상시 크롬"에 가깝다는 판단, 확정 결정).
+          z-40: 헤더(`z-30`, sticky)와는 화면 위/아래로 겹칠 일이 없어 순서가 기능에 영향을 주지
+          않지만, 이 화면에 뜨는 Dialog/Sheet(`z-50`)는 항상 이 바 위를 덮어야 하므로 그 아래로 둔다. */}
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] lg:static lg:inset-auto lg:z-auto lg:mt-5 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pb-0">
+        {footer}
+      </div>
+    </>
   );
 }
 

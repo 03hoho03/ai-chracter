@@ -49,7 +49,7 @@ function NoticeListItemRow({ item }: { item: NoticeListItem }) {
       params={{ noticeId: item.id }}
       className="flex flex-col gap-1 rounded-xl border border-border bg-background p-4 outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
     >
-      <span className="break-keep text-base font-semibold text-foreground">{item.title}</span>
+      <span className="break-keep text-lg font-semibold text-foreground">{item.title}</span>
       <span className="text-sm text-muted-foreground">{formatDate(item.publishedAt)}</span>
     </Link>
   );

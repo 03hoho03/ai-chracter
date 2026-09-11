@@ -30,7 +30,7 @@ export function ContentUnavailableState({ access }: { access: ContentAccessStatu
   return (
     <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
       <Icon aria-hidden className="size-8 text-muted-foreground" />
-      <p className="text-base font-semibold text-foreground">{title}</p>
+      <p className="text-lg font-semibold text-foreground">{title}</p>
       <p className="text-sm text-muted-foreground">{description}</p>
     </div>
   );

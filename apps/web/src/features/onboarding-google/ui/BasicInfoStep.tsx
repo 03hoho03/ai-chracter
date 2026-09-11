@@ -70,7 +70,7 @@ export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
 
       <LegalConsentFields />
 
-      <Button type="submit" size="lg" className="h-10" disabled={isSubmitting}>
+      <Button type="submit" size="lg" disabled={isSubmitting}>
         {isSubmitting ? "처리 중..." : "다음"}
       </Button>
     </form>

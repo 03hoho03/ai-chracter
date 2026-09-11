@@ -50,7 +50,7 @@ export function ChatMoreSidebar(props: ChatMoreNavProps) {
       className="flex w-72 shrink-0 flex-col border-l border-border bg-card motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
     >
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
-        <h2 className="font-heading text-base font-medium text-foreground">더보기</h2>
+        <h2 className="font-heading text-lg font-medium text-foreground">더보기</h2>
         <Button variant="ghost" size="icon-sm" aria-label="더보기 닫기" onClick={() => setOpen(false)}>
           <X aria-hidden className="size-4" />
         </Button>

@@ -98,7 +98,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
               <span aria-hidden>·</span>
               <span>{MODERATION_STATUS_LABELS[reportDetailQuery.data.content.moderationStatus]}</span>
             </div>
-            <p className="truncate text-base font-semibold text-foreground">
+            <p className="truncate text-lg font-semibold text-foreground">
               {reportDetailQuery.data.content.name || "(이름 없음)"}
             </p>
           </div>

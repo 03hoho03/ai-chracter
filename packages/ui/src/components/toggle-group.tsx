@@ -40,8 +40,17 @@ function ToggleGroup({
       data-spacing={spacing}
       data-orientation={orientation}
       style={{ "--gap": spacing } as React.CSSProperties}
+      /** `sm`이 32px 티어로 올라가며(`toggle.tsx` D-4) 컨테이너 반경 캡을 걷었다 — 캡을 남기면
+       * 같은 32px 안에서 `default`와 `sm`의 모서리가 갈린다(design-system-progress.md P-0-2-③).
+       * 이제 두 사이즈가 같은 반경을 쓴다.
+       *
+       * **여기 `rounded-lg`와 아래 `first:rounded-l-lg` 계열은 `spacing={0}`(맞붙은 세그먼트)
+       * 에서만 보인다** — 기본 `spacing=2`에서는 배경도 보더도 없고 아이템이 각자 반경을 그리므로
+       * 렌더에 아무 영향이 없다. D-13이 아이템을 pill로 바꿨으니 `spacing={0}`을 쓰는 호출부가
+       * 처음 생기면 끝단 캡(8px)과 pill 본체가 어긋난다. **지금 `spacing={0}` 호출부는 0곳**이라
+       * 실제 결함은 없다 — 그 호출부를 만드는 사람이 여기부터 맞춰라. */
       className={cn(
-        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-[size=sm]:rounded-[min(var(--radius-md),10px)] data-vertical:flex-col data-vertical:items-stretch",
+        "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-vertical:flex-col data-vertical:items-stretch",
         className
       )}
       {...props}

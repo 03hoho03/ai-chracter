@@ -101,7 +101,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
         )}
       </div>
 
-      <Button type="submit" size="lg" className="h-10" disabled={confirmMutation.isPending}>
+      <Button type="submit" size="lg" disabled={confirmMutation.isPending}>
         {confirmMutation.isPending ? "변경 중..." : "비밀번호 변경"}
       </Button>
     </form>

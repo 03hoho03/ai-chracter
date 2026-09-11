@@ -37,18 +37,35 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive-text hover:bg-destructive/20 focus-visible:border-destructive focus-visible:ring-destructive/50",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      /** 24/28/32/40/48px 어휘의 좌우 패딩이 134곳 전부 10px 단일값이던 것을 벌린다
+       * (design-system-goal-prompt.md D-4) — `default` 32→36px(`px-4`), `sm` 28→32px(`px-3`).
+       * `text-[0.8rem]`(12.8px, 토큰 미사용) 하드코딩도 `sm`에서 제거해 `text-xs`(P-1 이후 14px)를
+       * 쓴다 — 전에는 `xs`(12px) < `sm`(12.8px) < `default`(14px)였는데 P-1로 `xs`가 14px가 되며
+       * `sm`만 더 작은 상자에 더 큰 글자가 들어가는 역전이 생겼었다.
+       *
+       * `has-data-[icon=inline-end]:pr-*` / `has-data-[icon=inline-start]:pl-*`는 각 사이즈가
+       * 원래 갖고 있던 "베이스 패딩에서 줄이는 양"(default/lg -0.5unit, sm -1unit)을 새 베이스에
+       * 그대로 옮긴 값이다 — 그래야 아이콘이 있을 때/없을 때의 여백 차이가 개편 전후로 같게 유지된다.
+       *
+       * **`sm`/`icon-sm`의 `rounded-[min(var(--radius-md),12px)]` 캡을 걷어냈다.** `sm`이 32px
+       * 티어로 올라가면 `default`/`icon`과 같은 32px 안에 들어가는데, 캡을 남기면 그 안에서
+       * `default`(8px, 캡 없음)와 `sm`(6.4px, `min(6.4,12)`)의 모서리가 갈린다. `apps/web/CLAUDE.md`와
+       * `MyWorksPage.tsx`가 "SelectTrigger sm과 ToggleGroupItem sm은 픽셀상 같다"고 명문화해 둔
+       * 전제가 여기서 성립하려면 같은 높이 티어는 같은 반경이어야 한다(design-system-progress.md
+       * P-0-2-③). `xs`/`icon-xs`(24px 티어)의 캡은 그대로 둔다 — 32px 티어와 무관한 다른 높이라
+       * 이 정합성 요구가 적용되지 않는다. */
       size: {
         default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+          "h-9 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
         xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
+        sm: "h-8 gap-1 px-3 text-xs in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-10 gap-1.5 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
+        icon: "size-9",
         "icon-xs":
           "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-lg [&_svg:not([class*='size-'])]:size-3",
         "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+          "size-8 in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "size-10",
       },
     },
     defaultVariants: {
