@@ -60,7 +60,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
             <span aria-hidden>·</span>
             <span>{userDetailQuery.data.suspendedAt ? "정지" : "정상"}</span>
           </div>
-          <p className="text-base font-semibold text-foreground">{userDetailQuery.data.nickname}</p>
+          <p className="text-lg font-semibold text-foreground">{userDetailQuery.data.nickname}</p>
           <p className="text-sm text-muted-foreground">{userDetailQuery.data.email}</p>
           <p className="text-xs text-muted-foreground">
             {formatDateTime(userDetailQuery.data.createdAt)} 가입

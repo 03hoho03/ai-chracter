@@ -15,9 +15,11 @@ type ContentListEmptyStateProps = {
  * `title`은 결과가 0건인 게 아니라 **아직 아무것도 시작하지 않은** 상태를 위한 슬롯이다(US-011).
  * 그때는 한 줄이 사실 통보("없어요")와 초대("만들어 보세요") 둘을 겸해야 해서 문장이 길어지는데,
  * 앞을 제목으로 떼면 상태는 굵게 먼저 읽히고 남은 한 줄이 온전히 다음 행동을 말할 수 있다.
- * 타입 조합(`text-base font-semibold text-foreground` + `text-sm text-muted-foreground`)과 문장부호
+ * 타입 조합(`text-lg font-semibold text-foreground` + `text-sm text-muted-foreground`)과 문장부호
  * 규약(제목엔 마침표 없음)은 `ContentUnavailableState`에서 그대로 가져왔다 — 간격은 그쪽이 셋 다
- * `gap-3`인 것과 달리 여기선 쌍을 한 덩어리로 묶는다(아래 참고). 없으면 예전처럼 한 줄만 렌더한다. */
+ * `gap-3`인 것과 달리 여기선 쌍을 한 덩어리로 묶는다(아래 참고). 없으면 예전처럼 한 줄만 렌더한다.
+ * 제목이 `text-base`가 아니라 `text-lg`인 것은, D-8이 `--text-sm`을 16px로 올려 `text-base`와
+ * 값이 같아지면서 굵기만 남을 뻔한 위계를 D-9가 18px로 다시 벌린 결과다(design-system-goal-prompt.md D-9). */
 export function ContentListEmptyState({
   title,
   message = "조건에 맞는 작품이 없어요.",
@@ -41,7 +43,7 @@ export function ContentListEmptyState({
       {/* 제목과 설명은 한 덩어리다 — 패널의 `gap-3`(12px)을 그대로 두면 상태와 다음 행동이 같은 거리로
           떨어져 셋이 나란한 목록으로 읽힌다. 제목이 없을 땐 자식이 하나뿐이라 예전과 픽셀이 같다. */}
       <div className="flex flex-col gap-1.5">
-        {title && <p className="text-base font-semibold text-foreground">{title}</p>}
+        {title && <p className="text-lg font-semibold text-foreground">{title}</p>}
         <p className="text-sm text-muted-foreground">{message}</p>
       </div>
       {action}

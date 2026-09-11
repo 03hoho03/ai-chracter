@@ -29,10 +29,17 @@ export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
         // stat.icon은 "Droplet" 같은 이름 문자열이다 — 컴포넌트로 되돌리지 않으면 글자로 렌더된다.
         const Icon = getIconByName(stat.icon);
 
-        // w-32: 시드 스탯 이름의 85%가 7자 이하이고, 그 길이까지는 아이콘·값과 나란히 놓아도
-        // 안 잘린다(w-28은 5자에서 잘렸다). 더 긴 이름은 의도대로 truncate + title로 노출.
+        // w-36(144px): --text-xs가 12→14px로 오른 뒤(design-system-goal-prompt.md D-8)
+        // w-32(128px)에서는 7자 스탯도 잘리는 회귀가 났다("손전등 배터리" 7자, scrollWidth 76 >
+        // clientWidth 66). 같은 고정폭 안에서도 가용폭(clientWidth)은 스탯마다 다르다 — 아이콘·
+        // 값(숫자+단위)이 먹는 폭이 스탯마다 달라 66~92px로 갈린다. 그래서 "N자까지 안전"은 규칙으로
+        // 성립하지 않는다 — 같은 7자인데 "동료 생존 수"(67/67, 안 잘림)와 "손전등 배터리"(76/66,
+        // 잘림)가 갈렸던 게 그 증거다. w-36으로 올린 뒤 재측정(2026-09-11, 8개 스토리·24개 스탯):
+        // "손전등 배터리" 76/76, "규칙 위반 횟수"(8자) 79/79, "동료 생존 수" 67/67 등 7~8자 표본
+        // 전부 안 잘림. "첫서리까지 남은 날"(10자)은 104/91로 여전히 잘리며, 의도대로 truncate +
+        // title로 노출된다.
         return (
-          <div key={stat.id} className="flex w-32 shrink-0 flex-col gap-1">
+          <div key={stat.id} className="flex w-36 shrink-0 flex-col gap-1">
             <div className="flex items-center justify-between gap-1.5 text-xs">
               {/* min-w-0 이 없으면 flex 아이템의 기본 min-width:auto 때문에 truncate가 먹지 않는다. */}
               <span className="flex min-w-0 items-center gap-1 font-medium text-foreground">

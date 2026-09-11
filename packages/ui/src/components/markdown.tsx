@@ -75,7 +75,7 @@ function MarkdownH2({
   ...props
 }: ComponentProps<"h2"> & ExtraProps) {
   return (
-    <h2 className={cn("m-0 text-base font-semibold", className)} {...props} />
+    <h2 className={cn("m-0 text-lg font-semibold", className)} {...props} />
   )
 }
 

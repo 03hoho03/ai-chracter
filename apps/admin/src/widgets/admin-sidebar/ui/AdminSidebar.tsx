@@ -21,7 +21,7 @@ export function AdminSidebar() {
   return (
     <aside className="sticky top-0 flex h-screen w-56 shrink-0 flex-col border-r border-border bg-card">
       <div className="px-4 py-4">
-        <span className="text-base font-semibold tracking-tight text-foreground">또나 어드민</span>
+        <span className="text-lg font-semibold tracking-tight text-foreground">또나 어드민</span>
       </div>
 
       <nav className="flex flex-1 flex-col gap-1 px-2">

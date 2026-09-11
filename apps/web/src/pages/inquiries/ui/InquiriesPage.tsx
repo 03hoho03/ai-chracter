@@ -56,7 +56,7 @@ function InquiryListItemRow({ item }: { item: MyInquiryListItem }) {
       className="flex flex-col gap-1 rounded-xl border border-border bg-background p-4 outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px"
     >
       <span className="flex items-center justify-between gap-2">
-        <span className="break-keep text-base font-semibold text-foreground">{item.title}</span>
+        <span className="break-keep text-lg font-semibold text-foreground">{item.title}</span>
         <span
           className={cn(
             "inline-flex shrink-0 items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium",
