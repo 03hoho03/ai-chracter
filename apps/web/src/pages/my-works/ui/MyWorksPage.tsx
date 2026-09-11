@@ -13,9 +13,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 
 import {
   ContentCard,
+  ContentCardGrid,
+  ContentCardSkeleton,
   ContentListEmptyState,
   ContentListLoadMore,
   isVisibilityFilter,
+  toThumbnailAspect,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
@@ -263,12 +266,10 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         />
       ) : (
         // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
-        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2).
-        <div
-          ref={gridRef}
-          tabIndex={-1}
-          className="grid grid-cols-2 gap-3 outline-none sm:grid-cols-3 md:grid-cols-4"
-        >
+        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2). `mixed`인 이유(card-grid-goal-prompt.md
+        // D-6): '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2/3/4열)에
+        // `items-start`를 쓰고, 카드는 각자 `toThumbnailAspect(item.type)`로 자기 비율을 지킨다.
+        <ContentCardGrid thumbnailAspect="mixed" ref={gridRef} tabIndex={-1} className="outline-none">
           {visibleItems.map((item, index) => (
             <MyWorkCard
               key={`${item.kind}-${item.id}`}
@@ -278,7 +279,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
               isLcpCandidate={index === 0}
             />
           ))}
-        </div>
+        </ContentCardGrid>
       )}
 
       <ContentListLoadMore
@@ -574,6 +575,9 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
   return (
     <ContentCard
       thumbnailUrl={item.thumbnailUrl}
+      // card-grid-goal-prompt.md D-6 — '전체' 필터에서 캐릭터·스토리가 섞이므로 그리드가 아니라
+      // **항목별**로 비율을 정한다(`toThumbnailAspect`).
+      thumbnailAspect={toThumbnailAspect(item.type)}
       title={title}
       metrics={
         item.kind === "published"
@@ -599,8 +603,13 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
   );
 }
 
-/** 실제 카드 구조(썸네일 웰 + 제목 + 한 줄 + 배지)를 그대로 흉내 낸다 — `aspect-[3/4]` 한 장짜리
- * 스켈레톤은 390px에서 실제 카드보다 45.5px 짧아 목록이 도착할 때 2행이 46px, 3행이 91px씩 밀렸다(실측).
+/** card-grid-techspec.md T-5/T-6 — 보이지 않는 실제 카드(`ContentCardSkeleton`)가 레이아웃(높이)을
+ * 만든다. 손으로 잰 높이 수치(제목 줄 32px·배지 행 22.5px 등)에 더는 의존하지 않는다 — 높이의 유일한
+ * 소스가 카드 자신이라 카드 구조가 바뀌어도 스켈레톤이 자동으로 따라온다.
+ *
+ * 툴바 스페이서도 같은 기법이다(T-6, B-18) — 실제 `ToggleGroup`·`Select`를 `inert`+`invisible`로 그려
+ * 자리를 비운다. 폭이 자동으로 일치하므로 칩 라벨이나 "공개 여부" 문구가 바뀌어도 이 스페이서가
+ * 실제 툴바와 다른 폭에서 접히는 일이 없다.
  *
  * `role="status"`가 있어야 `aria-label`이 읽힌다 — 암묵 role(generic)에 붙인 `aria-label`은 ARIA 1.2가
  * 금지하는 조합이라 스크린리더가 대개 무시한다(a11y 트리 실측). */
@@ -608,59 +617,52 @@ function MyWorksSkeleton() {
   return (
     <div role="status" aria-busy aria-label="내 작품 목록 불러오는 중" className="flex flex-col gap-6">
       {/* 도착 분기는 그리드 **위에** 필터 툴바를 얹는데 로딩 분기엔 그게 없어서, 목록이 도착할 때
-          그리드 top이 밀리는 CLS가 있었다. 여기서 자리만 비워 시프트를 0으로 만든다.
-
-          한 줄(72px = 32 + `gap-2` 8 + 32)짜리 고정 스페이서였다가 지금은 툴바 자체와 같은
-          `-m-1 flex flex-wrap gap-6 p-1` 구조를 그대로 흉내 낸다 — `MyWorksPage.tsx`의 필터 행
-          회귀 수정(390px에서 `공개 여부`가 스크롤 밖으로 밀리던 문제, design-system-progress.md
-          P-7)으로 그 행이 이제 **폭에 따라 한 줄/두 줄을 오간다**. 고정 72px 스페이서를 그대로
-          뒀으면 두 줄로 접히는 폭(~432px 미만, 390px 포함)에서 실제 툴바가 ~128px로 커져 그리드
-          top이 253→309로 **+56px** 다시 밀렸을 것이다(실측). 폭 261px/113px는 `ToggleGroup`·
-          `SelectTrigger`의 현재 실측 폭이라 — **칩 라벨이나 "공개 여부" 문구가 바뀌면 이 값도
-          함께 재야 한다**(안 그러면 이 스페이서가 실제와 다른 폭에서 접혀 이 주석이 거짓이 된다).
-          내부를 흐리게 렌더하지 않고 빈 상자로 둔 이유는 그대로다: 누를 수 없는 컨트롤을 보여주면
-          비활성 상태 표시(대비·커서)를 새로 정해야 하는데, 시프트를 없애는 데 그게 필요하지 않다. */}
+          그리드 top이 밀리는 CLS가 있었다. 여기서 자리만 비워 시프트를 0으로 만든다. */}
       <div className="flex flex-col gap-2" aria-hidden>
         <div className="-m-1 flex flex-wrap gap-6 p-1">
-          <div className="h-8 w-[261px]" />
-          <div className="h-8 w-[113px]" />
+          <ToggleGroup
+            inert
+            type="single"
+            variant="outline"
+            size="sm"
+            value="all"
+            aria-label="작품 종류 필터"
+            className="invisible shrink-0"
+          >
+            {TYPE_FILTER_OPTIONS.map((option) => (
+              <ToggleGroupItem key={option.value} value={option.value}>
+                {option.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+
+          <Select value="">
+            <SelectTrigger inert size="sm" aria-label={VISIBILITY_AXIS_LABEL} className="invisible shrink-0">
+              <SelectValue placeholder={VISIBILITY_AXIS_LABEL} />
+            </SelectTrigger>
+            <SelectContent>
+              {VISIBILITY_FILTER_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="h-8" />
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-        <div
-          key={key}
-          className="flex flex-col gap-3 rounded-xl border border-border bg-background p-3 motion-safe:animate-pulse"
-        >
-          <div className="aspect-square rounded-lg bg-muted" />
-          <div className="flex flex-col gap-1.5">
-            {/* 32 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
-                20이 아니라 32인 이유는 US-010의 ⋯ 버튼(`size="icon-sm"`, D-4로 28→32px)이 그 행의
-                높이를 잡기 때문이다 — `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측).
-
-                **US-010의 마이크로카피 줄은 여기 미러링하지 않는다.** 390px 실측으로 그 줄은 2줄
-                32px + `gap-1.5` 6px = **38.5px**를 더하지만(카드 텍스트 열 78.5 → 116.5), 줄이 뜨는
-                조건이 `hasUnpublishedChanges`라 **소수 카드에만** 붙는다(발행이 플래그를 끄므로 발행
-                직후는 전부 false고, 그 뒤 편집한 것만 true다 — 시드 26장 중 2장). 8칸 전부를 38.5px
-                키우면 지금 0.5px로 맞는 다수(78 대 78.5)가 그만큼 어긋나 목록이 도착할 때 위로
-                튄다 — 오차를 소수에서 다수로 옮기는 것뿐이다. 그래서 이 스켈레톤은 **기본 카드**를
-                미러링한다.
-
-                남은 오차는 한때 카드가 아니라 이 분기 자체에 있었다: 로딩 분기는 그리드만
-                돌려주는데 도착 분기는 그리드 **위에** 필터 툴바를 얹어 그리드 top이 153 → 241로
-                **+88px** 밀렸다(구 실측). 이건 스켈레톤에 툴바 자리 스페이서가 없던 게 원인이었고,
-                위 `MyWorksSkeleton` 상단의 스페이서(툴바와 같은 `flex-wrap` 구조를 흉내 낸다)가
-                그 자리를 대신 비워 지금은 그리드 top 시프트가 **0**이다(390px 포함, 실측) — US-011로
-                미룰 잔여 오차가 아니라 이미 닫힌 갭이다. */}
-            <div className="h-8 w-3/4 rounded bg-muted" />
-            <div className="h-4 w-1/2 rounded bg-muted" />
-            <div className="h-5.5 w-2/3 rounded-full bg-muted" />
-          </div>
-        </div>
-      ))}
-      </div>
+      <ContentCardGrid thumbnailAspect="mixed">
+        {Array.from({ length: 8 }, (_, index) => (
+          <ContentCardSkeleton
+            key={index}
+            thumbnailAspect={index % 2 === 0 ? "square" : "portrait"}
+            metrics={{ viewCount: 0, chatCount: 0, likeCount: 0 }}
+            tags={["character"]}
+            actions={<span aria-hidden className="size-8" />}
+          />
+        ))}
+      </ContentCardGrid>
     </div>
   );
 }

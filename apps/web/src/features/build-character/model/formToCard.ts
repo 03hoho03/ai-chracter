@@ -24,6 +24,7 @@ export function formToCard(
 ): ContentCardProps {
   return {
     thumbnailUrl: ctx.thumbnailUrl,
+    thumbnailAspect: "square",
     title: values.profile.name,
     metrics: { viewCount: 0 },
     author: { name: ctx.authorNickname, profileUrl: "" },

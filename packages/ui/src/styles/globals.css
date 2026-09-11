@@ -59,6 +59,10 @@
      기본 루트(16px)에서 정확히 12px(D-8 사다리의 새 값)이 나오면서 사용자가 브라우저 기본
      글자 크기를 키웠을 때 함께 커진다. */
   --text-badge: 0.75rem;
+  /* 스토리 썸네일 표시 비율 — card-grid-techspec.md T-2. `--aspect-*`는 Tailwind v4가 이미 쓰는
+     네임스페이스라(`--aspect-video: 16/9`가 같은 자리) 이 한 줄로 `aspect-story` 유틸리티가 생긴다.
+     캐릭터용 토큰은 만들지 않는다 — `aspect-square`가 이미 Tailwind 기본이다. */
+  --aspect-story: 2 / 3;
 }
 
 :root {

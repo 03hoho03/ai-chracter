@@ -7,7 +7,10 @@ import { Loader2, X } from "lucide-react";
 
 import {
   ContentCard,
+  ContentCardGrid,
+  ContentCardSkeleton,
   ContentListEmptyState,
+  toThumbnailAspect,
   useContentListQuery,
   useGenreListQuery,
   type ContentListSort,
@@ -59,6 +62,7 @@ export function HomePage({
   const items = contentListQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const activeCreatorNickname = search.creator ? items[0]?.creatorNickname : undefined;
   const hasActiveExtraFilter = Boolean(search.creator || search.hashtag);
+  const thumbnailAspect = toThumbnailAspect(contentType);
 
   const fetchNextPage = useCallback(() => {
     if (contentListQuery.hasNextPage && !contentListQuery.isFetchingNextPage) {
@@ -148,21 +152,39 @@ export function HomePage({
         </div>
       )}
 
-      {contentListQuery.isPending && <ContentGridSkeleton />}
+      {contentListQuery.isPending && (
+        <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+          {Array.from({ length: 8 }, (_, index) => (
+            <ContentCardSkeleton key={index} thumbnailAspect={thumbnailAspect} metrics={{ viewCount: 0 }} />
+          ))}
+        </ContentCardGrid>
+      )}
 
-      {contentListQuery.isError && (
+      {contentListQuery.isError && items.length === 0 && (
         <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+      )}
+
+      {contentListQuery.isError && items.length > 0 && (
+        <div role="alert" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-destructive-text">
+            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void contentListQuery.refetch()}>
+            다시 시도
+          </Button>
+        </div>
       )}
 
       {contentListQuery.data && items.length === 0 && <ContentListEmptyState />}
 
       {contentListQuery.data && items.length > 0 && (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+          <ContentCardGrid thumbnailAspect={thumbnailAspect}>
             {items.map((item, index) => (
               <ContentCard
                 key={item.id}
                 thumbnailUrl={item.thumbnailUrl}
+                thumbnailAspect={thumbnailAspect}
                 title={item.name}
                 metrics={{ viewCount: item.viewCount }}
                 author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
@@ -172,7 +194,7 @@ export function HomePage({
                 onAuthorClick={() => onSearchChange({ creator: item.creatorUserId })}
               />
             ))}
-          </div>
+          </ContentCardGrid>
 
           <div ref={sentinelRef} className="flex justify-center py-4">
             {contentListQuery.isFetchingNextPage && (
@@ -187,14 +209,4 @@ export function HomePage({
 
 function isContentListSort(value: string): value is ContentListSort {
   return value === "latest" || value === "popular" || value === "genre";
-}
-
-function ContentGridSkeleton() {
-  return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
-      {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
-        <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
-      ))}
-    </div>
-  );
 }

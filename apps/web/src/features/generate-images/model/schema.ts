@@ -9,11 +9,17 @@ export const IMAGE_STYLE_PRESET_OPTIONS = [
   { value: "none", label: "없음" },
 ] as const;
 
-/** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. */
+/** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1.
+ *
+ * `2:3`은 나중에 추가됐다(card-grid-goal-prompt.md D-3) — 스토리 카드 슬롯이 2:3이고 실제 생성 치수는
+ * 832×1216(Animagine XL 4.0 권장 버킷 · NovelAI 기본값)이다. 세로 셋의 순서는 비율순(3:4 → 2:3 → 9:16)이다.
+ *
+ * ⚠️ 이 배열과 아래 zod enum은 **둘 다** 고쳐야 한다 — enum만 고치면 타입은 통과하는데 선택지가 안 뜬다. */
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { value: "1:1", label: "1:1 · 정사각형" },
   { value: "4:3", label: "4:3 · 가로" },
   { value: "3:4", label: "3:4 · 세로" },
+  { value: "2:3", label: "2:3 · 세로 포스터" },
   { value: "16:9", label: "16:9 · 와이드" },
   { value: "9:16", label: "9:16 · 세로 와이드" },
 ] as const;
@@ -28,7 +34,7 @@ export const generateImagesSchema = z.object({
   prompt: z.string().trim().min(1, { message: "프롬프트를 입력해주세요" }),
   model: z.enum(["flux-schnell", "sdxl"]),
   style: z.enum(["realistic", "anime", "illustration", "render3d", "none"]),
-  aspectRatio: z.enum(["1:1", "4:3", "3:4", "16:9", "9:16"]),
+  aspectRatio: z.enum(["1:1", "4:3", "3:4", "2:3", "16:9", "9:16"]),
   count: z.number().int().min(1).max(4),
 });
 

@@ -21,6 +21,7 @@ type StoryToCardContext = {
 export function formToCard(values: StoryBuilderFormValues, ctx: StoryToCardContext): ContentCardProps {
   return {
     thumbnailUrl: ctx.thumbnailUrl,
+    thumbnailAspect: "portrait",
     title: values.profile.name,
     metrics: { viewCount: 0 },
     author: { name: ctx.authorNickname, profileUrl: "" },

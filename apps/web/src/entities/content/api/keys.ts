@@ -28,8 +28,10 @@ export const contentKeys = {
   genres: () => [...contentKeys.all, "genres"] as const,
 };
 
-/** techspec-home-discovery.md §4 — 상세화면 즐겨찾기 토글 성공 시 이 키를 invalidate해 목록을 최신화한다. */
+/** techspec-home-discovery.md §4 — 상세화면 즐겨찾기 토글 성공 시 이 키를 invalidate해 목록을 최신화한다.
+ * `type`이 쿼리키에 들어간다(card-grid-techspec.md T-1) — 없으면 캐릭터/스토리 두 타입이 같은 캐시
+ * 엔트리를 공유해 한쪽 목록이 반대 타입 데이터를 보여줄 수 있다. */
 export const favoriteKeys = {
   all: ["favorites"] as const,
-  list: () => [...favoriteKeys.all, "list"] as const,
+  list: (type: ContentType) => [...favoriteKeys.all, "list", type] as const,
 };
