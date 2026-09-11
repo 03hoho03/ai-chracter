@@ -86,8 +86,9 @@ export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10">
       {/* 제목과 버튼은 접지 않고 한 줄에 둔다 — 390px 실측으로 `내 작품` 65.38px + `작품 만들기`
-          85.92px = 151.3px이라 본문 342px의 44%다(최악인 320px에서도 간격 120.7px이 남는다). 버튼은
-          `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고, 제목은 2어절이라 접힐 자리도 없다. */}
+          107.05px(D-4 전 85.92px) = 172.43px이라 본문 358px의 48%다(최악인 320px에서도 간격
+          115.58px이 남는다). 버튼은 `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고,
+          제목은 2어절이라 접힐 자리도 없다. */}
       <div className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">내 작품</h1>
         <CreateWorkButton />
@@ -103,10 +104,16 @@ export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps
  * 이 자리(화면의 유일한 앞길)에 정확히 해당한다.
  *
  * **두 자리를 크기가 아니라 라벨로 가른다.** 처음엔 빈 상태 쪽을 `size="lg"`로 올렸는데 (1) `lg`는
- * `default`와 패딩이 같아 두 버튼 폭이 85.92px로 **완전히 동일**하고 높이만 32→36(+4px)이라 위계가
- * 아니라 정렬 오차로 읽히고 (2) 앱의 다른 `size="lg"` 11곳은 전부 `h-10`/`h-12`로 높이를 덮어써
- * 36px은 존재하지 않는 티어이며 (3) 라벨·역할·목적지가 모두 같아 빈 상태 탭 스톱 8개 중 2개가
- * 스크린리더에 `링크, 작품 만들기`로 연달아 읽혔다(실측). 라벨을 가르면 셋이 한 번에 풀린다.
+ * `default`와 패딩이 같아 두 버튼 폭이 107.05px로 **완전히 동일**하고 높이만 36→40(+4px)이라 위계가
+ * 아니라 정렬 오차로 읽히고 (2) D-4 전엔 앱의 다른 `size="lg"`가 대부분 `h-10`/`h-12`로 높이를
+ * 덮어써 36px은 존재하지 않는 티어였으며 (3) 라벨·역할·목적지가 모두 같아 빈 상태 탭 스톱 8개 중
+ * 2개가 스크린리더에 `링크, 작품 만들기`로 연달아 읽혔다(실측). 라벨을 가르면 셋이 한 번에 풀렸다.
+ *
+ * **(2)는 D-4로 사실관계가 바뀌었다.** `default` 자체가 36px가 되며 "32→36" 비교의 기준점이
+ * 이동했고, 다른 `size="lg"` 10곳의 `h-10` 오버라이드를 이번 개편에서 걷어내 그 10곳은 이제
+ * 네이티브 40px다 — "전부 덮어쓴다 / 36px 티어는 없다"는 더 이상 참이 아니다(남은 오버라이드는
+ * `h-12` 플레이 2곳뿐, design-system-progress.md P-2). **그래도 결정은 안 바뀐다** — (1) 폭 동일과
+ * (3) 라벨 중복은 D-4와 무관하게 그대로 참이라 크기 대신 라벨을 가르는 처방은 둘만으로도 유효하다.
  *
  * 빈 상태 라벨이 `첫`이 아니라 **`새`**인 이유: `첫`은 서수를 주장하는데 이 화면에 도달하는 경로 둘이
  * 그걸 거짓으로 만든다 — (a) 발행작 두 쿼리가 실패하고 초안만 `[]`로 성공하면 작품 32건을 가진
@@ -316,8 +323,8 @@ function MyWorksEmptyResult({
       <ContentListEmptyState
         message="아직 발행한 작품이 없어요."
         action={
-          // `size="sm"`(28px)이 아닌 이유: 이 버튼은 US-007 지연 생성 이후 **모든 신규 창작자의
-          // 첫 화면**에서 유일한 앞길인데, 190px 패널 한가운데 28px 보조 액션으로 놓이면 위계가
+          // `size="sm"`(32px)이 아닌 이유: 이 버튼은 US-007 지연 생성 이후 **모든 신규 창작자의
+          // 첫 화면**에서 유일한 앞길인데, 190px 패널 한가운데 32px 보조 액션으로 놓이면 위계가
           // 실제 역할과 어긋난다. `primary` 솔리드는 US-011의 `작품 만들기`가 가져갈 자리라
           // 채움이 아니라 크기로만 올린다.
           <Button type="button" variant="outline" onClick={onShowUnpublished}>
@@ -381,28 +388,20 @@ function MyWorksToolbar({
     // 툴바 안쪽은 `gap-2`, 툴바와 목록 사이는 `gap-6`(`MyWorksBody`) — 두 값이 4px밖에 안 벌어져 있으면
     // 건수 줄이 툴바의 꼬리인지 목록의 머리글인지 읽히지 않는다(실측: 12px vs 16px이었다).
     <div className="flex flex-col gap-2">
-      {/* 칩이 한 줄에 못 들어가면 접지 않고 가로로 흘린다(제안 답장 칩과 같은 관용구). `-m-1 p-1`은
-          focus 링(3px)이 잘리지 않게 하는 여백이다 — `overflow-x: auto`는 **네 방향 모두** 클립하고,
-          첫 칩은 스크롤 컨테이너의 좌측 경계에 딱 붙어 있어 링이 통째로 사라진다(픽셀 실측: 패딩 없이는
-          링 밴드가 rest와 완전히 같은 색, 홈의 같은 칩은 링이 보인다). 음수 마진이 그 패딩을 되돌린다. */}
+      {/* D-4로 `SelectTrigger`가 93.91→113.33px로 커지면서 두 축(작품 종류 + 공개 여부)이 한 줄에
+          다 안 들어가는 폭이 생겼다(390px 실측: 컨테이너 366px / 필요 폭 406px, 40px 초과). 이전의
+          `overflow-x-auto`는 스크롤 어포던스 없이 `공개 여부`를 화면 밖으로 밀어 안 보이게 만드므로
+          (회귀) **흘리는 대신 접는다** — `flex-wrap`으로 안 들어가는 축을 다음 줄로 내린다.
+          `overflow-x-auto`를 걷어내며 그게 만들던 4방향 클리핑도 함께 사라져 `-m-1 p-1`은 원래
+          이유로는 더 필요하지 않지만, 지워도 득이 없고 남겨도 레이아웃에 영향이 없어 그대로 둔다
+          (Tab 키보드 포커스로 재확인: 접힌 둘째 줄의 `공개 여부` 링이 네 방향 모두 안 잘린다). */}
       <div
-        // 축 사이는 `gap-6`(24px), 칩 사이는 `gap-2`(8px, ToggleGroup 기본) — 잉크를 더하지 않고
-        // 근접성만으로 축을 가른다. **3배여야 갈린다**: 처음엔 `gap-3`(12px)이었는데 1.5배는
-        // Gestalt 임계 아래라 셸이 픽셀 단위로 같은(높이 28·radius·보더 전부 Δ0.0000) 다섯 컨트롤이
-        // "한 축 5선택지"로 읽혔다. 바로 아래 건수 줄이 이미 같은 논리로 8 vs 24를 쓰고 있다.
-        className="-m-1 flex gap-6 overflow-x-auto p-1 scroll-p-1"
-        // 스크롤 줄 안의 컨트롤로 Tab 해도 브라우저가 가로로 끌어와 주지 않는다 — 320px에서 `공개 여부`가
-        // 60px 잘린 채 포커스만 옮겨 갔다(실측: `scrollLeft` 0 고정, `scrollIntoView`는 정상 동작).
-        // `event.target`은 실제로 포커스를 받은 컨트롤이다(React는 이 자리를 컨테이너 타입으로 보지만
-        // 둘 다 `scrollIntoView`를 갖고 있어 결과는 같다). 이미 보이면 no-op이다.
-        // Radix `SelectContent`는 body로 포털되지만 React 합성 이벤트는 컴포넌트 트리를 타고 올라와,
-        // 드롭다운이 열리며 `SelectItem`이 포커스를 받는 순간에도 이 핸들러가 불린다(실측: 항목의
-        // `inRow`가 false). 그 요소를 끌어오면 드롭다운 정렬이나 페이지가 함께 움직이므로 줄 안쪽으로
-        // 한정한다(`apps/web/CLAUDE.md`의 "클릭 카드"가 같은 현상을 dropdown에서 기록해 뒀다).
-        onFocus={(event) => {
-          if (!event.currentTarget.contains(event.target)) return;
-          event.target.scrollIntoView({ block: "nearest", inline: "nearest" });
-        }}
+        // 축 사이 `gap-6`(24px)은 한 줄에 다 들어가는 폭에서 여전히 **3배 규칙**(`gap-3`의 1.5배는
+        // Gestalt 임계 아래라 다섯 컨트롤이 "한 축 5선택지"로 읽혔다)으로 두 축을 가른다. 접혀서
+        // 두 줄이 되면 줄바꿈 자체가 이미 축을 가르므로 이 값이 그 역할을 더 할 필요는 없지만, 값을
+        // 쪼갤(`gap-y-2` 등) 이유도 없다 — 390px 실측 스크린샷에서 24px 세로 간격이 붙지도 뜨지도
+        // 않아 그대로 둔다.
+        className="-m-1 flex flex-wrap gap-6 p-1"
       >
         <ToggleGroup
           ref={typeFilterRef}
@@ -607,15 +606,25 @@ function MyWorksSkeleton() {
   return (
     <div role="status" aria-busy aria-label="내 작품 목록 불러오는 중" className="flex flex-col gap-6">
       {/* 도착 분기는 그리드 **위에** 필터 툴바를 얹는데 로딩 분기엔 그게 없어서, 목록이 도착할 때
-          그리드 top이 153 → 241로 **+88px** 밀렸다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가
-          아니라 행 top 직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로
-          센다). 여기서 자리만 비워 시프트를 0으로 만든다.
+          그리드 top이 밀리는 CLS가 있었다. 여기서 자리만 비워 시프트를 0으로 만든다.
 
-          `h-16`(64px)은 툴바의 실측 높이다. 카드 스켈레톤의 28/16/22.5px와 같은 성격의 상수라
-          **툴바 구성이 바뀌면 여기도 함께 재야 한다** — 안 그러면 이 주석이 거짓이 된다.
-          툴바를 흐리게 렌더하지 않고 빈 공간으로 둔 이유: 누를 수 없는 컨트롤을 보여주면
+          한 줄(72px = 32 + `gap-2` 8 + 32)짜리 고정 스페이서였다가 지금은 툴바 자체와 같은
+          `-m-1 flex flex-wrap gap-6 p-1` 구조를 그대로 흉내 낸다 — `MyWorksPage.tsx`의 필터 행
+          회귀 수정(390px에서 `공개 여부`가 스크롤 밖으로 밀리던 문제, design-system-progress.md
+          P-7)으로 그 행이 이제 **폭에 따라 한 줄/두 줄을 오간다**. 고정 72px 스페이서를 그대로
+          뒀으면 두 줄로 접히는 폭(~432px 미만, 390px 포함)에서 실제 툴바가 ~128px로 커져 그리드
+          top이 253→309로 **+56px** 다시 밀렸을 것이다(실측). 폭 261px/113px는 `ToggleGroup`·
+          `SelectTrigger`의 현재 실측 폭이라 — **칩 라벨이나 "공개 여부" 문구가 바뀌면 이 값도
+          함께 재야 한다**(안 그러면 이 스페이서가 실제와 다른 폭에서 접혀 이 주석이 거짓이 된다).
+          내부를 흐리게 렌더하지 않고 빈 상자로 둔 이유는 그대로다: 누를 수 없는 컨트롤을 보여주면
           비활성 상태 표시(대비·커서)를 새로 정해야 하는데, 시프트를 없애는 데 그게 필요하지 않다. */}
-      <div className="h-16" aria-hidden />
+      <div className="flex flex-col gap-2" aria-hidden>
+        <div className="-m-1 flex flex-wrap gap-6 p-1">
+          <div className="h-8 w-[261px]" />
+          <div className="h-8 w-[113px]" />
+        </div>
+        <div className="h-8" />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
@@ -625,9 +634,9 @@ function MyWorksSkeleton() {
         >
           <div className="aspect-square rounded-lg bg-muted" />
           <div className="flex flex-col gap-1.5">
-            {/* 28 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
-                20이 아니라 28인 이유는 US-010의 ⋯ 버튼(`size-7`)이 그 행의 높이를 잡기 때문이다 —
-                `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측).
+            {/* 32 / 16 / 22.5px는 실제 카드의 제목 줄 · 한 줄(text-xs) · 배지 행 높이다. 제목 줄이
+                20이 아니라 32인 이유는 US-010의 ⋯ 버튼(`size="icon-sm"`, D-4로 28→32px)이 그 행의
+                높이를 잡기 때문이다 — `h-5`로 두면 목록이 도착할 때 행마다 8px씩 누적해 밀린다(실측).
 
                 **US-010의 마이크로카피 줄은 여기 미러링하지 않는다.** 390px 실측으로 그 줄은 2줄
                 32px + `gap-1.5` 6px = **38.5px**를 더하지만(카드 텍스트 열 78.5 → 116.5), 줄이 뜨는
@@ -637,12 +646,13 @@ function MyWorksSkeleton() {
                 튄다 — 오차를 소수에서 다수로 옮기는 것뿐이다. 그래서 이 스켈레톤은 **기본 카드**를
                 미러링한다.
 
-                남은 오차는 카드가 아니라 이 분기 자체에 있다: 로딩 분기는 그리드만 돌려주는데 도착
-                분기는 그리드 **위에** 필터 툴바(64px + `gap-6` 24px)를 얹는다 — 그래서 그리드 top이
-                153 → 241로 **+88px** 밀린다(SPA 진입 프레임 기록으로 실측. CLS 엔트리가 아니라 행 top
-                직접 비교다 — 스켈레톤 언마운트는 "이동한 기존 노드"가 없어 Chrome이 0으로 센다).
-                이건 조건부인 38.5px보다 2.3배 크고 US-010 이전부터 있던 것이라 US-011로 넘긴다. */}
-            <div className="h-7 w-3/4 rounded bg-muted" />
+                남은 오차는 한때 카드가 아니라 이 분기 자체에 있었다: 로딩 분기는 그리드만
+                돌려주는데 도착 분기는 그리드 **위에** 필터 툴바를 얹어 그리드 top이 153 → 241로
+                **+88px** 밀렸다(구 실측). 이건 스켈레톤에 툴바 자리 스페이서가 없던 게 원인이었고,
+                위 `MyWorksSkeleton` 상단의 스페이서(툴바와 같은 `flex-wrap` 구조를 흉내 낸다)가
+                그 자리를 대신 비워 지금은 그리드 top 시프트가 **0**이다(390px 포함, 실측) — US-011로
+                미룰 잔여 오차가 아니라 이미 닫힌 갭이다. */}
+            <div className="h-8 w-3/4 rounded bg-muted" />
             <div className="h-4 w-1/2 rounded bg-muted" />
             <div className="h-5.5 w-2/3 rounded-full bg-muted" />
           </div>

@@ -37,7 +37,7 @@ export function ResetPasswordPage({ token, isTokenValid }: ResetPasswordPageProp
                 </p>
               </div>
 
-              <Button asChild size="lg" className="h-10 w-full">
+              <Button asChild size="lg" className="w-full">
                 <Link to="/forgot-password">재설정 다시 요청하기</Link>
               </Button>
             </>

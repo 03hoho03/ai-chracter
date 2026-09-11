@@ -152,7 +152,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
           </Link>
         </div>
 
-        <Button type="submit" size="lg" className="h-10" disabled={loginMutation.isPending}>
+        <Button type="submit" size="lg" disabled={loginMutation.isPending}>
           {loginMutation.isPending ? "로그인 중..." : "로그인"}
         </Button>
       </form>
@@ -167,7 +167,6 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         type="button"
         variant="outline"
         size="lg"
-        className="h-10"
         onClick={() => {
           window.location.href = buildGoogleLoginUrl(redirectTo);
         }}

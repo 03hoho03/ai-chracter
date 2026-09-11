@@ -75,7 +75,8 @@ function BuilderSkeleton() {
     <>
       <BuilderTopBar title="작품 만들기" />
       <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
-        <div className="h-8 w-full animate-pulse rounded-lg bg-muted" />
+        {/* Input 기본 높이(D-4로 h-9=36px)에 맞춘다(design-system-progress.md P-3-8). */}
+        <div className="h-9 w-full animate-pulse rounded-lg bg-muted" />
         <div className="h-64 w-full animate-pulse rounded-xl bg-muted" />
       </main>
     </>

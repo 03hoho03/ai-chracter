@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Button } from "@ai-character-chat/ui/components/button";
+import { Button, buttonVariants } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import {
@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { Camera, Loader2, X } from "lucide-react";
@@ -154,7 +155,7 @@ export function SubmitInquiryForm() {
         />
       </div>
 
-      <Button type="submit" className="h-10 self-start" disabled={isBusy}>
+      <Button type="submit" size="lg" className="self-start" disabled={isBusy}>
         {isSubmitting ? "접수 중..." : "문의 접수하기"}
       </Button>
     </form>
@@ -234,9 +235,15 @@ function InquiryAttachmentField({
         </div>
       )}
 
+      {/* 직접 비교 대상이 없어 같은 폼의 SelectTrigger(default=36px)에 맞춘다.
+          숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
+          (design-system-progress.md P-2-9). */}
       <Label
         htmlFor="submit-inquiry-attachment"
-        className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2.5 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
+        className={cn(
+          buttonVariants({ variant: "outline", size: "default" }),
+          "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50"
+        )}
       >
         <Camera aria-hidden className="size-4" />
         {isUploading ? "업로드 중..." : "파일 업로드"}

@@ -29,15 +29,23 @@ const toggleVariants = cva(
           "border border-input bg-transparent hover:bg-muted data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring",
         /** 세로로 쌓인 목록형 선택지(신고 사유 등). 행이 버튼보다 훨씬 넓어서 솔리드 채움을 쓰면
          * 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다
-         * (DESIGN.md 밝기 예산 규칙: primary 채움은 버튼 크기에 머문다). 색은 보더·텍스트·옅은
-         * 틴트로만 얹어 CTA가 화면의 유일한 솔리드 채움으로 남게 한다. */
+         * (DESIGN.md 밝기 예산 규칙: "밝은 면적은 예산이고, 한 화면에서 지금 눌러야 할 단 하나에만
+         * 쓴다" — 화면당 `primary` 솔리드 채움은 하나). 색은 보더·텍스트·옅은 틴트로만 얹어 CTA가
+         * 화면의 유일한 솔리드 채움으로 남게 한다. */
         list: "border border-input bg-transparent hover:bg-muted data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15",
       },
+      /** `button.tsx`의 size 표와 같은 값(design-system-goal-prompt.md D-4) — 장르 필터·헤더
+       * 토글·테마 선택·빌더 시작설정이 전부 이 하나에서 나온다. `text-[0.8rem]`(12.8px) 하드코딩을
+       * `sm`에서 제거해 `text-xs`(P-1 이후 14px)를 쓰고, `has-data-[icon=*]:p{r,l}-*` 보정값은
+       * 각 사이즈가 원래 갖던 델타(default/lg -0.5unit, sm -1unit)를 새 베이스 패딩에 그대로 옮겼다.
+       * `sm`이 32px 티어로 올라가므로 `rounded-[min(var(--radius-md),12px)]` 캡도 걷어 기본
+       * `rounded-lg`(10px)를 상속하게 한다 — `button.tsx`의 `sm`/`icon-sm`과 같은 이유다
+       * (design-system-progress.md P-0-2-③, 같은 32px 안에서 모서리가 갈리지 않게). */
       size: {
         default:
-          "h-8 min-w-8 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        sm: "h-7 min-w-7 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 min-w-9 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+          "h-9 min-w-9 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
+        sm: "h-8 min-w-8 px-3 text-xs has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2 [&_svg:not([class*='size-'])]:size-3.5",
+        lg: "h-10 min-w-10 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
       },
     },
     defaultVariants: {

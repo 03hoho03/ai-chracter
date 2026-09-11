@@ -22,8 +22,12 @@ function Tabs({
   )
 }
 
+/** `h-9` — 버튼 `default`(36px)와 같은 높이 티어로 맞춘다(design-system-goal-prompt.md D-4).
+ * `TabsTrigger`의 `px-1.5 py-0.5`는 이 값과 무관하다 — 리스트 안쪽 패딩(`p-[3px]`)과 짝인 계보라
+ * 버튼 패딩 체계와 다르므로 건드리지 않는다. 트리거 높이는 `h-[calc(100%-1px)]`로 부모(`TabsList`)를
+ * 그대로 따라가므로 별도 수정이 필요 없다. */
 const tabsListVariants = cva(
-  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-8 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+  "group/tabs-list inline-flex w-fit items-center justify-center rounded-lg p-[3px] text-muted-foreground group-data-horizontal/tabs:h-9 group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
   {
     variants: {
       variant: {

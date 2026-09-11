@@ -97,7 +97,7 @@ export function ChangePasswordForm() {
         )}
       </div>
 
-      <Button type="submit" className="h-10 self-start" disabled={changePasswordMutation.isPending}>
+      <Button type="submit" size="lg" className="self-start" disabled={changePasswordMutation.isPending}>
         {changePasswordMutation.isPending ? "변경 중..." : "비밀번호 변경"}
       </Button>
     </form>

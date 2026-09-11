@@ -187,7 +187,8 @@ function ContentSearchForm({ defaultQuery, onSearch }: ContentSearchFormProps) {
       }}
       className="flex items-center gap-2"
     >
-      <Input placeholder="작품 이름 검색" aria-label="작품 이름 검색" className="h-7 w-40 sm:w-56" {...register("q")} />
+      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다(design-system-progress.md P-3-8). */}
+      <Input placeholder="작품 이름 검색" aria-label="작품 이름 검색" className="h-8 w-40 sm:w-56" {...register("q")} />
       <Button type="submit" variant="outline" size="sm">
         검색
       </Button>

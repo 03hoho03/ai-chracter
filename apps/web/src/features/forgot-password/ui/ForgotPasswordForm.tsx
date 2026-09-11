@@ -71,7 +71,7 @@ export function ForgotPasswordForm() {
         )}
       </div>
 
-      <Button type="submit" size="lg" className="h-10" disabled={requestMutation.isPending}>
+      <Button type="submit" size="lg" disabled={requestMutation.isPending}>
         {requestMutation.isPending ? "전송 중..." : "재설정 링크 받기"}
       </Button>
     </form>

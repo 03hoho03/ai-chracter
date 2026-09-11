@@ -105,7 +105,9 @@ export function ChatRoomListItemRow({
           value={name}
           onChange={(event) => setName(event.target.value)}
           aria-label="대화방 이름"
-          className="h-8 border-none px-0 text-sm font-medium shadow-none focus-visible:ring-0"
+          // 높이 오버라이드 제거 — Input 기본값(D-4로 h-9=36px)이 옆 아이콘 버튼(size="icon", 36px)과
+          // 같아져 이 인라인 제목 편집란도 같은 터치 타깃 높이를 갖는다(design-system-progress.md P-3-8).
+          className="border-none px-0 text-sm font-medium shadow-none focus-visible:ring-0"
         />
         <p className="truncate text-xs text-muted-foreground">{item.lastMessagePreview}</p>
       </div>

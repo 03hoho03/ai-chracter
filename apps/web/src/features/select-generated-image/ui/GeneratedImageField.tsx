@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { Button } from "@ai-character-chat/ui/components/button";
+import { Button, buttonVariants } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -120,9 +121,15 @@ export function GeneratedImageField({
       </div>
 
       <div className="flex flex-col gap-2">
+        {/* 바로 아래 "생성한 이미지에서 선택" Button과 같은 variant="outline" size="sm"으로 맞춘다.
+            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
+            (design-system-progress.md P-2-9). */}
         <Label
           htmlFor={inputId}
-          className="inline-flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2.5 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50"
+          )}
         >
           <Camera aria-hidden className="size-4" />
           {isUploading ? "업로드 중..." : "파일 업로드"}

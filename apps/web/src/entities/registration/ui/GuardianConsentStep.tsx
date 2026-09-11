@@ -105,7 +105,7 @@ export function GuardianConsentStep({ onSubmit, isSubmitting }: GuardianConsentS
         )}
       </div>
 
-      <Button type="submit" size="lg" className="h-10" disabled={isSubmitting}>
+      <Button type="submit" size="lg" disabled={isSubmitting}>
         {isSubmitting ? "처리 중..." : "동의하고 가입 완료"}
       </Button>
     </form>
