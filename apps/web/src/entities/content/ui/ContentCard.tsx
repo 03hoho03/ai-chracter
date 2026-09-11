@@ -3,7 +3,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { BookOpen, Eye, Heart, ImageOff, MessageCircle, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
-import type { ThumbnailAspect } from "../model/cardLayout";
+import { toThumbnailAspectClass, type ThumbnailAspect } from "../model/cardLayout";
 import type { ContentType, ContentVisibility } from "../model/content";
 
 /** 카드에 다는 배지. 타입(무엇인지)과 상태(어디에 놓여 있는지)를 한 배열로 받아 순서는 호출부가 정한다.
@@ -171,12 +171,7 @@ export function ContentCard({
           값으로 만들어, `bg-muted` 웰은 hover에서 정확히 1.0000:1로 사라진다(실측). 썸네일이 아직 없는
           초안 카드(US-007의 지연 생성이 만드는 정상 상태)에서만 보이는 자리라 그때가 곧 전부다.
           `rounded-lg`는 두지 않는다 — 카드의 `rounded-xl`이 `overflow-hidden`으로 직접 자른다(D-1). */}
-      <div
-        className={cn(
-          thumbnailAspect === "portrait" ? "aspect-story" : "aspect-square",
-          "overflow-hidden bg-secondary",
-        )}
-      >
+      <div className={cn(toThumbnailAspectClass(thumbnailAspect), "overflow-hidden bg-secondary")}>
         {thumbnailUrl ? (
           <img
             src={thumbnailUrl}

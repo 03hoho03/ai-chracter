@@ -40,6 +40,9 @@ export type {
   StoryDraftContent,
 } from "./model/emptyDraft";
 export {
+  CONTENT_TYPES,
+  CONTENT_TYPE_LABEL,
+  isContentType,
   canAccessExistingRoom,
   canDiscoverPublicly,
   canViewDetailPage,
@@ -54,7 +57,7 @@ export type {
   ContentVisibility,
   ModerationStatus,
 } from "./model/content";
-export { toGridColumns, toThumbnailAspect } from "./model/cardLayout";
+export { toGridColumns, toThumbnailAspect, toThumbnailAspectClass } from "./model/cardLayout";
 export type { GridAspect, ThumbnailAspect } from "./model/cardLayout";
 export { ContentCard } from "./ui/ContentCard";
 export type { ContentCardMetrics, ContentCardProps, ContentCardTag } from "./ui/ContentCard";

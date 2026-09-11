@@ -1,5 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
+import { toThumbnailAspectClass } from "../model/cardLayout";
 import { ContentCard, type ContentCardProps } from "./ContentCard";
 
 export type ContentCardSkeletonProps = Pick<
@@ -39,10 +40,7 @@ export function ContentCardSkeleton({ thumbnailAspect, metrics, tags, actions }:
       />
       <div aria-hidden className="absolute inset-0 flex flex-col overflow-hidden rounded-xl">
         <div
-          className={cn(
-            thumbnailAspect === "portrait" ? "aspect-story" : "aspect-square",
-            "bg-muted animate-pulse",
-          )}
+          className={cn(toThumbnailAspectClass(thumbnailAspect), "bg-muted animate-pulse")}
         />
         <div className="flex-1 bg-muted animate-pulse" />
       </div>

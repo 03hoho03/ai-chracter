@@ -5,13 +5,18 @@ import { useAtomValue } from "jotai";
 import { Loader2 } from "lucide-react";
 
 import {
+  CONTENT_TYPES,
+  CONTENT_TYPE_LABEL,
   ContentCard,
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListEmptyState,
+  isContentType,
   toThumbnailAspect,
   useFavoriteListQuery,
+  type ContentListItem,
   type ContentType,
+  type ThumbnailAspect,
 } from "@/entities/content";
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
@@ -21,10 +26,9 @@ export type FavoritesSearch = {
   type?: ContentType;
 };
 
-const TYPE_OPTIONS: { value: ContentType; label: string }[] = [
-  { value: "character", label: "캐릭터" },
-  { value: "story", label: "스토리" },
-];
+/** `entities/content`의 `CONTENT_TYPES` 하나에서 도출한다 — 이 목록·`isContentType`·
+ * `routes/favorites.tsx`의 `z.enum`이 한때 손으로 유지되는 세 벌이었다(TS-09). */
+const TYPE_OPTIONS = CONTENT_TYPES.map((value) => ({ value, label: CONTENT_TYPE_LABEL[value] }));
 
 /** techspec-home-discovery.md §4 — 즐겨찾기 목록. §1 홈 무한스크롤과 동일한 구조(`ContentCard`/
  * `ContentListEmptyState`/sentinel)를 재사용한다.
@@ -81,62 +85,88 @@ export function FavoritesPage({
         </Select>
       </div>
 
-      {favoriteListQuery.isPending && (
-        <ContentCardGrid thumbnailAspect={thumbnailAspect}>
-          {Array.from({ length: 8 }, (_, index) => (
-            <ContentCardSkeleton key={index} thumbnailAspect={thumbnailAspect} metrics={{ viewCount: 0 }} />
-          ))}
-        </ContentCardGrid>
-      )}
+      <FavoritesBody
+        query={favoriteListQuery}
+        items={items}
+        thumbnailAspect={thumbnailAspect}
+        sentinelRef={sentinelRef}
+        onOpenContent={open}
+      />
+    </main>
+  );
+}
 
-      {favoriteListQuery.isError && items.length === 0 && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
+/** 로딩·전면실패·빈·성공 네 갈래를 **early return 순서**로 강제한다 — 본문에 `&&`로 나열하면 순서가
+ * 코드 배치에만 의존해 두 분기가 조용히 겹친다(COMP-04). 툴바(`Select`)는 어떤 상태에서도 남아야 해서
+ * 목록 본문만 떼어냈다.
+ *
+ * ⚠️ **부분 실패 배너는 성공 분기 안에 있다.** `apps/web/CLAUDE.md`가 "부분 실패 배너는 0건 분기에서도
+ * 렌더한다"고 적은 건 빈 상태가 실패를 감추는 걸 막으라는 뜻인데, 여기서는 `isError && 0건`이 그 위
+ * **전면 실패** 분기에서 이미 걸러진다 — 빈 상태에 도달하는 경로에는 실패가 없다. 배너를 빈 상태로
+ * 끌어올리지 말 것(도달 불가 분기가 된다). */
+function FavoritesBody({
+  query,
+  items,
+  thumbnailAspect,
+  sentinelRef,
+  onOpenContent,
+}: {
+  query: ReturnType<typeof useFavoriteListQuery>;
+  items: ContentListItem[];
+  thumbnailAspect: ThumbnailAspect;
+  sentinelRef: ReturnType<typeof useInfiniteScrollSentinel>;
+  onOpenContent: (type: ContentType, id: string) => void;
+}) {
+  if (query.isPending) {
+    return (
+      <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+        {Array.from({ length: 8 }, (_, index) => (
+          <ContentCardSkeleton key={index} thumbnailAspect={thumbnailAspect} metrics={{ viewCount: 0 }} />
+        ))}
+      </ContentCardGrid>
+    );
+  }
 
-      {favoriteListQuery.isError && items.length > 0 && (
+  if (query.isError && items.length === 0) {
+    return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (items.length === 0) {
+    return (
+      <ContentListEmptyState message="아직 즐겨찾기한 작품이 없어요. 마음에 드는 캐릭터·스토리를 상세화면에서 즐겨찾기에 담아보세요." />
+    );
+  }
+
+  return (
+    <>
+      {query.isError && (
         <div role="alert" className="flex flex-wrap items-center gap-3">
-          <p className="text-sm text-destructive-text">
-            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
-          </p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void favoriteListQuery.refetch()}>
+          <p className="text-sm text-destructive-text">새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.</p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
             다시 시도
           </Button>
         </div>
       )}
 
-      {favoriteListQuery.data && items.length === 0 && (
-        <ContentListEmptyState message="아직 즐겨찾기한 작품이 없어요. 마음에 드는 캐릭터·스토리를 상세화면에서 즐겨찾기에 담아보세요." />
-      )}
+      <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+        {items.map((item, index) => (
+          <ContentCard
+            key={item.id}
+            thumbnailUrl={item.thumbnailUrl}
+            thumbnailAspect={thumbnailAspect}
+            title={item.name}
+            metrics={{ viewCount: item.viewCount }}
+            author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
+            priority={index < 4}
+            isLcpCandidate={index === 0}
+            onClick={() => onOpenContent(item.type, item.id)}
+          />
+        ))}
+      </ContentCardGrid>
 
-      {favoriteListQuery.data && items.length > 0 && (
-        <>
-          <ContentCardGrid thumbnailAspect={thumbnailAspect}>
-            {items.map((item, index) => (
-              <ContentCard
-                key={item.id}
-                thumbnailUrl={item.thumbnailUrl}
-                thumbnailAspect={thumbnailAspect}
-                title={item.name}
-                metrics={{ viewCount: item.viewCount }}
-                author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
-                priority={index < 4}
-                isLcpCandidate={index === 0}
-                onClick={() => open(item.type, item.id)}
-              />
-            ))}
-          </ContentCardGrid>
-
-          <div ref={sentinelRef} className="flex justify-center py-4">
-            {favoriteListQuery.isFetchingNextPage && (
-              <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />
-            )}
-          </div>
-        </>
-      )}
-    </main>
+      <div ref={sentinelRef} className="flex justify-center py-4">
+        {query.isFetchingNextPage && <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />}
+      </div>
+    </>
   );
-}
-
-function isContentType(value: string): value is ContentType {
-  return value === "character" || value === "story";
 }
