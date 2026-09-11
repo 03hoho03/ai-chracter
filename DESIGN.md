@@ -37,15 +37,15 @@ typography:
     letterSpacing: "-0.025em"
   body:
     fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
-    fontSize: "0.875rem"
+    fontSize: "1rem"
     fontWeight: 400
-    lineHeight: "1.25rem"
+    lineHeight: "1.4286rem"
     letterSpacing: "normal"
   label:
     fontFamily: "Pretendard Variable, -apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif"
-    fontSize: "0.75rem"
+    fontSize: "0.875rem"
     fontWeight: 500
-    lineHeight: "1rem"
+    lineHeight: "1.1667rem"
     letterSpacing: "normal"
 rounded:
   sm: "6px"
@@ -66,8 +66,8 @@ components:
     backgroundColor: "{colors.primary}"
     textColor: "{colors.primary-foreground}"
     rounded: "{rounded.lg}"
-    height: "32px"
-    padding: "0 10px"
+    height: "36px"
+    padding: "0 16px"
     typography: "{typography.body}"
   button-primary-hover:
     backgroundColor: "oklch(0.720 0.180 0 / 0.8)"
@@ -75,24 +75,24 @@ components:
     backgroundColor: "{colors.background}"
     textColor: "{colors.foreground}"
     rounded: "{rounded.lg}"
-    height: "32px"
-    padding: "0 10px"
+    height: "36px"
+    padding: "0 16px"
   button-outline-hover:
     backgroundColor: "{colors.muted}"
   button-ghost:
     backgroundColor: "transparent"
     textColor: "{colors.foreground}"
     rounded: "{rounded.lg}"
-    height: "32px"
-    padding: "0 10px"
+    height: "36px"
+    padding: "0 16px"
   button-ghost-hover:
     backgroundColor: "{colors.muted}"
   button-destructive:
     backgroundColor: "oklch(0.640 0.190 25 / 0.1)"
     textColor: "{colors.destructive-text}"
     rounded: "{rounded.lg}"
-    height: "32px"
-    padding: "0 10px"
+    height: "36px"
+    padding: "0 16px"
   button-destructive-hover:
     backgroundColor: "oklch(0.640 0.190 25 / 0.2)"
   card:
@@ -103,8 +103,8 @@ components:
   input:
     backgroundColor: "transparent"
     textColor: "{colors.foreground}"
-    rounded: "{rounded.md}"
-    height: "32px"
+    rounded: "{rounded.lg}"
+    height: "36px"
     padding: "0 12px"
   badge-status:
     backgroundColor: "{colors.muted}"
@@ -141,7 +141,7 @@ components:
 - `primary`는 **핑크-레드 강조**이자 이 시스템의 유일한 유채색 솔리드 채움이다(라이트 `oklch(0.5 0.19 0)` / 다크 `oklch(0.72 0.18 0)`, `ring`도 같은 값)
 - 그 밖의 유채색은 위험 액션(`destructive`, 항상 `/10` 틴트)과 사용자가 고른 스탯 스와치뿐 — 배경·카드·보더 사다리는 무채색을 유지한다
 - 정지 상태는 평평하다 — 그림자는 앱 전체에 5개뿐이고 그중 3개가 떠 있는 팝오버다
-- 크롬은 sticky 헤더 하나(`h-14`)뿐 — 하단 탭바도, 사이드 레일도, 푸터도 없다(web 한정 — admin은 좌측 사이드바를 쓴다, §5 Navigation). 빌더 라우트(`/builder/*`)는 전역 헤더 대신 같은 56px 자리를 쓰는 전용 상단바(`BuilderTopBar`)로 바뀐다 — 크롬은 여전히 한 줄이다
+- 크롬은 sticky 헤더 하나(`h-14`)뿐 — 하단 탭바도, 사이드 레일도, 푸터도 없다(web 한정 — admin은 좌측 사이드바를 쓴다, §5 Navigation). 빌더 라우트(`/builder/*`)는 전역 헤더 대신 같은 56px 자리를 쓰는 전용 상단바(`BuilderTopBar`)로 바뀐다 — 크롬은 여전히 한 줄이다. **또 하나의 예외는 상세화면의 하단 고정 액션 바다**(D-7) — `lg` 미만에서 주 CTA(플레이) 하나를 화면 하단에 고정한다. 이것은 탭바·사이드 레일·푸터 같은 **상시 내비게이션**이 아니다: 화면 전환에 쓰이는 것이 아니라 그 화면의 **단일 전환 액션 하나만** 담는 바다. 이 예외는 상세화면 한 곳에 한정되며 **다른 화면으로 번지지 않는다** — 목록·채팅·빌더에 새 하단 바를 추가할 근거로 쓰지 말 것
 
 ## 2. Colors
 
@@ -192,7 +192,7 @@ components:
 - **스탯 스와치(User-chosen swatches)** — `packages/ui/src/lib/color-palette.ts`의 10색 고정 팔레트(rose/orange/amber/lime/emerald/teal/sky/indigo/violet/fuchsia, 예: oklch(0.62 0.19 350)). **UI 팔레트가 아니라 사용자 데이터다** — 채팅방 스탯 게이지와 컬러 피커에서 사용자가 직접 고른 값이며, 테마에 따라 변하지 않는다. 시스템 토큰으로 승격하지 말 것.
 
 ### Named Rules
-**The Brightness Budget Rule (밝기 예산 규칙).** 화면은 방의 유일한 광원이다. 다크 테마에서 `foreground`(0.930)보다 밝은 값은 **존재하지 않는다** — 순백(oklch 1.000)은 다크에서 금지다. 밝은 표면은 예산이며, 큰 면적일수록 비싸다. `primary` 채움이 `h-8`(32px) 버튼 크기에 머무는 것은 우연이 아니다. 핑크-레드로 바뀐 뒤에도 다크 `primary`의 L(0.72)은 이 천장 아래에 있다.
+**The Brightness Budget Rule (밝기 예산 규칙).** 화면은 방의 유일한 광원이다. 다크 테마에서 `foreground`(0.930)보다 밝은 값은 **존재하지 않는다** — 순백(oklch 1.000)은 다크에서 금지다. 밝은 표면은 예산이고, 단위는 **면적**이다. 하지만 실제로 지켜지는 제약은 치수 상한이 아니다 — `CharacterPlayButton.tsx`·`StoryDetailBody.tsx`의 플레이 버튼은 `primary` 솔리드 채움에 `h-12 w-full`이라 데스크톱 472×48 ≈ 22,700px²로 `h-8` 버튼의 약 15배지만 예산을 어기지 않는다, 그 화면의 유일한 전환 지점이기 때문이다(`design-system-goal-prompt.md` §3-0). 지켜지는 규칙은 **"밝은 면적은 예산이고, 한 화면에서 지금 눌러야 할 단 하나에만 쓴다"**이다: 무채색 variant(`outline`·`ghost`·`secondary`)의 확대는 이 예산을 전혀 쓰지 않고, `primary` 솔리드 확대는 **화면당 하나**라는 제약으로 관리한다 — 치수 상한이 아니다. `destructive`는 항상 `/10` 틴트라 애초에 이 예산 밖이다. **두 가지 오독을 차단한다**: ① "단위가 높이니 패딩은 공짜다"가 아니다 — 원문 단위는 면적이라 가로로 넓혀도 그만큼 예산을 쓴다. ② "규칙이 거짓이니 밝기는 신경 안 써도 된다"가 아니다 — 거짓이었던 건 `h-8`이라는 **수치 상한 주장**이지 예산 개념 자체가 아니다. 핑크-레드로 바뀐 뒤에도 다크 `primary`의 L(0.72)은 이 천장 아래에 있다.
 
 **The Inverted Ladder Rule (반전 사다리 규칙).** 다크에서는 위로 뜨는 레이어일수록 밝아진다(0.160 → 0.210 → 0.260 → 0.300). 라이트에서는 정확히 반대다(1.000 → 0.970 → 0.930 → 0.890). 새 레이어를 추가할 때 이 사다리에 없는 중간값을 발명하지 말 것.
 
@@ -209,9 +209,10 @@ components:
 ### Hierarchy
 - **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1) 전용. 화면 내 최상위. **h1이 아닌 곳에 쓰지 않는다 — 예외가 0이다**: 앱의 `text-2xl` 8곳 중 7곳이 h1이고 나머지 하나는 아바타 이니셜 글리프다. (이 줄은 한때 "마이페이지 섹션 제목"을 포함했다. 그건 규칙이 아니라 한 파일의 예외였고 — 그 화면의 h1과 h2는 계산된 속성 580개가 **전부 일치**해 헤딩으로 훑으면 넷이 동일하게 읽혔다 — US-013이 그 h2 셋을 Title로 내리면서 사라졌다.)
 - **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목, **설정 섹션 제목(h2)**. 페이지 제목 아래 한 단계가 필요한 자리는 전부 여기다.
-- **Body** (400, 0.875rem/1.25rem): 본문, 대화 메시지, 설명. 앱에서 압도적으로 가장 많이 쓰이는 크기(122회)이며 **사실상의 기본값**이다. 산문은 65-75자에서 줄바꿈.
-- **Label** (500, 0.75rem/1rem): 폼 라벨, 캡션, 메타(조회수·타임스탬프), 에러 텍스트.
-- **Badge** (500, 0.6875rem = 11px): 상태 배지 전용. `text-xs`(12px)는 배지 안에서 너무 크다. **Tailwind 숫자 사다리(xs/sm/base…) 밖의 값이지만 임의값이 아니라 토큰이다** — `globals.css`의 `--text-badge`로 두고 호출부는 `text-badge`를 쓴다. (한때 호출부 6곳이 `text-[11px]`를 손으로 적었고 이 줄은 "이 한 티어를 위해 스케일을 늘리지 않았다"로 그걸 정당화했다. 같은 임의값이 6번 반복되면 승격이 규칙이고, 사다리에 칸을 끼우는 것과 **이미 이름 붙은 티어를 시맨틱 토큰으로 실체화하는 것**은 다르다 — `text-2xs`가 아니라 `text-badge`인 이유다. 줄높이는 짝으로 두지 않았다: 이전 `text-[11px]`도 font-size만 설정했으므로 여기서 정하면 6곳의 렌더가 바뀐다.)
+- **18px 소제목** (`text-lg`, 1.125rem/1.75rem, 굵기는 자리에 따라 `font-semibold`(카드·목록·빈 상태 제목) 또는 `font-medium`(Dialog/Sheet/AlertDialog 제목)): Title(20px)보다 한 단계 낮은 강조가 필요한 소제목. **D-9 이전엔 이 문서에 없던 6번째 크기였다** — 당시 `text-base`(Tailwind 기본값, 16px)로 17곳이 손조립돼 있었는데, D-8이 Body(`--text-sm`)를 16px로 올리면서 `text-base`와 값이 같아져 위계가 붕괴할 뻔했다. D-9가 그 17곳을 `text-lg`(18px)로 옮기며 이 자리를 사다리의 정식 티어로 승격했다(`design-system-goal-prompt.md` D-9).
+- **Body** (400, 1rem/1.4286rem): 본문, 대화 메시지, 설명. 앱에서 여전히 가장 많이 쓰이는 크기다(재측정 `text-sm` 150회 — `grep -rnE '\btext-sm\b' apps/web/src --include='*.tsx'`, 주석 제외 — Label(`text-xs`) 128회를 근소하게 앞선다)이며 **사실상의 기본값**이다. 산문은 65-75**자**(문자 수 기준 — `ch` 단위가 아니다, 한글은 글리프가 전각이라 두 단위가 갈린다)에서 줄바꿈이 규범이다. 채팅 실측은 1512px에서 61~70자로 이 규범 안에 들고, 390px는 폰 폭이 물리적으로 좁아 규범 달성이 아니라 낭비 제거가 목표다(`design-system-goal-prompt.md` §3-3-3).
+- **Label** (500, 0.875rem/1.1667rem): 폼 라벨, 캡션, 메타(조회수·타임스탬프), 에러 텍스트.
+- **Badge** (500, 0.75rem = 12px): 상태 배지 전용. `text-xs`(현재 Label, 14px)는 배지 안에서 너무 크다. **Tailwind 숫자 사다리(xs/sm/base…) 밖의 값이지만 임의값이 아니라 토큰이다** — `globals.css`의 `--text-badge`로 두고 호출부는 `text-badge`를 쓴다. (한때 호출부 6곳이 `text-[11px]`를 손으로 적었고 이 줄은 "이 한 티어를 위해 스케일을 늘리지 않았다"로 그걸 정당화했다. 같은 임의값이 6번 반복되면 승격이 규칙이고, 사다리에 칸을 끼우는 것과 **이미 이름 붙은 티어를 시맨틱 토큰으로 실체화하는 것**은 다르다 — `text-2xs`가 아니라 `text-badge`인 이유다. 줄높이는 짝으로 두지 않았다: 이전 `text-[11px]`도 font-size만 설정했으므로 여기서 정하면 6곳의 렌더가 바뀐다. 값은 D-8로 11px→12px가 됐다.)
 
 ### Named Rules
 **The Single Family Rule (단일 서체 규칙).** 새 화면에 다른 서체 패밀리를 추가하지 않는다. 위계는 굵기·크기·자간으로만 만든다. `font-medium` / `font-semibold` / `font-bold` 셋 밖의 굵기를 도입하지 말 것.
@@ -235,10 +236,12 @@ components:
 
 ## 5. Components
 
-캐주얼하지 않고 **조용하다**. 컴포넌트는 작고(기본 높이 32px), 라운드는 부드럽지만 장식적이지 않으며, 반응은 즉각적이되 과장이 없다. 밤에 한 손으로 쓰는 물건의 성격이다.
+캐주얼하지 않고 **조용하다**. 컴포넌트는 작고(기본 높이 36px), 라운드는 부드럽지만 장식적이지 않으며, 반응은 즉각적이되 과장이 없다. 밤에 한 손으로 쓰는 물건의 성격이다.
+
+**반경 정책: 같은 높이 티어는 같은 반경을 쓴다** — 32px 티어(`Button`/`Toggle`의 `sm`·`icon-sm`, `SelectTrigger sm`)는 `lg`(10px), 24px 티어(`xs`·`icon-xs`)는 `min(md,10px)`(8px). `apps/web/CLAUDE.md`가 "`SelectTrigger size="sm"`은 `ToggleGroupItem sm`과 픽셀상 같다"고 쓸 수 있는 근거가 이 정책이다 — 반경 캡이 따로 남아 있으면 같은 32px 안에서 모서리가 갈린다.
 
 ### Buttons
-- **Shape:** radius `lg`(10px), 기본 높이 `h-8`(32px). 크기 4단계(`xs` 24px / `sm` 28px / `default` 32px / `lg` 36px)와 아이콘 전용 4종.
+- **Shape:** radius `lg`(10px; `xs`/`icon-xs`만 8px, §반경 정책), 기본 높이 `h-9`(36px). 크기 4단계(`xs` 24px / `sm` 32px / `default` 36px / `lg` 40px)와 아이콘 전용 4종. 48px(`h-12`, 플레이 버튼 2곳)은 이 사다리에 없는 호출부 오버라이드 예외다.
 - **Primary:** 핑크-레드 `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝힌 핑크 + 어두운 텍스트, 라이트에서는 어두운 핑크 + 흰 텍스트 — **규칙은 "채움 위 텍스트를 뒤집는다"로 동일하다**(§2 Primary).
 - **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
@@ -251,10 +254,10 @@ components:
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다.
 
-- **Shape:** 칩은 `sm`(높이 28px, radius `min(md,12px)`), 그 밖은 `default`(32px, radius `lg`). 테두리 `border-input`, 배경 투명.
+- **Shape:** 칩은 `sm`(높이 32px), 그 밖은 `default`(36px) — 둘 다 radius `lg`(10px, §반경 정책)로 같다. 테두리 `border-input`, 배경 투명.
 - **선택 상태는 `primary` 솔리드 채움 + `primary-foreground` 텍스트**다(§2 Primary가 "활성 토글"을 primary 용처로 명시). 다크 **7.18:1** / 라이트 **6.70:1**, hover(`bg-primary/80`)에서도 **4.90:1** / **4.77:1**로 AA를 유지한다.
 - **선택 상태를 `bg-muted`로 칠하지 말 것.** 상류 shadcn 기본값이지만 이 시스템에서 그 값은 `background`와 명도가 0.05밖에 차이 나지 않아(다크 0.210 vs 0.160, 약 **1.3:1**) 선택이 보이지 않고, `hover:bg-muted`와 색이 같아 선택 안 된 항목에 마우스만 올려도 구별되지 않는다. `shadcn add toggle`로 재생성하면 이 값이 되돌아온다.
-- **`variant="list"` — 넓은 행이 세로로 쌓인 목록형 선택지**(신고 사유 등)**에만 쓴다.** 이 형태에 솔리드 채움을 쓰면 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다(밝기 예산 규칙 — `primary` 채움은 버튼 크기에 머문다). 그래서 `border-primary` + `text-primary` + `bg-primary/10` 틴트로만 표시하고(선택 행 텍스트 대비 **5.24:1**), 솔리드 채움은 CTA에 남긴다.
+- **`variant="list"` — 넓은 행이 세로로 쌓인 목록형 선택지**(신고 사유 등)**에만 쓴다.** 이 형태에 솔리드 채움을 쓰면 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다(밝기 예산 규칙 — 화면당 `primary` 솔리드 채움은 하나뿐이어야 한다). 그래서 `border-primary` + `text-primary` + `bg-primary/10` 틴트로만 표시하고(선택 행 텍스트 대비 **5.24:1**), 솔리드 채움은 CTA에 남긴다.
 - **감사 테스트:** 토글에 새 선택 표시를 만들려 한다면, 그 항목이 버튼만 한 크기인지 자문하라. 그렇다면 기본 채움을 그대로 쓰고, 한 줄을 가득 채우는 크기라면 `list`를 쓴다.
 - **호출부에 선택 상태 클래스를 직접 붙이지 말 것** — 프리미티브에 없는 규칙을 호출부마다 문자열로 붙이면 새로 추가되는 화면이 조용히 빠진다(실제로 17곳 중 2곳만 맞았던 적이 있다).
 - **선택된 토글의 포커스 링은 불투명해야 한다**(`data-[state=on]:focus-visible:ring-ring`). §Buttons의 기본 레시피(`ring-ring/50` + `border-ring`)는 **배경 위에서만** 성립한다 — `primary` 솔리드 채움 위에서는 `border-ring`이 보더를 채움과 **같은 핑크**로 바꿔 rest의 회색 윤곽을 지워 버리고(라이트 **1.0000** / 다크 **1.0437**), 남는 50% 링은 페이지 배경 대비 **2.5757 다크 / 2.5511 라이트**로 WCAG 1.4.11의 3:1에 미달한다(포커스 on/off 픽셀 diff 실측, 두 리뷰어 독립 일치). **이 수치는 포커스가 정착한 뒤 재야 한다** — `transition-all` 0.15s가 box-shadow까지 애니메이션해서 Tab 직후 읽으면 전이 중간값(α≈0.486, 2.4724)이 잡힌다. ToggleGroup은 roving tabindex라 **Tab이 닿는 칩은 언제나 선택된 칩**이므로 이건 엣지가 아니라 기본 포커스 상태다. 불투명 링은 같은 픽셀이 **7.1768 다크 / 6.7011 라이트**가 되고 rest 상태는 1픽셀도 바뀌지 않는다.
@@ -269,7 +272,7 @@ components:
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
-- **Style:** radius `md`(8px), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 §2 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
+- **Style:** radius `lg`(10px, §반경 정책 — `Input`은 36px 티어), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 §2 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
 - **Focus:** `ring-3 ring-ring/50` + `border-ring` — 버튼과 동일한 포커스 언어.
 - **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive-text`(글자는 텍스트 전용 토큰, 보더·링은 `--destructive`).
 

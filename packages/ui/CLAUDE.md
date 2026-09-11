@@ -22,6 +22,7 @@ shadcn 기반 공용 프리미티브 + 디자인 토큰. web·admin이 함께 �
 - **다크는 `.dark` 클래스 기반이다**(`@custom-variant dark (&:is(.dark *))`). `html`에 클래스를 붙이면 전환되고, `:root`/`.dark` 양쪽에 `color-scheme`이 선언돼 네이티브 컨트롤·스크롤바도 따라온다. **admin은 `.dark`를 절대 붙이지 않아 라이트 값만 적용된다** — 이 패키지를 고칠 때 다크만 확인하고 끝내지 말 것.
 - **`data-open:`·`data-active:`·`data-horizontal:` 같은 축약 variant는 Tailwind 내장이 아니다** — `globals.css`의 `@import "shadcn/tailwind.css"`가 정의한다. 순수 tailwindcss로 컴파일하면 `&[data-active]`(불리언 매칭)로 나와 죽은 셀렉터처럼 보이지만 실제 앱에서는 동작한다 — **"안 맞는 셀렉터"로 오판해 고치지 말 것.** shadcn이 정의하지 않은 상태(`data-state=inactive` 등)는 명시 문법 `data-[state=inactive]:`를 쓴다.
 - 폰트는 Pretendard variable **dynamic-subset**을 `globals.css`에서 직접 import한다(`pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css`). Fontsource 계열이 아니다.
+- **새 코드에서 `text-base`를 쓰지 않는다.** `--text-sm`(Body)이 D-8로 1rem(16px)이 되면서 Tailwind 기본값 `text-base`(1rem)와 값이 같아졌다 — 두 유틸리티가 같은 크기를 가리키면 다음 사람이 둘 중 뭘 써야 하는지 판단할 근거가 없다. `--text-sm`을 써라. **예외는 `input.tsx`/`textarea.tsx`의 `text-base` 고정** — iOS Safari의 16px 미만 입력 자동 확대를 막는 용도라 그 자리에 이미 근거 주석이 있다(D-5/D-8).
 
 ## shadcn 컴포넌트 정리 관례
 
@@ -34,10 +35,10 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 
 ## 호출부에서 처방하는 것 (프리미티브를 고치면 안 되는 자리)
 
-- **`DropdownMenuContent`의 폭은 트리거 폭에 고정돼 있다**(`w-(--radix-dropdown-menu-trigger-width)` + `min-w-32`, `w-`는 이 저장소가 더한 것). 그래서 **아이콘 버튼(32px)이 트리거면 메뉴가 128px에 갇혀** 라벨이 두 줄로 깨진다 — 그 호출부에 `className="w-auto"`를 얹는다. 프리미티브를 고치면 헤더 프로필·알림 등 기존 메뉴 폭이 함께 바뀐다.
+- **`DropdownMenuContent`의 폭은 트리거 폭에 고정돼 있다**(`w-(--radix-dropdown-menu-trigger-width)` + `min-w-32`, `w-`는 이 저장소가 더한 것). 그래서 **아이콘 버튼(36px)이 트리거면 메뉴가 128px에 갇혀** 라벨이 두 줄로 깨진다 — 그 호출부에 `className="w-auto"`를 얹는다. 프리미티브를 고치면 헤더 프로필·알림 등 기존 메뉴 폭이 함께 바뀐다.
 - **`DialogContent`에는 최대 높이도 내부 스크롤도 없다.** 내용이 길어질 수 있는 다이얼로그는 호출부에서 `max-h-[calc(100dvh-2rem)] overflow-y-auto`를 얹을 것 — Radix가 body 스크롤을 잠그므로 빼먹으면 **화면 밖으로 밀린 푸터에 닿을 방법이 없다**.
 - **`DialogDescription`에 `break-keep`이 없다.** 한국어 본문이 어절 중간에서 끊기는데 **넓은 폭에서만 나타나는 게 함정이다**(좁은 화면은 우연히 문장 경계로 접힌다). 지금은 한국어 본문 7곳 전부 호출부에서 `className="break-keep"`을 준다.
-- **`Button`의 `size="lg"`를 단독으로 쓰지 않는다.** `default`와 패딩·타이포가 같고 높이만 32→36px이라, 같은 라벨의 두 버튼에 걸면 폭이 완전히 같아져 위계가 아니라 **정렬 오차로 읽힌다**. 호출부는 전부 `h-10`(폼 제출)·`h-12`(플레이)로 덮어쓴다 — **실제 출하 어휘는 32/40/48px이고 36px 티어는 없다.** 크기로 위계를 만들려면 오버라이드까지 함께 쓰고, 아니면 라벨·배치로 가른다.
+- **`Button`의 `size="lg"`를 단독으로 쓸 때는 `default`와 폭이 같아진다는 점을 알고 써라.** `lg`(`h-10`, 40px)는 `default`(`h-9`, 36px)와 패딩·타이포가 같아, 같은 라벨의 두 버튼에 걸면 폭이 완전히 같아지고(실측 107.05px = 107.05px) 차이는 높이 +4px뿐이다 — 위계가 아니라 정렬 오차로 읽힌다. **어휘 자체는 이제 실재한다**: `xs`/`icon-xs` 24px · `sm`/`icon-sm` 32px · `default`/`icon` 36px · `lg`/`icon-lg` 40px, 호출부 오버라이드로만 존재하는 48px(`h-12`, 플레이 버튼 2곳) 예외 — `default`가 36px가 되기 전엔 `size="lg"` 12곳 중 10곳이 `h-10`으로 다시 덮어써 36px 티어가 실사용 0건이었지만, 그 오버라이드가 걷히며 사라졌다(`design-system-progress.md` P-2). 같은 화면에 목적지·라벨이 같은 두 진입점을 크기로 가르려 하지 말 것 — 폭이 같아 위계로 안 읽히고, 스크린리더에도 같은 이름이 연달아 읽힌다. 크기 대신 라벨·배치로 가른다.
 
 ## 프리미티브에서만 고칠 수 있는 것
 
