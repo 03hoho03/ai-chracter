@@ -49,7 +49,7 @@ const buttonVariants = cva(
        *
        * **`sm`/`icon-sm`의 `rounded-[min(var(--radius-md),12px)]` 캡을 걷어냈다.** `sm`이 32px
        * 티어로 올라가면 `default`/`icon`과 같은 32px 안에 들어가는데, 캡을 남기면 그 안에서
-       * `default`(10px, 캡 없음)와 `sm`(8px, `min(8,12)`)의 모서리가 갈린다. `apps/web/CLAUDE.md`와
+       * `default`(8px, 캡 없음)와 `sm`(6.4px, `min(6.4,12)`)의 모서리가 갈린다. `apps/web/CLAUDE.md`와
        * `MyWorksPage.tsx`가 "SelectTrigger sm과 ToggleGroupItem sm은 픽셀상 같다"고 명문화해 둔
        * 전제가 여기서 성립하려면 같은 높이 티어는 같은 반경이어야 한다(design-system-progress.md
        * P-0-2-③). `xs`/`icon-xs`(24px 티어)의 캡은 그대로 둔다 — 32px 티어와 무관한 다른 높이라

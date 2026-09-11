@@ -39,7 +39,7 @@ const toggleVariants = cva(
        * `sm`에서 제거해 `text-xs`(P-1 이후 14px)를 쓰고, `has-data-[icon=*]:p{r,l}-*` 보정값은
        * 각 사이즈가 원래 갖던 델타(default/lg -0.5unit, sm -1unit)를 새 베이스 패딩에 그대로 옮겼다.
        * `sm`이 32px 티어로 올라가므로 `rounded-[min(var(--radius-md),12px)]` 캡도 걷어 기본
-       * `rounded-lg`(10px)를 상속하게 한다 — `button.tsx`의 `sm`/`icon-sm`과 같은 이유다
+       * `rounded-lg`(8px)를 상속하게 한다 — `button.tsx`의 `sm`/`icon-sm`과 같은 이유다
        * (design-system-progress.md P-0-2-③, 같은 32px 안에서 모서리가 갈리지 않게). */
       size: {
         default:

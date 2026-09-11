@@ -41,8 +41,8 @@ function ToggleGroup({
       data-orientation={orientation}
       style={{ "--gap": spacing } as React.CSSProperties}
       /** `sm`이 32px 티어로 올라가며(`toggle.tsx` D-4) 컨테이너 반경 캡을 걷었다 — 캡을 남기면
-       * 같은 32px 안에서 `default`(10px)와 `sm`(8px)의 모서리가 갈린다(design-system-progress.md
-       * P-0-2-③). 이제 `sm`도 기본 `rounded-lg`(10px)를 그대로 상속한다. */
+       * 같은 32px 안에서 `default`(8px)와 `sm`(6.4px)의 모서리가 갈린다(design-system-progress.md
+       * P-0-2-③). 이제 `sm`도 기본 `rounded-lg`(8px)를 그대로 상속한다. */
       className={cn(
         "group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] rounded-lg data-vertical:flex-col data-vertical:items-stretch",
         className

@@ -48,10 +48,10 @@ typography:
     lineHeight: "1.1667rem"
     letterSpacing: "normal"
 rounded:
-  sm: "6px"
-  md: "8px"
-  lg: "10px"
-  xl: "14px"
+  sm: "4.8px"
+  md: "6.4px"
+  lg: "8px"
+  xl: "11.2px"
   full: "9999px"
 spacing:
   xs: "4px"
@@ -238,10 +238,10 @@ components:
 
 캐주얼하지 않고 **조용하다**. 컴포넌트는 작고(기본 높이 36px), 라운드는 부드럽지만 장식적이지 않으며, 반응은 즉각적이되 과장이 없다. 밤에 한 손으로 쓰는 물건의 성격이다.
 
-**반경 정책: 같은 높이 티어는 같은 반경을 쓴다** — 32px 티어(`Button`/`Toggle`의 `sm`·`icon-sm`, `SelectTrigger sm`)는 `lg`(10px), 24px 티어(`xs`·`icon-xs`)는 `min(md,10px)`(8px). `apps/web/CLAUDE.md`가 "`SelectTrigger size="sm"`은 `ToggleGroupItem sm`과 픽셀상 같다"고 쓸 수 있는 근거가 이 정책이다 — 반경 캡이 따로 남아 있으면 같은 32px 안에서 모서리가 갈린다.
+**반경 정책: 같은 높이 티어는 같은 반경을 쓴다** — 32px 티어(`Button`/`Toggle`의 `sm`·`icon-sm`, `SelectTrigger sm`)는 `lg`(8px), 24px 티어(`xs`·`icon-xs`)는 `min(md,10px)`(6.4px). `apps/web/CLAUDE.md`가 "`SelectTrigger size="sm"`은 `ToggleGroupItem sm`과 픽셀상 같다"고 쓸 수 있는 근거가 이 정책이다 — 반경 캡이 따로 남아 있으면 같은 32px 안에서 모서리가 갈린다.
 
 ### Buttons
-- **Shape:** radius `lg`(10px; `xs`/`icon-xs`만 8px, §반경 정책), 기본 높이 `h-9`(36px). 크기 4단계(`xs` 24px / `sm` 32px / `default` 36px / `lg` 40px)와 아이콘 전용 4종. 48px(`h-12`, 플레이 버튼 2곳)은 이 사다리에 없는 호출부 오버라이드 예외다.
+- **Shape:** radius `lg`(8px; `xs`/`icon-xs`만 6.4px, §반경 정책), 기본 높이 `h-9`(36px). 크기 4단계(`xs` 24px / `sm` 32px / `default` 36px / `lg` 40px)와 아이콘 전용 4종. 48px(`h-12`, 플레이 버튼 2곳)은 이 사다리에 없는 호출부 오버라이드 예외다.
 - **Primary:** 핑크-레드 `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝힌 핑크 + 어두운 텍스트, 라이트에서는 어두운 핑크 + 흰 텍스트 — **규칙은 "채움 위 텍스트를 뒤집는다"로 동일하다**(§2 Primary).
 - **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
@@ -254,7 +254,7 @@ components:
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다.
 
-- **Shape:** 칩은 `sm`(높이 32px), 그 밖은 `default`(36px) — 둘 다 radius `lg`(10px, §반경 정책)로 같다. 테두리 `border-input`, 배경 투명.
+- **Shape:** 칩은 `sm`(높이 32px), 그 밖은 `default`(36px) — 둘 다 radius `lg`(8px, §반경 정책)로 같다. 테두리 `border-input`, 배경 투명.
 - **선택 상태는 `primary` 솔리드 채움 + `primary-foreground` 텍스트**다(§2 Primary가 "활성 토글"을 primary 용처로 명시). 다크 **7.18:1** / 라이트 **6.70:1**, hover(`bg-primary/80`)에서도 **4.90:1** / **4.77:1**로 AA를 유지한다.
 - **선택 상태를 `bg-muted`로 칠하지 말 것.** 상류 shadcn 기본값이지만 이 시스템에서 그 값은 `background`와 명도가 0.05밖에 차이 나지 않아(다크 0.210 vs 0.160, 약 **1.3:1**) 선택이 보이지 않고, `hover:bg-muted`와 색이 같아 선택 안 된 항목에 마우스만 올려도 구별되지 않는다. `shadcn add toggle`로 재생성하면 이 값이 되돌아온다.
 - **`variant="list"` — 넓은 행이 세로로 쌓인 목록형 선택지**(신고 사유 등)**에만 쓴다.** 이 형태에 솔리드 채움을 쓰면 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다(밝기 예산 규칙 — 화면당 `primary` 솔리드 채움은 하나뿐이어야 한다). 그래서 `border-primary` + `text-primary` + `bg-primary/10` 틴트로만 표시하고(선택 행 텍스트 대비 **5.24:1**), 솔리드 채움은 CTA에 남긴다.
@@ -263,7 +263,7 @@ components:
 - **선택된 토글의 포커스 링은 불투명해야 한다**(`data-[state=on]:focus-visible:ring-ring`). §Buttons의 기본 레시피(`ring-ring/50` + `border-ring`)는 **배경 위에서만** 성립한다 — `primary` 솔리드 채움 위에서는 `border-ring`이 보더를 채움과 **같은 핑크**로 바꿔 rest의 회색 윤곽을 지워 버리고(라이트 **1.0000** / 다크 **1.0437**), 남는 50% 링은 페이지 배경 대비 **2.5757 다크 / 2.5511 라이트**로 WCAG 1.4.11의 3:1에 미달한다(포커스 on/off 픽셀 diff 실측, 두 리뷰어 독립 일치). **이 수치는 포커스가 정착한 뒤 재야 한다** — `transition-all` 0.15s가 box-shadow까지 애니메이션해서 Tab 직후 읽으면 전이 중간값(α≈0.486, 2.4724)이 잡힌다. ToggleGroup은 roving tabindex라 **Tab이 닿는 칩은 언제나 선택된 칩**이므로 이건 엣지가 아니라 기본 포커스 상태다. 불투명 링은 같은 픽셀이 **7.1768 다크 / 6.7011 라이트**가 되고 rest 상태는 1픽셀도 바뀌지 않는다.
 
 ### Cards / Containers
-- **Corner Style:** radius `xl`(14px).
+- **Corner Style:** radius `xl`(11.2px).
 - **Background:** `bg-card`, 테두리 `border-border` 한 줄. **그림자 없음.**
 - **Internal Padding:** 12px(콘텐츠 카드) / 16px(초안 카드) / 32px(인증 카드).
 - **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸. **단, 이건 정지 표시용 카드에만 유효하다** — 아래 예외를 볼 것.
@@ -272,7 +272,7 @@ components:
 - **Empty state:** `rounded-xl border border-dashed border-border py-16` — 점선은 빈 상태와 컬러 피커에만 쓴다.
 
 ### Inputs / Fields
-- **Style:** radius `lg`(10px, §반경 정책 — `Input`은 36px 티어), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 §2 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
+- **Style:** radius `lg`(8px, §반경 정책 — `Input`은 36px 티어), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 §2 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
 - **Focus:** `ring-3 ring-ring/50` + `border-ring` — 버튼과 동일한 포커스 언어.
 - **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive-text`(글자는 텍스트 전용 토큰, 보더·링은 `--destructive`).
 
