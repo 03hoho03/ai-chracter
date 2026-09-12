@@ -23,7 +23,7 @@
 
 - **`shared/lib/api/client.ts`·`entities/session`·`features/login`·`features/logout`은 web 동형 구현의 복제다** — 쿼리 옵션 공유, `resetQueries`로 즉시 로그아웃 반영, `beforeLoad: requireSession` 가드까지 모양이 같으니 **그 규약은 `apps/web/CLAUDE.md`를 먼저 볼 것.**
 - 다른 것은 **엔드포인트뿐**이다: `POST /admin/auth/login` · `GET /admin/me` · `POST /admin/auth/logout`. 서버 쪽도 쿠키 이름(`admin_session_id`)과 Redis 프리픽스가 완전히 분리돼 있어 교차 인증이 구조적으로 불가능하다.
-- **web에 있는데 가져오지 않은 것 셋**: `setUnauthorizedHandler` · 구글 로그인 · 비밀번호 표시 토글(내부 발급 계정이라 소셜 로그인이 없다).
+- **web에 있는데 가져오지 않은 것 둘**: 구글 로그인 · 비밀번호 표시 토글(내부 발급 계정이라 소셜 로그인이 없다).
 - 새 보호 라우트는 `beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href)` 한 줄만 추가하면 된다.
 
 ## 라우팅

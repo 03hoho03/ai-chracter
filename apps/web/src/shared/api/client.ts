@@ -17,15 +17,6 @@ export const apiClient = axios.create({
   },
 });
 
-type UnauthorizedHandler = () => void;
-
-let unauthorizedHandler: UnauthorizedHandler | undefined;
-
-/** 401 응답 발생 시 호출될 핸들러를 등록한다. 실제 로그인 라우트 연결(US-011/019)은 이후 단계에서 이 훅을 통해 구현한다. */
-export function setUnauthorizedHandler(handler: UnauthorizedHandler | undefined): void {
-  unauthorizedHandler = handler;
-}
-
 /** FastAPI 에러 봉투. `detail`은 셋 중 하나다 — HTTPException의 string, 422 검증 실패의
  * `[{loc, msg, type}]`, 일부 엔드포인트가 쓰는 구조화 dict(예: 429의 retryAfterSeconds).
  *
@@ -105,10 +96,6 @@ apiClient.interceptors.response.use(
   (response) => response,
   (error: AxiosError) => {
     const normalized = normalizeError(error);
-
-    if (normalized.status === 401) {
-      unauthorizedHandler?.();
-    }
 
     return Promise.reject(new ApiErrorObject(normalized));
   },
