@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
@@ -93,22 +94,56 @@ async def signup(
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> SignupResponse:
     existing = await db.scalar(select(User).where(User.email == payload.email))
-    if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-
     now = datetime.now(UTC)
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        nickname=payload.nickname,
-        birth_date=payload.birth_date,
-        terms_agreed_at=now,
-        privacy_agreed_at=now,
-        terms_version=await _latest_published_legal_version(db, "terms"),
-        privacy_version=await _latest_published_legal_version(db, "privacy"),
-    )
-    db.add(user)
-    await db.commit()
+
+    if existing is not None:
+        # email-goal-prompt.md E-5: 인증 완료·구글 연동·탈퇴·정지 중 하나라도 걸리면
+        # "방치된 미인증 가입"이 아니라 실사용/보호 대상 계정이므로 409로 막는다
+        # (google_callback이 email_verified_at을 보지 않고 세션을 발급해 미인증인 채
+        # 실사용 중인 계정이 있을 수 있다 — tests/test_auth_google_api.py:196-224).
+        if (
+            existing.email_verified_at is not None
+            or existing.google_sub is not None
+            or existing.deleted_at is not None
+            or existing.suspended_at is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
+
+        # 순수하게 방치된 비밀번호 가입 — 기존 row를 덮어쓴다. id/created_at/google_sub 등은
+        # 보존해야 하므로 새 User(...)로 교체하지 않고 기존 인스턴스의 속성만 바꾼다.
+        existing.password_hash = hash_password(payload.password)
+        existing.nickname = payload.nickname
+        existing.birth_date = payload.birth_date
+        existing.terms_agreed_at = now
+        existing.privacy_agreed_at = now
+        existing.terms_version = await _latest_published_legal_version(db, "terms")
+        existing.privacy_version = await _latest_published_legal_version(db, "privacy")
+        await db.commit()
+    else:
+        user = User(
+            email=payload.email,
+            password_hash=hash_password(payload.password),
+            nickname=payload.nickname,
+            birth_date=payload.birth_date,
+            terms_agreed_at=now,
+            privacy_agreed_at=now,
+            terms_version=await _latest_published_legal_version(db, "terms"),
+            privacy_version=await _latest_published_legal_version(db, "privacy"),
+        )
+        try:
+            async with db.begin_nested():
+                db.add(user)
+                await db.flush()
+        except IntegrityError:
+            # email-goal-prompt.md E-11: select와 이 insert 사이의 경합에서 진 요청.
+            # admin/legal.py의 SAVEPOINT 패턴과 같은 이유로 db.rollback()은 쓰지 않는다 —
+            # begin_nested()의 컨텍스트 매니저가 SAVEPOINT까지만 되감아 세션을 정리한다.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            ) from None
+        await db.commit()
 
     code = generate_code()
     await store_verification_code(payload.email, code, now)
