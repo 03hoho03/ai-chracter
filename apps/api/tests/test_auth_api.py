@@ -1,13 +1,17 @@
+import logging
 import uuid
 from datetime import date, datetime, timedelta
 
 import httpx
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code, store_verification_code
 from api.core.config import settings
+from api.core.email import EmailSendError, get_email_sender
 from api.db.models.auth import GuardianConsent, User
+from api.main import app
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -60,6 +64,26 @@ async def test_signup_rejects_duplicate_email(db_client: httpx.AsyncClient) -> N
 
     second = await db_client.post("/auth/signup", json=_signup_payload(email=payload["email"]))
     assert second.status_code == 409
+
+
+async def test_signup_succeeds_when_email_send_fails(
+    db_client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
+) -> None:
+    """email-goal-prompt.md 성공기준 3: 발송 실패를 주입해도 signup은 201을 유지하고
+    실패는 로그에 남는다(BackgroundTasks가 응답 이후 처리하므로)."""
+
+    async def _failing_sender(to: str, subject: str, body: str) -> None:
+        raise EmailSendError("boom")
+
+    app.dependency_overrides[get_email_sender] = lambda: _failing_sender
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post("/auth/signup", json=_signup_payload())
+    finally:
+        app.dependency_overrides.pop(get_email_sender, None)
+
+    assert resp.status_code == 201
+    assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
 async def test_verify_email_adult_does_not_require_guardian_consent(

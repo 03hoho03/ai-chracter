@@ -1,7 +1,7 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,6 +42,7 @@ from api.auth.verification import (
     store_verification_code,
 )
 from api.core.config import settings
+from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, verify_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
@@ -86,7 +87,10 @@ def _reconsent_required(current_version: str | None, required_version: str | Non
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
-    payload: SignupRequest, db: AsyncSession = Depends(get_db_session)
+    payload: SignupRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> SignupResponse:
     existing = await db.scalar(select(User).where(User.email == payload.email))
     if existing is not None:
@@ -108,7 +112,7 @@ async def signup(
 
     code = generate_code()
     await store_verification_code(payload.email, code, now)
-    send_verification_code_email(payload.email, code)
+    background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
 
     return SignupResponse(email=payload.email)
 
@@ -138,7 +142,10 @@ async def verify_email(
 
 @router.post("/resend-verification-code", status_code=status.HTTP_204_NO_CONTENT)
 async def resend_verification_code(
-    payload: ResendVerificationCodeRequest, db: AsyncSession = Depends(get_db_session)
+    payload: ResendVerificationCodeRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
     user = await db.scalar(select(User).where(User.email == payload.email))
     if user is None:
@@ -159,7 +166,7 @@ async def resend_verification_code(
 
     code = generate_code()
     await store_verification_code(payload.email, code, now)
-    send_verification_code_email(payload.email, code)
+    background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
     return None
 
 
@@ -369,7 +376,10 @@ async def logout(request: Request, response: Response) -> None:
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
 async def request_password_reset(
-    payload: PasswordResetRequestRequest, db: AsyncSession = Depends(get_db_session)
+    payload: PasswordResetRequestRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
@@ -377,7 +387,7 @@ async def request_password_reset(
     if user is not None:
         token = await store_reset_token(user.id)
         reset_link = f"{settings.frontend_base_url}/reset-password?token={token}"
-        send_password_reset_email(payload.email, reset_link)
+        background_tasks.add_task(send_password_reset_email, email_sender, payload.email, reset_link)
     return None
 
 
