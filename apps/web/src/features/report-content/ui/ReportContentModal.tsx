@@ -50,7 +50,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
   }
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>신고하기</DialogTitle>

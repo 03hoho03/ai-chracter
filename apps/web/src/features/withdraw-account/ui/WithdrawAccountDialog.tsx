@@ -13,7 +13,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { useWithdrawAccountMutation } from "../api/mutations";
+import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 

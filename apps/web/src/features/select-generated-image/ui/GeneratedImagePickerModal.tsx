@@ -17,13 +17,13 @@ export type PickedGeneratedImage = { assetId: string; imageUrl: string };
 // PlayGuideModal(US-068)과 동일하게 useMutationFlow 없는 순수 조회+선택 모달이다: 그리드 셀 클릭이
 // 곧 결과 확정이라 별도 제출 단계가 없다. "새로 생성하기"는 새 탭을 열 뿐 이 모달/호출한 폼의 상태에는
 // 전혀 영향을 주지 않는다(평범한 <a target="_blank">).
-export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedImage | null>(
+export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedImage | undefined>(
   ({ call }) => {
-    const open = !call.ended;
-    const galleryQuery = useGeneratedImagesQuery(open);
+    const isOpen = !call.ended;
+    const galleryQuery = useGeneratedImagesQuery(isOpen);
 
     return (
-      <Dialog open={open} onOpenChange={(next) => !next && call.end(null)}>
+      <Dialog open={isOpen} onOpenChange={(next) => !next && call.end(undefined)}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>생성한 이미지에서 선택</DialogTitle>

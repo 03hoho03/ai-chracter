@@ -9,10 +9,10 @@ import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
 import { sessionKeys } from "@/entities/session";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import { useLoginMutation } from "../api/mutations";
-import { buildGoogleLoginUrl } from "../lib/googleLoginUrl";
+import { useLoginMutation } from "../api/useLoginMutation";
+import { buildGoogleLoginUrl } from "../lib/buildGoogleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";

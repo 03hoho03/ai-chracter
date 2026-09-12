@@ -12,10 +12,16 @@ import {
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
 import type { ChatMessage, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
-import { openChatStream } from "@/shared/lib/sse/openChatStream";
+import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLast" };
-type SendMessageError = { retryPayload: PendingRequest };
+
+// TS-04 — isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
+// 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
+type SendMessageStatus =
+  | { kind: "idle" }
+  | { kind: "sending" }
+  | { kind: "error"; retryPayload: PendingRequest };
 
 /** techspec-chat-common.md §1 — 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
@@ -23,16 +29,17 @@ type SendMessageError = { retryPayload: PendingRequest };
  * 메시지가 도착하면 이미지 보관함(US-074) 쿼리를 무효화한다(techspec-chat-character.md §1.2). */
 export function useSendMessage(roomId: string, characterId?: string) {
   const queryClient = useQueryClient();
-  const [isSending, setIsSending] = useState(false);
-  const [error, setError] = useState<SendMessageError | null>(null);
-  const [policyWarning, setPolicyWarning] = useState<string | null>(null);
+  const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
+  const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
 
   async function openStream(pending: PendingRequest) {
-    setIsSending(true);
-    setError(null);
-    setPolicyWarning(null);
+    setStatus({ kind: "sending" });
+    setPolicyWarning(undefined);
     setStreamingText("");
+    // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
+    // 에러가 났는지는 로컬 변수로 따로 추적한다.
+    let hasErrored = false;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -41,7 +48,8 @@ export function useSendMessage(roomId: string, characterId?: string) {
         } else if (event.type === "policyWarning") {
           setPolicyWarning(event.message);
         } else if (event.type === "error") {
-          setError({ retryPayload: pending });
+          hasErrored = true;
+          setStatus({ kind: "error", retryPayload: pending });
         }
         applyStreamEvent(queryClient, roomId, event, {
           mode: pending.mode,
@@ -53,10 +61,11 @@ export function useSendMessage(roomId: string, characterId?: string) {
         });
       }
     } catch {
-      setError({ retryPayload: pending });
+      hasErrored = true;
+      setStatus({ kind: "error", retryPayload: pending });
     } finally {
       setStreamingText("");
-      setIsSending(false);
+      if (!hasErrored) setStatus({ kind: "idle" });
     }
   }
 
@@ -78,7 +87,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
   // techspec-chat-common.md §2.1 — 마지막 AI 응답만 새 텍스트로 교체(같은 턴), 새 사용자
   // 메시지를 추가하지 않는다.
   function regenerate(): void {
-    if (isSending) return;
+    if (status.kind === "sending") return;
     void openStream({ payload: buildRegeneratePayload({ roomId }), mode: "replaceLast" });
   }
 
@@ -86,16 +95,16 @@ export function useSendMessage(roomId: string, characterId?: string) {
   // 재실행한다(편집 대상 이후 새 응답을 append) — send()와 달리 낙관적 사용자 메시지를 새로
   // 추가하지 않는다(이미 캐시에 있는 메시지를 truncateAndEdit이 갱신한다).
   function editMessage(messageId: string, text: string): void {
-    if (isSending) return;
+    if (status.kind === "sending") return;
     truncateAndEdit(queryClient, roomId, messageId, text);
     void openStream({ payload: buildEditPayload({ roomId, messageId, text }), mode: "append" });
   }
 
   function retry(): void {
-    if (!error) return;
+    if (status.kind !== "error") return;
     // 동일 payload로 스트림만 재오픈 — 사용자 메시지를 중복 추가하지 않음(send()를 다시 호출하지 않음).
-    void openStream(error.retryPayload);
+    void openStream(status.retryPayload);
   }
 
-  return { send, retry, regenerate, editMessage, isSending, error, policyWarning, streamingText };
+  return { send, retry, regenerate, editMessage, status, policyWarning, streamingText };
 }

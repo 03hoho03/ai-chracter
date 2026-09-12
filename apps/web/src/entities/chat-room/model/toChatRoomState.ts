@@ -1,7 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import type { ChatMessage } from "../api/chatStream";
 import type {
-  ChatMessage,
   ChatRoomState,
   ComparisonOp,
   Ending,
@@ -9,7 +9,7 @@ import type {
   Shortcut,
   SingleRule,
   StatDef,
-} from "../api/chat-room";
+} from "./chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 type ChatMessageDto = ChatRoomResponseDto["messages"][number];
@@ -110,7 +110,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
       : undefined,
     messages: dto.messages.map(toChatMessage),
     stats: dto.stats ?? {},
-    endingStatus: { reached: dto.endingReached, endingId: null, reachedAtTurn: null, epilogue: null },
+    endingStatus: { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: dto.turnCount,
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,

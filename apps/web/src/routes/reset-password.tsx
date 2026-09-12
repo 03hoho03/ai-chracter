@@ -1,8 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { validatePasswordResetToken } from "../features/reset-password";
-import { ResetPasswordPage } from "../pages/reset-password";
+import { validatePasswordResetToken } from "@/features/reset-password";
+import { ResetPasswordPage } from "@/pages/reset-password";
 
 // 토큰에는 기본값이 없어 부재(`undefined`)가 아니라 빈 문자열로 떨어뜨린다 — 삼키는 게 아니라
 // "토큰 없음"으로 정규화해 실패를 그대로 드러내는 쪽이다. 아래 loader의

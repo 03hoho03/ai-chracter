@@ -79,7 +79,7 @@ export const ResetContentDraftModal = createCallable<ResetContentDraftModalProps
   }
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>편집한 내용을 버릴까요?</DialogTitle>

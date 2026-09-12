@@ -5,9 +5,9 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import { useChangePasswordMutation } from "../api/mutations";
+import { useChangePasswordMutation } from "../api/useChangePasswordMutation";
 import {
   changePasswordDefaultValues,
   changePasswordSchema,

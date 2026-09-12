@@ -4,16 +4,22 @@ export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKe
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";
 export {
+  COMPARISON_OPERATORS,
   endingSchema,
   keywordNoteSchema,
+  LOGIC_OPERATORS,
+  PROMPT_TEMPLATE_VALUES,
   ruleListItemSchema,
   shortcutSchema,
   startingSetupSchema,
   statDefSchema,
   storyBuilderSchema,
   storySettingSchema,
+  TARGET_VALUES,
+  VISIBILITY_VALUES,
   type EndingValues,
   type KeywordNoteValues,
+  type PromptTemplate,
   type RuleListItemValues,
   type ShortcutValues,
   type SingleRuleValues,
@@ -21,4 +27,6 @@ export {
   type StatDefValues,
   type StoryBuilderFormValues,
   type StorySettingValues,
+  type Target,
+  type Visibility,
 } from "./model/schema";

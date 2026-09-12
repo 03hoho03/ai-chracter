@@ -2,7 +2,7 @@ import type { ApiError } from "@ai-character-chat/api-types";
 import type { InfiniteData, QueryKey } from "@tanstack/react-query";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 import type { ContentType } from "../model/content";
 import { favoriteKeys } from "./keys";

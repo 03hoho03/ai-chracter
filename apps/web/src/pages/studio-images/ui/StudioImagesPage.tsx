@@ -2,9 +2,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/
 
 import { GenerateImagesPanel } from "@/features/generate-images";
 
+import { isStudioImagesTab, type StudioImagesTab } from "../model/studioImagesTab";
 import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
-
-export type StudioImagesTab = "generate" | "library";
 
 export function StudioImagesPage({
   tab,
@@ -25,7 +24,7 @@ export function StudioImagesPage({
       <Tabs
         value={tab}
         onValueChange={(value) => {
-          if (value === "generate" || value === "library") onTabChange(value);
+          if (isStudioImagesTab(value)) onTabChange(value);
         }}
       >
         <TabsList variant="line">

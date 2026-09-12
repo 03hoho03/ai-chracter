@@ -1,10 +1,10 @@
 import type { ApiError } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 import { chatRoomKeys } from "./keys";
-import type { ChatRoomState } from "./chat-room";
+import type { ChatRoomState } from "../model/chatRoomState";
 
 // US-079, techspec-content-versioning.md §4 — 이 확인 호출이 "봤는지 여부"의 유일한 기준점이라
 // GET은 스스로 플래그를 끄지 않는다. 서버 응답을 다시 파싱하지 않고(pin과 달리 다른 필드가 바뀔

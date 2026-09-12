@@ -24,7 +24,9 @@ export const VISIBILITY_FILTER_OPTIONS: { value: VisibilityFilter; label: string
 
 /** Radix 토글·셀렉트의 `onValueChange`는 `string`을 흘려보낸다. `as` 단언 대신 술어로 좁힌다.
  * `value in VISIBILITY_FILTER_LABEL`로 줄이지 않는 이유: `in`은 프로토타입 체인까지 보므로
- * `"toString"`·`"constructor"`가 통과한다(`Object.hasOwn`은 좁히는 대상이 키가 아니라 객체라 술어가 안 된다). */
+ * `"toString"`·`"constructor"`가 통과한다. `Object.hasOwn`은 좁히는 대상이 키가 아니라 객체라
+ * 그 자체로는 술어가 안 되지만 명시 반환 타입을 단 함수 안에서는 쓸 수 있다(`entities/legal`·`entities/inquiry`가 그렇게 한다)
+ * — 여기서는 배열 `VISIBILITY_FILTERS`가 단일 소스라 `some`이 더 직접적이다. */
 export function isVisibilityFilter(value: string): value is VisibilityFilter {
   return VISIBILITY_FILTERS.some((filter) => filter === value);
 }

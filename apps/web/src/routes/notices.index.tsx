@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 
-import { NoticesPage } from "../pages/notices";
+import { NoticesPage } from "@/pages/notices";
 
 /** 공개 라우트 — `routes/terms.tsx`처럼 `beforeLoad: requireSession`이 없다(D-5). 약관이 약속한
  * 고지 채널이 로그인 뒤에 있으면 문구와 어긋난다. 목록은 `.index.tsx`로 둔다 — `notices.tsx` 옆에

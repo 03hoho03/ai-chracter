@@ -2,7 +2,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { useImageJobStatusQuery } from "@/entities/image-job";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
 import { useGenerateImagesMutation } from "../api/useGenerateImagesMutation";
 import type { GenerateImagesFormValues } from "../model/schema";
@@ -18,13 +18,13 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 // 여기서 `setError("root")`를 칠 폼 인스턴스가 없다 — 배너를 되살리려면 메시지를 자식에게 내려
 // 자식이 root 에러를 치는 구조가 돼야 한다.
 export function GenerateImagesPanel() {
-  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobId, setJobId] = useState<string | undefined>(undefined);
 
   const generateMutation = useGenerateImagesMutation();
-  const jobQuery = useImageJobStatusQuery(jobId ?? "", jobId !== null);
+  const jobQuery = useImageJobStatusQuery(jobId ?? "", jobId !== undefined);
 
   async function handleSubmit(values: GenerateImagesFormValues) {
-    setJobId(null);
+    setJobId(undefined);
     try {
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
@@ -38,7 +38,7 @@ export function GenerateImagesPanel() {
     <div className="flex flex-col gap-8">
       <GenerateImagesForm onSubmit={handleSubmit} />
 
-      {jobId !== null && (
+      {jobId !== undefined && (
         <GenerateImagesResultGrid
           job={jobQuery.data}
           requestedCount={generateMutation.variables?.count ?? 1}

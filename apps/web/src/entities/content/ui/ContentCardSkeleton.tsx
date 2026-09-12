@@ -1,6 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
-import { toThumbnailAspectClass } from "../model/cardLayout";
+import { toThumbnailAspectClass } from "./cardLayoutClass";
 import { ContentCard, type ContentCardProps } from "./ContentCard";
 
 export type ContentCardSkeletonProps = Pick<
@@ -24,7 +24,6 @@ export function ContentCardSkeleton({ thumbnailAspect, metrics, tags, actions }:
         thumbnailAspect={thumbnailAspect}
         // ⚠️ 반드시 `null` — `visibility: hidden`은 이미지 fetch를 막지 못한다(실측: 요청이 나가고 200
         // 응답). `null`이면 `ImageOff` 분기로 빠져 `<img>` 자체가 만들어지지 않는다.
-        thumbnailUrl={null}
         // ⚠️ 반드시 nbsp(` `) — 빈 문자열은 `truncate`(`overflow: hidden`) <p>의 라인박스를
         // 0px로 붕괴시킨다. 일반 공백 `" "`로 고쳐도 collapse 되어 똑같이 0px이라 안 된다 — nbsp라야
         // 라인박스가 생긴다. 내용이 무엇인지는 상관없다 — 카드가 `invisible`이고 제목은 `truncate`라

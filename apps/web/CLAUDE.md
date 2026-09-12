@@ -14,23 +14,23 @@
 | 라우트 파라미터/서치 | RouteComponent가 읽어 페이지에 props 주입(routes↔pages 순환 방지) |
 | 서치 파라미터 스키마 | 모든 필드를 `.catch(...)`로 끝낸다 (빠지면 페이지가 통째로 죽는다) |
 | 액션/확인 모달 | react-call 2계열 — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
-| 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
+| 자산 업로드 | `shared/api/asset/uploadAsset(file, purpose)` 재사용 |
 | 카드 목록 | `entities/content`의 `ContentCard` + `ContentCardActionMenu` + `toContentStatusTags` |
 | 브랜드 자산(파비콘·OG) | `public/`을 직접 고치지 말고 `brand/generate.sh`로 재생성 |
 | 서버에서만 되는 일(봇 메타·sitemap·리다이렉트) | `worker/` — `dist/_worker.js`로 번들된다 |
 | 라우트 추가/삭제 | `src/routes/*.tsx`와 `worker/routes.ts`의 `KNOWN_ROUTES`를 **함께** 고친다 |
 | 조회 없이 정해지는 메타 | `index.html`의 `<head>` — Worker가 아니다 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
-| SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
+| SSE | `shared/api/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 발행 | draft PATCH 먼저 → `publish`(무바디), 400은 `missingFields`/`reason` 분기 |
 | 테마 | `shared/model/theme.ts`의 `themeAtom`만 write (DOM·스토리지 직접 금지) |
 
 ## 아키텍처 / 라우팅
 
-- **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 금지). 같은 레이어 슬라이스끼리 코드를 공유해야 하면 그 코드를 `entities`로 내린다(슬라이스 간 직접 import 금지). `routes/*`는 `pages/{page}`를 렌더링만 하는 얇은 어댑터다.
+- **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 금지). 같은 레이어 슬라이스끼리 코드를 공유해야 하면 그 코드를 `entities`로 내린다(슬라이스 간 직접 import 금지). **단 폼 컨텍스트(`useFormContext`)를 읽는 UI는 내리지 않고 슬라이스를 합친다** — entity `ui`는 로직을 props로 받는 표현만 담는다(FSD-06; `entities/registration`을 `features/sign-up`으로 되돌린 이유, `fe-convention-refactor-goal-prompt.md R-10`). `routes/*`는 `pages/{page}`를 렌더링만 하는 얇은 어댑터다.
 - **레이어를 넘는 import는 `@/` alias**, 같은 슬라이스 내부는 상대경로. 정의가 `tsconfig.json` `paths` + `vite.config.ts`·`vitest.config.ts` `resolve.alias` **세 곳**에 있어 함께 움직인다.
 - **`routeTree.gen.ts`는 커밋한다.** `@tanstack/router-plugin`이 `vite dev`/`vite build` 때 생성하므로, 라우트를 바꿨으면 typecheck·커밋 전에 `vite build`를 한 번 돌린다 — `tsc --noEmit`만으로는 fresh checkout에서 생성되지 않아 새 라우트가 검증에서 통째로 누락된다.
-- **라우터 컨텍스트**: `createRootRouteWithContext<{queryClient}>()`로 `app/providers.tsx`의 **단일** `queryClient`를 넘긴다(`QueryClientProvider`와 다른 인스턴스면 캐시가 갈린다). 진입 자체에 서버 검증이 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 호출은 라우트 파일이 아니라 `features/*`의 순수 async 함수에 둔다.
+- **라우터 컨텍스트**: `createRootRouteWithContext<{queryClient}>()`로 `app/AppProviders.tsx`의 **단일** `queryClient`를 넘긴다(`QueryClientProvider`와 다른 인스턴스면 캐시가 갈린다). 진입 자체에 서버 검증이 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 호출은 라우트 파일이 아니라 `features/*`의 순수 async 함수에 둔다.
 - **플랫 파일명은 `.`으로 경로를 구분한다**(`onboarding.google.tsx` → `/onboarding/google`). 같은 부모 아래서 정적 세그먼트가 동적 파라미터보다 먼저 매치된다. 인덱스 라우트는 `createFileRoute("/builder/")`(끝 슬래시)로 선언하지만 `fullPath`·`<Link to>`·`KNOWN_ROUTES`는 전부 `/builder`다 — `worker/routes.test.ts`의 `toRoutePattern`이 이 셋을 맞춘다.
 - **화면 상태를 유지한 채 URL만 바꿔야 하면 라우트를 하나로 합친다.** 같은 라우트에서 파라미터만 바뀌면 리마운트가 없지만 **다른 라우트 파일로 넘어가면 리마운트한다** — `autoCodeSplitting`이 파일마다 별도 lazy 컴포넌트를 만들어서, 두 파일이 `component:`에 **같은 함수**를 넣어도 소용없다(실측). 빌더가 만들기와 이어쓰기를 `builder.$type.$draftId.tsx` 한 라우트로 받고 `new`를 sentinel로 쓰는 이유다.
 - **쿼리 키가 바뀌는 URL 교체는 `setQueryData`로 캐시를 먼저 채우고 `navigate`한다** — 안 그러면 그 렌더가 `isPending`이 되어 아래 트리가 통째로 언마운트된다(리마운트가 없어도).
@@ -74,17 +74,17 @@
 - **마운트 시 뮤테이션은 `mutateAsync`+`await`** — `useEffect`에서 `.mutate(vars, {onSuccess})`에 의존하면 StrictMode의 마운트→언마운트→재마운트가 `MutationObserver`를 영구 제거해 콜백과 반응형 `isPending`이 그 순간 값에 멈춘다. "결과와 무관하게 항상 일어나야 할" 부수효과는 훅 정의의 `onSuccess`에 둔다.
 - **1회성 배너**: 뮤테이션 성공 즉시 꺼지는 서버 플래그를 렌더 조건으로 직접 쓰면 뜨자마자 사라진다 → "봤다"를 로컬 state로 분리한다.
 - **SSE는 `openChatStream`** (fetch 기반, `credentials: "include"`, `kind` 판별유니언). 스트리밍 중 텍스트는 로컬 버퍼에 두고(Query 캐시와 이중상태 금지) 종료 시 비운다. 캐시 조작은 훅이 아니라 `QueryClient`를 인자로 받는 **순수 함수**로 두면 `new QueryClient()`만으로 테스트된다.
-- **rule-engine은 `shared/lib/rule-engine`이 SSOT** — `entities/*`는 로컬 재정의 대신 `export type {...} from`. `noUncheckedIndexedAccess` 때문에 배열은 인덱싱 대신 구조분해 + `for...of`.
+- **rule-engine(엔딩 스탯 규칙 타입·평가)은 `entities/chat-room/model/endingRules.ts`가 SSOT** — BE `apps/api/src/api/chat/ending_rules.py`의 `evaluate_item`/`evaluate_rule_list`와 같은 techspec §1.5 의사코드를 각자 구현한 짝이고(연산자는 FE 6 · BE 5, FRONTEND_NOTES), 같은 슬라이스의 `chatRoomState`가 재수출해 index로 공개한다. 빌더 스키마(`features/build-story`)는 BE와 맞춘 5개 연산자로 독자 선언하고 타입만 구조적으로 맞춘다(FRONTEND_NOTES). `noUncheckedIndexedAccess` 때문에 배열은 인덱싱 대신 구조분해 + `for...of`.
 - **테마는 `themeAtom` 하나만 write**(localStorage 저장 + `<html>` dark 토글까지 이 atom 책임). 초기값 규칙("light" 저장값일 때만 라이트, 그 외 다크)은 `index.html`의 FOUC 방지 인라인 스크립트와 **반드시 동일**하게 유지한다.
 
 ## 폼 / 빌더
 
-- **멀티스텝도 단일 `useForm` + 단일 zod 스키마**를 전체 스텝이 공유한다. 스텝 검증은 `form.trigger(['필드'])`(도달 안 한 스텝의 필수 필드가 현재 제출을 막지 않는다). `handleSubmit`은 전체 검증이라 스텝 제출에 쓰지 않는다. 위저드마다 `useForm`·스텝 atom을 새로 만든다(모듈 전역 싱글턴 atom은 라우트 간 상태가 샌다).
+- **멀티스텝도 단일 `useForm` + 단일 zod 스키마**를 전체 스텝이 공유한다. 스텝 검증은 `form.trigger(['필드'])`(도달 안 한 스텝의 필수 필드가 현재 제출을 막지 않는다). `handleSubmit`은 전체 검증이라 스텝 제출에 쓰지 않는다. 위저드마다 `useForm`을 새로 만들고, **현재 스텝은 page의 `useState`가 소유해 위저드에 `step`/`onStepChange` props로 넘긴다**(모듈 전역 싱글턴 atom은 라우트를 떠나도 살아남아 폼 값만 비워진 채 중간 스텝으로 재진입하는 막다른 상태를 만든다).
 - **`formToServer`/`serverToForm`이 이름·모양 변환을 전담한다.** draft를 표현해야 하는 필수 선택 필드는 `.nullable()`(`z.enum`엔 "미선택" 멤버가 없어 서버 `null`을 못 담는다), 배열 `order`는 배열 위치 자체(명시 숫자 필드를 만들지 말 것). **실제 필드명은 `packages/api-types/src/generated.ts`에서 확인한다** — 스펙 문서의 이름과 다른 사례가 있었다.
 - **shadcn `Checkbox`는 `register()`로 못 묶는다**(Radix `checked`/`onCheckedChange`) → `Controller` 또는 `watch`/`setValue`.
 - **shadcn `Select`로 숫자 필드를 다룰 때 `z.coerce.number()`를 쓰지 말 것** — `onValueChange`에서 이미 `Number(v)`로 넣는데, `z.coerce`는 스키마 input 타입을 `unknown`으로 만들어 `zodResolver`의 input/output이 어긋난다. `z.coerce`는 항상 string인 네이티브 컨트롤에만 필요하다.
 - **자동저장은 `features/build-common`의 `useAutosave`** — 각 빌더는 자기 `formToServer`만 주입하고 디바운스를 재구현하지 않는다. 디바운스된 저장은 호출부에 catch할 자리가 없으므로 실패 토스트를 훅이 직접 띄운다(`saveNow`의 실패만 호출부 몫).
-- **`useAutosave`에 넘기는 `save`는 렌더마다 같은 함수여야 한다.** 인라인 화살표를 주면 매 렌더 새 디바운스가 생기는데 이전 타이머는 취소되지 않아 **입력 한 글자마다 PATCH가 나간다**. `useWatch`가 키 입력마다 리렌더를 일으키므로 이 함정은 항상 켜져 있다. **의존성 배열에 바뀌는 값이 하나라도 있으면 깨진다** — `useDraftPersistence`가 `draftId`(null → 초안 id)를 클로저 대신 `useRef`로 읽는 이유다.
+- **`useAutosave`에 넘기는 `save`는 렌더마다 같은 함수여야 한다.** 인라인 화살표를 주면 매 렌더 새 디바운스가 생기는데 이전 타이머는 취소되지 않아 **입력 한 글자마다 PATCH가 나간다**. `useWatch`가 키 입력마다 리렌더를 일으키므로 이 함정은 항상 켜져 있다. **의존성 배열에 바뀌는 값이 하나라도 있으면 깨진다** — `useDraftPersistence`가 `draftId`(undefined → 초안 id)를 클로저 대신 `useRef`로 읽는 이유다.
 - **언마운트 때 대기 중인 디바운스 저장은 "버릴지 실행할지"를 갈라야 한다**(`flushOnUnmount`). 그냥 두면 떠난 화면 위로 실패 토스트가 뜨고 URL 교체가 **사용자를 빌더로 되돌려 놓는다**. 반대로 `cancel`만 하면 마지막 편집이 조용히 사라진다("자동으로 저장돼요"라고 적어 두고 어기는 셈이다). **초안이 이미 있으면 flush, 아직 없으면 cancel.**
 - **반복 발화하는 시스템 주도 토스트는 `id` 고정 + `duration: Infinity` + `closeButton`이 한 세트다.** id가 없으면 실패 횟수만큼 쌓이고(600px 이하에선 전체 폭 바닥 고정이라 입력 필드를 가린다), 기본 4초면 "마지막 편집이 서버에 없다"는 **지속 상태**가 눈을 뗀 사이 사라진다. 해제는 다음 저장 성공·닫기·이탈 셋이고 언마운트에서도 같은 id를 dismiss한다. **성공 토스트는 띄우지 않는다**(1.5초마다 초록 토스트는 재앙).
 - **`QueryClient`가 기본 `networkMode: "online"`이라 진짜 오프라인에서는 뮤테이션이 실패하지 않고 pause된다**(재접속 시 큐가 한꺼번에 발사된다 — 실측 9건 동시). "오프라인이면 실패 토스트가 뜬다"는 틀린 가정이다. **"저장 중/저장됨" 인디케이터를 만들 거라면 이 pause 구간에서 거짓말을 하지 않는지부터 확인할 것.**

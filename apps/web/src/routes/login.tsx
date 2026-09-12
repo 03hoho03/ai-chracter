@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { LoginPage } from "../pages/login";
+import { LoginPage } from "@/pages/login";
 
 // 인증 흐름이지만 두 축 모두 삼켜도 되는 값이다 — `redirect`가 날아가면 로그인 후 기본 도착지(`/`)로
 // 가고(`LoginForm`의 `redirectTo || "/"`), `error`가 날아가면 배너 한 줄이 안 뜰 뿐이다. 어느 쪽도

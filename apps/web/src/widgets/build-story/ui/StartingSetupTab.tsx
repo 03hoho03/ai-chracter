@@ -60,7 +60,7 @@ export function StartingSetupTab() {
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
-        {errors.startingSetups?.message && (
+        {!!errors.startingSetups?.message && (
           <p id="story-starting-setups-error" role="alert" className="text-xs text-destructive-text">
             {errors.startingSetups.message}
           </p>
@@ -138,7 +138,7 @@ function StartingSetupRow({
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
   const [replyInput, setReplyInput] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(
     () =>
       Boolean(getValues(`startingSetups.${index}.playGuide`)) ||
       getValues(`startingSetups.${index}.suggestedReplies`).length > 0,
@@ -171,7 +171,7 @@ function StartingSetupRow({
         <button
           type="button"
           aria-label="순서 변경"
-          className="mt-1.5 cursor-grab touch-none text-muted-foreground hover:text-foreground focus-visible:outline-none"
+          className="mt-1.5 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           {...attributes}
           {...listeners}
         >
@@ -249,12 +249,12 @@ function StartingSetupRow({
         </div>
         <Switch
           id={`starting-setup-${id}-advanced-toggle`}
-          checked={showAdvanced}
-          onCheckedChange={setShowAdvanced}
+          checked={isAdvancedOpen}
+          onCheckedChange={setIsAdvancedOpen}
         />
       </div>
 
-      {showAdvanced && (
+      {isAdvancedOpen && (
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`starting-setup-${id}-play-guide`}>플레이가이드</Label>

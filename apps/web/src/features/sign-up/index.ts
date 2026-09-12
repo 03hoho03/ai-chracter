@@ -1,2 +1,1 @@
-export { SignUpWizard } from "./ui/SignUpWizard";
-export { signUpStepAtom } from "./model/atom";
+export { SignUpWizard, type GoogleSignUpStep, type SignUpStep } from "./ui/SignUpWizard";

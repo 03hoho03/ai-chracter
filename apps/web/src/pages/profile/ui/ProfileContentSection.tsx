@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, type RefObject } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 
@@ -8,10 +8,12 @@ import {
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListLoadMore,
+  isContentType,
   isVisibilityFilter,
   toContentStatusTags,
   toPriorityCount,
   toThumbnailAspect,
+  useContentDetailModal,
   useProfileContentListQuery,
   VISIBILITY_FILTER_OPTIONS,
   type ContentCardTag,
@@ -21,18 +23,17 @@ import {
   type VisibilityFilter,
 } from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
-import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
-
-const TYPE_LABEL: Record<ContentType, string> = {
-  character: "캐릭터",
-  story: "스토리",
-};
 
 type ProfileContentSectionProps = {
   userId: string;
   isOwner: boolean;
   contentType: ContentType;
   onContentTypeChange: (type: ContentType) => void;
+};
+
+const TYPE_LABEL: Record<ContentType, string> = {
+  character: "캐릭터",
+  story: "스토리",
 };
 
 /** techspec-global-nav-profile.md §3.2 — [스토리]/[캐릭터] 유형 토글(부모가 URL search param과
@@ -65,7 +66,7 @@ export function ProfileContentSection({
           variant="outline"
           value={contentType}
           onValueChange={(value) => {
-            if (value === "character" || value === "story") onContentTypeChange(value);
+            if (isContentType(value)) onContentTypeChange(value);
           }}
           aria-label="작품 유형 전환"
         >
@@ -97,75 +98,101 @@ export function ProfileContentSection({
         )}
       </div>
 
-      {/* 네 상태가 배타적이지 않아 순서를 명시적으로 만든다(COMP-04) — `isError`와 `data`는 **동시에
-          참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다).
-          예전엔 그래서 에러 문단과 목록이 함께 렌더됐다.
+      <ProfileContentBody
+        query={contentListQuery}
+        items={items}
+        thumbnailAspect={thumbnailAspect}
+        contentType={contentType}
+        isOwner={isOwner}
+        userId={userId}
+        gridRef={gridRef}
+      />
+    </section>
+  );
+}
 
-          `isPending && failureCount === 0`인 이유는 `/my`(MyWorksPage)와 같다: 재시도 백오프 중에도
-          `isPending`이라, 그것만 보면 이미 도착한 목록이 최대 7초(3회 1s→2s→4s) 스켈레톤에 갇힌다. */}
-      {contentListQuery.isPending && contentListQuery.failureCount === 0 && (
-        <ContentCardGrid thumbnailAspect={thumbnailAspect}>
-          {Array.from({ length: 4 }, (_, index) => (
-            <ContentCardSkeleton
-              key={index}
-              thumbnailAspect={thumbnailAspect}
-              metrics={{ viewCount: 0 }}
-              tags={[contentType]}
-              actions={isOwner ? <span aria-hidden className="size-8" /> : undefined}
-            />
-          ))}
-        </ContentCardGrid>
-      )}
+type ProfileContentBodyProps = {
+  query: ReturnType<typeof useProfileContentListQuery>;
+  items: ContentSummary[];
+  thumbnailAspect: ThumbnailAspect;
+  contentType: ContentType;
+  isOwner: boolean;
+  userId: string;
+  gridRef: RefObject<HTMLDivElement | null>;
+};
 
-      {/* 보여줄 목록이 없을 때만 전면 에러다 — 있으면 아래 배너로 알리고 목록을 살린다(/my 선례). */}
-      {contentListQuery.isError && items.length === 0 && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
+/** 로딩·전면실패·빈·성공 네 갈래를 **early return 순서**로 강제한다(COMP-04) — `isError`와 `data`는
+ * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
+ * 그래서 부분 실패 배너는 성공(목록 있음) 분기 안에서 조건부로 함께 렌더한다.
+ *
+ * `isPending && failureCount === 0`인 이유는 `/my`(MyWorksPage)와 같다: 재시도 백오프 중에도
+ * `isPending`이라, 그것만 보면 이미 도착한 목록이 최대 7초(3회 1s→2s→4s) 스켈레톤에 갇힌다. */
+function ProfileContentBody({ query, items, thumbnailAspect, contentType, isOwner, userId, gridRef }: ProfileContentBodyProps) {
+  if (query.isPending && query.failureCount === 0) {
+    return (
+      <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+        {Array.from({ length: 4 }, (_, index) => (
+          <ContentCardSkeleton
+            key={index}
+            thumbnailAspect={thumbnailAspect}
+            metrics={{ viewCount: 0 }}
+            tags={[contentType]}
+            actions={isOwner ? <span aria-hidden className="size-8" /> : undefined}
+          />
+        ))}
+      </ContentCardGrid>
+    );
+  }
 
-      {contentListQuery.isError && items.length > 0 && (
+  // 보여줄 목록이 없을 때만 전면 에러다 — 있으면 아래 배너로 알리고 목록을 살린다(/my 선례).
+  if (query.isError && items.length === 0) {
+    return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (items.length === 0) {
+    return <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>;
+  }
+
+  return (
+    <>
+      {query.isError && (
         <div role="alert" className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-destructive-text">
             새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void contentListQuery.refetch()}>
+          <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
             다시 시도
           </Button>
         </div>
       )}
 
-      {!contentListQuery.isPending && !contentListQuery.isError && items.length === 0 && (
-        <p className="text-sm text-muted-foreground">아직 {TYPE_LABEL[contentType]} 작품이 없어요.</p>
-      )}
-
-      {items.length > 0 && (
-        // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
-        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2).
-        <ContentCardGrid thumbnailAspect={thumbnailAspect} ref={gridRef} tabIndex={-1} className="outline-none">
-          {items.map((content, index) => (
-            <ProfileContentCard
-              key={content.id}
-              content={content}
-              isOwner={isOwner}
-              ownerUserId={userId}
-              thumbnailAspect={thumbnailAspect}
-              priority={index < toPriorityCount(thumbnailAspect)}
-              isLcpCandidate={index === 0}
-            />
-          ))}
-        </ContentCardGrid>
-      )}
+      {/* `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
+          마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2). */}
+      <ContentCardGrid thumbnailAspect={thumbnailAspect} ref={gridRef} tabIndex={-1} className="outline-none">
+        {items.map((content, index) => (
+          <ProfileContentCard
+            key={content.id}
+            content={content}
+            isOwner={isOwner}
+            ownerUserId={userId}
+            thumbnailAspect={thumbnailAspect}
+            isPriority={index < toPriorityCount(thumbnailAspect)}
+            isLcpCandidate={index === 0}
+          />
+        ))}
+      </ContentCardGrid>
 
       <ContentListLoadMore
-        hasMore={contentListQuery.hasNextPage}
-        isLoading={contentListQuery.isFetchingNextPage}
+        hasMore={query.hasNextPage}
+        isLoading={query.isFetchingNextPage}
         onLoadMore={() => {
-          if (contentListQuery.hasNextPage && !contentListQuery.isFetchingNextPage) {
-            void contentListQuery.fetchNextPage();
+          if (query.hasNextPage && !query.isFetchingNextPage) {
+            void query.fetchNextPage();
           }
         }}
         onExhausted={() => gridRef.current?.focus()}
       />
-    </section>
+    </>
   );
 }
 
@@ -176,7 +203,7 @@ type ProfileContentCardProps = {
   thumbnailAspect: ThumbnailAspect;
   /** US-013 — 공용 ContentCard와 같은 규칙. 그리드가 `grid-cols-2 sm:grid-cols-3 md:grid-cols-4`라
    * 첫 줄이 뷰포트에 따라 2/3/4장으로 갈리므로 호출부는 최대값 4를 기준으로 `index < 4`에 준다. */
-  priority?: boolean;
+  isPriority?: boolean;
   /** LCP 후보 1장(`index === 0`)에만 준다. */
   isLcpCandidate?: boolean;
 };
@@ -188,7 +215,7 @@ function ProfileContentCard({
   isOwner,
   ownerUserId,
   thumbnailAspect,
-  priority = false,
+  isPriority = false,
   isLcpCandidate = false,
 }: ProfileContentCardProps) {
   const { open } = useContentDetailModal();
@@ -200,7 +227,7 @@ function ProfileContentCard({
 
   return (
     <ContentCard
-      thumbnailUrl={content.thumbnailUrl}
+      thumbnailUrl={content.thumbnailUrl ?? undefined}
       thumbnailAspect={thumbnailAspect}
       title={content.name}
       metrics={{ viewCount: content.viewCount }}
@@ -210,7 +237,7 @@ function ProfileContentCard({
           <VisibilityMenu content={content} ownerUserId={ownerUserId} />
         ) : undefined
       }
-      priority={priority}
+      isPriority={isPriority}
       isLcpCandidate={isLcpCandidate}
       onClick={() => open(content.type, content.id)}
     />

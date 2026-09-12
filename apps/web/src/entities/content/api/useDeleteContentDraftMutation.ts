@@ -1,7 +1,7 @@
 import type { ApiError } from "@ai-character-chat/api-types";
 import { useMutation } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 /** US-003 — 한 번도 발행된 적 없는 초안을 콘텐츠 행째로 지운다(`GET /me/drafts`가 돌려주는 것과 정확히
  * 같은 집합). 발행 이력이 있으면 서버가 409로 거절한다 — 발행이 새 초안 버전을 자동 복제하므로 발행작에도

@@ -1,6 +1,11 @@
 import { atom } from "jotai";
 
-export type Theme = "dark" | "light";
+export const THEMES = ["dark", "light"] as const;
+export type Theme = (typeof THEMES)[number];
+
+export function isTheme(value: string): value is Theme {
+  return THEMES.some((theme) => theme === value);
+}
 
 const THEME_STORAGE_KEY = "theme";
 

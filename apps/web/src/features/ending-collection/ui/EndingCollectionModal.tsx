@@ -21,19 +21,19 @@ type EndingCollectionModalProps = {
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). 목록↔에필로그 상세는 로컬
 // state(selectedEnding)로 같은 Dialog 안에서 전환한다 — 새 Dialog를 중첩하지 않는다.
 export const EndingCollectionModal = createCallable<EndingCollectionModalProps, void>(({ call, startingSetupId }) => {
-  const open = !call.ended;
-  const [selectedEnding, setSelectedEnding] = useState<EndingCollectionItem | null>(null);
-  const endingsQuery = useEndingCollectionQuery(startingSetupId, open);
+  const isOpen = !call.ended;
+  const [selectedEnding, setSelectedEnding] = useState<EndingCollectionItem | undefined>(undefined);
+  const endingsQuery = useEndingCollectionQuery(startingSetupId, isOpen);
 
   function handleOpenChange(next: boolean) {
     if (!next) {
       call.end();
-      setSelectedEnding(null);
+      setSelectedEnding(undefined);
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogContent className="sm:max-w-sm">
         {selectedEnding ? (
           <div key={selectedEnding.id} className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
@@ -41,7 +41,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setSelectedEnding(null)}
+                onClick={() => setSelectedEnding(undefined)}
                 className="-ml-2 w-fit"
               >
                 <ArrowLeft aria-hidden className="size-3.5" />

@@ -47,7 +47,7 @@ export const DeleteContentDraftModal = createCallable<DeleteContentDraftModalPro
   }
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>이 초안을 삭제할까요?</DialogTitle>

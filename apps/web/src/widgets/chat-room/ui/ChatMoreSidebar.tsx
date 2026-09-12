@@ -4,9 +4,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { X } from "lucide-react";
 
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
-import { chatMorePanelOpenAtom } from "../model/atom";
+import { chatMorePanelOpenAtom } from "../model/atoms";
 import type { ChatMoreNavProps } from "./ChatMoreNav";
 import { ChatMoreNav } from "./ChatMoreNav";
+
+type ChatMoreSidebarProps = ChatMoreNavProps;
 
 // US-004 — lg 이상의 더보기 패널. 오버레이 시트가 아니라 채팅과 폭을 나눠 갖는 인라인 <aside>다:
 // 열어둔 채로 메시지를 읽고 입력·전송할 수 있어야 하므로 포털+모달 전제인 shadcn Sheet를 쓸 수 없다.
@@ -26,23 +28,23 @@ import { ChatMoreNav } from "./ChatMoreNav";
 // 페이드뿐이지만 duration-200과 fade-in-0이 그대로라 등장이 급작스럽지 않고, DESIGN.md도 슬라이드를
 // 요구하지 않는다. 슬라이드를 되살리려면 이 <aside>만 감싸는 래퍼에 클리핑을 걸어야 한다(행
 // 전체가 아니라) — DOM 노드를 하나 더 만드는 구조 변경이라 이번에는 하지 않았다.
-export function ChatMoreSidebar(props: ChatMoreNavProps) {
-  const [open, setOpen] = useAtom(chatMorePanelOpenAtom);
+export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
+  const [isOpen, setIsOpen] = useAtom(chatMorePanelOpenAtom);
   const isSidebarLayout = useIsChatMoreSidebarLayout();
-  const visible = isSidebarLayout && open;
+  const isVisible = isSidebarLayout && isOpen;
 
   // Sheet와 달리 Radix의 ESC 처리가 없으므로 직접 듣는다. 항목을 누르면 패널이 먼저 닫히고 모달이
   // 열리므로(ChatMoreNav) 모달과 ESC를 다툴 일은 없다.
   useEffect(() => {
-    if (!visible) return;
+    if (!isVisible) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setOpen(false);
+      if (event.key === "Escape") setIsOpen(false);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [visible, setOpen]);
+  }, [isVisible, setIsOpen]);
 
-  if (!visible) return null;
+  if (!isVisible) return null;
 
   return (
     <aside
@@ -51,7 +53,7 @@ export function ChatMoreSidebar(props: ChatMoreNavProps) {
     >
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
         <h2 className="font-heading text-lg font-medium text-foreground">더보기</h2>
-        <Button variant="ghost" size="icon-sm" aria-label="더보기 닫기" onClick={() => setOpen(false)}>
+        <Button variant="ghost" size="icon-sm" aria-label="더보기 닫기" onClick={() => setIsOpen(false)}>
           <X aria-hidden className="size-4" />
         </Button>
       </div>

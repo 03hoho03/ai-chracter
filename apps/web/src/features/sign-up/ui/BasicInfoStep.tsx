@@ -5,7 +5,8 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 
-import { LegalConsentFields, type SignUpFormValues } from "@/entities/registration";
+import type { SignUpFormValues } from "../model/signUpSchema";
+import { LegalConsentFields } from "./LegalConsentFields";
 
 const BASIC_INFO_FIELDS = [
   "email",
@@ -79,7 +80,7 @@ export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
           <button
             type="button"
             onClick={() => setIsPasswordVisible((prev) => !prev)}
-            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+            className="absolute inset-y-0 right-0 flex w-9 items-center justify-center rounded-md text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
             aria-label={isPasswordVisible ? "비밀번호 숨기기" : "비밀번호 표시"}
           >
             {isPasswordVisible ? (

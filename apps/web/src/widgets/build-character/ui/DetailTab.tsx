@@ -10,24 +10,33 @@ import {
 } from "@ai-character-chat/ui/components/select";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { X } from "lucide-react";
 import { useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useGenreListQuery } from "@/entities/content";
-import type { CharacterBuilderFormValues } from "@/features/build-character";
+import {
+  TARGET_VALUES,
+  VISIBILITY_VALUES,
+  type CharacterBuilderFormValues,
+  type Target,
+  type Visibility,
+} from "@/features/build-character";
 
-const TARGET_OPTIONS: { value: "female" | "male" | "all"; label: string }[] = [
-  { value: "female", label: "여성향" },
-  { value: "male", label: "남성향" },
-  { value: "all", label: "공용" },
-];
+// TS-09 — 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
+// 라벨만 매핑한다.
+const TARGET_LABELS: Record<Target, string> = {
+  female: "여성향",
+  male: "남성향",
+  all: "공용",
+};
 
-const VISIBILITY_OPTIONS: { value: "public" | "link" | "private"; label: string }[] = [
-  { value: "public", label: "전체공개" },
-  { value: "link", label: "링크공개" },
-  { value: "private", label: "비공개" },
-];
+const VISIBILITY_LABELS: Record<Visibility, string> = {
+  public: "전체공개",
+  link: "링크공개",
+  private: "비공개",
+};
 
 /** techspec-builder-character.md §5 — 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 장르 목록은
  * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다(techspec-builder-story.md §3). */
@@ -127,14 +136,14 @@ export function DetailTab() {
               aria-invalid={!!errors.registration?.target}
               aria-describedby={errors.registration?.target ? "character-detail-target-error" : undefined}
             >
-              {TARGET_OPTIONS.map((option) => (
+              {TARGET_VALUES.map((value) => (
                 <ToggleGroupItem
-                  key={option.value}
-                  value={option.value}
-                  aria-label={option.label}
-                  className={errors.registration?.target ? "border-destructive ring-3 ring-destructive/20" : undefined}
+                  key={value}
+                  value={value}
+                  aria-label={TARGET_LABELS[value]}
+                  className={cn(errors.registration?.target && "border-destructive ring-3 ring-destructive/20")}
                 >
-                  {option.label}
+                  {TARGET_LABELS[value]}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>
@@ -205,16 +214,14 @@ export function DetailTab() {
               aria-invalid={!!errors.registration?.visibility}
               aria-describedby={errors.registration?.visibility ? "character-detail-visibility-error" : undefined}
             >
-              {VISIBILITY_OPTIONS.map((option) => (
+              {VISIBILITY_VALUES.map((value) => (
                 <ToggleGroupItem
-                  key={option.value}
-                  value={option.value}
-                  aria-label={option.label}
-                  className={
-                    errors.registration?.visibility ? "border-destructive ring-3 ring-destructive/20" : undefined
-                  }
+                  key={value}
+                  value={value}
+                  aria-label={VISIBILITY_LABELS[value]}
+                  className={cn(errors.registration?.visibility && "border-destructive ring-3 ring-destructive/20")}
                 >
-                  {option.label}
+                  {VISIBILITY_LABELS[value]}
                 </ToggleGroupItem>
               ))}
             </ToggleGroup>

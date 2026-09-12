@@ -1,6 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { PreviewSessionState, PreviewShortcut, PreviewStartPayload, PreviewStatDef } from "../api/preview-session";
+import type { PreviewStartPayload } from "../api/previewStream";
+import type { PreviewSessionState, PreviewShortcut, PreviewStatDef } from "./previewSessionState";
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
@@ -53,7 +54,7 @@ export function buildPreviewStartState(
       statDefs: [],
       shortcuts: [],
       suggestedReplies: [],
-      endingStatus: { reached: false, epilogue: null },
+      endingStatus: { reached: false, epilogue: undefined },
       turnCount: 0,
     };
   }
@@ -70,7 +71,7 @@ export function buildPreviewStartState(
       statDefs: [],
       shortcuts: payload.shortcuts.map(toShortcut),
       suggestedReplies: [],
-      endingStatus: { reached: false, epilogue: null },
+      endingStatus: { reached: false, epilogue: undefined },
       turnCount: 0,
     };
   }
@@ -86,7 +87,7 @@ export function buildPreviewStartState(
     statDefs: setup.statDefs.map(toStatDef),
     shortcuts: payload.shortcuts.map(toShortcut),
     suggestedReplies: setup.suggestedReplies,
-    endingStatus: { reached: false, epilogue: null },
+    endingStatus: { reached: false, epilogue: undefined },
     turnCount: 0,
   };
 }

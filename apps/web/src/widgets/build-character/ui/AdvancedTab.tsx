@@ -17,9 +17,9 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
+import { registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
-import { registerSituationalImage } from "@/shared/lib/asset/registerSituationalImage";
-import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
+import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
 type SituationalImageRowProps = {
@@ -114,14 +114,14 @@ function SituationalImageRow({
     formState: { errors },
   } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File>();
   const [isUploading, setIsUploading] = useState(false);
   const hasRegisteredImage = watch(`situationalImages.${index}.image`) !== null;
   const situationDescriptionError = errors.situationalImages?.[index]?.situationDescription;
   const situationDescriptionErrorId = `situational-image-${id}-description-error`;
 
   const objectPreviewUrl = useMemo(
-    () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
+    () => (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
     [selectedFile],
   );
   useEffect(() => {
@@ -134,11 +134,8 @@ function SituationalImageRow({
     event.target.value = "";
     if (!file) return;
 
+    if (!(await form.trigger(`situationalImages.${index}.situationDescription`))) return;
     const triggerCondition = getValues(`situationalImages.${index}.situationDescription`);
-    if (!triggerCondition.trim()) {
-      toast.error("노출 상황을 먼저 입력해주세요.");
-      return;
-    }
 
     setIsUploading(true);
     try {
@@ -170,7 +167,7 @@ function SituationalImageRow({
       <button
         type="button"
         aria-label="순서 변경"
-        className="mt-1.5 cursor-grab touch-none text-muted-foreground hover:text-foreground focus-visible:outline-none"
+        className="mt-1.5 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         {...attributes}
         {...listeners}
       >
@@ -235,7 +232,7 @@ function SituationalImageThumb({
   objectPreviewUrl,
   hasRegisteredImage,
 }: {
-  objectPreviewUrl: string | null;
+  objectPreviewUrl: string | undefined;
   hasRegisteredImage: boolean;
 }) {
   if (objectPreviewUrl) {

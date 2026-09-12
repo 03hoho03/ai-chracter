@@ -1,4 +1,4 @@
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 /**
  * builder-techspec.md §4-1(T-4) — 스토리 빌더 8탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던

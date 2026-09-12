@@ -9,7 +9,7 @@ type ComingSoonPageProps = {
  */
 export function ComingSoonPage({ title, description }: ComingSoonPageProps) {
   return (
-    <main className="mx-auto flex min-h-[60vh] max-w-3xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center">
+    <main className="mx-auto flex min-h-placeholder max-w-3xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center">
       <h1 className="text-lg font-semibold text-foreground">{title}</h1>
       <p className="text-sm text-muted-foreground">{description}</p>
     </main>

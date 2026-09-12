@@ -18,7 +18,7 @@ import {
   type GeneratedImageItem,
 } from "@/entities/generated-image";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
 const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",

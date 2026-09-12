@@ -1,10 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
+import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
-import { Eye, Save, TriangleAlert } from "lucide-react";
 import { FormProvider, useForm, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -18,24 +16,36 @@ import {
   type CharacterBuilderFormValues,
   type CharacterBuilderTab,
 } from "@/features/build-character";
-import { useAutosave, useDraftPersistence } from "@/features/build-common";
-import { AppealModal } from "@/features/submit-appeal";
-import { isApiError } from "@/shared/lib/api/client";
 import {
   BuilderLayout,
+  BuilderTabStrip,
   BuilderTopBar,
+  BuilderTopBarActions,
   errorTabs,
   firstErrorLocation,
+  getFilterRejectionReason,
+  getMissingFields,
+  useAutosave,
+  useDraftPersistence,
   useFocusFirstError,
-  useHorizontalScrollClip,
-} from "@/widgets/build-common";
+} from "@/features/build-common";
+import { AppealModal } from "@/features/submit-appeal";
 
-import { characterBuilderActiveTabAtom } from "../model/activeTabAtom";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
+
+type CharacterBuilderShellProps = {
+  draft: CharacterDraftContent;
+  draftId: string | undefined;
+  renderPreview: (args: {
+    kind: "card" | "chat";
+    getPayload: () => PreviewStartPayload;
+    onClose: () => void;
+  }) => ReactNode;
+};
 
 // 탭 목록은 features/build-character/model/tabs.ts(CHARACTER_TABS)가 단일 소스다(builder-techspec.md
 // §4-1) — fields(에러 탭 매칭용 경로 프리픽스)·preview(D-2)가 이 배열에 함께 실려 있다.
@@ -70,26 +80,19 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<CharacterBuilderFormV
   target: "registration.target",
 };
 
-type CharacterBuilderShellProps = {
-  draft: CharacterDraftContent;
-  draftId: string | null;
-  renderPreview: (args: {
-    kind: "card" | "chat";
-    getPayload: () => PreviewStartPayload;
-    onClose: () => void;
-  }) => ReactNode;
-};
-
 /** techspec-builder-character.md §0/§1 — 5탭 단일 useForm 셸. 자동저장(US-096)/발행(US-083)/
  * 미리보기(US-088)를 여기서 연동한다.
  *
- * `draftId`는 아직 서버에 없는 초안이면 null이다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
+ * `draftId`는 아직 서버에 없는 초안이면 undefined다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function CharacterBuilderShell({ draft, draftId, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useAtom(characterBuilderActiveTabAtom);
+  const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // FORM-07 의도적 이탈(V-3, fe-convention-refactor-progress.md) — `form.formState.isSubmitting`은
+  // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
+  // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
   const [isPublishing, setIsPublishing] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
   // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구(D-10)와 정확히 같다
   // (builder-goal-prompt.md §5-3). 기본값을 그대로 두는 것 자체가 이 단계의 결정이다.
@@ -120,9 +123,6 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     },
   });
 
-  // 스텝 탭 스트립 가로 스크롤 신호(P2) — `useHorizontalScrollClip` 참고.
-  const tabsScroll = useHorizontalScrollClip();
-
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
       // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
@@ -132,7 +132,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     },
     formToServer,
     save: saveDraft,
-    flushOnUnmount: () => draftId !== null,
+    flushOnUnmount: () => draftId !== undefined,
   });
 
   /** 상황별 이미지 등록(`POST /assets/{id}/register-situational-image`)은 content_version_id를
@@ -156,7 +156,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   // `handleSubmit`이 넘겨주는 values는 resolver(characterBuilderSchema)를 이미 통과한 파싱 결과라
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다(builder-goal-prompt.md §5-2).
   async function handlePublish(values: CharacterBuilderFormValues) {
-    setRejectionReason(null);
+    setRejectionReason(undefined);
     const payload = formToServer(values);
     setIsPublishing(true);
     try {
@@ -223,40 +223,16 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         autosaveNotice="변경사항은 자동으로 저장돼요."
         isPreviewOpen={isPreviewOpen}
         actions={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label="미리보기"
-              className="lg:hidden"
-              onClick={() => setIsPreviewOpen(true)}
-            >
-              <Eye aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">미리보기</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label="임시저장"
-              onClick={() => void handleSaveNow()}
-            >
-              <Save aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">임시저장</span>
-            </Button>
-            <Button
-              size="sm"
-              disabled={isPublishing}
-              onClick={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
-            >
-              {isPublishing ? "발행 중..." : "발행"}
-            </Button>
-          </>
+          <BuilderTopBarActions
+            isPublishing={isPublishing}
+            onPreview={() => setIsPreviewOpen(true)}
+            onSaveNow={() => void handleSaveNow()}
+            onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
+          />
         }
       />
       <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {rejectionReason !== null && draftId !== null && (
+        {rejectionReason !== undefined && draftId !== undefined && (
           <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
@@ -277,43 +253,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         )}
 
         <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
-          {/* P2 — `TabsList`는 `inline-flex w-fit`이고 `overflow-x-auto`가 없어(packages/ui/tabs.tsx는
-              고치지 않는다, 호출부 처방) 8개 탭이 넘치면 이 스트립이 아니라 페이지 전체가 가로로
-              밀렸다(390px 실측 428px). 스트립 자체를 스크롤 컨테이너로 감싼다 — `-m-1 p-1`은
-              `overflow-x-auto`가 포커스 링을 클립하는 걸 상쇄한다(apps/web/CLAUDE.md "overflow-x-auto는
-              focus 링을 네 방향 모두 클립한다"). 오른쪽 페이드는 실제로 잘렸을 때만(`isClippedRight`)
-              뜬다 — iOS Safari 오버레이 스크롤바엔 상시 표시가 없어(`useHorizontalScrollClip` 주석,
-              packages/ui의 `data-clipped-below`와 같은 이유) 신호가 따로 필요하다. */}
-          <div className="relative">
-            <div ref={tabsScroll.ref} className="-m-1 overflow-x-auto p-1">
-              <TabsList variant="line">
-                {TABS.map((tab) => {
-                  const hasError = errorTabIds.has(tab.id);
-                  return (
-                    <TabsTrigger
-                      key={tab.id}
-                      value={tab.id}
-                      className={
-                        hasError
-                          ? "text-destructive-text hover:text-destructive-text data-active:text-destructive-text dark:text-destructive-text dark:hover:text-destructive-text dark:data-active:text-destructive-text"
-                          : undefined
-                      }
-                    >
-                      {hasError && <TriangleAlert aria-hidden className="size-3.5 shrink-0" />}
-                      {tab.label}
-                      {hasError && <span className="sr-only"> (입력 오류가 있어요)</span>}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </div>
-            {tabsScroll.isClippedRight && (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-y-1 right-1 w-8 bg-linear-to-l from-background"
-              />
-            )}
-          </div>
+          <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
           <TabsContent value="profile">
             <ProfileTab thumbnailUrl={draft.thumbnailUrl} />
@@ -336,28 +276,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   );
 }
 
-/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+/** `Tabs`의 `onValueChange`가 주는 값이 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
  * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
 function isCharacterBuilderTab(value: string): value is CharacterBuilderTab {
   return TABS.some((tab) => tab.id === value);
-}
-
-/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
- * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
- * 있는 발행 거부 상태로 보여준다. */
-function getFilterRejectionReason(error: unknown): string | null {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  if ("reason" in apiError.detail) return String(apiError.detail.reason);
-  return null;
-}
-
-/** 서버 필드명 원문(예: `"thumbnailAssetId"`)을 돌려준다 — 토스트용 한국어 라벨(`MISSING_FIELD_LABELS`)
- * 과 `form.setError()`용 폼 경로(`MISSING_FIELD_FORM_PATH`) 둘 다 이 원문을 키로 찾는다. */
-function getMissingFields(error: unknown): string[] | null {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
-  const fields = apiError.detail.missingFields;
-  if (!Array.isArray(fields)) return null;
-  return fields.map(String);
 }

@@ -5,12 +5,9 @@ import { ContentCard, toThumbnailAspect, useContentListQuery } from "@/entities/
 import type { ContentCardProps, ContentType } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import { useSessionQuery } from "@/entities/session";
-import { PreviewCloseHeader, PreviewSessionView } from "@/widgets/preview-session";
 
-/** 배경으로 까는 목록 카드 최대 개수. 내 카드(1장) + 7장 = 8장 — 이 앱의 그리드 스켈레톤들
- * (`ContentCardSkeleton` 등)이 이미 쓰는 "4열 기준 2행" 관례와 맞췄다. 목록이 이보다 적게 오면
- * 그만큼만 그린다 — 개수를 채우는 건 이 위젯의 책임이 아니다(D-8, 배경은 맥락일 뿐이다). */
-const BACKGROUND_CARD_LIMIT = 7;
+import { PreviewCloseHeader } from "./PreviewCloseHeader";
+import { PreviewSessionView } from "./PreviewSessionView";
 
 export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
   /** 활성 탭(`TABS[activeTab].preview`)에서 파생된 값 — Shell이 계산해 넘긴다(A-6, 상세 프리뷰는
@@ -33,6 +30,11 @@ export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
     ctx: { thumbnailUrl: string | null; authorNickname: string },
   ) => ContentCardProps;
 };
+
+/** 배경으로 까는 목록 카드 최대 개수. 내 카드(1장) + 7장 = 8장 — 이 앱의 그리드 스켈레톤들
+ * (`ContentCardSkeleton` 등)이 이미 쓰는 "4열 기준 2행" 관례와 맞췄다. 목록이 이보다 적게 오면
+ * 그만큼만 그린다 — 개수를 채우는 건 이 위젯의 책임이 아니다(D-8, 배경은 맥락일 뿐이다). */
+const BACKGROUND_CARD_LIMIT = 7;
 
 /**
  * builder-techspec.md §6(T-3) — 빌더 2단 레이아웃의 우측 프리뷰 패널. `BuilderPage`가 `renderPreview`
@@ -115,7 +117,7 @@ function CardPreview<TFieldValues extends FieldValues>({
     // 폭에서는 `BuilderLayout`이 `lg:h-[...]`만 준다) 동작하지 않았고, 카드 그리드가 페이지 전체를
     // 늘려 닫기 버튼이 스크롤 밖으로 사라졌다. `PreviewSessionView`가 쓰는 패턴대로 조상에 기대지
     // 않고 자기 높이를 직접 확정한다.
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
+    <div className="flex h-below-header flex-col">
       <PreviewCloseHeader onClose={onClose} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 py-4">
@@ -139,7 +141,7 @@ function CardPreview<TFieldValues extends FieldValues>({
           {backgroundItems.map((item) => (
             <ContentCard
               key={item.id}
-              thumbnailUrl={item.thumbnailUrl}
+              thumbnailUrl={item.thumbnailUrl ?? undefined}
               thumbnailAspect={toThumbnailAspect(contentType)}
               title={item.name}
               metrics={{ viewCount: item.viewCount }}

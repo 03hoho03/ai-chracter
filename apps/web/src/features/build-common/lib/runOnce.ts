@@ -9,11 +9,11 @@
  * 실패하면 기억을 지운다 — 네트워크 오류로 한 번 실패한 뒤 영영 만들 수 없게 되면 안 된다.
  */
 export function runOnce<T>(run: () => Promise<T>): () => Promise<T> {
-  let pending: Promise<T> | null = null;
+  let pending: Promise<T> | undefined;
 
   return () => {
     pending ??= run().catch((error: unknown) => {
-      pending = null;
+      pending = undefined;
       throw error;
     });
     return pending;

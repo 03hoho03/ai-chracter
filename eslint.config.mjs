@@ -117,6 +117,19 @@ export default tseslint.config(
       ],
     },
   },
+  // routes·app은 `src/` 바로 아래 평면 폴더라 `../`가 곧 레이어 교차다 — `../pages`·`../entities`도
+  // 한 단계여서 위 `allowedDepth: 1`이 통과시키지만 `apps/web/CLAUDE.md`의 "레이어를 넘는 import는
+  // `@/`"에는 정면으로 걸린다. 두 폴더엔 슬라이스가 없어 위 주석이 지키려던 `../model/x`가 0건이라
+  // depth 0이 안전하다(같은 폴더 `./AppProviders`는 `allowSameFolder`가 따로 보므로 그대로 남는다).
+  {
+    files: ["apps/web/src/routes/**/*.{ts,tsx}", "apps/web/src/app/**/*.{ts,tsx}"],
+    rules: {
+      "no-relative-import-paths/no-relative-import-paths": [
+        "error",
+        { allowSameFolder: true, allowedDepth: 0, rootDir: "apps/web/src", prefix: "@" },
+      ],
+    },
+  },
   {
     files: ["apps/admin/src/**/*.{ts,tsx}"],
     rules: {
@@ -131,7 +144,7 @@ export default tseslint.config(
     // FSD-02 · 레이어 의존은 상위→하위 단방향. 서열은 app → pages → widgets → features → entities → shared.
     // `routes/`는 TanStack Router가 강제하는 위치라 FSD 레이어가 아니며 pages와 같은 높이로 다룬다.
     //
-    // **한계: 이 규칙은 정적 `import` 문만 본다.** `validateSearchFallback.test.ts`가 shared에서
+    // **한계: 이 규칙은 정적 `import` 문만 본다.** `searchSchemaContract.test.ts`가 shared에서
     // `import.meta.glob("../../../routes/*.tsx")`로 상위 레이어를 읽는 역참조는 잡지 못한다(도입 직후
     // 0건이 나와 확인했다 — 그 파일은 실제로 위반인데도 통과한다). 글롭·동적 import로 레이어를 넘는
     // 것은 여전히 사람이나 `hojeong-architect` 리뷰의 몫이다.

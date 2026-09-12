@@ -45,10 +45,10 @@ describe("formToCard", () => {
     expect(formToCard(values, { thumbnailUrl: null, authorNickname: "숲지기" }).title).toBe("");
   });
 
-  it("썸네일이 아직 없으면 null을 그대로 전달한다", () => {
+  it("썸네일이 아직 없으면 undefined로 정규화한다(카드 prop은 null을 받지 않는다)", () => {
     const card = formToCard(baseFormValues(), { thumbnailUrl: null, authorNickname: "숲지기" });
 
-    expect(card.thumbnailUrl).toBeNull();
+    expect(card.thumbnailUrl).toBeUndefined();
   });
 
   it("긴 제목도 자르지 않고 그대로 전달한다(말줄임은 ContentCard의 CSS 몫)", () => {

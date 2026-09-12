@@ -64,7 +64,7 @@ MIN_SHORTCUTS = 2
 NARRATOR_WORDS = ("서술자", "진행자")
 
 # 스탯 아이콘/색은 자유 문자열이 아니라 FE 의 고정 목록에서만 골라야 화면에 제대로 뜬다
-# (`apps/web/src/shared/ui/color-icon-picker/icons.ts`, `packages/ui/src/lib/color-palette.ts`).
+# (`apps/web/src/entities/chat-room/model/statIcons.ts`, `packages/ui/src/lib/color-palette.ts`).
 # BE 스키마는 `str` 이라 아무 값이나 통과하므로 시드가 스스로 지킨다.
 StatIcon = Literal[
     "Heart", "Zap", "Brain", "Shield", "Swords", "Star", "Smile", "Flame", "Droplet", "Moon", "Coins", "Sparkles"

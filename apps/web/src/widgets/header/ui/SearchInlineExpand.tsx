@@ -15,13 +15,13 @@ const DEBOUNCE_MS = 300;
 export function SearchInlineExpand() {
   const navigate = useNavigate();
   const initialQuery = useRouterState({ select: (state) => extractHomeQuery(state.location.search) });
-  const [expanded, setExpanded] = useState(Boolean(initialQuery));
+  const [isExpanded, setIsExpanded] = useState(Boolean(initialQuery));
   const [value, setValue] = useState(initialQuery ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
 
   useDebounce(
     () => {
-      if (!expanded) return;
+      if (!isExpanded) return;
       const q = value.trim();
       // US-044 — 홈의 정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
       // 나머지 search param은 보존한다(이전엔 `search: { q }`로 통째로 덮어써 다른 필터가 날아갔다).
@@ -32,11 +32,11 @@ export function SearchInlineExpand() {
   );
 
   useEffect(() => {
-    if (expanded) inputRef.current?.focus();
-  }, [expanded]);
+    if (isExpanded) inputRef.current?.focus();
+  }, [isExpanded]);
 
   const collapse = () => {
-    setExpanded(false);
+    setIsExpanded(false);
     setValue("");
   };
 
@@ -46,10 +46,10 @@ export function SearchInlineExpand() {
         // `w-40`은 선호 폭이지 하한이 아니다 — `min-w-0`이 없으면 390px 폭에서 헤더 아이콘 4개 + 펼친 검색이
         // 합쳐 뷰포트를 14px 넘겨 페이지가 가로로 스크롤된다. 좁을 때만 줄어들고 여유가 있으면 w-40/sm:w-64를 지킨다.
         "flex min-w-0 items-center justify-end motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
-        expanded ? "w-40 sm:w-64" : "w-8",
+        isExpanded ? "w-40 sm:w-64" : "w-8",
       )}
     >
-      {expanded ? (
+      {isExpanded ? (
         <div className="flex w-full items-center gap-1">
           <Input
             ref={inputRef}
@@ -72,7 +72,7 @@ export function SearchInlineExpand() {
           </Button>
         </div>
       ) : (
-        <Button type="button" variant="ghost" size="icon" aria-label="검색" onClick={() => setExpanded(true)}>
+        <Button type="button" variant="ghost" size="icon" aria-label="검색" onClick={() => setIsExpanded(true)}>
           <Search aria-hidden />
         </Button>
       )}

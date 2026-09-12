@@ -2,8 +2,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { chatRoomKeys } from "../api/keys";
-import type { ChatMessage, ChatRoomState } from "../api/chat-room";
+import type { ChatMessage } from "../api/chatStream";
 import { applyStreamEvent } from "./applyStreamEvent";
+import type { ChatRoomState } from "./chatRoomState";
 
 const ROOM_ID = "room-1";
 
@@ -24,7 +25,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     },
     messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
     stats: { hp: 50 },
-    endingStatus: { reached: false, endingId: null, reachedAtTurn: null, epilogue: null },
+    endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: 3,
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
@@ -76,12 +77,12 @@ describe("applyStreamEvent", () => {
     });
   });
 
-  it("endingReached stores a null epilogue as-is", () => {
+  it("endingReached normalizes a null epilogue to undefined (TS-08)", () => {
     applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: null });
 
     expect(
       queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.endingStatus.epilogue,
-    ).toBeNull();
+    ).toBeUndefined();
   });
 
   it("done appends the final message and increments turnCount by default (mode: append)", () => {

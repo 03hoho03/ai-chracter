@@ -20,13 +20,13 @@ import {
   isVisibilityFilter,
   toPriorityCount,
   toThumbnailAspect,
+  useContentDetailModal,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
   type VisibilityFilter,
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
-import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
 import {
   filterMyWorks,
@@ -47,6 +47,12 @@ import {
   type MyWorkTypeFilter,
 } from "../model/myWorksSearch";
 import { MyWorkCardMenu } from "./MyWorkCardMenu";
+
+type MyWorksPageProps = {
+  userId: string;
+  search: MyWorksSearch;
+  onSearchChange: (patch: Partial<MyWorksSearch>) => void;
+};
 
 const TYPE_FILTER_LABEL: Record<MyWorkTypeFilter, string> = {
   all: "전체",
@@ -76,12 +82,6 @@ const SORT_OPTIONS: { value: MyWorksSort; label: string }[] = MY_WORKS_SORTS.map
   value,
   label: SORT_LABEL[value],
 }));
-
-type MyWorksPageProps = {
-  userId: string;
-  search: MyWorksSearch;
-  onSearchChange: (patch: Partial<MyWorksSearch>) => void;
-};
 
 /** prd-creator-entry-and-my-works.md US-008 — 발행 여부와 상관없이 내가 만든 것을 한 화면에서 본다.
  * 서버에는 둘을 합쳐 주는 엔드포인트가 없어 캐릭터·스토리 발행작(`GET /users/{me}/contents`)과
@@ -276,7 +276,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
               key={`${item.kind}-${item.id}`}
               item={item}
               userId={userId}
-              priority={index < toPriorityCount("mixed")}
+              isPriority={index < toPriorityCount("mixed")}
               isLcpCandidate={index === 0}
             />
           ))}
@@ -555,14 +555,14 @@ function describeFilter(typeFilter: MyWorkTypeFilter, visibilityFilter: Visibili
 type MyWorkCardProps = {
   item: MyWorkItem;
   userId: string;
-  priority: boolean;
+  isPriority: boolean;
   isLcpCandidate: boolean;
 };
 
 /** 발행작은 홈·프로필과 같은 상세 모달로, 초안은 이어 쓰던 빌더로 간다. 초안이 `<Link>`가 아닌 이유는
  * 한 그리드 안에서 발행작 카드가 라우터를 우회하는 모달(`useContentDetailModal`)이라 링크가 될 수 없고,
  * 카드 안에 다른 동작을 넣을 자리(US-010의 ⋯ 메뉴)가 `role="button"` 패턴을 요구하기 때문이다. */
-function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps) {
+function MyWorkCard({ item, userId, isPriority, isLcpCandidate }: MyWorkCardProps) {
   const navigate = useNavigate();
   const { open } = useContentDetailModal();
 
@@ -575,7 +575,7 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
 
   return (
     <ContentCard
-      thumbnailUrl={item.thumbnailUrl}
+      thumbnailUrl={item.thumbnailUrl ?? undefined}
       // card-grid-goal-prompt.md D-6 — '전체' 필터에서 캐릭터·스토리가 섞이므로 그리드가 아니라
       // **항목별**로 비율을 정한다(`toThumbnailAspect`).
       thumbnailAspect={toThumbnailAspect(item.type)}
@@ -591,7 +591,7 @@ function MyWorkCard({ item, userId, priority, isLcpCandidate }: MyWorkCardProps)
       metaLabel={toMyWorkMetaLabel(item)}
       tags={toMyWorkTags(item)}
       actions={<MyWorkCardMenu item={item} title={title} userId={userId} />}
-      priority={priority}
+      isPriority={isPriority}
       isLcpCandidate={isLcpCandidate}
       onClick={() => {
         if (item.kind === "published") {

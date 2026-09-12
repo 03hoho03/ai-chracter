@@ -2,9 +2,9 @@ import { RouterProvider } from "@tanstack/react-router";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
-import { AppProviders } from "./app/providers";
+import { AppProviders } from "./app/AppProviders";
 import { router } from "./app/router";
-import { AppToaster } from "./app/toaster";
+import { AppToaster } from "./app/AppToaster";
 
 import "@ai-character-chat/ui/globals.css";
 

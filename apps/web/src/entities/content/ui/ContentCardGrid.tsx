@@ -1,7 +1,8 @@
 import type { ReactNode, Ref } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
-import { toGridColumns, type GridAspect } from "../model/cardLayout";
+import type { GridAspect } from "../model/cardLayout";
+import { toGridColumns } from "./cardLayoutClass";
 
 export type ContentCardGridProps = {
   thumbnailAspect: GridAspect;

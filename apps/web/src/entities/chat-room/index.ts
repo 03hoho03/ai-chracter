@@ -1,21 +1,23 @@
 export { chatRoomKeys } from "./api/keys";
 export type {
   ChatMessage,
-  ChatRoomState,
   ChatStreamEvent,
   ChatStreamRequest,
-  ComparisonOp,
   EditMessageRequest,
+  RegenerateRequest,
+  SendMessageRequest,
+} from "./api/chatStream";
+export type {
+  ChatRoomState,
+  ComparisonOp,
   Ending,
   LogicOp,
-  RegenerateRequest,
   RuleGroup,
   RuleListItem,
-  SendMessageRequest,
   Shortcut,
   SingleRule,
   StatDef,
-} from "./api/chat-room";
+} from "./model/chatRoomState";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
@@ -29,13 +31,16 @@ export { usePinLatestVersionMutation } from "./api/usePinLatestVersionMutation";
 export { useRenameChatRoomMutation } from "./api/useRenameChatRoomMutation";
 export { useResetChatRoomMutation } from "./api/useResetChatRoomMutation";
 export { useStartChatMutation } from "./api/useStartChatMutation";
-export { EndingDivider, MessageBubble, TypingIndicator } from "./ui/MessageBubble";
+export { EndingDivider } from "./ui/EndingDivider";
+export { MessageBubble } from "./ui/MessageBubble";
+export { TypingIndicator } from "./ui/TypingIndicator";
 export { StatGaugePanel } from "./ui/StatGaugePanel";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildEditPayload } from "./model/buildEditPayload";
 export { buildRegeneratePayload } from "./model/buildRegeneratePayload";
 export { buildSendPayload } from "./model/buildSendPayload";
+export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { toChatRoomState } from "./model/toChatRoomState";
 export { truncateAndEdit } from "./model/truncateAndEdit";
-export { chatStreamEventSchema } from "./api/chat-room";
+export { chatStreamEventSchema } from "./api/chatStream";

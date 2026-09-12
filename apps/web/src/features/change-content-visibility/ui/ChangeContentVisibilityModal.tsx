@@ -50,7 +50,7 @@ export const ChangeContentVisibilityModal = createCallable<ChangeContentVisibili
     }
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>이 작품을 {label}로 전환할까요?</DialogTitle>

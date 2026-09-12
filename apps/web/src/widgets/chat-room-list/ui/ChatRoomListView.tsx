@@ -43,24 +43,52 @@ export function ChatRoomListView({
         )}
       </div>
 
-      {listQuery.isPending && <ChatRoomListSkeleton />}
+      <ChatRoomListBody listQuery={listQuery} contentId={contentId} contentType={contentType} />
+    </main>
+  );
+}
 
+type ChatRoomListBodyProps = {
+  listQuery: ReturnType<typeof useChatRoomListQuery>;
+  contentId: string;
+  contentType: "character" | "story";
+};
+
+/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다(COMP-04) — `isError`와 `data`는
+ * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
+ * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
+function ChatRoomListBody({ listQuery, contentId, contentType }: ChatRoomListBodyProps) {
+  if (listQuery.isPending) return <ChatRoomListSkeleton />;
+
+  const items = listQuery.data ?? [];
+
+  if (listQuery.isError && items.length === 0) {
+    return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (items.length === 0) {
+    return <p className="text-sm text-muted-foreground">아직 대화방이 없어요. 새 대화를 시작해보세요.</p>;
+  }
+
+  return (
+    <>
       {listQuery.isError && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
-
-      {listQuery.data && listQuery.data.length === 0 && (
-        <p className="text-sm text-muted-foreground">아직 대화방이 없어요. 새 대화를 시작해보세요.</p>
-      )}
-
-      {listQuery.data && listQuery.data.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {listQuery.data.map((item) => (
-            <ChatRoomListItemRow key={item.id} item={item} contentId={contentId} contentType={contentType} />
-          ))}
+        <div role="alert" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-destructive-text">
+            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void listQuery.refetch()}>
+            다시 시도
+          </Button>
         </div>
       )}
-    </main>
+
+      <div className="flex flex-col gap-2">
+        {items.map((item) => (
+          <ChatRoomListItemRow key={item.id} item={item} contentId={contentId} contentType={contentType} />
+        ))}
+      </div>
+    </>
   );
 }
 

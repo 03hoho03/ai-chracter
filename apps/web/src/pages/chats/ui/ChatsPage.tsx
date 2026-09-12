@@ -1,3 +1,4 @@
+import type { ContentType } from "@/entities/content";
 import { ChatRoomListView, MyChatRoomListView } from "@/widgets/chat-room-list";
 
 // techspec-chat-common.md §3 — 목록은 콘텐츠(캐릭터/스토리) 단위로 스코프된다. 콘텐츠 상세화면의
@@ -9,7 +10,7 @@ export function ChatsPage({
   contentType,
 }: {
   contentId?: string;
-  contentType?: "character" | "story";
+  contentType?: ContentType;
 }) {
   if (contentId && contentType) {
     return <ChatRoomListView contentId={contentId} contentType={contentType} />;

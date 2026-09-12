@@ -1,8 +1,8 @@
 import { useQuery } from "@tanstack/react-query";
 
-import { sessionQueryOptions } from "./session-query-options";
+import { sessionQueryOptions } from "./sessionQueryOptions";
 
-export type { MeResponse } from "./session-query-options";
+export type { MeResponse } from "./sessionQueryOptions";
 
 export function useSessionQuery() {
   return useQuery(sessionQueryOptions);

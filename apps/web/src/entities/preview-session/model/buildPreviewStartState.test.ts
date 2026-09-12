@@ -104,7 +104,7 @@ describe("buildPreviewStartState", () => {
     expect(state.statDefs).toEqual([]);
     expect(state.shortcuts).toEqual([]);
     expect(state.suggestedReplies).toEqual([]);
-    expect(state.endingStatus).toEqual({ reached: false, epilogue: null });
+    expect(state.endingStatus).toEqual({ reached: false, epilogue: undefined });
     expect(state.turnCount).toBe(0);
   });
 

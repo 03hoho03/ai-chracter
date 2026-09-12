@@ -1,13 +1,22 @@
 import { z } from "zod";
 
-/** tasks/archive/prd-image-generation.md §3 — 스타일 프리셋 5종(값은 백엔드 ImageStylePreset과 동일 키). */
-export const IMAGE_STYLE_PRESET_OPTIONS = [
-  { value: "realistic", label: "사실적" },
-  { value: "anime", label: "애니메이션" },
-  { value: "illustration", label: "일러스트" },
-  { value: "render3d", label: "3D 렌더" },
-  { value: "none", label: "없음" },
-] as const;
+/** tasks/archive/prd-image-generation.md §3 — 스타일 프리셋 5종(값은 백엔드 ImageStylePreset과 동일 키).
+ * **이 배열이 단일 소스다** — 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서
+ * 도출된다(TS-09, `IMAGE_ASPECT_RATIOS`와 같은 패턴). */
+export const IMAGE_STYLE_PRESETS = ["realistic", "anime", "illustration", "render3d", "none"] as const;
+
+const IMAGE_STYLE_PRESET_LABEL: Record<(typeof IMAGE_STYLE_PRESETS)[number], string> = {
+  realistic: "사실적",
+  anime: "애니메이션",
+  illustration: "일러스트",
+  render3d: "3D 렌더",
+  none: "없음",
+};
+
+export const IMAGE_STYLE_PRESET_OPTIONS = IMAGE_STYLE_PRESETS.map((value) => ({
+  value,
+  label: IMAGE_STYLE_PRESET_LABEL[value],
+}));
 
 /** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. **이 배열이 단일 소스다** —
  * 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서 도출된다(TS-09).
@@ -43,9 +52,9 @@ export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 export const generateImagesSchema = z.object({
   prompt: z.string().trim().min(1, { message: "프롬프트를 입력해주세요" }),
   model: z.enum(["flux-schnell", "sdxl"]),
-  style: z.enum(["realistic", "anime", "illustration", "render3d", "none"]),
+  style: z.enum(IMAGE_STYLE_PRESETS),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
-  count: z.number().int().min(1).max(4),
+  count: z.number().int().min(Math.min(...IMAGE_COUNT_OPTIONS)).max(Math.max(...IMAGE_COUNT_OPTIONS)),
 });
 
 export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;

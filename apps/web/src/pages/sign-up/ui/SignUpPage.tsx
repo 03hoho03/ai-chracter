@@ -1,7 +1,7 @@
+import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 
-import { SignUpWizard, signUpStepAtom } from "@/features/sign-up";
+import { SignUpWizard, type SignUpStep } from "@/features/sign-up";
 
 const STEP_COPY = {
   basicInfo: {
@@ -19,7 +19,7 @@ const STEP_COPY = {
 } as const;
 
 export function SignUpPage() {
-  const step = useAtomValue(signUpStepAtom);
+  const [step, setStep] = useState<SignUpStep>("basicInfo");
   const { title, description } = STEP_COPY[step];
 
   return (
@@ -31,7 +31,7 @@ export function SignUpPage() {
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
-          <SignUpWizard />
+          <SignUpWizard mode="email" step={step} onStepChange={setStep} />
 
           {step === "basicInfo" && (
             <p className="mt-6 text-center text-sm text-muted-foreground">

@@ -68,16 +68,16 @@ function fieldLines(body: string): string[] {
   return lines;
 }
 
-const routesWithValidateSearch = Object.entries(ROUTE_SOURCES)
+const ROUTES_WITH_VALIDATE_SEARCH = Object.entries(ROUTE_SOURCES)
   .map(([path, source]) => ({ path, schemaName: /validateSearch:\s*(\w+)/.exec(source)?.[1] }))
   .filter((route): route is { path: string; schemaName: string } => route.schemaName !== undefined);
 
 describe("validateSearch 스키마 규약", () => {
   it("검사 대상을 실제로 찾았다 — glob이 0건이면 아래 검사가 통째로 공회전한다", () => {
-    expect(routesWithValidateSearch.length).toBeGreaterThanOrEqual(8);
+    expect(ROUTES_WITH_VALIDATE_SEARCH.length).toBeGreaterThanOrEqual(8);
   });
 
-  it.each(routesWithValidateSearch)("$path 의 모든 필드가 .catch()로 끝난다", ({ schemaName }) => {
+  it.each(ROUTES_WITH_VALIDATE_SEARCH)("$path 의 모든 필드가 .catch()로 끝난다", ({ schemaName }) => {
     const body = findSchemaBody(schemaName);
     // 스키마를 못 찾으면 조용히 통과하는 게 아니라 실패해야 한다 — 그게 이 테스트의 유일한 공회전 경로다.
     expect(body, `${schemaName} 정의를 찾지 못했다`).not.toBeNull();
