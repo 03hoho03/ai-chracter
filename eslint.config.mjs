@@ -144,7 +144,7 @@ export default tseslint.config(
     // FSD-02 · 레이어 의존은 상위→하위 단방향. 서열은 app → pages → widgets → features → entities → shared.
     // `routes/`는 TanStack Router가 강제하는 위치라 FSD 레이어가 아니며 pages와 같은 높이로 다룬다.
     //
-    // **한계: 이 규칙은 정적 `import` 문만 본다.** `validateSearchFallback.test.ts`가 shared에서
+    // **한계: 이 규칙은 정적 `import` 문만 본다.** `searchSchemaContract.test.ts`가 shared에서
     // `import.meta.glob("../../../routes/*.tsx")`로 상위 레이어를 읽는 역참조는 잡지 못한다(도입 직후
     // 0건이 나와 확인했다 — 그 파일은 실제로 위반인데도 통과한다). 글롭·동적 import로 레이어를 넘는
     // 것은 여전히 사람이나 `hojeong-architect` 리뷰의 몫이다.

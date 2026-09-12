@@ -1,6 +1,6 @@
 // techspec-builder-common.md §3 — 빌더 미리보기 세션의 SSE 이벤트 스키마·요청 타입. entities/chat-room의
-// ChatStreamEvent와 형태는 유사하나 완전히 별도인 데이터 레이어(쿼리 키/상태 타입 분리, 순수 평가 로직/
-// 프레젠테이션 컴포넌트만 실제 채팅과 공유한다). 도메인 상태 타입(PreviewStatDef/PreviewShortcut/
+// ChatStreamEvent와 형태는 유사하나 완전히 별도인 데이터 레이어(쿼리 키/상태 타입 분리 — 실제 채팅과 공유하는 것은
+// 프레젠테이션 컴포넌트와 `shouldShowSuggestedReplies`뿐이고 엔딩 평가 로직은 가져오지 않는다). 도메인 상태 타입(PreviewStatDef/PreviewShortcut/
 // PreviewSessionState)은 `../model/previewSessionState`에 있다.
 
 import { z } from "zod";
