@@ -39,7 +39,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
     setStreamingText("");
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다.
-    let didError = false;
+    let hasErrored = false;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -48,7 +48,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
         } else if (event.type === "policyWarning") {
           setPolicyWarning(event.message);
         } else if (event.type === "error") {
-          didError = true;
+          hasErrored = true;
           setStatus({ kind: "error", retryPayload: pending });
         }
         applyStreamEvent(queryClient, roomId, event, {
@@ -61,11 +61,11 @@ export function useSendMessage(roomId: string, characterId?: string) {
         });
       }
     } catch {
-      didError = true;
+      hasErrored = true;
       setStatus({ kind: "error", retryPayload: pending });
     } finally {
       setStreamingText("");
-      if (!didError) setStatus({ kind: "idle" });
+      if (!hasErrored) setStatus({ kind: "idle" });
     }
   }
 

@@ -37,7 +37,7 @@ const TYPE_LABEL: Record<ContentType, string> = {
 };
 
 // techspec-overview.md §11 — 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
-// 화면 표시는 desiredLiked/desiredFavorited로 매 클릭마다 즉시 반영한다.
+// 화면 표시는 isLikeDesired/isFavoriteDesired로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
 /** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
@@ -51,8 +51,8 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
   const queryClient = useQueryClient();
   const toggleLike = useToggleLikeMutation(id);
   const toggleFavorite = useToggleFavoriteMutation(id);
-  const [desiredLiked, setDesiredLiked] = useState<boolean | undefined>(undefined);
-  const [desiredFavorited, setDesiredFavorited] = useState<boolean | undefined>(undefined);
+  const [isLikeDesired, setIsLikeDesired] = useState<boolean | undefined>(undefined);
+  const [isFavoriteDesired, setIsFavoriteDesired] = useState<boolean | undefined>(undefined);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   // 스토리 전용 — 시작설정 선택. `StoryDetailBody`(스크롤 영역의 선택기)와 `StoryPlayBar`(하단
   // 고정 바)가 형제로 갈라지면서(P-5) 상태를 여기서 들고 있어야 서로 공유할 수 있다. 캐릭터는 쓰지
@@ -91,35 +91,35 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
 
   useDebounce(
     () => {
-      if (content === undefined || desiredLiked === undefined || desiredLiked === content.isLiked) return;
-      const syncingLiked = desiredLiked;
-      toggleLike.mutate(syncingLiked, {
+      if (content === undefined || isLikeDesired === undefined || isLikeDesired === content.isLiked) return;
+      const isNextLiked = isLikeDesired;
+      toggleLike.mutate(isNextLiked, {
         onError: (error) => {
           toast.error(
             error.status === 401 ? "로그인 후 좋아요를 남길 수 있어요." : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
           );
         },
         onSettled: () => {
-          // 정산되는 사이 다시 클릭해 desiredLiked가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
-          setDesiredLiked((current) => (current === syncingLiked ? undefined : current));
+          // 정산되는 사이 다시 클릭해 isLikeDesired가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
+          setIsLikeDesired((current) => (current === isNextLiked ? undefined : current));
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
         },
       });
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [desiredLiked],
+    [isLikeDesired],
   );
 
   useDebounce(
     () => {
       if (
         content === undefined ||
-        desiredFavorited === undefined ||
-        desiredFavorited === content.isFavorited
+        isFavoriteDesired === undefined ||
+        isFavoriteDesired === content.isFavorited
       )
         return;
-      const syncingFavorited = desiredFavorited;
-      toggleFavorite.mutate(syncingFavorited, {
+      const isNextFavorited = isFavoriteDesired;
+      toggleFavorite.mutate(isNextFavorited, {
         onError: (error) => {
           toast.error(
             error.status === 401
@@ -128,7 +128,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
           );
         },
         onSettled: () => {
-          setDesiredFavorited((current) => (current === syncingFavorited ? undefined : current));
+          setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
           // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다(card-grid-techspec.md T-1) — 접두사로
           // 두 타입 모두 무효화한다. 한쪽만 지우면 반대 타입 즐겨찾기 목록이 stale로 남는다.
@@ -137,7 +137,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
       });
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [desiredFavorited],
+    [isFavoriteDesired],
   );
 
   if (detailQuery.isPending) return <ContentDetailSkeleton />;
@@ -160,9 +160,9 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
     return <ContentUnavailableState access={access} />;
   }
 
-  const isLiked = desiredLiked ?? content.isLiked;
+  const isLiked = isLikeDesired ?? content.isLiked;
   const likeCount = content.likeCount + optimisticDelta(isLiked, content.isLiked);
-  const isFavorited = desiredFavorited ?? content.isFavorited;
+  const isFavorited = isFavoriteDesired ?? content.isFavorited;
   const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
 
   const footer =
@@ -255,7 +255,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
         <button
           type="button"
           aria-pressed={isLiked}
-          onClick={() => setDesiredLiked((current) => !(current ?? content.isLiked))}
+          onClick={() => setIsLikeDesired((current) => !(current ?? content.isLiked))}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
             isLiked && "text-primary hover:text-primary",
@@ -269,7 +269,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
         <button
           type="button"
           aria-pressed={isFavorited}
-          onClick={() => setDesiredFavorited((current) => !(current ?? content.isFavorited))}
+          onClick={() => setIsFavoriteDesired((current) => !(current ?? content.isFavorited))}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md motion-safe:transition-colors hover:text-foreground",
             isFavorited && "text-primary hover:text-primary",

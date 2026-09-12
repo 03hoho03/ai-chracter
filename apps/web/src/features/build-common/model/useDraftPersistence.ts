@@ -30,7 +30,7 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
   // 이 래퍼가 마운트 동안 하나여야 "초안은 정확히 한 번만 만들어진다"가 성립한다(연속 자동저장이
   // 겹쳐 들어온다) → ref에 담아 첫 렌더의 것을 계속 쓴다. 첫 렌더의 `mutateAsync`를 붙잡는 건
   // 안전하다 — useMutation의 MutationObserver는 마운트 내내 같은 인스턴스다.
-  const createDraftOnceRef = useRef<(() => Promise<string>) | null>(null);
+  const createDraftOnceRef = useRef<() => Promise<string>>(undefined);
   const createDraftOnce = (createDraftOnceRef.current ??= runOnce(
     async () => (await createDraftMutation.mutateAsync({ type })).contentId,
   ));

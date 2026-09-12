@@ -32,7 +32,7 @@ export function useFocusFirstError<T extends FieldValues>({
   activeTab: string;
   setActiveTab: (tabId: string) => void;
 }): (location: FirstErrorLocation | undefined) => void {
-  const pendingFieldPathRef = useRef<string | null>(null);
+  const pendingFieldPathRef = useRef<string>(undefined);
   // handlePublish는 async라 발행 await 도중 사용자가 탭을 수동 전환하면 클릭 시점 activeTab을 든
   // 클로저가 stale해진다 — 호출 시점의 최신값을 읽도록 ref로 미러링한다(builder-goal-prompt.md §5-4).
   const activeTabRef = useRef(activeTab);
@@ -43,8 +43,8 @@ export function useFocusFirstError<T extends FieldValues>({
 
   useEffect(() => {
     const fieldPath = pendingFieldPathRef.current;
-    if (fieldPath === null) return;
-    pendingFieldPathRef.current = null;
+    if (fieldPath === undefined) return;
+    pendingFieldPathRef.current = undefined;
     const frameId = requestAnimationFrame(() => focusAndScroll(form, fieldPath));
     return () => cancelAnimationFrame(frameId);
   }, [activeTab, form]);
