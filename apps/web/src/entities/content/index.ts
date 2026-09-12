@@ -42,6 +42,7 @@ export type {
   ContentDraftContent,
   StoryDraftContent,
 } from "./model/emptyDraft";
+export type { BuilderTab } from "./model/builderTab";
 export {
   CONTENT_LIST_SORTS,
   CONTENT_TYPES,

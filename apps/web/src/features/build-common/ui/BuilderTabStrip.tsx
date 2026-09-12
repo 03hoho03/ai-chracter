@@ -2,7 +2,7 @@ import { TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { TriangleAlert } from "lucide-react";
 
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 import { useHorizontalScrollClip } from "../lib/useHorizontalScrollClip";
 

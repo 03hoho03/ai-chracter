@@ -1,4 +1,4 @@
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 /**
  * builder-techspec.md §4-1(T-4) — 캐릭터 빌더 5탭의 단일 소스. `CharacterBuilderShell.tsx`가 그리던

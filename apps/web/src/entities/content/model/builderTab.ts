@@ -1,9 +1,10 @@
 /**
  * builder-techspec.md §4-1 — 빌더 탭 하나의 선언. 라벨·에러 매칭용 필드 프리픽스·프리뷰 종류가 이 한
- * 타입에 모인다(단일 소스). 소비처는 `features/build-story`·`features/build-character`(탭 목록 선언)와
- * `features/build-common`(에러 매칭) 셋으로 전부 features다 — 한때 여기 적혀 있던 "features가 widgets를
- * import할 수 없어 shared에 둔다"는 사유는 build-common이 features로 내려오면서 거짓이 됐다. 콘텐츠 초안
- * 도메인이라 entities로 옮기는 결정이 `fe-convention-refactor-goal-prompt.md R-4`에 예정돼 있다.
+ * 타입에 모인다(단일 소스). 셋 다 콘텐츠 초안을 어떻게 나눠 보여주느냐에 대한 서술이라, 초안 본문
+ * (`useContentDraftQuery`·`createEmptyDraft`)을 이미 품는 `entities/content`가 집이다
+ * (`fe-convention-refactor-goal-prompt.md R-4`). 소비처는 `features/build-story`·
+ * `features/build-character`(탭 목록 선언)와 `features/build-common`(에러 매칭·탭 스트립)으로 전부
+ * features다.
  *
  * 폼 값 타입으로 제네릭을 두지 않는다 — `fields`는 `*`(배열 인덱스 와일드카드)를 쓰는 경로 프리픽스
  * 문자열이라 특정 폼 타입의 키 구조로 표현할 수 없고(구조적으로 아무것도 좁히지 못한다), 저장소

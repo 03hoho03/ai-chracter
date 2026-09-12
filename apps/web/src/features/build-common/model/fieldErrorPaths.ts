@@ -1,4 +1,4 @@
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 /** RHF `FieldErrors`는 중첩 객체/배열이고 **잎에만** `{type, message, ref}`가 있다 — `type`이 문자열인
  * 자리를 잎으로 판정하고 그 아래로는 내려가지 않는다(builder-techspec.md §4-2).

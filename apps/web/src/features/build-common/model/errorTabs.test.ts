@@ -1,7 +1,7 @@
 import type { FieldErrors } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 import { errorTabs } from "./errorTabs";
 

@@ -1,6 +1,6 @@
 import type { FieldErrors, FieldValues } from "react-hook-form";
 
-import type { BuilderTab } from "@/shared/model/builderTab";
+import type { BuilderTab } from "@/entities/content";
 
 import { flattenFieldErrorPaths, matchTabForPath } from "./fieldErrorPaths";
 
