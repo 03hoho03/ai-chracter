@@ -93,7 +93,7 @@ function isComparisonOperator(value: string): value is SingleRuleValues["operato
 }
 
 /** 목록 위에서 인접한 두 항목 사이의 and/or 관계. 마지막 항목의 nextOp는 평가에서 무시되므로
- * (shared/lib/rule-engine) 마지막 항목 뒤에는 렌더링하지 않는다. */
+ * (entities/chat-room/model/endingRules.ts) 마지막 항목 뒤에는 렌더링하지 않는다. */
 type LogicOp = (typeof LOGIC_OPERATORS)[number];
 
 function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: LogicOp) => void }) {

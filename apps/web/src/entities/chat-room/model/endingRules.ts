@@ -2,8 +2,9 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 // techspec-builder-story.md §1.5 — 엔딩 스탯 규칙(단일 규칙/그룹, and/or 누적)의 타입과 평가
 // 순수 함수. BE 포팅은 apps/api/src/api/chat/ending_rules.py의 evaluate_item/evaluate_rule_list.
-// 빌더(US-091~)/미리보기(US-089)와 entities/chat-room(US-052 provisional 타입)이 공유하는
-// 단일 진실 공급원이다.
+// 타입 소비처는 이 슬라이스의 chatRoomState(US-052 provisional 타입) 하나이고, 평가 함수는 FE 프로덕션
+// 소비 0건 — 위 BE 짝과의 대응을 위해 남긴다(테스트만 호출). 빌더(US-091~)는 BE enum에 맞춘 연산자
+// 5개로 스키마를 독자 선언하므로 이 파일을 import하지 않고 구조적으로만 맞춘다.
 
 export type ComparisonOp = ">" | ">=" | "<" | "<=" | "==" | "!=";
 export type LogicOp = "and" | "or";

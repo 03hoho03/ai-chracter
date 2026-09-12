@@ -2,11 +2,10 @@
 // techspec-chat-story.md §1.1/§1.2, techspec-content-versioning.md §2 — ChatRoomState는 캐릭터/스토리
 // 챗 공용 상태 모델이다.
 
-import type { RuleListItem } from "@/shared/lib/rule-engine/endingRules";
-
 import type { ChatMessage } from "../api/chatStream";
+import type { RuleListItem } from "./endingRules";
 
-export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "@/shared/lib/rule-engine/endingRules";
+export type { ComparisonOp, LogicOp, RuleGroup, RuleListItem, SingleRule } from "./endingRules";
 
 export type StatDef = {
   id: string;

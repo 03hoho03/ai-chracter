@@ -81,9 +81,9 @@ export const statDefSchema = z.object({
 });
 
 /**
- * techspec-builder-story.md §1.5 — `shared/lib/rule-engine`의 `SingleRule`/`RuleGroup`/`RuleListItem`과
- * 구조적으로 동일한 값을 생성한다(재정의가 아니라 재사용 — `formToServer.ts`/`serverToForm.ts`가 이
- * 스키마의 추론 타입을 그 타입들의 함수 시그니처에 그대로 대입해 컴파일타임에 어긋남을 잡아낸다).
+ * techspec-builder-story.md §1.5 — `entities/chat-room`의 `SingleRule`/`RuleGroup`/`RuleListItem`과
+ * 구조적으로 동일한 값을 생성한다(재사용이 아니라 독자 선언 — 두 타입을 잇는 컴파일타임 검사는 없고
+ * 모양만 맞춰 둔다. `formToServer.ts`/`serverToForm.ts`는 생성 DTO(`EndingRuleDraftItem`)와만 대응한다).
  * `operator`는 실제 DB enum(`EndingRuleOperator`: gte/lte/eq/gt/lt, techspec-db-schema.md §5)에 맞춰
  * `ComparisonOp`의 6개 값 중 서버가 애초에 저장할 방법이 없는 "!="만 제외한 5개로 좁힌다.
  * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다(FR-59).

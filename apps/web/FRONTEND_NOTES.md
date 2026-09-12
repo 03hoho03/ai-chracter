@@ -20,13 +20,13 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 - **startingSetupId vs pinnedStartingSetupId**: `room.startingSetupId`는 entity_id(버전 안정 참조). 물리적 PK를 path param으로 요구하는 엔드포인트엔 `room.contentSnapshot?.pinnedStartingSetupId`. `contentSnapshot`은 스토리 챗에만 존재하므로 관련 prop은 항상 optional로 받고, 없으면 그 항목을 비활성.
 - **toChatRoomState 경계** (`entities/chat-room/model/toChatRoomState.ts`): BE DTO(raw 컬럼명 `minValue`/`maxValue`, 연산자 `gte`/`lte`/`eq`) → `ChatRoomState`(FE provisional 타입 `min`/`max`, `>=`) 변환을 이 파일 하나가 전담(`OPERATOR_MAP` 등). 캐릭터 챗은 스토리 전용 필드(`startingSetupId`/`stats`/`contentSnapshot`)를 `null`/`undefined`로 받는다.
 - **imageUrl / toChatMessage nullable**: BE nullable(`string | null`)과 FE optional(`string | undefined`) 불일치는 `entities/chat-room`의 `toChatMessage()`가 명시 매핑으로 흡수(예전 `messages: dto.messages` 직통은 잠재 불일치였다).
-- **ComparisonOp 6 vs BE enum 5**: `shared/lib/rule-engine`의 `ComparisonOp`는 6개(`!=` 포함, 평가 엔진 타입이라 그대로), BE `EndingRuleOperator`는 5개(not-equal 없음). 빌더 스키마의 `comparisonOpSchema`를 5개로 좁혀 `!=`를 선택 불가로 막아 매핑 Record가 방어 코드 없이 exhaustive.
+- **ComparisonOp 6 vs BE enum 5**: `entities/chat-room/model/endingRules.ts`의 `ComparisonOp`는 6개(`!=` 포함, 평가 엔진 타입이라 그대로), BE `EndingRuleOperator`는 5개(not-equal 없음). 빌더 스키마의 `comparisonOpSchema`를 5개로 좁혀 `!=`를 선택 불가로 막아 매핑 Record가 방어 코드 없이 exhaustive.
 - **초기화 setQueryData 훅 고정** (`useResetChatRoomMutation`): "서버 응답으로 detail 캐시 통째 교체"가 유일하게 옳은 동작이라 `onSuccess`의 `setQueryData`를 훅 안에 고정(호출부가 잊어도 지켜지게 — 다른 토글류가 호출부에서 캐시를 결정하는 것과 다름). list 캐시(`lastMessagePreview`) 무효화는 호출부가 별도로.
 - **endingReached epilogue 세션 한정**: `endingStatus.epilogue`(+`endingId`/`reachedAtTurn`)는 SSE로만 채워지고 `GET /chat-rooms/{id}`는 `ending_reached: bool`만 준다 → 새로고침/포커스 리페치 시 `null`로 되돌아간다(의도됨, 영속은 엔딩 컬렉션 기능 몫).
 
 ## 스키마 / zod
 
-- **zod v4 discriminatedUnion 어노테이션 함정**: 멤버를 `const x: z.ZodType<T> = z.object({...})`로 미리 넓혀 재사용하면 discriminant 추론에 쓰는 내부 캐퍼빌리티(`$ZodTypeDiscriminable`)가 지워져 타입 에러(v3의 흔한 패턴이 v4 discriminatedUnion에서 깨짐). 재귀 rule 스키마(`singleRuleSchema`/`ruleGroupSchema`/`ruleListItemSchema`)는 명시 어노테이션 없이 자연 추론에 맡기고, "rule-engine 타입 재사용" 요구는 `formToServer`/`serverToForm` 파라미터 타입에 `z.infer` 결과를 흘려보내 구조적으로 검증한다.
+- **zod v4 discriminatedUnion 어노테이션 함정**: 멤버를 `const x: z.ZodType<T> = z.object({...})`로 미리 넓혀 재사용하면 discriminant 추론에 쓰는 내부 캐퍼빌리티(`$ZodTypeDiscriminable`)가 지워져 타입 에러(v3의 흔한 패턴이 v4 discriminatedUnion에서 깨짐). 재귀 rule 스키마(`singleRuleSchema`/`ruleGroupSchema`/`ruleListItemSchema`)는 명시 어노테이션 없이 자연 추론에 맡긴다. `entities/chat-room`의 규칙 타입과는 컴파일타임 연결이 없고 모양만 같다(`schema.ts` 주석).
 
 ## situationalImages 전용 이미지 필드
 
