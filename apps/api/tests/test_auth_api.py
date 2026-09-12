@@ -8,10 +8,16 @@ import pytest
 from sqlalchemy import delete, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
-from api.auth.verification import get_verification_code, store_verification_code
+from api.auth.verification import (
+    VERIFICATION_ATTEMPTS_LIMIT,
+    delete_verification_code,
+    get_verification_code,
+    store_verification_code,
+)
 from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSendError, get_email_sender
+from api.core.redis import redis_client
 from api.db.models.auth import GuardianConsent, User
 from api.db.session import engine
 from api.main import app
@@ -283,11 +289,126 @@ async def test_verify_email_rejects_wrong_code(db_client: httpx.AsyncClient) -> 
     assert resp.status_code == 400
 
 
-async def test_verify_email_unknown_user_returns_404(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post(
-        "/auth/verify-email", json={"email": "nobody@example.com", "code": "123456"}
+async def test_verify_email_unknown_user_returns_400_same_as_wrong_code(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """email-goal-prompt.md E-12 성공기준 7-b: 미등록 이메일도 계정 존재를 새지 않도록
+    오답 코드와 완전히 같은 400을 낸다."""
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+
+    wrong_code_resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": "000000"}
     )
-    assert resp.status_code == 404
+    unknown_user_resp = await db_client.post(
+        "/auth/verify-email",
+        json={"email": f"nobody-{uuid.uuid4()}@example.com", "code": "000000"},
+    )
+
+    assert wrong_code_resp.status_code == unknown_user_resp.status_code == 400
+    assert wrong_code_resp.json() == unknown_user_resp.json()
+
+
+async def test_verify_email_three_failure_cases_increment_attempts_identically(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """적대적 리뷰: '유저 없음'/'코드 없음'/'코드 오답'이 같은 400 응답을 내는 것만으론
+    부족하다 — Redis 왕복 횟수가 다르면 응답 지연으로 계정 존재 여부가 샌다. 세 경우 모두
+    오답 카운터가 1로 오르는지 직접 읽어 '같은 연산을 한다'는 것까지 확인한다."""
+    unknown_email = f"nobody-{uuid.uuid4()}@example.com"
+
+    no_code_payload = _signup_payload()
+    await db_client.post("/auth/signup", json=no_code_payload)
+    await delete_verification_code(str(no_code_payload["email"]))
+
+    wrong_code_payload = _signup_payload()
+    await db_client.post("/auth/signup", json=wrong_code_payload)
+
+    for email in (unknown_email, no_code_payload["email"], wrong_code_payload["email"]):
+        resp = await db_client.post("/auth/verify-email", json={"email": email, "code": "000000"})
+        assert resp.status_code == 400
+        assert await redis_client.get(f"email_verification_attempts:{email}") == "1"
+
+
+async def test_verify_email_invalidates_code_after_max_wrong_attempts(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """email-goal-prompt.md E-7 성공기준 7: 오답 5회 → 코드 무효화 → 올바른 코드도 실패,
+    재전송 후에는 통과한다."""
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+    stored = await get_verification_code(str(payload["email"]))
+    assert stored is not None
+    correct_code = stored["code"]
+
+    for _ in range(VERIFICATION_ATTEMPTS_LIMIT):
+        resp = await db_client.post(
+            "/auth/verify-email", json={"email": payload["email"], "code": "000000"}
+        )
+        assert resp.status_code == 400
+
+    # 코드가 무효화되어 올바른 코드를 넣어도 실패한다.
+    resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": correct_code}
+    )
+    assert resp.status_code == 400
+
+    # 재전송 버튼을 누르면 복구된다 — 별도 잠금 상태가 아니다.
+    resend_resp = await db_client.post(
+        "/auth/resend-verification-code", json={"email": payload["email"]}
+    )
+    assert resend_resp.status_code == 204
+
+    new_code = await get_verification_code(str(payload["email"]))
+    assert new_code is not None
+    resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": new_code["code"]}
+    )
+    assert resp.status_code == 200
+
+
+async def test_verify_email_succeeds_after_limit_minus_one_wrong_attempts(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """상한 테스트(위)가 LIMIT회에서 무효화되는 것만 보면, `attempts >= LIMIT - 1`로 하나 밀린
+    오프바이원 회귀를 못 잡는다. LIMIT-1(=4)번 오답 뒤에는 코드가 아직 살아있어 올바른 코드가
+    통과해야 한다."""
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+    stored = await get_verification_code(str(payload["email"]))
+    assert stored is not None
+    correct_code = stored["code"]
+
+    for _ in range(VERIFICATION_ATTEMPTS_LIMIT - 1):
+        resp = await db_client.post(
+            "/auth/verify-email", json={"email": payload["email"], "code": "000000"}
+        )
+        assert resp.status_code == 400
+
+    resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": correct_code}
+    )
+    assert resp.status_code == 200
+
+
+async def test_verify_email_success_clears_attempts_counter(db_client: httpx.AsyncClient) -> None:
+    """email-goal-prompt.md E-7: 성공하면 오답 카운터가 지워진다."""
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+    stored = await get_verification_code(str(payload["email"]))
+    assert stored is not None
+
+    wrong_resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": "000000"}
+    )
+    assert wrong_resp.status_code == 400
+
+    ok_resp = await db_client.post(
+        "/auth/verify-email", json={"email": payload["email"], "code": stored["code"]}
+    )
+    assert ok_resp.status_code == 200
+
+    assert await redis_client.get(f"email_verification_attempts:{payload['email']}") is None
 
 
 async def test_resend_within_cooldown_returns_429_with_retry_after(
@@ -319,11 +440,45 @@ async def test_resend_after_cooldown_issues_new_code(db_client: httpx.AsyncClien
     assert refreshed is not None
 
 
-async def test_resend_unknown_user_returns_404(db_client: httpx.AsyncClient) -> None:
+async def test_resend_unknown_user_returns_204(db_client: httpx.AsyncClient) -> None:
+    """email-goal-prompt.md E-12 성공기준 7-b: 미등록 이메일도 계정 존재를 새지 않도록
+    204를 낸다(발송은 하지 않는다)."""
     resp = await db_client.post(
-        "/auth/resend-verification-code", json={"email": "nobody@example.com"}
+        "/auth/resend-verification-code", json={"email": f"nobody-{uuid.uuid4()}@example.com"}
     )
-    assert resp.status_code == 404
+    assert resp.status_code == 204
+
+
+async def test_resend_responses_match_for_registered_and_unregistered_email(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """email-goal-prompt.md E-12a: 60초 쿨다운이 계정 존재 여부를 새지 않으려면 코드가
+    등록 여부와 무관하게 항상 저장돼야 한다 — 연속 2회 호출의 응답이 등록/미등록에서
+    같은지 직접 비교한다."""
+    registered_email = f"registered-{uuid.uuid4()}@example.com"
+    db_session.add(_make_user(email=registered_email))
+    await db_session.flush()
+    unregistered_email = f"unregistered-{uuid.uuid4()}@example.com"
+
+    registered_first = await db_client.post(
+        "/auth/resend-verification-code", json={"email": registered_email}
+    )
+    unregistered_first = await db_client.post(
+        "/auth/resend-verification-code", json={"email": unregistered_email}
+    )
+    assert registered_first.status_code == unregistered_first.status_code == 204
+
+    registered_second = await db_client.post(
+        "/auth/resend-verification-code", json={"email": registered_email}
+    )
+    unregistered_second = await db_client.post(
+        "/auth/resend-verification-code", json={"email": unregistered_email}
+    )
+    assert registered_second.status_code == unregistered_second.status_code == 429
+    assert registered_second.json() == unregistered_second.json()
+    # 2회 호출로는 RESEND_VERIFICATION_EMAIL_LIMIT(5)에 닿을 수 없다 — 이 429가 시간당 상한이
+    # 아니라 60초 쿨다운에서 온 것임을 명시해 둔다(S3에서 겪은 "다른 이유로 429" 오판 방지).
+    assert registered_second.json()["detail"]["retryAfterSeconds"] == 60
 
 
 async def test_signup_rate_limited_by_ip_returns_429(db_client: httpx.AsyncClient) -> None:

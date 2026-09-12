@@ -36,9 +36,12 @@ from api.auth.schemas import (
     VerifyEmailResponse,
 )
 from api.auth.verification import (
+    VERIFICATION_ATTEMPTS_LIMIT,
+    clear_verification_attempts,
     delete_verification_code,
     generate_code,
     get_verification_code,
+    increment_verification_attempts,
     seconds_until_resend_allowed,
     store_verification_code,
 )
@@ -174,12 +177,18 @@ async def signup(
 async def verify_email(
     payload: VerifyEmailRequest, db: AsyncSession = Depends(get_db_session)
 ) -> VerifyEmailResponse:
+    # email-goal-prompt.md E-12: 계정 존재 여부를 새지 않도록 "유저 없음"도 오답 코드와 완전히
+    # 같은 400을 낸다. 응답뿐 아니라 **Redis 왕복 횟수까지 같아야** 타이밍으로도 안 샌다 —
+    # 그래서 user 존재 여부와 무관하게 get_verification_code/increment_verification_attempts를
+    # 항상 실행한 뒤 한 조건문에서 같이 판정한다.
     user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     stored = await get_verification_code(payload.email)
-    if stored is None or stored["code"] != payload.code:
+    if user is None or stored is None or stored["code"] != payload.code:
+        # email-goal-prompt.md E-7: 오답마다 증가, 상한에 닿으면 코드를 삭제해 무효화한다.
+        # 별도 잠금 상태는 만들지 않는다 — 재전송이 곧 복구다.
+        attempts = await increment_verification_attempts(payload.email)
+        if attempts >= VERIFICATION_ATTEMPTS_LIMIT:
+            await delete_verification_code(payload.email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code"
         )
@@ -187,6 +196,7 @@ async def verify_email(
     user.email_verified_at = datetime.now(UTC)
     await db.commit()
     await delete_verification_code(payload.email)
+    await clear_verification_attempts(payload.email)
 
     return VerifyEmailResponse(
         is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
@@ -213,10 +223,9 @@ async def resend_verification_code(
             detail={"retryAfterSeconds": retry_after},
         )
 
-    user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
+    # email-goal-prompt.md E-12a: 쿨다운 검사를 유저 조회보다 먼저 한다. 코드는 아래에서
+    # 등록 여부와 무관하게 항상 저장되므로, 유저 조회를 먼저 하면 미등록 이메일은 쿨다운
+    # 429를 낼 코드가 없어 등록 이메일과 다른 응답이 나온다(존재 여부 누설).
     now = datetime.now(UTC)
     stored = await get_verification_code(payload.email)
     if stored is not None:
@@ -230,9 +239,12 @@ async def resend_verification_code(
                 detail={"retryAfterSeconds": retry_after},
             )
 
+    user = await db.scalar(select(User).where(User.email == payload.email))
+
     code = generate_code()
     await store_verification_code(payload.email, code, now)
-    background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
+    if user is not None:
+        background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
     return None
 
 
