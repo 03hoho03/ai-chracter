@@ -60,17 +60,22 @@ export function usePreviewSendMessage() {
         } else if (event.type === "policyWarning") {
           setPolicyWarning(event.message);
         } else if (event.type === "error") {
+          // V-5 — 여기서 즉시 setStatus({kind:"error"})를 부르지 않는다. isSending은 status.kind==="sending"의
+          // 파생값이라, 그러면 실제 채팅방(useSendMessage)과 달리 스트림이 아직 열려 있는데 입력창이 풀린다.
+          // BE apps/api/src/api/chat/router.py의 send_preview_message는 안쪽 제너레이터가 error로 return한
+          // 뒤에도 바깥에서 update_preview_session(Redis SET)을 마쳐야 스트림이 닫히므로, 그 창에 재전송하면
+          // _owned_preview_session_dependency의 락 없는 read-modify-write가 직전 메시지를 잃을 수 있다
+          // (fe-convention-refactor-progress.md V-5). 그래서 이 훅만 확정을 finally로 미뤄 옛 main처럼
+          // 스트림 종료까지 입력을 잠근다 — hasErrored만 세우고 setStatus는 finally의 단일 호출에 맡긴다.
           hasErrored = true;
-          setStatus({ kind: "error" });
         }
         applyPreviewStreamEvent(queryClient, previewSessionId, event);
       }
     } catch {
       hasErrored = true;
-      setStatus({ kind: "error" });
     } finally {
       setStreamingText("");
-      if (!hasErrored) setStatus({ kind: "idle" });
+      setStatus(hasErrored ? { kind: "error" } : { kind: "idle" });
     }
   }
 
