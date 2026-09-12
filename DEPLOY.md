@@ -118,7 +118,7 @@ Cloudflare Workers AI다 — §5.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**22개 키다**: 앱 런타임 17개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME` 제외) + compose용 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·
+**26개 키다**: 앱 런타임 21개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME` 제외) + compose용 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·
 `POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 
 | 변수 | 값 | 비고 |
@@ -138,6 +138,10 @@ Cloudflare Workers AI다 — §5.
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | R2 API 토큰 키쌍 | boto3가 프로세스 env로 읽는다 |
 | `AWS_REGION` | `auto` | R2 규약 |
 | `S3_BUCKET_NAME` | `ai-chracter-chat` | 기본값이 dev용이라 override 필수 |
+| `EMAIL_PROVIDER` | `resend` | 미설정 시 `console`(발송 안 함). `email-goal-prompt.md E-3` |
+| `RESEND_API_KEY` | `re_...` | Resend API 키. `E-1` |
+| `EMAIL_FROM` | `noreply@ddona.site` | `ddona.site` 도메인이 Resend에서 검증돼야 한다. `E-4` |
+| `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. `*`가 안전한 이유는 api 컨테이너가 호스트에 포트를 게시하지 않아 Caddy 외에는 닿을 수 없기 때문이다(이 파일의 `docker-compose.prod.yml` 설명이 그 설계를 이미 명시한다). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다). `E-6a` |
 
 > **`CORS_ALLOW_ORIGINS` 함정**: pydantic-settings는 `list[str]` 필드를 env에서 **JSON으로 파싱**한다.
 > 반드시 `["https://a","https://b"]` 형태로 넣을 것(콤마 구분 평문 아님).
@@ -299,9 +303,9 @@ R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/da
 
 ## 6. 알려진 갭
 
-- **이메일 발송이 print 스텁**(`apps/api/src/api/core/email.py`). Google 로그인은 동작하지만
-  **이메일/비밀번호 가입의 인증 코드가 발송되지 않는다** → 이메일 가입 경로는 사실상 미동작.
-  Resend 등 연동 필요(함수 본문만 교체).
+- **이메일 발송 연동은 구현됐으나 아직 배포되지 않았다**(`apps/api/src/api/core/email.py`). `EMAIL_PROVIDER=resend`
+  + `RESEND_API_KEY`(§2-1)를 VM env에 설정해야 실제로 발송되고, 설정 전 기본값(`console`)에서는 콘솔에
+  로그만 찍고 발송하지 않는다 → 배포·env 설정 전까지는 이메일/비밀번호 가입의 인증 코드가 여전히 나가지 않는다.
 - **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 태그 한 줄 롤백(§3-1), FE는 Pages 이전
   배포로 롤백 가능 → 문제 시 1순위는 롤백, fix는 그 다음.
 - **Pages 프리뷰에서는 API 연동 확인 불가**: `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해 PR

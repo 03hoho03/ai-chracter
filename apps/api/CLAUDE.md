@@ -24,6 +24,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 | 오래 걸리는 백그라운드 잡 | `images/jobs.py`의 `enqueue_generation` + 같은 세션 팩토리 |
 | Redis read-modify-write | pipeline + `WATCH`/`MULTI`/`EXEC` (단순 GET-then-SET 금지) |
 | 자산 → 렌더링 URL | `generate_presigned_get_url` + `run_in_threadpool` |
+| 실패를 서버 로그에 남기기 | `logger.warning()` 이상. uvicorn이 root logger에 핸들러를 안 붙여 `info`/`debug`는 사라지지만 `logging.lastResort`가 WARNING 이상을 stderr로 내보낸다(`chat/router.py:100-102` 선례) — `print`가 아니다 |
 | 테스트 클라이언트 | `db_client` / `api_client` 픽스처 (`TestClient` 금지) |
 | S3 흉내 | `moto.server.ThreadedMotoServer` (`mock_aws` 금지) |
 
@@ -201,6 +202,6 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 알려진 갭
 
-- **이메일 발송이 print 스텁**(`core/email.py`) — `logging.info`를 쓰면 uvicorn이 root logger에 핸들러를 안 붙여 조용히 사라진다. 프로바이더가 정해지면 이 함수 본문만 바꾼다.
+- **이메일 발송은 구현됐으나 운영에 배포되지 않았다**(`core/email.py`) — `EMAIL_PROVIDER=resend`+`RESEND_API_KEY`(`DEPLOY.md §2-1`)를 설정해야 실제 발송이 켜지고, 기본값(`console`)에서는 로그만 찍는다.
 - **`_update_story_draft`의 선재 버그**: 제거된 시작설정을 `keyword_notes` 조정보다 먼저 지워서, 어떤 키워드북이 가리키는 시작설정을 빼는 PATCH는 물리 FK 위반으로 500이 난다. 빌더의 시작설정 삭제를 다시 만질 때 같이 고칠 것(노트 prune을 앞으로 옮기거나 참조를 먼저 끊는다).
 - **`contents.has_unpublished_changes`가 "초안이 발행본과 다른가"의 단일 소스다**(타임스탬프로는 판정 불가). 세우는 곳은 자동저장·편집취소·발행 셋뿐 — **초안을 바꾸는 새 엔드포인트를 추가하면 이 플래그를 반드시 함께 세울 것.**
