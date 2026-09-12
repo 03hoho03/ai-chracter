@@ -3,6 +3,12 @@ import { describe, expect, it } from "vitest";
 import { formToServer } from "./formToServer";
 import type { StoryBuilderFormValues } from "./schema";
 
+function requireFirst<T>(items: readonly T[]): T {
+  const [first] = items;
+  if (!first) throw new Error("fixture empty");
+  return first;
+}
+
 function baseFormValues(): StoryBuilderFormValues {
   return {
     profile: { name: "여름밤의 항해", oneLiner: "바다 위 표류기", image: { assetId: "asset-thumbnail" } },
@@ -178,55 +184,56 @@ describe("formToServer", () => {
 
   it("maps unset openingSituation/playGuide/unit to null", () => {
     const values = baseFormValues();
-    const [setup] = values.startingSetups;
-    setup!.openingSituation = undefined;
-    setup!.playGuide = undefined;
-    setup!.stats[0]!.unit = undefined;
+    const setup = requireFirst(values.startingSetups);
+    setup.openingSituation = undefined;
+    setup.playGuide = undefined;
+    requireFirst(setup.stats).unit = undefined;
 
     const payload = formToServer(values);
 
-    expect(payload.startingSetups[0]!.openingMessage).toBeNull();
-    expect(payload.startingSetups[0]!.playguide).toBeNull();
-    expect(payload.startingSetups[0]!.statDefs[0]!.unit).toBeNull();
+    const firstSetup = requireFirst(payload.startingSetups);
+    expect(firstSetup.openingMessage).toBeNull();
+    expect(firstSetup.playguide).toBeNull();
+    expect(requireFirst(firstSetup.statDefs).unit).toBeNull();
   });
 
   it("preserves startingSetups/statDefs array order as the wire's implicit order (no explicit order field)", () => {
     const values = baseFormValues();
-    const [firstSetup] = values.startingSetups;
-    const [firstStat] = firstSetup!.stats;
+    const firstSetup = requireFirst(values.startingSetups);
+    const firstStat = requireFirst(firstSetup.stats);
     values.startingSetups = [
-      { ...firstSetup!, id: "second", name: "second" },
-      { ...firstSetup!, id: "first", name: "first" },
+      { ...firstSetup, id: "second", name: "second" },
+      { ...firstSetup, id: "first", name: "first" },
     ];
-    values.startingSetups[0]!.stats = [
-      { ...firstStat!, id: "stat-b" },
-      { ...firstStat!, id: "stat-a" },
+    requireFirst(values.startingSetups).stats = [
+      { ...firstStat, id: "stat-b" },
+      { ...firstStat, id: "stat-a" },
     ];
 
     const payload = formToServer(values);
 
     expect(payload.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
-    expect(payload.startingSetups[0]!.statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+    expect(requireFirst(payload.startingSetups).statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
   });
 
   it("maps a global keyword note scope to a null startingSetupId", () => {
     const values = baseFormValues();
-    values.keywordNotes = [{ ...values.keywordNotes[0]!, scope: { kind: "global" } }];
+    values.keywordNotes = [{ ...requireFirst(values.keywordNotes), scope: { kind: "global" } }];
 
     const payload = formToServer(values);
 
-    expect(payload.keywordNotes[0]!.startingSetupId).toBeNull();
+    expect(requireFirst(payload.keywordNotes).startingSetupId).toBeNull();
   });
 
   it("maps a startingSetup keyword note scope to its startingSetupId", () => {
     const values = baseFormValues();
     values.keywordNotes = [
-      { ...values.keywordNotes[0]!, scope: { kind: "startingSetup", startingSetupId: "setup-9" } },
+      { ...requireFirst(values.keywordNotes), scope: { kind: "startingSetup", startingSetupId: "setup-9" } },
     ];
 
     const payload = formToServer(values);
 
-    expect(payload.keywordNotes[0]!.startingSetupId).toBe("setup-9");
+    expect(requireFirst(payload.keywordNotes).startingSetupId).toBe("setup-9");
   });
 
   it("passes shortcuts through unchanged", () => {
@@ -239,7 +246,7 @@ describe("formToServer", () => {
 
   it("maps an ending's rule tree (single rule + group) into the wire shape, including the operator rename", () => {
     const values = baseFormValues();
-    values.startingSetups[0]!.endings = [
+    requireFirst(values.startingSetups).endings = [
       {
         id: "ending-1",
         name: "함께 살아남기",
@@ -264,7 +271,7 @@ describe("formToServer", () => {
 
     const payload = formToServer(values);
 
-    expect(payload.startingSetups[0]!.endings).toEqual([
+    expect(requireFirst(payload.startingSetups).endings).toEqual([
       {
         id: "ending-1",
         name: "함께 살아남기",
@@ -290,7 +297,7 @@ describe("formToServer", () => {
 
   it("maps unset ending epilogue/hint to null", () => {
     const values = baseFormValues();
-    values.startingSetups[0]!.endings = [
+    requireFirst(values.startingSetups).endings = [
       {
         id: "ending-1",
         name: "열린 결말",
@@ -304,25 +311,28 @@ describe("formToServer", () => {
 
     const payload = formToServer(values);
 
-    expect(payload.startingSetups[0]!.endings[0]!.epilogue).toBeNull();
-    expect(payload.startingSetups[0]!.endings[0]!.hint).toBeNull();
+    const firstEnding = requireFirst(requireFirst(payload.startingSetups).endings);
+    expect(firstEnding.epilogue).toBeNull();
+    expect(firstEnding.hint).toBeNull();
   });
 
   it("preserves endings/statRules array order as the wire's implicit order (no explicit order field)", () => {
     const values = baseFormValues();
-    values.startingSetups[0]!.endings = [
+    const firstSetup = requireFirst(values.startingSetups);
+    firstSetup.endings = [
       { id: "second", name: "second", turnGate: 10, judgePrompt: "판정", statRules: [] },
       { id: "first", name: "first", turnGate: 10, judgePrompt: "판정", statRules: [] },
     ];
-    values.startingSetups[0]!.endings[0]!.statRules = [
+    requireFirst(firstSetup.endings).statRules = [
       { kind: "rule", id: "rule-b", statId: "stat-1", operator: ">", value: 1, nextOp: null },
       { kind: "rule", id: "rule-a", statId: "stat-1", operator: ">", value: 1, nextOp: null },
     ];
 
     const payload = formToServer(values);
 
-    expect(payload.startingSetups[0]!.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
-    expect(payload.startingSetups[0]!.endings[0]!.statRules.map((rule) => rule.id)).toEqual([
+    const firstPayloadSetup = requireFirst(payload.startingSetups);
+    expect(firstPayloadSetup.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
+    expect(requireFirst(firstPayloadSetup.endings).statRules.map((rule) => rule.id)).toEqual([
       "rule-b",
       "rule-a",
     ]);

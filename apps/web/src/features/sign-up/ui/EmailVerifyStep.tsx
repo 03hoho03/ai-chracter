@@ -6,9 +6,10 @@ import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import type { SignUpFormValues } from "@/entities/registration";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
 import { useResendVerificationCodeMutation } from "../api/mutations";
+import { toResendVerificationCodeRequest } from "../model/formToServer";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 
@@ -43,7 +44,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
 
   async function handleResend() {
     try {
-      await resendMutation.mutateAsync({ email });
+      await resendMutation.mutateAsync(toResendVerificationCodeRequest(email));
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
       toast.success("인증코드를 다시 보냈어요");
     } catch (error) {

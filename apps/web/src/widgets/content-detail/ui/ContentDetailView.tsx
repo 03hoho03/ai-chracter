@@ -19,7 +19,7 @@ import {
 } from "@/entities/content";
 import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
-import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayButton";
+import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayBar";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody, StoryPlayBar } from "./StoryDetailBody";
@@ -218,7 +218,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
         <Link
           to="/profile/$userId"
           params={{ userId: content.creatorUserId }}
-          onClick={() => setModalState(null)}
+          onClick={() => setModalState(undefined)}
           className="w-fit text-sm text-muted-foreground hover:underline"
         >
           {content.creatorNickname}
@@ -233,7 +233,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
                 key={tag}
                 type="button"
                 onClick={() => {
-                  setModalState(null);
+                  setModalState(undefined);
                   // techspec-home-discovery.md §2 — 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
                   void navigate({ to: "/", search: { hashtag: tag } });
                 }}
@@ -318,7 +318,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
     return (
       <>
         <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
-        <div className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+        <div className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-4-safe">
           {footer}
         </div>
       </>
@@ -333,7 +333,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
           전폭 고정 바는 DESIGN.md가 경계하는 "상시 크롬"에 가깝다는 판단, 확정 결정).
           z-40: 헤더(`z-30`, sticky)와는 화면 위/아래로 겹칠 일이 없어 순서가 기능에 영향을 주지
           않지만, 이 화면에 뜨는 Dialog/Sheet(`z-50`)는 항상 이 바 위를 덮어야 하므로 그 아래로 둔다. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background p-4 pb-[calc(1rem+env(safe-area-inset-bottom))] lg:static lg:inset-auto lg:z-auto lg:mt-5 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pb-0">
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background p-4 pb-4-safe lg:static lg:inset-auto lg:z-auto lg:mt-5 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pb-0">
         {footer}
       </div>
     </>

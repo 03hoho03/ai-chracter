@@ -53,7 +53,7 @@ export const AppealModal = createCallable<AppealModalProps, void>(({ call, targe
   }
 
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>이의제기</DialogTitle>

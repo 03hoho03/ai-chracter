@@ -6,7 +6,11 @@ export {
   characterBuilderSchema,
   exampleDialogueSchema,
   situationalImageSchema,
+  TARGET_VALUES,
+  VISIBILITY_VALUES,
   type CharacterBuilderFormValues,
   type ExampleDialogueValues,
   type SituationalImageValues,
+  type Target,
+  type Visibility,
 } from "./model/schema";

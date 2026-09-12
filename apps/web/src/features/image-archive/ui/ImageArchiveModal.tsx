@@ -18,11 +18,11 @@ type ImageArchiveModalProps = {
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). exposed=false 항목은 서버가
 // 내려준 블러 imageUrl 위에 자물쇠 아이콘만 오버레이하고 클라이언트 사이드 블러 처리는 하지 않는다.
 export const ImageArchiveModal = createCallable<ImageArchiveModalProps, void>(({ call, characterId }) => {
-  const open = !call.ended;
-  const archiveQuery = useCharacterImageArchiveQuery(characterId, open);
+  const isOpen = !call.ended;
+  const archiveQuery = useCharacterImageArchiveQuery(characterId, isOpen);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && call.end()}>
+    <Dialog open={isOpen} onOpenChange={(next) => !next && call.end()}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>이미지 보관함</DialogTitle>

@@ -18,19 +18,17 @@ import { GripVertical, Trash2 } from "lucide-react";
 import { useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-import type {
-  RuleListItemValues,
-  SingleRuleValues,
-  StatDefValues,
-  StoryBuilderFormValues,
+import {
+  COMPARISON_OPERATORS,
+  LOGIC_OPERATORS,
+  type RuleListItemValues,
+  type SingleRuleValues,
+  type StatDefValues,
+  type StoryBuilderFormValues,
 } from "@/features/build-story";
 
-const COMPARISON_OPERATORS: SingleRuleValues["operator"][] = [">", ">=", "<", "<=", "=="];
-
-/** 그룹 내부 규칙을 잇는 접속사. 화면이 이 목록으로 항목을 그리므로 술어와 어긋날 수 없다. */
-const GROUP_OPERATORS = ["and", "or"] as const;
-
-const GROUP_OPERATOR_LABEL: Record<(typeof GROUP_OPERATORS)[number], string> = {
+/** 그룹 내부 규칙을 잇는 접속사. 화면이 이 목록(LOGIC_OPERATORS)으로 항목을 그리므로 술어와 어긋날 수 없다. */
+const GROUP_OPERATOR_LABEL: Record<(typeof LOGIC_OPERATORS)[number], string> = {
   and: "그리고",
   or: "또는",
 };
@@ -42,7 +40,7 @@ export function EndingTab() {
 
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
-  const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
+  const [selectedSetupId, setSelectedSetupId] = useState<string | undefined>(startingSetups[0]?.id);
 
   if (startingSetups.length === 0) {
     return (
@@ -86,8 +84,8 @@ export function EndingTab() {
 
 /** Radix 토글·셀렉트는 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
  * `as` 대신 술어를 쓴다(TS-03) — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
-function isGroupOperator(value: string): value is (typeof GROUP_OPERATORS)[number] {
-  return GROUP_OPERATORS.some((op) => op === value);
+function isGroupOperator(value: string): value is (typeof LOGIC_OPERATORS)[number] {
+  return LOGIC_OPERATORS.some((op) => op === value);
 }
 
 function isComparisonOperator(value: string): value is SingleRuleValues["operator"] {
@@ -96,7 +94,9 @@ function isComparisonOperator(value: string): value is SingleRuleValues["operato
 
 /** 목록 위에서 인접한 두 항목 사이의 and/or 관계. 마지막 항목의 nextOp는 평가에서 무시되므로
  * (shared/lib/rule-engine) 마지막 항목 뒤에는 렌더링하지 않는다. */
-function LogicOpToggle({ value, onChange }: { value: "and" | "or"; onChange: (op: "and" | "or") => void }) {
+type LogicOp = (typeof LOGIC_OPERATORS)[number];
+
+function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: LogicOp) => void }) {
   return (
     <ToggleGroup
       type="single"
@@ -107,7 +107,7 @@ function LogicOpToggle({ value, onChange }: { value: "and" | "or"; onChange: (op
       onValueChange={(next) => isGroupOperator(next) && onChange(next)}
       aria-label="다음 규칙과의 관계"
     >
-      {GROUP_OPERATORS.map((op) => (
+      {LOGIC_OPERATORS.map((op) => (
         <ToggleGroupItem key={op} value={op}>
           {GROUP_OPERATOR_LABEL[op]}
         </ToggleGroupItem>
@@ -193,6 +193,13 @@ function SingleRuleRow({
   );
 }
 
+type RuleGroupRowProps = {
+  group: Extract<RuleListItemValues, { kind: "group" }>;
+  stats: StatDefValues[];
+  onChange: (group: Extract<RuleListItemValues, { kind: "group" }>) => void;
+  onRemove: () => void;
+};
+
 /** 규칙 그룹 컨테이너(내부는 단일 규칙만, 중첩 불가) — 내부 목록은 아래 RuleListEditor를 그대로
  * 재사용한다(techspec-builder-story.md §1.5: "그룹 안의 rules 배열도 동일한 재정렬 UI를 재사용"). */
 function RuleGroupRow({
@@ -200,12 +207,7 @@ function RuleGroupRow({
   stats,
   onChange,
   onRemove,
-}: {
-  group: Extract<RuleListItemValues, { kind: "group" }>;
-  stats: StatDefValues[];
-  onChange: (group: Extract<RuleListItemValues, { kind: "group" }>) => void;
-  onRemove: () => void;
-}) {
+}: RuleGroupRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: group.id });
 
   return (

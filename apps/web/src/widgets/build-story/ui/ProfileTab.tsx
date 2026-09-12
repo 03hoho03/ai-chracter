@@ -30,7 +30,7 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
                 value={field.value}
                 onChange={field.onChange}
                 purpose="content-thumbnail"
-                previewUrl={thumbnailUrl}
+                previewUrl={thumbnailUrl ?? undefined}
               />
               {errors.profile?.image && (
                 <p id="story-profile-image-error" role="alert" className="text-xs text-destructive-text">

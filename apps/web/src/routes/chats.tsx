@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
+import { CONTENT_TYPES } from "../entities/content";
 import { requireSession } from "../entities/session";
 import { ChatsPage } from "../pages/chats";
 
@@ -9,7 +10,7 @@ import { ChatsPage } from "../pages/chats";
 // 모르는 값은 그 축만 기본값(= 파라미터의 부재)으로 흘려보낸다 — `validateSearch` 8곳 공통 처방.
 const chatsSearchSchema = z.object({
   contentId: z.string().optional().catch(undefined),
-  contentType: z.enum(["character", "story"]).optional().catch(undefined),
+  contentType: z.enum(CONTENT_TYPES).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/chats")({

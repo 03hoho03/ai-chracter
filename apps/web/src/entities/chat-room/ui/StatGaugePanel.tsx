@@ -1,6 +1,6 @@
 import { getIconByName } from "@/shared/ui/color-icon-picker";
 
-import type { StatDef } from "../api/chat-room";
+import type { StatDef } from "../model/chatRoomState";
 
 type StatGaugePanelProps = {
   stats: StatDef[];

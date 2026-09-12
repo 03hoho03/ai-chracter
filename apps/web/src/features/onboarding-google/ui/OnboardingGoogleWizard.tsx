@@ -13,10 +13,11 @@ import {
   type SignUpFormValues,
 } from "@/entities/registration";
 import { sessionKeys } from "@/entities/session";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import { useOnboardingGoogleMutation } from "../api/mutations";
-import { onboardingGoogleStepAtom } from "../model/atom";
+import { useOnboardingGoogleMutation } from "../api/useOnboardingGoogleMutation";
+import { onboardingGoogleStepAtom } from "../model/atoms";
+import { toGuardianConsentRequest, toOnboardingGoogleRequest } from "../model/formToServer";
 import { BasicInfoStep } from "./BasicInfoStep";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
@@ -44,15 +45,10 @@ export function OnboardingGoogleWizard({ token }: OnboardingGoogleWizardProps) {
   }
 
   async function handleBasicInfoSubmit() {
-    const { nickname, birthDate, termsAgreed, privacyAgreed } = form.getValues();
     try {
-      const { isMinorGuardianRequired, email } = await onboardingMutation.mutateAsync({
-        token,
-        nickname,
-        birthDate,
-        termsAgreed,
-        privacyAgreed,
-      });
+      const { isMinorGuardianRequired, email } = await onboardingMutation.mutateAsync(
+        toOnboardingGoogleRequest(form.getValues(), token),
+      );
 
       if (isMinorGuardianRequired) {
         // guardian-consent가 계정을 email로 식별한다 — 이 폼엔 사용자가 직접 입력하는
@@ -74,14 +70,8 @@ export function OnboardingGoogleWizard({ token }: OnboardingGoogleWizardProps) {
   }
 
   async function handleGuardianConsentSubmit() {
-    const { email, guardian } = form.getValues();
     try {
-      await guardianConsentMutation.mutateAsync({
-        email,
-        guardianName: guardian.name,
-        guardianContact: guardian.contact,
-        consentAgreed: guardian.consentAgreed,
-      });
+      await guardianConsentMutation.mutateAsync(toGuardianConsentRequest(form.getValues()));
       await completeOnboarding();
     } catch {
       toast.error(GENERIC_ERROR_MESSAGE);

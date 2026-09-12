@@ -1,9 +1,9 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { useAtom } from "jotai";
 import { Eye, Save, TriangleAlert } from "lucide-react";
 import { FormProvider, useForm, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
@@ -20,7 +20,7 @@ import {
 } from "@/features/build-character";
 import { useAutosave, useDraftPersistence } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 import {
   BuilderLayout,
   BuilderTopBar,
@@ -30,12 +30,21 @@ import {
   useHorizontalScrollClip,
 } from "@/widgets/build-common";
 
-import { characterBuilderActiveTabAtom } from "../model/activeTabAtom";
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
 import { IntroTab } from "./IntroTab";
 import { ProfileTab } from "./ProfileTab";
 import { PromptTab } from "./PromptTab";
+
+type CharacterBuilderShellProps = {
+  draft: CharacterDraftContent;
+  draftId: string | null;
+  renderPreview: (args: {
+    kind: "card" | "chat";
+    getPayload: () => PreviewStartPayload;
+    onClose: () => void;
+  }) => ReactNode;
+};
 
 // 탭 목록은 features/build-character/model/tabs.ts(CHARACTER_TABS)가 단일 소스다(builder-techspec.md
 // §4-1) — fields(에러 탭 매칭용 경로 프리픽스)·preview(D-2)가 이 배열에 함께 실려 있다.
@@ -70,26 +79,15 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<CharacterBuilderFormV
   target: "registration.target",
 };
 
-type CharacterBuilderShellProps = {
-  draft: CharacterDraftContent;
-  draftId: string | null;
-  renderPreview: (args: {
-    kind: "card" | "chat";
-    getPayload: () => PreviewStartPayload;
-    onClose: () => void;
-  }) => ReactNode;
-};
-
 /** techspec-builder-character.md §0/§1 — 5탭 단일 useForm 셸. 자동저장(US-096)/발행(US-083)/
  * 미리보기(US-088)를 여기서 연동한다.
  *
  * `draftId`는 아직 서버에 없는 초안이면 null이다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function CharacterBuilderShell({ draft, draftId, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useAtom(characterBuilderActiveTabAtom);
+  const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isPublishing, setIsPublishing] = useState(false);
-  const [rejectionReason, setRejectionReason] = useState<string | null>(null);
+  const [rejectionReason, setRejectionReason] = useState<string>();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
   // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구(D-10)와 정확히 같다
   // (builder-goal-prompt.md §5-3). 기본값을 그대로 두는 것 자체가 이 단계의 결정이다.
@@ -156,9 +154,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   // `handleSubmit`이 넘겨주는 values는 resolver(characterBuilderSchema)를 이미 통과한 파싱 결과라
   // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다(builder-goal-prompt.md §5-2).
   async function handlePublish(values: CharacterBuilderFormValues) {
-    setRejectionReason(null);
+    setRejectionReason(undefined);
     const payload = formToServer(values);
-    setIsPublishing(true);
     try {
       const savedDraft = await saveDraft(payload);
       const result = await publishMutation.mutateAsync({ id: savedDraft.id });
@@ -182,8 +179,6 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
-    } finally {
-      setIsPublishing(false);
     }
   }
 
@@ -247,16 +242,16 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
             </Button>
             <Button
               size="sm"
-              disabled={isPublishing}
+              disabled={form.formState.isSubmitting}
               onClick={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
             >
-              {isPublishing ? "발행 중..." : "발행"}
+              {form.formState.isSubmitting ? "발행 중..." : "발행"}
             </Button>
           </>
         }
       />
       <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {rejectionReason !== null && draftId !== null && (
+        {rejectionReason !== undefined && draftId !== null && (
           <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
@@ -293,11 +288,10 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
                     <TabsTrigger
                       key={tab.id}
                       value={tab.id}
-                      className={
-                        hasError
-                          ? "text-destructive-text hover:text-destructive-text data-active:text-destructive-text dark:text-destructive-text dark:hover:text-destructive-text dark:data-active:text-destructive-text"
-                          : undefined
-                      }
+                      className={cn(
+                        hasError &&
+                          "text-destructive-text hover:text-destructive-text data-active:text-destructive-text dark:text-destructive-text dark:hover:text-destructive-text dark:data-active:text-destructive-text",
+                      )}
                     >
                       {hasError && <TriangleAlert aria-hidden className="size-3.5 shrink-0" />}
                       {tab.label}
@@ -345,19 +339,19 @@ function isCharacterBuilderTab(value: string): value is CharacterBuilderTab {
 /** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
  * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
  * 있는 발행 거부 상태로 보여준다. */
-function getFilterRejectionReason(error: unknown): string | null {
+function getFilterRejectionReason(error: unknown): string | undefined {
   const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
+  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return undefined;
   if ("reason" in apiError.detail) return String(apiError.detail.reason);
-  return null;
+  return undefined;
 }
 
 /** 서버 필드명 원문(예: `"thumbnailAssetId"`)을 돌려준다 — 토스트용 한국어 라벨(`MISSING_FIELD_LABELS`)
  * 과 `form.setError()`용 폼 경로(`MISSING_FIELD_FORM_PATH`) 둘 다 이 원문을 키로 찾는다. */
-function getMissingFields(error: unknown): string[] | null {
+function getMissingFields(error: unknown): string[] | undefined {
   const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return null;
+  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return undefined;
   const fields = apiError.detail.missingFields;
-  if (!Array.isArray(fields)) return null;
+  if (!Array.isArray(fields)) return undefined;
   return fields.map(String);
 }

@@ -5,9 +5,10 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import { useConfirmPasswordResetMutation } from "../api/mutations";
+import { useConfirmPasswordResetMutation } from "../api/useConfirmPasswordResetMutation";
+import { toPasswordResetConfirmRequest } from "../model/formToServer";
 import {
   resetPasswordDefaultValues,
   resetPasswordSchema,
@@ -38,7 +39,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   async function handleValidSubmit(values: ResetPasswordFormValues) {
     clearErrors("root");
     try {
-      await confirmMutation.mutateAsync({ token, newPassword: values.newPassword });
+      await confirmMutation.mutateAsync(toPasswordResetConfirmRequest(values, token));
       await navigate({ to: "/login" });
     } catch (error) {
       const apiError = isApiError(error) ? error : null;

@@ -13,14 +13,20 @@ import {
   type SignUpFormValues,
 } from "@/entities/registration";
 import { sessionKeys } from "@/entities/session";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
 import {
   useSignUpLoginMutation,
   useSignUpMutation,
   useVerifyEmailMutation,
 } from "../api/mutations";
-import { signUpStepAtom } from "../model/atom";
+import { signUpStepAtom } from "../model/atoms";
+import {
+  toGuardianConsentRequest,
+  toSignUpLoginRequest,
+  toSignupRequest,
+  toVerifyEmailRequest,
+} from "../model/formToServer";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
 
@@ -47,17 +53,8 @@ export function SignUpWizard() {
   }
 
   async function handleBasicInfoSubmit() {
-    const { email, password, nickname, birthDate, termsAgreed, privacyAgreed } =
-      form.getValues();
     try {
-      await signUpMutation.mutateAsync({
-        email,
-        password,
-        nickname,
-        birthDate,
-        termsAgreed,
-        privacyAgreed,
-      });
+      await signUpMutation.mutateAsync(toSignupRequest(form.getValues()));
       setStep("emailVerify");
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
@@ -70,12 +67,11 @@ export function SignUpWizard() {
   }
 
   async function handleEmailVerifySubmit() {
-    const { email, password, emailVerificationCode } = form.getValues();
+    const values = form.getValues();
     try {
-      const { isMinorGuardianRequired } = await verifyEmailMutation.mutateAsync({
-        email,
-        code: emailVerificationCode,
-      });
+      const { isMinorGuardianRequired } = await verifyEmailMutation.mutateAsync(
+        toVerifyEmailRequest(values),
+      );
 
       if (isMinorGuardianRequired) {
         setStep("guardianConsent");
@@ -84,7 +80,7 @@ export function SignUpWizard() {
 
       // 성인 경로: 이메일 인증만으로는 세션이 발급되지 않으므로, 방금 만든 계정으로
       // 직접 로그인해 세션을 발급시킨다 (apps/api/CLAUDE.md의 me_router 세션 발급 규약 참고).
-      await loginMutation.mutateAsync({ email, password });
+      await loginMutation.mutateAsync(toSignUpLoginRequest(values));
       await completeSignUp();
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
@@ -99,14 +95,8 @@ export function SignUpWizard() {
   }
 
   async function handleGuardianConsentSubmit() {
-    const { email, guardian } = form.getValues();
     try {
-      await guardianConsentMutation.mutateAsync({
-        email,
-        guardianName: guardian.name,
-        guardianContact: guardian.contact,
-        consentAgreed: guardian.consentAgreed,
-      });
+      await guardianConsentMutation.mutateAsync(toGuardianConsentRequest(form.getValues()));
       await completeSignUp();
     } catch {
       toast.error(GENERIC_ERROR_MESSAGE);

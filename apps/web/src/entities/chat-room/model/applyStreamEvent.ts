@@ -1,7 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import { chatRoomKeys } from "../api/keys";
-import type { ChatMessage, ChatRoomState, ChatStreamEvent } from "../api/chat-room";
+import type { ChatMessage, ChatStreamEvent } from "../api/chatStream";
+import type { ChatRoomState } from "./chatRoomState";
 
 type ApplyStreamEventOptions = {
   mode?: "append" | "replaceLast"; // 기본 append, 재생성 시 replaceLast(techspec-chat-common.md §2.1)
@@ -39,7 +42,7 @@ export function applyStreamEvent(
               reached: true,
               endingId: event.endingId,
               reachedAtTurn: prev.turnCount,
-              epilogue: event.epilogue,
+              epilogue: event.epilogue ?? undefined,
             },
           },
       );
@@ -56,5 +59,7 @@ export function applyStreamEvent(
         return next;
       });
       return;
+    default:
+      return assertNever(event);
   }
 }

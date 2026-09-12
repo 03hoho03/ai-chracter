@@ -1,7 +1,7 @@
 import type { ApiError } from "@ai-character-chat/api-types";
 import { useMutation } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 // prd-image-library US-006 — 삭제 후 목록 invalidate/토스트/409 사용처 재표시 책임은
 // 호출부(pages/studio-images)에 있다. 이 훅은 삭제 요청만 담당한다(useDeleteChatRoomMutation과

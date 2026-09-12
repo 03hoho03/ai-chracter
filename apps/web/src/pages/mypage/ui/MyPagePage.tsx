@@ -8,8 +8,7 @@ import { toast } from "sonner";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
-import type { Theme } from "@/shared/model/theme";
-import { themeAtom } from "@/shared/model/theme";
+import { isTheme, themeAtom } from "@/shared/model/theme";
 
 /** prd-creator-entry-and-my-works.md US-013 — 설정 전용 페이지(테마 · 비밀번호 변경 · 계정).
  *
@@ -107,10 +106,6 @@ export function MyPagePage() {
  * 이 화면에서 제목과 섹션을 가르는 축이 태그 이름밖에 없었다는 뜻이다. */
 function SectionHeading({ children }: { children: string }) {
   return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
-}
-
-function isTheme(value: string): value is Theme {
-  return value === "dark" || value === "light";
 }
 
 function ThemeSection() {

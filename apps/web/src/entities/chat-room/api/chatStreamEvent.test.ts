@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { chatStreamEventSchema } from "./chat-room";
+import { chatStreamEventSchema } from "./chatStream";
 
 /**
  * SSE 이벤트 스키마. 이 파일이 있는 이유는 스키마가 **타입의 단일 소스**이기 때문이다 —

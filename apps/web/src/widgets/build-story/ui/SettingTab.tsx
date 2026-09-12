@@ -3,39 +3,34 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Trash2 } from "lucide-react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-import type { StoryBuilderFormValues } from "@/features/build-story";
+import { PROMPT_TEMPLATE_VALUES, type PromptTemplate, type StoryBuilderFormValues } from "@/features/build-story";
 
 // chat-techspec.md §6-5 — 4단계에서 템플릿마다 실제로 다른 지시문(chat-goal-prompt.md §6)을 갖게
 // 되므로, 여기 설명이 빈말이 아니다. 안내문이라 지시문을 그대로 옮기지 않고 창작자가 읽을 말로 풀었다.
-const PROMPT_TEMPLATE_OPTIONS: {
-  value: "basic" | "emotional" | "simulation" | "custom";
-  label: string;
-  description: string;
-}[] = [
-  {
-    value: "basic",
+// TS-09 — 값 목록(PROMPT_TEMPLATE_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해 라벨·설명만
+// 매핑한다.
+const PROMPT_TEMPLATE_LABELS: Record<PromptTemplate, { label: string; description: string }> = {
+  basic: {
     label: "기본",
     description: "상황을 담백하게 그리며, 매 턴 다음 장면으로 이어질 실마리를 남겨요.",
   },
-  {
-    value: "emotional",
+  emotional: {
     label: "감정형",
     description: "인물의 감정 변화를 섬세한 단서로 드러내 사용자가 알아챌 수 있게 해요.",
   },
-  {
-    value: "simulation",
+  simulation: {
     label: "시뮬레이션형",
     description: "매 턴 무엇이 달라졌는지, 지금 무엇을 조작할 수 있는지 명확히 보여줘요.",
   },
-  {
-    value: "custom",
+  custom: {
     label: "커스텀",
     description: "직접 작성한 프롬프트로 진행하되, 기본 템플릿과 같은 진행 방식이 바탕에 깔려요.",
   },
-];
+};
 
 const MAX_DEVELOPMENT_EXAMPLES = 3;
 
@@ -56,7 +51,6 @@ export function SettingTab() {
   } = form;
   const promptTemplate = useWatch({ control, name: "storySetting.promptTemplate" });
   const isCustom = promptTemplate === "custom";
-  const selectedTemplate = PROMPT_TEMPLATE_OPTIONS.find((option) => option.value === promptTemplate);
 
   const { fields, append, remove } = useFieldArray({ control, name: "storySetting.developmentExamples" });
 
@@ -81,16 +75,16 @@ export function SettingTab() {
                   errors.storySetting?.promptTemplate ? "story-setting-prompt-template-error" : undefined
                 }
               >
-                {PROMPT_TEMPLATE_OPTIONS.map((option) => (
+                {PROMPT_TEMPLATE_VALUES.map((value) => (
                   <ToggleGroupItem
-                    key={option.value}
-                    value={option.value}
-                    aria-label={option.label}
-                    className={
-                      errors.storySetting?.promptTemplate ? "border-destructive ring-3 ring-destructive/20" : undefined
-                    }
+                    key={value}
+                    value={value}
+                    aria-label={PROMPT_TEMPLATE_LABELS[value].label}
+                    className={cn(
+                      errors.storySetting?.promptTemplate && "border-destructive ring-3 ring-destructive/20",
+                    )}
                   >
-                    {option.label}
+                    {PROMPT_TEMPLATE_LABELS[value].label}
                   </ToggleGroupItem>
                 ))}
               </ToggleGroup>
@@ -102,7 +96,7 @@ export function SettingTab() {
             </>
           )}
         />
-        {selectedTemplate ? <p className="text-sm text-muted-foreground">{selectedTemplate.description}</p> : null}
+        <p className="text-sm text-muted-foreground">{PROMPT_TEMPLATE_LABELS[promptTemplate].description}</p>
       </div>
 
       {isCustom ? (
@@ -177,7 +171,7 @@ export function SettingTab() {
 
       <div className="flex flex-col gap-4" data-field-path="storySetting.developmentExamples">
         <Label>전개 예시 (고급설정, 최대 {MAX_DEVELOPMENT_EXAMPLES}개)</Label>
-        {errors.storySetting?.developmentExamples?.message && (
+        {!!errors.storySetting?.developmentExamples?.message && (
           <p id="story-setting-development-examples-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.developmentExamples.message}
           </p>

@@ -14,7 +14,7 @@ import { createCallable } from "react-call";
 // 이어받아야 해서 Promise<boolean>만 반환한다.
 export const ConfirmStartingSetupChangeModal = createCallable<void, boolean>(({ call }) => {
   return (
-    <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end(false)}>
+    <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>시작설정을 변경할까요?</DialogTitle>

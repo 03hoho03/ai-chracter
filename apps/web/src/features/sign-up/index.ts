@@ -1,2 +1,2 @@
 export { SignUpWizard } from "./ui/SignUpWizard";
-export { signUpStepAtom } from "./model/atom";
+export { signUpStepAtom } from "./model/atoms";

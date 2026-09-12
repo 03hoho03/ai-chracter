@@ -24,46 +24,66 @@ export function ProfilePage({
 
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-8 px-4 sm:px-6 py-10">
-      {profileQuery.isPending && <ProfileHeaderSkeleton />}
-
-      {profileQuery.isError && (
-        <p className="text-sm text-destructive-text">
-          {profileQuery.error.status === 404
-            ? "존재하지 않거나 탈퇴한 사용자예요."
-            : "프로필을 불러오지 못했어요. 잠시 후 다시 시도해주세요."}
-        </p>
-      )}
-
-      {profileQuery.data && (
-        <>
-          <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <Avatar className="size-20 shrink-0">
-                <AvatarImage src={profileQuery.data.profileImageUrl ?? undefined} alt="" />
-                <AvatarFallback className="text-2xl">{profileQuery.data.nickname.slice(0, 1)}</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col gap-1">
-                <h1 className="text-2xl font-bold tracking-tight text-foreground">
-                  {profileQuery.data.nickname}
-                </h1>
-                <p className="max-w-md text-sm text-muted-foreground">
-                  {profileQuery.data.bio || "아직 소개글이 없어요."}
-                </p>
-              </div>
-            </div>
-
-            {isOwner && <EditProfileDialog userId={userId} profile={profileQuery.data} />}
-          </section>
-
-          <ProfileContentSection
-            userId={userId}
-            isOwner={isOwner}
-            contentType={contentType}
-            onContentTypeChange={onContentTypeChange}
-          />
-        </>
-      )}
+      <ProfileBody
+        query={profileQuery}
+        userId={userId}
+        isOwner={isOwner}
+        contentType={contentType}
+        onContentTypeChange={onContentTypeChange}
+      />
     </main>
+  );
+}
+
+type ProfileBodyProps = {
+  query: ReturnType<typeof useProfileQuery>;
+  userId: string;
+  isOwner: boolean;
+  contentType: ContentType;
+  onContentTypeChange: (type: ContentType) => void;
+};
+
+/** 로딩·에러·성공 세 갈래를 **early return 순서**로 강제한다(COMP-04). */
+function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange }: ProfileBodyProps) {
+  if (query.isPending) return <ProfileHeaderSkeleton />;
+
+  if (query.isError) {
+    return (
+      <p className="text-sm text-destructive-text">
+        {query.error.status === 404
+          ? "존재하지 않거나 탈퇴한 사용자예요."
+          : "프로필을 불러오지 못했어요. 잠시 후 다시 시도해주세요."}
+      </p>
+    );
+  }
+
+  const profile = query.data;
+  if (!profile) return null;
+
+  return (
+    <>
+      <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex items-center gap-4">
+          <Avatar className="size-20 shrink-0">
+            <AvatarImage src={profile.profileImageUrl ?? undefined} alt="" />
+            <AvatarFallback className="text-2xl">{profile.nickname.slice(0, 1)}</AvatarFallback>
+          </Avatar>
+          <div className="flex flex-col gap-1">
+            <h1 className="text-2xl font-bold tracking-tight text-foreground">{profile.nickname}</h1>
+            <p className="max-w-md text-sm text-muted-foreground">{profile.bio || "아직 소개글이 없어요."}</p>
+          </div>
+        </div>
+
+        {isOwner && <EditProfileDialog userId={userId} profile={profile} />}
+      </section>
+
+      <ProfileContentSection
+        userId={userId}
+        isOwner={isOwner}
+        contentType={contentType}
+        onContentTypeChange={onContentTypeChange}
+      />
+    </>
   );
 }
 

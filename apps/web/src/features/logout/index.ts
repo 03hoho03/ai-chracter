@@ -1,1 +1,1 @@
-export { useLogoutMutation } from "./api/mutations";
+export { useLogoutMutation } from "./api/useLogoutMutation";

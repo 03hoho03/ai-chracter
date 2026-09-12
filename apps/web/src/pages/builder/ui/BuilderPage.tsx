@@ -28,7 +28,7 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
     return (
       <>
         <BuilderTopBar title="작품 만들기" />
-        <main className="mx-auto flex min-h-[60vh] max-w-2xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center">
+        <main className="mx-auto flex min-h-placeholder max-w-2xl flex-col items-center justify-center gap-2 px-4 sm:px-6 text-center">
           <p className="text-sm text-destructive-text">초안을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
         </main>
       </>

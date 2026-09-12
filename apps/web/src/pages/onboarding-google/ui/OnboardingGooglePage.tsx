@@ -2,6 +2,10 @@ import { useAtomValue } from "jotai";
 
 import { OnboardingGoogleWizard, onboardingGoogleStepAtom } from "@/features/onboarding-google";
 
+type OnboardingGooglePageProps = {
+  token: string;
+}
+
 const STEP_COPY = {
   basicInfo: {
     title: "추가 정보 입력",
@@ -12,10 +16,6 @@ const STEP_COPY = {
     description: "보호자 정보를 입력하고 동의해주세요.",
   },
 } as const;
-
-type OnboardingGooglePageProps = {
-  token: string;
-}
 
 export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {
   const step = useAtomValue(onboardingGoogleStepAtom);

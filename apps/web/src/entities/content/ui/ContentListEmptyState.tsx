@@ -43,7 +43,7 @@ export function ContentListEmptyState({
       {/* 제목과 설명은 한 덩어리다 — 패널의 `gap-3`(12px)을 그대로 두면 상태와 다음 행동이 같은 거리로
           떨어져 셋이 나란한 목록으로 읽힌다. 제목이 없을 땐 자식이 하나뿐이라 예전과 픽셀이 같다. */}
       <div className="flex flex-col gap-1.5">
-        {title && <p className="text-lg font-semibold text-foreground">{title}</p>}
+        {!!title && <p className="text-lg font-semibold text-foreground">{title}</p>}
         <p className="text-sm text-muted-foreground">{message}</p>
       </div>
       {action}

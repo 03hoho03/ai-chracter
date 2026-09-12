@@ -6,6 +6,12 @@ import { serverToForm } from "./serverToForm";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
 
+function requireFirst<T>(items: readonly T[]): T {
+  const [first] = items;
+  if (!first) throw new Error("fixture empty");
+  return first;
+}
+
 function baseDraftResponse(): StoryDraftResponse {
   return {
     id: "content-1",
@@ -162,44 +168,45 @@ describe("serverToForm", () => {
 
   it("maps a null openingMessage/playguide/unit to unset form fields", () => {
     const data = baseDraftResponse();
-    const [setup] = data.startingSetups;
-    setup!.openingMessage = null;
-    setup!.playguide = null;
-    setup!.statDefs[0]!.unit = null;
+    const setup = requireFirst(data.startingSetups);
+    setup.openingMessage = null;
+    setup.playguide = null;
+    requireFirst(setup.statDefs).unit = null;
 
     const form = serverToForm(data);
 
-    expect(form.startingSetups[0]!.openingSituation).toBeUndefined();
-    expect(form.startingSetups[0]!.playGuide).toBeUndefined();
-    expect(form.startingSetups[0]!.stats[0]!.unit).toBeUndefined();
+    const firstSetup = requireFirst(form.startingSetups);
+    expect(firstSetup.openingSituation).toBeUndefined();
+    expect(firstSetup.playGuide).toBeUndefined();
+    expect(requireFirst(firstSetup.stats).unit).toBeUndefined();
   });
 
   it("preserves startingSetups/statDefs array order as returned by the server (no explicit order field)", () => {
     const data = baseDraftResponse();
-    const [firstSetup] = data.startingSetups;
-    const [firstStat] = firstSetup!.statDefs;
+    const firstSetup = requireFirst(data.startingSetups);
+    const firstStat = requireFirst(firstSetup.statDefs);
     data.startingSetups = [
-      { ...firstSetup!, id: "second", name: "second" },
-      { ...firstSetup!, id: "first", name: "first" },
+      { ...firstSetup, id: "second", name: "second" },
+      { ...firstSetup, id: "first", name: "first" },
     ];
-    data.startingSetups[0]!.statDefs = [
-      { ...firstStat!, id: "stat-b" },
-      { ...firstStat!, id: "stat-a" },
+    requireFirst(data.startingSetups).statDefs = [
+      { ...firstStat, id: "stat-b" },
+      { ...firstStat, id: "stat-a" },
     ];
 
     const form = serverToForm(data);
 
     expect(form.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
-    expect(form.startingSetups[0]!.stats.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+    expect(requireFirst(form.startingSetups).stats.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
   });
 
   it("maps a null startingSetupId to a global keyword note scope", () => {
     const data = baseDraftResponse();
-    data.keywordNotes = [{ ...data.keywordNotes[0]!, startingSetupId: null }];
+    data.keywordNotes = [{ ...requireFirst(data.keywordNotes), startingSetupId: null }];
 
     const form = serverToForm(data);
 
-    expect(form.keywordNotes[0]!.scope).toEqual({ kind: "global" });
+    expect(requireFirst(form.keywordNotes).scope).toEqual({ kind: "global" });
   });
 
   function endingRuleTreeResponse(): StoryDraftResponse["startingSetups"][number]["endings"] {
@@ -229,11 +236,11 @@ describe("serverToForm", () => {
 
   it("maps an ending's rule tree (single rule + group) from the wire shape, including the operator rename", () => {
     const data = baseDraftResponse();
-    data.startingSetups[0]!.endings = endingRuleTreeResponse();
+    requireFirst(data.startingSetups).endings = endingRuleTreeResponse();
 
     const form = serverToForm(data);
 
-    expect(form.startingSetups[0]!.endings).toEqual([
+    expect(requireFirst(form.startingSetups).endings).toEqual([
       {
         id: "ending-1",
         name: "함께 살아남기",
@@ -259,7 +266,7 @@ describe("serverToForm", () => {
 
   it("maps a null ending epilogue/hint to unset form fields", () => {
     const data = baseDraftResponse();
-    data.startingSetups[0]!.endings = [
+    requireFirst(data.startingSetups).endings = [
       {
         id: "ending-1",
         name: "열린 결말",
@@ -273,30 +280,33 @@ describe("serverToForm", () => {
 
     const form = serverToForm(data);
 
-    expect(form.startingSetups[0]!.endings[0]!.epilogue).toBeUndefined();
-    expect(form.startingSetups[0]!.endings[0]!.hint).toBeUndefined();
+    const firstEnding = requireFirst(requireFirst(form.startingSetups).endings);
+    expect(firstEnding.epilogue).toBeUndefined();
+    expect(firstEnding.hint).toBeUndefined();
   });
 
   it("preserves endings/statRules array order as returned by the server (no explicit order field)", () => {
     const data = baseDraftResponse();
-    data.startingSetups[0]!.endings = [
+    const firstSetup = requireFirst(data.startingSetups);
+    firstSetup.endings = [
       { id: "second", name: "second", turnCountGate: 10, judgmentPrompt: "판정", epilogue: null, hint: null, statRules: [] },
       { id: "first", name: "first", turnCountGate: 10, judgmentPrompt: "판정", epilogue: null, hint: null, statRules: [] },
     ];
-    data.startingSetups[0]!.endings[0]!.statRules = [
+    requireFirst(firstSetup.endings).statRules = [
       { kind: "rule", id: "rule-b", statId: "stat-1", operator: "gt", threshold: 1, nextOp: null },
       { kind: "rule", id: "rule-a", statId: "stat-1", operator: "gt", threshold: 1, nextOp: null },
     ];
 
     const form = serverToForm(data);
 
-    expect(form.startingSetups[0]!.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
-    expect(form.startingSetups[0]!.endings[0]!.statRules.map((rule) => rule.id)).toEqual(["rule-b", "rule-a"]);
+    const firstFormSetup = requireFirst(form.startingSetups);
+    expect(firstFormSetup.endings.map((ending) => ending.id)).toEqual(["second", "first"]);
+    expect(requireFirst(firstFormSetup.endings).statRules.map((rule) => rule.id)).toEqual(["rule-b", "rule-a"]);
   });
 
   it("round-trips formToServer(serverToForm(response)) back to the same profile/storySetting/startingSetups (incl. endings/rule trees)/keywordNotes/shortcuts/registration fields", () => {
     const response = baseDraftResponse();
-    response.startingSetups[0]!.endings = endingRuleTreeResponse();
+    requireFirst(response.startingSetups).endings = endingRuleTreeResponse();
 
     const payload = formToServer(serverToForm(response));
 

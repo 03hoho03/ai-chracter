@@ -2,7 +2,7 @@ import type { components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { inquiryKeys } from "@/entities/inquiry";
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 type InquiryCreateRequest = components["schemas"]["InquiryCreateRequest"];
 type InquiryCreateResponse = components["schemas"]["InquiryCreateResponse"];

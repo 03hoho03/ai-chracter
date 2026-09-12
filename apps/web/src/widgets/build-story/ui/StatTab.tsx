@@ -17,7 +17,7 @@ export function StatTab() {
 
   const { control } = form;
   const startingSetups = useWatch({ control, name: "startingSetups" });
-  const [selectedSetupId, setSelectedSetupId] = useState<string | null>(startingSetups[0]?.id ?? null);
+  const [selectedSetupId, setSelectedSetupId] = useState<string | undefined>(startingSetups[0]?.id);
 
   if (startingSetups.length === 0) {
     return (
@@ -218,7 +218,7 @@ function StatRow({
             aria-invalid={!!statErrors?.perTurnDelta}
             aria-describedby={[
               `stat-${id}-per-turn-delta-hint`,
-              statErrors?.perTurnDelta ? `stat-${id}-per-turn-delta-error` : null,
+              statErrors?.perTurnDelta ? `stat-${id}-per-turn-delta-error` : undefined,
             ]
               .filter(Boolean)
               .join(" ")}

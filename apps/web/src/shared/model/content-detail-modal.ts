@@ -5,6 +5,6 @@ import { atom } from "jotai";
  * `entities/content`의 `ContentType`을 재사용하지 않고 그대로 리터럴을 두는 이유는
  * `shared/model/content-type-toggle.ts`와 동일(하위 레이어는 상위 레이어를 import하지 않는다).
  */
-export type ContentDetailModalState = { type: "character" | "story"; id: string } | null;
+export type ContentDetailModalState = { type: "character" | "story"; id: string } | undefined;
 
-export const contentDetailModalAtom = atom<ContentDetailModalState>(null);
+export const contentDetailModalAtom = atom<ContentDetailModalState>(undefined);

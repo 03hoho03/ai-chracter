@@ -46,7 +46,8 @@ export function PreviewSessionView({
   // 스켈레톤이 된다.
   const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload());
 
-  const { send, isSending, error, policyWarning, streamingText } = usePreviewSendMessage();
+  const { send, status, policyWarning, streamingText } = usePreviewSendMessage();
+  const isSending = status.kind === "sending";
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -111,7 +112,7 @@ export function PreviewSessionView({
   }
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
+    <div className="flex h-below-header flex-col">
       <PreviewCloseHeader
         onClose={onClose}
         action={
@@ -131,7 +132,7 @@ export function PreviewSessionView({
               <MessageBubble key={message.id} message={message} />
             ))}
 
-            {state.endingStatus.reached && state.endingStatus.epilogue && (
+            {state.endingStatus.reached && !!state.endingStatus.epilogue && (
               <>
                 <EndingDivider />
                 <MessageBubble
@@ -147,13 +148,13 @@ export function PreviewSessionView({
                 <TypingIndicator />
               ))}
 
-            {error && (
+            {status.kind === "error" && (
               <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
                 <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
               </div>
             )}
 
-            {policyWarning && (
+            {!!policyWarning && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
                 <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground">{policyWarning}</span>

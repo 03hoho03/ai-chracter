@@ -16,11 +16,11 @@ type PlayGuideModalProps = {
 /** techspec-chat-story.md §6, US-067 — "더보기 > 플레이가이드"에서 여는 읽기 전용 react-call 모달.
  * 입력/제출이 없어 mutationFn/useMutationFlow 없이 call.end()만으로 닫는다. */
 export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call, roomId }) => {
-  const open = !call.ended;
-  const playGuideQuery = useChatRoomPlayGuideQuery(roomId, open);
+  const isOpen = !call.ended;
+  const playGuideQuery = useChatRoomPlayGuideQuery(roomId, isOpen);
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && call.end()}>
+    <Dialog open={isOpen} onOpenChange={(next) => !next && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>플레이가이드</DialogTitle>

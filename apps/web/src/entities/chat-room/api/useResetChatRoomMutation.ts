@@ -1,11 +1,11 @@
 import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 import { toChatRoomState } from "../model/toChatRoomState";
 import { chatRoomKeys } from "./keys";
-import type { ChatRoomState } from "./chat-room";
+import type { ChatRoomState } from "../model/chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 

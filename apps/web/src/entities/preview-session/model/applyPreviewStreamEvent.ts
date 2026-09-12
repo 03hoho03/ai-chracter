@@ -1,7 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import { previewSessionKeys } from "../api/keys";
-import type { PreviewSessionState, PreviewStreamEvent } from "../api/preview-session";
+import type { PreviewStreamEvent } from "../api/previewStream";
+import type { PreviewSessionState } from "./previewSessionState";
 
 // entities/chat-room의 applyStreamEvent(techspec-chat-story.md §1.2)와 케이스 구조는 동일하지만
 // previewSessionKeys(별도 쿼리 키)만 건드린다 — 실제 대화방 캐시엔 절대 영향을 주지 않는다.
@@ -24,7 +27,7 @@ export function applyPreviewStreamEvent(
     case "endingReached":
       queryClient.setQueryData<PreviewSessionState>(
         previewSessionKeys.detail(previewSessionId),
-        (prev) => prev && { ...prev, endingStatus: { reached: true, epilogue: event.epilogue } },
+        (prev) => prev && { ...prev, endingStatus: { reached: true, epilogue: event.epilogue ?? undefined } },
       );
       return;
     case "done":
@@ -38,5 +41,7 @@ export function applyPreviewStreamEvent(
           },
       );
       return;
+    default:
+      return assertNever(event);
   }
 }

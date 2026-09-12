@@ -6,15 +6,20 @@ import { useAtomValue } from "jotai";
 import { Loader2, X } from "lucide-react";
 
 import {
+  CONTENT_LIST_SORTS,
   ContentCard,
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListEmptyState,
+  isContentListSort,
   toPriorityCount,
   toThumbnailAspect,
   useContentListQuery,
   useGenreListQuery,
+  type ContentListItem,
   type ContentListSort,
+  type ContentType,
+  type ThumbnailAspect,
 } from "@/entities/content";
 import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
@@ -28,11 +33,16 @@ export type HomeSearch = {
   hashtag?: string;
 };
 
-const SORT_OPTIONS: { value: ContentListSort; label: string }[] = [
-  { value: "latest", label: "최신순" },
-  { value: "popular", label: "인기순" },
-  { value: "genre", label: "장르별" },
-];
+const SORT_LABEL: Record<ContentListSort, string> = {
+  latest: "최신순",
+  popular: "인기순",
+  genre: "장르별",
+};
+
+const SORT_OPTIONS: { value: ContentListSort; label: string }[] = CONTENT_LIST_SORTS.map((value) => ({
+  value,
+  label: SORT_LABEL[value],
+}));
 
 const ALL_GENRES_VALUE = "all";
 
@@ -153,61 +163,81 @@ export function HomePage({
         </div>
       )}
 
-      {contentListQuery.isPending && (
-        <ContentCardGrid thumbnailAspect={thumbnailAspect}>
-          {Array.from({ length: 8 }, (_, index) => (
-            <ContentCardSkeleton key={index} thumbnailAspect={thumbnailAspect} metrics={{ viewCount: 0 }} />
-          ))}
-        </ContentCardGrid>
-      )}
+      <HomeContentBody
+        query={contentListQuery}
+        items={items}
+        thumbnailAspect={thumbnailAspect}
+        sentinelRef={sentinelRef}
+        onOpenContent={open}
+        onAuthorClick={(creatorUserId) => onSearchChange({ creator: creatorUserId })}
+      />
+    </main>
+  );
+}
 
-      {contentListQuery.isError && items.length === 0 && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
+type HomeContentBodyProps = {
+  query: ReturnType<typeof useContentListQuery>;
+  items: ContentListItem[];
+  thumbnailAspect: ThumbnailAspect;
+  sentinelRef: ReturnType<typeof useInfiniteScrollSentinel>;
+  onOpenContent: (type: ContentType, id: string) => void;
+  onAuthorClick: (creatorUserId: string) => void;
+};
 
-      {contentListQuery.isError && items.length > 0 && (
+/** 로딩·전면실패·빈·성공 네 갈래를 **early return 순서**로 강제한다(COMP-04). 참고 모델:
+ * `pages/favorites/ui/FavoritesPage.tsx`의 `FavoritesBody`. */
+function HomeContentBody({ query, items, thumbnailAspect, sentinelRef, onOpenContent, onAuthorClick }: HomeContentBodyProps) {
+  if (query.isPending) {
+    return (
+      <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+        {Array.from({ length: 8 }, (_, index) => (
+          <ContentCardSkeleton key={index} thumbnailAspect={thumbnailAspect} metrics={{ viewCount: 0 }} />
+        ))}
+      </ContentCardGrid>
+    );
+  }
+
+  if (query.isError && items.length === 0) {
+    return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (items.length === 0) {
+    return <ContentListEmptyState />;
+  }
+
+  return (
+    <>
+      {query.isError && (
         <div role="alert" className="flex flex-wrap items-center gap-3">
           <p className="text-sm text-destructive-text">
             새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
           </p>
-          <Button type="button" variant="outline" size="sm" onClick={() => void contentListQuery.refetch()}>
+          <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
             다시 시도
           </Button>
         </div>
       )}
 
-      {contentListQuery.data && items.length === 0 && <ContentListEmptyState />}
+      <ContentCardGrid thumbnailAspect={thumbnailAspect}>
+        {items.map((item, index) => (
+          <ContentCard
+            key={item.id}
+            thumbnailUrl={item.thumbnailUrl ?? undefined}
+            thumbnailAspect={thumbnailAspect}
+            title={item.name}
+            metrics={{ viewCount: item.viewCount }}
+            author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
+            isPriority={index < toPriorityCount(thumbnailAspect)}
+            isLcpCandidate={index === 0}
+            onClick={() => onOpenContent(item.type, item.id)}
+            onAuthorClick={() => onAuthorClick(item.creatorUserId)}
+          />
+        ))}
+      </ContentCardGrid>
 
-      {contentListQuery.data && items.length > 0 && (
-        <>
-          <ContentCardGrid thumbnailAspect={thumbnailAspect}>
-            {items.map((item, index) => (
-              <ContentCard
-                key={item.id}
-                thumbnailUrl={item.thumbnailUrl}
-                thumbnailAspect={thumbnailAspect}
-                title={item.name}
-                metrics={{ viewCount: item.viewCount }}
-                author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
-                priority={index < toPriorityCount(thumbnailAspect)}
-                isLcpCandidate={index === 0}
-                onClick={() => open(item.type, item.id)}
-                onAuthorClick={() => onSearchChange({ creator: item.creatorUserId })}
-              />
-            ))}
-          </ContentCardGrid>
-
-          <div ref={sentinelRef} className="flex justify-center py-4">
-            {contentListQuery.isFetchingNextPage && (
-              <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />
-            )}
-          </div>
-        </>
-      )}
-    </main>
+      <div ref={sentinelRef} className="flex justify-center py-4">
+        {query.isFetchingNextPage && <Loader2 aria-hidden className="size-5 animate-spin text-muted-foreground" />}
+      </div>
+    </>
   );
-}
-
-function isContentListSort(value: string): value is ContentListSort {
-  return value === "latest" || value === "popular" || value === "genre";
 }

@@ -1,5 +1,13 @@
 import { z } from "zod";
 
+// TS-09 — 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
+// widgets/build-story/ui/RegistrationTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
+export const TARGET_VALUES = ["female", "male", "all"] as const;
+export type Target = (typeof TARGET_VALUES)[number];
+
+export const VISIBILITY_VALUES = ["public", "link", "private"] as const;
+export type Visibility = (typeof VISIBILITY_VALUES)[number];
+
 /**
  * chat-goal-prompt.md §8-3(D-10), chat-techspec.md §6-1(D-12) — 전개 예시 한 쌍. build-character의
  * `exampleDialogueSchema`와 같은 입출력 쌍 모양이지만 `id`는 두지 않는다 — 서버 계약
@@ -20,9 +28,14 @@ export const developmentExampleSchema = z.object({
  * 항상 적용되는 L1 작품 층이라 이 분기 대상이 아니고, 어느 템플릿에서도 필수가 아니다
  * (chat-goal-prompt.md §8, D-19 — 기존 33건이 비어 있는 채로 발행돼 있다).
  */
+// TS-09 — widgets/build-story/ui/SettingTab.tsx의 PROMPT_TEMPLATE_LABELS가 이 배열을 단일 소스로
+// 삼는다(라벨·설명 문구만 위젯이 map해 붙인다).
+export const PROMPT_TEMPLATE_VALUES = ["basic", "emotional", "simulation", "custom"] as const;
+export type PromptTemplate = (typeof PROMPT_TEMPLATE_VALUES)[number];
+
 export const storySettingSchema = z
   .object({
-    promptTemplate: z.enum(["basic", "emotional", "simulation", "custom"]).default("basic"),
+    promptTemplate: z.enum(PROMPT_TEMPLATE_VALUES).default("basic"),
     worldSetting: z.string().optional(),
     developmentExamples: z
       .array(developmentExampleSchema)
@@ -75,8 +88,12 @@ export const statDefSchema = z.object({
  * `ComparisonOp`의 6개 값 중 서버가 애초에 저장할 방법이 없는 "!="만 제외한 5개로 좁힌다.
  * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다(FR-59).
  */
-const comparisonOpSchema = z.enum([">", ">=", "<", "<=", "=="]);
-const logicOpSchema = z.enum(["and", "or"]);
+// TS-09 — widgets/build-story/ui/EndingTab.tsx가 이 두 배열을 단일 소스로 삼는다(손복사 금지).
+export const COMPARISON_OPERATORS = [">", ">=", "<", "<=", "=="] as const;
+export const LOGIC_OPERATORS = ["and", "or"] as const;
+
+const comparisonOpSchema = z.enum(COMPARISON_OPERATORS);
+const logicOpSchema = z.enum(LOGIC_OPERATORS);
 
 const singleRuleSchema = z.object({
   kind: z.literal("rule"),
@@ -159,9 +176,9 @@ export const storyBuilderSchema = z.object({
     // profile.image와 동일한 이유로 nullable로 둔다(US-091 캐릭터 빌더와 동일한 판단 — 초안 상태에선
     // 아직 선택 전일 수 있고, 발행 시 필수 검증은 이 스키마를 쓰는 이후 빌더 UI 스토리의 몫이다).
     genre: z.string().nullable(),
-    target: z.enum(["female", "male", "all"]).nullable(),
+    target: z.enum(TARGET_VALUES).nullable(),
     hashtags: z.array(z.string()).default([]),
-    visibility: z.enum(["public", "link", "private"]).default("private"),
+    visibility: z.enum(VISIBILITY_VALUES).default("private"),
   }),
 });
 

@@ -14,9 +14,9 @@ type IconPickerProps = {
 /** techspec-builder-story.md §1.2 — lucide-react 아이콘 서브셋(./icons.ts) 중에서만 고르는 피커.
  * ColorPicker와 동일한 relative 트리거 + absolute 패널 구조. */
 export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  useClickAway(containerRef, () => setOpen(false));
+  useClickAway(containerRef, () => setIsOpen(false));
   const selected = ICON_OPTIONS.find((option) => option.name === value);
   const SelectedIcon = selected?.Icon;
 
@@ -26,8 +26,8 @@ export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
         type="button"
         aria-label={triggerLabel}
         aria-haspopup="true"
-        aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((prev) => !prev)}
         className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input text-foreground hover:bg-secondary/50"
       >
         {SelectedIcon ? (
@@ -37,7 +37,7 @@ export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
         )}
       </button>
 
-      {open && (
+      {isOpen && (
         <div
           role="listbox"
           aria-label={triggerLabel}
@@ -53,7 +53,7 @@ export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
               title={option.label}
               onClick={() => {
                 onChange(option.name);
-                setOpen(false);
+                setIsOpen(false);
               }}
               className={cn(
                 "flex size-8 items-center justify-center rounded-md hover:bg-accent",

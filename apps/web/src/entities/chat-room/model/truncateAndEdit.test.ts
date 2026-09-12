@@ -2,8 +2,9 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { chatRoomKeys } from "../api/keys";
-import type { ChatMessage, ChatRoomState } from "../api/chat-room";
+import type { ChatMessage } from "../api/chatStream";
 import { truncateAndEdit } from "./truncateAndEdit";
+import type { ChatRoomState } from "./chatRoomState";
 
 const ROOM_ID = "room-1";
 
@@ -15,7 +16,7 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     name: "대화 1",
     messages,
     stats: {},
-    endingStatus: { reached: false, endingId: null, reachedAtTurn: null, epilogue: null },
+    endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: messages.length,
     latestVersionAvailable: false,
     versionAutoUpgraded: false,

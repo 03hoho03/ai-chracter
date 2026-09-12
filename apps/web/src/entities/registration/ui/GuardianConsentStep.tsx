@@ -4,7 +4,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, useFormContext } from "react-hook-form";
 
-import type { SignUpFormValues } from "../model/schema";
+import type { SignUpFormValues } from "../model/signUpSchema";
 
 const GUARDIAN_FIELDS = [
   "guardian.name",

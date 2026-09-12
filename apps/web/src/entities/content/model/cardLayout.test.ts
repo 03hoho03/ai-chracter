@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { toGridColumns, toThumbnailAspect } from "./cardLayout";
+import { toThumbnailAspect } from "./cardLayout";
+import { toGridColumns } from "../ui/cardLayoutClass";
 
 describe("toThumbnailAspect", () => {
   it("character -> square", () => {

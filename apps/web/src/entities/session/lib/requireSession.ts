@@ -1,10 +1,10 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import type { MeResponse } from "../api/session-query-options";
-import { sessionQueryOptions } from "../api/session-query-options";
+import type { MeResponse } from "../api/sessionQueryOptions";
+import { sessionQueryOptions } from "../api/sessionQueryOptions";
 
 /** techspec-auth-onboarding.md §1 — 인증이 필요한 라우트의 `beforeLoad`에서 호출한다.
  * 세션이 없으면(GET /me가 401) 로그인 화면으로 리다이렉트하고 원래 목적지를 보존한다.

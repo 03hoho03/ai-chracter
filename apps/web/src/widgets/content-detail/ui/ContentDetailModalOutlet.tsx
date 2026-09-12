@@ -14,7 +14,7 @@ export function ContentDetailModalOutlet() {
   const { state, close } = useContentDetailModal();
 
   return (
-    <Dialog open={state !== null} onOpenChange={(open) => !open && close()}>
+    <Dialog open={state !== undefined} onOpenChange={(open) => !open && close()}>
       {/* design-system-progress.md P-5(D-11) — flex-col로 바꿔 `ContentDetailView`가 내놓는
           [스크롤 본문(flex-1 overflow-y-auto), 플레이 CTA(shrink-0)] 두 아이템을 그대로 받는다.
           overflow-y-auto는 여기서 본문 쪽으로 옮겨갔다(CTA는 스크롤에 딸려가면 안 된다). */}

@@ -20,7 +20,7 @@ export function IntroTab() {
     formState: { errors },
   } = form;
   const { fields, append, remove } = useFieldArray({ control, name: "intro.exampleDialogues" });
-  const [showAdvanced, setShowAdvanced] = useState(() => fields.length > 0);
+  const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => fields.length > 0);
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -48,12 +48,12 @@ export function IntroTab() {
         </div>
         <Switch
           id="character-intro-advanced-toggle"
-          checked={showAdvanced}
-          onCheckedChange={setShowAdvanced}
+          checked={isAdvancedOpen}
+          onCheckedChange={setIsAdvancedOpen}
         />
       </div>
 
-      {showAdvanced && (
+      {isAdvancedOpen && (
         <div className="flex flex-col gap-4">
           <Label>예시 대화</Label>
           {fields.map((field, index) => {

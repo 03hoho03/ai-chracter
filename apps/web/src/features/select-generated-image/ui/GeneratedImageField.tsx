@@ -5,7 +5,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
-import { uploadAsset, type AssetPurpose } from "@/shared/lib/asset/uploadAsset";
+import { uploadAsset, type AssetPurpose } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
 import { GeneratedImagePickerModal } from "./GeneratedImagePickerModal";
@@ -16,7 +16,7 @@ type GeneratedImageFieldProps = {
   value: SelectedImageValue;
   onChange: (value: SelectedImageValue) => void;
   purpose: AssetPurpose;
-  previewUrl?: string | null;
+  previewUrl?: string;
   label?: string;
 };
 
@@ -33,15 +33,15 @@ export function GeneratedImageField({
   value,
   onChange,
   purpose,
-  previewUrl = null,
+  previewUrl,
   label = "이미지",
 }: GeneratedImageFieldProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File>();
+  const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string>();
   const [isUploading, setIsUploading] = useState(false);
 
   const objectPreviewUrl = useMemo(
-    () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
+    () => (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
     [selectedFile],
   );
   useEffect(() => {
@@ -58,14 +58,14 @@ export function GeneratedImageField({
     if (!file) return;
 
     setSelectedFile(file);
-    setPickedPreviewUrl(null);
+    setPickedPreviewUrl(undefined);
     setIsUploading(true);
     try {
       const assetId = await uploadAsset(file, purpose);
       onChange({ assetId });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
-      setSelectedFile(null);
+      setSelectedFile(undefined);
     } finally {
       setIsUploading(false);
     }
@@ -74,14 +74,14 @@ export function GeneratedImageField({
   async function handlePickFromGallery() {
     const picked = await GeneratedImagePickerModal.call();
     if (!picked) return;
-    setSelectedFile(null);
+    setSelectedFile(undefined);
     setPickedPreviewUrl(picked.imageUrl);
     onChange({ assetId: picked.assetId });
   }
 
   function handleDelete() {
-    setSelectedFile(null);
-    setPickedPreviewUrl(null);
+    setSelectedFile(undefined);
+    setPickedPreviewUrl(undefined);
     onChange(null);
   }
 

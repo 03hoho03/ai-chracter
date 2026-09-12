@@ -24,9 +24,9 @@ type ChangeStartingSetupModalProps = {
 // room.contentSnapshot.pinnedStartingSetupId(물리적 PK, US-070)로 판정 — room.startingSetupId는
 // entity_id라 GET /contents/{id}가 내려주는 startingSetups[].id(물리적 PK)와 비교할 수 없다.
 export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalProps, void>(({ call, roomId }) => {
-  const open = !call.ended;
+  const isOpen = !call.ended;
   const room = useChatRoomQuery(roomId).data;
-  const contentQuery = useContentDetailQuery(room?.contentId ?? "", open && room !== undefined);
+  const contentQuery = useContentDetailQuery(room?.contentId ?? "", isOpen && room !== undefined);
   const startingSetups = contentQuery.data?.startingSetups ?? [];
   const currentSetupId = room?.contentSnapshot?.pinnedStartingSetupId;
   const changeMutation = useChangeStartingSetupMutation(roomId);
@@ -50,7 +50,7 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
   }
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && call.end()}>
+    <Dialog open={isOpen} onOpenChange={(next) => !next && call.end()}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>시작 설정</DialogTitle>

@@ -97,6 +97,14 @@ export function FavoritesPage({
   );
 }
 
+type FavoritesBodyProps = {
+  query: ReturnType<typeof useFavoriteListQuery>;
+  items: ContentListItem[];
+  thumbnailAspect: ThumbnailAspect;
+  sentinelRef: ReturnType<typeof useInfiniteScrollSentinel>;
+  onOpenContent: (type: ContentType, id: string) => void;
+};
+
 /** 로딩·전면실패·빈·성공 네 갈래를 **early return 순서**로 강제한다 — 본문에 `&&`로 나열하면 순서가
  * 코드 배치에만 의존해 두 분기가 조용히 겹친다(COMP-04). 툴바(`Select`)는 어떤 상태에서도 남아야 해서
  * 목록 본문만 떼어냈다.
@@ -105,19 +113,7 @@ export function FavoritesPage({
  * 렌더한다"고 적은 건 빈 상태가 실패를 감추는 걸 막으라는 뜻인데, 여기서는 `isError && 0건`이 그 위
  * **전면 실패** 분기에서 이미 걸러진다 — 빈 상태에 도달하는 경로에는 실패가 없다. 배너를 빈 상태로
  * 끌어올리지 말 것(도달 불가 분기가 된다). */
-function FavoritesBody({
-  query,
-  items,
-  thumbnailAspect,
-  sentinelRef,
-  onOpenContent,
-}: {
-  query: ReturnType<typeof useFavoriteListQuery>;
-  items: ContentListItem[];
-  thumbnailAspect: ThumbnailAspect;
-  sentinelRef: ReturnType<typeof useInfiniteScrollSentinel>;
-  onOpenContent: (type: ContentType, id: string) => void;
-}) {
+function FavoritesBody({ query, items, thumbnailAspect, sentinelRef, onOpenContent }: FavoritesBodyProps) {
   if (query.isPending) {
     return (
       <ContentCardGrid thumbnailAspect={thumbnailAspect}>
@@ -153,12 +149,12 @@ function FavoritesBody({
         {items.map((item, index) => (
           <ContentCard
             key={item.id}
-            thumbnailUrl={item.thumbnailUrl}
+            thumbnailUrl={item.thumbnailUrl ?? undefined}
             thumbnailAspect={thumbnailAspect}
             title={item.name}
             metrics={{ viewCount: item.viewCount }}
             author={{ name: item.creatorNickname, profileUrl: `/profile/${item.creatorUserId}` }}
-            priority={index < toPriorityCount(thumbnailAspect)}
+            isPriority={index < toPriorityCount(thumbnailAspect)}
             isLcpCandidate={index === 0}
             onClick={() => onOpenContent(item.type, item.id)}
           />

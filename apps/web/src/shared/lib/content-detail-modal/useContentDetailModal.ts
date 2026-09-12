@@ -25,15 +25,15 @@ export function useContentDetailModal() {
   }
 
   function close() {
-    setState(null);
+    setState(undefined);
     window.history.back();
   }
 
   useEffect(() => {
     if (!state) return;
-    const onPopState = () => setState(null);
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
+    const handlePopState = () => setState(undefined);
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
   }, [state, setState]);
 
   return { state, open, close };

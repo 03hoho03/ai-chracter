@@ -13,9 +13,9 @@ type ColorPickerProps = {
  * COLOR_PALETTE) 중에서만 고르는 피커. Popover/Command 프리미티브가 없어 US-066과 동일하게
  * relative 트리거 + 조건부 absolute 패널로 구현한다. */
 export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps) {
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  useClickAway(containerRef, () => setOpen(false));
+  useClickAway(containerRef, () => setIsOpen(false));
   const selected = COLOR_PALETTE.find((swatch) => swatch.value === value);
 
   return (
@@ -24,8 +24,8 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
         type="button"
         aria-label={triggerLabel}
         aria-haspopup="true"
-        aria-expanded={open}
-        onClick={() => setOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((prev) => !prev)}
         className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input hover:bg-secondary/50"
       >
         {selected ? (
@@ -35,7 +35,7 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
         )}
       </button>
 
-      {open && (
+      {isOpen && (
         <div
           role="listbox"
           aria-label={triggerLabel}
@@ -51,7 +51,7 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
               title={swatch.label}
               onClick={() => {
                 onChange(swatch.value);
-                setOpen(false);
+                setIsOpen(false);
               }}
               className="flex size-7 items-center justify-center rounded-full"
               style={{ backgroundColor: swatch.value }}

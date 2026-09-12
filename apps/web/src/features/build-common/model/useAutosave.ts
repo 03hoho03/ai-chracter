@@ -38,7 +38,7 @@ function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: num
  * 않은 걸 모른 채 탭을 닫는다. 해제는 다음 저장 성공(`dismiss`)과 빌더 이탈 두 가지다. 성공 토스트는
  * 띄우지 않는다 — 1.5초마다 초록 토스트가 뜨면 재앙이다.
  *
- * 참고: 진짜 오프라인에서는 이 토스트가 뜨지 않는다. `app/providers.tsx`의 `QueryClient`가 기본
+ * 참고: 진짜 오프라인에서는 이 토스트가 뜨지 않는다. `app/AppProviders.tsx`의 `QueryClient`가 기본
  * `networkMode: "online"`이라 뮤테이션이 **pause**되고(재접속 시 한꺼번에 발사된다) 실패하지 않기
  * 때문이다. 이 토스트가 뜨는 건 4xx/5xx와 `navigator.onLine === true`인 연결 실패다(실측). */
 const AUTOSAVE_ERROR_TOAST_ID = "builder-autosave-error";

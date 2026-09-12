@@ -85,48 +85,48 @@ describe("mergeMyWorks", () => {
 
 // 네 칩 전부가 1건 이상을 남기도록 캐릭터 발행작 · 스토리 발행작 · 초안 셋을 모두 담는다 —
 // `filterMyWorks`와 `toMyWorkPageSources` 대조 테스트가 이 커버리지 위에 서 있다.
-const published = [
+const PUBLISHED = [
   makePublished({ id: "c-public", type: "character", visibility: "public", updatedAt: "2026-08-20T00:00:00Z" }),
   makePublished({ id: "c-private", type: "character", visibility: "private", updatedAt: "2026-08-19T00:00:00Z" }),
   makePublished({ id: "s-link", type: "story", visibility: "link", updatedAt: "2026-08-18T00:00:00Z" }),
 ];
-const drafts = [
+const DRAFTS = [
   makeDraft({ id: "d-1", type: "character", updatedAt: "2026-08-21T00:00:00Z" }),
   makeDraft({ id: "d-2", type: "story", updatedAt: "2026-08-17T00:00:00Z" }),
 ];
-const items = mergeMyWorks(published, drafts);
+const ITEMS = mergeMyWorks(PUBLISHED, DRAFTS);
 
 describe("filterMyWorks", () => {
   it("전체에는 초안이 섞이지 않는다 — FR-18", () => {
-    const filtered = filterMyWorks(items, { type: "all", visibility: "all" });
+    const filtered = filterMyWorks(ITEMS, { type: "all", visibility: "all" });
 
     expect(filtered.map((item) => item.id)).toEqual(["c-public", "c-private", "s-link"]);
   });
 
   it("미등록은 초안만 돌려준다 — 발행작이 섞이지 않는다", () => {
-    const filtered = filterMyWorks(items, { type: "unpublished", visibility: "all" });
+    const filtered = filterMyWorks(ITEMS, { type: "unpublished", visibility: "all" });
 
     expect(filtered.map((item) => item.id)).toEqual(["d-1", "d-2"]);
   });
 
   it("캐릭터·스토리는 그 유형의 발행작만 돌려준다", () => {
-    expect(filterMyWorks(items, { type: "character", visibility: "all" }).map((item) => item.id)).toEqual([
+    expect(filterMyWorks(ITEMS, { type: "character", visibility: "all" }).map((item) => item.id)).toEqual([
       "c-public",
       "c-private",
     ]);
-    expect(filterMyWorks(items, { type: "story", visibility: "all" }).map((item) => item.id)).toEqual(["s-link"]);
+    expect(filterMyWorks(ITEMS, { type: "story", visibility: "all" }).map((item) => item.id)).toEqual(["s-link"]);
   });
 
   it("공개 여부는 발행작을 한 겹 더 좁힌다", () => {
-    expect(filterMyWorks(items, { type: "all", visibility: "private" }).map((item) => item.id)).toEqual(["c-private"]);
-    expect(filterMyWorks(items, { type: "all", visibility: "link" }).map((item) => item.id)).toEqual(["s-link"]);
-    expect(filterMyWorks(items, { type: "character", visibility: "public" }).map((item) => item.id)).toEqual([
+    expect(filterMyWorks(ITEMS, { type: "all", visibility: "private" }).map((item) => item.id)).toEqual(["c-private"]);
+    expect(filterMyWorks(ITEMS, { type: "all", visibility: "link" }).map((item) => item.id)).toEqual(["s-link"]);
+    expect(filterMyWorks(ITEMS, { type: "character", visibility: "public" }).map((item) => item.id)).toEqual([
       "c-public",
     ]);
   });
 
   it("미등록에서는 공개 여부를 보지 않는다 — 손으로 만든 URL도 무해해야 한다", () => {
-    const filtered = filterMyWorks(items, { type: "unpublished", visibility: "public" });
+    const filtered = filterMyWorks(ITEMS, { type: "unpublished", visibility: "public" });
 
     expect(filtered.map((item) => item.id)).toEqual(["d-1", "d-2"]);
   });
@@ -134,14 +134,14 @@ describe("filterMyWorks", () => {
   // 화면의 "아직 발행한 작품이 없어요 / 미등록 보기" 분기가 이 불변식 위에 서 있다 — 필터가 안 걸렸는데
   // 0건이면 남은 건 초안뿐이므로 `미등록 보기`는 반드시 1건 이상으로 간다(죽은 버튼이 될 수 없다).
   it("필터 없이 0건이면 목록은 전부 초안이다 — 미등록이 그 항목들을 그대로 돌려준다", () => {
-    const draftsOnly = mergeMyWorks([], drafts);
+    const draftsOnly = mergeMyWorks([], DRAFTS);
 
     expect(filterMyWorks(draftsOnly, { type: "all", visibility: "all" })).toEqual([]);
-    expect(filterMyWorks(draftsOnly, { type: "unpublished", visibility: "all" })).toHaveLength(drafts.length);
+    expect(filterMyWorks(draftsOnly, { type: "unpublished", visibility: "all" })).toHaveLength(DRAFTS.length);
   });
 
   it("병합 정렬 순서를 그대로 보존한다", () => {
-    const filtered = filterMyWorks(items, { type: "all", visibility: "all" });
+    const filtered = filterMyWorks(ITEMS, { type: "all", visibility: "all" });
 
     expect(filtered.map((item) => item.updatedAt)).toEqual([
       "2026-08-20T00:00:00Z",
@@ -192,7 +192,7 @@ describe("toMyWorkPageSources", () => {
   it.each(MY_WORK_TYPE_FILTERS)(
     "%s 칩이 당기는 스트림이 그 칩에 남는 항목의 출처와 정확히 같다",
     (type) => {
-      const survived = filterMyWorks(items, { type, visibility: "all" });
+      const survived = filterMyWorks(ITEMS, { type, visibility: "all" });
 
       expect(survived.length).toBeGreaterThan(0);
       expect(new Set(survived.map(sourceOf))).toEqual(new Set(toMyWorkPageSources(type)));

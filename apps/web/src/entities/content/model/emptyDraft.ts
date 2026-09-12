@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import type { ContentType } from "./content";
 
 type CharacterDraftResponse = components["schemas"]["CharacterDraftResponse"];
@@ -19,11 +21,11 @@ export type ContentDraftContent = CharacterDraftContent | StoryDraftContent;
  * 서버 왕복 없이 빌더를 바로 띄우기 위한 초기값이라, 서버 기본값이 바뀌면 여기도 함께 바뀌어야
  * 한다 — 어긋나면 첫 자동저장 직후 화면이 소리 없이 달라진다.
  *
- * `if/else`가 아니라 `switch`인 건 완전성 검사 때문이다 — 반환 타입이 명시돼 있어 `ContentType`에
- * 멤버가 늘면 "ending return statement가 없다"로 컴파일이 깨진다(조용히 스토리 초안을 돌려주지 않는다).
- * 대신 런타임 방어는 없다: 유니언 밖 문자열이 들어오면 `undefined`가 나간다. 지금은
- * `routes/builder.$type.$draftId.tsx`의 `type === "story" ? "story" : "character"`가 **유일한 진입
- * 가드**로 좁혀 넣어 도달 불가다 — 그 삼항을 걷어내거나 다른 호출부를 만들면 이 가정도 같이 깨진다.
+ * `if/else`가 아니라 `switch`인 건 완전성 검사 때문이다(TS-05) — `ContentType`에 멤버가 늘면
+ * `default`의 `assertNever(type)`가 컴파일 에러를 낸다. 유니언 밖 문자열이 들어오면 런타임에도
+ * `assertNever`가 throw한다. 지금은 `routes/builder.$type.$draftId.tsx`의
+ * `type === "story" ? "story" : "character"`가 **유일한 진입 가드**로 좁혀 넣어 도달 불가다 — 그
+ * 삼항을 걷어내거나 다른 호출부를 만들면 이 가정도 같이 깨진다.
  */
 export function createEmptyDraft(type: ContentType): ContentDraftContent {
   switch (type) {
@@ -68,5 +70,7 @@ export function createEmptyDraft(type: ContentType): ContentDraftContent {
         hashtags: [],
         visibility: "private",
       };
+    default:
+      return assertNever(type);
   }
 }

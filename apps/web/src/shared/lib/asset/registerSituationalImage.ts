@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import { apiClient } from "../api/client";
+import { apiClient } from "@/shared/api/client";
 
 type RegisterSituationalImageRequest = components["schemas"]["RegisterSituationalImageRequest"];
 type SituationalImageResponse = components["schemas"]["SituationalImageResponse"];

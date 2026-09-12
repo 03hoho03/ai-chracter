@@ -1,4 +1,4 @@
-import type { SendMessageRequest } from "../api/chat-room";
+import type { SendMessageRequest } from "../api/chatStream";
 
 export function buildSendPayload(input: { roomId: string; text: string; shortcutId?: string }): SendMessageRequest {
   return { kind: "send", roomId: input.roomId, content: input.text, shortcutId: input.shortcutId ?? null };

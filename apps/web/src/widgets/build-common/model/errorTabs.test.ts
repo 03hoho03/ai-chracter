@@ -11,18 +11,18 @@ function fieldError(message = "필수 항목이에요."): { type: string; messag
 
 describe("errorTabs", () => {
   it("startingSetups.0.stats.1.name처럼 겹치는 경로는 더 구체적인 stat 탭에만 귀속된다", () => {
-    const errors = {
+    const errors: FieldErrors<StoryBuilderFormValues> = {
       startingSetups: [
         undefined,
         { stats: [undefined, { name: fieldError() }] },
       ],
-    } as FieldErrors<StoryBuilderFormValues>;
+    };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["stat"]));
   });
 
   it("최상위 키 에러(profile.name)는 profile 탭에 귀속된다", () => {
-    const errors = { profile: { name: fieldError() } } as FieldErrors<StoryBuilderFormValues>;
+    const errors: FieldErrors<StoryBuilderFormValues> = { profile: { name: fieldError() } };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["profile"]));
   });
@@ -34,18 +34,18 @@ describe("errorTabs", () => {
   });
 
   it("배열 인덱스 구멍(에러 없는 자리)은 건너뛰고 나머지만 매칭한다", () => {
-    const errors = {
+    const errors: FieldErrors<StoryBuilderFormValues> = {
       startingSetups: [undefined, { name: fieldError() }],
-    } as FieldErrors<StoryBuilderFormValues>;
+    };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["startingSetup"]));
   });
 
   it("서로 다른 탭에 걸친 에러는 둘 다 담는다", () => {
-    const errors = {
+    const errors: FieldErrors<StoryBuilderFormValues> = {
       profile: { name: fieldError() },
       shortcuts: [{ name: fieldError() }],
-    } as FieldErrors<StoryBuilderFormValues>;
+    };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["profile", "shortcut"]));
   });
@@ -59,7 +59,7 @@ describe("errorTabs", () => {
     const shortcutsErrors = Object.assign([{ name: fieldError() }], {
       root: fieldError("최소 1개 이상 입력해주세요."),
     });
-    const errors = { shortcuts: shortcutsErrors } as FieldErrors<StoryBuilderFormValues>;
+    const errors: FieldErrors<StoryBuilderFormValues> = { shortcuts: shortcutsErrors };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["shortcut"]));
   });

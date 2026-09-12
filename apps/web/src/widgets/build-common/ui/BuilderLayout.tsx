@@ -28,14 +28,14 @@ type BuilderLayoutProps = {
  * 포털되기 때문인데(DESIGN.md §Navigation) 이 프리뷰 열은 포털 없이 in-flow라 그 제약이 없다.
  *
  * `min-h-0`(그리드 자식의 기본 `min-height:auto`를 되돌린다) + `overflow-y-auto`가 없으면 두 열이
- * 콘텐츠 높이만큼 늘어나 페이지 전체가 스크롤된다(techspec §5-3) — `lg:h-[calc(100dvh-3.5rem)]`로
+ * 콘텐츠 높이만큼 늘어나 페이지 전체가 스크롤된다(techspec §5-3) — `lg:h-below-header`로
  * 그리드 행 자체를 뷰포트 높이에 고정하고, 각 열에 그 두 클래스를 걸어 열 내부만 스크롤되게 한다.
  */
 export function BuilderLayout({ children, preview, isPreviewOpen }: BuilderLayoutProps) {
   return (
     <main
       className={cn(
-        "mx-auto lg:grid lg:h-[calc(100dvh-3.5rem)] lg:grid-cols-[minmax(0,42rem)_1fr] lg:gap-6",
+        "mx-auto lg:grid lg:h-below-header lg:grid-cols-[minmax(0,42rem)_1fr] lg:gap-6",
         builderMainMaxWidth(isPreviewOpen),
       )}
     >

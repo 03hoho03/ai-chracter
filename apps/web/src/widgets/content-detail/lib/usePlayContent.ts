@@ -31,13 +31,13 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
   const hasAutoStartedRef = useRef(false);
   const startChatMutation = useStartChatMutation();
   const [modalState, setModalState] = useAtom(contentDetailModalAtom);
-  const isFromModal = modalState !== null;
+  const isFromModal = modalState !== undefined;
 
   async function start(startingSetupId?: string) {
     try {
       const room = await startChatMutation.mutateAsync({ contentId, contentType, startingSetupId });
       // 방 생성이 끝난 뒤에 닫는다 — 클릭 즉시 닫으면 생성을 기다리는 동안 아무 피드백 없이 리스트만 보인다.
-      setModalState(null);
+      setModalState(undefined);
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id }, replace: isFromModal });
     } catch {
       toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
@@ -61,7 +61,7 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       if (startingSetupId) query.set("startingSetupId", startingSetupId);
       // 로그인 화면 위에 상세 모달이 남지 않게 한다. 히스토리 엔트리는 남겨둔다 —
       // 로그인 후 복귀 지점이 바로 그 `/content/...` 풀페이지라 뒤로가기가 그리 가는 편이 자연스럽다.
-      setModalState(null);
+      setModalState(undefined);
       void navigate({
         to: "/login",
         search: { redirect: `/content/${contentType}/${contentId}?${query.toString()}` },

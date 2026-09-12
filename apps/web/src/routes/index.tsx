@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
+import { CONTENT_LIST_SORTS } from "../entities/content";
 import { HomePage, type HomeSearch } from "../pages/home";
 
 // techspec-home-discovery.md §1~2 — 정렬/장르/크리에이터/해시태그/검색어를 모두 홈 라우트의 URL search
@@ -10,7 +11,7 @@ import { HomePage, type HomeSearch } from "../pages/home";
 // 처방을 쓴다(`apps/web/CLAUDE.md`).
 const homeSearchSchema = z.object({
   q: z.string().optional().catch(undefined),
-  sort: z.enum(["latest", "popular", "genre"]).optional().catch(undefined),
+  sort: z.enum(CONTENT_LIST_SORTS).optional().catch(undefined),
   genre: z.string().optional().catch(undefined),
   creator: z.string().optional().catch(undefined),
   hashtag: z.string().optional().catch(undefined),

@@ -168,6 +168,20 @@
   color-scheme: dark;
 }
 
+/* apps/web 에서 2회 이상 반복되던 레이아웃 임의값(fe-styling STYLE-02). 값은 그대로, 이름만 붙였다. */
+@utility h-below-header {
+  /* sticky 헤더(h-14 = 3.5rem) 아래 남는 뷰포트 높이 */
+  height: calc(100dvh - 3.5rem);
+}
+@utility min-h-placeholder {
+  /* 준비 중·로딩·오류처럼 본문이 비는 화면의 세로 중앙 정렬용 최소 높이 */
+  min-height: 60vh;
+}
+@utility pb-4-safe {
+  /* p-4 하단에 iOS safe-area 를 더한다 */
+  padding-bottom: calc(1rem + env(safe-area-inset-bottom));
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

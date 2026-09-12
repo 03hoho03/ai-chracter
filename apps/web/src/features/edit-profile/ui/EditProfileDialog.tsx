@@ -19,13 +19,14 @@ import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import type { UserProfileResponse } from "@/entities/profile";
-import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
+import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
-import { useUpdateProfileMutation } from "../api/mutations";
+import { useUpdateProfileMutation } from "../api/useUpdateProfileMutation";
 import { formToServer } from "../model/formToServer";
-import { editProfileDefaultValues, editProfileSchema, type EditProfileFormValues } from "../model/schema";
+import { editProfileSchema, type EditProfileFormValues } from "../model/schema";
+import { serverToForm } from "../model/serverToForm";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -36,13 +37,13 @@ export function EditProfileDialog({
   userId: string;
   profile: UserProfileResponse;
 }) {
-  const [open, setOpen] = useState(false);
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | undefined>(undefined);
   const [isUploadingImage, setIsUploadingImage] = useState(false);
 
   const form = useForm<EditProfileFormValues>({
     resolver: zodResolver(editProfileSchema),
-    defaultValues: editProfileDefaultValues(profile),
+    defaultValues: serverToForm(profile),
   });
 
   const updateProfileMutation = useUpdateProfileMutation(userId);
@@ -57,11 +58,11 @@ export function EditProfileDialog({
   }, [previewUrl]);
 
   function handleOpenChange(nextOpen: boolean) {
-    setOpen(nextOpen);
+    setIsOpen(nextOpen);
     if (nextOpen) {
       // `reset`이 업로드해 둔 `profileImageAssetId`와 `errors.root`(직전 제출 실패)까지 함께 되돌린다.
-      form.reset(editProfileDefaultValues(profile));
-      setSelectedFile(null);
+      form.reset(serverToForm(profile));
+      setSelectedFile(undefined);
     }
   }
 
@@ -77,7 +78,7 @@ export function EditProfileDialog({
       form.setValue("profileImageAssetId", assetId, { shouldDirty: true });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
-      setSelectedFile(null);
+      setSelectedFile(undefined);
     } finally {
       setIsUploadingImage(false);
     }
@@ -88,7 +89,7 @@ export function EditProfileDialog({
     try {
       await updateProfileMutation.mutateAsync(formToServer(values));
       toast.success("프로필이 저장되었어요.");
-      setOpen(false);
+      setIsOpen(false);
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
       form.setError("root", {
@@ -101,7 +102,7 @@ export function EditProfileDialog({
   const isSaving = updateProfileMutation.isPending;
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
+    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button variant="outline">
           <Pencil aria-hidden />

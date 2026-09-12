@@ -3,6 +3,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Trash2, X } from "lucide-react";
 import { useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
@@ -188,7 +189,7 @@ function KeywordNoteRow({
             ))}
           </div>
         )}
-        {noteErrors?.triggerKeywords?.message && (
+        {!!noteErrors?.triggerKeywords?.message && (
           <p id={`keyword-note-${id}-trigger-keywords-error`} role="alert" className="text-xs text-destructive-text">
             {noteErrors.triggerKeywords.message}
           </p>
@@ -209,7 +210,7 @@ function KeywordNoteRow({
           <ToggleGroupItem
             value="global"
             aria-label="스토리 전체"
-            className={noteErrors?.scope ? "border-destructive ring-3 ring-destructive/20" : undefined}
+            className={cn(noteErrors?.scope && "border-destructive ring-3 ring-destructive/20")}
           >
             스토리 전체
           </ToggleGroupItem>
@@ -217,7 +218,7 @@ function KeywordNoteRow({
             value="startingSetup"
             aria-label="특정 시작설정"
             disabled={startingSetups.length === 0}
-            className={noteErrors?.scope ? "border-destructive ring-3 ring-destructive/20" : undefined}
+            className={cn(noteErrors?.scope && "border-destructive ring-3 ring-destructive/20")}
           >
             특정 시작설정
           </ToggleGroupItem>

@@ -16,7 +16,7 @@ export type FirstErrorLocation = { tabId: string; fieldPath: string };
 export function firstErrorLocation<T extends FieldValues>(
   errors: FieldErrors<T>,
   tabs: readonly BuilderTab[],
-): FirstErrorLocation | null {
+): FirstErrorLocation | undefined {
   const located = flattenFieldErrorPaths(errors)
     .map((fieldPath) => ({ fieldPath, tabId: matchTabForPath(fieldPath, tabs) }))
     .filter((entry): entry is FirstErrorLocation => entry.tabId !== undefined);
@@ -25,5 +25,5 @@ export function firstErrorLocation<T extends FieldValues>(
     const match = located.find((entry) => entry.tabId === tab.id);
     if (match) return match;
   }
-  return null;
+  return undefined;
 }

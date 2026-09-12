@@ -33,13 +33,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
-  const { send, retry, regenerate, editMessage, isSending, error, policyWarning, streamingText } = useSendMessage(
+  const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     characterId,
   );
+  const isSending = status.kind === "sending";
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
   const [text, setText] = useState("");
-  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string>();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -47,14 +48,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // acknowledge 뮤테이션 성공 즉시 캐시에서 false로 꺼지므로, 그 값을 직접 렌더링 조건으로 쓰면 배너가
   // 뜨자마자 사라진다 — 로컬 state로 "봤다"는 사실을 분리해서 들고 있는다. room이 비동기로 로드되므로
   // useEffectOnce 대신 usePlayContent와 동일한 ref 가드+useEffect 패턴을 쓴다.
-  const [versionUpgradeBannerVisible, setVersionUpgradeBannerVisible] = useState(false);
+  const [isVersionUpgradeBannerVisible, setIsVersionUpgradeBannerVisible] = useState(false);
   const acknowledgeVersionUpgradeMutation = useAcknowledgeVersionUpgradeMutation(roomId);
   const versionUpgradeAcknowledgedRef = useRef(false);
   useEffect(() => {
     if (versionUpgradeAcknowledgedRef.current || !room) return;
     versionUpgradeAcknowledgedRef.current = true;
     if (room.versionAutoUpgraded) {
-      setVersionUpgradeBannerVisible(true);
+      setIsVersionUpgradeBannerVisible(true);
       acknowledgeVersionUpgradeMutation.mutate();
     }
   }, [room]);
@@ -93,7 +94,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   if (roomQuery.isPending) {
     return (
-      <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
+      <div className="flex h-below-header flex-col">
         <ChatRoomSkeleton />
       </div>
     );
@@ -101,14 +102,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
 
   if (roomQuery.isError || !room) {
     return (
-      <div className="flex h-[calc(100dvh-3.5rem)] items-center justify-center px-4 sm:px-6">
+      <div className="flex h-below-header items-center justify-center px-4 sm:px-6">
         <p className="text-sm text-destructive-text">대화방을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </div>
     );
   }
 
   return (
-    <div className="flex h-[calc(100dvh-3.5rem)] flex-col">
+    <div className="flex h-below-header flex-col">
       {/* border-b를 <header>가 아니라 안쪽 컬럼 div에 건다 — 뷰포트를 가로지르는 선은 전역 헤더의
           border-b 하나뿐이어야 한다(DESIGN.md §Navigation "크롬은 sticky 헤더 하나뿐이다"). <header>에
           걸면 이 선만 전폭이 되어 바로 아래 StatGaugePanel·버전 배너의 border-b, 입력창의 border-t와
@@ -147,7 +148,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           붕괴한다. */}
       <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          {versionUpgradeBannerVisible && (
+          {isVersionUpgradeBannerVisible && (
             <div className="flex shrink-0 items-center gap-2 border-b border-border bg-secondary/50 px-4 sm:px-6 py-2.5 motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
               <History aria-hidden className="size-4 shrink-0 text-muted-foreground" />
               <span className="text-xs text-muted-foreground">최신 버전으로 자동 전환되었어요.</span>
@@ -169,17 +170,17 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     canRegenerate={isLastMessage && message.role === "assistant" && room.messages.length >= 2}
                     onRegenerate={isLastMessage && message.role === "assistant" ? regenerate : undefined}
                     onStartEdit={message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
-                    onCancelEdit={() => setEditingMessageId(null)}
+                    onCancelEdit={() => setEditingMessageId(undefined)}
                     onSaveEdit={(newText) => {
                       editMessage(message.id, newText);
-                      setEditingMessageId(null);
+                      setEditingMessageId(undefined);
                     }}
                     onDelete={() => handleDeleteMessage(message.id)}
                   />
                 );
               })}
 
-              {room.endingStatus.reached && room.endingStatus.epilogue && (
+              {room.endingStatus.reached && !!room.endingStatus.epilogue && (
                 <>
                   <EndingDivider
                     endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
@@ -197,7 +198,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   <TypingIndicator />
                 ))}
 
-              {error && (
+              {status.kind === "error" && (
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
                   <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
                   <Button variant="destructive" size="sm" onClick={retry}>
@@ -207,7 +208,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 </div>
               )}
 
-              {policyWarning && (
+              {!!policyWarning && (
                 <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
                   <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">{policyWarning}</span>

@@ -43,24 +43,36 @@ export function ChatRoomListView({
         )}
       </div>
 
-      {listQuery.isPending && <ChatRoomListSkeleton />}
-
-      {listQuery.isError && (
-        <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
-
-      {listQuery.data && listQuery.data.length === 0 && (
-        <p className="text-sm text-muted-foreground">아직 대화방이 없어요. 새 대화를 시작해보세요.</p>
-      )}
-
-      {listQuery.data && listQuery.data.length > 0 && (
-        <div className="flex flex-col gap-2">
-          {listQuery.data.map((item) => (
-            <ChatRoomListItemRow key={item.id} item={item} contentId={contentId} contentType={contentType} />
-          ))}
-        </div>
-      )}
+      <ChatRoomListBody listQuery={listQuery} contentId={contentId} contentType={contentType} />
     </main>
+  );
+}
+
+type ChatRoomListBodyProps = {
+  listQuery: ReturnType<typeof useChatRoomListQuery>;
+  contentId: string;
+  contentType: "character" | "story";
+};
+
+/** 로딩·에러·빈·목록 네 상태가 배타적이라 early return으로 순서를 강제한다(COMP-04) — `&&` 나열이면
+ * 리페치 실패 시 `isError`와 직전 `data`가 동시에 참이 될 수 있다. */
+function ChatRoomListBody({ listQuery, contentId, contentType }: ChatRoomListBodyProps) {
+  if (listQuery.isPending) return <ChatRoomListSkeleton />;
+
+  if (listQuery.isError) {
+    return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (listQuery.data.length === 0) {
+    return <p className="text-sm text-muted-foreground">아직 대화방이 없어요. 새 대화를 시작해보세요.</p>;
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      {listQuery.data.map((item) => (
+        <ChatRoomListItemRow key={item.id} item={item} contentId={contentId} contentType={contentType} />
+      ))}
+    </div>
   );
 }
 

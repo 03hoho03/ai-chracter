@@ -7,26 +7,26 @@ import { ImageArchiveModal } from "@/features/image-archive";
 import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
 
-import { chatMorePanelOpenAtom } from "../model/atom";
+import { chatMorePanelOpenAtom } from "../model/atoms";
 
 type MorePanelItem = {
   key: string;
   label: string;
   icon: typeof BookOpen;
-  active: boolean;
+  isActive: boolean;
 };
 
 const CHARACTER_ITEMS: MorePanelItem[] = [
-  { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
-  { key: "update-info", label: "업데이트 정보", icon: History, active: true },
-  { key: "image-archive", label: "이미지 보관함", icon: Images, active: true },
+  { key: "play-guide", label: "플레이가이드", icon: BookOpen, isActive: true },
+  { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
+  { key: "image-archive", label: "이미지 보관함", icon: Images, isActive: true },
 ];
 
 const STORY_ITEMS: MorePanelItem[] = [
-  { key: "play-guide", label: "플레이가이드", icon: BookOpen, active: true },
-  { key: "update-info", label: "업데이트 정보", icon: History, active: true },
-  { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, active: true },
-  { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, active: true },
+  { key: "play-guide", label: "플레이가이드", icon: BookOpen, isActive: true },
+  { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
+  { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, isActive: true },
+  { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, isActive: true },
 ];
 
 export type ChatMoreNavProps = {
@@ -45,7 +45,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
 
   function handleItemClick(item: MorePanelItem) {
-    if (!item.active) return;
+    if (!item.isActive) return;
     setOpen(false);
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
     if (item.key === "update-info") void UpdateInfoModal.call({ roomId });
@@ -64,13 +64,13 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
         <button
           key={item.key}
           type="button"
-          disabled={!item.active}
+          disabled={!item.isActive}
           onClick={() => handleItemClick(item)}
           className="flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors enabled:hover:bg-secondary/50 disabled:cursor-not-allowed disabled:text-muted-foreground/60"
         >
           <item.icon aria-hidden className="size-4 shrink-0" />
           <span className="flex-1">{item.label}</span>
-          {!item.active && <span className="text-xs text-muted-foreground/60">준비 중</span>}
+          {!item.isActive && <span className="text-xs text-muted-foreground/60">준비 중</span>}
         </button>
       ))}
     </nav>

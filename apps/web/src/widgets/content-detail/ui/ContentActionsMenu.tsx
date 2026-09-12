@@ -16,7 +16,7 @@ import {
 } from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
 import { ReportContentModal } from "@/features/report-content";
-import { isApiError } from "@/shared/lib/api/client";
+import { isApiError } from "@/shared/api/client";
 
 type ContentActionsMenuProps = {
   contentId: string;
@@ -54,7 +54,7 @@ export function ContentActionsMenu({
           toast.success("신고가 접수되었어요.");
           call.end();
         } catch (error) {
-          const apiError = isApiError(error) ? error : null;
+          const apiError = isApiError(error) ? error : undefined;
           toast.error(
             apiError?.status === 401
               ? "로그인 후 신고할 수 있어요."

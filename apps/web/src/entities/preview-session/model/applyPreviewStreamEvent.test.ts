@@ -2,8 +2,8 @@ import { QueryClient } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { previewSessionKeys } from "../api/keys";
-import type { PreviewSessionState } from "../api/preview-session";
 import { applyPreviewStreamEvent } from "./applyPreviewStreamEvent";
+import type { PreviewSessionState } from "./previewSessionState";
 
 const SESSION_ID = "preview-1";
 
@@ -16,7 +16,7 @@ function buildState(overrides: Partial<PreviewSessionState> = {}): PreviewSessio
     statDefs: [],
     shortcuts: [],
     suggestedReplies: [],
-    endingStatus: { reached: false, epilogue: null },
+    endingStatus: { reached: false, epilogue: undefined },
     turnCount: 3,
     ...overrides,
   };

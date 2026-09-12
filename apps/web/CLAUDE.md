@@ -30,7 +30,7 @@
 - **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 금지). 같은 레이어 슬라이스끼리 코드를 공유해야 하면 그 코드를 `entities`로 내린다(슬라이스 간 직접 import 금지). `routes/*`는 `pages/{page}`를 렌더링만 하는 얇은 어댑터다.
 - **레이어를 넘는 import는 `@/` alias**, 같은 슬라이스 내부는 상대경로. 정의가 `tsconfig.json` `paths` + `vite.config.ts`·`vitest.config.ts` `resolve.alias` **세 곳**에 있어 함께 움직인다.
 - **`routeTree.gen.ts`는 커밋한다.** `@tanstack/router-plugin`이 `vite dev`/`vite build` 때 생성하므로, 라우트를 바꿨으면 typecheck·커밋 전에 `vite build`를 한 번 돌린다 — `tsc --noEmit`만으로는 fresh checkout에서 생성되지 않아 새 라우트가 검증에서 통째로 누락된다.
-- **라우터 컨텍스트**: `createRootRouteWithContext<{queryClient}>()`로 `app/providers.tsx`의 **단일** `queryClient`를 넘긴다(`QueryClientProvider`와 다른 인스턴스면 캐시가 갈린다). 진입 자체에 서버 검증이 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 호출은 라우트 파일이 아니라 `features/*`의 순수 async 함수에 둔다.
+- **라우터 컨텍스트**: `createRootRouteWithContext<{queryClient}>()`로 `app/AppProviders.tsx`의 **단일** `queryClient`를 넘긴다(`QueryClientProvider`와 다른 인스턴스면 캐시가 갈린다). 진입 자체에 서버 검증이 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 호출은 라우트 파일이 아니라 `features/*`의 순수 async 함수에 둔다.
 - **플랫 파일명은 `.`으로 경로를 구분한다**(`onboarding.google.tsx` → `/onboarding/google`). 같은 부모 아래서 정적 세그먼트가 동적 파라미터보다 먼저 매치된다. 인덱스 라우트는 `createFileRoute("/builder/")`(끝 슬래시)로 선언하지만 `fullPath`·`<Link to>`·`KNOWN_ROUTES`는 전부 `/builder`다 — `worker/routes.test.ts`의 `toRoutePattern`이 이 셋을 맞춘다.
 - **화면 상태를 유지한 채 URL만 바꿔야 하면 라우트를 하나로 합친다.** 같은 라우트에서 파라미터만 바뀌면 리마운트가 없지만 **다른 라우트 파일로 넘어가면 리마운트한다** — `autoCodeSplitting`이 파일마다 별도 lazy 컴포넌트를 만들어서, 두 파일이 `component:`에 **같은 함수**를 넣어도 소용없다(실측). 빌더가 만들기와 이어쓰기를 `builder.$type.$draftId.tsx` 한 라우트로 받고 `new`를 sentinel로 쓰는 이유다.
 - **쿼리 키가 바뀌는 URL 교체는 `setQueryData`로 캐시를 먼저 채우고 `navigate`한다** — 안 그러면 그 렌더가 `isPending`이 되어 아래 트리가 통째로 언마운트된다(리마운트가 없어도).

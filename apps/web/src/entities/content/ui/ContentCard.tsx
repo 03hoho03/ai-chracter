@@ -5,8 +5,9 @@ import type { LucideIcon } from "lucide-react";
 
 import { formatCompactCount } from "@/shared/lib/number/formatCompactCount";
 
-import { toThumbnailAspectClass, type ThumbnailAspect } from "../model/cardLayout";
+import type { ThumbnailAspect } from "../model/cardLayout";
 import type { ContentType, ContentVisibility } from "../model/content";
+import { toThumbnailAspectClass } from "./cardLayoutClass";
 
 /** 카드에 다는 배지. 타입(무엇인지)과 상태(어디에 놓여 있는지)를 한 배열로 받아 순서는 호출부가 정한다.
  * `unpublished`(미등록)는 한 번도 발행된 적 없는 초안이라 공개범위 자체가 없다 — 그래서 다른 상태 배지와
@@ -66,7 +67,7 @@ export type ContentCardMetrics = {
 };
 
 export type ContentCardProps = {
-  thumbnailUrl: string | null;
+  thumbnailUrl?: string;
   /** card-grid-techspec.md T-3 — 표시 비율. **기본값을 두지 않는다**: 두면 빠뜨린 호출부가 조용히
    * `square`가 된다. 도메인(`ContentType`) → 표현 매핑은 카드가 아니라 `toThumbnailAspect`가 진다. */
   thumbnailAspect: ThumbnailAspect;
@@ -88,7 +89,7 @@ export type ContentCardProps = {
    * 그 사다리의 최대 열 수다. **손으로 적은 숫자를 쓰지 말 것**: 2026-09-11 에 스토리 사다리를 바꿨을 때
    * 호출부 4곳의 `index < 4` 가 그대로 남아 md 이상에서 첫 줄 마지막(5번째) 카드가 lazy 로 빠졌다.
    * 좁은 화면에선 실제 열 수보다 많이 당겨지지만(2열이면 2장이 과하게) 그건 원래 감수하던 오차다. */
-  priority?: boolean;
+  isPriority?: boolean;
   /** LCP 후보 1장(`index === 0`)에만 준다 — 여러 장에 주면 우선순위 신호가 희석돼 의미가 없다. */
   isLcpCandidate?: boolean;
   /** card-grid-techspec.md T-5 — `ContentCardSkeleton`이 "보이지 않는 실제 카드"를 `invisible`로
@@ -116,7 +117,7 @@ export function ContentCard({
   author,
   tags,
   actions,
-  priority = false,
+  isPriority = false,
   isLcpCandidate = false,
   className,
   inert,
@@ -192,7 +193,7 @@ export function ContentCard({
           <img
             src={thumbnailUrl}
             alt=""
-            loading={priority ? "eager" : "lazy"}
+            loading={isPriority ? "eager" : "lazy"}
             fetchPriority={isLcpCandidate ? "high" : "auto"}
             decoding="async"
             className="size-full object-cover"
@@ -233,7 +234,7 @@ export function ContentCard({
             `편집한 내용은 발행해야 반영` / `돼요`로 어절 한가운데가 갈렸다(US-010 실측) — 하필 무엇을
             해야 하는지를 말하는 그 동사다. 붙인 뒤 `편집한 내용은` / `발행해야 반영돼요`로 어절 경계에서
             접힌다. `truncate`인 제목·작가명과 달리 이 줄만 여러 줄이 될 수 있어 이 줄에만 건다. */}
-        {metaLabel && (
+        {!!metaLabel && (
           <p id={`${id}-meta`} className="text-xs break-keep text-muted-foreground">
             {metaLabel}
           </p>

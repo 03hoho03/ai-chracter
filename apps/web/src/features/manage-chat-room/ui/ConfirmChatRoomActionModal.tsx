@@ -26,7 +26,7 @@ export const ConfirmChatRoomActionModal = createCallable<ConfirmChatRoomActionMo
     const submit = useMutationFlow(call, mutationFn);
 
     return (
-      <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
+      <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end()}>
         <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>

@@ -1,7 +1,7 @@
 import type { ApiError } from "@ai-character-chat/api-types";
 import { useMutation } from "@tanstack/react-query";
 
-import { apiClient } from "@/shared/lib/api/client";
+import { apiClient } from "@/shared/api/client";
 
 /** US-004 편집 취소 — 발행 후 편집한 변경분을 버리고 초안 버전을 현재 발행 버전의 내용으로 덮어쓴다.
  * 발행 버전 자체는 건드리지 않는다.

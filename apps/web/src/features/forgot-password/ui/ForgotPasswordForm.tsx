@@ -6,7 +6,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { useRequestPasswordResetMutation } from "../api/mutations";
+import { useRequestPasswordResetMutation } from "../api/useRequestPasswordResetMutation";
 import {
   forgotPasswordDefaultValues,
   forgotPasswordSchema,

@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   DropdownMenu,
@@ -6,10 +5,10 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { MoreHorizontal, Pencil, RotateCw, Sparkles, Trash2 } from "lucide-react";
+import { MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react";
 
-import type { ChatMessage } from "../api/chat-room";
+import type { ChatMessage } from "../api/chatStream";
+import { MessageEditForm } from "./MessageEditForm";
 
 type MessageBubbleProps = {
   message: ChatMessage;
@@ -38,41 +37,9 @@ export function MessageBubble({
   onDelete,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
-  const [draft, setDraft] = useState(message.content);
-
-  useEffect(() => {
-    if (isEditing) setDraft(message.content);
-  }, [isEditing, message.content]);
 
   if (isEditing) {
-    const trimmed = draft.trim();
-    return (
-      <div className="flex flex-col items-end gap-1.5">
-        <Textarea
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey) {
-              event.preventDefault();
-              if (trimmed) onSaveEdit?.(trimmed);
-            } else if (event.key === "Escape") {
-              onCancelEdit?.();
-            }
-          }}
-          autoFocus
-          rows={2}
-          className="max-w-[75%] resize-none"
-        />
-        <div className="flex gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit}>
-            취소
-          </Button>
-          <Button type="button" size="sm" disabled={!trimmed} onClick={() => onSaveEdit?.(trimmed)}>
-            저장
-          </Button>
-        </div>
-      </div>
-    );
+    return <MessageEditForm content={message.content} onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
   }
 
   // design-system-progress.md P-4 / design-system-goal-prompt.md D-6 — assistant는 말풍선 상자를
@@ -83,7 +50,7 @@ export function MessageBubble({
     return (
       <div className="flex flex-col items-end gap-1.5">
         <div className="flex flex-row-reverse items-end gap-1">
-          <p className="max-w-[75%] whitespace-pre-wrap break-words break-keep rounded-lg bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground">
+          <p className="max-w-3/4 whitespace-pre-wrap break-words break-keep rounded-lg bg-primary px-3.5 py-2.5 text-sm leading-relaxed text-primary-foreground">
             {message.content}
           </p>
           {onDelete && (
@@ -121,7 +88,7 @@ export function MessageBubble({
             </DropdownMenu>
           )}
         </div>
-        {message.imageUrl && (
+        {!!message.imageUrl && (
           // US-073/US-014 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). 다만 그 비율을
           // 미리 알 수 없어 이미지가 도착한 뒤에야 높이가 정해지면 읽던 대화가 아래로 밀린다(CLS) →
           // 고정 비율 자리를 먼저 깔고 그 안에서 `object-contain`으로 맞춘다.
@@ -133,9 +100,9 @@ export function MessageBubble({
           // 폭이 아니라 높이(`h-80`)를 고정한 이유: 폭을 고정하면 칼럼 너비에 따라 웰의 실제 비율이
           // 흔들려 레터박스가 생긴다. 높이를 기존 상한(max-h-80)과 같은 값으로 못박으면 3:4 웰의
           // 폭이 240px로 확정돼, 어느 폭에서든 기존과 정확히 같은 240x320이 되고 레터박스도 없다.
-          // `max-w-[75%]`는 칼럼이 320px보다 좁을 때만 걸리는 안전장치(기존 제약과 동일).
+          // `max-w-3/4`는 칼럼이 320px보다 좁을 때만 걸리는 안전장치(기존 제약과 동일).
           // items-end(부모)가 이 웰의 우측 정렬도 함께 지므로 여기선 손댈 필요가 없다.
-          <div className="aspect-[3/4] h-80 max-w-[75%] overflow-hidden rounded-lg bg-muted">
+          <div className="aspect-3/4 h-80 max-w-3/4 overflow-hidden rounded-lg bg-muted">
             <img
               src={message.imageUrl}
               alt="대화 중 노출된 이미지"
@@ -197,11 +164,11 @@ export function MessageBubble({
           </DropdownMenu>
         )}
       </div>
-      {message.imageUrl && (
+      {!!message.imageUrl && (
         // 부모가 이제 items-* 없이 stretch라 이 웰도 그 폭을 그대로 받아 aspect-ratio가 무력화된다
         // (design-system-goal-prompt.md §4-3 D-6 표 — "이미지 웰, 놓치기 쉬운 지점"). self-start로
-        // stretch를 걷어 아래 aspect-[3/4]+h-80이 실제 폭(240px)을 계산하게 하고 좌측 정렬도 되살린다.
-        <div className="self-start aspect-[3/4] h-80 max-w-[75%] overflow-hidden rounded-lg bg-muted">
+        // stretch를 걷어 아래 aspect-3/4+h-80이 실제 폭(240px)을 계산하게 하고 좌측 정렬도 되살린다.
+        <div className="self-start aspect-3/4 h-80 max-w-3/4 overflow-hidden rounded-lg bg-muted">
           <img
             src={message.imageUrl}
             alt="대화 중 노출된 이미지"
@@ -211,38 +178,6 @@ export function MessageBubble({
           />
         </div>
       )}
-    </div>
-  );
-}
-
-// techspec-chat-story.md §5 — 엔딩 도달을 알리는 구분선. 바로 아래 오는 에필로그 말풍선(MessageBubble,
-// 일반 AI 메시지와 동일한 스타일)과 짝을 이뤄, 그 메시지가 엔딩임을 표시하는 역할만 한다.
-export function EndingDivider({ endingName }: { endingName?: string }) {
-  return (
-    <div role="separator" aria-label="엔딩 도달" className="flex items-center gap-3 py-1">
-      <div className="h-px flex-1 bg-border" />
-      <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-secondary px-3 py-1 text-xs font-medium text-secondary-foreground">
-        <Sparkles aria-hidden className="size-3.5" />
-        {endingName ? `엔딩 · ${endingName}` : "엔딩에 도달했어요"}
-      </span>
-      <div className="h-px flex-1 bg-border" />
-    </div>
-  );
-}
-
-// techspec-chat-common.md §5 — AI가 아직 응답하지 않은 동안(첫 토큰 도착 전) 보여주는 대기 표시.
-export function TypingIndicator() {
-  return (
-    <div className="flex justify-start">
-      <div className="flex items-center gap-1 rounded-lg bg-card px-3.5 py-3.5">
-        {[0, 1, 2].map((dot) => (
-          <span
-            key={dot}
-            className="size-1.5 rounded-full bg-muted-foreground motion-safe:animate-pulse"
-            style={{ animationDelay: `${dot * 150}ms` }}
-          />
-        ))}
-      </div>
     </div>
   );
 }

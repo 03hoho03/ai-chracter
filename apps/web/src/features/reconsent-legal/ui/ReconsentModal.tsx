@@ -49,7 +49,9 @@ export function ReconsentModal() {
   };
 
   const isOpen = !isDismissed && pendingKinds.length > 0;
-  const isLoadingDocs = pendingKinds.some((kind) => docQueryByKind[kind].isPending);
+  const isLoadingDocs = pendingKinds.some(
+    (kind) => docQueryByKind[kind].isPending && docQueryByKind[kind].failureCount === 0,
+  );
   const hasDocError = pendingKinds.some((kind) => docQueryByKind[kind].isError);
 
   function handleOpenChange(next: boolean) {

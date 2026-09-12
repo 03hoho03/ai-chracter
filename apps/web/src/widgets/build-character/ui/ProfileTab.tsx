@@ -29,7 +29,7 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
               value={field.value}
               onChange={field.onChange}
               purpose="content-thumbnail"
-              previewUrl={thumbnailUrl}
+              previewUrl={thumbnailUrl ?? undefined}
             />
           )}
         />

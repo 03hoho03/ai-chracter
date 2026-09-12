@@ -23,7 +23,7 @@ export function formToCard(
   ctx: CharacterToCardContext,
 ): ContentCardProps {
   return {
-    thumbnailUrl: ctx.thumbnailUrl,
+    thumbnailUrl: ctx.thumbnailUrl ?? undefined,
     thumbnailAspect: "square",
     title: values.profile.name,
     metrics: { viewCount: 0 },

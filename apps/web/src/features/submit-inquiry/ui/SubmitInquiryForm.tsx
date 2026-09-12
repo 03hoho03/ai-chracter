@@ -18,7 +18,7 @@ import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { INQUIRY_CATEGORIES, INQUIRY_CATEGORY_LABEL } from "@/entities/inquiry";
-import { uploadAsset } from "@/shared/lib/asset/uploadAsset";
+import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
 import { useCreateInquiryMutation } from "../api/useCreateInquiryMutation";
@@ -176,7 +176,7 @@ function InquiryAttachmentField({
   onChange,
   onUploadingChange,
 }: InquiryAttachmentFieldProps) {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | undefined>(undefined);
   const [isUploading, setIsUploading] = useState(false);
 
   const previewUrl = useMemo(() => (selectedFile ? URL.createObjectURL(selectedFile) : null), [selectedFile]);
@@ -198,7 +198,7 @@ function InquiryAttachmentField({
       onChange(assetId);
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
-      setSelectedFile(null);
+      setSelectedFile(undefined);
     } finally {
       setIsUploading(false);
       onUploadingChange(false);
@@ -206,7 +206,7 @@ function InquiryAttachmentField({
   }
 
   function handleRemove() {
-    setSelectedFile(null);
+    setSelectedFile(undefined);
     onChange(undefined);
   }
 
