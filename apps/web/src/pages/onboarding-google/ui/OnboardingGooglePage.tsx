@@ -1,6 +1,6 @@
-import { useAtomValue } from "jotai";
+import { useState } from "react";
 
-import { OnboardingGoogleWizard, onboardingGoogleStepAtom } from "@/features/onboarding-google";
+import { SignUpWizard, type GoogleSignUpStep } from "@/features/sign-up";
 
 type OnboardingGooglePageProps = {
   token: string;
@@ -18,7 +18,7 @@ const STEP_COPY = {
 } as const;
 
 export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {
-  const step = useAtomValue(onboardingGoogleStepAtom);
+  const [step, setStep] = useState<GoogleSignUpStep>("basicInfo");
   const { title, description } = STEP_COPY[step];
 
   return (
@@ -30,7 +30,7 @@ export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
-          <OnboardingGoogleWizard token={token} />
+          <SignUpWizard mode="google" token={token} step={step} onStepChange={setStep} />
         </div>
       </div>
     </main>

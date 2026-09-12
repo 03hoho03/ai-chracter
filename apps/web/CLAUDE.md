@@ -27,7 +27,7 @@
 
 ## 아키텍처 / 라우팅
 
-- **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 금지). 같은 레이어 슬라이스끼리 코드를 공유해야 하면 그 코드를 `entities`로 내린다(슬라이스 간 직접 import 금지). `routes/*`는 `pages/{page}`를 렌더링만 하는 얇은 어댑터다.
+- **FSD 의존 방향**: `app → pages → widgets → features → entities → shared`(역방향 금지). 같은 레이어 슬라이스끼리 코드를 공유해야 하면 그 코드를 `entities`로 내린다(슬라이스 간 직접 import 금지). **단 폼 컨텍스트(`useFormContext`)를 읽는 UI는 내리지 않고 슬라이스를 합친다** — entity `ui`는 로직을 props로 받는 표현만 담는다(FSD-06; `entities/registration`을 `features/sign-up`으로 되돌린 이유, `fe-convention-refactor-goal-prompt.md R-10`). `routes/*`는 `pages/{page}`를 렌더링만 하는 얇은 어댑터다.
 - **레이어를 넘는 import는 `@/` alias**, 같은 슬라이스 내부는 상대경로. 정의가 `tsconfig.json` `paths` + `vite.config.ts`·`vitest.config.ts` `resolve.alias` **세 곳**에 있어 함께 움직인다.
 - **`routeTree.gen.ts`는 커밋한다.** `@tanstack/router-plugin`이 `vite dev`/`vite build` 때 생성하므로, 라우트를 바꿨으면 typecheck·커밋 전에 `vite build`를 한 번 돌린다 — `tsc --noEmit`만으로는 fresh checkout에서 생성되지 않아 새 라우트가 검증에서 통째로 누락된다.
 - **라우터 컨텍스트**: `createRootRouteWithContext<{queryClient}>()`로 `app/AppProviders.tsx`의 **단일** `queryClient`를 넘긴다(`QueryClientProvider`와 다른 인스턴스면 캐시가 갈린다). 진입 자체에 서버 검증이 필요하면 `beforeLoad`가 아니라 `loader`/`loaderDeps`를 쓰고, 실제 호출은 라우트 파일이 아니라 `features/*`의 순수 async 함수에 둔다.
@@ -79,7 +79,7 @@
 
 ## 폼 / 빌더
 
-- **멀티스텝도 단일 `useForm` + 단일 zod 스키마**를 전체 스텝이 공유한다. 스텝 검증은 `form.trigger(['필드'])`(도달 안 한 스텝의 필수 필드가 현재 제출을 막지 않는다). `handleSubmit`은 전체 검증이라 스텝 제출에 쓰지 않는다. 위저드마다 `useForm`·스텝 atom을 새로 만든다(모듈 전역 싱글턴 atom은 라우트 간 상태가 샌다).
+- **멀티스텝도 단일 `useForm` + 단일 zod 스키마**를 전체 스텝이 공유한다. 스텝 검증은 `form.trigger(['필드'])`(도달 안 한 스텝의 필수 필드가 현재 제출을 막지 않는다). `handleSubmit`은 전체 검증이라 스텝 제출에 쓰지 않는다. 위저드마다 `useForm`을 새로 만들고, **현재 스텝은 page의 `useState`가 소유해 위저드에 `step`/`onStepChange` props로 넘긴다**(모듈 전역 싱글턴 atom은 라우트를 떠나도 살아남아 폼 값만 비워진 채 중간 스텝으로 재진입하는 막다른 상태를 만든다).
 - **`formToServer`/`serverToForm`이 이름·모양 변환을 전담한다.** draft를 표현해야 하는 필수 선택 필드는 `.nullable()`(`z.enum`엔 "미선택" 멤버가 없어 서버 `null`을 못 담는다), 배열 `order`는 배열 위치 자체(명시 숫자 필드를 만들지 말 것). **실제 필드명은 `packages/api-types/src/generated.ts`에서 확인한다** — 스펙 문서의 이름과 다른 사례가 있었다.
 - **shadcn `Checkbox`는 `register()`로 못 묶는다**(Radix `checked`/`onCheckedChange`) → `Controller` 또는 `watch`/`setValue`.
 - **shadcn `Select`로 숫자 필드를 다룰 때 `z.coerce.number()`를 쓰지 말 것** — `onValueChange`에서 이미 `Number(v)`로 넣는데, `z.coerce`는 스키마 input 타입을 `unknown`으로 만들어 `zodResolver`의 input/output이 어긋난다. `z.coerce`는 항상 string인 네이티브 컨트롤에만 필요하다.

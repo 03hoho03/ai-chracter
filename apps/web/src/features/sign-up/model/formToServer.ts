@@ -1,12 +1,13 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { SignUpFormValues } from "@/entities/registration";
+import type { SignUpFormValues } from "./signUpSchema";
 
 type SignupRequest = components["schemas"]["SignupRequest"];
 type VerifyEmailRequest = components["schemas"]["VerifyEmailRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type GuardianConsentRequest = components["schemas"]["GuardianConsentRequest"];
 type ResendVerificationCodeRequest = components["schemas"]["ResendVerificationCodeRequest"];
+type OnboardingGoogleRequest = components["schemas"]["OnboardingGoogleRequest"];
 
 export function toSignupRequest(values: SignUpFormValues): SignupRequest {
   return {
@@ -38,4 +39,17 @@ export function toGuardianConsentRequest(values: SignUpFormValues): GuardianCons
 
 export function toResendVerificationCodeRequest(email: string): ResendVerificationCodeRequest {
   return { email };
+}
+
+export function toOnboardingGoogleRequest(
+  values: SignUpFormValues,
+  token: string,
+): OnboardingGoogleRequest {
+  return {
+    token,
+    nickname: values.nickname,
+    birthDate: values.birthDate,
+    termsAgreed: values.termsAgreed,
+    privacyAgreed: values.privacyAgreed,
+  };
 }

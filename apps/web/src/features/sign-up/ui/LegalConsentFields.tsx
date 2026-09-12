@@ -3,7 +3,7 @@ import { Controller, useFormContext } from "react-hook-form";
 
 import type { SignUpFormValues } from "../model/signUpSchema";
 
-/** 이메일 가입과 구글 온보딩 두 스텝이 이 fieldset을 바이트 단위로 똑같이 갖고 있어 내렸다 —
+/** 이메일 가입과 구글 온보딩 두 스텝이 이 fieldset을 바이트 단위로 똑같이 갖고 있어 한 벌로 묶었다 —
  * 문구·링크 수정이 한쪽에만 적용되는 사고를 막는 게 목적이다. `GuardianConsentStep`과 같은 결로
  * 폼은 prop이 아니라 `FormProvider` 컨텍스트에서 읽는다(두 스텝 모두 같은 `SignUpFormValues`를 쓴다). */
 export function LegalConsentFields() {

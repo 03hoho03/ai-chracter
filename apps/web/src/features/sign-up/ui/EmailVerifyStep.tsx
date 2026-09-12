@@ -5,11 +5,11 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
-import type { SignUpFormValues } from "@/entities/registration";
 import { isApiError } from "@/shared/api/client";
 
 import { useResendVerificationCodeMutation } from "../api/mutations";
 import { toResendVerificationCodeRequest } from "../model/formToServer";
+import type { SignUpFormValues } from "../model/signUpSchema";
 
 const RESEND_COOLDOWN_SECONDS = 60;
 

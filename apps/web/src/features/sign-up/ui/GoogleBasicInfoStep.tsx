@@ -3,16 +3,17 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { useFormContext } from "react-hook-form";
 
-import { LegalConsentFields, type SignUpFormValues } from "@/entities/registration";
+import type { SignUpFormValues } from "../model/signUpSchema";
+import { LegalConsentFields } from "./LegalConsentFields";
 
 const BASIC_INFO_FIELDS = ["nickname", "birthDate", "termsAgreed", "privacyAgreed"] as const;
 
-type BasicInfoStepProps = {
+type GoogleBasicInfoStepProps = {
   onSubmit: () => void;
   isSubmitting: boolean;
 }
 
-export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
+export function GoogleBasicInfoStep({ onSubmit, isSubmitting }: GoogleBasicInfoStepProps) {
   const form = useFormContext<SignUpFormValues>();
 
   const {
