@@ -8,8 +8,11 @@ export const LEGAL_DOCUMENT_LABEL: Record<LegalDocumentKind, string> = {
   privacy: "개인정보처리방침",
 };
 
+/** 현재 호출부는 `Object.keys(...)` 결과만 넘겨 `in`과 `hasOwn`이 갈리지 않지만, 이 술어는 public API라 외부 입력이
+ * 닿는 순간을 대비해 own key만 본다 — `in`은 프로토타입 체인까지 보므로 `"toString"`·`"constructor"`가 통과한다.
+ * 좁히기는 `Object.hasOwn`이 아니라 명시 반환 타입(`value is …`)이 만든다(`entities/content/model/visibilityFilter.ts` 참고). */
 export function isLegalDocumentKind(value: string): value is LegalDocumentKind {
-  return value in LEGAL_DOCUMENT_LABEL;
+  return Object.hasOwn(LEGAL_DOCUMENT_LABEL, value);
 }
 
 /** 스키마에 kind가 늘면 `LEGAL_DOCUMENT_LABEL`이 컴파일 에러로 잡는다 — 목록을 손으로 또 적으면
