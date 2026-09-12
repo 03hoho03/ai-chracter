@@ -21,7 +21,7 @@ import { runOnce } from "../lib/runOnce";
  * 만들기와 이어쓰기가 한 라우트라 이 URL 교체는 파라미터만 바꾼다 — 리마운트가 없으므로 입력 중이던
  * 폼 상태와 포커스가 그대로 남는다(이유는 `pages/builder`의 `NEW_DRAFT_SEGMENT` 주석).
  */
-export function useDraftPersistence({ type, draftId }: { type: ContentType; draftId: string | null }) {
+export function useDraftPersistence({ type, draftId }: { type: ContentType; draftId: string | undefined }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const createDraftMutation = useCreateContentDraftMutation();
@@ -36,7 +36,7 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
   ));
 
   // `draftId`를 클로저가 아니라 ref로 읽어 `saveDraft`가 마운트 내내 **같은 함수**로 남게 한다.
-  // 의존성에 넣으면 초안이 생기는 순간(null → id) 정체성이 바뀌는데, 그러면 `useAutosave`의
+  // 의존성에 넣으면 초안이 생기는 순간(undefined → id) 정체성이 바뀌는데, 그러면 `useAutosave`의
   // `useMemo`가 그 렌더에서 새 디바운서를 만들고 옛 디바운서의 타이머는 취소되지 않은 채 남아
   // 낡은 폼 값으로 한 번 더 저장된다(`useAutosave`가 요구하는 "렌더마다 같은 함수" 계약).
   const draftIdRef = useRef(draftId);
@@ -58,7 +58,7 @@ export function useDraftPersistence({ type, draftId }: { type: ContentType; draf
       //     없다) 다음 자동저장이 그걸 서버에 덮어써 **편집분이 사라진다**(실측으로 재현하고 고쳤다).
       queryClient.setQueryData(contentKeys.draft(id), draft);
 
-      if (knownId === null) {
+      if (knownId === undefined) {
         // 방금 없던 초안이 생겼으니 초안 목록은 낡았다(내 작품 `/my`의 `미등록`).
         void queryClient.invalidateQueries({ queryKey: draftKeys.list() });
         await navigate({ to: "/builder/$type/$draftId", params: { type, draftId: id }, replace: true });

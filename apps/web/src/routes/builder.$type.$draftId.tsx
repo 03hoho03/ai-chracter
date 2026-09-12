@@ -20,7 +20,7 @@ function RouteComponent() {
   return (
     <BuilderPage
       type={type === "story" ? "story" : "character"}
-      draftId={draftId === NEW_DRAFT_SEGMENT ? null : draftId}
+      draftId={draftId === NEW_DRAFT_SEGMENT ? undefined : draftId}
     />
   );
 }

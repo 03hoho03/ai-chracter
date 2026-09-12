@@ -84,7 +84,7 @@
 - **shadcn `Checkbox`는 `register()`로 못 묶는다**(Radix `checked`/`onCheckedChange`) → `Controller` 또는 `watch`/`setValue`.
 - **shadcn `Select`로 숫자 필드를 다룰 때 `z.coerce.number()`를 쓰지 말 것** — `onValueChange`에서 이미 `Number(v)`로 넣는데, `z.coerce`는 스키마 input 타입을 `unknown`으로 만들어 `zodResolver`의 input/output이 어긋난다. `z.coerce`는 항상 string인 네이티브 컨트롤에만 필요하다.
 - **자동저장은 `features/build-common`의 `useAutosave`** — 각 빌더는 자기 `formToServer`만 주입하고 디바운스를 재구현하지 않는다. 디바운스된 저장은 호출부에 catch할 자리가 없으므로 실패 토스트를 훅이 직접 띄운다(`saveNow`의 실패만 호출부 몫).
-- **`useAutosave`에 넘기는 `save`는 렌더마다 같은 함수여야 한다.** 인라인 화살표를 주면 매 렌더 새 디바운스가 생기는데 이전 타이머는 취소되지 않아 **입력 한 글자마다 PATCH가 나간다**. `useWatch`가 키 입력마다 리렌더를 일으키므로 이 함정은 항상 켜져 있다. **의존성 배열에 바뀌는 값이 하나라도 있으면 깨진다** — `useDraftPersistence`가 `draftId`(null → 초안 id)를 클로저 대신 `useRef`로 읽는 이유다.
+- **`useAutosave`에 넘기는 `save`는 렌더마다 같은 함수여야 한다.** 인라인 화살표를 주면 매 렌더 새 디바운스가 생기는데 이전 타이머는 취소되지 않아 **입력 한 글자마다 PATCH가 나간다**. `useWatch`가 키 입력마다 리렌더를 일으키므로 이 함정은 항상 켜져 있다. **의존성 배열에 바뀌는 값이 하나라도 있으면 깨진다** — `useDraftPersistence`가 `draftId`(undefined → 초안 id)를 클로저 대신 `useRef`로 읽는 이유다.
 - **언마운트 때 대기 중인 디바운스 저장은 "버릴지 실행할지"를 갈라야 한다**(`flushOnUnmount`). 그냥 두면 떠난 화면 위로 실패 토스트가 뜨고 URL 교체가 **사용자를 빌더로 되돌려 놓는다**. 반대로 `cancel`만 하면 마지막 편집이 조용히 사라진다("자동으로 저장돼요"라고 적어 두고 어기는 셈이다). **초안이 이미 있으면 flush, 아직 없으면 cancel.**
 - **반복 발화하는 시스템 주도 토스트는 `id` 고정 + `duration: Infinity` + `closeButton`이 한 세트다.** id가 없으면 실패 횟수만큼 쌓이고(600px 이하에선 전체 폭 바닥 고정이라 입력 필드를 가린다), 기본 4초면 "마지막 편집이 서버에 없다"는 **지속 상태**가 눈을 뗀 사이 사라진다. 해제는 다음 저장 성공·닫기·이탈 셋이고 언마운트에서도 같은 id를 dismiss한다. **성공 토스트는 띄우지 않는다**(1.5초마다 초록 토스트는 재앙).
 - **`QueryClient`가 기본 `networkMode: "online"`이라 진짜 오프라인에서는 뮤테이션이 실패하지 않고 pause된다**(재접속 시 큐가 한꺼번에 발사된다 — 실측 9건 동시). "오프라인이면 실패 토스트가 뜬다"는 틀린 가정이다. **"저장 중/저장됨" 인디케이터를 만들 거라면 이 pause 구간에서 거짓말을 하지 않는지부터 확인할 것.**

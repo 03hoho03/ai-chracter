@@ -9,7 +9,7 @@ import { StoryBuilderShell } from "@/widgets/build-story";
 import { BuilderPreview } from "@/widgets/builder-preview";
 
 /**
- * techspec-builder-common.md §2 — 초안 만들기(`draftId === null`)와 이어쓰기 양쪽의 화면.
+ * techspec-builder-common.md §2 — 초안 만들기(`draftId === undefined`)와 이어쓰기 양쪽의 화면.
  *
  * 초안은 첫 자동저장 시점에 만들어지므로(US-007) `draftId`가 없는 동안에는 서버 조회 없이
  * `createEmptyDraft(type)`의 로컬 초기값으로 시작한다. 첫 저장이 URL을 초안 주소로 바꿔도 라우트가
@@ -18,11 +18,11 @@ import { BuilderPreview } from "@/widgets/builder-preview";
  * 응답의 `type` 판별값으로 캐릭터/스토리 빌더를 나눈다 — URL의 `$type`은 가독성용이라 신뢰하지 않고,
  * 아직 초안이 없을 때의 초기값을 고를 때만 쓴다.
  */
-export function BuilderPage({ type, draftId }: { type: ContentType; draftId: string | null }) {
+export function BuilderPage({ type, draftId }: { type: ContentType; draftId: string | undefined }) {
   const draftQuery = useContentDraftQuery(draftId);
   const emptyDraft = useMemo(() => createEmptyDraft(type), [type]);
 
-  if (draftId !== null && draftQuery.isPending) return <BuilderSkeleton />;
+  if (draftId !== undefined && draftQuery.isPending) return <BuilderSkeleton />;
 
   if (draftQuery.isError) {
     return (

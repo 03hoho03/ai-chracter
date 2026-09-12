@@ -39,7 +39,7 @@ import { PromptTab } from "./PromptTab";
 
 type CharacterBuilderShellProps = {
   draft: CharacterDraftContent;
-  draftId: string | null;
+  draftId: string | undefined;
   renderPreview: (args: {
     kind: "card" | "chat";
     getPayload: () => PreviewStartPayload;
@@ -83,7 +83,7 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<CharacterBuilderFormV
 /** techspec-builder-character.md §0/§1 — 5탭 단일 useForm 셸. 자동저장(US-096)/발행(US-083)/
  * 미리보기(US-088)를 여기서 연동한다.
  *
- * `draftId`는 아직 서버에 없는 초안이면 null이다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
+ * `draftId`는 아직 서버에 없는 초안이면 undefined다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function CharacterBuilderShell({ draft, draftId, renderPreview }: CharacterBuilderShellProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
@@ -128,7 +128,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     },
     formToServer,
     save: saveDraft,
-    flushOnUnmount: () => draftId !== null,
+    flushOnUnmount: () => draftId !== undefined,
   });
 
   /** 상황별 이미지 등록(`POST /assets/{id}/register-situational-image`)은 content_version_id를
@@ -225,7 +225,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         }
       />
       <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {rejectionReason !== undefined && draftId !== null && (
+        {rejectionReason !== undefined && draftId !== undefined && (
           <div className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
             <div>
               <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
