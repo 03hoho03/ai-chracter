@@ -7,6 +7,7 @@ import { Trash2 } from "lucide-react";
 import { useState } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
@@ -94,7 +95,12 @@ function StatRow({
               className="flex flex-col gap-1"
               data-field-path={`startingSetups.${startingSetupIndex}.stats.${statIndex}.icon`}
             >
-              <IconPicker value={field.value} onChange={field.onChange} triggerLabel="아이콘 선택 *" />
+              <IconPicker
+                value={field.value}
+                onChange={field.onChange}
+                options={STAT_ICON_OPTIONS}
+                triggerLabel="아이콘 선택 *"
+              />
               {statErrors?.icon && (
                 <p id={`stat-${id}-icon-error`} role="alert" className="text-xs text-destructive-text">
                   {statErrors.icon.message}

@@ -1,23 +1,31 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, type LucideIcon } from "lucide-react";
 import { useRef, useState } from "react";
 import { useClickAway } from "react-use";
 
-import { ICON_OPTIONS } from "./icons";
+/** 피커가 고를 수 있는 아이콘 하나. 목록은 도메인이 쥐고 있고(스탯은
+ * `entities/chat-room/model/statIcons.ts`) 이 타입만 둘 사이의 계약이다. */
+export type IconPickerOption = {
+  name: string;
+  label: string;
+  Icon: LucideIcon;
+}
 
 type IconPickerProps = {
   value: string;
   onChange: (value: string) => void;
+  options: readonly IconPickerOption[];
   triggerLabel: string;
 }
 
-/** techspec-builder-story.md §1.2 — lucide-react 아이콘 서브셋(./icons.ts) 중에서만 고르는 피커.
+/** techspec-builder-story.md §1.2 — lucide-react 아이콘 서브셋 중에서만 고르는 피커. 서브셋은
+ * 도메인 어휘라 `options`로 주입받는다(fe-convention-refactor-goal-prompt.md R-8).
  * ColorPicker와 동일한 relative 트리거 + absolute 패널 구조. */
-export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
+export function IconPicker({ value, onChange, options, triggerLabel }: IconPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   useClickAway(containerRef, () => setIsOpen(false));
-  const selected = ICON_OPTIONS.find((option) => option.name === value);
+  const selected = options.find((option) => option.name === value);
   const SelectedIcon = selected?.Icon;
 
   return (
@@ -43,7 +51,7 @@ export function IconPicker({ value, onChange, triggerLabel }: IconPickerProps) {
           aria-label={triggerLabel}
           className="absolute z-10 mt-2 grid w-40 grid-cols-4 gap-1 rounded-md bg-popover p-2 text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
-          {ICON_OPTIONS.map((option) => (
+          {options.map((option) => (
             <button
               key={option.name}
               type="button"
