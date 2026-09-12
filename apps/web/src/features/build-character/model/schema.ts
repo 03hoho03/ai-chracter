@@ -20,7 +20,10 @@ export const situationalImageSchema = z.object({
   // 업로드/AI생성 갤러리 선택 모두 assetId 참조로 수렴한다(techspec-overview.md §8.1) — 업로드 중
   // 상태는 이미지 필드 컴포넌트의 로컬 상태로만 존재하고 이 스키마에는 두지 않는다.
   image: z.object({ assetId: z.string() }).nullable(),
-  situationDescription: z.string().min(1, "어떤 상황에서 이 이미지를 노출할지 입력해주세요"),
+  situationDescription: z
+    .string()
+    .min(1, "어떤 상황에서 이 이미지를 노출할지 입력해주세요")
+    .refine((value) => value.trim().length > 0, "어떤 상황에서 이 이미지를 노출할지 입력해주세요"),
 });
 
 export const characterBuilderSchema = z.object({
