@@ -2,9 +2,9 @@ import { useMemo } from "react";
 
 import { createEmptyDraft, useContentDraftQuery, type ContentType } from "@/entities/content";
 import { formToCard as characterFormToCard } from "@/features/build-character";
+import { BuilderTopBar } from "@/features/build-common";
 import { formToCard as storyFormToCard } from "@/features/build-story";
 import { CharacterBuilderShell } from "@/widgets/build-character";
-import { BuilderTopBar } from "@/widgets/build-common";
 import { StoryBuilderShell } from "@/widgets/build-story";
 import { BuilderPreview } from "@/widgets/builder-preview";
 

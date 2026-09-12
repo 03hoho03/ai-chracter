@@ -1,2 +1,10 @@
 export { useAutosave } from "./model/useAutosave";
 export { useDraftPersistence } from "./model/useDraftPersistence";
+export { errorTabs } from "./model/errorTabs";
+export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
+export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
+export { useFocusFirstError } from "./lib/useFocusFirstError";
+export { BuilderLayout } from "./ui/BuilderLayout";
+export { BuilderTabStrip } from "./ui/BuilderTabStrip";
+export { BuilderTopBar } from "./ui/BuilderTopBar";
+export { BuilderTopBarActions } from "./ui/BuilderTopBarActions";

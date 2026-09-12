@@ -1,10 +1,8 @@
 import { useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-import { cn } from "@ai-character-chat/ui/lib/utils";
+import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { Eye, Save, TriangleAlert } from "lucide-react";
 import { FormProvider, useForm, type FieldErrors, type Path, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -18,17 +16,20 @@ import {
   type CharacterBuilderFormValues,
   type CharacterBuilderTab,
 } from "@/features/build-character";
-import { useAutosave, useDraftPersistence } from "@/features/build-common";
-import { AppealModal } from "@/features/submit-appeal";
-import { isApiError } from "@/shared/api/client";
 import {
   BuilderLayout,
+  BuilderTabStrip,
   BuilderTopBar,
+  BuilderTopBarActions,
   errorTabs,
   firstErrorLocation,
+  getFilterRejectionReason,
+  getMissingFields,
+  useAutosave,
+  useDraftPersistence,
   useFocusFirstError,
-  useHorizontalScrollClip,
-} from "@/widgets/build-common";
+} from "@/features/build-common";
+import { AppealModal } from "@/features/submit-appeal";
 
 import { AdvancedTab } from "./AdvancedTab";
 import { DetailTab } from "./DetailTab";
@@ -117,9 +118,6 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
       if (isCharacterBuilderTab(tabId)) setActiveTab(tabId);
     },
   });
-
-  // 스텝 탭 스트립 가로 스크롤 신호(P2) — `useHorizontalScrollClip` 참고.
-  const tabsScroll = useHorizontalScrollClip();
 
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
@@ -218,36 +216,12 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         autosaveNotice="변경사항은 자동으로 저장돼요."
         isPreviewOpen={isPreviewOpen}
         actions={
-          <>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label="미리보기"
-              className="lg:hidden"
-              onClick={() => setIsPreviewOpen(true)}
-            >
-              <Eye aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">미리보기</span>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              aria-label="임시저장"
-              onClick={() => void handleSaveNow()}
-            >
-              <Save aria-hidden className="size-3.5" />
-              <span className="hidden sm:inline">임시저장</span>
-            </Button>
-            <Button
-              size="sm"
-              disabled={form.formState.isSubmitting}
-              onClick={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
-            >
-              {form.formState.isSubmitting ? "발행 중..." : "발행"}
-            </Button>
-          </>
+          <BuilderTopBarActions
+            isSubmitting={form.formState.isSubmitting}
+            onPreview={() => setIsPreviewOpen(true)}
+            onSaveNow={() => void handleSaveNow()}
+            onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
+          />
         }
       />
       <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
@@ -272,42 +246,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         )}
 
         <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
-          {/* P2 — `TabsList`는 `inline-flex w-fit`이고 `overflow-x-auto`가 없어(packages/ui/tabs.tsx는
-              고치지 않는다, 호출부 처방) 8개 탭이 넘치면 이 스트립이 아니라 페이지 전체가 가로로
-              밀렸다(390px 실측 428px). 스트립 자체를 스크롤 컨테이너로 감싼다 — `-m-1 p-1`은
-              `overflow-x-auto`가 포커스 링을 클립하는 걸 상쇄한다(apps/web/CLAUDE.md "overflow-x-auto는
-              focus 링을 네 방향 모두 클립한다"). 오른쪽 페이드는 실제로 잘렸을 때만(`isClippedRight`)
-              뜬다 — iOS Safari 오버레이 스크롤바엔 상시 표시가 없어(`useHorizontalScrollClip` 주석,
-              packages/ui의 `data-clipped-below`와 같은 이유) 신호가 따로 필요하다. */}
-          <div className="relative">
-            <div ref={tabsScroll.ref} className="-m-1 overflow-x-auto p-1">
-              <TabsList variant="line">
-                {TABS.map((tab) => {
-                  const hasError = errorTabIds.has(tab.id);
-                  return (
-                    <TabsTrigger
-                      key={tab.id}
-                      value={tab.id}
-                      className={cn(
-                        hasError &&
-                          "text-destructive-text hover:text-destructive-text data-active:text-destructive-text dark:text-destructive-text dark:hover:text-destructive-text dark:data-active:text-destructive-text",
-                      )}
-                    >
-                      {hasError && <TriangleAlert aria-hidden className="size-3.5 shrink-0" />}
-                      {tab.label}
-                      {hasError && <span className="sr-only"> (입력 오류가 있어요)</span>}
-                    </TabsTrigger>
-                  );
-                })}
-              </TabsList>
-            </div>
-            {tabsScroll.isClippedRight && (
-              <div
-                aria-hidden
-                className="pointer-events-none absolute inset-y-1 right-1 w-8 bg-linear-to-l from-background"
-              />
-            )}
-          </div>
+          <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
           <TabsContent value="profile">
             <ProfileTab thumbnailUrl={draft.thumbnailUrl} />
@@ -330,28 +269,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   );
 }
 
-/** `TabsTrigger`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+/** `Tabs`의 `onValueChange`가 주는 값이 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
  * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
 function isCharacterBuilderTab(value: string): value is CharacterBuilderTab {
   return TABS.some((tab) => tab.id === value);
-}
-
-/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
- * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
- * 있는 발행 거부 상태로 보여준다. */
-function getFilterRejectionReason(error: unknown): string | undefined {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return undefined;
-  if ("reason" in apiError.detail) return String(apiError.detail.reason);
-  return undefined;
-}
-
-/** 서버 필드명 원문(예: `"thumbnailAssetId"`)을 돌려준다 — 토스트용 한국어 라벨(`MISSING_FIELD_LABELS`)
- * 과 `form.setError()`용 폼 경로(`MISSING_FIELD_FORM_PATH`) 둘 다 이 원문을 키로 찾는다. */
-function getMissingFields(error: unknown): string[] | undefined {
-  const apiError = isApiError(error) ? error : null;
-  if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return undefined;
-  const fields = apiError.detail.missingFields;
-  if (!Array.isArray(fields)) return undefined;
-  return fields.map(String);
 }

@@ -3,7 +3,7 @@ import { BookOpen, UserRound } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 import type { ContentType } from "@/entities/content";
-import { BuilderTopBar } from "@/widgets/build-common";
+import { BuilderTopBar } from "@/features/build-common";
 
 import { NEW_DRAFT_SEGMENT } from "../config/newDraftSegment";
 

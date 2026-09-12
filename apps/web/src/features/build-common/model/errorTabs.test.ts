@@ -1,9 +1,33 @@
 import type { FieldErrors } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
-import { STORY_TABS, type StoryBuilderFormValues } from "@/features/build-story";
+import type { BuilderTab } from "@/shared/model/builderTab";
 
 import { errorTabs } from "./errorTabs";
+
+/** 픽스처가 참조하는 폼 경로만 담은 지역 타입. 실제 폼 타입(`features/build-story`의
+ * `StoryBuilderFormValues`)을 쓰면 features끼리 import하는 셈이라(FSD-04,
+ * fe-convention-refactor-goal-prompt.md R-1) 여기서 모양만 다시 적는다 — 검증 대상은 경로 매칭이지
+ * 폼 스키마가 아니다. */
+type StoryFormValuesFixture = {
+  profile: { name: string };
+  startingSetups: { name: string; stats: { name: string }[] }[];
+  shortcuts: { name: string }[];
+};
+
+/** `features/build-story`의 `STORY_TABS`를 값 그대로 옮긴 픽스처(같은 이유로 import 대신 리터럴).
+ * 겹치는 프리픽스(`startingSetups` ↔ `startingSetups.*.stats`)와 탭 선언 순서가 이 테스트의 검증
+ * 대상이라 목록을 줄이지 않는다. */
+const STORY_TABS: readonly BuilderTab[] = [
+  { id: "profile", label: "프로필", fields: ["profile"], preview: "card" },
+  { id: "setting", label: "설정", fields: ["storySetting"], preview: "chat" },
+  { id: "startingSetup", label: "시작설정", fields: ["startingSetups"], preview: "chat" },
+  { id: "stat", label: "스탯", fields: ["startingSetups.*.stats"], preview: "chat" },
+  { id: "keywordNote", label: "키워드북", fields: ["keywordNotes"], preview: "chat" },
+  { id: "shortcut", label: "단축어", fields: ["shortcuts"], preview: "chat" },
+  { id: "ending", label: "엔딩", fields: ["startingSetups.*.endings"], preview: "chat" },
+  { id: "registration", label: "등록", fields: ["registration"], preview: "card" },
+];
 
 function fieldError(message = "필수 항목이에요."): { type: string; message: string } {
   return { type: "custom", message };
@@ -11,7 +35,7 @@ function fieldError(message = "필수 항목이에요."): { type: string; messag
 
 describe("errorTabs", () => {
   it("startingSetups.0.stats.1.name처럼 겹치는 경로는 더 구체적인 stat 탭에만 귀속된다", () => {
-    const errors: FieldErrors<StoryBuilderFormValues> = {
+    const errors: FieldErrors<StoryFormValuesFixture> = {
       startingSetups: [
         undefined,
         { stats: [undefined, { name: fieldError() }] },
@@ -22,19 +46,19 @@ describe("errorTabs", () => {
   });
 
   it("최상위 키 에러(profile.name)는 profile 탭에 귀속된다", () => {
-    const errors: FieldErrors<StoryBuilderFormValues> = { profile: { name: fieldError() } };
+    const errors: FieldErrors<StoryFormValuesFixture> = { profile: { name: fieldError() } };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["profile"]));
   });
 
   it("빈 에러는 빈 집합을 돌려준다", () => {
-    const errors: FieldErrors<StoryBuilderFormValues> = {};
+    const errors: FieldErrors<StoryFormValuesFixture> = {};
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set());
   });
 
   it("배열 인덱스 구멍(에러 없는 자리)은 건너뛰고 나머지만 매칭한다", () => {
-    const errors: FieldErrors<StoryBuilderFormValues> = {
+    const errors: FieldErrors<StoryFormValuesFixture> = {
       startingSetups: [undefined, { name: fieldError() }],
     };
 
@@ -42,7 +66,7 @@ describe("errorTabs", () => {
   });
 
   it("서로 다른 탭에 걸친 에러는 둘 다 담는다", () => {
-    const errors: FieldErrors<StoryBuilderFormValues> = {
+    const errors: FieldErrors<StoryFormValuesFixture> = {
       profile: { name: fieldError() },
       shortcuts: [{ name: fieldError() }],
     };
@@ -59,7 +83,7 @@ describe("errorTabs", () => {
     const shortcutsErrors = Object.assign([{ name: fieldError() }], {
       root: fieldError("최소 1개 이상 입력해주세요."),
     });
-    const errors: FieldErrors<StoryBuilderFormValues> = { shortcuts: shortcutsErrors };
+    const errors: FieldErrors<StoryFormValuesFixture> = { shortcuts: shortcutsErrors };
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["shortcut"]));
   });
@@ -72,7 +96,7 @@ describe("errorTabs", () => {
   it("setError가 만드는 type 없는 에러도 잎으로 인식돼 올바른 탭에 귀속된다", () => {
     const errors = {
       profile: { name: { message: "필수 항목이에요.", ref: undefined } },
-    } as FieldErrors<StoryBuilderFormValues>;
+    } as FieldErrors<StoryFormValuesFixture>;
 
     expect(errorTabs(errors, STORY_TABS)).toEqual(new Set(["profile"]));
   });
