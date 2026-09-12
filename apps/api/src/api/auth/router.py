@@ -42,6 +42,7 @@ from api.auth.verification import (
     seconds_until_resend_allowed,
     store_verification_code,
 )
+from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, verify_password
@@ -90,9 +91,26 @@ def _reconsent_required(current_version: str | None, required_version: str | Non
 async def signup(
     payload: SignupRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> SignupResponse:
+    # email-goal-prompt.md E-6: 카운터는 DB 조회보다 먼저, 무조건 올린다. IP·이메일 둘 다 매
+    # 요청마다 증가해야(성공/실패와 무관하게) 한쪽이 이미 상한을 넘겨도 다른 쪽 카운트가 누락되지 않는다.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_retry_after = await rate_limit.check_rate_limit(
+        "signup_ip", client_ip, rate_limit.SIGNUP_IP_LIMIT
+    )
+    email_retry_after = await rate_limit.check_rate_limit(
+        "signup_email", payload.email, rate_limit.SIGNUP_EMAIL_LIMIT
+    )
+    retry_after = ip_retry_after or email_retry_after
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
+
     existing = await db.scalar(select(User).where(User.email == payload.email))
     now = datetime.now(UTC)
 
@@ -182,6 +200,19 @@ async def resend_verification_code(
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
+    # email-goal-prompt.md E-6: 시간당 상한을 60초 쿨다운보다 먼저 검사한다 — 카운터 증분이
+    # 핸들러 최상단, DB 조회보다 앞에 있어야 하므로 자연스럽게 이 순서가 된다. 둘 다 429지만
+    # retryAfterSeconds가 다르다: 상한을 넘긴 사용자는 (대개 더 긴) 창 잔여 시간을 보고,
+    # 그 아래에서는 기존 60초 쿨다운이 그대로 동작한다.
+    retry_after = await rate_limit.check_rate_limit(
+        "resend_verification_code_email", payload.email, rate_limit.RESEND_VERIFICATION_EMAIL_LIMIT
+    )
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
+
     user = await db.scalar(select(User).where(User.email == payload.email))
     if user is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -413,9 +444,26 @@ async def logout(request: Request, response: Response) -> None:
 async def request_password_reset(
     payload: PasswordResetRequestRequest,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
+    # email-goal-prompt.md E-6: 카운터를 계정 존재 여부와 무관하게, DB 조회보다 먼저 올린다 —
+    # 안 그러면 등록된 이메일에서만 429가 나서 아래의 204 고정 응답이 지키려는 은닉이 429로 깨진다.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_retry_after = await rate_limit.check_rate_limit(
+        "password_reset_ip", client_ip, rate_limit.PASSWORD_RESET_IP_LIMIT
+    )
+    email_retry_after = await rate_limit.check_rate_limit(
+        "password_reset_email", payload.email, rate_limit.PASSWORD_RESET_EMAIL_LIMIT
+    )
+    retry_after = ip_retry_after or email_retry_after
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
+
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
     user = await db.scalar(select(User).where(User.email == payload.email))

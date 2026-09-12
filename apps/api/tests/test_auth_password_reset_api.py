@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
+from api.core import rate_limit
 from api.core.email import get_email_sender
 from api.core.security import verify_password
 from api.db.models.auth import User
@@ -97,6 +98,40 @@ async def test_request_password_reset_for_unknown_email_returns_same_response(
         app.dependency_overrides.pop(get_email_sender, None)
     assert resp.status_code == 204
     assert called is False
+
+
+async def test_request_password_reset_rate_limited_by_email_hides_registration_status(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """email-goal-prompt.md E-6 성공기준 6: 미등록 이메일도 상한까지 반복하면 똑같이 429가
+    떠야 한다 — 등록된 이메일만 429가 나면 그 자체로 가입 여부가 새어나간다(request_password_reset의
+    204 고정 응답과 같은 은닉 원칙)."""
+    email = "nobody@example.com"
+    for _ in range(rate_limit.PASSWORD_RESET_EMAIL_LIMIT):
+        resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+        assert resp.status_code == 204
+
+    resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_request_password_reset_rate_limited_by_ip_returns_429(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """email-goal-prompt.md E-6: IP당 시간당 10회. 서로 다른(미등록) 이메일을 써서 이메일별
+    상한이 아니라 IP 상한만으로 트리거한다."""
+    for i in range(rate_limit.PASSWORD_RESET_IP_LIMIT):
+        resp = await db_client.post(
+            "/auth/password-reset/request", json={"email": f"nobody-{i}@example.com"}
+        )
+        assert resp.status_code == 204
+
+    resp = await db_client.post(
+        "/auth/password-reset/request", json={"email": "one-more@example.com"}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
 
 
 async def test_validate_valid_token_returns_200(db_client: httpx.AsyncClient) -> None:

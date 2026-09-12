@@ -9,6 +9,7 @@ from sqlalchemy import delete, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from api.auth.verification import get_verification_code, store_verification_code
+from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSendError, get_email_sender
 from api.db.models.auth import GuardianConsent, User
@@ -323,6 +324,55 @@ async def test_resend_unknown_user_returns_404(db_client: httpx.AsyncClient) -> 
         "/auth/resend-verification-code", json={"email": "nobody@example.com"}
     )
     assert resp.status_code == 404
+
+
+async def test_signup_rate_limited_by_ip_returns_429(db_client: httpx.AsyncClient) -> None:
+    """email-goal-prompt.md E-6: IP당 시간당 10회. httpx.ASGITransport의 client 기본값이
+    모든 요청에서 동일해(`('127.0.0.1', 123)`) 서로 다른 이메일로도 IP 카운터는 공유된다."""
+    for _ in range(rate_limit.SIGNUP_IP_LIMIT):
+        resp = await db_client.post("/auth/signup", json=_signup_payload())
+        assert resp.status_code == 201
+
+    resp = await db_client.post("/auth/signup", json=_signup_payload())
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_signup_rate_limited_by_email_returns_429(db_client: httpx.AsyncClient) -> None:
+    """email-goal-prompt.md E-6: 이메일당 시간당 5회. 같은 미인증 이메일로 반복 signup은
+    E-5의 덮어쓰기 경로를 타 매번 201이므로, 상한을 이메일 카운터만으로 트리거할 수 있다."""
+    payload = _signup_payload()
+    for _ in range(rate_limit.SIGNUP_EMAIL_LIMIT):
+        resp = await db_client.post("/auth/signup", json=payload)
+        assert resp.status_code == 201
+
+    resp = await db_client.post("/auth/signup", json=payload)
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_resend_rate_limited_by_email_returns_429(db_client: httpx.AsyncClient) -> None:
+    """email-goal-prompt.md E-6: resend의 이메일당 시간당 5회는 기존 60초 쿨다운과 별개 규칙이다.
+    매 반복 전에 sent_at을 과거로 되돌려 쿨다운을 우회하고, 시간당 상한만으로 6번째를 막는다."""
+    payload = _signup_payload()
+    await db_client.post("/auth/signup", json=payload)
+    past = datetime.now(UTC) - timedelta(seconds=61)
+
+    for _ in range(rate_limit.RESEND_VERIFICATION_EMAIL_LIMIT):
+        await store_verification_code(str(payload["email"]), "000000", past)
+        resp = await db_client.post(
+            "/auth/resend-verification-code", json={"email": payload["email"]}
+        )
+        assert resp.status_code == 204
+
+    # 쿨다운도 다시 우회해둔다 — 안 그러면 이 마지막 호출은 방금 6번째 성공 호출이 새로 찍은
+    # sent_at 때문에 60초 쿨다운으로도 429가 나서, 어느 규칙이 막았는지 테스트가 구분하지 못한다.
+    await store_verification_code(str(payload["email"]), "000000", past)
+    resp = await db_client.post(
+        "/auth/resend-verification-code", json={"email": payload["email"]}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
 
 
 async def _signup_and_verify(db_client: httpx.AsyncClient, **overrides: object) -> dict[str, object]:
