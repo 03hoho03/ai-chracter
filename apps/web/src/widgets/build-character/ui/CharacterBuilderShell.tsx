@@ -88,6 +88,10 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<CharacterBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  // FORM-07 의도적 이탈(V-3, fe-convention-refactor-progress.md) — `form.formState.isSubmitting`은
+  // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
+  // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
+  const [isPublishing, setIsPublishing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string>();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
   // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구(D-10)와 정확히 같다
@@ -154,6 +158,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   async function handlePublish(values: CharacterBuilderFormValues) {
     setRejectionReason(undefined);
     const payload = formToServer(values);
+    setIsPublishing(true);
     try {
       const savedDraft = await saveDraft(payload);
       const result = await publishMutation.mutateAsync({ id: savedDraft.id });
@@ -177,6 +182,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      setIsPublishing(false);
     }
   }
 
@@ -217,7 +224,7 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
         isPreviewOpen={isPreviewOpen}
         actions={
           <BuilderTopBarActions
-            isSubmitting={form.formState.isSubmitting}
+            isPublishing={isPublishing}
             onPreview={() => setIsPreviewOpen(true)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}

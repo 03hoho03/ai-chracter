@@ -2,8 +2,13 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Eye, Save } from "lucide-react";
 
 type BuilderTopBarActionsProps = {
-  /** 발행 요청이 진행 중인지(`form.formState.isSubmitting`) — 발행 버튼을 잠그고 라벨을 바꾼다. */
-  isSubmitting: boolean;
+  /** 발행 요청(onValid 경로)이 진행 중인지 — 발행 버튼을 잠그고 라벨을 바꾼다.
+   *
+   * FORM-07("중복 제출 방지는 `form.formState.isSubmitting`")을 의도적으로 벗어난다 — `isSubmitting`은
+   * 검증 구간까지 포함해 true가 되는데, 이 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
+   * body로 떨어진다. 그래서 발행 성공 경로(onValid)에서만 켜지는 로컬 state를 쓴다
+   * (fe-convention-refactor-progress.md V-3). */
+  isPublishing: boolean;
   onPreview: () => void;
   onSaveNow: () => void;
   onPublish: () => void;
@@ -19,7 +24,7 @@ type BuilderTopBarActionsProps = {
  * 라벨을 항상 노출한다.
  */
 export function BuilderTopBarActions({
-  isSubmitting,
+  isPublishing,
   onPreview,
   onSaveNow,
   onPublish,
@@ -41,8 +46,8 @@ export function BuilderTopBarActions({
         <Save aria-hidden className="size-3.5" />
         <span className="hidden sm:inline">임시저장</span>
       </Button>
-      <Button size="sm" disabled={isSubmitting} onClick={onPublish}>
-        {isSubmitting ? "발행 중..." : "발행"}
+      <Button size="sm" disabled={isPublishing} onClick={onPublish}>
+        {isPublishing ? "발행 중..." : "발행"}
       </Button>
     </>
   );
