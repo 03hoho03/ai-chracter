@@ -21,16 +21,19 @@ export function MyChatRoomListView() {
   );
 }
 
-/** 로딩·에러·빈·목록 네 상태가 배타적이라 early return으로 순서를 강제한다(COMP-04) — `&&` 나열이면
- * 리페치 실패 시 `isError`와 직전 `data`가 동시에 참이 될 수 있다. */
+/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다(COMP-04) — `isError`와 `data`는
+ * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
+ * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
 function MyChatRoomListBody({ listQuery }: { listQuery: ReturnType<typeof useMyChatRoomListQuery> }) {
   if (listQuery.isPending) return <MyChatRoomListSkeleton />;
 
-  if (listQuery.isError) {
+  const items = listQuery.data ?? [];
+
+  if (listQuery.isError && items.length === 0) {
     return <p className="text-sm text-destructive-text">목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
   }
 
-  if (listQuery.data.length === 0) {
+  if (items.length === 0) {
     return (
       <ContentListEmptyState
         message="아직 시작한 대화가 없어요."
@@ -44,11 +47,24 @@ function MyChatRoomListBody({ listQuery }: { listQuery: ReturnType<typeof useMyC
   }
 
   return (
-    <div className="flex flex-col gap-2">
-      {listQuery.data.map((item) => (
-        <MyChatRoomListItemRow key={item.id} item={item} />
-      ))}
-    </div>
+    <>
+      {listQuery.isError && (
+        <div role="alert" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-destructive-text">
+            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void listQuery.refetch()}>
+            다시 시도
+          </Button>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-2">
+        {items.map((item) => (
+          <MyChatRoomListItemRow key={item.id} item={item} />
+        ))}
+      </div>
+    </>
   );
 }
 

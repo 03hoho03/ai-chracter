@@ -1,4 +1,5 @@
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
+import { Button } from "@ai-character-chat/ui/components/button";
 
 import type { ContentType } from "@/entities/content";
 import { useProfileQuery } from "@/entities/profile";
@@ -43,11 +44,15 @@ type ProfileBodyProps = {
   onContentTypeChange: (type: ContentType) => void;
 };
 
-/** 로딩·에러·성공 세 갈래를 **early return 순서**로 강제한다(COMP-04). */
+/** 로딩·전면실패·성공 세 갈래를 **early return 순서**로 강제한다(COMP-04) — `isError`와 `data`는
+ * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
+ * 그래서 전면 에러는 프로필이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
 function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange }: ProfileBodyProps) {
   if (query.isPending) return <ProfileHeaderSkeleton />;
 
-  if (query.isError) {
+  const profile = query.data;
+
+  if (query.isError && profile === undefined) {
     return (
       <p className="text-sm text-destructive-text">
         {query.error.status === 404
@@ -57,11 +62,21 @@ function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange 
     );
   }
 
-  const profile = query.data;
   if (!profile) return null;
 
   return (
     <>
+      {query.isError && (
+        <div role="alert" className="flex flex-wrap items-center gap-3">
+          <p className="text-sm text-destructive-text">
+            새로고침에 실패했어요. 보이는 목록이 최신이 아닐 수 있어요.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void query.refetch()}>
+            다시 시도
+          </Button>
+        </div>
+      )}
+
       <section className="flex flex-col items-start gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-center gap-4">
           <Avatar className="size-20 shrink-0">
