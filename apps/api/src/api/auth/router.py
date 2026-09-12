@@ -1,9 +1,10 @@
 import uuid
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.age import is_guardian_consent_required
@@ -35,13 +36,18 @@ from api.auth.schemas import (
     VerifyEmailResponse,
 )
 from api.auth.verification import (
+    VERIFICATION_ATTEMPTS_LIMIT,
+    clear_verification_attempts,
     delete_verification_code,
     generate_code,
     get_verification_code,
+    increment_verification_attempts,
     seconds_until_resend_allowed,
     store_verification_code,
 )
+from api.core import rate_limit
 from api.core.config import settings
+from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, verify_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
@@ -86,29 +92,83 @@ def _reconsent_required(current_version: str | None, required_version: str | Non
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
-    payload: SignupRequest, db: AsyncSession = Depends(get_db_session)
+    payload: SignupRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> SignupResponse:
-    existing = await db.scalar(select(User).where(User.email == payload.email))
-    if existing is not None:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
-
-    now = datetime.now(UTC)
-    user = User(
-        email=payload.email,
-        password_hash=hash_password(payload.password),
-        nickname=payload.nickname,
-        birth_date=payload.birth_date,
-        terms_agreed_at=now,
-        privacy_agreed_at=now,
-        terms_version=await _latest_published_legal_version(db, "terms"),
-        privacy_version=await _latest_published_legal_version(db, "privacy"),
+    # email-goal-prompt.md E-6: 카운터는 DB 조회보다 먼저, 무조건 올린다. IP·이메일 둘 다 매
+    # 요청마다 증가해야(성공/실패와 무관하게) 한쪽이 이미 상한을 넘겨도 다른 쪽 카운트가 누락되지 않는다.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_retry_after = await rate_limit.check_rate_limit(
+        "signup_ip", client_ip, rate_limit.SIGNUP_IP_LIMIT
     )
-    db.add(user)
-    await db.commit()
+    email_retry_after = await rate_limit.check_rate_limit(
+        "signup_email", payload.email, rate_limit.SIGNUP_EMAIL_LIMIT
+    )
+    retry_after = ip_retry_after or email_retry_after
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
+
+    existing = await db.scalar(select(User).where(User.email == payload.email))
+    now = datetime.now(UTC)
+
+    if existing is not None:
+        # email-goal-prompt.md E-5: 인증 완료·구글 연동·탈퇴·정지 중 하나라도 걸리면
+        # "방치된 미인증 가입"이 아니라 실사용/보호 대상 계정이므로 409로 막는다
+        # (google_callback이 email_verified_at을 보지 않고 세션을 발급해 미인증인 채
+        # 실사용 중인 계정이 있을 수 있다 — tests/test_auth_google_api.py:196-224).
+        if (
+            existing.email_verified_at is not None
+            or existing.google_sub is not None
+            or existing.deleted_at is not None
+            or existing.suspended_at is not None
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
+
+        # 순수하게 방치된 비밀번호 가입 — 기존 row를 덮어쓴다. id/created_at/google_sub 등은
+        # 보존해야 하므로 새 User(...)로 교체하지 않고 기존 인스턴스의 속성만 바꾼다.
+        existing.password_hash = hash_password(payload.password)
+        existing.nickname = payload.nickname
+        existing.birth_date = payload.birth_date
+        existing.terms_agreed_at = now
+        existing.privacy_agreed_at = now
+        existing.terms_version = await _latest_published_legal_version(db, "terms")
+        existing.privacy_version = await _latest_published_legal_version(db, "privacy")
+        await db.commit()
+    else:
+        user = User(
+            email=payload.email,
+            password_hash=hash_password(payload.password),
+            nickname=payload.nickname,
+            birth_date=payload.birth_date,
+            terms_agreed_at=now,
+            privacy_agreed_at=now,
+            terms_version=await _latest_published_legal_version(db, "terms"),
+            privacy_version=await _latest_published_legal_version(db, "privacy"),
+        )
+        try:
+            async with db.begin_nested():
+                db.add(user)
+                await db.flush()
+        except IntegrityError:
+            # email-goal-prompt.md E-11: select와 이 insert 사이의 경합에서 진 요청.
+            # admin/legal.py의 SAVEPOINT 패턴과 같은 이유로 db.rollback()은 쓰지 않는다 —
+            # begin_nested()의 컨텍스트 매니저가 SAVEPOINT까지만 되감아 세션을 정리한다.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            ) from None
+        await db.commit()
 
     code = generate_code()
     await store_verification_code(payload.email, code, now)
-    send_verification_code_email(payload.email, code)
+    background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
 
     return SignupResponse(email=payload.email)
 
@@ -117,12 +177,18 @@ async def signup(
 async def verify_email(
     payload: VerifyEmailRequest, db: AsyncSession = Depends(get_db_session)
 ) -> VerifyEmailResponse:
+    # email-goal-prompt.md E-12: 계정 존재 여부를 새지 않도록 "유저 없음"도 오답 코드와 완전히
+    # 같은 400을 낸다. 응답뿐 아니라 **Redis 왕복 횟수까지 같아야** 타이밍으로도 안 샌다 —
+    # 그래서 user 존재 여부와 무관하게 get_verification_code/increment_verification_attempts를
+    # 항상 실행한 뒤 한 조건문에서 같이 판정한다.
     user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
     stored = await get_verification_code(payload.email)
-    if stored is None or stored["code"] != payload.code:
+    if user is None or stored is None or stored["code"] != payload.code:
+        # email-goal-prompt.md E-7: 오답마다 증가, 상한에 닿으면 코드를 삭제해 무효화한다.
+        # 별도 잠금 상태는 만들지 않는다 — 재전송이 곧 복구다.
+        attempts = await increment_verification_attempts(payload.email)
+        if attempts >= VERIFICATION_ATTEMPTS_LIMIT:
+            await delete_verification_code(payload.email)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired verification code"
         )
@@ -130,6 +196,7 @@ async def verify_email(
     user.email_verified_at = datetime.now(UTC)
     await db.commit()
     await delete_verification_code(payload.email)
+    await clear_verification_attempts(payload.email)
 
     return VerifyEmailResponse(
         is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
@@ -138,12 +205,27 @@ async def verify_email(
 
 @router.post("/resend-verification-code", status_code=status.HTTP_204_NO_CONTENT)
 async def resend_verification_code(
-    payload: ResendVerificationCodeRequest, db: AsyncSession = Depends(get_db_session)
+    payload: ResendVerificationCodeRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
-    user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    # email-goal-prompt.md E-6: 시간당 상한을 60초 쿨다운보다 먼저 검사한다 — 카운터 증분이
+    # 핸들러 최상단, DB 조회보다 앞에 있어야 하므로 자연스럽게 이 순서가 된다. 둘 다 429지만
+    # retryAfterSeconds가 다르다: 상한을 넘긴 사용자는 (대개 더 긴) 창 잔여 시간을 보고,
+    # 그 아래에서는 기존 60초 쿨다운이 그대로 동작한다.
+    retry_after = await rate_limit.check_rate_limit(
+        "resend_verification_code_email", payload.email, rate_limit.RESEND_VERIFICATION_EMAIL_LIMIT
+    )
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
 
+    # email-goal-prompt.md E-12a: 쿨다운 검사를 유저 조회보다 먼저 한다. 코드는 아래에서
+    # 등록 여부와 무관하게 항상 저장되므로, 유저 조회를 먼저 하면 미등록 이메일은 쿨다운
+    # 429를 낼 코드가 없어 등록 이메일과 다른 응답이 나온다(존재 여부 누설).
     now = datetime.now(UTC)
     stored = await get_verification_code(payload.email)
     if stored is not None:
@@ -157,9 +239,12 @@ async def resend_verification_code(
                 detail={"retryAfterSeconds": retry_after},
             )
 
+    user = await db.scalar(select(User).where(User.email == payload.email))
+
     code = generate_code()
     await store_verification_code(payload.email, code, now)
-    send_verification_code_email(payload.email, code)
+    if user is not None:
+        background_tasks.add_task(send_verification_code_email, email_sender, payload.email, code)
     return None
 
 
@@ -369,15 +454,35 @@ async def logout(request: Request, response: Response) -> None:
 
 @router.post("/password-reset/request", status_code=status.HTTP_204_NO_CONTENT)
 async def request_password_reset(
-    payload: PasswordResetRequestRequest, db: AsyncSession = Depends(get_db_session)
+    payload: PasswordResetRequestRequest,
+    background_tasks: BackgroundTasks,
+    request: Request,
+    db: AsyncSession = Depends(get_db_session),
+    email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
+    # email-goal-prompt.md E-6: 카운터를 계정 존재 여부와 무관하게, DB 조회보다 먼저 올린다 —
+    # 안 그러면 등록된 이메일에서만 429가 나서 아래의 204 고정 응답이 지키려는 은닉이 429로 깨진다.
+    client_ip = request.client.host if request.client else "unknown"
+    ip_retry_after = await rate_limit.check_rate_limit(
+        "password_reset_ip", client_ip, rate_limit.PASSWORD_RESET_IP_LIMIT
+    )
+    email_retry_after = await rate_limit.check_rate_limit(
+        "password_reset_email", payload.email, rate_limit.PASSWORD_RESET_EMAIL_LIMIT
+    )
+    retry_after = ip_retry_after or email_retry_after
+    if retry_after > 0:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={"retryAfterSeconds": retry_after},
+        )
+
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
     user = await db.scalar(select(User).where(User.email == payload.email))
     if user is not None:
         token = await store_reset_token(user.id)
         reset_link = f"{settings.frontend_base_url}/reset-password?token={token}"
-        send_password_reset_email(payload.email, reset_link)
+        background_tasks.add_task(send_password_reset_email, email_sender, payload.email, reset_link)
     return None
 
 

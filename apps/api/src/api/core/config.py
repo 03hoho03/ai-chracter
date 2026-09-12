@@ -101,6 +101,15 @@ class Settings(BaseSettings):
     guest_viewer_cookie_max_age_seconds: int = 60 * 60 * 24 * 365
     content_view_dedup_ttl_seconds: int = 60 * 60 * 24
 
+    # email-goal-prompt.md E-3: 프로바이더는 env 스위치, 기본값은 콘솔 — 로컬 개발/pytest가
+    # 실수로 실제 메일을 쏘는 사고를 원천 차단한다.
+    email_provider: Literal["console", "resend"] = "console"
+    # email-goal-prompt.md E-1: Resend REST API(https://api.resend.com/emails) 인증 토큰.
+    resend_api_key: str = ""
+    # email-goal-prompt.md E-4: 발신 주소. ddona.site 도메인이 Resend에서 검증돼야 이 주소로
+    # 실제 발신이 나간다(§5의 사용자 액션).
+    email_from: str = "noreply@ddona.site"
+
     # prompt-db-goal-prompt.md §8-1: 활성 프롬프트 세트 캐시(`prompt_set:active`)의 TTL.
     # `invalidate_active_prompt_set()`의 명시적 DEL이 무효화의 정공법이라 이 값은 주 수단이
     # 아니라 그 DEL이 누락되는 경로가 생겼을 때의 상한이다. 게시는 드문 관리자 작업이라 짧을

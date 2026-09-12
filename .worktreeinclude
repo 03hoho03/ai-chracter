@@ -1,0 +1,18 @@
+# 새 워크트리로 들고 갈 gitignore 대상. gitignore 문법이고, 매칭된 파일만 개별 복사된다.
+# 심볼릭 링크는 복사기가 건너뛰므로 node_modules/.venv 는 여기 넣지 말고 워크트리에서 새로 만든다
+# (venv 는 bin/* 셔뱅에 절대경로가 박혀 있어 복사하면 main 트리의 파이썬을 부른다).
+
+# 시크릿·로컬 오리진 — dev-up.sh 가 새로 만들어주는 .env 는 값이 비어 있어 로그인·채팅·이미지생성이 죽는다
+apps/api/.env
+apps/web/.env.local
+
+# 비주얼 시스템 사이드카 (DESIGN.md 가 참조)
+.impeccable/design.json
+
+# 작업 문서 — 코드 주석이 파일명을 영구 식별자로 인용한다
+tasks/*.md
+tasks/archive/**
+
+# 필요할 때만 주석 해제
+# apps/api/scripts/seed_content/images/**   # 워크트리에서 시드를 재실행할 때 (38M)
+# tasks/baseline/**                         # 시각 회귀 비교할 때 (20M)

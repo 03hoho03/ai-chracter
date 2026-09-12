@@ -153,6 +153,18 @@ async def _flush_prompt_set_cache() -> None:
     await redis_client.delete(ACTIVE_PROMPT_SET_KEY)
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_rate_limit_keys() -> None:
+    """email-goal-prompt.md E-6 S3-8: `rate_limit:*` 키도 위 `_flush_prompt_set_cache`와 같은
+    범주다 — IP 기반 키(`rate_limit:signup_ip:...` 등)는 `httpx.ASGITransport`의 client
+    기본값이 모든 테스트에서 `('127.0.0.1', 123)`이라 랜덤 값(email/session_id/token)으로
+    자연 격리되지 않는다. 안 지우면 무관한 테스트가 쌓아둔 IP 카운터 때문에 뒤에 실행되는
+    테스트가 실행 순서에 따라 간헐적으로 429를 받는다."""
+    keys = await redis_client.keys("rate_limit:*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
 @pytest_asyncio.fixture(scope="session")
 async def api_client() -> AsyncGenerator[httpx.AsyncClient, None]:
     """Session-scoped, `ASGITransport`-based (not `TestClient`): `TestClient`

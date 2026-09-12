@@ -1,14 +1,17 @@
+import re
 import uuid
 from urllib.parse import parse_qs, urlparse
 
 import httpx
-import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
+from api.core import rate_limit
+from api.core.email import get_email_sender
 from api.core.security import verify_password
 from api.db.models.auth import User
+from api.main import app
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -42,55 +45,98 @@ def _extract_token(reset_link: str) -> str:
     return query["token"][0]
 
 
-async def _request_reset_and_capture_token(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, email: str
-) -> str:
+def _extract_reset_link(body: str) -> str:
+    match = re.search(r"https?://\S+", body)
+    assert match is not None
+    return match.group(0)
+
+
+async def _request_reset_and_capture_token(db_client: httpx.AsyncClient, email: str) -> str:
+    """email-goal-prompt.md E-10: 발송자는 이제 Depends 경계라 monkeypatch가 아니라
+    app.dependency_overrides[get_email_sender]로 갈아끼운다(apps/api/CLAUDE.md의
+    `mock.patch` 금지 규약과 일치)."""
     captured: dict[str, str] = {}
 
-    def _capture(to: str, reset_link: str) -> None:
+    async def _fake_sender(to: str, subject: str, body: str) -> None:
         captured["to"] = to
-        captured["reset_link"] = reset_link
+        captured["body"] = body
 
-    monkeypatch.setattr("api.auth.router.send_password_reset_email", _capture)
-
-    resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+    app.dependency_overrides[get_email_sender] = lambda: _fake_sender
+    try:
+        resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+    finally:
+        app.dependency_overrides.pop(get_email_sender, None)
     assert resp.status_code == 204
     assert captured["to"] == email
-    return _extract_token(captured["reset_link"])
+    return _extract_token(_extract_reset_link(captured["body"]))
 
 
 async def test_request_password_reset_for_registered_user_sends_email(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient,
 ) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
 
-    token = await _request_reset_and_capture_token(db_client, monkeypatch, str(payload["email"]))
+    token = await _request_reset_and_capture_token(db_client, str(payload["email"]))
     assert token
 
 
 async def test_request_password_reset_for_unknown_email_returns_same_response(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient,
 ) -> None:
     called = False
 
-    def _capture(to: str, reset_link: str) -> None:
+    async def _fake_sender(to: str, subject: str, body: str) -> None:
         nonlocal called
         called = True
 
-    monkeypatch.setattr("api.auth.router.send_password_reset_email", _capture)
-
-    resp = await db_client.post(
-        "/auth/password-reset/request", json={"email": "nobody@example.com"}
-    )
+    app.dependency_overrides[get_email_sender] = lambda: _fake_sender
+    try:
+        resp = await db_client.post(
+            "/auth/password-reset/request", json={"email": "nobody@example.com"}
+        )
+    finally:
+        app.dependency_overrides.pop(get_email_sender, None)
     assert resp.status_code == 204
     assert called is False
 
 
-async def test_validate_valid_token_returns_200(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+async def test_request_password_reset_rate_limited_by_email_hides_registration_status(
+    db_client: httpx.AsyncClient,
 ) -> None:
+    """email-goal-prompt.md E-6 성공기준 6: 미등록 이메일도 상한까지 반복하면 똑같이 429가
+    떠야 한다 — 등록된 이메일만 429가 나면 그 자체로 가입 여부가 새어나간다(request_password_reset의
+    204 고정 응답과 같은 은닉 원칙)."""
+    email = "nobody@example.com"
+    for _ in range(rate_limit.PASSWORD_RESET_EMAIL_LIMIT):
+        resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+        assert resp.status_code == 204
+
+    resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_request_password_reset_rate_limited_by_ip_returns_429(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """email-goal-prompt.md E-6: IP당 시간당 10회. 서로 다른(미등록) 이메일을 써서 이메일별
+    상한이 아니라 IP 상한만으로 트리거한다."""
+    for i in range(rate_limit.PASSWORD_RESET_IP_LIMIT):
+        resp = await db_client.post(
+            "/auth/password-reset/request", json={"email": f"nobody-{i}@example.com"}
+        )
+        assert resp.status_code == 204
+
+    resp = await db_client.post(
+        "/auth/password-reset/request", json={"email": "one-more@example.com"}
+    )
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_validate_valid_token_returns_200(db_client: httpx.AsyncClient) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
-    token = await _request_reset_and_capture_token(db_client, monkeypatch, str(payload["email"]))
+    token = await _request_reset_and_capture_token(db_client, str(payload["email"]))
 
     resp = await db_client.get("/auth/password-reset/validate", params={"token": token})
     assert resp.status_code == 200
@@ -102,10 +148,10 @@ async def test_validate_unknown_token_returns_400(db_client: httpx.AsyncClient) 
 
 
 async def test_confirm_updates_password_and_login_works(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
-    token = await _request_reset_and_capture_token(db_client, monkeypatch, str(payload["email"]))
+    token = await _request_reset_and_capture_token(db_client, str(payload["email"]))
 
     resp = await db_client.post(
         "/auth/password-reset/confirm", json={"token": token, "newPassword": "new-password123"}
@@ -135,11 +181,9 @@ async def test_confirm_rejects_unknown_token(db_client: httpx.AsyncClient) -> No
     assert resp.status_code == 400
 
 
-async def test_confirm_token_cannot_be_reused(
-    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
-) -> None:
+async def test_confirm_token_cannot_be_reused(db_client: httpx.AsyncClient) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
-    token = await _request_reset_and_capture_token(db_client, monkeypatch, str(payload["email"]))
+    token = await _request_reset_and_capture_token(db_client, str(payload["email"]))
 
     first = await db_client.post(
         "/auth/password-reset/confirm", json={"token": token, "newPassword": "new-password123"}

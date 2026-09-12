@@ -244,7 +244,7 @@ components:
 ### Buttons
 - **Shape:** radius `lg`(8px; `xs`/`icon-xs`만 6.4px, §반경 정책), 기본 높이 `h-9`(36px). 크기 4단계(`xs` 24px / `sm` 32px / `default` 36px / `lg` 40px)와 아이콘 전용 4종. 48px(`h-12`, 플레이 버튼 2곳)은 이 사다리에 없는 호출부 오버라이드 예외다.
 - **Primary:** 핑크-레드 `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝힌 핑크 + 어두운 텍스트, 라이트에서는 어두운 핑크 + 흰 텍스트 — **규칙은 "채움 위 텍스트를 뒤집는다"로 동일하다**(§2 Primary).
-- **Outline:** `border-border` + `background`, hover 시 `bg-muted`.
+- **Outline:** `border-input` + `background`, hover 시 `bg-muted`. **보더는 `border`가 아니라 `input`이다** — 채움이 배경과 같아 이 한 줄이 유일한 식별 신호이고 3:1을 진다(§2 Neutral).
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
 - **Ghost:** 투명, hover 시 `bg-muted`.
 - **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive-text`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다. **포커스는 하우스 레시피의 hue만 바꾼다** — `focus-visible:border-destructive` + `ring-destructive/50`. 알파를 낮추지 말 것: 보더 40% · 링 20%였을 때 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 배경 1.2371 다크 / 1.3694 라이트, 링 대 자기 채움 1.1312 / 1.1728 — 이 앱에서 포커스가 사실상 안 보이는 유일한 컨트롤이었다). 불투명 보더는 자기 채움 대비 **4.8431 / 4.5795**, 배경 대비 **5.2933 / 5.3328**이다.
@@ -347,7 +347,7 @@ components:
 - **Do** 다크에서 채움 위 텍스트를 뒤집는다 — `primary`와 `destructive` 모두 밝은 채움 + 어두운 텍스트다. 이 쌍을 깨지 말 것.
 - **Do** 모든 애니메이션에 `motion-safe:`를 붙인다.
 - **Do** 모든 인터랙티브 엘리먼트에 `focus-visible` 링(`ring-3 ring-ring/50`)을 유지한다(전연령/접근성 정책).
-- **Do** 본문에 `text-sm`(0.875rem)을 쓴다. 이것이 기본값이다.
+- **Do** 본문에 `text-sm`(1rem)을 쓴다. 이것이 기본값이다.
 
 ### Don't:
 - **Don't** 다크에서 순백(`oklch(1)`, `text-white`, `#fff`)을 쓰지 않는다. 천장은 `foreground`(0.930)다.
