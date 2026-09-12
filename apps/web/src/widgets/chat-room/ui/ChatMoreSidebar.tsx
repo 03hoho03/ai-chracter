@@ -31,20 +31,20 @@ type ChatMoreSidebarProps = ChatMoreNavProps;
 export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
   const [isOpen, setIsOpen] = useAtom(chatMorePanelOpenAtom);
   const isSidebarLayout = useIsChatMoreSidebarLayout();
-  const visible = isSidebarLayout && isOpen;
+  const isVisible = isSidebarLayout && isOpen;
 
   // Sheet와 달리 Radix의 ESC 처리가 없으므로 직접 듣는다. 항목을 누르면 패널이 먼저 닫히고 모달이
   // 열리므로(ChatMoreNav) 모달과 ESC를 다툴 일은 없다.
   useEffect(() => {
-    if (!visible) return;
+    if (!isVisible) return;
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") setIsOpen(false);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [visible, setIsOpen]);
+  }, [isVisible, setIsOpen]);
 
-  if (!visible) return null;
+  if (!isVisible) return null;
 
   return (
     <aside

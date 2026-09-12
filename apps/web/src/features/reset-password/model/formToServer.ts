@@ -4,7 +4,7 @@ import type { ResetPasswordFormValues } from "./schema";
 
 type PasswordResetConfirmRequest = components["schemas"]["PasswordResetConfirmRequest"];
 
-export function toPasswordResetConfirmRequest(
+export function formToServer(
   values: ResetPasswordFormValues,
   token: string,
 ): PasswordResetConfirmRequest {

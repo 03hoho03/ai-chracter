@@ -8,7 +8,7 @@ import { useForm } from "react-hook-form";
 import { isApiError } from "@/shared/api/client";
 
 import { useConfirmPasswordResetMutation } from "../api/useConfirmPasswordResetMutation";
-import { toPasswordResetConfirmRequest } from "../model/formToServer";
+import { formToServer } from "../model/formToServer";
 import {
   resetPasswordDefaultValues,
   resetPasswordSchema,
@@ -39,7 +39,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
   async function handleValidSubmit(values: ResetPasswordFormValues) {
     clearErrors("root");
     try {
-      await confirmMutation.mutateAsync(toPasswordResetConfirmRequest(values, token));
+      await confirmMutation.mutateAsync(formToServer(values, token));
       await navigate({ to: "/login" });
     } catch (error) {
       const apiError = isApiError(error) ? error : null;

@@ -56,6 +56,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     versionUpgradeAcknowledgedRef.current = true;
     if (room.versionAutoUpgraded) {
       setIsVersionUpgradeBannerVisible(true);
+      // mutateAsync가 아니라 mutate인 채로 둔다 — per-call 콜백이 없고, 결과와 무관하게 항상 일어나야 할
+      // 부수효과는 훅 정의의 onSuccess에 있다(CLAUDE.md "마운트 시 뮤테이션"). 바꾸면 실패 시 unhandled rejection만 는다.
       acknowledgeVersionUpgradeMutation.mutate();
     }
   }, [room]);

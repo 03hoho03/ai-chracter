@@ -28,7 +28,7 @@ type PreviewSendStatus = { kind: "idle" } | { kind: "sending" } | { kind: "error
 export function usePreviewSendMessage() {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<PreviewSendStatus>({ kind: "idle" });
-  const [policyWarning, setPolicyWarning] = useState<string | null>(null);
+  const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
 
   async function send(previewSessionId: string, text: string, shortcutId?: string): Promise<void> {
@@ -44,7 +44,7 @@ export function usePreviewSendMessage() {
     );
 
     setStatus({ kind: "sending" });
-    setPolicyWarning(null);
+    setPolicyWarning(undefined);
     setStreamingText("");
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다(useSendMessage와 동일한 사유).
