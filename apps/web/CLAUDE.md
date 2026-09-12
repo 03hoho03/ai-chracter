@@ -14,14 +14,14 @@
 | 라우트 파라미터/서치 | RouteComponent가 읽어 페이지에 props 주입(routes↔pages 순환 방지) |
 | 서치 파라미터 스키마 | 모든 필드를 `.catch(...)`로 끝낸다 (빠지면 페이지가 통째로 죽는다) |
 | 액션/확인 모달 | react-call 2계열 — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
-| 자산 업로드 | `shared/lib/asset/uploadAsset(file, purpose)` 재사용 |
+| 자산 업로드 | `shared/api/asset/uploadAsset(file, purpose)` 재사용 |
 | 카드 목록 | `entities/content`의 `ContentCard` + `ContentCardActionMenu` + `toContentStatusTags` |
 | 브랜드 자산(파비콘·OG) | `public/`을 직접 고치지 말고 `brand/generate.sh`로 재생성 |
 | 서버에서만 되는 일(봇 메타·sitemap·리다이렉트) | `worker/` — `dist/_worker.js`로 번들된다 |
 | 라우트 추가/삭제 | `src/routes/*.tsx`와 `worker/routes.ts`의 `KNOWN_ROUTES`를 **함께** 고친다 |
 | 조회 없이 정해지는 메타 | `index.html`의 `<head>` — Worker가 아니다 |
 | 마운트 시 뮤테이션 | `mutateAsync`+`await`+로컬 로딩 state (StrictMode 콜백 손실 회피) |
-| SSE | `shared/lib/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
+| SSE | `shared/api/sse/openChatStream`의 `kind` 판별유니언에 분기 추가 |
 | 발행 | draft PATCH 먼저 → `publish`(무바디), 400은 `missingFields`/`reason` 분기 |
 | 테마 | `shared/model/theme.ts`의 `themeAtom`만 write (DOM·스토리지 직접 금지) |
 
