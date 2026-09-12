@@ -9,6 +9,7 @@ import { toast } from "sonner";
 
 import {
   canViewDetailPage,
+  contentDetailModalAtom,
   contentKeys,
   favoriteKeys,
   toContentAccessStatus,
@@ -17,7 +18,6 @@ import {
   useToggleLikeMutation,
   type ContentType,
 } from "@/entities/content";
-import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
 import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayBar";
 import { ContentActionsMenu } from "./ContentActionsMenu";

@@ -13,6 +13,7 @@ import {
   toContentStatusTags,
   toPriorityCount,
   toThumbnailAspect,
+  useContentDetailModal,
   useProfileContentListQuery,
   VISIBILITY_FILTER_OPTIONS,
   type ContentCardTag,
@@ -22,7 +23,6 @@ import {
   type VisibilityFilter,
 } from "@/entities/content";
 import { VisibilityTransitionMenuItems } from "@/features/change-content-visibility";
-import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
 type ProfileContentSectionProps = {
   userId: string;

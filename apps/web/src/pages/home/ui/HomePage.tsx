@@ -11,9 +11,11 @@ import {
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListEmptyState,
+  contentTypeToggleAtom,
   isContentListSort,
   toPriorityCount,
   toThumbnailAspect,
+  useContentDetailModal,
   useContentListQuery,
   useGenreListQuery,
   type ContentListItem,
@@ -21,9 +23,7 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
-import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
-import { contentTypeToggleAtom } from "@/shared/model/content-type-toggle";
 
 export type HomeSearch = {
   q?: string;

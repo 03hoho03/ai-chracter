@@ -3,10 +3,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { toast } from "sonner";
 
-import type { ContentType } from "@/entities/content";
+import { contentDetailModalAtom, type ContentType } from "@/entities/content";
 import { useStartChatMutation } from "@/entities/chat-room";
 import { useSessionQuery } from "@/entities/session";
-import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 
 import { useRawSearchParams } from "./useRawSearchParams";
 

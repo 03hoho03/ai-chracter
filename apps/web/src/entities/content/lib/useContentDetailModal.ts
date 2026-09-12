@@ -1,7 +1,8 @@
 import { useEffect } from "react";
 import { useAtom } from "jotai";
 
-import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
+import { contentDetailModalAtom } from "../model/atoms";
+import type { ContentType } from "../model/content";
 
 /**
  * techspec-content-detail.md §1 — 카드 클릭 시 페이지 전환 없이 모달로 여는 훅. `open()`은
@@ -19,7 +20,7 @@ import { contentDetailModalAtom } from "@/shared/model/content-detail-modal";
 export function useContentDetailModal() {
   const [state, setState] = useAtom(contentDetailModalAtom);
 
-  function open(type: "character" | "story", id: string) {
+  function open(type: ContentType, id: string) {
     setState({ type, id });
     History.prototype.pushState.call(window.history, window.history.state, "", `/content/${type}/${id}`);
   }

@@ -20,13 +20,13 @@ import {
   isVisibilityFilter,
   toPriorityCount,
   toThumbnailAspect,
+  useContentDetailModal,
   useProfileContentListQuery,
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
   type VisibilityFilter,
 } from "@/entities/content";
 import { useDraftListQuery } from "@/entities/draft";
-import { useContentDetailModal } from "@/shared/lib/content-detail-modal/useContentDetailModal";
 
 import {
   filterMyWorks,
