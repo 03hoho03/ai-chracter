@@ -5,7 +5,9 @@ import { ContentCard, toThumbnailAspect, useContentListQuery } from "@/entities/
 import type { ContentCardProps, ContentType } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import { useSessionQuery } from "@/entities/session";
-import { PreviewCloseHeader, PreviewSessionView } from "@/widgets/preview-session";
+
+import { PreviewCloseHeader } from "./PreviewCloseHeader";
+import { PreviewSessionView } from "./PreviewSessionView";
 
 export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
   /** 활성 탭(`TABS[activeTab].preview`)에서 파생된 값 — Shell이 계산해 넘긴다(A-6, 상세 프리뷰는
