@@ -17,8 +17,8 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
+import { registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
-import { registerSituationalImage } from "@/shared/lib/asset/registerSituationalImage";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 

@@ -30,7 +30,7 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 
 ## situationalImages 전용 이미지 필드
 
-- `situationalImages`처럼 draft PATCH가 아니라 별도 엔드포인트(`POST /assets/{id}/register-situational-image`)로만 반영되는 필드는 공용 `GeneratedImageField`(업로드 결과가 draft PATCH로 나가는 전제)를 재사용하지 않고 전용 컴포넌트(`SituationalImageRow` + `shared/lib/asset/registerSituationalImage.ts`)를 쓴다. 등록 호출엔 draft 응답에 없던 `contentVersionId`가 필요(`CharacterDraftResponse`에 추가), "노출 상황" 텍스트가 비면 422라 업로드 핸들러가 호출 전 확인.
+- `situationalImages`처럼 draft PATCH가 아니라 별도 엔드포인트(`POST /assets/{id}/register-situational-image`)로만 반영되는 필드는 공용 `GeneratedImageField`(업로드 결과가 draft PATCH로 나가는 전제)를 재사용하지 않고 전용 컴포넌트(`SituationalImageRow` + `entities/content/api/registerSituationalImage.ts`)를 쓴다. 등록 호출엔 draft 응답에 없던 `contentVersionId`가 필요(`CharacterDraftResponse`에 추가), "노출 상황" 텍스트가 비면 422라 업로드 핸들러가 호출 전 확인.
 
 ## 검증 환경 (로컬)
 

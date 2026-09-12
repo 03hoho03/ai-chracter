@@ -26,6 +26,7 @@ export { useToggleFavoriteMutation } from "./api/useToggleFavoriteMutation";
 export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibilityMutation";
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
+export { registerSituationalImage } from "./api/registerSituationalImage";
 export {
   VISIBILITY_FILTER_LABEL,
   VISIBILITY_FILTER_OPTIONS,
