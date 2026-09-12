@@ -167,7 +167,7 @@ function SituationalImageRow({
       <button
         type="button"
         aria-label="순서 변경"
-        className="mt-1.5 cursor-grab touch-none text-muted-foreground hover:text-foreground focus-visible:outline-none"
+        className="mt-1.5 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         {...attributes}
         {...listeners}
       >
