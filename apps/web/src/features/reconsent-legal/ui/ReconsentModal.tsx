@@ -49,10 +49,11 @@ export function ReconsentModal() {
   };
 
   const isOpen = !isDismissed && pendingKinds.length > 0;
-  const isLoadingDocs = pendingKinds.some(
-    (kind) => docQueryByKind[kind].isPending && docQueryByKind[kind].failureCount === 0,
-  );
-  const hasDocError = pendingKinds.some((kind) => docQueryByKind[kind].isError);
+  // 동의 가능 여부는 `data` 유무로만 정의한다(최초 로딩·재시도 backoff·최종 실패 전부 미보유로
+  // 취급) — isPending 기반 집계는 재시도 backoff 구간(isPending && failureCount>0)을 "로딩 아님"으로
+  // 잘못 읽어 handleConsent의 동기 throw 경로를 열어버렸다. 문서별 로딩·에러 UI는
+  // ReconsentDocumentBody가 각자의 docQuery.isPending/isError로 그대로 그린다.
+  const allDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
 
   function handleOpenChange(next: boolean) {
     if (!next) setIsDismissed(true);
@@ -64,6 +65,8 @@ export function ReconsentModal() {
       await Promise.all(
         pendingKinds.map((kind) => {
           const version = docQueryByKind[kind].data?.version;
+          // allDocsLoaded가 버튼을 게이트하므로 handleConsent 호출 시점엔 모든 pendingKinds가
+          // data를 갖고 있음이 보장돼 이 분기는 도달 불가능하다 — 타입만 optional이라 남겨둔다.
           if (version === undefined) throw new Error(`${kind} 문서를 아직 불러오지 못했어요`);
           return consentMutation.mutateAsync({ kind, version });
         }),
@@ -108,7 +111,7 @@ export function ReconsentModal() {
           </Button>
           <Button
             type="button"
-            disabled={isLoadingDocs || hasDocError || isConsenting}
+            disabled={!allDocsLoaded || isConsenting}
             onClick={() => void handleConsent()}
           >
             {isConsenting ? "처리 중..." : "동의"}
