@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { CONTENT_TYPES } from "../entities/content";
-import { requireSession } from "../entities/session";
-import { ChatsPage } from "../pages/chats";
+import { CONTENT_TYPES } from "@/entities/content";
+import { requireSession } from "@/entities/session";
+import { ChatsPage } from "@/pages/chats";
 
 // techspec-chat-common.md §3 — 목록은 콘텐츠(캐릭터/스토리) 단위로 스코프되므로 contentId/contentType을
 // search param으로 받는다. 콘텐츠 상세 진입점 없이(예: 헤더의 범용 링크) 들어오면 둘 다 없을 수 있어 optional.

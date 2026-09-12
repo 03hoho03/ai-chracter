@@ -1,9 +1,9 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
-import { CONTENT_TYPES } from "../entities/content";
-import { requireSession } from "../entities/session";
-import { FavoritesPage, type FavoritesSearch } from "../pages/favorites";
+import { CONTENT_TYPES } from "@/entities/content";
+import { requireSession } from "@/entities/session";
+import { FavoritesPage, type FavoritesSearch } from "@/pages/favorites";
 
 // card-grid-goal-prompt.md D-6 — 그리드가 항상 단일 타입이어야 해서(D-5) 타입 필터 상태를 URL에 싣는다.
 // `routes/profile.$userId.tsx`의 `profileSearchSchema`와 같은 패턴이다. 모르는 값은 그 축만 기본값
