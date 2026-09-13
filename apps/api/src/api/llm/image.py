@@ -1,42 +1,26 @@
-"""Provider 무관 이미지 생성 인터페이스와 스타일 프리셋.
+"""Provider 무관 이미지 생성 인터페이스.
 
-구현체는 provider별 파일에 있다(`cloudflare_image.py`/`gemini_image.py`). 이 모듈은
-`google.genai`를 import하지 않는다 — 그래야 Cloudflare만 쓰는 기동 경로가 genai import
-비용(1 vCPU에서 약 1초)을 물지 않는다. Gemini 구현을 여기로 되돌리지 말 것.
+구현체는 provider별 파일에 있다(`local_image.py`, local-image-gen-goal-prompt.md LG-13으로
+Cloudflare/Gemini 경로는 제거됨). 이 모듈은 `google.genai`를 import하지 않는다 — Gemini
+구현을 여기로 되돌리지 말 것.
+
+`ImageStylePreset`은 local-image-gen-techspec.md LT-4로 `api.images.models`로 옮겼다(id
+옆이 라벨의 집이라는 이유 — 그 파일이 서버가 내리는 스타일 라벨도 함께 갖는다).
 """
 
 import abc
-import enum
 
-
-class ImageStylePreset(str, enum.Enum):
-    REALISTIC = "realistic"
-    ANIME = "anime"
-    ILLUSTRATION = "illustration"
-    RENDER3D = "render3d"
-    NONE = "none"
-
-
-# tasks/archive/prd-image-generation.md §3: 프리셋별 프롬프트 부착 문구 (영어). NONE은 부착하지 않는다.
-STYLE_PRESET_PROMPT_SUFFIXES: dict[ImageStylePreset, str] = {
-    ImageStylePreset.REALISTIC: "photorealistic, realistic lighting, high detail",
-    ImageStylePreset.ANIME: "anime style, cel shading, clean lineart",
-    ImageStylePreset.ILLUSTRATION: "digital illustration, painterly, soft shading",
-    ImageStylePreset.RENDER3D: "3D render, cinematic lighting, volumetric",
-    ImageStylePreset.NONE: "",
-}
-
-
-def apply_style_preset(prompt: str, style: ImageStylePreset) -> str:
-    suffix = STYLE_PRESET_PROMPT_SUFFIXES[style]
-    if not suffix:
-        return prompt
-    return f"{prompt}, {suffix}"
+# `as ImageStylePreset`는 mypy의 명시적 재export 요구(`--no-implicit-reexport`, strict
+# 기본값) 때문이다 — `from api.llm.image import ImageStylePreset`로 이 이름을 쓰는 테스트가
+# 아직 셋 있다(`test_images_capabilities_gate.py`/`test_images_generate_api.py`/
+# `test_seed_image_prompts.py`). 그 셋의 import 줄을 전부 고치는 대신, 이 한 줄로 기존
+# import 경로를 계속 유효하게 둔다.
+from api.images.models import ImageStylePreset as ImageStylePreset
 
 
 class ImageClient(abc.ABC):
-    """Provider-agnostic 이미지 생성 인터페이스. 구현체(Gemini/Cloudflare)는 프롬프트·스타일·
-    종횡비를 받아 (이미지 바이트, MIME 타입)을 반환한다. 잡 러너/라우터는 이 타입만 안다."""
+    """Provider-agnostic 이미지 생성 인터페이스. 구현체(`LocalImageClient`)는 프롬프트·
+    스타일·종횡비를 받아 (이미지 바이트, MIME 타입)을 반환한다. 잡 러너/라우터는 이 타입만 안다."""
 
     @abc.abstractmethod
     async def generate_image(

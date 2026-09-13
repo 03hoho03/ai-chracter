@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import {
@@ -16,24 +17,30 @@ import { useImageModelsQuery } from "@/entities/image-model";
 import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_COUNT_OPTIONS,
-  IMAGE_STYLE_PRESET_OPTIONS,
   generateImagesDefaultValues,
   generateImagesSchema,
   type GenerateImagesFormValues,
 } from "../model/schema";
+import { GenerateImagesUnavailableState } from "./GenerateImagesUnavailableState";
 
 type GenerateImagesFormProps = {
   onSubmit: (values: GenerateImagesFormValues) => void | Promise<void>;
 }
 
 export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
-  const { data: models, isPending: isModelsPending } = useImageModelsQuery();
+  const {
+    data: models,
+    isPending: isModelsPending,
+    isError: isModelsError,
+    refetch: refetchModels,
+  } = useImageModelsQuery();
   const {
     register,
     handleSubmit,
     control,
     setValue,
     getValues,
+    reset,
     formState: { errors, isSubmitting },
   } = useForm<GenerateImagesFormValues>({
     resolver: zodResolver(generateImagesSchema),
@@ -41,6 +48,39 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
   });
 
   const selectedModelId = useWatch({ control, name: "model" });
+
+  // model/style 기본값은 스키마에 없다(LT-9) — 목록이 처음 로드되면 첫 가용 모델/스타일로 한 번만
+  // reset()한다. 이후 배경 refetch에서는(가용성이 바뀌어도) 다시 손대지 않는다 — 사용자가 이미 고른
+  // 값을 조용히 되돌리면 그게 더 놀랍다(LT-9b, `reset()` 선례가 이 저장소에 없어 새로 만든 흐름).
+  const hasAppliedModelDefaultsRef = useRef(false);
+  useEffect(() => {
+    if (hasAppliedModelDefaultsRef.current || models === undefined) return;
+    const firstAvailable = models.find((model) => model.available);
+    if (firstAvailable == null) return;
+    hasAppliedModelDefaultsRef.current = true;
+    reset({ ...getValues(), model: firstAvailable.id, style: firstAvailable.styles[0]?.id ?? "" });
+  }, [models, getValues, reset]);
+
+  // 배경 refetch 실패(staleTime 30s + refetchOnWindowFocus 기본값)에도 query-core의 'error' reducer는
+  // 이전 data를 지우지 않는다 — 그래서 models가 남아 있으면(낡았어도) 화면을 갈아엎지 않고 폼을 그대로
+  // 보여준다. LG-8("사전 헬스체크 + 즉시 실패")과 모순되지 않는다: 로컬 비가동은 *성공한* 쿼리가
+  // `available: false`를 실어 오는 값이라 아래 unavailable 분기가 잡는다. 여기는 쿼리 자체가 실패해
+  // "그런지 아닌지도 모른다"이고, 그건 보여줄 게 없을 때만 화면을 대체할 가치가 있다.
+  if (isModelsError && models === undefined) {
+    return <GenerateImagesUnavailableState reason="error" onRetry={() => void refetchModels()} />;
+  }
+
+  const availableModels = models?.filter((model) => model.available) ?? [];
+
+  // (LG-17) models 쿼리의 선행 갭 — 빈 목록과 전 모델 일시 불가는 전에는 "활성화된 빈 Select + 낡은
+  // 기본값 + 제출 가능"으로 조용히 깨졌다. 둘 다 제출 이전 상태로 이름을 준다.
+  if (models !== undefined && models.length === 0) {
+    return <GenerateImagesUnavailableState reason="empty" />;
+  }
+  if (models !== undefined && availableModels.length === 0) {
+    return <GenerateImagesUnavailableState reason="unavailable" onRetry={() => void refetchModels()} />;
+  }
+
   const selectedModel = models?.find((model) => model.id === selectedModelId);
   const supportedRatios = new Set<string>(
     selectedModel?.supportedAspectRatios ?? IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value),
@@ -48,8 +88,10 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
   const isRatioRestricted =
     selectedModel != null &&
     selectedModel.supportedAspectRatios.length < IMAGE_ASPECT_RATIO_OPTIONS.length;
+  const styleOptions = selectedModel?.styles ?? [];
+  const hasUnavailableModel = models?.some((model) => !model.available) ?? false;
 
-  // 모델을 바꿨을 때 현재 선택한 비율을 그 모델이 지원하지 않으면, 지원하는 첫 비율로 옮긴다.
+  // 모델을 바꿨을 때 현재 선택한 비율/스타일을 그 모델이 지원하지 않으면, 지원하는 첫 값으로 옮긴다.
   const handleModelChange = (nextModelId: string, onChange: (value: string) => void) => {
     onChange(nextModelId);
     const nextModel = models?.find((model) => model.id === nextModelId);
@@ -57,6 +99,10 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
     if (!nextModel.supportedAspectRatios.includes(getValues("aspectRatio"))) {
       const [firstSupported] = nextModel.supportedAspectRatios;
       if (firstSupported != null) setValue("aspectRatio", firstSupported);
+    }
+    if (!nextModel.styles.some((style) => style.id === getValues("style"))) {
+      const [firstStyle] = nextModel.styles;
+      if (firstStyle != null) setValue("style", firstStyle.id);
     }
   };
 
@@ -100,7 +146,7 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
               </SelectTrigger>
               <SelectContent>
                 {models?.map((model) => (
-                  <SelectItem key={model.id} value={model.id}>
+                  <SelectItem key={model.id} value={model.id} disabled={!model.available}>
                     {model.name}
                   </SelectItem>
                 ))}
@@ -108,6 +154,9 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
             </Select>
           )}
         />
+        {hasUnavailableModel && (
+          <p className="text-xs text-muted-foreground">지금 이용 가능한 모델만 선택할 수 있어요</p>
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -117,14 +166,18 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
             control={control}
             name="style"
             render={({ field }) => (
-              <Select value={field.value} onValueChange={field.onChange}>
+              <Select
+                value={field.value}
+                onValueChange={field.onChange}
+                disabled={styleOptions.length === 0}
+              >
                 <SelectTrigger id="generate-images-style" className="w-full">
-                  <SelectValue />
+                  <SelectValue placeholder="스타일 불러오는 중…" />
                 </SelectTrigger>
                 <SelectContent>
-                  {IMAGE_STYLE_PRESET_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
-                      {option.label}
+                  {styleOptions.map((style) => (
+                    <SelectItem key={style.id} value={style.id}>
+                      {style.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -189,7 +242,9 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
       </div>
 
       <div>
-        <Button type="submit" disabled={isSubmitting}>
+        {/* 모델 목록이 아직 로딩 중이면 model/style이 비어 있어 제출해도 zod가 조용히 막는다(그 필드엔
+            에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다. */}
+        <Button type="submit" disabled={isSubmitting || isModelsPending}>
           이미지 생성
         </Button>
       </div>

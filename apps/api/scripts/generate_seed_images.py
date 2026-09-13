@@ -23,24 +23,23 @@ import json
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
 from PIL import Image
 
 from api.core.config import settings
-from api.images.models import IMAGE_MODELS_BY_ID, AspectRatio, ImageModelId
+from api.images.models import IMAGE_MODELS_BY_ID, AspectRatio, ImageModelId, ImageStylePreset
 from api.llm.client import LLMClientError
 from api.llm.dependencies import build_image_client
-from api.llm.image import ImageStylePreset, apply_style_preset
 from seed_content.images import IMAGES_DIR
 from seed_content.loader import DATA_DIR, SeedContentError
 
 PROMPTS_PATH = DATA_DIR / "image_prompts.json"
 
-# 인물 컷이 기본이라 세로 3:4 다. flux-schnell 은 1:1 전용이라 인물에 쓰지 않는다.
-DEFAULT_MODEL: ImageModelId = "sdxl"
+# 인물 컷이 기본이라 세로 3:4 다.
+DEFAULT_MODEL: ImageModelId = "v1"
 DEFAULT_ASPECT_RATIO: AspectRatio = "3:4"
-DEFAULT_STYLE = ImageStylePreset.ANIME
+DEFAULT_STYLE = ImageStylePreset.BASE
 
 # 장과 장 사이의 기본 간격(초)과, 실패한 장을 되짚는 간격. 뒤로 갈수록 벌려 쿼터가 실제로
 # 마른 경우에도 무의미한 연타가 되지 않게 한다.
@@ -49,6 +48,10 @@ RETRY_DELAYS: tuple[float, ...] = (5.0, 20.0)
 
 # JSON 의 문자열을 Literal 타입으로 좁히는 통로 (캐스트 없이).
 _MODEL_IDS: dict[str, ImageModelId] = {model_id: model_id for model_id in IMAGE_MODELS_BY_ID}
+# local-image-gen-progress.md §0: 모델이 하나뿐이고 그 하나가 6종 비율을 전부 지원하므로
+# (local-image-gen-techspec.md LT-4가 모델별 supported_aspect_ratios를 정적 선언에서
+# 뺐다) 모델별 검사는 더 이상 의미가 없다 — AspectRatio Literal 자체로만 좁힌다.
+_ASPECT_RATIOS: dict[str, AspectRatio] = {ratio: ratio for ratio in get_args(AspectRatio)}
 _STYLE_NAMES = sorted(style.value for style in ImageStylePreset)
 
 
@@ -64,11 +67,6 @@ class ImagePromptSpec:
     def path(self) -> Path:
         """생성물 경로. 시드는 이 파일명(`{slug}.png`)으로만 이미지를 찾는다."""
         return IMAGES_DIR / f"{self.slug}.png"
-
-    @property
-    def full_prompt(self) -> str:
-        """실제로 모델에 나가는 문자열 — 스타일 프리셋 접미까지 붙은 형태."""
-        return apply_style_preset(self.prompt, self.style)
 
 
 def load_prompt_specs(path: Path = PROMPTS_PATH) -> list[ImagePromptSpec]:
@@ -107,12 +105,12 @@ def main() -> int:
         _print_dry_run(specs)
         return 0
 
-    if not settings.cloudflare_account_id or not settings.cloudflare_api_token:
+    if not settings.local_image_base_url:
         print(
-            "CLOUDFLARE_ACCOUNT_ID / CLOUDFLARE_API_TOKEN 이 비어 있어 이미지를 생성할 수 없다.\n"
-            "  apps/api/.env 에 두 값을 넣고 `uv run --env-file .env python "
+            "LOCAL_IMAGE_BASE_URL 이 비어 있어 이미지를 생성할 수 없다.\n"
+            "  apps/api/.env 에 집 PC 이미지 생성 서버 설정을 넣고 `uv run --env-file .env python "
             "scripts/generate_seed_images.py` 로 실행할 것.\n"
-            "  (--dry-run 은 키 없이도 조립된 프롬프트를 보여준다)"
+            "  (--dry-run 은 설정 없이도 조립된 프롬프트를 보여준다)"
         )
         return 1
 
@@ -181,7 +179,7 @@ def _print_dry_run(specs: list[ImagePromptSpec]) -> None:
         exists = " [이미 있음]" if spec.path.exists() else ""
         print(f"- {spec.slug}{exists}")
         print(f"    model={spec.model} aspectRatio={spec.aspect_ratio} style={spec.style.value}")
-        print(f"    prompt: {spec.full_prompt}")
+        print(f"    prompt: {spec.prompt}")
 
 
 def _parse_spec(filename: str, index: int, item: object) -> ImagePromptSpec:
@@ -196,12 +194,10 @@ def _parse_spec(filename: str, index: int, item: object) -> ImagePromptSpec:
         )
     model = _MODEL_IDS[model_raw]
 
-    supported = {ratio: ratio for ratio in IMAGE_MODELS_BY_ID[model].supported_aspect_ratios}
     aspect_raw = item.get("aspectRatio", DEFAULT_ASPECT_RATIO)
-    if aspect_raw not in supported:
+    if aspect_raw not in _ASPECT_RATIOS:
         raise SeedContentError(
-            f"{where}: {model} 이 지원하지 않는 aspectRatio {aspect_raw!r} — "
-            f"{sorted(supported)} 중 하나여야 한다"
+            f"{where}: 알 수 없는 aspectRatio {aspect_raw!r} — {sorted(_ASPECT_RATIOS)} 중 하나여야 한다"
         )
 
     style_raw = item.get("style", DEFAULT_STYLE.value)
@@ -216,7 +212,7 @@ def _parse_spec(filename: str, index: int, item: object) -> ImagePromptSpec:
         slug=_require_text(where, item, "slug"),
         prompt=_require_text(where, item, "prompt"),
         model=model,
-        aspect_ratio=supported[aspect_raw],
+        aspect_ratio=_ASPECT_RATIOS[aspect_raw],
         style=style,
     )
 

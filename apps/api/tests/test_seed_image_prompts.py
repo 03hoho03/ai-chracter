@@ -33,39 +33,26 @@ def test_applies_defaults(tmp_path: Path) -> None:
         ImagePromptSpec(
             slug="a",
             prompt="a booth at night",
-            model="sdxl",
+            model="v1",
             aspect_ratio="3:4",
-            style=ImageStylePreset.ANIME,
+            style=ImageStylePreset.BASE,
         )
     ]
-
-
-def test_full_prompt_appends_style_suffix(tmp_path: Path) -> None:
-    specs = load_prompt_specs(_write(tmp_path, [{"slug": "a", "prompt": "a booth at night"}]))
-
-    assert specs[0].full_prompt == "a booth at night, anime style, cel shading, clean lineart"
 
 
 def test_explicit_values_win(tmp_path: Path) -> None:
     specs = load_prompt_specs(
         _write(
             tmp_path,
-            [{"slug": "a", "prompt": "p", "model": "flux-schnell", "aspectRatio": "1:1", "style": "illustration"}],
+            [{"slug": "a", "prompt": "p", "model": "v1", "aspectRatio": "1:1", "style": "base"}],
         )
     )
 
     assert (specs[0].model, specs[0].aspect_ratio, specs[0].style.value) == (
-        "flux-schnell",
+        "v1",
         "1:1",
-        "illustration",
+        "base",
     )
-
-
-def test_rejects_aspect_ratio_the_model_does_not_support(tmp_path: Path) -> None:
-    path = _write(tmp_path, [{"slug": "a", "prompt": "p", "model": "flux-schnell", "aspectRatio": "3:4"}])
-
-    with pytest.raises(SeedContentError, match=r"image_prompts.json\[0\].*3:4"):
-        load_prompt_specs(path)
 
 
 def test_rejects_unknown_model_and_empty_slug(tmp_path: Path) -> None:

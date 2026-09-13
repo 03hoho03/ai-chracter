@@ -4,11 +4,8 @@ from typing import assert_never
 
 from api.images.models import ImageModelId
 from api.llm.client import LLMClient
-from api.llm.cloudflare_image import CloudflareImageClient
 from api.llm.image import ImageClient
-
-_CF_FLUX_MODEL = "@cf/black-forest-labs/flux-1-schnell"
-_CF_SDXL_MODEL = "@cf/stabilityai/stable-diffusion-xl-base-1.0"
+from api.llm.local_image import LocalImageClient
 
 
 @lru_cache
@@ -30,13 +27,11 @@ def get_llm_client() -> LLMClient:
 
 
 def build_image_client(model_id: ImageModelId) -> ImageClient:
-    """모델 id → 구체 ImageClient. FLUX/SDXL 모두 Cloudflare Workers AI를 쓰지만 요청/응답
-    형식이 달라 별도 설정(send_dimensions)으로 구성한다. 새 모델 추가 시 여기 분기를
-    안 늘리면 `assert_never`가 mypy 단계에서 잡는다."""
-    if model_id == "flux-schnell":
-        return CloudflareImageClient(_CF_FLUX_MODEL, send_dimensions=False)
-    if model_id == "sdxl":
-        return CloudflareImageClient(_CF_SDXL_MODEL, send_dimensions=True)
+    """모델 id → 구체 ImageClient. local-image-gen-techspec.md LT-7: 집 PC로 전환한 뒤에도
+    `assert_never` 분기 형태를 유지한다 — 체크포인트가 늘 때 분기 누락을 mypy가 잡는 성질이
+    로컬 전환(여러 체크포인트 예정, local-image-gen-goal-prompt.md LG-9)에서 더 필요해진다."""
+    if model_id == "v1":
+        return LocalImageClient(model_id)
     assert_never(model_id)
 
 

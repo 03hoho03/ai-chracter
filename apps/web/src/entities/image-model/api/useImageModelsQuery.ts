@@ -7,12 +7,15 @@ import { imageModelKeys } from "./keys";
 
 export type ImageModel = components["schemas"]["ImageModelItem"];
 
-// 생성에 쓸 수 있는 모델 + 각 모델 지원 종횡비. capability 메타라 세션 중 바뀌지 않으므로
-// staleTime을 무한으로 둔다(모델 선택 시 미지원 비율을 비활성화하는 데 쓰인다).
+// 생성에 쓸 수 있는 모델 + 각 모델 지원 종횡비·스타일·가용성. **가용성은 세션 중에 바뀐다** —
+// 집 PC 추론 서버가 꺼지면 캐시된 "가능"이 바로 틀린 값이 된다(local-image-gen-goal-prompt.md LG-8).
+// staleTime을 서버의 capabilities TTL(30초 — local-image-gen-progress.md 실측)에 맞춰 유한하게 둔다.
+// **권위는 서버다**: 실제 차단은 POST /images/generate의 사전 확인이 하고, 이 값은 화면에 보이는
+// 목록이 얼마나 자주 새로고침되는지(UI 신선도)만 좌우한다(local-image-gen-techspec.md LT-10).
 export function useImageModelsQuery() {
   return useQuery<ImageModel[], ApiError>({
     queryKey: imageModelKeys.all,
     queryFn: async () => (await apiClient.get<ImageModel[]>("/images/models")).data,
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 30_000,
   });
 }
