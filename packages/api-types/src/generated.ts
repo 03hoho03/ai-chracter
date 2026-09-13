@@ -2197,8 +2197,13 @@ export interface paths {
         };
         /**
          * List Image Models
-         * @description 생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비. FE가 모델 선택 시 미지원
-         *     종횡비를 비활성화하는 데 쓴다.
+         * @description 생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명
+         *     id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다(local-image-gen-
+         *     techspec.md LT-6). 로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는
+         *     무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다(contract LC-1).
+         *
+         *     local-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를
+         *     보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.
          */
         get: operations["list_image_models_images_models_get"];
         put?: never;
@@ -3953,9 +3958,9 @@ export interface components {
             prompt: string;
             /**
              * Model
-             * @enum {string}
+             * @constant
              */
-            model: "flux-schnell" | "sdxl";
+            model: "v1";
             style: components["schemas"]["ImageStylePreset"];
             /**
              * Aspectratio
@@ -4089,19 +4094,30 @@ export interface components {
         ImageModelItem: {
             /**
              * Id
-             * @enum {string}
+             * @constant
              */
-            id: "flux-schnell" | "sdxl";
+            id: "v1";
             /** Name */
             name: string;
             /** Supportedaspectratios */
             supportedAspectRatios: ("1:1" | "4:3" | "3:4" | "16:9" | "9:16" | "2:3")[];
+            /** Available */
+            available: boolean;
+            /** Styles */
+            styles: components["schemas"]["ImageStyleItem"][];
+        };
+        /** ImageStyleItem */
+        ImageStyleItem: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
         };
         /**
          * ImageStylePreset
          * @enum {string}
          */
-        ImageStylePreset: "realistic" | "anime" | "illustration" | "render3d" | "none";
+        ImageStylePreset: "base";
         /**
          * InquiryCategory
          * @enum {string}

@@ -5201,7 +5201,7 @@
           "images"
         ],
         "summary": "List Image Models",
-        "description": "생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비. FE가 모델 선택 시 미지원\n종횡비를 비활성화하는 데 쓴다.",
+        "description": "생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명\nid + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다(local-image-gen-\ntechspec.md LT-6). 로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는\n무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다(contract LC-1).\n\nlocal-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를\n보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.",
         "operationId": "list_image_models_images_models_get",
         "responses": {
           "200": {
@@ -9364,10 +9364,7 @@
           },
           "model": {
             "type": "string",
-            "enum": [
-              "flux-schnell",
-              "sdxl"
-            ],
+            "const": "v1",
             "title": "Model"
           },
           "style": {
@@ -9387,7 +9384,7 @@
           },
           "count": {
             "type": "integer",
-            "maximum": 4.0,
+            "maximum": 2.0,
             "minimum": 1.0,
             "title": "Count",
             "default": 1
@@ -9649,10 +9646,7 @@
         "properties": {
           "id": {
             "type": "string",
-            "enum": [
-              "flux-schnell",
-              "sdxl"
-            ],
+            "const": "v1",
             "title": "Id"
           },
           "name": {
@@ -9673,24 +9667,51 @@
             },
             "type": "array",
             "title": "Supportedaspectratios"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "styles": {
+            "items": {
+              "$ref": "#/components/schemas/ImageStyleItem"
+            },
+            "type": "array",
+            "title": "Styles"
           }
         },
         "type": "object",
         "required": [
           "id",
           "name",
-          "supportedAspectRatios"
+          "supportedAspectRatios",
+          "available",
+          "styles"
         ],
         "title": "ImageModelItem"
+      },
+      "ImageStyleItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "ImageStyleItem"
       },
       "ImageStylePreset": {
         "type": "string",
         "enum": [
-          "realistic",
-          "anime",
-          "illustration",
-          "render3d",
-          "none"
+          "base"
         ],
         "title": "ImageStylePreset"
       },
