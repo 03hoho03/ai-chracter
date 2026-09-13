@@ -1,22 +1,12 @@
+import type { DefaultValues } from "react-hook-form";
 import { z } from "zod";
 
-/** tasks/archive/prd-image-generation.md §3 — 스타일 프리셋 5종(값은 백엔드 ImageStylePreset과 동일 키).
- * **이 배열이 단일 소스다** — 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서
- * 도출된다(TS-09, `IMAGE_ASPECT_RATIOS`와 같은 패턴). */
-export const IMAGE_STYLE_PRESETS = ["realistic", "anime", "illustration", "render3d", "none"] as const;
-
-const IMAGE_STYLE_PRESET_LABEL: Record<(typeof IMAGE_STYLE_PRESETS)[number], string> = {
-  realistic: "사실적",
-  anime: "애니메이션",
-  illustration: "일러스트",
-  render3d: "3D 렌더",
-  none: "없음",
-};
-
-export const IMAGE_STYLE_PRESET_OPTIONS = IMAGE_STYLE_PRESETS.map((value) => ({
-  value,
-  label: IMAGE_STYLE_PRESET_LABEL[value],
-}));
+/** tasks/local-image-gen-techspec.md LT-9 — model/style의 id·표시명 단일 소스가 서버로 옮겨갔다
+ * (`GET /images/models`, `entities/image-model`). 한때 이 파일이 스타일 프리셋 배열
+ * (`IMAGE_STYLE_PRESETS`)을 들고 있었고 그 배열이 단일 소스였다(TS-09) — **그 관례가 깨진 게 아니다.**
+ * 아래 `IMAGE_ASPECT_RATIOS`·`IMAGE_COUNT_OPTIONS`는 여전히 이 파일이 단일 소스다. model/style만
+ * **단일 소스가 서버로 옮겨간 것**이므로, 렌더할 옵션이 없다고 이 배열을 되살리지 말 것 —
+ * `features/generate-images/ui/GenerateImagesForm.tsx`가 `useImageModelsQuery`의 응답에서 직접 읽는다. */
 
 /** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. **이 배열이 단일 소스다** —
  * 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서 도출된다(TS-09).
@@ -43,26 +33,27 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = IMAGE_ASPECT_RATIOS.map((value) => ({
   label: IMAGE_ASPECT_RATIO_LABEL[value],
 }));
 
-export const IMAGE_COUNT_OPTIONS = [1, 2, 3, 4] as const;
+export const IMAGE_COUNT_OPTIONS = [1, 2] as const;
 
 /** POST /images/generate 요청 필드 4개뿐인 단순 폼이라 formToServer/serverToForm 분리 없이 구현한다
  * (change-password/edit-profile 선례). 실제 제출 로직은 US-008에서 이 값을 그대로 API 바디에 맞춰 붙인다. */
-/** 모델 목록은 GET /images/models(entities/image-model)에서 동적으로 받지만, 폼 값 검증용
- * enum은 백엔드 ImageModelId와 동일하게 고정한다(BE가 종횡비 지원 여부까지 재검증한다). */
+/** model/style은 값을 모르는 `z.string().min(1)`로만 검증한다(LT-9) — 실제 id·가용성 검증은
+ * `GET /images/models` 응답과 BE의 재검증(종횡비 포함)이 한다. */
 export const generateImagesSchema = z.object({
   prompt: z.string().trim().min(1, { message: "프롬프트를 입력해주세요" }),
-  model: z.enum(["flux-schnell", "sdxl"]),
-  style: z.enum(IMAGE_STYLE_PRESETS),
+  model: z.string().min(1),
+  style: z.string().min(1),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
   count: z.number().int().min(Math.min(...IMAGE_COUNT_OPTIONS)).max(Math.max(...IMAGE_COUNT_OPTIONS)),
 });
 
 export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;
 
-export const generateImagesDefaultValues: GenerateImagesFormValues = {
+/** model/style은 여기 없다 — 모델 목록이 로드된 뒤 `GenerateImagesForm`이 첫 가용 모델/스타일로
+ * `reset()`한다(LT-9). `DefaultValues<T>`는 partial이라 이 누락이 타입 에러 없이 통과하므로, 그 동안
+ * `field.value`가 `undefined`인 것을 Select 쪽에서 감안해야 한다. */
+export const generateImagesDefaultValues: DefaultValues<GenerateImagesFormValues> = {
   prompt: "",
-  model: "flux-schnell",
-  style: "none",
   aspectRatio: "1:1",
   count: 1,
 };
