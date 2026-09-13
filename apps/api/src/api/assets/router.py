@@ -39,13 +39,16 @@ from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.story import StoryVersionDetail
 from api.db.session import get_db_session
+from api.legal.dependencies import require_legal_consent
 from api.session.dependencies import get_current_user_id
 
 router = APIRouter(prefix="/assets", tags=["assets"])
 me_router = APIRouter(prefix="/me", tags=["assets"])
 
 
-@router.post("/presigned-upload", status_code=status.HTTP_201_CREATED)
+@router.post(  # consent-gate-goal-prompt.md CG-4
+    "/presigned-upload", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+)
 async def create_presigned_upload(
     payload: PresignedUploadRequest,
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
@@ -84,7 +87,9 @@ def _upload_size_limit(storage_key: str) -> int | None:
     return UPLOAD_SIZE_LIMIT_BYTES[purpose]
 
 
-@router.post("/{asset_id}/complete")
+@router.post(
+    "/{asset_id}/complete", dependencies=[Depends(require_legal_consent)]
+)  # consent-gate-goal-prompt.md CG-4
 async def complete_asset_upload(
     asset_id: uuid.UUID,
     current_user_id: uuid.UUID = Depends(get_current_user_id),
@@ -145,7 +150,9 @@ async def complete_asset_upload(
     return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
 
 
-@router.post("/{asset_id}/register-situational-image")
+@router.post(  # consent-gate-goal-prompt.md CG-4
+    "/{asset_id}/register-situational-image", dependencies=[Depends(require_legal_consent)]
+)
 async def register_situational_image(
     asset_id: uuid.UUID,
     payload: RegisterSituationalImageRequest,

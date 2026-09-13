@@ -1,0 +1,93 @@
+# worktree 전용 인프라 — 여러 세션이 동시에 작업할 때 서로의 DB/Redis를 깨뜨리지 않기 위한 것.
+#
+#   WT_NAME=consent-gate WT_PORT_OFFSET=2 docker compose -f docker-compose.worktree.yml up -d --wait
+#
+# `docker-compose.dev.yml`과 **같은 구성, 다른 포트·다른 프로젝트 이름**이다. dev 스택을 고칠 일이
+# 생기면 이 파일도 같이 본다.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# 왜 필요한가 (consent-gate-goal-prompt.md §8)
+#
+# pytest는 moto를 in-process(`ThreadedMotoServer(port=0)`)로 띄우므로 S3는 세션마다 이미 격리돼
+# 있다. 그러나 Postgres와 Redis는 **호스트 포트로 공유**된다 — `tests/conftest.py`가
+#
+#     TEST_DATABASE_URL  기본값: postgresql+asyncpg://...@localhost:5432/ai_character_chat_test
+#     TEST_REDIS_URL     기본값: redis://localhost:6379/1
+#
+# 을 쓰므로, 두 세션이 동시에 pytest를 돌리면 **같은 `ai_character_chat_test` DB를 서로
+# drop/create 하고 같은 Redis index 1을 flush 한다.** 한쪽 스위트가 이유 없이 깨진다.
+#
+# 그래서 worktree마다 이 스택을 별도 포트로 띄우고, 그 worktree의 `apps/api/.env`에
+# `TEST_DATABASE_URL`·`TEST_REDIS_URL`을 그 포트로 박아둔다.
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# `WT_PORT_OFFSET`은 dev 스택(5432/6379/5001) 기준 오프셋이다. **이미 쓰이는 오프셋을 피할 것** —
+# 2026-09-13 기준 `wt-postgres`(5433)/`wt-redis`(6380)가 오프셋 1을 점유하고 있다(다른 세션이
+# `docker run`으로 띄운 것이라 이 파일로는 안 보인다). 띄우기 전에 `docker ps`로 확인한다.
+# ⚠️ 이 스칼라는 반드시 따옴표로 감싼다 — `${VAR:?메시지}` 의 메시지에 `: ` 가 들어가면 YAML 이
+# 매핑으로 오독해 `mapping values are not allowed in this context` 로 죽는다(실측).
+name: "ai-character-chat-wt-${WT_NAME:?WT_NAME 을 지정하세요 - 예를 들어 consent-gate}"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ai_character_chat
+    ports:
+      - "${WT_PG_PORT:-5434}:5432"
+    volumes:
+      # dev 스택과 같은 이유로 버전 하위 디렉터리가 아니라 상위에 건다. 볼륨 이름은 compose가
+      # 프로젝트 이름으로 접두사를 붙이므로 worktree마다 자동으로 갈린다.
+      - pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d ai_character_chat"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    ports:
+      - "${WT_REDIS_PORT:-6381}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # 앱을 띄울 때만 필요하다 — pytest는 자기 moto를 in-process로 올린다(위 주석).
+  moto:
+    image: motoserver/moto:latest
+    environment:
+      S3_IGNORE_SUBDOMAIN_BUCKETNAME: "1"
+    ports:
+      - "${WT_MOTO_PORT:-5002}:5000"
+
+  s3-init:
+    image: amazon/aws-cli:latest
+    depends_on:
+      moto:
+        condition: service_started
+    environment:
+      AWS_ACCESS_KEY_ID: testing
+      AWS_SECRET_ACCESS_KEY: testing
+      AWS_DEFAULT_REGION: ap-northeast-2
+    volumes:
+      - ./apps/api/scripts/dev/s3-cors.json:/tmp/s3-cors.json:ro
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until aws --endpoint-url http://moto:5000 s3 ls >/dev/null 2>&1; do
+          echo "moto 기다리는 중..."; sleep 1;
+        done
+        aws --endpoint-url http://moto:5000 s3 mb s3://ai-character-chat-assets-dev 2>/dev/null || true
+        aws --endpoint-url http://moto:5000 s3api put-bucket-cors \
+          --bucket ai-character-chat-assets-dev \
+          --cors-configuration file:///tmp/s3-cors.json
+        echo "S3 버킷 + CORS 준비 완료"
+    restart: "no"
+
+volumes:
+  pgdata:

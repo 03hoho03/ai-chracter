@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timezone, UTC
+from datetime import timezone
 
 import httpx
 from sqlalchemy import delete, select
@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
 from api.db.models import LegalDocument, User
+from factories import _make_published
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -38,28 +39,6 @@ async def _signup_and_login(db_client: httpx.AsyncClient, **overrides: object) -
     )
     assert login_resp.status_code == 204
     return payload
-
-
-async def _make_published(
-    db_session: AsyncSession,
-    *,
-    kind: str = "terms",
-    version: str = "2024-01-01",
-    body_markdown: str = "게시된 내용",
-    requires_reconsent: bool = False,
-    published_at: datetime | None = None,
-) -> LegalDocument:
-    document = LegalDocument(
-        kind=kind,
-        version=version,
-        body_markdown=body_markdown,
-        status="published",
-        requires_reconsent=requires_reconsent,
-        published_at=published_at or datetime.now(UTC),
-    )
-    db_session.add(document)
-    await db_session.flush()
-    return document
 
 
 # ---- 공개 조회 ----------------------------------------------------------------

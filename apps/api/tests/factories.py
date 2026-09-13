@@ -24,12 +24,22 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Genre,
+    LegalDocument,
     ModerationStatus,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
 )
 from api.db.session import engine
+
+
+# consent-gate-goal-prompt.md CG-3/CG-4: migration c49014ae5b62가 시드해둔 terms/privacy
+# 게시본(version "2026-09-06", requires_reconsent=True)이 세션 내내 사라지지 않는 ambient
+# 상태다 — `_make_user`는 DB를 조회하지 않는 순수 헬퍼라 "현재 게시본이 몇 버전인지"를 알
+# 수 없으므로, 어떤 게시본보다 큰 값을 기본값으로 둬 "이미 동의한 사용자"를 재현한다.
+# `_reconsent_required`는 zero-padded ISO 날짜 문자열 비교라 "9999-12-31"이 서버가 강제하는
+# `\d{4}-\d{2}-\d{2}` 포맷 안에서 사실상 최댓값이다.
+_FAR_FUTURE_LEGAL_VERSION = "9999-12-31"
 
 
 def _make_user(**overrides: object) -> User:
@@ -39,6 +49,8 @@ def _make_user(**overrides: object) -> User:
         "birth_date": date(2000, 1, 1),
         "terms_agreed_at": datetime.now(UTC),
         "privacy_agreed_at": datetime.now(UTC),
+        "terms_version": _FAR_FUTURE_LEGAL_VERSION,
+        "privacy_version": _FAR_FUTURE_LEGAL_VERSION,
     }
     defaults.update(overrides)
     return User(**defaults)
@@ -108,6 +120,28 @@ async def _make_asset(
     db_session.add(asset)
     await db_session.flush()
     return asset
+
+
+async def _make_published(
+    db_session: AsyncSession,
+    *,
+    kind: str = "terms",
+    version: str = "2024-01-01",
+    body_markdown: str = "게시된 내용",
+    requires_reconsent: bool = False,
+    published_at: datetime | None = None,
+) -> LegalDocument:
+    document = LegalDocument(
+        kind=kind,
+        version=version,
+        body_markdown=body_markdown,
+        status="published",
+        requires_reconsent=requires_reconsent,
+        published_at=published_at or datetime.now(UTC),
+    )
+    db_session.add(document)
+    await db_session.flush()
+    return document
 
 
 async def _make_published_story(

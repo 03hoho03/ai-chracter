@@ -1,12 +1,13 @@
 import uuid
 
 import httpx
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.preview_session import get_preview_session
 from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
 from api.core.config import settings
 from api.core.redis import redis_client
-from factories import _login_as
+from factories import _login_as, _make_user
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:
@@ -72,11 +73,18 @@ async def test_start_preview_session_requires_login(api_client: httpx.AsyncClien
     assert resp.status_code == 401
 
 
-async def test_start_preview_session_character_seeds_intro_message(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_start_preview_session_character_seeds_intro_message(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    # consent-gate-goal-prompt.md CG-9: /preview-sessions가 이제 재동의 게이트를 거치므로
+    # (require_legal_consent가 User 행을 조회한다) 실존하지 않는 user_id로는 로그인할 수
+    # 없다 — 실제 User 행을 만들어 로그인한다.
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
-    resp = await api_client.post("/preview-sessions", json=_character_payload(intro="안녕하세요, 아리아예요"))
+    resp = await db_client.post("/preview-sessions", json=_character_payload(intro="안녕하세요, 아리아예요"))
     assert resp.status_code == 201
     session_id = resp.json()["previewSessionId"]
     assert isinstance(session_id, str) and session_id
@@ -93,12 +101,16 @@ async def test_start_preview_session_character_seeds_intro_message(api_client: h
     assert state.ending_reached is False
 
 
-async def test_start_preview_session_story_seeds_first_starting_setup(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_start_preview_session_story_seeds_first_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
     stat_id = str(uuid.uuid4())
-    resp = await api_client.post(
+    resp = await db_client.post(
         "/preview-sessions",
         json=_story_payload(
             startingSetups=[
@@ -135,11 +147,15 @@ async def test_start_preview_session_story_seeds_first_starting_setup(api_client
     assert state.stats == {stat_id: 50.0}
 
 
-async def test_start_preview_session_story_falls_back_to_prologue(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_start_preview_session_story_falls_back_to_prologue(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
-    resp = await api_client.post(
+    resp = await db_client.post(
         "/preview-sessions",
         json=_story_payload(startingSetups=[_starting_setup_item(prologue="시작합니다", openingMessage=None)]),
     )
@@ -150,12 +166,14 @@ async def test_start_preview_session_story_falls_back_to_prologue(api_client: ht
 
 
 async def test_start_preview_session_story_without_starting_setups_has_empty_state(
-    api_client: httpx.AsyncClient,
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
-    resp = await api_client.post("/preview-sessions", json=_story_payload(startingSetups=[]))
+    resp = await db_client.post("/preview-sessions", json=_story_payload(startingSetups=[]))
     assert resp.status_code == 201
     state = await get_preview_session(resp.json()["previewSessionId"])
     assert state is not None
@@ -163,11 +181,15 @@ async def test_start_preview_session_story_without_starting_setups_has_empty_sta
     assert state.stats == {}
 
 
-async def test_start_preview_session_sets_24h_ttl(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_start_preview_session_sets_24h_ttl(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
-    resp = await api_client.post("/preview-sessions", json=_character_payload())
+    resp = await db_client.post("/preview-sessions", json=_character_payload())
     assert resp.status_code == 201
     session_id = resp.json()["previewSessionId"]
 

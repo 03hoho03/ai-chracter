@@ -22,15 +22,17 @@ import {
   useLegalDocumentQuery,
 } from "@/entities/legal";
 import { sessionKeys, useSessionQuery } from "@/entities/session";
+import { WithdrawAccountDialog } from "@/features/withdraw-account";
 
-/** 확정 결정 D-16 — 닫아도 "닫음" 상태를 저장하지 않는다. `isDismissed`는 이 컴포넌트가 살아 있는
- * 동안(새로고침 전까지)만 유지되는 로컬 state라 새로고침·재접속에는 세션이 여전히 재동의를
- * 요구하는 한 다시 뜬다. 동의에 성공하면 세션 쿼리를 무효화해 서버 상태로 닫는다. */
+/** consent-gate-goal-prompt.md CG-1 — 이 모달은 닫을 수 없다. "나중에"(이전 주석이 인용하던
+ * "확정 결정 D-16")를 없애고, X 버튼(`showCloseButton={false}`)·ESC·바깥 클릭을 전부 막는다.
+ * D-16 원문은 저장소 전수 조사로도 추적 불가능해 새 근거로 대체한다(§2-6). 출구는 동의 또는
+ * 탈퇴(CG-2) 둘뿐이라 `isDismissed`/`handleOpenChange`(`onOpenChange(false)` 경로) 자체가
+ * 사라진다 — 열림 여부는 세션의 재동의 플래그로만 정해진다. */
 export function ReconsentModal() {
   const sessionQuery = useSessionQuery();
   const queryClient = useQueryClient();
   const consentMutation = useLegalConsentMutation();
-  const [isDismissed, setIsDismissed] = useState(false);
   const [isConsenting, setIsConsenting] = useState(false);
 
   const session = sessionQuery.data;
@@ -48,15 +50,17 @@ export function ReconsentModal() {
     privacy: privacyDocQuery,
   };
 
-  const isOpen = !isDismissed && pendingKinds.length > 0;
+  const isOpen = pendingKinds.length > 0;
   // 동의 가능 여부는 `data` 유무로만 정의한다(최초 로딩·재시도 backoff·최종 실패 전부 미보유로
   // 취급) — isPending 기반 집계는 재시도 backoff 구간(isPending && failureCount>0)을 "로딩 아님"으로
   // 잘못 읽어 handleConsent의 동기 throw 경로를 열어버렸다. 문서별 로딩·에러 UI는
   // ReconsentDocumentBody가 각자의 docQuery.isPending/isError로 그대로 그린다.
   const allDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
+  const canConsent = allDocsLoaded && !isConsenting;
 
-  function handleOpenChange(next: boolean) {
-    if (!next) setIsDismissed(true);
+  function handleConsentClick() {
+    if (!canConsent) return;
+    void handleConsent();
   }
 
   async function handleConsent() {
@@ -80,17 +84,26 @@ export function ReconsentModal() {
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={handleOpenChange}>
+    <Dialog open={isOpen}>
       {/* 제목과 동의 버튼은 항상 보여야 하므로(약관 전문이 합쳐 약 1만 8천 자라 다이얼로그 전체를
           스크롤하면 동의 버튼이 화면 밖으로 밀린다), DialogContent를 3행 그리드(헤더/본문/푸터)로
           바꾸고 본문 행만 `minmax(0,1fr)` + `overflow-y-auto`로 스크롤시킨다. */}
-      <DialogContent className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg">
+      {/* consent-gate-goal-prompt.md CG-1 — X 버튼을 없애고(showCloseButton) ESC·바깥 클릭을
+          preventDefault로 막는다. `...props`가 DialogPrimitive.Content로 spread되는 것을 그대로
+          쓴다(packages/ui는 건드리지 않는다). */}
+      <DialogContent
+        showCloseButton={false}
+        onEscapeKeyDown={(event) => event.preventDefault()}
+        onPointerDownOutside={(event) => event.preventDefault()}
+        className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
+      >
         <DialogHeader>
           <DialogTitle>
             {pendingKinds.map((kind) => LEGAL_DOCUMENT_LABEL[kind]).join(" · ")} 개정 안내
           </DialogTitle>
           <DialogDescription>
-            서비스를 계속 이용하려면 개정된 내용을 확인하고 동의해주세요.
+            동의하거나 탈퇴하기 전까지 이 안내는 닫히지 않아요. 아래 개정 내용을 확인하고
+            동의해주세요.
           </DialogDescription>
         </DialogHeader>
 
@@ -106,13 +119,18 @@ export function ReconsentModal() {
         </div>
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => setIsDismissed(true)}>
-            나중에
-          </Button>
+          {/* consent-gate-goal-prompt.md CG-2·CG-11 — 미동의 이용자의 출구는 탈퇴다. 기존
+              WithdrawAccountDialog(트리거+AlertDialog+뮤테이션)를 그대로 재사용한다. */}
+          <WithdrawAccountDialog label="동의하지 않고 탈퇴" />
+          {/* consent-gate-goal-prompt.md CG-13 — 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
+              포커스를 <body>로 떨어뜨린다(apps/web/CLAUDE.md). CG-1이 ESC를 막아 키보드 복귀 수단이
+              Tab 하나뿐이라 영향이 커진다. `aria-disabled` + 핸들러 early return으로 바꾼다
+              (ContentListLoadMore 선례와 동일한 처방: pointer-events-none + opacity-65). */}
           <Button
             type="button"
-            disabled={!allDocsLoaded || isConsenting}
-            onClick={() => void handleConsent()}
+            aria-disabled={!canConsent}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+            onClick={handleConsentClick}
           >
             {isConsenting ? "처리 중..." : "동의"}
           </Button>

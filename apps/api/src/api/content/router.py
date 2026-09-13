@@ -85,6 +85,7 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.db.session import get_db_session, get_session_factory
+from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
@@ -514,7 +515,9 @@ async def list_genres(db: AsyncSession = Depends(get_db_session)) -> list[GenreR
     return [GenreResponse(id=genre.id, name=genre.name, sort_order=genre.sort_order) for genre in genres]
 
 
-@router.post("/contents", status_code=status.HTTP_201_CREATED)
+@router.post(  # consent-gate-goal-prompt.md CG-4
+    "/contents", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+)
 async def create_content_draft(
     payload: ContentCreateRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1115,7 +1118,9 @@ async def _update_story_draft(
         shortcut.prompt = shortcut_item.prompt
 
 
-@router.patch("/contents/{id}/draft")
+@router.patch(
+    "/contents/{id}/draft", dependencies=[Depends(require_legal_consent)]
+)  # consent-gate-goal-prompt.md CG-4
 async def update_content_draft(
     id: uuid.UUID,
     payload: CharacterDraftPayload | StoryDraftPayload,
@@ -1189,7 +1194,9 @@ async def _delete_draft_children(db: AsyncSession, content_type: ContentType, ve
     await db.flush()
 
 
-@router.delete("/contents/{id}/draft", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete(  # consent-gate-goal-prompt.md CG-4
+    "/contents/{id}/draft", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_legal_consent)]
+)
 async def delete_content_draft(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1259,7 +1266,11 @@ async def _restore_draft_detail(
     draft_story.rules = published_story.rules
 
 
-@router.post("/contents/{id}/draft/reset", status_code=status.HTTP_204_NO_CONTENT)
+@router.post(  # consent-gate-goal-prompt.md CG-4
+    "/contents/{id}/draft/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_legal_consent)],
+)
 async def reset_content_draft(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1333,7 +1344,9 @@ async def _load_publish_filter_images(
     return images
 
 
-@router.post("/contents/{id}/publish")
+@router.post(
+    "/contents/{id}/publish", dependencies=[Depends(require_legal_consent)]
+)  # consent-gate-goal-prompt.md CG-4
 async def publish_content(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1709,7 +1722,11 @@ async def _publish_story_content(
     return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
 
 
-@router.patch("/contents/{id}/visibility", status_code=status.HTTP_204_NO_CONTENT)
+@router.patch(  # consent-gate-goal-prompt.md CG-4
+    "/contents/{id}/visibility",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_legal_consent)],
+)
 async def update_content_visibility(
     id: uuid.UUID,
     body: ContentVisibilityUpdateRequest,

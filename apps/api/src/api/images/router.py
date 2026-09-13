@@ -31,6 +31,7 @@ from api.images.schemas import (
     ImageModelItem,
     ImageStyleItem,
 )
+from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient
@@ -282,7 +283,9 @@ async def list_image_models(
     return items
 
 
-@router.post("/generate", status_code=status.HTTP_202_ACCEPTED)
+@router.post(  # consent-gate-goal-prompt.md CG-3/CG-4
+    "/generate", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)]
+)
 async def generate_images(
     payload: GenerateImageRequest,
     owner_user_id: uuid.UUID = Depends(get_current_user_id),

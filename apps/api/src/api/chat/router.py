@@ -93,6 +93,7 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.db.session import get_db_session, get_session_factory
+from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
@@ -490,7 +491,9 @@ async def _resolve_setup_for_content(
     return setup
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
+@router.post(  # consent-gate-goal-prompt.md CG-3/CG-4: 재동의 게이트
+    "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+)
 async def create_chat_room(
     payload: ChatRoomCreateRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -865,6 +868,11 @@ async def _stream_new_turn(
 @router.post("/{room_id}/messages", response_class=EventSourceResponse)
 async def send_message(
     payload: ChatMessageCreateRequest,
+    # consent-gate-goal-prompt.md CG-4/§2-5: SSE 제너레이터라 시그니처에 Depends로 붙인다
+    # (dependencies=처럼 본문 실행 전에 해석되지만, 이 파일의 `_owned_room_dependency`
+    # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
+    # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
+    _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
@@ -924,6 +932,8 @@ async def _regeneratable_last_message_dependency(
 
 @router.post("/{room_id}/regenerate", response_class=EventSourceResponse)
 async def regenerate_message(
+    # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
+    _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1012,6 +1022,8 @@ async def _editable_user_message_dependency(
 @router.patch("/{room_id}/messages/{message_id}", response_class=EventSourceResponse)
 async def edit_message(
     payload: ChatMessageEditRequest,
+    # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
+    _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1247,7 +1259,7 @@ async def list_my_chat_rooms(
     return items
 
 
-@router.patch("/{room_id}")
+@router.patch("/{room_id}", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-4
 async def rename_chat_room(
     room_id: uuid.UUID,
     payload: ChatRoomRenameRequest,
@@ -1260,7 +1272,7 @@ async def rename_chat_room(
     return await _to_response(db, room)
 
 
-@router.post("/{room_id}/reset")
+@router.post("/{room_id}/reset", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-4
 async def reset_chat_room(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1285,7 +1297,9 @@ async def reset_chat_room(
     return await _to_response(db, room)
 
 
-@router.post("/{room_id}/pin-latest-version")
+@router.post(
+    "/{room_id}/pin-latest-version", dependencies=[Depends(require_legal_consent)]
+)  # consent-gate-goal-prompt.md CG-4
 async def pin_latest_version(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1303,7 +1317,11 @@ async def pin_latest_version(
     return await _to_response(db, room)
 
 
-@router.post("/{room_id}/change-starting-setup", status_code=status.HTTP_201_CREATED)
+@router.post(  # consent-gate-goal-prompt.md CG-4
+    "/{room_id}/change-starting-setup",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_legal_consent)],
+)
 async def change_starting_setup(
     room_id: uuid.UUID,
     payload: ChangeStartingSetupRequest,
@@ -1331,7 +1349,9 @@ async def change_starting_setup(
     return await _to_response(db, new_room)
 
 
-@router.post("/{room_id}/acknowledge-version-upgrade")
+@router.post(
+    "/{room_id}/acknowledge-version-upgrade", dependencies=[Depends(require_legal_consent)]
+)  # consent-gate-goal-prompt.md CG-4
 async def acknowledge_version_upgrade(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1480,7 +1500,9 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
     return PreviewSessionState(payload=payload, messages=messages, stats=stats)
 
 
-@preview_router.post("", status_code=status.HTTP_201_CREATED)
+@preview_router.post(  # consent-gate-goal-prompt.md CG-4/CG-9
+    "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
+)
 async def start_preview_session(
     payload: CharacterDraftPayload | StoryDraftPayload,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1741,6 +1763,8 @@ async def _stream_preview_turn(
 async def send_preview_message(
     id: str,
     payload: ChatMessageCreateRequest,
+    # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
+    _consent: None = Depends(require_legal_consent),
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),

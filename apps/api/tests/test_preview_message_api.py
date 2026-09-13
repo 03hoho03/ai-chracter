@@ -17,7 +17,7 @@ from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _login_as, _read_golden_prompt
+from factories import _login_as, _make_user, _read_golden_prompt
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:
@@ -176,29 +176,33 @@ async def test_send_preview_message_requires_login(api_client: httpx.AsyncClient
     assert resp.status_code == 401
 
 
-async def test_send_preview_message_unknown_session_404(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_unknown_session_404(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
 
     # `send_message`'s CLAUDE.md gotcha applies here too: every request past login needs
     # `get_llm_client` overridden, even ones that end up failing on an earlier Depends().
     _override_llm_client(_FakeLLMClient(tokens=[]))
     try:
-        resp = await api_client.post(f"/preview-sessions/{uuid.uuid4().hex}/messages", json={"content": "안녕"})
+        resp = await db_client.post(f"/preview-sessions/{uuid.uuid4().hex}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()
     assert resp.status_code == 404
 
 
-async def test_send_preview_message_character_streams_and_appends(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
-    session_id = await _start_session(api_client, _character_payload())
+async def test_send_preview_message_character_streams_and_appends(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
 
     fake = _FakeLLMClient(tokens=["안", "녕"])
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
     finally:
         _clear_llm_override()
 
@@ -217,17 +221,19 @@ async def test_send_preview_message_character_streams_and_appends(api_client: ht
     assert fake.received_system_instruction == _read_golden_prompt("system_instruction_character.txt")
 
 
-async def test_send_preview_message_story_selects_template_instruction(api_client: httpx.AsyncClient) -> None:
+async def test_send_preview_message_story_selects_template_instruction(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     """chat-techspec.md §4-2 — `_stream_preview_turn` 호출부는 `payload.prompt_template`을
     골라 시스템 지시문(L0.5)에 잇는다."""
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
-    session_id = await _start_session(api_client, _story_payload(promptTemplate="emotional"))
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _story_payload(promptTemplate="emotional"))
 
     fake = _FakeLLMClient(tokens=["이야기"])
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
     finally:
         _clear_llm_override()
 
@@ -240,18 +246,20 @@ async def test_send_preview_message_story_selects_template_instruction(api_clien
 
 
 async def test_send_preview_message_policy_violation_emits_policy_warning(
-    api_client: httpx.AsyncClient,
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`chat/router.py`의 `_stream_preview_turn`은 본 채팅·재생성과 글자 그대로 같은
     `except LLMPolicyViolationError` 핸들러를 갖지만 여태 이 경로만 테스트가 없었다."""
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
-    session_id = await _start_session(api_client, _character_payload())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
 
     fake = _FakeLLMClient(tokens=[], error=LLMPolicyViolationError("blocked"))
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(
+        resp = await db_client.post(
             f"/preview-sessions/{session_id}/messages", json={"content": "부적절한 메시지"}
         )
     finally:
@@ -270,16 +278,18 @@ async def test_send_preview_message_policy_violation_emits_policy_warning(
 
 
 async def test_send_preview_message_llm_error_emits_error_event(
-    api_client: httpx.AsyncClient,
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
-    session_id = await _start_session(api_client, _character_payload())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
 
     fake = _FakeLLMClient(tokens=[], error=LLMClientError("network down"))
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()
 
@@ -294,13 +304,15 @@ async def test_send_preview_message_llm_error_emits_error_event(
     assert state.turn_count == 0
 
 
-async def test_send_preview_message_story_stat_change(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     stat = _stat_def_item(id=stat_id)
     session_id = await _start_session(
-        api_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
     )
 
     fake = _FakeLLMClient(
@@ -309,7 +321,7 @@ async def test_send_preview_message_story_stat_change(api_client: httpx.AsyncCli
     )
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
     finally:
         _clear_llm_override()
 
@@ -327,22 +339,24 @@ async def test_send_preview_message_story_stat_change(api_client: httpx.AsyncCli
 
 
 async def test_send_preview_message_judgment_llm_failure_still_completes_the_turn(
-    api_client: httpx.AsyncClient,
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """실제 채팅과 동일하게, 판정 LLM 실패는 SSE 제너레이터 밖으로 새지 않고 흡수된다 —
     이미 스트리밍된 응답은 세션에 정상 반영되고 그 턴의 판정만 포기한다."""
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     stat_id = str(uuid.uuid4())
     stat = _stat_def_item(id=stat_id)
     session_id = await _start_session(
-        api_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
     )
 
     fake = _FakeLLMClient(tokens=["이야기"], structured_results=[LLMClientError("429 RESOURCE_EXHAUSTED")])
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})
     finally:
         _clear_llm_override()
 
@@ -356,12 +370,14 @@ async def test_send_preview_message_judgment_llm_failure_still_completes_the_tur
     assert state.stats == {stat_id: 50.0}
 
 
-async def test_send_preview_message_keyword_note_injected_into_prompt(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_keyword_note_injected_into_prompt(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     setup = _starting_setup_item()
     session_id = await _start_session(
-        api_client,
+        db_client,
         _story_payload(
             startingSetups=[setup],
             keywordNotes=[
@@ -378,7 +394,7 @@ async def test_send_preview_message_keyword_note_injected_into_prompt(api_client
     fake = _FakeLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "통로를 찾는다"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "통로를 찾는다"})
     finally:
         _clear_llm_override()
 
@@ -387,12 +403,14 @@ async def test_send_preview_message_keyword_note_injected_into_prompt(api_client
     assert "비밀 통로가 존재한다" in fake.received_prompt
 
 
-async def test_send_preview_message_shortcut_prompt_injected(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_shortcut_prompt_injected(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     shortcut_id = str(uuid.uuid4())
     session_id = await _start_session(
-        api_client,
+        db_client,
         _story_payload(
             startingSetups=[_starting_setup_item()],
             shortcuts=[{"id": shortcut_id, "name": "공격", "description": "적을 공격한다", "prompt": "칼을 휘두른다"}],
@@ -402,7 +420,7 @@ async def test_send_preview_message_shortcut_prompt_injected(api_client: httpx.A
     fake = _FakeLLMClient(tokens=["응답"], structured_results=[StatJudgmentResult(stat_changes=[])])
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(
+        resp = await db_client.post(
             f"/preview-sessions/{session_id}/messages", json={"content": "칼을 휘두른다", "shortcutId": shortcut_id}
         )
     finally:
@@ -413,14 +431,16 @@ async def test_send_preview_message_shortcut_prompt_injected(api_client: httpx.A
     assert "칼을 휘두른다" in fake.received_prompt
 
 
-async def test_send_preview_message_invalid_shortcut_id_400(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
-    session_id = await _start_session(api_client, _story_payload(startingSetups=[_starting_setup_item()]))
+async def test_send_preview_message_invalid_shortcut_id_400(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _story_payload(startingSetups=[_starting_setup_item()]))
 
     _override_llm_client(_FakeLLMClient(tokens=[]))
     try:
-        resp = await api_client.post(
+        resp = await db_client.post(
             f"/preview-sessions/{session_id}/messages",
             json={"content": "안녕", "shortcutId": str(uuid.uuid4())},
         )
@@ -429,12 +449,14 @@ async def test_send_preview_message_invalid_shortcut_id_400(api_client: httpx.As
     assert resp.status_code == 400
 
 
-async def test_send_preview_message_reaches_ending(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_reaches_ending(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     ending = _ending_item(turnCountGate=1)
     session_id = await _start_session(
-        api_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
     )
 
     fake = _FakeLLMClient(
@@ -443,7 +465,7 @@ async def test_send_preview_message_reaches_ending(api_client: httpx.AsyncClient
     )
     _override_llm_client(fake)
     try:
-        resp = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "결말로 향한다"})
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "결말로 향한다"})
     finally:
         _clear_llm_override()
 
@@ -458,12 +480,14 @@ async def test_send_preview_message_reaches_ending(api_client: httpx.AsyncClient
     assert state.ending_reached is True
 
 
-async def test_send_preview_message_skips_judgment_after_ending_reached(api_client: httpx.AsyncClient) -> None:
-    api_client.cookies.clear()
-    await _login_as(api_client, uuid.uuid4())
+async def test_send_preview_message_skips_judgment_after_ending_reached(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     ending = _ending_item(turnCountGate=1)
     session_id = await _start_session(
-        api_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
+        db_client, _story_payload(startingSetups=[_starting_setup_item(endings=[ending])])
     )
 
     fake = _FakeLLMClient(
@@ -472,12 +496,12 @@ async def test_send_preview_message_skips_judgment_after_ending_reached(api_clie
     )
     _override_llm_client(fake)
     try:
-        first = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "결말로 향한다"})
+        first = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "결말로 향한다"})
         assert first.status_code == 200
 
         second_fake = _FakeLLMClient(tokens=["그 이후"])
         _override_llm_client(second_fake)
-        second = await api_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "계속한다"})
+        second = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "계속한다"})
     finally:
         _clear_llm_override()
 
@@ -490,7 +514,10 @@ async def test_send_preview_message_skips_judgment_after_ending_reached(api_clie
 async def test_preview_messages_do_not_touch_chat_rooms(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    await _login_as(db_client, uuid.uuid4())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     session_id = await _start_session(db_client, _character_payload())
 
     fake = _FakeLLMClient(tokens=["안녕"])
