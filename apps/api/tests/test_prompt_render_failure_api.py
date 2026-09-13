@@ -335,7 +335,10 @@ async def test_send_preview_message_with_broken_section_body_ends_the_stream_wit
 ) -> None:
     await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
 
-    await _login_as(db_client, uuid.uuid4())
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
     session_resp = await db_client.post(
         "/preview-sessions",
         json={

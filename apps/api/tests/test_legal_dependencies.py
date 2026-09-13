@@ -29,7 +29,7 @@ async def _clear_published_legal_documents(db_session: AsyncSession) -> None:
 
 async def test_require_legal_consent_blocks_when_terms_unconsented(db_session: AsyncSession) -> None:
     await _clear_published_legal_documents(db_session)
-    user = _make_user()
+    user = _make_user(terms_version=None)
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)
@@ -48,7 +48,7 @@ async def test_require_legal_consent_blocks_when_terms_unconsented(db_session: A
 
 async def test_require_legal_consent_blocks_when_privacy_unconsented(db_session: AsyncSession) -> None:
     await _clear_published_legal_documents(db_session)
-    user = _make_user()
+    user = _make_user(privacy_version=None)
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="privacy", version="2099-01-01", requires_reconsent=True)
@@ -65,7 +65,7 @@ async def test_require_legal_consent_blocks_when_privacy_unconsented(db_session:
 
 async def test_require_legal_consent_blocks_when_both_unconsented(db_session: AsyncSession) -> None:
     await _clear_published_legal_documents(db_session)
-    user = _make_user()
+    user = _make_user(terms_version=None, privacy_version=None)
     db_session.add(user)
     await db_session.flush()
     await _make_published(db_session, kind="terms", version="2099-01-01", requires_reconsent=True)

@@ -52,7 +52,14 @@ async def require_legal_consent(
     Depends로 그대로 쓸 뿐 건드리지 않는다(CG-7) — 그 의존성은 읽기 엔드포인트와
     CG-4의 예외 15개에도 함께 쓰이므로, 재동의 검사를 거기 끼워넣으면 읽기까지 막힌다."""
     user = await db.get(User, user_id)
-    assert user is not None  # get_current_user_id가 통과시킨 session의 user_id라 존재가 보장된다
+    if user is None or user.deleted_at is not None:
+        # consent-gate-goal-prompt.md S2: S1의 `assert`는 "get_current_user_id를 통과했으면
+        # User 행이 존재한다"고 가정했지만, `get_current_user_id`(session/dependencies.py)는
+        # 세션만 보고 User 테이블을 조회하지 않는다 — 이 게이트를 `/preview-sessions`류에
+        # 붙이자 실제로 깨졌다(그 라우트들의 테스트가 원래 User 조회가 필요 없어 실존하지
+        # 않는 user_id로 로그인한다). `auth/router.py`의 나머지 엔드포인트(get_me·withdraw
+        # 등)와 같은 401로 통일한다.
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     required_terms_version = await _latest_published_legal_version(db, "terms", requires_reconsent=True)
     required_privacy_version = await _latest_published_legal_version(
