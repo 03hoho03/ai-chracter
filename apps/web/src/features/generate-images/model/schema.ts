@@ -6,7 +6,8 @@ import { z } from "zod";
  * (`IMAGE_STYLE_PRESETS`)을 들고 있었고 그 배열이 단일 소스였다(TS-09) — **그 관례가 깨진 게 아니다.**
  * 아래 `IMAGE_ASPECT_RATIOS`·`IMAGE_COUNT_OPTIONS`는 여전히 이 파일이 단일 소스다. model/style만
  * **단일 소스가 서버로 옮겨간 것**이므로, 렌더할 옵션이 없다고 이 배열을 되살리지 말 것 —
- * `features/generate-images/ui/GenerateImagesForm.tsx`가 `useImageModelsQuery`의 응답에서 직접 읽는다. */
+ * `features/generate-images/ui/GenerateImagesOptionsFields.tsx`가 `useImageModelsQuery`의 응답에서
+ * 직접 읽는다(image-refact-techspec.md IT-9 — 옛 `GenerateImagesForm.tsx`가 세 조각으로 쪼개졌다). */
 
 /** tasks/archive/prd-image-generation.md §3 — 비율 풀 세트, 기본값 1:1. **이 배열이 단일 소스다** —
  * 아래 옵션 목록도 `generateImagesSchema`의 zod enum도 전부 여기서 도출된다(TS-09).
@@ -19,7 +20,9 @@ import { z } from "zod";
  * 832×1216(Animagine XL 4.0 권장 버킷 · NovelAI 기본값)이다. 세로 셋의 순서는 비율순(3:4 → 2:3 → 9:16)이다. */
 export const IMAGE_ASPECT_RATIOS = ["1:1", "4:3", "3:4", "2:3", "16:9", "9:16"] as const;
 
-const IMAGE_ASPECT_RATIO_LABEL: Record<(typeof IMAGE_ASPECT_RATIOS)[number], string> = {
+// image-refact-techspec.md IT-13 — 칩(ToggleGroup)은 좁아서 이 긴 라벨이 안 들어간다. 지우지 않고
+// 접근 가능한 이름(`aria-label`)용으로 남긴다.
+export const IMAGE_ASPECT_RATIO_LABEL: Record<(typeof IMAGE_ASPECT_RATIOS)[number], string> = {
   "1:1": "1:1 · 정사각형",
   "4:3": "4:3 · 가로",
   "3:4": "3:4 · 세로",
@@ -35,6 +38,12 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = IMAGE_ASPECT_RATIOS.map((value) => ({
 
 export const IMAGE_COUNT_OPTIONS = [1, 2] as const;
 
+// image-refact-techspec.md IT-13 — radix 단일 ToggleGroup은 선택된 항목을 다시 누르면 빈 문자열을
+// 흘려보낸다(`ContentTypeToggle.tsx`의 `isContentType` 선례와 같은 모양의 가드).
+export function isImageAspectRatio(value: string): value is (typeof IMAGE_ASPECT_RATIOS)[number] {
+  return IMAGE_ASPECT_RATIOS.some((ratio) => ratio === value);
+}
+
 /** POST /images/generate 요청 필드 4개뿐인 단순 폼이라 formToServer/serverToForm 분리 없이 구현한다
  * (change-password/edit-profile 선례). 실제 제출 로직은 US-008에서 이 값을 그대로 API 바디에 맞춰 붙인다. */
 /** model/style은 값을 모르는 `z.string().min(1)`로만 검증한다(LT-9) — 실제 id·가용성 검증은
@@ -49,9 +58,9 @@ export const generateImagesSchema = z.object({
 
 export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;
 
-/** model/style은 여기 없다 — 모델 목록이 로드된 뒤 `GenerateImagesForm`이 첫 가용 모델/스타일로
- * `reset()`한다(LT-9). `DefaultValues<T>`는 partial이라 이 누락이 타입 에러 없이 통과하므로, 그 동안
- * `field.value`가 `undefined`인 것을 Select 쪽에서 감안해야 한다. */
+/** model/style은 여기 없다 — 모델 목록이 로드된 뒤 `GenerateImagesFormProvider`가 첫 가용 모델/
+ * 스타일로 `reset()`한다(LT-9). `DefaultValues<T>`는 partial이라 이 누락이 타입 에러 없이 통과하므로,
+ * 그 동안 `field.value`가 `undefined`인 것을 Select 쪽에서 감안해야 한다. */
 export const generateImagesDefaultValues: DefaultValues<GenerateImagesFormValues> = {
   prompt: "",
   aspectRatio: "1:1",
