@@ -335,19 +335,10 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 | 재부팅 후 콜드스타트 | 약 5.4초(프로세스 기동 → `/capabilities` 첫 200) |
 | VRAM | 상주 0 MiB(오프로드 훅, forward 시점까지 GPU에 올리지 않음) · 생성 피크 **5494 MiB** |
 
-⚠️ **지금 이 브랜치에서 이미지 생성은 동작하지 않는다** — 배포 전에 §6을 반드시 읽을 것.
-
 ---
 
 ## 6. 알려진 갭
 
-- ⚠️ **이미지 생성은 아직 켜지지 않았다.** 코드는 완성됐고(공개 id ↔ 와이어 id 매핑 포함) 스위트도
-  그린이지만, **저장소 밖의 선행 조건이 남아 있다** — Cloudflare Tunnel과 Access 서비스 토큰을 만들고
-  VM `.env`에 `LOCAL_IMAGE_BASE_URL`·`LOCAL_IMAGE_ACCESS_CLIENT_ID`·`LOCAL_IMAGE_ACCESS_CLIENT_SECRET`과
-  **와이어 id 두 개**(`LOCAL_IMAGE_MODEL_WIRE_ID`·`LOCAL_IMAGE_STYLE_WIRE_ID`, §2-1)를 채워야 한다.
-  하나라도 비면 capabilities 프로브가 실패하거나 id 교차가 전부 걸러져 **모든 생성 요청이 사전
-  차단(503)**된다 — 방어 로직이 설계대로 작동한 결과이지 버그가 아니다. 넷을 다 채운 뒤 §5의 검증
-  절차로 실제 생성을 한 번 확인하고 **이 항목을 지운다.**
 - **이미지 생성이 집 PC 한 대의 가동률에 종속된다.** 그 PC의 다운타임이 곧 이 기능의 실패율이다 —
   폴백이 없다(Cloudflare의 모델을 없앤 것은 의도적 결정이라, 조용히 낮은 품질로 대체되면 애초에
   로컬로 옮긴 이유가 무너진다). 사용자가 보는 것은 깨진 폼이 아니라 제출 전 사전 차단(503, §5)이다.
