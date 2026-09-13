@@ -4,7 +4,7 @@ from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.images.jobs import ImageGenerationJobStatus
-from api.images.models import AspectRatio, ImageModelId, ImageStylePreset
+from api.images.models import AspectRatio, ImageBlockedReason, ImageModelId, ImageStylePreset
 
 __all__ = [
     "AspectRatio",
@@ -57,3 +57,7 @@ class ImageJobStatusResponse(CamelModel):
     completed_count: int
     images: list[ImageJobImageItem]
     error: str | None
+    # guard-techspec.md GT-4: `ImageBlockedReason`가 `Literal`이라 `generated.ts`에
+    # 유니온으로 내려가 FE가 exhaustive switch를 쓸 수 있다(guard-goal-prompt.md G-6).
+    blocked_count: int
+    blocked_reason: ImageBlockedReason | None

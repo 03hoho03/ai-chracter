@@ -6,6 +6,9 @@ name: lint
 #
 # `eslint.config.mjs`가 경로 필터에 있는 이유: 규칙만 바뀐 커밋도 검사돼야 한다. web/admin
 # 워크플로의 필터에는 그 파일이 없어서, 여기에 없으면 규칙 변경이 아무 검사도 안 받는다.
+#
+# `apps/api/openapi.json`이 경로 필터에 있는 이유도 같다 — 아래 `generated.ts` 드리프트
+# 검사는 **BE 스펙만 바뀐 PR에서도** 돌아야 한다. 빼면 조용히 스킵된다.
 on:
   push:
     branches: [main]
@@ -13,6 +16,8 @@ on:
       - "apps/web/**"
       - "apps/admin/**"
       - "packages/**"
+      - "apps/api/openapi.json"
+      - ".github/workflows/lint.yml"
       - "eslint.config.mjs"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -21,6 +26,8 @@ on:
       - "apps/web/**"
       - "apps/admin/**"
       - "packages/**"
+      - "apps/api/openapi.json"
+      - ".github/workflows/lint.yml"
       - "eslint.config.mjs"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
@@ -41,3 +48,18 @@ jobs:
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm run lint
+
+      # backlog.md D-5: `generated.ts` 도 커밋되는 생성물이다(`openapi.json` → 이 파일).
+      # 체인의 앞쪽 절반은 `api.yml` 이 검사하고, 뒤쪽인 이 파일을 여기서 검사하는 이유는
+      # openapi-typescript 가 node 워크플로에만 깔려 있어서다.
+      #
+      # `pnpm typecheck` 가 이것을 대신하지 못한다. 필드가 **추가**될 때는 FE 가 그 필드를
+      # 쓰는 순간 타입 에러로 잡히지만, 필드가 **삭제·변경**될 때는 옛 타입이 그대로 남아
+      # typecheck 는 초록인 채 런타임에 undefined 가 된다. 잡히는 방향이 절반뿐이다.
+      - name: generated.ts 드리프트 검사
+        run: |
+          pnpm --filter @ai-character-chat/api-types run codegen
+          git diff --exit-code -- packages/api-types/src/generated.ts || {
+            echo "::error::generated.ts 가 openapi.json 과 어긋났다 — 'pnpm --filter @ai-character-chat/api-types run codegen' 을 돌리고 커밋해라"
+            exit 1
+          }
