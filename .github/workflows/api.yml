@@ -5,9 +5,13 @@ on:
     branches: [main]
     paths:
       - "apps/api/**"
+      # 자기 자신이 필터에 있는 이유: 이 워크플로의 검사 단계를 고친 커밋은 그 검사를
+      # 한 번도 안 거친 채 병합된다(`deploy-api.yml` 이 같은 이유로 자기 파일을 넣어 뒀다).
+      - ".github/workflows/api.yml"
   pull_request:
     paths:
       - "apps/api/**"
+      - ".github/workflows/api.yml"
 
 jobs:
   build:
