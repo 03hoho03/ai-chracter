@@ -52,42 +52,14 @@ from api.core.security import hash_password, verify_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
-from api.db.models.legal import LegalDocument
 from api.db.session import get_db_session
+from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
-
-
-async def _latest_published_legal_version(
-    db: AsyncSession, kind: str, *, requires_reconsent: bool | None = None
-) -> str | None:
-    """kind별 최신 게시본의 version. `requires_reconsent`를 주면 그 값으로 게시된 것만
-    보고(`GET /me` 재동의 판정용), 안 주면 전체 게시본 중 최신(가입 시점 기록용)."""
-    filters = [LegalDocument.kind == kind, LegalDocument.status == "published"]
-    if requires_reconsent is not None:
-        filters.append(LegalDocument.requires_reconsent.is_(requires_reconsent))
-    document = await db.scalar(
-        select(LegalDocument).where(*filters).order_by(LegalDocument.published_at.desc()).limit(1)
-    )
-    return document.version if document is not None else None
-
-
-def _reconsent_required(current_version: str | None, required_version: str | None) -> bool:
-    """`required_version`이 없으면(=`requires_reconsent=true`로 게시된 문서가 아직
-    없으면) 재동의가 필요할 수 없다. 있으면 유저가 그 버전 이상으로 동의했는지 본다.
-
-    **`version`이 zero-padded ISO 날짜 문자열이라 문자열 비교가 시간순과 일치한다는
-    전제 위에 이 판정 전체가 서 있다** — 다른 포맷의 버전을 쓰면 이 비교가 깨진다.
-    그 전제는 서버가 강제한다: `AdminLegalPublishRequest.version`(`api/admin/schemas.py`)의
-    `pattern=r"^\d{4}-\d{2}-\d{2}$"`가 이 포맷이 아닌 버전의 게시 자체를 422로 막는다.
-    """
-    if required_version is None:
-        return False
-    return current_version is None or current_version < required_version
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)

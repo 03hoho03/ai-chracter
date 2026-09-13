@@ -8,35 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin import legal as admin_legal
 from api.db.models import AdminActionLog, LegalDocument
 from api.legal.schemas import LegalDocumentKind
-from factories import _create_admin, _login_as_admin, _make_user
+from factories import _create_admin, _login_as_admin, _make_published, _make_user
 
 
 async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     admin_payload = await _create_admin(db_session)
     await db_session.commit()
     await _login_as_admin(db_client, admin_payload)
-
-
-async def _make_published(
-    db_session: AsyncSession,
-    *,
-    kind: str = "terms",
-    version: str = "2024-01-01",
-    body_markdown: str = "게시된 내용",
-    requires_reconsent: bool = False,
-    published_at: datetime | None = None,
-) -> LegalDocument:
-    document = LegalDocument(
-        kind=kind,
-        version=version,
-        body_markdown=body_markdown,
-        status="published",
-        requires_reconsent=requires_reconsent,
-        published_at=published_at or datetime.now(UTC),
-    )
-    db_session.add(document)
-    await db_session.flush()
-    return document
 
 
 async def _make_draft(

@@ -24,6 +24,7 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Genre,
+    LegalDocument,
     ModerationStatus,
     StoryPromptTemplate,
     StoryVersionDetail,
@@ -108,6 +109,28 @@ async def _make_asset(
     db_session.add(asset)
     await db_session.flush()
     return asset
+
+
+async def _make_published(
+    db_session: AsyncSession,
+    *,
+    kind: str = "terms",
+    version: str = "2024-01-01",
+    body_markdown: str = "게시된 내용",
+    requires_reconsent: bool = False,
+    published_at: datetime | None = None,
+) -> LegalDocument:
+    document = LegalDocument(
+        kind=kind,
+        version=version,
+        body_markdown=body_markdown,
+        status="published",
+        requires_reconsent=requires_reconsent,
+        published_at=published_at or datetime.now(UTC),
+    )
+    db_session.add(document)
+    await db_session.flush()
+    return document
 
 
 async def _make_published_story(
