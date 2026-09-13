@@ -19,6 +19,12 @@ AspectRatio = Literal["1:1", "4:3", "3:4", "16:9", "9:16", "2:3"]
 # LG-16: 첫 런은 단일 모델("v1")로 시작한다.
 ImageModelId = Literal["v1"]
 
+# guard-contract.md LC-4a / guard-techspec.md GT-1: 집 PC의 두 가드(생성 전 프롬프트,
+# 생성 후 이미지)가 422로 실어 보내는 고정 카테고리. 여기 두는 이유는 위 순환 회피와
+# 같다 — `llm/local_image.py`(예외)·`images/jobs.py`(Redis 모델)·`images/schemas.py`
+# (응답) 셋이 같은 리터럴을 공유해야 한다.
+ImageBlockedReason = Literal["prompt", "image"]
+
 
 class ImageStylePreset(str, enum.Enum):
     # local-image-gen-goal-prompt.md LG-16: 로컬 전환 후의 유일한 실사용 프리셋.

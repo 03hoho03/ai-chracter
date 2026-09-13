@@ -2,7 +2,8 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Callable
-from typing import get_args
+from dataclasses import dataclass
+from typing import Literal, assert_never, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -14,7 +15,14 @@ from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigne
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
-from api.images.models import IMAGE_MODELS, IMAGE_STYLE_PRESETS_BY_ID, AspectRatio, ImageModelId, ImageStylePreset
+from api.images.models import (
+    IMAGE_MODELS,
+    IMAGE_STYLE_PRESETS_BY_ID,
+    AspectRatio,
+    ImageBlockedReason,
+    ImageModelId,
+    ImageStylePreset,
+)
 from api.images.schemas import (
     GenerateImageRequest,
     GenerateImageResponse,
@@ -26,7 +34,7 @@ from api.images.schemas import (
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient
-from api.llm.local_image import get_capabilities, release_admission, try_admit
+from api.llm.local_image import LocalImageBlockedError, get_capabilities, release_admission, try_admit
 from api.session.dependencies import get_current_user_id
 
 # local-image-gen-contract.md LC-1: 정적 레지스트리 ↔ 로컬 capabilities 불일치는 조용한
@@ -38,6 +46,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/images", tags=["images"])
 
 
+@dataclass(frozen=True)
+class _GenerationResult:
+    """`_generate_and_store_one`의 3치 결과 — `bool` 2치로는 "차단"을 표현할 자리가
+    없었다(guard-goal-prompt.md §1-5). `outcome`이 Literal이라 `_run_generation`의
+    분기 누락을 mypy `assert_never`가 잡는다(guard-techspec.md GT-2,
+    `llm/dependencies.py`의 기존 `assert_never` 패턴)."""
+
+    outcome: Literal["succeeded", "blocked", "failed"]
+    blocked_reason: ImageBlockedReason | None = None
+
+
 async def _generate_and_store_one(
     image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -46,7 +65,7 @@ async def _generate_and_store_one(
     prompt: str,
     style: ImageStylePreset,
     aspect_ratio: AspectRatio,
-) -> bool:
+) -> _GenerationResult:
     try:
         data, mime_type = await image_client.generate_image(prompt, style, aspect_ratio)
         asset_id = uuid.uuid4()
@@ -55,7 +74,7 @@ async def _generate_and_store_one(
         # Invariant: a READY image asset always has a `{key}_thumb.webp` variant.
         # The bytes are already in memory, so no download_object round-trip. A
         # thumbnail failure falls through to the except blocks below (return
-        # False) before the Asset row is created — never READY with only the
+        # "failed") before the Asset row is created — never READY with only the
         # original.
         thumbnail_bytes = await run_in_threadpool(generate_thumbnail, data)
         await run_in_threadpool(
@@ -75,14 +94,19 @@ async def _generate_and_store_one(
             await session.commit()
 
         await update_job(job_id, completed_increment=1, asset_id=asset_id)
-        return True
+        return _GenerationResult(outcome="succeeded")
+    except LocalImageBlockedError as exc:
+        # guard-techspec.md GT-1: `LocalImageBlockedError`는 `LLMClientError`의
+        # 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야 한다 — 순서가
+        # 바뀌면 차단이 조용히 일반 실패로 접힌다.
+        return _GenerationResult(outcome="blocked", blocked_reason=exc.reason)
     except LLMClientError:
-        return False
+        return _GenerationResult(outcome="failed")
     except Exception as exc:
         # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에
         # 영원히 멈추는 것을 방지한다(uvicorn이 root logger 핸들러를 안 붙여서 print로 남긴다).
         print(f"[imggen] job={job_id} unexpected generation error: {type(exc).__name__}: {exc}", flush=True)
-        return False
+        return _GenerationResult(outcome="failed")
 
 
 async def _run_generation(
@@ -108,8 +132,73 @@ async def _run_generation(
                 for _ in range(count)
             ]
         )
-        if any(results):
-            await update_job(job_id, status=ImageGenerationJobStatus.SUCCEEDED)
+
+        # guard-techspec.md GT-3 / guard-progress.md I-1: `_generate_and_store_one`의
+        # 반환이 3치가 되면서 `if any(results):`를 그대로 두면, 파이썬은 non-bool
+        # 멤버를 전부 truthy로 보므로 전부 차단(succeeded 0건)이어도 이 줄이 True가
+        # 되어 잡이 SUCCEEDED로 잘못 끝난다. 성공/차단을 직접 센다 — `assert_never`가
+        # 세 번째 outcome을 빠짐없이 처리했는지 mypy로 강제한다.
+        succeeded_count = 0
+        failed_count = 0
+        blocked_reasons: list[ImageBlockedReason] = []
+        for result in results:
+            if result.outcome == "succeeded":
+                succeeded_count += 1
+            elif result.outcome == "blocked":
+                assert result.blocked_reason is not None
+                blocked_reasons.append(result.blocked_reason)
+            elif result.outcome == "failed":
+                failed_count += 1
+            else:
+                assert_never(result.outcome)
+
+        blocked_count = len(blocked_reasons)
+        blocked_reason: ImageBlockedReason | None = None
+        if blocked_reasons:
+            blocked_reason = blocked_reasons[0]
+            # guard-goal-prompt.md G-5: 사유만 남긴다 — 사용자 id·프롬프트 원문은
+            # 절대 넣지 않는다.
+            logger.warning("local image generation blocked: reason=%s count=%d", blocked_reason, blocked_count)
+            distinct_reasons = set(blocked_reasons)
+            if len(distinct_reasons) > 1:
+                # guard-techspec.md GT-3: 프롬프트 가드는 결정적이라 한 잡 안에서
+                # 사유가 섞일 수 없다(G-6) — 섞이면 로컬이 계약(LC-4b)을 어긴
+                # 것이므로 조용히 넘기지 않는다.
+                logger.warning(
+                    "local image generation blocked reasons mismatched within one job: reasons=%s",
+                    sorted(distinct_reasons),
+                )
+            if failed_count > 0:
+                # guard-progress.md 적대적 리뷰: GT-3의 표는 성공/차단 수만 키로
+                # 삼아 "차단과 무관한 진짜 실패가 함께 일어났다"는 칸이 아예 없었다
+                # — 그 조합은 순수 전부-차단 잡과 구분 불가능하게 FAILED+error=None
+                # 으로 끝나 진짜 회귀의 흔적이 `print()`뿐이 된다. 사용자 화면은
+                # 그대로 정책 차단으로 두고(사실이다), 운영자에게만 별개의 신호를
+                # 남긴다.
+                logger.warning(
+                    "local image generation blocked alongside a non-block failure: "
+                    "blocked_reason=%s blocked_count=%d failed_count=%d",
+                    blocked_reason,
+                    blocked_count,
+                    failed_count,
+                )
+
+        if succeeded_count > 0:
+            await update_job(
+                job_id,
+                status=ImageGenerationJobStatus.SUCCEEDED,
+                blocked_count=blocked_count,
+                blocked_reason=blocked_reason,
+            )
+        elif blocked_count > 0:
+            # guard-goal-prompt.md G-6: 문구는 FE가 조립한다 — error는 진짜 실패에만
+            # 쓰고 차단에는 쓰지 않는다.
+            await update_job(
+                job_id,
+                status=ImageGenerationJobStatus.FAILED,
+                blocked_count=blocked_count,
+                blocked_reason=blocked_reason,
+            )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
     finally:
@@ -283,4 +372,6 @@ async def get_image_job(
         completed_count=job.completed_count,
         images=images,
         error=job.error,
+        blocked_count=job.blocked_count,
+        blocked_reason=job.blocked_reason,
     )

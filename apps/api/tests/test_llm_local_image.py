@@ -18,6 +18,7 @@ from api.llm.client import LLMClientError
 from api.llm.local_image import (
     UNAVAILABLE,
     LocalCapabilities,
+    LocalImageBlockedError,
     LocalImageClient,
     ModelCapability,
     get_capabilities,
@@ -98,6 +99,113 @@ async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.Mo
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
         await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+
+
+async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """guard-techspec.md GT-1 / guard-contract-md LC-4a: 두 가드 사유를 구분 못 하면
+    GT-3/GT-5가 사유별로 분기·집계·로깅할 수 없어 사용자가 어떤 가드에 걸렸는지
+    영원히 알 수 없다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "content blocked", "reason": "prompt"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageBlockedError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert exc_info.value.reason == "prompt"
+
+
+async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """이미지 가드 사유가 프롬프트 가드로 잘못 표시되면, 재시도해도 소용없는데
+    사용자에게 "표현을 바꾸라"는 틀린 안내가 나간다(guard-goal-prompt.md G-4)."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "content blocked", "reason": "image"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageBlockedError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert exc_info.value.reason == "image"
+
+
+async def test_422_missing_reason_collapses_to_plain_llm_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LC-4a가 정의하지 않은 모양이다 — 이걸 차단으로 해석하면 계약 밖 422를 정책
+    차단으로 오독해 근거 없이 "정책 위반"이라고 사용자에게 말하게 된다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "content blocked"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
+
+
+async def test_422_unknown_reason_value_collapses_to_plain_llm_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """계약 밖 reason(신규 가드 종류 등)이 오면 서버가 모르는 카테고리를 차단으로
+    단정하지 않는다 — LC-4a "서버가 모르는 값이 오면 일반 실패로 접는다"."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "content blocked", "reason": "nsfw"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
+
+
+async def test_422_non_json_body_collapses_to_plain_llm_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """프록시가 끼어들어 만든 422(HTML 오류 페이지 등)를 정책 차단으로 오독하면
+    안 된다 — GT-1이 명시적으로 요구하는 안전장치다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, content=b"<html>not json</html>")
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
+
+
+async def test_422_detail_string_is_never_interpreted_only_reason_is(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LC-4a: 분기는 오직 `reason`이다. `detail` 문구를 매칭에 쓰면 로컬이 문구를
+    다듬을 때마다(오타 수정 등) 이 클라이언트가 깨진다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "완전히 다른 문구", "reason": "prompt"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageBlockedError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert exc_info.value.reason == "prompt"
+
+
+@pytest.mark.parametrize("status_code", [400, 429, 500])
+async def test_non_422_status_codes_never_raise_block_error(
+    monkeypatch: pytest.MonkeyPatch, status_code: int
+) -> None:
+    """GT-1이 422 처리를 추가한다고 다른 비200까지 차단으로 넓히면, 진짜 장애(500)·
+    계약 위반(400)·과부하(429)가 정책 차단으로 오인되어 잘못된 안내가 나간다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status_code, content=b'{"detail":"irrelevant"}')
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
 async def test_request_body_carries_prompt_unmodified_and_access_headers(

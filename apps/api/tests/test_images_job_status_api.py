@@ -63,6 +63,10 @@ async def test_get_job_in_progress_reports_partial_state(
     assert body["completedCount"] == 0
     assert body["images"] == []
     assert body["error"] is None
+    # guard-techspec.md GT-4: 차단이 없으면 blocked 필드는 기본값(0/None)으로 내려야
+    # 한다 — 안 그러면 FE의 exhaustive switch가 없는 차단을 있는 것으로 오판한다.
+    assert body["blockedCount"] == 0
+    assert body["blockedReason"] is None
 
 
 async def test_get_job_succeeded_returns_presigned_image_urls(
@@ -102,6 +106,32 @@ async def test_get_job_succeeded_returns_presigned_image_urls(
     assert len(body["images"]) == 1
     assert body["images"][0]["assetId"] == str(asset_id)
     assert body["images"][0]["imageUrl"].startswith("http")
+
+
+async def test_get_job_reports_blocked_count_and_reason(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """guard-techspec.md GT-4: `ImageJobStatusResponse`가 blockedCount/blockedReason을
+    camelCase로 내리지 않으면, 내부 잡 레코드가 차단을 정확히 집계해도 FE는 부분
+    차단을 절대 알 수 없다(guard-goal-prompt.md G-3)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    job = await create_job(user.id, requested_count=2)
+    await update_job(
+        job.job_id,
+        status=ImageGenerationJobStatus.SUCCEEDED,
+        blocked_count=1,
+        blocked_reason="image",
+    )
+
+    resp = await db_client.get(f"/images/jobs/{job.job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["blockedCount"] == 1
+    assert body["blockedReason"] == "image"
 
 
 async def test_get_job_failed_reports_error(
