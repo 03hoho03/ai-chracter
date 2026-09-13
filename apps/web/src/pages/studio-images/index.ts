@@ -1,2 +1,2 @@
-export { STUDIO_IMAGES_TABS, isStudioImagesTab, type StudioImagesTab } from "./model/studioImagesTab";
+export { IMAGE_STUDIO_TABS, isImageStudioTab, type ImageStudioTab } from "@/widgets/image-studio";
 export { StudioImagesPage } from "./ui/StudioImagesPage";
