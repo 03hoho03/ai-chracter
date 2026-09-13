@@ -17,7 +17,7 @@ from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
 from api.images.models import (
     IMAGE_MODELS,
-    IMAGE_STYLE_PRESETS_BY_ID,
+    IMAGE_STYLE_PRESETS,
     AspectRatio,
     ImageBlockedReason,
     ImageModelId,
@@ -205,24 +205,27 @@ async def _run_generation(
         release_admission()
 
 
-def _known_styles(wire_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
-    """local-image-gen-goal-prompt.md LG-19: 로컬이 보고하는 건 **와이어** 스타일 id다 —
-    공개 id로 되매핑한 뒤에야 정적 라벨 레지스트리와 교차할 수 있다. N=1이라 매핑은
-    스칼라 비교 하나다(LG-16, style이 여럿이 되면 이 함수가 다시 설계된다). 서버가 모르는
-    id는 무시한다(contract LC-1과 같은 규칙을 모델뿐 아니라 스타일에도 적용)."""
-    items: list[ImageStyleItem] = []
-    for wire_style_id in wire_style_ids:
-        if wire_style_id != settings.local_image_style_wire_id:
-            continue
-        spec = IMAGE_STYLE_PRESETS_BY_ID.get(ImageStylePreset.BASE.value)
-        if spec is not None:
-            items.append(ImageStyleItem(id=spec.id, name=spec.name))
-    return items
+def _style_items(wire_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
+    """image-refact-techspec.md IT-3 — 레지스트리 전체를 내리고, 로컬이 보고한 것만
+    available=true로 표시한다. (이전 `_known_styles`는 로컬 보고값으로 **걸렀다** — 그러면
+    준비 중 스타일이 응답에서 사라져 "없는 것"과 구분되지 않는다.)
+
+    LG-19: 로컬은 공개 id가 아니라 와이어 id를 보고한다. 매핑은 아직 스칼라 하나
+    (`settings.local_image_style_wire_id`)이고, 준비 중 3종에 매핑이 없다는 사실이 곧
+    available=false의 이유다 — 켤 때 이 설정을 매핑으로 바꾸는 것이 그 작업의 본체다
+    (image-refact-goal-prompt.md §7-3).
+    """
+    served = settings.local_image_style_wire_id in wire_style_ids
+    return [
+        ImageStyleItem(id=spec.id, name=spec.name, available=served and spec.id == ImageStylePreset.BASE.value)
+        for spec in IMAGE_STYLE_PRESETS
+    ]
 
 
 # 로컬이 보고하는 aspect_ratio는 (JSON을 거쳐 온) 평범한 str이라 `AspectRatio` Literal로
-# 정적으로 좁혀지지 않는다 — dict 조회로 좁히고, 서버가 모르는 값은 `_known_styles`와 같은
-# 규칙으로 무시한다.
+# 정적으로 좁혀지지 않는다 — dict 조회로 좁히고, 서버가 모르는 값은 무시한다. (`_style_items`는
+# image-refact-techspec.md IT-3부터 이 규칙을 쓰지 않는다 — 레지스트리 전체를 항상 내리고
+# `available`로만 표시한다.)
 _ASPECT_RATIO_VALUES: dict[str, AspectRatio] = {ratio: ratio for ratio in get_args(AspectRatio)}
 
 
@@ -265,8 +268,12 @@ async def list_image_models(
                 )
             )
             continue
-        styles = _known_styles(capability.styles)
-        if not styles:
+        styles = _style_items(capability.styles)
+        # image-refact-techspec.md IT-4: `_style_items`(IT-3)가 레지스트리 전체(항상
+        # 4개)를 내리면서 `bool(styles)`는 항진명제가 됐다 — styles가 비는 경우가
+        # 없어져 이 조건이 늘 True였다. LG-20의 의도("실제로 생성 가능")를 지키려면
+        # available 플래그로 직접 물어야 한다.
+        if not any(style.available for style in styles):
             # LG-20: capability는 있지만 매핑되는 style이 하나도 없다 — id 불일치(위)와는
             # 다른 조용한 기능 축소라 구분되는 문구로 남긴다.
             logger.warning("local image capability for registered model id %s maps to no usable style", spec.id)
@@ -275,7 +282,7 @@ async def list_image_models(
                 id=spec.id,
                 name=spec.name,
                 supported_aspect_ratios=_known_aspect_ratios(capability.aspect_ratios),
-                available=bool(styles),
+                available=any(style.available for style in styles),
                 styles=styles,
             )
         )
@@ -307,10 +314,13 @@ async def generate_images(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"model '{payload.model}' does not support aspect ratio '{payload.aspect_ratio}'",
         )
-    # LG-19: capability.styles는 로컬이 보고한 와이어 style id들이다 — 비교 전에
-    # 공개 style을 와이어로 매핑해야 한다(N=1이라 스칼라 하나, LG-16). 사용자에게 보이는
+    # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IT-3)가
+    # 요청된 스타일이 레지스트리에 있는지와 지금 매핑되어 있는지(available)를 함께 본다.
+    # LG-19: capability.styles는 로컬이 보고한 와이어 style id들이라 `_style_items`가
+    # 내부에서 와이어→공개 매핑을 한다(N=1이라 스칼라 하나, LG-16). 사용자에게 보이는
     # detail은 공개 값(`payload.style.value`)을 그대로 쓴다 — 와이어 id를 노출하지 않는다.
-    if settings.local_image_style_wire_id not in capability.styles:
+    style_items = _style_items(capability.styles)
+    if not any(item.available and item.id == payload.style.value for item in style_items):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"model '{payload.model}' does not support style '{payload.style.value}'",

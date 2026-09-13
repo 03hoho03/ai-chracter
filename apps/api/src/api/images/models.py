@@ -27,8 +27,14 @@ ImageBlockedReason = Literal["prompt", "image"]
 
 
 class ImageStylePreset(str, enum.Enum):
-    # local-image-gen-goal-prompt.md LG-16: 로컬 전환 후의 유일한 실사용 프리셋.
+    # local-image-gen-goal-prompt.md LG-16: 로컬 전환 후 첫 실사용 프리셋.
     BASE = "base"
+    # image-refact-goal-prompt.md IR-12/IR-13: 레지스트리엔 있지만 아직 어떤 와이어
+    # style에도 매핑되지 않아 `available: false`로 내려간다(image-refact-techspec.md
+    # IT-3). 매핑을 켜는 작업은 별도 런(§7-3).
+    LINE = "line"  # 극화
+    WATER = "water"  # 수채
+    REAL = "real"  # 반실사
 
 
 @dataclass(frozen=True)
@@ -47,5 +53,11 @@ class ImageStyleSpec:
     name: str
 
 
-IMAGE_STYLE_PRESETS: tuple[ImageStyleSpec, ...] = (ImageStyleSpec(id="base", name="기본"),)
-IMAGE_STYLE_PRESETS_BY_ID: dict[str, ImageStyleSpec] = {s.id: s for s in IMAGE_STYLE_PRESETS}
+# image-refact-techspec.md IT-1: base의 id는 그대로 두고 표시명만 "기본"→"순정"으로
+# 바꾼다(IR-12). 순서가 곧 `GET /images/models`의 응답 순서다(IT-3).
+IMAGE_STYLE_PRESETS: tuple[ImageStyleSpec, ...] = (
+    ImageStyleSpec(id="base", name="순정"),
+    ImageStyleSpec(id="line", name="극화"),
+    ImageStyleSpec(id="water", name="수채"),
+    ImageStyleSpec(id="real", name="반실사"),
+)

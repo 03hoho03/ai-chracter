@@ -160,6 +160,27 @@ async def test_generate_rejects_style_the_local_does_not_serve_under_the_wire_id
     assert resp.status_code == 400
 
 
+async def test_generate_rejects_registry_style_that_is_not_yet_available(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-refact-techspec.md IT-1/IT-3/IT-5: 위 테스트(로컬이 그 와이어 id를 안
+    서빙한다)와는 다른 축이다 — 여기는 와이어 id 매핑이 정상(`_stub_capabilities_ready`가
+    기본 와이어 id "base"를 그대로 서빙)인데, `style: "line"`이 레지스트리(IT-1)엔
+    있지만 아직 어떤 와이어 style에도 매핑되지 않아 `available: false`인 경우(IT-3)다.
+    detail 형식은 바로 위 종횡비 400(`router.py:305-309`)과 대칭이어야 한다(IT-5)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _stub_capabilities_ready(monkeypatch)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(style="line"))
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "model 'v1' does not support style 'line'"
+
+
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -193,7 +214,15 @@ async def test_list_image_models_returns_capabilities(
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
-    assert models["v1"]["styles"] == [{"id": "base", "name": "기본"}]
+    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 4종은 항상 전부 내려가고
+    # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `base`
+    # (표시명 "순정") 하나뿐이라 나머지 3종은 `available: false`다.
+    assert models["v1"]["styles"] == [
+        {"id": "base", "name": "순정", "available": True},
+        {"id": "line", "name": "극화", "available": False},
+        {"id": "water", "name": "수채", "available": False},
+        {"id": "real", "name": "반실사", "available": False},
+    ]
 
 
 async def test_generate_creates_assets_and_completes_job(

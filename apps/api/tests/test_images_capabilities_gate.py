@@ -135,7 +135,15 @@ async def test_models_endpoint_maps_wire_capability_back_to_public_ids(
     assert resp.status_code == 200
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
-    assert models["v1"]["styles"] == [{"id": "base", "name": "기본"}]
+    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 4종은 항상 전부 내려가고
+    # (순서도 레지스트리 순서 그대로), 이 매핑에서 서빙되는 건 `base`(표시명 "순정")
+    # 하나뿐이라 나머지 3종은 `available: false`다.
+    assert models["v1"]["styles"] == [
+        {"id": "base", "name": "순정", "available": True},
+        {"id": "line", "name": "극화", "available": False},
+        {"id": "water", "name": "수채", "available": False},
+        {"id": "real", "name": "반실사", "available": False},
+    ]
 
 
 async def test_registry_entry_unavailable_when_capability_has_no_style_that_maps(
@@ -144,7 +152,7 @@ async def test_registry_entry_unavailable_when_capability_has_no_style_that_maps
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-17: `available`이 `_known_styles()`의 결과와
+    """local-image-gen-goal-prompt.md LG-17: `available`이 `_style_items()`의 결과와
     무관하게 `capability_for()`의 존재만으로 정해지면, 홈PC가 와이어 style을 하나도
     서빙하지 않을 때도 `available: true, styles: []`가 나가 FE의 제출 버튼이 눌려도
     아무 일도 일어나지 않고 사용자는 이유를 알 방법이 없다(불일치는 조용한 기능 축소이므로
