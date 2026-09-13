@@ -2204,6 +2204,9 @@ export interface paths {
          *
          *     local-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를
          *     보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.
+         *
+         *     LG-20: `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
+         *     매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).
          */
         get: operations["list_image_models_images_models_get"];
         put?: never;
@@ -4089,6 +4092,10 @@ export interface components {
             images: components["schemas"]["ImageJobImageItem"][];
             /** Error */
             error: string | null;
+            /** Blockedcount */
+            blockedCount: number;
+            /** Blockedreason */
+            blockedReason: ("prompt" | "image") | null;
         };
         /** ImageModelItem */
         ImageModelItem: {

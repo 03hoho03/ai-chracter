@@ -1,9 +1,11 @@
 import asyncio
+import json
 import uuid
 
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.images.jobs import (
+    ImageGenerationJob,
     ImageGenerationJobStatus,
     create_job,
     enqueue_generation,
@@ -106,6 +108,30 @@ async def test_update_job_sets_failed_status_and_error() -> None:
 
 async def test_update_job_on_nonexistent_job_is_a_noop() -> None:
     await update_job(uuid.uuid4().hex, status=ImageGenerationJobStatus.FAILED)
+
+
+def test_image_generation_job_without_blocked_fields_still_validates() -> None:
+    """guard-techspec.md GT-4 / guard-progress.md I-1: 잡 TTL이 1시간이라 배포 직후
+    최대 1시간 동안 `blocked_count`/`blocked_reason` 필드가 없는 옛 Redis 레코드가
+    남아 있다. 기본값이 없으면 `model_validate_json`이 `ValidationError`로 터져 그
+    잡의 폴링 엔드포인트(`GET /images/jobs/{id}`)가 500이 된다(I-1 실측 재현) — 이
+    테스트가 그 기본값을 고정한다."""
+    old_record = json.dumps(
+        {
+            "job_id": "abc123",
+            "owner_user_id": str(uuid.uuid4()),
+            "status": "succeeded",
+            "requested_count": 1,
+            "completed_count": 1,
+            "asset_ids": [],
+            "error": None,
+        }
+    )
+
+    job = ImageGenerationJob.model_validate_json(old_record)
+
+    assert job.blocked_count == 0
+    assert job.blocked_reason is None
 
 
 async def test_enqueue_generation_runs_handler_as_background_task() -> None:

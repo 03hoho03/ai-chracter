@@ -9,6 +9,7 @@ from redis.exceptions import WatchError
 
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.images.models import ImageBlockedReason
 
 
 class ImageGenerationJobStatus(str, enum.Enum):
@@ -28,6 +29,11 @@ class ImageGenerationJob(BaseModel):
     completed_count: int = 0
     asset_ids: list[uuid.UUID] = Field(default_factory=list)
     error: str | None = None
+    # guard-techspec.md GT-4: 둘 다 기본값이 필수다 — 잡 TTL이 1시간이라 배포 직후
+    # 최대 1시간 동안 이 필드가 없는 옛 레코드가 Redis에 남아 있고, 기본값이 없으면
+    # `model_validate_json`이 터져 폴링 엔드포인트가 500이 된다(guard-progress.md I-1).
+    blocked_count: int = 0
+    blocked_reason: ImageBlockedReason | None = None
 
 
 def _job_key(job_id: str) -> str:
@@ -70,10 +76,17 @@ async def update_job(
     completed_increment: int = 0,
     asset_id: uuid.UUID | None = None,
     error: str | None = None,
+    blocked_count: int = 0,
+    blocked_reason: ImageBlockedReason | None = None,
 ) -> None:
     """Progress-update helper: bumps `completed_count`, appends a succeeded
     `asset_id`, and/or sets `status`/`error` (e.g. queued->running, or the final
     succeeded/failed transition once generation finishes).
+
+    `blocked_count`/`blocked_reason` are set as absolute values, not increments
+    (guard-techspec.md GT-3) — unlike `completed_increment`, the blocked tally is
+    decided once by `_run_generation`'s aggregation after `asyncio.gather`
+    completes, not by concurrently-running callers.
 
     Uses Redis WATCH/MULTI/EXEC (optimistic locking, retried on conflict)
     instead of a plain GET-then-SET: US-004's `asyncio.gather`'d generation
@@ -98,6 +111,10 @@ async def update_job(
                     job.asset_ids.append(asset_id)
                 if error is not None:
                     job.error = error
+                if blocked_count:
+                    job.blocked_count = blocked_count
+                if blocked_reason is not None:
+                    job.blocked_reason = blocked_reason
                 pipe.multi()  # type: ignore[no-untyped-call]
                 pipe.set(key, job.model_dump_json(), ex=settings.image_generation_job_ttl_seconds)
                 await pipe.execute()

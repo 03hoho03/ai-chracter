@@ -19,9 +19,20 @@ from dataclasses import dataclass
 import httpx
 
 from api.core.config import settings
-from api.images.models import ImageStylePreset
+from api.images.models import ImageBlockedReason, ImageStylePreset
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient
+
+
+class LocalImageBlockedError(LLMClientError):
+    """집 PC의 콘텐츠 정책 가드(프롬프트 사전 차단 · 이미지 사후 검증)가 422로 차단한
+    경우에만 올린다(guard-contract.md LC-4a). `LLMClientError`를 상속하는 이유는
+    기존 `except LLMClientError` 경로가 이 예외를 놓쳐도 일반 실패로 안전하게 떨어지게
+    하기 위해서다(fail-safe, guard-techspec.md GT-1)."""
+
+    def __init__(self, *, reason: ImageBlockedReason) -> None:
+        self.reason = reason
+        super().__init__(f"Local image generation blocked by content policy guard: reason={reason}")
 
 
 @dataclass(frozen=True)
@@ -204,6 +215,19 @@ class LocalImageClient(ImageClient):
                 )
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 422:
+                # guard-contract.md LC-4a: 본문은 `{"detail": "...", "reason": "prompt"|"image"}`
+                # 평평한 구조다. `detail`은 해석하지 않는다 — 분기는 오직 `reason`이다.
+                # 본문이 JSON이 아니거나 `reason`이 계약 밖 값이면 일반 실패로 접는다
+                # (guard-techspec.md GT-1) — 프록시가 끼어든 422를 정책 차단으로
+                # 오독하면 안 된다.
+                try:
+                    error_body = exc.response.json()
+                except ValueError:
+                    error_body = None
+                reason = error_body.get("reason") if isinstance(error_body, dict) else None
+                if reason == "prompt" or reason == "image":
+                    raise LocalImageBlockedError(reason=reason) from exc
             raise LLMClientError(
                 f"Local image generation failed: {exc.response.status_code} {exc.response.text[:300]}"
             ) from exc
