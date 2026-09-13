@@ -58,7 +58,13 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
     const firstAvailable = models.find((model) => model.available);
     if (firstAvailable == null) return;
     hasAppliedModelDefaultsRef.current = true;
-    reset({ ...getValues(), model: firstAvailable.id, style: firstAvailable.styles[0]?.id ?? "" });
+    // styles[0]은 레지스트리 순서에 기대는 것이라 스타일이 여럿이고 그중 앞쪽이 available: false면
+    // 깨진다 — 가용한 첫 스타일을 명시적으로 찾는다.
+    reset({
+      ...getValues(),
+      model: firstAvailable.id,
+      style: firstAvailable.styles.find((style) => style.available)?.id ?? "",
+    });
   }, [models, getValues, reset]);
 
   // 배경 refetch 실패(staleTime 30s + refetchOnWindowFocus 기본값)에도 query-core의 'error' reducer는
@@ -101,8 +107,11 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
       if (firstSupported != null) setValue("aspectRatio", firstSupported);
     }
     if (!nextModel.styles.some((style) => style.id === getValues("style"))) {
-      const [firstStyle] = nextModel.styles;
-      if (firstStyle != null) setValue("style", firstStyle.id);
+      // styles[0]은 레지스트리 순서 의존이라 같은 이유로 고친다 — 지금은 모델이 v1 하나뿐이라
+      // 이 분기 자체가 도달 불가(모델 전환이 없다)지만, 같은 식을 반쪽만 고치면 다음 사람이
+      // 어느 쪽이 맞는지 알 수 없다.
+      const firstAvailableStyle = nextModel.styles.find((style) => style.available);
+      if (firstAvailableStyle != null) setValue("style", firstAvailableStyle.id);
     }
   };
 
@@ -176,8 +185,13 @@ export function GenerateImagesForm({ onSubmit }: GenerateImagesFormProps) {
                 </SelectTrigger>
                 <SelectContent>
                   {styleOptions.map((style) => (
-                    <SelectItem key={style.id} value={style.id}>
+                    // BE가 스타일 4종을 내리기 시작하는 시점과 PR ②의 스타일 그리드가 이 Select를
+                    // 대체하는 시점 사이 구간에 대한 최소 안전망이다(image-refact-techspec.md §6-2) —
+                    // 없으면 미가용 스타일을 골라 생성 시 400을 받는다. PR ②에서 그리드로 대체되며
+                    // 이 자리는 사라진다.
+                    <SelectItem key={style.id} value={style.id} disabled={!style.available}>
                       {style.name}
+                      {!style.available && " · 준비 중"}
                     </SelectItem>
                   ))}
                 </SelectContent>
