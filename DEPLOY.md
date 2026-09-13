@@ -51,6 +51,7 @@ Cloudflare 애니캐스트 IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 �
 | VM 파일 소유 | **root + sudo 배포** | OS Login은 접속 주체마다 POSIX 사용자가 달라, 사람 계정 소유로 두면 배포 SA가 git·docker·`.env` 셋 다 막힌다 |
 | 백업 위치 | **자산 버킷의 `backup/`** | 기존 R2 토큰이 그 버킷 전용이라 새 토큰 없이 쓰려면 이 방법뿐. 대신 prune이 백업 파일명 형태에 **정확히** 맞는 것만 지우게 해 자산과 격리했다 |
 | `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·compose healthcheck·배포 검증이 의존). 자원 장애 감지는 `/ready`가 맡는다 |
+| 이미지 생성 → 집 PC 경로 | **Cloudflare Tunnel + Access 서비스 토큰** | VM에 데몬·컨테이너 네트워크 변경·키 로테이션이 필요 없다. 세마포어(§5)가 매 HTTP 호출을 생성 1건으로 묶어 두므로 엣지 요청 제한에 다가가지 않는다. 체크포인트 스왑을 도입하면 그 전제가 깨져 Tailscale로 돌아간다 |
 
 **기각한 것**: Caddy `flush_interval -1` — 있으나 없으나 SSE 도착 간격이 같았다(300ms 간격 5개 실측:
 0.28/0.58/0.89/1.19s vs 0.30/0.60/0.91/1.21s). Caddy 2가 `text/event-stream`을 감지해 자동 flush 한다.
@@ -99,7 +100,7 @@ R2 무료 한도는 10GB이고 **생성 이미지가 여기부터 병목**이다
 ### 1-2. Gemini
 
 Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다. 이미지 생성은 Gemini가 아니라
-Cloudflare Workers AI다 — §5.
+집 PC의 자가 호스팅 추론 서버다 — §5.
 
 ### 1-3. Google OAuth (로그인)
 
@@ -118,8 +119,10 @@ Cloudflare Workers AI다 — §5.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**26개 키다**: 앱 런타임 21개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME` 제외) + compose용 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·
-`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
+**29개 키다**: 앱 런타임 24개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외) + compose용
+5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는
+**로컬 개발용이며 배포와 무관하다.**
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -133,7 +136,14 @@ Cloudflare Workers AI다 — §5.
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
 | `GEMINI_MODEL_NAME` | 기본 `gemini-2.5-flash` | 보통 생략 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | §1-3 |
-| `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` | Workers AI용(R2 토큰과 별개) | 이미지 생성. §5 |
+| `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. §5 |
+| `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. §5 |
+| `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**(§5) |
+| `LOCAL_IMAGE_STYLE_WIRE_ID` | 집 PC가 보고하는 **실제** 스타일 id | **이미지 생성 필수.** 위와 같다(기본값 `base`) |
+| `LOCAL_IMAGE_TIMEOUT_SECONDS` | 기본 `90` | 안전한 기본값 — 보통 생략. 근거는 §5의 실측치 |
+| `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS` | 기본 `30` | 안전한 기본값 — 보통 생략 |
+| `LOCAL_IMAGE_QUEUE_LIMIT` | 기본 `4` | 안전한 기본값 — 보통 생략 |
+| `EXPOSE_API_DOCS` | 기본 `false` | 안전한 기본값(닫힘) — **운영에서는 절대 켜지 않는다.** 켜면 `/docs`·`/openapi.json`이 열려 이미지 모델의 불투명 id 은닉(§5)이 무의미해진다 |
 | `S3_ENDPOINT_URL` | `https://<accountid>.r2.cloudflarestorage.com` | R2 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | R2 API 토큰 키쌍 | boto3가 프로세스 env로 읽는다 |
 | `AWS_REGION` | `auto` | R2 규약 |
@@ -245,6 +255,14 @@ Pages 프로젝트 2개, 각각 Git 연동으로 `main` push 시 자동 빌드:
 배포되지 않았다. 반드시 `*` 하나만 쓸 것. 스킵된 커밋은 대시보드에서 **Retry deployment** — watch
 paths를 고쳐도 과거 푸시가 소급 빌드되지는 않는다.
 
+⚠️ **이미지 생성 count 상한을 낮추는 배포는 전환 구간에 짧은 비대칭이 있다.** BE는 GitHub Actions,
+FE는 Cloudflare Pages 자체 Git 연동이라 같은 push라도 두 배포가 끝나는 시점이 다르다(순서 보장 없음).
+그 사이 구 FE 번들이 살아 있으면 사용자가 여전히 `count` 3~4를 고를 수 있는데, 새 BE는 상한을 2로
+낮췄으므로 그 제출은 **422를 한 번** 받는다(`styles`·`available` 필드 추가는 필드 추가뿐이라 구 FE에
+무해하다). 이미 열려 있던 탭은 SPA라 새로고침 전까지 구 번들을 그대로 쓴다. **서버에서 값을 조용히
+클램프하지 않는다** — 조용한 축소가 눈에 보이는 422보다 나쁘다는 판단이다. 양쪽 배포가 끝나면 저절로
+사라진다.
+
 ### 3-4. 백업 · 복원
 
 백업은 VM 크론이 매일 18:00 UTC에 돈다(`apps/api/scripts/ops/backup_db.py`, `-Fc --no-owner
@@ -290,22 +308,53 @@ R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/da
 
 ## 5. 이미지 생성
 
-**Cloudflare Workers AI**를 쓴다 — Gemini 이미지 모델은 무료 티어 quota가 0이었다. 현재 고를 수 있는
-모델은 `flux-schnell`(1:1만)과 `sdxl`(전 종횡비) 둘뿐이고(`api/images/models.py`), 실제 클라이언트는
-`llm/dependencies.py`가 `CloudflareImageClient`로만 만든다. 그래서 `CLOUDFLARE_ACCOUNT_ID`/
-`CLOUDFLARE_API_TOKEN`이 필요하고 `GEMINI_IMAGE_MODEL_NAME`은 쓰이지 않는다(`GeminiImageClient`
-클래스는 코드에 남아 있으나 레지스트리가 고르지 않는다). 생성 이미지는 R2에 저장된다.
+**집 PC의 자가 호스팅 추론 서버**를 쓴다. 서버는 NSSM Windows 서비스로 등록돼 상시 구동되고(재부팅
+자동 기동, 크래시 자동 재시작), `127.0.0.1:8100`에만 바인드한다(외부 노출 없음). VM은 **Cloudflare
+Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-Secret` 헤더로 Access 서비스
+토큰을 함께 보낸다 — 이 경로를 고른 근거는 §0-2. 실제 클라이언트는 `llm/dependencies.py`가
+`LocalImageClient`(`llm/local_image.py`)로만 만든다.
 
-생성 잡은 응답 뒤 `asyncio.create_task`로 돈다 — VM에는 CPU 스로틀링이 없어 완주한다(실측: status
-`succeeded`, R2에 283KB JPEG).
+사용자에게 노출되는 것은 불투명 id 한 쌍뿐이다 — 모델 `v1`(표시명 "v1"), 스타일 `base`(표시명 "기본").
+체크포인트·LoRA·프리셋 문안·샘플러 파라미터는 전부 집 PC 소유이고, 서버는 프롬프트 원문과 이 두 id,
+`aspect_ratio` 문자열만 보낸다. 서버↔집 PC 계약은 `tasks/local-image-gen-contract.md`(저장소 밖,
+`.gitignore` 대상)에 있다.
+
+생성 잡은 기존과 동일하게 응답(202) 뒤 `asyncio.create_task`로 돌고, 이미지는 그대로 R2에 올라간다.
+서버는 모듈 수준 `asyncio.Semaphore(1)`로 GPU 호출을 직렬화하고(프로덕션이 uvicorn 단일 프로세스라 이
+정도로 충분하다 — §0-2), 별도 카운터(`LOCAL_IMAGE_QUEUE_LIMIT`, 기본 4)로 대기열 깊이를 제한해 초과
+요청은 잡을 만들지 않고 즉시 429로 거절한다. 생성 전에는 `GET /capabilities`를 TTL 캐시
+(`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
+503으로 차단한다.
+
+**측정치**(집 PC 팀의 계약 이행 확인서 기준):
+
+| 항목 | 값 |
+|---|---|
+| 생성 시간(정상 상태) | 약 17~20초 |
+| 생성 시간(종횡비 버킷 전환 직후 첫 요청) | **27~34초** — `torch.backends.cudnn.benchmark`가 그 해상도의 커널을 처음 탐색·캐시하는 비용이다. **`LOCAL_IMAGE_TIMEOUT_SECONDS`가 45초가 아니라 90초인 이유가 이 값이다** |
+| 재부팅 후 콜드스타트 | 약 5.4초(프로세스 기동 → `/capabilities` 첫 200) |
+| VRAM | 상주 0 MiB(오프로드 훅, forward 시점까지 GPU에 올리지 않음) · 생성 피크 **5494 MiB** |
+
+⚠️ **지금 이 브랜치에서 이미지 생성은 동작하지 않는다** — 배포 전에 §6을 반드시 읽을 것.
 
 ---
 
 ## 6. 알려진 갭
 
-- **이메일 발송 연동은 구현됐으나 아직 배포되지 않았다**(`apps/api/src/api/core/email.py`). `EMAIL_PROVIDER=resend`
-  + `RESEND_API_KEY`(§2-1)를 VM env에 설정해야 실제로 발송되고, 설정 전 기본값(`console`)에서는 콘솔에
-  로그만 찍고 발송하지 않는다 → 배포·env 설정 전까지는 이메일/비밀번호 가입의 인증 코드가 여전히 나가지 않는다.
+- ⚠️ **이미지 생성은 아직 켜지지 않았다.** 코드는 완성됐고(공개 id ↔ 와이어 id 매핑 포함) 스위트도
+  그린이지만, **저장소 밖의 선행 조건이 남아 있다** — Cloudflare Tunnel과 Access 서비스 토큰을 만들고
+  VM `.env`에 `LOCAL_IMAGE_BASE_URL`·`LOCAL_IMAGE_ACCESS_CLIENT_ID`·`LOCAL_IMAGE_ACCESS_CLIENT_SECRET`과
+  **와이어 id 두 개**(`LOCAL_IMAGE_MODEL_WIRE_ID`·`LOCAL_IMAGE_STYLE_WIRE_ID`, §2-1)를 채워야 한다.
+  하나라도 비면 capabilities 프로브가 실패하거나 id 교차가 전부 걸러져 **모든 생성 요청이 사전
+  차단(503)**된다 — 방어 로직이 설계대로 작동한 결과이지 버그가 아니다. 넷을 다 채운 뒤 §5의 검증
+  절차로 실제 생성을 한 번 확인하고 **이 항목을 지운다.**
+- **이미지 생성이 집 PC 한 대의 가동률에 종속된다.** 그 PC의 다운타임이 곧 이 기능의 실패율이다 —
+  폴백이 없다(Cloudflare의 모델을 없앤 것은 의도적 결정이라, 조용히 낮은 품질로 대체되면 애초에
+  로컬로 옮긴 이유가 무너진다). 사용자가 보는 것은 깨진 폼이 아니라 제출 전 사전 차단(503, §5)이다.
+- **생성 시점 안전 필터가 없다.** Cloudflare 내장 필터가 유일한 사전 필터였는데 그게 사라졌다.
+  `moderation/`은 신고·이의제기·관리자 조치뿐인 사후 대응이고, 생성물은 공개 캐릭터 썸네일·상황
+  이미지로 바로 흐를 수 있다. 부적절한 이미지가 신고될 때까지 공개될 수 있다는 뜻이고, 의도적으로
+  수용한 리스크다. 문제가 실제로 나타나면 그때 사전 필터를 다시 연다.
 - **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 태그 한 줄 롤백(§3-1), FE는 Pages 이전
   배포로 롤백 가능 → 문제 시 1순위는 롤백, fix는 그 다음.
 - **Pages 프리뷰에서는 API 연동 확인 불가**: `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해 PR

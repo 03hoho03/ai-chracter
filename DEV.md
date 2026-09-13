@@ -168,18 +168,21 @@ apps/api/scripts/seed_content/data/
 `apps/api/scripts/seed_content/images/`는 **gitignore**다(생성물 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
 장르별 색으로 그려진 **절차적 목업 PNG**로 뜬다 — 채팅·발행·이미지 매칭 동작에는 영향이 없다.
 
-진짜 애니메 이미지가 필요하면 `apps/api/.env`에 `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`을 채우고:
+진짜 이미지가 필요하면 집 PC 자가 호스팅 이미지 생성 서버(`local-image-gen-contract.md`)가 떠 있어야 한다.
+`apps/api/.env`에 `LOCAL_IMAGE_BASE_URL`(Cloudflare Access를 앞단에 뒀다면
+`LOCAL_IMAGE_ACCESS_CLIENT_ID`/`LOCAL_IMAGE_ACCESS_CLIENT_SECRET`도)을 채우고:
 
 ```sh
 cd apps/api
-uv run --env-file .env python scripts/generate_seed_images.py --dry-run    # 키 없이 조립된 프롬프트만 출력
+uv run --env-file .env python scripts/generate_seed_images.py --dry-run    # 서버 없이 조립된 프롬프트만 출력
 uv run --env-file .env python scripts/generate_seed_images.py             # 아직 없는 것만 생성
 uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rdloop-dj --force
 ```
 
+- CLI의 선행조건 검사는 `LOCAL_IMAGE_BASE_URL`이 비어 있는지만 본다(`--dry-run`은 이 값 없이도 동작한다).
 - 파일명 규약: 콘텐츠 썸네일 `{콘텐츠slug}.png`, 상황 이미지 `{캐릭터slug}-scene{n}.png`(1-based). 이 이름이 아니면 시드가 목업으로 폴백한다.
 - 생성 후 시드를 다시 돌려야 S3(moto)에 올라간다. moto는 인메모리라 컨테이너를 재생성할 때마다 시드가 매번 재업로드한다.
-- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** Cloudflare Workers AI에 시드값을 보낼 수 없어 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
+- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** 로컬 서버는 시드값을 고정하지 않으므로(`local-image-gen-contract.md` LC-8) 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
 
 ## 구성 요소
 
