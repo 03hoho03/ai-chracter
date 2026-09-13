@@ -71,6 +71,27 @@ async def test_update_job_increments_progress_and_appends_asset_id() -> None:
     assert fetched.asset_ids == [asset_id]
 
 
+async def test_update_job_concurrent_calls_do_not_lose_updates() -> None:
+    """`_generate_and_store_one`(LG-6 이후에도 세마포어 밖에 있다)는 `asyncio.gather`로
+    같은 잡을 동시에 갱신한다 — WATCH/MULTI/EXEC 낙관적 락을 GET-then-SET으로 바꾸면 이
+    동시성에서 갱신이 유실된다(docstring이 이미 실측을 적어뒀다). 오늘 코드가 그 락을 실제로
+    쓰는지 고정한다(local-image-gen-goal-prompt.md LG-6 — 업로드/썸네일/Asset 생성은
+    세마포어 밖이라 이 동시 갱신 경로는 로컬 전환 후에도 그대로 유효하다)."""
+    owner_user_id = uuid.uuid4()
+    job = await create_job(owner_user_id, requested_count=5)
+    asset_ids = [uuid.uuid4() for _ in range(5)]
+
+    await asyncio.gather(
+        *[update_job(job.job_id, completed_increment=1, asset_id=asset_id) for asset_id in asset_ids]
+    )
+
+    fetched = await get_job(job.job_id, owner_user_id)
+    assert fetched is not None
+    assert fetched.completed_count == 5
+    assert set(fetched.asset_ids) == set(asset_ids)
+    assert len(fetched.asset_ids) == 5
+
+
 async def test_update_job_sets_failed_status_and_error() -> None:
     owner_user_id = uuid.uuid4()
     job = await create_job(owner_user_id, requested_count=1)

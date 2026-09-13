@@ -52,7 +52,16 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
-app = FastAPI(title="AI 캐릭터 챗 API", lifespan=lifespan)
+# local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출(`/docs`·`/redoc`·
+# `/openapi.json`)을 닫는다. `scripts/export_openapi.py`는 `app.openapi()`를 직접 불러
+# 이 설정과 무관하게 전체 스펙을 얻으므로 codegen에는 영향이 없다.
+app = FastAPI(
+    title="AI 캐릭터 챗 API",
+    lifespan=lifespan,
+    docs_url="/docs" if settings.expose_api_docs else None,
+    redoc_url="/redoc" if settings.expose_api_docs else None,
+    openapi_url="/openapi.json" if settings.expose_api_docs else None,
+)
 
 # `/ready` 의 자원별 검사 상한. 모니터가 5분 간격이라 넉넉할 이유가 없고, 길면 죽은 자원이
 # 실패가 아니라 타임아웃으로 보여 원인이 흐려진다.

@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat"
     redis_url: str = "redis://localhost:6379/0"
 
+    # local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출을 막는다 — 안전한
+    # 기본값(닫힘)이어야 env 설정 없이 배포해도 닫힌 채로 뜬다. 로컬 개발만 True로 켠다.
+    expose_api_docs: bool = False
+
     session_cookie_name: str = "session_id"
     session_ttl_seconds: int = 60 * 60 * 24 * 7
     # Secure requires HTTPS; browsers drop the cookie on local http dev servers, so
@@ -80,15 +84,29 @@ class Settings(BaseSettings):
     # 남길 파일 경로. None = 아무 일도 안 함(프로덕션 기본값이자 방어) — 프롬프트에는
     # 창작자의 비공개 설정이 들어 있어 기본으로 켜지면 안 된다.
     prompt_dump_path: str | None = None
-    # tasks/archive/prd-image-generation.md §3: 이미지 생성 전용 모델(채팅과 같은 키를 공유).
-    gemini_image_model_name: str = "gemini-2.5-flash-image"
     # tasks/archive/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 
-    # Cloudflare Workers AI 이미지 생성(FLUX.1-schnell / SDXL, 무료 티어). account_id는
-    # R2 엔드포인트의 계정 hex와 동일, api_token은 Workers AI 권한 토큰(R2 토큰과 별개).
-    cloudflare_account_id: str = ""
-    cloudflare_api_token: str = ""
+    # local-image-gen-goal-prompt.md/techspec §5(LT-13): 집 PC 자가 호스팅 이미지 생성
+    # 서버. 호스트명에 모델 힌트를 넣지 않는다(LC-14) — DNS 레코드와 CT 로그는 공개다.
+    local_image_base_url: str = ""
+    # local-image-gen-goal-prompt.md LG-5: Cloudflare Access 서비스 토큰.
+    local_image_access_client_id: str = ""
+    local_image_access_client_secret: str = ""
+    # local-image-gen-progress.md §0: S1(집 PC) 실측 전 잠정값 — 생성 30초 + LoRA 전환 3초 +
+    # 여유, Cloudflare edge 타임아웃(무료 플랜 100초로 알려짐, 실측 전) 미만이어야 한다.
+    local_image_timeout_seconds: int = 90
+    # 잠정값 — 복구 감지 속도와 프로브 빈도의 타협(LG-18: 콜드/만료 시에만 프로브).
+    local_image_capabilities_ttl_seconds: int = 30
+    # 잠정값 — 잡당 최대 60초(count<=2, LG-7) 기준 최악 대기 약 4분(LT-3).
+    local_image_queue_limit: int = 4
+    # local-image-gen-goal-prompt.md LG-19: 공개 id(FE 노출, `v1`/`base`)와 홈PC의 실제
+    # 체크포인트/LoRA id(와이어 id)가 다를 수 있다. 원 요구가 "코드상이나 endpoint나
+    # payload로 모델을 유추할 수 없게"이므로 실제 와이어 값(예: `sdxl-anime-v1`)을 이
+    # 소스에 박으면 그 요구를 어긴다 — 실제 값은 VM `.env`에만 두고 이 저장소엔 없다.
+    # 기본값을 공개 id와 같게 두어 env 없이 테스트·로컬 개발이 그대로 동작한다.
+    local_image_model_wire_id: str = "v1"
+    local_image_style_wire_id: str = "base"
 
     # techspec-builder-common.md §3: 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.

@@ -19,7 +19,7 @@ async def send_email_console(to: str, subject: str, body: str) -> None:
 
 
 async def send_email_resend(to: str, subject: str, body: str) -> None:
-    """email-goal-prompt.md E-1: Resend HTTP API. llm/cloudflare_image.py:84-94와 같은 형태 —
+    """email-goal-prompt.md E-1: Resend HTTP API. llm/local_image.py:194-207와 같은 형태 —
     httpx.AsyncClient → raise_for_status() → HTTPStatusError(좁음)/HTTPError(넓음) 순으로
     잡아 전용 예외로 정규화한다.
 

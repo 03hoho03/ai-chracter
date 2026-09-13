@@ -12,7 +12,7 @@ def _patch_httpx(
     monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]
 ) -> None:
     """core.email이 만드는 httpx.AsyncClient에 MockTransport를 주입한다
-    (test_llm_cloudflare_image.py의 `_patch_httpx`와 동일 패턴)."""
+    (test_llm_local_image.py의 `_patch_httpx`와 동일 패턴)."""
     real_client = httpx.AsyncClient
 
     def factory(**kwargs: object) -> httpx.AsyncClient:
