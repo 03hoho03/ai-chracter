@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
 import { requireSession } from "@/entities/session";
-import { IMAGE_STUDIO_TABS, StudioImagesPage } from "@/pages/studio-images";
+import { StudioImagesPage } from "@/pages/studio-images";
+import { IMAGE_STUDIO_TABS } from "@/widgets/image-studio";
 
 // prd-image-library US-003 — 선택 탭은 URL search param(?tab=)으로 관리해 새로고침/뒤로가기에도
 // 유지한다. 생략 시 '생성' 탭: 헤더 진입점(아이콘 "이미지 생성")과 빌더 피커의 "새로 생성하기"

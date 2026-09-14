@@ -9,6 +9,6 @@
 // public/이 아니라 src 임포트인 이유는 IT-11 — public/은 해시 없이 원본 이름 그대로 dist/에
 // 복사되지만(실측: dist/favicon-96.png), src에서 import하면 Vite가 콘텐츠 해시를 붙여
 // (dist/assets/base-<8자>.webp) 아트 교체 시 URL이 저절로 바뀐다.
-import baseSample from "../assets/image-styles/base.webp";
+import baseSample from "../style-samples/base.webp";
 
 export const STYLE_SAMPLE_IMAGES: Record<string, string> = { base: baseSample };
