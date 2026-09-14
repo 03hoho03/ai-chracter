@@ -88,7 +88,7 @@ export function GenerateImagesOptionsFields() {
                         아래 라벨의 세로 위치가 칩마다 달라진다(2026-09-14 사용자 피드백).
                         박스가 긴 변(18px)만큼 자리를 늘 차지하므로 라벨은 어느 칩에서든 같은
                         높이에 선다. 박스는 중앙 정렬이라 도형 자체도 가로·세로 가운데에 온다. */}
-                    <span aria-hidden className="flex size-[18px] shrink-0 items-center justify-center">
+                    <span aria-hidden className="flex size-4.5 shrink-0 items-center justify-center">
                       {/* border-current로 칩 텍스트 색(비선택 muted-foreground / 선택 primary)을
                           그대로 따라간다 — 별도 색 분기가 필요 없다. */}
                       <span

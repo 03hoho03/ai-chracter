@@ -1,10 +1,11 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-import { useAtom } from "jotai";
+import { useQueryClient } from "@tanstack/react-query";
 import { Images, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
+import { generatedImagesKeys } from "@/entities/generated-image";
 import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
 import {
   GenerateImagesFormProvider,
@@ -18,7 +19,6 @@ import {
 } from "@/features/generate-images";
 import { isApiError } from "@/shared/api/client";
 
-import { imageStudioLibrarySheetOpenAtom, imageStudioOptionsSheetOpenAtom } from "../model/atoms";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail } from "./ImageStudioOptionsRail";
@@ -41,8 +41,11 @@ export function ImageStudioShell({
   tab: ImageStudioTab;
   onTabChange: (tab: ImageStudioTab) => void;
 }) {
-  const [isLibraryOpen, setIsLibraryOpen] = useAtom(imageStudioLibrarySheetOpenAtom);
-  const [isOptionsOpen, setIsOptionsOpen] = useAtom(imageStudioOptionsSheetOpenAtom);
+  // 시트 열림 상태는 이 셸의 지역 state다. widgets/chat-room의 chatMorePanelOpenAtom은 트리거
+  // (ChatMoreNav)가 콘텐츠(ChatMorePanel/ChatMoreSidebar) **안쪽**에 중첩돼 있어 atom으로 건너뛰지만,
+  // 여기는 트리거(탭 스트립)와 두 Rail이 전부 이 컴포넌트의 직계 자식이라 prop 한 단이면 닿는다.
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
 
   // features/generate-images가 조각을 한 열로 쌓아 두던 옛 조합 컴포넌트가 갖고 있던 잡 폴링·
   // 제출 로직 — 3열로 조각을 흩는 이 셸이 그 조합을 대신하면서 쓰는 곳이 없어져 지웠고(고아 정리),
@@ -51,8 +54,24 @@ export function ImageStudioShell({
   const generateMutation = useGenerateImagesMutation();
   const jobQuery = useImageJobStatusQuery(jobId ?? "", jobId !== undefined);
 
+  // 잡이 끝나면 보관함 목록을 무효화한다. 중앙 열은 잡 응답의 job.images로 새 이미지를 이미
+  // 보여주지만, 보관함(과 빌더 피커)이 공유하는 `useGeneratedImagesQuery`는 refetchOnWindowFocus
+  // 뿐이라 창을 떠났다 돌아오기 전까지 낡은 채로 남았다 — 그 값은 보관함이 "다른 화면"이던 시절에
+  // 맞춘 것이고, 3열 개편으로 생성 화면 옆에 상시 노출되면서 갭이 드러났다.
+  // 그 쿼리는 gcTime: 0이라 시트가 닫혀 있으면(좁은 화면) 무효화가 no-op이고 다음에 열 때 새로 받는다.
+  // failed는 새로 생긴 게 없으므로 제외한다.
+  const queryClient = useQueryClient();
+  const jobStatus = jobQuery.data?.status;
+  const hasInvalidatedGalleryRef = useRef(false);
+  useEffect(() => {
+    if (jobStatus !== "succeeded" || hasInvalidatedGalleryRef.current) return;
+    hasInvalidatedGalleryRef.current = true;
+    void queryClient.invalidateQueries({ queryKey: generatedImagesKeys.list() });
+  }, [jobStatus, queryClient]);
+
   async function handleSubmit(values: GenerateImagesFormValues) {
     setJobId(undefined);
+    hasInvalidatedGalleryRef.current = false;
     try {
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
@@ -71,7 +90,7 @@ export function ImageStudioShell({
     <div className="flex w-full min-h-0 flex-col lg:h-below-header lg:flex-row">
       {/* 좌열 — lg 이상만 보인다(그림자 없음, 경계는 border-r 한 줄, DESIGN.md Flat-at-Rest). */}
       <aside className="hidden w-60 shrink-0 flex-col border-r border-border lg:flex">
-        <ImageStudioLibraryRail />
+        <ImageStudioLibraryRail isOpen={isLibraryOpen} onOpenChange={setIsLibraryOpen} />
       </aside>
 
       {/* image-refact-techspec.md IT-9 — GenerateImagesFormProvider는 중앙(Prompt/Style/Result)과
@@ -172,12 +191,19 @@ export function ImageStudioShell({
 
         {/* 우열 — lg 이상만 보인다. */}
         <aside className="hidden w-80 shrink-0 flex-col border-l border-border lg:flex">
-          <ImageStudioOptionsRail />
+          <ImageStudioOptionsRail isOpen={isOptionsOpen} onOpenChange={setIsOptionsOpen} />
         </aside>
       </GenerateImagesFormProvider>
     </div>
   );
 }
+
+type ImageStudioGenerateTabContentProps = {
+  jobId: string | undefined;
+  jobData: ImageJobStatusResponse | undefined;
+  requestedCount: number;
+  isJobQueryError: boolean;
+};
 
 // 브라우저 실검증 회귀 수정 — GenerateImagesFormProvider가 더 이상 early return하지 않으므로
 // (파일 상단 주석), "이용 불가"일 때 프롬프트·스타일·결과 대신 대체 UI를 꽂는 이 판정은 중앙
@@ -189,12 +215,7 @@ function ImageStudioGenerateTabContent({
   jobData,
   requestedCount,
   isJobQueryError,
-}: {
-  jobId: string | undefined;
-  jobData: ImageJobStatusResponse | undefined;
-  requestedCount: number;
-  isJobQueryError: boolean;
-}) {
+}: ImageStudioGenerateTabContentProps) {
   const { unavailableReason, onRetry } = useGenerateImagesSubmit();
 
   if (unavailableReason) {

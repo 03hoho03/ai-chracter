@@ -29,6 +29,7 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
   const withdrawMutation = useWithdrawAccountMutation();
 
   const handleConfirm = () => {
+    if (withdrawMutation.isPending) return;
     withdrawMutation.mutate(undefined, {
       onSuccess: () => {
         toast.success("탈퇴가 완료되었어요.");
@@ -59,9 +60,15 @@ export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccoun
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel>취소</AlertDialogCancel>
+          {/* apps/web/CLAUDE.md §포커스 — 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
+              포커스를 <body>로 떨어뜨린다. ContentListLoadMore·ReconsentModal과 같은 처방으로
+              맞춘다(`aria-disabled` + 핸들러 early return + pointer-events-none·opacity-65).
+              이 버튼은 ESC를 막아 둔 ReconsentModal 안에서도 재사용되므로 키보드 복귀 수단이
+              Tab 하나뿐이다. */}
           <AlertDialogAction
             variant="destructive"
-            disabled={withdrawMutation.isPending}
+            aria-disabled={withdrawMutation.isPending}
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
             onClick={handleConfirm}
           >
             {withdrawMutation.isPending ? "탈퇴 처리 중..." : "탈퇴하기"}

@@ -3,10 +3,8 @@ export {
   type GenerateImagesFormValues,
 } from "./model/schema";
 export { useGenerateImagesMutation } from "./api/useGenerateImagesMutation";
-export {
-  GenerateImagesFormProvider,
-  useGenerateImagesSubmit,
-} from "./ui/GenerateImagesFormProvider";
+export { useGenerateImagesSubmit } from "./model/useGenerateImagesSubmit";
+export { GenerateImagesFormProvider } from "./ui/GenerateImagesFormProvider";
 export { GenerateImagesOptionsFields } from "./ui/GenerateImagesOptionsFields";
 export { GenerateImagesPromptField } from "./ui/GenerateImagesPromptField";
 export { GenerateImagesResultGrid } from "./ui/GenerateImagesResultGrid";

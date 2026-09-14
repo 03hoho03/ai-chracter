@@ -1,18 +1,21 @@
-import { useAtom } from "jotai";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@ai-character-chat/ui/components/sheet";
 
 import { GenerateImagesOptionsFields } from "@/features/generate-images";
 
 import { useIsImageStudioWideLayout } from "../lib/useIsImageStudioWideLayout";
-import { imageStudioOptionsSheetOpenAtom } from "../model/atoms";
 
 // image-refact-techspec.md IT-8 — 열 껍데기는 ImageStudioShell이 CSS `lg:`로 그리고, 이 컴포넌트는
 // 그 안의 "내용"만 결정한다(ImageStudioLibraryRail과 같은 구조). GenerateImagesOptionsFields는
 // useFormContext로 상위 GenerateImagesFormProvider를 읽으므로, 인라인이든 시트(포털)든 React 트리상
 // 그 아래에 있기만 하면 된다(DOM 위치와 무관 — image-refact-techspec.md IT-9).
-export function ImageStudioOptionsRail() {
+export function ImageStudioOptionsRail({
+  isOpen,
+  onOpenChange,
+}: {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+}) {
   const isWide = useIsImageStudioWideLayout();
-  const [isOpen, setIsOpen] = useAtom(imageStudioOptionsSheetOpenAtom);
 
   if (isWide) {
     return (
@@ -23,7 +26,7 @@ export function ImageStudioOptionsRail() {
   }
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
       {/* image-refact-goal-prompt.md IR-6 — 옵션 시트는 콘텐츠 높이(비율 6 + 개수 2라 짧다).
           SheetContent 기본값(data-[side=bottom]:h-auto)을 그대로 둔다. */}
       <SheetContent

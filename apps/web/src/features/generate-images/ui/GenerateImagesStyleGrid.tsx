@@ -31,7 +31,7 @@ export function GenerateImagesStyleGrid() {
     return (
       <div className={STYLE_GRID_CLASSNAME}>
         {[0, 1, 2, 3].map((key) => (
-          <div key={key} className="aspect-[3/4] motion-safe:animate-pulse rounded-xl bg-muted" />
+          <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
         ))}
       </div>
     );
@@ -79,8 +79,15 @@ export function GenerateImagesStyleGrid() {
                     <Check aria-hidden className="size-4 text-primary-foreground" />
                   </span>
                 )}
-                {/* DESIGN.md:354 — 다크에서 순백 금지. `text-white`가 아니라 `text-foreground`. */}
-                <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 pt-6 pb-2 text-sm font-semibold text-foreground">
+                {/* 아트워크 위 캡션이라 색은 테마를 따라가지 않는다 — `scrim`/`scrim-foreground`는
+                    globals.css에서 .dark에 덮이지 않는 유일한 쌍이다(근거는 그 토큰 주석). 옛 값
+                    (`from-black/60` 그라데이션 + `text-foreground`)은 **두 테마 모두** AA 미달이었다:
+                    그라데이션이 글자 윗단에서 알파 0.28까지 옅어져 아트워크가 그대로 비쳤고, 이 샘플
+                    아트 하단 밴드는 휘도 중앙 0.42·p95 0.985라 밝은 픽셀과 어두운 픽셀이 같이 있다 —
+                    다크는 밝은 쪽에서 1.65:1, 라이트는 어두운 쪽에서 1.67:1. 불투명 밴드로 바꿔
+                    아트워크와 무관하게 최악(순백) 6.93:1을 보장한다. 그라데이션을 되살리지 말 것:
+                    라벨이 두 줄이 되면(`반실사 · 준비 중`) % 기준 스톱이 글자를 다시 벗어난다. */}
+                <span className="absolute inset-x-0 bottom-0 bg-scrim/70 px-3 py-2 text-sm font-semibold text-scrim-foreground">
                   {style.name}
                   {!style.available && " · 준비 중"}
                 </span>

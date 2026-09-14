@@ -20,6 +20,15 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
+type GeneratedImageLibraryPanelProps = {
+  onNavigateToGenerate?: () => void;
+  gridColumnsClassName?: string;
+  // 브라우저 실측 피드백 — 좌열(98px 셀)에서는 날짜 캡션이 3행이면 72px을 먹는다. 시트는
+  // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
+  // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
+  isCreatedAtVisible?: boolean;
+};
+
 /** prd-image-library US-004/US-005/US-006 — 보관함(좌열/바텀시트). 생성 이미지를 최신순 그리드로
  * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,
  * 셀을 누르면 사용처 목록·삭제가 있는 상세 모달을 연다.
@@ -31,15 +40,8 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
 export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
   gridColumnsClassName = DEFAULT_GRID_COLUMNS_CLASSNAME,
-  showCreatedAt = true,
-}: {
-  onNavigateToGenerate?: () => void;
-  gridColumnsClassName?: string;
-  // 브라우저 실측 피드백 — 좌열(98px 셀)에서는 날짜 캡션이 3행이면 72px을 먹는다. 시트는
-  // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
-  // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
-  showCreatedAt?: boolean;
-}) {
+  isCreatedAtVisible = true,
+}: GeneratedImageLibraryPanelProps) {
   const galleryQuery = useGeneratedImagesQuery(true);
   const images = galleryQuery.data;
   // 항목 스냅샷이 아니라 id로 선택하고 목록에서 매번 찾는다 — 삭제 409로 목록을 다시 받으면
@@ -94,7 +96,7 @@ export function GeneratedImageLibraryPanel({
             <figure key={image.assetId} className="flex flex-col gap-1.5">
               <button
                 type="button"
-                // 날짜를 시각적으로 숨겨도 접근 이름에는 남긴다 — showCreatedAt는 <figcaption>의
+                // 날짜를 시각적으로 숨겨도 접근 이름에는 남긴다 — isCreatedAtVisible은 <figcaption>의
                 // 렌더 여부만 바꾼다.
                 aria-label={`${createdAtLabel} 생성 이미지 상세 보기`}
                 onClick={() => setSelectedAssetId(image.assetId)}
@@ -108,9 +110,9 @@ export function GeneratedImageLibraryPanel({
                   className="size-full object-cover"
                 />
               </button>
-              {(showCreatedAt || hasUsageBadge) && (
+              {(isCreatedAtVisible || hasUsageBadge) && (
                 <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                  {showCreatedAt && <time dateTime={image.createdAt}>{createdAtLabel}</time>}
+                  {isCreatedAtVisible && <time dateTime={image.createdAt}>{createdAtLabel}</time>}
                   {hasUsageBadge && (
                     <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-badge font-medium text-muted-foreground">
                       {image.usages.length}곳에서 사용 중
@@ -138,8 +140,8 @@ function LibraryGridSkeleton({ gridColumnsClassName }: { gridColumnsClassName: s
     <div className={cn("grid gap-3", gridColumnsClassName)}>
       {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
         <div key={key} className="flex flex-col gap-1.5">
-          <div className="aspect-square motion-safe:animate-pulse rounded-lg bg-muted" />
-          <div className="h-3 w-16 motion-safe:animate-pulse rounded bg-muted" />
+          <div className="aspect-square animate-pulse rounded-lg bg-muted" />
+          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
         </div>
       ))}
     </div>

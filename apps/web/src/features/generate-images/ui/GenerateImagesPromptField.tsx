@@ -4,7 +4,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useFormContext } from "react-hook-form";
 
 import type { GenerateImagesFormValues } from "../model/schema";
-import { useGenerateImagesSubmit } from "./GenerateImagesFormProvider";
+import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 // image-refact-goal-prompt.md IR-15 — danbooru 태그 예시(품질 부스터 금지, LG-3이 서버에서 치운
 // Animagine 시그니처 문구라 FE 번들에도 넣지 않는다).
@@ -20,13 +20,22 @@ export function GenerateImagesPromptField() {
     formState: { errors, isSubmitting },
   } = useFormContext<GenerateImagesFormValues>();
   const { onSubmit, isModelsPending } = useGenerateImagesSubmit();
+  const isSubmitBlocked = isSubmitting || isModelsPending;
 
   return (
     <form
       className="flex flex-col gap-6"
       noValidate
-      // `handleSubmit`은 프라미스를 반환하는데 이 속성은 void를 기대한다(no-misused-promises).
-      onSubmit={(event) => void handleSubmit(onSubmit)(event)}
+      onSubmit={(event) => {
+        // aria-disabled는 포인터만 막으므로(pointer-events-none) 버튼을 키보드로 누른 Enter는
+        // 그대로 들어온다 — 실제 중복 제출 차단은 여기다.
+        if (isSubmitBlocked) {
+          event.preventDefault();
+          return;
+        }
+        // `handleSubmit`은 프라미스를 반환하는데 이 속성은 void를 기대한다(no-misused-promises).
+        void handleSubmit(onSubmit)(event);
+      }}
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="generate-images-prompt">프롬프트</Label>
@@ -46,8 +55,17 @@ export function GenerateImagesPromptField() {
           />
           <div className="flex justify-end">
             {/* 모델 목록이 아직 로딩 중이면 model/style이 비어 있어 제출해도 zod가 조용히 막는다(그
-                필드엔 에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다. */}
-            <Button type="submit" disabled={isSubmitting || isModelsPending}>
+                필드엔 에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다.
+                apps/web/CLAUDE.md §포커스 — plain `disabled`는 브라우저가 즉시 blur해 포커스를
+                <body>로 떨어뜨린다. 제출 중(isSubmitting)에 실제로 그 상황이 되므로
+                ContentListLoadMore·ReconsentModal·WithdrawAccountDialog와 같은 레시피를 쓴다.
+                isModelsPending은 마운트 시점부터 true라 blur 위험은 없지만, 한 버튼에 두 어휘가
+                섞이지 않게 같은 축으로 묶는다 — 덕분에 모델 로딩 중에도 버튼이 tab 순서에 남는다. */}
+            <Button
+              type="submit"
+              aria-disabled={isSubmitBlocked}
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+            >
               이미지 생성
             </Button>
           </div>
