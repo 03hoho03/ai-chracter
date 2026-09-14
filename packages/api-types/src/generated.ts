@@ -4119,12 +4119,14 @@ export interface components {
             id: string;
             /** Name */
             name: string;
+            /** Available */
+            available: boolean;
         };
         /**
          * ImageStylePreset
          * @enum {string}
          */
-        ImageStylePreset: "base";
+        ImageStylePreset: "base" | "line" | "water" | "real";
         /**
          * InquiryCategory
          * @enum {string}

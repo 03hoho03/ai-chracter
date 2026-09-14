@@ -30,6 +30,10 @@ class GenerateImageRequest(CamelModel):
 class ImageStyleItem(CamelModel):
     id: str
     name: str
+    # image-refact-techspec.md IT-2 — 목록에서 빼지 않고 플래그로 표현한다. 모델의
+    # `available`과 같은 근거다(LT-5): 빈 목록은 "그런 스타일이 없다"와 "지금 못
+    # 쓴다"를 구분하지 못한다.
+    available: bool
 
 
 class ImageModelItem(CamelModel):

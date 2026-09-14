@@ -1,46 +1,21 @@
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
-
-import { GenerateImagesPanel } from "@/features/generate-images";
-
-import { isStudioImagesTab, type StudioImagesTab } from "../model/studioImagesTab";
-import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
+import { ImageStudioShell, type ImageStudioTab } from "@/widgets/image-studio";
 
 export function StudioImagesPage({
   tab,
   onTabChange,
 }: {
-  tab: StudioImagesTab;
-  onTabChange: (tab: StudioImagesTab) => void;
+  tab: ImageStudioTab;
+  onTabChange: (tab: ImageStudioTab) => void;
 }) {
   return (
-    <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">이미지</h1>
-        <p className="text-sm text-muted-foreground">
-          프롬프트와 스타일로 이미지를 생성하고, 만든 이미지를 모아 봐요.
-        </p>
-      </div>
-
-      <Tabs
-        value={tab}
-        onValueChange={(value) => {
-          if (isStudioImagesTab(value)) onTabChange(value);
-        }}
-      >
-        <TabsList variant="line">
-          <TabsTrigger value="generate">생성</TabsTrigger>
-          <TabsTrigger value="library">내 이미지</TabsTrigger>
-        </TabsList>
-
-        {/* forceMount — 탭을 오가도 입력 중인 프롬프트와 진행 중인 생성 잡 표시(로컬 state)가
-            사라지지 않게 언마운트 대신 숨긴다. */}
-        <TabsContent value="generate" forceMount className="data-[state=inactive]:hidden">
-          <GenerateImagesPanel />
-        </TabsContent>
-        <TabsContent value="library">
-          <GeneratedImageLibraryPanel onNavigateToGenerate={() => onTabChange("generate")} />
-        </TabsContent>
-      </Tabs>
+    // <main>은 이 페이지가 소유한다 — 제목·설명과 3열 셸을 둘 다 감싸야 lg 미만에서 스크린리더가
+    // 랜드마크로 건너뛰어도 제목을 지나치지 않는다(랜드마크는 감싸기만, 폭·높이 제약은 ImageStudioShell
+    // 안쪽 행에 그대로 있다 — DESIGN.md §Layout containers, 대화방 선례).
+    <main>
+      {/* image-refact-goal-prompt.md IR-17 을 확장: lg 미만에서도 감춘다(2026-09-14 사용자 피드백).
+          h1 은 문서 개요를 위해 sr-only 로 남긴다. */}
+      <h1 className="sr-only">이미지</h1>
+      <ImageStudioShell tab={tab} onTabChange={onTabChange} />
     </main>
   );
 }

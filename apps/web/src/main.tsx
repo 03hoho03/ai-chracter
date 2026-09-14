@@ -1,4 +1,5 @@
 import { RouterProvider } from "@tanstack/react-router";
+import { Agentation } from "agentation";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 
@@ -18,6 +19,16 @@ createRoot(rootElement).render(
     <AppProviders>
       <RouterProvider router={router} />
       <AppToaster />
+      {/* 개발 전용 주석 도구(agentation, devDependency) — 화면 요소를 찍어 남긴 코멘트를 MCP로
+          에이전트가 읽어간다. 공식 문서는 `process.env.NODE_ENV`로 가드하지만 이 앱은 Vite라
+          브라우저에 `process`가 없다(`process.env` 사용 0건, 관례는 `shared/api/client.ts:5`의
+          `import.meta.env`). `import.meta.env.DEV`는 빌드 시 `false` 리터럴로 치환돼 이 분기와
+          import가 프로덕션 번들에서 통째로 빠진다 — devDependency가 배포에 실리지 않는 근거다
+          (실측: 3.5MB 패키지인데 `dist/`에서 문자열 0건, 번들 +3바이트).
+
+          `endpoint`가 없으면 주석이 localStorage에만 쌓여 에이전트가 못 읽는다(타입 주석 원문:
+          "If not provided, uses localStorage only"). 4747은 `agentation-mcp server`가 여는 포트다. */}
+      {import.meta.env.DEV && <Agentation endpoint="http://localhost:4747" />}
     </AppProviders>
   </StrictMode>,
 );

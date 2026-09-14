@@ -9720,19 +9720,27 @@
           "name": {
             "type": "string",
             "title": "Name"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
           }
         },
         "type": "object",
         "required": [
           "id",
-          "name"
+          "name",
+          "available"
         ],
         "title": "ImageStyleItem"
       },
       "ImageStylePreset": {
         "type": "string",
         "enum": [
-          "base"
+          "base",
+          "line",
+          "water",
+          "real"
         ],
         "title": "ImageStylePreset"
       },
