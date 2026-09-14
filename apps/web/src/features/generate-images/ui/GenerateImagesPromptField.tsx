@@ -1,8 +1,9 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { useFormContext } from "react-hook-form";
+import { useFormContext, useWatch } from "react-hook-form";
 
+import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptSyntaxHint";
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
@@ -17,10 +18,18 @@ export function GenerateImagesPromptField() {
   const {
     register,
     handleSubmit,
+    control,
     formState: { errors, isSubmitting },
   } = useFormContext<GenerateImagesFormValues>();
   const { onSubmit, isModelsPending } = useGenerateImagesSubmit();
   const isSubmitBlocked = isSubmitting || isModelsPending;
+  // image-style-7-goal-prompt.md IS-10 — useWatch로 렌더 시점에 계산한다(useEffect 금지, 파생 상태).
+  const promptValue = useWatch({ control, name: "prompt" });
+  const syntaxHint = getPromptSyntaxHint(promptValue ?? "");
+  const isSyntaxWarning = syntaxHint !== PROMPT_WEIGHT_SYNTAX_HINT;
+  const describedByIds = errors.prompt
+    ? "generate-images-prompt-hint generate-images-prompt-error"
+    : "generate-images-prompt-hint";
 
   return (
     <form
@@ -49,7 +58,7 @@ export function GenerateImagesPromptField() {
             placeholder={PROMPT_PLACEHOLDER}
             rows={4}
             aria-invalid={!!errors.prompt}
-            aria-describedby={errors.prompt ? "generate-images-prompt-error" : undefined}
+            aria-describedby={describedByIds}
             className="border-0 bg-transparent p-0 focus-visible:ring-0"
             {...register("prompt")}
           />
@@ -70,6 +79,22 @@ export function GenerateImagesPromptField() {
             </Button>
           </div>
         </div>
+        {/* image-style-7-goal-prompt.md IS-10 — 가중치 문법 안내/괄호 경고를 한 줄로 합친다. 하드
+            에러(errors.prompt)와 다른 어휘라 aria-invalid/role="alert"/text-destructive-text에는
+            연결하지 않는다 — 제출을 막지 않는 경고다(GenerateImagesOptionsFields.tsx:106-108 선례).
+            aria-live="polite" + 항상 마운트(GenerateImagesResultGrid.tsx:143-148 선례) — 문구가
+            타이핑마다 바뀌므로 조건부 마운트하면 announce 여부가 갈린다. */}
+        <p
+          id="generate-images-prompt-hint"
+          aria-live="polite"
+          className={
+            isSyntaxWarning
+              ? "break-keep text-xs text-foreground"
+              : "break-keep text-xs text-muted-foreground"
+          }
+        >
+          {syntaxHint}
+        </p>
         {errors.prompt && (
           <p id="generate-images-prompt-error" role="alert" className="text-xs text-destructive-text">
             {errors.prompt.message}

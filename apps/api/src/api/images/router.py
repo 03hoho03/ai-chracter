@@ -20,6 +20,7 @@ from api.images.models import (
     IMAGE_STYLE_PRESETS,
     AspectRatio,
     ImageBlockedReason,
+    ImageInputError,
     ImageModelId,
     ImageStylePreset,
 )
@@ -35,7 +36,13 @@ from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient
-from api.llm.local_image import LocalImageBlockedError, get_capabilities, release_admission, try_admit
+from api.llm.local_image import (
+    LocalImageBlockedError,
+    LocalImageInputError,
+    get_capabilities,
+    release_admission,
+    try_admit,
+)
 from api.session.dependencies import get_current_user_id
 
 # local-image-gen-contract.md LC-1: 정적 레지스트리 ↔ 로컬 capabilities 불일치는 조용한
@@ -49,13 +56,15 @@ router = APIRouter(prefix="/images", tags=["images"])
 
 @dataclass(frozen=True)
 class _GenerationResult:
-    """`_generate_and_store_one`의 3치 결과 — `bool` 2치로는 "차단"을 표현할 자리가
+    """`_generate_and_store_one`의 결과 — `bool` 2치로는 "차단"을 표현할 자리가
     없었다(guard-goal-prompt.md §1-5). `outcome`이 Literal이라 `_run_generation`의
     분기 누락을 mypy `assert_never`가 잡는다(guard-techspec.md GT-2,
-    `llm/dependencies.py`의 기존 `assert_never` 패턴)."""
+    `llm/dependencies.py`의 기존 `assert_never` 패턴). image-style-7-goal-prompt.md
+    IS-8: `input_error`는 그 안전망을 그대로 활용해 추가한 네 번째 값이다."""
 
-    outcome: Literal["succeeded", "blocked", "failed"]
+    outcome: Literal["succeeded", "blocked", "input_error", "failed"]
     blocked_reason: ImageBlockedReason | None = None
+    input_error: ImageInputError | None = None
 
 
 async def _generate_and_store_one(
@@ -90,6 +99,9 @@ async def _generate_and_store_one(
                     storage_key=storage_key,
                     kind=AssetKind.GENERATED,
                     status=AssetStatus.READY,
+                    # image-style-7-goal-prompt.md IS-6: plain Text 컬럼이라
+                    # `.value`를 명시한다(apps/api/CLAUDE.md 모델 규약).
+                    style=style.value,
                 )
             )
             await session.commit()
@@ -101,7 +113,16 @@ async def _generate_and_store_one(
         # 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야 한다 — 순서가
         # 바뀌면 차단이 조용히 일반 실패로 접힌다.
         return _GenerationResult(outcome="blocked", blocked_reason=exc.reason)
-    except LLMClientError:
+    except LocalImageInputError as exc:
+        # image-style-7-goal-prompt.md IS-8: `LocalImageInputError`도 `LLMClientError`의
+        # 하위 클래스라 같은 이유로 아래 `except LLMClientError`보다 먼저 잡는다.
+        return _GenerationResult(outcome="input_error", input_error=exc.input_error)
+    except LLMClientError as exc:
+        # image-style-7-goal-prompt.md IS-11: 예외 인스턴스를 바인딩하지 않으면 상태
+        # 코드·detail이 통째로 버려져 400·422·429·500·503·타임아웃이 운영 로그에서
+        # 구분 불가능하다. `local_image.py`가 이미 상태 코드+`detail`만 실어 메시지를
+        # 만들어 뒀으므로(프롬프트 에코 가능성 배제) 그 문자열을 그대로 남긴다.
+        logger.warning("local image generation call failed: %s", exc)
         return _GenerationResult(outcome="failed")
     except Exception as exc:
         # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에
@@ -142,12 +163,16 @@ async def _run_generation(
         succeeded_count = 0
         failed_count = 0
         blocked_reasons: list[ImageBlockedReason] = []
+        input_errors: list[ImageInputError] = []
         for result in results:
             if result.outcome == "succeeded":
                 succeeded_count += 1
             elif result.outcome == "blocked":
                 assert result.blocked_reason is not None
                 blocked_reasons.append(result.blocked_reason)
+            elif result.outcome == "input_error":
+                assert result.input_error is not None
+                input_errors.append(result.input_error)
             elif result.outcome == "failed":
                 failed_count += 1
             else:
@@ -184,6 +209,26 @@ async def _run_generation(
                     failed_count,
                 )
 
+        input_error_count = len(input_errors)
+        input_error: ImageInputError | None = None
+        if input_errors:
+            input_error = input_errors[0]
+            logger.warning(
+                "local image generation rejected input: input_error=%s count=%d",
+                input_error,
+                input_error_count,
+            )
+            distinct_input_errors = set(input_errors)
+            if len(distinct_input_errors) > 1:
+                # image-style-7-goal-prompt.md IS-8 §3-8: 문법 오류·길이 초과는
+                # 결정적이라 한 잡 안에서 사유가 섞일 수 없다 — 섞이면 프록시 흔들림
+                # 등 계약 밖 사건이므로 위 blocked_reasons 불일치 경고와 같은 패턴으로
+                # 조용히 넘기지 않는다.
+                logger.warning(
+                    "local image generation input errors mismatched within one job: input_errors=%s",
+                    sorted(distinct_input_errors),
+                )
+
         if succeeded_count > 0:
             await update_job(
                 job_id,
@@ -200,25 +245,36 @@ async def _run_generation(
                 blocked_count=blocked_count,
                 blocked_reason=blocked_reason,
             )
+        elif input_error_count > 0:
+            # image-style-7-goal-prompt.md IS-8: 성공과 공존하는 경우는 위 succeeded_count
+            # 분기가 이미 가로챈다 — 문법/길이 오류는 결정적이라 원래 그 조합이 없어야
+            # 정상이고(부분 input_error 안내가 FE에 없는 이유), 섞이면 위 경고가 남는다.
+            await update_job(
+                job_id,
+                status=ImageGenerationJobStatus.FAILED,
+                input_error_count=input_error_count,
+                input_error=input_error,
+            )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
     finally:
         release_admission()
 
 
-def _style_items(wire_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
-    """image-refact-techspec.md IT-3 — 레지스트리 전체를 내리고, 로컬이 보고한 것만
-    available=true로 표시한다. (이전 `_known_styles`는 로컬 보고값으로 **걸렀다** — 그러면
-    준비 중 스타일이 응답에서 사라져 "없는 것"과 구분되지 않는다.)
+def _style_items(served_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
+    """image-style-7-goal-prompt.md IS-2/IS-5 — style 축의 공개 id와 와이어 id가
+    같아져(IS-2) 매핑 없이 원소별로 판정한다. 레지스트리 전체를 항상 내리고, 로컬이
+    보고한 집합에 있는 것만 available=true로 표시한다. (이전 `_known_styles`는 로컬
+    보고값으로 **걸렀다** — 그러면 준비 중 스타일이 응답에서 사라져 "없는 것"과
+    구분되지 않는다.)
 
-    LG-19: 로컬은 공개 id가 아니라 와이어 id를 보고한다. 매핑은 아직 스칼라 하나
-    (`settings.local_image_style_wire_id`)이고, 준비 중 3종에 매핑이 없다는 사실이 곧
-    available=false의 이유다 — 켤 때 이 설정을 매핑으로 바꾸는 것이 그 작업의 본체다
-    (image-refact-goal-prompt.md §7-3).
+    `served`를 bool이 아니라 집합으로 두는 것 자체가 방어다 — bool로 두면 `and`로
+    잇고 싶어지고, 그 순간 "하나라도 서빙되면 전부 available" 버그가 열린다(같은
+    함수가 image-refact-techspec.md IT-4로 이미 한 번 이 함정에 물렸다).
     """
-    served = settings.local_image_style_wire_id in wire_style_ids
+    served = set(served_style_ids)
     return [
-        ImageStyleItem(id=spec.id, name=spec.name, available=served and spec.id == ImageStylePreset.BASE.value)
+        ImageStyleItem(id=spec.id, name=spec.name, available=spec.id in served)
         for spec in IMAGE_STYLE_PRESETS
     ]
 
@@ -270,8 +326,8 @@ async def list_image_models(
             )
             continue
         styles = _style_items(capability.styles)
-        # image-refact-techspec.md IT-4: `_style_items`(IT-3)가 레지스트리 전체(항상
-        # 4개)를 내리면서 `bool(styles)`는 항진명제가 됐다 — styles가 비는 경우가
+        # image-refact-techspec.md IT-4: `_style_items`(IS-5)가 레지스트리 전체(항상
+        # 7개)를 내리면서 `bool(styles)`는 항진명제가 됐다 — styles가 비는 경우가
         # 없어져 이 조건이 늘 True였다. LG-20의 의도("실제로 생성 가능")를 지키려면
         # available 플래그로 직접 물어야 한다.
         if not any(style.available for style in styles):
@@ -317,11 +373,11 @@ async def generate_images(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"model '{payload.model}' does not support aspect ratio '{payload.aspect_ratio}'",
         )
-    # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IT-3)가
-    # 요청된 스타일이 레지스트리에 있는지와 지금 매핑되어 있는지(available)를 함께 본다.
-    # LG-19: capability.styles는 로컬이 보고한 와이어 style id들이라 `_style_items`가
-    # 내부에서 와이어→공개 매핑을 한다(N=1이라 스칼라 하나, LG-16). 사용자에게 보이는
-    # detail은 공개 값(`payload.style.value`)을 그대로 쓴다 — 와이어 id를 노출하지 않는다.
+    # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IS-5)가
+    # 요청된 스타일이 레지스트리에 있는지와 지금 서빙되고 있는지(available)를 함께 본다.
+    # image-style-7-goal-prompt.md IS-2: style 축은 공개 id와 와이어 id가 같아
+    # capability.styles를 매핑 없이 그대로 집합 비교한다. 사용자에게 보이는 detail은
+    # 공개 값(`payload.style.value`)을 그대로 쓴다.
     style_items = _style_items(capability.styles)
     if not any(item.available and item.id == payload.style.value for item in style_items):
         raise HTTPException(
@@ -387,4 +443,6 @@ async def get_image_job(
         error=job.error,
         blocked_count=job.blocked_count,
         blocked_reason=job.blocked_reason,
+        input_error_count=job.input_error_count,
+        input_error=job.input_error,
     )

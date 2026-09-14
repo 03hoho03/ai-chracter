@@ -4,7 +4,7 @@ import type { GenerateImagesFormValues } from "./schema";
 
 /** `POST /images/generate` 바디. DTO를 그대로 쓰지 못하고 model·style 두 축만 넓힌다 —
  * 폼은 그 둘을 `GET /images/models` 응답에서 받은 문자열로 들고 있는데(LT-9 / IR-10, 스키마도
- * `z.string().min(1)`이다) DTO는 `model: "v1"` 상수와 `ImageStylePreset` 4종 리터럴이라 정적으로
+ * `z.string().min(1)`이다) DTO는 `model: "v1"` 상수와 `ImageStylePreset` 7종 리터럴이라 정적으로
  * 맞출 방법이 없다. 좁히려면 `as`(fe-typescript 금지)를 쓰거나 FE가 스타일 목록을 하드코딩해야
  * 하는데, 후자는 "서버가 스타일 목록의 소스다"(IR-10)를 깨서 서버가 스타일을 늘리면 FE가 막는다.
  * 그 두 축의 검증은 서버가 하고, **나머지 세 축(prompt·aspectRatio·count)은 DTO에 묶여 있어**

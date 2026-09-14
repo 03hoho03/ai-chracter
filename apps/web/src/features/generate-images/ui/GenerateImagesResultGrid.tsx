@@ -27,6 +27,22 @@ function getBlockedReasonCopy(reason: BlockedReason): string {
   }
 }
 
+type InputError = NonNullable<ImageJobStatusResponse["inputError"]>;
+
+// image-style-7-goal-prompt.md IS-8 — `input_error`는 `blockedReason`과 달리 사용자가 프롬프트를
+// 고치면 통과할 수 있는 결정적 실패라 구체적으로 알려준다. `syntax`는 결정적이므로(계약 4-1: 문법을
+// 고쳐야 통과한다) "다시 시도해주세요"를 붙이지 않는다 — 재시도를 암시하면 거짓 안내가 된다.
+function getInputErrorCopy(inputError: InputError): string {
+  switch (inputError) {
+    case "too_long":
+      return "프롬프트가 너무 길어요. 문구를 줄여서 다시 시도해주세요.";
+    case "syntax":
+      return "프롬프트 문법을 확인해주세요.";
+    default:
+      return assertNever(inputError);
+  }
+}
+
 // local-image-gen-contract.md LC-4b — 프롬프트 가드는 결정적이라 같은 프롬프트는 항상 전부-차단이다.
 // 그래서 부분 차단(SUCCEEDED + blockedCount>0)은 이미지 가드에서만 나올 수 있고, 여기에 `prompt`
 // 사유가 섞이면 상류(로컬 가드) 이상이다 — 그 경우에도 "문구를 바꿔주세요"는 G-4가 금지하는
@@ -73,9 +89,12 @@ export function GenerateImagesResultGrid({
     const blockedCopy = job.blockedCount > 0 && job.blockedReason != null
       ? getBlockedReasonCopy(job.blockedReason)
       : null;
+    // image-style-7-goal-prompt.md IS-8 — 문법/길이 입력 오류는 결정적이라 blockedReason과
+    // 동시에 나지 않는다(부분 input_error가 원리적으로 불가능한 것과 같은 이유).
+    const inputErrorCopy = job.inputError != null ? getInputErrorCopy(job.inputError) : null;
     return (
       <p role="alert" className="text-sm text-destructive-text">
-        {blockedCopy ?? job.error ?? "이미지 생성에 실패했어요. 잠시 후 다시 시도해주세요."}
+        {inputErrorCopy ?? blockedCopy ?? job.error ?? "이미지 생성에 실패했어요. 잠시 후 다시 시도해주세요."}
       </p>
     );
   }

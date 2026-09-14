@@ -100,13 +100,17 @@ class Settings(BaseSettings):
     local_image_capabilities_ttl_seconds: int = 30
     # 잠정값 — 잡당 최대 60초(count<=2, LG-7) 기준 최악 대기 약 4분(LT-3).
     local_image_queue_limit: int = 4
-    # local-image-gen-goal-prompt.md LG-19: 공개 id(FE 노출, `v1`/`base`)와 홈PC의 실제
-    # 체크포인트/LoRA id(와이어 id)가 다를 수 있다. 원 요구가 "코드상이나 endpoint나
-    # payload로 모델을 유추할 수 없게"이므로 실제 와이어 값(예: `sdxl-anime-v1`)을 이
-    # 소스에 박으면 그 요구를 어긴다 — 실제 값은 VM `.env`에만 두고 이 저장소엔 없다.
+    # local-image-gen-goal-prompt.md LG-19: 공개 id(FE 노출, `v1`)와 홈PC의 실제
+    # 체크포인트 id(와이어 id)가 다를 수 있다. 원 요구가 "코드상이나 endpoint나
+    # payload로 모델을 유추할 수 없게"이므로 실제 와이어 값을 이 소스에 박으면 그 요구를
+    # 어긴다 — 실제 값은 VM `.env`에만 두고 이 저장소엔 없다.
     # 기본값을 공개 id와 같게 두어 env 없이 테스트·로컬 개발이 그대로 동작한다.
+    #
+    # image-style-7-goal-prompt.md IS-2: style 축은 이 분리를 두지 않는다 — 공개 id와
+    # 와이어 id가 같아 `local_image.py`가 `style.value`를 그대로 싣는다. model 축만
+    # 분리를 유지하는 이유는 IS-2 참고(model 축은 실제로 다른 와이어 값을 가렸지만
+    # style 축은 지금까지 아무것도 보호한 적이 없다).
     local_image_model_wire_id: str = "v1"
-    local_image_style_wire_id: str = "base"
 
     # techspec-builder-common.md §3: 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.
