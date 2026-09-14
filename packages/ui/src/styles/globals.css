@@ -29,6 +29,8 @@
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-scrim: var(--scrim);
+  --color-scrim-foreground: var(--scrim-foreground);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -113,6 +115,15 @@
      부모만 훑는 감사는 그 자리를 놓친다. */
   --input: oklch(0.62 0 0);
   --ring: oklch(0.5 0.19 0);
+  /* 미디어 위 스크림 — **이 한 쌍만 테마와 무관하게 고정이다**(.dark에서 덮지 않는다). 사용자
+     아트워크 위에 얹는 자리라 아래 깔린 것이 팔레트가 아니라 임의의 사진이고, 그래서 테마를 따라
+     뒤집으면 한쪽 테마가 반드시 깨진다 — 스크림은 테마와 무관하게 어두운데 그 위 글씨만 라이트에서
+     어두워지기 때문이다(실측: 다크는 밝은 픽셀 위 1.65:1, 라이트는 어두운 픽셀 위 1.67:1로 양쪽 다
+     AA 미달이었다). 0.93은 밝기 천장인 다크 foreground와 같은 값이라 "다크에서 순백 금지"를 지킨다.
+     쓰는 쪽은 `bg-scrim/70`을 **불투명 밴드로** 깔아야 한다 — 그래야 아트워크가 무엇이든 최악
+     (순백 픽셀)에서도 6.93:1이 보장된다. 그라데이션으로 옅게 깔면 그 보장이 사라진다 */
+  --scrim: oklch(0 0 0);
+  --scrim-foreground: oklch(0.93 0 0);
   /* D-4가 32px 이상 티어 반경을 10px로 통일했는데, 레퍼런스와 나란히 재보니 또나가 뚜렷하게 더
      둥글다. 판단 기준은 radius ÷ 반높이(1.0이면 완전한 pill) — 레퍼런스(케이브덕 사이드 홈
      56px/6px=0.21, 크랙 자동정리 24px/4px=0.33, 크랙 전체보기 44px/8px=0.36, 케이브덕 더보기
