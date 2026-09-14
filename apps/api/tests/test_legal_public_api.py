@@ -216,6 +216,63 @@ async def test_consent_requires_user_session(db_client: httpx.AsyncClient) -> No
     assert resp.status_code == 401
 
 
+async def test_consent_terms_updates_version_and_agreed_at(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-5: 재동의는 버전뿐 아니라 동의 시각도 갱신한다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    before_version = user.terms_version
+    before_agreed_at = user.terms_agreed_at
+
+    await _make_published(db_session, kind="terms", version="2099-01-01")
+    await db_session.commit()
+
+    resp = await db_client.post(
+        "/legal/consent", json={"kind": "terms", "version": "2099-01-01"}
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.terms_version == "2099-01-01"
+    assert user.terms_version != before_version
+    assert user.terms_agreed_at != before_agreed_at
+
+
+async def test_consent_privacy_updates_privacy_and_transfer_pair(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-3·LR-5: 처리방침 재동의는 privacy·transfer 두 쌍을
+    함께 갱신하고, transfer_version은 처리방침 게시본의 버전을 그대로 쓴다. 같은 시점에
+    더 높은 버전의 약관(terms)을 함께 게시해, transfer_version이 엉뚱하게 terms 값을
+    집어오지 않는지도 같이 확인한다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    before_privacy_version = user.privacy_version
+    before_privacy_agreed_at = user.privacy_agreed_at
+    before_transfer_version = user.transfer_version
+    before_transfer_agreed_at = user.transfer_agreed_at
+
+    await _make_published(db_session, kind="terms", version="2099-09-09")
+    await _make_published(db_session, kind="privacy", version="2099-02-01")
+    await db_session.commit()
+
+    resp = await db_client.post(
+        "/legal/consent", json={"kind": "privacy", "version": "2099-02-01"}
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.privacy_version == "2099-02-01"
+    assert user.privacy_version != before_privacy_version
+    assert user.privacy_agreed_at != before_privacy_agreed_at
+    assert user.transfer_version == "2099-02-01"
+    assert user.transfer_version != before_transfer_version
+    assert user.transfer_agreed_at != before_transfer_agreed_at
+
+
 # ---- 신규 가입 시 버전 기록 -----------------------------------------------------
 
 
