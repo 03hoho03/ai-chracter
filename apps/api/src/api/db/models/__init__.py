@@ -1,6 +1,6 @@
 """Import every model module so `Base.metadata` is fully populated for Alembic autogenerate."""
 
-from api.db.models.auth import AdminUser, GuardianConsent, User
+from api.db.models.auth import AdminUser, GuardianConsent, User, WithdrawnEmail
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -106,4 +106,5 @@ __all__ = [
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
+    "WithdrawnEmail",
 ]

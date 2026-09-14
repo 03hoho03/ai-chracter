@@ -1,9 +1,11 @@
 import uuid
 from datetime import datetime, timezone, UTC
 
+import pytest
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import AdminUser, Asset, AssetKind, GuardianConsent, User
+from api.db.models import AdminUser, Asset, AssetKind, GuardianConsent, User, WithdrawnEmail
 from factories import _make_user
 
 
@@ -55,3 +57,18 @@ async def test_admin_user_is_a_separate_table_from_users(db_session: AsyncSessio
     db_session.add(AdminUser(email=email, password_hash="hashed"))
 
     await db_session.flush()  # same email across the two separate tables must be fine
+
+
+# legal-revision-goal-prompt.md LR-7·LR-8. `alembic check`는 복합 PK는 비교하지만 단일
+# 컬럼 PK의 유일성 자체는 실제 INSERT로만 확인된다(project_alembic_check_blind_spots와
+# 같은 계열의 사각지대) — 같은 email_hmac을 두 번 넣으면 두 번째 flush가 IntegrityError로
+# 거부돼야 재가입 차단(HMAC 조회)이 실제로 유일 키에 기대고 있다는 것이 증명된다.
+async def test_withdrawn_email_rejects_duplicate_hmac(db_session: AsyncSession) -> None:
+    email_hmac = "hmac-" + uuid.uuid4().hex
+
+    db_session.add(WithdrawnEmail(email_hmac=email_hmac, withdrawn_at=datetime.now(UTC)))
+    await db_session.flush()
+
+    db_session.add(WithdrawnEmail(email_hmac=email_hmac, withdrawn_at=datetime.now(UTC)))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
