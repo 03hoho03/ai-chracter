@@ -14,7 +14,9 @@ export const signUpSchema = z.object({
       message: "미래 날짜는 입력할 수 없습니다",
     }),
   termsAgreed: requiredAgreement("이용약관에 동의해주세요"),
-  privacyAgreed: requiredAgreement("개인정보처리방침에 동의해주세요"),
+  privacyAgreed: requiredAgreement("개인정보 수집·이용에 동의해주세요"),
+  // legal-revision-goal-prompt.md LR-1·LR-3 — 국외이전 동의를 수집·이용 동의에서 분리한다.
+  transferAgreed: requiredAgreement("개인정보 국외이전에 동의해주세요"),
   // 2단계(이메일 인증)에서만 실제로 채워진다 — techspec-auth-onboarding.md §2.
   emailVerificationCode: z.string().length(6, { message: "6자리 코드를 입력해주세요" }),
   // 3단계(법정대리인 동의)는 만 14세 미만일 때만 노출된다 — techspec-auth-onboarding.md §2.
@@ -34,6 +36,7 @@ export const signUpDefaultValues: SignUpFormValues = {
   birthDate: "",
   termsAgreed: false,
   privacyAgreed: false,
+  transferAgreed: false,
   emailVerificationCode: "",
   guardian: { name: "", contact: "", consentAgreed: false },
 };

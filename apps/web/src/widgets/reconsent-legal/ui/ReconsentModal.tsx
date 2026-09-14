@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApiError } from "@ai-character-chat/api-types";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { Checkbox } from "@ai-character-chat/ui/components/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -34,6 +35,12 @@ export function ReconsentModal() {
   const queryClient = useQueryClient();
   const consentMutation = useLegalConsentMutation();
   const [isConsenting, setIsConsenting] = useState(false);
+  // legal-revision-goal-prompt.md LR-3 — 처리방침 재동의는 kind 하나(privacy)지만 개인정보보호법
+  // 제22조 제1항 제3호에 따라 수집·이용과 국외이전을 구분해 각각 체크받는다. API 호출은 그대로
+  // kind="privacy" 한 번이다(서버가 privacy·transfer 두 쌍을 함께 갱신, S4에서 구현됨) — 이
+  // 체크박스는 순수 FE 게이트다.
+  const [isPrivacyCollectionChecked, setIsPrivacyCollectionChecked] = useState(false);
+  const [isTransferChecked, setIsTransferChecked] = useState(false);
 
   const session = sessionQuery.data;
   const pendingKinds = LEGAL_DOCUMENT_KINDS.filter(
@@ -56,7 +63,11 @@ export function ReconsentModal() {
   // 잘못 읽어 handleConsent의 동기 throw 경로를 열어버렸다. 문서별 로딩·에러 UI는
   // ReconsentDocumentBody가 각자의 docQuery.isPending/isError로 그대로 그린다.
   const allDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
-  const canConsent = allDocsLoaded && !isConsenting;
+  // 🔴 legal-revision-goal-prompt.md LR-3 — privacy가 pending일 때 두 체크박스를 반영하지 않으면
+  // 국외이전 미체크 상태로 동의 버튼이 눌린다(§2-1이 지적한 위반을 UI가 재생산한다).
+  const isPrivacyConsentReady =
+    !pendingKinds.includes("privacy") || (isPrivacyCollectionChecked && isTransferChecked);
+  const canConsent = allDocsLoaded && !isConsenting && isPrivacyConsentReady;
 
   function handleConsentClick() {
     if (!canConsent) return;
@@ -114,6 +125,24 @@ export function ReconsentModal() {
             <section key={kind} className="flex flex-col gap-2">
               <h3 className="text-sm font-semibold text-foreground">{LEGAL_DOCUMENT_LABEL[kind]}</h3>
               <ReconsentDocumentBody docQuery={docQueryByKind[kind]} />
+              {kind === "privacy" && (
+                <div className="flex flex-col gap-2 border-t border-border pt-2">
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <Checkbox
+                      checked={isPrivacyCollectionChecked}
+                      onCheckedChange={(checked) => setIsPrivacyCollectionChecked(checked === true)}
+                    />
+                    (필수) 개인정보 수집·이용 동의
+                  </label>
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <Checkbox
+                      checked={isTransferChecked}
+                      onCheckedChange={(checked) => setIsTransferChecked(checked === true)}
+                    />
+                    (필수) 개인정보 국외이전 동의
+                  </label>
+                </div>
+              )}
             </section>
           ))}
         </div>

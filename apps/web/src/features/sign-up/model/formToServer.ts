@@ -17,6 +17,7 @@ export function toSignupRequest(values: SignUpFormValues): SignupRequest {
     birthDate: values.birthDate,
     termsAgreed: values.termsAgreed,
     privacyAgreed: values.privacyAgreed,
+    transferAgreed: values.transferAgreed,
   };
 }
 
@@ -51,5 +52,6 @@ export function toOnboardingGoogleRequest(
     birthDate: values.birthDate,
     termsAgreed: values.termsAgreed,
     privacyAgreed: values.privacyAgreed,
+    transferAgreed: values.transferAgreed,
   };
 }
