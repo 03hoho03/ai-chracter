@@ -33,7 +33,7 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 // (§0-3, 768px). IR-2/IT-7이 "max-w는 이 행에 건다"고 정한 건 틀렸다 — 그건 DESIGN.md §Layout
 // containers의 대화방 선례를 따른 것인데, 대화방은 본문이 읽기 콘텐츠라 컬럼을 좁히는 게 맞지만
 // 여기는 도구라 레일이 가장자리에 붙어야 한다. 그래서 lg 이상에서는 이 행에 max-w를 걸지 않고,
-// 중앙 컬럼 안쪽 두 블록만 max-w-3xl로 감싼다.
+// 중앙 컬럼의 **스크롤 콘텐츠만** max-w-3xl로 감싼다 — 탭 스트립과 border-b는 컬럼 전체 폭이다.
 export function ImageStudioShell({
   tab,
   onTabChange,
@@ -89,13 +89,14 @@ export function ImageStudioShell({
           }}
           className="flex min-h-0 min-w-0 flex-1 flex-col gap-0"
         >
-          {/* 크랙 §0-3 실측대로 border-b는 컬럼 전체 폭을 가로지르고, 안쪽 내용만 max-w-3xl(768px)로
-              묶는다 — DESIGN.md §Layout containers의 대화방 처방(헤더 border-b를 컬럼 div에 걸어
-              선이 뷰포트가 아니라 컬럼을 따르게 한다)과 반대 방향으로, 여기선 선이 컬럼을 따르고
-              내용만 좁힌다. px-4 sm:px-6 패딩도 안쪽 래퍼에 둔다 — 그래야 1024px처럼 컬럼이
-              768px보다 좁을 때도 콘텐츠가 가장자리에 붙지 않는다. */}
+          {/* 탭 스트립은 아래 콘텐츠와 달리 max-width를 걸지 않는다 — 선과 마찬가지로 컬럼 전체
+              폭을 쓴다. 한때 콘텐츠와 같은 max-w-3xl로 묶었는데, 1920px에서 탭이 콘텐츠보다
+              296px 바깥에 서서 어긋나 보였다(2026-09-14 사용자 피드백). 탭은 읽는 콘텐츠가
+              아니라 그 컬럼의 크롬이라 컬럼 경계를 따르는 쪽이 맞다. 시트 트리거 2개도 이
+              행에 있어 컬럼 오른쪽 끝에 선다 — lg 미만에서만 보이므로 폭 제한과 무관하다.
+              px-4 sm:px-6 패딩은 여기 둔다(선은 패딩 밖, 즉 컬럼 전체를 가로지른다). */}
           <div className="shrink-0 border-b border-border">
-            <div className="mx-auto flex w-full max-w-3xl items-center justify-between gap-2 px-4 py-3 sm:px-6">
+            <div className="flex w-full items-center justify-between gap-2 px-4 py-3 sm:px-6">
               <TabsList variant="line">
                 <TabsTrigger value="generate">생성</TabsTrigger>
                 {/* image-refact-techspec.md IT-10 — 저장소 최초의 disabled 탭. GenerateImagesStyleGrid의
