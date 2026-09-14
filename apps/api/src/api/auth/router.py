@@ -170,8 +170,9 @@ async def verify_email(
     await delete_verification_code(payload.email)
     await clear_verification_attempts(payload.email)
 
-    # signup():111/122이 이 email의 user row에 payload.birth_date(non-optional)를 대입했고,
-    # 탈퇴 계정은 signup():100에서 재가입 자체가 막혀 이 row를 다시 만들 수 없다.
+    # legal-revision-goal-prompt.md LR-27: 지금은 birth_date를 NULL로 만드는 코드가 없다.
+    # S5 이후에는 탈퇴 행의 email이 자리표시자로 바뀌어 위 select(:156)가 원래 이메일로는
+    # 그 행을 찾지 못한다 — 이 assert가 실제로 그렇게 막히는지는 S5에서 실측 확인해야 한다.
     assert user.birth_date is not None
     return VerifyEmailResponse(
         is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
@@ -239,8 +240,9 @@ async def guardian_consent(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email verification required"
         )
 
-    # signup():111/122이 이 email의 user row에 payload.birth_date(non-optional)를 대입했고,
-    # 탈퇴 계정은 signup():100에서 재가입 자체가 막혀 이 row를 다시 만들 수 없다.
+    # legal-revision-goal-prompt.md LR-27: 지금은 birth_date를 NULL로 만드는 코드가 없다.
+    # S5 이후에는 탈퇴 행의 email이 자리표시자로 바뀌어 위 select(:234)가 원래 이메일로는
+    # 그 행을 찾지 못한다 — 이 assert가 실제로 그렇게 막히는지는 S5에서 실측 확인해야 한다.
     assert user.birth_date is not None
     if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
         raise HTTPException(
