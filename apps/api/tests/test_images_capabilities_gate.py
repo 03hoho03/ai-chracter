@@ -114,7 +114,7 @@ async def test_local_model_unknown_to_static_registry_is_ignored(
 async def test_models_endpoint_maps_wire_model_id_back_to_the_public_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id(`sdxl-anime-v1`)만
+    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id(`opaque-wire-id`)만
     보고한다. 교차 참조가 공개 id로 그대로 조회하면(매핑 전 동작) 매치가 안 나 존재하는
     모델이 `available: false`로 내려간다 — 공개→와이어로 조회해야 FE가 `v1`을 쓸 수 있다.
 
@@ -123,13 +123,13 @@ async def test_models_endpoint_maps_wire_model_id_back_to_the_public_id(
     `test_partial_serving_produces_exact_availability_vector_for_all_seven_styles`가
     이미 담당하므로, 여기서는 model 축 와이어 매핑(살아있는 기능)만 검증한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
             models=(
-                ModelCapability(model_id="sdxl-anime-v1", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
             ),
         )
 
@@ -182,7 +182,7 @@ async def test_registry_entry_unavailable_when_local_does_not_report_the_wire_id
     이상 매치가 아니어야 한다 — 매핑을 건너뛰고 공개 id로 계속 조회하면 이 불일치를
     놓치고 `available: true`를 잘못 내린다(그 뒤 실제 생성 요청은 홈PC의 400으로 끝난다)."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
@@ -211,13 +211,13 @@ async def test_models_endpoint_does_not_warn_when_wire_id_matches_and_model_is_a
     로그다). 같은 요청 중 다른 로거가 WARNING을 내도 무관하므로 `api.images.router`
     로거 한정으로 부재를 확인한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
             models=(
-                ModelCapability(model_id="sdxl-anime-v1", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
             ),
         )
 
@@ -315,13 +315,13 @@ async def test_generate_returns_202_when_capability_lookup_uses_the_wire_model_i
     `local_image_base_url`을 향한 백그라운드 태스크는 안전하게 실패하고 잡은 나중에
     FAILED로 끝나지만(이미 확인된 경로), 게이트가 202를 냈는지만 고정한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
             models=(
-                ModelCapability(model_id="sdxl-anime-v1", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
             ),
         )
 

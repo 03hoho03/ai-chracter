@@ -31,6 +31,7 @@ from api.core.config import settings
 from api.images.models import IMAGE_MODELS_BY_ID, AspectRatio, ImageModelId, ImageStylePreset
 from api.llm.client import LLMClientError
 from api.llm.dependencies import build_image_client
+from api.llm.local_image import LocalImageBlockedError, LocalImageInputError
 from seed_content.images import IMAGES_DIR
 from seed_content.loader import DATA_DIR, SeedContentError
 
@@ -162,11 +163,22 @@ async def _generate_all(
 async def _generate_with_retry(
     spec: ImagePromptSpec, retry_delays: tuple[float, ...]
 ) -> tuple[bytes, str]:
-    """마지막 시도의 실패는 그대로 올린다 — 배치 전체를 멈출지는 호출부가 정한다."""
+    """마지막 시도의 실패는 그대로 올린다 — 배치 전체를 멈출지는 호출부가 정한다.
+
+    image-style-7-goal-prompt.md IS-15: `LocalImageInputError`(400 길이·422 문법)와
+    `LocalImageBlockedError`(422 콘텐츠 차단)는 결정적 실패다 — 같은 프롬프트를 다시
+    보내도 같은 실패가 나므로 재시도하면 `RETRY_DELAYS` 합(25초)을 확실히 낭비한다.
+    둘 다 `LLMClientError`의 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야
+    한다(순서가 바뀌면 상위 절이 먼저 걸린다). 429·타임아웃·5xx 등 나머지는 그대로
+    재시도한다(429를 재시도 불가로 바꾸지 않는다 — local-image-gen-techspec.md LT-12).
+    """
     client = build_image_client(spec.model)
     for delay in retry_delays:
         try:
             return await client.generate_image(spec.prompt, spec.style, spec.aspect_ratio)
+        except (LocalImageInputError, LocalImageBlockedError) as exc:
+            print(f"    ✗ {spec.slug}: {exc} — 결정적 실패라 재시도하지 않는다")
+            raise
         except LLMClientError as exc:
             print(f"    ↻ {spec.slug}: {exc} — {delay:.0f}s 뒤 재시도")
             await asyncio.sleep(delay)

@@ -389,7 +389,7 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
 async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.MonkeyPatch) -> None:
     """local-image-gen-goal-prompt.md LG-19: 공개 model id(`v1`)를 그대로 보내면 홈PC의
-    실제 체크포인트 id(`sdxl-anime-v1`)와 맞지 않아 계약(LC-4) 위반으로 모든 요청이
+    실제 체크포인트 id(`opaque-wire-id`)와 맞지 않아 계약(LC-4) 위반으로 모든 요청이
     400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다.
 
     image-style-7-goal-prompt.md IS-2: style은 더 이상 별도 와이어 설정이 없다 —
@@ -402,13 +402,13 @@ async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.
         return httpx.Response(200, content=b"bytes", headers={"content-type": "image/webp"})
 
     _patch_httpx(monkeypatch, handler)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
     assert captured["body"] == {
         "prompt": "a cat wizard",
-        "model": "sdxl-anime-v1",
+        "model": "opaque-wire-id",
         "style": "soft_portrait",
         "aspect_ratio": "1:1",
     }

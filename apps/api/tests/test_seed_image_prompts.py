@@ -15,6 +15,7 @@ from PIL import Image
 import generate_seed_images
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient, ImageStylePreset
+from api.llm.local_image import LocalImageBlockedError, LocalImageInputError
 from generate_seed_images import ImagePromptSpec, load_prompt_specs
 from seed_content.images import situational_image_slug
 from seed_content.loader import SeedContentError, load_characters, load_stories
@@ -163,3 +164,49 @@ async def test_transient_failure_is_retried(
     assert exit_code == 0
     assert _FlakyImageClient.calls == 2  # 첫 실패 뒤 한 번 더 시도해서 살아났다
     assert (tmp_path / "flaky.png").exists()
+
+
+class _DeterministicFailureImageClient(ImageClient):
+    """매 호출마다 결정적 실패(길이·문법·차단)를 올리는 클라이언트 — 재시도해도 성공하지
+    않는다(image-style-7-goal-prompt.md IS-15)."""
+
+    calls = 0
+    exc: LLMClientError = LocalImageInputError(input_error="too_long")
+
+    def __init__(self, model_id: str) -> None:
+        self._model_id = model_id
+
+    async def generate_image(
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+    ) -> tuple[bytes, str]:
+        _DeterministicFailureImageClient.calls += 1
+        raise _DeterministicFailureImageClient.exc
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [
+        LocalImageInputError(input_error="too_long"),
+        LocalImageInputError(input_error="syntax"),
+        LocalImageBlockedError(reason="prompt"),
+    ],
+    ids=["input_error_too_long", "input_error_syntax", "blocked"],
+)
+async def test_deterministic_failure_is_not_retried(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, exc: LLMClientError
+) -> None:
+    _DeterministicFailureImageClient.calls = 0
+    _DeterministicFailureImageClient.exc = exc
+    monkeypatch.setattr(generate_seed_images, "IMAGES_DIR", tmp_path)
+    monkeypatch.setattr(generate_seed_images, "build_image_client", _DeterministicFailureImageClient)
+    specs = load_prompt_specs(_write(tmp_path, [{"slug": "bad", "prompt": "ok"}]))
+
+    exit_code = await generate_seed_images._generate_all(
+        specs, force=False, sleep_seconds=0.0, retry_delays=(0.0, 0.0)
+    )
+
+    assert exit_code == 1
+    # RETRY_DELAYS 가 두 칸이라 재시도했다면 3회(최초 + 2회) 호출됐을 것 — 1회로 멈춰야
+    # "재시도 없이 즉시 포기"가 증명된다.
+    assert _DeterministicFailureImageClient.calls == 1
+    assert not (tmp_path / "bad.png").exists()
