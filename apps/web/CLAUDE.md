@@ -116,6 +116,7 @@
 - **`SelectTrigger` 안에는 반드시 `SelectValue`가 있어야 한다.** 값 표시를 커스터마이즈하려고 텍스트를 직접 넣으면 `position="item-aligned"`(저장소 기본값)이 `valueNode`를 기다리다 포지셔닝·포커스 이관을 아예 하지 않아 **마우스로도 키보드로도 못 고르는** 드롭다운이 된다(타입체크·테스트·코드리뷰를 전부 통과하는 결함이다). 문구를 바꾸려면 루트에 `value=""` + `SelectValue placeholder`를 쓴다.
 - **자동완성 드롭다운**은 `relative` 래퍼 + 조건부 `absolute` div로 충분하다(`packages/ui`에 Popover/Command 없음). 스크롤 컨테이너 **안**이면 `fixed`/포털이 필요하다.
 - **뷰포트에 따라 Sheet ↔ 인라인 패널을 갈라야 하면 CSS가 아니라 JS로 분기한다**(`useMedia`). Sheet는 body로 포털되어 부모의 `lg:hidden`이 닿지 않고, 열린 Sheet는 포커스 트랩과 바깥 클릭 차단까지 걸어 인라인 패널과 공존할 수 없다 — **둘 중 하나만 마운트되어야 한다.** 브레이크포인트는 두 분기가 공유하는 훅 한 곳에 둔다.
+- **`asChild` 아래에 커스텀 컴포넌트를 끼우면 Radix가 얹는 `onClick`·`ref`가 조용히 사라진다.** `SheetTrigger`·`SheetClose`·`DropdownMenuItem`의 `asChild`는 Radix `Slot`이 **바로 아래 자식**에 props를 머지한다. 그 자리에 `className`만 구조분해하고 나머지를 버리는 함수 컴포넌트를 두면 **버튼을 눌러도 아무 일도 안 나고**(트리거가 안 열린다) **링크는 이동하지만 패널이 안 닫힌다**. typecheck·lint가 둘 다 통과하므로 화면에서만 드러난다. 처방은 `...props` 전개 + 필요하면 `forwardRef`이고, **더 단순한 쪽은 `<Link>`·`<button>`을 `asChild`의 직계 자식으로 두고 커스텀 컴포넌트는 그 안쪽 내용으로만 쓰는 것**이다. (2026-09-15 실측, `main-refact-goal-prompt.md` MR-10)
 - **알려진 갭 — 루트에 마운트된 react-call 모달은 트리거로 포커스를 돌려주지 않는다**(WCAG 2.4.3). 드롭다운 항목 → 확인 모달 → 닫기 뒤 `activeElement`가 `<body>`로 떨어져 다음 Tab이 헤더부터 다시 시작한다(취소로 닫아도 그렇다). 원인은 Callable이 `__root.tsx`에 마운트돼 카드 트리 밖에서 열리는 것 — DropdownMenu의 복원과 Dialog의 복원이 서로를 모른다. **한 호출부만 고치면 관습이 갈리므로 Callable 래퍼가 `call()` 시점의 `activeElement`를 저장했다가 `call.end()`에서 복원하는 전역 작업으로 잡을 것.**
 
 ### 필터 · 빈 상태
