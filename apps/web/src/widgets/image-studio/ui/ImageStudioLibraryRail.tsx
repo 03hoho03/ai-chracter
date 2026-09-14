@@ -31,7 +31,17 @@ export function ImageStudioLibraryRail() {
       {/* image-refact-goal-prompt.md IR-6 — 보관함 시트는 헤더 아래까지(긴 그리드). ChatMorePanel의
           top-[118px]은 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(우리 크롬은 h-14 하나뿐).
           정확한 값은 브라우저 실측으로 정하기로 하고 지금은 top-14로 둔다. */}
-      <SheetContent side="bottom" className="top-14 rounded-t-xl">
+      <SheetContent
+        side="bottom"
+        className="top-14 rounded-t-xl"
+        // 브라우저 실검증(S6) — 이 시트는 SheetTrigger가 아니라 셸의 별도 버튼이 setIsOpen(true)로
+        // 여는데, radix Dialog는 SheetTrigger로 열렸을 때만 트리거에 포커스를 자동 복원한다.
+        // 트리거가 시트 트리 밖에 있어 복원 대상이 없으므로 직접 지정한다.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          document.querySelector<HTMLElement>('[data-image-studio-trigger="library"]')?.focus();
+        }}
+      >
         <SheetHeader>
           <SheetTitle>보관함</SheetTitle>
         </SheetHeader>

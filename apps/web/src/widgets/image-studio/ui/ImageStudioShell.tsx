@@ -5,13 +5,15 @@ import { useAtom } from "jotai";
 import { Images, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
-import { useImageJobStatusQuery } from "@/entities/image-job";
+import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
 import {
   GenerateImagesFormProvider,
   GenerateImagesPromptField,
   GenerateImagesResultGrid,
   GenerateImagesStyleGrid,
+  GenerateImagesUnavailableState,
   useGenerateImagesMutation,
+  useGenerateImagesSubmit,
   type GenerateImagesFormValues,
 } from "@/features/generate-images";
 import { isApiError } from "@/shared/api/client";
@@ -68,8 +70,12 @@ export function ImageStudioShell({
 
       {/* image-refact-techspec.md IT-9 — GenerateImagesFormProvider는 중앙(Prompt/Style/Result)과
           우열(Options) 양쪽의 공통 조상이어야 폼 context가 닿는다(React context는 DOM 위치와
-          무관). 좌열(보관함)은 그 바깥에 둔다 — 모델을 못 불러와 이 프로바이더가 "이용 불가" 화면으로
-          바뀌어도 이미 만든 보관함까지 함께 가려지면 안 된다. */}
+          무관). 좌열(보관함)은 그 바깥에 둔다 — 폼 context가 전혀 필요 없고, 모델 목록을 못
+          불러온 상태에서도 이미 만든 보관함은 계속 열 수 있어야 한다.
+          이 프로바이더는 더 이상 "이용 불가" 판정으로 children을 통째로 갈아치우지 않는다
+          (브라우저 실검증 회귀 수정) — 탭 스트립·시트 트리거·좌우열 껍데기는 어떤 상태에서도
+          항상 남고, 판정 결과만 context로 내려 중앙 TabsContent 안(ImageStudioGenerateTabContent)
+          에서만 대체 UI로 바꿔 낀다. */}
       <GenerateImagesFormProvider onSubmit={handleSubmit}>
         <Tabs
           value={tab}
@@ -100,6 +106,7 @@ export function ImageStudioShell({
                 size="icon"
                 aria-label="보관함"
                 aria-expanded={isLibraryOpen}
+                data-image-studio-trigger="library"
                 onClick={() => setIsLibraryOpen(true)}
               >
                 <Images aria-hidden className="size-4" />
@@ -109,6 +116,7 @@ export function ImageStudioShell({
                 size="icon"
                 aria-label="생성 옵션"
                 aria-expanded={isOptionsOpen}
+                data-image-studio-trigger="options"
                 onClick={() => setIsOptionsOpen(true)}
               >
                 <SlidersHorizontal aria-hidden className="size-4" />
@@ -123,16 +131,12 @@ export function ImageStudioShell({
                 변형·인페인트는 disabled라 도달 불가능하므로 그 둘의 TabsContent는 만들지 않는다
                 (IT-10 — 빈 껍데기는 도달 불가능한 코드다). */}
             <TabsContent value="generate" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
-              <GenerateImagesPromptField />
-              <GenerateImagesStyleGrid />
-              {/* image-refact-goal-prompt.md IR-16 — 생성 결과는 중앙 하단에 그대로 남긴다. */}
-              {jobId !== undefined && (
-                <GenerateImagesResultGrid
-                  job={jobQuery.data}
-                  requestedCount={generateMutation.variables?.count ?? 1}
-                  isQueryError={jobQuery.isError}
-                />
-              )}
+              <ImageStudioGenerateTabContent
+                jobId={jobId}
+                jobData={jobQuery.data}
+                requestedCount={generateMutation.variables?.count ?? 1}
+                isJobQueryError={jobQuery.isError}
+              />
             </TabsContent>
           </div>
         </Tabs>
@@ -143,5 +147,39 @@ export function ImageStudioShell({
         </aside>
       </GenerateImagesFormProvider>
     </div>
+  );
+}
+
+// 브라우저 실검증 회귀 수정 — GenerateImagesFormProvider가 더 이상 early return하지 않으므로
+// (파일 상단 주석), "이용 불가"일 때 프롬프트·스타일·결과 대신 대체 UI를 꽂는 이 판정은 중앙
+// TabsContent **안**에서만 일어난다. 이 함수가 useGenerateImagesSubmit()을 부르려면 그 자체가
+// GenerateImagesFormProvider의 자손이어야 한다 — ImageStudioShell 본문에서 그냥 호출하면 아직
+// FormProvider가 만들어지기 전 트리를 읽어 항상 실패한다.
+function ImageStudioGenerateTabContent({
+  jobId,
+  jobData,
+  requestedCount,
+  isJobQueryError,
+}: {
+  jobId: string | undefined;
+  jobData: ImageJobStatusResponse | undefined;
+  requestedCount: number;
+  isJobQueryError: boolean;
+}) {
+  const { unavailableReason, onRetry } = useGenerateImagesSubmit();
+
+  if (unavailableReason) {
+    return <GenerateImagesUnavailableState reason={unavailableReason} onRetry={onRetry} />;
+  }
+
+  return (
+    <>
+      <GenerateImagesPromptField />
+      <GenerateImagesStyleGrid />
+      {/* image-refact-goal-prompt.md IR-16 — 생성 결과는 중앙 하단에 그대로 남긴다. */}
+      {jobId !== undefined && (
+        <GenerateImagesResultGrid job={jobData} requestedCount={requestedCount} isQueryError={isJobQueryError} />
+      )}
+    </>
   );
 }

@@ -9,7 +9,7 @@ import {
   generateImagesSchema,
   type GenerateImagesFormValues,
 } from "../model/schema";
-import { GenerateImagesUnavailableState } from "./GenerateImagesUnavailableState";
+import type { UnavailableReason } from "./GenerateImagesUnavailableState";
 
 type GenerateImagesFormProviderProps = {
   onSubmit: (values: GenerateImagesFormValues) => void | Promise<void>;
@@ -19,6 +19,12 @@ type GenerateImagesFormProviderProps = {
 type GenerateImagesSubmitContextValue = {
   onSubmit: GenerateImagesFormProviderProps["onSubmit"];
   isModelsPending: boolean;
+  // 브라우저 실검증 회귀 수정 — 예전엔 이 판정이 early return으로 children 전체(탭 스트립·트리거·
+  // 좌우열까지)를 대체 화면으로 바꿔치기했다(3열 셸에서 실측: 이용 불가 상태가 되면 <aside>도
+  // 시트 트리거도 통째로 사라져 lg 미만에서 보관함을 열 방법이 없어졌다). 판정 로직은 그대로 두고
+  // 결과만 context로 내려, 소비 측(중앙 열)이 그 자리에서만 대체 UI를 꽂게 한다.
+  unavailableReason: UnavailableReason | null;
+  onRetry: (() => void) | undefined;
 };
 
 // image-refact-techspec.md IT-9 — `<form>` 엘리먼트는 GenerateImagesPromptField(중앙 열)가 감싸지만
@@ -69,29 +75,30 @@ export function GenerateImagesFormProvider({ onSubmit, children }: GenerateImage
     });
   }, [models, getValues, reset]);
 
+  const availableModels = models?.filter((model) => model.available) ?? [];
+
+  let unavailableReason: UnavailableReason | null = null;
+  let onRetry: (() => void) | undefined;
   // 배경 refetch 실패(staleTime 30s + refetchOnWindowFocus 기본값)에도 query-core의 'error' reducer는
   // 이전 data를 지우지 않는다 — 그래서 models가 남아 있으면(낡았어도) 화면을 갈아엎지 않고 폼을 그대로
   // 보여준다. LG-8("사전 헬스체크 + 즉시 실패")과 모순되지 않는다: 로컬 비가동은 *성공한* 쿼리가
   // `available: false`를 실어 오는 값이라 아래 unavailable 분기가 잡는다. 여기는 쿼리 자체가 실패해
   // "그런지 아닌지도 모른다"이고, 그건 보여줄 게 없을 때만 화면을 대체할 가치가 있다.
   if (isModelsError && models === undefined) {
-    return <GenerateImagesUnavailableState reason="error" onRetry={() => void refetchModels()} />;
-  }
-
-  const availableModels = models?.filter((model) => model.available) ?? [];
-
-  // (LG-17) models 쿼리의 선행 갭 — 빈 목록과 전 모델 일시 불가는 전에는 "활성화된 빈 Select + 낡은
-  // 기본값 + 제출 가능"으로 조용히 깨졌다. 둘 다 제출 이전 상태로 이름을 준다.
-  if (models !== undefined && models.length === 0) {
-    return <GenerateImagesUnavailableState reason="empty" />;
-  }
-  if (models !== undefined && availableModels.length === 0) {
-    return <GenerateImagesUnavailableState reason="unavailable" onRetry={() => void refetchModels()} />;
+    unavailableReason = "error";
+    onRetry = () => void refetchModels();
+  } else if (models !== undefined && models.length === 0) {
+    // (LG-17) models 쿼리의 선행 갭 — 빈 목록과 전 모델 일시 불가는 전에는 "활성화된 빈 Select + 낡은
+    // 기본값 + 제출 가능"으로 조용히 깨졌다. 둘 다 제출 이전 상태로 이름을 준다.
+    unavailableReason = "empty";
+  } else if (models !== undefined && availableModels.length === 0) {
+    unavailableReason = "unavailable";
+    onRetry = () => void refetchModels();
   }
 
   return (
     <FormProvider {...form}>
-      <GenerateImagesSubmitContext.Provider value={{ onSubmit, isModelsPending }}>
+      <GenerateImagesSubmitContext.Provider value={{ onSubmit, isModelsPending, unavailableReason, onRetry }}>
         {children}
       </GenerateImagesSubmitContext.Provider>
     </FormProvider>

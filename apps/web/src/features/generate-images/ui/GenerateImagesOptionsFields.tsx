@@ -108,6 +108,9 @@ export function GenerateImagesOptionsFields() {
                   value={ratio}
                   disabled={!supportedRatios.has(ratio)}
                   aria-label={IMAGE_ASPECT_RATIO_LABEL[ratio]}
+                  // DESIGN.md:262 variant="list" 레시피 — 화면당 primary 솔리드 채움은 CTA 하나뿐이어야
+                  // 하는데 이 칩과 아래 개수 칩까지 솔리드면 셋이 된다. 틴트로 내려 예산을 CTA에 남긴다.
+                  className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
                 >
                   {ratio}
                 </ToggleGroupItem>
@@ -139,7 +142,12 @@ export function GenerateImagesOptionsFields() {
               aria-label="개수"
             >
               {IMAGE_COUNT_OPTIONS.map((count) => (
-                <ToggleGroupItem key={count} value={String(count)}>
+                <ToggleGroupItem
+                  key={count}
+                  value={String(count)}
+                  // DESIGN.md:262 variant="list" 레시피 — 위 비율 칩과 같은 이유.
+                  className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
+                >
                   {count}장
                 </ToggleGroupItem>
               ))}

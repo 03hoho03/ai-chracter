@@ -26,7 +26,16 @@ export function ImageStudioOptionsRail() {
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       {/* image-refact-goal-prompt.md IR-6 — 옵션 시트는 콘텐츠 높이(비율 6 + 개수 2라 짧다).
           SheetContent 기본값(data-[side=bottom]:h-auto)을 그대로 둔다. */}
-      <SheetContent side="bottom" className="rounded-t-xl">
+      <SheetContent
+        side="bottom"
+        className="rounded-t-xl"
+        // 브라우저 실검증(S6) — ImageStudioLibraryRail과 같은 이유. 셸의 별도 버튼이 열어서
+        // SheetTrigger의 자동 포커스 복원 대상이 없다.
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          document.querySelector<HTMLElement>('[data-image-studio-trigger="options"]')?.focus();
+        }}
+      >
         <SheetHeader>
           <SheetTitle>생성 옵션</SheetTitle>
         </SheetHeader>
