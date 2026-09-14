@@ -80,17 +80,22 @@ export function GenerateImagesOptionsFields() {
                     // sm의 나머지 값은 그대로 상속한다.
                     // rounded-lg — 프리미티브 기본 pill을 덮는다. ~90×59 도형 타일에 pill을 주면 원으로
                     // 보인다(DESIGN.md:262가 신고 모달 352×44 행에 쓴 것과 같은 근거: 키 큰 항목엔 pill이
-                    // 아니라 lg). 개수 칩(1장/2장)은 32px 텍스트 전용이라 기존 필터 칩 어휘(pill) 그대로
-                    // 둔다 — 이 둘의 반경 차이는 의도된 것이지 통일 대상이 아니다.
+                    // 아니라 lg). 아래 개수 칩도 같은 반경으로 맞춘다 — 이 패널은 필터 바가 아니라
+                    // 옵션 패널이라 칩 어휘(pill)를 쓰지 않는다.
                     className="h-auto flex-col gap-1 rounded-lg py-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
                   >
-                    {/* border-current로 칩 텍스트 색(비선택 muted-foreground / 선택 primary)을
-                        그대로 따라간다 — 별도 색 분기가 필요 없다. 장식이라 aria-hidden. */}
-                    <div
-                      aria-hidden
-                      className="shrink-0 border border-current"
-                      style={{ width: shapeSize.width, height: shapeSize.height }}
-                    />
+                    {/* 도형을 18×18 고정 박스로 감싼다 — 도형 높이가 비율마다 다르면(18/14/10)
+                        아래 라벨의 세로 위치가 칩마다 달라진다(2026-09-14 사용자 피드백).
+                        박스가 긴 변(18px)만큼 자리를 늘 차지하므로 라벨은 어느 칩에서든 같은
+                        높이에 선다. 박스는 중앙 정렬이라 도형 자체도 가로·세로 가운데에 온다. */}
+                    <span aria-hidden className="flex size-[18px] shrink-0 items-center justify-center">
+                      {/* border-current로 칩 텍스트 색(비선택 muted-foreground / 선택 primary)을
+                          그대로 따라간다 — 별도 색 분기가 필요 없다. */}
+                      <span
+                        className="block border border-current"
+                        style={{ width: shapeSize.width, height: shapeSize.height }}
+                      />
+                    </span>
                     {ratio}
                   </ToggleGroupItem>
                 );
@@ -126,7 +131,11 @@ export function GenerateImagesOptionsFields() {
                   key={count}
                   value={String(count)}
                   // DESIGN.md:262 variant="list" 레시피 — 위 비율 칩과 같은 이유.
-                  className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
+                  // rounded-lg — 비율 칩과 반경을 맞춘다. 한때 "32px 텍스트 전용이라 기존 필터 칩
+                  // 어휘(pill)를 유지한다"고 갈라 뒀는데, 나란히 놓고 보니 같은 패널의 두 칩 줄이
+                  // 다른 반경을 갖는 쪽이 더 어색했다(2026-09-14 사용자 피드백). 필터 바의 칩은
+                  // 여전히 pill이다 — 이건 그 어휘를 쓰지 않는 옵션 패널이라는 뜻이다.
+                  className="rounded-lg data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
                 >
                   {count}장
                 </ToggleGroupItem>
