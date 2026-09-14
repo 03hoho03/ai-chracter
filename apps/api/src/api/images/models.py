@@ -25,6 +25,11 @@ ImageModelId = Literal["v1"]
 # (응답) 셋이 같은 리터럴을 공유해야 한다.
 ImageBlockedReason = Literal["prompt", "image"]
 
+# image-style-7-goal-prompt.md IS-8: 사용자가 프롬프트를 고쳐서 통과할 수 있는 입력
+# 오류 축 — `blocked_reason`(정책 차단, 일부러 사유를 숨긴다)과는 의미가 다르다.
+# 여기 두는 이유는 위 `ImageBlockedReason`과 같다(순환 회피, 세 모듈이 공유).
+ImageInputError = Literal["too_long", "syntax"]
+
 
 class ImageStylePreset(str, enum.Enum):
     # image-style-7-goal-prompt.md IS-1: 계약 v3가 지정한 7종, id·순서 그대로.

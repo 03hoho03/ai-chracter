@@ -20,7 +20,12 @@ from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_jo
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient, ImageStylePreset
-from api.llm.local_image import LocalCapabilities, LocalImageBlockedError, ModelCapability
+from api.llm.local_image import (
+    LocalCapabilities,
+    LocalImageBlockedError,
+    LocalImageInputError,
+    ModelCapability,
+)
 from api.main import app
 from factories import _login_as, _make_user
 
@@ -505,6 +510,142 @@ async def test_generate_blocked_log_omits_user_id_and_prompt_text(
         message = record.getMessage()
         assert secret_prompt not in message
         assert str(user.id) not in message
+
+
+async def test_generate_input_error_too_long_marks_job_failed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-11: `local_image.py`가 `LocalImageInputError`를
+    던지는 것은 `test_llm_local_image.py`가 이미 고정했지만, `router.py`가 그것을 받아 잡
+    상태·응답으로 바꾸는 경로(`:113`의 `except LocalImageInputError`, `:249`의 FAILED 기록)는
+    커버리지 0건이었다 — `blocked_reason` 파이프라인 테스트와 같은 관용구를 쓴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="too_long")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+
+    job = await _wait_for_job_completion(job_id, user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.completed_count == 0
+    assert job.input_error_count == 2
+    assert job.input_error == "too_long"
+    assert job.error is None
+
+
+async def test_generate_input_error_syntax_marks_job_failed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-11: 위 테스트와 같은 경로 — 값만
+    `syntax`로 다르다(422 `reason=="syntax"` 진입점)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="syntax")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+
+    job = await _wait_for_job_completion(job_id, user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.completed_count == 0
+    assert job.input_error_count == 1
+    assert job.input_error == "syntax"
+    assert job.error is None
+
+
+async def test_generate_mixed_input_errors_logs_warning(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-8: `too_long`/`syntax`는 프롬프트만의
+    함수라 결정적이다 — 한 잡 안에서 섞이면 계약 밖 사건(프록시 흔들림 등)이므로
+    `router.py:212-224`의 혼재 감지 WARNING이 남아야 한다. 이 신설 코드는 이 테스트
+    전까지 한 번도 실행된 적이 없었다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        input_error: Literal["too_long", "syntax"] = "too_long" if call_count["n"] == 1 else "syntax"
+        raise LocalImageInputError(input_error=input_error)
+
+    _override_image_client(generate)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+            job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    finally:
+        _clear_image_override()
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.input_error_count == 2
+    router_warnings = [
+        record
+        for record in caplog.records
+        if record.name == "api.images.router" and record.levelno >= logging.WARNING
+    ]
+    # 사유가 섞이지 않으면 경고 하나(일상적인 input_error 거부 경고)뿐이다 — 최소 2건을
+    # 요구해야 혼재 감지 경고(:212-224)가 실제로 남는지 확인할 수 있다.
+    assert len(router_warnings) >= 2
+
+
+async def test_generate_input_error_does_not_set_blocked_fields(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8: `input_error`와 `blocked_reason`은 별개 축이다
+    (`blocked_reason`의 "일부러 정보를 안 준다"는 의미를 보존하기 위해 분리했다) —
+    `jobs.py:update_job`이 `blocked_count`/`blocked_reason`과 거의 같은 모양으로
+    `input_error_count`/`input_error`를 다뤄 필드를 바꿔 쓰는 실수를 하기 쉽다. 반대
+    방향(차단 잡의 input_error가 기본값인지)은 기존 `blocked_reason` 테스트들이 이미
+    `blocked_count==0`/`blocked_reason is None`을 보므로 여기서 다시 쓰지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="too_long")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.input_error == "too_long"
+    assert job.blocked_count == 0
+    assert job.blocked_reason is None
 
 
 async def test_generate_undecodable_image_counts_as_failure(

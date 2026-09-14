@@ -20,6 +20,7 @@ from api.images.models import (
     IMAGE_STYLE_PRESETS,
     AspectRatio,
     ImageBlockedReason,
+    ImageInputError,
     ImageModelId,
     ImageStylePreset,
 )
@@ -35,7 +36,13 @@ from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient
-from api.llm.local_image import LocalImageBlockedError, get_capabilities, release_admission, try_admit
+from api.llm.local_image import (
+    LocalImageBlockedError,
+    LocalImageInputError,
+    get_capabilities,
+    release_admission,
+    try_admit,
+)
 from api.session.dependencies import get_current_user_id
 
 # local-image-gen-contract.md LC-1: 정적 레지스트리 ↔ 로컬 capabilities 불일치는 조용한
@@ -49,13 +56,15 @@ router = APIRouter(prefix="/images", tags=["images"])
 
 @dataclass(frozen=True)
 class _GenerationResult:
-    """`_generate_and_store_one`의 3치 결과 — `bool` 2치로는 "차단"을 표현할 자리가
+    """`_generate_and_store_one`의 결과 — `bool` 2치로는 "차단"을 표현할 자리가
     없었다(guard-goal-prompt.md §1-5). `outcome`이 Literal이라 `_run_generation`의
     분기 누락을 mypy `assert_never`가 잡는다(guard-techspec.md GT-2,
-    `llm/dependencies.py`의 기존 `assert_never` 패턴)."""
+    `llm/dependencies.py`의 기존 `assert_never` 패턴). image-style-7-goal-prompt.md
+    IS-8: `input_error`는 그 안전망을 그대로 활용해 추가한 네 번째 값이다."""
 
-    outcome: Literal["succeeded", "blocked", "failed"]
+    outcome: Literal["succeeded", "blocked", "input_error", "failed"]
     blocked_reason: ImageBlockedReason | None = None
+    input_error: ImageInputError | None = None
 
 
 async def _generate_and_store_one(
@@ -101,7 +110,16 @@ async def _generate_and_store_one(
         # 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야 한다 — 순서가
         # 바뀌면 차단이 조용히 일반 실패로 접힌다.
         return _GenerationResult(outcome="blocked", blocked_reason=exc.reason)
-    except LLMClientError:
+    except LocalImageInputError as exc:
+        # image-style-7-goal-prompt.md IS-8: `LocalImageInputError`도 `LLMClientError`의
+        # 하위 클래스라 같은 이유로 아래 `except LLMClientError`보다 먼저 잡는다.
+        return _GenerationResult(outcome="input_error", input_error=exc.input_error)
+    except LLMClientError as exc:
+        # image-style-7-goal-prompt.md IS-11: 예외 인스턴스를 바인딩하지 않으면 상태
+        # 코드·detail이 통째로 버려져 400·422·429·500·503·타임아웃이 운영 로그에서
+        # 구분 불가능하다. `local_image.py`가 이미 상태 코드+`detail`만 실어 메시지를
+        # 만들어 뒀으므로(프롬프트 에코 가능성 배제) 그 문자열을 그대로 남긴다.
+        logger.warning("local image generation call failed: %s", exc)
         return _GenerationResult(outcome="failed")
     except Exception as exc:
         # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에
@@ -142,12 +160,16 @@ async def _run_generation(
         succeeded_count = 0
         failed_count = 0
         blocked_reasons: list[ImageBlockedReason] = []
+        input_errors: list[ImageInputError] = []
         for result in results:
             if result.outcome == "succeeded":
                 succeeded_count += 1
             elif result.outcome == "blocked":
                 assert result.blocked_reason is not None
                 blocked_reasons.append(result.blocked_reason)
+            elif result.outcome == "input_error":
+                assert result.input_error is not None
+                input_errors.append(result.input_error)
             elif result.outcome == "failed":
                 failed_count += 1
             else:
@@ -184,6 +206,26 @@ async def _run_generation(
                     failed_count,
                 )
 
+        input_error_count = len(input_errors)
+        input_error: ImageInputError | None = None
+        if input_errors:
+            input_error = input_errors[0]
+            logger.warning(
+                "local image generation rejected input: input_error=%s count=%d",
+                input_error,
+                input_error_count,
+            )
+            distinct_input_errors = set(input_errors)
+            if len(distinct_input_errors) > 1:
+                # image-style-7-goal-prompt.md IS-8 §3-8: 문법 오류·길이 초과는
+                # 결정적이라 한 잡 안에서 사유가 섞일 수 없다 — 섞이면 프록시 흔들림
+                # 등 계약 밖 사건이므로 위 blocked_reasons 불일치 경고와 같은 패턴으로
+                # 조용히 넘기지 않는다.
+                logger.warning(
+                    "local image generation input errors mismatched within one job: input_errors=%s",
+                    sorted(distinct_input_errors),
+                )
+
         if succeeded_count > 0:
             await update_job(
                 job_id,
@@ -199,6 +241,16 @@ async def _run_generation(
                 status=ImageGenerationJobStatus.FAILED,
                 blocked_count=blocked_count,
                 blocked_reason=blocked_reason,
+            )
+        elif input_error_count > 0:
+            # image-style-7-goal-prompt.md IS-8: 성공과 공존하는 경우는 위 succeeded_count
+            # 분기가 이미 가로챈다 — 문법/길이 오류는 결정적이라 원래 그 조합이 없어야
+            # 정상이고(부분 input_error 안내가 FE에 없는 이유), 섞이면 위 경고가 남는다.
+            await update_job(
+                job_id,
+                status=ImageGenerationJobStatus.FAILED,
+                input_error_count=input_error_count,
+                input_error=input_error,
             )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
@@ -388,4 +440,6 @@ async def get_image_job(
         error=job.error,
         blocked_count=job.blocked_count,
         blocked_reason=job.blocked_reason,
+        input_error_count=job.input_error_count,
+        input_error=job.input_error,
     )

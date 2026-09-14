@@ -19,7 +19,7 @@ from dataclasses import dataclass
 import httpx
 
 from api.core.config import settings
-from api.images.models import ImageBlockedReason, ImageStylePreset
+from api.images.models import ImageBlockedReason, ImageInputError, ImageStylePreset
 from api.llm.client import LLMClientError
 from api.llm.image import ImageClient
 
@@ -33,6 +33,16 @@ class LocalImageBlockedError(LLMClientError):
     def __init__(self, *, reason: ImageBlockedReason) -> None:
         self.reason = reason
         super().__init__(f"Local image generation blocked by content policy guard: reason={reason}")
+
+
+class LocalImageInputError(LLMClientError):
+    """image-style-7-goal-prompt.md IS-8: 사용자가 프롬프트를 고치면 통과할 수 있는
+    입력 오류(길이 초과 400 두 종류 → `too_long`, 문법 오류 422 → `syntax`)에만 올린다.
+    `LocalImageBlockedError`와 같은 이유로 `LLMClientError`를 상속한다(fail-safe)."""
+
+    def __init__(self, *, input_error: ImageInputError) -> None:
+        self.input_error = input_error
+        super().__init__(f"Local image generation rejected the input: input_error={input_error}")
 
 
 @dataclass(frozen=True)
@@ -216,21 +226,41 @@ class LocalImageClient(ImageClient):
                 )
                 response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            try:
+                error_body = exc.response.json()
+            except ValueError:
+                error_body = None
+            detail = error_body.get("detail") if isinstance(error_body, dict) else None
             if exc.response.status_code == 422:
-                # guard-contract.md LC-4a: 본문은 `{"detail": "...", "reason": "prompt"|"image"}`
+                # guard-contract.md LC-4a: 본문은 `{"detail": "...", "reason": "prompt"|"image"|"syntax"}`
                 # 평평한 구조다. `detail`은 해석하지 않는다 — 분기는 오직 `reason`이다.
                 # 본문이 JSON이 아니거나 `reason`이 계약 밖 값이면 일반 실패로 접는다
                 # (guard-techspec.md GT-1) — 프록시가 끼어든 422를 정책 차단으로
                 # 오독하면 안 된다.
-                try:
-                    error_body = exc.response.json()
-                except ValueError:
-                    error_body = None
                 reason = error_body.get("reason") if isinstance(error_body, dict) else None
                 if reason == "prompt" or reason == "image":
                     raise LocalImageBlockedError(reason=reason) from exc
+                if reason == "syntax":
+                    raise LocalImageInputError(input_error="syntax") from exc
+            elif exc.response.status_code == 400:
+                # image-style-7-goal-prompt.md IS-8/IS-9: 계약이 400에는 `reason` 키를
+                # 안 줘서 여기만 `detail` 문자열로 분기한다 — 위 422의 "detail은
+                # 해석하지 않는다"(LC-4a) 규율과 다르다는 것을 명시해 둔다.
+                # `unsupported style`은 우리 쪽 계약 위반(버그)이지 사용자가 고칠 입력이
+                # 아니므로 화이트리스트에 넣지 않는다 — 밖은 전부 일반 실패로 떨어진다.
+                if detail in ("invalid request", "prompt too long"):
+                    raise LocalImageInputError(input_error="too_long") from exc
+            # image-style-7-goal-prompt.md IS-11: 로그가 이 메시지를 그대로 남긴다(`router.py`).
+            # 상태 코드 + `detail`만 싣는다 — 계약이 본문 형태를 보장하지 않아 원문을
+            # 그대로 실으면 프롬프트 에코 가능성을 배제할 수 없다.
+            # image-style-7-goal-prompt.md IS-11 §3-12: `detail`이 리스트(FastAPI 기본
+            # 검증 핸들러 모양)면 pydantic v2가 `include_input=True`가 기본값이라 각
+            # 항목의 `input` 키에 검증 실패한 제출값 원문(예: 프롬프트)이 통째로 들어갈
+            # 수 있다 — `repr(detail)`을 캡 없이 로그에 남기면 위에서 막으려던 "본문
+            # 전체 노출"이 재발한다. 이전에 있던 `exc.response.text[:300]` 캡을 그대로
+            # 되살린다.
             raise LLMClientError(
-                f"Local image generation failed: {exc.response.status_code} {exc.response.text[:300]}"
+                f"Local image generation failed: {exc.response.status_code} detail={repr(detail)[:300]}"
             ) from exc
         except httpx.HTTPError as exc:
             raise LLMClientError(f"Local image generation call failed: {exc}") from exc

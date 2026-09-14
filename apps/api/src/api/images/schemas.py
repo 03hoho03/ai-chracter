@@ -4,7 +4,7 @@ from pydantic import Field
 
 from api.core.schema import CamelModel
 from api.images.jobs import ImageGenerationJobStatus
-from api.images.models import AspectRatio, ImageBlockedReason, ImageModelId, ImageStylePreset
+from api.images.models import AspectRatio, ImageBlockedReason, ImageInputError, ImageModelId, ImageStylePreset
 
 __all__ = [
     "AspectRatio",
@@ -65,3 +65,8 @@ class ImageJobStatusResponse(CamelModel):
     # 유니온으로 내려가 FE가 exhaustive switch를 쓸 수 있다(guard-goal-prompt.md G-6).
     blocked_count: int
     blocked_reason: ImageBlockedReason | None
+    # image-style-7-goal-prompt.md IS-8: 사용자가 프롬프트를 고쳐야 하는 입력 오류
+    # 축 — `blocked_reason`과 별개 필드로 둔다(그 필드의 "사유를 숨긴다" 의미를
+    # 보존하기 위해서다, IS-8 근거).
+    input_error_count: int
+    input_error: ImageInputError | None

@@ -134,6 +134,32 @@ async def test_get_job_reports_blocked_count_and_reason(
     assert body["blockedReason"] == "image"
 
 
+async def test_get_job_reports_input_error_count_and_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-style-7-goal-prompt.md IS-8: BE가 잡에 저장한 input_error_count/input_error가
+    `inputErrorCount`/`inputError`로 camelCase 직렬화돼 FE까지 그대로 나가는지 지킨다 —
+    `get_image_job`이 이 두 값을 응답에 배선하지 않으면 이 단언이 깨져야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    job = await create_job(user.id, requested_count=2)
+    await update_job(
+        job.job_id,
+        status=ImageGenerationJobStatus.SUCCEEDED,
+        input_error_count=1,
+        input_error="too_long",
+    )
+
+    resp = await db_client.get(f"/images/jobs/{job.job_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["inputErrorCount"] == 1
+    assert body["inputError"] == "too_long"
+
+
 async def test_get_job_failed_reports_error(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
