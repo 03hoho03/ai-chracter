@@ -15,8 +15,11 @@ import { cn } from "@ai-character-chat/ui/lib/utils"
  * 필터 칩 8~16px / 액션 버튼 4px. 이 프리미티브는 `Button`과 같은 `rounded-lg`(8px)를 써서 둘이
  * 형태로 안 갈렸다. **헤더의 캐릭터/스토리 토글도 함께 pill이 된다 — 의도된 것이다.** 그 토글은
  * 필터가 아니라 라우트 전환 탭이라 이질적으로 보일 수 있지만, 크랙·케이브덕처럼 버튼 형태 없이
- * 글자색만으로 활성/비활성을 가르는 텍스트 탭으로 바꿀 예정이라(추후 작업) 지금 형태를 호출부별로
- * 가르는 비용을 들이지 않는다 — 그 작업이 나면 이 토글은 애초에 `Toggle` 프리미티브를 벗어난다.
+ * 글자색만으로 활성/비활성을 가르는 텍스트 탭으로 바꾸겠다는 예고였다. **그 예고는 2026-09-14
+ * 실행됐다**(`main-refact-goal-prompt.md` MR-2) — 다만 프리미티브를 벗어나는 쪽이 아니라 아래
+ * `variant="tab"`으로 프리미티브 **안에 남는** 쪽을 택했다. 벗어나면 roving tabindex·단일선택
+ * 불변(재클릭 `""` emit 가드)·`aria-label`을 호출부가 손으로 다시 지어야 하고, DESIGN.md
+ * §Toggles가 "호출부에 선택 상태 클래스를 직접 붙이지 말 것 — 17곳 중 2곳만 맞았다"를 금지한다.
  *
  * **비활성 글자를 `text-muted-foreground`로 낮춘 이유.** 레퍼런스는 비활성 → 활성 방향으로
  * 밝기가 오른다(크랙 탭 43%→96%, 케이브덕 탭 36%→100%, 크랙 필터 칩은 회색 텍스트→흰 텍스트+
@@ -67,6 +70,57 @@ const toggleVariants = cva(
          * 6.74:1도 또렷이 읽혔지만 그 확인이 "읽는 부담이 없다"를 보장하진 않는다 — 대비 수치와
          * 읽기 부담은 별개 축이라 눈으로 통과했다는 이유로 다운을 씌우지 않는다. */
         list: "rounded-lg border border-input bg-transparent text-foreground hover:bg-muted data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15",
+        /** 라우트 전환 탭이 하나뿐인 자리(헤더 캐릭터/스토리, `main-refact-goal-prompt.md` MR-2).
+         * 필터 칩에는 쓰지 않는다 — 채움·보더 없이 글자색과 `after:` 밑줄로만 활성을 가른다.
+         *
+         * `relative` — 베이스에 없다. 없으면 `after:absolute` 밑줄이 포지셔닝 컨텍스트를 못 찾고
+         * 상위(헤더)로 흘러 엉뚱한 곳에 찍힌다.
+         *
+         * `rounded-md` — 채움이 없어도 `focus-visible:ring-*`은 반경을 따라간다. 안 주면 포커스
+         * 링이 알약 모양으로 남는다(`tabs.tsx` 트리거와 같은 값).
+         *
+         * `border border-transparent` — 장식이 아니라 WCAG 1.4.11을 지는 하중 부재다.
+         * `focus-visible:border-ring`(베이스에 있음)이 이걸 불투명 핑크로 바꿔 포커스를 드러낸다.
+         * 50% 링만으로는 배경 대비 2.5757(다크)로 3:1 미달이다(DESIGN.md §Toggles 실측) — 지우지
+         * 말 것. `tab`은 활성 솔리드 채움이 없어 `default`/`outline`/`list`가 쓰는 불투명 포커스
+         * 링 오버라이드(`data-[state=on]:focus-visible:ring-ring`)가 필요 없다 — 보더 하나로 이미
+         * 3:1을 지므로 이건 실측이 아니라 구조적 결론이다.
+         *
+         * **활성 채움 제거는 베이스와 같은 modifier chain으로 재선언해야 twMerge가 지운다**
+         * (`packages/ui/CLAUDE.md`, 2026-09-14 스크립트로 재현) — chain이 다르면
+         * `data-[state=on]:bg-primary`(특이도 0,2,0)가 평평한 `bg-transparent`(0,1,0)를 이겨 활성
+         * 탭이 핑크로 남는다. `data-[state=on]:hover:bg-primary/80`은 3중 chain이라
+         * `data-[state=on]:hover:bg-transparent`로 **별도** 선언한다 — 안 하면 활성 탭 hover에서만
+         * 반투명 핑크가 스친다. `aria-pressed:*`도 함께 덮는 이유는 `ToggleGroup`이 `data-state`,
+         * standalone `Toggle`이 `aria-pressed`를 쓰기 때문이다(`type="single"`에서는 Radix가
+         * `aria-pressed`를 지워 죽은 경로지만, DESIGN.md §Toggles가 "호출부에 선택 상태 클래스를
+         * 직접 붙이지 말 것 — 17곳 중 2곳만 맞았다"를 근거로 규칙을 프리미티브에 두라고 못박아
+         * 그대로 둔다). `hover:bg-transparent`가 없으면 비활성 탭 hover에 회색 알약이 남는다 —
+         * `hover:text-foreground`는 베이스에 이미 있어 그대로 재사용한다.
+         *
+         * `after:` 밑줄 — 이 앱의 유일한 밑줄 어휘(`tabs.tsx` line variant)를 가져오되
+         * **`bottom-[-5px]`는 베끼지 않는다.** 그 값은 `TabsList`의 `h-9`+`p-[3px]`와 트리거의
+         * `h-[calc(100%-1px)]`가 만드는 약 3.5px 트로프를 상쇄하는 값이라, 그 패딩이 없는
+         * `ToggleGroup`에 그대로 쓰면 밑줄이 헤더 `border-b`와 3px 거리에서 이중선으로 읽힌다
+         * (MR-2). **`tabs.tsx`의 `group-data-horizontal/tabs:` · `group-data-[variant=line]/tabs-list:`
+         * 도 베끼지 않는다** — 그 셀렉터는 `tabs`/`tabs-list`라는 group 이름에 의존하는데
+         * `ToggleGroup`이 여는 group 이름은 `toggle-group` 하나뿐이라 조용히 죽는다.
+         * `ToggleGroupItem`은 cva `variant`를 직접 받으므로 2단 group 트릭 자체가 불필요하다 —
+         * `tab`은 수평 전용(세로 호출부 0곳)이라 group 접두사 없이 직접 선언한다.
+         *
+         * 좌우 패딩은 아래 `compoundVariants`가 size `default`의 `px-4`를 `px-2`로 내린다 —
+         * **텍스트 탭은 채움이 없어 알약 패딩이 필요 없다.** `px-4`는 배경이 pill로 보이게 여백을
+         * 벌리던 값인데 `tab`은 배경 자체가 없으므로 패딩은 모양이 아니라 히트 영역만 정한다.
+         * `h-9`(36px)는 그대로 유지하므로 WCAG 2.5.8(24×24 타깃)은 `px-2`로 줄여도 만족한다.
+         * (부수 효과로 항목당 16px씩 폭이 줄지만, 그게 이 값을 고른 이유는 아니다.)
+         *
+         * **여기 variant 문자열에 직접 `px-2`를 넣으면 안 먹는다.** cva는
+         * `base + variant + size + className` 순으로 이어붙이는데 `size`가 `variant`보다 뒤에 와서,
+         * 같은 그룹(`px-*`)에서 twMerge는 더 뒤에 오는 클래스를 남긴다 — variant의 `px-2`보다 size의
+         * `px-4`가 뒤에 있어 `px-4`가 이겨 버린다(2026-09-14 직접 재현, I-1 조사엔 없던 함정).
+         * `compoundVariants`는 `size` 다음에 이어붙으므로 그 자리에서 주면 twMerge가 마지막
+         * 값으로 인정한다. */
+        tab: "relative rounded-md border border-transparent hover:bg-transparent data-[state=on]:bg-transparent data-[state=on]:text-foreground data-[state=on]:hover:bg-transparent aria-pressed:bg-transparent aria-pressed:text-foreground after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-foreground after:opacity-0 data-[state=on]:after:opacity-100 motion-safe:after:transition-opacity",
       },
       /** `button.tsx`의 size 표와 같은 값(design-system-goal-prompt.md D-4) — 장르 필터·헤더
        * 토글·테마 선택·빌더 시작설정이 전부 이 하나에서 나온다. `text-[0.8rem]`(12.8px) 하드코딩을
@@ -83,6 +137,10 @@ const toggleVariants = cva(
         lg: "h-10 min-w-10 px-4 has-data-[icon=inline-end]:pr-3.5 has-data-[icon=inline-start]:pl-3.5",
       },
     },
+    /** `tab` variant의 `px-2`는 여기서만 이긴다 — 위 `tab` 주석의 cva 이어붙임 순서(base+variant+
+     * size) 설명 참조. `size: "default"`로 좁힌 이유는 `tab`+`sm`/`lg` 조합 호출부가 아직 0곳이라
+     * 그 조합까지 미리 처방하지 않는다(호출되면 그때 넓힌다). */
+    compoundVariants: [{ variant: "tab", size: "default", class: "px-2" }],
     defaultVariants: {
       variant: "default",
       size: "default",
