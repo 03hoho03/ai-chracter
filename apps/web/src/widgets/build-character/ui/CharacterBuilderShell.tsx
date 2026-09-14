@@ -221,7 +221,6 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
       <BuilderTopBar
         title="캐릭터 만들기"
         autosaveNotice="변경사항은 자동으로 저장돼요."
-        isPreviewOpen={isPreviewOpen}
         actions={
           <BuilderTopBarActions
             isPublishing={isPublishing}
