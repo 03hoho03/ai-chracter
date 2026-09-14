@@ -4,7 +4,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useFormContext } from "react-hook-form";
 
 import type { GenerateImagesFormValues } from "../model/schema";
-import { useGenerateImagesSubmit } from "./GenerateImagesFormProvider";
+import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 // image-refact-goal-prompt.md IR-15 — danbooru 태그 예시(품질 부스터 금지, LG-3이 서버에서 치운
 // Animagine 시그니처 문구라 FE 번들에도 넣지 않는다).
