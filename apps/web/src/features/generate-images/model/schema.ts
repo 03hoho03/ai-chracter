@@ -44,8 +44,9 @@ export function isImageAspectRatio(value: string): value is (typeof IMAGE_ASPECT
   return IMAGE_ASPECT_RATIOS.some((ratio) => ratio === value);
 }
 
-/** POST /images/generate 요청 필드 4개뿐인 단순 폼이라 formToServer/serverToForm 분리 없이 구현한다
- * (change-password/edit-profile 선례). 실제 제출 로직은 US-008에서 이 값을 그대로 API 바디에 맞춰 붙인다. */
+/** 폼값 -> API 바디 변환은 `model/formToServer.ts`가 전담한다. 한때 "필드 4개뿐인 단순 폼이라
+ * 분리 없이 간다"(change-password/edit-profile 선례)였는데, 그 결과 폼값이 그대로 POST 바디가 되면서
+ * 아래 `model`/`style`의 `z.string()`과 DTO의 좁은 리터럴이 어긋난 것을 컴파일이 못 잡았다. */
 /** model/style은 값을 모르는 `z.string().min(1)`로만 검증한다(LT-9) — 실제 id·가용성 검증은
  * `GET /images/models` 응답과 BE의 재검증(종횡비 포함)이 한다. */
 export const generateImagesSchema = z.object({
