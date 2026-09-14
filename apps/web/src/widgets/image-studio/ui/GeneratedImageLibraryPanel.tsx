@@ -31,9 +31,14 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
 export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
   gridColumnsClassName = DEFAULT_GRID_COLUMNS_CLASSNAME,
+  showCreatedAt = true,
 }: {
   onNavigateToGenerate?: () => void;
   gridColumnsClassName?: string;
+  // 브라우저 실측 피드백 — 좌열(98px 셀)에서는 날짜 캡션이 3행이면 72px을 먹는다. 시트는
+  // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
+  // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
+  showCreatedAt?: boolean;
 }) {
   const galleryQuery = useGeneratedImagesQuery(true);
   const images = galleryQuery.data;
@@ -59,9 +64,13 @@ export function GeneratedImageLibraryPanel({
 
   if (images === undefined || images.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-6 py-16 text-center">
+      // apps/web/CLAUDE.md — dashed 빈 상태 패널 셸은 손으로 복사된 사본이 셋(ContentListEmptyState·
+      // MyWorksFullErrorState·이 파일)이다. 여기 px-4 py-10은 나머지 둘의 px-6 py-16과 다른데,
+      // 레일(207px 콘텐츠 폭)에 맞춘 값이라 의도적으로 다르다 — 넓은 본문에 있는 나머지 둘은
+      // 이 문제가 없어 건드리지 않았다.
+      <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border px-4 py-10 text-center">
         <Images aria-hidden className="size-8 text-muted-foreground" />
-        <p className="text-sm text-muted-foreground">
+        <p className="break-keep text-sm text-muted-foreground">
           아직 생성한 이미지가 없어요.
           <br />
           프롬프트 한 줄로 첫 이미지를 만들어보세요.
@@ -80,10 +89,13 @@ export function GeneratedImageLibraryPanel({
       <div className={cn("grid gap-3", gridColumnsClassName)}>
         {images.map((image) => {
           const createdAtLabel = CREATED_AT_FORMATTER.format(new Date(image.createdAt));
+          const hasUsageBadge = image.usages.length > 0;
           return (
             <figure key={image.assetId} className="flex flex-col gap-1.5">
               <button
                 type="button"
+                // 날짜를 시각적으로 숨겨도 접근 이름에는 남긴다 — showCreatedAt는 <figcaption>의
+                // 렌더 여부만 바꾼다.
                 aria-label={`${createdAtLabel} 생성 이미지 상세 보기`}
                 onClick={() => setSelectedAssetId(image.assetId)}
                 className="aspect-square overflow-hidden rounded-lg bg-muted motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
@@ -96,14 +108,16 @@ export function GeneratedImageLibraryPanel({
                   className="size-full object-cover"
                 />
               </button>
-              <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
-                <time dateTime={image.createdAt}>{createdAtLabel}</time>
-                {image.usages.length > 0 && (
-                  <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-badge font-medium text-muted-foreground">
-                    {image.usages.length}곳에서 사용 중
-                  </span>
-                )}
-              </figcaption>
+              {(showCreatedAt || hasUsageBadge) && (
+                <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
+                  {showCreatedAt && <time dateTime={image.createdAt}>{createdAtLabel}</time>}
+                  {hasUsageBadge && (
+                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-badge font-medium text-muted-foreground">
+                      {image.usages.length}곳에서 사용 중
+                    </span>
+                  )}
+                </figcaption>
+              )}
             </figure>
           );
         })}

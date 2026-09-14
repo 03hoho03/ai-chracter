@@ -21,7 +21,9 @@ export function ImageStudioLibraryRail() {
             98×98 정사각 타일. 기본값(sm:/md: 이스케일)은 뷰포트 폭 기준이라 이 고정폭 레일에
             그대로 두면 lg 이상에서 그대로 걸려 4열까지 욱여넣는다(GeneratedImageLibraryPanel.tsx
             상단 주석). */}
-        <GeneratedImageLibraryPanel gridColumnsClassName="grid-cols-2" />
+        {/* 브라우저 실측 피드백 — 98px 타일에서 날짜 캡션이 3행이면 72px을 먹는다. 레일에서만
+            숨기고 시트(아래)는 폭이 넓어 그대로 둔다. aria-label의 날짜는 그대로 남는다. */}
+        <GeneratedImageLibraryPanel gridColumnsClassName="grid-cols-2" showCreatedAt={false} />
       </div>
     );
   }

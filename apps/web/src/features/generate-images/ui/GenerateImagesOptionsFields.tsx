@@ -1,11 +1,4 @@
 import { Label } from "@ai-character-chat/ui/components/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
@@ -19,12 +12,27 @@ import {
   type GenerateImagesFormValues,
 } from "../model/schema";
 
+// 비율 칩의 도형 치수 — 비율 문자열("16:9")을 그때그때 나눠 계산한다. IMAGE_ASPECT_RATIOS별로
+// 임의값 클래스(w-[18px]/h-[14px] 등)를 6종 만드는 것보다 순수 함수 하나가 더 단순하고, 배열이
+// 늘어도 여기 손댈 곳이 없다 — 그래서 style={{width, height}} 인라인이 맞는 자리다.
+function getAspectRatioShapeSize(ratio: string): { width: number; height: number } {
+  const LONG_SIDE_PX = 18;
+  // noUncheckedIndexedAccess — split 결과의 각 자리는 string | undefined다.
+  const [widthPart, heightPart] = ratio.split(":");
+  const w = Number(widthPart ?? "");
+  const h = Number(heightPart ?? "");
+  if (w >= h) {
+    return { width: LONG_SIDE_PX, height: Math.round((LONG_SIDE_PX * h) / w) };
+  }
+  return { width: Math.round((LONG_SIDE_PX * w) / h), height: LONG_SIDE_PX };
+}
+
 // image-refact-techspec.md IT-13 — 비율·개수는 Select가 아니라 ToggleGroup(칩)이다. 모델 Select는
-// 그대로 두되(IR-7, 값이 v1 하나뿐이라 칩으로 바꿀 근거가 없다) 칩 줄과 같은 줄에 두지 않는다 —
-// apps/web/CLAUDE.md:124가 "칩 줄 안의 Select는 활성 표현이 뒤집힌다"고 경고한다.
+// 2026-09-14 브라우저 피드백으로 제거했다 — 값이 v1 하나뿐이라 고를 게 없다. model 값 자체는
+// 여전히 GenerateImagesFormProvider가 목록 로드 후 reset()으로 채운다(그 로직은 그대로 둔다).
 export function GenerateImagesOptionsFields() {
-  const { control, setValue, getValues } = useFormContext<GenerateImagesFormValues>();
-  const { data: models, isPending: isModelsPending } = useImageModelsQuery();
+  const { control } = useFormContext<GenerateImagesFormValues>();
+  const { data: models } = useImageModelsQuery();
   const selectedModelId = useWatch({ control, name: "model" });
   const selectedModel = models?.find((model) => model.id === selectedModelId);
   const supportedRatios = new Set<string>(
@@ -32,57 +40,9 @@ export function GenerateImagesOptionsFields() {
   );
   const isRatioRestricted =
     selectedModel != null && selectedModel.supportedAspectRatios.length < IMAGE_ASPECT_RATIOS.length;
-  const hasUnavailableModel = models?.some((model) => !model.available) ?? false;
-
-  // 모델을 바꿨을 때 현재 선택한 비율/스타일을 그 모델이 지원하지 않으면, 지원하는 첫 값으로 옮긴다.
-  const handleModelChange = (nextModelId: string, onChange: (value: string) => void) => {
-    onChange(nextModelId);
-    const nextModel = models?.find((model) => model.id === nextModelId);
-    if (nextModel == null) return;
-    if (!nextModel.supportedAspectRatios.includes(getValues("aspectRatio"))) {
-      const [firstSupported] = nextModel.supportedAspectRatios;
-      if (firstSupported != null) setValue("aspectRatio", firstSupported);
-    }
-    if (!nextModel.styles.some((style) => style.id === getValues("style"))) {
-      // styles[0]은 레지스트리 순서 의존이라 같은 이유로 고친다 — 지금은 모델이 v1 하나뿐이라
-      // 이 분기 자체가 도달 불가(모델 전환이 없다)지만, 같은 식을 반쪽만 고치면 다음 사람이
-      // 어느 쪽이 맞는지 알 수 없다.
-      const firstAvailableStyle = nextModel.styles.find((style) => style.available);
-      if (firstAvailableStyle != null) setValue("style", firstAvailableStyle.id);
-    }
-  };
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="generate-images-model">모델</Label>
-        <Controller
-          control={control}
-          name="model"
-          render={({ field }) => (
-            <Select
-              value={field.value}
-              onValueChange={(value) => handleModelChange(value, field.onChange)}
-              disabled={isModelsPending}
-            >
-              <SelectTrigger id="generate-images-model" className="w-full">
-                <SelectValue placeholder="모델 불러오는 중…" />
-              </SelectTrigger>
-              <SelectContent>
-                {models?.map((model) => (
-                  <SelectItem key={model.id} value={model.id} disabled={!model.available}>
-                    {model.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        />
-        {hasUnavailableModel && (
-          <p className="text-xs text-muted-foreground">지금 이용 가능한 모델만 선택할 수 있어요</p>
-        )}
-      </div>
-
       <div className="flex flex-col gap-1.5">
         <Label>비율</Label>
         <Controller
@@ -100,21 +60,41 @@ export function GenerateImagesOptionsFields() {
                 field.onChange(value);
               }}
               aria-label="비율"
-              className="grid grid-cols-3"
+              // w-full — 프리미티브 기본값 w-fit이 그리드를 콘텐츠 폭(176px)으로 수축시켜 칩이
+              // 53px로 쪼그라든다(브라우저 실측). 우열 가용폭 287px를 다 쓰게 덮는다.
+              // items-stretch — 기본값 items-center면 도형 높이가 비율마다 달라 같은 행 칩 높이가
+              // 들쭉날쭉해진다(실측 59/55/59). stretch로 같은 행 칩 높이를 맞춘다.
+              className="grid grid-cols-3 w-full items-stretch"
             >
-              {IMAGE_ASPECT_RATIOS.map((ratio) => (
-                <ToggleGroupItem
-                  key={ratio}
-                  value={ratio}
-                  disabled={!supportedRatios.has(ratio)}
-                  aria-label={IMAGE_ASPECT_RATIO_LABEL[ratio]}
-                  // DESIGN.md:262 variant="list" 레시피 — 화면당 primary 솔리드 채움은 CTA 하나뿐이어야
-                  // 하는데 이 칩과 아래 개수 칩까지 솔리드면 셋이 된다. 틴트로 내려 예산을 CTA에 남긴다.
-                  className="data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
-                >
-                  {ratio}
-                </ToggleGroupItem>
-              ))}
+              {IMAGE_ASPECT_RATIOS.map((ratio) => {
+                const shapeSize = getAspectRatioShapeSize(ratio);
+                return (
+                  <ToggleGroupItem
+                    key={ratio}
+                    value={ratio}
+                    disabled={!supportedRatios.has(ratio)}
+                    aria-label={IMAGE_ASPECT_RATIO_LABEL[ratio]}
+                    // DESIGN.md:262 variant="list" 레시피 — 화면당 primary 솔리드 채움은 CTA 하나뿐이어야
+                    // 하는데 이 칩과 아래 개수 칩까지 솔리드면 셋이 된다. 틴트로 내려 예산을 CTA에 남긴다.
+                    // h-auto + py-2 — 도형+라벨 2단은 size="sm"의 h-8에 안 들어간다. px-3/text-xs 등
+                    // sm의 나머지 값은 그대로 상속한다.
+                    // rounded-lg — 프리미티브 기본 pill을 덮는다. ~90×59 도형 타일에 pill을 주면 원으로
+                    // 보인다(DESIGN.md:262가 신고 모달 352×44 행에 쓴 것과 같은 근거: 키 큰 항목엔 pill이
+                    // 아니라 lg). 개수 칩(1장/2장)은 32px 텍스트 전용이라 기존 필터 칩 어휘(pill) 그대로
+                    // 둔다 — 이 둘의 반경 차이는 의도된 것이지 통일 대상이 아니다.
+                    className="h-auto flex-col gap-1 rounded-lg py-2 data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15"
+                  >
+                    {/* border-current로 칩 텍스트 색(비선택 muted-foreground / 선택 primary)을
+                        그대로 따라간다 — 별도 색 분기가 필요 없다. 장식이라 aria-hidden. */}
+                    <div
+                      aria-hidden
+                      className="shrink-0 border border-current"
+                      style={{ width: shapeSize.width, height: shapeSize.height }}
+                    />
+                    {ratio}
+                  </ToggleGroupItem>
+                );
+              })}
             </ToggleGroup>
           )}
         />
