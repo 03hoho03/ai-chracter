@@ -158,6 +158,41 @@ async def test_generate_rejects_registry_style_that_is_not_yet_available(
     assert resp.json()["detail"] == "model 'v1' does not support style 'pixel_art'"
 
 
+async def test_generate_accepts_prompt_at_max_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-7: 1000자는 하드 상한의 경계값이라 거절되면 안 된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(prompt="a" * 1000))
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+
+
+async def test_generate_rejects_prompt_exceeding_max_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-style-7-goal-prompt.md IS-7: 1001자는 pydantic `max_length` 경계에서 422로
+    거절돼야 한다 — capabilities 스텁 없이도(가용성 확인보다 앞선 스키마 검증이라) 거절된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(prompt="a" * 1001))
+    assert resp.status_code == 422
+
+
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:

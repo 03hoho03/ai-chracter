@@ -18,7 +18,10 @@ __all__ = [
 
 
 class GenerateImageRequest(CamelModel):
-    prompt: str = Field(min_length=1)
+    # image-style-7-goal-prompt.md IS-7 / local-image-gen-contract.md LC-11: 집 PC 계약 v3가
+    # 통보한 1000자 하드 상한을 미러한다 — 값은 구현 단계 실측으로 재확인 대상이고 바뀌면 계약
+    # 개정으로 통지된다. FE 미러: apps/web/src/features/generate-images/model/schema.ts.
+    prompt: str = Field(min_length=1, max_length=1000)
     model: ImageModelId
     style: ImageStylePreset
     aspect_ratio: AspectRatio
