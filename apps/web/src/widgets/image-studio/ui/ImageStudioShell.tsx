@@ -101,7 +101,14 @@ export function ImageStudioShell({
               피드백). 시트 트리거도 같은 36px이라 세로 패딩 0에서 잘리지 않는다. */}
           <div className="shrink-0 border-b border-border">
             <div className="flex w-full items-center justify-between gap-2 px-3">
-              <TabsList variant="line">
+              {/* h-12 — 프리미티브 기본 h-9(36px)를 덮는다. 세로 패딩을 걷고 나니 헤더(57px) 옆에서
+                  탭바가 눌려 보였다(2026-09-14 사용자 피드백). 헤더와 같은 h-14로 올리지 않는 이유는
+                  두 줄이 같은 두께면 크롬이 두 겹으로 읽히기 때문이다 — 탭은 컬럼 내부 요소지 크롬이
+                  아니다. **밑줄 조건은 이 변경으로 깨지지 않는다**: TabsTrigger가
+                  `h-[calc(100%-1px)]`로 부모를 따라가므로 밑줄(`after:bottom-[-5px]`)은 리스트 높이와
+                  무관하게 항상 리스트 바닥 +1px에 선다. 행에 세로 패딩이 없으므로 그 자리가 곧
+                  탭바 하단 border다. 시트 트리거(36px)는 items-center로 가운데 정렬된다. */}
+              <TabsList variant="line" className="group-data-horizontal/tabs:h-12">
                 <TabsTrigger value="generate">생성</TabsTrigger>
                 {/* image-refact-techspec.md IT-10 — 저장소 최초의 disabled 탭. GenerateImagesStyleGrid의
                     "· 준비 중" 표기(§0-13)와 같은 어법을 접근 가능한 이름에도 남긴다. */}
