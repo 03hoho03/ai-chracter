@@ -1,8 +1,6 @@
-import { useAtom } from "jotai";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@ai-character-chat/ui/components/sheet";
 
 import { useIsImageStudioWideLayout } from "../lib/useIsImageStudioWideLayout";
-import { imageStudioLibrarySheetOpenAtom } from "../model/atoms";
 import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
 
 // image-refact-techspec.md IT-8 — 열 껍데기(<aside>, 폭, 보더)는 ImageStudioShell이 CSS `lg:`로
@@ -10,9 +8,14 @@ import { GeneratedImageLibraryPanel } from "./GeneratedImageLibraryPanel";
 // 같은 boolean으로 각자 "내가 렌더될지"를 판정하는 구조를 그대로 베낀다 — 어느 쪽이든
 // GeneratedImageLibraryPanel은 한 곳에만 마운트된다(image-refact-goal-prompt.md IR-5, §2-6:
 // 쿼리가 이중으로 나가는 게 아니라 DOM에 두 벌 남는 게 문제다).
-export function ImageStudioLibraryRail() {
+export function ImageStudioLibraryRail({
+  isOpen,
+  onOpenChange,
+}: {
+  isOpen: boolean;
+  onOpenChange: (isOpen: boolean) => void;
+}) {
   const isWide = useIsImageStudioWideLayout();
-  const [isOpen, setIsOpen] = useAtom(imageStudioLibrarySheetOpenAtom);
 
   if (isWide) {
     return (
@@ -23,20 +26,20 @@ export function ImageStudioLibraryRail() {
             상단 주석). */}
         {/* 브라우저 실측 피드백 — 98px 타일에서 날짜 캡션이 3행이면 72px을 먹는다. 레일에서만
             숨기고 시트(아래)는 폭이 넓어 그대로 둔다. aria-label의 날짜는 그대로 남는다. */}
-        <GeneratedImageLibraryPanel gridColumnsClassName="grid-cols-2" showCreatedAt={false} />
+        <GeneratedImageLibraryPanel gridColumnsClassName="grid-cols-2" isCreatedAtVisible={false} />
       </div>
     );
   }
 
   return (
-    <Sheet open={isOpen} onOpenChange={setIsOpen}>
+    <Sheet open={isOpen} onOpenChange={onOpenChange}>
       {/* image-refact-goal-prompt.md IR-6 — 보관함 시트는 헤더 아래까지(긴 그리드). ChatMorePanel의
           top-[118px]은 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(우리 크롬은 h-14 하나뿐).
           정확한 값은 브라우저 실측으로 정하기로 하고 지금은 top-14로 둔다. */}
       <SheetContent
         side="bottom"
         className="top-14 rounded-t-xl"
-        // 브라우저 실검증(S6) — 이 시트는 SheetTrigger가 아니라 셸의 별도 버튼이 setIsOpen(true)로
+        // 브라우저 실검증(S6) — 이 시트는 SheetTrigger가 아니라 셸의 별도 버튼이 onOpenChange(true)로
         // 여는데, radix Dialog는 SheetTrigger로 열렸을 때만 트리거에 포커스를 자동 복원한다.
         // 트리거가 시트 트리 밖에 있어 복원 대상이 없으므로 직접 지정한다.
         onCloseAutoFocus={(event) => {
@@ -48,7 +51,7 @@ export function ImageStudioLibraryRail() {
           <SheetTitle>보관함</SheetTitle>
         </SheetHeader>
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
-          <GeneratedImageLibraryPanel onNavigateToGenerate={() => setIsOpen(false)} />
+          <GeneratedImageLibraryPanel onNavigateToGenerate={() => onOpenChange(false)} />
         </div>
       </SheetContent>
     </Sheet>
