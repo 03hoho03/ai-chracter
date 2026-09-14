@@ -4096,6 +4096,10 @@ export interface components {
             blockedCount: number;
             /** Blockedreason */
             blockedReason: ("prompt" | "image") | null;
+            /** Inputerrorcount */
+            inputErrorCount: number;
+            /** Inputerror */
+            inputError: ("too_long" | "syntax") | null;
         };
         /** ImageModelItem */
         ImageModelItem: {
@@ -4126,7 +4130,7 @@ export interface components {
          * ImageStylePreset
          * @enum {string}
          */
-        ImageStylePreset: "base" | "line" | "water" | "real";
+        ImageStylePreset: "soft_portrait" | "chapel_glass" | "royal_drama" | "sparkle_night" | "watercolor" | "pixel_art" | "deco_cute";
         /**
          * InquiryCategory
          * @enum {string}
