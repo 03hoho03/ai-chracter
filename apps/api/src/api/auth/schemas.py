@@ -13,8 +13,9 @@ class SignupRequest(CamelModel):
     birth_date: date
     terms_agreed: bool
     privacy_agreed: bool
+    transfer_agreed: bool
 
-    @field_validator("terms_agreed", "privacy_agreed")
+    @field_validator("terms_agreed", "privacy_agreed", "transfer_agreed")
     @classmethod
     def _must_be_agreed(cls, value: bool) -> bool:
         if not value:
@@ -64,8 +65,9 @@ class OnboardingGoogleRequest(CamelModel):
     birth_date: date
     terms_agreed: bool
     privacy_agreed: bool
+    transfer_agreed: bool
 
-    @field_validator("terms_agreed", "privacy_agreed")
+    @field_validator("terms_agreed", "privacy_agreed", "transfer_agreed")
     @classmethod
     def _must_be_agreed(cls, value: bool) -> bool:
         if not value:

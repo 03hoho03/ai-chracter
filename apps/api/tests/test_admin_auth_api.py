@@ -18,6 +18,7 @@ async def _signup_and_login_user(db_client: httpx.AsyncClient, **overrides: obje
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     defaults.update(overrides)
     await db_client.post("/auth/signup", json=defaults)

@@ -18,6 +18,7 @@ def _signup_payload(**overrides: object) -> dict[str, object]:
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     defaults.update(overrides)
     return defaults
@@ -233,6 +234,10 @@ async def test_signup_records_current_published_versions(
     assert user is not None
     assert user.terms_version == "2024-01-01"
     assert user.privacy_version == "2024-02-01"
+    # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다 —
+    # terms가 아니라 privacy의 게시본 버전과 같아야 한다.
+    assert user.transfer_agreed_at is not None
+    assert user.transfer_version == "2024-02-01"
 
 
 async def test_signup_records_null_version_when_no_published_document(

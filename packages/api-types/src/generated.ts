@@ -4400,6 +4400,8 @@ export interface components {
             termsAgreed: boolean;
             /** Privacyagreed */
             privacyAgreed: boolean;
+            /** Transferagreed */
+            transferAgreed: boolean;
         };
         /** OnboardingGoogleResponse */
         OnboardingGoogleResponse: {
@@ -4557,6 +4559,8 @@ export interface components {
             termsAgreed: boolean;
             /** Privacyagreed */
             privacyAgreed: boolean;
+            /** Transferagreed */
+            transferAgreed: boolean;
         };
         /** SignupResponse */
         SignupResponse: {

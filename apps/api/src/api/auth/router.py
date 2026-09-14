@@ -111,10 +111,15 @@ async def signup(
         existing.birth_date = payload.birth_date
         existing.terms_agreed_at = now
         existing.privacy_agreed_at = now
+        existing.transfer_agreed_at = now
         existing.terms_version = await _latest_published_legal_version(db, "terms")
-        existing.privacy_version = await _latest_published_legal_version(db, "privacy")
+        privacy_version = await _latest_published_legal_version(db, "privacy")
+        existing.privacy_version = privacy_version
+        # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+        existing.transfer_version = privacy_version
         await db.commit()
     else:
+        privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=payload.email,
             password_hash=hash_password(payload.password),
@@ -122,8 +127,11 @@ async def signup(
             birth_date=payload.birth_date,
             terms_agreed_at=now,
             privacy_agreed_at=now,
+            transfer_agreed_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
-            privacy_version=await _latest_published_legal_version(db, "privacy"),
+            privacy_version=privacy_version,
+            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            transfer_version=privacy_version,
         )
         try:
             async with db.begin_nested():
@@ -359,6 +367,7 @@ async def onboarding_google(
     now = datetime.now(UTC)
     user = await db.scalar(select(User).where(User.google_sub == pending["sub"]))
     if user is None:
+        privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=pending["email"],
             google_sub=pending["sub"],
@@ -366,9 +375,12 @@ async def onboarding_google(
             birth_date=payload.birth_date,
             terms_agreed_at=now,
             privacy_agreed_at=now,
+            transfer_agreed_at=now,
             email_verified_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
-            privacy_version=await _latest_published_legal_version(db, "privacy"),
+            privacy_version=privacy_version,
+            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            transfer_version=privacy_version,
         )
         db.add(user)
     else:

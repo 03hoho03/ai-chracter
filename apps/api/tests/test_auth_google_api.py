@@ -92,6 +92,7 @@ async def _onboard_new_google_user(
         "birthDate": birth_date,
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     payload.update(overrides)
     return {"payload": payload, "sub": sub, "email": email}
@@ -157,6 +158,26 @@ async def test_onboarding_google_rejects_missing_terms_agreement(db_client: http
     assert resp.status_code == 422
 
 
+async def test_onboarding_google_rejects_missing_transfer_agreement(db_client: httpx.AsyncClient) -> None:
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01", transferAgreed=False)
+    resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert resp.status_code == 422
+
+
+async def test_onboarding_google_rejects_transfer_agreement_field_omitted(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """legal-revision-goal-prompt.md LR-1: SignupRequest와 마찬가지로 transferAgreed는
+    OnboardingGoogleRequest에서도 필수 필드다 — 두 클래스의 validator는 복붙본이라
+    한쪽만 고치면 이 경로에서만 422가 안 걸리는 비대칭이 생길 수 있다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    payload = ctx["payload"]
+    assert isinstance(payload, dict)
+    del payload["transferAgreed"]
+    resp = await db_client.post("/auth/onboarding/google", json=payload)
+    assert resp.status_code == 422
+
+
 async def test_onboarding_google_rejects_invalid_token(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post(
         "/auth/onboarding/google",
@@ -166,6 +187,7 @@ async def test_onboarding_google_rejects_invalid_token(db_client: httpx.AsyncCli
             "birthDate": "2000-01-01",
             "termsAgreed": True,
             "privacyAgreed": True,
+            "transferAgreed": True,
         },
     )
     assert resp.status_code == 400
@@ -203,6 +225,7 @@ async def test_google_callback_links_existing_password_account_by_email(
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     signup_resp = await db_client.post("/auth/signup", json=signup_payload)
     assert signup_resp.status_code == 201

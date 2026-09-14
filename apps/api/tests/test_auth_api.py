@@ -32,6 +32,7 @@ def _signup_payload(**overrides: object) -> dict[str, object]:
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     defaults.update(overrides)
     return defaults
@@ -64,6 +65,20 @@ async def test_signup_rejects_missing_terms_agreement(db_client: httpx.AsyncClie
 
 async def test_signup_rejects_missing_privacy_agreement(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post("/auth/signup", json=_signup_payload(privacyAgreed=False))
+    assert resp.status_code == 422
+
+
+async def test_signup_rejects_missing_transfer_agreement(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post("/auth/signup", json=_signup_payload(transferAgreed=False))
+    assert resp.status_code == 422
+
+
+async def test_signup_rejects_transfer_agreement_field_omitted(db_client: httpx.AsyncClient) -> None:
+    """legal-revision-goal-prompt.md LR-1: transferAgreed는 필수 필드라 아예 빠지면
+    validator가 아니라 pydantic의 필수값 검사에서 422가 나야 한다."""
+    payload = _signup_payload()
+    del payload["transferAgreed"]
+    resp = await db_client.post("/auth/signup", json=payload)
     assert resp.status_code == 422
 
 
