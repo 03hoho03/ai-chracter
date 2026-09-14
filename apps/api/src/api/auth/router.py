@@ -170,6 +170,9 @@ async def verify_email(
     await delete_verification_code(payload.email)
     await clear_verification_attempts(payload.email)
 
+    # signup():111/122이 이 email의 user row에 payload.birth_date(non-optional)를 대입했고,
+    # 탈퇴 계정은 signup():100에서 재가입 자체가 막혀 이 row를 다시 만들 수 없다.
+    assert user.birth_date is not None
     return VerifyEmailResponse(
         is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
     )
@@ -236,6 +239,9 @@ async def guardian_consent(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Email verification required"
         )
 
+    # signup():111/122이 이 email의 user row에 payload.birth_date(non-optional)를 대입했고,
+    # 탈퇴 계정은 signup():100에서 재가입 자체가 막혀 이 row를 다시 만들 수 없다.
+    assert user.birth_date is not None
     if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -267,6 +273,12 @@ async def google_login(redirect: str = "/") -> RedirectResponse:
 
 
 async def _guardian_consent_missing(db: AsyncSession, user: User) -> bool:
+    if user.birth_date is None:
+        # LR-27(legal-revision-goal-prompt.md §3-2): google_callback:309가 이 함수를
+        # deleted_at 검사(:320)보다 먼저 호출한다. S5 이후 탈퇴 유저의 birth_date가 None이
+        # 되면 여기서 False를 반환해 뒤따르는 deleted_at 검사에 맡긴다.
+        # S2가 이 함수를 통째로 지울 예정이라 임시 처방이다.
+        return False
     if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
         return False
     consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
@@ -363,6 +375,9 @@ async def onboarding_google(
     await db.commit()
     await delete_pending_google_signup(payload.token)
 
+    # 두 분기 모두 바로 위에서 payload.birth_date(non-optional)를 대입했다 — commit 이후
+    # mypy가 narrowing을 잃는다.
+    assert user.birth_date is not None
     if is_guardian_consent_required(user.birth_date, now.date()):
         return OnboardingGoogleResponse(is_minor_guardian_required=True, email=user.email)
 
@@ -396,6 +411,9 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required"
         )
 
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — birth_date는 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.birth_date is not None
     if is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
         consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
         if consent is None:
@@ -499,6 +517,9 @@ async def get_me(
         db, "privacy", requires_reconsent=True
     )
 
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.nickname is not None
     return MeResponse(
         id=user.id,
         email=user.email,

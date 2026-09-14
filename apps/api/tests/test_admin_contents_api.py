@@ -548,6 +548,28 @@ async def test_content_detail_returns_prompt_versions_and_creator_for_character(
     assert body["versions"][0]["name"] == "캐릭터E"
 
 
+async def test_content_detail_shows_placeholder_nickname_for_withdrawn_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    creator = _make_user(nickname=None, deleted_at=datetime.now(UTC))
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(
+        db_session, creator_user_id=creator.id, genre_id=genre.id, name="캐릭터F"
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/contents/{character.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["creator"]["nickname"] == "(탈퇴한 사용자)"
+
+
 async def test_content_detail_uses_custom_prompt_for_story(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

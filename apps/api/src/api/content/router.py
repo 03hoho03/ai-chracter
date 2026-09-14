@@ -356,6 +356,9 @@ async def get_user_profile(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.nickname is not None
     return UserProfileResponse(
         nickname=user.nickname,
         bio=user.bio,

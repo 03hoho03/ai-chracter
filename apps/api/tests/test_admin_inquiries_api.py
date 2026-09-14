@@ -59,6 +59,23 @@ async def test_admin_inquiry_detail_includes_author_info(
     assert body["authorEmail"] == "inquirer@example.com"
 
 
+async def test_admin_inquiry_detail_shows_placeholder_nickname_for_withdrawn_author(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(nickname=None, deleted_at=datetime.now(UTC), email="withdrawn@example.com")
+    db_session.add(user)
+    await db_session.flush()
+    inquiry = await _make_inquiry(db_session, user_id=user.id)
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+
+    await _login_as_admin(db_client, admin_payload)
+    resp = await db_client.get(f"/admin/inquiries/{inquiry.id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["authorNickname"] == "(탈퇴한 사용자)"
+
+
 async def test_reply_answers_inquiry_and_notifies_only_target_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
