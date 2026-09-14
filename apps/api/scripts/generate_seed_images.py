@@ -39,7 +39,7 @@ PROMPTS_PATH = DATA_DIR / "image_prompts.json"
 # 인물 컷이 기본이라 세로 3:4 다.
 DEFAULT_MODEL: ImageModelId = "v1"
 DEFAULT_ASPECT_RATIO: AspectRatio = "3:4"
-DEFAULT_STYLE = ImageStylePreset.BASE
+DEFAULT_STYLE = ImageStylePreset.SOFT_PORTRAIT
 
 # 장과 장 사이의 기본 간격(초)과, 실패한 장을 되짚는 간격. 뒤로 갈수록 벌려 쿼터가 실제로
 # 마른 경우에도 무의미한 연타가 되지 않게 한다.

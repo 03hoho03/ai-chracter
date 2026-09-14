@@ -35,7 +35,7 @@ def test_applies_defaults(tmp_path: Path) -> None:
             prompt="a booth at night",
             model="v1",
             aspect_ratio="3:4",
-            style=ImageStylePreset.BASE,
+            style=ImageStylePreset.SOFT_PORTRAIT,
         )
     ]
 
@@ -44,14 +44,14 @@ def test_explicit_values_win(tmp_path: Path) -> None:
     specs = load_prompt_specs(
         _write(
             tmp_path,
-            [{"slug": "a", "prompt": "p", "model": "v1", "aspectRatio": "1:1", "style": "base"}],
+            [{"slug": "a", "prompt": "p", "model": "v1", "aspectRatio": "1:1", "style": "watercolor"}],
         )
     )
 
     assert (specs[0].model, specs[0].aspect_ratio, specs[0].style.value) == (
         "v1",
         "1:1",
-        "base",
+        "watercolor",
     )
 
 

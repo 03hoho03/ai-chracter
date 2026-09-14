@@ -146,7 +146,7 @@ async def get_capabilities() -> LocalCapabilities:
             models=tuple(
                 ModelCapability(
                     model_id=str(model["id"]),
-                    styles=tuple(model["styles"]),
+                    styles=tuple(str(style) for style in model["styles"]),
                     aspect_ratios=tuple(model["aspect_ratios"]),
                 )
                 for model in body.get("models", [])
@@ -195,15 +195,16 @@ class LocalImageClient(ImageClient):
         # local-image-gen-contract.md LC-2: 서버는 프롬프트를 가공하지 않는다 — 프리셋
         # 태그·네거티브 프롬프트·샘플러 등은 전부 로컬 소유다(LG-3).
         #
-        # local-image-gen-goal-prompt.md LG-19: `model`/`style`은 공개 id(`self._model_id`,
-        # `style.value`)가 아니라 **와이어 id**(설정)를 보낸다 — 공개 id는 FE/서버 계약용
-        # 불투명 라벨일 뿐, 홈PC는 자신의 실제 체크포인트/LoRA id만 이해한다. N=1이라
-        # 스칼라 설정 2개로 충분하다(LG-16 — style별 맵은 존재하지 않는 다중성을 위한
-        # 투기적 추상화).
+        # local-image-gen-goal-prompt.md LG-19: `model`은 공개 id(`self._model_id`)가
+        # 아니라 **와이어 id**(설정)를 보낸다 — 공개 id는 FE/서버 계약용 불투명 라벨일
+        # 뿐, 홈PC는 자신의 실제 체크포인트 id만 이해한다.
+        #
+        # image-style-7-goal-prompt.md IS-2: `style`은 공개 id와 와이어 id가 같아
+        # `style.value`를 그대로 싣는다 — 별도 와이어 설정이 없다.
         body = {
             "prompt": prompt,
             "model": settings.local_image_model_wire_id,
-            "style": settings.local_image_style_wire_id,
+            "style": style.value,
             "aspect_ratio": aspect_ratio,
         }
         try:

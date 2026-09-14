@@ -64,7 +64,7 @@ _READY_CAPABILITIES = LocalCapabilities(
     models=(
         ModelCapability(
             model_id="v1",
-            styles=("base",),
+            styles=("soft_portrait",),
             aspect_ratios=("1:1", "4:3", "3:4", "16:9", "9:16", "2:3"),
         ),
     ),
@@ -97,7 +97,7 @@ def _generate_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "prompt": "a cat wizard",
         "model": "v1",
-        "style": "base",
+        "style": "soft_portrait",
         "aspectRatio": "1:1",
         "count": 1,
     }
@@ -133,40 +133,12 @@ async def test_generate_rejects_aspect_ratio_not_supported_by_local_capabilities
     assert resp.status_code == 400
 
 
-async def test_generate_rejects_style_the_local_does_not_serve_under_the_wire_id(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """local-image-gen-goal-prompt.md LG-19: `router.py:203`의 style 400 분기 — 홈PC가
-    지금 서빙하는 화풍이 바뀌면(재개편 등) 제출 시점에 400을 받아야 한다. 안 그러면 잡이
-    만들어지고 나중에 일반 실패 메시지로 끝난다. 여기서 로컬이 보고하는 문자열이 우연히
-    공개 id("base")와 같아도, 지금 설정된 와이어 style("default")과 다르면 지원하지
-    않는 것으로 취급해야 한다 — 매핑 없이 원문을 그대로 비교하면(구 동작) 이 우연한
-    문자열 일치 때문에 잘못 통과시킨다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    monkeypatch.setattr(settings, "local_image_style_wire_id", "default")
-
-    async def fake_get_capabilities() -> LocalCapabilities:
-        return LocalCapabilities(
-            ready=True, models=(ModelCapability(model_id="v1", styles=("base",), aspect_ratios=("1:1",)),)
-        )
-
-    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload())
-    assert resp.status_code == 400
-
-
 async def test_generate_rejects_registry_style_that_is_not_yet_available(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-refact-techspec.md IT-1/IT-3/IT-5: 위 테스트(로컬이 그 와이어 id를 안
-    서빙한다)와는 다른 축이다 — 여기는 와이어 id 매핑이 정상(`_stub_capabilities_ready`가
-    기본 와이어 id "base"를 그대로 서빙)인데, `style: "line"`이 레지스트리(IT-1)엔
-    있지만 아직 어떤 와이어 style에도 매핑되지 않아 `available: false`인 경우(IT-3)다.
+    """image-style-7-goal-prompt.md IS-1/IS-5: `_stub_capabilities_ready`가 서빙하는
+    건 `soft_portrait` 하나뿐이다(`_READY_CAPABILITIES`) — `style: "pixel_art"`는
+    레지스트리(IS-1)엔 있지만 지금 서빙되지 않아 `available: false`인 경우(IS-5)다.
     detail 형식은 바로 위 종횡비 400(`router.py:305-309`)과 대칭이어야 한다(IT-5)."""
     user = _make_user()
     db_session.add(user)
@@ -175,10 +147,10 @@ async def test_generate_rejects_registry_style_that_is_not_yet_available(
 
     _stub_capabilities_ready(monkeypatch)
 
-    resp = await db_client.post("/images/generate", json=_generate_payload(style="line"))
+    resp = await db_client.post("/images/generate", json=_generate_payload(style="pixel_art"))
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "model 'v1' does not support style 'line'"
+    assert resp.json()["detail"] == "model 'v1' does not support style 'pixel_art'"
 
 
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
@@ -214,14 +186,17 @@ async def test_list_image_models_returns_capabilities(
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
-    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 4종은 항상 전부 내려가고
-    # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `base`
-    # (표시명 "순정") 하나뿐이라 나머지 3종은 `available: false`다.
+    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 7종은 항상 전부 내려가고
+    # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `soft_portrait`
+    # (표시명 "부드러운") 하나뿐이라 나머지 6종은 `available: false`다.
     assert models["v1"]["styles"] == [
-        {"id": "base", "name": "순정", "available": True},
-        {"id": "line", "name": "극화", "available": False},
-        {"id": "water", "name": "수채", "available": False},
-        {"id": "real", "name": "반실사", "available": False},
+        {"id": "soft_portrait", "name": "부드러운", "available": True},
+        {"id": "chapel_glass", "name": "스테인드", "available": False},
+        {"id": "royal_drama", "name": "극적", "available": False},
+        {"id": "sparkle_night", "name": "반짝임", "available": False},
+        {"id": "watercolor", "name": "수채", "available": False},
+        {"id": "pixel_art", "name": "픽셀", "available": False},
+        {"id": "deco_cute", "name": "데포르메", "available": False},
     ]
 
 

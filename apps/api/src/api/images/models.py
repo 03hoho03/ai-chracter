@@ -27,14 +27,15 @@ ImageBlockedReason = Literal["prompt", "image"]
 
 
 class ImageStylePreset(str, enum.Enum):
-    # local-image-gen-goal-prompt.md LG-16: 로컬 전환 후 첫 실사용 프리셋.
-    BASE = "base"
-    # image-refact-goal-prompt.md IR-12/IR-13: 레지스트리엔 있지만 아직 어떤 와이어
-    # style에도 매핑되지 않아 `available: false`로 내려간다(image-refact-techspec.md
-    # IT-3). 매핑을 켜는 작업은 별도 런(§7-3).
-    LINE = "line"  # 극화
-    WATER = "water"  # 수채
-    REAL = "real"  # 반실사
+    # image-style-7-goal-prompt.md IS-1: 계약 v3가 지정한 7종, id·순서 그대로.
+    # 별칭 없음 — 기존 4종(base/line/water/real)은 전부 폐기됐다.
+    SOFT_PORTRAIT = "soft_portrait"  # 부드러운
+    CHAPEL_GLASS = "chapel_glass"  # 스테인드
+    ROYAL_DRAMA = "royal_drama"  # 극적
+    SPARKLE_NIGHT = "sparkle_night"  # 반짝임
+    WATERCOLOR = "watercolor"  # 수채
+    PIXEL_ART = "pixel_art"  # 픽셀
+    DECO_CUTE = "deco_cute"  # 데포르메
 
 
 @dataclass(frozen=True)
@@ -53,11 +54,14 @@ class ImageStyleSpec:
     name: str
 
 
-# image-refact-techspec.md IT-1: base의 id는 그대로 두고 표시명만 "기본"→"순정"으로
-# 바꾼다(IR-12). 순서가 곧 `GET /images/models`의 응답 순서다(IT-3).
+# image-style-7-goal-prompt.md IS-1/IS-3: 순서가 곧 `GET /images/models`의 응답
+# 순서다. 표시명의 유일한 소스가 여기다(집 PC capabilities는 id 문자열만 준다).
 IMAGE_STYLE_PRESETS: tuple[ImageStyleSpec, ...] = (
-    ImageStyleSpec(id="base", name="순정"),
-    ImageStyleSpec(id="line", name="극화"),
-    ImageStyleSpec(id="water", name="수채"),
-    ImageStyleSpec(id="real", name="반실사"),
+    ImageStyleSpec(id="soft_portrait", name="부드러운"),
+    ImageStyleSpec(id="chapel_glass", name="스테인드"),
+    ImageStyleSpec(id="royal_drama", name="극적"),
+    ImageStyleSpec(id="sparkle_night", name="반짝임"),
+    ImageStyleSpec(id="watercolor", name="수채"),
+    ImageStyleSpec(id="pixel_art", name="픽셀"),
+    ImageStyleSpec(id="deco_cute", name="데포르메"),
 )

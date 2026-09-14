@@ -62,7 +62,7 @@ async def test_generate_image_returns_bytes_and_content_type_as_mime(monkeypatch
         return httpx.Response(200, content=b"webp-bytes", headers={"content-type": "image/webp"})
 
     _patch_httpx(monkeypatch, handler)
-    data, mime = await _client().generate_image("a cat wizard", ImageStylePreset.BASE, "1:1")
+    data, mime = await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert data == b"webp-bytes"
     assert mime == "image/webp"
 
@@ -76,7 +76,7 @@ async def test_non_200_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) 
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_empty_body_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,7 +85,7 @@ async def test_empty_body_raises_llm_client_error(monkeypatch: pytest.MonkeyPatc
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +98,7 @@ async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.Mo
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
@@ -113,7 +113,7 @@ async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "prompt"
 
 
@@ -128,7 +128,7 @@ async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "image"
 
 
@@ -143,7 +143,7 @@ async def test_422_missing_reason_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -158,7 +158,7 @@ async def test_422_unknown_reason_value_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -173,7 +173,7 @@ async def test_422_non_json_body_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -188,7 +188,7 @@ async def test_422_detail_string_is_never_interpreted_only_reason_is(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "prompt"
 
 
@@ -204,15 +204,20 @@ async def test_non_422_status_codes_never_raise_block_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
+@pytest.mark.parametrize("style", [ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
 async def test_request_body_carries_prompt_unmodified_and_access_headers(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, style: ImageStylePreset
 ) -> None:
     """LG-3/LC-2: 서버는 프롬프트를 가공하지 않고 model/style/aspect_ratio 불투명 id만
-    싣는다. 여기서 suffix를 붙이거나 필드를 더 보내면 집 PC(별도 저장소)의 계약을 어긴다."""
+    싣는다. 여기서 suffix를 붙이거나 필드를 더 보내면 집 PC(별도 저장소)의 계약을 어긴다.
+
+    image-style-7-goal-prompt.md IS-2/2차 인터뷰 결정 4: 두 스타일로 파라미터화해
+    "인자를 바꾸면 바디도 바뀐다"를 실제로 증명한다 — style.value를 그대로 싣는 IS-2
+    변경 전에는 이 파일 어떤 테스트도 이걸 증명하지 못했다(전부 BASE 하나만 썼다)."""
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -222,12 +227,12 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
     _patch_httpx(monkeypatch, handler)
     prompt = "a cat wizard, extremely detailed, dramatic lighting"
-    await _client().generate_image(prompt, ImageStylePreset.BASE, "2:3")
+    await _client().generate_image(prompt, style, "2:3")
 
     assert captured["body"] == {
         "prompt": prompt,
         "model": "v1",
-        "style": "base",
+        "style": style.value,
         "aspect_ratio": "2:3",
     }
     headers = captured["headers"]
@@ -237,9 +242,13 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
 
 async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 공개 id(`v1`/`base`)를 그대로 보내면 홈PC의
-    실제 체크포인트/LoRA id(`sdxl-anime-v1`/`default`)와 맞지 않아 계약(LC-4) 위반으로
-    모든 요청이 400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다."""
+    """local-image-gen-goal-prompt.md LG-19: 공개 model id(`v1`)를 그대로 보내면 홈PC의
+    실제 체크포인트 id(`sdxl-anime-v1`)와 맞지 않아 계약(LC-4) 위반으로 모든 요청이
+    400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다.
+
+    image-style-7-goal-prompt.md IS-2: style은 더 이상 별도 와이어 설정이 없다 —
+    `style.value`가 그대로 실리는지는 위
+    `test_request_body_carries_prompt_unmodified_and_access_headers`가 담당한다."""
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -248,14 +257,13 @@ async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.
 
     _patch_httpx(monkeypatch, handler)
     monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
-    monkeypatch.setattr(settings, "local_image_style_wire_id", "default")
 
-    await _client().generate_image("a cat wizard", ImageStylePreset.BASE, "1:1")
+    await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
     assert captured["body"] == {
         "prompt": "a cat wizard",
         "model": "sdxl-anime-v1",
-        "style": "default",
+        "style": "soft_portrait",
         "aspect_ratio": "1:1",
     }
 
@@ -279,8 +287,8 @@ async def test_concurrent_generate_calls_never_overlap(monkeypatch: pytest.Monke
     client_b = _client()
 
     await asyncio.gather(
-        client_a.generate_image("prompt-1", ImageStylePreset.BASE, "1:1"),
-        client_b.generate_image("prompt-2", ImageStylePreset.BASE, "1:1"),
+        client_a.generate_image("prompt-1", ImageStylePreset.SOFT_PORTRAIT, "1:1"),
+        client_b.generate_image("prompt-2", ImageStylePreset.SOFT_PORTRAIT, "1:1"),
     )
 
     assert events == ["enter", "exit", "enter", "exit"]
