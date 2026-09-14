@@ -24,6 +24,7 @@ import {
   type ThumbnailAspect,
 } from "@/entities/content";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
+import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 export type HomeSearch = {
   q?: string;
@@ -59,6 +60,7 @@ export function HomePage({
   const contentType = useAtomValue(contentTypeToggleAtom);
   const { open } = useContentDetailModal();
   const genreListQuery = useGenreListQuery();
+  const genreScroll = useHorizontalScrollClip();
 
   const sort = search.sort ?? "latest";
   const contentListQuery = useContentListQuery({
@@ -83,50 +85,83 @@ export function HomePage({
   const sentinelRef = useInfiniteScrollSentinel(fetchNextPage, Boolean(contentListQuery.hasNextPage));
 
   return (
-    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10">
+    // MR-7 — 홈은 보이는 첫 행이 h1이 아니라 필터 툴바인 유일한 라우트라 상단 패딩을 pt-4로 줄인다
+    // (홈의 h1은 sr-only, 즐겨찾기·내 작품은 보이는 h1으로 시작한다). 헤더↔칩 거리 40 → 16px.
+    <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 pt-4 pb-10">
       <h1 className="sr-only">{contentType === "character" ? "캐릭터 홈" : "스토리 홈"}</h1>
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {genreListQuery.data && (
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={search.genre ?? ALL_GENRES_VALUE}
-            onValueChange={(value) => {
-              if (!value) return;
-              onSearchChange({ genre: value === ALL_GENRES_VALUE ? undefined : value });
-            }}
-            aria-label="장르 필터"
-            className="flex-wrap"
-          >
-            <ToggleGroupItem value={ALL_GENRES_VALUE}>전체</ToggleGroupItem>
-            {genreListQuery.data.map((genre) => (
-              <ToggleGroupItem key={genre.id} value={genre.id}>
-                {genre.name}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-        )}
-
-        <Select
-          value={sort}
-          onValueChange={(value) => {
-            if (isContentListSort(value)) onSearchChange({ sort: value });
-          }}
+      {/* MR-4 — 장르 캐러셀. flex-wrap 대신 overflow-x-auto인 이유: 칩 11개가 1줄에 필요한 폭은
+          780.71px, 본문 컨테이너는 1024px 뷰포트에서 976px다 — 1024px 이상에서만 전부 보이고
+          390px에서는 3줄로 접힌다. MR-4a — 래퍼는 항상 렌더하고 min-h-8(칩 높이 32px)로 자리를
+          예약한다: 조건부(genreListQuery.data &&)를 안쪽 ToggleGroup에만 두는 이유는, 행 전체를
+          조건부로 걸면 로딩 중엔 행이 없다가 도착 시 행 + gap-6(24px)이 통째로 삽입되어 전
+          뷰포트에서 새 점프가 생기기 때문이다. */}
+      <div className="relative min-h-8">
+        {/* -m-1 p-1: overflow-x-auto는 포커스 링을 네 방향 모두 클립한다(가로만 스크롤해도 세로가
+            함께 클립된다) — 링 두께 이상을 안팎으로 상쇄한다. BuilderTabStrip과 같은 처방.
+            MR-4b — 스크롤바 숨김: 클래식 스크롤바 환경에서는 캐러셀 아래에 가로 스크롤바가 15px
+            자리를 차지해 래퍼 높이가 32px가 아니라 47px이 된다(실측). 잘렸다는 신호는 아래 양쪽
+            페이드가 지므로 어포던스를 잃지 않는다 — 그래서 페이드가 이 결정의 전제다. 이
+            저장소의 첫 스크롤바 숨김이다. */}
+        <div
+          ref={genreScroll.ref}
+          className="-m-1 overflow-x-auto p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
         >
-          <SelectTrigger size="sm" aria-label="정렬" className="ml-auto">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SORT_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          {genreListQuery.data && (
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={search.genre ?? ALL_GENRES_VALUE}
+              onValueChange={(value) => {
+                if (!value) return;
+                onSearchChange({ genre: value === ALL_GENRES_VALUE ? undefined : value });
+              }}
+              aria-label="장르 필터"
+            >
+              <ToggleGroupItem value={ALL_GENRES_VALUE}>전체</ToggleGroupItem>
+              {genreListQuery.data.map((genre) => (
+                <ToggleGroupItem key={genre.id} value={genre.id}>
+                  {genre.name}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          )}
+        </div>
+        {/* 장르 축은 `전체` 칩이 항상 첫 자리에 있어 축의 존재와 현재 값은 잘리지 않는다 —
+            MyWorksToolbar가 overflow-x-auto를 회귀로 걷어낸 것과 층위가 다르다. 거기서 밀려난 건
+            필터 축 하나 전체였고, 여기서 밀려나는 건 한 축 안의 항목이다. */}
+        {genreScroll.isClippedLeft && (
+          <div aria-hidden className="pointer-events-none absolute inset-y-1 left-1 w-8 bg-linear-to-r from-background" />
+        )}
+        {genreScroll.isClippedRight && (
+          <div aria-hidden className="pointer-events-none absolute inset-y-1 right-1 w-8 bg-linear-to-l from-background" />
+        )}
       </div>
+
+      {/* MR-6 — 정렬을 <main>의 다음 행으로: 툴바 래퍼(flex flex-col)를 새로 만들지 않는다. 만들면
+          "툴바 안쪽 간격"과 "툴바→목록 간격"이 경쟁한다. 직접 자식으로 두면 둘 사이가 본문 리듬
+          gap-6(24px)이고 그건 칩 간격 8px의 정확히 3배다(두 필터 축은 3배는 벌어져야 갈린다).
+          ml-auto는 flex-col의 교차축에서도 남는 공간을 흡수해 우측 정렬을 만든다(실측 확인 —
+          align-self 불필요). 정렬 SelectTrigger에는 bg-secondary 강조를 넣지 않는다 — 홈 정렬은
+          목록을 줄이는 축이 아니라 순서만 바꾸는 축이다. */}
+      <Select
+        value={sort}
+        onValueChange={(value) => {
+          if (isContentListSort(value)) onSearchChange({ sort: value });
+        }}
+      >
+        <SelectTrigger size="sm" aria-label="정렬" className="ml-auto">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          {SORT_OPTIONS.map((option) => (
+            <SelectItem key={option.value} value={option.value}>
+              {option.label}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
 
       {hasActiveExtraFilter && (
         <div className="flex flex-wrap gap-2">
