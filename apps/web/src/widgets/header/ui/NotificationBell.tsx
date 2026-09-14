@@ -7,35 +7,16 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
-import { Bell, ChevronRight } from "lucide-react";
+import { Bell } from "lucide-react";
 
 import {
+  NotificationItemContent,
+  resolveNotificationDestination,
   useMarkNotificationReadMutation,
   useNotificationListQuery,
   type NotificationResponse,
 } from "@/entities/notification";
-
-const REASON_CATEGORY_LABELS: Record<string, string> = {
-  adult: "선정성",
-  copyright: "저작권 침해",
-  hate: "혐오·차별",
-  spam: "스팸",
-  other: "기타",
-};
-
-/** techspec.md §1-2 — 이용제한/삭제 조치 통지(moderation-action, US-055)에 계정 경고(user-warned)·
- * 계정 정지(user-suspended)·공지(notice, T-11b)·문의 답변(inquiry-reply, T-17)이 더해져 `type`이
- * 다섯이 됐다. type별로 제목 문구만 가르는 최소 구현이고, 모르는 type은 이용제한 문구로
- * 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
-const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {
-  "moderation-action": "콘텐츠 이용제한 안내",
-  "user-warned": "계정 경고 안내",
-  "user-suspended": "계정 이용정지 안내",
-  notice: "공지사항",
-  "inquiry-reply": "문의 답변",
-};
 
 export function NotificationBell() {
   const { data: notifications = [] } = useNotificationListQuery();
@@ -90,7 +71,9 @@ function NotificationListItem({
   notification: NotificationResponse;
   onRead: (id: string) => void;
 }) {
-  if (notification.type === "notice" && notification.noticeId) {
+  const destination = resolveNotificationDestination(notification);
+
+  if (destination.kind === "notice") {
     return (
       <DropdownMenuItem
         asChild
@@ -99,19 +82,14 @@ function NotificationListItem({
           if (!notification.read) onRead(notification.id);
         }}
       >
-        <Link to="/notices/$noticeId" params={{ noticeId: notification.noticeId }}>
-          <span className="flex w-full items-center justify-between gap-2">
-            <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
-              {NOTIFICATION_TITLE_BY_TYPE.notice} · {notification.title}
-            </span>
-            <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-          </span>
+        <Link to="/notices/$noticeId" params={{ noticeId: destination.noticeId }}>
+          <NotificationItemContent notification={notification} />
         </Link>
       </DropdownMenuItem>
     );
   }
 
-  if (notification.type === "inquiry-reply" && notification.inquiryId) {
+  if (destination.kind === "inquiry") {
     return (
       <DropdownMenuItem
         asChild
@@ -120,13 +98,8 @@ function NotificationListItem({
           if (!notification.read) onRead(notification.id);
         }}
       >
-        <Link to="/inquiries/$inquiryId" params={{ inquiryId: notification.inquiryId }}>
-          <span className="flex w-full items-center justify-between gap-2">
-            <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
-              {NOTIFICATION_TITLE_BY_TYPE["inquiry-reply"]} · {notification.title}
-            </span>
-            <ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-          </span>
+        <Link to="/inquiries/$inquiryId" params={{ inquiryId: destination.inquiryId }}>
+          <NotificationItemContent notification={notification} />
         </Link>
       </DropdownMenuItem>
     );
@@ -141,12 +114,7 @@ function NotificationListItem({
         if (!notification.read) onRead(notification.id);
       }}
     >
-      <span className={cn("text-sm", !notification.read && "font-semibold text-foreground")}>
-        {NOTIFICATION_TITLE_BY_TYPE[notification.type] ?? NOTIFICATION_TITLE_BY_TYPE["moderation-action"]}
-        {notification.reasonCategory != null &&
-          ` · ${REASON_CATEGORY_LABELS[notification.reasonCategory] ?? notification.reasonCategory}`}
-      </span>
-      <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>
+      <NotificationItemContent notification={notification} />
     </DropdownMenuItem>
   );
 }
