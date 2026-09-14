@@ -24,13 +24,14 @@ export function ContentCardSkeleton({ thumbnailAspect, metrics, tags, actions }:
         thumbnailAspect={thumbnailAspect}
         // ⚠️ 반드시 `null` — `visibility: hidden`은 이미지 fetch를 막지 못한다(실측: 요청이 나가고 200
         // 응답). `null`이면 `ImageOff` 분기로 빠져 `<img>` 자체가 만들어지지 않는다.
-        // ⚠️ 반드시 nbsp(` `) — 빈 문자열은 `truncate`(`overflow: hidden`) <p>의 라인박스를
-        // 0px로 붕괴시킨다. 일반 공백 `" "`로 고쳐도 collapse 되어 똑같이 0px이라 안 된다 — nbsp라야
-        // 라인박스가 생긴다. 내용이 무엇인지는 상관없다 — 카드가 `invisible`이고 제목은 `truncate`라
-        // 항상 1줄이라 라인박스만 생기면 높이가 정확히 맞는다. `actions`가 있는 화면은 그 32px 버튼이
-        // 제목 줄 높이를 정해 이 붕괴가 가려지므로, 실제 영향은 `actions` 없는 홈·즐겨찾기·타인 프로필
-        // (`isOwner=false`)뿐이고 `/my`·본인 프로필은 영향 없다.
-        // 근거: card-grid-techspec.md T-5 · card-grid-progress.md 2-19 실측.
+        // ⚠️ 반드시 nbsp(` `) — 빈 문자열은 여전히 라인박스를 만들지 않는다(일반 공백 `" "`로 고쳐도
+        // collapse 되어 똑같다 — nbsp라야 라인박스가 생긴다). main-refact-goal-prompt.md MR-8 이후
+        // 제목 박스는 `line-clamp-2` + `min-h-[2lh]`로 콘텐츠 길이·줄 수와 무관하게 항상 45.7031px로
+        // 고정되므로, nbsp 한 줄만 있어도 실제 제목과 정확히 같은 높이가 나온다. `actions`(32px 버튼)는
+        // 이제 제목 행 높이보다 작아(32 < 45.7) 그 행 높이를 정하는 쪽이 아니므로, `actions` 유무가
+        // 제목 행 높이에 영향을 주는 경로 자체가 사라졌다 — 이 계산은 `actions` 유무·`/my`·본인 프로필
+        // 여부와 무관하게 모든 화면에서 똑같이 성립한다.
+        // 근거: card-grid-techspec.md T-5 · main-refact-goal-prompt.md MR-8.
         title=" "
         metrics={metrics}
         tags={tags}
