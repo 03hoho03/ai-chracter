@@ -276,6 +276,9 @@ async def test_generate_creates_assets_and_completes_job(
         assert asset.owner_user_id == user.id
         assert asset.kind == AssetKind.GENERATED
         assert asset.status == AssetStatus.READY
+        # image-style-7-goal-prompt.md IS-6: 어떤 style로 생성됐는지가 Asset 행에
+        # 남아야 한다 — 안 남으면 스타일별 효능 측정이 영원히 불가능해진다(§0-4).
+        assert asset.style == "soft_portrait"
         s3_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
         assert s3_object["Body"].read() == _png_bytes()
         thumb_object = s3.get_object(

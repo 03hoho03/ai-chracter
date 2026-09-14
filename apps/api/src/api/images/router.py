@@ -99,6 +99,9 @@ async def _generate_and_store_one(
                     storage_key=storage_key,
                     kind=AssetKind.GENERATED,
                     status=AssetStatus.READY,
+                    # image-style-7-goal-prompt.md IS-6: plain Text 컬럼이라
+                    # `.value`를 명시한다(apps/api/CLAUDE.md 모델 규약).
+                    style=style.value,
                 )
             )
             await session.commit()
