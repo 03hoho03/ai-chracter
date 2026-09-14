@@ -26,7 +26,8 @@ type BuilderTopBarProps = {
  * `calc(100dvh-3.5rem)` 높이 계산이 그대로 유지된다 — 헤더 자리만 바뀌고 높이 계산식은 그대로다.
  *
  * 뒤로가기 목적지는 인터뷰로 확정된 `/my`(내 작품) 하나뿐이라 prop으로 받지 않는다. 폭이 좁을 때는
- * 액션 버튼의 라벨을 숨기고 아이콘만 남긴다(`ContentTypeToggle`과 같은 `hidden sm:inline` 선례).
+ * 액션 버튼의 라벨을 숨기고 아이콘만 남긴다(`hidden sm:inline`, DESIGN.md §Navigation의 모바일
+ * 대응 규범 — `ContentTypeToggle`은 2026-09-14 텍스트 탭이 되며 이 규범의 예외로 빠졌다, MR-2).
  */
 export function BuilderTopBar({ title, actions, autosaveNotice, isPreviewOpen }: BuilderTopBarProps) {
   return (

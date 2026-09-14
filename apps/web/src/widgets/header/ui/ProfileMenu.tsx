@@ -21,11 +21,12 @@ import {
   Star,
   User,
 } from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { forwardRef, Fragment, useId, type ComponentPropsWithoutRef, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
+import { assertNever } from "@/shared/lib/assertNever";
 
 /** prd-creator-entry-and-my-works.md US-012 — 창작 / 활동 / 계정 세 그룹 + 로그아웃.
  * techspec.md §5-7(D-4)이 `계정` 아래에 `고객센터` 그룹을 얹었다(T-12가 `공지사항` 한 항목으로
@@ -41,6 +42,112 @@ import { useLogoutMutation } from "@/features/logout";
  * 들어간다(`scrollHeight` 457px, `max-h` 796px 대비 여유 339px 실측 — T-12 상태는 429px/367px,
  * T-12 이전엔 368px/428px였다).
  */
+/** MR-10 — 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
+ * 읽는다 — 두 곳이 각자 목록을 들면 한쪽에만 항목이 추가되는 게 이 저장소의 알려진 실패 모드다
+ * (`toContentStatusTags` 선례: "같은 작품이 한 화면에서는 이용제한, 다른 화면에서는 공개가 됐다"). */
+export type ProfileDestinationKey =
+  | "builder"
+  | "my-works"
+  | "studio-images"
+  | "chats"
+  | "favorites"
+  | "profile"
+  | "mypage"
+  | "notices"
+  | "inquiry-new";
+
+export const PROFILE_DESTINATION_GROUPS: readonly { label: string; keys: readonly ProfileDestinationKey[] }[] = [
+  { label: "창작", keys: ["builder", "my-works", "studio-images"] },
+  { label: "활동", keys: ["chats", "favorites"] },
+  { label: "계정", keys: ["profile", "mypage"] },
+  { label: "고객센터", keys: ["notices", "inquiry-new"] },
+];
+
+/** 라우트별 `to`/`params` 타입이 제각각이라(`/profile/$userId`만 params가 필요하다) 하나의 배열에
+ * `to` 문자열을 담아 범용으로 렌더하면 라우터 제네릭과 계속 부딪힌다 — `switch`로 각 케이스를 그대로
+ * 적어 리터럴 타입 추론을 그대로 받는다. `className`은 호출부가 준다 — `ProfileMenu`는 `DropdownMenuItem
+ * asChild`의 기본 클래스에 얹혀야 해서 비워 두고(원래도 그랬다), 드로어는 자기 행 스타일을 준다.
+ *
+ * `forwardRef` + `...rest` 전달이 필수다 — 두 호출부 모두 `asChild`(`DropdownMenuItem`·`SheetClose`)로
+ * 이 컴포넌트를 감싸는데, Radix의 Slot은 `ref`와 `onClick`(메뉴 선택·시트 닫기를 거는 바로 그 핸들러)을
+ * 바로 아래 자식에 병합해 얹는다. 이 컴포넌트가 일반 함수 컴포넌트로 `className`만 받고 나머지를 버리면
+ * 그 `onClick`이 실제 `<Link>`까지 못 가 "눌러도 메뉴/시트가 안 닫힌다"가 조용히 재현된다(실측). */
+export const ProfileDestinationLink = forwardRef<
+  HTMLAnchorElement,
+  ComponentPropsWithoutRef<"a"> & { destinationKey: ProfileDestinationKey; me: MeResponse }
+>(function ProfileDestinationLink({ destinationKey, me, className, ...rest }, ref) {
+  switch (destinationKey) {
+    case "builder":
+      return (
+        <Link ref={ref} to="/builder" className={className} {...rest}>
+          <Plus aria-hidden />
+          작품 만들기
+        </Link>
+      );
+    case "my-works":
+      return (
+        <Link ref={ref} to="/my" className={className} {...rest}>
+          <LayoutGrid aria-hidden />
+          내 작품
+        </Link>
+      );
+    case "studio-images":
+      return (
+        <Link ref={ref} to="/studio/images" className={className} {...rest}>
+          <ImagePlus aria-hidden />
+          이미지 생성
+        </Link>
+      );
+    case "chats":
+      return (
+        <Link ref={ref} to="/chats" className={className} {...rest}>
+          <MessagesSquare aria-hidden />
+          내 채팅목록
+        </Link>
+      );
+    case "favorites":
+      return (
+        <Link ref={ref} to="/favorites" className={className} {...rest}>
+          <Star aria-hidden />
+          즐겨찾기
+        </Link>
+      );
+    case "profile":
+      return (
+        <Link ref={ref} to="/profile/$userId" params={{ userId: me.id }} className={className} {...rest}>
+          <User aria-hidden />
+          내 프로필
+        </Link>
+      );
+    case "mypage":
+      return (
+        <Link ref={ref} to="/mypage" className={className} {...rest}>
+          <Settings2 aria-hidden />
+          설정
+        </Link>
+      );
+    case "notices":
+      return (
+        <Link ref={ref} to="/notices" className={className} {...rest}>
+          <Megaphone aria-hidden />
+          공지사항
+        </Link>
+      );
+    case "inquiry-new":
+      return (
+        <Link ref={ref} to="/inquiries/new" className={className} {...rest}>
+          <LifeBuoy aria-hidden />
+          문의하기
+        </Link>
+      );
+    default:
+      // MR-10 — default 가 없으면 키를 유니언·PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를
+      // 빠뜨려도 typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도
+      // 안 난다(2026-09-15 적대적 리뷰가 실증). assertNever 로 다음 키 추가 때 컴파일 에러로 막는다.
+      return assertNever(destinationKey);
+  }
+});
+
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
   const logout = useLogoutMutation();
@@ -111,83 +218,26 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        <ProfileMenuGroup label="창작">
-          <DropdownMenuItem asChild>
-            <Link to="/builder">
-              <Plus aria-hidden />
-              작품 만들기
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/my">
-              <LayoutGrid aria-hidden />
-              내 작품
-            </Link>
-          </DropdownMenuItem>
-          {/* 헤더의 이미지 생성 버튼과 **같은 글리프**를 쓴다 — 같은 목적지에 다른 아이콘을 붙이면
-              둘이 다른 기능으로 읽힌다. */}
-          <DropdownMenuItem asChild>
-            <Link to="/studio/images">
-              <ImagePlus aria-hidden />
-              이미지 생성
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="활동">
-          <DropdownMenuItem asChild>
-            <Link to="/chats">
-              <MessagesSquare aria-hidden />
-              내 채팅목록
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/favorites">
-              <Star aria-hidden />
-              즐겨찾기
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="계정">
-          <DropdownMenuItem asChild>
-            <Link to="/profile/$userId" params={{ userId: me.id }}>
-              <User aria-hidden />
-              내 프로필
-            </Link>
-          </DropdownMenuItem>
-          {/* US-013이 초안 섹션을 걷어내 이 목적지가 설정 전용이 됐다. 라벨은 페이지 제목(`설정`)과 같은
-              문자열이어야 한다 — 다르면 메뉴에서 고른 이름과 도착한 화면의 h1이 어긋나고, 특히 목적지를
-              제목으로만 확인하는 스크린리더 사용자에게 "다른 데로 왔나"로 읽힌다. */}
-          <DropdownMenuItem asChild>
-            <Link to="/mypage">
-              <Settings2 aria-hidden />
-              설정
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="고객센터">
-          <DropdownMenuItem asChild>
-            <Link to="/notices">
-              <Megaphone aria-hidden />
-              공지사항
-            </Link>
-          </DropdownMenuItem>
-          {/* h1이 `문의하기`인 `/inquiries/new`로 간다(D-12) — `/inquiries`(목록, h1 `내 문의 내역`)로
-              가면 라벨과 도착 페이지 h1이 어긋난다. 목록은 그 폼 본문의 링크로 간다(`MyPagePage` 관용구). */}
-          <DropdownMenuItem asChild>
-            <Link to="/inquiries/new">
-              <LifeBuoy aria-hidden />
-              문의하기
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-
-        <DropdownMenuSeparator />
+        {/* 목적지는 `PROFILE_DESTINATION_GROUPS`(위) 하나에서만 온다 — 그룹 구조·라벨·구분선 위치는
+            그대로다, 목록만 밖으로 뺀 리팩터다. 개별 항목의 주석(같은 글리프를 쓰는 이유, 라벨이 페이지
+            제목과 같아야 하는 이유 등)은 `ProfileDestinationLink`로 옮기지 않았다 — 그 근거들은 각
+            라우트 자체의 성질이라 이 파일에 남겨도 무방하지만, 정확한 위치가 흩어지므로 배열 옆
+            대신 여기 한 번에 적어 둔다: 이미지 생성은 헤더 버튼과 같은 `ImagePlus` 글리프를 쓰고
+            (같은 목적지에 다른 아이콘을 붙이면 둘이 다른 기능으로 읽힌다), `설정`은 페이지 제목과
+            같은 문자열이어야 하며(US-013), `문의하기`는 h1이 `문의하기`인 `/inquiries/new`로 간다(D-12
+            — `/inquiries` 목록의 h1은 `내 문의 내역`이라 라벨이 어긋난다). */}
+        {PROFILE_DESTINATION_GROUPS.map((group) => (
+          <Fragment key={group.label}>
+            <ProfileMenuGroup label={group.label}>
+              {group.keys.map((key) => (
+                <DropdownMenuItem key={key} asChild>
+                  <ProfileDestinationLink destinationKey={key} me={me} />
+                </DropdownMenuItem>
+              ))}
+            </ProfileMenuGroup>
+            <DropdownMenuSeparator />
+          </Fragment>
+        ))}
 
         {/* `variant="destructive"`를 쓰지 않는다. DESIGN.md §Destructive가 이 토큰의 뜻을 삭제·탈퇴·거부·
             이용제한 넷으로 못박았는데 로그아웃은 넷 중 아무것도 아니다(지우는 게 없고 다시 로그인하면 되돌아온다).
