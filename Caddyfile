@@ -45,7 +45,18 @@
 				not header X-Ingest-Secret {$INGEST_SHARED_SECRET}
 			}
 			respond @envelope_unauthorized 401
-			reverse_proxy bugsink:8000
+			# ⚠️ Host 를 `ddona.site` 로 바꿔 보낸다. Worker 가 `ddona.site/_ingest/*` 를 받아
+			# 여기(`api.ddona.site`)로 넘기는데, Caddy 가 Host 를 그대로 전달하면 Bugsink(Django)
+			# 가 보는 Host 는 `api.ddona.site` 이고 브라우저가 보낸 Origin 은 `https://ddona.site`
+			# 라 **둘이 달라 CSRF 가 거부된다**(실측: `Forbidden (Origin header does not match
+			# (deduced) Host: 'https://ddona.site' != 'https://api.ddona.site')`). Bugsink 에는
+			# `CSRF_TRUSTED_ORIGINS` 를 노출하는 설정이 없어(`docker.py.template` 확인) 프록시가
+			# Host 를 맞추는 것이 유일한 해법이고, Bugsink 자신의 에러 메시지도 그 방식을 권한다
+			# ("or configure proxy to use 'Host: ddona.site'"). `BASE_URL` 도 `ddona.site` 라
+			# DSN·링크 생성과도 일치한다.
+			reverse_proxy bugsink:8000 {
+				header_up Host ddona.site
+			}
 		}
 	}
 
