@@ -17,6 +17,7 @@ import {
   useNotificationListQuery,
   type NotificationResponse,
 } from "@/entities/notification";
+import { assertNever } from "@/shared/lib/assertNever";
 
 export function NotificationBell() {
   const { data: notifications = [] } = useNotificationListQuery();
@@ -105,16 +106,20 @@ function NotificationListItem({
     );
   }
 
-  return (
-    <DropdownMenuItem
-      className="flex flex-col items-start gap-0.5 py-2 whitespace-normal"
-      onSelect={(event) => {
-        // 여러 알림을 이어서 확인할 수 있도록 클릭 후에도 드롭다운을 열어둔다.
-        event.preventDefault();
-        if (!notification.read) onRead(notification.id);
-      }}
-    >
-      <NotificationItemContent notification={notification} />
-    </DropdownMenuItem>
-  );
+  if (destination.kind === "none") {
+    return (
+      <DropdownMenuItem
+        className="flex flex-col items-start gap-0.5 py-2 whitespace-normal"
+        onSelect={(event) => {
+          // 여러 알림을 이어서 확인할 수 있도록 클릭 후에도 드롭다운을 열어둔다.
+          event.preventDefault();
+          if (!notification.read) onRead(notification.id);
+        }}
+      >
+        <NotificationItemContent notification={notification} />
+      </DropdownMenuItem>
+    );
+  }
+
+  return assertNever(destination);
 }

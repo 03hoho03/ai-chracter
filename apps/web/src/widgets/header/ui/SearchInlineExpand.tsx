@@ -44,16 +44,22 @@ export function SearchInlineExpand({
     if (isExpanded) inputRef.current?.focus();
   }, [isExpanded]);
 
-  // 통지 이펙트만 useLayoutEffect다 — `initialQuery`가 있으면 `isExpanded`가 첫 렌더부터 true인데
-  // useEffect는 페인트 후에 돌아 첫 프레임에 부모(Header)가 아직 false로 그려져 버거·로고가 한 프레임
-  // 노출된다(모바일 폭에서 `?q=` URL 직접 열기 — 2026-09-15 적대적 리뷰가 지목).
+  // hojeong 리뷰 STATE-06(c) — 사용자 이벤트로 인한 펼침/접힘은 `setIsExpanded`를 직접 부르는 지점
+  // (검색 버튼 onClick·`collapse`)에서 `onExpandedChange`도 함께 부른다. 여기 남는 이펙트는 더 이상
+  // "상태 복제"가 아니라 "URL 파생 초기값을 부모에 한 번 알리는 핸드셰이크"다 — `isExpanded`의 초기값이
+  // `useState(Boolean(initialQuery))`로 URL에서 오는 그 한 경우만 사용자 이벤트가 아니라서, deps를 `[]`로
+  // 좁혀 마운트 1회만 알린다. useEffect가 아니라 useLayoutEffect인 이유는 그대로다 — `initialQuery`가
+  // 있으면 `isExpanded`가 첫 렌더부터 true인데 useEffect는 페인트 후에 돌아 첫 프레임에 부모(Header)가
+  // 아직 false로 그려져 버거·로고가 한 프레임 노출된다(모바일 폭에서 `?q=` URL 직접 열기 — 2026-09-15
+  // 적대적 리뷰가 지목).
   useLayoutEffect(() => {
     onExpandedChange?.(isExpanded);
-  }, [isExpanded, onExpandedChange]);
+  }, []);
 
   const collapse = () => {
     setIsExpanded(false);
     setValue("");
+    onExpandedChange?.(false);
   };
 
   return (
@@ -99,7 +105,16 @@ export function SearchInlineExpand({
           </Button>
         </div>
       ) : (
-        <Button type="button" variant="ghost" size="icon" aria-label="검색" onClick={() => setIsExpanded(true)}>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="검색"
+          onClick={() => {
+            setIsExpanded(true);
+            onExpandedChange?.(true);
+          }}
+        >
           <Search aria-hidden />
         </Button>
       )}

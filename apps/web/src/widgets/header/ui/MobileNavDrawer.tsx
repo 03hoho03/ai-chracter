@@ -9,12 +9,10 @@ import {
 } from "@ai-character-chat/ui/components/sheet";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useAtomValue } from "jotai";
 import { Bell, ChevronDown, LogIn, LogOut, Menu } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ComponentProps } from "react";
+import { useId, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
 
-import { contentTypeToggleAtom } from "@/entities/content";
 import {
   NotificationItemContent,
   resolveNotificationDestination,
@@ -24,9 +22,10 @@ import {
 } from "@/entities/notification";
 import { useSessionQuery } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import { ContentTypeToggle } from "./ContentTypeToggle";
-import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileMenu";
+import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
 
 const ROW_CLASS =
   "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-disabled:opacity-65 [&_svg]:size-4 [&_svg]:shrink-0";
@@ -45,31 +44,16 @@ const NOTIFICATION_ACTION_ROW_CLASS = cn(ROW_CLASS, "flex-col items-start gap-0.
  */
 export function MobileNavDrawer({ className }: { className?: string }) {
   const { data: me } = useSessionQuery();
-  const [open, setOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(false);
   const navigate = useNavigate();
   const logout = useLogoutMutation();
-
-  // MR-14 — 드로어에서 유형을 바꾸면 `ContentTypeToggle`이 내부에서 재클릭 가드를 통과한 값을
-  // atom에 쓰고 `navigate({ to: "/" })`를 부른다(로직은 그 컴포넌트 한 곳에만 둔다 — 여기서 다시
-  // 구현하면 "17곳 중 2곳만 맞았다"류 복제 실패가 재현된다). 드로어가 열린 채 남으면 홈으로 이동한
-  // 결과(그리드가 캐릭터/스토리로 바뀐 것)를 사용자가 볼 수 없으므로, 값이 바뀔 때 이 위젯이 직접
-  // 닫는다. 마운트 시점의 초깃값과 동일한 첫 effect 실행에서 닫히면 안 되므로 첫 번째는 건너뛴다.
-  const contentType = useAtomValue(contentTypeToggleAtom);
-  const isFirstContentTypeChange = useRef(true);
-  useEffect(() => {
-    if (isFirstContentTypeChange.current) {
-      isFirstContentTypeChange.current = false;
-      return;
-    }
-    setOpen(false);
-  }, [contentType]);
 
   function handleLogout() {
     if (logout.isPending) return;
     logout.mutate(undefined, {
       onSuccess: () => {
         toast.success("로그아웃되었어요.");
-        setOpen(false);
+        setIsOpen(false);
         void navigate({ to: "/" });
       },
       onError: () => {
@@ -79,7 +63,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
         {me ? <BurgerButtonWithUnreadDot className={className} /> : <BurgerButton className={className} />}
       </SheetTrigger>
@@ -91,8 +75,14 @@ export function MobileNavDrawer({ className }: { className?: string }) {
         <nav className="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-2 pb-3">
           <div className="px-0.5 py-1">
             {/* MR-14 — 가로 pill 쌍(`variant="outline"`). 헤더는 라벨만 있는 텍스트 탭(`"tab"`, 기본값),
-                드로어는 버튼 크기 항목 둘이라 감사 테스트대로 기본 채움을 쓴다(`DESIGN.md` §Toggles). */}
-            <ContentTypeToggle variant="outline" />
+                드로어는 버튼 크기 항목 둘이라 감사 테스트대로 기본 채움을 쓴다(`DESIGN.md` §Toggles).
+
+                hojeong 리뷰 STATE-06 — 드로어가 열린 채 남으면 홈으로 이동한 결과(그리드가 캐릭터/스토리로
+                바뀐 것)를 사용자가 볼 수 없으므로 닫아야 한다. 이전엔 atom을 `useAtomValue`로 관찰하고
+                `useEffect`+`useRef` 첫-실행 가드로 닫았는데, `ContentTypeToggle`이 재클릭 가드를 통과한
+                뒤에만 부르는 `onSelected`로 대체한다 — 재클릭은 그 가드에서 막혀 `onSelected`가 안
+                불리므로(현재도 atom이 안 바뀌어 안 닫혔다) 동작은 그대로고, 다른 유형 클릭만 닫는다. */}
+            <ContentTypeToggle variant="outline" onSelected={() => setIsOpen(false)} />
           </div>
 
           <hr className={DIVIDER_CLASS} />
@@ -269,15 +259,19 @@ function NotificationDrawerItem({
     );
   }
 
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        if (!notification.read) onRead(notification.id);
-      }}
-      className={NOTIFICATION_ACTION_ROW_CLASS}
-    >
-      <NotificationItemContent notification={notification} />
-    </button>
-  );
+  if (destination.kind === "none") {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          if (!notification.read) onRead(notification.id);
+        }}
+        className={NOTIFICATION_ACTION_ROW_CLASS}
+      >
+        <NotificationItemContent notification={notification} />
+      </button>
+    );
+  }
+
+  return assertNever(destination);
 }

@@ -1,6 +1,8 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronRight } from "lucide-react";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import type { NotificationResponse } from "../api/useNotificationListQuery";
 import { resolveNotificationDestination } from "../model/notificationDestination";
 
@@ -30,10 +32,19 @@ export function NotificationItemContent({ notification }: { notification: Notifi
   const destination = resolveNotificationDestination(notification);
 
   if (destination.kind !== "none") {
-    const title =
-      destination.kind === "notice"
-        ? NOTIFICATION_TITLE_BY_TYPE.notice
-        : NOTIFICATION_TITLE_BY_TYPE["inquiry-reply"];
+    // 삼항이면 새 kind가 추가돼도 `!== "none"`을 그대로 통과해 무조건 "문의 답변" 제목을 달고 나간다 —
+    // switch + default: assertNever로 kind마다 명시적으로 갈라, 새 멤버가 생기면 타입에러로 막는다.
+    let title: string | undefined;
+    switch (destination.kind) {
+      case "notice":
+        title = NOTIFICATION_TITLE_BY_TYPE.notice;
+        break;
+      case "inquiry":
+        title = NOTIFICATION_TITLE_BY_TYPE["inquiry-reply"];
+        break;
+      default:
+        return assertNever(destination);
+    }
 
     return (
       <span className="flex w-full items-center justify-between gap-2">

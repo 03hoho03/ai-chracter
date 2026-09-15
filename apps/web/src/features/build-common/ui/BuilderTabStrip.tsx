@@ -3,7 +3,6 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { TriangleAlert } from "lucide-react";
 
 import type { BuilderTab } from "@/entities/content";
-
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 type BuilderTabStripProps = {
