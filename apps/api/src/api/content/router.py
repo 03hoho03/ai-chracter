@@ -57,6 +57,7 @@ from api.content.schemas import (
     VisibilityFilter,
 )
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
+from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -306,7 +307,9 @@ async def list_my_favorites(
                 thumbnail_url=await _resolve_thumbnail_url(db, detail.thumbnail_asset_id),
                 view_count=content.view_count,
                 creator_user_id=content.creator_user_id,
-                creator_nickname=creator_nickname,
+                creator_nickname=creator_nickname
+                if creator_nickname is not None
+                else WITHDRAWN_USER_NICKNAME,
             )
         )
 
@@ -356,6 +359,9 @@ async def get_user_profile(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.nickname is not None
     return UserProfileResponse(
         nickname=user.nickname,
         bio=user.bio,
@@ -1858,7 +1864,7 @@ async def list_contents(
             thumbnail_url=await _resolve_thumbnail_url(db, thumbnail_asset_id),
             view_count=content.view_count,
             creator_user_id=content.creator_user_id,
-            creator_nickname=nickname,
+            creator_nickname=nickname if nickname is not None else WITHDRAWN_USER_NICKNAME,
         )
         for content, name, thumbnail_asset_id, nickname, _genre_sort_order in page
     ]
@@ -2011,7 +2017,9 @@ async def get_content_detail(
         name=name,
         thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
         creator_user_id=content.creator_user_id,
-        creator_nickname=creator_nickname,
+        creator_nickname=creator_nickname
+        if creator_nickname is not None
+        else WITHDRAWN_USER_NICKNAME,
         genre_id=content.genre_id,
         genre_name=genre_name,
         hashtags=content.hashtags,

@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import GoogleProfile, get_google_profile
 from api.core.config import settings
-from api.db.models.auth import GuardianConsent, User
+from api.core.security import hash_password
+from api.db.models.auth import User
 from api.main import app
+from factories import _make_user
 
 
 def _fake_profile(sub: str, email: str) -> GoogleProfile:
@@ -92,6 +94,7 @@ async def _onboard_new_google_user(
         "birthDate": birth_date,
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     payload.update(overrides)
     return {"payload": payload, "sub": sub, "email": email}
@@ -104,7 +107,7 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
     assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": False, "email": ctx["email"]}
+    assert resp.json() == {"email": ctx["email"]}
     assert settings.session_cookie_name in resp.cookies
 
     user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
@@ -118,42 +121,39 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
     assert me.json()["id"] == str(user.id)
 
 
-async def test_onboarding_google_minor_requires_guardian_consent_and_no_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10).isoformat()
+async def test_onboarding_google_rejects_under_minimum_age(db_client: httpx.AsyncClient) -> None:
+    """legal-revision-goal-prompt.md LR-9: 이메일 가입과 마찬가지로 구글 온보딩도 만 14세
+    미만을 거부한다 — 두 경로가 비대칭으로 새지 않는지가 이 런의 반복된 위험이다."""
+    minor_birth_date = date.today().replace(year=date.today().year - 13).isoformat()
     ctx = await _onboard_new_google_user(db_client, minor_birth_date)
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
-    assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": True, "email": ctx["email"]}
-    assert settings.session_cookie_name not in resp.cookies
-
-    me = await db_client.get("/me")
-    assert me.status_code == 401
-
-    user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
-    assert user is not None
-
-    consent_resp = await db_client.post(
-        "/auth/guardian-consent",
-        json={
-            "email": ctx["email"],
-            "guardianName": "홍길동",
-            "guardianContact": "010-1234-5678",
-            "consentAgreed": True,
-        },
-    )
-    assert consent_resp.status_code == 204
-    assert settings.session_cookie_name in consent_resp.cookies
-
-    consent = await db_session.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-    assert consent is not None
+    assert resp.status_code == 422
 
 
 async def test_onboarding_google_rejects_missing_terms_agreement(db_client: httpx.AsyncClient) -> None:
     ctx = await _onboard_new_google_user(db_client, "2000-01-01", termsAgreed=False)
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert resp.status_code == 422
+
+
+async def test_onboarding_google_rejects_missing_transfer_agreement(db_client: httpx.AsyncClient) -> None:
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01", transferAgreed=False)
+    resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert resp.status_code == 422
+
+
+async def test_onboarding_google_rejects_transfer_agreement_field_omitted(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """legal-revision-goal-prompt.md LR-1: SignupRequest와 마찬가지로 transferAgreed는
+    OnboardingGoogleRequest에서도 필수 필드다 — 두 클래스의 validator는 복붙본이라
+    한쪽만 고치면 이 경로에서만 422가 안 걸리는 비대칭이 생길 수 있다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    payload = ctx["payload"]
+    assert isinstance(payload, dict)
+    del payload["transferAgreed"]
+    resp = await db_client.post("/auth/onboarding/google", json=payload)
     assert resp.status_code == 422
 
 
@@ -166,6 +166,7 @@ async def test_onboarding_google_rejects_invalid_token(db_client: httpx.AsyncCli
             "birthDate": "2000-01-01",
             "termsAgreed": True,
             "privacyAgreed": True,
+            "transferAgreed": True,
         },
     )
     assert resp.status_code == 400
@@ -203,6 +204,7 @@ async def test_google_callback_links_existing_password_account_by_email(
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     signup_resp = await db_client.post("/auth/signup", json=signup_payload)
     assert signup_resp.status_code == 201
@@ -255,17 +257,22 @@ async def test_google_callback_redirects_suspended_existing_user(
     assert settings.session_cookie_name not in resp.cookies
 
 
-async def test_google_callback_minor_without_consent_redirects_to_onboarding_again(
-    db_client: httpx.AsyncClient,
+async def test_google_callback_rejects_existing_minor_account_matched_by_google_sub(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10).isoformat()
-    ctx = await _onboard_new_google_user(db_client, minor_birth_date)
-    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
-    assert onboard_resp.status_code == 200
-    assert settings.session_cookie_name not in onboard_resp.cookies
+    """legal-revision-goal-prompt.md LR-30 정정판: S2 적대적 리뷰가 찾은 구멍 — 연령 게이트가
+    `login()`에만 있고 `google_callback`엔 없었다. LR-9가 신규 가입을 막아 더 이상
+    `/auth/signup`으로는 만들 수 없는 기존 미성년 계정을, 시행일 이전 가입분을 흉내 내
+    DB에 직접 만들어 재현한다. google_sub 직접 매치 분기가 세션 없이 되돌리는지 본다."""
+    sub = f"google-sub-{uuid.uuid4()}"
+    user = _make_user(
+        google_sub=sub, birth_date=date.today().replace(year=date.today().year - 13)
+    )
+    db_session.add(user)
+    await db_session.flush()
 
     state = await _start_google_login(db_client)
-    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    _override_google_profile(sub, user.email)
     try:
         resp = await db_client.get(
             "/auth/google/callback", params={"state": state}, follow_redirects=False
@@ -274,5 +281,84 @@ async def test_google_callback_minor_without_consent_redirects_to_onboarding_aga
         _clear_google_profile_override()
 
     assert resp.status_code == 302
-    assert resp.headers["location"].startswith(f"{settings.frontend_base_url}/onboarding/google?token=")
+    assert (
+        resp.headers["location"]
+        == f"{settings.frontend_base_url}/login?error=account_age_restricted"
+    )
     assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_google_callback_rejects_existing_minor_account_linked_by_email(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이메일 매칭으로 기존 (비밀번호) 계정에 google_sub를 붙이는 분기도 같은 게이트를
+    타는지 본다 — 정정판이 지적한 바로 그 분기다. google_sub 직접 매치 분기만 막고 이
+    분기를 빠뜨리면 링크된 기존 미성년 계정이 구글 로그인으로 그대로 들어온다."""
+    user = _make_user(
+        birth_date=date.today().replace(year=date.today().year - 13),
+        password_hash=hash_password("password123"),
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    google_sub = f"google-sub-{uuid.uuid4()}"
+    _override_google_profile(google_sub, user.email)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert (
+        resp.headers["location"]
+        == f"{settings.frontend_base_url}/login?error=account_age_restricted"
+    )
+    assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdrawal(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+    google_sub 직접 매치가 아니라 onboarding_google의 신규 유저 생성 분기를 타게 되고,
+    거기서 withdrawn_emails의 HMAC 조회가 막는다. 이 런에서 반복된 비대칭 위험(이메일
+    경로만 막고 구글 경로가 새는 것)을 가장 직접적으로 확인하는 테스트다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+
+    withdraw_resp = await db_client.delete("/me")
+    assert withdraw_resp.status_code == 204
+
+    state = await _start_google_login(db_client)
+    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    try:
+        callback = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    # google_sub가 파기됐으므로 "기존 계정을 찾음"이 아니라 "신규 가입"으로 취급돼
+    # 온보딩으로 되돌아간다 — google_sub가 안 지워졌다면 여긴 /login?error=account_deleted였을 것.
+    assert callback.status_code == 302
+    assert callback.headers["location"].startswith(
+        f"{settings.frontend_base_url}/onboarding/google?token="
+    )
+    token = httpx.URL(callback.headers["location"]).params["token"]
+
+    resp = await db_client.post(
+        "/auth/onboarding/google",
+        json={
+            "token": token,
+            "nickname": "구글유저",
+            "birthDate": "2000-01-01",
+            "termsAgreed": True,
+            "privacyAgreed": True,
+            "transferAgreed": True,
+        },
+    )
+    assert resp.status_code == 409

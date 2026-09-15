@@ -8,6 +8,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
+from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
@@ -55,7 +56,7 @@ async def _to_detail(db: AsyncSession, inquiry: Inquiry) -> AdminInquiryDetailRe
         body=inquiry.body,
         attachment_url=await _resolve_asset_url(db, inquiry.attachment_asset_id),
         status=inquiry.status,
-        author_nickname=author.nickname,
+        author_nickname=author.nickname if author.nickname is not None else WITHDRAWN_USER_NICKNAME,
         author_email=author.email,
         reply_body=inquiry.reply_body,
         answered_at=inquiry.answered_at,

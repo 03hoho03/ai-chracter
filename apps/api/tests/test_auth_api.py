@@ -18,6 +18,7 @@ from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSendError, get_email_sender
 from api.core.redis import redis_client
+from api.core.security import hash_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.session import engine
 from api.main import app
@@ -32,6 +33,7 @@ def _signup_payload(**overrides: object) -> dict[str, object]:
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     defaults.update(overrides)
     return defaults
@@ -64,6 +66,20 @@ async def test_signup_rejects_missing_terms_agreement(db_client: httpx.AsyncClie
 
 async def test_signup_rejects_missing_privacy_agreement(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post("/auth/signup", json=_signup_payload(privacyAgreed=False))
+    assert resp.status_code == 422
+
+
+async def test_signup_rejects_missing_transfer_agreement(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.post("/auth/signup", json=_signup_payload(transferAgreed=False))
+    assert resp.status_code == 422
+
+
+async def test_signup_rejects_transfer_agreement_field_omitted(db_client: httpx.AsyncClient) -> None:
+    """legal-revision-goal-prompt.md LR-1: transferAgreed는 필수 필드라 아예 빠지면
+    validator가 아니라 pydantic의 필수값 검사에서 422가 나야 한다."""
+    payload = _signup_payload()
+    del payload["transferAgreed"]
+    resp = await db_client.post("/auth/signup", json=payload)
     assert resp.status_code == 422
 
 
@@ -126,18 +142,6 @@ async def test_signup_rejects_unverified_account_with_google_sub(
     없어도(구글 콜백은 그 값을 보지 않고 세션을 발급하므로 실사용 중일 수 있다) 409."""
     email = f"race-google-{uuid.uuid4()}@example.com"
     db_session.add(_make_user(email=email, google_sub=f"sub-{uuid.uuid4()}"))
-    await db_session.flush()
-
-    resp = await db_client.post("/auth/signup", json=_signup_payload(email=email))
-    assert resp.status_code == 409
-
-
-async def test_signup_rejects_unverified_deleted_account(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """email-goal-prompt.md E-5: 탈퇴 계정은 미인증이어도 재가입으로 부활시키지 않는다."""
-    email = f"race-deleted-{uuid.uuid4()}@example.com"
-    db_session.add(_make_user(email=email, deleted_at=datetime.now(UTC)))
     await db_session.flush()
 
     resp = await db_client.post("/auth/signup", json=_signup_payload(email=email))
@@ -250,9 +254,7 @@ async def test_signup_succeeds_when_email_send_fails(
     assert any(record.levelno == logging.WARNING for record in caplog.records)
 
 
-async def test_verify_email_adult_does_not_require_guardian_consent(
-    db_client: httpx.AsyncClient,
-) -> None:
+async def test_verify_email_returns_200_for_adult(db_client: httpx.AsyncClient) -> None:
     payload = _signup_payload(birthDate="2000-01-01")
     await db_client.post("/auth/signup", json=payload)
     stored = await get_verification_code(str(payload["email"]))
@@ -262,21 +264,15 @@ async def test_verify_email_adult_does_not_require_guardian_consent(
         "/auth/verify-email", json={"email": payload["email"], "code": stored["code"]}
     )
     assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": False}
 
 
-async def test_verify_email_minor_requires_guardian_consent(db_client: httpx.AsyncClient) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = _signup_payload(birthDate=minor_birth_date.isoformat())
-    await db_client.post("/auth/signup", json=payload)
-    stored = await get_verification_code(str(payload["email"]))
-    assert stored is not None
-
+async def test_signup_rejects_under_minimum_age(db_client: httpx.AsyncClient) -> None:
+    """legal-revision-goal-prompt.md LR-9: 만 14세 미만은 서버가 가입을 거부한다."""
+    minor_birth_date = date.today().replace(year=date.today().year - 13)
     resp = await db_client.post(
-        "/auth/verify-email", json={"email": payload["email"], "code": stored["code"]}
+        "/auth/signup", json=_signup_payload(birthDate=minor_birth_date.isoformat())
     )
-    assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": True}
+    assert resp.status_code == 422
 
 
 async def test_verify_email_rejects_wrong_code(db_client: httpx.AsyncClient) -> None:
@@ -543,78 +539,6 @@ async def _signup_and_verify(db_client: httpx.AsyncClient, **overrides: object) 
     return payload
 
 
-def _guardian_consent_payload(email: str, **overrides: object) -> dict[str, object]:
-    defaults: dict[str, object] = {
-        "email": email,
-        "guardianName": "홍길동",
-        "guardianContact": "010-1234-5678",
-        "consentAgreed": True,
-    }
-    defaults.update(overrides)
-    return defaults
-
-
-async def test_guardian_consent_activates_minor_account_and_issues_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
-
-    resp = await db_client.post(
-        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
-    )
-    assert resp.status_code == 204
-    assert settings.session_cookie_name in resp.cookies
-
-    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
-    assert user is not None
-    consent = await db_session.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-    assert consent is not None
-    assert consent.guardian_name == "홍길동"
-
-    echo = await db_client.get("/dev/session-echo")
-    assert echo.status_code == 200
-    assert echo.json() == {"user_id": str(user.id)}
-
-
-async def test_guardian_consent_rejects_before_email_verified(db_client: httpx.AsyncClient) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = _signup_payload(birthDate=minor_birth_date.isoformat())
-    await db_client.post("/auth/signup", json=payload)
-
-    resp = await db_client.post(
-        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
-    )
-    assert resp.status_code == 400
-
-
-async def test_guardian_consent_rejects_adult_account(db_client: httpx.AsyncClient) -> None:
-    payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
-
-    resp = await db_client.post(
-        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
-    )
-    assert resp.status_code == 400
-
-
-async def test_guardian_consent_rejects_consent_not_agreed(db_client: httpx.AsyncClient) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
-
-    resp = await db_client.post(
-        "/auth/guardian-consent",
-        json=_guardian_consent_payload(str(payload["email"]), consentAgreed=False),
-    )
-    assert resp.status_code == 422
-
-
-async def test_guardian_consent_unknown_user_returns_404(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post(
-        "/auth/guardian-consent", json=_guardian_consent_payload("nobody@example.com")
-    )
-    assert resp.status_code == 404
-
-
 async def test_login_adult_issues_session_and_me_returns_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -668,28 +592,32 @@ async def test_login_rejects_unverified_email(db_client: httpx.AsyncClient) -> N
     assert resp.status_code == 403
 
 
-async def test_login_rejects_minor_without_guardian_consent(db_client: httpx.AsyncClient) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
+async def test_login_rejects_existing_minor_account_regardless_of_guardian_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-30: LR-9가 신규 가입을 막아 회원가입 엔드포인트로는
+    더 이상 만들 수 없는 기존 미성년 계정을, 시행일 이전 가입분을 흉내 내 DB에 직접 만들어
+    재현한다. 법정대리인 동의 기록(GuardianConsent)이 있어도 연령만으로 막힌다."""
+    user = _make_user(
+        birth_date=date.today().replace(year=date.today().year - 13),
+        password_hash=hash_password("password123"),
+        email_verified_at=datetime.now(UTC),
+    )
+    db_session.add(user)
+    await db_session.flush()
+    consent = GuardianConsent(
+        user_id=user.id,
+        guardian_name="홍길동",
+        guardian_contact="010-1234-5678",
+        consent_agreed_at=datetime.now(UTC),
+    )
+    db_session.add(consent)
+    await db_session.flush()
 
     resp = await db_client.post(
-        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
+        "/auth/login", json={"email": user.email, "password": "password123"}
     )
     assert resp.status_code == 403
-
-
-async def test_login_succeeds_for_minor_with_guardian_consent(db_client: httpx.AsyncClient) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10)
-    payload = await _signup_and_verify(db_client, birthDate=minor_birth_date.isoformat())
-    consent_resp = await db_client.post(
-        "/auth/guardian-consent", json=_guardian_consent_payload(str(payload["email"]))
-    )
-    assert consent_resp.status_code == 204
-
-    resp = await db_client.post(
-        "/auth/login", json={"email": payload["email"], "password": payload["password"]}
-    )
-    assert resp.status_code == 204
 
 
 async def test_me_without_session_returns_401(db_client: httpx.AsyncClient) -> None:

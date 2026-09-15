@@ -43,6 +43,11 @@ class Settings(BaseSettings):
     email_verification_code_ttl_seconds: int = 60 * 15
     email_verification_resend_cooldown_seconds: int = 60
 
+    # legal-revision-goal-prompt.md LR-8: 탈퇴 시 users.email이 자리표시자로 바뀌므로(LR-6),
+    # 재가입 차단은 이 키로 만든 HMAC-SHA256(withdrawn_emails.email_hmac)을 조회해서 한다.
+    # 키를 잃거나(배포 환경마다 값이 달라지는 등) 바꾸면 과거에 적립한 해시와 새 조회의 해시가
+    # 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스) — DEPLOY.md에 남긴다.
+    withdrawn_email_hmac_key: str = ""
     google_client_id: str = ""
     google_client_secret: str = ""
     # Used to build the redirect_uri sent to Google and the /auth/google/callback

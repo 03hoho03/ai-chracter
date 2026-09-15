@@ -12,10 +12,6 @@ const STEP_COPY = {
     title: "이메일 인증",
     description: "받으신 인증코드를 입력해주세요.",
   },
-  guardianConsent: {
-    title: "법정대리인 동의",
-    description: "보호자 정보를 입력하고 동의해주세요.",
-  },
 } as const;
 
 export function SignUpPage() {

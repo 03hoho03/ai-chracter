@@ -20,11 +20,19 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 const SUSPENDED_ERROR_MESSAGE =
   "이용정지된 계정이에요. 문의사항은 ghwjd32123@gmail.com으로 연락해주세요.";
 
+// legal-revision-goal-prompt.md LR-30: 만 14세 미만은 해결책이 없는 상태다 — "인증하면
+// 된다"처럼 읽히는 문구를 주지 않는다.
+const MINIMUM_AGE_ERROR_MESSAGE = "만 14세 미만은 이용할 수 없는 서비스예요.";
+
+const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
+  "이메일 인증이 완료되지 않은 계정이에요. 같은 이메일로 회원가입을 다시 진행하면 인증 메일을 새로 받을 수 있어요.";
+
 /** 구글 콜백이 `?error=` 로 되돌려 보낸 코드 → 사용자용 문구. */
 const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   google_state: "구글 로그인 요청이 만료되었어요. 다시 시도해주세요.",
   account_suspended: SUSPENDED_ERROR_MESSAGE,
   account_deleted: "탈퇴한 계정이에요.",
+  account_age_restricted: MINIMUM_AGE_ERROR_MESSAGE,
 };
 
 type LoginFormProps = {
@@ -67,8 +75,10 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
       } else if (apiError?.status === 403 && apiError.detail === "Account suspended") {
         setError("root", { message: SUSPENDED_ERROR_MESSAGE });
+      } else if (apiError?.status === 403 && apiError.detail === "Minimum age not met") {
+        setError("root", { message: MINIMUM_AGE_ERROR_MESSAGE });
       } else if (apiError?.status === 403) {
-        setError("root", { message: "이메일 인증이 완료되지 않았거나 법정대리인 동의가 필요한 계정이에요." });
+        setError("root", { message: EMAIL_VERIFICATION_REQUIRED_MESSAGE });
       } else {
         setError("root", { message: GENERIC_ERROR_MESSAGE });
       }
@@ -178,6 +188,17 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         아직 계정이 없으신가요?{" "}
         <Link to="/signup" className="font-medium text-primary hover:underline">
           회원가입
+        </Link>
+      </p>
+
+      {/* 비로그인 방문자는 `ProfileMenu`를 못 보므로 두 문서에 닿는 자리가 여기뿐이다(LR-12). */}
+      <p className="text-center text-sm text-muted-foreground">
+        <Link to="/terms" className="font-medium text-primary hover:underline">
+          이용약관
+        </Link>
+        <span aria-hidden> · </span>
+        <Link to="/privacy" className="font-medium text-primary hover:underline">
+          개인정보처리방침
         </Link>
       </p>
     </div>

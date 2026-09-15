@@ -21,6 +21,21 @@
 
 (자산이 브라우저에 노출되는 문제는 없다 — R2의 CORS는 읽기 권한을 주지 않고, S3 엔드포인트는
 항상 SigV4 서명을 요구한다. 공개 접근은 별도 `r2.dev` 도메인을 켜야 생기는데 켜져 있지 않다.)
+
+**백업(덤프+업로드+prune)이 전부 성공한 뒤에만 만료된 `withdrawn_emails` 행도 지운다**
+(legal-revision-goal-prompt.md LR-32). 처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년간
+보관하고 그 기간이 지나면 파기합니다"를 실제로 수행하는 유일한 코드다 — `auth/router.py`의
+`_reregistration_blocked`는 조회 시 만료를 무시할 뿐 행을 지우지 않는다. 삭제를 백업 뒤에
+두는 이유는 지우기 전 상태를 그날 백업에 남기기 위해서다. `--no-upload`(로컬 전용 덤프)
+경로에는 얹지 않는다 — 그 경로는 durable 백업을 남기지 않는다.
+
+⚠️ **이 파일은 SQLAlchemy/asyncpg/`api.*`를 import 하면 안 된다.** 프로덕션 크론은
+`/opt/ddona/backup.sh`(VM 실측)가 `PYTHONPATH=/opt/ddona/scripts` 아래 시스템
+`/usr/bin/python3 -m ops.backup_db`로 돌리는데, 그 경로엔 `api` 패키지가 없고 그 python3엔
+SQLAlchemy/asyncpg가 안 깔려 있다(boto3만 있다). S5-d가 만료 `withdrawn_emails` 삭제를
+SQLAlchemy로 구현해 배포했다가 매일 18:00 UTC 크론이 import 시점에 죽어 백업이 통째로
+멈췄다(S5-e에서 되돌림) — 그래서 삭제도 `pg_dump`와 같은 방식(`run_sh`로 컨테이너 안
+`psql`을 부름)으로 한다. `tests/test_ops_backup_db_importable.py`가 이 제약을 `ast`로 고정한다.
 """
 
 import argparse
@@ -28,16 +43,24 @@ import os
 import re
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import IO
 
 from ops.db_url import describe, to_libpq_url
-from ops.pg import run_sh
+from ops.pg import run_sh, shell_quote
 
 AWS_IMAGE = "amazon/aws-cli:latest"
 DAILY_KEEP = 7
 WEEKLY_KEEP = 4
+
+# legal-revision-goal-prompt.md LR-7·LR-32: `auth/router.py`의 `_reregistration_blocked`(조회)와
+# 같은 1년을 써야 "차단이 풀리는 시점"과 "행이 파기되는 시점"이 갈라지지 않는다. 원본은
+# `api.core.constants.WITHDRAWN_EMAIL_BLOCK_PERIOD`지만 VM에 `api` 패키지가 없어 이 파일에서는
+# import 할 수 없다(위 경고 참고) — 그래서 로컬로 값을 복제하고,
+# `tests/test_ops_backup_withdrawn_emails.py::test_block_period_matches_api_constant`가 두 값이
+# 갈라지지 않는지 매 실행마다 확인한다(그 테스트는 일반 pytest 환경에서 돌아 `api`를 볼 수 있다).
+WITHDRAWN_EMAIL_BLOCK_PERIOD = timedelta(days=365)
 
 # 백업 파일명은 UTC 타임스탬프 하나뿐이다(`20260902T070331Z.dump`). 삭제는 이 형태에 정확히
 # 맞는 이름에만 허용되며, 그게 자산과 버킷을 공유해도 안전한 이유다.
@@ -121,6 +144,28 @@ def prune(bucket: str, prefix: str, keep: int) -> list[str]:
     return doomed
 
 
+def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
+    """legal-revision-goal-prompt.md LR-32: `withdrawn_at + WITHDRAWN_EMAIL_BLOCK_PERIOD`가
+    지난 `withdrawn_emails` 행을 지우고 지운 개수를 돌려준다. 처리방침 제4조 2항·약관 제14조
+    4항이 "1년이 지나면 파기합니다"라고 약속하는 대상이 바로 이 행이다.
+
+    `dump()`와 같은 방식(`run_sh`로 컨테이너 안 `psql`을 부름)을 쓴다 — 위 파일 상단 경고 참고,
+    이 파일은 SQLAlchemy를 import 할 수 없다. 삭제 건수는 `.rowcount`(SQLAlchemy 전용) 대신
+    `DELETE ... RETURNING`이 `psql -At`로 찍는 줄 수로 센다(`admin/users.py`가 `.returning()`을
+    쓰는 이유와 같다 — 여기선 아예 `.rowcount` 자체가 없다). 각 줄이 지워진 행 하나의
+    `email_hmac`이므로 빈 줄만 제외하면 그대로 개수다.
+    """
+    cutoff = now - WITHDRAWN_EMAIL_BLOCK_PERIOD
+    sql = (
+        f"DELETE FROM withdrawn_emails WHERE withdrawn_at < '{cutoff.isoformat()}' "
+        "RETURNING email_hmac;"
+    )
+    result = run_sh(f'psql "$PGURL" -At -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE)
+    if result.returncode != 0:
+        raise RuntimeError(f"만료 삭제 실패:\n{result.stderr.decode().strip()}")
+    return len([line for line in result.stdout.decode().splitlines() if line.strip()])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path("backups"))
@@ -157,6 +202,13 @@ def main() -> int:
         removed = prune(bucket, f"{base}{kind}", keep)
         if removed:
             print(f"🗑 {base}{kind} 정리: {len(removed)}개 삭제 ({', '.join(removed)})")
+
+    # legal-revision-goal-prompt.md LR-32: 여기 도달했다는 것 자체가 덤프·업로드·prune이 전부
+    # 성공했다는 뜻이다 — 앞선 어느 단계든 실패하면 예외가 여기까지 오기 전에 전파되어 삭제도
+    # 함께 건너뛴다. 순서 고정: 백업 뒤에 지워야 지우기 전 상태가 오늘 백업에 남는다.
+    expired_count = delete_expired_withdrawn_emails(url, now=datetime.now(UTC))
+    if expired_count:
+        print(f"🗑 withdrawn_emails 만료 정리: {expired_count}개 삭제")
 
     if not args.keep_local:
         target.unlink()

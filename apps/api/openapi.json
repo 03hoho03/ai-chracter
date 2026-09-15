@@ -2122,40 +2122,6 @@
         }
       }
     },
-    "/auth/guardian-consent": {
-      "post": {
-        "tags": [
-          "auth"
-        ],
-        "summary": "Guardian Consent",
-        "operationId": "guardian_consent_auth_guardian_consent_post",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/GuardianConsentRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "Successful Response"
-          },
-          "422": {
-            "description": "Validation Error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/HTTPValidationError"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/auth/google": {
       "get": {
         "tags": [
@@ -9504,37 +9470,6 @@
         ],
         "title": "GenreResponse"
       },
-      "GuardianConsentRequest": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "format": "email",
-            "title": "Email"
-          },
-          "guardianName": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Guardianname"
-          },
-          "guardianContact": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Guardiancontact"
-          },
-          "consentAgreed": {
-            "type": "boolean",
-            "title": "Consentagreed"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email",
-          "guardianName",
-          "guardianContact",
-          "consentAgreed"
-        ],
-        "title": "GuardianConsentRequest"
-      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -10446,6 +10381,10 @@
           "privacyAgreed": {
             "type": "boolean",
             "title": "Privacyagreed"
+          },
+          "transferAgreed": {
+            "type": "boolean",
+            "title": "Transferagreed"
           }
         },
         "type": "object",
@@ -10454,16 +10393,13 @@
           "nickname",
           "birthDate",
           "termsAgreed",
-          "privacyAgreed"
+          "privacyAgreed",
+          "transferAgreed"
         ],
         "title": "OnboardingGoogleRequest"
       },
       "OnboardingGoogleResponse": {
         "properties": {
-          "isMinorGuardianRequired": {
-            "type": "boolean",
-            "title": "Isminorguardianrequired"
-          },
           "email": {
             "type": "string",
             "title": "Email"
@@ -10471,7 +10407,6 @@
         },
         "type": "object",
         "required": [
-          "isMinorGuardianRequired",
           "email"
         ],
         "title": "OnboardingGoogleResponse"
@@ -10784,6 +10719,10 @@
           "privacyAgreed": {
             "type": "boolean",
             "title": "Privacyagreed"
+          },
+          "transferAgreed": {
+            "type": "boolean",
+            "title": "Transferagreed"
           }
         },
         "type": "object",
@@ -10793,7 +10732,8 @@
           "nickname",
           "birthDate",
           "termsAgreed",
-          "privacyAgreed"
+          "privacyAgreed",
+          "transferAgreed"
         ],
         "title": "SignupRequest"
       },
@@ -11633,16 +11573,8 @@
         "title": "VerifyEmailRequest"
       },
       "VerifyEmailResponse": {
-        "properties": {
-          "isMinorGuardianRequired": {
-            "type": "boolean",
-            "title": "Isminorguardianrequired"
-          }
-        },
+        "properties": {},
         "type": "object",
-        "required": [
-          "isMinorGuardianRequired"
-        ],
         "title": "VerifyEmailResponse"
       }
     }

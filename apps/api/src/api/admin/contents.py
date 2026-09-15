@@ -16,6 +16,7 @@ from api.admin.schemas import (
     AdminContentListResponse,
     AdminContentVersionItem,
 )
+from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail
@@ -268,7 +269,11 @@ async def _build_content_detail_response(db: AsyncSession, content: Content) -> 
         like_count=content.like_count,
         chat_count=content.chat_count,
         created_at=content.created_at,
-        creator=AdminContentCreator(id=creator.id, email=creator.email, nickname=creator.nickname),
+        creator=AdminContentCreator(
+            id=creator.id,
+            email=creator.email,
+            nickname=creator.nickname if creator.nickname is not None else WITHDRAWN_USER_NICKNAME,
+        ),
         prompt=prompt,
         detail_description=detail_description,
         thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),

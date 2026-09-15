@@ -32,9 +32,9 @@ export function useResendVerificationCodeMutation() {
 }
 
 /**
- * 회원가입 위저드 전용 재사용: 이메일 인증만으로는 세션이 발급되지 않고(성인 경로),
- * guardian-consent만 세션을 발급한다(apps/api/CLAUDE.md 참고). 성인 경로는 이메일 인증
- * 성공 직후 폼에 남아있는 email/password로 이 로그인 뮤테이션을 호출해 세션을 발급시킨다.
+ * 회원가입 위저드 전용 재사용: 이메일 인증만으로는 세션이 발급되지 않는다(apps/api/CLAUDE.md
+ * 참고). 이메일 인증 성공 직후 폼에 남아있는 email/password로 이 로그인 뮤테이션을 호출해
+ * 세션을 발급시킨다.
  */
 export function useSignUpLoginMutation() {
   return useMutation({

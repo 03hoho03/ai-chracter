@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
+  FileText,
   ImagePlus,
   LayoutGrid,
   LifeBuoy,
@@ -7,6 +8,7 @@ import {
   MessagesSquare,
   Plus,
   Settings2,
+  Shield,
   Star,
   User,
 } from "lucide-react";
@@ -27,13 +29,15 @@ export type ProfileDestinationKey =
   | "profile"
   | "mypage"
   | "notices"
-  | "inquiry-new";
+  | "inquiry-new"
+  | "terms"
+  | "privacy";
 
 export const PROFILE_DESTINATION_GROUPS: readonly { label: string; keys: readonly ProfileDestinationKey[] }[] = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
   { label: "계정", keys: ["profile", "mypage"] },
-  { label: "고객센터", keys: ["notices", "inquiry-new"] },
+  { label: "고객센터", keys: ["notices", "inquiry-new", "terms", "privacy"] },
 ];
 
 /** 라우트별 `to`/`params` 타입이 제각각이라(`/profile/$userId`만 params가 필요하다) 하나의 배열에
@@ -111,6 +115,20 @@ export const ProfileDestinationLink = forwardRef<
         <Link ref={ref} to="/inquiries/new" className={className} {...rest}>
           <LifeBuoy aria-hidden />
           문의하기
+        </Link>
+      );
+    case "terms":
+      return (
+        <Link ref={ref} to="/terms" className={className} {...rest}>
+          <FileText aria-hidden />
+          이용약관
+        </Link>
+      );
+    case "privacy":
+      return (
+        <Link ref={ref} to="/privacy" className={className} {...rest}>
+          <Shield aria-hidden />
+          개인정보처리방침
         </Link>
       );
     default:

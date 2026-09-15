@@ -243,11 +243,17 @@ async def get_dashboard_activity(
             )
         )
 
-    return AdminDashboardActivityResponse(
-        recent_users=[
+    recent_user_items: list[AdminDashboardRecentUser] = []
+    for u in recent_users:
+        # 위 쿼리(:210)가 deleted_at.is_(None)으로 이미 필터링했다 — nickname은 탈퇴(S5 파기)
+        # 시에만 None이 된다.
+        assert u.nickname is not None
+        recent_user_items.append(
             AdminDashboardRecentUser(id=u.id, email=u.email, nickname=u.nickname, created_at=u.created_at)
-            for u in recent_users
-        ],
+        )
+
+    return AdminDashboardActivityResponse(
+        recent_users=recent_user_items,
         recent_contents=[
             AdminDashboardRecentContent(
                 id=content.id,

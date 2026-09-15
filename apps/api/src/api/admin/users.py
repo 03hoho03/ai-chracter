@@ -249,6 +249,10 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
     }
     content_names_by_id = await _content_names_by_id(db, all_content_ids)
 
+    # LR-27(legal-revision-goal-prompt.md §3-2): 유일한 호출부 get_admin_user_detail이
+    # deleted_at is not None인 유저를 404로 이미 배제한 뒤에만 이 함수를 부른다 — 탈퇴 유저는
+    # 여기 도달하지 않으므로 nickname은 항상 채워져 있다.
+    assert user.nickname is not None
     return AdminUserDetailResponse(
         id=user.id,
         email=user.email,

@@ -15,6 +15,7 @@ const BASIC_INFO_FIELDS = [
   "birthDate",
   "termsAgreed",
   "privacyAgreed",
+  "transferAgreed",
 ] as const;
 
 type BasicInfoStepProps = {

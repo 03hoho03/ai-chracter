@@ -22,6 +22,7 @@ def _signup_payload(**overrides: object) -> dict[str, object]:
         "birthDate": "2000-01-01",
         "termsAgreed": True,
         "privacyAgreed": True,
+        "transferAgreed": True,
     }
     defaults.update(overrides)
     return defaults

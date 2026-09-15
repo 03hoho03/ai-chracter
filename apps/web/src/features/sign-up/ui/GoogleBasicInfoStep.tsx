@@ -6,7 +6,13 @@ import { useFormContext } from "react-hook-form";
 import type { SignUpFormValues } from "../model/signUpSchema";
 import { LegalConsentFields } from "./LegalConsentFields";
 
-const BASIC_INFO_FIELDS = ["nickname", "birthDate", "termsAgreed", "privacyAgreed"] as const;
+const BASIC_INFO_FIELDS = [
+  "nickname",
+  "birthDate",
+  "termsAgreed",
+  "privacyAgreed",
+  "transferAgreed",
+] as const;
 
 type GoogleBasicInfoStepProps = {
   onSubmit: () => void;

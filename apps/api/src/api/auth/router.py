@@ -6,8 +6,9 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
-from api.auth.age import is_guardian_consent_required
+from api.auth.age import is_under_minimum_age
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
     GoogleProfile,
@@ -22,7 +23,6 @@ from api.auth.google_oauth import (
 from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
     ChangePasswordRequest,
-    GuardianConsentRequest,
     LoginRequest,
     MeResponse,
     OnboardingGoogleRequest,
@@ -47,11 +47,14 @@ from api.auth.verification import (
 )
 from api.core import rate_limit
 from api.core.config import settings
+from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
 from api.core.email import EmailSender, get_email_sender
-from api.core.security import hash_password, verify_password
-from api.db.models.auth import GuardianConsent, User
+from api.core.s3 import build_thumbnail_key, delete_object
+from api.core.security import hash_password, hash_withdrawn_email, verify_password
+from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
+from api.db.models.media import Asset
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
@@ -60,6 +63,13 @@ from api.session.store import create_session, delete_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
+
+
+async def _reregistration_blocked(db: AsyncSession, email: str, now: datetime) -> bool:
+    withdrawn = await db.scalar(
+        select(WithdrawnEmail).where(WithdrawnEmail.email_hmac == hash_withdrawn_email(email))
+    )
+    return withdrawn is not None and now - withdrawn.withdrawn_at < WITHDRAWN_EMAIL_BLOCK_PERIOD
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -89,15 +99,19 @@ async def signup(
     existing = await db.scalar(select(User).where(User.email == payload.email))
     now = datetime.now(UTC)
 
+    # legal-revision-goal-prompt.md LR-7: 탈퇴 시 users.email이 자리표시자로 바뀌므로(LR-6)
+    # 위 existing 조회는 탈퇴 행을 더 이상 찾지 못한다 — 재가입 차단은 이 HMAC 조회로 옮긴다.
+    if await _reregistration_blocked(db, payload.email, now):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
     if existing is not None:
-        # email-goal-prompt.md E-5: 인증 완료·구글 연동·탈퇴·정지 중 하나라도 걸리면
-        # "방치된 미인증 가입"이 아니라 실사용/보호 대상 계정이므로 409로 막는다
-        # (google_callback이 email_verified_at을 보지 않고 세션을 발급해 미인증인 채
-        # 실사용 중인 계정이 있을 수 있다 — tests/test_auth_google_api.py:196-224).
+        # email-goal-prompt.md E-5: 인증 완료 또는 구글 연동이 있으면 "방치된 미인증 가입"이
+        # 아니라 실사용 중인 계정이므로 409로 막는다(google_callback이 email_verified_at을
+        # 보지 않고 세션을 발급해 미인증인 채 실사용 중인 계정이 있을 수 있다 —
+        # tests/test_auth_google_api.py:196-224). 정지도 마찬가지로 보호 대상이다.
         if (
             existing.email_verified_at is not None
             or existing.google_sub is not None
-            or existing.deleted_at is not None
             or existing.suspended_at is not None
         ):
             raise HTTPException(
@@ -111,10 +125,15 @@ async def signup(
         existing.birth_date = payload.birth_date
         existing.terms_agreed_at = now
         existing.privacy_agreed_at = now
+        existing.transfer_agreed_at = now
         existing.terms_version = await _latest_published_legal_version(db, "terms")
-        existing.privacy_version = await _latest_published_legal_version(db, "privacy")
+        privacy_version = await _latest_published_legal_version(db, "privacy")
+        existing.privacy_version = privacy_version
+        # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+        existing.transfer_version = privacy_version
         await db.commit()
     else:
+        privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=payload.email,
             password_hash=hash_password(payload.password),
@@ -122,8 +141,11 @@ async def signup(
             birth_date=payload.birth_date,
             terms_agreed_at=now,
             privacy_agreed_at=now,
+            transfer_agreed_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
-            privacy_version=await _latest_published_legal_version(db, "privacy"),
+            privacy_version=privacy_version,
+            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            transfer_version=privacy_version,
         )
         try:
             async with db.begin_nested():
@@ -170,9 +192,7 @@ async def verify_email(
     await delete_verification_code(payload.email)
     await clear_verification_attempts(payload.email)
 
-    return VerifyEmailResponse(
-        is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
-    )
+    return VerifyEmailResponse()
 
 
 @router.post("/resend-verification-code", status_code=status.HTTP_204_NO_CONTENT)
@@ -220,57 +240,10 @@ async def resend_verification_code(
     return None
 
 
-@router.post("/guardian-consent", status_code=status.HTTP_204_NO_CONTENT)
-async def guardian_consent(
-    payload: GuardianConsentRequest,
-    request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db_session),
-) -> None:
-    user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    if user.email_verified_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email verification required"
-        )
-
-    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guardian consent is not required for this account",
-        )
-
-    consent = GuardianConsent(
-        user_id=user.id,
-        guardian_name=payload.guardian_name,
-        guardian_contact=payload.guardian_contact,
-        consent_agreed_at=datetime.now(UTC),
-        ip_address=request.client.host if request.client else None,
-    )
-    db.add(consent)
-    await db.commit()
-
-    if user.suspended_at is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
-
-    session_id = await create_session({"user_id": str(user.id)})
-    set_session_cookie(response, session_id)
-    return None
-
-
 @router.get("/google")
 async def google_login(redirect: str = "/") -> RedirectResponse:
     state = await store_oauth_state(redirect)
     return RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
-
-
-async def _guardian_consent_missing(db: AsyncSession, user: User) -> bool:
-    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        return False
-    consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-    return consent is None
 
 
 async def _get_oauth_redirect_target(state: str) -> str:
@@ -306,7 +279,7 @@ async def google_callback(
             user.google_sub = profile["sub"]
             await db.commit()
 
-    if user is None or await _guardian_consent_missing(db, user):
+    if user is None:
         token = await store_pending_google_signup(profile)
         return RedirectResponse(
             f"{settings.frontend_base_url}/onboarding/google?token={token}",
@@ -321,6 +294,18 @@ async def google_callback(
         error_code = "account_deleted" if user.deleted_at is not None else "account_suspended"
         return RedirectResponse(
             f"{settings.frontend_base_url}/login?error={error_code}",
+            status_code=status.HTTP_302_FOUND,
+        )
+
+    # legal-revision-goal-prompt.md LR-30(2026-09-15 정정판): login()과 같은 게이트를 여기에도
+    # 둔다 — google_sub 직접 매치와 이메일 매칭으로 google_sub를 붙이는 두 분기가 모두 여기로
+    # 수렴하므로 한 곳만 막으면 둘 다 막힌다. 위 조건문이 deleted_at is not None인 계정을
+    # 이미 배제했다 — birth_date는 탈퇴(S5 파기) 시에만 None이 된다. 집계에서 0건 확인되면
+    # 이 블록을 걷어낼 것(login()의 동일 게이트와 짝).
+    assert user.birth_date is not None
+    if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
+        return RedirectResponse(
+            f"{settings.frontend_base_url}/login?error=account_age_restricted",
             status_code=status.HTTP_302_FOUND,
         )
 
@@ -345,6 +330,13 @@ async def onboarding_google(
     now = datetime.now(UTC)
     user = await db.scalar(select(User).where(User.google_sub == pending["sub"]))
     if user is None:
+        # legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+        # 재가입 시도는 위 google_sub 매치가 아니라 항상 이 신규 유저 생성 분기를 타게 된다.
+        if await _reregistration_blocked(db, pending["email"], now):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
+        privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=pending["email"],
             google_sub=pending["sub"],
@@ -352,9 +344,12 @@ async def onboarding_google(
             birth_date=payload.birth_date,
             terms_agreed_at=now,
             privacy_agreed_at=now,
+            transfer_agreed_at=now,
             email_verified_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
-            privacy_version=await _latest_published_legal_version(db, "privacy"),
+            privacy_version=privacy_version,
+            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            transfer_version=privacy_version,
         )
         db.add(user)
     else:
@@ -363,15 +358,12 @@ async def onboarding_google(
     await db.commit()
     await delete_pending_google_signup(payload.token)
 
-    if is_guardian_consent_required(user.birth_date, now.date()):
-        return OnboardingGoogleResponse(is_minor_guardian_required=True, email=user.email)
-
     if user.suspended_at is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
-    return OnboardingGoogleResponse(is_minor_guardian_required=False, email=user.email)
+    return OnboardingGoogleResponse(email=user.email)
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
@@ -396,12 +388,17 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required"
         )
 
-    if is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-        if consent is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Guardian consent required"
-            )
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — birth_date는 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.birth_date is not None
+    # legal-revision-goal-prompt.md LR-30: LR-9가 신규 가입을 막으므로 이 분기는 시행일
+    # 이전에 가입한 기존 미성년 계정만 겨냥한다. 법정대리인 동의 여부와 무관하게 연령만
+    # 본다 — 프로덕션 집계를 받지 못해 안전한 쪽(로그인 차단)을 택했다. 집계가 0건으로
+    # 확인되면 이 블록을 걷어낼 것.
+    if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Minimum age not met"
+        )
 
     if user.suspended_at is not None:
         # deleted_at과 달리 숨기지 않는다 — 탈퇴는 "이메일 또는 비밀번호가 올바르지 않음"에
@@ -499,6 +496,9 @@ async def get_me(
         db, "privacy", requires_reconsent=True
     )
 
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 시에만 None이 된다.
+    assert user.nickname is not None
     return MeResponse(
         id=user.id,
         email=user.email,
@@ -543,7 +543,44 @@ async def withdraw(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    user.deleted_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    original_email = user.email
+
+    # legal-revision-goal-prompt.md LR-19: 프로필 이미지 R2 오브젝트를 지운다 —
+    # core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다.
+    if user.profile_image_asset_id is not None:
+        asset = await db.get(Asset, user.profile_image_asset_id)
+        if asset is not None:
+            await run_in_threadpool(delete_object, asset.storage_key)
+            # assets/router.py:124의 불변식 — READY 이미지 asset은 항상
+            # `{key}_thumb.webp` 변형을 갖는다. 프로필 이미지도 그 공용 업로드
+            # 경로(assets/router.py의 complete_asset_upload)를 타므로 원본만
+            # 지우면 썸네일이 R2에 고아로 남는다.
+            await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
+
+    user.deleted_at = now
+    # legal-revision-goal-prompt.md LR-6: users.email이 unique=True, nullable=False라
+    # NULL을 못 쓴다 — 복원 불가능한 자리표시자로 유일성을 유지한다.
+    user.email = f"withdrawn:{user_id}"
+    user.password_hash = None
+    user.nickname = None
+    user.bio = None
+    user.birth_date = None
+    # legal-revision-goal-prompt.md LR-18: 파기하지 않으면 구글 가입자는 google_sub 직접
+    # 매치(google_callback)에 영구히 걸려, 이메일 가입자와 달리 1년이 지나도 재가입이 안 열린다.
+    user.google_sub = None
+    user.profile_image_asset_id = None
+
+    # legal-revision-goal-prompt.md LR-7·LR-8: 평문 이메일 대신 키 있는 HMAC 한 행을 남긴다.
+    # 같은 이메일이 만료 후 재사용됐다가 다시 탈퇴할 수 있어 PK 충돌이면 갱신한다.
+    email_hmac = hash_withdrawn_email(original_email)
+    withdrawn_row = await db.scalar(
+        select(WithdrawnEmail).where(WithdrawnEmail.email_hmac == email_hmac)
+    )
+    if withdrawn_row is not None:
+        withdrawn_row.withdrawn_at = now
+    else:
+        db.add(WithdrawnEmail(email_hmac=email_hmac, withdrawn_at=now))
 
     await db.execute(
         update(Content)
