@@ -56,7 +56,12 @@ services:
       # 실측). sentry-sdk가 전송 실패를 조용히 삼켜(MT-4~MT-6) 이 400은 백엔드 에러 이벤트를 전부
       # 유실시킨다 — 위 세 호스트는 이 값을 명시하면 자동유도가 꺼지므로(docker.py.template
       # 확인) 같이 나열해야 한다.
-      ALLOWED_HOSTS: "ddona.site,bugsink,localhost,127.0.0.1"
+      # ⚠️ `api.ddona.site`가 필요하다 — Worker가 `ddona.site/_ingest/*`를 받아
+      # `api.ddona.site`로 넘기고 Caddy가 **Host 헤더를 그대로 전달**하므로, Bugsink에
+      # 도착하는 Host는 `ddona.site`가 아니라 `api.ddona.site`다. 2026-09-15 프로덕션
+      # 기동 직후 이게 빠져 관리자 UI가 전부 400(DisallowedHost)이었다 — 로컬 검증은
+      # `SITE_ADDRESS=http://localhost`로 돌아 이 차이가 드러나지 않았다.
+      ALLOWED_HOSTS: "ddona.site,api.ddona.site,bugsink,localhost,127.0.0.1"
       # 가입 차단(MT-2 ④). 기본값 `CB_MEMBERS`도 공개 회원가입(`/signup`)은 이미 404로 막지만
       # (users/views.py:signup, `USER_REGISTRATION != CB_ANYBODY`면 404 — 공식 소스 확인),
       # 로그인한 팀 관리자가 새 사용자를 초대하는 경로는 CB_MEMBERS에서 계속 열려 있다.
