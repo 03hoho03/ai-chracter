@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import get_verification_code
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.core.security import hash_withdrawn_email, verify_password
 from api.db.models import (
     Asset,
@@ -260,7 +261,10 @@ async def test_withdraw_deletes_profile_image_from_object_storage(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
     """legal-revision-goal-prompt.md LR-19: 프로필 이미지 R2 오브젝트도 탈퇴 시 지운다 —
-    core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다."""
+    core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다.
+    assets/router.py:124의 불변식(READY 이미지 asset은 항상 `_thumb.webp` 변형을 갖는다)에
+    따라 원본과 함께 썸네일도 미리 업로드해두고, 탈퇴 후 둘 다 사라졌는지 확인한다 —
+    썸네일을 안 지우면 이 검증 없이도 (지울 게 없어) 통과해버리는 항진명제가 된다."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
     assert user is not None
@@ -276,15 +280,20 @@ async def test_withdraw_deletes_profile_image_from_object_storage(
     user.profile_image_asset_id = asset.id
     await db_session.commit()
     storage_key = asset.storage_key
+    thumbnail_key = build_thumbnail_key(storage_key)
     user_id = user.id
 
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-profile-image")
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
 
     resp = await db_client.delete("/me")
     assert resp.status_code == 204
 
-    listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=storage_key)
+    # storage_key 확장자 이전까지가 원본·썸네일 공통 접두사다(build_thumbnail_key가
+    # 확장자를 `_thumb.webp`로 바꿔 붙이므로).
+    common_prefix = storage_key.rsplit(".", 1)[0]
+    listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=common_prefix)
     assert listed["KeyCount"] == 0
 
     reloaded = await db_session.get(User, user_id)

@@ -48,7 +48,7 @@ from api.auth.verification import (
 from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSender, get_email_sender
-from api.core.s3 import delete_object
+from api.core.s3 import build_thumbnail_key, delete_object
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
@@ -555,6 +555,11 @@ async def withdraw(
         asset = await db.get(Asset, user.profile_image_asset_id)
         if asset is not None:
             await run_in_threadpool(delete_object, asset.storage_key)
+            # assets/router.py:124의 불변식 — READY 이미지 asset은 항상
+            # `{key}_thumb.webp` 변형을 갖는다. 프로필 이미지도 그 공용 업로드
+            # 경로(assets/router.py의 complete_asset_upload)를 타므로 원본만
+            # 지우면 썸네일이 R2에 고아로 남는다.
+            await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
 
     user.deleted_at = now
     # legal-revision-goal-prompt.md LR-6: users.email이 unique=True, nullable=False라
