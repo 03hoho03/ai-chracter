@@ -1,7 +1,7 @@
 """users transfer consent, nullable nickname birth_date, withdrawn emails
 
 Revision ID: e00c32bf159a
-Revises: bd258b26c34a
+Revises: 10f9f8e5e5c0
 Create Date: 2026-09-15 00:54:08.738796
 
 legal-revision-goal-prompt.md §3 LR-2·LR-6·LR-7, §3-2 LR-16·LR-18·LR-19·LR-20. S1 단계 —
@@ -27,7 +27,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'e00c32bf159a'
-down_revision: str | Sequence[str] | None = 'bd258b26c34a'
+down_revision: str | Sequence[str] | None = '10f9f8e5e5c0'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
