@@ -352,6 +352,116 @@ sudo tail -f /var/log/ddona-backup.log
 버전별 하위 디렉터리에 데이터를 두므로 관례대로 `/data`에 걸면 기동을 거부한다 — `caddy_data`가
 없으면 재시작마다 인증서를 새로 받다가 Let's Encrypt 레이트리밋에 걸린다.
 
+### 3-5. Bugsink(에러 트래커) — 별도 compose, 별도 배포
+
+자가호스팅 Bugsink(Sentry 호환, `monitoring-techspec.md` `MT-1`~`MT-3`)는 `docker-compose.prod.yml`과
+**다른 compose 프로젝트**(`docker-compose.monitoring.yml`)이고 **앱 배포와 별도로 손으로** 기동한다.
+
+**왜 별도 compose·별도 배포인가.** §3-1의 자동배포는 `up -d --wait api caddy`로 **서비스명을 명시**한다
+— 여기에 Bugsink를 얹으면 앱을 배포할 때마다 에러 추적기도 같이 재시작돼, "배포가 뭔가 깨뜨리는 바로
+그 창"에서 에러 추적이 눈을 감는다(`MT-2` ①). 그래서 Bugsink는 이 워크플로가 아예 건드리지 않는
+별도 파일이다 — `.github/workflows/deploy-api.yml`의 트리거 경로에 `docker-compose.monitoring.yml`이
+없으므로 **이 서비스는 앱 배포로 뜨지 않는다.** 이미지를 갈아끼우거나 설정을 바꿀 때도 아래 명령을
+손으로 다시 돈다.
+
+```sh
+cd /opt/ddona/app
+sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env up -d
+sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env ps   # healthy 확인
+sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 실측으로 다시 조정할 때
+```
+
+**`/opt/ddona/.env`에 추가해야 하는 값**(§2-1의 29개 키 표와 별개 — Bugsink 전용 값의 유일한 소스는 이 절):
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50` | Django SECRET_KEY. `django-insecure` 접두어 없이 |
+| `BUGSINK_CREATE_SUPERUSER` | `관리자이메일:비밀번호` | 최초 1회만 동작한다 — 사용자가 이미 1명이라도 있으면 무시된다(공식 소스 `bsmain/management/commands/prestart.py` 확인). 부트스트랩 후 값을 지우지 않고 둬도 안전하다 |
+| `BUGSINK_BASE_URL` | `https://ddona.site/_ingest` | `api.ddona.site`가 아니다 — DSN·이메일 링크가 이 값으로 조립되고, 브라우저 ingest는 `ddona.site`(Worker 경유, `MT-3`)를 쓴다. `/_ingest` 프리픽스는 DSN·관리자 UI가 그 경로 아래로 들어가게 만든다(Bugsink는 이 프리픽스를 `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓰고, 실제 라우팅은 `Caddyfile`이 프리픽스를 벗겨서 맞춘다 — 아래 "DSN 발급 절차"·`Caddyfile` 참조) |
+| `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). 🔴 **Caddy 쪽 배선이 아직 없다 — 아래 "배포 순서 위험" 참조** |
+| `SENTRY_DSN` | Bugsink에서 프로젝트 생성 후 발급되는 DSN | API(`apps/api`, `MT-4`)가 자기 에러를 Bugsink로 보내는 값. 비어 있으면 `_init_sentry()`가 조용히 비활성으로 남는다(테스트로 고정된 동작이지 에러가 아니다) |
+| `SENTRY_ENVIRONMENT` | `production` | ⚠️ **필수.** 빠뜨리면 기본값 `"development"`가 그대로 남아 프로덕션 이벤트가 Bugsink에서 개발 환경으로 표시된다(`config.py` 주석 — 이 저장소에 스테이징이 없어 프로덕션·dev를 가르는 유일한 값) |
+
+**`SENTRY_DSN` 발급 절차**(최초 1회):
+1. 위 명령으로 기동 후 `BUGSINK_BASE_URL`(`https://ddona.site/_ingest/` — **트레일링 슬래시
+   필수**. `Caddyfile`의 매처가 `/_ingest/*`라 슬래시 없는 `/_ingest`는 이 라우트에 안 걸리고
+   `api:8000`으로 흘러가 404가 난다 — 로컬 caddy 컨테이너로 확인)로 접속해 `BUGSINK_CREATE_SUPERUSER`의
+   `email:password`로 로그인한다. 이 경로는 시크릿을 요구하지 않는다(위 표 참조).
+2. 프로젝트를 하나 만든다(예: `ddona-api`). Bugsink가 DSN을 보여준다 — 형태는
+   `https://<key>@ddona.site/_ingest/<project_id>`다.
+3. **API(백엔드) 자신의 `SENTRY_DSN`에는 위 값을 그대로 쓰지 않는다.** `api` 컨테이너는 Bugsink와
+   같은 `ddona_default` 네트워크에 있어 Caddy·Worker를 거칠 이유가 없다 — host만 내부 서비스명으로
+   바꿔 `http://<key>@bugsink:8000/<project_id>`로 쓴다(key·project_id는 2단계와 동일, host만
+   다름, **경로에 `/_ingest`를 넣지 않는다** — 그 프리픽스는 Caddy가 벗겨주는 것을 전제로 한
+   공개 DSN에만 있고, bugsink 컨테이너 자신은 `/_ingest`를 모른다). 이 내부 DSN이 실제로 통하려면
+   `docker-compose.monitoring.yml`의 `ALLOWED_HOSTS`에 `bugsink`가 들어 있어야 한다 — 빠지면
+   `bugsink:8000`으로 보낸 요청의 `Host: bugsink` 헤더가 Django `ALLOWED_HOSTS` 검증에서 막혀
+   HTTP 400이 나고, sentry-sdk는 이 실패를 조용히 삼킨다(같은 파일 주석 참조).
+   2단계의 공개 DSN(`ddona.site` 경유)은 **web SDK(`MT-7`, 아직 미구현)용**이고 Cloudflare Pages
+   빌드 환경변수(`VITE_SENTRY_DSN`, 아래)에 들어간다.
+
+   **실제 envelope 경로가 무엇인지 확인한 근거**(사용하는 sentry-sdk가 DSN에서 URL을 어떻게
+   계산하는지를 봐야 한다 — Bugsink가 어떻게 생성하겠다고 "의도"했는지만으로는 부족하다):
+   `apps/api/.venv/lib/python3.11/site-packages/sentry_sdk/utils.py`(설치 버전 2.69.1)의
+   `Dsn`/`Auth.get_api_url`을 직접 읽었다. DSN `https://<key>@ddona.site/_ingest/<id>`에서
+   `Dsn.path`는 경로에서 project_id를 뗀 나머지 + `/`(=`/_ingest/`)이고, `Auth.get_api_url`이
+   `f"{scheme}://{host}{path}api/{id}/envelope/"`를 조립한다 — 즉 브라우저·API가 실제로 POST하는
+   경로는 **`/_ingest/api/<project_id>/envelope/`**다. 로컬 caddy 컨테이너에 이 정확한 경로로
+   실제 요청을 보내 5종 시나리오(시크릿 정상/누락/오답, 관리자 UI, `/_ingest` 밖 경로)로 확인했다
+   (`Caddyfile` 주석 참조).
+
+**Cloudflare Pages 빌드 환경변수**(web 프로젝트, §2-2와 같은 자리 — `MT-7` 구현 시 필요, 지금은 web SDK가
+없어 당장 값을 채울 필요는 없지만 자리를 여기 남긴다):
+
+| 변수 | 값 |
+|---|---|
+| `VITE_SENTRY_DSN` | 위 2단계의 공개 DSN(`https://<key>@ddona.site/_ingest/<project_id>`) |
+
+**가입 차단 확인.** `docker-compose.monitoring.yml`이 `USER_REGISTRATION: CB_NOBODY`를 명시한다(기본값
+`CB_MEMBERS`도 익명 공개가입은 이미 404지만 — `users/views.py:signup`이 `USER_REGISTRATION != CB_ANYBODY`면
+404를 낸다(공식 소스 확인) — 로그인한 팀 관리자가 새 사용자를 초대하는 경로는 `CB_MEMBERS`에서
+계속 열려 있다. `CB_NOBODY`는 그 경로까지 잠가 단일 운영자 인스턴스로 명시적으로 고정한다). 확인:
+로그아웃 상태로 `https://ddona.site/_ingest/accounts/signup/`(관리자 UI 프리픽스, 위 표 참조)에
+접속해 404가 뜨는지 확인한다.
+
+🔴 **배포 순서 위험 — Caddy 컨테이너에 `INGEST_SHARED_SECRET`이 아직 배선돼 있지 않다.**
+`Caddyfile`의 `/_ingest/*` 라우트는 `{$INGEST_SHARED_SECRET}`(Caddy 프로세스 자신의 환경변수)를
+읽지만, `docker-compose.prod.yml`의 `caddy` 서비스는 현재 `SITE_ADDRESS`만 주입한다(이번 런은 그
+파일을 건드리지 않기로 정했다 — monitoring-goal-prompt 범위 밖).
+
+**완전히 빠진 환경변수도, 빈 문자열로 설정한 환경변수도 Caddyfile 자체를 깨뜨린다 — 둘이 다르지
+않다.** 로컬에서 `INGEST_SHARED_SECRET`을 (a) 아예 안 주고, (b) `INGEST_SHARED_SECRET=""`로 주고
+각각 이 `Caddyfile`을 `caddy validate`로 어댑트해 실측했다 — **두 경우 모두 토씨 하나 안 틀리고
+같은 에러가 난다**:
+
+```
+Error: adapting config using caddyfile: parsing caddyfile tokens for 'handle_path': parsing
+caddyfile tokens for 'route': malformed header matcher: expected both field and value, at
+/etc/caddy/Caddyfile:45, at /etc/caddy/Caddyfile:50
+```
+
+`header X-Ingest-Secret {$INGEST_SHARED_SECRET}`에서 변수가 완전 미설정이든 빈 문자열이든 Caddy는
+같은 빈 값으로 치환하고, 치환된 토큰이 비어 있으면 `header` 매처가 인자 1개만 받아 파싱 에러다 —
+`{$SITE_ADDRESS}` 블록 전체(=`api:8000`으로 가는 기존 프록시 포함)가 **적재 자체에 실패**한다.
+실제 영향은 이 라우트를 언제 적용하느냐에 따라 갈린다:
+
+- **`Caddyfile`만 바뀐 상태로 배포**(현재 `deploy-api.yml`의 정상 경로 — 바인드 마운트만 바뀌면
+  compose가 caddy 컨테이너를 재생성하지 않고, 대신 `caddy reload`를 명시적으로 부른다, §3-1) —
+  reload는 새 설정이 안 먹으면 **기존에 돌고 있던 옛 설정을 그대로 유지**한다(Caddy의 트랜잭션 성격
+  reload). `deploy-api.yml`의 재시도 루프가 5회 실패 후 `exit 1`로 배포를 **실패 처리**한다(이미
+  있는 안전장치, §3-1 주석 "Caddyfile 문법 오류 같은 진짜 실패를 배포 성공으로 만들면 안 되기
+  때문"). 즉 **사이트는 안 죽지만 CI는 빨갛게 실패하고 `/_ingest/*`는 적용되지 않는다.**
+- **caddy 컨테이너가 처음부터 새로 뜨는 경우**(VM 재구축, `docker-compose.prod.yml` 자체 변경으로
+  강제 재생성 등) — `caddy run`이 시작 시점에 똑같은 파싱 에러로 **컨테이너가 즉시 종료**한다(로컬
+  실측: `Exited (1)`). 이 경우는 **`api.ddona.site` 전체가 내려간다.**
+
+**따라서 이 Caddyfile 변경을 실제로 반영하려면, `docker-compose.prod.yml`의 `caddy.environment`에
+`INGEST_SHARED_SECRET: ${INGEST_SHARED_SECRET}` 한 줄을 추가하는 별도 런이 먼저(또는 같은 창에)
+있어야 한다** — 값은 이미 위 표대로 `/opt/ddona/.env`에 있으므로 새로 만들 필요는 없다. 그 한 줄이
+들어간 뒤에는 **환경변수가 컨테이너 생성 시점에 고정되므로** `caddy reload`가 아니라
+`$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다(`Caddyfile` 내용만 바뀐 경우 reload로
+충분한 것과 다르다).
+
 ---
 
 ## 4. 배포 후 스모크 검증
