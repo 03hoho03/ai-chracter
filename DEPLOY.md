@@ -248,6 +248,33 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 ⚠️ **배포 성공 판정은 `/health` 200만으로 부족하다.** 옛 컨테이너도 200을 준다. 그래서 워크플로가
 `docker inspect`로 실행 중 이미지가 새 태그인지 대조한다 — 손으로 배포할 때도 같이 확인할 것.
 
+⚠️ **`Caddyfile`만 바뀐 배포는 `caddy reload`가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다**
+(2026-09-15 실측). `docker-compose.prod.yml`이 그대로면 `up -d --wait api caddy`는 caddy
+컨테이너를 재생성하지 않고(`Caddyfile` 내용만으로는 compose의 config-hash가 안 바뀐다), 대신
+`deploy-api.yml`이 `caddy reload --config /etc/caddy/Caddyfile`을 명시적으로 부른다. 그런데
+`Caddyfile`은 **파일 단위 bind mount**(`./Caddyfile:/etc/caddy/Caddyfile:ro`)이고, 매 배포가
+`git reset --hard origin/main`으로 호스트 파일을 갱신할 때 **덮어쓰지 않고 새로 만들어 inode가
+바뀌면**, 컨테이너 쪽 마운트는 옛 inode를 계속 가리킨다 — 컨테이너 안에서 읽는
+`/etc/caddy/Caddyfile`은 여전히 옛 내용이다. `caddy reload`는 이 옛 내용을 "변경 없음"으로
+조용히 재적재할 뿐이라 **에러 없이 끝난다.**
+
+- **증상**: 배포 워크플로 성공(`DEPLOY_EXIT=0`), `caddy reload`도 에러 없이 끝났는데 `Caddyfile`
+  변경이 실제로는 반영 안 됨.
+- **확인 방법**: 호스트 파일(`/opt/ddona/app/Caddyfile`)은 이미 새 내용이므로 그걸 봐서는 속는다 —
+  **컨테이너 안** 파일을 봐야 한다.
+  ```sh
+  sudo docker exec ddona-caddy-1 grep '<바뀐 줄>' /etc/caddy/Caddyfile
+  ```
+- **해결**: 컨테이너를 강제로 재생성한다.
+  ```sh
+  sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env \
+    up -d --force-recreate --wait caddy
+  ```
+- **`deploy-api.yml`의 reload 재시도 루프(5회, admin API 준비 대기)와는 다른 문제다** — 그 루프는
+  caddy가 **방금 재생성됐을 때** admin API(`127.0.0.1:2019`)가 아직 안 떠서 `connection refused`가
+  나는 타이밍 경합을 다룬다. 이건 정반대로 **컨테이너가 재생성되지 않았을 때** bind mount가 새
+  파일을 못 보는 문제라, 재시도해도 고쳐지지 않는다 — 매번 같은 옛 inode를 다시 읽을 뿐이다.
+
 ### 3-2. DB 마이그레이션
 
 **기본은 파이프라인이 처리한다.** `deploy-api.yml`이 `compose pull api` 직후, `up -d` 직전에 새
