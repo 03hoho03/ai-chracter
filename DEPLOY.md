@@ -351,6 +351,24 @@ cd /opt/ddona/app && $C up -d --wait api
 R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
 (`--endpoint-url`은 `S3_ENDPOINT_URL`).
 
+**최초 1회 — `/opt/ddona/backup.sh` 심볼릭 링크 전환**(`ops/bugsink-vacuum.sh`·`ops/logrotate.d`와
+같은 이유: `/opt/ddona/app`은 배포마다 `git reset --hard`되므로 링크만 걸어두면 이후 갱신이 자동이다).
+
+2026-09-16까지 `/opt/ddona/backup.sh`는 **저장소에 없는 VM 로컬 파일**(9/2자)이었다. 그래서 이 런에서
+`.env`에 추가한 `HEALTHCHECKS_BACKUP_PING_URL`·`DISCORD_WEBHOOK_URL`을 `backup_db.py`에 넘기지 못했고,
+**백업은 매일 성공하는데 `MT-11` dead-man's switch와 `MT-12` R2 용량 경고만 조용히 죽어 있었다** —
+알림 키가 없으면 `ping()`/`notify()`가 예외 없이 건너뛰도록 설계돼 있어(백업을 죽이지 않으려고)
+증상이 전혀 없었고, 실측 전까지 아무도 몰랐다. `ops/backup.sh`가 저장소에 생겼으니 링크로 바꾼다.
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/backup.sh /opt/ddona/backup.sh
+ls -l /opt/ddona/backup.sh    # → /opt/ddona/app/ops/backup.sh 를 가리켜야 한다
+sudo /opt/ddona/backup.sh     # 수동 1회 — healthchecks.io 대시보드에 check-in 이 찍히는지 본다
+```
+
+⚠️ `/etc/cron.d/ddona-backup`은 아직 `ops/cron.d/`에 없는 VM 로컬 파일이다(같은 드리프트). 크론은
+`/opt/ddona/backup.sh`를 부르므로 위 링크만으로 동작하지만, 재구축 시에는 이 파일도 손으로 만들어야 한다.
+
 **최초 1회 — `/opt/ddona/scripts` 심볼릭 링크 설치**(monitoring-techspec.md MT-9). 지금
 `/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**이고, 배포(`deploy-api.yml`)는
 `/opt/ddona/app`만 `git reset --hard`하므로 이 디렉터리는 배포 때마다 갱신되지 않고 그대로
