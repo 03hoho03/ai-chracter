@@ -1,4 +1,5 @@
 import { Dialog, DialogContent, DialogTitle } from "@ai-character-chat/ui/components/dialog";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 
 import { useContentDetailModal } from "@/entities/content";
 
@@ -18,7 +19,11 @@ export function ContentDetailModalOutlet() {
       {/* design-system-progress.md P-5(D-11) — flex-col로 바꿔 `ContentDetailView`가 내놓는
           [스크롤 본문(flex-1 overflow-y-auto), 플레이 CTA(shrink-0)] 두 아이템을 그대로 받는다.
           overflow-y-auto는 여기서 본문 쪽으로 옮겨갔다(CTA는 스크롤에 딸려가면 안 된다). */}
-      <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-lg">
+      {/* image-crop-goal-prompt.md IC-11 — 스토리는 2열 레이아웃이 필요해 더 넓게(`sm:max-w-2xl`),
+          캐릭터는 지금 폭(`sm:max-w-lg`)을 그대로 유지한다. */}
+      <DialogContent
+        className={cn("flex max-h-[85vh] flex-col sm:max-w-lg", state?.type === "story" && "sm:max-w-2xl")}
+      >
         <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>
         {state && <ContentDetailView id={state.id} type={state.type} variant="modal" />}
       </DialogContent>
