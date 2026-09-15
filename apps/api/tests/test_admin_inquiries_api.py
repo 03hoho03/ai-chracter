@@ -37,6 +37,10 @@ async def test_admin_inquiries_rejects_non_admin_user_session(
     await db_session.commit()
 
     await _login_as(db_client, user.id)
+    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 유저로는 실제로 인증된다"를 고정해야 위 테스트와 구분되는 명제가 남는다(공허한 통과 방지).
+    assert (await db_client.get("/me")).status_code == 200
+
     resp = await db_client.get("/admin/inquiries?page=1")
     assert resp.status_code == 401
 
