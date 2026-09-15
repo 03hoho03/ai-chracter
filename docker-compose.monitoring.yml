@@ -56,11 +56,14 @@ services:
       # 실측). sentry-sdk가 전송 실패를 조용히 삼켜(MT-4~MT-6) 이 400은 백엔드 에러 이벤트를 전부
       # 유실시킨다 — 위 세 호스트는 이 값을 명시하면 자동유도가 꺼지므로(docker.py.template
       # 확인) 같이 나열해야 한다.
-      # ⚠️ `api.ddona.site`가 필요하다 — Worker가 `ddona.site/_ingest/*`를 받아
-      # `api.ddona.site`로 넘기고 Caddy가 **Host 헤더를 그대로 전달**하므로, Bugsink에
-      # 도착하는 Host는 `ddona.site`가 아니라 `api.ddona.site`다. 2026-09-15 프로덕션
-      # 기동 직후 이게 빠져 관리자 UI가 전부 400(DisallowedHost)이었다 — 로컬 검증은
-      # `SITE_ADDRESS=http://localhost`로 돌아 이 차이가 드러나지 않았다.
+      # `api.ddona.site`는 **안전망으로만 남긴다.** 2026-09-15 프로덕션 기동 직후 Caddy가 Host를
+      # 그대로 전달해 Bugsink가 `api.ddona.site`를 보고 400(DisallowedHost)을 냈고, 이 항목을
+      # 더해 그건 고쳤다. 그런데 **Host를 허용하는 것만으로는 부족했다** — 브라우저 Origin은
+      # `https://ddona.site`인데 Host가 `api.ddona.site`라 Django가 CSRF를 거부했다
+      # (`Origin header does not match (deduced) Host`). Bugsink에는 `CSRF_TRUSTED_ORIGINS`를
+      # 노출하는 설정이 없어(`docker.py.template` 확인) **Caddy가 `header_up Host ddona.site`로
+      # 맞추는 것이 정답이었다**(Caddyfile 참조). 그래서 정상 경로의 Host는 이제 `ddona.site`이고
+      # 이 항목은 그 재작성이 빠졌을 때 400 대신 CSRF 에러로 드러나게 하는 안전망이다.
       ALLOWED_HOSTS: "ddona.site,api.ddona.site,bugsink,localhost,127.0.0.1"
       # 가입 차단(MT-2 ④). 기본값 `CB_MEMBERS`도 공개 회원가입(`/signup`)은 이미 404로 막지만
       # (users/views.py:signup, `USER_REGISTRATION != CB_ANYBODY`면 404 — 공식 소스 확인),
