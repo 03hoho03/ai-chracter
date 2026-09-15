@@ -43,6 +43,8 @@ def test_deletes_only_rows_past_the_shared_block_period(monkeypatch: pytest.Monk
         script: str, *, url: str, stdin: object = None, stdout: object = None
     ) -> subprocess.CompletedProcess[bytes]:
         captured["script"] = script
+        # 실제 `psql -Atq -c "DELETE ... RETURNING email_hmac;"` 출력(2026-09-16 도커 실측):
+        # RETURNING 행만 찍히고 커맨드 태그(`DELETE 2`)는 `-q`가 억제한다.
         return subprocess.CompletedProcess(
             args=[], returncode=0, stdout=b"hmac-a\nhmac-b\n", stderr=b""
         )
@@ -55,15 +57,35 @@ def test_deletes_only_rows_past_the_shared_block_period(monkeypatch: pytest.Monk
     assert expected_cutoff.isoformat() in captured["script"]
     assert "withdrawn_at <" in captured["script"]
     assert "DELETE FROM withdrawn_emails" in captured["script"]
+    # `-q`가 빠지면(`-At`로 되돌아가면) `psql`이 커맨드 태그(`DELETE 2`)를 한 줄 더 찍어 위
+    # `removed == 2` 단언이 3으로 깨진다 — 그 사실에 기대는 대신, 여기서 직접 `-q` 사용을
+    # 못박는다(2026-09-16: `-At`로 되돌려 실제로 이 단언이 빨개지는 것을 확인했다).
+    assert " -Atq " in captured["script"]
 
 
 def test_counts_zero_when_nothing_expired(monkeypatch: pytest.MonkeyPatch) -> None:
     """만료 조건을 "전부 삭제"로 잘못 구현해도 위 테스트는 통과한다 — `RETURNING`이 빈 출력을
-    낼 때 0을 세는 이 테스트가 그 항진명제를 막는다."""
+    낼 때 0을 세는 이 테스트가 그 항진명제를 막는다.
+
+    **이 테스트가 실제 결함(2026-09-16 프로덕션)을 놓쳤던 이유**: 여기서 모킹한 `stdout=b""`는
+    `psql -At`(당시 코드)의 실제 0행 출력이 아니다 — 실측하면 `psql -At -c "DELETE ...
+    RETURNING ...;"`는 0행이어도 커맨드 태그 `DELETE 0`을 한 줄 찍어 `stdout`이 `b"DELETE
+    0\\n"`이었다(도커로 재현: `docker run ... postgres:18-alpine psql ... -At -c "DELETE FROM t
+    WHERE x='nope' RETURNING x"` → `DELETE 0`). 모킹이 `-q` 없는 진짜 psql 출력이 아니라
+    "이상적인 빈 출력"을 흉내 내는 바람에, 프로덕션에서 매일 `1개 삭제` 로그가 찍히는 동안에도
+    이 테스트는 계속 초록이었다. 모킹한 경계의 실제 출력을 확인하지 않으면 테스트는 초록이어도
+    신호가 없다."""
+
+    captured: dict[str, str] = {}
 
     def _fake_run_sh(
         script: str, *, url: str, stdin: object = None, stdout: object = None
     ) -> subprocess.CompletedProcess[bytes]:
+        captured["script"] = script
+        # 실제 `psql -Atq -c "... RETURNING ...;"` 출력(0행, 2026-09-16 도커 실측): `-q`가
+        # 커맨드 태그까지 억제해 완전히 빈 stdout이다. `-q`가 빠지면(`-At`) 이 mock은 여전히
+        # `b""`를 돌려주므로 아래 `removed == 0`만으로는 `-q` 누락을 못 잡는다 — 그래서
+        # 생성된 스크립트에 `-Atq`가 실제로 있는지 별도로 확인한다.
         return subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr(backup_db, "run_sh", _fake_run_sh)
@@ -73,6 +95,10 @@ def test_counts_zero_when_nothing_expired(monkeypatch: pytest.MonkeyPatch) -> No
     )
 
     assert removed == 0
+    # `-Atq`가 `-At`로 되돌아가면 이 mock은 여전히 `b""`를 돌려줘 `removed == 0`은 계속
+    # 통과한다 — 그래서 `-q` 사용 자체를 직접 못박는다(2026-09-16: `-At`로 되돌려 이 단언이
+    # 실제로 빨개지는 것을 확인했다).
+    assert " -Atq " in captured["script"]
 
 
 def test_raises_when_psql_fails(monkeypatch: pytest.MonkeyPatch) -> None:

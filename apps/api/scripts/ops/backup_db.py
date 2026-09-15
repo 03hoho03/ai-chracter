@@ -202,16 +202,23 @@ def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
 
     `dump()`와 같은 방식(`run_sh`로 컨테이너 안 `psql`을 부름)을 쓴다 — 위 파일 상단 경고 참고,
     이 파일은 SQLAlchemy를 import 할 수 없다. 삭제 건수는 `.rowcount`(SQLAlchemy 전용) 대신
-    `DELETE ... RETURNING`이 `psql -At`로 찍는 줄 수로 센다(`admin/users.py`가 `.returning()`을
+    `DELETE ... RETURNING`이 `psql -Atq`로 찍는 줄 수로 센다(`admin/users.py`가 `.returning()`을
     쓰는 이유와 같다 — 여기선 아예 `.rowcount` 자체가 없다). 각 줄이 지워진 행 하나의
     `email_hmac`이므로 빈 줄만 제외하면 그대로 개수다.
+
+    ⚠️ **`-t`(tuples-only)만으로는 부족하다.** `RETURNING`이 있는 DML 뒤에 `psql`은 결과 행과는
+    별개로 커맨드 태그(`DELETE n`)를 한 줄 더 찍고, `-t`는 이 태그를 억제하지 않는다(2026-09-16
+    프로덕션 실측: 0행을 지워도 `DELETE 0` 한 줄이 나와 `len()`이 1을 반환했다 — `main()`의
+    `if expired_count:` 가드가 항상 참이 되어 0건일 때도 "삭제" 로그가 찍혔다). `-q`(quiet)를
+    더하면 이 태그 자체가 안 찍힌다 — `DELETE \\d+` 패턴을 걸러내는 대안도 있었지만, 출력을
+    깨끗하게 만드는 `-q` 쪽이 파싱 방어보다 단순해서 택했다.
     """
     cutoff = now - WITHDRAWN_EMAIL_BLOCK_PERIOD
     sql = (
         f"DELETE FROM withdrawn_emails WHERE withdrawn_at < '{cutoff.isoformat()}' "
         "RETURNING email_hmac;"
     )
-    result = run_sh(f'psql "$PGURL" -At -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE)
+    result = run_sh(f'psql "$PGURL" -Atq -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE)
     if result.returncode != 0:
         raise RuntimeError(f"만료 삭제 실패:\n{result.stderr.decode().strip()}")
     return len([line for line in result.stdout.decode().splitlines() if line.strip()])
