@@ -20,7 +20,7 @@ export function ContentDetailModalOutlet() {
           overflow-y-auto는 여기서 본문 쪽으로 옮겨갔다(CTA는 스크롤에 딸려가면 안 된다). */}
       <DialogContent className="flex max-h-[85vh] flex-col sm:max-w-lg">
         <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>
-        {state && <ContentDetailView id={state.id} variant="modal" />}
+        {state && <ContentDetailView id={state.id} type={state.type} variant="modal" />}
       </DialogContent>
     </Dialog>
   );

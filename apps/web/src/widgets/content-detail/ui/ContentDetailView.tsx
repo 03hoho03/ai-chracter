@@ -13,10 +13,13 @@ import {
   contentKeys,
   favoriteKeys,
   toContentAccessStatus,
+  toThumbnailAspect,
+  toThumbnailAspectClass,
   useContentDetailQuery,
   useToggleFavoriteMutation,
   useToggleLikeMutation,
   type ContentType,
+  type ThumbnailAspect,
 } from "@/entities/content";
 
 import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayBar";
@@ -36,6 +39,15 @@ const TYPE_LABEL: Record<ContentType, string> = {
   story: "스토리",
 };
 
+// image-crop-goal-prompt.md IC-11 — 모바일(`<640`)은 폭이 예산이라 `w-full` 그대로 두고, 데스크톱은
+// 높이 예산 60dvh가 단일 소스, 폭 상한 두 값은 거기서 유도한다(1:1 → 60dvh, 2:3 → 60dvh × 2/3 = 40dvh).
+// `max-height`가 아니라 `max-width`로 거는 이유: `aspect-ratio` + `w-full` 상태에서 `max-height`는
+// 폭을 줄이지 않아 비율이 깨지고 `object-cover`가 다시 자른다.
+const HERO_CAP_CLASS: Record<ThumbnailAspect, string> = {
+  square: "sm:max-w-[60dvh]",
+  portrait: "sm:max-w-[40dvh]",
+};
+
 // techspec-overview.md §11 — 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
 // 화면 표시는 isLikeDesired/isFavoriteDesired로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
@@ -44,7 +56,18 @@ const TOGGLE_SYNC_DEBOUNCE_MS = 400;
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
  * `variant`는 design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 하단에 고정하는 방식이
  * 모달(카드 안 flex)과 풀페이지(lg 미만 fixed)에서 구조 자체가 달라 호출부가 명시한다. */
-export function ContentDetailView({ id, variant }: { id: string; variant: "modal" | "page" }) {
+export function ContentDetailView({
+  id,
+  type,
+  variant,
+}: {
+  id: string;
+  // image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
+  // 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
+  // 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다).
+  type: ContentType;
+  variant: "modal" | "page";
+}) {
   const detailQuery = useContentDetailQuery(id);
   const setModalState = useSetAtom(contentDetailModalAtom);
   const navigate = useNavigate();
@@ -140,7 +163,7 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
     [isFavoriteDesired],
   );
 
-  if (detailQuery.isPending) return <ContentDetailSkeleton />;
+  if (detailQuery.isPending) return <ContentDetailSkeleton type={type} />;
 
   if (detailQuery.isError) {
     return (
@@ -177,9 +200,19 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
       <CharacterPlayBar contentId={content.id} />
     );
 
+  // image-crop-goal-prompt.md IC-11 — hero 비율은 카드 그리드와 같은 도메인→표현 매핑
+  // (`toThumbnailAspect`)을 재사용한다: 캐릭터 1:1, 스토리 2:3.
+  const heroAspect = toThumbnailAspect(content.type);
+
   const body = (
     <article className="flex flex-col gap-5 p-1">
-      <div className="aspect-video w-full overflow-hidden rounded-lg bg-muted">
+      <div
+        className={cn(
+          "mx-auto w-full overflow-hidden rounded-lg bg-muted",
+          toThumbnailAspectClass(heroAspect),
+          HERO_CAP_CLASS[heroAspect],
+        )}
+      >
         {/* US-013 — 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
         {content.thumbnailUrl ? (
           <img src={content.thumbnailUrl} alt="" decoding="async" className="size-full object-cover" />
@@ -340,10 +373,20 @@ export function ContentDetailView({ id, variant }: { id: string; variant: "modal
   );
 }
 
-function ContentDetailSkeleton() {
+// image-crop-goal-prompt.md IC-11 — content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴
+// `type`(모달: 상태에 이미 있음, 페이지: URL 세그먼트)으로 같은 비율을 흉내 낸다. 어긋나면 도착 시
+// 화면이 밀린다(card-grid-goal-prompt.md F-1 전례).
+function ContentDetailSkeleton({ type }: { type: ContentType }) {
+  const heroAspect = toThumbnailAspect(type);
   return (
     <div className="flex flex-col gap-4 p-1">
-      <div className="aspect-video w-full animate-pulse rounded-lg bg-muted" />
+      <div
+        className={cn(
+          "mx-auto w-full animate-pulse rounded-lg bg-muted",
+          toThumbnailAspectClass(heroAspect),
+          HERO_CAP_CLASS[heroAspect],
+        )}
+      />
       <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
       <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
       <div className="h-20 w-full animate-pulse rounded bg-muted" />
