@@ -6,7 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import Notice, Notification
-from factories import _create_admin, _login_as_admin, _make_user
+from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
 
 async def _make_notice(
@@ -53,8 +53,8 @@ async def test_regular_user_session_cannot_list_admin_notices(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.get("/admin/notices?page=1")
     assert resp.status_code == 401

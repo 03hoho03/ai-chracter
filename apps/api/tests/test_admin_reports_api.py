@@ -24,7 +24,7 @@ from api.db.models import (
     ReportStatus,
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _create_admin, _get_genre, _login_as_admin, _make_user
+from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -148,8 +148,8 @@ async def test_regular_user_session_cannot_list_reports(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.get("/admin/reports?page=1")
     assert resp.status_code == 401
@@ -522,8 +522,7 @@ async def test_report_submission_does_not_auto_change_content_moderation_status(
     character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
     await db_session.commit()
 
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(reporter.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, reporter.id)
 
     resp = await db_client.post(f"/contents/{character.id}/report", json={"reasonCategory": "spam"})
     assert resp.status_code == 204

@@ -21,7 +21,7 @@ from api.db.models import (
     Notification,
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _create_admin, _get_genre, _login_as_admin, _make_user
+from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -190,8 +190,10 @@ async def test_regular_user_session_cannot_list_contents(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    # secure-issue-goal-prompt.md SEC-2: 세션이 실제로 섰음을 먼저 고정한다 —
+    # 안 그러면 세션이 아예 안 서도 초록이라 위 무세션 401 테스트와 같은 명제가 된다.
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.get("/admin/contents?page=1")
     assert resp.status_code == 401
@@ -208,8 +210,8 @@ async def test_regular_user_session_cannot_view_content_detail(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.get(f"/admin/contents/{uuid.uuid4()}")
     assert resp.status_code == 401
@@ -229,8 +231,8 @@ async def test_regular_user_session_cannot_act_on_content(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.post(
         f"/admin/contents/{uuid.uuid4()}/action",
@@ -875,10 +877,7 @@ async def test_direct_action_appeal_round_trip_restores_content(
     action_id = actions[0].id
 
     # 2. 제작자 세션(어드민 세션과 쿠키 이름이 달라 공존한다)으로 이의제기
-    session_resp = await db_client.post(
-        "/dev/session-echo", json={"data": {"user_id": str(creator.id)}}
-    )
-    assert session_resp.status_code == 201
+    await _login_as(db_client, creator.id)
 
     appeal_resp = await db_client.post(
         "/appeals",

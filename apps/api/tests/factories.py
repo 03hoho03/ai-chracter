@@ -59,9 +59,11 @@ def _make_user(**overrides: object) -> User:
 
 
 # secure-issue-goal-prompt.md SEC-2: 인증 없이 임의 `user_id`로 쿠키를 굽던
-# `POST /dev/session-echo` 대신 세션을 직접 만들어 쿠키에 넣는다. 넣는 값
-# `{"user_id": str(...)}`은 프로덕션 로그인 경로 4곳(`auth/router.py:258,327,372,413`)이
-# 세션에 담는 것과 글자까지 같다 — 그래서 이 헬퍼로 선 세션은 실제 로그인 세션과 구분되지 않는다.
+# `POST /dev/session-echo`(SEC-1 에서 삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 넣는 값
+# `{"user_id": str(...)}`은 프로덕션 로그인 경로 세 곳(`auth/router.py`의 `google_callback`(구글
+# 콜백) · `onboarding_google`(구글 온보딩) · `login`(비밀번호 로그인))이 세션에 담는 것과 글자까지
+# 같다 — 그래서 이 헬퍼로 선 세션은 실제 로그인 세션과 구분되지 않는다(줄번호로 가리키면 썩는다 —
+# 심볼로 가리킬 것).
 # ⚠️ 한 테스트에서 HTTP 로그인(`/auth/login` 등)과 이 헬퍼를 섞지 말 것 — 응답 `Set-Cookie`로
 # 들어온 쿠키에는 도메인이 붙고 여기서 넣는 쿠키에는 안 붙어, 같은 이름의 쿠키가 둘이 되고
 # 쿠키를 읽는 순간 `httpx.CookieConflict`가 난다(현재 스위트에 그 조합은 0건이다).

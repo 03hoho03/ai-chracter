@@ -4,25 +4,6 @@
  */
 
 export interface paths {
-    "/dev/session-echo": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Read Session Echo */
-        get: operations["read_session_echo_dev_session_echo_get"];
-        put?: never;
-        /** Create Session Echo */
-        post: operations["create_session_echo_dev_session_echo_post"];
-        /** Delete Session Echo */
-        delete: operations["delete_session_echo_dev_session_echo_delete"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/auth/login": {
         parameters: {
             query?: never;
@@ -4472,16 +4453,6 @@ export interface components {
              */
             email: string;
         };
-        /** SessionEchoPayload */
-        SessionEchoPayload: {
-            /**
-             * Data
-             * @default {}
-             */
-            data: {
-                [key: string]: unknown;
-            };
-        };
         /** ShortcutDraftItem */
         ShortcutDraftItem: {
             /**
@@ -4807,81 +4778,6 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    read_session_echo_dev_session_echo_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
-                };
-            };
-        };
-    };
-    create_session_echo_dev_session_echo_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["SessionEchoPayload"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            201: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": {
-                        [key: string]: string;
-                    };
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    delete_session_echo_dev_session_echo_delete: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-        };
-    };
     admin_login_admin_auth_login_post: {
         parameters: {
             query?: never;

@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.admin import legal as admin_legal
 from api.db.models import AdminActionLog, LegalDocument
 from api.legal.schemas import LegalDocumentKind
-from factories import _create_admin, _login_as_admin, _make_published, _make_user
+from factories import _create_admin, _login_as, _login_as_admin, _make_published, _make_user
 
 
 async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -42,10 +42,10 @@ async def _assert_requires_admin_session(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    session_resp = await db_client.post(
-        "/dev/session-echo", json={"data": {"user_id": str(user.id)}}
-    )
-    assert session_resp.status_code == 201
+    await _login_as(db_client, user.id)
+    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.request(method.upper(), path, json=json)
     assert resp.status_code == 401
