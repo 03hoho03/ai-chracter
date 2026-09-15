@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import GoogleProfile, get_google_profile
 from api.core.config import settings
-from api.db.models.auth import GuardianConsent, User
+from api.db.models.auth import User
 from api.main import app
 
 
@@ -105,7 +105,7 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
     assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": False, "email": ctx["email"]}
+    assert resp.json() == {"email": ctx["email"]}
     assert settings.session_cookie_name in resp.cookies
 
     user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
@@ -119,37 +119,14 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
     assert me.json()["id"] == str(user.id)
 
 
-async def test_onboarding_google_minor_requires_guardian_consent_and_no_session(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10).isoformat()
+async def test_onboarding_google_rejects_under_minimum_age(db_client: httpx.AsyncClient) -> None:
+    """legal-revision-goal-prompt.md LR-9: 이메일 가입과 마찬가지로 구글 온보딩도 만 14세
+    미만을 거부한다 — 두 경로가 비대칭으로 새지 않는지가 이 런의 반복된 위험이다."""
+    minor_birth_date = date.today().replace(year=date.today().year - 13).isoformat()
     ctx = await _onboard_new_google_user(db_client, minor_birth_date)
 
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
-    assert resp.status_code == 200
-    assert resp.json() == {"isMinorGuardianRequired": True, "email": ctx["email"]}
-    assert settings.session_cookie_name not in resp.cookies
-
-    me = await db_client.get("/me")
-    assert me.status_code == 401
-
-    user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
-    assert user is not None
-
-    consent_resp = await db_client.post(
-        "/auth/guardian-consent",
-        json={
-            "email": ctx["email"],
-            "guardianName": "홍길동",
-            "guardianContact": "010-1234-5678",
-            "consentAgreed": True,
-        },
-    )
-    assert consent_resp.status_code == 204
-    assert settings.session_cookie_name in consent_resp.cookies
-
-    consent = await db_session.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-    assert consent is not None
+    assert resp.status_code == 422
 
 
 async def test_onboarding_google_rejects_missing_terms_agreement(db_client: httpx.AsyncClient) -> None:
@@ -275,27 +252,4 @@ async def test_google_callback_redirects_suspended_existing_user(
 
     assert resp.status_code == 302
     assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=account_suspended"
-    assert settings.session_cookie_name not in resp.cookies
-
-
-async def test_google_callback_minor_without_consent_redirects_to_onboarding_again(
-    db_client: httpx.AsyncClient,
-) -> None:
-    minor_birth_date = date.today().replace(year=date.today().year - 10).isoformat()
-    ctx = await _onboard_new_google_user(db_client, minor_birth_date)
-    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
-    assert onboard_resp.status_code == 200
-    assert settings.session_cookie_name not in onboard_resp.cookies
-
-    state = await _start_google_login(db_client)
-    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
-    try:
-        resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
-        )
-    finally:
-        _clear_google_profile_override()
-
-    assert resp.status_code == 302
-    assert resp.headers["location"].startswith(f"{settings.frontend_base_url}/onboarding/google?token=")
     assert settings.session_cookie_name not in resp.cookies

@@ -11,10 +11,6 @@ const STEP_COPY = {
     title: "추가 정보 입력",
     description: "닉네임과 생년월일을 입력하고 약관에 동의해주세요.",
   },
-  guardianConsent: {
-    title: "법정대리인 동의",
-    description: "보호자 정보를 입력하고 동의해주세요.",
-  },
 } as const;
 
 export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {

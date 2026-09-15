@@ -1,8 +1,9 @@
 import uuid
-from datetime import date
+from datetime import UTC, date, datetime
 
 from pydantic import EmailStr, Field, field_validator
 
+from api.auth.age import is_under_minimum_age
 from api.core.schema import CamelModel
 
 
@@ -14,6 +15,14 @@ class SignupRequest(CamelModel):
     terms_agreed: bool
     privacy_agreed: bool
     transfer_agreed: bool
+
+    @field_validator("birth_date")
+    @classmethod
+    def _must_meet_minimum_age(cls, value: date) -> date:
+        # legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다.
+        if is_under_minimum_age(value, datetime.now(UTC).date()):
+            raise ValueError("만 14세 미만은 가입할 수 없습니다.")
+        return value
 
     @field_validator("terms_agreed", "privacy_agreed", "transfer_agreed")
     @classmethod
@@ -33,25 +42,11 @@ class VerifyEmailRequest(CamelModel):
 
 
 class VerifyEmailResponse(CamelModel):
-    is_minor_guardian_required: bool
+    pass
 
 
 class ResendVerificationCodeRequest(CamelModel):
     email: EmailStr
-
-
-class GuardianConsentRequest(CamelModel):
-    email: EmailStr
-    guardian_name: str = Field(min_length=1)
-    guardian_contact: str = Field(min_length=1)
-    consent_agreed: bool
-
-    @field_validator("consent_agreed")
-    @classmethod
-    def _must_be_agreed(cls, value: bool) -> bool:
-        if not value:
-            raise ValueError("법정대리인 동의가 필요합니다.")
-        return value
 
 
 class LoginRequest(CamelModel):
@@ -67,6 +62,14 @@ class OnboardingGoogleRequest(CamelModel):
     privacy_agreed: bool
     transfer_agreed: bool
 
+    @field_validator("birth_date")
+    @classmethod
+    def _must_meet_minimum_age(cls, value: date) -> date:
+        # legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다.
+        if is_under_minimum_age(value, datetime.now(UTC).date()):
+            raise ValueError("만 14세 미만은 가입할 수 없습니다.")
+        return value
+
     @field_validator("terms_agreed", "privacy_agreed", "transfer_agreed")
     @classmethod
     def _must_be_agreed(cls, value: bool) -> bool:
@@ -76,7 +79,6 @@ class OnboardingGoogleRequest(CamelModel):
 
 
 class OnboardingGoogleResponse(CamelModel):
-    is_minor_guardian_required: bool
     email: str
 
 

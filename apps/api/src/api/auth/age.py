@@ -1,6 +1,6 @@
 from datetime import date
 
-GUARDIAN_CONSENT_AGE_THRESHOLD = 14
+MINIMUM_AGE_THRESHOLD = 14
 
 
 def calculate_age(birth_date: date, today: date) -> int:
@@ -10,6 +10,6 @@ def calculate_age(birth_date: date, today: date) -> int:
     return age
 
 
-def is_guardian_consent_required(birth_date: date, today: date) -> bool:
-    """techspec-backend-auth.md §3: 만 14세 미만이면 법정대리인 동의가 필요하다."""
-    return calculate_age(birth_date, today) < GUARDIAN_CONSENT_AGE_THRESHOLD
+def is_under_minimum_age(birth_date: date, today: date) -> bool:
+    """legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다."""
+    return calculate_age(birth_date, today) < MINIMUM_AGE_THRESHOLD

@@ -7,7 +7,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.age import is_guardian_consent_required
+from api.auth.age import is_under_minimum_age
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
     GoogleProfile,
@@ -22,7 +22,6 @@ from api.auth.google_oauth import (
 from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
     ChangePasswordRequest,
-    GuardianConsentRequest,
     LoginRequest,
     MeResponse,
     OnboardingGoogleRequest,
@@ -49,7 +48,7 @@ from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, verify_password
-from api.db.models.auth import GuardianConsent, User
+from api.db.models.auth import User
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
 from api.db.session import get_db_session
@@ -178,13 +177,7 @@ async def verify_email(
     await delete_verification_code(payload.email)
     await clear_verification_attempts(payload.email)
 
-    # legal-revision-goal-prompt.md LR-27: 지금은 birth_date를 NULL로 만드는 코드가 없다.
-    # S5 이후에는 탈퇴 행의 email이 자리표시자로 바뀌어 위 select(:156)가 원래 이메일로는
-    # 그 행을 찾지 못한다 — 이 assert가 실제로 그렇게 막히는지는 S5에서 실측 확인해야 한다.
-    assert user.birth_date is not None
-    return VerifyEmailResponse(
-        is_minor_guardian_required=is_guardian_consent_required(user.birth_date, datetime.now(UTC).date())
-    )
+    return VerifyEmailResponse()
 
 
 @router.post("/resend-verification-code", status_code=status.HTTP_204_NO_CONTENT)
@@ -232,67 +225,10 @@ async def resend_verification_code(
     return None
 
 
-@router.post("/guardian-consent", status_code=status.HTTP_204_NO_CONTENT)
-async def guardian_consent(
-    payload: GuardianConsentRequest,
-    request: Request,
-    response: Response,
-    db: AsyncSession = Depends(get_db_session),
-) -> None:
-    user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    if user.email_verified_at is None:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="Email verification required"
-        )
-
-    # legal-revision-goal-prompt.md LR-27: 지금은 birth_date를 NULL로 만드는 코드가 없다.
-    # S5 이후에는 탈퇴 행의 email이 자리표시자로 바뀌어 위 select(:234)가 원래 이메일로는
-    # 그 행을 찾지 못한다 — 이 assert가 실제로 그렇게 막히는지는 S5에서 실측 확인해야 한다.
-    assert user.birth_date is not None
-    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Guardian consent is not required for this account",
-        )
-
-    consent = GuardianConsent(
-        user_id=user.id,
-        guardian_name=payload.guardian_name,
-        guardian_contact=payload.guardian_contact,
-        consent_agreed_at=datetime.now(UTC),
-        ip_address=request.client.host if request.client else None,
-    )
-    db.add(consent)
-    await db.commit()
-
-    if user.suspended_at is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
-
-    session_id = await create_session({"user_id": str(user.id)})
-    set_session_cookie(response, session_id)
-    return None
-
-
 @router.get("/google")
 async def google_login(redirect: str = "/") -> RedirectResponse:
     state = await store_oauth_state(redirect)
     return RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
-
-
-async def _guardian_consent_missing(db: AsyncSession, user: User) -> bool:
-    if user.birth_date is None:
-        # LR-27(legal-revision-goal-prompt.md §3-2): google_callback:309가 이 함수를
-        # deleted_at 검사(:320)보다 먼저 호출한다. S5 이후 탈퇴 유저의 birth_date가 None이
-        # 되면 여기서 False를 반환해 뒤따르는 deleted_at 검사에 맡긴다.
-        # S2가 이 함수를 통째로 지울 예정이라 임시 처방이다.
-        return False
-    if not is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        return False
-    consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-    return consent is None
 
 
 async def _get_oauth_redirect_target(state: str) -> str:
@@ -328,7 +264,7 @@ async def google_callback(
             user.google_sub = profile["sub"]
             await db.commit()
 
-    if user is None or await _guardian_consent_missing(db, user):
+    if user is None:
         token = await store_pending_google_signup(profile)
         return RedirectResponse(
             f"{settings.frontend_base_url}/onboarding/google?token={token}",
@@ -389,18 +325,12 @@ async def onboarding_google(
     await db.commit()
     await delete_pending_google_signup(payload.token)
 
-    # 두 분기 모두 바로 위에서 payload.birth_date(non-optional)를 대입했다 — commit 이후
-    # mypy가 narrowing을 잃는다.
-    assert user.birth_date is not None
-    if is_guardian_consent_required(user.birth_date, now.date()):
-        return OnboardingGoogleResponse(is_minor_guardian_required=True, email=user.email)
-
     if user.suspended_at is not None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
     session_id = await create_session({"user_id": str(user.id)})
     set_session_cookie(response, session_id)
-    return OnboardingGoogleResponse(is_minor_guardian_required=False, email=user.email)
+    return OnboardingGoogleResponse(email=user.email)
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
@@ -428,12 +358,14 @@ async def login(
     # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — birth_date는 탈퇴(S5 파기)
     # 시에만 None이 된다.
     assert user.birth_date is not None
-    if is_guardian_consent_required(user.birth_date, datetime.now(UTC).date()):
-        consent = await db.scalar(select(GuardianConsent).where(GuardianConsent.user_id == user.id))
-        if consent is None:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN, detail="Guardian consent required"
-            )
+    # legal-revision-goal-prompt.md LR-30: LR-9가 신규 가입을 막으므로 이 분기는 시행일
+    # 이전에 가입한 기존 미성년 계정만 겨냥한다. 법정대리인 동의 여부와 무관하게 연령만
+    # 본다 — 프로덕션 집계를 받지 못해 안전한 쪽(로그인 차단)을 택했다. 집계가 0건으로
+    # 확인되면 이 블록을 걷어낼 것.
+    if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Minimum age not met"
+        )
 
     if user.suspended_at is not None:
         # deleted_at과 달리 숨기지 않는다 — 탈퇴는 "이메일 또는 비밀번호가 올바르지 않음"에

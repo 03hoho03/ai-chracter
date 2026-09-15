@@ -5,7 +5,6 @@ import type { SignUpFormValues } from "./signUpSchema";
 type SignupRequest = components["schemas"]["SignupRequest"];
 type VerifyEmailRequest = components["schemas"]["VerifyEmailRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
-type GuardianConsentRequest = components["schemas"]["GuardianConsentRequest"];
 type ResendVerificationCodeRequest = components["schemas"]["ResendVerificationCodeRequest"];
 type OnboardingGoogleRequest = components["schemas"]["OnboardingGoogleRequest"];
 
@@ -27,15 +26,6 @@ export function toVerifyEmailRequest(values: SignUpFormValues): VerifyEmailReque
 
 export function toSignUpLoginRequest(values: SignUpFormValues): LoginRequest {
   return { email: values.email, password: values.password };
-}
-
-export function toGuardianConsentRequest(values: SignUpFormValues): GuardianConsentRequest {
-  return {
-    email: values.email,
-    guardianName: values.guardian.name,
-    guardianContact: values.guardian.contact,
-    consentAgreed: values.guardian.consentAgreed,
-  };
 }
 
 export function toResendVerificationCodeRequest(email: string): ResendVerificationCodeRequest {

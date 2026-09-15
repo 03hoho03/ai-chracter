@@ -12,10 +12,13 @@ function validPayload() {
     privacyAgreed: true,
     transferAgreed: true,
     emailVerificationCode: "123456",
-    // guardian은 항상 필수로 선언돼 있어(만 14세 미만 여부와 무관, 스텝 검증은 trigger()가 갈라
-    // 준다) 전체 스키마 파싱 테스트에서는 통과시켜 둔다 — 여기서 검증하는 대상이 아니다.
-    guardian: { name: "보호자", contact: "010-0000-0000", consentAgreed: true },
   };
+}
+
+function isoDateYearsAgo(years: number): string {
+  const date = new Date();
+  date.setFullYear(date.getFullYear() - years);
+  return date.toISOString().slice(0, 10);
 }
 
 describe("signUpSchema", () => {
@@ -38,6 +41,25 @@ describe("signUpSchema", () => {
 
   it("accepts a fully agreed payload", () => {
     const result = signUpSchema.safeParse(validPayload());
+
+    expect(result.success).toBe(true);
+  });
+
+  // legal-revision-goal-prompt.md LR-9 — 서버가 진짜 게이트, 이건 위저드 1스텝의 UX 하한이다.
+  it("rejects a birth date under the minimum age", () => {
+    const result = signUpSchema.safeParse({
+      ...validPayload(),
+      birthDate: isoDateYearsAgo(13),
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts a birth date exactly at the minimum age", () => {
+    const result = signUpSchema.safeParse({
+      ...validPayload(),
+      birthDate: isoDateYearsAgo(14),
+    });
 
     expect(result.success).toBe(true);
   });
