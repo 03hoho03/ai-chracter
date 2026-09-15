@@ -586,6 +586,33 @@ describe("handleRequest", () => {
       expect(fetchMock).toHaveBeenCalledTimes(1);
     });
 
+    it("업스트림이 3xx를 주면 따라가지 않고 그대로 브라우저에 넘긴다 — redirect: \"manual\" 없이 따라가면 Worker 자신에게 재진입해 502가 난다(2026-09-15 프로덕션 실측)", async () => {
+      const fetchMock = vi.fn((_url: string, _init: RequestInit) =>
+        Promise.resolve(
+          new Response(null, {
+            status: 302,
+            headers: { location: "https://ddona.site/_ingest/" },
+          }),
+        ),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/accounts/login/", { method: "POST" }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(302);
+      expect(response.headers.get("location")).toBe(
+        "https://ddona.site/_ingest/",
+      );
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [, calledInit] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(calledInit.redirect).toBe("manual");
+    });
+
     it("확장자가 있는 /_ingest 경로도 ASSETS로 새지 않는다 — 자산 검사보다 앞이다", async () => {
       const fetchMock = vi.fn(() => Promise.resolve(new Response("css")));
       vi.stubGlobal("fetch", fetchMock);
