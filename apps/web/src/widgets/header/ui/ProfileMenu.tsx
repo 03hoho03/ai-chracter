@@ -10,6 +10,7 @@ import {
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
+  FileText,
   ImagePlus,
   LayoutGrid,
   LifeBuoy,
@@ -18,6 +19,7 @@ import {
   MessagesSquare,
   Plus,
   Settings2,
+  Shield,
   Star,
   User,
 } from "lucide-react";
@@ -37,9 +39,10 @@ import { useLogoutMutation } from "@/features/logout";
  *
  * 미구현 기능(구독함·활동배지·차단관리·크리에이터·혜택)은 넣지 않는다(결정 11) — 이 판단은 그대로다.
  * `고객센터`는 그 목록 밖의 새 그룹이라 T-12에서 항목이 8→9개, 구분선이 4→5개로 늘었고, T-17이 같은
- * 그룹에 `문의하기`를 더하며(구분선 추가 없음) 9→10개가 됐다. 390×844에서는 여전히 스크롤 없이
- * 들어간다(`scrollHeight` 457px, `max-h` 796px 대비 여유 339px 실측 — T-12 상태는 429px/367px,
- * T-12 이전엔 368px/428px였다).
+ * 그룹에 `문의하기`를 더하며(구분선 추가 없음) 9→10개가 됐다. S7(LR-12)이 같은 그룹에 `이용약관`·
+ * `개인정보처리방침`을 더하며(구분선 추가 없음) 10→12개가 됐다. **아래 390×844 실측치(`scrollHeight`
+ * 457px, 여유 339px)는 T-17 기준이라 이 항목 2개 추가로 무효다 — 재실측 필요**(390×844 뷰포트에서
+ * `[data-slot=dropdown-menu-content]`의 `scrollHeight`를 `max-h` 796px와 대조).
  */
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
@@ -77,22 +80,27 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
           `apps/web/CLAUDE.md`에서 필터 축 간격 1.5배를 Gestalt 임계 미달로 판정했다 — 여기는 1.0배였다.
           높이 비용은 그때 18px(350→368)이었고, T-12가 `고객센터` 그룹(구분선 1 + 항목 1)을 얹으며
           61px(368→429)이 더 붙었다. T-17이 같은 그룹에 `문의하기`를 하나 더 얹으며(구분선 추가 없음)
-          28px(429→457)이 다시 붙었다. 세로 390×844에서는 `max-h` 796px 대비 **여유 339px**(T-12 상태는
-          367px, T-12 이전 428px)로 여전히 무해하다.
+          28px(429→457)이 다시 붙었다. S7이 같은 그룹에 `이용약관`·`개인정보처리방침` 두 항목을 더
+          얹으며(구분선 추가 없음) 높이가 다시 늘었다 — **정확한 px과 세로 390×844 여유(T-17 기준
+          339px)는 항목 2개 추가로 무효, 재실측 필요**(390×844, `scrollHeight` vs `max-h` 796px).
           **가로로 눕힌 폰(844×390)에서는 대가가 있고, 그건 각 결정이 만든 회귀다** — 프리미티브의
           `max-h-(--radix-…-available-height)`가 342px로 자르는데, 구분선 둘일 때는 넘치는 8px이 `로그아웃`
           **아래 여백**이라 글자가 16/16px 온전히 보였고, 넷일 때는 넘치는 26px이 `로그아웃` **행 자체**라
           글자가 **0/16px**로 한 픽셀도 안 보이되 행 박스는 6/28px 남아 있었다. T-12로 다섯이 된
           시점에는 넘치는 87px이었다 — 행 박스째로 화면 밖이라 `로그아웃`이 **0/28px**, 글자는
-          0/17px로 그 6px 여백마저 사라졌다(`scrollTop: 0` 실측 A/B, 9항목 기준). **T-17로 항목이
-          하나 더 늘어난 지금은 넘치는 115px**(87+28) — 결함의 성격은 같다, `로그아웃` 행 전체가
-          여전히 화면 밖이다(`scrollTop: 0` 실측 A/B, 10항목 기준).
+          0/17px로 그 6px 여백마저 사라졌다(`scrollTop: 0` 실측 A/B, 9항목 기준). T-17로 항목이
+          하나 더 늘어난 시점엔 넘치는 115px이었다(87+28) — 결함의 성격은 같다, `로그아웃` 행 전체가
+          화면 밖이었다(`scrollTop: 0` 실측 A/B, 10항목 기준). **S7이 항목을 2개 더 얹은 지금(12항목)
+          이 115px과 가시 비율은 무효 — 재실측 필요**(844×390, `scrollTop: 0` A/B).
           **여기 한때 "포인터·터치 사용자에게는 잘렸다는 신호가 아예 없다"고 적혀 있었는데, 그건 이제
           거짓이다.** 그 뒤 프리미티브에 하단 페이드가 들어갔다 — `dropdown-menu.tsx`가 콜백 ref로
           `scrollHeight - scrollTop - clientHeight > 1`을 재서 `data-clipped-below`를 세우고, 그때만
           `::after` 스티키 그라디언트(`h-8`, `from-popover`)가 얹힌다. 10항목 상태의 844×390에서 실측하면
           `data-clipped-below="true"`, `::after`가 32px sticky로 실제 렌더되고, 스크롤 끝(115px)에서
-          `로그아웃`이 **28/28px 온전히** 보인다. 잘렸다는 사실과 도달 경로가 둘 다 화면에 있다.
+          `로그아웃`이 **28/28px 온전히** 보였다(T-17 기준). 메커니즘(끝까지 스크롤하면 페이드가 걷히고
+          잘린 행이 드러난다는 것) 자체는 항목 수와 무관하게 유지되지만, **12항목이 된 지금 이 구체
+          수치(115px, 28/28px)는 재실측 필요**(844×390, `scrollTop: 0` → 스크롤 끝 A/B). 잘렸다는
+          사실과 도달 경로가 둘 다 화면에 있다는 결론은 유지된다.
           그래도 구분선을 되돌리지 않는다: 위의 1.0배 결함은 **모든 폭·모든 기기에서 항상** 켜져 있는 반면
           이건 가로 폰 한 곳이고 페이드·스크롤·키보드라는 탈출구가 있다.
           뷰포트를 **넘어가는** 일은 이 프리미티브에서 구조적으로 불가능하다(잘릴 뿐이다). */}
@@ -183,6 +191,18 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             <Link to="/inquiries/new">
               <LifeBuoy aria-hidden />
               문의하기
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/terms">
+              <FileText aria-hidden />
+              이용약관
+            </Link>
+          </DropdownMenuItem>
+          <DropdownMenuItem asChild>
+            <Link to="/privacy">
+              <Shield aria-hidden />
+              개인정보처리방침
             </Link>
           </DropdownMenuItem>
         </ProfileMenuGroup>

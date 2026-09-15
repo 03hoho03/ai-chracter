@@ -180,6 +180,17 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
           회원가입
         </Link>
       </p>
+
+      {/* 비로그인 방문자는 `ProfileMenu`를 못 보므로 두 문서에 닿는 자리가 여기뿐이다(LR-12). */}
+      <p className="text-center text-sm text-muted-foreground">
+        <Link to="/terms" className="font-medium text-primary hover:underline">
+          이용약관
+        </Link>
+        <span aria-hidden> · </span>
+        <Link to="/privacy" className="font-medium text-primary hover:underline">
+          개인정보처리방침
+        </Link>
+      </p>
     </div>
   );
 }
