@@ -106,7 +106,23 @@ jobs:
           # 경우든 똑같이 안전하다: 방금 뜬 컨테이너는 이미 최신 Caddyfile로 시작했으므로
           # reload가 "설정 변경 없음"으로 조용히 no-op하고, 계속 떠 있던 컨테이너는 이
           # reload가 새 Caddyfile을 무중단으로 반영하는 유일한 경로다.
-          $C exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+          # ⚠️ 방금 재생성된 caddy 에 곧바로 reload 를 걸면 **admin API(127.0.0.1:2019)가 아직
+          # 바인딩되기 전**이라 `connection refused` 로 죽는다 — 2026-09-15 첫 배포에서 실측했다.
+          # 컨테이너 로그의 `serving initial configuration`(ts …379.3877)과 reload 실패
+          # (04:42:59.45 ≈ …379.45)가 **0.07초 차**였다. compose 의 healthcheck 는 :80 을 보므로
+          # admin API 준비를 보장하지 않는다. 그래서 짧게 재시도한다 — `|| true` 로 삼키지
+          # 않는 이유는 Caddyfile 문법 오류 같은 진짜 실패를 배포 성공으로 만들면 안 되기 때문이다.
+          for i in 1 2 3 4 5; do
+            if $C exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile; then
+              break
+            fi
+            if [ "$i" = 5 ]; then
+              echo "caddy reload 가 5회 모두 실패했다" >&2
+              exit 1
+            fi
+            echo "caddy reload 재시도 $i/5 (admin API 준비 대기)"
+            sleep 2
+          done
           $C ps --format 'table {{.Service}}\t{{.Status}}'
           # 새 이미지로 실제로 갈렸는지 확인한다. 아래 "배포 검증" 의 /health 200 만으로는
           # 위와 같은 무동작 배포를 잡을 수 없다 — 옛 컨테이너가 그대로 답하기 때문이다.
