@@ -24,6 +24,18 @@ export function toThumbnailAspect(type: ContentType): ThumbnailAspect {
   return THUMBNAIL_ASPECT[type];
 }
 
+/** `ThumbnailAspect`의 숫자 비율 — 크롭 유틸(`features/crop-image`)이 쓴다. 삼항이 아니라 `Record`인
+ * 이유는 위 `THUMBNAIL_ASPECT`와 같다(TS-05 exhaustiveness) — `1`/`2/3`을 크롭 코드에 새로 적으면
+ * 슬롯과 크롭이 조용히 갈린다(image-crop-goal-prompt.md IC-2). */
+const THUMBNAIL_ASPECT_RATIO: Record<ThumbnailAspect, number> = {
+  square: 1,
+  portrait: 2 / 3,
+};
+
+export function toThumbnailAspectRatio(aspect: ThumbnailAspect): number {
+  return THUMBNAIL_ASPECT_RATIO[aspect];
+}
+
 /** 첫 줄에 놓이는 카드 수 = 그 사다리의 최대 열 수. 호출부가 `priority`(eager 로드)를 줄 개수다.
  *
  * `ui/cardLayoutClass.ts`의 열 사다리(`GRID_COLUMNS`)와 값이 어긋나면 안 된다 — 2026-09-11 에 portrait 를

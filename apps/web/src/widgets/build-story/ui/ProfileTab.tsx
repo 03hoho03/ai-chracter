@@ -2,7 +2,9 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Controller, useFormContext } from "react-hook-form";
 
+import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
 import type { StoryBuilderFormValues } from "@/features/build-story";
+import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 
 /** techspec-builder-story.md §0 AC — 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
@@ -31,6 +33,10 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
                 onChange={field.onChange}
                 purpose="content-thumbnail"
                 previewUrl={thumbnailUrl ?? undefined}
+                previewAspect={toThumbnailAspect("story")}
+                beforeUpload={(file) =>
+                  ImageCropModal.call({ file, aspect: toThumbnailAspectRatio(toThumbnailAspect("story")) })
+                }
               />
               {errors.profile?.image && (
                 <p id="story-profile-image-error" role="alert" className="text-xs text-destructive-text">

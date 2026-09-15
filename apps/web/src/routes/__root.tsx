@@ -3,6 +3,7 @@ import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/re
 
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
+import { ImageCropModal } from "@/features/crop-image";
 import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal } from "@/features/image-archive";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
@@ -43,6 +44,7 @@ function RootComponent() {
       <PlayGuideModal />
       <EndingCollectionModal />
       <ImageArchiveModal />
+      <ImageCropModal />
       <UpdateInfoModal />
       <ChangeStartingSetupModal />
       <ConfirmStartingSetupChangeModal />

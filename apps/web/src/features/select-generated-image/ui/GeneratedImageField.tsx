@@ -5,6 +5,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ImageOff, Images, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 
+import { toThumbnailAspectClass, type ThumbnailAspect } from "@/entities/content";
 import { uploadAsset, type AssetPurpose } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
@@ -18,6 +19,15 @@ type GeneratedImageFieldProps = {
   purpose: AssetPurpose;
   previewUrl?: string;
   label?: string;
+  /** 미리보기 웰의 비율. 카드에서 실제로 보일 모양과 같게 둔다 — 스토리는 세로 2:3이라
+   * 정사각 미리보기로는 잘려나갈 위아래를 판단할 수 없다. 폭(`w-28`)을 고정하고 높이가 비율을
+   * 따라가므로 스토리 빌더에서만 이 줄이 56px 높아진다. */
+  previewAspect?: ThumbnailAspect;
+  /** image-crop-goal-prompt.md IC-15 — `features` 간 직접 import는 eslint가 막아서(`features/crop-image`를
+   * 여기서 부를 수 없다) 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
+   * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
+   * 거치지 않는다. */
+  beforeUpload?: (file: File) => Promise<File | undefined>;
 };
 
 /**
@@ -35,6 +45,8 @@ export function GeneratedImageField({
   purpose,
   previewUrl,
   label = "이미지",
+  previewAspect = "square",
+  beforeUpload,
 }: GeneratedImageFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File>();
   const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string>();
@@ -57,11 +69,14 @@ export function GeneratedImageField({
     event.target.value = "";
     if (!file) return;
 
-    setSelectedFile(file);
+    const prepared = beforeUpload ? await beforeUpload(file) : file;
+    if (!prepared) return; // 크롭 취소 — 기존 이미지를 그대로 둔다
+
+    setSelectedFile(prepared);
     setPickedPreviewUrl(undefined);
     setIsUploading(true);
     try {
-      const assetId = await uploadAsset(file, purpose);
+      const assetId = await uploadAsset(prepared, purpose);
       onChange({ assetId });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
@@ -87,33 +102,42 @@ export function GeneratedImageField({
 
   return (
     <div className="flex items-start gap-4">
-      <div className="relative size-28 shrink-0 overflow-hidden rounded-lg bg-muted">
-        {displayUrl ? (
-          <img
-            src={displayUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="size-full object-cover"
-          />
-        ) : (
-          <div className="flex size-full items-center justify-center text-muted-foreground">
-            <ImageOff aria-hidden />
-          </div>
-        )}
+      {/* `overflow-hidden`은 이미지 웰(안쪽)에만 건다. 바깥 상자에 걸면 `-top-2 -right-2`로 밖으로
+          나가려는 삭제 버튼이 잘려 "박스 안에 갇힌" 모양이 된다(2026-09-15 실사용 제보). */}
+      <div className="relative w-28 shrink-0">
+        <div
+          className={cn(
+            "relative w-full overflow-hidden rounded-lg bg-muted",
+            toThumbnailAspectClass(previewAspect),
+          )}
+        >
+          {displayUrl ? (
+            <img
+              src={displayUrl}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              className="size-full object-cover"
+            />
+          ) : (
+            <div className="flex size-full items-center justify-center text-muted-foreground">
+              <ImageOff aria-hidden />
+            </div>
+          )}
 
-        {isUploading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-            <Loader2 aria-hidden className="size-5 animate-spin text-foreground" />
-          </div>
-        )}
+          {isUploading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+              <Loader2 aria-hidden className="size-5 animate-spin text-foreground" />
+            </div>
+          )}
+        </div>
 
         {value !== null && !isUploading && (
           <button
             type="button"
             onClick={handleDelete}
             aria-label="이미지 삭제"
-            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-input bg-background text-muted-foreground shadow-sm hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+            className="absolute -top-2 -right-2 inline-flex size-6 items-center justify-center rounded-full border border-input bg-background text-muted-foreground hover:text-destructive-text focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
           >
             <X aria-hidden className="size-3.5" />
           </button>

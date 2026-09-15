@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { toThumbnailAspect } from "./cardLayout";
+import { toThumbnailAspect, toThumbnailAspectRatio } from "./cardLayout";
 import { toGridColumns } from "../ui/cardLayoutClass";
 
 describe("toThumbnailAspect", () => {
@@ -10,6 +10,16 @@ describe("toThumbnailAspect", () => {
 
   it("story -> portrait", () => {
     expect(toThumbnailAspect("story")).toBe("portrait");
+  });
+});
+
+describe("toThumbnailAspectRatio", () => {
+  it("square -> 1", () => {
+    expect(toThumbnailAspectRatio("square")).toBe(1);
+  });
+
+  it("portrait -> 2/3", () => {
+    expect(toThumbnailAspectRatio("portrait")).toBe(2 / 3);
   });
 });
 

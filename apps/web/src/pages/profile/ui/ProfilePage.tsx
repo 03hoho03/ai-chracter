@@ -4,6 +4,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import type { ContentType } from "@/entities/content";
 import { useProfileQuery } from "@/entities/profile";
 import { useSessionQuery } from "@/entities/session";
+import { ImageCropModal } from "@/features/crop-image";
 import { EditProfileDialog } from "@/features/edit-profile";
 
 import { ProfileContentSection } from "./ProfileContentSection";
@@ -89,7 +90,21 @@ function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange 
           </div>
         </div>
 
-        {isOwner && <EditProfileDialog userId={userId} profile={profile} />}
+        {isOwner && (
+          <EditProfileDialog
+            userId={userId}
+            profile={profile}
+            beforeUpload={(file) =>
+              ImageCropModal.call({
+                file,
+                // 유저 프로필 사진은 ContentType이 아니라 toThumbnailAspect 매핑 밖이고, 아바타는
+                // 전부 원형 1:1이라 리터럴로 둔다(image-crop-goal-prompt.md IC-2).
+                aspect: 1,
+                shape: "round",
+              })
+            }
+          />
+        )}
       </section>
 
       <ProfileContentSection
