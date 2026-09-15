@@ -378,7 +378,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 | `BUGSINK_SECRET_KEY` | `openssl rand -base64 50` | Django SECRET_KEY. `django-insecure` 접두어 없이 |
 | `BUGSINK_CREATE_SUPERUSER` | `관리자이메일:비밀번호` | 최초 1회만 동작한다 — 사용자가 이미 1명이라도 있으면 무시된다(공식 소스 `bsmain/management/commands/prestart.py` 확인). 부트스트랩 후 값을 지우지 않고 둬도 안전하다 |
 | `BUGSINK_BASE_URL` | `https://ddona.site/_ingest` | `api.ddona.site`가 아니다 — DSN·이메일 링크가 이 값으로 조립되고, 브라우저 ingest는 `ddona.site`(Worker 경유, `MT-3`)를 쓴다. `/_ingest` 프리픽스는 DSN·관리자 UI가 그 경로 아래로 들어가게 만든다(Bugsink는 이 프리픽스를 `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓰고, 실제 라우팅은 `Caddyfile`이 프리픽스를 벗겨서 맞춘다 — 아래 "DSN 발급 절차"·`Caddyfile` 참조) |
-| `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). 🔴 **Caddy 쪽 배선이 아직 없다 — 아래 "배포 순서 위험" 참조** |
+| `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). Caddy 쪽 배선은 `docker-compose.prod.yml`에 돼 있다 — 배포 순서는 아래 "배포 순서 위험" 참조 |
 | `SENTRY_DSN` | Bugsink에서 프로젝트 생성 후 발급되는 DSN | API(`apps/api`, `MT-4`)가 자기 에러를 Bugsink로 보내는 값. 비어 있으면 `_init_sentry()`가 조용히 비활성으로 남는다(테스트로 고정된 동작이지 에러가 아니다) |
 | `SENTRY_ENVIRONMENT` | `production` | ⚠️ **필수.** 빠뜨리면 기본값 `"development"`가 그대로 남아 프로덕션 이벤트가 Bugsink에서 개발 환경으로 표시된다(`config.py` 주석 — 이 저장소에 스테이징이 없어 프로덕션·dev를 가르는 유일한 값) |
 
@@ -424,10 +424,12 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 로그아웃 상태로 `https://ddona.site/_ingest/accounts/signup/`(관리자 UI 프리픽스, 위 표 참조)에
 접속해 404가 뜨는지 확인한다.
 
-🔴 **배포 순서 위험 — Caddy 컨테이너에 `INGEST_SHARED_SECRET`이 아직 배선돼 있지 않다.**
+🔴 **배포 순서 위험 — `INGEST_SHARED_SECRET`은 배선됐지만 값이 `/opt/ddona/.env`에 먼저 있어야 한다.**
 `Caddyfile`의 `/_ingest/*` 라우트는 `{$INGEST_SHARED_SECRET}`(Caddy 프로세스 자신의 환경변수)를
-읽지만, `docker-compose.prod.yml`의 `caddy` 서비스는 현재 `SITE_ADDRESS`만 주입한다(이번 런은 그
-파일을 건드리지 않기로 정했다 — monitoring-goal-prompt 범위 밖).
+읽는다. `docker-compose.prod.yml`의 `caddy` 서비스는 이제 `environment`로 이 값을 주입한다 — 하지만
+그 주입이 읽는 `${INGEST_SHARED_SECRET}` 자체가 `/opt/ddona/.env`에 없으면 똑같은 실패가
+재발한다(아래 실측 참조). 즉 **compose 배선만으로는 부족하고, 이 compose 변경을 적용하기 전에
+`/opt/ddona/.env`에 값을 먼저 넣어야 한다** — 순서가 바뀌면 값이 아예 없는 것과 같다.
 
 **완전히 빠진 환경변수도, 빈 문자열로 설정한 환경변수도 Caddyfile 자체를 깨뜨린다 — 둘이 다르지
 않다.** 로컬에서 `INGEST_SHARED_SECRET`을 (a) 아예 안 주고, (b) `INGEST_SHARED_SECRET=""`로 주고
@@ -455,12 +457,11 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
   강제 재생성 등) — `caddy run`이 시작 시점에 똑같은 파싱 에러로 **컨테이너가 즉시 종료**한다(로컬
   실측: `Exited (1)`). 이 경우는 **`api.ddona.site` 전체가 내려간다.**
 
-**따라서 이 Caddyfile 변경을 실제로 반영하려면, `docker-compose.prod.yml`의 `caddy.environment`에
-`INGEST_SHARED_SECRET: ${INGEST_SHARED_SECRET}` 한 줄을 추가하는 별도 런이 먼저(또는 같은 창에)
-있어야 한다** — 값은 이미 위 표대로 `/opt/ddona/.env`에 있으므로 새로 만들 필요는 없다. 그 한 줄이
-들어간 뒤에는 **환경변수가 컨테이너 생성 시점에 고정되므로** `caddy reload`가 아니라
-`$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다(`Caddyfile` 내용만 바뀐 경우 reload로
-충분한 것과 다르다).
+**`docker-compose.prod.yml`의 `caddy.environment`에는 이제 `INGEST_SHARED_SECRET: ${INGEST_SHARED_SECRET}`
+가 들어 있다.** 이걸 처음 배포에 반영할 때는 순서가 중요하다: 위 표대로 `/opt/ddona/.env`에 값을
+**먼저** 채워 넣고 나서 이 compose 변경을 적용한다. 그리고 **환경변수는 컨테이너 생성 시점에
+고정되므로** `caddy reload`가 아니라 `$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다
+(`Caddyfile` 내용만 바뀐 경우 reload로 충분한 것과 다르다).
 
 ---
 

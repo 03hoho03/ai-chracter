@@ -30,9 +30,9 @@
 	# 자체 로그인에 맡긴다. 시크릿의 목적은 DSN이 공개된 브라우저 ingest로 오는 익명 POST 홍수를
 	# 막는 것이지 로그인 페이지를 숨기는 게 아니고, 가입은 이미 `CB_NOBODY`로 잠겨 있다(DEPLOY.md
 	# 참조). 시크릿 값은 저장소에 없다 — Caddy 컨테이너의 `INGEST_SHARED_SECRET` 환경변수로 받는다
-	# (⚠️ `docker-compose.prod.yml`의 caddy 서비스에 아직 배선돼 있지 않다. DEPLOY.md 참조. 그리고
-	# 이 값이 완전히 빠지든 빈 문자열이든 똑같이 아래 `header` 매처가 Caddyfile 파싱 자체를
-	# 깨뜨린다 — DEPLOY.md 참조).
+	# (`docker-compose.prod.yml`의 caddy 서비스에 배선돼 있다. 이 값이 완전히 빠지든 빈 문자열이든
+	# 똑같이 아래 `header` 매처가 Caddyfile 파싱 자체를 깨뜨리므로, 배포 전 `/opt/ddona/.env`에
+	# 값이 먼저 있어야 한다 — DEPLOY.md 참조).
 	#
 	# ⚠️ 안쪽을 `route { }`로 감싼 이유 — Caddy는 같은 블록의 서로 다른 지시어를 **작성 순서가
 	# 아니라 자체 표준 순서**로 재배치한다(공식 문서). `route` 없이 쓰면 매처 없는 `respond 401`이

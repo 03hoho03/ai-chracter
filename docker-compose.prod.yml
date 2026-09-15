@@ -23,6 +23,13 @@ services:
       - "443:443"
     environment:
       SITE_ADDRESS: ${SITE_ADDRESS}
+      # `Caddyfile`의 `/_ingest/*` 라우트가 `{$INGEST_SHARED_SECRET}`를 읽는다(monitoring-techspec.md
+      # MT-3). 이 값이 완전히 빠지든 빈 문자열이든 똑같이 Caddyfile 파싱 자체가 실패한다(실측,
+      # DEPLOY.md "배포 순서 위험" 참조) — `caddy reload` 경로는 옛 설정을 유지한 채 CI만
+      # 실패하지만, 컨테이너가 새로 뜨는 콜드스타트(VM 재구축·이 서비스 재생성)에서는 `caddy run`이
+      # 시작 시점에 즉시 종료해 api.ddona.site 전체가 내려간다. 값은 배포 전에 `/opt/ddona/.env`에
+      # 먼저 있어야 한다.
+      INGEST_SHARED_SECRET: ${INGEST_SHARED_SECRET}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # ⚠️ 이 볼륨이 없으면 재시작마다 인증서를 새로 발급받다가 Let's Encrypt 레이트리밋에 걸린다.

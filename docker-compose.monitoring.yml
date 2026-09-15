@@ -26,10 +26,11 @@
 #                             `/_ingest`를 벗기고 프록시해서 맞춘다. Caddyfile·DEPLOY.md 참조).
 #   INGEST_SHARED_SECRET      Caddyfile이 `/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만
 #                             거는 게이트 값과 반드시 같아야 한다 — 관리자 UI(`/_ingest/` 나머지)는
-#                             이 시크릿 없이 통과한다(DEPLOY.md 참조). ⚠️ Caddy 컨테이너
+#                             이 시크릿 없이 통과한다(DEPLOY.md 참조). Caddy 컨테이너
 #                             (`docker-compose.prod.yml`)의 `environment`에도 같은 이름으로
-#                             주입돼야 Caddyfile의 `{$INGEST_SHARED_SECRET}`가 풀린다 — 이 저장소
-#                             상태에는 **아직 없다**(DEPLOY.md 참조).
+#                             주입돼야 Caddyfile의 `{$INGEST_SHARED_SECRET}`가 풀린다 — 이미
+#                             배선돼 있다. 배포 전 `/opt/ddona/.env`에 값이 먼저 있어야 하는 순서는
+#                             DEPLOY.md 참조.
 #
 name: ddona-monitoring
 
