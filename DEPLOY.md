@@ -119,10 +119,11 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**29개 키다**: 앱 런타임 24개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외) + compose용
-5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는
-**로컬 개발용이며 배포와 무관하다.**
+**32개 키다**: 앱 런타임 26개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외 — 이 중
+`SENTRY_DSN`·`SENTRY_ENVIRONMENT` 2개는 아래 표가 아니라 §3-5에 있다) + compose용 6개(`API_IMAGE`·
+`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`·`INGEST_SHARED_SECRET` — 마지막
+값도 §3-5 참고). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -172,13 +173,15 @@ web 프로젝트 → Settings → Environment variables. **Production과 Preview
 |---|---|---|
 | `PUBLIC_ORIGIN` | `https://ddona.site` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 중복 콘텐츠가 된다. **`legacyRedirect`의 목적지이기도 해서** 비어 있으면 옛 도메인 리다이렉트가 통째로 꺼진다(자기 자신으로 가는 루프를 막는 가드) |
 | `API_BASE_URL` | `https://api.ddona.site` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
-| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다(§3-5) | `/_ingest/*` 프록시(`worker/ingestProxy.ts`, MT-3)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
+| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다(§3-5) — ⚠️ **Production에만**, 아래 예외 참고 | `/_ingest/*` 프록시(`worker/ingestProxy.ts`, MT-3)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
 
 - **`VITE_API_BASE_URL`(§2-2)과 별개다** — 저건 빌드타임에 번들에 박히고 이건 Worker가 런타임에
   읽는다. **둘 다** 필요하다.
 - **Preview에도 `PUBLIC_ORIGIN`은 프로덕션 오리진**을 넣는다(프리뷰 URL이 아니라). Worker는
   `요청 host ≠ PUBLIC_ORIGIN host`일 때만 `X-Robots-Tag: noindex`를 붙이므로(`worker/indexing.ts`),
   Preview에서 비어 있으면 프리뷰 색인 차단이 함께 꺼진다.
+- **`INGEST_SHARED_SECRET`은 위 "Production과 Preview 양쪽 모두" 지침의 예외다 — Production에만
+  넣는다.** 근거는 §3-5 "환경 범위는 Production만이다" 참고.
 - 런타임 변수는 **저장만으로 반영되지 않는다** — 저장 후 재배포(또는 최신 배포 Retry)해야 한다.
 
 ---
@@ -393,7 +396,9 @@ sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env 
 sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 실측으로 다시 조정할 때
 ```
 
-**`/opt/ddona/.env`에 추가해야 하는 값**(§2-1의 29개 키 표와 별개 — Bugsink 전용 값의 유일한 소스는 이 절):
+**`/opt/ddona/.env`에 추가해야 하는 값**(이 중 `INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`
+3개는 §2-1의 32개 키 카운트에 포함되지만, 값·근거의 유일한 소스는 이 절이다 — §2-1 표에는 행을
+따로 만들지 않는다):
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -454,6 +459,19 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 
 ⚠️ `@sentry/vite-plugin`이 Bugsink API와 실제로 호환되는지는 **미검증**이다(`monitoring-techspec.md`
 `MT-8` §5 미결 참고) — 안 되면 `sentry-cli` 직접 호출로 후퇴한다.
+
+**환경 범위는 Production만이다 — 위 빌드 변수 5개와 §2-3의 `INGEST_SHARED_SECRET`은 Preview에
+넣지 않는다.** `apps/web/src/app/sentry.ts`가 `environment: import.meta.env.MODE`를 쓰는데,
+`apps/web/package.json`의 `build` 스크립트는 `--mode` 없이 `vite build`를 부른다 — Cloudflare
+Pages의 Preview 배포도 같은 빌드 커맨드를 쓰므로 `MODE`는 Preview에서도 그대로 `production`이다.
+지금 이 값들을 Preview에도 넣으면 Preview 배포에서 난 에러와 실사용자 프로덕션 에러가 Bugsink에서
+**구분되지 않고 섞인다** — 섞이면 "진짜 사용자에게 난 에러인가"를 판단할 수 없다. 그리고 Preview에
+`VITE_SENTRY_DSN`이 없으면 `initSentry()`가 `init`을 아예 안 부르므로(위 `sentry.ts` 발췌),
+`INGEST_SHARED_SECRET`도 Preview에는 불필요하다(프록시를 부를 SDK가 없다) — §2-3의 "Production과
+Preview 양쪽 모두" 지침은 `PUBLIC_ORIGIN`·`API_BASE_URL`에만 해당하고 `INGEST_SHARED_SECRET`은
+예외다. **나중에 Preview 에러도 보려면 `environment`가 `MODE`가 아니라 실제 배포 환경(Production/
+Preview)을 구분하는 값을 읽도록 코드를 먼저 바꾸고 나서 Preview에도 값을 켜는 것이 순서다** —
+지금 켜면 구분 없이 섞인다.
 
 **가입 차단 확인.** `docker-compose.monitoring.yml`이 `USER_REGISTRATION: CB_NOBODY`를 명시한다(기본값
 `CB_MEMBERS`도 익명 공개가입은 이미 404지만 — `users/views.py:signup`이 `USER_REGISTRATION != CB_ANYBODY`면
