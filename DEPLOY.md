@@ -172,6 +172,7 @@ web 프로젝트 → Settings → Environment variables. **Production과 Preview
 |---|---|---|
 | `PUBLIC_ORIGIN` | `https://ddona.site` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 중복 콘텐츠가 된다. **`legacyRedirect`의 목적지이기도 해서** 비어 있으면 옛 도메인 리다이렉트가 통째로 꺼진다(자기 자신으로 가는 루프를 막는 가드) |
 | `API_BASE_URL` | `https://api.ddona.site` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
+| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다(§3-5) | `/_ingest/*` 프록시(`worker/ingestProxy.ts`, MT-3)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
 
 - **`VITE_API_BASE_URL`(§2-2)과 별개다** — 저건 빌드타임에 번들에 박히고 이건 Worker가 런타임에
   읽는다. **둘 다** 필요하다.
@@ -437,6 +438,22 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 | 변수 | 값 |
 |---|---|
 | `VITE_SENTRY_DSN` | 위 2단계의 공개 DSN(`https://<key>@ddona.site/_ingest/<project_id>`) |
+
+**소스맵 업로드(`MT-8`)용 변수 — `apps/web/vite.config.ts`가 아니라 `@sentry/vite-plugin`(정확히는
+`@sentry/bundler-plugins`의 `normalizeUserOptions`)이 `process.env`에서 직접 읽는다**(공식 지원
+경로, `vite.config.ts`는 옵션으로 넘기지 않는다). `SENTRY_AUTH_TOKEN`이 있을 때만 플러그인 자체가
+`plugins` 배열에 들어가므로, 토큰만 있고 아래 세 값이 없으면 플러그인은 활성화된 채 잘못된
+대상으로 업로드를 시도한다:
+
+| 변수 | 무엇인지 |
+|---|---|
+| `SENTRY_AUTH_TOKEN` | Bugsink에서 발급하는 인증 토큰. **이 값이 있을 때만** 소스맵 생성·업로드가 켜지고, 없으면 `build.sourcemap`을 아예 끄므로 `dist`에 `.map`이 남지 않는다(빌드는 정상 종료). ⚠️ **`VITE_` 접두어를 절대 붙이지 않는다** — 붙이면 브라우저 번들에 그대로 인라인된다 |
+| `SENTRY_ORG` | 이 Bugsink/Sentry 인스턴스에서 위 프로젝트가 속한 조직(org) slug. Bugsink 관리자 UI에서 확인한다 |
+| `SENTRY_PROJECT` | 위 2단계에서 만든 프로젝트의 slug(예: `ddona-api`로 만들었다면 그 값) |
+| `SENTRY_URL` | 이 Bugsink 인스턴스의 베이스 URL. **비우면 플러그인이 기본값인 SaaS `https://sentry.io`로 떨어져** 이 인증정보로는 인증에 실패한다 — 다만 빌드 자체는 깨지지 않는다(에러 로그만 남고 `vite build`는 exit 0으로 끝난다), 그래서 실패가 눈에 안 띄기 쉽다 |
+
+⚠️ `@sentry/vite-plugin`이 Bugsink API와 실제로 호환되는지는 **미검증**이다(`monitoring-techspec.md`
+`MT-8` §5 미결 참고) — 안 되면 `sentry-cli` 직접 호출로 후퇴한다.
 
 **가입 차단 확인.** `docker-compose.monitoring.yml`이 `USER_REGISTRATION: CB_NOBODY`를 명시한다(기본값
 `CB_MEMBERS`도 익명 공개가입은 이미 404지만 — `users/views.py:signup`이 `USER_REGISTRATION != CB_ANYBODY`면
