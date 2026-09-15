@@ -25,7 +25,8 @@ import sqlalchemy as sa
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import PromptSetNotFoundError, StatJudgmentResult
+from api.chat import router as chat_router
+from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, StatJudgmentResult
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
 from api.db.models import (
     CharacterVersionDetail,
@@ -219,8 +220,17 @@ def _parse_sse_events(body: str) -> list[dict[str, Any]]:
 
 
 async def test_send_message_with_broken_section_body_ends_the_stream_with_an_error_event(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """monitoring-techspec.md MT-6: 이 흡수는 그대로 두되, `PromptRenderError`가 `prompt_render`
+    태그로 Bugsink 이벤트에도 승격돼야 한다 — 이 태그는 지금 어디서도 검증되지 않는다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -243,6 +253,9 @@ async def test_send_message_with_broken_section_body_ends_the_stream_with_an_err
 
     assert resp.status_code == 200
     assert [e["type"] for e in _parse_sse_events(resp.text)] == ["error"]
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], PromptRenderError)
+    assert captured[0][1] == "prompt_render"
 
     # 실패가 이 요청 안에 갇혔는지 — 커넥션이 살아 있고, 어시스턴트 메시지는 추가되지 않았다.
     assistant_count = await db_session.scalar(

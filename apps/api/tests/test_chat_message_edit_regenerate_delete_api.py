@@ -5,6 +5,7 @@ from datetime import datetime, timezone, UTC
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,6 +25,7 @@ from api.db.models import (
     StatDef,
     StoryPromptTemplate,
 )
+from api.chat import router as chat_router
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from api.llm.dependencies import get_llm_client
 from api.main import app
@@ -428,8 +430,18 @@ async def test_regenerate_policy_violation_keeps_original_message(
 
 
 async def test_regenerate_llm_error_keeps_original_message(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """monitoring-techspec.md MT-6: 이 흡수(원래 응답 유지)는 그대로 두되, `regenerate_message`도
+    `_stream_new_turn`과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다 — 형제 경로지만
+    사용자 흐름이 달라 아직 검증되지 않았다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -449,6 +461,9 @@ async def test_regenerate_llm_error_keeps_original_message(
 
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["error"]
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], LLMClientError)
+    assert captured[0][1] == "gemini"
 
     messages = await _room_messages(db_session, room_id)
     assert len(messages) == 3

@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.images import router as images_router
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
@@ -322,11 +323,20 @@ async def test_generate_partial_failure_still_succeeds(
 async def test_generate_total_failure_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """monitoring-techspec.md MT-6: 이 흡수(잡을 FAILED로 기록)는 그대로 두되, `local_image`
+    태그로 Bugsink 이벤트에도 승격돼야 한다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
     _stub_capabilities_ready(monkeypatch)
+
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        images_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
 
     def generate() -> tuple[bytes, str]:
         raise LLMClientError("unavailable")
@@ -348,6 +358,8 @@ async def test_generate_total_failure_marks_job_failed(
     assert job.error == "이미지 생성에 모두 실패했습니다"
     assert job.blocked_count == 0
     assert job.blocked_reason is None
+    assert len(captured) == 2  # count=2 → 두 번 모두 같은 방식으로 실패한다
+    assert all(isinstance(exc, LLMClientError) and dependency == "local_image" for exc, dependency in captured)
 
 
 async def test_generate_partial_block_succeeds_with_blocked_count_and_reason(

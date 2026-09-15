@@ -119,10 +119,11 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**29개 키다**: 앱 런타임 24개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외) + compose용
-5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는
-**로컬 개발용이며 배포와 무관하다.**
+**32개 키다**: 앱 런타임 26개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외 — 이 중
+`SENTRY_DSN`·`SENTRY_ENVIRONMENT` 2개는 아래 표가 아니라 §3-5에 있다) + compose용 6개(`API_IMAGE`·
+`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`·`INGEST_SHARED_SECRET` — 마지막
+값도 §3-5 참고). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -166,18 +167,28 @@ Vite env는 런타임이 아니라 빌드타임이다 — BE URL이 바뀌면 FE
 
 ### 2-3. web Worker 런타임 (⚠️ 빠지면 조용히 무효)
 
-web 프로젝트 → Settings → Environment variables. **Production과 Preview 양쪽 모두** plaintext로.
+web 프로젝트 → Settings → Environment variables(현 UI는 **Variables and Secrets**).
+**Production과 Preview 양쪽 모두** plaintext로.
+
+> ⚠️ **§2-2와 입력란이 같다.** Cloudflare Pages에는 변수 화면이 하나뿐이고 "런타임 변수"라는
+> 별도 메뉴가 없다 — 절을 나눈 것은 **누가 읽느냐**의 구분이다. §2-2는 `vite build`가 읽어
+> 번들에 박고, 여기 것은 배포된 `dist/_worker.js`가 요청마다 읽는다. `VITE_` 접두어가 붙은
+> 것만 브라우저 번들에 들어간다(그래서 `SENTRY_AUTH_TOKEN`에는 절대 붙이지 않는다, §3-5).
+> 2026-09-16 실제로 이 절 제목 때문에 "런타임 입력란을 못 찾겠다"는 혼선이 있었다.
 
 | 변수 | 값 | 없으면 |
 |---|---|---|
 | `PUBLIC_ORIGIN` | `https://ddona.site` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 중복 콘텐츠가 된다. **`legacyRedirect`의 목적지이기도 해서** 비어 있으면 옛 도메인 리다이렉트가 통째로 꺼진다(자기 자신으로 가는 루프를 막는 가드) |
 | `API_BASE_URL` | `https://api.ddona.site` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
+| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다(§3-5) — ⚠️ **Production에만**, 아래 예외 참고 | `/_ingest/*` 프록시(`worker/ingestProxy.ts`, MT-3)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
 
 - **`VITE_API_BASE_URL`(§2-2)과 별개다** — 저건 빌드타임에 번들에 박히고 이건 Worker가 런타임에
   읽는다. **둘 다** 필요하다.
 - **Preview에도 `PUBLIC_ORIGIN`은 프로덕션 오리진**을 넣는다(프리뷰 URL이 아니라). Worker는
   `요청 host ≠ PUBLIC_ORIGIN host`일 때만 `X-Robots-Tag: noindex`를 붙이므로(`worker/indexing.ts`),
   Preview에서 비어 있으면 프리뷰 색인 차단이 함께 꺼진다.
+- **`INGEST_SHARED_SECRET`은 위 "Production과 Preview 양쪽 모두" 지침의 예외다 — Production에만
+  넣는다.** 근거는 §3-5 "환경 범위는 Production만이다" 참고.
 - 런타임 변수는 **저장만으로 반영되지 않는다** — 저장 후 재배포(또는 최신 배포 Retry)해야 한다.
 
 ---
@@ -188,7 +199,8 @@ web 프로젝트 → Settings → Environment variables. **Production과 Preview
 
 **자동배포가 정상 경로다.** `main` push 시 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
 Artifact Registry push → IAP SSH로 VM 교체 → 인터넷 쪽 `/health` 확인까지 한다(실측 1분 35초).
-트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 워크플로 자신이다.
+트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
+워크플로 자신이다.
 **GitHub Secrets에 넣는 값은 없다** — WIF라 키를 저장하지 않는다.
 
 ```sh
@@ -312,12 +324,308 @@ cd /opt/ddona/app && $C up -d --wait api
 R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
 (`--endpoint-url`은 `S3_ENDPOINT_URL`).
 
+**최초 1회 — `/opt/ddona/scripts` 심볼릭 링크 설치**(monitoring-techspec.md MT-9). 지금
+`/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**이고, 배포(`deploy-api.yml`)는
+`/opt/ddona/app`만 `git reset --hard`하므로 이 디렉터리는 배포 때마다 갱신되지 않고 그대로
+남는다 — 실측(2026-09-15) `backup_db.py`가 크론 사본 8,139B(9/2 판) vs 저장소 12,230B(9/15)로
+md5가 다르다. 이 드리프트 때문에 `delete_expired_withdrawn_emails`(LR-32, 처리방침 제4조 2항·
+약관 제14조 4항의 파기 의무)가 9/15에 저장소에 들어간 뒤로 **프로덕션 크론에서 한 번도 실행되지
+않았다**(크론 사본 0건 vs 저장소 2건, `/var/log/ddona-backup.log`에 파기 기록 0건). 다만
+`withdrawn_emails` 행이 아직 0건이라 실제 위반은 아니고 휴면 결함이다.
+
+**해법은 복사가 아니라 심볼릭 링크다** — 이유는 위 logrotate 절차와 같다: `/opt/ddona/app`은
+배포마다 `git reset --hard origin/main`으로 갱신되므로, 링크해두면 `ops/*`를 고칠 때 재설치 없이
+다음 배포부터 자동 반영된다.
+
+```sh
+sudo rm -rf /opt/ddona/scripts
+sudo ln -s /opt/ddona/app/apps/api/scripts /opt/ddona/scripts
+```
+
+**검증**:
+```sh
+# 1. 크론 사본이 저장소와 같아졌는지
+md5sum /opt/ddona/scripts/ops/backup_db.py /opt/ddona/app/apps/api/scripts/ops/backup_db.py
+
+# 2. 다음 18:00 UTC 백업 크론 로그에 파기 라인이 찍히는지
+sudo tail -f /var/log/ddona-backup.log
+```
+
+**부작용**: 링크가 걸리면 `ops/*` 전체가 프로덕션 크론의 시스템 python3(+boto3,
+`PYTHONPATH=/opt/ddona/scripts`)에서 import 가능해야 한다는 제약을 실제로 받는다.
+`apps/api/tests/test_ops_production_cron_importable.py`가 그 시스템 python3로 실제 불리는
+`backup_db.py`·`restore_db.py` 각각에 대해 이 제약을 `ast`로 고정한다.
+
 ⚠️ **`PG_DOCKER_NETWORK=ddona_default`가 없으면 안 된다** — 운영 Postgres는 포트를 게시하지 않으므로
 기본 bridge로 뜬 `pg_dump`/`psql` 컨테이너에서 닿지 않는다.
 
 ⚠️ **볼륨 두 개는 지우면 안 된다.** `pgdata`는 `/var/lib/postgresql`(부모)에 걸려 있고 — PG 18+는
 버전별 하위 디렉터리에 데이터를 두므로 관례대로 `/data`에 걸면 기동을 거부한다 — `caddy_data`가
 없으면 재시작마다 인증서를 새로 받다가 Let's Encrypt 레이트리밋에 걸린다.
+
+**백업 알림 · check-in · R2 용량 감시**(`monitoring-techspec.md` MT-10~MT-12). `backup_db.py`가
+Discord 웹훅(`ops/notify.py`)·healthchecks.io check-in·R2 용량 임계 알림을 전부 겸한다 — 새
+스크립트·새 크론·새 Cloudflare 토큰은 없다.
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `DISCORD_WEBHOOK_URL` | Discord 채널의 웹훅 URL | 없으면 `ops/notify.py`의 `notify()`가 조용히 건너뛴다(실패가 아니다) — 알림 미설정이 백업을 죽이면 안 된다 |
+| `HEALTHCHECKS_BACKUP_PING_URL` | healthchecks.io에서 발급한 체크의 ping URL(예: `https://hc-ping.com/<uuid>`) | `main()` 진입부(`/start`)·성공 직전(접미사 없음)·`__main__`의 실패 처리(`/fail`) 세 지점에서 접미사만 바꿔 호출한다(healthchecks.io 관례). 없으면 조용히 건너뛴다 |
+| `R2_CAPACITY_THRESHOLD_BYTES` | 기본 `10737418240`(10GiB, R2 무료 한도) | prune 직후 버킷 전체 용량(`aws s3 ls --recursive --summarize`)이 이 값 이상이면 Discord로만 알린다. 값이 숫자가 아니면 `RuntimeError`로 갈아 끼워 백업 크론의 `except (RuntimeError, KeyError)`가 잡는다(그냥 `ValueError`로 두면 그 가드 밖으로 새 나가 실패 ping도 못 보낸다) |
+
+**`backup.sh`(VM 실측, 저장소 밖 호스트 파일)를 함께 고쳐야 한다** — 지금은 백업에 필요한 키만
+뽑아 export하므로, 위 두 키(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`)를 `export` 목록에
+추가하지 않으면 `/opt/ddona/.env`에 값이 있어도 크론 프로세스에는 전달되지 않는다(`.env`를 통째로
+source하지 않는 이유는 `backup.sh` 주석 참고 — JSON 값이 쉘 문법과 부딪친다).
+
+⚠️ **`__main__`의 `except (RuntimeError, KeyError)` 밖의 예외(예: docker 미기동으로 인한
+`FileNotFoundError`)는 실패 ping이 나가지 않는다.** 의도적으로 넓히지 않았다 — 이 가드는 원래
+"사전에 식별한 실패 모드"만 좁게 잡도록 설계돼 있고(S5-d/S5-e 회귀 방지), 예상 못한 예외까지
+뭉뚱그려 삼키면 새 버그 클래스를 조용히 숨긴다. 그 대신 start ping 이후 **healthchecks.io 자체의
+grace time 초과 감지**가 이 경우를 대신 잡는다 — 두 경로가 서로를 덮는 설계다.
+
+### 3-5. Bugsink(에러 트래커) — 별도 compose, 별도 배포
+
+자가호스팅 Bugsink(Sentry 호환, `monitoring-techspec.md` `MT-1`~`MT-3`)는 `docker-compose.prod.yml`과
+**다른 compose 프로젝트**(`docker-compose.monitoring.yml`)이고 **앱 배포와 별도로 손으로** 기동한다.
+
+**왜 별도 compose·별도 배포인가.** §3-1의 자동배포는 `up -d --wait api caddy`로 **서비스명을 명시**한다
+— 여기에 Bugsink를 얹으면 앱을 배포할 때마다 에러 추적기도 같이 재시작돼, "배포가 뭔가 깨뜨리는 바로
+그 창"에서 에러 추적이 눈을 감는다(`MT-2` ①). 그래서 Bugsink는 이 워크플로가 아예 건드리지 않는
+별도 파일이다 — `.github/workflows/deploy-api.yml`의 트리거 경로에 `docker-compose.monitoring.yml`이
+없으므로 **이 서비스는 앱 배포로 뜨지 않는다.** 이미지를 갈아끼우거나 설정을 바꿀 때도 아래 명령을
+손으로 다시 돈다.
+
+```sh
+cd /opt/ddona/app
+sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env up -d
+sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env ps   # healthy 확인
+sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 실측으로 다시 조정할 때
+```
+
+**`/opt/ddona/.env`에 추가해야 하는 값**(이 중 `INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`
+3개는 §2-1의 32개 키 카운트에 포함되지만, 값·근거의 유일한 소스는 이 절이다 — §2-1 표에는 행을
+따로 만들지 않는다):
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `BUGSINK_SECRET_KEY` | `openssl rand -base64 50` | Django SECRET_KEY. `django-insecure` 접두어 없이 |
+| `BUGSINK_CREATE_SUPERUSER` | `관리자이메일:비밀번호` | 최초 1회만 동작한다 — 사용자가 이미 1명이라도 있으면 무시된다(공식 소스 `bsmain/management/commands/prestart.py` 확인). 부트스트랩 후 값을 지우지 않고 둬도 안전하다 |
+| `BUGSINK_BASE_URL` | `https://ddona.site/_ingest` | `api.ddona.site`가 아니다 — DSN·이메일 링크가 이 값으로 조립되고, 브라우저 ingest는 `ddona.site`(Worker 경유, `MT-3`)를 쓴다. `/_ingest` 프리픽스는 DSN·관리자 UI가 그 경로 아래로 들어가게 만든다(Bugsink는 이 프리픽스를 `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓰고, 실제 라우팅은 `Caddyfile`이 프리픽스를 벗겨서 맞춘다 — 아래 "DSN 발급 절차"·`Caddyfile` 참조) |
+| `INGEST_SHARED_SECRET` | 무작위 값(`openssl rand -hex 32`) | `Caddyfile`이 **`/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만** 거는 게이트 값. 관리자 UI(`/_ingest/` 나머지)는 이 시크릿 없이 통과하고 Bugsink 자체 로그인으로 보호된다(사용자 결정 — 가입은 이미 `CB_NOBODY`로 잠겨 있어 시크릿의 목적은 로그인 페이지를 숨기는 게 아니라 익명 POST 홍수를 막는 것). Caddy 쪽 배선은 `docker-compose.prod.yml`에 돼 있다 — 배포 순서는 아래 "배포 순서 위험" 참조 |
+| `SENTRY_DSN` | Bugsink에서 프로젝트 생성 후 발급되는 DSN | API(`apps/api`, `MT-4`)가 자기 에러를 Bugsink로 보내는 값. 비어 있으면 `_init_sentry()`가 조용히 비활성으로 남는다(테스트로 고정된 동작이지 에러가 아니다) |
+| `SENTRY_ENVIRONMENT` | `production` | ⚠️ **필수.** 빠뜨리면 기본값 `"development"`가 그대로 남아 프로덕션 이벤트가 Bugsink에서 개발 환경으로 표시된다(`config.py` 주석 — 이 저장소에 스테이징이 없어 프로덕션·dev를 가르는 유일한 값) |
+
+**`SENTRY_DSN` 발급 절차**(최초 1회):
+1. 위 명령으로 기동 후 `BUGSINK_BASE_URL`(`https://ddona.site/_ingest/` — **트레일링 슬래시
+   필수**. `Caddyfile`의 매처가 `/_ingest/*`라 슬래시 없는 `/_ingest`는 이 라우트에 안 걸리고
+   `api:8000`으로 흘러가 404가 난다 — 로컬 caddy 컨테이너로 확인)로 접속해 `BUGSINK_CREATE_SUPERUSER`의
+   `email:password`로 로그인한다. 이 경로는 시크릿을 요구하지 않는다(위 표 참조).
+2. 프로젝트를 하나 만든다(예: `ddona-api`). Bugsink가 DSN을 보여준다 — 형태는
+   `https://<key>@ddona.site/_ingest/<project_id>`다.
+3. **API(백엔드) 자신의 `SENTRY_DSN`에는 위 값을 그대로 쓰지 않는다.** `api` 컨테이너는 Bugsink와
+   같은 `ddona_default` 네트워크에 있어 Caddy·Worker를 거칠 이유가 없다 — host만 내부 서비스명으로
+   바꿔 `http://<key>@bugsink:8000/<project_id>`로 쓴다(key·project_id는 2단계와 동일, host만
+   다름, **경로에 `/_ingest`를 넣지 않는다** — 그 프리픽스는 Caddy가 벗겨주는 것을 전제로 한
+   공개 DSN에만 있고, bugsink 컨테이너 자신은 `/_ingest`를 모른다). 이 내부 DSN이 실제로 통하려면
+   `docker-compose.monitoring.yml`의 `ALLOWED_HOSTS`에 `bugsink`가 들어 있어야 한다 — 빠지면
+   `bugsink:8000`으로 보낸 요청의 `Host: bugsink` 헤더가 Django `ALLOWED_HOSTS` 검증에서 막혀
+   HTTP 400이 나고, sentry-sdk는 이 실패를 조용히 삼킨다(같은 파일 주석 참조).
+   2단계의 공개 DSN(`ddona.site` 경유)은 **web SDK(`MT-7`, 아직 미구현)용**이고 Cloudflare Pages
+   빌드 환경변수(`VITE_SENTRY_DSN`, 아래)에 들어간다.
+
+   **실제 envelope 경로가 무엇인지 확인한 근거**(사용하는 sentry-sdk가 DSN에서 URL을 어떻게
+   계산하는지를 봐야 한다 — Bugsink가 어떻게 생성하겠다고 "의도"했는지만으로는 부족하다):
+   `apps/api/.venv/lib/python3.11/site-packages/sentry_sdk/utils.py`(설치 버전 2.69.1)의
+   `Dsn`/`Auth.get_api_url`을 직접 읽었다. DSN `https://<key>@ddona.site/_ingest/<id>`에서
+   `Dsn.path`는 경로에서 project_id를 뗀 나머지 + `/`(=`/_ingest/`)이고, `Auth.get_api_url`이
+   `f"{scheme}://{host}{path}api/{id}/envelope/"`를 조립한다 — 즉 브라우저·API가 실제로 POST하는
+   경로는 **`/_ingest/api/<project_id>/envelope/`**다. 로컬 caddy 컨테이너에 이 정확한 경로로
+   실제 요청을 보내 5종 시나리오(시크릿 정상/누락/오답, 관리자 UI, `/_ingest` 밖 경로)로 확인했다
+   (`Caddyfile` 주석 참조).
+
+**Cloudflare Pages 빌드 환경변수**(web 프로젝트, §2-2와 같은 자리 — `MT-7` 구현 시 필요, 지금은 web SDK가
+없어 당장 값을 채울 필요는 없지만 자리를 여기 남긴다):
+
+| 변수 | 값 |
+|---|---|
+| `VITE_SENTRY_DSN` | 위 2단계의 공개 DSN(`https://<key>@ddona.site/_ingest/<project_id>`) |
+
+**소스맵 업로드(`MT-8`)용 변수 — `apps/web/vite.config.ts`가 아니라 `@sentry/vite-plugin`(정확히는
+`@sentry/bundler-plugins`의 `normalizeUserOptions`)이 `process.env`에서 직접 읽는다**(공식 지원
+경로, `vite.config.ts`는 옵션으로 넘기지 않는다). `SENTRY_AUTH_TOKEN`이 있을 때만 플러그인 자체가
+`plugins` 배열에 들어가므로, 토큰만 있고 아래 세 값이 없으면 플러그인은 활성화된 채 잘못된
+대상으로 업로드를 시도한다:
+
+| 변수 | 무엇인지 |
+|---|---|
+| `SENTRY_AUTH_TOKEN` | Bugsink에서 발급하는 인증 토큰. **이 값이 있을 때만** 소스맵 생성·업로드가 켜지고, 없으면 `build.sourcemap`을 아예 끄므로 `dist`에 `.map`이 남지 않는다(빌드는 정상 종료). ⚠️ **`VITE_` 접두어를 절대 붙이지 않는다** — 붙이면 브라우저 번들에 그대로 인라인된다 |
+| `SENTRY_ORG` | 이 Bugsink/Sentry 인스턴스에서 위 프로젝트가 속한 조직(org) slug. Bugsink 관리자 UI에서 확인한다 |
+| `SENTRY_PROJECT` | 위 2단계에서 만든 프로젝트의 slug(예: `ddona-api`로 만들었다면 그 값) |
+| `SENTRY_URL` | 이 Bugsink 인스턴스의 베이스 URL. **비우면 플러그인이 기본값인 SaaS `https://sentry.io`로 떨어져** 이 인증정보로는 인증에 실패한다 — 다만 빌드 자체는 깨지지 않는다(에러 로그만 남고 `vite build`는 exit 0으로 끝난다), 그래서 실패가 눈에 안 띄기 쉽다 |
+
+⚠️ `@sentry/vite-plugin`이 Bugsink API와 실제로 호환되는지는 **미검증**이다(`monitoring-techspec.md`
+`MT-8` §5 미결 참고) — 안 되면 `sentry-cli` 직접 호출로 후퇴한다.
+
+**환경 범위는 Production만이다 — 위 빌드 변수 5개와 §2-3의 `INGEST_SHARED_SECRET`은 Preview에
+넣지 않는다.** `apps/web/src/app/sentry.ts`가 `environment: import.meta.env.MODE`를 쓰는데,
+`apps/web/package.json`의 `build` 스크립트는 `--mode` 없이 `vite build`를 부른다 — Cloudflare
+Pages의 Preview 배포도 같은 빌드 커맨드를 쓰므로 `MODE`는 Preview에서도 그대로 `production`이다.
+지금 이 값들을 Preview에도 넣으면 Preview 배포에서 난 에러와 실사용자 프로덕션 에러가 Bugsink에서
+**구분되지 않고 섞인다** — 섞이면 "진짜 사용자에게 난 에러인가"를 판단할 수 없다. 그리고 Preview에
+`VITE_SENTRY_DSN`이 없으면 `initSentry()`가 `init`을 아예 안 부르므로(위 `sentry.ts` 발췌),
+`INGEST_SHARED_SECRET`도 Preview에는 불필요하다(프록시를 부를 SDK가 없다) — §2-3의 "Production과
+Preview 양쪽 모두" 지침은 `PUBLIC_ORIGIN`·`API_BASE_URL`에만 해당하고 `INGEST_SHARED_SECRET`은
+예외다. **나중에 Preview 에러도 보려면 `environment`가 `MODE`가 아니라 실제 배포 환경(Production/
+Preview)을 구분하는 값을 읽도록 코드를 먼저 바꾸고 나서 Preview에도 값을 켜는 것이 순서다** —
+지금 켜면 구분 없이 섞인다.
+
+**가입 차단 확인.** `docker-compose.monitoring.yml`이 `USER_REGISTRATION: CB_NOBODY`를 명시한다(기본값
+`CB_MEMBERS`도 익명 공개가입은 이미 404지만 — `users/views.py:signup`이 `USER_REGISTRATION != CB_ANYBODY`면
+404를 낸다(공식 소스 확인) — 로그인한 팀 관리자가 새 사용자를 초대하는 경로는 `CB_MEMBERS`에서
+계속 열려 있다. `CB_NOBODY`는 그 경로까지 잠가 단일 운영자 인스턴스로 명시적으로 고정한다). 확인:
+로그아웃 상태로 `https://ddona.site/_ingest/accounts/signup/`(관리자 UI 프리픽스, 위 표 참조)에
+접속해 404가 뜨는지 확인한다.
+
+🔴 **배포 순서 위험 — `INGEST_SHARED_SECRET`은 배선됐지만 값이 `/opt/ddona/.env`에 먼저 있어야 한다.**
+`Caddyfile`의 `/_ingest/*` 라우트는 `{$INGEST_SHARED_SECRET}`(Caddy 프로세스 자신의 환경변수)를
+읽는다. `docker-compose.prod.yml`의 `caddy` 서비스는 이제 `environment`로 이 값을 주입한다 — 하지만
+그 주입이 읽는 `${INGEST_SHARED_SECRET}` 자체가 `/opt/ddona/.env`에 없으면 똑같은 실패가
+재발한다(아래 실측 참조). 즉 **compose 배선만으로는 부족하고, 이 compose 변경을 적용하기 전에
+`/opt/ddona/.env`에 값을 먼저 넣어야 한다** — 순서가 바뀌면 값이 아예 없는 것과 같다.
+
+**완전히 빠진 환경변수도, 빈 문자열로 설정한 환경변수도 Caddyfile 자체를 깨뜨린다 — 둘이 다르지
+않다.** 로컬에서 `INGEST_SHARED_SECRET`을 (a) 아예 안 주고, (b) `INGEST_SHARED_SECRET=""`로 주고
+각각 이 `Caddyfile`을 `caddy validate`로 어댑트해 실측했다 — **두 경우 모두 토씨 하나 안 틀리고
+같은 에러가 난다**:
+
+```
+Error: adapting config using caddyfile: parsing caddyfile tokens for 'handle_path': parsing
+caddyfile tokens for 'route': malformed header matcher: expected both field and value, at
+/etc/caddy/Caddyfile:45, at /etc/caddy/Caddyfile:50
+```
+
+`header X-Ingest-Secret {$INGEST_SHARED_SECRET}`에서 변수가 완전 미설정이든 빈 문자열이든 Caddy는
+같은 빈 값으로 치환하고, 치환된 토큰이 비어 있으면 `header` 매처가 인자 1개만 받아 파싱 에러다 —
+`{$SITE_ADDRESS}` 블록 전체(=`api:8000`으로 가는 기존 프록시 포함)가 **적재 자체에 실패**한다.
+실제 영향은 이 라우트를 언제 적용하느냐에 따라 갈린다:
+
+- **`Caddyfile`만 바뀐 상태로 배포**(현재 `deploy-api.yml`의 정상 경로 — 바인드 마운트만 바뀌면
+  compose가 caddy 컨테이너를 재생성하지 않고, 대신 `caddy reload`를 명시적으로 부른다, §3-1) —
+  reload는 새 설정이 안 먹으면 **기존에 돌고 있던 옛 설정을 그대로 유지**한다(Caddy의 트랜잭션 성격
+  reload). `deploy-api.yml`의 재시도 루프가 5회 실패 후 `exit 1`로 배포를 **실패 처리**한다(이미
+  있는 안전장치, §3-1 주석 "Caddyfile 문법 오류 같은 진짜 실패를 배포 성공으로 만들면 안 되기
+  때문"). 즉 **사이트는 안 죽지만 CI는 빨갛게 실패하고 `/_ingest/*`는 적용되지 않는다.**
+- **caddy 컨테이너가 처음부터 새로 뜨는 경우**(VM 재구축, `docker-compose.prod.yml` 자체 변경으로
+  강제 재생성 등) — `caddy run`이 시작 시점에 똑같은 파싱 에러로 **컨테이너가 즉시 종료**한다(로컬
+  실측: `Exited (1)`). 이 경우는 **`api.ddona.site` 전체가 내려간다.**
+
+**`docker-compose.prod.yml`의 `caddy.environment`에는 이제 `INGEST_SHARED_SECRET: ${INGEST_SHARED_SECRET}`
+가 들어 있다.** 이걸 처음 배포에 반영할 때는 순서가 중요하다: 위 표대로 `/opt/ddona/.env`에 값을
+**먼저** 채워 넣고 나서 이 compose 변경을 적용한다. 그리고 **환경변수는 컨테이너 생성 시점에
+고정되므로** `caddy reload`가 아니라 `$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다
+(`Caddyfile` 내용만 바뀐 경우 reload로 충분한 것과 다르다).
+
+### 3-6. Bugsink 이벤트 보유기간 파기 — vacuum cron
+
+`monitoring-legal-draft.md` §7-6(MT-16). §3-5의 `MAX_EVENT_AGE_DAYS: "30"`
+(`docker-compose.monitoring.yml`)은 "30일보다 오래된 이벤트는 지운다"는 **기준값**만 고정한다 —
+실제로 지우는 건 `bugsink-manage vacuum --old-events` 관리 명령이고, 공식 이미지는 이 명령을 도는
+스케줄러를 컨테이너 안에 두지 않는다(`Dockerfile` CMD 확인 — gunicorn+snappea만 상시 실행). 값만
+고정하고 이 크론이 없으면 처리방침이 약속하는 "수집일로부터 30일간 보관 후 파기"는 실행되지
+않는다.
+
+`apps/api/scripts/ops/vacuum_bugsink.py`가 `docker exec ddona-monitoring-bugsink-1 bugsink-manage
+vacuum --old-events`를 돌린다. 컨테이너 이름은 추측이 아니다 — `docker-compose.monitoring.yml`의
+`name: ddona-monitoring` + 서비스 `bugsink`(replica 1개)를 Compose V2 관례대로 조합한 이름이고,
+`docker compose config`로 프로젝트·서비스 이름을 확인한 뒤 로컬에서 실제로 `docker compose up`한
+컨테이너 이름을 실측했다(§3-5의 `docker stats --no-stream ddona-monitoring-bugsink-1`과 같은 이름).
+`docker compose exec`가 아니라 `docker exec <고정 이름>`을 쓰는 이유는 이 스크립트가
+`docker-compose.monitoring.yml`의 경로나 실행 시점 cwd를 몰라도 되게 하기 위해서다.
+
+**최초 1회 — `ops/bugsink-vacuum.sh` + cron.d 심볼릭 링크 설치**(§3-4의 `/opt/ddona/scripts` 절차,
+`ops/logrotate.d/ddona-caddy` 절차와 같은 이유 — `/opt/ddona/app`은 배포마다 `git reset --hard`되므로
+링크해두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/bugsink-vacuum.sh /opt/ddona/bugsink-vacuum.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-bugsink-vacuum /etc/cron.d/ddona-bugsink-vacuum
+```
+
+`ops/bugsink-vacuum.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 `DISCORD_WEBHOOK_URL`만 뽑아
+export한 뒤 `PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.vacuum_bugsink`를 부른다 —
+`resource-check.sh`와 같은 이유(JSON 값이 쉘 문법과 부딪친다).
+
+**검증 — "설치했다"가 아니라 "실제로 지워지는 것"을 확인한다**(설치만 확인하면 Caddy 접근 로그
+30일 보관이 logrotate 설치를 빠뜨려 조용히 깨졌던 것과 같은 실패 모드를 반복한다):
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료·"Vacuum complete." 로그 확인
+sudo -u root /opt/ddona/bugsink-vacuum.sh
+tail /var/log/ddona-bugsink-vacuum.log
+
+# 2. 삭제 로직 자체가 실제로 이벤트를 지우는지 — 30일을 기다리지 않고 확인한다.
+#    `--max-event-age-days 0`으로 "지금 기준 0일보다 오래된"(=현재 존재하는 전부) 이벤트를 지워
+#    개수가 실제로 줄어드는지 본다. 사람이 컨테이너 안에서 직접 돌리는 일회성 확인 커맨드이지
+#    cron이 쓰는 경로가 아니다(cron은 항상 compose env의 MAX_EVENT_AGE_DAYS=30을 그대로 쓴다).
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage showstat event_count   # 삭제 전
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage vacuum --old-events --max-event-age-days 0
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage showstat event_count   # 삭제 후 — 줄었는지
+
+# 3. 다음 05:00 UTC에 크론이 실제로 도는지
+tail -f /var/log/ddona-bugsink-vacuum.log
+```
+
+**컨테이너가 안 떠 있을 때**: `docker exec`가 그 자체로 nonzero exit(로컬 실측:
+`Error response from daemon: container ... is not running` / `No such container`)를 내고,
+`ops/vacuum_bugsink.py`는 이 실패를 삼키지 않고 `ops/notify.py`로 Discord에 알린다. 별도
+healthchecks.io dead man's switch는 만들지 않았다 — 이 작업의 범위는 "vacuum이 실제로 도는가"이지
+"bugsink 서비스 자체의 생사"가 아니고(후자는 §3-5가 손으로 기동/재기동하는 별개 관심사), Discord
+알림 하나로 "아무도 모르게 실패한다"는 이 작업의 실제 위험은 이미 닫힌다.
+
+⚠️ 매일 05:00 UTC로 골랐다 — `ddona-backup`(18:00 UTC, §3-4)과 겹치지 않으면 충분하다. vacuum
+자체가 이벤트 삭제 쿼리 한 번이라 `pg_dump`보다 훨씬 가볍고, 보관기간이 30일 단위라 몇 시간
+지연이 "30일간 보관 후 파기" 약속을 깨지 않는다 — 시간대를 더 정교하게 고를 이유가 없다.
+
+### 3-7. VM 리소스 감시 — cron이 `free`/`df`를 직접 읽는다
+
+`monitoring-techspec.md` MT-13. GCP Cloud Monitoring을 쓰지 않는 이유는 techspec MT-13 참고 —
+`instance/memory/balloon/ram_used`가 우리 VM에서 `free -m`과 2배 차이가 났고(실측 1.78GB vs
+890MB), 그 메트릭 자체가 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라진다. 대신
+`apps/api/scripts/ops/check_resources.py`가 5분마다 `free`/`df`를 직접 읽어 임계 초과 시
+Discord로 알리고, 같은 실행이 healthchecks.io로도 ping해 VM 자체의 생사를 VM 밖에서 본다.
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `DISCORD_WEBHOOK_URL` | §3-4의 백업 알림과 같은 키 | 두 스크립트가 같은 채널로 함께 쏜다 — 채널을 분리하고 싶어지면 그때 `ops/notify.py`에 인자를 뺀다 |
+| `HEALTHCHECKS_RESOURCE_PING_URL` | healthchecks.io에서 **백업과 별도로** 발급한 체크의 ping URL | 체크를 분리하는 이유는 백업(1일 1회)과 리소스 감시(5분마다)가 예정 주기가 달라 같은 체크를 공유하면 한쪽의 실행이 다른 쪽의 미실행을 가려버리기 때문이다 |
+| `MEMORY_ALERT_THRESHOLD_PERCENT` | 기본 `90` | `(total - available) / total`(`free -m`) 기준. `used` 컬럼이 아니라 `available`을 쓰는 이유는 buff/cache를 실사용량으로 착각하면 상시로 울기 때문이다(techspec MT-13) |
+| `DISK_ALERT_THRESHOLD_PERCENT` | 기본 `85` | `df /`의 `Use%` 컬럼 기준 |
+
+**최초 1회 — `ops/resource-check.sh` + cron.d 심볼릭 링크 설치**(§3-4의 `/opt/ddona/scripts`
+절차, `ops/logrotate.d/ddona-caddy` 절차와 같은 이유 — `/opt/ddona/app`은 배포마다
+`git reset --hard`되므로 링크해두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/resource-check.sh /opt/ddona/resource-check.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-resource-check /etc/cron.d/ddona-resource-check
+```
+
+`ops/resource-check.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 필요한 두 키
+(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_RESOURCE_PING_URL`)만 뽑아 export한 뒤
+`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources`를 부른다 — `backup.sh`와
+같은 이유(JSON 값이 쉘 문법과 부딪친다)이고, 이 wrapper는 (`backup.sh`와 달리) 저장소에 있어
+드리프트가 생기지 않는다.
+
+**검증**(사용 중인 `/etc/cron.d` 문법·심볼릭 링크 처리가 `logrotate.d`와 다를 수 있다 — techspec
+MT-13 미결 항목, 최초 설치 시 실측 확인):
+```sh
+sudo -u root /opt/ddona/resource-check.sh   # 수동 1회 실행 — 정상 종료·로그 확인
+tail -f /var/log/ddona-resource-check.log   # 다음 5분 주기에 크론이 실제로 도는지
+```
+
+MT-11과 같은 이유로 `check_resources.py`의 `__main__`도 `(RuntimeError, ValueError)` 밖의
+예외에서는 실패를 남기지 않는다 — healthchecks.io의 grace time 초과 감지가 대신 잡는다.
 
 ---
 

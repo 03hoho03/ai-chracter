@@ -2254,6 +2254,9 @@ export interface paths {
          *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
          *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
          *
+         *     HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+         *     찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
+         *
          *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
          *     본문에 담아 사람이 로그 없이도 구분하게 한다.
          *
@@ -2265,7 +2268,24 @@ export interface paths {
         post?: never;
         delete?: never;
         options?: never;
-        head?: never;
+        /**
+         * Ready
+         * @description DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**
+         *
+         *     `/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가
+         *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
+         *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
+         *
+         *     HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+         *     찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
+         *
+         *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
+         *     본문에 담아 사람이 로그 없이도 구분하게 한다.
+         *
+         *     각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,
+         *     그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.
+         */
+        head: operations["ready_ready_head"];
         patch?: never;
         trace?: never;
     };
@@ -8285,6 +8305,28 @@ export interface operations {
         };
     };
     ready_ready_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    ready_ready_head: {
         parameters: {
             query?: never;
             header?: never;

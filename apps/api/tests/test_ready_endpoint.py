@@ -22,6 +22,14 @@ async def test_returns_200_ready_when_all_resources_are_alive(api_client: AsyncC
     assert body["checks"] == {"database": "ok", "redis": "ok"}
 
 
+async def test_head_ready_is_allowed(api_client: AsyncClient) -> None:
+    """MT-15: UptimeRobot 이 HEAD 로 찌르고 405 를 받으면 GET 으로 폴백한다 —
+    체크당 왕복이 2 번이 되던 것을, HEAD 를 허용해 1 번으로 줄인다."""
+    response = await api_client.head("/ready")
+
+    assert response.status_code == 200
+
+
 async def test_health_does_not_check_dependent_resources(api_client: AsyncClient) -> None:
     """`/health` 가 얕다는 것 자체가 계약이다 — Caddy 헬스체크와 배포 검증이 여기 의존한다."""
     response = await api_client.get("/health")

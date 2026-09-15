@@ -15,6 +15,15 @@ class LLMPolicyViolationError(LLMClientError):
     """Raised when the provider's safety filtering blocks a prompt or its output."""
 
 
+class LLMRateLimitError(LLMClientError):
+    """Raised when the provider reports quota exhaustion (HTTP 429).
+
+    monitoring-techspec.md MT-6: `llm/gemini.py`가 네트워크 타임아웃(`httpx.HTTPError`)과
+    쿼터 소진(`genai_errors.APIError(code=429)`)을 구분하려고 두는 서브클래스다 — 여전히
+    `LLMClientError`라 기존 `except LLMClientError`가 그대로 잡으므로 사용자에게 보이는
+    동작(흡수)은 바뀌지 않는다. 호출부는 `isinstance` 검사로 승격 이벤트의 태그만 갈라 붙인다."""
+
+
 class LLMClient(abc.ABC):
     """Provider-agnostic 대화 생성/판단 인터페이스 (techspec-overview-backend.md §5).
 

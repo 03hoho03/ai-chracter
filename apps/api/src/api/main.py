@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status as status_module
 from fastapi.middleware.cors import CORSMiddleware
+import sentry_sdk
 from sqlalchemy import text
 
 from api.admin.chat_view import router as admin_chat_view_router
@@ -27,6 +28,7 @@ from api.chat.router import (
 from api.content.router import router as content_router
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.core.sentry import build_sentry_options
 from api.db.session import engine, get_session_factory
 from api.images.router import router as images_router
 from api.inquiry.router import me_router as inquiry_me_router, router as inquiry_router
@@ -49,6 +51,28 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """
     await rebuild_suspended_user_markers(get_session_factory())
     yield
+
+
+def _init_sentry() -> None:
+    """monitoring-techspec.md MT-4: `settings.sentry_dsn`이 비어 있으면 init을 부르지
+    않는다 — DSN 유무 자체가 활성 플래그를 겸하므로 별도 플래그를 두지 않는다. dev·워크트리는
+    `.env`에 DSN을 두지 않으므로 이 기본값 하나로 자동 비활성이다.
+
+    옵션은 반드시 `build_sentry_options()`(MT-5)를 통해서만 얻는다 — sentry-sdk의
+    `_processed_integrations`/`_installed_integrations`는 프로세스 전역 캐시라, 옵션을 직접
+    조립해 `init()`을 부르는 경로가 하나라도 생기면 이후 호출에서 `disabled_integrations`가
+    조용히 무시될 수 있다(GoogleGenAI 통합 비활성이 풀린다).
+    """
+    if not settings.sentry_dsn:
+        return
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        **build_sentry_options(),
+    )
+
+
+_init_sentry()
 
 
 # local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출(`/docs`·`/redoc`·
@@ -113,13 +137,23 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-@app.get("/ready")
+# monitoring-techspec.md MT-15: GET·HEAD 를 `api_route(methods=[...])`로 한 라우트에
+# 묶으면 `route.methods`가 set이라, 메서드가 2개일 때 자동 생성 operationId
+# (`list(route.methods)[0]`)가 프로세스 해시 시드에 따라 흔들려 export_openapi.py의
+# 드리프트 검사가 랜덤하게 깨진다(실측: 4회 재생성 중 ready_ready_get 1회 /
+# ready_ready_head 3회). 공유 라우트에 operation_id를 하나만 명시해도 GET·HEAD가 같은
+# ID를 그대로 물려받아 중복 경고는 남으므로, 메서드별로 라우트를 나눠 각각 명시한다.
+@app.head("/ready", operation_id="ready_ready_head")
+@app.get("/ready", operation_id="ready_ready_get")
 async def ready(response: Response) -> dict[str, object]:
     """DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**
 
     `/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가
     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
+
+    HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+    찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
 
     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
     본문에 담아 사람이 로그 없이도 구분하게 한다.

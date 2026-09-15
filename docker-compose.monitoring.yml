@@ -1,0 +1,114 @@
+# Bugsink(자가호스팅 에러 트래커) — 별도 compose 프로젝트, 별도 배포.
+#
+#   docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env up -d
+#
+# `docker-compose.prod.yml`과 합치지 않는 이유(monitoring-techspec.md MT-2 ①): 그 파일의 배포
+# 워크플로가 `up -d --wait api caddy`로 서비스명을 명시한다. 여기 합치면 앱 배포마다 이 서비스도
+# 같이 재시작해, 배포가 뭔가 깨뜨리는 바로 그 창에서 에러 추적이 눈을 감는다. 기동·재기동은
+# 앱 배포와 별도로 수동으로 한다(절차는 DEPLOY.md).
+#
+# SQLite인 이유(MT-2 ②): 공용 postgres에 스키마만 나눠 붙이면 `scripts/ops/backup_db.py`가
+# `DATABASE_URL` 하나만 덤프하므로 PII 섞인 에러 이벤트가 그대로 R2로(국외) 나간다. 별도
+# database를 만드는 절차도 저장소 어디에도 없다. SQLite는 백업 파이프라인 밖이라 이 둘을 없앤다
+# — 대가로 에러 이벤트는 백업되지 않는다(수용: 진단용 휘발성 데이터, 유실돼도 과거 이벤트
+# 목록만 잃는다).
+#
+# 필요한 env(전부 /opt/ddona/.env, 값은 DEPLOY.md의 "Bugsink" 절 참조):
+#   BUGSINK_SECRET_KEY        Django SECRET_KEY. `openssl rand -base64 50`
+#   BUGSINK_CREATE_SUPERUSER  최초 관리자 `email:password`. 이미 사용자가 1명이라도 있으면
+#                             무시된다(bsmain/management/commands/prestart.py 확인) — 부트스트랩
+#                             후에도 값을 지우지 않고 둬도 안전하다.
+#   BUGSINK_BASE_URL          `https://ddona.site/_ingest` — DSN·이메일 링크 조립에 쓰인다.
+#                             api.ddona.site가 아니라 ddona.site인 이유는 MT-3(브라우저 ingest가
+#                             이 도메인의 Worker를 거친다). `/_ingest` 프리픽스가 붙는 이유는
+#                             DSN이 그 경로로 조립되게 하기 위해서다(Bugsink는 이 프리픽스를
+#                             `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓴다 — 실제 라우팅은 Caddy가
+#                             `/_ingest`를 벗기고 프록시해서 맞춘다. Caddyfile·DEPLOY.md 참조).
+#   INGEST_SHARED_SECRET      Caddyfile이 `/_ingest/api/*/envelope/`(에러 이벤트 수신 경로)에만
+#                             거는 게이트 값과 반드시 같아야 한다 — 관리자 UI(`/_ingest/` 나머지)는
+#                             이 시크릿 없이 통과한다(DEPLOY.md 참조). Caddy 컨테이너
+#                             (`docker-compose.prod.yml`)의 `environment`에도 같은 이름으로
+#                             주입돼야 Caddyfile의 `{$INGEST_SHARED_SECRET}`가 풀린다 — 이미
+#                             배선돼 있다. 배포 전 `/opt/ddona/.env`에 값이 먼저 있어야 하는 순서는
+#                             DEPLOY.md 참조.
+#
+name: ddona-monitoring
+
+services:
+  bugsink:
+    # 공식 문서 확인(bugsink/bugsink `docker-compose-sample.yaml`): 단일 컨테이너, 태그 `2`가
+    # 메이저 버전 고정 태그다. SQLite 모드는 이미지 자체 지원(DATABASE_URL을 안 주면 `docker.py.template`이
+    # `/data/db.sqlite3`로 자동 폴백 — 공식 소스 확인, 별도 옵션 불필요).
+    image: bugsink/bugsink:2
+    restart: unless-stopped
+    # 호스트에 포트를 게시하지 않는다 — `ddona_default` 네트워크의 Caddy만 이 서비스에 닿는다
+    # (docker-compose.prod.yml의 api·postgres·redis와 같은 관례).
+    environment:
+      SECRET_KEY: ${BUGSINK_SECRET_KEY}
+      CREATE_SUPERUSER: ${BUGSINK_CREATE_SUPERUSER}
+      BASE_URL: ${BUGSINK_BASE_URL}
+      # Caddy가 TLS를 종단하고 평문 HTTP로 프록시한다 — 공식 옵션(docker.py.template 확인)을 켜서
+      # SECURE_PROXY_SSL_HEADER·쿠키 Secure 플래그가 프록시 뒤 배치를 인지하게 한다.
+      BEHIND_HTTPS_PROXY: "true"
+      # `BASE_URL`에서 자동유도되는 허용 호스트(`ddona.site,localhost,127.0.0.1`)에는 도커 내부
+      # 서비스명 `bugsink`가 빠진다 — API 컨테이너가 `http://<key>@bugsink:8000/...`로 직접 쏘면
+      # Host 헤더가 `bugsink`가 되고, 명시적으로 허용하지 않으면 Django가 HTTP 400을 낸다(리뷰
+      # 실측). sentry-sdk가 전송 실패를 조용히 삼켜(MT-4~MT-6) 이 400은 백엔드 에러 이벤트를 전부
+      # 유실시킨다 — 위 세 호스트는 이 값을 명시하면 자동유도가 꺼지므로(docker.py.template
+      # 확인) 같이 나열해야 한다.
+      ALLOWED_HOSTS: "ddona.site,bugsink,localhost,127.0.0.1"
+      # 가입 차단(MT-2 ④). 기본값 `CB_MEMBERS`도 공개 회원가입(`/signup`)은 이미 404로 막지만
+      # (users/views.py:signup, `USER_REGISTRATION != CB_ANYBODY`면 404 — 공식 소스 확인),
+      # 로그인한 팀 관리자가 새 사용자를 초대하는 경로는 CB_MEMBERS에서 계속 열려 있다.
+      # `CB_NOBODY`로 그 경로까지 잠가 단일 운영자 인스턴스로 명시적으로 고정한다.
+      USER_REGISTRATION: "CB_NOBODY"
+      # techspec MT-2 범위 밖의 추가 조치(공식 소스 확인 중 발견) — 기본값 true면 설치 통계
+      # (BASE_URL·사용자 수 등, 이벤트 본문은 아님)를 매시간 bugsink.com으로 보낸다. legal-revision
+      # 런이 방금 "Sentry 등 추적 도구 미사용" 문구를 고치는 참이라, 문서화 안 된 제3자 송신을
+      # 하나라도 더 늘리지 않는다.
+      PHONEHOME: "false"
+      # 보유기간(MT-16 legal draft)이 "N일 보관 후 파기"에 의존한다 — 건수 기준이 아니라 날짜
+      # 기준이어야 하는 이유: 건수 상한(`retention_max_event_count`)은 프로젝트당 DB 필드라
+      # Bugsink 관리 화면("프로젝트 편집")에서 운영자가 언제든 바꿀 수 있고(공식 소스 확인:
+      # projects/models.py:127, projects/forms.py:161 — 폼에 노출됨), 상한을 거는
+      # `MAX_RETENTION_PER_PROJECT_EVENT_COUNT`도 기본 무제한이라 이 배포에서 막혀 있지 않다.
+      # 그 값을 문안에 적으면 UI 클릭 한 번에 조용히 거짓이 된다.
+      # `MAX_EVENT_AGE_DAYS`는 반대로 프로젝트 UI·API 어디에도 노출되지 않는 순수 서버 설정이다
+      # (공식 소스 확인: bugsink/app_settings.py:81, docker.py.template의
+      # `int_or_none(os.getenv("MAX_EVENT_AGE_DAYS", None))`뿐 — projects/forms.py·serializers.py
+      # 어디에도 이 이름이 없다). 이 env로만 고정되고 운영 화면에서 덮어쓸 방법이 없다(로컬 실측:
+      # env 없이 기동하면 `get_settings().MAX_EVENT_AGE_DAYS`가 None, 이 값을 주면 그대로 반영됨을
+      # 확인 — 2026-09-15, `docker run bugsink/bugsink:2 bugsink-manage shell`).
+      # 건수 제한과의 관계: 배타적이지 않고 함께 동작한다 — 건수 기준(운영 화면 기본 10,000건,
+      # 이 배포는 그대로 둔다)은 ingest 시점에 자동으로 걸려 디스크 유계성을 담당하고, 이 값(일수)은
+      # 방침 문안이 약속하는 보관기간을 담당한다.
+      # ⚠️ 이 값만으로는 아무것도 지워지지 않는다 — Bugsink 공식 이미지는 gunicorn+snappea만 상시
+      # 실행하고(Dockerfile CMD 확인) 이 값을 쓰는 자동 스케줄러를 컨테이너 안에 두지 않는다. 실제
+      # 파기는 `docker exec ddona-monitoring-bugsink-1 bugsink-manage vacuum --old-events`를
+      # 주기적으로 호출해야 일어난다 — `ops/vacuum_bugsink.py` + `ops/cron.d/ddona-bugsink-vacuum`
+      # (매일 05:00 UTC, 기존 `ops/cron.d/ddona-resource-check`와 같은 host cron 패턴)이 그 역할을
+      # 맡는다. VM 설치 절차·검증은 DEPLOY.md §3-6, 배경은 tasks/monitoring-legal-draft.md §7-6.
+      # 30일 근거: 이 서비스는 1인 운영이라 매일 들여다보지 못할 수 있다(진단에 필요한 최소가 곧
+      # "다음에 볼 때까지 남아 있을 최소 기간"). 이미 같은 전제로 채택된 Caddy 접근 로그 보관
+      # (Caddyfile `roll_keep_for 720h` = 30일)과 진단 창을 맞춰, 같은 성격의 값이 문서마다 다른
+      # 숫자로 갈라지지 않게 한다. 더 길게 잡을 진단상 근거는 없다(불필요한 장기 보관 최소화).
+      MAX_EVENT_AGE_DAYS: "30"
+    volumes:
+      - bugsink-data:/data
+    # mem_limit 필수(MT-2 ③) — 현재 docker-compose.prod.yml에 리소스 제한이 한 줄도 없어, 제한
+    # 없는 서비스를 얹으면 OOM 킬러가 RSS 큰 postgres/api를 고른다. 로컬 실측: 트래픽 없이도 RSS
+    # 290~300MiB(이 이미지의 gunicorn 워커 수는 `min(cpu_count, 4)`, e2-medium 2vCPU면 2워커 —
+    # gunicorn.docker.conf.py 확인). VM 여유(available 3.0GB)가 감당하므로 1g로 여유를 둔다.
+    # ⚠️ 기동 후 `docker stats`로 실제 RSS를 다시 재고 이 값을 조정한다.
+    mem_limit: 1g
+    # 이미지에 HEALTHCHECK가 이미 있다(Dockerfile: `python -c 'requests.get(".../health/ready")'`)
+    # — compose에서 다시 정의하지 않는다(docker-compose.prod.yml의 api와 달리 이 이미지는
+    # curl/wget 대신 requests를 쓰는 자체 HEALTHCHECK를 갖고 있다).
+
+networks:
+  default:
+    name: ddona_default
+    external: true
+
+volumes:
+  bugsink-data:

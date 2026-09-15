@@ -9,7 +9,7 @@ from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from api.core.config import settings
-from api.llm.client import LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 from api.llm.gemini import GeminiLLMClient
 
 
@@ -30,8 +30,8 @@ async def _chunks(*texts: str) -> AsyncIterator[SimpleNamespace]:
         yield SimpleNamespace(text=text)
 
 
-def _api_error() -> genai_errors.APIError:
-    return genai_errors.APIError(code=503, response_json={"error": {"message": "unavailable"}})
+def _api_error(code: int = 503) -> genai_errors.APIError:
+    return genai_errors.APIError(code=code, response_json={"error": {"message": "unavailable"}})
 
 
 async def test_generate_relays_stream_chunks_in_order(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -62,7 +62,23 @@ async def test_generate_wraps_api_error(monkeypatch: pytest.MonkeyPatch) -> None
 
     client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
 
-    with pytest.raises(LLMClientError):
+    with pytest.raises(LLMClientError) as exc_info:
+        async for _ in client.generate("hi"):
+            pass
+    # monitoring-techspec.md MT-6: 429가 아닌 APIError(여기선 503)는 쿼터 소진과 섞이면 안 된다.
+    assert not isinstance(exc_info.value, LLMRateLimitError)
+
+
+async def test_generate_wraps_429_api_error_as_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """monitoring-techspec.md MT-6: 429(쿼터 소진)는 다른 APIError와 구분되는 타입으로 올라가야
+    승격된 이벤트가 행동 가능하다 — 사용자에게 보이는 동작(LLMClientError로 흡수)은 그대로다."""
+
+    async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
+        raise _api_error(code=429)
+
+    client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
+
+    with pytest.raises(LLMRateLimitError):
         async for _ in client.generate("hi"):
             pass
 
@@ -73,9 +89,13 @@ async def test_generate_wraps_network_error(monkeypatch: pytest.MonkeyPatch) -> 
 
     client = _make_client(monkeypatch, generate_content_stream=generate_content_stream)
 
-    with pytest.raises(LLMClientError):
+    with pytest.raises(LLMClientError) as exc_info:
         async for _ in client.generate("hi"):
             pass
+    # monitoring-techspec.md MT-6 함정: httpx.HTTPError에는 `.code`가 없다 — isinstance 가드
+    # 없이 접근하면 AttributeError가 원래 예외를 가린다. 이 pytest.raises(LLMClientError)가
+    # 이미 그 함정을 잡는다(AttributeError면 여기서 안 잡혀 테스트가 실패한다).
+    assert not isinstance(exc_info.value, LLMRateLimitError)
 
 
 async def test_generate_raises_policy_violation_on_blocked_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -149,8 +169,39 @@ async def test_generate_structured_wraps_api_error(monkeypatch: pytest.MonkeyPat
 
     client = _make_client(monkeypatch, generate_content=generate_content)
 
-    with pytest.raises(LLMClientError):
+    with pytest.raises(LLMClientError) as exc_info:
         await client.generate_structured("judge this", _JudgmentResult)
+    assert not isinstance(exc_info.value, LLMRateLimitError)
+
+
+async def test_generate_structured_wraps_429_api_error_as_rate_limit_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """monitoring-techspec.md MT-6: `generate()`와 대칭을 유지해야 하는 판단 호출 쪽(스탯/엔딩
+    판정 등)도 429를 구분해야 한다."""
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        raise _api_error(code=429)
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    with pytest.raises(LLMRateLimitError):
+        await client.generate_structured("judge this", _JudgmentResult)
+
+
+async def test_generate_structured_wraps_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """monitoring-techspec.md MT-6 함정: `generate_structured()`의 except 절도 `generate()`와
+    같은 `(APIError, httpx.HTTPError)` 튜플을 쓴다 — httpx 쪽은 `.code`가 없어 가드 없이
+    접근하면 AttributeError가 원래 예외를 가린다."""
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        raise httpx.ConnectTimeout("timed out")
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    with pytest.raises(LLMClientError) as exc_info:
+        await client.generate_structured("judge this", _JudgmentResult)
+    assert not isinstance(exc_info.value, LLMRateLimitError)
 
 
 async def test_generate_structured_without_images_sends_plain_string_contents(

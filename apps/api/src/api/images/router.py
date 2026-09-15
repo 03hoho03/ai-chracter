@@ -12,6 +12,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
 from api.core.config import settings
 from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigned_get_url, upload_object
+from api.core.sentry import capture_dependency_failure
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
@@ -123,6 +124,8 @@ async def _generate_and_store_one(
         # 구분 불가능하다. `local_image.py`가 이미 상태 코드+`detail`만 실어 메시지를
         # 만들어 뒀으므로(프롬프트 에코 가능성 배제) 그 문자열을 그대로 남긴다.
         logger.warning("local image generation call failed: %s", exc)
+        # monitoring-techspec.md MT-6: 자가호스팅 이미지 생성 다운(집 PC)을 이벤트로도 승격한다.
+        capture_dependency_failure(exc, dependency="local_image")
         return _GenerationResult(outcome="failed")
     except Exception as exc:
         # 생성/업로드/저장 중 예기치 못한 오류가 백그라운드 태스크를 조용히 죽여 잡이 running에

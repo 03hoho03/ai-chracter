@@ -10,6 +10,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat import router as chat_router
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
 from api.db.models import (
@@ -299,8 +300,18 @@ async def test_send_message_policy_violation_emits_policy_warning_and_skips_save
 
 
 async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """monitoring-techspec.md MT-6: 이 흡수(에러 이벤트만 보여주고 사용자 메시지는 유지)는
+    그대로 두되, Gemini 실패를 Bugsink 이벤트로도 승격해야 한다 — 안 그러면 채팅 생성이
+    통째로 죽어도 로그를 직접 뒤지기 전엔 아무도 모른다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -320,6 +331,9 @@ async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
 
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["error"]
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], LLMClientError)
+    assert captured[0][1] == "gemini"
 
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None

@@ -8,6 +8,7 @@ from redis.exceptions import RedisError
 
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.core.sentry import capture_dependency_failure
 from api.db.models.prompt import PromptSection, PromptSet
 
 # uvicorn은 root logger에 핸들러를 안 붙여 info는 조용히 사라진다(apps/api/CLAUDE.md
@@ -131,6 +132,8 @@ async def get_cached_active_prompt_set() -> tuple[PromptSet, list[PromptSection]
         raw = await redis_client.get(ACTIVE_PROMPT_SET_KEY)
     except RedisError:
         logger.warning("프롬프트 세트 캐시 조회 실패 — DB로 폴백한다", exc_info=True)
+        # monitoring-techspec.md MT-6: 조용한 성능 저하이자 Redis 이상 신호라 이벤트로도 남긴다.
+        capture_dependency_failure(dependency="redis")
         return None
     if raw is None:
         return None
@@ -157,6 +160,8 @@ async def set_cached_active_prompt_set(prompt_set: PromptSet, sections: Sequence
         )
     except RedisError:
         logger.warning("프롬프트 세트 캐시 저장 실패 — 이번 요청은 이미 손에 쥔 값으로 계속 진행한다", exc_info=True)
+        # monitoring-techspec.md MT-6: 조용한 성능 저하이자 Redis 이상 신호라 이벤트로도 남긴다.
+        capture_dependency_failure(dependency="redis")
 
 
 async def invalidate_active_prompt_set() -> None:

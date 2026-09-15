@@ -36,6 +36,7 @@ from api.chat.prompt_builder import build_ending_judgment_prompt as _build_endin
 from api.chat.prompt_builder import build_image_judgment_prompt as _build_image_judgment_prompt
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
 from api.content.publish import build_character_publish_filter_prompt, build_story_publish_filter_prompt
+from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
@@ -562,6 +563,8 @@ async def publish_prompt_set(
         await invalidate_active_prompt_set()
     except RedisError:
         logger.warning("게시 후 프롬프트 세트 캐시 무효화 실패", exc_info=True)
+        # monitoring-techspec.md MT-6: 낡은 프롬프트가 TTL만큼 계속 나가는 신호라 이벤트로도 남긴다.
+        capture_dependency_failure(dependency="redis")
 
     return AdminPromptSetDetailResponse(
         id=published.id,

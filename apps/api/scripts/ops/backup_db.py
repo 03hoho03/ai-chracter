@@ -35,7 +35,7 @@
 SQLAlchemy/asyncpg가 안 깔려 있다(boto3만 있다). S5-d가 만료 `withdrawn_emails` 삭제를
 SQLAlchemy로 구현해 배포했다가 매일 18:00 UTC 크론이 import 시점에 죽어 백업이 통째로
 멈췄다(S5-e에서 되돌림) — 그래서 삭제도 `pg_dump`와 같은 방식(`run_sh`로 컨테이너 안
-`psql`을 부름)으로 한다. `tests/test_ops_backup_db_importable.py`가 이 제약을 `ast`로 고정한다.
+`psql`을 부름)으로 한다. `tests/test_ops_production_cron_importable.py`가 이 제약을 `ast`로 고정한다.
 """
 
 import argparse
@@ -48,11 +48,16 @@ from pathlib import Path
 from typing import IO
 
 from ops.db_url import describe, to_libpq_url
+from ops.notify import notify, ping
 from ops.pg import run_sh, shell_quote
 
 AWS_IMAGE = "amazon/aws-cli:latest"
 DAILY_KEEP = 7
 WEEKLY_KEEP = 4
+
+# monitoring-techspec.md MT-12: R2 무료 한도(DEPLOY.md §1-1). 새 토큰·새 크론을 만들지 않고
+# 이미 있는 `aws()`/prune 경로로 총 사용량을 재는 김에 임계값만 비교한다.
+DEFAULT_R2_CAPACITY_THRESHOLD_BYTES = 10 * 1024**3
 
 # legal-revision-goal-prompt.md LR-7·LR-32: `auth/router.py`의 `_reregistration_blocked`(조회)와
 # 같은 1년을 써야 "차단이 풀리는 시점"과 "행이 파기되는 시점"이 갈라지지 않는다. 원본은
@@ -144,6 +149,52 @@ def prune(bucket: str, prefix: str, keep: int) -> list[str]:
     return doomed
 
 
+def parse_s3_summary(text: str) -> int:
+    """`aws s3 ls --recursive --summarize` 출력에서 `Total Size:` 줄의 바이트 수를 읽는다.
+
+    `Total Objects:` 줄도 `Total`로 시작하므로 접두어는 `Total Size:`까지 정확히 맞춰야 한다 —
+    느슨하게 매칭하면 객체 개수를 바이트로 잘못 읽어 임계값과 전혀 다른 스케일로 비교하게 된다.
+    """
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("Total Size:"):
+            return int(stripped.split(":", 1)[1].strip())
+    raise ValueError("`aws s3 ls --summarize` 출력에 'Total Size:' 줄이 없다")
+
+
+def check_r2_capacity(bucket: str) -> None:
+    """`monitoring-techspec.md` MT-12: 버킷 전체 용량이 임계값을 넘을 때만 Discord로 알린다.
+
+    새 스크립트·새 크론·새 Cloudflare 토큰을 만들지 않는다 — 이미 있는 `aws()` 헬퍼로 한 번 더
+    호출할 뿐이다(Cloudflare GraphQL 대신인 이유는 techspec MT-12 참고: 현재 토큰에 Analytics
+    권한이 없다).
+    """
+    listing = aws(["s3", "ls", f"s3://{bucket}/", "--recursive", "--summarize"])
+    if listing.returncode != 0:
+        # `prune()`과 같은 함정 — 객체가 하나도 없는 버킷도 exit 1을 내지만 그때는 stderr가
+        # 비어 있다. 진짜 오류(권한·네트워크)만 stderr에 메시지가 남으므로 그것만 터뜨린다.
+        message = listing.stderr.decode().strip()
+        if not message:
+            return
+        raise RuntimeError(f"용량 조회 실패:\n{message}")
+
+    total_bytes = parse_s3_summary(listing.stdout.decode())
+
+    raw_threshold = os.environ.get("R2_CAPACITY_THRESHOLD_BYTES")
+    try:
+        threshold = int(raw_threshold) if raw_threshold is not None else DEFAULT_R2_CAPACITY_THRESHOLD_BYTES
+    except ValueError as error:
+        # ValueError를 그대로 두면 `__main__`의 좁은 `except (RuntimeError, KeyError)` 밖으로
+        # 새 나가 실패 ping도 못 보낸다(MT-11) — 이 파일의 다른 설정 오류(KeyError)와 같은
+        # 급으로 다루도록 RuntimeError로 갈아 끼운다.
+        raise RuntimeError(f"R2_CAPACITY_THRESHOLD_BYTES 값이 잘못됐다: {raw_threshold!r}") from error
+
+    if total_bytes >= threshold:
+        used_gb = total_bytes / 1024**3
+        threshold_gb = threshold / 1024**3
+        notify(f"⚠️ R2 사용량 {used_gb:.2f}GB — 임계값 {threshold_gb:.2f}GB 초과")
+
+
 def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
     """legal-revision-goal-prompt.md LR-32: `withdrawn_at + WITHDRAWN_EMAIL_BLOCK_PERIOD`가
     지난 `withdrawn_emails` 행을 지우고 지운 개수를 돌려준다. 처리방침 제4조 2항·약관 제14조
@@ -166,12 +217,27 @@ def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
     return len([line for line in result.stdout.decode().splitlines() if line.strip()])
 
 
+def _healthcheck(suffix: str = "") -> None:
+    """monitoring-techspec.md MT-11: healthchecks.io check-in.
+
+    healthchecks.io 관례대로 base URL에 접미사를 붙여 start(`/start`)·성공(빈 접미사)·
+    실패(`/fail`)를 구분한다. `HEALTHCHECKS_BACKUP_PING_URL`이 없으면(알림 미설정) 아무 일도
+    하지 않는다 — `ops.notify.ping` 자체도 예외를 던지지 않으므로 이 호출이 백업을 막는 일은
+    없다.
+    """
+    base = os.environ.get("HEALTHCHECKS_BACKUP_PING_URL")
+    if base:
+        ping(f"{base}{suffix}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path("backups"))
     parser.add_argument("--no-upload", action="store_true", help="덤프만 뜨고 R2 는 건너뛴다")
     parser.add_argument("--keep-local", action="store_true", help="업로드 후에도 로컬 파일을 남긴다")
     args = parser.parse_args()
+
+    _healthcheck("/start")  # MT-11: "예정 시각에 안 돌았음"을 잡으려면 시작부터 찍어야 한다.
 
     url = to_libpq_url(os.environ["DATABASE_URL"])
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -185,6 +251,9 @@ def main() -> int:
 
     if args.no_upload:
         print("↷ 업로드 건너뜀(--no-upload)")
+        # ⚠️ MT-11: 여기서 성공 ping을 보내지 않는다 — 크론은 이 플래그를 쓰지 않으므로, 보내면
+        # 실제로는 R2에 아무것도 안 올라간 로컬 전용 실행이 healthchecks.io에는 "오늘 백업
+        # 성공"으로 찍힌다.
         return 0
 
     # 백업 버킷을 따로 안 주면 자산 버킷(`S3_BUCKET_NAME`)을 쓴다 — 기존 토큰이 그 버킷 전용이라
@@ -203,6 +272,8 @@ def main() -> int:
         if removed:
             print(f"🗑 {base}{kind} 정리: {len(removed)}개 삭제 ({', '.join(removed)})")
 
+    check_r2_capacity(bucket)  # MT-12: prune 직후 총 용량을 재서 임계 초과일 때만 알린다.
+
     # legal-revision-goal-prompt.md LR-32: 여기 도달했다는 것 자체가 덤프·업로드·prune이 전부
     # 성공했다는 뜻이다 — 앞선 어느 단계든 실패하면 예외가 여기까지 오기 전에 전파되어 삭제도
     # 함께 건너뛴다. 순서 고정: 백업 뒤에 지워야 지우기 전 상태가 오늘 백업에 남는다.
@@ -212,12 +283,28 @@ def main() -> int:
 
     if not args.keep_local:
         target.unlink()
+
+    _healthcheck()  # MT-11: 성공 신호. 접미사 없음이 healthchecks.io의 "성공" 규약이다.
     return 0
+
+
+def _on_failure(error: Exception) -> int:
+    """`__main__`이 잡은 예외를 stderr에 남기고 실패 ping을 보낸다. 반환값은 그대로 exit code다.
+
+    MT-11: 아래 `except (RuntimeError, KeyError)` **밖**의 예외(예: docker 미기동으로 인한
+    `FileNotFoundError`)는 여기 도달하지 못해 실패 ping도 나가지 않는다 — 그 경우는 start ping
+    이후 healthchecks.io 자체의 grace time 초과 감지가 대신 잡는다(두 경로가 서로를 덮는다).
+    이 except를 넓히지 않는 이유: 원래 이 가드는 "사전에 식별한 실패 모드"만 좁게 잡도록
+    설계돼 있다(S5-d/S5-e 회귀 — 예상 못한 예외까지 뭉뚱그려 삼키면 새 버그 클래스를 조용히
+    숨긴다) — 이 설계를 MT-11 때문에 흔들지 않는다.
+    """
+    print(f"실패: {error}", file=sys.stderr)
+    _healthcheck("/fail")
+    return 1
 
 
 if __name__ == "__main__":
     try:
         sys.exit(main())
     except (RuntimeError, KeyError) as error:
-        print(f"실패: {error}", file=sys.stderr)
-        sys.exit(1)
+        sys.exit(_on_failure(error))

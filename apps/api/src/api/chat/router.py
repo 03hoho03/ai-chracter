@@ -70,6 +70,7 @@ from api.content.schemas import (
 )
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
+from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -94,7 +95,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
 
@@ -553,6 +554,18 @@ _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
+def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
+    """monitoring-techspec.md MT-6: 이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
+    분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
+    묶어 본다. Gemini 429(쿼터 소진)는 `llm/gemini.py`의 `LLMRateLimitError`(선행 조건, MT-6)로
+    다른 실패와 구분한다 — 안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
+    if isinstance(exc, PromptRenderError):
+        return "prompt_render"
+    if isinstance(exc, LLMRateLimitError):
+        return "gemini_rate_limit"
+    return "gemini"
+
+
 async def _build_prompt(
     db: AsyncSession,
     room: ChatRoom,
@@ -702,6 +715,7 @@ async def _stream_new_turn(
         # 나가 태스크 취소 → 커넥션 강제종료로 번진다. LLM 호출 전이므로 흡수해도 잃는
         # 게 없다 — 아직 아무 것도 스트리밍되지 않았다.
         logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -722,6 +736,7 @@ async def _stream_new_turn(
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -835,6 +850,7 @@ async def _stream_new_turn(
             )
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
     await db.commit()
 
@@ -966,6 +982,7 @@ async def regenerate_message(
         )
     except PromptRenderError as exc:
         logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -987,6 +1004,7 @@ async def regenerate_message(
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1659,6 +1677,7 @@ async def _stream_preview_turn(
     except PromptRenderError as exc:
         # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
         logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1680,6 +1699,7 @@ async def _stream_preview_turn(
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1750,6 +1770,7 @@ async def _stream_preview_turn(
                 break
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
     for stat_change_event in stat_change_events:
         yield stat_change_event

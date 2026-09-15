@@ -3,6 +3,7 @@ import { handleContentMeta, parseContentPath } from "./contentMeta";
 import { isCrawler } from "./crawler";
 import { handleHomeMeta, HOME_PATH } from "./homeMeta";
 import { applyIndexingPolicy } from "./indexing";
+import { handleIngestProxy, isIngestPath } from "./ingestProxy";
 import { buildLegacyRedirect } from "./legacyRedirect";
 import { handleLegalMeta, parseLegalPath } from "./legalMeta";
 import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
@@ -72,6 +73,12 @@ async function routeRequest(
   // 확장자가 사라진 경로는 KNOWN_ROUTES 밖이라 404가 된다(`siteVerification.ts` 참고).
   const verification = handleSiteVerification(url.pathname);
   if (verification !== undefined) return verification;
+
+  // 브라우저 에러 ingest도 Worker가 만들어 내는 경로다(monitoring-techspec.md MT-3) —
+  // 확장자가 없어 `isStaticAssetPath`는 통과하지만 `isKnownRoute` 밖이라 그대로 두면 404다.
+  if (isIngestPath(url.pathname)) {
+    return handleIngestProxy(request, env);
+  }
 
   if (isStaticAssetPath(url.pathname)) {
     return env.ASSETS.fetch(request);
