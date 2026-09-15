@@ -197,7 +197,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 - 시드의 UUID는 리터럴이 아니라 **uuid5 파생**(`seed_uuid`)이고 `seed_dev.py`는 `session.merge` 업서트라 "이 파일이 곧 시드의 단일 진실"이다. 상세 규약은 `scripts/seed_content/` 코드 주석과 `tasks/archive/prd-genre-seed-content.md` §7·§8에 있다.
 - **`settingText`는 사용자용 소개문이 아니라 서술자에게 주는 지시문이다** — "당신은 …입니다"처럼 사용자를 주인공으로 부르면 서술자가 자기를 주인공으로 착각해 화자가 뒤집힌다(발행 검증도 유사도 게이트도 못 잡는다).
-- **SDXL 프롬프트는 CLIP 77토큰에서 조용히 잘린다**(에러 없음). 긴 산문 대신 짧은 태그 나열로 쓰고 가장 중요한 지시(인물 수·시선·조명)를 앞에 둘 것.
+- **SDXL 프롬프트는 더 이상 조용히 잘리지 않는다** — 1000자/320토큰 초과는 로컬이 `400`으로 거절한다(계약 v3, `tasks/local-image-gen-contract.md` LC-11). 긴 산문 대신 짧은 태그 나열로 쓰고 가장 중요한 지시(인물 수·시선·조명)를 앞에 둘 것.
 - 이미 시딩된 환경의 이미지만 교체할 때는 `scripts/upload_seed_images.py`(DB 무변경) — `Asset.id`도 storage key도 slug 파생 고정값이라 바뀌어야 하는 건 바이트뿐이다.
 
 ## 알려진 갭

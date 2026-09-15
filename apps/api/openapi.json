@@ -9359,6 +9359,7 @@
         "properties": {
           "prompt": {
             "type": "string",
+            "maxLength": 1000,
             "minLength": 1,
             "title": "Prompt"
           },
@@ -9649,6 +9650,25 @@
               }
             ],
             "title": "Blockedreason"
+          },
+          "inputErrorCount": {
+            "type": "integer",
+            "title": "Inputerrorcount"
+          },
+          "inputError": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "too_long",
+                  "syntax"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputerror"
           }
         },
         "type": "object",
@@ -9659,7 +9679,9 @@
           "images",
           "error",
           "blockedCount",
-          "blockedReason"
+          "blockedReason",
+          "inputErrorCount",
+          "inputError"
         ],
         "title": "ImageJobStatusResponse"
       },
@@ -9737,10 +9759,13 @@
       "ImageStylePreset": {
         "type": "string",
         "enum": [
-          "base",
-          "line",
-          "water",
-          "real"
+          "soft_portrait",
+          "chapel_glass",
+          "royal_drama",
+          "sparkle_night",
+          "watercolor",
+          "pixel_art",
+          "deco_cute"
         ],
         "title": "ImageStylePreset"
       },

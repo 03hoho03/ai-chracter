@@ -9,7 +9,7 @@ from redis.exceptions import WatchError
 
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.images.models import ImageBlockedReason
+from api.images.models import ImageBlockedReason, ImageInputError
 
 
 class ImageGenerationJobStatus(str, enum.Enum):
@@ -34,6 +34,10 @@ class ImageGenerationJob(BaseModel):
     # `model_validate_json`이 터져 폴링 엔드포인트가 500이 된다(guard-progress.md I-1).
     blocked_count: int = 0
     blocked_reason: ImageBlockedReason | None = None
+    # image-style-7-goal-prompt.md IS-8: 같은 이유로 같은 패턴 — 기본값 없이 배포하면
+    # TTL 만료 전 옛 레코드에서 `ValidationError`가 나 폴링 엔드포인트가 500이 된다.
+    input_error_count: int = 0
+    input_error: ImageInputError | None = None
 
 
 def _job_key(job_id: str) -> str:
@@ -78,15 +82,18 @@ async def update_job(
     error: str | None = None,
     blocked_count: int = 0,
     blocked_reason: ImageBlockedReason | None = None,
+    input_error_count: int = 0,
+    input_error: ImageInputError | None = None,
 ) -> None:
     """Progress-update helper: bumps `completed_count`, appends a succeeded
     `asset_id`, and/or sets `status`/`error` (e.g. queued->running, or the final
     succeeded/failed transition once generation finishes).
 
-    `blocked_count`/`blocked_reason` are set as absolute values, not increments
-    (guard-techspec.md GT-3) — unlike `completed_increment`, the blocked tally is
-    decided once by `_run_generation`'s aggregation after `asyncio.gather`
-    completes, not by concurrently-running callers.
+    `blocked_count`/`blocked_reason` (and `input_error_count`/`input_error`,
+    image-style-7-goal-prompt.md IS-8, same shape) are set as absolute values,
+    not increments (guard-techspec.md GT-3) — unlike `completed_increment`, the
+    tally is decided once by `_run_generation`'s aggregation after
+    `asyncio.gather` completes, not by concurrently-running callers.
 
     Uses Redis WATCH/MULTI/EXEC (optimistic locking, retried on conflict)
     instead of a plain GET-then-SET: US-004's `asyncio.gather`'d generation
@@ -115,6 +122,10 @@ async def update_job(
                     job.blocked_count = blocked_count
                 if blocked_reason is not None:
                     job.blocked_reason = blocked_reason
+                if input_error_count:
+                    job.input_error_count = input_error_count
+                if input_error is not None:
+                    job.input_error = input_error
                 pipe.multi()  # type: ignore[no-untyped-call]
                 pipe.set(key, job.model_dump_json(), ex=settings.image_generation_job_ttl_seconds)
                 await pipe.execute()

@@ -20,7 +20,12 @@ from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_jo
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient, ImageStylePreset
-from api.llm.local_image import LocalCapabilities, LocalImageBlockedError, ModelCapability
+from api.llm.local_image import (
+    LocalCapabilities,
+    LocalImageBlockedError,
+    LocalImageInputError,
+    ModelCapability,
+)
 from api.main import app
 from factories import _login_as, _make_user
 
@@ -64,7 +69,7 @@ _READY_CAPABILITIES = LocalCapabilities(
     models=(
         ModelCapability(
             model_id="v1",
-            styles=("base",),
+            styles=("soft_portrait",),
             aspect_ratios=("1:1", "4:3", "3:4", "16:9", "9:16", "2:3"),
         ),
     ),
@@ -97,7 +102,7 @@ def _generate_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "prompt": "a cat wizard",
         "model": "v1",
-        "style": "base",
+        "style": "soft_portrait",
         "aspectRatio": "1:1",
         "count": 1,
     }
@@ -133,40 +138,12 @@ async def test_generate_rejects_aspect_ratio_not_supported_by_local_capabilities
     assert resp.status_code == 400
 
 
-async def test_generate_rejects_style_the_local_does_not_serve_under_the_wire_id(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """local-image-gen-goal-prompt.md LG-19: `router.py:203`의 style 400 분기 — 홈PC가
-    지금 서빙하는 화풍이 바뀌면(재개편 등) 제출 시점에 400을 받아야 한다. 안 그러면 잡이
-    만들어지고 나중에 일반 실패 메시지로 끝난다. 여기서 로컬이 보고하는 문자열이 우연히
-    공개 id("base")와 같아도, 지금 설정된 와이어 style("default")과 다르면 지원하지
-    않는 것으로 취급해야 한다 — 매핑 없이 원문을 그대로 비교하면(구 동작) 이 우연한
-    문자열 일치 때문에 잘못 통과시킨다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.commit()
-    await _login_as(db_client, user.id)
-
-    monkeypatch.setattr(settings, "local_image_style_wire_id", "default")
-
-    async def fake_get_capabilities() -> LocalCapabilities:
-        return LocalCapabilities(
-            ready=True, models=(ModelCapability(model_id="v1", styles=("base",), aspect_ratios=("1:1",)),)
-        )
-
-    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
-
-    resp = await db_client.post("/images/generate", json=_generate_payload())
-    assert resp.status_code == 400
-
-
 async def test_generate_rejects_registry_style_that_is_not_yet_available(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-refact-techspec.md IT-1/IT-3/IT-5: 위 테스트(로컬이 그 와이어 id를 안
-    서빙한다)와는 다른 축이다 — 여기는 와이어 id 매핑이 정상(`_stub_capabilities_ready`가
-    기본 와이어 id "base"를 그대로 서빙)인데, `style: "line"`이 레지스트리(IT-1)엔
-    있지만 아직 어떤 와이어 style에도 매핑되지 않아 `available: false`인 경우(IT-3)다.
+    """image-style-7-goal-prompt.md IS-1/IS-5: `_stub_capabilities_ready`가 서빙하는
+    건 `soft_portrait` 하나뿐이다(`_READY_CAPABILITIES`) — `style: "pixel_art"`는
+    레지스트리(IS-1)엔 있지만 지금 서빙되지 않아 `available: false`인 경우(IS-5)다.
     detail 형식은 바로 위 종횡비 400(`router.py:305-309`)과 대칭이어야 한다(IT-5)."""
     user = _make_user()
     db_session.add(user)
@@ -175,10 +152,45 @@ async def test_generate_rejects_registry_style_that_is_not_yet_available(
 
     _stub_capabilities_ready(monkeypatch)
 
-    resp = await db_client.post("/images/generate", json=_generate_payload(style="line"))
+    resp = await db_client.post("/images/generate", json=_generate_payload(style="pixel_art"))
 
     assert resp.status_code == 400
-    assert resp.json()["detail"] == "model 'v1' does not support style 'line'"
+    assert resp.json()["detail"] == "model 'v1' does not support style 'pixel_art'"
+
+
+async def test_generate_accepts_prompt_at_max_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-7: 1000자는 하드 상한의 경계값이라 거절되면 안 된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(prompt="a" * 1000))
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+
+
+async def test_generate_rejects_prompt_exceeding_max_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-style-7-goal-prompt.md IS-7: 1001자는 pydantic `max_length` 경계에서 422로
+    거절돼야 한다 — capabilities 스텁 없이도(가용성 확인보다 앞선 스키마 검증이라) 거절된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(prompt="a" * 1001))
+    assert resp.status_code == 422
 
 
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
@@ -214,14 +226,17 @@ async def test_list_image_models_returns_capabilities(
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
-    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 4종은 항상 전부 내려가고
-    # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `base`
-    # (표시명 "순정") 하나뿐이라 나머지 3종은 `available: false`다.
+    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 7종은 항상 전부 내려가고
+    # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `soft_portrait`
+    # (표시명 "부드러운") 하나뿐이라 나머지 6종은 `available: false`다.
     assert models["v1"]["styles"] == [
-        {"id": "base", "name": "순정", "available": True},
-        {"id": "line", "name": "극화", "available": False},
-        {"id": "water", "name": "수채", "available": False},
-        {"id": "real", "name": "반실사", "available": False},
+        {"id": "soft_portrait", "name": "부드러운", "available": True},
+        {"id": "chapel_glass", "name": "스테인드", "available": False},
+        {"id": "royal_drama", "name": "극적", "available": False},
+        {"id": "sparkle_night", "name": "반짝임", "available": False},
+        {"id": "watercolor", "name": "수채", "available": False},
+        {"id": "pixel_art", "name": "픽셀", "available": False},
+        {"id": "deco_cute", "name": "데포르메", "available": False},
     ]
 
 
@@ -261,6 +276,9 @@ async def test_generate_creates_assets_and_completes_job(
         assert asset.owner_user_id == user.id
         assert asset.kind == AssetKind.GENERATED
         assert asset.status == AssetStatus.READY
+        # image-style-7-goal-prompt.md IS-6: 어떤 style로 생성됐는지가 Asset 행에
+        # 남아야 한다 — 안 남으면 스타일별 효능 측정이 영원히 불가능해진다(§0-4).
+        assert asset.style == "soft_portrait"
         s3_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
         assert s3_object["Body"].read() == _png_bytes()
         thumb_object = s3.get_object(
@@ -530,6 +548,142 @@ async def test_generate_blocked_log_omits_user_id_and_prompt_text(
         message = record.getMessage()
         assert secret_prompt not in message
         assert str(user.id) not in message
+
+
+async def test_generate_input_error_too_long_marks_job_failed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-11: `local_image.py`가 `LocalImageInputError`를
+    던지는 것은 `test_llm_local_image.py`가 이미 고정했지만, `router.py`가 그것을 받아 잡
+    상태·응답으로 바꾸는 경로(`:113`의 `except LocalImageInputError`, `:249`의 FAILED 기록)는
+    커버리지 0건이었다 — `blocked_reason` 파이프라인 테스트와 같은 관용구를 쓴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="too_long")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+
+    job = await _wait_for_job_completion(job_id, user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.completed_count == 0
+    assert job.input_error_count == 2
+    assert job.input_error == "too_long"
+    assert job.error is None
+
+
+async def test_generate_input_error_syntax_marks_job_failed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-11: 위 테스트와 같은 경로 — 값만
+    `syntax`로 다르다(422 `reason=="syntax"` 진입점)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="syntax")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job_id = resp.json()["jobId"]
+
+    job = await _wait_for_job_completion(job_id, user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.completed_count == 0
+    assert job.input_error_count == 1
+    assert job.input_error == "syntax"
+    assert job.error is None
+
+
+async def test_generate_mixed_input_errors_logs_warning(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """image-style-7-goal-prompt.md IS-8 §3-8: `too_long`/`syntax`는 프롬프트만의
+    함수라 결정적이다 — 한 잡 안에서 섞이면 계약 밖 사건(프록시 흔들림 등)이므로
+    `router.py:212-224`의 혼재 감지 WARNING이 남아야 한다. 이 신설 코드는 이 테스트
+    전까지 한 번도 실행된 적이 없었다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        input_error: Literal["too_long", "syntax"] = "too_long" if call_count["n"] == 1 else "syntax"
+        raise LocalImageInputError(input_error=input_error)
+
+    _override_image_client(generate)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+            job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    finally:
+        _clear_image_override()
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.input_error_count == 2
+    router_warnings = [
+        record
+        for record in caplog.records
+        if record.name == "api.images.router" and record.levelno >= logging.WARNING
+    ]
+    # 사유가 섞이지 않으면 경고 하나(일상적인 input_error 거부 경고)뿐이다 — 최소 2건을
+    # 요구해야 혼재 감지 경고(:212-224)가 실제로 남는지 확인할 수 있다.
+    assert len(router_warnings) >= 2
+
+
+async def test_generate_input_error_does_not_set_blocked_fields(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-8: `input_error`와 `blocked_reason`은 별개 축이다
+    (`blocked_reason`의 "일부러 정보를 안 준다"는 의미를 보존하기 위해 분리했다) —
+    `jobs.py:update_job`이 `blocked_count`/`blocked_reason`과 거의 같은 모양으로
+    `input_error_count`/`input_error`를 다뤄 필드를 바꿔 쓰는 실수를 하기 쉽다. 반대
+    방향(차단 잡의 input_error가 기본값인지)은 기존 `blocked_reason` 테스트들이 이미
+    `blocked_count==0`/`blocked_reason is None`을 보므로 여기서 다시 쓰지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageInputError(input_error="too_long")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.input_error == "too_long"
+    assert job.blocked_count == 0
+    assert job.blocked_reason is None
 
 
 async def test_generate_undecodable_image_counts_as_failure(

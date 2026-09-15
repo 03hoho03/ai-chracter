@@ -119,7 +119,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**29개 키다**: 앱 런타임 24개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+**28개 키다**: 앱 런타임 23개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는
 **로컬 개발용이며 배포와 무관하다.**
@@ -139,7 +139,6 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. §5 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. §5 |
 | `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**(§5) |
-| `LOCAL_IMAGE_STYLE_WIRE_ID` | 집 PC가 보고하는 **실제** 스타일 id | **이미지 생성 필수.** 위와 같다(기본값 `base`) |
 | `LOCAL_IMAGE_TIMEOUT_SECONDS` | 기본 `90` | 안전한 기본값 — 보통 생략. 근거는 §5의 실측치 |
 | `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS` | 기본 `30` | 안전한 기본값 — 보통 생략 |
 | `LOCAL_IMAGE_QUEUE_LIMIT` | 기본 `4` | 안전한 기본값 — 보통 생략 |
@@ -314,7 +313,8 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 토큰을 함께 보낸다 — 이 경로를 고른 근거는 §0-2. 실제 클라이언트는 `llm/dependencies.py`가
 `LocalImageClient`(`llm/local_image.py`)로만 만든다.
 
-사용자에게 노출되는 것은 불투명 id 한 쌍뿐이다 — 모델 `v1`(표시명 "v1"), 스타일 `base`(표시명 "기본").
+사용자에게 노출되는 것은 불투명 id뿐이다 — 모델 id 1개(`v1`, 표시명 "v1")와 스타일 id 7개
+(`soft_portrait`~`deco_cute`, 표시명은 `images/models.py`의 `IMAGE_STYLE_PRESETS` 참고).
 체크포인트·LoRA·프리셋 문안·샘플러 파라미터는 전부 집 PC 소유이고, 서버는 프롬프트 원문과 이 두 id,
 `aspect_ratio` 문자열만 보낸다. 서버↔집 PC 계약은 `tasks/local-image-gen-contract.md`(저장소 밖,
 `.gitignore` 대상)에 있다.
@@ -335,6 +335,10 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 | 재부팅 후 콜드스타트 | 약 5.4초(프로세스 기동 → `/capabilities` 첫 200) |
 | VRAM | 상주 0 MiB(오프로드 훅, forward 시점까지 GPU에 올리지 않음) · 생성 피크 **5494 MiB** |
 
+집 PC는 콘텐츠 정책 가드도 운영한다 — 생성 전(프롬프트) · 생성 후(이미지) 2단계로 판정하고,
+위반이 의심되면 `422`를 낸다. 서버는 그것을 사용자에게 "정책 차단"으로 알린다. 상세는
+`tasks/CONTRACT_COMPLIANCE_V2.md` §0·§3.
+
 ---
 
 ## 6. 알려진 갭
@@ -342,10 +346,6 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 - **이미지 생성이 집 PC 한 대의 가동률에 종속된다.** 그 PC의 다운타임이 곧 이 기능의 실패율이다 —
   폴백이 없다(Cloudflare의 모델을 없앤 것은 의도적 결정이라, 조용히 낮은 품질로 대체되면 애초에
   로컬로 옮긴 이유가 무너진다). 사용자가 보는 것은 깨진 폼이 아니라 제출 전 사전 차단(503, §5)이다.
-- **생성 시점 안전 필터가 없다.** Cloudflare 내장 필터가 유일한 사전 필터였는데 그게 사라졌다.
-  `moderation/`은 신고·이의제기·관리자 조치뿐인 사후 대응이고, 생성물은 공개 캐릭터 썸네일·상황
-  이미지로 바로 흐를 수 있다. 부적절한 이미지가 신고될 때까지 공개될 수 있다는 뜻이고, 의도적으로
-  수용한 리스크다. 문제가 실제로 나타나면 그때 사전 필터를 다시 연다.
 - **스테이징 환경 없음**: main push → 바로 prod. 대신 BE는 태그 한 줄 롤백(§3-1), FE는 Pages 이전
   배포로 롤백 가능 → 문제 시 1순위는 롤백, fix는 그 다음.
 - **Pages 프리뷰에서는 API 연동 확인 불가**: `CORS_ALLOW_ORIGINS`가 prod 두 도메인만 허용해 PR
