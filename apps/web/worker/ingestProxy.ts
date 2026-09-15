@@ -97,6 +97,14 @@ export async function handleIngestProxy(
       method: request.method,
       headers,
       body: request.body,
+      // ⚠️ `redirect: "manual"` 이 필수다. Workers 의 `fetch` 는 기본이 `"follow"` 라
+      // 업스트림이 3xx 를 주면 **Worker 자신이** 그 Location 을 따라간다. Bugsink 는 로그인
+      // 성공 시 `302 → https://ddona.site/_ingest/` 를 주는데, 그 목적지가 다시 이 Worker 로
+      // 들어와 무한 재진입이 되고 Cloudflare 서브요청 한도에서 `fetch` 가 던져 아래 catch 가
+      // 502 를 낸다(2026-09-15 프로덕션 실측: Caddy 액세스 로그에는 302 만 있고 502 가 없어
+      // 출처가 Worker 임이 드러났다). 프록시는 3xx 를 해석하지 말고 브라우저에 그대로 넘겨야
+      // 한다 — 리다이렉트를 따라갈 주체는 브라우저다.
+      redirect: "manual",
     });
   } catch (error) {
     console.warn("[ingest] 업스트림 요청이 실패했다", error);
