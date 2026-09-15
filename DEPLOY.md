@@ -167,7 +167,14 @@ Vite env는 런타임이 아니라 빌드타임이다 — BE URL이 바뀌면 FE
 
 ### 2-3. web Worker 런타임 (⚠️ 빠지면 조용히 무효)
 
-web 프로젝트 → Settings → Environment variables. **Production과 Preview 양쪽 모두** plaintext로.
+web 프로젝트 → Settings → Environment variables(현 UI는 **Variables and Secrets**).
+**Production과 Preview 양쪽 모두** plaintext로.
+
+> ⚠️ **§2-2와 입력란이 같다.** Cloudflare Pages에는 변수 화면이 하나뿐이고 "런타임 변수"라는
+> 별도 메뉴가 없다 — 절을 나눈 것은 **누가 읽느냐**의 구분이다. §2-2는 `vite build`가 읽어
+> 번들에 박고, 여기 것은 배포된 `dist/_worker.js`가 요청마다 읽는다. `VITE_` 접두어가 붙은
+> 것만 브라우저 번들에 들어간다(그래서 `SENTRY_AUTH_TOKEN`에는 절대 붙이지 않는다, §3-5).
+> 2026-09-16 실제로 이 절 제목 때문에 "런타임 입력란을 못 찾겠다"는 혼선이 있었다.
 
 | 변수 | 값 | 없으면 |
 |---|---|---|
