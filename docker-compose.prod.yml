@@ -28,7 +28,11 @@ services:
       - caddy_data:/data
       - caddy_config:/config
       # 접근 로그 30일 보관(legal-revision-goal-prompt.md LR-13). Caddyfile이 여기로 파일을 쓴다.
-      - caddy_logs:/var/log/caddy
+      # named volume이 아니라 호스트 bind mount다(LR-29) — roll_keep_for는 이미 회전된 파일만
+      # 정리하고 활성 access.log 자체는 시간으로 정리하지 않으므로, 저트래픽 구간에는 호스트
+      # logrotate(ops/logrotate.d/ddona-caddy)가 daily 회전을 맡아야 한다. 호스트 도구가 파일을
+      # 봐야 하니 named volume 은 못 쓴다. 디렉터리는 DEPLOY.md 절차로 미리 만든다.
+      - /opt/ddona/logs/caddy:/var/log/caddy
     depends_on:
       api:
         condition: service_healthy
@@ -97,4 +101,3 @@ volumes:
   redisdata:
   caddy_data:
   caddy_config:
-  caddy_logs:
