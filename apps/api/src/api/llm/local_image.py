@@ -5,11 +5,12 @@
 `local-image-gen-goal-prompt.md` LG-18(콜드 캐시에서도 `generate_images`의 사전 차단이
 동작해야 한다 — `/images/models`와 `generate_images` 두 호출부가 이 함수 하나를 공유).
 
-Pillow는 import하지 않는다 — `cloudflare_image.py`의 `_is_blank_image`(Cloudflare 내장
-안전 필터가 차단된 프롬프트를 단색 이미지로 바꿔치기하는 것을 감지하는 코드)가 그 import의
-유일한 이유였는데, 집 PC엔 그런 필터가 없다(local-image-gen-goal-prompt.md LG-12 — 사전
-안전 필터를 두지 않기로 결정). Pillow는 import에만 3.7MB를 읽고 이 모듈은 모든 기동
-경로(`llm/dependencies.py`)에 걸려 있으므로 그 비용을 되살리지 않는다.
+Pillow는 import하지 않는다 — 서버가 픽셀을 열어 볼 일이 없기 때문이다. 콘텐츠 가드는 집
+PC가 생성 전(프롬프트)·생성 후(이미지) 2단계로 돌리고(DEPLOY.md §5), 서버는 그 결과인
+`422`를 받아 `LocalImageBlockedError`로 정규화하기만 한다(guard-contract.md LC-4a) — 판정을
+서버에서 다시 하지 않으니 이미지 바이트를 디코드할 이유가 없다. Pillow는 import에만 3.7MB를
+읽고 이 모듈은 모든 기동 경로(`llm/dependencies.py`)에 걸려 있으므로 그 비용을 되살리지
+않는다.
 """
 
 import time

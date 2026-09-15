@@ -19,13 +19,14 @@ async def send_email_console(to: str, subject: str, body: str) -> None:
 
 
 async def send_email_resend(to: str, subject: str, body: str) -> None:
-    """email-goal-prompt.md E-1: Resend HTTP API. llm/local_image.py:194-207와 같은 형태 —
-    httpx.AsyncClient → raise_for_status() → HTTPStatusError(좁음)/HTTPError(넓음) 순으로
-    잡아 전용 예외로 정규화한다.
+    """email-goal-prompt.md E-1: Resend HTTP API. `llm/local_image.py`의 `_call_generate`
+    오류 정규화와 같은 형태 — httpx.AsyncClient → raise_for_status() → HTTPStatusError(좁음)/
+    HTTPError(넓음) 순으로 잡아 전용 예외로 정규화한다(줄번호로 가리키면 썩는다 — 심볼로
+    가리킬 것).
 
-    타임아웃 10초: 이미지 생성(60초, 무거운 추론)과 달리 몇 KB짜리 JSON 왕복이라 오래 걸릴
-    이유가 없다 — 응답 이후 백그라운드에서 도는 호출(E-2)이 오래 매달리면 그만큼 이벤트 루프
-    워커가 묶이므로 짧게 잡는다.
+    타임아웃 10초: 이미지 생성(90초, 무거운 추론 — `local_image_timeout_seconds`)과 달리 몇
+    KB짜리 JSON 왕복이라 오래 걸릴 이유가 없다 — 응답 이후 백그라운드에서 도는 호출(E-2)이
+    오래 매달리면 그만큼 이벤트 루프 워커가 묶이므로 짧게 잡는다.
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:

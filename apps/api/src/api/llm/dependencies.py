@@ -15,10 +15,10 @@ def get_llm_client() -> LLMClient:
     구체 구현체(GeminiLLMClient)를 직접 참조하지 않도록 하기 위한 DI 지점 —
     같은 이유로 만든 `api.auth.google_oauth.get_google_profile` 패턴과 동일.
 
-    import이 함수 안에 있는 건 콜드스타트 때문이다: `api.llm.gemini`가 끌고 오는
-    `google.genai`는 1 vCPU에서 import에만 약 1초가 든다. 여기 두면 그 비용을 기동
-    시점이 아니라 첫 LLM 호출 시점(`@lru_cache`라 프로세스당 한 번)에 문다 — 홈/목록
-    같은 LLM 무관 경로가 첫 요청인 콜드스타트는 이 비용을 아예 안 낸다.
+    import이 함수 안에 있는 건 프로세스 기동(재배포·재시작·크래시 복구) 비용 때문이다:
+    `api.llm.gemini`가 끌고 오는 `google.genai`는 import에만 약 1초가 든다(1 vCPU 실측).
+    여기 두면 그 비용을 기동 시점이 아니라 첫 LLM 호출 시점(`@lru_cache`라 프로세스당 한
+    번)에 문다 — 홈/목록 같은 LLM 무관 경로만 타는 프로세스는 이 비용을 아예 안 낸다.
     모듈 최상단으로 올리지 말 것.
     """
     from api.llm.gemini import GeminiLLMClient
