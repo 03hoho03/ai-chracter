@@ -306,8 +306,103 @@ agent-browser network har stop <워크스페이스 안 경로>/after-mobile.har
 
 ## 2026-09 현행 실측
 
-**미측정.**
+**측정 일시: 2026-09-15 14:47 KST (05:47 UTC).** 도구: `chrome-devtools` MCP(전용 신규 탭, 측정 후 정리). 위 「현행 재측정 절차」를 실행한 1회 실측이다.
 
-위 「현행 재측정 절차」를 그대로 실행한 결과를 여기 적는다. 기록할 값: 초기 이미지 요청 수 · 초기 이미지 전송량 · 이미지 1건 최대 · 썸네일 비율 · LCP(PerformanceObserver, 25초) · **LCP 요소(tag/src/size)** · CLS · TTFB · 측정 시각 · FE 번들 해시.
+### 달성한 조건 — 원본과 대조
 
-> 기록할 때 **인프라가 다르다는 주석을 반드시 함께 남겨라**(서울 GCE VM vs 싱가포르 Cloud Run). 이 값은 2026-08-19 수치와 **직접 비교 대상이 아니다.**
+| 항목 | 원본 요구 | 이번 실측 | |
+|---|---|---|---|
+| 대상 | 홈, 비로그인 | `https://ddona.site/` 홈, 비로그인(`GET /me` → 401) | 일치 |
+| 뷰포트 | 390 × 844 | **`innerWidth` 390 · `innerHeight` 844** (페이지에서 직접 읽음) | 일치 |
+| **DPR** | **3** | **`window.devicePixelRatio` = 3** (페이지에서 직접 읽음) | 일치 |
+| mobile + touch | 예 | `isMobile:true, hasTouch:true` (CDP 에뮬레이션 회신) | 일치 |
+| CPU | 4× 스로틀 | 4× | 일치 |
+| 네트워크 | Slow 4G | Slow 4G | 일치 |
+| API 워밍업 | `GET /contents?type=story` 3회 | 3회 (TTFB 0.189 / 0.215 / 0.218 s) | 일치 |
+| 이미지 캐시 | presigned라 자동 콜드 | 20건 전부 새 서명 URL로 재요청 | 일치 |
+| 앱 셸(JS·CSS·폰트) 캐시 | *원본에 언급 없음* | **격리 브라우저 컨텍스트로 콜드 확보** — 캐시 히트 0건 확인 | 원본에 없는 조건 |
+
+**뷰포트 폭은 함정에 걸리지 않았다.** 「기타 하네스 함정」의 *"`resize_page`로 390px를 줘도 실제 뷰포트는 500px까지만 좁아진다"*는 `resize_page`(창 리사이즈)의 문제이고, 이번엔 `emulate`(`Emulation.setDeviceMetricsOverride`)를 썼다 — `innerWidth`를 실제로 읽어 390을 확인했다.
+
+**DPR은 원본과 같은 3이지만, 이번 측정에서 DPR은 전송량에 영향을 주지 않는다.** 카드 이미지 20건 중 `srcset`을 가진 것이 **0건**이다(페이지에서 실측). 서버가 `_thumb.webp` 단일 URL을 서명해 내려주므로 브라우저가 고를 후보 자체가 하나뿐이고, DPR을 바꿔도 같은 파일을 받는다. → **DPR을 이유로 전송량이 원본과 어긋날 여지는 없다.**
+
+**⚠️ 앱 셸 캐시 — 원본 조건표에 없는 항목이라 처음에 밟았다.** 첫 시도는 브라우저 프로필의 HTTP 캐시가 warm이어서 동일 오리진 자산 44건 중 **14건이 캐시 히트**였다(`transferSize=300`인데 `encodedBodySize`는 수만 바이트 — 폰트 subset·JS 청크 다수). 원본 조건표의 *"presigned URL이라 매 실행이 자동으로 콜드 캐시 — 별도 초기화 불필요"*는 **이미지에만 참이고 JS·CSS·폰트에는 거짓이다.** 그래서 격리 컨텍스트에서 다시 쟀다. 아래 표는 그 콜드 런(**런 3**) 값이다. 세 런의 조건과 LCP는 이 절 끝에 전부 적었다.
+
+### 측정값 (런 3 — 콜드 캐시 · 콜드 커넥션 · fresh navigation)
+
+| 지표 | 값 | 근거 |
+|---|---|---|
+| **초기 이미지 요청 수** | **20건** | 전부 R2 presigned `_thumb.webp`, 200 |
+| **초기 이미지 전송량** | **360,390 B = 0.344 MiB (0.360 MB)** | 20건 응답 `content-length` 합. 헤더 제외(건당 약 250 B, 합계 약 5 KB) |
+| **이미지 1건 최대** | **27,930 B = 27.3 KiB** | `6a55f5e8-f02f-5558-84be-143994804820_thumb.webp` |
+| 이미지 1건 평균 | 18,020 B = 17.6 KiB | |
+| **썸네일(`_thumb.webp`) 전환율** | **20 / 20** | 목록 API `thumbnailUrl` 20건 전부 `_thumb.webp` |
+| **LCP (PerformanceObserver, 25초+ 대기)** | **7,268 ms** | 3회 표본 6,524 / 7,236 / 7,268 |
+| **LCP 요소** | **`IMG.size-full object-cover`**, size 18,040 px²<br>`…/assets/seed/f20d0bae-4cbe-5459-9a77-ff0582fcf4b9_thumb.webp` (16,578 B, 384×512) | 그리드 **3번째 카드** |
+| **25초 시점 로드 완료** | **20 / 20건** | 25,692 ms 시점 스냅샷. 마지막 이미지 `responseEnd` 9,629 ms |
+| CLS | **0** (`layout-shift` 엔트리 0건) | ⚠️ 아래 함정② |
+| TTFB (문서, `responseStart − requestStart`) | **338 ms** | Slow 4G 스로틀 하 |
+| FCP | 4,480 ms | |
+| DOMContentLoaded / load | 3,590 ms / 3,591 ms | |
+| 전체 전송량 | **약 1,065,160 B = 1.02 MiB** | 동일오리진 690,642 + 이미지 360,390 + API 약 14,128 |
+| 원본 해상도 → 렌더 크기 | **384×512 → 109.33 × 164.99 CSS px** | 카드 열 폭 111.33 px (`grid gap-3 grid-cols-3 sm:grid-cols-4 md:grid-cols-5`) |
+| `loading` 속성 | lazy 15 / eager 5, `fetchpriority="high"` 1건 | |
+| FE 번들 | `assets/index-nFCm7OFc.js` (195,342 B) | |
+
+**LCP 요소가 1번 카드가 아닌 것은 오류가 아니다.** 첫 줄 카드들의 면적이 18,023~18,040 px²로 사실상 동률이라(같은 `grid-cols-3` 셀) 어느 장이 LCP가 되는지는 도착 순서가 가른다. 세 런 모두 LCP 요소는 `IMG` + `_thumb.webp`였고, 텍스트(`P` 카드 제목, 4,431 px²)는 한 번도 최종 LCP가 아니었다.
+
+### 원본 "후" 값과 나란히 — ⚠️ 직접 비교가 아니다
+
+> **대조 불가 사유 (이 표를 인용할 때 반드시 함께 적을 것):**
+> 1. **인프라가 바뀌었다** — 원 측정 BE는 **Cloud Run `asia-southeast1`(싱가포르)**, 현행은 **GCE VM `ddona-api` `asia-northeast3-a`(서울)**다. FE 오리진도 `ai-character-chat-web.pages.dev` → `ddona.site`. 리전 이전만으로 TTFB·LCP가 달라진다. 이 문서 「⚠️ 이 값들은 다시 잴 수 없다」 절 참조.
+> 2. **카드 그리드가 2열 → 3열이 됐다** — 2026-09-11 개편으로 `portrait` 사다리가 `3/4/5`가 되어 390 px에서 **한 줄에 3장**이 들어간다(원 측정 당시 2열, 카드 폭 139 px → 현행 111.33 px). **요청 수 16 → 20의 직접 원인이 이것이다**(Chrome lazy 임계값 약 1,250 px 안에 들어오는 카드 수가 늘었다). 코드 변경으로 인한 악화가 아니다.
+> 3. 두 점 사이의 차이는 **코드 변경의 효과가 아니다.**
+
+| 지표 | 원본 "후" (2026-08-19, 싱가포르·2열) | 현행 (2026-09-15, 서울·3열) | 읽는 법 |
+|---|---|---|---|
+| 초기 이미지 요청 수 | 16건 | **20건** | 3열 전환으로 첫 화면 카드가 늘어난 결과 |
+| 초기 이미지 전송량 | 0.27 MB | **0.344 MiB (360,390 B)** | 건수가 16→20으로 **1.25배**, 전송량도 약 1.27배. **장당 평균은 사실상 동일**(원본 ≈17 KB, 현행 17.6 KB) |
+| 이미지 1건 최대 | 28 KB | **27.3 KiB** | 동급 |
+| 썸네일 비율 | 16 / 16 | **20 / 20** | 전량 전환 유지 |
+| 원본 해상도 | 384×512 | **384×512** | 동일 |
+| `loading="lazy"` 적용 | 16건 | **15건**(+ eager 5건) | eager는 `toPriorityCount` 사다리 값(3열 사다리 최대 5열) |
+| LCP (PerformanceObserver, 25초) | 6,208 ms | **7,268 ms** | ⚠️ 리전·오리진·열 수가 전부 달라 **개선/악화로 읽지 말 것** |
+| LCP 요소 | `IMG` `_thumb.webp` | **`IMG` `_thumb.webp`** | 동일 유형 |
+| 25초 시점 로드 완료 | 16 / 16건 | **20 / 20건** | |
+| TTFB | 59~67 ms | **338 ms** | ⚠️ 아래 참조 |
+| **CLS** | **원본에 "후" 값이 없다** | **0** | **대조 불가** — 배포 후 대조표에 CLS 행이 자체가 없다 |
+
+**TTFB 338 ms를 "악화"로 읽지 마라.** 리전이 싱가포르 → 서울로 **가까워졌는데** 값이 커졌다 — 즉 두 수치는 같은 것을 재고 있지 않다. 원본은 조건표에 Slow 4G를 적어 놓고 59~67 ms를 보고하는데, Slow 4G 에뮬레이션의 지연만으로도 그 값이 나올 수 없다(이번 실측에서 같은 스로틀 하 문서 TTFB는 fresh navigation 338~501 ms, 커넥션 재사용 reload 132 ms였다). **원본의 59~67 ms가 어느 경로에서 나온 값인지 원본에 적혀 있지 않아 방법 자체를 재현할 수 없다.** 참고로 스로틀 없는 `curl` 기준 `api.ddona.site` TTFB는 이번에 **184~236 ms**였다.
+
+### 함정 처리 결과
+
+**함정 ① (트레이스 autoStop LCP 금지) — 지켰다.** `performance_start_trace`를 아예 쓰지 않았다. `PerformanceObserver({type:'largest-contentful-paint', buffered:true})`를 **`navigate_page`의 `initScript`로 navigate 전에** 심고, 28초까지 기다린 뒤 `window.__lcp`를 읽었다. 관측된 LCP 후보 전이는 `SPAN`(798) → `BUTTON`(1,476) → `P` 카드 제목(4,431) → `IMG` 썸네일(18,023) → `IMG`(18,040)이다. **텍스트 단계(`P`, 5,292 ms)에서 끊었다면 원 측정의 3,584 ms와 같은 종류의 틀린 값을 얻었을 것이고**, 실제로 이번에도 텍스트→이미지 추월이 일어났다.
+
+**함정 ② (CLS는 시프트가 뷰포트 밖이면 0) — 한계를 명기한다.** 홈 CLS는 **0**(`layout-shift` 엔트리 0건)으로 나왔지만, 이 값은 **"시프트가 없었다"의 증명이 아니다.** 뷰포트(390×844) 밖에서 일어난 시프트는 엔트리를 만들지 않는다. 이번 측정은 스크롤도 마커 샘플링도 하지 않은 **초기 화면 관찰값**이다. 확실히 하려면 이 문서 「함정 ②」의 두 방법(`scrollIntoView` 후 관찰 + 마커 `getBoundingClientRect` rAF 샘플링)을 써야 한다 — **이번엔 하지 않았다.** 더구나 **원본에 홈 CLS의 "후" 값이 아예 없어** 이 0은 애초에 대조할 상대가 없다.
+
+### 세 런 전부 (숨기지 않는다)
+
+| 런 | 캐시 상태 | 진입 방식 | LCP | CLS | 문서 TTFB | 비고 |
+|---|---|---|---|---|---|---|
+| 1 | 앱 셸 **warm**(44건 중 14건 캐시 히트), 이미지 콜드 | fresh navigate | 7,236 ms | 0 | 501 ms | **원본 조건 미달** — 아래 표 값의 근거로 쓰지 않는다 |
+| 2 | 콜드(hard reload, 캐시 히트 0) | reload, 커넥션 재사용 | 6,524 ms | 0 | 132 ms | TTFB가 커넥션 재사용으로 낮다 |
+| **3** | **콜드(격리 컨텍스트, 캐시 히트 0)** | **fresh navigate** | **7,268 ms** | **0** | **338 ms** | **채택값** — 원본 조건에 가장 가깝다 |
+
+세 런 모두 이미지 20건·`_thumb.webp` 20/20·동일한 20개 UUID 집합·25초 시점 20/20 완료로 **결정적 지표는 동일**했다. LCP만 6,524~7,268 ms로 흔들린다(표본 3, 중앙값 7,236 ms). **원 측정처럼 3회 중앙값을 주지표로 삼고 싶다면 이 세 런은 캐시 조건이 서로 달라 짝지어진 반복이 아니다** — 채택값은 조건이 맞는 런 3 단일값이다.
+
+### 재현에 쓴 명령
+
+```bash
+# 1) API 워밍업 3회
+for i in 1 2 3; do curl -s -o /dev/null "https://api.ddona.site/contents?type=story"; done
+
+# 2) 이미지 바이트 — 목록 API가 서명해 준 20건을 그대로 받아 합산
+curl -s "https://api.ddona.site/contents?type=story&sort=latest" \
+  | python3 -c 'import json,sys; [print(i["thumbnailUrl"]) for i in json.load(sys.stdin)["items"]]' \
+  | while IFS= read -r u; do curl -s -o /dev/null -w '%{size_download}\n' "$u"; done \
+  | awk '{s+=$1;n++;if($1>m)m=$1} END{print n" reqs", s" B", m" B max"}'
+```
+
+브라우저 쪽 수치(LCP·CLS·요청 수·완료율)는 `chrome-devtools` MCP로 냈다: `new_page`(전용 탭) → `emulate(viewport="390x844x3,mobile,touch", cpuThrottlingRate=4, networkConditions="Slow 4G")` → `navigate_page(initScript=<LCP·CLS 옵저버>)` → 28초 대기 → `evaluate_script`로 `window.__lcp` 읽기.
+
+**이미지 바이트 교차검증:** 위 `curl` 합산이 브라우저가 실제로 받은 것과 같은지 두 가지로 확인했다 — (1) 브라우저가 요청한 20개 파일명 집합과 `curl`로 잰 20개 집합이 **완전히 일치**(diff 0), (2) LCP 요소 파일(`f20d0bae…`)의 크기가 CDP 응답 헤더 `content-length: 16578`과 `curl` 측정값 16,578 B로 **일치**. `PerformanceResourceTiming.transferSize`는 R2가 `Timing-Allow-Origin`을 보내지 않아 **20건 전부 0으로 나오므로 쓸 수 없다**(이 경로로 재려던 시도가 먼저 있었다).
