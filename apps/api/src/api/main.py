@@ -33,7 +33,6 @@ from api.inquiry.router import me_router as inquiry_me_router, router as inquiry
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
-from api.session.router import router as session_router
 from api.session.suspension import rebuild_suspended_user_markers
 
 
@@ -75,7 +74,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(session_router)
 app.include_router(admin_router)
 app.include_router(admin_me_router)
 app.include_router(admin_dashboard_router)

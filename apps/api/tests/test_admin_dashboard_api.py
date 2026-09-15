@@ -22,7 +22,7 @@ from api.db.models import (
     ReportStatus,
 )
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _create_admin, _get_genre, _login_as_admin, _make_user
+from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -152,8 +152,8 @@ async def test_regular_user_session_cannot_access_dashboard(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     for path in (
         "/admin/dashboard/counts",

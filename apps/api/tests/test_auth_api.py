@@ -625,6 +625,20 @@ async def test_me_without_session_returns_401(db_client: httpx.AsyncClient) -> N
     assert resp.status_code == 401
 
 
+async def test_me_with_expired_session_cookie_returns_401(db_client: httpx.AsyncClient) -> None:
+    """secure-issue-goal-prompt.md SEC-3: Redis에 없는 session_id가 쿠키로 들어오는 경우.
+    쿠키 값은 서명도 암호화도 없는 생짜 session_id라(`session/cookies.py`) 클라이언트가 임의
+    문자열을 그대로 보낼 수 있고, 로그아웃(`auth/router.py`)이 Redis 키를 지운 뒤에도 그
+    쿠키를 들고 있는 클라이언트가 있으면 같은 모양이 된다. `get_session`의 `raw is None`
+    분기는 이때만 탄다 — 쿠키가 아예 없는 위 테스트는 `_session_user_id`가 그 앞에서
+    갈라져 여기에 닿지 못한다."""
+    db_client.cookies.set(settings.session_cookie_name, uuid.uuid4().hex)
+
+    resp = await db_client.get("/me")
+
+    assert resp.status_code == 401
+
+
 async def test_logout_invalidates_session(db_client: httpx.AsyncClient) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
     login_resp = await db_client.post(

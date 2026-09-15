@@ -10,7 +10,8 @@
 #   SITE_ADDRESS         `api.ddona.site` (로컬 검증은 `http://localhost`)
 #   POSTGRES_PASSWORD    아래 postgres 와 DATABASE_URL 양쪽이 같은 값을 봐야 한다
 #   POSTGRES_DB
-#   그리고 앱 런타임 env 22개(DEPLOY.md §2-1 표 기준 — 생략 가능한 5개는 별도) — `env_file` 로 api 에 주입된다.
+#   그리고 앱 런타임 env(목록·개수는 DEPLOY.md §2-1 표 참조) — `env_file` 로 api 에 주입된다.
+#   ⚠️ 여기에는 개수를 적지 않는다 — 17 → 22 → 23 으로 세 번 어긋났다. 설정이 늘 때 §2-1 한 곳만 고치면 되도록 둔다.
 name: ddona
 
 services:

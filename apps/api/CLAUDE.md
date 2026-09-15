@@ -36,6 +36,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - **DB URL의 단일 소스는 `api.core.config.settings.database_url`이다.** `alembic.ini`의 `sqlalchemy.url`은 플레이스홀더이고 `migrations/env.py`가 기동 시 덮어쓴다 — 마이그레이션용 URL을 따로 관리하지 않는다.
 - 새 모델은 `db/models/{domain}.py`에 두고 **`db/models/__init__.py`에 import**해야 한다. 빠뜨리면 `Base.metadata`가 비어 autogenerate가 조용히 빈 diff를 낸다.
 - **Dockerfile**은 uv 멀티스테이지. `uv:` 이미지 태그를 `[build-system] uv_build` 버전과 맞춰 고정한다(어긋나면 빌드 백엔드 호환성 문제).
+- **이메일 발송(`core/email.py`)은 운영에 배포돼 실제로 나간다** — 2026-09-12 프로덕션 왕복 검증 완료(실메일 가입: `signup`→수신함 도착→`verify-email`, 비밀번호 재설정 링크 1회용까지. `tasks/email-progress.md` S5-5·S5-6). VM env가 `EMAIL_PROVIDER=resend`+`RESEND_API_KEY`+`EMAIL_FROM`을 싣는다(`DEPLOY.md §2-1`). **다만 코드 기본값은 `console`이다**(`core/config.py`) — 로컬·pytest는 설정 없이 돌면 로그만 찍으므로 "메일이 안 온다"가 로컬에서는 정상 동작이다.
 
 ## 마이그레이션 (autogenerate가 못 만드는 것들)
 
@@ -88,7 +89,9 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 테스트 정책 — 무엇을 얼마나 쓰는가
 
-2026-09-08 정리로 870개였던 테스트가 830개가 됐고(42개 삭제 + T-9로 2개 보강), `tests/`는 누적 -1,202줄, 라인 커버리지는 97%→98%(5,013문 중 121 미커버)다. 스위트는 커버리지 포함 약 3분 50초에 끝난다.
+2026-09-08 정리로 870개였던 테스트가 830개가 됐고(42개 삭제 + T-9로 2개 보강), `tests/`는 누적 -1,202줄, 라인 커버리지는 97%→98%(5,013문 중 121 미커버)였다. 그 뒤 기능 작업으로 다시 늘어 2026-09-15 기준 1,082개이고, 라인 커버리지는 98%(5,753문 중 108 미커버 = 98.12%)다. 스위트는 커버리지 포함 약 2분 42초(161.8초)에 끝난다.
+
+> 측정 조건: 2026-09-15 `fix/dev-session-echo-auth-bypass` 실측, 로컬 Apple Silicon + docker dev 컨테이너, 커버리지 포함. 소요시간만 기계 의존이고 개수·커버리지는 환경 독립이다.
 
 ### 순서: 테스트를 먼저 쓰고, 실패를 눈으로 본 뒤 구현한다
 
@@ -202,6 +205,5 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 알려진 갭
 
-- **이메일 발송은 구현됐으나 운영에 배포되지 않았다**(`core/email.py`) — `EMAIL_PROVIDER=resend`+`RESEND_API_KEY`(`DEPLOY.md §2-1`)를 설정해야 실제 발송이 켜지고, 기본값(`console`)에서는 로그만 찍는다.
 - **`_update_story_draft`의 선재 버그**: 제거된 시작설정을 `keyword_notes` 조정보다 먼저 지워서, 어떤 키워드북이 가리키는 시작설정을 빼는 PATCH는 물리 FK 위반으로 500이 난다. 빌더의 시작설정 삭제를 다시 만질 때 같이 고칠 것(노트 prune을 앞으로 옮기거나 참조를 먼저 끊는다).
 - **`contents.has_unpublished_changes`가 "초안이 발행본과 다른가"의 단일 소스다**(타임스탬프로는 판정 불가). 세우는 곳은 자동저장·편집취소·발행 셋뿐 — **초안을 바꾸는 새 엔드포인트를 추가하면 이 플래그를 반드시 함께 세울 것.**

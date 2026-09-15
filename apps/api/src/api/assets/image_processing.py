@@ -1,9 +1,8 @@
 """Pillow 기반 이미지 변형.
 
-`from PIL import ...`이 함수 안에 있는 건 콜드스타트 때문이다: Pillow는 import에만
-3.7MB를 읽는데(Cloud Run은 이미지를 lazy loading으로 스트리밍해서 이 바이트가 그대로
-기동 지연이 된다) 여기 두 함수는 업로드/블러 경로에서만 불린다. 최상단으로 올리면
-`assets/router.py`를 타고 모든 콜드스타트가 그 비용을 문다 — 올리지 말 것.
+`from PIL import ...`이 함수 안에 있는 건 프로세스 기동(재배포·재시작·크래시 복구) 비용
+때문이다: Pillow는 import에만 3.7MB를 읽는데 여기 두 함수는 업로드/블러 경로에서만 불린다.
+최상단으로 올리면 `assets/router.py`를 타고 모든 기동이 그 비용을 문다 — 올리지 말 것.
 """
 
 import io

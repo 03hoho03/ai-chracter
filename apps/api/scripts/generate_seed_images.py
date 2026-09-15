@@ -4,16 +4,21 @@
     cd apps/api && uv run --env-file .env python scripts/generate_seed_images.py
     cd apps/api && uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rdloop --force
 
-프롬프트 파일은 커밋하고 생성물(`seed_content/images/{slug}.png`)은 gitignore 다 — 다른
-머신에서는 이 스크립트로 다시 뽑는다(Cloudflare 에 시드값을 못 보내므로 원본과 픽셀이
-같지는 않다). 이미지가 없는 머신은 시드가 목업 썸네일로 대체하므로 이 단계는 선택이다.
+생성은 집 PC 자가 호스팅 추론 서버로 나간다(`build_image_client` → `LocalImageClient`,
+DEPLOY.md §5). 프롬프트 파일은 커밋하고 생성물(`seed_content/images/{slug}.png`)은 gitignore
+다 — 다른 머신에서는 이 스크립트로 다시 뽑는다(요청 본문에 시드값이 없어 — `_call_generate`
+가 싣는 건 prompt·model·style·aspect_ratio 넷뿐이다 — 원본과 픽셀이 같지는 않다). 이미지가
+없는 머신은 시드가 목업 썸네일로 대체하므로 이 단계는 선택이다.
 
-Cloudflare 는 간헐적으로 실패한다(빈 메시지의 `LLMClientError` = 일시적 blip). 한 장이
-실패해도 나머지는 계속 생성하고, 끝에 실패 목록을 찍는다 — `--only <slug>` 로 재시도할 것.
+타임아웃·5xx·429 같은 일시적 실패가 섞인다. 한 장이 실패해도 나머지는 계속 생성하고, 끝에
+실패 목록을 찍는다 — `--only <slug>` 로 재시도할 것.
 
-무료 티어는 하루 10,000 뉴런을 계정 전체가 나눠 쓰므로 30장짜리 배치는 한 번에 몰아치지
-않는다: 장과 장 사이에 `--sleep` 만큼 쉬고, 실패한 장은 `RETRY_DELAYS` 간격으로 두 번 더
-되짚는다(429 든 일시적 blip 이든 같은 취급 — 응답이 둘을 구분해주지 않는다).
+배치가 한 번에 몰아치지 않는 근거는 계정 쿼터가 아니라 직렬화다: 집 PC는 GPU 한 장이고
+`llm/local_image.py`의 모듈 수준 `Semaphore(1)`가 이 프로세스의 생성 호출도 한 번에 하나로
+묶는다(`_generate_all` 루프 자체도 한 장씩 await 한다). 그 위에서 장과 장 사이에 `--sleep` 만큼 쉬고, 실패한 장은
+`RETRY_DELAYS` 간격으로 두 번 더 되짚는다(429 든 일시적 blip 이든 같은 취급 — 응답이 둘을
+구분해주지 않는다). 서버 쪽 대기열 상한(`LOCAL_IMAGE_QUEUE_LIMIT`, 기본 4, 초과 429)은 API
+라우터의 사전 차단이라 이 CLI 경로에는 걸리지 않는다.
 """
 
 import argparse

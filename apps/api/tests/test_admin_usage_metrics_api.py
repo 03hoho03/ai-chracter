@@ -14,7 +14,7 @@ from api.db.models import (
     ContentVisibility,
     ModerationStatus,
 )
-from factories import _create_admin, _login_as_admin, _make_user
+from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
 DAY0 = date(2030, 3, 10)
 DAY1 = DAY0 + timedelta(days=1)
@@ -62,8 +62,8 @@ async def test_regular_user_session_cannot_access_usage_metrics(
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
-    resp = await db_client.post("/dev/session-echo", json={"data": {"user_id": str(user.id)}})
-    assert resp.status_code == 201
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
 
     resp = await db_client.get(f"/admin/usage-metrics?from={DAY0.isoformat()}&to={DAY2.isoformat()}")
     assert resp.status_code == 401
