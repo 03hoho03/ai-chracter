@@ -16,20 +16,27 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Slider } from "@ai-character-chat/ui/components/slider";
 
-import { computeZoomBounds } from "../lib/computeZoomBounds";
 import { cropToFile } from "../lib/cropToFile";
 
-export type ImageCropModalProps = { file: File; aspect: number; maxEdge: number; shape?: "rect" | "round" };
+export type ImageCropModalProps = { file: File; aspect: number; shape?: "rect" | "round" };
+
+// image-crop-goal-prompt.md IC-7 — 확대는 원본 크기와 무관하게 항상 1~3배다.
+// 처음엔 "결과가 목표 해상도 밑으로 안 내려가는 배율"로 상한을 계산했는데, AI 생성 이미지가
+// 정확히 목표 해상도(1024)라 1:1 크롭에서 상한이 1.00으로 떨어져 **확대가 아예 안 됐다**.
+// 화질보다 창작자의 구도 통제를 택했다(2026-09-15 실사용 확인 후 결정).
+// 하한이 1인 이유: `getCropSize`가 zoom=1에서 크롭 박스를 미디어 안에 맞춰 넣고
+// `restrictPosition`(기본 true)이 그 상태를 유지해 결과물에 여백이 생길 수 없다.
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 3;
 
 // image-crop-goal-prompt.md IC-8 — react-call 자체 호출형. 성공 후 동작이 호출부마다 갈리지 않고
 // 잘라낸 File을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
 // 전부 onOpenChange 한 지점으로 모여 call.end(undefined)로 수렴한다(GeneratedImagePickerModal과 동일 패턴).
 export const ImageCropModal = createCallable<ImageCropModalProps, File | undefined>(
-  ({ call, file, aspect, maxEdge, shape = "rect" }) => {
+  ({ call, file, aspect, shape = "rect" }) => {
     const isOpen = !call.ended;
 
     const [imageUrl, setImageUrl] = useState<string>();
-    const [bounds, setBounds] = useState<{ minZoom: number; maxZoom: number }>();
     const [crop, setCrop] = useState<Point>({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1);
     const [croppedAreaPixels, setCroppedAreaPixels] = useState<Area>();
@@ -40,19 +47,8 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
     useEffect(() => {
       const url = URL.createObjectURL(file);
       setImageUrl(url);
-
-      // IC-16 — 비율이 이미 맞는 이미지에서도 크롭 UI를 항상 띄우므로 naturalWidth/Height는
-      // 매번 새로 재야 한다. 줌 범위를 알기 전에는 크롭 UI 대신 로딩 상태를 보여준다.
-      const image = new Image();
-      image.onload = () => {
-        setBounds(
-          computeZoomBounds({ naturalWidth: image.naturalWidth, naturalHeight: image.naturalHeight, aspect, maxEdge }),
-        );
-      };
-      image.src = url;
-
       return () => URL.revokeObjectURL(url);
-    }, [file, aspect, maxEdge]);
+    }, [file]);
 
     const handleApply = async () => {
       if (!croppedAreaPixels) return;
@@ -78,7 +74,7 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
               부모(auto-height flex column)가 실제로 자라지 않아 0높이로 접힌다 — `min-h-64`가 hypothetical
               main size에 반영돼야 DialogContent 자체가 그만큼 자란다. */}
           <div className="relative min-h-64 flex-1 overflow-hidden rounded-md bg-muted">
-            {imageUrl === undefined || bounds === undefined ? (
+            {imageUrl === undefined ? (
               <div className="flex size-full items-center justify-center">
                 <Loader2 aria-hidden className="size-6 animate-spin text-muted-foreground" />
                 <span className="sr-only">이미지를 불러오는 중</span>
@@ -89,8 +85,8 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
                 crop={crop}
                 zoom={zoom}
                 aspect={aspect}
-                minZoom={bounds.minZoom}
-                maxZoom={bounds.maxZoom}
+                minZoom={MIN_ZOOM}
+                maxZoom={MAX_ZOOM}
                 cropShape={shape}
                 // image-crop-goal-prompt.md IC-9 — 다크에서 순백 금지. 라이브러리 기본 격자선(showGrid
                 // 기본값 true)도 같은 흰색이고 이 제품은 조용한 인터페이스를 지향해 끈다. 방향키 step은
@@ -113,27 +109,16 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
             )}
           </div>
 
-          {bounds !== undefined && (
-            <div className="flex items-center gap-3">
-              {bounds.minZoom === bounds.maxZoom ? (
-                // IC-7 — 원본이 목표 해상도보다 작으면 computeZoomBounds가 minZoom===maxZoom===1을
-                // 준다(화질이 깨지는 확대를 막는 정책). 슬라이더는 값 범위가 축퇴해 조작 불능이 되므로
-                // 숨기고, 왜 확대가 안 되는지 안내한다.
-                <p className="text-sm text-muted-foreground">원본이 작아 확대하면 화질이 깨져요.</p>
-              ) : (
-                <>
-                  <span className="shrink-0 text-sm text-muted-foreground">확대/축소</span>
-                  <Slider
-                    value={[zoom]}
-                    min={bounds.minZoom}
-                    max={bounds.maxZoom}
-                    step={0.01}
-                    onValueChange={([next]) => next !== undefined && setZoom(next)}
-                  />
-                </>
-              )}
-            </div>
-          )}
+          <div className="flex items-center gap-3">
+            <span className="shrink-0 text-sm text-muted-foreground">확대/축소</span>
+            <Slider
+              value={[zoom]}
+              min={MIN_ZOOM}
+              max={MAX_ZOOM}
+              step={0.01}
+              onValueChange={([next]) => next !== undefined && setZoom(next)}
+            />
+          </div>
 
           <DialogFooter>
             <Button variant="outline" onClick={() => call.end(undefined)}>

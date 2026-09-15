@@ -6,7 +6,6 @@ import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
-import { maxEdgeForPurpose } from "@/shared/api/asset/uploadAsset";
 
 /** techspec-builder-character.md §0 AC — 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
  * `thumbnailUrl`은 초안 조회 응답의 표시 전용 값(builder-techspec.md §7) — 폼 필드가 아니라 초안
@@ -33,12 +32,9 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
               onChange={field.onChange}
               purpose="content-thumbnail"
               previewUrl={thumbnailUrl ?? undefined}
+              previewAspect={toThumbnailAspect("character")}
               beforeUpload={(file) =>
-                ImageCropModal.call({
-                  file,
-                  aspect: toThumbnailAspectRatio(toThumbnailAspect("character")),
-                  maxEdge: maxEdgeForPurpose("content-thumbnail"),
-                })
+                ImageCropModal.call({ file, aspect: toThumbnailAspectRatio(toThumbnailAspect("character")) })
               }
             />
           )}

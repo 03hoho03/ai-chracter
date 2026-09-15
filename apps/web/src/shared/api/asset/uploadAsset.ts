@@ -36,12 +36,6 @@ const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "inquiry-attachment": 5 * 1024 * 1024,
 };
 
-/** image-crop-goal-prompt.md IC-2 — RESIZE_SPEC_BY_PURPOSE가 maxEdge의 유일한 소스다. 크롭 모달이
- * 목표 해상도를 알아야 하므로 숫자를 복제하지 않고 이 접근자로 읽는다. */
-export function maxEdgeForPurpose(purpose: AssetPurpose): number {
-  return RESIZE_SPEC_BY_PURPOSE[purpose].maxEdge;
-}
-
 export type UploadAssetErrorCode =
   | ResizeImageErrorCode
   /** 리사이즈 결과가 purpose별 상한을 넘음 */
