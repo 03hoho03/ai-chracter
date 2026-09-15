@@ -1,10 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-
-import { builderMainMaxWidth } from "../lib/builderMainMaxWidth";
 
 type BuilderTopBarProps = {
   /** 빌더 라우트(`/builder`, `/builder/$type/$draftId`)의 페이지 제목. */
@@ -14,10 +11,6 @@ type BuilderTopBarProps = {
   actions?: ReactNode;
   /** "변경사항은 자동으로 저장돼요." 같은 저장 계약 안내문. 폼이 있는 셸에서만 의미가 있다. */
   autosaveNotice?: string;
-  /** builder-preview-validation 회귀 수정 — `BuilderLayout`에 넘기는 것과 같은 값을 그대로 넘겨야
-   * 상단바와 `main`의 왼쪽 좌표가 모든 폭에서 같은 식(`builderMainMaxWidth`)으로 계산된다.
-   * `BuilderLayout`을 쓰지 않는 화면(`BuilderTypeSelectPage`, 스켈레톤/에러 상태)은 생략한다. */
-  isPreviewOpen?: boolean;
 };
 
 /**
@@ -25,18 +18,18 @@ type BuilderTopBarProps = {
  * 전용 상단바를 쓴다(크랙 실측 기준). 같은 56px(`h-14`) 자리를 차지하므로 BuilderLayout의
  * `calc(100dvh-3.5rem)` 높이 계산이 그대로 유지된다 — 헤더 자리만 바뀌고 높이 계산식은 그대로다.
  *
+ * 전역 헤더와 같은 규칙으로 full-bleed다(`mx-auto max-w-*` 없이 `px-4 sm:px-6`만) — 대가로
+ * 뒤로가기 버튼의 left와 `BuilderLayout` 폼 열의 left가 폭에 따라 갈릴 수 있다(drift 0을 포기, 의도된
+ * 것이다). main-refact-goal-prompt.md MR-3.
+ *
  * 뒤로가기 목적지는 인터뷰로 확정된 `/my`(내 작품) 하나뿐이라 prop으로 받지 않는다. 폭이 좁을 때는
- * 액션 버튼의 라벨을 숨기고 아이콘만 남긴다(`ContentTypeToggle`과 같은 `hidden sm:inline` 선례).
+ * 액션 버튼의 라벨을 숨기고 아이콘만 남긴다(`hidden sm:inline`, DESIGN.md §Navigation의 모바일
+ * 대응 규범 — `ContentTypeToggle`은 2026-09-14 텍스트 탭이 되며 이 규범의 예외로 빠졌다, MR-2).
  */
-export function BuilderTopBar({ title, actions, autosaveNotice, isPreviewOpen }: BuilderTopBarProps) {
+export function BuilderTopBar({ title, actions, autosaveNotice }: BuilderTopBarProps) {
   return (
     <header className="sticky top-0 z-30 h-14 shrink-0 border-b border-border bg-background">
-      <div
-        className={cn(
-          "mx-auto flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6",
-          builderMainMaxWidth(isPreviewOpen),
-        )}
-      >
+      <div className="flex h-14 items-center gap-2 px-4 sm:gap-3 sm:px-6">
         <Button asChild variant="ghost" size="icon" aria-label="뒤로가기" className="shrink-0">
           <Link to="/my">
             <ArrowLeft aria-hidden className="size-4" />

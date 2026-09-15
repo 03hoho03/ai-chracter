@@ -24,8 +24,10 @@ const SQUARE_COLUMNS = "grid-cols-2 sm:grid-cols-3 md:grid-cols-4";
 // 인용하기 전에 카드에 패딩이 없다는 전제부터 확인할 것** — 패딩이 돌아오면 3열은 다시 못 쓴다.
 const PORTRAIT_COLUMNS = "grid-cols-3 sm:grid-cols-4 md:grid-cols-5";
 
-// `mixed`의 `items-start` — 없으면 grid 기본 `stretch`가 짧은 카드(캐릭터 245px)를 긴 카드
-// (스토리 331px) 높이까지 늘려 **빈 border 상자**가 생긴다(card-grid-goal-prompt.md D-6).
+// `mixed`의 `items-start` — 없으면 grid 기본 `stretch`가 짧은 카드(캐릭터)를 긴 카드(스토리) 높이까지
+// 늘려 **빈 border 상자**가 생긴다(card-grid-goal-prompt.md D-6) — 두 타입의 썸네일 비율이 다른 한
+// 이 결론은 유효하다. 실측 높이는 화면·뷰포트·`actions` 유무마다 달라 여기 숫자로 박아 두면 금방
+// stale해진다 — 측정값이 필요하면 `DESIGN.md` §Cards의 화면·뷰포트가 라벨된 실측을 본다.
 const MIXED_COLUMNS = "grid-cols-2 sm:grid-cols-3 md:grid-cols-4 items-start";
 
 const GRID_COLUMNS: Record<GridAspect, string> = {

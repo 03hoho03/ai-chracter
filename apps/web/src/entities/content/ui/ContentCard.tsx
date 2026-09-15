@@ -206,15 +206,45 @@ export function ContentCard({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        {/* `gap-2`는 잘린 제목의 말줄임 `…`과 `actions`의 "⋯"를 갈라 놓기 위한 것이다
-            (`apps/web/CLAUDE.md`의 "잘린 제목 옆에 ⋯" 항목에 실측치와 함께 있다). */}
-        <div className="flex items-center gap-2">
+        {/* main-refact-goal-prompt.md MR-8 — 제목을 1줄 말줄임 대신 2줄 클램프 + 높이 예약으로 바꿨다.
+            `text-sm`은 16px(`globals.css`가 사다리를 올렸다), line-height 22.857px, 2줄 클램프 박스
+            45.7031px. `min-h-[2lh]`의 computed `min-height`가 45.7031px임을 Chrome에서 확인했다(`lh`는
+            계산된 줄높이 단위라 `--text-sm`이 바뀌어도 따라온다).
+
+            이 저장소의 첫 `min-h-[` 임의값이라(`apps/web/src`·`packages/ui/src` 전체 grep 확인) Tailwind
+            스케일 값이 아닌 이유를 남긴다: `min-h-11`(44px)이면 1줄 제목 카드는 44px인데 2줄 카드는
+            콘텐츠가 이겨 45.71px가 되어, 한 행의 지표 줄을 맞추려고 예약하는 목적 자체가 1.71px 어긋난다.
+            `min-h-12`(48px)면 균일하긴 하지만 2.29px 죽은 공간이 남는다. 둘 다 `--text-sm`이 바뀌면
+            따라오지 않는다 — `2lh`는 따라온다.
+
+            `min-h`와 클램프가 같은 지점에서 바닥과
+            천장을 막아 제목 박스 높이가 콘텐츠 길이와 무관하게 항상 45.7031px가 된다(297px 분량을 넣어도
+            45.703125px로 실측). 그 결과 `actions`(32px)가 제목 행 높이를 지배하던 구도가 역전되어
+            (32 < 45.7) `actions` 유무가 제목 행 높이에 영향을 주는 경로가 사라졌고, 로딩 스켈레톤이 nbsp
+            한 줄로도 정확히 같은 높이를 얻는다.
+
+            `break-words`를 `break-keep`과 함께 주는 이유(MR-8a): `break-keep` 단독이면 컨테이너보다 긴
+            단일 어절이 가로로 넘치고, `line-clamp`은 `text-overflow`를 세팅하지 않아 `…` 없이 글자 중간에서
+            하드컷된다(실측 임계: 390px 스토리 열 111.33px에서 9글자, 390px 본인 프로필의 스토리 탭에서
+            제목 실폭 71.33px 열에서 6글자 — `portrait` 3열(카드 폭 111.33px)에 `⋯`(`actions`)가 붙어
+            제목 실폭이 `111.33 − (버튼 32 + gap 8) = 71.33px`가 된다).
+            현행 `truncate`는 `…`을 붙이므로 그대로 두면 개선이 아니라 퇴행이다. 이 쌍은 `MessageBubble.tsx`가
+            채팅 메시지에 이미 쓴다.
+
+            `gap-2`의 원래 근거(말줄임 `…`과 아이콘의 점 여섯 개가 한 덩어리로 읽힌다)는 소멸했다 —
+            `line-clamp`의 `…`은 둘째 줄 끝에 붙고 `⋯` 버튼은 `items-start`로 첫 줄 옆에 있어 둘이 만나지
+            않는다. 값은 유지한다(긴 제목의 첫 줄이 버튼에 닿는다). */}
+        <div className="flex items-start gap-2">
           <p
             id={`${id}-title`}
-            className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground"
+            className="min-w-0 flex-1 line-clamp-2 break-keep break-words min-h-[2lh] text-sm font-semibold text-foreground"
           >
             {title}
           </p>
+          {/* items-start인 이유(MR-8): 2줄(45.7px) 블록 옆에서 32px 버튼을 items-center로 두면 첫 줄이
+              아니라 두 줄 사이에 뜬다. items-start로 두면 `⋯` top과 제목 박스 top이 정확히 일치하고
+              (실측 topDiff 0) 버튼 중심이 첫 줄 중심보다 4.57px 아래에 온다 — "완벽한 중심 정렬"을
+              "상단 정렬 우선"으로 바꾸는 트레이드오프다. */}
           {actions}
         </div>
 
