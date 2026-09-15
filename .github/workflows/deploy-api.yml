@@ -105,11 +105,15 @@ jobs:
           # 위 up -d는 caddy 컨테이너를 재생성하지 않는다(legal-revision-goal-prompt.md
           # LR-25). caddy 이미지 자체에는 --watch 같은 자동 재적용 기능이 없다.
           #
-          # 그래서 reload로 명시적으로 재적용한다 — 이번 배포로 caddy가 방금 새로 뜬
-          # 경우(예: 이번 커밋처럼 volumes 목록이 바뀌어 재생성된 경우)든 계속 떠 있던
-          # 경우든 똑같이 안전하다: 방금 뜬 컨테이너는 이미 최신 Caddyfile로 시작했으므로
-          # reload가 "설정 변경 없음"으로 조용히 no-op하고, 계속 떠 있던 컨테이너는 이
-          # reload가 새 Caddyfile을 무중단으로 반영하는 유일한 경로다.
+          # 그래서 reload로 명시적으로 재적용을 시도한다 — caddy가 방금 새로 뜬 경우(예:
+          # volumes 목록이 바뀌어 재생성된 경우)는 이미 최신 Caddyfile로 시작했으므로 reload가
+          # "설정 변경 없음"으로 조용히 no-op한다.
+          # ⚠️ 계속 떠 있던 컨테이너에서는 이 reload가 새 Caddyfile을 반영한다는 보장이 없다 —
+          # `Caddyfile`은 파일 단위 bind mount라, git reset --hard가 호스트 파일을 덮어쓰지 않고
+          # 새 inode로 만들면 컨테이너 쪽 마운트는 옛 inode를 계속 보고, reload는 그 옛 내용을
+          # "성공적으로" 재적재할 뿐이다(2026-09-15 실측 — DEPLOY.md §3-1 "Caddyfile만 바뀐 배포는
+          # caddy reload가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다" 참조). 배포 뒤 반영 여부는
+          # 컨테이너 안 파일로 확인하고, 안 바뀌었으면 `up -d --force-recreate --wait caddy`.
           # ⚠️ 방금 재생성된 caddy 에 곧바로 reload 를 걸면 **admin API(127.0.0.1:2019)가 아직
           # 바인딩되기 전**이라 `connection refused` 로 죽는다 — 2026-09-15 첫 배포에서 실측했다.
           # 컨테이너 로그의 `serving initial configuration`(ts …379.3877)과 reload 실패
