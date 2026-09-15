@@ -352,6 +352,27 @@ sudo tail -f /var/log/ddona-backup.log
 버전별 하위 디렉터리에 데이터를 두므로 관례대로 `/data`에 걸면 기동을 거부한다 — `caddy_data`가
 없으면 재시작마다 인증서를 새로 받다가 Let's Encrypt 레이트리밋에 걸린다.
 
+**백업 알림 · check-in · R2 용량 감시**(`monitoring-techspec.md` MT-10~MT-12). `backup_db.py`가
+Discord 웹훅(`ops/notify.py`)·healthchecks.io check-in·R2 용량 임계 알림을 전부 겸한다 — 새
+스크립트·새 크론·새 Cloudflare 토큰은 없다.
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `DISCORD_WEBHOOK_URL` | Discord 채널의 웹훅 URL | 없으면 `ops/notify.py`의 `notify()`가 조용히 건너뛴다(실패가 아니다) — 알림 미설정이 백업을 죽이면 안 된다 |
+| `HEALTHCHECKS_BACKUP_PING_URL` | healthchecks.io에서 발급한 체크의 ping URL(예: `https://hc-ping.com/<uuid>`) | `main()` 진입부(`/start`)·성공 직전(접미사 없음)·`__main__`의 실패 처리(`/fail`) 세 지점에서 접미사만 바꿔 호출한다(healthchecks.io 관례). 없으면 조용히 건너뛴다 |
+| `R2_CAPACITY_THRESHOLD_BYTES` | 기본 `10737418240`(10GiB, R2 무료 한도) | prune 직후 버킷 전체 용량(`aws s3 ls --recursive --summarize`)이 이 값 이상이면 Discord로만 알린다. 값이 숫자가 아니면 `RuntimeError`로 갈아 끼워 백업 크론의 `except (RuntimeError, KeyError)`가 잡는다(그냥 `ValueError`로 두면 그 가드 밖으로 새 나가 실패 ping도 못 보낸다) |
+
+**`backup.sh`(VM 실측, 저장소 밖 호스트 파일)를 함께 고쳐야 한다** — 지금은 백업에 필요한 키만
+뽑아 export하므로, 위 두 키(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`)를 `export` 목록에
+추가하지 않으면 `/opt/ddona/.env`에 값이 있어도 크론 프로세스에는 전달되지 않는다(`.env`를 통째로
+source하지 않는 이유는 `backup.sh` 주석 참고 — JSON 값이 쉘 문법과 부딪친다).
+
+⚠️ **`__main__`의 `except (RuntimeError, KeyError)` 밖의 예외(예: docker 미기동으로 인한
+`FileNotFoundError`)는 실패 ping이 나가지 않는다.** 의도적으로 넓히지 않았다 — 이 가드는 원래
+"사전에 식별한 실패 모드"만 좁게 잡도록 설계돼 있고(S5-d/S5-e 회귀 방지), 예상 못한 예외까지
+뭉뚱그려 삼키면 새 버그 클래스를 조용히 숨긴다. 그 대신 start ping 이후 **healthchecks.io 자체의
+grace time 초과 감지**가 이 경우를 대신 잡는다 — 두 경로가 서로를 덮는 설계다.
+
 ### 3-5. Bugsink(에러 트래커) — 별도 compose, 별도 배포
 
 자가호스팅 Bugsink(Sentry 호환, `monitoring-techspec.md` `MT-1`~`MT-3`)는 `docker-compose.prod.yml`과
@@ -462,6 +483,46 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
 **먼저** 채워 넣고 나서 이 compose 변경을 적용한다. 그리고 **환경변수는 컨테이너 생성 시점에
 고정되므로** `caddy reload`가 아니라 `$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다
 (`Caddyfile` 내용만 바뀐 경우 reload로 충분한 것과 다르다).
+
+### 3-6. VM 리소스 감시 — cron이 `free`/`df`를 직접 읽는다
+
+`monitoring-techspec.md` MT-13. GCP Cloud Monitoring을 쓰지 않는 이유는 techspec MT-13 참고 —
+`instance/memory/balloon/ram_used`가 우리 VM에서 `free -m`과 2배 차이가 났고(실측 1.78GB vs
+890MB), 그 메트릭 자체가 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라진다. 대신
+`apps/api/scripts/ops/check_resources.py`가 5분마다 `free`/`df`를 직접 읽어 임계 초과 시
+Discord로 알리고, 같은 실행이 healthchecks.io로도 ping해 VM 자체의 생사를 VM 밖에서 본다.
+
+| 변수 | 값 | 비고 |
+|---|---|---|
+| `DISCORD_WEBHOOK_URL` | §3-4의 백업 알림과 같은 키 | 두 스크립트가 같은 채널로 함께 쏜다 — 채널을 분리하고 싶어지면 그때 `ops/notify.py`에 인자를 뺀다 |
+| `HEALTHCHECKS_RESOURCE_PING_URL` | healthchecks.io에서 **백업과 별도로** 발급한 체크의 ping URL | 체크를 분리하는 이유는 백업(1일 1회)과 리소스 감시(5분마다)가 예정 주기가 달라 같은 체크를 공유하면 한쪽의 실행이 다른 쪽의 미실행을 가려버리기 때문이다 |
+| `MEMORY_ALERT_THRESHOLD_PERCENT` | 기본 `90` | `(total - available) / total`(`free -m`) 기준. `used` 컬럼이 아니라 `available`을 쓰는 이유는 buff/cache를 실사용량으로 착각하면 상시로 울기 때문이다(techspec MT-13) |
+| `DISK_ALERT_THRESHOLD_PERCENT` | 기본 `85` | `df /`의 `Use%` 컬럼 기준 |
+
+**최초 1회 — `ops/resource-check.sh` + cron.d 심볼릭 링크 설치**(§3-4의 `/opt/ddona/scripts`
+절차, `ops/logrotate.d/ddona-caddy` 절차와 같은 이유 — `/opt/ddona/app`은 배포마다
+`git reset --hard`되므로 링크해두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/resource-check.sh /opt/ddona/resource-check.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-resource-check /etc/cron.d/ddona-resource-check
+```
+
+`ops/resource-check.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 필요한 두 키
+(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_RESOURCE_PING_URL`)만 뽑아 export한 뒤
+`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources`를 부른다 — `backup.sh`와
+같은 이유(JSON 값이 쉘 문법과 부딪친다)이고, 이 wrapper는 (`backup.sh`와 달리) 저장소에 있어
+드리프트가 생기지 않는다.
+
+**검증**(사용 중인 `/etc/cron.d` 문법·심볼릭 링크 처리가 `logrotate.d`와 다를 수 있다 — techspec
+MT-13 미결 항목, 최초 설치 시 실측 확인):
+```sh
+sudo -u root /opt/ddona/resource-check.sh   # 수동 1회 실행 — 정상 종료·로그 확인
+tail -f /var/log/ddona-resource-check.log   # 다음 5분 주기에 크론이 실제로 도는지
+```
+
+MT-11과 같은 이유로 `check_resources.py`의 `__main__`도 `(RuntimeError, ValueError)` 밖의
+예외에서는 실패를 남기지 않는다 — healthchecks.io의 grace time 초과 감지가 대신 잡는다.
 
 ---
 

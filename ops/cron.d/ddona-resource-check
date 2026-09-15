@@ -1,0 +1,11 @@
+# monitoring-techspec.md MT-13
+#
+# VM 메모리·디스크를 5분마다 직접 읽어 임계 초과 시 Discord로 알린다. GCP balloon 메트릭
+# (instance/memory/balloon/ram_used) 대신 `free`/`df`를 직접 읽는 이유는 techspec MT-13 참고
+# — 우리 VM에서 실측 1.78GB로 `free -m`의 890MB와 2배 차이가 났고, 그 메트릭은 e2 계열
+# 전용이라 인스턴스 타입을 바꾸면 조용히 사라진다. 같은 실행이 healthchecks.io로도
+# ping해 VM 자체의 생사를 VM 밖에서 보게 한다.
+#
+# /etc/cron.d 문법은 일반 crontab과 다르다 — 6번째 필드로 실행 사용자가 필수다(ddona-backup과
+# 같은 관례). 설치 절차·env·dry-run 검증은 DEPLOY.md 참고.
+*/5 * * * * root /opt/ddona/resource-check.sh >> /var/log/ddona-resource-check.log 2>&1
