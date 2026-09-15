@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
 from api.admin.action_log import record_admin_action
-from api.admin.constants import WITHDRAWN_USER_NICKNAME
 from api.admin.dependencies import get_current_admin_id
 from api.admin.schemas import (
     AdminContentActionRequest,
@@ -17,6 +16,7 @@ from api.admin.schemas import (
     AdminContentListResponse,
     AdminContentVersionItem,
 )
+from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail

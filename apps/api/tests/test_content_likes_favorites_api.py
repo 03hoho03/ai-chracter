@@ -252,6 +252,31 @@ async def test_list_favorites_returns_favorited_contents_most_recently_favorited
     assert body["items"][0]["creatorUserId"] == str(creator.id)
 
 
+async def test_list_favorites_shows_placeholder_nickname_for_withdrawn_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-27: S5(LR-20)가 탈퇴 시 nickname을 파기하면서
+    드러난 회귀 — 탈퇴한 창작자의 콘텐츠를 즐겨찾기해 둔 유저가 `/me/favorites`를 부르면
+    creator_nickname(non-optional str)에 파기된 None이 꽂혀 응답 전체가 500이 난다."""
+    user = _make_user()
+    creator = _make_user(nickname=None, deleted_at=datetime.now(UTC))
+    db_session.add_all([user, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+
+    content = await _make_published_content(
+        db_session, creator_user_id=creator.id, genre_id=genre.id, name="탈퇴 작가의 콘텐츠"
+    )
+    db_session.add(Favorite(user_id=user.id, content_id=content.id))
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get("/me/favorites")
+    assert resp.status_code == 200
+    [item] = resp.json()["items"]
+    assert item["creatorNickname"] == "(탈퇴한 사용자)"
+
+
 async def test_list_favorites_excludes_deleted_moderation_status(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

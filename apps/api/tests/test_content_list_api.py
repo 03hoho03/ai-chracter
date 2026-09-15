@@ -246,6 +246,28 @@ async def test_list_contents_response_includes_card_fields(
     assert item["thumbnailUrl"] is not None
 
 
+async def test_list_contents_shows_placeholder_nickname_for_withdrawn_creator(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-27: S5(LR-20)가 탈퇴 시 nickname을 파기하면서
+    드러난 회귀 — creator_nickname은 non-optional str이라 파기된 None을 그대로 넣으면
+    Pydantic 검증에서 500이 난다(admin/contents.py의 LR-27 선례와 같은 처방)."""
+    user = _make_user(nickname=None, deleted_at=datetime.now(UTC))
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+
+    await _make_published_content(
+        db_session, creator_user_id=user.id, genre_id=genre.id, name="탈퇴 작가의 캐릭터"
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/contents", params={"type": "character"})
+    assert resp.status_code == 200
+    [item] = resp.json()["items"]
+    assert item["creatorNickname"] == "(탈퇴한 사용자)"
+
+
 async def test_list_signs_thumbnail_variant_while_detail_signs_original(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
