@@ -317,3 +317,48 @@ async def test_google_callback_rejects_existing_minor_account_linked_by_email(
         == f"{settings.frontend_base_url}/login?error=account_age_restricted"
     )
     assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdrawal(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+    google_sub 직접 매치가 아니라 onboarding_google의 신규 유저 생성 분기를 타게 되고,
+    거기서 withdrawn_emails의 HMAC 조회가 막는다. 이 런에서 반복된 비대칭 위험(이메일
+    경로만 막고 구글 경로가 새는 것)을 가장 직접적으로 확인하는 테스트다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+
+    withdraw_resp = await db_client.delete("/me")
+    assert withdraw_resp.status_code == 204
+
+    state = await _start_google_login(db_client)
+    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    try:
+        callback = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    # google_sub가 파기됐으므로 "기존 계정을 찾음"이 아니라 "신규 가입"으로 취급돼
+    # 온보딩으로 되돌아간다 — google_sub가 안 지워졌다면 여긴 /login?error=account_deleted였을 것.
+    assert callback.status_code == 302
+    assert callback.headers["location"].startswith(
+        f"{settings.frontend_base_url}/onboarding/google?token="
+    )
+    token = httpx.URL(callback.headers["location"]).params["token"]
+
+    resp = await db_client.post(
+        "/auth/onboarding/google",
+        json={
+            "token": token,
+            "nickname": "구글유저",
+            "birthDate": "2000-01-01",
+            "termsAgreed": True,
+            "privacyAgreed": True,
+            "transferAgreed": True,
+        },
+    )
+    assert resp.status_code == 409

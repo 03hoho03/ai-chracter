@@ -148,18 +148,6 @@ async def test_signup_rejects_unverified_account_with_google_sub(
     assert resp.status_code == 409
 
 
-async def test_signup_rejects_unverified_deleted_account(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    """email-goal-prompt.md E-5: 탈퇴 계정은 미인증이어도 재가입으로 부활시키지 않는다."""
-    email = f"race-deleted-{uuid.uuid4()}@example.com"
-    db_session.add(_make_user(email=email, deleted_at=datetime.now(UTC)))
-    await db_session.flush()
-
-    resp = await db_client.post("/auth/signup", json=_signup_payload(email=email))
-    assert resp.status_code == 409
-
-
 async def test_signup_rejects_unverified_suspended_account(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

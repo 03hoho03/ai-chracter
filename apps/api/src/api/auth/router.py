@@ -1,11 +1,12 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
 
 from api.auth.age import is_under_minimum_age
 from api.auth.emails import send_password_reset_email, send_verification_code_email
@@ -47,10 +48,12 @@ from api.auth.verification import (
 from api.core import rate_limit
 from api.core.config import settings
 from api.core.email import EmailSender, get_email_sender
-from api.core.security import hash_password, verify_password
-from api.db.models.auth import User
+from api.core.s3 import delete_object
+from api.core.security import hash_password, hash_withdrawn_email, verify_password
+from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
+from api.db.models.media import Asset
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
@@ -59,6 +62,17 @@ from api.session.store import create_session, delete_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
+
+# legal-revision-goal-prompt.md LR-7: 탈퇴일로부터 이 기간 안에는 같은 이메일로 재가입이
+# 막힌다. 만료된 행은 조회 시점에 무시만 한다 — 별도 삭제 배치는 만들지 않는다(LR-23).
+WITHDRAWN_EMAIL_BLOCK_PERIOD = timedelta(days=365)
+
+
+async def _reregistration_blocked(db: AsyncSession, email: str, now: datetime) -> bool:
+    withdrawn = await db.scalar(
+        select(WithdrawnEmail).where(WithdrawnEmail.email_hmac == hash_withdrawn_email(email))
+    )
+    return withdrawn is not None and now - withdrawn.withdrawn_at < WITHDRAWN_EMAIL_BLOCK_PERIOD
 
 
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
@@ -88,15 +102,19 @@ async def signup(
     existing = await db.scalar(select(User).where(User.email == payload.email))
     now = datetime.now(UTC)
 
+    # legal-revision-goal-prompt.md LR-7: 탈퇴 시 users.email이 자리표시자로 바뀌므로(LR-6)
+    # 위 existing 조회는 탈퇴 행을 더 이상 찾지 못한다 — 재가입 차단은 이 HMAC 조회로 옮긴다.
+    if await _reregistration_blocked(db, payload.email, now):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
+
     if existing is not None:
-        # email-goal-prompt.md E-5: 인증 완료·구글 연동·탈퇴·정지 중 하나라도 걸리면
-        # "방치된 미인증 가입"이 아니라 실사용/보호 대상 계정이므로 409로 막는다
-        # (google_callback이 email_verified_at을 보지 않고 세션을 발급해 미인증인 채
-        # 실사용 중인 계정이 있을 수 있다 — tests/test_auth_google_api.py:196-224).
+        # email-goal-prompt.md E-5: 인증 완료 또는 구글 연동이 있으면 "방치된 미인증 가입"이
+        # 아니라 실사용 중인 계정이므로 409로 막는다(google_callback이 email_verified_at을
+        # 보지 않고 세션을 발급해 미인증인 채 실사용 중인 계정이 있을 수 있다 —
+        # tests/test_auth_google_api.py:196-224). 정지도 마찬가지로 보호 대상이다.
         if (
             existing.email_verified_at is not None
             or existing.google_sub is not None
-            or existing.deleted_at is not None
             or existing.suspended_at is not None
         ):
             raise HTTPException(
@@ -315,6 +333,12 @@ async def onboarding_google(
     now = datetime.now(UTC)
     user = await db.scalar(select(User).where(User.google_sub == pending["sub"]))
     if user is None:
+        # legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+        # 재가입 시도는 위 google_sub 매치가 아니라 항상 이 신규 유저 생성 분기를 타게 된다.
+        if await _reregistration_blocked(db, pending["email"], now):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+            )
         privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
             email=pending["email"],
@@ -522,7 +546,39 @@ async def withdraw(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    user.deleted_at = datetime.now(UTC)
+    now = datetime.now(UTC)
+    original_email = user.email
+
+    # legal-revision-goal-prompt.md LR-19: 프로필 이미지 R2 오브젝트를 지운다 —
+    # core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다.
+    if user.profile_image_asset_id is not None:
+        asset = await db.get(Asset, user.profile_image_asset_id)
+        if asset is not None:
+            await run_in_threadpool(delete_object, asset.storage_key)
+
+    user.deleted_at = now
+    # legal-revision-goal-prompt.md LR-6: users.email이 unique=True, nullable=False라
+    # NULL을 못 쓴다 — 복원 불가능한 자리표시자로 유일성을 유지한다.
+    user.email = f"withdrawn:{user_id}"
+    user.password_hash = None
+    user.nickname = None
+    user.bio = None
+    user.birth_date = None
+    # legal-revision-goal-prompt.md LR-18: 파기하지 않으면 구글 가입자는 google_sub 직접
+    # 매치(google_callback)에 영구히 걸려, 이메일 가입자와 달리 1년이 지나도 재가입이 안 열린다.
+    user.google_sub = None
+    user.profile_image_asset_id = None
+
+    # legal-revision-goal-prompt.md LR-7·LR-8: 평문 이메일 대신 키 있는 HMAC 한 행을 남긴다.
+    # 같은 이메일이 만료 후 재사용됐다가 다시 탈퇴할 수 있어 PK 충돌이면 갱신한다.
+    email_hmac = hash_withdrawn_email(original_email)
+    withdrawn_row = await db.scalar(
+        select(WithdrawnEmail).where(WithdrawnEmail.email_hmac == email_hmac)
+    )
+    if withdrawn_row is not None:
+        withdrawn_row.withdrawn_at = now
+    else:
+        db.add(WithdrawnEmail(email_hmac=email_hmac, withdrawn_at=now))
 
     await db.execute(
         update(Content)

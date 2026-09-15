@@ -119,7 +119,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**28개 키다**: 앱 런타임 23개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
+**29개 키다**: 앱 런타임 24개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`). `apps/api/.env`는
 **로컬 개발용이며 배포와 무관하다.**
@@ -136,6 +136,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
 | `GEMINI_MODEL_NAME` | 기본 `gemini-2.5-flash` | 보통 생략 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | §1-3 |
+| `WITHDRAWN_EMAIL_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 탈퇴 재가입 차단용 HMAC 키(`legal-revision-goal-prompt.md LR-8`). **한번 정하면 바꾸지 말 것** — 바뀌면 과거에 적립한 해시와 새 조회의 해시가 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스가 된다. 에러가 나지 않아 알아채기 어렵다) |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. §5 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. §5 |
 | `LOCAL_IMAGE_MODEL_WIRE_ID` | 집 PC가 보고하는 **실제** 모델 id | **이미지 생성 필수.** 기본값은 공개 id(`v1`)와 같아 로컬·테스트는 설정 없이 돌지만, 운영에서 집 PC의 값과 다르면 교차 검증에서 전부 걸러져 생성이 사전 차단된다. **이 값을 소스에 두지 않는 것이 요점이다**(§5) |
