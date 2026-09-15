@@ -10,7 +10,8 @@ function stripBreadcrumbUrls(breadcrumb: Breadcrumb): Breadcrumb {
   const data = breadcrumb.data;
   if (data) {
     for (const key of ["url", "to", "from"] as const) {
-      const value = data[key];
+      // `Breadcrumb["data"]`가 `{[key: string]: any}`라 그냥 받으면 no-unsafe-assignment에 걸린다.
+      const value: unknown = data[key];
       if (typeof value === "string") data[key] = stripQueryString(value);
     }
   }
