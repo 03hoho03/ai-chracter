@@ -9,7 +9,7 @@ from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from api.core.config import settings
-from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -77,6 +77,11 @@ class GeminiLLMClient(LLMClient):
                 if chunk.text:
                     yield chunk.text
         except (genai_errors.APIError, httpx.HTTPError) as exc:
+            # monitoring-techspec.md MT-6: 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
+            # `httpx.HTTPError`에는 `.code`가 없으므로 `isinstance` 가드가 먼저다(순서를
+            # 바꾸면 네트워크 쪽에서 AttributeError가 원래 예외를 가린다).
+            if isinstance(exc, genai_errors.APIError) and exc.code == 429:
+                raise LLMRateLimitError(f"Gemini generate() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate() call failed: {exc}") from exc
 
     async def generate_structured(
@@ -103,7 +108,10 @@ class GeminiLLMClient(LLMClient):
             )
         except (genai_errors.APIError, httpx.HTTPError) as exc:
             # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
-            # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다.
+            # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다. 429 구분도 `generate()`와
+            # 대칭을 유지한다(monitoring-techspec.md MT-6).
+            if isinstance(exc, genai_errors.APIError) and exc.code == 429:
+                raise LLMRateLimitError(f"Gemini generate_structured() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc
 
         if not isinstance(response.parsed, response_schema):

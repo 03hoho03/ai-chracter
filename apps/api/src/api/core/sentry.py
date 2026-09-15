@@ -1,13 +1,19 @@
 """monitoring-techspec.md MT-5: 자가호스팅 Bugsink에는 서버측 스크러빙이 없다(§0-1-3) —
 SDK 옵션이 유일한 방어선이다. 실제 `sentry_sdk.init()` 호출과 DSN 등 배포별 설정은 MT-4
-(`main.py`/`core/config.py`)다. 이 모듈은 **스크러빙 옵션을 만드는 함수만** 갖는다 — `init()`을
-직접 부르지 않아야 테스트가 전역 SDK 상태를 건드리지 않고 `sentry_sdk.Client(**build_sentry_
-options())`로 프로덕션과 같은 옵션을 재현해 검증할 수 있다(옵션이 테스트와 프로덕션에서
-갈리면 테스트가 아무것도 보증하지 못한다).
+(`main.py`/`core/config.py`)다. 이 모듈의 옵션 빌더는 `init()`을 직접 부르지 않는다 — 그래야
+테스트가 전역 SDK 상태를 건드리지 않고 `sentry_sdk.Client(**build_sentry_options())`로
+프로덕션과 같은 옵션을 재현해 검증할 수 있다(옵션이 테스트와 프로덕션에서 갈리면 테스트가
+아무것도 보증하지 못한다).
+
+`capture_dependency_failure`(MT-6)는 흡수된 장애(`logger.warning`)를 Bugsink 이벤트로도
+승격하는 공통 지점이다 — 승격 대상 13곳이 같은 두 줄(로그는 유지 + 호출 한 줄)을 반복해서
+헬퍼로 뺐다. 전역 `sentry_sdk.capture_exception`을 그대로 호출하므로 `init()`을 부르지 않고,
+DSN이 비어 `init()`이 안 불린 환경(dev·테스트, MT-4)에서는 활성 클라이언트가 없어 no-op이다.
 """
 
 from typing import Any
 
+import sentry_sdk
 from sentry_sdk.integrations.google_genai import GoogleGenAIIntegration
 from sentry_sdk.types import Event, Hint
 
@@ -64,3 +70,16 @@ def build_sentry_options() -> dict[str, Any]:
         "traces_sample_rate": 0,
         "before_send": _strip_query_string,
     }
+
+
+def capture_dependency_failure(exc: BaseException | None = None, *, dependency: str) -> None:
+    """monitoring-techspec.md MT-6: 흡수(사용자 응답 유지 + `logger.warning`)는 그대로 두고
+    Bugsink 이벤트로도 승격한다. `dependency` 태그(`gemini`/`gemini_rate_limit`/`local_image`/
+    `redis`/`email`/`prompt_render`)로만 Bugsink에서 묶어 본다 — **태그·컨텍스트에는 이
+    리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·이메일 주소는 호출부가
+    절대 넘기지 말 것(MT-6 설계 제약 1, PII 금지).
+
+    `exc`를 생략하면 `sentry_sdk.capture_exception`이 `sys.exc_info()`를 쓴다 — 호출부의
+    `except` 절이 예외를 `as exc`로 바인딩하지 않은 경우(`prompt_set_cache.py`·
+    `admin/prompts.py`)를 위한 것이다."""
+    sentry_sdk.capture_exception(exc, tags={"dependency": dependency})

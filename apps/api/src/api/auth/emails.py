@@ -1,6 +1,7 @@
 import logging
 
 from api.core.email import EmailSendError, EmailSender
+from api.core.sentry import capture_dependency_failure
 
 # email-goal-prompt.md E-2: 발송은 BackgroundTasks로 응답 이후 실행되므로 실패해도 가입/재전송/
 # 비밀번호 재설정 응답에는 영향이 없다 — 대신 로그에 남긴다. uvicorn은 root logger에 핸들러를
@@ -37,3 +38,5 @@ async def _send(sender: EmailSender, to: str, subject: str, body: str) -> None:
         # 식별하면서 개인 식별은 피한다.
         domain = to.split("@", 1)[1] if "@" in to else "(no-at)"
         logger.warning("email send failed subject=%r domain=%s: %s", subject, domain, exc)
+        # monitoring-techspec.md MT-6: 흡수는 그대로 두고 Bugsink 이벤트로도 승격한다.
+        capture_dependency_failure(exc, dependency="email")

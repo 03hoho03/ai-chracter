@@ -5,11 +5,16 @@
 실제로 raise된 예외를 SDK의 진짜 이벤트 빌더(`event_from_exception`)·`Client.capture_event`
 파이프라인(스크러버·`before_send` 포함)에 흘려 transport가 받은 envelope을 단언한다.
 
-`chat/router.py`(`_stream_new_turn` 등)·`chat/prompt_set_cache.py`의 실제 except 블록은 예외를
-삼키고 `capture_exception`을 부르지 않는다 — 그 승격은 MT-6(이번 범위 밖)이다. 그 프레임이
-캡처될 "때"를 재현하기 위해 두 곳(`auth/emails.py`·`chat/prompt_set_cache.py`)은 `logger.warning`
-호출 시점에 아직 살아 있는 `sys.exc_info()`를 붙잡는 테스트 전용 트릭(`_capture_on_next_warning`)을
-쓴다 — 소스는 건드리지 않는다.
+`chat/router.py`(`_stream_new_turn` 등)·`chat/prompt_set_cache.py`의 실제 except 블록은 이제
+`capture_dependency_failure`(`api.core.sentry`, MT-6)를 부르지만, 그건 **전역** `sentry_sdk.
+capture_exception`을 호출하는 얇은 래퍼라 이 파일이 만든 격리된 `Client`(위 `_make_client`)는
+전혀 거치지 않는다 — 전역 SDK는 `init()`이 안 불린 이 테스트 환경(DSN 빈 문자열)에서 no-op이다.
+그래서 두 곳(`auth/emails.py`·`chat/prompt_set_cache.py`)은 여전히 `logger.warning` 호출
+시점에 아직 살아 있는 `sys.exc_info()`를 붙잡아 **이 파일의 격리된 Client**로 흘리는 테스트
+전용 트릭(`_capture_on_next_warning`)을 쓴다 — 소스는 건드리지 않는다. (`capture_dependency_
+failure` 자체가 실제로 불리는지·태그가 맞는지는 `tests/test_prompt_set_cache.py`·
+`tests/test_auth_emails.py`·`tests/test_chat_message_send_api.py`가 검증한다 — 이 파일의
+관심사는 스크러빙뿐이다.)
 """
 
 import json

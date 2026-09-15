@@ -15,6 +15,7 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
+from api.chat import prompt_set_cache
 from api.chat.prompt_builder import PromptSetNotFoundError, load_active_prompt_set
 from api.chat.prompt_set_cache import (
     ACTIVE_PROMPT_SET_KEY,
@@ -163,6 +164,12 @@ async def test_active_prompt_set_dependency_falls_back_to_db_when_cache_read_fai
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(redis_client, "get", _raise_redis_error)
+    captured: list[str] = []
+    monkeypatch.setattr(
+        prompt_set_cache,
+        "capture_dependency_failure",
+        lambda *_a, dependency, **_k: captured.append(dependency),
+    )
 
     with caplog.at_level(logging.WARNING):
         prompt_set, sections = await chat_router._active_prompt_set_dependency(db=db_session)
@@ -170,12 +177,21 @@ async def test_active_prompt_set_dependency_falls_back_to_db_when_cache_read_fai
     assert prompt_set.status == "published"
     assert sections
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
+    # monitoring-techspec.md MT-6: 로그만 남기고 끝나면 Redis 장애가 조용한 성능 저하로
+    # 묻힌다 — Bugsink 이벤트로도 승격해야 한다.
+    assert captured == ["redis"]
 
 
 async def test_active_prompt_set_dependency_succeeds_when_cache_write_fails(
     db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     monkeypatch.setattr(redis_client, "set", _raise_redis_error)
+    captured: list[str] = []
+    monkeypatch.setattr(
+        prompt_set_cache,
+        "capture_dependency_failure",
+        lambda *_a, dependency, **_k: captured.append(dependency),
+    )
 
     with caplog.at_level(logging.WARNING):
         prompt_set, sections = await chat_router._active_prompt_set_dependency(db=db_session)
@@ -183,6 +199,7 @@ async def test_active_prompt_set_dependency_succeeds_when_cache_write_fails(
     assert prompt_set.status == "published"
     assert sections
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
+    assert captured == ["redis"]
 
 
 # ---- 미리보기 경로 — `_preview_prompt_set_dependency` --------------------------

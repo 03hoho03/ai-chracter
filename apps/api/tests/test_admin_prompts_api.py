@@ -474,12 +474,22 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     """DB 커밋(진짜 소스)이 이미 성공했으면 캐시 무효화 실패로 게시 자체를 500으로
-    만들지 않는다 — `admin/prompts.py`의 결정과 근거 주석 참고."""
+    만들지 않는다 — `admin/prompts.py`의 결정과 근거 주석 참고.
+
+    monitoring-techspec.md MT-6: 이 흡수는 그대로 두되, `redis` 태그로 Bugsink
+    이벤트에도 승격돼야 한다."""
 
     async def _raise_redis_error(*args: object, **kwargs: object) -> None:
         raise RedisError("connection refused")
 
     monkeypatch.setattr(redis_client, "delete", _raise_redis_error)
+
+    captured: list[str] = []
+    monkeypatch.setattr(
+        admin_prompts,
+        "capture_dependency_failure",
+        lambda *_a, dependency, **_k: captured.append(dependency),
+    )
 
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client)
@@ -490,6 +500,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
     assert resp.status_code == 200
     assert resp.json()["version"] == "2"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
+    assert captured == ["redis"]
 
 
 async def test_publish_version_conflict_returns_409(

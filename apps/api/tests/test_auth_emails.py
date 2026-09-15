@@ -2,6 +2,7 @@ import logging
 
 import pytest
 
+from api.auth import emails as auth_emails
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.core.email import EmailSendError
 
@@ -34,8 +35,15 @@ async def test_send_password_reset_email_calls_sender_with_link() -> None:
 
 
 async def test_send_failure_is_logged_as_warning_and_not_raised(
-    caplog: pytest.LogCaptureFixture,
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    captured: list[str] = []
+    monkeypatch.setattr(
+        auth_emails,
+        "capture_dependency_failure",
+        lambda *_a, dependency, **_k: captured.append(dependency),
+    )
+
     async def _failing_sender(to: str, subject: str, body: str) -> None:
         raise EmailSendError("boom")
 
@@ -43,3 +51,6 @@ async def test_send_failure_is_logged_as_warning_and_not_raised(
         await send_verification_code_email(_failing_sender, "user@example.com", "123456")
 
     assert any(record.levelno == logging.WARNING for record in caplog.records)
+    # monitoring-techspec.md MT-6: 이메일 발송 실패도 흡수만으로 끝나면 안 되고 Bugsink
+    # 이벤트로 승격돼야 한다.
+    assert captured == ["email"]
