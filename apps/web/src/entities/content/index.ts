@@ -63,7 +63,7 @@ export type {
   ContentVisibility,
   ModerationStatus,
 } from "./model/content";
-export { toPriorityCount, toThumbnailAspect } from "./model/cardLayout";
+export { toPriorityCount, toThumbnailAspect, toThumbnailAspectRatio } from "./model/cardLayout";
 export type { GridAspect, ThumbnailAspect } from "./model/cardLayout";
 export { useContentDetailModal } from "./lib/useContentDetailModal";
 export { toGridColumns, toThumbnailAspectClass } from "./ui/cardLayoutClass";

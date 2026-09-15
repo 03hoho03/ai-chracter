@@ -18,6 +18,11 @@ type GeneratedImageFieldProps = {
   purpose: AssetPurpose;
   previewUrl?: string;
   label?: string;
+  /** image-crop-goal-prompt.md IC-15 — `features` 간 직접 import는 eslint가 막아서(`features/crop-image`를
+   * 여기서 부를 수 없다) 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
+   * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
+   * 거치지 않는다. */
+  beforeUpload?: (file: File) => Promise<File | undefined>;
 };
 
 /**
@@ -35,6 +40,7 @@ export function GeneratedImageField({
   purpose,
   previewUrl,
   label = "이미지",
+  beforeUpload,
 }: GeneratedImageFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File>();
   const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string>();
@@ -57,11 +63,14 @@ export function GeneratedImageField({
     event.target.value = "";
     if (!file) return;
 
-    setSelectedFile(file);
+    const prepared = beforeUpload ? await beforeUpload(file) : file;
+    if (!prepared) return; // 크롭 취소 — 기존 이미지를 그대로 둔다
+
+    setSelectedFile(prepared);
     setPickedPreviewUrl(undefined);
     setIsUploading(true);
     try {
-      const assetId = await uploadAsset(file, purpose);
+      const assetId = await uploadAsset(prepared, purpose);
       onChange({ assetId });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
