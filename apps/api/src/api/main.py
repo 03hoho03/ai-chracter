@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Response, status as status_module
 from fastapi.middleware.cors import CORSMiddleware
+import sentry_sdk
 from sqlalchemy import text
 
 from api.admin.chat_view import router as admin_chat_view_router
@@ -27,6 +28,7 @@ from api.chat.router import (
 from api.content.router import router as content_router
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.core.sentry import build_sentry_options
 from api.db.session import engine, get_session_factory
 from api.images.router import router as images_router
 from api.inquiry.router import me_router as inquiry_me_router, router as inquiry_router
@@ -49,6 +51,28 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
     """
     await rebuild_suspended_user_markers(get_session_factory())
     yield
+
+
+def _init_sentry() -> None:
+    """monitoring-techspec.md MT-4: `settings.sentry_dsn`이 비어 있으면 init을 부르지
+    않는다 — DSN 유무 자체가 활성 플래그를 겸하므로 별도 플래그를 두지 않는다. dev·워크트리는
+    `.env`에 DSN을 두지 않으므로 이 기본값 하나로 자동 비활성이다.
+
+    옵션은 반드시 `build_sentry_options()`(MT-5)를 통해서만 얻는다 — sentry-sdk의
+    `_processed_integrations`/`_installed_integrations`는 프로세스 전역 캐시라, 옵션을 직접
+    조립해 `init()`을 부르는 경로가 하나라도 생기면 이후 호출에서 `disabled_integrations`가
+    조용히 무시될 수 있다(GoogleGenAI 통합 비활성이 풀린다).
+    """
+    if not settings.sentry_dsn:
+        return
+    sentry_sdk.init(
+        dsn=settings.sentry_dsn,
+        environment=settings.sentry_environment,
+        **build_sentry_options(),
+    )
+
+
+_init_sentry()
 
 
 # local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출(`/docs`·`/redoc`·

@@ -160,5 +160,15 @@ class Settings(BaseSettings):
     # 길게 둘 수도 없다 — 5분이면 무효화가 깨져도 운영자가 재게시 확인을 오래 기다리지 않는다.
     prompt_set_cache_ttl_seconds: int = 60 * 5
 
+    # monitoring-techspec.md MT-4: 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
+    # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이
+    # 없다). `apps/api/.env`는 `.worktreeinclude`로 전 워크트리에 복사되므로 여기 실제 DSN을
+    # 넣으면 dev·모든 워크트리가 같은 프로덕션 Bugsink로 이벤트를 쏜다 — 기본값은 항상
+    # 빈 문자열로 둘 것(배포 환경에서만 값을 채운다).
+    sentry_dsn: str = Field(default="", repr=False)
+    # monitoring-techspec.md MT-4: 프로덕션·dev를 가르는 값(DEPLOY.md: 스테이징 환경 없음).
+    # 기본값 "development"는 DSN이 실수로 채워져도 이벤트가 dev로 표시되게 하는 안전장치다.
+    sentry_environment: Literal["development", "production"] = "development"
+
 
 settings = Settings()
