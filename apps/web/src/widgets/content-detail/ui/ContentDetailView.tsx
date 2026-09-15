@@ -52,22 +52,20 @@ const HERO_CAP_CLASS: Record<ThumbnailAspect, string> = {
 // 화면 표시는 isLikeDesired/isFavoriteDesired로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
+type ContentDetailViewProps = {
+  id: string;
+  /** image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
+   * 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
+   * 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다). */
+  type: ContentType;
+  variant: "modal" | "page";
+};
+
 /** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
  * `variant`는 design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 하단에 고정하는 방식이
  * 모달(카드 안 flex)과 풀페이지(lg 미만 fixed)에서 구조 자체가 달라 호출부가 명시한다. */
-export function ContentDetailView({
-  id,
-  type,
-  variant,
-}: {
-  id: string;
-  // image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
-  // 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
-  // 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다).
-  type: ContentType;
-  variant: "modal" | "page";
-}) {
+export function ContentDetailView({ id, type, variant }: ContentDetailViewProps) {
   const detailQuery = useContentDetailQuery(id);
   const setModalState = useSetAtom(contentDetailModalAtom);
   const navigate = useNavigate();

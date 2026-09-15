@@ -19,12 +19,12 @@ import { Slider } from "@ai-character-chat/ui/components/slider";
 import { computeZoomBounds } from "../lib/computeZoomBounds";
 import { cropToFile } from "../lib/cropToFile";
 
-export type CropArgs = { file: File; aspect: number; maxEdge: number; shape?: "rect" | "round" };
+export type ImageCropModalProps = { file: File; aspect: number; maxEdge: number; shape?: "rect" | "round" };
 
 // image-crop-goal-prompt.md IC-8 — react-call 자체 호출형. 성공 후 동작이 호출부마다 갈리지 않고
 // 잘라낸 File을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
 // 전부 onOpenChange 한 지점으로 모여 call.end(undefined)로 수렴한다(GeneratedImagePickerModal과 동일 패턴).
-export const ImageCropModal = createCallable<CropArgs, File | undefined>(
+export const ImageCropModal = createCallable<ImageCropModalProps, File | undefined>(
   ({ call, file, aspect, maxEdge, shape = "rect" }) => {
     const isOpen = !call.ended;
 
