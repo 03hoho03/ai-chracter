@@ -1,12 +1,22 @@
 from typing import Literal
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat"
+    # secure-issue-goal-prompt.md SEC-9: 비밀 5종(`database_url`·`google_client_secret`·
+    # `gemini_api_key`·`local_image_access_client_secret`·`resend_api_key`)은 `Field(repr=False)`로
+    # repr에서 뺀다 — `monkeypatch.setattr(settings, "오타", ...)`가 내는
+    # `AttributeError(f"{target!r} has no attribute ...")` 메시지에 전 필드 repr이 실려 비밀이
+    # 평문으로 찍히기 때문이다. 값이 traceback이 아니라 **예외 메시지 자체**에 있어 pytest
+    # `--tb` 옵션으로는 못 막는다. 타입은 `str` 그대로다(`SecretStr` 전환은 별건).
+    database_url: str = Field(
+        default="postgresql+asyncpg://postgres:postgres@localhost:5432/ai_character_chat",
+        repr=False,
+    )
     redis_url: str = "redis://localhost:6379/0"
 
     # local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출을 막는다 — 안전한
@@ -49,7 +59,7 @@ class Settings(BaseSettings):
     # 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스) — DEPLOY.md에 남긴다.
     withdrawn_email_hmac_key: str = ""
     google_client_id: str = ""
-    google_client_secret: str = ""
+    google_client_secret: str = Field(default="", repr=False)
     # Used to build the redirect_uri sent to Google and the /auth/google/callback
     # Location header target after a successful/pending login.
     api_base_url: str = "http://localhost:8000"
@@ -63,8 +73,11 @@ class Settings(BaseSettings):
     password_reset_token_ttl_seconds: int = 60 * 60
 
     # techspec-overview-backend.md §5: Gemini 2.5 LLMClient 구현체 (US-050).
-    gemini_api_key: str = ""
+    gemini_api_key: str = Field(default="", repr=False)
     gemini_model_name: str = "gemini-2.5-flash"
+    # ⚠️ 아래 실측은 전부 **현행 기본 모델이 아닌 모델**(gemini-3.5-flash·flash-lite)에서 나왔다
+    # — 현행 기본값은 바로 위 `gemini_model_name`(gemini-2.5-flash)이다. 근거로는 쓰되 현행
+    # 모델에서 재현된 값은 아니다(secure-issue-goal-prompt.md SEC-8).
     # generate()(채팅 생성)의 출력 상한 — 폭주 방지용이지 길이 연출 수단이 아니다. 주의:
     # 이 상한은 응답만이 아니라 **사고(thinking) 토큰과 응답이 나눠 쓰는 예산**이다.
     # 옛 기본값 2048의 근거였던 "실측 90턴 최대 응답 1635자"는 사고를 안 하는 flash-lite
@@ -97,9 +110,12 @@ class Settings(BaseSettings):
     local_image_base_url: str = ""
     # local-image-gen-goal-prompt.md LG-5: Cloudflare Access 서비스 토큰.
     local_image_access_client_id: str = ""
-    local_image_access_client_secret: str = ""
-    # local-image-gen-progress.md §0: S1(집 PC) 실측 전 잠정값 — 생성 30초 + LoRA 전환 3초 +
-    # 여유, Cloudflare edge 타임아웃(무료 플랜 100초로 알려짐, 실측 전) 미만이어야 한다.
+    local_image_access_client_secret: str = Field(default="", repr=False)
+    # DEPLOY.md §5 실측: 정상 생성은 17~20초지만 종횡비 버킷 전환 직후 첫 요청이 27~34초다
+    # (`torch.backends.cudnn.benchmark`가 그 해상도의 커널을 처음 탐색·캐시하는 비용) — 45초가
+    # 아니라 90초인 이유가 이 값이다. 상한 쪽 제약은 그대로 살아 있다: VM은 Cloudflare Tunnel로
+    # 집 PC에 도달하므로(DEPLOY.md §5) edge 타임아웃(무료 플랜 100초로 알려짐, 아직 실측 없음)
+    # 미만이어야 한다.
     local_image_timeout_seconds: int = 90
     # 잠정값 — 복구 감지 속도와 프로브 빈도의 타협(LG-18: 콜드/만료 시에만 프로브).
     local_image_capabilities_ttl_seconds: int = 30
@@ -132,7 +148,7 @@ class Settings(BaseSettings):
     # 실수로 실제 메일을 쏘는 사고를 원천 차단한다.
     email_provider: Literal["console", "resend"] = "console"
     # email-goal-prompt.md E-1: Resend REST API(https://api.resend.com/emails) 인증 토큰.
-    resend_api_key: str = ""
+    resend_api_key: str = Field(default="", repr=False)
     # email-goal-prompt.md E-4: 발신 주소. ddona.site 도메인이 Resend에서 검증돼야 이 주소로
     # 실제 발신이 나간다(§5의 사용자 액션).
     email_from: str = "noreply@ddona.site"
