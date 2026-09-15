@@ -21,9 +21,17 @@
 
 (자산이 브라우저에 노출되는 문제는 없다 — R2의 CORS는 읽기 권한을 주지 않고, S3 엔드포인트는
 항상 SigV4 서명을 요구한다. 공개 접근은 별도 `r2.dev` 도메인을 켜야 생기는데 켜져 있지 않다.)
+
+**백업(덤프+업로드+prune)이 전부 성공한 뒤에만 만료된 `withdrawn_emails` 행도 지운다**
+(legal-revision-goal-prompt.md LR-32). 처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년간
+보관하고 그 기간이 지나면 파기합니다"를 실제로 수행하는 유일한 코드다 — `auth/router.py`의
+`_reregistration_blocked`는 조회 시 만료를 무시할 뿐 행을 지우지 않는다. 삭제를 백업 뒤에
+두는 이유는 지우기 전 상태를 그날 백업에 남기기 위해서다. `--no-upload`(로컬 전용 덤프)
+경로에는 얹지 않는다 — 그 경로는 durable 백업을 남기지 않는다.
 """
 
 import argparse
+import asyncio
 import os
 import re
 import subprocess
@@ -32,6 +40,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import IO
 
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
+from api.db.models.auth import WithdrawnEmail
+from api.db.session import async_session_factory
 from ops.db_url import describe, to_libpq_url
 from ops.pg import run_sh
 
@@ -121,6 +135,32 @@ def prune(bucket: str, prefix: str, keep: int) -> list[str]:
     return doomed
 
 
+async def delete_expired_withdrawn_emails(db: AsyncSession, *, now: datetime) -> int:
+    """legal-revision-goal-prompt.md LR-32: `withdrawn_at + WITHDRAWN_EMAIL_BLOCK_PERIOD`가
+    지난 `withdrawn_emails` 행을 지우고 지운 개수를 돌려준다. 처리방침 제4조 2항·약관 제14조
+    4항이 "1년이 지나면 파기합니다"라고 약속하는 대상이 바로 이 행이다. 기준값은
+    `auth/router.py`의 조회(`_reregistration_blocked`)와 같은 상수를 공유한다 — 여기서
+    따로 정의하면 둘이 갈라질 수 있다. `.rowcount` 대신 `.returning()`(admin/users.py 선례)을
+    쓴다 — mypy strict에서 `Result[Any]`가 `.rowcount`를 노출하지 않는다."""
+    cutoff = now - WITHDRAWN_EMAIL_BLOCK_PERIOD
+    deleted = (
+        await db.scalars(
+            delete(WithdrawnEmail)
+            .where(WithdrawnEmail.withdrawn_at < cutoff)
+            .returning(WithdrawnEmail.email_hmac)
+        )
+    ).all()
+    return len(deleted)
+
+
+async def _purge_expired_withdrawn_emails() -> int:
+    """`main()`이 백업 성공 뒤에 부르는 진입점 — 스크립트 자신의 세션을 열고 커밋까지 한다."""
+    async with async_session_factory() as session:
+        removed = await delete_expired_withdrawn_emails(session, now=datetime.now(UTC))
+        await session.commit()
+        return removed
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, default=Path("backups"))
@@ -157,6 +197,13 @@ def main() -> int:
         removed = prune(bucket, f"{base}{kind}", keep)
         if removed:
             print(f"🗑 {base}{kind} 정리: {len(removed)}개 삭제 ({', '.join(removed)})")
+
+    # legal-revision-goal-prompt.md LR-32: 여기 도달했다는 것 자체가 덤프·업로드·prune이 전부
+    # 성공했다는 뜻이다 — 앞선 어느 단계든 실패하면 예외가 여기까지 오기 전에 전파되어 삭제도
+    # 함께 건너뛴다. 순서 고정: 백업 뒤에 지워야 지우기 전 상태가 오늘 백업에 남는다.
+    expired_count = asyncio.run(_purge_expired_withdrawn_emails())
+    if expired_count:
+        print(f"🗑 withdrawn_emails 만료 정리: {expired_count}개 삭제")
 
     if not args.keep_local:
         target.unlink()

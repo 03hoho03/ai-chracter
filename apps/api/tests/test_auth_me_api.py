@@ -318,8 +318,8 @@ async def test_signup_with_same_email_is_blocked_within_one_year_of_withdrawal(
 async def test_signup_with_same_email_succeeds_after_withdrawn_block_period_expires(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-7·LR-23: withdrawn_at + 1년이 지난 행은 조회
-    시점에 무시된다(별도 삭제 배치 없이)."""
+    """legal-revision-goal-prompt.md LR-7: withdrawn_at + 1년이 지난 행은 조회 시점에
+    무시된다(행 자체의 삭제는 백업 크론이 담당한다 — LR-32)."""
     payload = await _signup_and_login(db_client)
     withdraw_resp = await db_client.delete("/me")
     assert withdraw_resp.status_code == 204

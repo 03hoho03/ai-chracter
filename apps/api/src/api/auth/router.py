@@ -1,5 +1,5 @@
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
@@ -47,6 +47,7 @@ from api.auth.verification import (
 )
 from api.core import rate_limit
 from api.core.config import settings
+from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
 from api.core.email import EmailSender, get_email_sender
 from api.core.s3 import build_thumbnail_key, delete_object
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
@@ -62,10 +63,6 @@ from api.session.store import create_session, delete_session
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
-
-# legal-revision-goal-prompt.md LR-7: 탈퇴일로부터 이 기간 안에는 같은 이메일로 재가입이
-# 막힌다. 만료된 행은 조회 시점에 무시만 한다 — 별도 삭제 배치는 만들지 않는다(LR-23).
-WITHDRAWN_EMAIL_BLOCK_PERIOD = timedelta(days=365)
 
 
 async def _reregistration_blocked(db: AsyncSession, email: str, now: datetime) -> bool:

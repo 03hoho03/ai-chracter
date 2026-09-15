@@ -56,7 +56,8 @@ class WithdrawnEmail(Base):
     자리표시자로 바뀌므로(LR-6), 재가입 차단은 평문 이메일 대신 이 테이블의 키 있는
     HMAC-SHA256 해시로 조회한다. 순수 SHA-256은 이메일 공간이 좁아 사전 공격으로 되돌릴
     수 있어 서버 비밀키를 붙인 HMAC을 쓴다(LR-8). `withdrawn_at + 1년`이 지난 행은
-    조회 시점에 무시한다(LR-23) — 별도 삭제 배치는 없다.
+    조회 시점에 무시하고, 행 자체는 매일 도는 백업 크론이 지운다
+    (`scripts/ops/backup_db.py`, legal-revision-goal-prompt.md LR-32).
     """
 
     __tablename__ = "withdrawn_emails"
