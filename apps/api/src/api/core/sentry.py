@@ -49,7 +49,11 @@ def build_sentry_options() -> dict[str, Any]:
       스택 프레임 지역변수로 산다(§0-1-7) — 임의 문자열이라 키 이름 매칭 스크럽으로는 원리적으로
       못 잡는다.
     - `send_default_pii=False`: IP(`x_forwarded_for`·`x_real_ip`·`ip_address`·`remote_addr`)·
-      쿠키를 SDK `DEFAULT_PII_DENYLIST`로 거른다.
+      쿠키를 SDK `DEFAULT_PII_DENYLIST`로 거른다. **User-Agent와 요청 경로(`request.url`)는 이
+      플래그와 무관하게 항상 붙는다** — ASGI 통합의 `_get_request_data()`가 헤더 딕셔너리를
+      `_filter_headers()`로 거르는데, 그 차단 목록(`integrations/_wsgi_common.py`의
+      `SENSITIVE_HEADERS`)에 User-Agent가 없고, `request.url`은 아예 게이트 없이 항상
+      채워진다(sentry-sdk 2.69.1 소스로 확인).
     - `disabled_integrations=[GoogleGenAIIntegration]`: `google-genai`가 의존성에 있어 이 통합이
       auto-enabling 이고 `include_prompts` 기본값이 True라 프롬프트가 span에 실린다(§0-1-8).
       지금은 트레이싱이 꺼져 있어(`traces_sample_rate=0`) 전송되지 않지만, 그 안전은 "트레이싱을
