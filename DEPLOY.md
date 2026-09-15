@@ -188,7 +188,8 @@ web 프로젝트 → Settings → Environment variables. **Production과 Preview
 
 **자동배포가 정상 경로다.** `main` push 시 `.github/workflows/deploy-api.yml`이 이미지 빌드 →
 Artifact Registry push → IAP SSH로 VM 교체 → 인터넷 쪽 `/health` 확인까지 한다(실측 1분 35초).
-트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 워크플로 자신이다.
+트리거 경로는 `apps/api/**` · `docker-compose.prod.yml` · `Caddyfile` · 저장소 루트 `ops/**` ·
+워크플로 자신이다.
 **GitHub Secrets에 넣는 값은 없다** — WIF라 키를 저장하지 않는다.
 
 ```sh
@@ -311,6 +312,38 @@ cd /opt/ddona/app && $C up -d --wait api
 
 R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
 (`--endpoint-url`은 `S3_ENDPOINT_URL`).
+
+**최초 1회 — `/opt/ddona/scripts` 심볼릭 링크 설치**(monitoring-techspec.md MT-9). 지금
+`/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**이고, 배포(`deploy-api.yml`)는
+`/opt/ddona/app`만 `git reset --hard`하므로 이 디렉터리는 배포 때마다 갱신되지 않고 그대로
+남는다 — 실측(2026-09-15) `backup_db.py`가 크론 사본 8,139B(9/2 판) vs 저장소 12,230B(9/15)로
+md5가 다르다. 이 드리프트 때문에 `delete_expired_withdrawn_emails`(LR-32, 처리방침 제4조 2항·
+약관 제14조 4항의 파기 의무)가 9/15에 저장소에 들어간 뒤로 **프로덕션 크론에서 한 번도 실행되지
+않았다**(크론 사본 0건 vs 저장소 2건, `/var/log/ddona-backup.log`에 파기 기록 0건). 다만
+`withdrawn_emails` 행이 아직 0건이라 실제 위반은 아니고 휴면 결함이다.
+
+**해법은 복사가 아니라 심볼릭 링크다** — 이유는 위 logrotate 절차와 같다: `/opt/ddona/app`은
+배포마다 `git reset --hard origin/main`으로 갱신되므로, 링크해두면 `ops/*`를 고칠 때 재설치 없이
+다음 배포부터 자동 반영된다.
+
+```sh
+sudo rm -rf /opt/ddona/scripts
+sudo ln -s /opt/ddona/app/apps/api/scripts /opt/ddona/scripts
+```
+
+**검증**:
+```sh
+# 1. 크론 사본이 저장소와 같아졌는지
+md5sum /opt/ddona/scripts/ops/backup_db.py /opt/ddona/app/apps/api/scripts/ops/backup_db.py
+
+# 2. 다음 18:00 UTC 백업 크론 로그에 파기 라인이 찍히는지
+sudo tail -f /var/log/ddona-backup.log
+```
+
+**부작용**: 링크가 걸리면 `ops/*` 전체가 프로덕션 크론의 시스템 python3(+boto3,
+`PYTHONPATH=/opt/ddona/scripts`)에서 import 가능해야 한다는 제약을 실제로 받는다.
+`apps/api/tests/test_ops_production_cron_importable.py`가 그 시스템 python3로 실제 불리는
+`backup_db.py`·`restore_db.py` 각각에 대해 이 제약을 `ast`로 고정한다.
 
 ⚠️ **`PG_DOCKER_NETWORK=ddona_default`가 없으면 안 된다** — 운영 Postgres는 포트를 게시하지 않으므로
 기본 bridge로 뜬 `pg_dump`/`psql` 컨테이너에서 닿지 않는다.

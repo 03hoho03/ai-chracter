@@ -35,7 +35,7 @@
 SQLAlchemy/asyncpg가 안 깔려 있다(boto3만 있다). S5-d가 만료 `withdrawn_emails` 삭제를
 SQLAlchemy로 구현해 배포했다가 매일 18:00 UTC 크론이 import 시점에 죽어 백업이 통째로
 멈췄다(S5-e에서 되돌림) — 그래서 삭제도 `pg_dump`와 같은 방식(`run_sh`로 컨테이너 안
-`psql`을 부름)으로 한다. `tests/test_ops_backup_db_importable.py`가 이 제약을 `ast`로 고정한다.
+`psql`을 부름)으로 한다. `tests/test_ops_production_cron_importable.py`가 이 제약을 `ast`로 고정한다.
 """
 
 import argparse

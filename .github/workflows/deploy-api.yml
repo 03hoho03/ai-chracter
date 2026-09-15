@@ -19,6 +19,10 @@ on:
       # VM 은 compose·Caddyfile 을 git 에서 받아가므로 이 둘도 배포 트리거다.
       - "docker-compose.prod.yml"
       - "Caddyfile"
+      # 저장소 루트 ops/(예: ops/logrotate.d)도 VM이 /opt/ddona/app의 git reset --hard로만
+      # 받아간다 — 트리거가 없으면 ops/ 단독 변경은 배포되지 않고 다음 무관한 api 배포 때
+      # 조용히 따라 들어간다(DEPLOY.md, monitoring-techspec.md MT-9).
+      - "ops/**"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch: # 롤백·재배포용 수동 실행
 
