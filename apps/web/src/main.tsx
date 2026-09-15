@@ -6,8 +6,12 @@ import { createRoot } from "react-dom/client";
 import { AppProviders } from "./app/AppProviders";
 import { router } from "./app/router";
 import { AppToaster } from "./app/AppToaster";
+import { initSentry } from "./app/sentry";
 
 import "@ai-character-chat/ui/globals.css";
+
+// 렌더보다 먼저 부른다 — 이 아래의 `#root` 부재 같은 부팅 단계 에러도 잡히게 한다(MT-7).
+initSentry();
 
 // `index.html`의 `#root`가 사라지면 `!`는 `createRoot(null)`로 넘겨 리액트 내부에서 터진다 —
 // 스택이 앱 코드를 안 가리켜 원인을 찾기 어렵다. 부팅 지점이라 한 번만 도는 검사다.

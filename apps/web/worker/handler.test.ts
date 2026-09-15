@@ -28,6 +28,7 @@ function createEnv(overrides: Partial<WorkerEnv> = {}): WorkerEnv & {
   return {
     ASSETS: { fetch: (request) => Promise.resolve(assetFetch(request)) },
     API_BASE_URL: "https://api.example.com",
+    INGEST_SHARED_SECRET: "test-shared-secret",
     assetFetch,
     ...overrides,
   };
@@ -525,6 +526,186 @@ describe("handleRequest", () => {
     expect(response.status).toBe(200);
     expect(await response.text()).toContain("naver-site-verification:");
     expect(env.assetFetch).not.toHaveBeenCalled();
+  });
+
+  describe("/_ingest 프록시 (MT-3)", () => {
+    function ingestRequest(path: string, init: RequestInit = {}): Request {
+      return new Request(`https://ddona.example${path}`, init);
+    }
+
+    it("envelope POST를 API_BASE_URL로 중계하고 공유 시크릿을 붙인다", async () => {
+      const fetchMock = vi.fn((_url: string, _init: RequestInit) =>
+        Promise.resolve(new Response("ok", { status: 200 })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv({
+        API_BASE_URL: "https://api.example.com",
+        INGEST_SHARED_SECRET: "shh",
+      });
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/?sentry_key=abc", {
+          method: "POST",
+          headers: { "content-type": "application/x-sentry-envelope" },
+          body: "envelope-body",
+        }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(200);
+      expect(env.assetFetch).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const [calledUrl, calledInit] = fetchMock.mock.calls[0] as [
+        string,
+        RequestInit,
+      ];
+      expect(calledUrl).toBe(
+        "https://api.example.com/_ingest/api/1/envelope/?sentry_key=abc",
+      );
+      expect(calledInit.method).toBe("POST");
+      expect((calledInit.headers as Headers).get("x-ingest-secret")).toBe(
+        "shh",
+      );
+    });
+
+    it("관리자 UI 경로(GET)도 통과시킨다 — ddona.site 경유로 열람 가능해야 한다", async () => {
+      const fetchMock = vi.fn(() =>
+        Promise.resolve(new Response("<html></html>", { status: 200 })),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/accounts/signup/"),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("확장자가 있는 /_ingest 경로도 ASSETS로 새지 않는다 — 자산 검사보다 앞이다", async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response("css")));
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      await handleRequest(ingestRequest("/_ingest/static/admin.css"), env, {
+        cache: NOOP_CACHE,
+      });
+
+      expect(env.assetFetch).not.toHaveBeenCalled();
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("POST/GET/HEAD 밖의 메서드는 405이고 업스트림을 부르지 않는다", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/", { method: "PUT" }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(405);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("Content-Length가 10MB를 넘으면 413이고 업스트림을 부르지 않는다", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/", {
+          method: "POST",
+          headers: { "content-length": String(10 * 1024 * 1024 + 1) },
+        }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(413);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("10MB 이하는 통과한다", async () => {
+      const fetchMock = vi.fn(() => Promise.resolve(new Response("ok")));
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/", {
+          method: "POST",
+          headers: { "content-length": String(10 * 1024 * 1024) },
+        }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(200);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+
+    it("API_BASE_URL이 없으면 500이고 업스트림을 부르지 않는다", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv({ API_BASE_URL: undefined });
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/", { method: "POST" }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(500);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("INGEST_SHARED_SECRET이 없으면 500이고 업스트림을 부르지 않는다", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv({ INGEST_SHARED_SECRET: undefined });
+
+      const response = await handleRequest(
+        ingestRequest("/_ingest/api/1/envelope/", { method: "POST" }),
+        env,
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(500);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("트레일링 슬래시 없는 /_ingest 단독은 프록시하지 않는다 — Caddy 매처와 같은 경계", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(ingestRequest("/_ingest"), env, {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(404);
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it("/_ingest 밖 경로는 기존 동작 그대로다", async () => {
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      const env = createEnv();
+
+      const response = await handleRequest(get("/content/character/42"), env, {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe("/index.html");
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
   });
 
   // 배선 위치 검사다. 판별 규칙 자체는 legacyRedirect.test.ts가 본다.
