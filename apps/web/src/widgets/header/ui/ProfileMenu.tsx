@@ -8,24 +8,15 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
-import { Link, useNavigate } from "@tanstack/react-router";
-import {
-  ImagePlus,
-  LayoutGrid,
-  LifeBuoy,
-  LogOut,
-  Megaphone,
-  MessagesSquare,
-  Plus,
-  Settings2,
-  Star,
-  User,
-} from "lucide-react";
-import { useId, type ReactNode } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import { LogOut, User } from "lucide-react";
+import { Fragment, useId, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import type { MeResponse } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
+
+import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
 
 /** prd-creator-entry-and-my-works.md US-012 — 창작 / 활동 / 계정 세 그룹 + 로그아웃.
  * techspec.md §5-7(D-4)이 `계정` 아래에 `고객센터` 그룹을 얹었다(T-12가 `공지사항` 한 항목으로
@@ -111,83 +102,26 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
 
-        <ProfileMenuGroup label="창작">
-          <DropdownMenuItem asChild>
-            <Link to="/builder">
-              <Plus aria-hidden />
-              작품 만들기
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/my">
-              <LayoutGrid aria-hidden />
-              내 작품
-            </Link>
-          </DropdownMenuItem>
-          {/* 헤더의 이미지 생성 버튼과 **같은 글리프**를 쓴다 — 같은 목적지에 다른 아이콘을 붙이면
-              둘이 다른 기능으로 읽힌다. */}
-          <DropdownMenuItem asChild>
-            <Link to="/studio/images">
-              <ImagePlus aria-hidden />
-              이미지 생성
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="활동">
-          <DropdownMenuItem asChild>
-            <Link to="/chats">
-              <MessagesSquare aria-hidden />
-              내 채팅목록
-            </Link>
-          </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <Link to="/favorites">
-              <Star aria-hidden />
-              즐겨찾기
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="계정">
-          <DropdownMenuItem asChild>
-            <Link to="/profile/$userId" params={{ userId: me.id }}>
-              <User aria-hidden />
-              내 프로필
-            </Link>
-          </DropdownMenuItem>
-          {/* US-013이 초안 섹션을 걷어내 이 목적지가 설정 전용이 됐다. 라벨은 페이지 제목(`설정`)과 같은
-              문자열이어야 한다 — 다르면 메뉴에서 고른 이름과 도착한 화면의 h1이 어긋나고, 특히 목적지를
-              제목으로만 확인하는 스크린리더 사용자에게 "다른 데로 왔나"로 읽힌다. */}
-          <DropdownMenuItem asChild>
-            <Link to="/mypage">
-              <Settings2 aria-hidden />
-              설정
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-        <DropdownMenuSeparator />
-
-        <ProfileMenuGroup label="고객센터">
-          <DropdownMenuItem asChild>
-            <Link to="/notices">
-              <Megaphone aria-hidden />
-              공지사항
-            </Link>
-          </DropdownMenuItem>
-          {/* h1이 `문의하기`인 `/inquiries/new`로 간다(D-12) — `/inquiries`(목록, h1 `내 문의 내역`)로
-              가면 라벨과 도착 페이지 h1이 어긋난다. 목록은 그 폼 본문의 링크로 간다(`MyPagePage` 관용구). */}
-          <DropdownMenuItem asChild>
-            <Link to="/inquiries/new">
-              <LifeBuoy aria-hidden />
-              문의하기
-            </Link>
-          </DropdownMenuItem>
-        </ProfileMenuGroup>
-
-        <DropdownMenuSeparator />
+        {/* 목적지는 `PROFILE_DESTINATION_GROUPS`(위) 하나에서만 온다 — 그룹 구조·라벨·구분선 위치는
+            그대로다, 목록만 밖으로 뺀 리팩터다. 개별 항목의 주석(같은 글리프를 쓰는 이유, 라벨이 페이지
+            제목과 같아야 하는 이유 등)은 `ProfileDestinationLink`로 옮기지 않았다 — 그 근거들은 각
+            라우트 자체의 성질이라 이 파일에 남겨도 무방하지만, 정확한 위치가 흩어지므로 배열 옆
+            대신 여기 한 번에 적어 둔다: 이미지 생성은 헤더 버튼과 같은 `ImagePlus` 글리프를 쓰고
+            (같은 목적지에 다른 아이콘을 붙이면 둘이 다른 기능으로 읽힌다), `설정`은 페이지 제목과
+            같은 문자열이어야 하며(US-013), `문의하기`는 h1이 `문의하기`인 `/inquiries/new`로 간다(D-12
+            — `/inquiries` 목록의 h1은 `내 문의 내역`이라 라벨이 어긋난다). */}
+        {PROFILE_DESTINATION_GROUPS.map((group) => (
+          <Fragment key={group.label}>
+            <ProfileMenuGroup label={group.label}>
+              {group.keys.map((key) => (
+                <DropdownMenuItem key={key} asChild>
+                  <ProfileDestinationLink destinationKey={key} me={me} />
+                </DropdownMenuItem>
+              ))}
+            </ProfileMenuGroup>
+            <DropdownMenuSeparator />
+          </Fragment>
+        ))}
 
         {/* `variant="destructive"`를 쓰지 않는다. DESIGN.md §Destructive가 이 토큰의 뜻을 삭제·탈퇴·거부·
             이용제한 넷으로 못박았는데 로그아웃은 넷 중 아무것도 아니다(지우는 게 없고 다시 로그인하면 되돌아온다).
@@ -202,7 +136,7 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             두 자리의 시각 언어를 일치시킨다.
             심각도는 색이 아니라 아이콘(`LogOut`)과 구분선이 진다 — `MyWorkCardMenu`가 쓴 것과 같은 규칙이다.
 
-            `event.preventDefault()`가 있어야 옆의 `disabled`가 살아난다 — Radix의 기본 `onSelect`는 메뉴를
+            `event.preventDefault()`가 있어야 옆의 `aria-disabled`가 살아난다 — Radix의 기본 `onSelect`는 메뉴를
             닫으므로, 막지 않으면 `logout.isPending`이 true인 동안 이 행은 이미 언마운트돼 있다(실측: 선택
             직후 `[data-slot=dropdown-menu-content]`가 `null`). 그래서 (1) 진행 표시가 죽은 코드였고
             (2) 실패했을 때 재시도가 "메뉴 다시 열기 + 항목 고르기" 두 동작이 됐다. **(2)를 "다시 누를 자리가
@@ -220,9 +154,10 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
             포털하거나 토스트가 없을 때 언마운트되게 바꾸면 이 보장이 조용히 깨진다**(이미 실행된 `hideOthers`는
             나중에 생긴 노드를 되살리지 않는다). */}
         <DropdownMenuItem
-          disabled={logout.isPending}
+          aria-disabled={logout.isPending}
           onSelect={(event) => {
             event.preventDefault();
+            if (logout.isPending) return;
             handleLogout();
           }}
         >

@@ -3,8 +3,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { TriangleAlert } from "lucide-react";
 
 import type { BuilderTab } from "@/entities/content";
-
-import { useHorizontalScrollClip } from "../lib/useHorizontalScrollClip";
+import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 type BuilderTabStripProps = {
   /** 그릴 탭 목록. 셸의 `TABS`(`CHARACTER_TABS`·`STORY_TABS`)가 단일 소스다(builder-techspec.md §4-1). */
