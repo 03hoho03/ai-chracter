@@ -1,13 +1,15 @@
-"""S5-e 재발 방지 + `monitoring-techspec.md` MT-9·MT-13: 프로덕션 크론이 시스템 python3로 직접
-부르는 ops 모듈들이 실제로 그 환경에서 import 가능한지 고정한다.
+"""S5-e 재발 방지 + `monitoring-techspec.md` MT-9·MT-13·`monitoring-legal-draft.md` §7-6(MT-16):
+프로덕션 크론이 시스템 python3로 직접 부르는 ops 모듈들이 실제로 그 환경에서 import 가능한지
+고정한다.
 
-**대상은 `backup_db.py`·`restore_db.py`·`check_resources.py`, 그리고 이 셋이 `ops.`로 top-level
-import하는 형제 모듈 `notify.py`·`db_url.py`·`pg.py`다.** VM 시스템 python3로 실제 불리는 건
-앞의 셋이다 — `DEPLOY.md` §3-4가 복원 절차를 `PYTHONPATH=. python3 -m ops.restore_db`로
-명시하고, `ops/cron.d/ddona-resource-check`(MT-13)가 리소스 감시를 같은 방식으로 돌린다.
-**형제 모듈을 셋만 따로 검사하는 이유** — 진입점 셋의 허용 목록에 `ops`가 있어 `from ops.notify
+**대상은 `backup_db.py`·`restore_db.py`·`check_resources.py`·`vacuum_bugsink.py`, 그리고 이
+넷이 `ops.`로 top-level import하는 형제 모듈 `notify.py`·`db_url.py`·`pg.py`다.** VM 시스템
+python3로 실제 불리는 건 앞의 넷이다 — `DEPLOY.md` §3-4가 복원 절차를 `PYTHONPATH=.
+python3 -m ops.restore_db`로 명시하고, `ops/cron.d/ddona-resource-check`(MT-13)가 리소스 감시를,
+`ops/cron.d/ddona-bugsink-vacuum`(MT-16)가 Bugsink 이벤트 파기를 같은 방식으로 돌린다.
+**형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
-`requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 세 테스트가 전부 통과했다(실측). `snapshot_redis.py`·
+`requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 테스트들이 전부 통과했다(실측). `snapshot_redis.py`·
 `compare_rows.py`는 독스트링이 `uv run`만 안내하고, `cloudrun_to_dotenv.py`는 `DEPLOY.md`가
 "사문 — 실행 대상 없음"으로 선언한 죽은 코드라 이 테스트의 범위 밖이다.
 
@@ -43,6 +45,7 @@ import ops.db_url as db_url
 import ops.notify as notify
 import ops.pg as pg
 import ops.restore_db as restore_db
+import ops.vacuum_bugsink as vacuum_bugsink
 
 # 모듈별 허용 목록. `ops`는 형제 모듈(`ops/pg.py`, `ops/db_url.py`, `ops/notify.py`)이라
 # `PYTHONPATH=/opt/ddona/scripts`로 항상 잡힌다 — 그 형제 모듈 자신의 최상단 import는 아래
@@ -76,6 +79,15 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
     "check_resources": {
         "argparse",
         "os",
+        "subprocess",
+        "sys",
+        "ops",
+    },
+    # MT-16(monitoring-legal-draft.md §7-6): Bugsink vacuum도 시스템 python3로 돈다
+    # (ops/cron.d/ddona-bugsink-vacuum). `docker exec`를 서브프로세스로 부르지 docker SDK를
+    # 쓰지 않는다 — check_resources.py와 같은 이유로 stdlib만 쓴다.
+    "vacuum_bugsink": {
+        "argparse",
         "subprocess",
         "sys",
         "ops",
@@ -146,6 +158,18 @@ def test_check_resources_top_level_imports_are_satisfied_by_production_cron_envi
         f"ops/check_resources.py 최상단 import {disallowed}는 리소스 감시 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 5분마다 "
         "도는 크론이 import 시점에 죽는다(MT-13)."
+    )
+
+
+def test_vacuum_bugsink_top_level_imports_are_satisfied_by_production_cron_environment() -> None:
+    path = Path(vacuum_bugsink.__file__)
+    imports = _top_level_import_names(path)
+
+    disallowed = imports - _ALLOWED_TOP_LEVEL_MODULES["vacuum_bugsink"]
+    assert not disallowed, (
+        f"ops/vacuum_bugsink.py 최상단 import {disallowed}는 Bugsink vacuum 크론의 시스템 "
+        "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
+        "크론이 import 시점에 죽어 '30일 보관 후 파기' 약속이 조용히 깨진다(MT-16)."
     )
 
 

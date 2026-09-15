@@ -484,7 +484,68 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
 고정되므로** `caddy reload`가 아니라 `$C up -d --wait caddy`로 컨테이너를 **재생성**해야 한다
 (`Caddyfile` 내용만 바뀐 경우 reload로 충분한 것과 다르다).
 
-### 3-6. VM 리소스 감시 — cron이 `free`/`df`를 직접 읽는다
+### 3-6. Bugsink 이벤트 보유기간 파기 — vacuum cron
+
+`monitoring-legal-draft.md` §7-6(MT-16). §3-5의 `MAX_EVENT_AGE_DAYS: "30"`
+(`docker-compose.monitoring.yml`)은 "30일보다 오래된 이벤트는 지운다"는 **기준값**만 고정한다 —
+실제로 지우는 건 `bugsink-manage vacuum --old-events` 관리 명령이고, 공식 이미지는 이 명령을 도는
+스케줄러를 컨테이너 안에 두지 않는다(`Dockerfile` CMD 확인 — gunicorn+snappea만 상시 실행). 값만
+고정하고 이 크론이 없으면 처리방침이 약속하는 "수집일로부터 30일간 보관 후 파기"는 실행되지
+않는다.
+
+`apps/api/scripts/ops/vacuum_bugsink.py`가 `docker exec ddona-monitoring-bugsink-1 bugsink-manage
+vacuum --old-events`를 돌린다. 컨테이너 이름은 추측이 아니다 — `docker-compose.monitoring.yml`의
+`name: ddona-monitoring` + 서비스 `bugsink`(replica 1개)를 Compose V2 관례대로 조합한 이름이고,
+`docker compose config`로 프로젝트·서비스 이름을 확인한 뒤 로컬에서 실제로 `docker compose up`한
+컨테이너 이름을 실측했다(§3-5의 `docker stats --no-stream ddona-monitoring-bugsink-1`과 같은 이름).
+`docker compose exec`가 아니라 `docker exec <고정 이름>`을 쓰는 이유는 이 스크립트가
+`docker-compose.monitoring.yml`의 경로나 실행 시점 cwd를 몰라도 되게 하기 위해서다.
+
+**최초 1회 — `ops/bugsink-vacuum.sh` + cron.d 심볼릭 링크 설치**(§3-4의 `/opt/ddona/scripts` 절차,
+`ops/logrotate.d/ddona-caddy` 절차와 같은 이유 — `/opt/ddona/app`은 배포마다 `git reset --hard`되므로
+링크해두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/bugsink-vacuum.sh /opt/ddona/bugsink-vacuum.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-bugsink-vacuum /etc/cron.d/ddona-bugsink-vacuum
+```
+
+`ops/bugsink-vacuum.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 `DISCORD_WEBHOOK_URL`만 뽑아
+export한 뒤 `PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.vacuum_bugsink`를 부른다 —
+`resource-check.sh`와 같은 이유(JSON 값이 쉘 문법과 부딪친다).
+
+**검증 — "설치했다"가 아니라 "실제로 지워지는 것"을 확인한다**(설치만 확인하면 Caddy 접근 로그
+30일 보관이 logrotate 설치를 빠뜨려 조용히 깨졌던 것과 같은 실패 모드를 반복한다):
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료·"Vacuum complete." 로그 확인
+sudo -u root /opt/ddona/bugsink-vacuum.sh
+tail /var/log/ddona-bugsink-vacuum.log
+
+# 2. 삭제 로직 자체가 실제로 이벤트를 지우는지 — 30일을 기다리지 않고 확인한다.
+#    `--max-event-age-days 0`으로 "지금 기준 0일보다 오래된"(=현재 존재하는 전부) 이벤트를 지워
+#    개수가 실제로 줄어드는지 본다. 사람이 컨테이너 안에서 직접 돌리는 일회성 확인 커맨드이지
+#    cron이 쓰는 경로가 아니다(cron은 항상 compose env의 MAX_EVENT_AGE_DAYS=30을 그대로 쓴다).
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage showstat event_count   # 삭제 전
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage vacuum --old-events --max-event-age-days 0
+sudo docker exec ddona-monitoring-bugsink-1 bugsink-manage showstat event_count   # 삭제 후 — 줄었는지
+
+# 3. 다음 05:00 UTC에 크론이 실제로 도는지
+tail -f /var/log/ddona-bugsink-vacuum.log
+```
+
+**컨테이너가 안 떠 있을 때**: `docker exec`가 그 자체로 nonzero exit(로컬 실측:
+`Error response from daemon: container ... is not running` / `No such container`)를 내고,
+`ops/vacuum_bugsink.py`는 이 실패를 삼키지 않고 `ops/notify.py`로 Discord에 알린다. 별도
+healthchecks.io dead man's switch는 만들지 않았다 — 이 작업의 범위는 "vacuum이 실제로 도는가"이지
+"bugsink 서비스 자체의 생사"가 아니고(후자는 §3-5가 손으로 기동/재기동하는 별개 관심사), Discord
+알림 하나로 "아무도 모르게 실패한다"는 이 작업의 실제 위험은 이미 닫힌다.
+
+⚠️ 매일 05:00 UTC로 골랐다 — `ddona-backup`(18:00 UTC, §3-4)과 겹치지 않으면 충분하다. vacuum
+자체가 이벤트 삭제 쿼리 한 번이라 `pg_dump`보다 훨씬 가볍고, 보관기간이 30일 단위라 몇 시간
+지연이 "30일간 보관 후 파기" 약속을 깨지 않는다 — 시간대를 더 정교하게 고를 이유가 없다.
+
+### 3-7. VM 리소스 감시 — cron이 `free`/`df`를 직접 읽는다
 
 `monitoring-techspec.md` MT-13. GCP Cloud Monitoring을 쓰지 않는 이유는 techspec MT-13 참고 —
 `instance/memory/balloon/ram_used`가 우리 VM에서 `free -m`과 2배 차이가 났고(실측 1.78GB vs

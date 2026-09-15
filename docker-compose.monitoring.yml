@@ -67,6 +67,32 @@ services:
       # 런이 방금 "Sentry 등 추적 도구 미사용" 문구를 고치는 참이라, 문서화 안 된 제3자 송신을
       # 하나라도 더 늘리지 않는다.
       PHONEHOME: "false"
+      # 보유기간(MT-16 legal draft)이 "N일 보관 후 파기"에 의존한다 — 건수 기준이 아니라 날짜
+      # 기준이어야 하는 이유: 건수 상한(`retention_max_event_count`)은 프로젝트당 DB 필드라
+      # Bugsink 관리 화면("프로젝트 편집")에서 운영자가 언제든 바꿀 수 있고(공식 소스 확인:
+      # projects/models.py:127, projects/forms.py:161 — 폼에 노출됨), 상한을 거는
+      # `MAX_RETENTION_PER_PROJECT_EVENT_COUNT`도 기본 무제한이라 이 배포에서 막혀 있지 않다.
+      # 그 값을 문안에 적으면 UI 클릭 한 번에 조용히 거짓이 된다.
+      # `MAX_EVENT_AGE_DAYS`는 반대로 프로젝트 UI·API 어디에도 노출되지 않는 순수 서버 설정이다
+      # (공식 소스 확인: bugsink/app_settings.py:81, docker.py.template의
+      # `int_or_none(os.getenv("MAX_EVENT_AGE_DAYS", None))`뿐 — projects/forms.py·serializers.py
+      # 어디에도 이 이름이 없다). 이 env로만 고정되고 운영 화면에서 덮어쓸 방법이 없다(로컬 실측:
+      # env 없이 기동하면 `get_settings().MAX_EVENT_AGE_DAYS`가 None, 이 값을 주면 그대로 반영됨을
+      # 확인 — 2026-09-15, `docker run bugsink/bugsink:2 bugsink-manage shell`).
+      # 건수 제한과의 관계: 배타적이지 않고 함께 동작한다 — 건수 기준(운영 화면 기본 10,000건,
+      # 이 배포는 그대로 둔다)은 ingest 시점에 자동으로 걸려 디스크 유계성을 담당하고, 이 값(일수)은
+      # 방침 문안이 약속하는 보관기간을 담당한다.
+      # ⚠️ 이 값만으로는 아무것도 지워지지 않는다 — Bugsink 공식 이미지는 gunicorn+snappea만 상시
+      # 실행하고(Dockerfile CMD 확인) 이 값을 쓰는 자동 스케줄러를 컨테이너 안에 두지 않는다. 실제
+      # 파기는 `docker exec ddona-monitoring-bugsink-1 bugsink-manage vacuum --old-events`를
+      # 주기적으로 호출해야 일어난다 — `ops/vacuum_bugsink.py` + `ops/cron.d/ddona-bugsink-vacuum`
+      # (매일 05:00 UTC, 기존 `ops/cron.d/ddona-resource-check`와 같은 host cron 패턴)이 그 역할을
+      # 맡는다. VM 설치 절차·검증은 DEPLOY.md §3-6, 배경은 tasks/monitoring-legal-draft.md §7-6.
+      # 30일 근거: 이 서비스는 1인 운영이라 매일 들여다보지 못할 수 있다(진단에 필요한 최소가 곧
+      # "다음에 볼 때까지 남아 있을 최소 기간"). 이미 같은 전제로 채택된 Caddy 접근 로그 보관
+      # (Caddyfile `roll_keep_for 720h` = 30일)과 진단 창을 맞춰, 같은 성격의 값이 문서마다 다른
+      # 숫자로 갈라지지 않게 한다. 더 길게 잡을 진단상 근거는 없다(불필요한 장기 보관 최소화).
+      MAX_EVENT_AGE_DAYS: "30"
     volumes:
       - bugsink-data:/data
     # mem_limit 필수(MT-2 ③) — 현재 docker-compose.prod.yml에 리소스 제한이 한 줄도 없어, 제한
