@@ -199,6 +199,11 @@ gcloud compute ssh ddona-api --zone=asia-northeast3-a --tunnel-through-iap
 cd /opt/ddona/app
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env ps
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env logs -f api
+
+# caddy 접근 로그는 파일로만 쓴다(legal-revision-goal-prompt.md LR-13·LR-26) — `logs caddy`에는
+# 더는 뜨지 않는다.
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec caddy \
+  tail -f /var/log/caddy/access.log
 ```
 
 **롤백**(실측) — `.env`의 태그 한 줄을 되돌리고 다시 올린다:

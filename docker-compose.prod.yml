@@ -27,6 +27,8 @@ services:
       # ⚠️ 이 볼륨이 없으면 재시작마다 인증서를 새로 발급받다가 Let's Encrypt 레이트리밋에 걸린다.
       - caddy_data:/data
       - caddy_config:/config
+      # 접근 로그 30일 보관(legal-revision-goal-prompt.md LR-13). Caddyfile이 여기로 파일을 쓴다.
+      - caddy_logs:/var/log/caddy
     depends_on:
       api:
         condition: service_healthy
@@ -95,3 +97,4 @@ volumes:
   redisdata:
   caddy_data:
   caddy_config:
+  caddy_logs:

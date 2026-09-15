@@ -97,6 +97,16 @@ jobs:
           # "성공" 으로 보고됐다(/health 는 옛 컨테이너도 200 을 주므로 검증도 통과했다).
           $C run --rm -T api alembic upgrade head < /dev/null
           $C up -d --wait api caddy
+          # Caddyfile은 bind mount라 내용만 바뀌어서는 compose의 config-hash에 안 잡히고,
+          # 위 up -d는 caddy 컨테이너를 재생성하지 않는다(legal-revision-goal-prompt.md
+          # LR-25). caddy 이미지 자체에는 --watch 같은 자동 재적용 기능이 없다.
+          #
+          # 그래서 reload로 명시적으로 재적용한다 — 이번 배포로 caddy가 방금 새로 뜬
+          # 경우(예: 이번 커밋처럼 volumes 목록이 바뀌어 재생성된 경우)든 계속 떠 있던
+          # 경우든 똑같이 안전하다: 방금 뜬 컨테이너는 이미 최신 Caddyfile로 시작했으므로
+          # reload가 "설정 변경 없음"으로 조용히 no-op하고, 계속 떠 있던 컨테이너는 이
+          # reload가 새 Caddyfile을 무중단으로 반영하는 유일한 경로다.
+          $C exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
           $C ps --format 'table {{.Service}}\t{{.Status}}'
           # 새 이미지로 실제로 갈렸는지 확인한다. 아래 "배포 검증" 의 /health 200 만으로는
           # 위와 같은 무동작 배포를 잡을 수 없다 — 옛 컨테이너가 그대로 답하기 때문이다.
