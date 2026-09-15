@@ -282,6 +282,18 @@ async def google_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
+    # legal-revision-goal-prompt.md LR-30(2026-09-15 정정판): login()과 같은 게이트를 여기에도
+    # 둔다 — google_sub 직접 매치와 이메일 매칭으로 google_sub를 붙이는 두 분기가 모두 여기로
+    # 수렴하므로 한 곳만 막으면 둘 다 막힌다. 위 조건문이 deleted_at is not None인 계정을
+    # 이미 배제했다 — birth_date는 탈퇴(S5 파기) 시에만 None이 된다. 집계에서 0건 확인되면
+    # 이 블록을 걷어낼 것(login()의 동일 게이트와 짝).
+    assert user.birth_date is not None
+    if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
+        return RedirectResponse(
+            f"{settings.frontend_base_url}/login?error=account_age_restricted",
+            status_code=status.HTTP_302_FOUND,
+        )
+
     session_id = await create_session({"user_id": str(user.id)})
     response = RedirectResponse(
         f"{settings.frontend_base_url}{redirect_target}", status_code=status.HTTP_302_FOUND

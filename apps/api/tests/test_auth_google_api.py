@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import GoogleProfile, get_google_profile
 from api.core.config import settings
+from api.core.security import hash_password
 from api.db.models.auth import User
 from api.main import app
+from factories import _make_user
 
 
 def _fake_profile(sub: str, email: str) -> GoogleProfile:
@@ -252,4 +254,66 @@ async def test_google_callback_redirects_suspended_existing_user(
 
     assert resp.status_code == 302
     assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=account_suspended"
+    assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_google_callback_rejects_existing_minor_account_matched_by_google_sub(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """legal-revision-goal-prompt.md LR-30 정정판: S2 적대적 리뷰가 찾은 구멍 — 연령 게이트가
+    `login()`에만 있고 `google_callback`엔 없었다. LR-9가 신규 가입을 막아 더 이상
+    `/auth/signup`으로는 만들 수 없는 기존 미성년 계정을, 시행일 이전 가입분을 흉내 내
+    DB에 직접 만들어 재현한다. google_sub 직접 매치 분기가 세션 없이 되돌리는지 본다."""
+    sub = f"google-sub-{uuid.uuid4()}"
+    user = _make_user(
+        google_sub=sub, birth_date=date.today().replace(year=date.today().year - 13)
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    _override_google_profile(sub, user.email)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert (
+        resp.headers["location"]
+        == f"{settings.frontend_base_url}/login?error=account_age_restricted"
+    )
+    assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_google_callback_rejects_existing_minor_account_linked_by_email(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이메일 매칭으로 기존 (비밀번호) 계정에 google_sub를 붙이는 분기도 같은 게이트를
+    타는지 본다 — 정정판이 지적한 바로 그 분기다. google_sub 직접 매치 분기만 막고 이
+    분기를 빠뜨리면 링크된 기존 미성년 계정이 구글 로그인으로 그대로 들어온다."""
+    user = _make_user(
+        birth_date=date.today().replace(year=date.today().year - 13),
+        password_hash=hash_password("password123"),
+    )
+    db_session.add(user)
+    await db_session.flush()
+
+    state = await _start_google_login(db_client)
+    google_sub = f"google-sub-{uuid.uuid4()}"
+    _override_google_profile(google_sub, user.email)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert (
+        resp.headers["location"]
+        == f"{settings.frontend_base_url}/login?error=account_age_restricted"
+    )
     assert settings.session_cookie_name not in resp.cookies
