@@ -43,7 +43,7 @@ def _generate_payload(**overrides: object) -> dict[str, object]:
     payload: dict[str, object] = {
         "prompt": "a cat wizard",
         "model": "v1",
-        "style": "base",
+        "style": "soft_portrait",
         "aspectRatio": "1:1",
         "count": 1,
     }
@@ -53,7 +53,7 @@ def _generate_payload(**overrides: object) -> dict[str, object]:
 
 _READY_MATCHING_LOCAL = LocalCapabilities(
     ready=True,
-    models=(ModelCapability(model_id="v1", styles=("base",), aspect_ratios=("1:1",)),),
+    models=(ModelCapability(model_id="v1", styles=("soft_portrait",), aspect_ratios=("1:1",)),),
 )
 
 
@@ -111,21 +111,26 @@ async def test_local_model_unknown_to_static_registry_is_ignored(
     assert ids == {"v1"}
 
 
-async def test_models_endpoint_maps_wire_capability_back_to_public_ids(
+async def test_models_endpoint_maps_wire_model_id_back_to_the_public_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id(`sdxl-anime-v1`/`default`)만
+    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id(`opaque-wire-id`)만
     보고한다. 교차 참조가 공개 id로 그대로 조회하면(매핑 전 동작) 매치가 안 나 존재하는
-    모델이 `available: false`로 내려간다 — 공개→와이어로 조회하고 돌아온 `styles`를
-    와이어→공개로 되매핑해야 FE가 `v1`을 쓸 수 있고 style id도 렌더 가능해진다."""
+    모델이 `available: false`로 내려간다 — 공개→와이어로 조회해야 FE가 `v1`을 쓸 수 있다.
+
+    image-style-7-goal-prompt.md IS-2: style 축은 이 레포에 별도 와이어 매핑이 없다 —
+    공개 id와 와이어 id가 같다. 그 가용성은
+    `test_partial_serving_produces_exact_availability_vector_for_all_seven_styles`가
+    이미 담당하므로, 여기서는 model 축 와이어 매핑(살아있는 기능)만 검증한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
-    monkeypatch.setattr(settings, "local_image_style_wire_id", "default")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
-            models=(ModelCapability(model_id="sdxl-anime-v1", styles=("default",), aspect_ratios=("1:1",)),),
+            models=(
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+            ),
         )
 
     monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
@@ -135,15 +140,6 @@ async def test_models_endpoint_maps_wire_capability_back_to_public_ids(
     assert resp.status_code == 200
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
-    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 4종은 항상 전부 내려가고
-    # (순서도 레지스트리 순서 그대로), 이 매핑에서 서빙되는 건 `base`(표시명 "순정")
-    # 하나뿐이라 나머지 3종은 `available: false`다.
-    assert models["v1"]["styles"] == [
-        {"id": "base", "name": "순정", "available": True},
-        {"id": "line", "name": "극화", "available": False},
-        {"id": "water", "name": "수채", "available": False},
-        {"id": "real", "name": "반실사", "available": False},
-    ]
 
 
 async def test_registry_entry_unavailable_when_capability_has_no_style_that_maps(
@@ -186,7 +182,7 @@ async def test_registry_entry_unavailable_when_local_does_not_report_the_wire_id
     이상 매치가 아니어야 한다 — 매핑을 건너뛰고 공개 id로 계속 조회하면 이 불일치를
     놓치고 `available: true`를 잘못 내린다(그 뒤 실제 생성 요청은 홈PC의 400으로 끝난다)."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
@@ -215,12 +211,14 @@ async def test_models_endpoint_does_not_warn_when_wire_id_matches_and_model_is_a
     로그다). 같은 요청 중 다른 로거가 WARNING을 내도 무관하므로 `api.images.router`
     로거 한정으로 부재를 확인한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
-            models=(ModelCapability(model_id="sdxl-anime-v1", styles=("base",), aspect_ratios=("1:1",)),),
+            models=(
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+            ),
         )
 
     monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
@@ -232,6 +230,50 @@ async def test_models_endpoint_does_not_warn_when_wire_id_matches_and_model_is_a
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
     assert not any(record.name == "api.images.router" for record in caplog.records)
+
+
+async def test_partial_serving_produces_exact_availability_vector_for_all_seven_styles(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-style-7-goal-prompt.md IS-5: 가용성 판정은 style 집합 원소별이어야 한다.
+    7종 중 **정확히 2종**(`chapel_glass`=2번째, `watercolor`=5번째)만 서빙하는 픽스처로
+    응답 7개의 `available`을 순서까지 포함해 통째로 단언한다.
+
+    **왜 이 픽스처인가**: 7종을 전부 서빙하는 픽스처도, 전무 서빙하는 픽스처도 검출력이
+    0이다 — 두 버그 유형이 그런 픽스처에서 **우연히 정답 벡터와 일치한다**: ①
+    `served`를 bool로 만들어 "하나라도 서빙되면 전부 available"이 되는 버그(전부
+    서빙에서 우연히 맞는다), ② 특정 슬롯을 하드코딩하는 버그(전무 서빙에서 그 슬롯도
+    False가 되어 우연히 맞는다). 정확히 2종을, 그것도 "자연스러운 기본값"이 아닌
+    위치(2·5번째)로 골라야 두 버그 유형 모두에서 벡터가 어긋난다. `_style_items`는
+    같은 종류의 항진명제로 이미 한 번 물렸다(image-refact-techspec.md IT-4:
+    `available=bool(styles)`가 IT-3 이후 항상 참이 된 사건 — `router.py`의
+    `_style_items` 호출부 주석 참고).
+    """
+    await _authed_user(db_client, db_session)
+
+    async def fake_get_capabilities() -> LocalCapabilities:
+        return LocalCapabilities(
+            ready=True,
+            models=(
+                ModelCapability(model_id="v1", styles=("chapel_glass", "watercolor"), aspect_ratios=("1:1",)),
+            ),
+        )
+
+    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
+
+    resp = await db_client.get("/images/models")
+
+    assert resp.status_code == 200
+    models = {m["id"]: m for m in resp.json()}
+    assert [(s["id"], s["available"]) for s in models["v1"]["styles"]] == [
+        ("soft_portrait", False),
+        ("chapel_glass", True),
+        ("royal_drama", False),
+        ("sparkle_night", False),
+        ("watercolor", True),
+        ("pixel_art", False),
+        ("deco_cute", False),
+    ]
 
 
 # ---- POST /images/generate 사전 차단 (LG-8/LT-3) -----------------------------
@@ -273,12 +315,14 @@ async def test_generate_returns_202_when_capability_lookup_uses_the_wire_model_i
     `local_image_base_url`을 향한 백그라운드 태스크는 안전하게 실패하고 잡은 나중에
     FAILED로 끝나지만(이미 확인된 경로), 게이트가 202를 냈는지만 고정한다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
     async def fake_get_capabilities() -> LocalCapabilities:
         return LocalCapabilities(
             ready=True,
-            models=(ModelCapability(model_id="sdxl-anime-v1", styles=("base",), aspect_ratios=("1:1",)),),
+            models=(
+                ModelCapability(model_id="opaque-wire-id", styles=("soft_portrait",), aspect_ratios=("1:1",)),
+            ),
         )
 
     monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)

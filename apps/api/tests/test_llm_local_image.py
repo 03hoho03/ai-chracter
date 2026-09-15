@@ -62,7 +62,7 @@ async def test_generate_image_returns_bytes_and_content_type_as_mime(monkeypatch
         return httpx.Response(200, content=b"webp-bytes", headers={"content-type": "image/webp"})
 
     _patch_httpx(monkeypatch, handler)
-    data, mime = await _client().generate_image("a cat wizard", ImageStylePreset.BASE, "1:1")
+    data, mime = await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert data == b"webp-bytes"
     assert mime == "image/webp"
 
@@ -76,7 +76,7 @@ async def test_non_200_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) 
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_empty_body_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -85,7 +85,7 @@ async def test_empty_body_raises_llm_client_error(monkeypatch: pytest.MonkeyPatc
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,7 +98,7 @@ async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.Mo
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError):
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
 
 async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
@@ -113,7 +113,7 @@ async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "prompt"
 
 
@@ -128,7 +128,7 @@ async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "image"
 
 
@@ -143,7 +143,7 @@ async def test_422_missing_reason_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -158,7 +158,7 @@ async def test_422_unknown_reason_value_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -173,7 +173,7 @@ async def test_422_non_json_body_collapses_to_plain_llm_client_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
@@ -188,8 +188,97 @@ async def test_422_detail_string_is_never_interpreted_only_reason_is(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LocalImageBlockedError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert exc_info.value.reason == "prompt"
+
+
+async def test_422_empty_body_collapses_to_plain_llm_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-9: 화이트리스트 밖 422는 전부 일반 실패다. 빈
+    본문(`.json()`이 `JSONDecodeError`)도 예외가 아니다 — 프록시가 만든 빈 422를 콘텐츠
+    차단으로 오독하면 안 된다. I-2 조사에서 "커버 0건"으로 확인된 경로다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422)
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
+
+
+async def test_422_list_detail_collapses_to_plain_llm_client_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-9: FastAPI 기본 검증 핸들러가 내는
+    `{"detail": [{"loc": ..., "msg": ...}]}` 모양(`detail`이 리스트)도 `reason` 키가
+    없으므로 화이트리스트 밖이다 — I-2가 "커버 0건, 주요 오분류 후보"로 지목한 경로."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            422,
+            json={"detail": [{"loc": ["body", "prompt"], "msg": "field required", "type": "missing"}]},
+        )
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert not isinstance(exc_info.value, LocalImageBlockedError)
+
+
+async def test_422_list_detail_with_long_input_field_is_capped_in_error_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-11 §3-12: pydantic v2는 `include_input=True`가
+    기본값이라, FastAPI 기본 검증 핸들러의 `detail` 리스트 각 항목에 검증 실패한
+    제출값 원문(`input` 키)이 그대로 담길 수 있다 — 집 PC가 언젠가 `prompt`에 제약을
+    걸면 그 원문이 캡 없이 로그로 샌다. 이전에는 `exc.response.text[:300]` 캡이 있었는데
+    `{status} detail={detail!r}`로 바뀌며 한동안 사라졌다 — `repr(detail)`에 캡을
+    되살렸는지 이 테스트가 고정한다."""
+    long_prompt = "매우 긴 프롬프트 원문 " * 50  # 300자 캡을 확실히 넘긴다
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            422,
+            json={
+                "detail": [
+                    {"loc": ["body", "prompt"], "msg": "field required", "type": "missing", "input": long_prompt}
+                ]
+            },
+        )
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image(long_prompt, ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    message = str(exc_info.value)
+    assert long_prompt not in message
+    assert len(message) < 400  # 캡이 살아 있으면 여유 있게 통과, 없으면 원문 그대로라 500자를 넘는다
+
+
+async def test_422_with_syntax_reason_raises_input_error_syntax(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-9: 집 PC에 `reason: "syntax"` 추가를 요구했으나
+    (§4-1) **아직 회신 전이다.** 회신 전까지 keyless `{"detail": "invalid prompt syntax"}`는
+    여전히 일반 실패로 남는다 — `test_422_missing_reason_collapses_to_plain_llm_client_error`가
+    이미 그 경로(reason 키 없음 → 일반 실패)를 고정하므로 여기서 다시 쓰지 않는다.
+
+    이 테스트는 회신 후 화이트리스트가 3값(`prompt`/`image`/`syntax`)으로 확장됐을 때의
+    계약을 **미리** 고정한다 — 구현이 그 전제로 짜이기 때문이다.
+
+    구현자 요구사항: `api.llm.local_image.LocalImageInputError`를 `LocalImageBlockedError`와
+    같은 모양으로 신설한다 — `__init__(self, *, input_error: str) -> None`,
+    속성 `.input_error`(IS-8 `input_error` 축, 값 `too_long`/`syntax`)."""
+    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "invalid prompt syntax", "reason": "syntax"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageInputError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert exc_info.value.input_error == "syntax"
 
 
 @pytest.mark.parametrize("status_code", [400, 429, 500])
@@ -204,15 +293,77 @@ async def test_non_422_status_codes_never_raise_block_error(
 
     _patch_httpx(monkeypatch, handler)
     with pytest.raises(LLMClientError) as exc_info:
-        await _client().generate_image("a cat", ImageStylePreset.BASE, "1:1")
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
-async def test_request_body_carries_prompt_unmodified_and_access_headers(
+# ---- 400 (IS-8: input_error 축, too_long) ------------------------------------
+
+
+async def test_400_invalid_request_raises_input_error_too_long(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """image-style-7-goal-prompt.md IS-8: 1000자 초과 400(`{"detail":"invalid request"}`)과
+    320토큰 초과 400(`{"detail":"prompt too long"}`)을 사용자에게는 `too_long` 하나로
+    합친다 — 요구하는 행동이 같기 때문이다(1000자인지 320토큰인지는 서버 로그에서만 구분).
+
+    구현자 요구사항: `LocalImageInputError(input_error="too_long")`
+    (위 `test_422_with_syntax_reason_raises_input_error_syntax` 참고)."""
+    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "invalid request"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageInputError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert exc_info.value.input_error == "too_long"
+
+
+async def test_400_prompt_too_long_raises_input_error_too_long(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-8: 위 테스트와 같은 축 — 320토큰 초과 400도
+    `too_long`으로 합쳐진다."""
+    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "prompt too long"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageInputError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert exc_info.value.input_error == "too_long"
+
+
+async def test_400_unsupported_style_does_not_raise_input_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """image-style-7-goal-prompt.md IS-8: `{"detail":"unsupported style"}`은 계약 위반
+    (우리 쪽 버그)이지 사용자가 고칠 수 있는 입력이 아니다 — `too_long`으로 뭉개면 안
+    된다. 세 400 모양을 같은 버킷으로 접으면 이 구분이 사라지는 것이 이 테스트가 잡으려는
+    신호다(IS-8: "unsupported style은 too_long이 아니다")."""
+    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "unsupported style"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert not isinstance(exc_info.value, LocalImageInputError)
+
+
+@pytest.mark.parametrize("style", [ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
+async def test_request_body_carries_prompt_unmodified_and_access_headers(
+    monkeypatch: pytest.MonkeyPatch, style: ImageStylePreset
+) -> None:
     """LG-3/LC-2: 서버는 프롬프트를 가공하지 않고 model/style/aspect_ratio 불투명 id만
-    싣는다. 여기서 suffix를 붙이거나 필드를 더 보내면 집 PC(별도 저장소)의 계약을 어긴다."""
+    싣는다. 여기서 suffix를 붙이거나 필드를 더 보내면 집 PC(별도 저장소)의 계약을 어긴다.
+
+    image-style-7-goal-prompt.md IS-2/2차 인터뷰 결정 4: 두 스타일로 파라미터화해
+    "인자를 바꾸면 바디도 바뀐다"를 실제로 증명한다 — style.value를 그대로 싣는 IS-2
+    변경 전에는 이 파일 어떤 테스트도 이걸 증명하지 못했다(전부 BASE 하나만 썼다)."""
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -222,12 +373,12 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
     _patch_httpx(monkeypatch, handler)
     prompt = "a cat wizard, extremely detailed, dramatic lighting"
-    await _client().generate_image(prompt, ImageStylePreset.BASE, "2:3")
+    await _client().generate_image(prompt, style, "2:3")
 
     assert captured["body"] == {
         "prompt": prompt,
         "model": "v1",
-        "style": "base",
+        "style": style.value,
         "aspect_ratio": "2:3",
     }
     headers = captured["headers"]
@@ -237,9 +388,13 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
 
 async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 공개 id(`v1`/`base`)를 그대로 보내면 홈PC의
-    실제 체크포인트/LoRA id(`sdxl-anime-v1`/`default`)와 맞지 않아 계약(LC-4) 위반으로
-    모든 요청이 400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다."""
+    """local-image-gen-goal-prompt.md LG-19: 공개 model id(`v1`)를 그대로 보내면 홈PC의
+    실제 체크포인트 id(`opaque-wire-id`)와 맞지 않아 계약(LC-4) 위반으로 모든 요청이
+    400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다.
+
+    image-style-7-goal-prompt.md IS-2: style은 더 이상 별도 와이어 설정이 없다 —
+    `style.value`가 그대로 실리는지는 위
+    `test_request_body_carries_prompt_unmodified_and_access_headers`가 담당한다."""
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -247,15 +402,14 @@ async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.
         return httpx.Response(200, content=b"bytes", headers={"content-type": "image/webp"})
 
     _patch_httpx(monkeypatch, handler)
-    monkeypatch.setattr(settings, "local_image_model_wire_id", "sdxl-anime-v1")
-    monkeypatch.setattr(settings, "local_image_style_wire_id", "default")
+    monkeypatch.setattr(settings, "local_image_model_wire_id", "opaque-wire-id")
 
-    await _client().generate_image("a cat wizard", ImageStylePreset.BASE, "1:1")
+    await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
 
     assert captured["body"] == {
         "prompt": "a cat wizard",
-        "model": "sdxl-anime-v1",
-        "style": "default",
+        "model": "opaque-wire-id",
+        "style": "soft_portrait",
         "aspect_ratio": "1:1",
     }
 
@@ -279,8 +433,8 @@ async def test_concurrent_generate_calls_never_overlap(monkeypatch: pytest.Monke
     client_b = _client()
 
     await asyncio.gather(
-        client_a.generate_image("prompt-1", ImageStylePreset.BASE, "1:1"),
-        client_b.generate_image("prompt-2", ImageStylePreset.BASE, "1:1"),
+        client_a.generate_image("prompt-1", ImageStylePreset.SOFT_PORTRAIT, "1:1"),
+        client_b.generate_image("prompt-2", ImageStylePreset.SOFT_PORTRAIT, "1:1"),
     )
 
     assert events == ["enter", "exit", "enter", "exit"]

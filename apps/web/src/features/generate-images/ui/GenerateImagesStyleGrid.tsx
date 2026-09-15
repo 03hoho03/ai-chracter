@@ -25,12 +25,12 @@ export function GenerateImagesStyleGrid() {
 
   // 모델 목록이 아직 로딩 중이면(models === undefined) 스타일 자리가 통째로 빈 채로 렌더됐다 —
   // 실제 타일과 같은 셸(같은 그리드 클래스 · aspect-[3/4])의 스켈레톤으로 채운다
-  // (GeneratedImageLibraryPanel.tsx의 LibraryGridSkeleton 관용구를 따른다). 개수 4는 레지스트리
-  // 스타일 종수(IR-13)와 맞춘다.
+  // (GeneratedImageLibraryPanel.tsx의 LibraryGridSkeleton 관용구를 따른다). 개수 7은 레지스트리
+  // 스타일 종수(image-style-7-goal-prompt.md IS-1)와 맞춘다.
   if (models === undefined) {
     return (
       <div className={STYLE_GRID_CLASSNAME}>
-        {[0, 1, 2, 3].map((key) => (
+        {[0, 1, 2, 3, 4, 5, 6].map((key) => (
           <div key={key} className="aspect-[3/4] animate-pulse rounded-xl bg-muted" />
         ))}
       </div>
