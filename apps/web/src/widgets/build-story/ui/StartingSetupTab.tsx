@@ -153,12 +153,14 @@ function StartingSetupRow({
 
   function addSuggestedReply() {
     const trimmed = replyInput.trim();
-    setReplyInput("");
-    // builder-publish-goal-prompt.md BP-7 — 상한 가드를 입력칸의 `disabled`가 아니라 여기 둔다.
-    // 입력칸에 `disabled`가 붙는 순간 브라우저가 blur해 activeElement가 <body>로 떨어진다
-    // (apps/web/CLAUDE.md §포커스, WCAG 2.4.3) — 4번째를 Enter로 추가한 키보드 사용자가 바로 그
-    // 순간 포커스를 잃는다. 이 자리면 Enter와 [추가] 버튼이 같은 가드를 지난다.
+    // builder-publish-goal-prompt.md BP-7 — 상한 가드가 여기 있는 이유는 둘이다. (1) 입력칸이나
+    // [추가] 버튼을 `disabled`로 막으면 그 속성이 붙는 순간 브라우저가 blur해 activeElement가
+    // <body>로 떨어진다(apps/web/CLAUDE.md §포커스, WCAG 2.4.3). (2) `aria-disabled`는 포인터만
+    // 막으므로(pointer-events-none) 키보드로 누른 Enter는 그대로 들어온다 — 실제 차단은 여기다
+    // (GenerateImagesPromptField.tsx와 같은 레시피).
     if (!canAddSuggestedReply || !trimmed || suggestedReplies.includes(trimmed)) return;
+    // 막힌 경우에는 사용자가 쓴 글을 지우지 않는다 — 상한에서 글자만 사라지면 피드백이 0이 된다.
+    setReplyInput("");
     setValue(`startingSetups.${index}.suggestedReplies`, [...suggestedReplies, trimmed], {
       shouldDirty: true,
     });
@@ -288,9 +290,12 @@ function StartingSetupRow({
             <Label htmlFor={`starting-setup-${id}-reply-input`}>
               추천 답변 (최대 {MAX_SUGGESTED_REPLIES}개)
             </Label>
-            {/* builder-publish-goal-prompt.md BP-7 — 상한에 닿으면 [추가] 버튼을 렌더하지 않는다
-                (SettingTab의 전개 예시와 같은 형태). 입력칸은 `disabled`로 막지 않는다 — 포커스가
-                <body>로 떨어진다(apps/web/CLAUDE.md §포커스). Enter 경로는 addSuggestedReply가 막는다. */}
+            {/* builder-publish-goal-prompt.md BP-7 — 상한에서도 입력칸과 [추가] 버튼을 트리에 남긴다.
+                `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는
+                순간 그 컨트롤이 blur/언마운트돼 포커스가 <body>로 떨어진다. 대신 `aria-disabled`로
+                잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 addSuggestedReply가 한다.
+                같은 자리의 `설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
+                조건부 렌더로 둔다 — 두 버튼에서 실제로 다른 값이다. */}
             <div className="flex gap-2">
               <Input
                 id={`starting-setup-${id}-reply-input`}
@@ -303,11 +308,15 @@ function StartingSetupRow({
                   addSuggestedReply();
                 }}
               />
-              {canAddSuggestedReply ? (
-                <Button type="button" variant="secondary" onClick={addSuggestedReply}>
-                  추가
-                </Button>
-              ) : null}
+              <Button
+                type="button"
+                variant="secondary"
+                aria-disabled={!canAddSuggestedReply}
+                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                onClick={addSuggestedReply}
+              >
+                추가
+              </Button>
             </div>
             {suggestedReplies.length > 0 && (
               <div className="flex flex-wrap gap-2">

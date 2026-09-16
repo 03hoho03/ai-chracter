@@ -201,7 +201,7 @@ describe("startingSetupSchema", () => {
   });
 
   it("accepts up to 4 suggested replies", () => {
-    const fourReplies = Array.from({ length: 4 }, (_, i) => `제안답장 ${i}`);
+    const fourReplies = Array.from({ length: 4 }, (_, i) => `추천 답변 ${i}`);
 
     const result = startingSetupSchema.safeParse({
       ...validStartingSetup(),
@@ -212,7 +212,7 @@ describe("startingSetupSchema", () => {
   });
 
   it("rejects a 5th suggested reply", () => {
-    const fiveReplies = Array.from({ length: 5 }, (_, i) => `제안답장 ${i}`);
+    const fiveReplies = Array.from({ length: 5 }, (_, i) => `추천 답변 ${i}`);
 
     const result = startingSetupSchema.safeParse({
       ...validStartingSetup(),

@@ -142,7 +142,8 @@ export const startingSetupSchema = z.object({
   playGuide: z.string().optional(),
   suggestedReplies: z
     .array(z.string())
-    .max(MAX_SUGGESTED_REPLIES, `제안답장은 최대 ${MAX_SUGGESTED_REPLIES}개까지만 추가할 수 있습니다`)
+    // 사용자 문구는 화면 라벨과 같은 "추천 답변"이다(식별자만 서버 계약의 suggestedReplies를 따른다).
+    .max(MAX_SUGGESTED_REPLIES, `추천 답변은 최대 ${MAX_SUGGESTED_REPLIES}개까지만 추가할 수 있습니다`)
     .default([]),
   stats: z.array(statDefSchema).default([]),
   endings: z.array(endingSchema).default([]),
