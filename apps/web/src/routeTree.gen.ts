@@ -14,6 +14,7 @@ import { Route as TermsRouteImport } from './routes/terms'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as PrivacyRouteImport } from './routes/privacy'
+import { Route as O10VerifyRenderThrowRouteImport } from './routes/o10-verify-render-throw'
 import { Route as MypageRouteImport } from './routes/mypage'
 import { Route as MyRouteImport } from './routes/my'
 import { Route as LoginRouteImport } from './routes/login'
@@ -57,6 +58,11 @@ const ResetPasswordRoute = ResetPasswordRouteImport.update({
 const PrivacyRoute = PrivacyRouteImport.update({
   id: '/privacy',
   path: '/privacy',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const O10VerifyRenderThrowRoute = O10VerifyRenderThrowRouteImport.update({
+  id: '/o10-verify-render-throw',
+  path: '/o10-verify-render-throw',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MypageRoute = MypageRouteImport.update({
@@ -163,6 +169,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/o10-verify-render-throw': typeof O10VerifyRenderThrowRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/o10-verify-render-throw': typeof O10VerifyRenderThrowRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -216,6 +224,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/my': typeof MyRoute
   '/mypage': typeof MypageRoute
+  '/o10-verify-render-throw': typeof O10VerifyRenderThrowRoute
   '/privacy': typeof PrivacyRoute
   '/reset-password': typeof ResetPasswordRoute
   '/signup': typeof SignupRoute
@@ -244,6 +253,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/o10-verify-render-throw'
     | '/privacy'
     | '/reset-password'
     | '/signup'
@@ -270,6 +280,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/o10-verify-render-throw'
     | '/privacy'
     | '/reset-password'
     | '/signup'
@@ -296,6 +307,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/my'
     | '/mypage'
+    | '/o10-verify-render-throw'
     | '/privacy'
     | '/reset-password'
     | '/signup'
@@ -323,6 +335,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MyRoute: typeof MyRoute
   MypageRoute: typeof MypageRoute
+  O10VerifyRenderThrowRoute: typeof O10VerifyRenderThrowRoute
   PrivacyRoute: typeof PrivacyRoute
   ResetPasswordRoute: typeof ResetPasswordRoute
   SignupRoute: typeof SignupRoute
@@ -377,6 +390,13 @@ declare module '@tanstack/react-router' {
       path: '/privacy'
       fullPath: '/privacy'
       preLoaderRoute: typeof PrivacyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/o10-verify-render-throw': {
+      id: '/o10-verify-render-throw'
+      path: '/o10-verify-render-throw'
+      fullPath: '/o10-verify-render-throw'
+      preLoaderRoute: typeof O10VerifyRenderThrowRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mypage': {
@@ -523,6 +543,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MyRoute: MyRoute,
   MypageRoute: MypageRoute,
+  O10VerifyRenderThrowRoute: O10VerifyRenderThrowRoute,
   PrivacyRoute: PrivacyRoute,
   ResetPasswordRoute: ResetPasswordRoute,
   SignupRoute: SignupRoute,
