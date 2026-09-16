@@ -13,7 +13,7 @@ from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbna
 from api.core.config import settings
 from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigned_get_url, upload_object
 from api.core.sentry import capture_dependency_failure
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.session import get_db_session, get_session_factory
 from api.images.jobs import ImageGenerationJobStatus, create_job, enqueue_generation, get_job, update_job
 from api.images.models import (
@@ -73,6 +73,7 @@ async def _generate_and_store_one(
     session_factory: async_sessionmaker[AsyncSession],
     job_id: str,
     owner_user_id: uuid.UUID,
+    request_id: uuid.UUID,
     prompt: str,
     style: ImageStylePreset,
     aspect_ratio: AspectRatio,
@@ -103,6 +104,8 @@ async def _generate_and_store_one(
                     # image-style-7-goal-prompt.md IS-6: plain Text 컬럼이라
                     # `.value`를 명시한다(apps/api/CLAUDE.md 모델 규약).
                     style=style.value,
+                    # image-monitoring-goal-prompt.md IM-4: 이 asset을 낳은 요청 행.
+                    request_id=request_id,
                 )
             )
             await session.commit()
@@ -137,6 +140,7 @@ async def _generate_and_store_one(
 async def _run_generation(
     job_id: str,
     owner_user_id: uuid.UUID,
+    request_id: uuid.UUID,
     image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
     prompt: str,
@@ -152,7 +156,7 @@ async def _run_generation(
         results = await asyncio.gather(
             *[
                 _generate_and_store_one(
-                    image_client, session_factory, job_id, owner_user_id, prompt, style, aspect_ratio
+                    image_client, session_factory, job_id, owner_user_id, request_id, prompt, style, aspect_ratio
                 )
                 for _ in range(count)
             ]
@@ -231,6 +235,42 @@ async def _run_generation(
                     "local image generation input errors mismatched within one job: input_errors=%s",
                     sorted(distinct_input_errors),
                 )
+
+        # image-monitoring-goal-prompt.md IM-4 종료 상태 판정 규칙 표: 아래 Redis 잡 갱신과
+        # 같은 집계값으로 요청 행을 한 번 UPDATE한다. `completed_count>0`이면 부분 성공도
+        # succeeded다(이미지가 한 장이라도 나왔다) — 그 다음은 blocked_count, 나머지(입력
+        # 오류만 난 경우 포함)는 failed다. Redis 갱신보다 먼저 커밋해야 한다 — 뒤에 두면
+        # "잡 완료 직후 release_admission 호출"을 보는 기존 테스트가 그 사이에 낀 이
+        # await 때문에 레이스로 깨진다(`test_admission_is_released_when_the_job_finishes_...`).
+        if succeeded_count > 0:
+            request_status = "succeeded"
+        elif blocked_count > 0:
+            request_status = "blocked"
+        else:
+            request_status = "failed"
+        request_error = (
+            "이미지 생성에 모두 실패했습니다"
+            if succeeded_count == 0 and blocked_count == 0 and input_error_count == 0
+            else None
+        )
+        try:
+            async with session_factory() as session:
+                request_row = await session.get(ImageGenerationRequest, request_id)
+                assert request_row is not None
+                request_row.status = request_status
+                request_row.completed_count = succeeded_count
+                request_row.blocked_count = blocked_count
+                request_row.input_error_count = input_error_count
+                request_row.blocked_reason = blocked_reason
+                request_row.input_error = input_error
+                request_row.error = request_error
+                await session.commit()
+        except Exception as exc:
+            # image-monitoring-goal-prompt.md IM-4 + test_generate_unexpected_error_marks_job_failed의
+            # hang 방지 불변식: 요청 행 기록은 부가 기능이다 — 이 UPDATE가 실패해도(커넥션 끊김 등)
+            # 아래 Redis update_job()은 반드시 실행돼야 잡이 RUNNING에 무기한 멈추지 않는다.
+            logger.warning("image generation request row update failed: job=%s error=%s", job_id, type(exc).__name__)
+            capture_dependency_failure(exc, dependency="db")
 
         if succeeded_count > 0:
             await update_job(
@@ -400,10 +440,27 @@ async def generate_images(
     try:
         image_client = image_client_factory(payload.model)
         job = await create_job(owner_user_id, payload.count)
+        # image-monitoring-goal-prompt.md IM-4: 접수 시 INSERT — 프롬프트·모델·비율·스타일이
+        # 전부 모여 있는 유일한 지점이 여기다. `create_job` 성공 뒤·`enqueue_generation` 앞에
+        # 둔다: 더 앞에 두면 429/503 사전 차단 경로(IM-6)에도 행이 생기고, asset의 FK 때문에
+        # 이 행은 백그라운드가 돌기 전에 이미 커밋돼 있어야 한다.
+        async with session_factory() as session:
+            request_row = ImageGenerationRequest(
+                owner_user_id=owner_user_id,
+                prompt=payload.prompt,
+                style=payload.style.value,
+                aspect_ratio=payload.aspect_ratio,
+                model=payload.model,
+                requested_count=payload.count,
+                status="pending",
+            )
+            session.add(request_row)
+            await session.commit()
         await enqueue_generation(
             _run_generation,
             job.job_id,
             owner_user_id,
+            request_row.id,
             image_client,
             session_factory,
             payload.prompt,
