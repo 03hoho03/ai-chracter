@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -453,6 +454,33 @@ async def test_delete_unused_generated_image_removes_it_from_list_and_s3(
     assert [item["assetId"] for item in list_resp.json()] == []
 
     listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=storage_key)
+    assert listed["KeyCount"] == 0
+
+
+async def test_delete_generated_image_removes_thumbnail_from_s3(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """image-monitoring-goal-prompt.md IM-16: 수정 전 코드는 원본만 지워 `_thumb.webp`가
+    S3에 고아로 남는다 — list_generated_images(:339)가 이 썸네일을 내보낸다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    await db_session.commit()
+    asset_id, storage_key = asset.id, asset.storage_key
+    thumbnail_key = build_thumbnail_key(storage_key)
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-image-bytes")
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+    assert resp.status_code == 204
+
+    # storage_key 확장자 이전까지가 원본·썸네일 공통 접두사다(build_thumbnail_key가
+    # 확장자를 `_thumb.webp`로 바꿔 붙이므로) — 하나의 조회로 둘 다 사라졌는지 본다.
+    common_prefix = storage_key.rsplit(".", 1)[0]
+    listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=common_prefix)
     assert listed["KeyCount"] == 0
 
 
