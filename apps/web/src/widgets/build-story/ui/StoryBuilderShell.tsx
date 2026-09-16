@@ -22,9 +22,13 @@ import {
   BuilderTopBar,
   BuilderTopBarActions,
   errorTabs,
+  fieldLabelByFormPath,
   firstErrorLocation,
+  flattenFieldErrorPaths,
   getFilterRejectionReason,
   getMissingFields,
+  invalidFieldsMessage,
+  missingFieldsMessage,
   useAutosave,
   useDraftPersistence,
   useFocusFirstError,
@@ -54,11 +58,10 @@ type StoryBuilderShellProps = {
 // fields(에러 탭 매칭용 경로 프리픽스)·preview(D-2)가 이 배열에 함께 실려 있다.
 const TABS = STORY_TABS;
 
-// storyBuilderSchema의 profile.image/registration.genre/target은 초안 상태를 표현하기 위해
-// nullable이라(US-092/095), zodResolver 검증을 통과해도 서버(validate_story_publish)가 요구하는
-// 값이 비어 있을 수 있다(CharacterBuilderShell.tsx와 동일한 간극 — customPrompt/settingText/
-// startingSetups/description 등 나머지 필드는 이미 폼 스키마가 min(1)/min(10)으로 막아 이 경로에
-// 도달하지 않는다) — 그 필드명을 한국어 라벨로 보여준다.
+// 서버(validate_story_publish)가 400으로 돌려주는 필드명을 한국어 라벨로 보여준다. 초안 상태를
+// 표현하느라 nullable인 3필드(profile.image/registration.genre/target, US-092/095)도 이제는 폼
+// 스키마의 refine이 먼저 막지만(builder-publish-goal-prompt.md BP-1), 다른 기기에서 편집된 초안처럼
+// 서버만 아는 상태가 남아 이 경로를 지우지 않는다(BP-4).
 const MISSING_FIELD_LABELS: Record<string, string> = {
   name: "이름",
   oneLiner: "한줄소개",
@@ -79,6 +82,11 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
   genreId: "registration.genre",
   target: "registration.target",
 };
+
+// 클라 검증 실패 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 위 두
+// 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다
+// (builder-publish-goal-prompt.md BP-3).
+const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
 
 /** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 자동저장(US-096)/발행(US-085)/
  * 미리보기(US-088)를 CharacterBuilderShell.tsx(US-105)와 동일한 방식으로 연동한다.
@@ -168,8 +176,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         }
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
-        const missingLabels = missingFields.map((field) => MISSING_FIELD_LABELS[field] ?? field);
-        toast.error(`발행하려면 다음 항목을 입력해주세요: ${missingLabels.join(", ")}`);
+        toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -178,9 +185,13 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     }
   }
 
-  // zodResolver 검증 실패(폼 스키마 위반) 경로 — builder-techspec.md §9-1.
+  // zodResolver 검증 실패(폼 스키마 위반) 경로 — builder-techspec.md §9-1. 먼저 걸리는 쪽이 덜
+  // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
+  // 문장이 갈린다(builder-publish-goal-prompt.md BP-3) — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
+  // 온다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     focusFirstError(firstErrorLocation(errors, TABS));
+    toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
   }
 
   // builder-techspec.md §4-3/§6 — 폼과 프리뷰가 동시에 살아 있어야 하므로(D-1의 lg 이상 2단) 더 이상

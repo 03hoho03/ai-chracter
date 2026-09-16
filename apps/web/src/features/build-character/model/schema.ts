@@ -30,7 +30,19 @@ export const characterBuilderSchema = z.object({
   profile: z.object({
     name: z.string().min(1, "캐릭터 이름을 입력해주세요"),
     oneLiner: z.string().min(1, "캐릭터를 한 줄로 소개해주세요"),
-    image: z.object({ assetId: z.string() }).nullable(),
+    // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
+    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2). **`.refine((v) => v !== null)`으로 줄이지
+    // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
+    // 좁혀(zod/v4/classic/schemas.d.cts:38) `z.infer`에서 null이 사라진다(serverToForm이 깨졌다).
+    // superRefine 선언은 조건 없이 `this`다(같은 파일 39행).
+    image: z
+      .object({ assetId: z.string() })
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
+        }
+      }),
   }),
   intro: z.object({
     firstMessage: z.string().min(1, "사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"),
@@ -44,10 +56,25 @@ export const characterBuilderSchema = z.object({
   registration: z.object({
     description: z.string().min(1, "캐릭터를 목록에서 소개할 설명을 입력해주세요"),
     // CharacterDraftPayload/Response의 genreId/target은 실제로 string | null / ContentTarget | null이다
-    // (초안 상태에선 아직 선택 전일 수 있음) — profile.image와 동일한 이유로 nullable로 둔다. 발행 시
-    // 필수 여부를 강제하는 검증은 이 스키마를 소비하는 빌더 UI 스토리(발행 버튼 연동)의 몫이다.
-    genre: z.string().nullable(),
-    target: z.enum(TARGET_VALUES).nullable(),
+    // (초안 상태에선 아직 선택 전일 수 있음) — profile.image와 동일한 이유로 nullable로 둔다. 발행
+    // 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시 검증한다
+    // (builder-publish-goal-prompt.md BP-1/BP-2, `.refine`을 쓰지 않는 이유도 거기 적었다).
+    genre: z
+      .string()
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "장르를 선택해주세요" });
+        }
+      }),
+    target: z
+      .enum(TARGET_VALUES)
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
+        }
+      }),
     hashtags: z.array(z.string()).default([]),
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
   }),

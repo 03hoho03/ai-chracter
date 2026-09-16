@@ -167,7 +167,19 @@ export const storyBuilderSchema = z.object({
   profile: z.object({
     name: z.string().min(1, "스토리 이름을 입력해주세요"),
     oneLiner: z.string().min(1, "스토리를 한 줄로 소개해주세요"),
-    image: z.object({ assetId: z.string() }).nullable(),
+    // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
+    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2). **`.refine((v) => v !== null)`으로 줄이지
+    // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
+    // 좁혀(zod/v4/classic/schemas.d.cts:38) `z.infer`에서 null이 사라진다(serverToForm이 깨졌다).
+    // superRefine 선언은 조건 없이 `this`다(같은 파일 39행).
+    image: z
+      .object({ assetId: z.string() })
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "대표 이미지를 등록해주세요" });
+        }
+      }),
   }),
   storySetting: storySettingSchema,
   startingSetups: z
@@ -180,9 +192,24 @@ export const storyBuilderSchema = z.object({
     description: z.string().min(1, "스토리를 목록에서 소개할 설명을 입력해주세요"),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
     // profile.image와 동일한 이유로 nullable로 둔다(US-091 캐릭터 빌더와 동일한 판단 — 초안 상태에선
-    // 아직 선택 전일 수 있고, 발행 시 필수 검증은 이 스키마를 쓰는 이후 빌더 UI 스토리의 몫이다).
-    genre: z.string().nullable(),
-    target: z.enum(TARGET_VALUES).nullable(),
+    // 아직 선택 전일 수 있다). 발행 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시
+    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2, `.refine`을 쓰지 않는 이유도 거기 적었다).
+    genre: z
+      .string()
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "장르를 선택해주세요" });
+        }
+      }),
+    target: z
+      .enum(TARGET_VALUES)
+      .nullable()
+      .superRefine((value, ctx) => {
+        if (value === null) {
+          ctx.addIssue({ code: z.ZodIssueCode.custom, message: "타겟을 선택해주세요" });
+        }
+      }),
     hashtags: z.array(z.string()).default([]),
     visibility: z.enum(VISIBILITY_VALUES).default("private"),
   }),
