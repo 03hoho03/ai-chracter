@@ -1,5 +1,6 @@
-import { init } from "@sentry/react";
+import { captureReactException, init } from "@sentry/react";
 import type { Breadcrumb, ErrorEvent } from "@sentry/react";
+import type { ErrorInfo } from "react";
 
 function stripQueryString(url: string): string {
   const queryIndex = url.indexOf("?");
@@ -86,5 +87,34 @@ export function initSentry(): void {
       if (breadcrumb.category === "ui.click") return null;
       return breadcrumb;
     },
+  });
+}
+
+/**
+ * `router.tsx`의 `createRouter({ defaultOnCatch })`로 넘기는 콜백(O-10) — 렌더/로더가 던진
+ * 에러가 라우트 트리를 버블링해 `__root.tsx`의 `errorComponent` 자리(`CatchBoundary`,
+ * `Match.js`의 `MatchView`)에서 잡혔을 때만 호출된다. 전역 `Matches.js`의 최상위
+ * CatchBoundary는 `onCatch`가 `process.env.NODE_ENV !== "production" ? ... : void 0`로
+ * 하드코딩돼 있어(설치된 `@tanstack/react-router@1.170.17` 소스로 확인) 프로덕션에서 아무
+ * 것도 하지 않는다 — 그래서 라우트 옵션 경로(`defaultOnCatch`)로 계측한다.
+ *
+ * `notFound()`는 여기로 오지 않는다 — `Match.js`의 `MatchView`가 `CatchBoundary`에 넘기는
+ * `onCatch` 래퍼가 `routeOnCatch`(=이 함수)를 부르기 전에 `isNotFound(error)`를 먼저 걸러
+ * 다시 throw한다(설치된 소스 확인, `Match.js` 73–94번째 줄):
+ *   onCatch: (error, errorInfo) => {
+ *     if (isNotFound(error)) { error.routeId ??= matchState.routeId; throw error; }
+ *     ...
+ *     routeOnCatch?.(error, errorInfo);
+ *   }
+ * 그래서 이 함수 안에서 별도 notFound 필터링을 하지 않는다.
+ *
+ * `componentStack`은 `captureReactException`에 그대로 넘긴다 — Sentry 공식
+ * `<ErrorBoundary>`의 `componentDidCatch`가 내부적으로 쓰는 것과 같은 함수(설치된
+ * `@sentry/react` `errorboundary.js`로 확인)로, 원본 에러의 `cause`에 componentStack을
+ * stack으로 갖는 합성 에러를 심어 Sentry가 이벤트에 컴포넌트 트리 위치를 붙이게 한다.
+ */
+export function captureRouterError(error: Error, errorInfo: ErrorInfo): void {
+  captureReactException(error, errorInfo, {
+    mechanism: { handled: true, type: "auto.function.react.router_catch_boundary" },
   });
 }

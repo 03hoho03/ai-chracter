@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
-import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/react-router";
+import { createRootRouteWithContext, ErrorComponent, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
@@ -23,6 +23,16 @@ export type RouterContext = {
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
+  // O-10: 라우터의 `defaultOnCatch`(router.tsx)만 설정하면 절대 호출되지 않는다 —
+  // `Match.js`의 `MatchView`가 `route.options.errorComponent ?? router.options.defaultErrorComponent`가
+  // 없으면 `CatchBoundary` 대신 `SafeFragment`를 쓰는데, `SafeFragment`는 `children` 외
+  // props를 전부 버려서 `onCatch`가 붙을 자리 자체가 없다(설치된 소스로 확인). 그래서 여기
+  // 루트 라우트에만 `errorComponent`를 건다. 여기 넘긴 `ErrorComponent`는 `@tanstack/react-router`가
+  // `defaultErrorComponent`/전역 CatchBoundary 미설정 시 실제로 렌더하는 바로 그 컴포넌트라
+  // (`CatchBoundary.js`에서 export) 화면에 보이는 에러 UI는 이 전후로 달라지지 않는다.
+  // 루트에만 걸어 하위 라우트는 여전히 `SafeFragment`이므로 에러가 루트까지 버블링돼
+  // 오늘과 동일하게 헤더 포함 전체가 교체된다(블라스트 반경 불변).
+  errorComponent: ErrorComponent,
 });
 
 function RootComponent() {
