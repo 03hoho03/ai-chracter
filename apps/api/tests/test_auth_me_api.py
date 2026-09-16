@@ -15,6 +15,7 @@ from api.db.models import (
     Asset,
     AssetKind,
     AssetStatus,
+    CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
@@ -25,6 +26,10 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Genre,
+    ImageGenerationRequest,
+    Inquiry,
+    InquiryCategory,
+    InquiryStatus,
     ModerationStatus,
     User,
     WithdrawnEmail,
@@ -363,3 +368,230 @@ async def test_verify_email_rejects_withdrawn_placeholder_email_format(
         "/auth/verify-email", json={"email": f"withdrawn:{uuid.uuid4()}", "code": "000000"}
     )
     assert resp.status_code == 422
+
+
+async def test_withdraw_deletes_unused_generated_asset_and_its_request_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """image-monitoring-goal-prompt.md IM-7: 탈퇴한 유저의 미사용 GENERATED asset은
+    S3 원본·썸네일과 함께 지워지고, 그 asset이 전부였던 요청 행도 같이 지워진다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    request = ImageGenerationRequest(
+        owner_user_id=user.id,
+        prompt="달빛 아래 고양이",
+        style="anime",
+        aspect_ratio="1:1",
+        model="v1",
+        requested_count=1,
+        status="succeeded",
+        completed_count=1,
+    )
+    db_session.add(request)
+    await db_session.flush()
+
+    asset_id = uuid.uuid4()
+    storage_key = f"assets/generated/{asset_id}.png"
+    asset = Asset(
+        id=asset_id,
+        owner_user_id=user.id,
+        storage_key=storage_key,
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+        request_id=request.id,
+    )
+    db_session.add(asset)
+    await db_session.commit()
+    request_id = request.id
+
+    thumbnail_key = build_thumbnail_key(storage_key)
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"fake-generated-image")
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=thumbnail_key, Body=b"fake-thumbnail")
+
+    resp = await db_client.delete("/me")
+    assert resp.status_code == 204
+
+    assert await db_session.get(Asset, asset_id) is None
+    assert await db_session.get(ImageGenerationRequest, request_id) is None
+
+    common_prefix = storage_key.rsplit(".", 1)[0]
+    listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=common_prefix)
+    assert listed["KeyCount"] == 0
+
+
+async def test_withdraw_deletes_own_generated_asset_used_as_profile_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """T-4 적대적 리뷰: `profile_image_asset_id = None` 대입(574줄)이 생성 이미지 파기
+    블록보다 뒤로 옮겨지면, users.profile_image_asset_id가 여전히 이 asset을 참조한 채로
+    `DELETE FROM assets`가 나가 FK 위반(IntegrityError)으로 탈퇴 전체가 500이 된다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    asset = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    user.profile_image_asset_id = asset.id
+    await db_session.commit()
+    asset_id = asset.id
+
+    resp = await db_client.delete("/me")
+    assert resp.status_code == 204
+
+    assert await db_session.get(Asset, asset_id) is None
+
+
+async def test_withdraw_keeps_generated_asset_used_as_content_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-monitoring-goal-prompt.md IM-7: 콘텐츠 썸네일로 쓰이는 GENERATED asset은
+    탈퇴해도 지우면 안 된다(발행 콘텐츠 썸네일이 깨지면 안 된다) — 그 요청 행도 남는다
+    (asset이 남아 있으므로 "같은 수명"에 따라 요청 행도 같이 남아야 한다)."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    request = ImageGenerationRequest(
+        owner_user_id=user.id,
+        prompt="캐릭터 썸네일",
+        style="anime",
+        aspect_ratio="3:4",
+        model="v1",
+        requested_count=1,
+        status="succeeded",
+        completed_count=1,
+    )
+    db_session.add(request)
+    await db_session.flush()
+
+    asset = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+        request_id=request.id,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+
+    genre = (await db_session.execute(sa.select(Genre).limit(1))).scalar_one()
+    content = Content(
+        creator_user_id=user.id,
+        type=ContentType.CHARACTER,
+        genre_id=genre.id,
+        target=ContentTarget.ALL,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+
+    version = ContentVersion(
+        content_id=content.id,
+        version_number=1,
+        published_at=datetime.now(UTC),
+        detail_description="설명",
+    )
+    db_session.add(version)
+    await db_session.flush()
+    db_session.add(
+        CharacterVersionDetail(
+            content_version_id=version.id,
+            name="캐릭터",
+            one_liner="",
+            thumbnail_asset_id=asset.id,
+            intro="",
+            example_dialogues=[],
+            character_prompt="",
+        )
+    )
+    await db_session.commit()
+    asset_id = asset.id
+    request_id = request.id
+
+    resp = await db_client.delete("/me")
+    assert resp.status_code == 204
+
+    assert await db_session.get(Asset, asset_id) is not None
+    assert await db_session.get(ImageGenerationRequest, request_id) is not None
+
+
+async def test_withdraw_keeps_generated_asset_used_as_inquiry_attachment(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-monitoring-goal-prompt.md IM-7 (🔴): collect_asset_usages는 문의 첨부
+    (inquiries.attachment_asset_id)를 보지 않는다. 문의는 소유자만 검사하고 kind를 안
+    보며(inquiry/router.py:42-51) 탈퇴해도 삭제되지 않으므로, 제외하지 않고 지우면 FK
+    위반으로 탈퇴 트랜잭션 전체가 500으로 죽는다 — 이 테스트가 없으면 그 회귀를 아무도
+    못 잡는다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    asset = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+
+    inquiry = Inquiry(
+        user_id=user.id,
+        category=InquiryCategory.BUG,
+        title="문의 제목",
+        body="문의 내용",
+        attachment_asset_id=asset.id,
+        status=InquiryStatus.PENDING,
+    )
+    db_session.add(inquiry)
+    await db_session.commit()
+    asset_id = asset.id
+    inquiry_id = inquiry.id
+
+    resp = await db_client.delete("/me")
+    assert resp.status_code == 204
+
+    assert await db_session.get(Asset, asset_id) is not None
+    assert await db_session.get(Inquiry, inquiry_id) is not None
+
+
+async def test_withdraw_keeps_blocked_request_row_without_images(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image-monitoring-goal-prompt.md IM-7: 이미지가 아예 없는 요청 행(차단·실패)은
+    IM-7a(90일 파기)의 몫이라 탈퇴로는 건드리지 않는다 — 여기서 지우면 그 경계가 깨진다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    request = ImageGenerationRequest(
+        owner_user_id=user.id,
+        prompt="차단된 프롬프트",
+        style="anime",
+        aspect_ratio="1:1",
+        model="v1",
+        requested_count=1,
+        status="blocked",
+        blocked_count=1,
+        blocked_reason="prompt",
+    )
+    db_session.add(request)
+    await db_session.commit()
+    request_id = request.id
+
+    resp = await db_client.delete("/me")
+    assert resp.status_code == 204
+
+    assert await db_session.get(ImageGenerationRequest, request_id) is not None
