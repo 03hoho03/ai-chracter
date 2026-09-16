@@ -1,5 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Eye, Save } from "lucide-react";
+import { Eye, Save, X } from "lucide-react";
 
 type BuilderTopBarActionsProps = {
   /** 발행 요청(onValid 경로)이 진행 중인지 — 발행 버튼을 잠그고 라벨을 바꾼다.
@@ -9,6 +9,9 @@ type BuilderTopBarActionsProps = {
    * body로 떨어진다. 그래서 발행 성공 경로(onValid)에서만 켜지는 로컬 state를 쓴다
    * (fe-convention-refactor-progress.md V-3). */
   isPublishing: boolean;
+  /** builder-publish-goal-prompt.md BP-6 — [미리보기] 버튼을 토글로 만드는 데 필요한 표시용 상태.
+   * 열고 닫는 로직(state 갱신)은 두 셸이 이미 갖고 있어 여기서는 아이콘·라벨·aria-expanded만 이 값을 따른다. */
+  isPreviewOpen: boolean;
   onPreview: () => void;
   onSaveNow: () => void;
   onPublish: () => void;
@@ -25,22 +28,31 @@ type BuilderTopBarActionsProps = {
  */
 export function BuilderTopBarActions({
   isPublishing,
+  isPreviewOpen,
   onPreview,
   onSaveNow,
   onPublish,
 }: BuilderTopBarActionsProps) {
   return (
     <>
+      {/* BP-6 — 열림 상태에 따라 아이콘·라벨·aria-expanded가 바뀐다. 실제 열기/닫기 토글 로직은
+          onPreview 쪽(셸)이 쥐고 있고, 이 버튼은 그 상태를 표시만 한다. `X`는 `SearchInlineExpand`가
+          펼침 버튼을 닫기로 바꿀 때 쓰는 것과 같은 어휘다(검색 닫기 패턴 재사용). */}
       <Button
         type="button"
         variant="outline"
         size="sm"
-        aria-label="미리보기"
+        aria-label={isPreviewOpen ? "미리보기 닫기" : "미리보기"}
+        aria-expanded={isPreviewOpen}
         className="lg:hidden"
         onClick={onPreview}
       >
-        <Eye aria-hidden className="size-3.5" />
-        <span className="hidden sm:inline">미리보기</span>
+        {isPreviewOpen ? (
+          <X aria-hidden className="size-3.5" />
+        ) : (
+          <Eye aria-hidden className="size-3.5" />
+        )}
+        <span className="hidden sm:inline">{isPreviewOpen ? "닫기" : "미리보기"}</span>
       </Button>
       <Button type="button" variant="outline" size="sm" aria-label="임시저장" onClick={onSaveNow}>
         <Save aria-hidden className="size-3.5" />

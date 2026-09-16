@@ -226,7 +226,8 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         actions={
           <BuilderTopBarActions
             isPublishing={isPublishing}
-            onPreview={() => setIsPreviewOpen(true)}
+            isPreviewOpen={isPreviewOpen}
+            onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
           />
