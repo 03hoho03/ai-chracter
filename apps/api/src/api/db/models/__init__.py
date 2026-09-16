@@ -23,7 +23,7 @@ from api.db.models.content import (
 )
 from api.db.models.inquiry import Inquiry, InquiryCategory, InquiryStatus
 from api.db.models.legal import LegalDocument
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.moderation import (
     AdminActionLog,
     Appeal,
@@ -81,6 +81,7 @@ __all__ = [
     "Favorite",
     "Genre",
     "GuardianConsent",
+    "ImageGenerationRequest",
     "Inquiry",
     "InquiryCategory",
     "InquiryStatus",
