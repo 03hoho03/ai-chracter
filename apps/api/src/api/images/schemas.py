@@ -1,20 +1,35 @@
 import uuid
+from datetime import datetime
+from typing import Literal
 
 from pydantic import Field
 
+from api.admin.schemas import ChatViewReasonCategory
 from api.core.schema import CamelModel
 from api.images.jobs import ImageGenerationJobStatus
 from api.images.models import AspectRatio, ImageBlockedReason, ImageInputError, ImageModelId, ImageStylePreset
 
 __all__ = [
+    "AdminImageGenerationDetailItem",
+    "AdminImageGenerationDetailListResponse",
+    "AdminImageGenerationImageItem",
+    "AdminImageGenerationListItem",
+    "AdminImageGenerationListResponse",
+    "AdminImageGenerationViewRequest",
     "AspectRatio",
     "GenerateImageRequest",
     "GenerateImageResponse",
+    "ImageGenerationRequestStatus",
     "ImageJobImageItem",
     "ImageJobStatusResponse",
     "ImageModelItem",
     "ImageStyleItem",
 ]
+
+# image-monitoring-goal-prompt.md IM-4: 종료 상태 판정 규칙 표의 값 그대로. 응답 필드는
+# DB 컬럼(plain Text, IS-6과 같은 이유)을 그대로 str로 받지만, 어드민 목록의 `status` 쿼리
+# 필터만은 잘못된 값을 400 대신 422로 걸러내도록 이 Literal로 좁힌다.
+ImageGenerationRequestStatus = Literal["pending", "succeeded", "blocked", "failed"]
 
 
 class GenerateImageRequest(CamelModel):
@@ -73,3 +88,74 @@ class ImageJobStatusResponse(CamelModel):
     # 보존하기 위해서다, IS-8 근거).
     input_error_count: int
     input_error: ImageInputError | None
+
+
+# ---- 어드민 (image-monitoring-goal-prompt.md IM-4/IM-11/IM-12) --------------------
+# notice·inquiry와 같은 패턴 — 공개 도메인이 이미 있는 리소스라 Admin* 스키마는
+# 전용 admin 패키지가 아니라 이 도메인의 schemas.py에 둔다.
+
+
+class AdminImageGenerationListItem(CamelModel):
+    """IM-11: 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다."""
+
+    id: uuid.UUID
+    user_id: uuid.UUID
+    nickname: str
+    email: str
+    # `ImageGenerationRequest.status`/`.style`처럼 plain Text 컬럼 그대로 str로 받는다 —
+    # Literal/enum으로 좁히면 IS-6이 Text를 고른 이유(값이 늘 때 마이그레이션 없이 넓히기)가
+    # API 응답 스키마에서 다시 막힌다.
+    status: str
+    style: str
+    requested_count: int
+    completed_count: int
+    created_at: datetime
+
+
+class AdminImageGenerationListResponse(CamelModel):
+    items: list[AdminImageGenerationListItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class AdminImageGenerationViewRequest(CamelModel):
+    """IM-2: `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유
+    enum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다."""
+
+    reason_category: ChatViewReasonCategory
+    reason_text: str
+
+
+class AdminImageGenerationImageItem(CamelModel):
+    asset_id: uuid.UUID
+    image_url: str
+
+
+class AdminImageGenerationDetailItem(CamelModel):
+    """사유 게이트(IM-2)를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다."""
+
+    id: uuid.UUID
+    prompt: str
+    # 위 `AdminImageGenerationListItem.style`/`.status`와 같은 이유(IS-6) — 전부 plain
+    # Text 컬럼이라 Literal/enum으로 좁히지 않는다.
+    style: str
+    aspect_ratio: str
+    model: str
+    status: str
+    requested_count: int
+    completed_count: int
+    blocked_count: int
+    blocked_reason: str | None
+    input_error_count: int
+    input_error: str | None
+    error: str | None
+    created_at: datetime
+    images: list[AdminImageGenerationImageItem]
+
+
+class AdminImageGenerationDetailListResponse(CamelModel):
+    items: list[AdminImageGenerationDetailItem]
+    page: int
+    total_pages: int
+    total_count: int
