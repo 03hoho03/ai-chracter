@@ -609,6 +609,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/image-generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Admin Image Generations
+         * @description image-monitoring-goal-prompt.md IM-11: 유저 식별(닉네임·이메일)·상태·스타일·요청/완료
+         *     이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트(IM-2) 뒤에서만
+         *     노출한다.
+         */
+        get: operations["list_admin_image_generations_admin_image_generations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/image-generations/view": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * View User Image Generations
+         * @description image-monitoring-goal-prompt.md IM-2. **열람 1회 = 로그 1행**(`chat_view.py`와 같은
+         *     규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를
+         *     쌓지 않는다.
+         */
+        post: operations["view_user_image_generations_admin_users__user_id__image_generations_view_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/image-generations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Image Generations
+         * @description 더보기 — **로그를 절대 쌓지 않는다**(IM-2): "열람 1회 = 로그 1행"을 여기서
+         *     깨면 더보기 3번에 3행이 쌓인다.
+         */
+        get: operations["list_user_image_generations_admin_users__user_id__image_generations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/chat-rooms/{room_id}/view": {
         parameters: {
             query?: never;
@@ -2590,6 +2655,123 @@ export interface components {
             contents: number;
             /** Messages */
             messages: number;
+        };
+        /**
+         * AdminImageGenerationDetailItem
+         * @description 사유 게이트(IM-2)를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다.
+         */
+        AdminImageGenerationDetailItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Prompt */
+            prompt: string;
+            /** Style */
+            style: string;
+            /** Aspectratio */
+            aspectRatio: string;
+            /** Model */
+            model: string;
+            /** Status */
+            status: string;
+            /** Requestedcount */
+            requestedCount: number;
+            /** Completedcount */
+            completedCount: number;
+            /** Blockedcount */
+            blockedCount: number;
+            /** Blockedreason */
+            blockedReason: string | null;
+            /** Inputerrorcount */
+            inputErrorCount: number;
+            /** Inputerror */
+            inputError: string | null;
+            /** Error */
+            error: string | null;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Images */
+            images: components["schemas"]["AdminImageGenerationImageItem"][];
+        };
+        /** AdminImageGenerationDetailListResponse */
+        AdminImageGenerationDetailListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminImageGenerationDetailItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** AdminImageGenerationImageItem */
+        AdminImageGenerationImageItem: {
+            /**
+             * Assetid
+             * Format: uuid
+             */
+            assetId: string;
+            /** Imageurl */
+            imageUrl: string;
+        };
+        /**
+         * AdminImageGenerationListItem
+         * @description IM-11: 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다.
+         */
+        AdminImageGenerationListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Userid
+             * Format: uuid
+             */
+            userId: string;
+            /** Nickname */
+            nickname: string;
+            /** Email */
+            email: string;
+            /** Status */
+            status: string;
+            /** Style */
+            style: string;
+            /** Requestedcount */
+            requestedCount: number;
+            /** Completedcount */
+            completedCount: number;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminImageGenerationListResponse */
+        AdminImageGenerationListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminImageGenerationListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /**
+         * AdminImageGenerationViewRequest
+         * @description IM-2: `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유
+         *     enum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다.
+         */
+        AdminImageGenerationViewRequest: {
+            reasonCategory: components["schemas"]["ChatViewReasonCategory"];
+            /** Reasontext */
+            reasonText: string;
         };
         /** AdminInquiryDetailResponse */
         AdminInquiryDetailResponse: {
@@ -5646,6 +5828,110 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminInquiryDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_admin_image_generations_admin_image_generations_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                q?: string | null;
+                status?: ("pending" | "succeeded" | "blocked" | "failed") | null;
+                style?: components["schemas"]["ImageStylePreset"] | null;
+                from?: string | null;
+                to?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminImageGenerationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    view_user_image_generations_admin_users__user_id__image_generations_view_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminImageGenerationViewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminImageGenerationDetailListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_image_generations_admin_users__user_id__image_generations_get: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminImageGenerationDetailListResponse"];
                 };
             };
             /** @description Validation Error */
