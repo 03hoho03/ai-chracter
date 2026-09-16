@@ -62,9 +62,15 @@ export function StartingSetupTab() {
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
-        {!!errors.startingSetups?.message && (
+        {/* 배열 자체의 위반(`.max(4)`)이 담기는 자리가 마운트 상태에 따라 갈린다(builder-publish-goal-prompt.md
+            BP-7) — Radix TabsContent가 비활성 탭을 언마운트하므로, 이 탭을 열지 않고 발행하면
+            `startingSetups`의 인덱스별 필드가 마운트돼 있지 않아 zodResolver가 그 필드 자체를 잎으로
+            보고 `.message`에 담고, 이 탭이 이미 열려 있어 필드들이 마운트돼 있으면 `@hookform/resolvers`의
+            isNameInFieldArray가 `startingSetups`를 필드배열로 판정해 배열 위반을 `.root.message`에
+            담는다(같은 [발행] 버튼을 두 번 눌러 실측). 둘 다 읽어야 어느 경로로도 안내가 사라지지 않는다. */}
+        {!!(errors.startingSetups?.message ?? errors.startingSetups?.root?.message) && (
           <p id="story-starting-setups-error" role="alert" className="text-xs text-destructive-text">
-            {errors.startingSetups.message}
+            {errors.startingSetups?.message ?? errors.startingSetups?.root?.message}
           </p>
         )}
       </div>

@@ -13,10 +13,19 @@ function isFieldErrorLeaf(value: unknown): boolean {
   return ("type" in value && typeof value.type === "string") || ("message" in value && typeof value.message === "string");
 }
 
+/** `root`는 RHF의 예약 키라 폼 경로가 아니다 — 배열 자체의 위반(`.max()` 등)이 인덱스 자리를 못
+ * 차지할 때 여기 담긴다(`errorTabs.test.ts`). 꼬리의 `.root`만 벗긴다 — `errors.root`(폼 전체
+ * 에러)·`errors.root.server`처럼 접두 없이 단독인 `root`는 그 자체가 유효한 경로이므로 그대로 둔다
+ * (길이 1이면 벗길 상위 세그먼트가 없다는 뜻이기도 하다). */
+function stripTrailingRoot(segments: readonly string[]): readonly string[] {
+  if (segments.length > 1 && segments[segments.length - 1] === "root") return segments.slice(0, -1);
+  return segments;
+}
+
 function collectPaths(node: unknown, prefix: readonly string[], paths: string[]): void {
   if (node === undefined || node === null || typeof node !== "object") return;
   if (isFieldErrorLeaf(node)) {
-    paths.push(prefix.join("."));
+    paths.push(stripTrailingRoot(prefix).join("."));
     return;
   }
   for (const [key, value] of Object.entries(node)) {

@@ -58,13 +58,18 @@ describe("invalidFieldsMessage", () => {
     );
   });
 
-  it("라벨 없는 키를 '필수 항목'이라고 부르지 않는다 (시작설정 .max(4) 위반은 삭제가 답이다)", () => {
-    const message = invalidFieldsMessage(["startingSetups.root"], LABEL_BY_FORM_PATH);
+  // `startingSetups.0.suggestedReplies`(추천 답변 배열 자체의 `.max(4)` 위반, BP-7)를 예시로 쓴다 —
+  // `startingSetups.root`는 더 이상 이 경로에 오지 않는다: fieldErrorPaths.ts의
+  // flattenFieldErrorPaths가 꼬리 `.root`를 벗겨 `startingSetups`로 내보내고, 그 키는 라벨 맵에
+  // 있어 "그 밖의 항목"이 아니라 "시작설정"으로 나온다. 반면 `startingSetups.0.suggestedReplies`는
+  // 라벨 맵에 없는 키라 지금도 fallback으로 접힌다(범위 밖 — CP-10 처방 문서에 실측 확인됨).
+  it("라벨 없는 키를 '필수 항목'이라고 부르지 않는다", () => {
+    const message = invalidFieldsMessage(["startingSetups.0.suggestedReplies"], LABEL_BY_FORM_PATH);
 
     expect(message).toBe("발행하려면 다음 항목을 확인해주세요: 그 밖의 항목");
     expect(message).not.toContain("입력해주세요");
     expect(message).not.toContain("필수");
-    expect(message).not.toContain("startingSetups");
+    expect(message).not.toContain("suggestedReplies");
   });
 
   it("서버 400 경로와 같은 라벨 목록을 쓰고 문장만 갈린다 (BP-3)", () => {
