@@ -199,6 +199,28 @@ describe("startingSetupSchema", () => {
     expect(result.success && result.data.openingSituation).toBeUndefined();
     expect(result.success && result.data.playGuide).toBeUndefined();
   });
+
+  it("accepts up to 4 suggested replies", () => {
+    const fourReplies = Array.from({ length: 4 }, (_, i) => `제안답장 ${i}`);
+
+    const result = startingSetupSchema.safeParse({
+      ...validStartingSetup(),
+      suggestedReplies: fourReplies,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a 5th suggested reply", () => {
+    const fiveReplies = Array.from({ length: 5 }, (_, i) => `제안답장 ${i}`);
+
+    const result = startingSetupSchema.safeParse({
+      ...validStartingSetup(),
+      suggestedReplies: fiveReplies,
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("keywordNoteSchema", () => {
@@ -366,6 +388,28 @@ describe("storyBuilderSchema startingSetups", () => {
 
     expect(empty.success).toBe(false);
     expect(withOne.success).toBe(true);
+  });
+
+  it("accepts up to 4 starting setups", () => {
+    const fourSetups = Array.from({ length: 4 }, (_, i) => ({
+      ...validStartingSetup(),
+      id: `setup-${i}`,
+    }));
+
+    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fourSetups });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a 5th starting setup", () => {
+    const fiveSetups = Array.from({ length: 5 }, (_, i) => ({
+      ...validStartingSetup(),
+      id: `setup-${i}`,
+    }));
+
+    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fiveSetups });
+
+    expect(result.success).toBe(false);
   });
 
   it("defaults keywordNotes/shortcuts to empty arrays when omitted", () => {

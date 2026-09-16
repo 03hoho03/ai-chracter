@@ -134,7 +134,10 @@ export const startingSetupSchema = z.object({
   prologue: z.string().min(1, "이 시작설정의 도입부를 입력해주세요"),
   openingSituation: z.string().optional(),
   playGuide: z.string().optional(),
-  suggestedReplies: z.array(z.string()).default([]),
+  suggestedReplies: z
+    .array(z.string())
+    .max(4, "제안답장은 최대 4개까지만 추가할 수 있습니다")
+    .default([]),
   stats: z.array(statDefSchema).default([]),
   endings: z.array(endingSchema).default([]),
 });
@@ -167,7 +170,10 @@ export const storyBuilderSchema = z.object({
     image: z.object({ assetId: z.string() }).nullable(),
   }),
   storySetting: storySettingSchema,
-  startingSetups: z.array(startingSetupSchema).min(1, "시작설정을 1개 이상 추가해주세요"),
+  startingSetups: z
+    .array(startingSetupSchema)
+    .min(1, "시작설정을 1개 이상 추가해주세요")
+    .max(4, "시작설정은 최대 4개까지만 추가할 수 있습니다"),
   keywordNotes: z.array(keywordNoteSchema).default([]),
   shortcuts: z.array(shortcutSchema).default([]),
   registration: z.object({
