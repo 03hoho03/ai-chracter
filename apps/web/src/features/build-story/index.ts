@@ -8,6 +8,8 @@ export {
   endingSchema,
   keywordNoteSchema,
   LOGIC_OPERATORS,
+  MAX_STARTING_SETUPS,
+  MAX_SUGGESTED_REPLIES,
   PROMPT_TEMPLATE_VALUES,
   ruleListItemSchema,
   shortcutSchema,

@@ -124,6 +124,12 @@ export const endingSchema = z.object({
   hint: z.string().optional(),
 });
 
+/** builder-publish-goal-prompt.md BP-7 — 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
+ * widgets/build-story/ui/StartingSetupTab.tsx의 라벨 표기·추가 버튼 게이트가 전부 여기를 읽는다
+ * (같은 숫자를 두 번 적으면 한쪽만 고치고 끝난다). */
+export const MAX_STARTING_SETUPS = 4;
+export const MAX_SUGGESTED_REPLIES = 4;
+
 /**
  * techspec-builder-story.md §1.1 — 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
  * 항목이 기본 선택이다.
@@ -136,7 +142,7 @@ export const startingSetupSchema = z.object({
   playGuide: z.string().optional(),
   suggestedReplies: z
     .array(z.string())
-    .max(4, "제안답장은 최대 4개까지만 추가할 수 있습니다")
+    .max(MAX_SUGGESTED_REPLIES, `제안답장은 최대 ${MAX_SUGGESTED_REPLIES}개까지만 추가할 수 있습니다`)
     .default([]),
   stats: z.array(statDefSchema).default([]),
   endings: z.array(endingSchema).default([]),
@@ -185,7 +191,7 @@ export const storyBuilderSchema = z.object({
   startingSetups: z
     .array(startingSetupSchema)
     .min(1, "시작설정을 1개 이상 추가해주세요")
-    .max(4, "시작설정은 최대 4개까지만 추가할 수 있습니다"),
+    .max(MAX_STARTING_SETUPS, `시작설정은 최대 ${MAX_STARTING_SETUPS}개까지만 추가할 수 있습니다`),
   keywordNotes: z.array(keywordNoteSchema).default([]),
   shortcuts: z.array(shortcutSchema).default([]),
   registration: z.object({

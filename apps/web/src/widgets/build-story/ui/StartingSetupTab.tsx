@@ -18,6 +18,8 @@ import { useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
+  MAX_STARTING_SETUPS,
+  MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
@@ -56,7 +58,7 @@ export function StartingSetupTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1" data-field-path="startingSetups">
-        <Label>시작설정 *</Label>
+        <Label>시작설정 * (최대 {MAX_STARTING_SETUPS}개)</Label>
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
@@ -88,25 +90,29 @@ export function StartingSetupTab() {
         </DndContext>
       )}
 
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() =>
-          append({
-            id: crypto.randomUUID(),
-            name: "",
-            prologue: "",
-            openingSituation: "",
-            playGuide: "",
-            suggestedReplies: [],
-            stats: [],
-            endings: [],
-          })
-        }
-      >
-        설정 추가
-      </Button>
+      {/* builder-publish-goal-prompt.md BP-7 — 상한에 닿으면 추가 버튼을 렌더하지 않는다(SettingTab의
+          전개 예시와 같은 형태). 스키마의 `.max()`만으로는 발행 시점에야 막혀 5개째를 만들게 둔다. */}
+      {fields.length < MAX_STARTING_SETUPS ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-fit"
+          onClick={() =>
+            append({
+              id: crypto.randomUUID(),
+              name: "",
+              prologue: "",
+              openingSituation: "",
+              playGuide: "",
+              suggestedReplies: [],
+              stats: [],
+              endings: [],
+            })
+          }
+        >
+          설정 추가
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -137,6 +143,7 @@ function StartingSetupRow({
   const rowErrors = errors.startingSetups?.[index];
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
+  const canAddSuggestedReply = suggestedReplies.length < MAX_SUGGESTED_REPLIES;
   const [replyInput, setReplyInput] = useState("");
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(
     () =>
@@ -147,7 +154,11 @@ function StartingSetupRow({
   function addSuggestedReply() {
     const trimmed = replyInput.trim();
     setReplyInput("");
-    if (!trimmed || suggestedReplies.includes(trimmed)) return;
+    // builder-publish-goal-prompt.md BP-7 — 상한 가드를 입력칸의 `disabled`가 아니라 여기 둔다.
+    // 입력칸에 `disabled`가 붙는 순간 브라우저가 blur해 activeElement가 <body>로 떨어진다
+    // (apps/web/CLAUDE.md §포커스, WCAG 2.4.3) — 4번째를 Enter로 추가한 키보드 사용자가 바로 그
+    // 순간 포커스를 잃는다. 이 자리면 Enter와 [추가] 버튼이 같은 가드를 지난다.
+    if (!canAddSuggestedReply || !trimmed || suggestedReplies.includes(trimmed)) return;
     setValue(`startingSetups.${index}.suggestedReplies`, [...suggestedReplies, trimmed], {
       shouldDirty: true,
     });
@@ -274,7 +285,12 @@ function StartingSetupRow({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-reply-input`}>추천 답변</Label>
+            <Label htmlFor={`starting-setup-${id}-reply-input`}>
+              추천 답변 (최대 {MAX_SUGGESTED_REPLIES}개)
+            </Label>
+            {/* builder-publish-goal-prompt.md BP-7 — 상한에 닿으면 [추가] 버튼을 렌더하지 않는다
+                (SettingTab의 전개 예시와 같은 형태). 입력칸은 `disabled`로 막지 않는다 — 포커스가
+                <body>로 떨어진다(apps/web/CLAUDE.md §포커스). Enter 경로는 addSuggestedReply가 막는다. */}
             <div className="flex gap-2">
               <Input
                 id={`starting-setup-${id}-reply-input`}
@@ -287,9 +303,11 @@ function StartingSetupRow({
                   addSuggestedReply();
                 }}
               />
-              <Button type="button" variant="secondary" onClick={addSuggestedReply}>
-                추가
-              </Button>
+              {canAddSuggestedReply ? (
+                <Button type="button" variant="secondary" onClick={addSuggestedReply}>
+                  추가
+                </Button>
+              ) : null}
             </div>
             {suggestedReplies.length > 0 && (
               <div className="flex flex-wrap gap-2">
@@ -312,6 +330,17 @@ function StartingSetupRow({
                   </span>
                 ))}
               </div>
+            )}
+            {/* 배열 자체의 위반(`.max`)은 인덱스가 아니라 이 키에 `.message`로 온다 — zodResolver를
+                RHF가 부르는 모양대로 호출해 확인했다(builder-publish-goal-prompt.md BP-7). */}
+            {!!rowErrors?.suggestedReplies?.message && (
+              <p
+                id={`starting-setup-${id}-suggested-replies-error`}
+                role="alert"
+                className="text-xs text-destructive-text"
+              >
+                {rowErrors.suggestedReplies.message}
+              </p>
             )}
           </div>
         </div>

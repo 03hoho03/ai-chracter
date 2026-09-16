@@ -62,10 +62,15 @@ const TABS = STORY_TABS;
 // 표현하느라 nullable인 3필드(profile.image/registration.genre/target, US-092/095)도 이제는 폼
 // 스키마의 refine이 먼저 막지만(builder-publish-goal-prompt.md BP-1), 다른 기기에서 편집된 초안처럼
 // 서버만 아는 상태가 남아 이 경로를 지우지 않는다(BP-4).
+// 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 9개 전부다(인덱스가 박힌
+// `startingSetups[0].prologue` 류는 fallback 문구로 접힌다, F-8/BP-4).
 const MISSING_FIELD_LABELS: Record<string, string> = {
   name: "이름",
   oneLiner: "한줄소개",
   thumbnailAssetId: "대표 이미지",
+  customPrompt: "커스텀 프롬프트",
+  settingText: "스토리 설정/정보",
+  startingSetups: "시작설정",
   description: "등록 설명",
   genreId: "장르",
   target: "타겟",
@@ -78,6 +83,10 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
   name: "profile.name",
   oneLiner: "profile.oneLiner",
   thumbnailAssetId: "profile.image",
+  customPrompt: "storySetting.customPrompt",
+  // 서버의 `settingText`가 폼에서는 `worldSetting`이다(formToServer.ts의 매핑).
+  settingText: "storySetting.worldSetting",
+  startingSetups: "startingSetups",
   description: "registration.description",
   genreId: "registration.genre",
   target: "registration.target",

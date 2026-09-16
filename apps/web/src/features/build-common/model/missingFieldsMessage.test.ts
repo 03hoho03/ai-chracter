@@ -91,7 +91,9 @@ describe("fieldLabelByFormPath", () => {
       { ...MISSING_FIELD_LABELS, characterPrompt: "캐릭터 프롬프트" },
     );
 
-    expect(result["storySetting.worldSetting"]).toBeUndefined();
+    // `toBeUndefined()`로는 "키가 없다"와 "키는 있고 값이 undefined다"가 갈리지 않아 라벨 가드를
+    // 지워도 초록이었다 — 키 집합 자체를 단언한다.
+    expect(Object.keys(result)).toEqual(["profile.image", "registration.genre", "registration.target"]);
     expect(Object.values(result)).not.toContain("캐릭터 프롬프트");
   });
 });
