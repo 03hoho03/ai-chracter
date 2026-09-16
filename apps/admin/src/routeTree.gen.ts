@@ -26,6 +26,7 @@ import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
 import { Route as ContentsContentIdRouteImport } from './routes/contents.$contentId'
 import { Route as UsersUserIdIndexRouteImport } from './routes/users.$userId.index'
+import { Route as UsersUserIdImageGenerationsRouteImport } from './routes/users.$userId.image-generations'
 import { Route as UsersUserIdChatsRoomIdRouteImport } from './routes/users.$userId.chats.$roomId'
 
 const UsageMetricsRoute = UsageMetricsRouteImport.update({
@@ -113,6 +114,12 @@ const UsersUserIdIndexRoute = UsersUserIdIndexRouteImport.update({
   path: '/users/$userId/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const UsersUserIdImageGenerationsRoute =
+  UsersUserIdImageGenerationsRouteImport.update({
+    id: '/users/$userId/image-generations',
+    path: '/users/$userId/image-generations',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const UsersUserIdChatsRoomIdRoute = UsersUserIdChatsRoomIdRouteImport.update({
   id: '/users/$userId/chats/$roomId',
   path: '/users/$userId/chats/$roomId',
@@ -136,6 +143,7 @@ export interface FileRoutesByFullPath {
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
   '/users/$userId/': typeof UsersUserIdIndexRoute
   '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
@@ -156,6 +164,7 @@ export interface FileRoutesByTo {
   '/notices': typeof NoticesIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/users': typeof UsersIndexRoute
+  '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
   '/users/$userId': typeof UsersUserIdIndexRoute
   '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
@@ -177,6 +186,7 @@ export interface FileRoutesById {
   '/notices/': typeof NoticesIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/users/': typeof UsersIndexRoute
+  '/users/$userId/image-generations': typeof UsersUserIdImageGenerationsRoute
   '/users/$userId/': typeof UsersUserIdIndexRoute
   '/users/$userId/chats/$roomId': typeof UsersUserIdChatsRoomIdRoute
 }
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/reports/'
     | '/users/'
+    | '/users/$userId/image-generations'
     | '/users/$userId/'
     | '/users/$userId/chats/$roomId'
   fileRoutesByTo: FileRoutesByTo
@@ -219,6 +230,7 @@ export interface FileRouteTypes {
     | '/notices'
     | '/reports'
     | '/users'
+    | '/users/$userId/image-generations'
     | '/users/$userId'
     | '/users/$userId/chats/$roomId'
   id:
@@ -239,6 +251,7 @@ export interface FileRouteTypes {
     | '/notices/'
     | '/reports/'
     | '/users/'
+    | '/users/$userId/image-generations'
     | '/users/$userId/'
     | '/users/$userId/chats/$roomId'
   fileRoutesById: FileRoutesById
@@ -260,6 +273,7 @@ export interface RootRouteChildren {
   NoticesIndexRoute: typeof NoticesIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
+  UsersUserIdImageGenerationsRoute: typeof UsersUserIdImageGenerationsRoute
   UsersUserIdIndexRoute: typeof UsersUserIdIndexRoute
   UsersUserIdChatsRoomIdRoute: typeof UsersUserIdChatsRoomIdRoute
 }
@@ -385,6 +399,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof UsersUserIdIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/users/$userId/image-generations': {
+      id: '/users/$userId/image-generations'
+      path: '/users/$userId/image-generations'
+      fullPath: '/users/$userId/image-generations'
+      preLoaderRoute: typeof UsersUserIdImageGenerationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/users/$userId/chats/$roomId': {
       id: '/users/$userId/chats/$roomId'
       path: '/users/$userId/chats/$roomId'
@@ -412,6 +433,7 @@ const rootRouteChildren: RootRouteChildren = {
   NoticesIndexRoute: NoticesIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
+  UsersUserIdImageGenerationsRoute: UsersUserIdImageGenerationsRoute,
   UsersUserIdIndexRoute: UsersUserIdIndexRoute,
   UsersUserIdChatsRoomIdRoute: UsersUserIdChatsRoomIdRoute,
 }

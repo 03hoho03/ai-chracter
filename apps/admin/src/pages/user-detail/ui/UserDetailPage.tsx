@@ -233,6 +233,16 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
         )}
       </section>
 
+      {/* image-monitoring-goal-prompt.md IM-1 — 같은 그리드를 두 벌 유지하지 않으려 링크만 둔다.
+       * 유저 상세 응답(AdminUserDetailResponse)에 생성 이미지 건수 필드가 없어(BE는 이 런에서
+       * 건드리지 않는다) "N건"은 못 붙이고 목적지만 알린다. */}
+      <section className="flex items-center justify-between rounded-xl border border-border bg-card p-6">
+        <h2 className="text-lg font-semibold text-foreground">생성 이미지</h2>
+        <Link to="/users/$userId/image-generations" params={{ userId }} className={INLINE_LINK_CLASS}>
+          생성 이미지 열람 →
+        </Link>
+      </section>
+
       <UserActionPanel
         userId={userDetailQuery.data.id}
         isSuspended={userDetailQuery.data.suspendedAt !== null}

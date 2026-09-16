@@ -3,6 +3,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
 import {
@@ -183,6 +184,7 @@ type ImageGenerationsTableProps = {
 /** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
 function ImageGenerationsTable({ params, onPageChange }: ImageGenerationsTableProps) {
   const imageGenerationListQuery = useImageGenerationListQuery(params);
+  const navigate = useNavigate();
 
   if (imageGenerationListQuery.isPending) {
     return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
@@ -200,6 +202,9 @@ function ImageGenerationsTable({ params, onPageChange }: ImageGenerationsTablePr
     return <p className="text-sm text-muted-foreground">조건에 맞는 생성 내역이 없어요.</p>;
   }
 
+  const goToUserImageGenerations = (userId: string) =>
+    void navigate({ to: "/users/$userId/image-generations", params: { userId } });
+
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-border">
@@ -215,7 +220,19 @@ function ImageGenerationsTable({ params, onPageChange }: ImageGenerationsTablePr
           </TableHeader>
           <TableBody>
             {imageGenerationListQuery.data.items.map((item) => (
-              <TableRow key={item.id}>
+              <TableRow
+                key={item.id}
+                tabIndex={0}
+                role="button"
+                className="cursor-pointer"
+                onClick={() => goToUserImageGenerations(item.userId)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    goToUserImageGenerations(item.userId);
+                  }
+                }}
+              >
                 <TableCell>
                   <div className="flex flex-col">
                     <span>{item.nickname}</span>
