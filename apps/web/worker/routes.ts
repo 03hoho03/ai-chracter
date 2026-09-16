@@ -22,8 +22,6 @@ export const KNOWN_ROUTES = [
   "/mypage",
   "/notices",
   "/notices/$noticeId",
-  // O-10 프로덕션 종단 검증용 임시 라우트 — `src/routes/o10-verify-render-throw.tsx`와 함께 제거한다.
-  "/o10-verify-render-throw",
   "/onboarding/google",
   "/privacy",
   "/profile/$userId",
