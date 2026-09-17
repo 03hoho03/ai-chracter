@@ -1,7 +1,7 @@
 """rate limit 기구 두 가지: 고정 창(fixed window) 카운터와 토큰 버킷.
 
 정책값(분·일 상한, 버킷 용량)은 이 파일에 없다 — 호출자가 인자로 넘긴다
-(limit-goal-prompt.md RL-14: 정책 상수는 게이트 모듈에 두고 여기는 기구만 제공한다).
+(limit-goal-prompt.md RL-14 — 정책 상수는 게이트·큐 모듈에, 여기는 기구만).
 예외는 먼저 있던 발송 엔드포인트(signup/resend/password-reset)의 시간당 상한이다
 (email-goal-prompt.md E-6) — 상한은 여기 모듈 상수로 둔다(E-6 — env로 빼지 않는다.
 조정이 필요하면 재배포 한 줄).

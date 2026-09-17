@@ -118,6 +118,54 @@ async def test_chat_routes_return_429_with_user_limit_body_when_burst_exceeded(
     assert 1 <= retry_after <= 60
 
 
+# ---- 1-1. 채팅 4경로가 버킷 하나를 공유한다 (RL-3) ----
+
+
+async def test_four_chat_routes_share_one_bucket(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """위 parametrize는 경로마다 **새 유저 + 상한 0**이라 버킷이 하나인지에 대해서는
+    항진명제다 — scope를 경로별로 갈라도(`_BURST_SCOPE + route`) 13개가 전부 그대로 초록이다.
+    한 버킷을 구분하는 유일한 상태는 **한 사용자가 서로 다른 경로로 상한을 나눠 쓴 뒤**이고,
+    그때 막혀야 하는 것은 아직 한 번도 안 쓴 나머지 두 경로다. 버킷이 갈리면 그 둘은 자기 몫의
+    첫 요청이라 통과해 404로 떨어진다.
+
+    RL-3이 단일 버킷을 고른 이유가 정확히 이 우회로다 — 전송으로 상한을 소진한 뒤 재생성·편집
+    으로 계속 태울 수 있으면 상한이 상한이 아니다.
+    """
+    await _consented_user(db_client, db_session)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 2)
+
+    _override_llm_client(_FakeLLMClient())
+    try:
+        sent = await db_client.post(
+            f"/chat-rooms/{_DUMMY_IDS['room_id']}/messages", json={"content": "안녕"}
+        )
+        regenerated = await db_client.post(f"/chat-rooms/{_DUMMY_IDS['room_id']}/regenerate")
+    finally:
+        _clear_llm_override()
+    # 4번 테스트와 같은 판정 — 게이트는 통과했고(429가 아니다) 그 뒤 소유권 검사에서 막혔다.
+    # 서로 다른 두 경로가 같은 버킷의 2칸을 썼다는 뜻이다.
+    assert sent.status_code == 404
+    assert regenerated.status_code == 404
+
+    edited = await db_client.patch(
+        f"/chat-rooms/{_DUMMY_IDS['room_id']}/messages/{_DUMMY_IDS['message_id']}",
+        json={"content": "안녕"},
+    )
+    previewed = await db_client.post(
+        f"/preview-sessions/{_DUMMY_IDS['id']}/messages", json={"content": "안녕"}
+    )
+
+    for resp in (edited, previewed):
+        assert resp.status_code == 429
+        detail = resp.json()["detail"]
+        assert detail["code"] == "USER_LIMIT"
+        assert detail["window"] == "minute"
+
+
 # ---- 2. 일일 상한 초과 → window=day, KST 자정까지 (RL-4·RL-15) ----
 
 
@@ -130,8 +178,9 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """버스트는 기본값 그대로 두고 일일만 0으로 낮춘다 — 그래야 "버스트 → 일일" 순서(RL-3)에서
-    뒤쪽 검사가 실제로 실행된다는 것까지 함께 증명된다."""
+    """버스트는 기본값 그대로 두고 일일만 0으로 낮춘다 — 그래야 "버스트 → 일일"
+    순서(RL-10 파생 / 게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는 것까지 함께
+    증명된다."""
     await _consented_user(db_client, db_session)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -146,7 +195,7 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     assert 1 <= retry_after <= 86400
 
 
-# ---- 2-1. 둘 다 넘겼을 때 이기는 쪽 = 버스트 (RL-3의 순서 결정) ----
+# ---- 2-1. 둘 다 넘겼을 때 이기는 쪽 = 버스트 (RL-10 파생 / 게이트 docstring) ----
 
 
 async def test_burst_check_runs_before_daily_check(
@@ -172,7 +221,7 @@ async def test_burst_check_runs_before_daily_check(
     assert detail["retryAfterSeconds"] <= 60
 
 
-# ---- 3. Depends 순서: 재동의 403이 429보다 먼저 (RL-1) ----
+# ---- 3. Depends 순서: 재동의 403이 429보다 먼저 (RL-13) ----
 
 
 async def test_reconsent_403_wins_over_429(

@@ -63,7 +63,7 @@ CHAT_DAILY_LIMIT = 30
 IMAGE_TOKEN_CAPACITY = 10
 IMAGE_TOKEN_REFILL_SECONDS = 3600
 
-# RL-11: 큐가 찼을 때 주는 재시도 초. **큐 길이 추정이 아니라 잡 하나의 최대 소요**를 고정값
+# RL-5: 큐가 찼을 때 주는 재시도 초. **큐 길이 추정이 아니라 잡 하나의 최대 소요**를 고정값
 # 으로 준다 — `core/config.py`의 `local_image_queue_limit` 주석이 근거로 쓰는 그 60초(장당
 # 약 30초 × `count` 상한 2)다. 앞선 대기자 수는 `local_image._queue_depth`가 정확히 들고
 # 있다 — 모르는 것은 **각 잡의 잔여 시간**이라 그 깊이를 초로 환산할 수 없다. 그래서 잡
