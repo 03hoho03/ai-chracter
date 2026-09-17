@@ -4,4 +4,5 @@ export const dashboardKeys = {
   trend: (days: number) => [...dashboardKeys.all, "trend", days] as const,
   popular: (limit: number) => [...dashboardKeys.all, "popular", limit] as const,
   activity: () => [...dashboardKeys.all, "activity"] as const,
+  growth: () => [...dashboardKeys.all, "growth"] as const,
 };
