@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone, UTC
@@ -23,7 +22,7 @@ from api.db.models.media import Asset, AssetKind
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _get_genre, _login_as, _make_asset, _make_user, _parse_sse_events
 
 
 async def _make_published_character(
@@ -88,8 +87,8 @@ async def _add_situational_image(
 
 
 class _ImageMatchingLLMClient(LLMClient):
-    """상황별 이미지 매칭만 흉내내는 최소 페이크 — `test_chat_message_send_api.py`의 페이크와
-    달리 판정 결과를 고정해, 이 파일이 검증하려는 "매칭 발동 → 보관함" 경로에만 집중한다."""
+    """상황별 이미지 매칭만 흉내내는 최소 페이크 — `factories.py`의 `_FakeLLMClient`와 달리
+    판정 결과를 고정해, 이 파일이 검증하려는 "매칭 발동 → 보관함" 경로에만 집중한다."""
 
     def __init__(self, matched_entity_id: uuid.UUID) -> None:
         self.matched_entity_id = matched_entity_id
@@ -104,15 +103,6 @@ class _ImageMatchingLLMClient(LLMClient):
 
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
         return ImageMatchJudgmentResult(matched_image_entity_id=str(self.matched_entity_id))
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
 
 
 async def test_image_archive_requires_login(db_client: httpx.AsyncClient) -> None:

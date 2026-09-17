@@ -1,7 +1,7 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, ForeignKey, Text, Uuid, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Text, Uuid, false, func
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -49,6 +49,10 @@ class User(Base):
     # 적이 없다). 시행일 재동의 게이트를 거치며 LR-5가 채운다.
     transfer_agreed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     transfer_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # limit-goal-prompt.md RL-9·RL-10: 레이트리밋 예외 플래그. 일일·토큰버킷만 면제하고 분당
+    # 버스트는 유지한다(RL-10). 값은 어드민 토글로만 바뀐다(RL-9) — 상한값 자체는 상수라
+    # 여기 담기지 않는다(RL-14).
+    rate_limit_exempt: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class WithdrawnEmail(Base):

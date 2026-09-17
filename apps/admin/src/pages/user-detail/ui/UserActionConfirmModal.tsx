@@ -18,15 +18,34 @@ import { toast } from "sonner";
 import { z } from "zod";
 
 import { adminContentKeys, type ContentActionReasonCategory } from "@/entities/admin-content";
-import { useSuspendUserMutation, useUnsuspendUserMutation, useWarnUserMutation } from "@/entities/admin-user";
+import {
+  useSetRateLimitExemptMutation,
+  useSuspendUserMutation,
+  useUnsuspendUserMutation,
+  useWarnUserMutation,
+} from "@/entities/admin-user";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
 
-type UserActionType = "warn" | "suspend" | "unsuspend";
+type UserActionType = "warn" | "suspend" | "unsuspend" | "rate-limit-exempt-on" | "rate-limit-exempt-off";
 
 const ACTION_TITLE: Record<UserActionType, string> = {
   warn: "경고",
   suspend: "정지",
   unsuspend: "정지 해제",
+  "rate-limit-exempt-on": "레이트리밋 면제",
+  "rate-limit-exempt-off": "면제 해제",
+};
+
+/** 사유 카테고리를 요구하는 조치는 `Notification`을 만드는 둘(경고·정지)뿐이다 — 나머지는 유저에게
+ * 나가는 통지가 없어 사유를 인용할 자리가 없고, 대신 관리자 코멘트가 필수다(빈 값이면 BE가 422).
+ * 컴포넌트와 `createUserActionSchema` 둘 다 이 한 곳을 보므로 규칙이 갈릴 수 없고, `Record`라
+ * 새 조치를 추가하면 여기 키가 빠진 것이 컴파일 에러로 잡힌다. */
+const IS_REASON_CATEGORY_REQUIRED: Record<UserActionType, boolean> = {
+  warn: true,
+  suspend: true,
+  unsuspend: false,
+  "rate-limit-exempt-on": false,
+  "rate-limit-exempt-off": false,
 };
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
@@ -57,6 +76,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
     const warnMutation = useWarnUserMutation(userId);
     const suspendMutation = useSuspendUserMutation(userId);
     const unsuspendMutation = useUnsuspendUserMutation(userId);
+    const setRateLimitExemptMutation = useSetRateLimitExemptMutation(userId);
     const {
       control,
       register,
@@ -67,7 +87,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
       defaultValues: { reasonCategory: undefined, adminComment: "" },
     });
 
-    const isReasonCategoryRequired = action !== "unsuspend";
+    const isReasonCategoryRequired = IS_REASON_CATEGORY_REQUIRED[action];
 
     const onSubmit = async (values: UserActionFormValues) => {
       try {
@@ -80,13 +100,21 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           const result = await suspendMutation.mutateAsync(formToReasonedRequest(values, values.reasonCategory));
           toast.success(`정지했어요. 작품 ${result.restrictedContentCount}건이 이용제한으로 전환됐어요.`);
         } else if (action === "unsuspend") {
-          await unsuspendMutation.mutateAsync(formToUnsuspendRequest(values));
+          await unsuspendMutation.mutateAsync(formToCommentOnlyRequest(values));
           toast.success("정지를 해제했어요.");
+        } else if (action === "rate-limit-exempt-on") {
+          await setRateLimitExemptMutation.mutateAsync({ exempt: true, ...formToCommentOnlyRequest(values) });
+          toast.success("레이트리밋을 면제했어요.");
+        } else if (action === "rate-limit-exempt-off") {
+          await setRateLimitExemptMutation.mutateAsync({ exempt: false, ...formToCommentOnlyRequest(values) });
+          toast.success("레이트리밋 면제를 해제했어요.");
         } else {
           assertNever(action);
         }
-        // 세 조치 모두 작품 상태를 바꿀 수 있다 — 유저 쿼리는 각 뮤테이션이 끊고, 작품 쿼리는
-        // entity끼리 물리지 않도록 여기서 끊는다.
+        // 경고·정지·정지 해제는 작품 상태를 바꿀 수 있다 — 유저 쿼리는 각 뮤테이션이 끊고, 작품
+        // 쿼리는 entity끼리 물리지 않도록 여기서 끊는다. 레이트리밋 면제 토글은 작품을 건드리지
+        // 않아 끊을 게 없지만, 조치별로 가르면 이 한 줄이 분기 다섯 개로 흩어져 그대로 둔다
+        // (무효화는 멱등하고 상세 화면의 작품 쿼리는 한 벌뿐이다).
         void queryClient.invalidateQueries({ queryKey: adminContentKeys.all });
         call.end();
       } catch {
@@ -106,6 +134,10 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
                   ? `이 유저를 정지합니다. 작품 ${restrictableContentCount}건이 함께 이용제한으로 전환됩니다.`
                   : "이 유저를 정지합니다.")}
               {action === "unsuspend" && "이 유저의 정지를 해제합니다. 작품은 이용제한 상태로 남습니다."}
+              {action === "rate-limit-exempt-on" &&
+                "이 유저를 일일 상한과 이미지 토큰 상한에서 면제합니다. 분당 상한과 이미지 동시 생성 1건은 그대로 적용됩니다."}
+              {action === "rate-limit-exempt-off" &&
+                "이 유저에게 일일 상한과 이미지 토큰 상한을 다시 적용합니다. 분당 상한과 이미지 동시 생성 1건은 면제 중에도 적용되고 있었습니다."}
             </DialogDescription>
           </DialogHeader>
 
@@ -160,7 +192,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
               </Label>
               <Textarea
                 id="user-action-comment"
-                placeholder={isReasonCategoryRequired ? "유저에게 전달할 코멘트" : "해제 사유를 입력하세요"}
+                placeholder={isReasonCategoryRequired ? "유저에게 전달할 코멘트" : "사유를 입력하세요"}
                 rows={3}
                 aria-invalid={!!errors.adminComment}
                 aria-describedby={errors.adminComment ? "user-action-comment-error" : undefined}
@@ -193,17 +225,17 @@ function formToReasonedRequest(values: UserActionFormValues, reasonCategory: Con
   return { reasonCategory, adminComment: values.adminComment.trim() || undefined };
 }
 
-/** unsuspend는 사유 카테고리를 받지 않고 코멘트가 필수다(빈 값이면 BE가 422). */
-function formToUnsuspendRequest(values: UserActionFormValues) {
+/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
+function formToCommentOnlyRequest(values: UserActionFormValues) {
   return { adminComment: values.adminComment.trim() };
 }
 
 /** 조치별로 필수 필드가 갈린다 — 그 규칙을 컴포넌트가 아니라 스키마 한 곳에 둔다. */
 function createUserActionSchema(action: UserActionType) {
   return userActionSchema.superRefine((values, ctx) => {
-    if (action === "unsuspend") {
+    if (!IS_REASON_CATEGORY_REQUIRED[action]) {
       if (values.adminComment.trim().length === 0) {
-        ctx.addIssue({ code: "custom", path: ["adminComment"], message: "해제 사유를 입력해주세요." });
+        ctx.addIssue({ code: "custom", path: ["adminComment"], message: "사유를 입력해주세요." });
       }
     } else if (!values.reasonCategory) {
       ctx.addIssue({ code: "custom", path: ["reasonCategory"], message: "사유 카테고리를 선택해주세요." });

@@ -1,9 +1,6 @@
 import json
 import uuid
-from collections.abc import AsyncIterator
-from datetime import datetime, timezone, UTC
 from pathlib import Path
-from typing import Any
 
 import httpx
 import pytest
@@ -15,62 +12,24 @@ from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
 from api.db.models import (
     CharacterImageExposure,
-    CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
-    Content,
-    ContentTarget,
-    ContentType,
-    ContentVersion,
-    ContentVisibility,
-    ModerationStatus,
     SituationalImage,
 )
-from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user, _read_golden_prompt
-
-
-async def _make_published_character(
-    db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID, intro: str = "인트로"
-) -> Content:
-    content = Content(
-        creator_user_id=creator_user_id,
-        type=ContentType.CHARACTER,
-        genre_id=genre_id,
-        target=ContentTarget.ALL,
-        hashtags=[],
-        visibility=ContentVisibility.PUBLIC,
-        moderation_status=ModerationStatus.NORMAL,
-    )
-    db_session.add(content)
-    await db_session.flush()
-
-    version = ContentVersion(
-        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
-    )
-    db_session.add(version)
-    await db_session.flush()
-
-    thumbnail = await _make_asset(db_session, owner_user_id=creator_user_id)
-    db_session.add(
-        CharacterVersionDetail(
-            content_version_id=version.id,
-            name="캐릭터",
-            one_liner="한줄소개",
-            thumbnail_asset_id=thumbnail.id,
-            intro=intro,
-            example_dialogues=[{"userLine": "밥 먹었어?", "characterLine": "아직이야옹"}],
-            character_prompt="프롬프트",
-        )
-    )
-    await db_session.flush()
-
-    content.current_published_version_id = version.id
-    await db_session.flush()
-    return content
+from api.llm.client import LLMClientError, LLMPolicyViolationError
+from factories import (
+    _clear_llm_override,
+    _FakeLLMClient,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_published_character,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+    _read_golden_prompt,
+)
 
 
 async def _create_room_via_api(client: httpx.AsyncClient, content_id: uuid.UUID) -> httpx.Response:
@@ -98,63 +57,6 @@ async def _make_situational_image(
     db_session.add(situational_image)
     await db_session.flush()
     return situational_image
-
-
-class _FakeLLMClient(LLMClient):
-    def __init__(
-        self,
-        tokens: list[str] | None = None,
-        error: Exception | None = None,
-        structured_result: ImageMatchJudgmentResult | None = None,
-        structured_error: Exception | None = None,
-    ) -> None:
-        self.tokens = tokens or []
-        self.error = error
-        self.structured_result = structured_result
-        self.structured_error = structured_error
-        self.received_prompt: str | None = None
-        self.received_judgment_prompt: str | None = None
-        self.generate_structured_called = False
-
-    async def generate(
-        self,
-        prompt: str,
-        system_instruction: str | None = None,
-        stop_sequences: list[str] | None = None,
-    ) -> AsyncIterator[str]:
-        self.received_prompt = prompt
-        if self.error is not None:
-            raise self.error
-        for token in self.tokens:
-            yield token
-
-    async def generate_structured(
-        self, prompt: str, response_schema: Any, images: Any = None
-    ) -> Any:
-        self.generate_structured_called = True
-        self.received_judgment_prompt = prompt
-        if self.structured_error is not None:
-            raise self.structured_error
-        if self.structured_result is None:
-            raise NotImplementedError
-        return self.structured_result
-
-
-def _override_llm_client(fake: _FakeLLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
 
 
 async def test_send_message_requires_login(db_client: httpx.AsyncClient) -> None:

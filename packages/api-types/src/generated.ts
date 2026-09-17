@@ -382,6 +382,45 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/rate-limit-exempt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Rate Limit Exempt
+         * @description limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
+         *     Redis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)
+         *     이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.
+         *
+         *     면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외
+         *     계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.
+         *
+         *     **액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /
+         *     `user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은
+         *     없고, 두 타입을 나눠야 이력 표에서 "언제 켰고 언제 껐나"가 구분된다 — 한 타입에
+         *     코멘트로만 담으면 그 구분이 사람이 읽는 자유 문자열로 내려간다.
+         *
+         *     `reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와
+         *     같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).
+         *
+         *     **같은 값을 다시 적용해도(True→True) 막지 않는다** — 대입은 멱등하고 `admin_action_logs`에는
+         *     "누가 언제 눌렀다"가 한 행 더 남는다. 이미 정지된 유저의 재정지를 400으로 막지 않는
+         *     `suspend_user`와 같은 관례다.
+         *
+         *     순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).
+         */
+        post: operations["set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/legal/{kind}": {
         parameters: {
             query?: never;
@@ -3405,6 +3444,8 @@ export interface components {
             contentCount: number;
             /** Restrictablecontentcount */
             restrictableContentCount: number;
+            /** Ratelimitexempt */
+            rateLimitExempt: boolean;
             /** Chatroomcount */
             chatRoomCount: number;
             /** Messagecount */
@@ -3451,6 +3492,19 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+        };
+        /**
+         * AdminUserRateLimitExemptRequest
+         * @description limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
+         *     쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는
+         *     `AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가
+         *     없고, 대신 "왜 면제했나"가 감사 로그에 남아야 한다(비어 있으면 422).
+         */
+        AdminUserRateLimitExemptRequest: {
+            /** Exempt */
+            exempt: boolean;
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /** AdminUserReportItem */
         AdminUserReportItem: {
@@ -5516,6 +5570,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserUnsuspendRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserRateLimitExemptRequest"];
             };
         };
         responses: {

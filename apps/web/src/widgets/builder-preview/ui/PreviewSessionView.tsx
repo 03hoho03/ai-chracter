@@ -8,6 +8,7 @@ import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-se
 import {
   EndingDivider,
   MessageBubble,
+  RateLimitNotice,
   StatGaugePanel,
   TypingIndicator,
   shouldShowSuggestedReplies,
@@ -148,11 +149,14 @@ export function PreviewSessionView({
                 <TypingIndicator />
               ))}
 
-            {status.kind === "error" && (
-              <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-                <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
-              </div>
-            )}
+            {status.kind === "error" &&
+              (status.rateLimit ? (
+                <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />
+              ) : (
+                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+                  <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
+                </div>
+              ))}
 
             {!!policyWarning && (
               <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">

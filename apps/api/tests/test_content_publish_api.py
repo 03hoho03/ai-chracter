@@ -37,9 +37,7 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.llm.client import LLMClient
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_user
+from factories import _clear_llm_override, _get_genre, _login_as, _make_user, _override_llm_client
 
 
 def _upload_test_image(storage_key: str) -> None:
@@ -314,14 +312,6 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt = prompt
         self.received_images = images
         return self.result
-
-
-def _override_llm_client(fake: _FakeLLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
 
 
 async def test_publish_requires_login(db_client: httpx.AsyncClient) -> None:

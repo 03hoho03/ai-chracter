@@ -8,20 +8,25 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
+  getChatRateLimit,
   truncateAndEdit,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
-import type { ChatMessage, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
+import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
+import { isLegalReconsentRequiredError } from "@/entities/legal";
+import { sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLast" };
 
 // TS-04 — isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
+// limit-goal-prompt.md RL-15 — 429는 안내 문구와 다음 행동이 다른 오류라(기다리면 풀린다) 배너가
+// 분기할 수 있게 `rateLimit`을 함께 싣는다. 429가 아닌 실패는 값이 없고 기존 배너 그대로다.
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; retryPayload: PendingRequest };
+  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit };
 
 /** techspec-chat-common.md §1 — 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
@@ -49,6 +54,7 @@ export function useSendMessage(roomId: string, characterId?: string) {
           setPolicyWarning(event.message);
         } else if (event.type === "error") {
           hasErrored = true;
+          // 스트림 안에서 온 오류는 상한과 무관하다(게이트는 스트림이 열리기 전에 429로 막는다).
           setStatus({ kind: "error", retryPayload: pending });
         }
         applyStreamEvent(queryClient, roomId, event, {
@@ -60,9 +66,15 @@ export function useSendMessage(roomId: string, characterId?: string) {
           },
         });
       }
-    } catch {
+    } catch (error) {
       hasErrored = true;
-      setStatus({ kind: "error", retryPayload: pending });
+      // RL-17 — SSE는 뮤테이션이 아니라 `app/AppProviders.tsx`의 MutationCache.onError가 못 본다.
+      // 재동의 403을 여기서 잡지 않으면 채팅 4경로에서만 모달이 뜨지 않는다(세션을 다시 조회하면
+      // ReconsentModal이 `GET /me`의 플래그로 뜬다 — CG-12와 같은 처리다).
+      if (isLegalReconsentRequiredError(error)) {
+        void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+      }
+      setStatus({ kind: "error", retryPayload: pending, rateLimit: getChatRateLimit(error) });
     } finally {
       setStreamingText("");
       if (!hasErrored) setStatus({ kind: "idle" });

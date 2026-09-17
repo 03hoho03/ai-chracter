@@ -2,7 +2,7 @@ import type { ZodType } from "zod";
 
 import { assertNever } from "@/shared/lib/assertNever";
 
-import { API_BASE_URL } from "../client";
+import { API_BASE_URL, ApiErrorObject, errorEnvelopeSchema } from "../client";
 
 /** techspec-overview.md §7 — 메시지 전송/재생성/수정은 모두 본문이 있는 POST/PATCH라 네이티브
  * EventSource(GET 전용)를 쓸 수 없어 fetch + ReadableStream으로 SSE(`data: <json>\n\n`)를
@@ -49,6 +49,31 @@ function buildRequestInit(payload: ChatStreamRequestPayload): { url: string; ini
 }
 
 /**
+ * limit-goal-prompt.md RL-11 — 실패 응답의 **바디를 읽어** `ApiErrorObject`로 던진다. 이 경로는
+ * fetch라 `apiClient`의 응답 인터셉터를 타지 않아서, 여기서 읽지 않으면 429의 `retryAfterSeconds`도
+ * 403 재동의의 `code`도 소비처에 영원히 닿지 않는다(둘 다 detail 안에만 있고 헤더에는 없다 —
+ * BE가 `Retry-After`를 일부러 주지 않는다: CORS 응답에서 브라우저가 못 읽는다).
+ *
+ * 파싱에 실패해도(프록시가 끼워 넣은 HTML 502 등) **던지기는 한다** — detail만 undefined인 같은
+ * 모양이다. 파싱 실패가 스트림을 조용히 성공시키면 화면은 응답을 영원히 기다린다.
+ * 422 검증 배열은 여기서 버린다(`client.ts`의 `normalizeError`는 `fields`로 펼치지만, SSE 경로에
+ * 필드 에러를 읽는 소비처가 없다).
+ */
+async function toApiError(response: Response): Promise<ApiErrorObject> {
+  const parsed = await response.json().then(
+    (body: unknown) => errorEnvelopeSchema.safeParse(body),
+    () => null,
+  );
+  const detail = parsed?.success === true ? parsed.data.detail : undefined;
+
+  return new ApiErrorObject({
+    status: response.status,
+    detail: Array.isArray(detail) ? undefined : detail,
+    message: `SSE request failed with status ${response.status}`,
+  });
+}
+
+/**
  * SSE 스트림을 이벤트 단위로 흘려보낸다.
  *
  * `eventSchema`를 받는 이유(TS-03): `JSON.parse`는 `any`를 돌려주고, 이전엔 그걸 `as TEvent`로
@@ -63,7 +88,9 @@ export async function* openChatStream<TEvent>(
   const { url, init } = buildRequestInit(payload);
   const response = await fetch(url, { ...init, credentials: "include" });
 
-  if (!response.ok || !response.body) {
+  // 바디 파싱은 `!response.ok`에만 건다 — 200인데 body가 없는 경우엔 읽을 에러 봉투가 없다.
+  if (!response.ok) throw await toApiError(response);
+  if (!response.body) {
     throw new Error(`SSE request failed with status ${response.status}`);
   }
 
