@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
+import { getChatRateLimit, type ChatRateLimit } from "@/entities/chat-room";
+import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   applyPreviewStreamEvent,
   buildPreviewSendPayload,
@@ -8,12 +10,16 @@ import {
 } from "@/entities/preview-session";
 import { previewStreamEventSchema } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
+import { sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 // TS-04 — isSending(boolean) + error(boolean)의 조합은 "전송 중이면서 동시에 에러"라는 불가능 상태를
 // 타입으로 막지 못했다(useSendMessage와 동일한 처방). 재시도가 없어 useSendMessage와 달리 retryPayload는
-// 필요 없다.
-type PreviewSendStatus = { kind: "idle" } | { kind: "sending" } | { kind: "error" };
+// 필요 없다. limit-goal-prompt.md RL-23 — 429만 배너 문구가 갈리므로 그 값만 함께 싣는다.
+type PreviewSendStatus =
+  | { kind: "idle" }
+  | { kind: "sending" }
+  | { kind: "error"; rateLimit?: ChatRateLimit };
 
 /**
  * features/send-message의 useSendMessage(techspec-chat-common.md §1)와 동일한 낙관적 업데이트+SSE
@@ -49,6 +55,8 @@ export function usePreviewSendMessage() {
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다(useSendMessage와 동일한 사유).
     let hasErrored = false;
+    // setStatus가 finally의 단일 호출이므로(아래 V-5) 429 정보도 그때까지 로컬 변수로 들고 있는다.
+    let rateLimit: ChatRateLimit | undefined;
 
     try {
       for await (const event of openChatStream(
@@ -71,11 +79,16 @@ export function usePreviewSendMessage() {
         }
         applyPreviewStreamEvent(queryClient, previewSessionId, event);
       }
-    } catch {
+    } catch (error) {
       hasErrored = true;
+      // RL-17 — useSendMessage와 같은 이유로 여기서도 재동의 403을 잡는다(SSE는 MutationCache가 못 본다).
+      if (isLegalReconsentRequiredError(error)) {
+        void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+      }
+      rateLimit = getChatRateLimit(error);
     } finally {
       setStreamingText("");
-      setStatus(hasErrored ? { kind: "error" } : { kind: "idle" });
+      setStatus(hasErrored ? { kind: "error", rateLimit } : { kind: "idle" });
     }
   }
 
