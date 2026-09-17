@@ -22,13 +22,6 @@ import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
-type SituationalImageRowProps = {
-  id: string;
-  index: number;
-  ensureContentVersionId: () => Promise<string>;
-  onRemove: () => void;
-};
-
 /** techspec-builder-character.md §2 AC — 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
 export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId: () => Promise<string> }) {
@@ -88,6 +81,13 @@ export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId
     </div>
   );
 }
+
+type SituationalImageRowProps = {
+  id: string;
+  index: number;
+  ensureContentVersionId: () => Promise<string>;
+  onRemove: () => void;
+};
 
 /** 목록 순서가 곧 우선순위(techspec-builder-character.md §2)라 dnd-kit로 재정렬한다 — 순서가
  * 의미 없는 배열(IntroTab의 예시 대화)과 달리 add/remove만으로는 부족하다. 이미지는 업로드

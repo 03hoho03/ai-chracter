@@ -24,8 +24,9 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
-/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
- * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
+/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
+ * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
+ * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §빌더, D-3). */
 export function StartingSetupTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
@@ -157,7 +158,7 @@ function StartingSetupRow({
       getValues(`startingSetups.${index}.suggestedReplies`).length > 0,
   );
 
-  function addSuggestedReply() {
+  function handleAddSuggestedReply() {
     const trimmed = replyInput.trim();
     // builder-publish-goal-prompt.md BP-7 — 상한 가드가 여기 있는 이유는 둘이다. (1) 입력칸이나
     // [추가] 버튼을 `disabled`로 막으면 그 속성이 붙는 순간 브라우저가 blur해 activeElement가
@@ -172,7 +173,7 @@ function StartingSetupRow({
     });
   }
 
-  function removeSuggestedReply(reply: string) {
+  function handleRemoveSuggestedReply(reply: string) {
     setValue(
       `startingSetups.${index}.suggestedReplies`,
       suggestedReplies.filter((item) => item !== reply),
@@ -299,7 +300,7 @@ function StartingSetupRow({
             {/* builder-publish-goal-prompt.md BP-7 — 상한에서도 입력칸과 [추가] 버튼을 트리에 남긴다.
                 `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는
                 순간 그 컨트롤이 blur/언마운트돼 포커스가 <body>로 떨어진다. 대신 `aria-disabled`로
-                잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 addSuggestedReply가 한다.
+                잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 handleAddSuggestedReply가 한다.
                 같은 자리의 `설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
                 조건부 렌더로 둔다 — 두 버튼에서 실제로 다른 값이다. */}
             <div className="flex gap-2">
@@ -311,7 +312,7 @@ function StartingSetupRow({
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
-                  addSuggestedReply();
+                  handleAddSuggestedReply();
                 }}
               />
               <Button
@@ -319,7 +320,7 @@ function StartingSetupRow({
                 variant="secondary"
                 aria-disabled={!canAddSuggestedReply}
                 className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
-                onClick={addSuggestedReply}
+                onClick={handleAddSuggestedReply}
               >
                 추가
               </Button>
@@ -338,7 +339,7 @@ function StartingSetupRow({
                       size="icon"
                       className="size-4"
                       aria-label={`${reply} 추천 답변 삭제`}
-                      onClick={() => removeSuggestedReply(reply)}
+                      onClick={() => handleRemoveSuggestedReply(reply)}
                     >
                       <X aria-hidden className="size-3" />
                     </Button>
