@@ -4,7 +4,7 @@ import { ChevronDown, ChevronUp } from "lucide-react";
 import { useFormContext } from "react-hook-form";
 
 import { allowedPlaceholdersFor } from "../model/allowedPlaceholders";
-import { PROMPT_SCOPE_LABELS } from "../model/channels";
+import { isPromptScope, PROMPT_SCOPE_LABELS } from "../model/channels";
 import type { PromptSetFormValues } from "../model/schema";
 
 const BADGE_CLASS =
@@ -52,7 +52,7 @@ export function SectionRow({
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
       <div className="flex items-start justify-between gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className={BADGE_CLASS}>{PROMPT_SCOPE_LABELS[scope] ?? scope}</span>
+          <span className={BADGE_CLASS}>{isPromptScope(scope) ? PROMPT_SCOPE_LABELS[scope] : scope}</span>
           {variant && <span className={BADGE_CLASS}>variant: {variant}</span>}
           <code className="font-mono text-xs text-muted-foreground">{slot}</code>
           {conditional && (

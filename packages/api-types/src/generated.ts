@@ -716,7 +716,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/prompt-sets/draft": {
+    "/admin/prompt-sets/{lane}/draft": {
         parameters: {
             query?: never;
             header?: never;
@@ -725,13 +725,15 @@ export interface paths {
         };
         /**
          * Get Prompt Draft
-         * @description `/admin/prompt-sets/{id}`보다 반드시 먼저 등록한다 — 둘 다 `GET`이고 경로 깊이가
-         *     같아 "draft"가 문자 그대로 `{id}`에도 매치된다. Starlette은 등록 순서대로 첫 매치를
-         *     쓰므로, `{id}`가 먼저면 이 라우트는 영원히 도달하지 못한다.
+         * @description prompt-scope-techspec.md §4-2 — 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
+         *     `GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다
+         *     도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —
+         *     만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
+         *     404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패).
          */
-        get: operations["get_prompt_draft_admin_prompt_sets_draft_get"];
+        get: operations["get_prompt_draft_admin_prompt_sets__lane__draft_get"];
         /** Upsert Prompt Draft */
-        put: operations["upsert_prompt_draft_admin_prompt_sets_draft_put"];
+        put: operations["upsert_prompt_draft_admin_prompt_sets__lane__draft_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -739,7 +741,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/prompt-sets/draft/preview": {
+    "/admin/prompt-sets/{lane}/draft/preview": {
         parameters: {
             query?: never;
             header?: never;
@@ -751,17 +753,17 @@ export interface paths {
         /**
          * Preview Prompt Draft
          * @description T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
-         *     LLM은 부르지 않는다. 초안이 없으면 활성 세트로 미리보기한다(`GET .../draft`와 같은
-         *     폴백).
+         *     LLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다
+         *     (`GET .../draft`와 같은 폴백).
          */
-        post: operations["preview_prompt_draft_admin_prompt_sets_draft_preview_post"];
+        post: operations["preview_prompt_draft_admin_prompt_sets__lane__draft_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
         trace?: never;
     };
-    "/admin/prompt-sets/publish": {
+    "/admin/prompt-sets/{lane}/publish": {
         parameters: {
             query?: never;
             header?: never;
@@ -771,7 +773,7 @@ export interface paths {
         get?: never;
         put?: never;
         /** Publish Prompt Set */
-        post: operations["publish_prompt_set_admin_prompt_sets_publish_post"];
+        post: operations["publish_prompt_set_admin_prompt_sets__lane__publish_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -791,6 +793,10 @@ export interface paths {
          * Restore Prompt Set
          * @description 옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
          *     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
+         *
+         *     레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다(prompt-scope-goal-prompt.md
+         *     CP-4 판정 4). `source.lane`이 `legacy`(PS-6의 과도기 격리 값)면 422로 거부한다 — 레인
+         *     분리 이전 버전은 복원 대상이 아니다.
          */
         post: operations["restore_prompt_set_admin_prompt_sets__id__restore_post"];
         delete?: never;
@@ -3102,6 +3108,11 @@ export interface components {
             version: string | null;
             /** Status */
             status: string;
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "story" | "character" | "publish_filter";
             /** Note */
             note: string;
             /**
@@ -3144,6 +3155,11 @@ export interface components {
             createdAt: string;
             /** Publishedat */
             publishedAt: string | null;
+            /**
+             * Lane
+             * @enum {string}
+             */
+            lane: "story" | "character" | "publish_filter";
             /** Isactive */
             isActive: boolean;
         };
@@ -6015,11 +6031,13 @@ export interface operations {
             };
         };
     };
-    get_prompt_draft_admin_prompt_sets_draft_get: {
+    get_prompt_draft_admin_prompt_sets__lane__draft_get: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                lane: "story" | "character" | "publish_filter";
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -6033,13 +6051,24 @@ export interface operations {
                     "application/json": components["schemas"]["AdminPromptDraftResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    upsert_prompt_draft_admin_prompt_sets_draft_put: {
+    upsert_prompt_draft_admin_prompt_sets__lane__draft_put: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                lane: "story" | "character" | "publish_filter";
+            };
             cookie?: never;
         };
         requestBody: {
@@ -6068,11 +6097,13 @@ export interface operations {
             };
         };
     };
-    preview_prompt_draft_admin_prompt_sets_draft_preview_post: {
+    preview_prompt_draft_admin_prompt_sets__lane__draft_preview_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                lane: "story" | "character" | "publish_filter";
+            };
             cookie?: never;
         };
         requestBody?: never;
@@ -6086,13 +6117,24 @@ export interface operations {
                     "application/json": components["schemas"]["AdminPromptPreviewResponse"];
                 };
             };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
         };
     };
-    publish_prompt_set_admin_prompt_sets_publish_post: {
+    publish_prompt_set_admin_prompt_sets__lane__publish_post: {
         parameters: {
             query?: never;
             header?: never;
-            path?: never;
+            path: {
+                lane: "story" | "character" | "publish_filter";
+            };
             cookie?: never;
         };
         requestBody: {

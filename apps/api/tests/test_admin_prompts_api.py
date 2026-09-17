@@ -520,6 +520,29 @@ async def test_preview_uses_the_draft_when_one_exists(
     assert "[초안 전용] 우선순위 문장" in story_system["text"]
 
 
+@pytest.mark.parametrize(
+    ("lane", "expected_count"),
+    [
+        pytest.param("story", 8, id="story"),
+        pytest.param("character", 3, id="character"),
+        pytest.param("publish_filter", 2, id="publish_filter"),
+    ],
+)
+async def test_preview_item_count_per_lane(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, expected_count: int
+) -> None:
+    """C6 리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
+    story 레인 미리보기 테스트에만 가려져 미커버였다. F-7②(R-7의 `StopIteration` → 500)가
+    `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
+    있어 3레인 전부 200 + 항목 수(story 8 / character 3 / publish_filter 2, goal-prompt
+    §11 "13항목의 구성"에서 레인별로 도출)를 직접 고정한다."""
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
+    assert resp.status_code == 200
+    assert len(resp.json()["items"]) == expected_count
+
+
 # ---- 게시 — happy path ----------------------------------------------------------
 
 
