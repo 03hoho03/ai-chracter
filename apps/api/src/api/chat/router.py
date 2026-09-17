@@ -17,6 +17,7 @@ from api.chat.preview_session import create_preview_session, get_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    PromptLane,
     PromptRenderError,
     StatJudgmentResult,
     build_ending_judgment_prompt,
@@ -160,40 +161,51 @@ async def _validate_shortcut(
     return shortcut
 
 
+async def _starting_setup_dependency(
+    room: ChatRoom = Depends(_owned_room_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> StartingSetup | None:
+    """prompt-scope-techspec.md §3-2 (PS-14 / RS-6) — 레인 선택과 빌더 선택이 **같은 값**에서
+    나오게 하는 단일 판별원. `room.starting_setup_entity_id is None`(조기 반환)이 아니라
+    `_resolve_starting_setup`의 결과를 쓴다 — 그쪽이 더 엄격하고(행의 실재까지 본다),
+    `_build_prompt`가 어차피 그 행을 필요로 한다. fastapi의 `Depends` 캐시(콜러블 동일성
+    기준, `use_cache=True`)가 있어 한 요청 안에서 `_resolve_starting_setup`이 두 번
+    불리지 않는다 — `_active_prompt_set_dependency`도 이 의존성을 거친다."""
+    return await _resolve_starting_setup(db, room)
+
+
+def _lane_for_setup(setup: StartingSetup | None) -> PromptLane:
+    return "story" if setup is not None else "character"
+
+
+def _lane_for_preview_payload(payload: CharacterDraftPayload | StoryDraftPayload) -> PromptLane:
+    return "story" if isinstance(payload, StoryDraftPayload) else "character"
+
+
 async def _active_prompt_set_dependency(
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
     """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
     (prompt-db-goal-prompt.md §7 — 미리보기의 `_preview_prompt_set_dependency`와 달리
-    세션을 짧게 여닫을 이유가 없다). 캐시 히트면 `db`를 조회하지 않고 그대로 반환한다
-    (§8-1, 3단계). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE 제너레이터 본문이
-    시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지 않는다(negative
-    caching 금지)."""
-    cached = await get_cached_active_prompt_set()
+    세션을 짧게 여닫을 이유가 없다). 레인은 `_starting_setup_dependency`가 넘겨준 `setup`
+    으로 정한다(PS-14) — 라우트 본문이 따로 판별하지 않는다. 캐시 히트면 `db`를 조회하지
+    않고 그대로 반환한다(§8-1, 3단계). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE
+    제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지
+    않는다(negative caching 금지)."""
+    lane = _lane_for_setup(setup)
+    cached = await get_cached_active_prompt_set(lane)
     if cached is not None:
         return cached
-    prompt_set, sections = await load_active_prompt_set(db)
-    await set_cached_active_prompt_set(prompt_set, sections)
+    prompt_set, sections = await load_active_prompt_set(db, lane=lane)
+    await set_cached_active_prompt_set(lane, prompt_set, sections)
     return prompt_set, sections
 
 
-async def _preview_prompt_set_dependency(
-    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> tuple[PromptSet, list[PromptSection]]:
-    """prompt-db-goal-prompt.md §8-2. 미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
-    세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다.
-
-    캐시 히트면 `session_factory()`를 아예 호출하지 않는다 — DB 세션을 열지 않는 것이
-    이 함수의 핵심이다(3단계, §8-1). 캐시 미스일 때만 짧게 열고 즉시 닫은 뒤 다음 조회를
-    위해 캐시를 채운다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
-    대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(§8-2 실측)."""
-    cached = await get_cached_active_prompt_set()
-    if cached is not None:
-        return cached
-    async with session_factory() as session:
-        prompt_set, sections = await load_active_prompt_set(session)
-    await set_cached_active_prompt_set(prompt_set, sections)
-    return prompt_set, sections
+# `_preview_prompt_set_dependency`는 여기 두지 않는다 — `_owned_preview_session_dependency`
+# (아래, 미리보기 섹션)에 의존하는데 그 함수는 파일 뒤쪽에 정의된다. `Depends(...)`가
+# 함수 정의 시점에 평가되는 기본 인자값이라, 그 함수 정의보다 앞에 두면 `NameError`가
+# 난다 — 그래서 미리보기 섹션(`_owned_preview_session_dependency` 바로 아래)에 둔다.
 
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
@@ -894,11 +906,11 @@ async def send_message(
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
     prompt_set, prompt_sections = prompt_set_data
-    setup = await _resolve_starting_setup(db, room)
 
     history = list(
         (
@@ -955,6 +967,7 @@ async def regenerate_message(
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
@@ -964,7 +977,6 @@ async def regenerate_message(
     교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
-    setup = await _resolve_starting_setup(db, room)
 
     history = list(
         (
@@ -1047,6 +1059,7 @@ async def edit_message(
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
+    setup: StartingSetup | None = Depends(_starting_setup_dependency),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
     생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
@@ -1060,7 +1073,6 @@ async def edit_message(
     (알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.
     """
     prompt_set, prompt_sections = prompt_set_data
-    setup = await _resolve_starting_setup(db, room)
 
     all_messages = list(
         (
@@ -1545,6 +1557,29 @@ async def _owned_preview_session_dependency(
     if state is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Preview session not found")
     return state
+
+
+async def _preview_prompt_set_dependency(
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> tuple[PromptSet, list[PromptSection]]:
+    """prompt-db-goal-prompt.md §8-2. 미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
+    세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 레인은
+    `state.payload`의 판별 유니언 타입으로 정한다(PS-14) — DB 조회도, 별도 판별자도
+    필요 없다.
+
+    캐시 히트면 `session_factory()`를 아예 호출하지 않는다 — DB 세션을 열지 않는 것이
+    이 함수의 핵심이다(3단계, §8-1). 캐시 미스일 때만 짧게 열고 즉시 닫은 뒤 다음 조회를
+    위해 캐시를 채운다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
+    대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(§8-2 실측)."""
+    lane = _lane_for_preview_payload(state.payload)
+    cached = await get_cached_active_prompt_set(lane)
+    if cached is not None:
+        return cached
+    async with session_factory() as session:
+        prompt_set, sections = await load_active_prompt_set(session, lane=lane)
+    await set_cached_active_prompt_set(lane, prompt_set, sections)
+    return prompt_set, sections
 
 
 async def _validate_preview_shortcut(

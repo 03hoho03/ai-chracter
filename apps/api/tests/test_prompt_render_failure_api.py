@@ -26,7 +26,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
-from api.chat.prompt_builder import PromptRenderError, PromptSetNotFoundError, StatJudgmentResult
+from api.chat.prompt_builder import PromptLane, PromptRenderError, PromptSetNotFoundError, StatJudgmentResult
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
 from api.db.models import (
     CharacterVersionDetail,
@@ -154,7 +154,7 @@ async def _add_stat_def(db_session: AsyncSession, setup: StartingSetup) -> StatD
     return stat_def
 
 
-async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot: str) -> None:
+async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot: str, lane: PromptLane) -> None:
     await db_session.execute(
         sa.update(PromptSection)
         .where(PromptSection.channel == channel, PromptSection.slot == slot)
@@ -164,8 +164,9 @@ async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot:
     # 3단계(prompt-db-goal-prompt.md §8-1)가 활성 세트 앞에 캐시를 얹었다 — 이 테스트들 중
     # 일부(regenerate/edit)는 그 전에 이미 정상 메시지를 한 번 보내 캐시를 데워 둔다. 이
     # 무효화가 없으면 다음 요청이 캐시 히트로 이 손상을 못 보고 지나가 테스트 의도(렌더
-    # 실패 재현)가 캐시 여부에 우연히 좌우된다.
-    await invalidate_active_prompt_set()
+    # 실패 재현)가 캐시 여부에 우연히 좌우된다. `lane`은 호출부가 만든 방/미리보기의
+    # 레인과 같아야 한다(prompt-scope-techspec.md §3-4 — 캐시 키가 레인별로 갈린다).
+    await invalidate_active_prompt_set(lane)
 
 
 class _FakeLLMClient(LLMClient):
@@ -236,7 +237,7 @@ async def test_send_message_with_broken_section_body_ends_the_stream_with_an_err
     await db_session.flush()
     genre = await _get_genre(db_session)
     content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
-    await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
+    await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
 
     await _login_as(db_client, user.id)
     room_resp = await db_client.post(
@@ -287,7 +288,7 @@ async def test_regenerate_message_with_broken_section_body_ends_the_stream_with_
     finally:
         _clear_llm_override()
 
-    await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
+    await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
 
     _override_llm(_NeverCalledLLMClient())
     try:
@@ -329,7 +330,7 @@ async def test_edit_message_with_broken_section_body_ends_the_stream_with_an_err
     )
     assert user_message_id is not None
 
-    await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
+    await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
 
     _override_llm(_NeverCalledLLMClient())
     try:
@@ -346,7 +347,7 @@ async def test_edit_message_with_broken_section_body_ends_the_stream_with_an_err
 async def test_send_preview_message_with_broken_section_body_ends_the_stream_with_an_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
+    await _corrupt_section_body(db_session, channel="generation", slot="final_frame", lane="character")
 
     user = _make_user()
     db_session.add(user)
@@ -398,7 +399,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
     content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
     setup = await _add_starting_setup(db_session, content)
     await _add_stat_def(db_session, setup)
-    await _corrupt_section_body(db_session, channel="stat_judgment", slot="turn_context")
+    await _corrupt_section_body(db_session, channel="stat_judgment", slot="turn_context", lane="story")
 
     await _login_as(db_client, user.id)
     room_id = (
@@ -445,7 +446,9 @@ async def test_send_message_without_an_active_prompt_set_fails_before_streaming_
 
     _override_llm(_NeverCalledLLMClient())
     try:
-        with pytest.raises(PromptSetNotFoundError):
+        # prompt-scope-techspec.md §3-3(C3-4) — 메시지에 어느 레인이 비었는지가 담긴다(캐릭터
+        # 방이라 character 레인).
+        with pytest.raises(PromptSetNotFoundError, match="lane=character"):
             await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()

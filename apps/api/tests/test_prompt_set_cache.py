@@ -1,12 +1,17 @@
 """prompt-db-goal-prompt.md §8-1 (3단계, T-31/T-32/T-35) — Redis 캐시 모듈과 그 앞의 두
 `Depends`(`_active_prompt_set_dependency`/`_preview_prompt_set_dependency`) 배선을 검증한다.
 
-`conftest.py`의 `_flush_prompt_set_cache`(autouse)가 매 테스트 전 `prompt_set:active`를
-지워준다 — 이 키는 랜덤 ID가 없는 고정 키라 그 픽스처 없이는 한 테스트가 캐싱한 세트를
-다음 테스트가 그대로 보게 된다(같은 문서 §8-1의 경고).
+`conftest.py`의 `_flush_prompt_set_cache`(autouse)가 매 테스트 전 `prompt_set:active:*`
+전부를 지워준다 — 이 키들은 랜덤 ID가 없는 고정 키라 그 픽스처 없이는 한 테스트가 캐싱한
+세트를 다음 테스트가 그대로 보게 된다(같은 문서 §8-1의 경고).
+
+prompt-scope-techspec.md §3-4(PS-15) 이후 캐시 키가 레인별로 3개(`prompt_set:active:story`
+등)다. 캐시 모듈 자체(GET/SET/TTL/DEL)의 동작 검증은 어느 레인을 쓰든 무관하므로 `_LANE`
+(character) 하나로 고정하고, 레인 간 격리 자체는 별도 테스트가 세 레인을 모두 다룬다.
 """
 
 import logging
+from typing import get_args
 
 import sqlalchemy as sa
 import pytest
@@ -16,36 +21,61 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat import router as chat_router
 from api.chat import prompt_set_cache
-from api.chat.prompt_builder import PromptSetNotFoundError, load_active_prompt_set
+from api.chat.prompt_builder import PromptLane, PromptSetNotFoundError, load_active_prompt_set
 from api.chat.prompt_set_cache import (
-    ACTIVE_PROMPT_SET_KEY,
     get_cached_active_prompt_set,
     invalidate_active_prompt_set,
     set_cached_active_prompt_set,
 )
+from api.chat.schemas import PreviewSessionState
+from api.content.schemas import CharacterDraftPayload
 from api.core.config import settings
 from api.core.redis import redis_client
+from api.db.models.content import ContentVisibility
 from api.db.models.prompt import PromptSection, PromptSet
 from factories import _count_queries
+
+_LANE: PromptLane = "character"
 
 
 async def _raise_redis_error(*args: object, **kwargs: object) -> None:
     raise RedisError("connection refused")
 
 
+def _character_draft_payload() -> CharacterDraftPayload:
+    """캐시 레인 판별(`_lane_for_preview_payload`)만 필요한 최소 페이로드 — 값 자체는
+    프롬프트 캐시 검증과 무관하다."""
+    return CharacterDraftPayload(
+        name="캐시 테스트",
+        one_liner="",
+        thumbnail_asset_id=None,
+        intro="",
+        example_dialogues=[],
+        character_prompt="",
+        playguide=None,
+        situational_images=[],
+        description="",
+        genre_id=None,
+        target=None,
+        hashtags=[],
+        visibility=ContentVisibility.PRIVATE,
+    )
+
+
 @pytest_asyncio.fixture
 async def active_prompt_set(db_session: AsyncSession) -> tuple[PromptSet, list[PromptSection]]:
-    """`_migrated_schema`(세션 스코프 autouse)가 심어 둔 실제 활성 세트를 그대로 읽는다 —
-    합성 값 대신 이걸 쓰는 이유는 캐시 대상 함수(`load_active_prompt_set`) 자체를 통해
-    읽어, 그 함수가 실제로 반환하는 모양과 캐시 모듈이 어긋나지 않는지까지 같이 본다."""
-    return await load_active_prompt_set(db_session)
+    """`_migrated_schema`(세션 스코프 autouse)가 심어 둔 `_LANE` 레인의 실제 활성 세트를
+    그대로 읽는다 — 합성 값 대신 이걸 쓰는 이유는 캐시 대상 함수(`load_active_prompt_set`)
+    자체를 통해 읽어, 그 함수가 실제로 반환하는 모양과 캐시 모듈이 어긋나지 않는지까지
+    같이 본다."""
+    return await load_active_prompt_set(db_session, lane=_LANE)
 
 
 # ---- 캐시 모듈 자체 — GET/SET/DEL --------------------------------------------
 
 
 async def test_get_returns_none_on_cache_miss() -> None:
-    assert await get_cached_active_prompt_set() is None
+    assert await get_cached_active_prompt_set(_LANE) is None
 
 
 async def test_set_then_get_round_trips_prompt_set_and_sections(
@@ -53,13 +83,17 @@ async def test_set_then_get_round_trips_prompt_set_and_sections(
 ) -> None:
     prompt_set, sections = active_prompt_set
 
-    await set_cached_active_prompt_set(prompt_set, sections)
-    cached = await get_cached_active_prompt_set()
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
+    cached = await get_cached_active_prompt_set(_LANE)
 
     assert cached is not None
     cached_prompt_set, cached_sections = cached
     assert cached_prompt_set.id == prompt_set.id
     assert cached_prompt_set.version == prompt_set.version
+    # prompt-scope-techspec.md §3-4 — `_CachedPromptSet.lane`이 `_from_cached_prompt_set`에서도
+    # 채워지는지의 유일한 방어(PS-9a 세 번째 `PromptSet(...)` 생성 지점, flush()가 없어
+    # NOT NULL이 못 잡는다).
+    assert cached_prompt_set.lane == prompt_set.lane
     assert cached_prompt_set.user_label == prompt_set.user_label
     assert cached_prompt_set.story_assistant_label == prompt_set.story_assistant_label
     assert cached_prompt_set.story_example_label == prompt_set.story_example_label
@@ -76,9 +110,9 @@ async def test_set_applies_the_configured_ttl(
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(prompt_set, sections)
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
 
-    ttl = await redis_client.ttl(ACTIVE_PROMPT_SET_KEY)
+    ttl = await redis_client.ttl(prompt_set_cache._active_prompt_set_key(_LANE))
 
     assert 0 < ttl <= settings.prompt_set_cache_ttl_seconds
 
@@ -87,12 +121,34 @@ async def test_invalidate_deletes_the_cached_value(
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(prompt_set, sections)
-    assert await get_cached_active_prompt_set() is not None
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
+    assert await get_cached_active_prompt_set(_LANE) is not None
 
-    await invalidate_active_prompt_set()
+    await invalidate_active_prompt_set(_LANE)
 
-    assert await get_cached_active_prompt_set() is None
+    assert await get_cached_active_prompt_set(_LANE) is None
+
+
+# ---- 레인 격리 — PS-15 --------------------------------------------------------
+
+
+async def test_invalidating_one_lane_leaves_the_other_two_cached(db_session: AsyncSession) -> None:
+    """prompt-scope-techspec.md §3-4/§7-1 #7 — `publish_filter` 레인은 프로덕션에서 아무도
+    캐시를 SET하지 않는다(발행 검열이 DB 직행, `content/router.py:publish_content`가
+    `load_active_prompt_set`을 DB 직행으로 부른다). 그래서 이 테스트가 **세 레인 키를
+    직접 SET한 뒤** 확인해야 한다 — 안 그러면 "원래 없던 키"를 보고 통과하는 항진명제가
+    된다."""
+    for lane in get_args(PromptLane):
+        prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
+        await set_cached_active_prompt_set(lane, prompt_set, sections)
+    for lane in get_args(PromptLane):
+        assert await get_cached_active_prompt_set(lane) is not None
+
+    await invalidate_active_prompt_set("story")
+
+    assert await get_cached_active_prompt_set("story") is None
+    assert await get_cached_active_prompt_set("character") is not None
+    assert await get_cached_active_prompt_set("publish_filter") is not None
 
 
 # ---- 실제 채팅 경로 — `_active_prompt_set_dependency` --------------------------
@@ -102,9 +158,11 @@ async def test_active_prompt_set_dependency_hits_cache_serves_stale_value_and_re
     db_session: AsyncSession,
 ) -> None:
     """한 흐름으로 세 가지를 증명한다 — ① 캐시 히트 시 DB 조회 0건, ② 캐시가 살아있는 동안
-    DB를 바꿔도 옛 값이 나온다(진짜 캐시라는 증거), ③ 무효화 뒤 다음 조회는 새 값이다."""
+    DB를 바꿔도 옛 값이 나온다(진짜 캐시라는 증거), ③ 무효화 뒤 다음 조회는 새 값이다.
+    `setup=None`(character 레인, PS-14)으로 직접 호출한다 — FastAPI DI를 거치지 않고
+    함수를 그대로 부른다."""
     with _count_queries() as get_count:
-        prompt_set, _ = await chat_router._active_prompt_set_dependency(db=db_session)
+        prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
     assert get_count() > 0  # 콜드 스타트 — 실제로 DB 를 읽었다
     original_note = prompt_set.note
 
@@ -115,14 +173,14 @@ async def test_active_prompt_set_dependency_hits_cache_serves_stale_value_and_re
     await db_session.flush()
 
     with _count_queries() as get_count:
-        cached_prompt_set, _ = await chat_router._active_prompt_set_dependency(db=db_session)
+        cached_prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
     assert get_count() == 0  # 캐시 히트 — DB 조회 0건
     assert cached_prompt_set.note == original_note  # 옛 값 그대로
 
-    await invalidate_active_prompt_set()
+    await invalidate_active_prompt_set(_LANE)
 
     with _count_queries() as get_count:
-        refreshed_prompt_set, _ = await chat_router._active_prompt_set_dependency(db=db_session)
+        refreshed_prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
     assert get_count() > 0  # 무효화 뒤엔 다시 DB 를 읽는다
     assert refreshed_prompt_set.note == "캐시-오염-확인용-새-값"
 
@@ -136,14 +194,14 @@ async def test_active_prompt_set_dependency_does_not_cache_a_missing_active_set(
     await db_session.flush()
 
     with pytest.raises(PromptSetNotFoundError):
-        await chat_router._active_prompt_set_dependency(db=db_session)
+        await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
 
-    assert await get_cached_active_prompt_set() is None
+    assert await get_cached_active_prompt_set(_LANE) is None
 
     await db_session.execute(sa.update(PromptSet).where(PromptSet.status == "archived").values(status="published"))
     await db_session.flush()
 
-    prompt_set, _ = await chat_router._active_prompt_set_dependency(db=db_session)
+    prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
     assert prompt_set.status == "published"
 
 
@@ -172,7 +230,7 @@ async def test_active_prompt_set_dependency_falls_back_to_db_when_cache_read_fai
     )
 
     with caplog.at_level(logging.WARNING):
-        prompt_set, sections = await chat_router._active_prompt_set_dependency(db=db_session)
+        prompt_set, sections = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
 
     assert prompt_set.status == "published"
     assert sections
@@ -194,7 +252,7 @@ async def test_active_prompt_set_dependency_succeeds_when_cache_write_fails(
     )
 
     with caplog.at_level(logging.WARNING):
-        prompt_set, sections = await chat_router._active_prompt_set_dependency(db=db_session)
+        prompt_set, sections = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
 
     assert prompt_set.status == "published"
     assert sections
@@ -217,11 +275,37 @@ async def test_preview_prompt_set_dependency_does_not_open_a_session_on_cache_hi
     active_prompt_set: tuple[PromptSet, list[PromptSection]],
 ) -> None:
     prompt_set, sections = active_prompt_set
-    await set_cached_active_prompt_set(prompt_set, sections)
+    await set_cached_active_prompt_set(_LANE, prompt_set, sections)
 
+    state = PreviewSessionState(payload=_character_draft_payload(), messages=[], stats={})
     result_prompt_set, result_sections = await chat_router._preview_prompt_set_dependency(
-        session_factory=_ExplodingSessionFactory()  # type: ignore[arg-type]
+        state=state,
+        session_factory=_ExplodingSessionFactory(),  # type: ignore[arg-type]
     )
 
     assert result_prompt_set.id == prompt_set.id
     assert len(result_sections) == len(sections)
+
+
+# ---- 픽스처 자기검증 — PS-15/RS-8 --------------------------------------------
+#
+# `_flush_prompt_set_cache`(conftest.py, autouse)가 매 테스트 전 `prompt_set:active:*`를
+# 실제로 지우는지 검증하는 자기검증 쌍이다. 아래 `_a`가 세 레인 키를 직접 SET하고, **바로
+# 다음에 실행되는** `_b`가 그 키들이 이 테스트가 시작되기 *전에* 이미 지워졌는지 확인한다.
+# ⚠️ 순서 의존 — pytest는 파일 안에서 정의 순서대로 실행한다(이 리포에 pytest-randomly
+# 없음, apps/api/CLAUDE.md). 그래서 반드시 이 파일 끝에 이 순서로 붙여 둔다.
+
+
+async def test_flush_prompt_set_cache_fixture_sets_up_three_lane_keys_a(db_session: AsyncSession) -> None:
+    for lane in get_args(PromptLane):
+        prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
+        await set_cached_active_prompt_set(lane, prompt_set, sections)
+    for lane in get_args(PromptLane):
+        assert await get_cached_active_prompt_set(lane) is not None
+
+
+async def test_flush_prompt_set_cache_fixture_cleared_them_before_this_test_b() -> None:
+    """위 `_a`가 SET한 세 키가 이 테스트 시작 전 `_flush_prompt_set_cache`에 의해 전부
+    지워졌는지 확인한다. **반드시 `_a` 바로 다음에 실행돼야 한다.**"""
+    for lane in get_args(PromptLane):
+        assert await get_cached_active_prompt_set(lane) is None

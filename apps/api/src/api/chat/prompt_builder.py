@@ -1,6 +1,6 @@
 from collections.abc import Sequence
 from string import Formatter
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -10,6 +10,23 @@ from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
+
+# prompt-scope-techspec.md §3-1 (PS-1). `"legacy"`를 이 유니온에 넣지 않는다(TS-C) — 넣는
+# 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
+PromptLane = Literal["story", "character", "publish_filter"]
+
+# TS-K: mypy는 각 원소가 PromptLane인지는 보지만 "전부 들어 있는지"는 못 본다 — 그 한 칸은
+# tests가 typing.get_args로 메운다.
+_PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter")
+
+
+def as_prompt_lane(value: str) -> PromptLane | None:
+    """DB의 `Mapped[str]`을 `PromptLane`으로 좁힌다. legacy는 `None`이다.
+
+    public인 이유: `admin/prompts.py`(restore·list)가 쓴다. 파일 간 헬퍼 비공유 관례
+    (apps/api/CLAUDE.md)가 있지만 이건 타입 유니온과 한 몸인 술어라 유니온이 사는 곳에
+    함께 둔다 — 복제하면 유니온이 늘 때 한쪽만 갱신된다."""
+    return next((lane for lane in _PROMPT_LANES if lane == value), None)
 
 
 class PromptSetNotFoundError(RuntimeError):
@@ -88,21 +105,38 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
 }
 
 
-async def load_active_prompt_set(db: AsyncSession) -> tuple[PromptSet, list[PromptSection]]:
-    """활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를 읽는다.
-    `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
+async def load_active_prompt_set(
+    db: AsyncSession, *, lane: PromptLane
+) -> tuple[PromptSet, list[PromptSection]]:
+    """`lane`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
+    읽는다. `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
     `PromptSetNotFoundError`(D-5) — downgrade 직후처럼 테이블 자체가 없는 게 아니라
-    행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다."""
+    행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
+
+    `lane`은 키워드 전용이다 — 현행 호출부가 전부 단일 인자였으므로, 위치 인자로 두면
+    두 번째 인자가 섞여 들어가는 실수가 타입 체커를 통과할 여지가 생긴다."""
     prompt_set = await db.scalar(
         select(PromptSet)
-        .where(PromptSet.status == "published")
+        .where(PromptSet.status == "published", PromptSet.lane == lane)
         .order_by(PromptSet.published_at.desc())
         .limit(1)
     )
     if prompt_set is None:
-        raise PromptSetNotFoundError("활성 프롬프트 세트가 없다")
+        raise PromptSetNotFoundError(f"활성 프롬프트 세트가 없다 (lane={lane})")
     sections = list(
-        (await db.scalars(select(PromptSection).where(PromptSection.prompt_set_id == prompt_set.id))).all()
+        (
+            await db.scalars(
+                select(PromptSection)
+                .where(PromptSection.prompt_set_id == prompt_set.id)
+                .order_by(
+                    PromptSection.channel,
+                    PromptSection.order,
+                    PromptSection.scope,
+                    PromptSection.slot,
+                    PromptSection.variant,
+                )
+            )
+        ).all()
     )
     return prompt_set, sections
 

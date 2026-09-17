@@ -26,74 +26,96 @@ from api.chat.prompt_builder import system_instruction_for
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
-# prompt-db-progress.md §B — 채널별 (scope, slot, variant) 전수. 누락·잉여를 여기와 대조한다.
-_EXPECTED_SLOTS: dict[str, set[tuple[str, str, str]]] = {
-    "system": {
-        ("story", "self_definition", ""),
-        ("character", "self_definition", ""),
-        ("both", "rule_response_format", ""),
-        ("both", "rule_user_agency", ""),
-        ("both", "rule_open_turn", ""),
-        ("both", "rule_rating", ""),
-        ("story", "template_instruction", "basic"),
-        ("story", "template_instruction", "emotional"),
-        ("story", "template_instruction", "simulation"),
-        ("story", "template_instruction", "custom"),
-        ("both", "priority_tail", ""),
+# prompt-scope-techspec.md §2-3(M2) — 레인 분리 이후 (channel, scope, slot, variant) 전수는
+# 레인별로 갈린다(story 26 / character 13 / publish_filter 16, 마이그레이션
+# `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for`와 정확히 같은 배정). system/generation
+# 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다(PS-4).
+_EXPECTED_SLOTS_BY_LANE: dict[str, dict[str, set[tuple[str, str, str]]]] = {
+    "story": {
+        "system": {
+            ("story", "self_definition", ""),
+            ("both", "rule_response_format", ""),
+            ("both", "rule_user_agency", ""),
+            ("both", "rule_open_turn", ""),
+            ("both", "rule_rating", ""),
+            ("story", "template_instruction", "basic"),
+            ("story", "template_instruction", "emotional"),
+            ("story", "template_instruction", "simulation"),
+            ("story", "template_instruction", "custom"),
+            ("both", "priority_tail", ""),
+        },
+        "generation": {
+            ("story", "base_content", ""),
+            ("story", "base_content", "custom"),
+            ("story", "rules", ""),
+            ("story", "user_goal", ""),
+            ("story", "development_examples", ""),
+            ("story", "prologue", ""),
+            ("both", "history", ""),
+            ("story", "keyword_notes", ""),
+            ("story", "shortcut_prompt", ""),
+            ("both", "final_frame", ""),
+        },
+        "stat_judgment": {
+            ("story", "stat_defs_intro", ""),
+            ("story", "turn_context", ""),
+            ("story", "judgment_instruction", ""),
+        },
+        "ending_judgment": {
+            ("story", "history_header", ""),
+            ("story", "turn_context", ""),
+            ("story", "criteria", ""),
+        },
     },
-    "generation": {
-        ("character", "character_prompt", ""),
-        ("story", "base_content", ""),
-        ("story", "base_content", "custom"),
-        ("character", "example_dialogues", ""),
-        ("story", "rules", ""),
-        ("story", "user_goal", ""),
-        ("story", "development_examples", ""),
-        ("story", "prologue", ""),
-        ("both", "history", ""),
-        ("story", "keyword_notes", ""),
-        ("story", "shortcut_prompt", ""),
-        ("both", "final_frame", ""),
-    },
-    "stat_judgment": {
-        ("story", "stat_defs_intro", ""),
-        ("story", "turn_context", ""),
-        ("story", "judgment_instruction", ""),
-    },
-    "ending_judgment": {
-        ("story", "history_header", ""),
-        ("story", "turn_context", ""),
-        ("story", "criteria", ""),
-    },
-    "image_judgment": {
-        ("character", "image_list_intro", ""),
-        ("character", "turn_context", ""),
-        ("character", "judgment_instruction", ""),
+    "character": {
+        "system": {
+            ("character", "self_definition", ""),
+            ("both", "rule_response_format", ""),
+            ("both", "rule_user_agency", ""),
+            ("both", "rule_open_turn", ""),
+            ("both", "rule_rating", ""),
+            ("both", "priority_tail", ""),
+        },
+        "generation": {
+            ("character", "character_prompt", ""),
+            ("character", "example_dialogues", ""),
+            ("both", "history", ""),
+            ("both", "final_frame", ""),
+        },
+        "image_judgment": {
+            ("character", "image_list_intro", ""),
+            ("character", "turn_context", ""),
+            ("character", "judgment_instruction", ""),
+        },
     },
     "publish_filter": {
-        ("character", "intro_instruction", ""),
-        ("story", "intro_instruction", ""),
-        ("both", "name", ""),
-        ("both", "one_liner", ""),
-        ("character", "intro", ""),
-        ("story", "setting_text", ""),
-        ("story", "development_example_legacy", ""),
-        ("story", "custom_prompt", ""),
-        ("story", "rules", ""),
-        ("story", "user_goal", ""),
-        ("story", "development_examples_pairs", ""),
-        ("character", "example_dialogues", ""),
-        ("character", "character_prompt", ""),
-        ("both", "detail_description", ""),
-        ("story", "starting_setups", ""),
-        ("both", "verdict_instruction", ""),
+        "publish_filter": {
+            ("character", "intro_instruction", ""),
+            ("story", "intro_instruction", ""),
+            ("both", "name", ""),
+            ("both", "one_liner", ""),
+            ("character", "intro", ""),
+            ("story", "setting_text", ""),
+            ("story", "development_example_legacy", ""),
+            ("story", "custom_prompt", ""),
+            ("story", "rules", ""),
+            ("story", "user_goal", ""),
+            ("story", "development_examples_pairs", ""),
+            ("character", "example_dialogues", ""),
+            ("character", "character_prompt", ""),
+            ("both", "detail_description", ""),
+            ("story", "starting_setups", ""),
+            ("both", "verdict_instruction", ""),
+        },
     },
 }
 
 
-async def _active_sections(db_session: AsyncSession) -> list[PromptSection]:
+async def _active_sections(db_session: AsyncSession, *, lane: str) -> list[PromptSection]:
     active_set_id = (
-        await db_session.execute(select(PromptSet.id).where(PromptSet.status == "published"))
+        await db_session.execute(
+            select(PromptSet.id).where(PromptSet.status == "published", PromptSet.lane == lane)
+        )
     ).scalar_one()
     result = await db_session.execute(
         select(PromptSection).where(PromptSection.prompt_set_id == active_set_id)
@@ -102,16 +124,17 @@ async def _active_sections(db_session: AsyncSession) -> list[PromptSection]:
 
 
 async def test_seeded_slot_set_matches_spec_exactly(db_session: AsyncSession) -> None:
-    sections = await _active_sections(db_session)
+    for lane, expected_slots in _EXPECTED_SLOTS_BY_LANE.items():
+        sections = await _active_sections(db_session, lane=lane)
 
-    actual: dict[str, set[tuple[str, str, str]]] = {}
-    for section in sections:
-        actual.setdefault(section.channel, set()).add((section.scope, section.slot, section.variant))
+        actual: dict[str, set[tuple[str, str, str]]] = {}
+        for section in sections:
+            actual.setdefault(section.channel, set()).add((section.scope, section.slot, section.variant))
 
-    assert actual == _EXPECTED_SLOTS
+        assert actual == expected_slots, lane
 
-    expected_total = sum(len(slots) for slots in _EXPECTED_SLOTS.values())
-    assert len(sections) == expected_total == 48
+        expected_total = sum(len(slots) for slots in expected_slots.values())
+        assert len(sections) == expected_total, lane
 
 
 def _reconstruct_system_instruction(
@@ -135,14 +158,14 @@ def _reconstruct_system_instruction(
 
 
 @pytest.mark.parametrize(
-    ("is_story_chat", "template"),
+    ("lane", "is_story_chat", "template"),
     [
-        (False, None),
-        (True, StoryPromptTemplate.BASIC),
-        (True, StoryPromptTemplate.EMOTIONAL),
-        (True, StoryPromptTemplate.SIMULATION),
-        (True, StoryPromptTemplate.CUSTOM),
-        (True, None),
+        ("character", False, None),
+        ("story", True, StoryPromptTemplate.BASIC),
+        ("story", True, StoryPromptTemplate.EMOTIONAL),
+        ("story", True, StoryPromptTemplate.SIMULATION),
+        ("story", True, StoryPromptTemplate.CUSTOM),
+        ("story", True, None),
     ],
     ids=[
         "character",
@@ -154,9 +177,9 @@ def _reconstruct_system_instruction(
     ],
 )
 async def test_system_channel_reconstruction_matches_current_code(
-    db_session: AsyncSession, is_story_chat: bool, template: StoryPromptTemplate | None
+    db_session: AsyncSession, lane: str, is_story_chat: bool, template: StoryPromptTemplate | None
 ) -> None:
-    sections = await _active_sections(db_session)
+    sections = await _active_sections(db_session, lane=lane)
     reconstructed = _reconstruct_system_instruction(
         sections, is_story_chat=is_story_chat, template=template
     )
