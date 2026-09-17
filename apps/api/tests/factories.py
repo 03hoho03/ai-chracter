@@ -1,17 +1,25 @@
 """테스트 전역에서 본문이 글자까지 같았던 셋업 헬퍼. `goal-prompt.md §4 T-2`가 80개
 파일에 복사돼 있던 것 중 완전 동일본(또는 docstring만 다른 것)만 여기로 옮겼다.
-`goal-prompt.md §4 T-3`이 변종이 있던 나머지(호출부를 안 깨는 시그니처로 합친 것)를 더했다."""
+`goal-prompt.md §4 T-3`이 변종이 있던 나머지(호출부를 안 깨는 시그니처로 합친 것)를 더했다.
 
+LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`_parse_sse_events`)·
+`_make_published_character`도 같은 기준으로 합쳤다 — 여기 있는 것과 **의미가 같은** 사본만
+가져왔고, 모양이 다른 변종(큐 기반 LLM 페이크, `example_dialogues`가 빈 캐릭터 팩토리 등)은
+각 파일에 그대로 뒀다."""
+
+import json
 import uuid
-from collections.abc import Callable, Generator
+from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
 from datetime import date, datetime, UTC
 from pathlib import Path
+from typing import Any
 
 import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
 from api.core.security import hash_password
 from api.db.models import (
@@ -19,6 +27,7 @@ from api.db.models import (
     Asset,
     AssetKind,
     AssetStatus,
+    CharacterVersionDetail,
     Content,
     ContentTarget,
     ContentType,
@@ -32,6 +41,9 @@ from api.db.models import (
     User,
 )
 from api.db.session import engine
+from api.llm.client import LLMClient
+from api.llm.dependencies import get_llm_client
+from api.main import app
 from api.session.store import create_session
 
 
@@ -159,6 +171,49 @@ async def _make_published(
     return document
 
 
+async def _make_published_character(
+    db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID, intro: str = "인트로"
+) -> Content:
+    """채팅 경로가 요구하는 최소 발행 캐릭터. `example_dialogues`가 비어 있지 않은 변종이라
+    프롬프트에 예시 대화가 실린다 — 빈 리스트를 쓰는 변종(`test_chat_room_api.py` 등)과는
+    렌더 결과가 달라 합치지 않았다."""
+    content = Content(
+        creator_user_id=creator_user_id,
+        type=ContentType.CHARACTER,
+        genre_id=genre_id,
+        target=ContentTarget.ALL,
+        hashtags=[],
+        visibility=ContentVisibility.PUBLIC,
+        moderation_status=ModerationStatus.NORMAL,
+    )
+    db_session.add(content)
+    await db_session.flush()
+
+    version = ContentVersion(
+        content_id=content.id, version_number=1, published_at=datetime.now(UTC), detail_description="설명"
+    )
+    db_session.add(version)
+    await db_session.flush()
+
+    thumbnail = await _make_asset(db_session, owner_user_id=creator_user_id)
+    db_session.add(
+        CharacterVersionDetail(
+            content_version_id=version.id,
+            name="캐릭터",
+            one_liner="한줄소개",
+            thumbnail_asset_id=thumbnail.id,
+            intro=intro,
+            example_dialogues=[{"userLine": "밥 먹었어?", "characterLine": "아직이야옹"}],
+            character_prompt="프롬프트",
+        )
+    )
+    await db_session.flush()
+
+    content.current_published_version_id = version.id
+    await db_session.flush()
+    return content
+
+
 async def _make_published_story(
     db_session: AsyncSession,
     *,
@@ -200,6 +255,72 @@ async def _make_published_story(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
+
+
+class _FakeLLMClient(LLMClient):
+    """단일 응답 페이크. `generate`는 `tokens`를 그대로 흘리고 `error`가 있으면 대신 raise하며,
+    `generate_structured`는 `structured_result`를 돌려준다(없으면 `NotImplementedError` — 그
+    경로가 불리면 안 되는 테스트가 바로 깨지라고).
+
+    ⚠️ **호출 순서대로 소비되는 큐**가 필요한 스위트(엔딩 파이프라인·미리보기)는 이걸 쓰지 않고
+    자기 파일의 큐 기반 페이크를 쓴다 — 같은 이름이지만 다른 물건이다."""
+
+    def __init__(
+        self,
+        tokens: list[str] | None = None,
+        error: Exception | None = None,
+        structured_result: ImageMatchJudgmentResult | None = None,
+        structured_error: Exception | None = None,
+    ) -> None:
+        self.tokens = tokens or []
+        self.error = error
+        self.structured_result = structured_result
+        self.structured_error = structured_error
+        self.received_prompt: str | None = None
+        self.received_judgment_prompt: str | None = None
+        self.generate_structured_called = False
+
+    async def generate(
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+    ) -> AsyncIterator[str]:
+        self.received_prompt = prompt
+        if self.error is not None:
+            raise self.error
+        for token in self.tokens:
+            yield token
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None
+    ) -> Any:
+        self.generate_structured_called = True
+        self.received_judgment_prompt = prompt
+        if self.structured_error is not None:
+            raise self.structured_error
+        if self.structured_result is None:
+            raise NotImplementedError
+        return self.structured_result
+
+
+# `LLMClient`로 받는다 — 이 저장소의 페이크는 파일마다 모양이 다르고(큐 기반·발행 심사용 등)
+# 전부 `LLMClient` 하위라, 구체 페이크로 좁히면 이 헬퍼를 공유할 수 없다.
+def _override_llm_client(fake: LLMClient) -> None:
+    app.dependency_overrides[get_llm_client] = lambda: fake
+
+
+def _clear_llm_override() -> None:
+    app.dependency_overrides.pop(get_llm_client, None)
+
+
+def _parse_sse_events(body: str) -> list[dict[str, Any]]:
+    events = []
+    for chunk in body.split("\n\n"):
+        for line in chunk.splitlines():
+            if line.startswith("data: "):
+                events.append(json.loads(line.removeprefix("data: ")))
+    return events
 
 
 _GOLDEN_PROMPTS_DIR = Path(__file__).parent / "golden" / "prompts"

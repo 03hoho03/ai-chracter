@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone, UTC
@@ -27,9 +26,16 @@ from api.db.models import (
 )
 from api.chat import router as chat_router
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_published_story, _make_user
+from factories import (
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_published_story,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+)
 
 
 async def _make_published_character(
@@ -172,23 +178,6 @@ class _QueuedFakeLLMClient(LLMClient):
     ) -> Any:
         self.generate_structured_calls.append(response_schema)
         return self._structured_results.pop(0)
-
-
-def _override_llm_client(fake: LLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
 
 
 async def _send_message(client: httpx.AsyncClient, room_id: uuid.UUID, content: str, tokens: list[str]) -> None:

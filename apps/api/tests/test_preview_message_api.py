@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -15,9 +14,14 @@ from api.chat.prompt_builder import (
 from api.chat.preview_session import get_preview_session
 from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _login_as, _make_user, _read_golden_prompt
+from factories import (
+    _clear_llm_override,
+    _login_as,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+    _read_golden_prompt,
+)
 
 
 def _character_payload(**overrides: object) -> dict[str, object]:
@@ -143,23 +147,6 @@ class _FakeLLMClient(LLMClient):
         if isinstance(result, Exception):
             raise result
         return result
-
-
-def _override_llm_client(fake: _FakeLLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
 
 
 async def _start_session(client: httpx.AsyncClient, payload: dict[str, object]) -> str:

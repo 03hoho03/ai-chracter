@@ -14,7 +14,6 @@
 되돌아간다.
 """
 
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
@@ -45,9 +44,15 @@ from api.db.models import (
 )
 from api.db.models.prompt import PromptSection, PromptSet
 from api.llm.client import LLMClient
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import (
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+)
 
 _BROKEN_BODY = "{이런_플레이스홀더는_시드에_없다}"
 
@@ -202,23 +207,6 @@ class _NeverCalledLLMClient(LLMClient):
         raise AssertionError("렌더 실패보다 먼저 LLM 이 호출됐다")
 
 
-def _override_llm(fake: LLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
-
-
 async def test_send_message_with_broken_section_body_ends_the_stream_with_an_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -245,7 +233,7 @@ async def test_send_message_with_broken_section_body_ends_the_stream_with_an_err
     assert room_resp.status_code == 201
     room_id = room_resp.json()["id"]
 
-    _override_llm(_NeverCalledLLMClient())
+    _override_llm_client(_NeverCalledLLMClient())
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
     finally:
@@ -280,7 +268,7 @@ async def test_regenerate_message_with_broken_section_body_ends_the_stream_with_
         await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
     ).json()["id"]
 
-    _override_llm(_FakeLLMClient(tokens=["안녕하세요"]))
+    _override_llm_client(_FakeLLMClient(tokens=["안녕하세요"]))
     try:
         first = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
         assert first.status_code == 200
@@ -289,7 +277,7 @@ async def test_regenerate_message_with_broken_section_body_ends_the_stream_with_
 
     await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
 
-    _override_llm(_NeverCalledLLMClient())
+    _override_llm_client(_NeverCalledLLMClient())
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
     finally:
@@ -313,7 +301,7 @@ async def test_edit_message_with_broken_section_body_ends_the_stream_with_an_err
         await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
     ).json()["id"]
 
-    _override_llm(_FakeLLMClient(tokens=["안녕하세요"]))
+    _override_llm_client(_FakeLLMClient(tokens=["안녕하세요"]))
     try:
         first = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
         assert first.status_code == 200
@@ -331,7 +319,7 @@ async def test_edit_message_with_broken_section_body_ends_the_stream_with_an_err
 
     await _corrupt_section_body(db_session, channel="generation", slot="final_frame")
 
-    _override_llm(_NeverCalledLLMClient())
+    _override_llm_client(_NeverCalledLLMClient())
     try:
         resp = await db_client.patch(
             f"/chat-rooms/{room_id}/messages/{user_message_id}", json={"content": "수정된 메시지"}
@@ -373,7 +361,7 @@ async def test_send_preview_message_with_broken_section_body_ends_the_stream_wit
     assert session_resp.status_code == 201
     preview_session_id = session_resp.json()["previewSessionId"]
 
-    _override_llm(_NeverCalledLLMClient())
+    _override_llm_client(_NeverCalledLLMClient())
     try:
         resp = await db_client.post(
             f"/preview-sessions/{preview_session_id}/messages", json={"content": "안녕"}
@@ -409,7 +397,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
     ).json()["id"]
 
     fake = _FakeLLMClient(tokens=["이야기가 이어진다"])
-    _override_llm(fake)
+    _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "달려간다"})
     finally:
@@ -443,7 +431,7 @@ async def test_send_message_without_an_active_prompt_set_fails_before_streaming_
     await db_session.execute(sa.update(PromptSet).where(PromptSet.status == "published").values(status="archived"))
     await db_session.flush()
 
-    _override_llm(_NeverCalledLLMClient())
+    _override_llm_client(_NeverCalledLLMClient())
     try:
         with pytest.raises(PromptSetNotFoundError):
             await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
