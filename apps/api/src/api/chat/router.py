@@ -69,6 +69,7 @@ from api.content.schemas import (
     StoryDraftPayload,
 )
 from api.core.config import settings
+from api.core.rate_limit_gate import enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -889,6 +890,7 @@ async def send_message(
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
     # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
     _consent: None = Depends(require_legal_consent),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
@@ -950,6 +952,7 @@ async def _regeneratable_last_message_dependency(
 async def regenerate_message(
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1042,6 +1045,7 @@ async def edit_message(
     payload: ChatMessageEditRequest,
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1786,6 +1790,7 @@ async def send_preview_message(
     payload: ChatMessageCreateRequest,
     # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
+    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
