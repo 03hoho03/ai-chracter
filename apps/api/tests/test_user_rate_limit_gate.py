@@ -23,6 +23,7 @@ from typing import cast
 import httpx
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import rate_limit_gate
@@ -61,9 +62,12 @@ _DUMMY_IDS = {
 # ---- 이 스위트 전용 셋업 (나머지 헬퍼는 factories.py) ----
 
 
-async def _consented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
-    """`_make_user`의 기본값이 이미 "동의한 사용자"라 재동의 403과 섞이지 않는다."""
-    user = _make_user()
+async def _consented_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
+) -> User:
+    """`_make_user`의 기본값이 이미 "동의한 사용자"라 재동의 403과 섞이지 않는다.
+    `**overrides`는 `_make_user`로 그대로 넘어간다(9번 절의 `rate_limit_exempt`)."""
+    user = _make_user(**overrides)
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -322,18 +326,23 @@ async def test_successful_request_does_not_touch_the_llm_when_limited(
 async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reload(
     db_session: AsyncSession,
 ) -> None:
-    """`users.rate_limit_exempt`(RL-9)는 이번 단계에서 컬럼만이다 — 게이트가 읽는 건 S5,
-    어드민이 뒤집는 건 S7이다. 그래서 여기서 검증할 건 "기본값이 켜져 있지 않다"와
-    "true 가 DB 를 왕복한다" 둘뿐이다.
+    """`users.rate_limit_exempt`(RL-9) 컬럼 자체만 본다 — 게이트가 그 값으로 무엇을 하는지는
+    아래 9번 절이고, 어드민이 뒤집는 건 S7이다. 그래서 여기서 검증할 건 "기본값이 켜져 있지
+    않다"와 "true 가 DB 를 왕복한다" 둘뿐이다.
 
-    ⚠️ 첫 단언이 `is None`인 건 오타가 아니다. `mapped_column(default=False)`는 **flush
-    시점** 기본값이고 `Base`는 `MappedAsDataclass`가 아니라 생성자를 건드리지 않는다(실측:
-    `default=False`가 있든 `server_default`만 있든 flush 전엔 똑같이 `None`이다). 그래서
+    ⚠️ 첫 단언이 `is None`인 건 오타가 아니다. `Base`는 `MappedAsDataclass`가 아니라
+    생성자를 건드리지 않고 `server_default=false()`는 INSERT 가 실행돼야 값이 생기므로,
+    flush 전 속성은 `None`이다(`default=False`를 붙여도 그건 flush 시점 기본값이라
+    flush 전에는 똑같이 `None`이다 — S5 리뷰 D-A 에서 A/B 로 실측하고 인자를 지웠다). 그래서
     S5 의 게이트는 flush 되지 않은 `User` 인스턴스가 아니라 **DB 에서 읽은 행**에만 이
     플래그를 물어야 한다 — 그 자리에서 falsy 는 "예외가 아니다"가 아니라 "아직 모른다"다.
     """
     user = _make_user()
-    assert user.rate_limit_exempt is None
+    # ⚠️ `object`로 한 번 끊어서 단언한다(S4 리뷰 D-1). `Mapped[bool]` 속성을 그대로
+    # `is None`으로 단언하면 mypy 가 그 뒤를 unreachable 로 좁혀 **아래 왕복 세 줄을 아예
+    # 검사하지 않는다** — A/B 로 실측했다.
+    before: object = user.rate_limit_exempt
+    assert before is None
 
     db_session.add(user)
     await db_session.flush()
@@ -344,3 +353,94 @@ async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reloa
     await db_session.flush()
     await db_session.refresh(user)
     assert user.rate_limit_exempt is True
+
+
+# ---- 9. 예외 판정: 일일만 면제하고 버스트는 유지한다 (RL-9·RL-10) ----
+
+
+async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RL-10: 면제의 범위는 일일 상한(과 S6의 이미지 토큰버킷)이지 "상한 해제"가 아니다.
+    분당 버스트는 예외 계정도 그대로 받는다 — 버스트는 쿼터가 아니라 폭주 방어라서 면제
+    대상에게 열어 줄 이유가 없다."""
+    await _consented_user(db_client, db_session, rate_limit_exempt=True)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    _override_llm_client(_FakeLLMClient())
+    try:
+        passed = await db_client.post(
+            f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"}
+        )
+    finally:
+        _clear_llm_override()
+    # 4번 테스트와 같은 판정이다 — 게이트를 통과했고(429가 아니다) 그 뒤 소유권 검사에서 막혔다.
+    assert passed.status_code == 404
+
+    monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
+
+    blocked = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+
+    assert blocked.status_code == 429
+    detail = blocked.json()["detail"]
+    assert detail["code"] == "USER_LIMIT"
+    assert detail["window"] == "minute"
+
+
+async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """위 테스트의 짝. 셋업이 글자까지 같고 `rate_limit_exempt`만 다르다 — 이 짝이 없으면 위의
+    통과는 "면제가 먹혔다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다(그 경우
+    면제 판정을 통째로 지워도 두 테스트가 다 초록이다)."""
+    await _consented_user(db_client, db_session, rate_limit_exempt=False)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    resp = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "USER_LIMIT"
+    assert detail["window"] == "day"
+
+
+async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RL-9: 판정의 소스는 `users.rate_limit_exempt` 행 하나다 — Redis 미러도, 로그인 시점에
+    세션에 굳는 사본도 없다. 그래서 로그인한 **뒤에** 행을 뒤집으면 같은 쿠키로 보낸 다음
+    요청이 바로 일일 상한에 걸린다. 무효화할 캐시가 없다는 것이 이 단언의 내용이다."""
+    user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    _override_llm_client(_FakeLLMClient())
+    try:
+        before = await db_client.post(
+            f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"}
+        )
+    finally:
+        _clear_llm_override()
+    assert before.status_code == 404
+
+    # ORM 대입이 아니라 raw UPDATE 다 — 대입은 이 세션의 인스턴스를 고쳐 버려서 "게이트가 DB 를
+    # 읽었는가"를 구분할 수 없게 만든다.
+    await db_session.execute(
+        text("UPDATE users SET rate_limit_exempt = false WHERE id = :id"), {"id": user.id}
+    )
+    # 프로덕션은 요청마다 세션이 새로 열리지만 테스트는 `db_client`가 앱에 이 `db_session`
+    # 하나를 물려준다(conftest) — identity map 이 그 차이를 덮으므로 여기서 한 번 만료시켜
+    # "새 요청의 새 세션"을 재현한다.
+    db_session.expire_all()
+
+    after = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+
+    assert after.status_code == 429
+    detail = after.json()["detail"]
+    assert detail["code"] == "USER_LIMIT"
+    assert detail["window"] == "day"

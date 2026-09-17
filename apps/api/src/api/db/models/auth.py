@@ -52,9 +52,7 @@ class User(Base):
     # limit-goal-prompt.md RL-9·RL-10: 레이트리밋 예외 플래그. 일일·토큰버킷만 면제하고 분당
     # 버스트는 유지한다(RL-10). 값은 어드민 토글로만 바뀐다(RL-9) — 상한값 자체는 상수라
     # 여기 담기지 않는다(RL-14).
-    rate_limit_exempt: Mapped[bool] = mapped_column(
-        Boolean, server_default=false(), nullable=False, default=False
-    )
+    rate_limit_exempt: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class WithdrawnEmail(Base):
