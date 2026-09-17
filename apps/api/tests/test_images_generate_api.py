@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from datetime import timezone
-from typing import Literal
+from typing import Any, Literal
 
 import boto3
 import httpx
@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.images import router as images_router
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm.client import LLMClientError
@@ -721,6 +721,131 @@ async def test_generate_undecodable_image_counts_as_failure(
     assert job.asset_ids == []
 
 
+async def test_generate_creates_request_row_succeeded_with_asset_request_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-monitoring-goal-prompt.md IM-4: 이게 깨지는 시나리오 — 종료 시점 UPDATE가
+    빠지거나 `request_id`가 `_generate_and_store_one`까지 전파되지 않으면 요청 행이
+    `pending`에 멈추거나 생성된 asset의 `request_id`가 `None`으로 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+
+    requests = (await db_session.execute(sa.select(ImageGenerationRequest))).scalars().all()
+    assert len(requests) == 1
+    request_row = requests[0]
+    assert request_row.status == "succeeded"
+    assert request_row.completed_count == 2
+
+    assets = (
+        (await db_session.execute(sa.select(Asset).where(Asset.id.in_(job.asset_ids)))).scalars().all()
+    )
+    assert len(assets) == 2
+    assert all(asset.request_id == request_row.id for asset in assets)
+
+
+async def test_generate_all_blocked_creates_request_row_blocked(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-monitoring-goal-prompt.md IM-4/IM-6: 이게 깨지는 시나리오 — 전부 차단인데
+    종료 판정이 `completed_count`를 먼저 보지 않으면(또는 UPDATE가 없으면) 요청 행이
+    `pending`으로 남거나 `status`가 `blocked`로 채워지지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    def generate() -> tuple[bytes, str]:
+        raise LocalImageBlockedError(reason="prompt")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+
+    requests = (await db_session.execute(sa.select(ImageGenerationRequest))).scalars().all()
+    assert len(requests) == 1
+    request_row = requests[0]
+    assert request_row.status == "blocked"
+    assert request_row.blocked_reason == "prompt"
+    assert request_row.completed_count == 0
+
+
+async def test_generate_partial_block_creates_request_row_succeeded_with_blocked_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-monitoring-goal-prompt.md IM-4 종료 상태 판정 규칙 표: 이게 깨지는 시나리오 —
+    "차단이 하나라도 있으면 blocked"로 잘못 구현하면 부분 성공(1장 성공+1장 차단)도
+    `blocked`로 잘못 기록된다. 부분 성공은 `succeeded`이면서 `blocked_count=1`이어야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+
+    requests = (await db_session.execute(sa.select(ImageGenerationRequest))).scalars().all()
+    assert len(requests) == 1
+    request_row = requests[0]
+    assert request_row.status == "succeeded"
+    assert request_row.blocked_count == 1
+    assert request_row.completed_count == 1
+
+
+async def test_generate_returns_429_creates_no_request_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """image-monitoring-goal-prompt.md IM-6: 이게 깨지는 시나리오 — 요청 행 INSERT가
+    `try_admit()` 판정보다 앞에 있으면 admission이 거부된(429) 요청도
+    `image_generation_requests` 행을 남긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+    monkeypatch.setattr("api.images.router.try_admit", lambda: False)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 429
+    count = (
+        await db_session.execute(sa.select(sa.func.count()).select_from(ImageGenerationRequest))
+    ).scalar_one()
+    assert count == 0
+
+
 async def test_generate_unexpected_error_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -743,3 +868,42 @@ async def test_generate_unexpected_error_marks_job_failed(
     # 예기치 못한 예외라도 잡이 running에 멈추지 않고 FAILED로 끝나야 한다(hang 방지).
     job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
     assert job.status == ImageGenerationJobStatus.FAILED
+
+
+async def test_generate_request_row_update_failure_still_marks_job_terminal(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """깨지는 시나리오: 요청 행 UPDATE(`session.get`/`commit`)가 예외를 던지고 그 블록이
+    try/except로 안 감싸여 있으면, 뒤따르는 Redis `update_job()`이 통째로 건너뛰어져 잡이
+    RUNNING에 무기한 멈춘다 — test_generate_unexpected_error_marks_job_failed와 같은 hang
+    방지 불변식이다(요청 행 기록은 부가 기능이라 그것 때문에 이 불변식이 깨지면 안 된다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    original_get = AsyncSession.get
+
+    async def failing_get(self: AsyncSession, entity: Any, *args: Any, **kwargs: Any) -> Any:
+        if entity is ImageGenerationRequest:
+            raise RuntimeError("request row update boom")
+        return await original_get(self, entity, *args, **kwargs)
+
+    monkeypatch.setattr(AsyncSession, "get", failing_get)
+
+    def generate() -> tuple[bytes, str]:
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    # 이미지 생성/저장 자체는 정상이었으므로 잡은 SUCCEEDED로 끝나야 한다 — 요청 행 UPDATE
+    # 실패가 뒤따르는 Redis 갱신을 막지 않았다는 뜻이다.
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert job.completed_count == 1

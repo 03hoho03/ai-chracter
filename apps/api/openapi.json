@@ -1351,6 +1351,248 @@
         }
       }
     },
+    "/admin/image-generations": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Admin Image Generations",
+        "description": "image-monitoring-goal-prompt.md IM-11: 유저 식별(닉네임·이메일)·상태·스타일·요청/완료\n이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트(IM-2) 뒤에서만\n노출한다.",
+        "operationId": "list_admin_image_generations_admin_image_generations_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Q"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "enum": [
+                    "pending",
+                    "succeeded",
+                    "blocked",
+                    "failed"
+                  ],
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "style",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ImageStylePreset"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Style"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminImageGenerationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/image-generations/view": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "View User Image Generations",
+        "description": "image-monitoring-goal-prompt.md IM-2. **열람 1회 = 로그 1행**(`chat_view.py`와 같은\n규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를\n쌓지 않는다.",
+        "operationId": "view_user_image_generations_admin_users__user_id__image_generations_view_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminImageGenerationViewRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminImageGenerationDetailListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/users/{user_id}/image-generations": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List User Image Generations",
+        "description": "더보기 — **로그를 절대 쌓지 않는다**(IM-2): \"열람 1회 = 로그 1행\"을 여기서\n깨면 더보기 3번에 3행이 쌓인다.",
+        "operationId": "list_user_image_generations_admin_users__user_id__image_generations_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminImageGenerationDetailListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/chat-rooms/{room_id}/view": {
       "post": {
         "tags": [
@@ -5960,6 +6202,272 @@
           "messages"
         ],
         "title": "AdminDashboardTrendPoint"
+      },
+      "AdminImageGenerationDetailItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "prompt": {
+            "type": "string",
+            "title": "Prompt"
+          },
+          "style": {
+            "type": "string",
+            "title": "Style"
+          },
+          "aspectRatio": {
+            "type": "string",
+            "title": "Aspectratio"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "requestedCount": {
+            "type": "integer",
+            "title": "Requestedcount"
+          },
+          "completedCount": {
+            "type": "integer",
+            "title": "Completedcount"
+          },
+          "blockedCount": {
+            "type": "integer",
+            "title": "Blockedcount"
+          },
+          "blockedReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blockedreason"
+          },
+          "inputErrorCount": {
+            "type": "integer",
+            "title": "Inputerrorcount"
+          },
+          "inputError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inputerror"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "images": {
+            "items": {
+              "$ref": "#/components/schemas/AdminImageGenerationImageItem"
+            },
+            "type": "array",
+            "title": "Images"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "prompt",
+          "style",
+          "aspectRatio",
+          "model",
+          "status",
+          "requestedCount",
+          "completedCount",
+          "blockedCount",
+          "blockedReason",
+          "inputErrorCount",
+          "inputError",
+          "error",
+          "createdAt",
+          "images"
+        ],
+        "title": "AdminImageGenerationDetailItem",
+        "description": "사유 게이트(IM-2)를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다."
+      },
+      "AdminImageGenerationDetailListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminImageGenerationDetailItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminImageGenerationDetailListResponse"
+      },
+      "AdminImageGenerationImageItem": {
+        "properties": {
+          "assetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assetid"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "assetId",
+          "imageUrl"
+        ],
+        "title": "AdminImageGenerationImageItem"
+      },
+      "AdminImageGenerationListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Userid"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "style": {
+            "type": "string",
+            "title": "Style"
+          },
+          "requestedCount": {
+            "type": "integer",
+            "title": "Requestedcount"
+          },
+          "completedCount": {
+            "type": "integer",
+            "title": "Completedcount"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "userId",
+          "nickname",
+          "email",
+          "status",
+          "style",
+          "requestedCount",
+          "completedCount",
+          "createdAt"
+        ],
+        "title": "AdminImageGenerationListItem",
+        "description": "IM-11: 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다."
+      },
+      "AdminImageGenerationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminImageGenerationListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminImageGenerationListResponse"
+      },
+      "AdminImageGenerationViewRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ChatViewReasonCategory"
+          },
+          "reasonText": {
+            "type": "string",
+            "title": "Reasontext"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reasonCategory",
+          "reasonText"
+        ],
+        "title": "AdminImageGenerationViewRequest",
+        "description": "IM-2: `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유\nenum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다."
       },
       "AdminInquiryDetailResponse": {
         "properties": {

@@ -18,6 +18,7 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   "lift-restriction": "이용제한 해제",
   reject: "반려",
   "chat-view": "채팅 열람",
+  "image-view": "이미지 열람",
 };
 
 export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];

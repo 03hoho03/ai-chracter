@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from api.assets.router import collect_asset_usages
 from api.auth.age import is_under_minimum_age
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
@@ -54,7 +55,8 @@ from api.core.security import hash_password, hash_withdrawn_email, verify_passwo
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
-from api.db.models.media import Asset
+from api.db.models.inquiry import Inquiry
+from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
@@ -593,6 +595,71 @@ async def withdraw(
         await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id.in_(room_ids)))
         await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
         await db.execute(delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))
+
+    # T-4 적대적 리뷰: `profile_image_asset_id = None` 대입(위 574줄)이 DB에 반영된
+    # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.
+    await db.flush()
+
+    # image-monitoring-goal-prompt.md IM-7: 탈퇴한 유저의 GENERATED asset과 요청 행을
+    # "이미지와 같은 수명"으로 파기한다. profile_image_asset_id는 위에서 이미 None으로
+    # 끊었으므로(LR-19 블록) 여기서 지워도 프로필 FK가 안전하다.
+    generated_assets = (
+        await db.scalars(
+            select(Asset).where(Asset.owner_user_id == user_id, Asset.kind == AssetKind.GENERATED)
+        )
+    ).all()
+    if generated_assets:
+        asset_ids = [asset.id for asset in generated_assets]
+        usages_by_asset = await collect_asset_usages(db, asset_ids)
+        # collect_asset_usages는 캐릭터/스토리 썸네일과 상황별 이미지만 본다 —
+        # 문의 첨부(inquiries.attachment_asset_id)는 보지 않는다. 문의는 소유자만
+        # 검사하고 kind를 안 보며(inquiry/router.py) 탈퇴해도 삭제되지 않으므로,
+        # 제외하지 않으면 FK 위반으로 탈퇴 전체가 500으로 죽는다.
+        inquiry_asset_ids = set(
+            (
+                await db.scalars(
+                    select(Inquiry.attachment_asset_id).where(
+                        Inquiry.attachment_asset_id.in_(asset_ids)
+                    )
+                )
+            ).all()
+        )
+
+        deletable_assets = [
+            asset
+            for asset in generated_assets
+            if not usages_by_asset.get(asset.id) and asset.id not in inquiry_asset_ids
+        ]
+        deletable_ids = {asset.id for asset in deletable_assets}
+        for asset in deletable_assets:
+            # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다
+            # (assets/router.py의 delete_generated_image와 같은 이유).
+            await run_in_threadpool(delete_object, asset.storage_key)
+            await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
+            await db.delete(asset)
+
+        # 요청 행은 asset이 하나도 안 남은 것만 지운다. 남은 asset을 가진 요청 행과,
+        # 애초에 asset이 없던 요청 행(차단·실패 — IM-7a의 몫)은 남긴다. 이 유저의
+        # GENERATED asset을 전부 조회했으므로(generated_assets), 다른 유저의 asset이
+        # 같은 요청 행을 참조할 수 없어(요청 행과 asset은 항상 같은 소유자) 이 목록만으로
+        # "남은 asset이 있는가"를 판단할 수 있다.
+        surviving_request_ids = {
+            asset.request_id
+            for asset in generated_assets
+            if asset.id not in deletable_ids and asset.request_id is not None
+        }
+        emptied_request_ids = {
+            asset.request_id for asset in deletable_assets if asset.request_id is not None
+        } - surviving_request_ids
+        if emptied_request_ids:
+            # assets.request_id FK 때문에 asset을 먼저 지우고 요청 행을 지워야 한다 —
+            # flush로 위 db.delete(asset)들을 먼저 반영한다.
+            await db.flush()
+            await db.execute(
+                delete(ImageGenerationRequest).where(
+                    ImageGenerationRequest.id.in_(emptied_request_ids)
+                )
+            )
 
     await db.commit()
 

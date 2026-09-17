@@ -380,5 +380,8 @@ async def delete_generated_image(
     # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다(고아 레코드 대신
     # 고아 파일을 피한다).
     await run_in_threadpool(delete_object, asset.storage_key)
+    # image-monitoring-goal-prompt.md IM-16: READY asset은 항상 `_thumb.webp`
+    # 변형을 갖는다(list_generated_images가 이걸 내보낸다) — 안 지우면 고아로 남는다.
+    await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
     await db.delete(asset)
     await db.commit()

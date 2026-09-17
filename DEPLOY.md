@@ -672,6 +672,54 @@ tail -f /var/log/ddona-resource-check.log   # 다음 5분 주기에 크론이 �
 MT-11과 같은 이유로 `check_resources.py`의 `__main__`도 `(RuntimeError, ValueError)` 밖의
 예외에서는 실패를 남기지 않는다 — healthchecks.io의 grace time 초과 감지가 대신 잡는다.
 
+### 3-8. 이미지 생성 요청 파기 — purge cron
+
+`image-monitoring-goal-prompt.md` IM-7a. `image_generation_requests`의 `status IN ('blocked',
+'failed')` 행은 프롬프트 원문을 그대로 담고 있어 이 서비스에서 가장 민감한 텍스트다. 삭제
+트리거가 없으면 탈퇴 전까지 무기한 남으므로, `created_at`으로부터 90일 뒤 이 크론이 지운다.
+`succeeded`(이미지가 나온 요청)·`pending`은 나이와 무관하게 손대지 않는다 — 그쪽 보유기간은
+IM-7("이미지와 같은 수명")이 별도로 정한다.
+
+`apps/api/scripts/ops/purge_image_requests.py`가 `ops.pg.run_sh`로 컨테이너 안 `psql`을 직접
+띄워 운영 DB에 붙어 `DELETE ... RETURNING`을 날린다(§3-4의 `delete_expired_withdrawn_emails`와
+같은 방식) — `ops/cron.d/ddona-bugsink-vacuum`처럼 `docker exec`로 남의 컨테이너에 들어가는
+방식이 아니다.
+
+**최초 1회 — `ops/purge-image-requests.sh` + cron.d 심볼릭 링크 설치**(§3-6의 `ops/bugsink-vacuum.sh`
+절차, `ops/logrotate.d/ddona-caddy` 절차와 같은 이유 — `/opt/ddona/app`은 배포마다
+`git reset --hard`되므로 링크해두면 재설치 없이 다음 배포부터 반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/purge-image-requests.sh /opt/ddona/purge-image-requests.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-image-request-purge /etc/cron.d/ddona-image-request-purge
+```
+
+`ops/purge-image-requests.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 `DATABASE_URL`·
+`DISCORD_WEBHOOK_URL`만 뽑아 export한 뒤 `PG_DOCKER_NETWORK=ddona_default`를 고정하고
+`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.purge_image_requests`를 부른다 —
+`resource-check.sh`와 같은 이유(JSON 값이 쉘 문법과 부딪친다)로 필요한 키만 뽑되, `docker exec`가
+아니라 운영 DB에 직접 붙는 만큼 §3-4의 `backup.sh`처럼 `DATABASE_URL`·`PG_DOCKER_NETWORK`가
+반드시 있어야 한다(운영 Postgres는 포트를 게시하지 않는다).
+
+**검증 — "설치했다"가 아니라 "실제로 지워지는 것"을 확인한다**(§3-6과 같은 이유 — 설치만
+확인하면 실제 삭제가 조용히 안 도는 드리프트를 놓친다):
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료·"파기" 또는 "파기 대상 없음" 로그 확인
+sudo -u root /opt/ddona/purge-image-requests.sh
+tail /var/log/ddona-image-request-purge.log
+
+# 2. 다음 06:00 UTC에 크론이 실제로 도는지
+tail -f /var/log/ddona-image-request-purge.log
+```
+
+**DB 접속이 안 되면**(`PG_DOCKER_NETWORK` 누락 등) `run_sh`가 nonzero exit + stderr를 내고
+`purge_image_requests.py`는 이 실패를 삼키지 않고 `ops/notify.py`로 Discord에 알린다.
+
+⚠️ 매일 06:00 UTC로 골랐다 — `ddona-bugsink-vacuum`(05:00 UTC)과 한 시간 버퍼를 두고
+`ddona-backup`(18:00 UTC, §3-4)과는 겹치지 않는다. 이 작업(DELETE 한 번)도 pg_dump보다 훨씬
+가벼워 시간대를 더 정교하게 고를 이유가 없다.
+
 ---
 
 ## 4. 배포 후 스모크 검증

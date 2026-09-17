@@ -1,0 +1,15 @@
+# image-monitoring-goal-prompt.md IM-7a
+#
+# 이미지가 남지 않은 생성 요청(`image_generation_requests.status IN ('blocked', 'failed')`)의
+# 프롬프트 원문을 기록일(`created_at`)로부터 90일 뒤 지운다. 이 행들은 IM-5 결정으로 프롬프트
+# 원문을 그대로 담고 있고, 그중 상당수가 성적·폭력 시도문일 가능성이 높은 이 서비스에서 가장
+# 민감한 텍스트다 — 삭제 트리거가 없으면 탈퇴 전까지 무기한 남는다. `succeeded`(이미지가 나온
+# 요청)는 IM-7이 정한 별도 보유기간을 따르므로 이 크론이 건드리지 않는다.
+#
+# 매일 06:00 UTC — `ddona-bugsink-vacuum`(05:00 UTC)과 한 시간 버퍼를 두고 `ddona-backup`
+# (18:00 UTC, DEPLOY.md §3-4)과는 아예 겹치지 않는 시간을 골랐다. 이 작업(DELETE 한 번)도
+# pg_dump보다 훨씬 가벼워 시간대를 더 정교하게 고를 이유는 없다.
+#
+# /etc/cron.d 문법은 일반 crontab과 다르다 — 6번째 필드로 실행 사용자가 필수다(ddona-backup·
+# ddona-bugsink-vacuum·ddona-resource-check와 같은 관례). 설치 절차·검증은 DEPLOY.md 참고.
+0 6 * * * root /opt/ddona/purge-image-requests.sh >> /var/log/ddona-image-request-purge.log 2>&1
