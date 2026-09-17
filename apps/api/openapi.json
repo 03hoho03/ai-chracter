@@ -706,6 +706,53 @@
         }
       }
     },
+    "/admin/users/{user_id}/rate-limit-exempt": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set User Rate Limit Exempt",
+        "description": "limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.\nRedis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)\n이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.\n\n면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외\n계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.\n\n**액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /\n`user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은\n없고, 두 타입을 나눠야 이력 표에서 \"언제 켰고 언제 껐나\"가 구분된다 — 한 타입에\n코멘트로만 담으면 그 구분이 사람이 읽는 자유 문자열로 내려간다.\n\n`reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와\n같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).\n\n순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).",
+        "operationId": "set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "User Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminUserRateLimitExemptRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/legal/{kind}": {
       "get": {
         "tags": [
@@ -7762,6 +7809,10 @@
             "type": "integer",
             "title": "Restrictablecontentcount"
           },
+          "rateLimitExempt": {
+            "type": "boolean",
+            "title": "Ratelimitexempt"
+          },
           "chatRoomCount": {
             "type": "integer",
             "title": "Chatroomcount"
@@ -7816,6 +7867,7 @@
           "signupMethod",
           "contentCount",
           "restrictableContentCount",
+          "rateLimitExempt",
           "chatRoomCount",
           "messageCount",
           "lastActiveAt",
@@ -7908,6 +7960,31 @@
           "totalCount"
         ],
         "title": "AdminUserListResponse"
+      },
+      "AdminUserRateLimitExemptRequest": {
+        "properties": {
+          "exempt": {
+            "type": "boolean",
+            "title": "Exempt"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exempt"
+        ],
+        "title": "AdminUserRateLimitExemptRequest",
+        "description": "limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로\n쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는\n`AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가\n없고, 대신 \"왜 면제했나\"가 감사 로그에 남아야 한다(비어 있으면 422)."
       },
       "AdminUserReportItem": {
         "properties": {

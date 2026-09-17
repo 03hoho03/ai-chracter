@@ -185,6 +185,12 @@ _ADMIN_SESSION_GUARD_CASES = [
     pytest.param(
         "post", f"/admin/users/{uuid.uuid4()}/unsuspend", {"adminComment": "해제합니다"}, id="unsuspend"
     ),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/rate-limit-exempt",
+        {"exempt": True, "adminComment": "면제합니다"},
+        id="rate-limit-exempt",
+    ),
 ]
 
 
@@ -1011,3 +1017,135 @@ async def test_unsuspend_blank_admin_comment_returns_422(
         f"/admin/users/{user.id}/unsuspend", json={"adminComment": "   "}
     )
     assert resp.status_code == 422
+
+
+# ---- 레이트리밋 면제 ----------------------------------------------------------
+
+
+async def test_user_detail_exposes_rate_limit_exempt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """limit-goal-prompt.md RL-19: 플래그는 유저 상세에만 실린다(목록·필터 없음). 면제/비면제
+    유저를 둘 다 조회한다 — 한쪽만 보면 상수를 내려도 통과하는 항진 테스트가 된다."""
+    exempt_user = _make_user(rate_limit_exempt=True)
+    plain_user = _make_user(rate_limit_exempt=False)
+    db_session.add_all([exempt_user, plain_user])
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    exempt_resp = await db_client.get(f"/admin/users/{exempt_user.id}")
+    assert exempt_resp.status_code == 200
+    assert exempt_resp.json()["rateLimitExempt"] is True
+
+    plain_resp = await db_client.get(f"/admin/users/{plain_user.id}")
+    assert plain_resp.status_code == 200
+    assert plain_resp.json()["rateLimitExempt"] is False
+
+
+async def test_set_rate_limit_exempt_on_writes_column_and_exactly_one_action_log(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """limit-goal-prompt.md RL-9: `users.rate_limit_exempt`를 바꾸는 유일한 경로가 이 토글이고,
+    켠 사실은 `admin_action_logs`에 `user-rate-limit-exempt-on`으로 남는다. 로그가 정확히 1행인
+    것까지 본다 — 켜기/끄기가 각각 한 행이어야 이력에서 시점을 셀 수 있다."""
+    user = _make_user(rate_limit_exempt=False)
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/rate-limit-exempt",
+        json={"exempt": True, "adminComment": "운영 테스트 계정"},
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.rate_limit_exempt is True
+
+    logs = (
+        await db_session.scalars(
+            sa.select(AdminActionLog).where(AdminActionLog.target_user_id == user.id)
+        )
+    ).all()
+    assert len(logs) == 1
+    assert logs[0].action_type == "user-rate-limit-exempt-on"
+    assert logs[0].reason_text == "운영 테스트 계정"
+
+
+async def test_set_rate_limit_exempt_off_writes_the_off_action_type(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """RL-9: 켤 때와 끌 때 액션 타입이 달라야 이력에서 구분된다 — 위 테스트의 짝이고 셋업이
+    글자까지 같다(시드·`exempt`·그 결과 단언의 면제 불리언만 반대이고 `adminComment`까지 같은
+    문자열이다). 그 불리언을 빼면 남는 차이는 `action_type` 리터럴 하나뿐이고, `reason_text`는
+    양쪽이 같은 값을 본다 — 끌 때도 사유가 로그에 남는지는 여기서만 검증된다."""
+    user = _make_user(rate_limit_exempt=True)
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/rate-limit-exempt",
+        json={"exempt": False, "adminComment": "운영 테스트 계정"},
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.rate_limit_exempt is False
+
+    logs = (
+        await db_session.scalars(
+            sa.select(AdminActionLog).where(AdminActionLog.target_user_id == user.id)
+        )
+    ).all()
+    assert len(logs) == 1
+    assert logs[0].action_type == "user-rate-limit-exempt-off"
+    assert logs[0].reason_text == "운영 테스트 계정"
+
+
+async def test_set_rate_limit_exempt_blank_admin_comment_returns_422(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """RL-22: `unsuspend`와 같은 규칙 — 사유 카테고리가 없는 대신 코멘트가 필수다. 라우터가
+    손으로 하는 검증이라 pydantic이 아니라 이 테스트가 유일한 검증이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/rate-limit-exempt", json={"exempt": True, "adminComment": "   "}
+    )
+    assert resp.status_code == 422
+
+    await db_session.refresh(user)
+    assert user.rate_limit_exempt is False
+
+
+async def test_set_rate_limit_exempt_on_deleted_user_returns_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(deleted_at=datetime.now(UTC))
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/rate-limit-exempt", json={"exempt": True, "adminComment": "면제"}
+    )
+    assert resp.status_code == 404

@@ -13,6 +13,8 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   "user-warn": "경고",
   "user-suspend": "정지",
   "user-unsuspend": "정지 해제",
+  "user-rate-limit-exempt-on": "레이트리밋 면제",
+  "user-rate-limit-exempt-off": "레이트리밋 면제 해제",
   restrict: "이용제한 부과",
   delete: "삭제",
   "lift-restriction": "이용제한 해제",
