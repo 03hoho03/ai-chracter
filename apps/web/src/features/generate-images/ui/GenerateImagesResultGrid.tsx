@@ -76,7 +76,7 @@ export function GenerateImagesResultGrid({
         </div>
         <div className="grid grid-cols-3 gap-2">
           {Array.from({ length: requestedCount }, (_, i) => (
-            <div key={i} className="aspect-square rounded-md bg-muted animate-pulse" />
+            <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
           ))}
         </div>
       </div>
@@ -132,7 +132,7 @@ export function GenerateImagesResultGrid({
           </div>
         ))}
         {Array.from({ length: skeletonCount }, (_, i) => (
-          <div key={`pending-${i}`} className="aspect-square rounded-md bg-muted animate-pulse" />
+          <div key={`pending-${i}`} className="aspect-square animate-pulse rounded-md bg-muted" />
         ))}
       </div>
       {/* my-works/ui/MyWorksPage.tsx:507 선례 — polite 라이브 리전은 조건부로 마운트하면 announce
