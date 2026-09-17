@@ -22,10 +22,12 @@ import {
   type ThumbnailAspect,
 } from "@/entities/content";
 
-import { CharacterChatHistoryLink, CharacterPlayBar } from "./CharacterPlayBar";
+import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
+import { CharacterPlayBar } from "./CharacterPlayBar";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
-import { StoryDetailBody, StoryPlayBar } from "./StoryDetailBody";
+import { StoryDetailBody } from "./StoryDetailBody";
+import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
 
 const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
