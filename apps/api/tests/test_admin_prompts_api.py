@@ -3,15 +3,13 @@
 `admin/legal.py`의 SAVEPOINT/upsert 패턴을 그대로 따르므로 시나리오도 그쪽과 겹친다
 (초안 upsert의 경쟁 처리, 게시의 SAVEPOINT+409).
 
-prompt-scope-techspec.md(C4) — 라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
-바뀌었다. R-1~R-7(§9-2) 규칙 **내용**의 레인별 분할(`_EXPECTED_ROWS_BY_LANE` 등)은 C5
-소관이라 이 파일에서는 손대지 않는다 — 그래서 여기서는 아직 레인별로 쪼개지지 않은
-`_validate_prompt_draft_for_publish`를 **레인 스코프 라우트를 거치지 않고 직접 호출**해
-R-1~R-7 각각을 계속 고정한다(`lane='legacy'` 세트가 옛 48행 구조를 그대로 들고 있어
-그 함수가 여전히 기대하는 입력 모양과 일치한다). 그 밖의 "게시가 실제로 성공하는지"를
-보는 테스트(버전 채번·캐시 무효화·롤백)는 `_validate_prompt_draft_for_publish`를
-`monkeypatch`로 우회한다 — 레인 스코프 초안(26/13/16행)은 아직 레인을 모르는 그 함수
-기준으로는 항상 R-1에 걸리기 때문이다(C5가 `_EXPECTED_ROWS_BY_LANE`을 넣어야 풀린다).
+prompt-scope-techspec.md(C4/C5) — 라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
+바뀌었고, R-1~R-8(§9-2·PS-13) 규칙도 레인별 표(`_EXPECTED_ROWS_BY_LANE` 등)로 쪼개졌다.
+"게시가 실제로 성공하는지"를 보는 테스트는 이제 **실제 검증을 그대로 태운다** —
+레인 스코프 초안(26/13/16행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
+R-1~R-7 규칙 자체를 직접 고정하는 테스트들은 story 레인의 실제 활성 세트(26행)를
+baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 정확히 일치하지 않는다 —
+새 레인별 표는 각각 story/character/publish_filter가 실제로 쓰는 부분집합이다).
 """
 
 import logging
@@ -33,21 +31,8 @@ from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_a
 from api.core.redis import redis_client
 from api.db.models.moderation import AdminActionLog
 from api.db.models.prompt import PromptSection, PromptSet
+from api.db.models.story import StoryPromptTemplate
 from factories import _create_admin, _login_as, _login_as_admin, _make_user
-
-
-def _bypass_publish_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """R-1~R-7 **내용**의 레인별 분할은 C5 소관이라, 레인 스코프 초안(26/13/16행)은 아직
-    레인을 모르는 `_validate_prompt_draft_for_publish` 기준으로는 항상 R-1(슬롯 불일치)에
-    걸린다. 이 파일에서 "게시가 성공하는지"만 보는 테스트는 그 검증을 우회해 C4가 배선한
-    쓰기 경로(버전 채번·캐시 무효화·레인 격리)만 따로 검사한다.
-
-    🔴 **TODO(C5): C5 가 `_EXPECTED_ROWS_BY_LANE` 을 넣으면 이 헬퍼와 아래 8개 호출을 전부
-    제거하고 실제 게시 검증을 타게 되돌려라.** 안 그러면 그 8개 테스트가 게시 게이트 없이
-    영구히 초록으로 남는다 — 그리고 **이 우회는 저절로 드러나지 않는다.**
-    `lambda *_a, **_k: None` 은 C5 가 `_validate_prompt_draft_for_publish` 에 `lane` 키워드
-    인자를 추가해도 그대로 받아 넘겨 깨지지 않기 때문이다. `TODO(C5)` 로 grep 해서 찾아라."""
-    monkeypatch.setattr(admin_prompts, "_validate_prompt_draft_for_publish", lambda *_a, **_k: None)
 
 
 async def _login_new_admin(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
@@ -119,9 +104,8 @@ def _select_active_id(lane: str) -> sa.Select[tuple[uuid.UUID]]:
 
 
 def _select_legacy_id() -> sa.Select[tuple[uuid.UUID]]:
-    """레인 분리 이전의 48행 통짜 세트 — `_validate_prompt_draft_for_publish`가 아직 아는
-    유일한 "정확히 일치하는" 입력 모양이라, R-1~R-7 규칙 자체를 직접 고정하는 테스트들이
-    여기서 baseline을 가져온다(PS-6 — 새 코드는 읽지 않지만, 그 문안 자체는 옛 구조 그대로다)."""
+    """레인 분리 이전의 48행 통짜 세트(PS-6 — 새 코드는 읽지 않지만 목록·복원 거부 테스트가
+    이 행의 존재 자체를 고정한다)."""
     return sa.select(PromptSet.id).where(PromptSet.lane == "legacy", PromptSet.status == "published")
 
 
@@ -138,6 +122,26 @@ async def _legacy_prompt_set_and_sections(
         ).all()
     )
     assert len(sections) == 48
+    return prompt_set, sections
+
+
+async def _story_prompt_set_and_sections(
+    db_session: AsyncSession,
+) -> tuple[PromptSet, list[PromptSection]]:
+    """C5(PS-13) — `_validate_prompt_draft_for_publish`가 레인별 표를 보게 된 뒤로는
+    story 레인의 실제 활성 세트(26행)가 그 표와 정확히 일치하는 유일한 baseline이다
+    (legacy 48행은 story/character/publish_filter 어느 표와도 더 이상 정확히 일치하지
+    않는다). R-1~R-7 규칙 자체를 직접 고정하는 테스트들이 여기서 baseline을 가져온다."""
+    story_id = await db_session.scalar(_select_active_id("story"))
+    assert story_id is not None
+    prompt_set = await db_session.get(PromptSet, story_id)
+    assert prompt_set is not None
+    sections = list(
+        (
+            await db_session.scalars(sa.select(PromptSection).where(PromptSection.prompt_set_id == story_id))
+        ).all()
+    )
+    assert len(sections) == 26
     return prompt_set, sections
 
 
@@ -472,8 +476,12 @@ async def test_get_by_id_legacy_lane_returns_404(
 async def test_preview_reuses_the_real_renderer(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """별도 조립 코드를 만들지 않았다는 증거 — 미리보기가 낸 `system·캐릭터` 텍스트가
-    `system_instruction_for()`를 직접 호출한 결과와 바이트 단위로 같아야 한다."""
+    """별도 조립 코드를 만들지 않았다는 증거 — 미리보기가 낸 `system·스토리·basic` 텍스트가
+    `system_instruction_for()`를 직접 호출한 결과와 바이트 단위로 같아야 한다.
+
+    C5(PS-13) — `_build_preview_items`가 레인별로 갈라진 뒤로는 story 레인 미리보기에
+    `image_judgment`/`publish_filter` 항목이 없다(그건 각각 character/publish_filter
+    레인 전용이다)."""
     await _login_new_admin(db_client, db_session)
     active_id = await db_session.scalar(_select_active_id("story"))
     sections = (
@@ -481,23 +489,16 @@ async def test_preview_reuses_the_real_renderer(
             sa.select(PromptSection).where(PromptSection.prompt_set_id == active_id)
         )
     ).all()
-    expected = system_instruction_for(list(sections), is_story_chat=False)
+    expected = system_instruction_for(list(sections), is_story_chat=True, template=StoryPromptTemplate.BASIC)
 
     resp = await db_client.post("/admin/prompt-sets/story/draft/preview")
     assert resp.status_code == 200
     items = resp.json()["items"]
-    character_system = next(i for i in items if i["channel"] == "system" and "캐릭터" in i["label"])
-    assert character_system["text"] == expected
+    story_system_basic = next(i for i in items if i["channel"] == "system" and "basic" in i["label"])
+    assert story_system_basic["text"] == expected
 
     channels = {item["channel"] for item in items}
-    assert channels == {
-        "system",
-        "generation",
-        "stat_judgment",
-        "ending_judgment",
-        "image_judgment",
-        "publish_filter",
-    }
+    assert channels == {"system", "generation", "stat_judgment", "ending_judgment"}
 
 
 async def test_preview_uses_the_draft_when_one_exists(
@@ -513,10 +514,10 @@ async def test_preview_uses_the_draft_when_one_exists(
 
     resp = await db_client.post("/admin/prompt-sets/story/draft/preview")
     assert resp.status_code == 200
-    character_system = next(
-        i for i in resp.json()["items"] if i["channel"] == "system" and "캐릭터" in i["label"]
+    story_system = next(
+        i for i in resp.json()["items"] if i["channel"] == "system" and "스토리" in i["label"]
     )
-    assert "[초안 전용] 우선순위 문장" in character_system["text"]
+    assert "[초안 전용] 우선순위 문장" in story_system["text"]
 
 
 # ---- 게시 — happy path ----------------------------------------------------------
@@ -531,9 +532,8 @@ async def test_publish_without_draft_returns_400(
 
 
 async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
 
@@ -563,9 +563,8 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
 
 
 async def test_publish_assigns_sequential_integer_versions(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
     first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v2"})
@@ -577,12 +576,11 @@ async def test_publish_assigns_sequential_integer_versions(
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """C4-T13 — PS-2: `_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
     story가 v2·v3을 게시한 뒤 character 게시가 v4를 받아야 한다(레인별 독립 증가라면
     character의 첫 게시는 v1일 것이다) — 이 테스트는 그 레인 필터의 **부재**를 고정한다."""
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
@@ -599,10 +597,9 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """C4-T14 — 레인 독립성: story 게시 뒤 character 활성본의 id·섹션이 그대로다."""
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
 
     character_active_id_before = await db_session.scalar(_select_active_id("character"))
@@ -635,9 +632,8 @@ async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
 
 
 async def test_publish_invalidates_the_active_prompt_set_cache(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     await set_cached_active_prompt_set("story", prompt_set, sections)
@@ -661,7 +657,6 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
 
     monitoring-techspec.md MT-6: 이 흡수는 그대로 두되, `redis` 태그로 Bugsink
     이벤트에도 승격돼야 한다."""
-    _bypass_publish_validation(monkeypatch)
 
     async def _raise_redis_error(*args: object, **kwargs: object) -> None:
         raise RedisError("connection refused")
@@ -692,7 +687,6 @@ async def test_publish_version_conflict_returns_409(
 ) -> None:
     """`_next_published_version`을 이미 게시된 버전("1")으로 고정해, 부분 유니크 인덱스
     (`ix_prompt_sets_lane_version_published`)에 실제로 걸리게 만든다."""
-    _bypass_publish_validation(monkeypatch)
 
     async def _stale_version(_db: AsyncSession) -> str:
         return "1"
@@ -717,9 +711,8 @@ async def test_publish_version_conflict_returns_409(
 
 
 async def test_restore_clones_old_version_into_draft(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    _bypass_publish_validation(monkeypatch)
     await _login_new_admin(db_client, db_session)
     seed_id = uuid.UUID(str(await db_session.scalar(_select_active_id("story"))))
     seed_tail = await _get_section(db_session, seed_id, channel="system", slot="priority_tail")
@@ -731,7 +724,9 @@ async def test_restore_clones_old_version_into_draft(
     draft_tail.body = "[망가뜨림] 우선순위"
     await db_session.commit()
     bad_publish = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "잘못된 게시"})
-    assert bad_publish.status_code == 200  # 검증을 우회했으니 문안만 나쁜 게시가 통과한다
+    # 문안 교체 자체는 R-1~R-8 어느 규칙도 어기지 않는다(플레이스홀더도 없고 order도 그대로) —
+    # 그래서 실제 검증을 태워도 통과한다. 그 "나쁜" 내용을 롤백이 되돌리는지가 이 테스트의 핵심이다.
+    assert bad_publish.status_code == 200
 
     restore_resp = await db_client.post(f"/admin/prompt-sets/{seed_id}/restore")
     assert restore_resp.status_code == 200
@@ -792,32 +787,32 @@ async def test_list_excludes_legacy_and_marks_exactly_three_active(
     assert {item["lane"] for item in active_items} == {"story", "character", "publish_filter"}
 
 
-# ---- 게시 검증 R-1~R-7 — `_validate_prompt_draft_for_publish` 직접 호출 -------------
+# ---- 게시 검증 R-1~R-8 — `_validate_prompt_draft_for_publish` 직접 호출 -------------
 #
-# C5가 `_EXPECTED_ROWS_BY_LANE`으로 쪼개기 전까지, 이 함수는 여전히 레인 분리 이전의
-# 48행 통짜 구조 하나만 안다(`admin/prompts.py`의 `_EXPECTED_ROWS`). 레인 스코프 라우트는
-# 한 번에 한 레인(26/13/16행)만 제출할 수 있어 그 구조를 더 이상 재현할 수 없으므로,
-# 여기서는 HTTP 라우트를 거치지 않고 `_validate_prompt_draft_for_publish`를 legacy 레인의
-# 48행 데이터로 직접 호출해 규칙 자체(변경되지 않았다)를 계속 고정한다.
+# R-1~R-7 규칙 자체(무엇이 위반인지)를 직접 고정한다. story 레인의 실제 활성 세트(26행)가
+# `_EXPECTED_ROWS_BY_LANE["story"]`와 정확히 일치하는 baseline이라, 슬롯 하나를 빼거나
+# body/label/order 하나를 망가뜨리면 그 규칙만 걸린다. R-8은 별도 절(아래)에서 HTTP
+# 라우트를 거쳐 고정한다 — R-6과 실제로 다른 답을 내는 입력이 핵심이라 레인 표 안의
+# 진짜 섹션 두 개(scope만 다른)를 써야 한다.
 
 
 async def test_publish_rejects_missing_slot_r1(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     tail = _find_section(sections, channel="system", slot="priority_tail")
     sections = [s for s in sections if s is not tail]
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-1"
 
 
 async def test_publish_rejects_missing_template_variant_r2(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     custom_variant = _find_section(sections, channel="system", slot="template_instruction", variant="custom")
     sections = [s for s in sections if s is not custom_variant]
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-2"
 
 
@@ -827,82 +822,180 @@ async def test_publish_rejects_missing_base_content_custom_variant_r2(db_session
     `setting_text`가 정상적으로 비어 있어 `conditional=True`인 이 섹션이 통째로
     드롭된다 — "다른 문안으로 대체"가 아니라 작품 설정(세계관/커스텀 프롬프트) 전체
     소실이다."""
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     custom_base_content = _find_section(sections, channel="generation", slot="base_content", variant="custom")
     sections = [s for s in sections if s is not custom_base_content]
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-2"
 
 
 async def test_publish_rejects_blank_body_r3(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     prologue = _find_section(sections, channel="generation", slot="prologue")
     prologue.body = "   "
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-3"
 
 
 async def test_publish_rejects_disallowed_placeholder_r4(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     prologue = _find_section(sections, channel="generation", slot="prologue")
     prologue.body = "[시작 상황]\n{prologue} {not_a_real_placeholder}"
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-4"
 
 
 async def test_publish_rejects_unbalanced_braces_r4(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     prologue = _find_section(sections, channel="generation", slot="prologue")
     prologue.body = "[시작 상황]\n{prologue"
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-4"
 
 
 async def test_publish_rejects_blank_label_r5(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     prompt_set.user_label = "  "
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-5"
 
 
 async def test_publish_rejects_label_with_colon_r5(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     prompt_set.user_label = "사용자:"
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-5"
 
 
 async def test_publish_rejects_duplicate_order_in_same_group_r6(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     rule_open_turn = _find_section(sections, channel="system", slot="rule_open_turn")
     rule_user_agency = _find_section(sections, channel="system", slot="rule_user_agency")
     rule_open_turn.order = rule_user_agency.order
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-6"
 
 
 async def test_publish_rejects_priority_tail_not_last_r7(db_session: AsyncSession) -> None:
-    prompt_set, sections = await _legacy_prompt_set_and_sections(db_session)
+    prompt_set, sections = await _story_prompt_set_and_sections(db_session)
     tail = _find_section(sections, channel="system", slot="priority_tail")
     tail.order = 1
 
     with pytest.raises(HTTPException) as exc_info:
-        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections)
+        admin_prompts._validate_prompt_draft_for_publish(prompt_set, sections, lane="story")
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-7"
+
+
+# ---- R-8 (신설, PS-13) + 레인별 R-2/R-5/R-7 회귀 가드 -----------------------------
+
+
+async def test_publish_rejects_order_collision_across_scopes_r8_not_r6(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """C5-T8(techspec §5-5, goal-prompt PS-13) — 가장 중요한 신설 테스트다. R-6의 그룹
+    키에 `scope`가 들어 있어 `(system, both, '', order)`와 `(system, story, '', order)`를
+    다른 그룹으로 본다 — 그래서 두 행의 order를 같게 만들어도 R-6은 통과한다. 하지만 story
+    scope로 렌더링할 때는 둘 다 선택돼 order가 실제로 충돌한다 — R-8만 그걸 잡아야 한다.
+    단언은 반드시 `detail["rule"] == "R-8"`이어야 한다 — 422만 보면 R-6이 잡았을 때와
+    구분되지 않아 R-8이 죽은 코드여도 초록이 된다."""
+    await _login_new_admin(db_client, db_session)
+    draft = await _make_valid_draft(db_client, "story")
+    draft_id = uuid.UUID(str(draft["id"]))
+    sections = list(
+        (
+            await db_session.scalars(sa.select(PromptSection).where(PromptSection.prompt_set_id == draft_id))
+        ).all()
+    )
+
+    both_scope_section = _find_section(sections, channel="system", slot="rule_response_format")
+    story_scope_section = _find_section(sections, channel="system", slot="self_definition")
+    # (system, both, '', order=N) + (system, story, '', order=N) — R-6은 scope가 달라 그룹이
+    # 갈리므로 통과하지만, story scope 렌더 선택에는 둘 다 들어가 order가 충돌한다.
+    story_scope_section.order = both_scope_section.order
+    await db_session.commit()
+
+    resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "R-8 회귀"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["rule"] == "R-8"
+
+
+@pytest.mark.parametrize("lane", ["character", "publish_filter"])
+async def test_publish_succeeds_for_lanes_without_required_variant_slots_r2(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
+) -> None:
+    """C5-T9(PS-13) — R-2(variant 전종 필수)는 story 레인 전용이 됐다
+    (`_REQUIRED_VARIANT_SLOTS_BY_LANE`가 character·publish_filter에는 빈 dict다). 레인
+    필터를 안 쪼개면 이 두 레인은 그 슬롯이 아예 없어 영원히 R-2로 거부된다 — 주석이
+    아니라 테스트로 "공허 통과"를 고정한다."""
+    await _login_new_admin(db_client, db_session)
+    await _make_valid_draft(db_client, lane)
+
+    resp = await db_client.post(f"/admin/prompt-sets/{lane}/publish", json={"note": "R-2 공허 통과"})
+    assert resp.status_code == 200
+
+
+async def test_publish_filter_lane_publish_succeeds_not_500_r7(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """C5-T10(F-7②, PS-13, C5-12 API 레벨 최종 확인) — `publish_filter` 레인엔 `system`
+    채널이 아예 없다. 기본값 없는 `next()`는 여기서 `StopIteration` → 500이었다. 기본값
+    있는 `next()` + `other_orders` 가드가 있으면 500이 아니라 정상 게시가 통과한다."""
+    await _login_new_admin(db_client, db_session)
+    await _make_valid_draft(db_client, "publish_filter")
+
+    resp = await db_client.post("/admin/prompt-sets/publish_filter/publish", json={"note": "R-7 회귀 가드"})
+    assert resp.status_code == 200
+
+
+async def test_publish_filter_lane_allows_blank_story_assistant_label_r5(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """C5-T11(techspec §5-3) — `publish_filter` 레인은 `storyAssistantLabel`을 안 쓴다
+    (`_LABEL_FIELDS_BY_LANE["publish_filter"]`에 없다). 공백이어도 통과해야 한다."""
+    await _login_new_admin(db_client, db_session)
+    draft = await _make_valid_draft(db_client, "publish_filter")
+    labels = dict(cast(dict[str, object], draft["labels"]))
+    labels["storyAssistantLabel"] = "   "
+    put_resp = await db_client.put(
+        "/admin/prompt-sets/publish_filter/draft", json={"labels": labels, "sections": draft["sections"]}
+    )
+    assert put_resp.status_code == 200
+
+    resp = await db_client.post("/admin/prompt-sets/publish_filter/publish", json={"note": "라벨 공백 통과"})
+    assert resp.status_code == 200
+
+
+async def test_story_lane_rejects_blank_story_assistant_label_r5(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """C5-T11 짝 — story 레인은 `storyAssistantLabel`을 실제로 쓰므로
+    (`_LABEL_FIELDS_BY_LANE["story"]`) 같은 입력이 422여야 한다."""
+    await _login_new_admin(db_client, db_session)
+    draft = await _make_valid_draft(db_client, "story")
+    labels = dict(cast(dict[str, object], draft["labels"]))
+    labels["storyAssistantLabel"] = "   "
+    put_resp = await db_client.put(
+        "/admin/prompt-sets/story/draft", json={"labels": labels, "sections": draft["sections"]}
+    )
+    assert put_resp.status_code == 200
+
+    resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "라벨 공백 거부"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["rule"] == "R-5"
 
 
 # ---- 허용 플레이스홀더 단일 소스 — legacy 48행 고정 --------------------------------

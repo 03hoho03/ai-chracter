@@ -141,26 +141,18 @@ async def load_active_prompt_set(
     return prompt_set, sections
 
 
-def render_prompt_channel(
-    sections: Sequence[PromptSection],
-    *,
-    channel: str,
-    scope: str,
-    variant: str = "",
-    values: dict[str, str],
-) -> str:
-    """prompt-db-goal-prompt.md §4-3 렌더링 규약을 구현하는 순수 함수 — DB에 닿지 않는다.
+def select_sections_for_render(
+    sections: Sequence[PromptSection], *, channel: str, scope: str, variant: str = ""
+) -> list[PromptSection]:
+    """`render_prompt_channel`의 1~3단계(scope 필터 → variant 선택 → order 정렬) — 렌더러와
+    `admin/prompts.py`의 R-8(prompt-scope-goal-prompt.md PS-13)이 **같은 함수**를 부른다.
+    사본을 두면 렌더러가 바뀔 때 R-8이 조용히 딴 것을 검사하게 된다.
 
     1. `channel`이 같고 `scope ∈ {both, 요청한 scope}`인 섹션만 후보로 남긴다.
     2. 같은 `slot`끼리 묶어 `variant`가 일치하는 행을 고르고, 없으면 기본(`variant=""`)
        행으로 대체한다 — `variant`별 행만 있는 슬롯(`template_instruction`)은 요청한
        `variant`가 없으면 그 슬롯 자체가 통째로 빠진다(L0.5 없는 `system_instruction_for`).
     3. `order`로 정렬한다.
-    4. `conditional=True`인 슬롯은 body가 참조하는 플레이스홀더 값이 전부 비어 있으면
-       (`values`에서 falsy) 섹션째 드롭한다. `conditional=False`는 값이 비어도 유지한다
-       — "비어 있으면 드롭"만으로는 재현되지 않는다(`generation_character_empty_prompt`
-       골든이 그 증거, §4-3).
-    5. 남은 섹션의 body를 `values`로 채우고 `"\\n\\n"`으로 잇는다.
     """
     candidates = [s for s in sections if s.channel == channel and s.scope in ("both", scope)]
 
@@ -176,6 +168,28 @@ def render_prompt_channel(
         if chosen is not None:
             selected.append(chosen)
     selected.sort(key=lambda s: s.order)
+    return selected
+
+
+def render_prompt_channel(
+    sections: Sequence[PromptSection],
+    *,
+    channel: str,
+    scope: str,
+    variant: str = "",
+    values: dict[str, str],
+) -> str:
+    """prompt-db-goal-prompt.md §4-3 렌더링 규약을 구현하는 순수 함수 — DB에 닿지 않는다.
+
+    1~3단계(scope 필터 → variant 선택 → order 정렬)는 `select_sections_for_render`가 한다.
+
+    4. `conditional=True`인 슬롯은 body가 참조하는 플레이스홀더 값이 전부 비어 있으면
+       (`values`에서 falsy) 섹션째 드롭한다. `conditional=False`는 값이 비어도 유지한다
+       — "비어 있으면 드롭"만으로는 재현되지 않는다(`generation_character_empty_prompt`
+       골든이 그 증거, §4-3).
+    5. 남은 섹션의 body를 `values`로 채우고 `"\\n\\n"`으로 잇는다.
+    """
+    selected = select_sections_for_render(sections, channel=channel, scope=scope, variant=variant)
 
     rendered: list[str] = []
     for section in selected:

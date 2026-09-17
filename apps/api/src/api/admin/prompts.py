@@ -32,6 +32,7 @@ from api.chat.prompt_builder import (
     build_stat_judgment_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
+    select_sections_for_render,
     system_instruction_for,
 )
 from api.chat.prompt_builder import build_ending_judgment_prompt as _build_ending_judgment_prompt
@@ -49,8 +50,8 @@ router = APIRouter(tags=["admin"])
 
 logger = logging.getLogger(__name__)
 
-# prompt-db-goal-prompt.md §9-2 — 코드가 아는 (channel, scope, slot, variant) 정확한 집합.
-# 마이그레이션 bd258b26c34a의 시드 48행 및 prompt-db-progress.md §B와 정확히 같다.
+# prompt-scope-goal-prompt.md PS-13 — 코드가 레인별로 아는 (channel, scope, slot, variant)
+# 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS`가 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -61,90 +62,118 @@ logger = logging.getLogger(__name__)
 # 걸려서 R-2("R-2가 유일한 방어다")가 영원히 발동할 기회가 없다 — 두 규칙이 같은 입력을
 # 두고 항상 같은 순서로 겹치면 뒤엣것은 죽은 코드다. 그래서 R-1은 "그 슬롯이 (scope
 # 기준으로) 존재는 하는가"만 보고, "그 슬롯의 variant가 전부 있는가"는 R-2 전담이다.
-_EXPECTED_ROWS: dict[str, frozenset[tuple[str, str, str]]] = {
-    "system": frozenset(
-        {
-            ("story", "self_definition", ""),
-            ("character", "self_definition", ""),
-            ("both", "rule_response_format", ""),
-            ("both", "rule_user_agency", ""),
-            ("both", "rule_open_turn", ""),
-            ("both", "rule_rating", ""),
-            ("story", "template_instruction", "basic"),
-            ("story", "template_instruction", "emotional"),
-            ("story", "template_instruction", "simulation"),
-            ("story", "template_instruction", "custom"),
-            ("both", "priority_tail", ""),
-        }
-    ),
-    "generation": frozenset(
-        {
-            ("character", "character_prompt", ""),
-            ("story", "base_content", ""),
-            ("story", "base_content", "custom"),
-            ("character", "example_dialogues", ""),
-            ("story", "rules", ""),
-            ("story", "user_goal", ""),
-            ("story", "development_examples", ""),
-            ("story", "prologue", ""),
-            ("both", "history", ""),
-            ("story", "keyword_notes", ""),
-            ("story", "shortcut_prompt", ""),
-            ("both", "final_frame", ""),
-        }
-    ),
-    "stat_judgment": frozenset(
-        {
-            ("story", "stat_defs_intro", ""),
-            ("story", "turn_context", ""),
-            ("story", "judgment_instruction", ""),
-        }
-    ),
-    "ending_judgment": frozenset(
-        {
-            ("story", "history_header", ""),
-            ("story", "turn_context", ""),
-            ("story", "criteria", ""),
-        }
-    ),
-    "image_judgment": frozenset(
-        {
-            ("character", "image_list_intro", ""),
-            ("character", "turn_context", ""),
-            ("character", "judgment_instruction", ""),
-        }
-    ),
-    "publish_filter": frozenset(
-        {
-            ("character", "intro_instruction", ""),
-            ("story", "intro_instruction", ""),
-            ("both", "name", ""),
-            ("both", "one_liner", ""),
-            ("character", "intro", ""),
-            ("story", "setting_text", ""),
-            ("story", "development_example_legacy", ""),
-            ("story", "custom_prompt", ""),
-            ("story", "rules", ""),
-            ("story", "user_goal", ""),
-            ("story", "development_examples_pairs", ""),
-            ("character", "example_dialogues", ""),
-            ("character", "character_prompt", ""),
-            ("both", "detail_description", ""),
-            ("story", "starting_setups", ""),
-            ("both", "verdict_instruction", ""),
-        }
-    ),
+_EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str]]]] = {
+    "story": {
+        "system": frozenset(
+            {
+                ("story", "self_definition", ""),
+                ("both", "rule_response_format", ""),
+                ("both", "rule_user_agency", ""),
+                ("both", "rule_open_turn", ""),
+                ("both", "rule_rating", ""),
+                ("story", "template_instruction", "basic"),
+                ("story", "template_instruction", "emotional"),
+                ("story", "template_instruction", "simulation"),
+                ("story", "template_instruction", "custom"),
+                ("both", "priority_tail", ""),
+            }
+        ),
+        "generation": frozenset(
+            {
+                ("story", "base_content", ""),
+                ("story", "base_content", "custom"),
+                ("story", "rules", ""),
+                ("story", "user_goal", ""),
+                ("story", "development_examples", ""),
+                ("story", "prologue", ""),
+                ("both", "history", ""),
+                ("story", "keyword_notes", ""),
+                ("story", "shortcut_prompt", ""),
+                ("both", "final_frame", ""),
+            }
+        ),
+        "stat_judgment": frozenset(
+            {
+                ("story", "stat_defs_intro", ""),
+                ("story", "turn_context", ""),
+                ("story", "judgment_instruction", ""),
+            }
+        ),
+        "ending_judgment": frozenset(
+            {
+                ("story", "history_header", ""),
+                ("story", "turn_context", ""),
+                ("story", "criteria", ""),
+            }
+        ),
+    },
+    "character": {
+        "system": frozenset(
+            {
+                ("character", "self_definition", ""),
+                ("both", "rule_response_format", ""),
+                ("both", "rule_user_agency", ""),
+                ("both", "rule_open_turn", ""),
+                ("both", "rule_rating", ""),
+                ("both", "priority_tail", ""),
+            }
+        ),
+        "generation": frozenset(
+            {
+                ("character", "character_prompt", ""),
+                ("character", "example_dialogues", ""),
+                ("both", "history", ""),
+                ("both", "final_frame", ""),
+            }
+        ),
+        "image_judgment": frozenset(
+            {
+                ("character", "image_list_intro", ""),
+                ("character", "turn_context", ""),
+                ("character", "judgment_instruction", ""),
+            }
+        ),
+    },
+    "publish_filter": {
+        "publish_filter": frozenset(
+            {
+                ("character", "intro_instruction", ""),
+                ("story", "intro_instruction", ""),
+                ("both", "name", ""),
+                ("both", "one_liner", ""),
+                ("character", "intro", ""),
+                ("story", "setting_text", ""),
+                ("story", "development_example_legacy", ""),
+                ("story", "custom_prompt", ""),
+                ("story", "rules", ""),
+                ("story", "user_goal", ""),
+                ("story", "development_examples_pairs", ""),
+                ("character", "example_dialogues", ""),
+                ("character", "character_prompt", ""),
+                ("both", "detail_description", ""),
+                ("story", "starting_setups", ""),
+                ("both", "verdict_instruction", ""),
+            }
+        ),
+    },
 }
 
 # R-1이 실제로 보는 것 — 위 표에서 `variant`를 뗀 (scope, slot) 집합. 새 목록을 손으로
-# 또 적지 않고 `_EXPECTED_ROWS`에서 뽑는다(두 벌이면 template_instruction/base_content의
-# variant 행 수가 바뀔 때 한쪽만 갱신되고 갈린다).
-_EXPECTED_SLOTS: dict[str, frozenset[tuple[str, str]]] = {
-    channel: frozenset((scope, slot) for scope, slot, _variant in rows)
-    for channel, rows in _EXPECTED_ROWS.items()
+# 또 적지 않고 `_EXPECTED_ROWS_BY_LANE`에서 뽑는다(두 벌이면 template_instruction/
+# base_content의 variant 행 수가 바뀔 때 한쪽만 갱신되고 갈린다).
+_EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]] = {
+    lane: {
+        channel: frozenset((scope, slot) for scope, slot, _variant in rows)
+        for channel, rows in by_channel.items()
+    }
+    for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# prompt-db-goal-prompt.md §9-2 R-2 — variant 전종이 반드시 있어야 하는 슬롯.
+# prompt-scope-goal-prompt.md PS-13 R-2 — variant 전종이 반드시 있어야 하는 슬롯. story
+# 레인에만 있다 — `template_instruction`/`base_content` 둘 다 story 레인 전용 슬롯이라,
+# 안 쪼개면 character·publish_filter 레인은 그 `(channel, scope, slot)` 행 자체가 없어
+# `present`가 빈 집합이 되고 `missing`이 required 전체가 되어 **영원히 게시할 수 없다**
+# (techspec §11#4 정정 — "공허 통과"가 아니라 "레인 필터가 없으면 거부"였다).
 #
 # `template_instruction`은 요청한 variant가 없으면 폴백할 기본(`variant=""`) 행 자체가
 # 없어 슬롯째 조용히 드롭된다.
@@ -159,39 +188,61 @@ _EXPECTED_SLOTS: dict[str, frozenset[tuple[str, str]]] = {
 # 이 사고를 렌더러 수준에서 고정한다.
 #
 # `StoryPromptTemplate`에서 직접 뽑아 두 벌로 갈릴 여지를 없앤다.
-_REQUIRED_VARIANT_SLOTS: dict[tuple[str, str, str], frozenset[str]] = {
-    ("system", "story", "template_instruction"): frozenset(t.value for t in StoryPromptTemplate),
-    ("generation", "story", "base_content"): frozenset({"", "custom"}),
+_REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], frozenset[str]]] = {
+    "story": {
+        ("system", "story", "template_instruction"): frozenset(t.value for t in StoryPromptTemplate),
+        ("generation", "story", "base_content"): frozenset({"", "custom"}),
+    },
+    "character": {},
+    "publish_filter": {},
 }
 
-_LABEL_FIELDS: tuple[tuple[str, str], ...] = (
-    ("userLabel", "user_label"),
-    ("storyAssistantLabel", "story_assistant_label"),
-    ("storyExampleLabel", "story_example_label"),
-    ("characterAssistantLabel", "character_assistant_label"),
-)
+# prompt-scope-techspec.md §5-3 — 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
+# 라벨 사용을 전수 추출해 도출했다: story={user,story_assistant,story_example} /
+# character={user,character_assistant} / publish_filter={user,character_assistant,
+# story_example}. 헤더 컬럼 4개는 레인과 무관하게 그대로 남는다(PS-5).
+_LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
+    "story": (
+        ("userLabel", "user_label"),
+        ("storyAssistantLabel", "story_assistant_label"),
+        ("storyExampleLabel", "story_example_label"),
+    ),
+    "character": (
+        ("userLabel", "user_label"),
+        ("characterAssistantLabel", "character_assistant_label"),
+    ),
+    "publish_filter": (
+        ("userLabel", "user_label"),
+        ("characterAssistantLabel", "character_assistant_label"),
+        ("storyExampleLabel", "story_example_label"),
+    ),
+}
 
 
 def _validation_error(rule: str, message: str) -> HTTPException:
     return HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"rule": rule, "message": message})
 
 
-def _validate_prompt_draft_for_publish(prompt_set: PromptSet, sections: list[PromptSection]) -> None:
-    """prompt-db-goal-prompt.md §9-2 R-1~R-7. 규칙 이름이 붙은 순서대로 검사하고 첫
-    위반에서 멈춘다("순서대로 본다") — 뒤의 규칙들은 앞이 통과했다는 것에 기대어 있다
-    (예: R-2는 슬롯 자체가 있다는 R-1의 결과를 전제한다)."""
-    # R-1 — `variant`는 보지 않는다(위 `_EXPECTED_SLOTS` 주석 참고, R-2와 역할을 가른다).
+def _validate_prompt_draft_for_publish(
+    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane
+) -> None:
+    """prompt-db-goal-prompt.md §9-2 · prompt-scope-goal-prompt.md PS-13 — R-1~R-8. 규칙
+    이름이 붙은 순서대로 검사하고 첫 위반에서 멈춘다("순서대로 본다") — 뒤의 규칙들은
+    앞이 통과했다는 것에 기대어 있다(예: R-2는 슬롯 자체가 있다는 R-1의 결과를 전제한다).
+    `lane`은 키워드 전용이다 — 앞 두 인자가 위치 인자라 세 번째 위치 인자가 붙으면 순서
+    실수가 조용히 통과할 여지가 있다."""
+    # R-1 — `variant`는 보지 않는다(위 `_EXPECTED_SLOTS_BY_LANE` 주석 참고, R-2와 역할을 가른다).
     grouped: dict[str, set[tuple[str, str]]] = {}
     for section in sections:
         grouped.setdefault(section.channel, set()).add((section.scope, section.slot))
     actual = {channel: frozenset(rows) for channel, rows in grouped.items()}
-    if actual != _EXPECTED_SLOTS:
+    if actual != _EXPECTED_SLOTS_BY_LANE[lane]:
         raise _validation_error(
             "R-1", "슬롯 집합이 코드가 아는 목록과 다릅니다(누락 또는 잉여가 있습니다)."
         )
 
     # R-2
-    for (channel, scope, slot), required_variants in _REQUIRED_VARIANT_SLOTS.items():
+    for (channel, scope, slot), required_variants in _REQUIRED_VARIANT_SLOTS_BY_LANE[lane].items():
         present = {
             s.variant for s in sections if s.channel == channel and s.scope == scope and s.slot == slot
         }
@@ -224,7 +275,7 @@ def _validate_prompt_draft_for_publish(prompt_set: PromptSet, sections: list[Pro
             )
 
     # R-5
-    for query_name, attr in _LABEL_FIELDS:
+    for query_name, attr in _LABEL_FIELDS_BY_LANE[lane]:
         value = getattr(prompt_set, attr)
         if not value.strip():
             raise _validation_error("R-5", f"{query_name}이(가) 비어 있습니다.")
@@ -234,7 +285,9 @@ def _validate_prompt_draft_for_publish(prompt_set: PromptSet, sections: list[Pro
     # R-6. `(channel, scope, variant)`로 묶는다 — `self_definition`/`intro_instruction`처럼
     # 같은 슬롯이 scope만 다르게 두 행으로 존재하는 경우(§4-2) 서로 다른 실제 렌더 호출
     # (story-scope 렌더와 character-scope 렌더)에서만 각각 쓰이므로 같은 order를 공유해도
-    # 충돌이 아니다 — 그래서 scope를 그룹 키에서 빼면 이 정상 케이스를 오탐한다.
+    # 충돌이 아니다 — 그래서 scope를 그룹 키에서 빼면 이 정상 케이스를 오탐한다. 이 사각
+    # 지대는 R-8이 렌더 결과 쪽에서 다시 본다(scope가 달라도 렌더 선택에는 같이 들어갈
+    # 수 있다, prompt-scope-goal-prompt.md PS-13).
     seen_orders: dict[tuple[str, str, str], dict[int, str]] = {}
     for section in sections:
         group = seen_orders.setdefault((section.channel, section.scope, section.variant), {})
@@ -246,12 +299,39 @@ def _validate_prompt_draft_for_publish(prompt_set: PromptSet, sections: list[Pro
             )
         group[section.order] = section.slot
 
-    # R-7
+    # R-7 — priority_tail은 both 행이라 `publish_filter` 레인에는 존재하지 않는다(그 레인엔
+    # system 채널 자체가 없다). 기본값 없는 next()는 그 레인에서 StopIteration -> 500이었다
+    # (prompt-scope-techspec.md §5-5 F-7②). `other_orders`가 비어 있을 때도 건드리지
+    # 않는다 — tail 하나만 있고 비교 대상이 없으면 검사할 것이 없다.
     system_sections = [s for s in sections if s.channel == "system"]
-    tail = next(s for s in system_sections if s.slot == "priority_tail")
-    other_orders = [s.order for s in system_sections if s.slot != "priority_tail"]
-    if other_orders and tail.order <= max(other_orders):
-        raise _validation_error("R-7", "system 채널에서 priority_tail의 order가 가장 크지 않습니다.")
+    tail = next((s for s in system_sections if s.slot == "priority_tail"), None)
+    if tail is not None:
+        other_orders = [s.order for s in system_sections if s.slot != "priority_tail"]
+        if other_orders and tail.order <= max(other_orders):
+            raise _validation_error("R-7", "system 채널에서 priority_tail의 order가 가장 크지 않습니다.")
+
+    # R-8 (prompt-scope-goal-prompt.md PS-13, 신설) — R-6의 그룹 키에 scope가 들어 있어
+    # (system, both, '', 5)와 (system, story, '', 5)를 **다른 그룹**으로 본다. 렌더러는
+    # 둘을 한 리스트에 담아 안정 정렬하므로 동률이면 입력 순서가 출력을 정한다(F-7③).
+    # R-6을 고치는 것은 답이 아니다 — 그 scope는 self_definition의 정상 케이스를
+    # 오탐하지 않으려고 들어간 것이다. R-8이 렌더 결과 쪽에서 같은 불변식을 다시 본다.
+    # `select_sections_for_render`(chat/prompt_builder.py)는 렌더러(render_prompt_channel)와
+    # 같은 함수다 — 사본을 두면 렌더러가 바뀔 때 R-8이 조용히 딴 것을 검사하게 된다.
+    for channel in {s.channel for s in sections}:
+        channel_sections = [s for s in sections if s.channel == channel]
+        variants = {s.variant for s in channel_sections} | {""}
+        for render_scope in ("story", "character"):
+            for variant in sorted(variants):
+                selected = select_sections_for_render(
+                    channel_sections, channel=channel, scope=render_scope, variant=variant
+                )
+                orders = [s.order for s in selected]
+                if len(orders) != len(set(orders)):
+                    raise _validation_error(
+                        "R-8",
+                        f"{channel}(render_scope={render_scope}, variant={variant!r})에서 렌더 선택 "
+                        "결과의 order가 중복됩니다.",
+                    )
 
 
 async def _next_published_version(db: AsyncSession) -> str:
@@ -505,7 +585,7 @@ async def preview_prompt_draft(
     else:
         prompt_set, sections = await load_active_prompt_set(db, lane=lane)
 
-    items = _build_preview_items(prompt_set, sections)
+    items = _build_preview_items(prompt_set, sections, lane=lane)
     return AdminPromptPreviewResponse(items=items)
 
 
@@ -521,7 +601,7 @@ async def publish_prompt_set(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
     sections = await _sections_of(db, draft.id)
 
-    _validate_prompt_draft_for_publish(draft, sections)
+    _validate_prompt_draft_for_publish(draft, sections, lane=lane)
 
     # PS-2 — 레인 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
     # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인 게시).
@@ -763,16 +843,9 @@ _SAMPLE_STARTING_SETUPS = [
 ]
 
 
-def _build_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
+def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
 
-    items.append(
-        AdminPromptPreviewItem(
-            channel="system",
-            label="system · 캐릭터",
-            text=system_instruction_for(sections, is_story_chat=False),
-        )
-    )
     for template in StoryPromptTemplate:
         items.append(
             AdminPromptPreviewItem(
@@ -782,20 +855,6 @@ def _build_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
             )
         )
 
-    items.append(
-        AdminPromptPreviewItem(
-            channel="generation",
-            label="generation · 캐릭터",
-            text=build_generation_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                character_prompt="[샘플] 캐릭터 프롬프트",
-                example_dialogues=_SAMPLE_EXAMPLE_DIALOGUES,
-                history=_SAMPLE_HISTORY,
-                user_message="[샘플] 사용자 메시지",
-            ),
-        )
-    )
     for label_suffix, template, custom_prompt in (
         ("스토리 · basic", StoryPromptTemplate.BASIC, None),
         ("스토리 · custom", StoryPromptTemplate.CUSTOM, "[샘플] 커스텀 프롬프트"),
@@ -850,6 +909,34 @@ def _build_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
             ),
         )
     )
+
+    return items
+
+
+def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
+    items: list[AdminPromptPreviewItem] = []
+
+    items.append(
+        AdminPromptPreviewItem(
+            channel="system",
+            label="system · 캐릭터",
+            text=system_instruction_for(sections, is_story_chat=False),
+        )
+    )
+    items.append(
+        AdminPromptPreviewItem(
+            channel="generation",
+            label="generation · 캐릭터",
+            text=build_generation_prompt(
+                prompt_set=prompt_set,
+                sections=sections,
+                character_prompt="[샘플] 캐릭터 프롬프트",
+                example_dialogues=_SAMPLE_EXAMPLE_DIALOGUES,
+                history=_SAMPLE_HISTORY,
+                user_message="[샘플] 사용자 메시지",
+            ),
+        )
+    )
     items.append(
         AdminPromptPreviewItem(
             channel="image_judgment",
@@ -865,6 +952,16 @@ def _build_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
         )
     )
 
+    return items
+
+
+def _publish_filter_preview_items(
+    prompt_set: PromptSet, sections: list[PromptSection]
+) -> list[AdminPromptPreviewItem]:
+    items: list[AdminPromptPreviewItem] = []
+
+    # ⚠️ techspec §5-4 — 이 두 label 문자열을 다듬지 않는다. 응답에 scope 필드가 없어
+    # "· 캐릭터"/"· 스토리" 구분이 오직 label에만 있다.
     items.append(
         AdminPromptPreviewItem(
             channel="publish_filter",
@@ -903,3 +1000,13 @@ def _build_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
     )
 
     return items
+
+
+def _build_preview_items(
+    prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane
+) -> list[AdminPromptPreviewItem]:
+    if lane == "story":
+        return _story_preview_items(prompt_set, sections)
+    if lane == "character":
+        return _character_preview_items(prompt_set, sections)
+    return _publish_filter_preview_items(prompt_set, sections)
