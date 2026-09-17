@@ -217,6 +217,28 @@
         }
       }
     },
+    "/admin/dashboard/growth": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Dashboard Growth",
+        "description": "가입자 성장 지표 — 새 수집 없이 기존 DB만 재구성한다(처리방침 개정 불필요, 외부\n미전송). `activation_rate`(가입자→첫 대화 도달률)의 분자는 방 생성이 아니라 실제\n`ChatMessage.role == USER` 메시지를 보낸 유저 distinct count다(`ChatRoom` 경유 조인\n필수 — 방만 만들고 메시지를 안 보낸 유저는 도달로 치지 않는다). `publish_rate`(제작자→\n발행 완료율)의 분자는 기존 발행 완료 관용구(`content/router.py`의\n`current_published_version_id.is_not(None)`)를 그대로 쓴다. `cohort_retention`은\n`_cohort_retention`의 docstring대로 **근사**다.",
+        "operationId": "get_dashboard_growth_admin_dashboard_growth_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardGrowthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/contents": {
       "get": {
         "tags": [
@@ -5768,6 +5790,56 @@
         ],
         "title": "AdminDashboardActivityResponse"
       },
+      "AdminDashboardCohort": {
+        "properties": {
+          "cohortWeekStart": {
+            "type": "string",
+            "format": "date",
+            "title": "Cohortweekstart"
+          },
+          "cohortSize": {
+            "type": "integer",
+            "title": "Cohortsize"
+          },
+          "weeks": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardCohortWeekPoint"
+            },
+            "type": "array",
+            "title": "Weeks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "cohortWeekStart",
+          "cohortSize",
+          "weeks"
+        ],
+        "title": "AdminDashboardCohort"
+      },
+      "AdminDashboardCohortWeekPoint": {
+        "properties": {
+          "weekOffset": {
+            "type": "integer",
+            "title": "Weekoffset"
+          },
+          "retainedUsers": {
+            "type": "integer",
+            "title": "Retainedusers"
+          },
+          "retentionRate": {
+            "type": "number",
+            "title": "Retentionrate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "weekOffset",
+          "retainedUsers",
+          "retentionRate"
+        ],
+        "title": "AdminDashboardCohortWeekPoint"
+      },
       "AdminDashboardCountsResponse": {
         "properties": {
           "totalUsers": {
@@ -5795,6 +5867,73 @@
           "pendingReports"
         ],
         "title": "AdminDashboardCountsResponse"
+      },
+      "AdminDashboardGrowthResponse": {
+        "properties": {
+          "totalUsers": {
+            "type": "integer",
+            "title": "Totalusers"
+          },
+          "activatedUsers": {
+            "type": "integer",
+            "title": "Activatedusers"
+          },
+          "activationRate": {
+            "type": "number",
+            "title": "Activationrate"
+          },
+          "creatorsWithPublishedContent": {
+            "type": "integer",
+            "title": "Creatorswithpublishedcontent"
+          },
+          "publishRate": {
+            "type": "number",
+            "title": "Publishrate"
+          },
+          "totalSignups": {
+            "type": "integer",
+            "title": "Totalsignups"
+          },
+          "withdrawnUsers": {
+            "type": "integer",
+            "title": "Withdrawnusers"
+          },
+          "withdrawnRate": {
+            "type": "number",
+            "title": "Withdrawnrate"
+          },
+          "usersWithContent": {
+            "type": "integer",
+            "title": "Userswithcontent"
+          },
+          "creatorRate": {
+            "type": "number",
+            "title": "Creatorrate"
+          },
+          "cohortRetention": {
+            "items": {
+              "$ref": "#/components/schemas/AdminDashboardCohort"
+            },
+            "type": "array",
+            "title": "Cohortretention"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalUsers",
+          "activatedUsers",
+          "activationRate",
+          "creatorsWithPublishedContent",
+          "publishRate",
+          "totalSignups",
+          "withdrawnUsers",
+          "withdrawnRate",
+          "usersWithContent",
+          "creatorRate",
+          "cohortRetention"
+        ],
+        "title": "AdminDashboardGrowthResponse",
+        "description": "가입자 성장 지표. 새 수집 없이 기존 DB만 재구성한다.\n\n- `activation_rate`: 가입자→첫 대화 도달률(분모 `total_users`, 분자 `activated_users`).\n- `publish_rate`: 제작자→발행 완료율(분모 `total_users`, 분자\n  `creators_with_published_content`).\n- `withdrawn_rate`/`creator_rate`는 근사가 아닌 정확한 수치.\n- `cohort_retention`: **근사다.** 로그인 이벤트가 DB에 없어(`last_login`류 필드 0건)\n  '재방문'을 '가입 후 그 주에 `ChatMessage.role == USER`를 보냈는가'로 대체한다 —\n  정확한 재방문율로 읽지 말 것."
       },
       "AdminDashboardPopularItem": {
         "properties": {

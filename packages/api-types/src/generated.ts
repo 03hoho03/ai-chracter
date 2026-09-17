@@ -138,6 +138,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/dashboard/growth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Growth
+         * @description 가입자 성장 지표 — 새 수집 없이 기존 DB만 재구성한다(처리방침 개정 불필요, 외부
+         *     미전송). `activation_rate`(가입자→첫 대화 도달률)의 분자는 방 생성이 아니라 실제
+         *     `ChatMessage.role == USER` 메시지를 보낸 유저 distinct count다(`ChatRoom` 경유 조인
+         *     필수 — 방만 만들고 메시지를 안 보낸 유저는 도달로 치지 않는다). `publish_rate`(제작자→
+         *     발행 완료율)의 분자는 기존 발행 완료 관용구(`content/router.py`의
+         *     `current_published_version_id.is_not(None)`)를 그대로 쓴다. `cohort_retention`은
+         *     `_cohort_retention`의 docstring대로 **근사**다.
+         */
+        get: operations["get_dashboard_growth_admin_dashboard_growth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/contents": {
         parameters: {
             query?: never;
@@ -2494,6 +2520,27 @@ export interface components {
             /** Recentreports */
             recentReports: components["schemas"]["AdminDashboardRecentReport"][];
         };
+        /** AdminDashboardCohort */
+        AdminDashboardCohort: {
+            /**
+             * Cohortweekstart
+             * Format: date
+             */
+            cohortWeekStart: string;
+            /** Cohortsize */
+            cohortSize: number;
+            /** Weeks */
+            weeks: components["schemas"]["AdminDashboardCohortWeekPoint"][];
+        };
+        /** AdminDashboardCohortWeekPoint */
+        AdminDashboardCohortWeekPoint: {
+            /** Weekoffset */
+            weekOffset: number;
+            /** Retainedusers */
+            retainedUsers: number;
+            /** Retentionrate */
+            retentionRate: number;
+        };
         /** AdminDashboardCountsResponse */
         AdminDashboardCountsResponse: {
             /** Totalusers */
@@ -2504,6 +2551,42 @@ export interface components {
             todayMessages: number;
             /** Pendingreports */
             pendingReports: number;
+        };
+        /**
+         * AdminDashboardGrowthResponse
+         * @description 가입자 성장 지표. 새 수집 없이 기존 DB만 재구성한다.
+         *
+         *     - `activation_rate`: 가입자→첫 대화 도달률(분모 `total_users`, 분자 `activated_users`).
+         *     - `publish_rate`: 제작자→발행 완료율(분모 `total_users`, 분자
+         *       `creators_with_published_content`).
+         *     - `withdrawn_rate`/`creator_rate`는 근사가 아닌 정확한 수치.
+         *     - `cohort_retention`: **근사다.** 로그인 이벤트가 DB에 없어(`last_login`류 필드 0건)
+         *       '재방문'을 '가입 후 그 주에 `ChatMessage.role == USER`를 보냈는가'로 대체한다 —
+         *       정확한 재방문율로 읽지 말 것.
+         */
+        AdminDashboardGrowthResponse: {
+            /** Totalusers */
+            totalUsers: number;
+            /** Activatedusers */
+            activatedUsers: number;
+            /** Activationrate */
+            activationRate: number;
+            /** Creatorswithpublishedcontent */
+            creatorsWithPublishedContent: number;
+            /** Publishrate */
+            publishRate: number;
+            /** Totalsignups */
+            totalSignups: number;
+            /** Withdrawnusers */
+            withdrawnUsers: number;
+            /** Withdrawnrate */
+            withdrawnRate: number;
+            /** Userswithcontent */
+            usersWithContent: number;
+            /** Creatorrate */
+            creatorRate: number;
+            /** Cohortretention */
+            cohortRetention: components["schemas"]["AdminDashboardCohort"][];
         };
         /** AdminDashboardPopularItem */
         AdminDashboardPopularItem: {
@@ -4965,6 +5048,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminDashboardActivityResponse"];
+                };
+            };
+        };
+    };
+    get_dashboard_growth_admin_dashboard_growth_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardGrowthResponse"];
                 };
             };
         };
