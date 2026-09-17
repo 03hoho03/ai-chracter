@@ -688,3 +688,66 @@ async def test_dashboard_growth_cohort_retention_excludes_deleted_users(
 
     week0 = next(w for w in cohorts[0]["weeks"] if w["weekOffset"] == 0)
     assert week0["retainedUsers"] == 0
+
+
+async def test_dashboard_growth_excludes_deleted_creators_and_activated_users(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """탈퇴한 유저가 발행 콘텐츠와 본인 유저 메시지를 둘 다 가진 시나리오. `activated_users`와
+    `creators_with_published_content`가 `User.deleted_at` 필터를 잃으면(각각 `ChatRoom`/
+    `Content`를 `User`와 조인만 하고 필터를 안 걸면) 탈퇴 유저 2명이 분자에 그대로 잡혀
+    분모(`total_users`=1)를 넘는 2.0 비율이 나온다 — 정상 구현에서는 분자가 0이라
+    비율도 0.0이어야 한다."""
+    genre = await _get_genre(db_session)
+    active_user = _make_user()
+    deleted_creator_a = _make_user(deleted_at=datetime.now(UTC))
+    deleted_creator_b = _make_user(deleted_at=datetime.now(UTC))
+    db_session.add_all([active_user, deleted_creator_a, deleted_creator_b])
+    await db_session.flush()
+
+    character_a = await _make_published_character(
+        db_session, creator_user_id=deleted_creator_a.id, genre_id=genre.id, name="탈퇴 캐릭터 A"
+    )
+    character_b = await _make_published_character(
+        db_session, creator_user_id=deleted_creator_b.id, genre_id=genre.id, name="탈퇴 캐릭터 B"
+    )
+
+    room_a = ChatRoom(
+        user_id=deleted_creator_a.id,
+        content_id=character_a.id,
+        content_version_id=character_a.current_published_version_id,
+    )
+    room_b = ChatRoom(
+        user_id=deleted_creator_b.id,
+        content_id=character_b.id,
+        content_version_id=character_b.current_published_version_id,
+    )
+    db_session.add_all([room_a, room_b])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            ChatMessage(chat_room_id=room_a.id, role=ChatMessageRole.USER, content="탈퇴 유저 A 메시지"),
+            ChatMessage(chat_room_id=room_b.id, role=ChatMessageRole.USER, content="탈퇴 유저 B 메시지"),
+        ]
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get("/admin/dashboard/growth")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["totalUsers"] == 1
+    assert body["activatedUsers"] == 0
+    assert body["activationRate"] == 0.0
+    assert body["creatorsWithPublishedContent"] == 0
+    assert body["publishRate"] == 0.0
+    assert body["usersWithContent"] == 0
+    assert body["creatorRate"] == 0.0
+
+    assert body["activationRate"] <= 1.0
+    assert body["publishRate"] <= 1.0
+    assert body["creatorRate"] <= 1.0
