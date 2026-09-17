@@ -26,6 +26,8 @@ from api.admin.schemas import (
 )
 from api.chat.prompt_builder import (
     ALLOWED_PLACEHOLDERS,
+    PromptLane,
+    as_prompt_lane,
     build_generation_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
@@ -263,9 +265,14 @@ async def _next_published_version(db: AsyncSession) -> str:
     return str((latest_version or 0) + 1)
 
 
-async def _get_draft(db: AsyncSession) -> PromptSet | None:
-    draft: PromptSet | None = await db.scalar(select(PromptSet).where(PromptSet.status == "draft"))
-    return draft
+async def _get_draft(db: AsyncSession, lane: PromptLane) -> PromptSet | None:
+    """prompt-scope-techspec.md §3-5 (PS-1). `lane`이 없는 `db.scalar()`는 레인 필터가
+    빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인 필터가
+    빠졌을 때(부분 유니크 인덱스가 레인별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
+    시끄럽게 터진다(F-7①)."""
+    return (
+        await db.scalars(select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane))
+    ).one_or_none()
 
 
 async def _sections_of(db: AsyncSession, prompt_set_id: uuid.UUID) -> list[PromptSection]:
@@ -329,19 +336,26 @@ def _find_duplicate_section_keys(sections: list[_SectionFields]) -> list[tuple[s
 
 
 async def _replace_draft_content(
-    db: AsyncSession, *, labels: AdminPromptLabels, sections: list[_SectionFields]
+    db: AsyncSession, *, lane: PromptLane, labels: AdminPromptLabels, sections: list[_SectionFields]
 ) -> PromptSet:
-    """초안 upsert(§9-1) — 섹션 전체 교체다. `PUT /draft`와 `POST /{id}/restore`가 공유한다.
+    """초안 upsert(§9-1) — 섹션 전체 교체다. `PUT /{lane}/draft`와 `POST /{id}/restore`가
+    공유한다.
 
     `admin/legal.py`의 SAVEPOINT 패턴을 그대로 따른다: 세션이 이미 이 요청(또는 테스트의
     롤백 트랜잭션)이라는 바깥 트랜잭션 안에 있으므로 `db.rollback()`은 그 바깥까지 되감아
     이전에 커밋된 행까지 지운다(실측으로 확인, `admin/legal.py:139-153`) — 이 upsert
-    하나만 되감으려면 `begin_nested()`(SAVEPOINT)가 필요하다. 두 요청이 동시에 초안이
-    없는 것을 보고 경쟁하면 진 쪽의 INSERT가 부분 유니크 인덱스(`ix_prompt_sets_draft`)에
-    걸리는데, upsert 의미상 "초안이 이 내용이 되게 하라"는 먼저 커밋된 게 자신인지
-    남인지와 무관하게 그대로 성립하므로 409로 거부하지 않고 이긴 행을 다시 읽어 이
-    요청의 내용으로 덮어쓴다(legal의 draft upsert와 같은 판단). 자식(섹션) 삭제→삽입도
-    같은 SAVEPOINT 안에서 한다 — `relationship()`이 없어 순서를 직접 지켜야 한다."""
+    하나만 되감으려면 `begin_nested()`(SAVEPOINT)가 필요하다. 두 요청이 동시에 이 레인의
+    초안이 없는 것을 보고 경쟁하면 진 쪽의 INSERT가 부분 유니크 인덱스(`ix_prompt_sets_draft`,
+    레인별)에 걸리는데, upsert 의미상 "이 레인의 초안이 이 내용이 되게 하라"는 먼저 커밋된
+    게 자신인지 남인지와 무관하게 그대로 성립하므로 409로 거부하지 않고 이긴 행을 다시
+    읽어 이 요청의 내용으로 덮어쓴다(legal의 draft upsert와 같은 판단). 자식(섹션) 삭제→삽입도
+    같은 SAVEPOINT 안에서 한다 — `relationship()`이 없어 순서를 직접 지켜야 한다.
+
+    prompt-scope-techspec.md §3-5(F-7①) — `try`/`except IntegrityError` 두 블록 모두
+    `_get_draft(db, lane)`로 **이 레인의** 초안만 찾고, `delete(PromptSection)` 직전에
+    `assert draft.lane == lane`을 둔다. 한쪽만 고치면 정상 경로는 멀쩡한데 경쟁 상황에서만
+    다른 레인 초안의 섹션이 통째로 삭제될 수 있다 — 재현 난이도가 가장 높은 부류의
+    데이터 소실이라 코드 리뷰로 두 블록을 각각 확인해야 한다."""
     duplicate_keys = _find_duplicate_section_keys(sections)
     if duplicate_keys:
         raise HTTPException(
@@ -352,7 +366,7 @@ async def _replace_draft_content(
             },
         )
 
-    draft = await _get_draft(db)
+    draft = await _get_draft(db, lane)
     try:
         async with db.begin_nested():
             if draft is None:
@@ -360,6 +374,7 @@ async def _replace_draft_content(
                     id=uuid.uuid4(),
                     version=None,
                     status="draft",
+                    lane=lane,
                     note="",
                     user_label=labels.user_label,
                     story_assistant_label=labels.story_assistant_label,
@@ -374,6 +389,7 @@ async def _replace_draft_content(
                 draft.story_example_label = labels.story_example_label
                 draft.character_assistant_label = labels.character_assistant_label
 
+            assert draft.lane == lane  # F-7① — 이 레인의 초안만 지운다
             await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
             await db.flush()
             for item in sections:
@@ -392,12 +408,13 @@ async def _replace_draft_content(
                 )
             await db.flush()
     except IntegrityError:
-        draft = await _get_draft(db)
-        assert draft is not None  # 유니크 위반은 곧 초안이 이제 존재한다는 뜻이다
+        draft = await _get_draft(db, lane)
+        assert draft is not None  # 유니크 위반은 곧 이 레인의 초안이 이제 존재한다는 뜻이다
         draft.user_label = labels.user_label
         draft.story_assistant_label = labels.story_assistant_label
         draft.story_example_label = labels.story_example_label
         draft.character_assistant_label = labels.character_assistant_label
+        assert draft.lane == lane  # F-7① — except 복구 경로도 이 레인의 초안만 지운다
         await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
         await db.flush()
         for item in sections:
@@ -422,29 +439,33 @@ async def _replace_draft_content(
 # ---- 목록·조회 ----------------------------------------------------------------
 
 
-@router.get("/admin/prompt-sets/draft")
+@router.get("/admin/prompt-sets/{lane}/draft")
 async def get_prompt_draft(
+    lane: PromptLane,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
-    """`/admin/prompt-sets/{id}`보다 반드시 먼저 등록한다 — 둘 다 `GET`이고 경로 깊이가
-    같아 "draft"가 문자 그대로 `{id}`에도 매치된다. Starlette은 등록 순서대로 첫 매치를
-    쓰므로, `{id}`가 먼저면 이 라우트는 영원히 도달하지 못한다."""
-    draft = await _get_draft(db)
+    """prompt-scope-techspec.md §4-2 — 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
+    `GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다
+    도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —
+    만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
+    404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패)."""
+    draft = await _get_draft(db, lane)
     if draft is not None:
         sections = await _sections_of(db, draft.id)
         return AdminPromptDraftResponse(
             id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
         )
 
-    active_set, active_sections = await load_active_prompt_set(db)
+    active_set, active_sections = await load_active_prompt_set(db, lane=lane)
     return AdminPromptDraftResponse(
         id=None, labels=_to_labels(active_set), sections=[_to_section_item(s) for s in active_sections]
     )
 
 
-@router.put("/admin/prompt-sets/draft")
+@router.put("/admin/prompt-sets/{lane}/draft")
 async def upsert_prompt_draft(
+    lane: PromptLane,
     body: AdminPromptDraftUpsertRequest,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
@@ -461,45 +482,49 @@ async def upsert_prompt_draft(
         )
         for item in body.sections
     ]
-    draft = await _replace_draft_content(db, labels=body.labels, sections=fields)
+    draft = await _replace_draft_content(db, lane=lane, labels=body.labels, sections=fields)
     sections = await _sections_of(db, draft.id)
     return AdminPromptDraftResponse(
         id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
     )
 
 
-@router.post("/admin/prompt-sets/draft/preview")
+@router.post("/admin/prompt-sets/{lane}/draft/preview")
 async def preview_prompt_draft(
+    lane: PromptLane,
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptPreviewResponse:
     """T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
-    LLM은 부르지 않는다. 초안이 없으면 활성 세트로 미리보기한다(`GET .../draft`와 같은
-    폴백)."""
-    draft = await _get_draft(db)
+    LLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다
+    (`GET .../draft`와 같은 폴백)."""
+    draft = await _get_draft(db, lane)
     if draft is not None:
         prompt_set = draft
         sections = await _sections_of(db, draft.id)
     else:
-        prompt_set, sections = await load_active_prompt_set(db)
+        prompt_set, sections = await load_active_prompt_set(db, lane=lane)
 
     items = _build_preview_items(prompt_set, sections)
     return AdminPromptPreviewResponse(items=items)
 
 
-@router.post("/admin/prompt-sets/publish")
+@router.post("/admin/prompt-sets/{lane}/publish")
 async def publish_prompt_set(
+    lane: PromptLane,
     body: AdminPromptPublishRequest,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptSetDetailResponse:
-    draft = await _get_draft(db)
+    draft = await _get_draft(db, lane)
     if draft is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="발행할 초안이 없습니다.")
     sections = await _sections_of(db, draft.id)
 
     _validate_prompt_draft_for_publish(draft, sections)
 
+    # PS-2 — 레인 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
+    # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인 게시).
     next_version = await _next_published_version(db)
 
     # `admin/legal.py:139-153`과 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다 — 두
@@ -513,6 +538,7 @@ async def publish_prompt_set(
                 id=uuid.uuid4(),
                 version=next_version,
                 status="published",
+                lane=lane,
                 note=body.note,
                 user_label=draft.user_label,
                 story_assistant_label=draft.story_assistant_label,
@@ -560,7 +586,7 @@ async def publish_prompt_set(
     # 잘못 알리는 것이다. TTL(`prompt_set_cache_ttl_seconds`)이 이 실패의 상한이라 최대
     # 그 시간만큼만 옛 문안이 나간다 — DB read/SET 캐시 모듈이 이미 쓰는 것과 같은 판단이다.
     try:
-        await invalidate_active_prompt_set()
+        await invalidate_active_prompt_set(lane)
     except RedisError:
         logger.warning("게시 후 프롬프트 세트 캐시 무효화 실패", exc_info=True)
         # monitoring-techspec.md MT-6: 낡은 프롬프트가 TTL만큼 계속 나가는 신호라 이벤트로도 남긴다.
@@ -568,6 +594,7 @@ async def publish_prompt_set(
 
     return AdminPromptSetDetailResponse(
         id=published.id,
+        lane=lane,
         version=published.version,
         status=published.status,
         note=published.note,
@@ -585,10 +612,23 @@ async def restore_prompt_set(
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
     """옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
-    없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다."""
+    없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
+
+    레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다(prompt-scope-goal-prompt.md
+    CP-4 판정 4). `source.lane`이 `legacy`(PS-6의 과도기 격리 값)면 422로 거부한다 — 레인
+    분리 이전 버전은 복원 대상이 아니다."""
     source = await db.get(PromptSet, id)
     if source is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
+    lane = as_prompt_lane(source.lane)
+    if lane is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={
+                "rule": "legacy-lane",
+                "message": "레인 분리 이전 버전은 복원할 수 없습니다.",
+            },
+        )
     source_sections = await _sections_of(db, source.id)
 
     fields = [
@@ -603,7 +643,7 @@ async def restore_prompt_set(
         )
         for s in source_sections
     ]
-    draft = await _replace_draft_content(db, labels=_to_labels(source), sections=fields)
+    draft = await _replace_draft_content(db, lane=lane, labels=_to_labels(source), sections=fields)
     sections = await _sections_of(db, draft.id)
     return AdminPromptDraftResponse(
         id=draft.id, labels=_to_labels(draft), sections=[_to_section_item(s) for s in sections]
@@ -617,11 +657,15 @@ async def get_prompt_set(
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptSetDetailResponse:
     prompt_set = await db.get(PromptSet, id)
-    if prompt_set is None:
+    lane = as_prompt_lane(prompt_set.lane) if prompt_set is not None else None
+    if prompt_set is None or lane is None:
+        # `lane`이 `legacy`(PS-6)면 응답의 `lane: PromptLane`(C4-9)을 채울 수 없다 — 새
+        # 코드는 legacy를 읽지 않는다는 원칙(PS-6)을 그대로 따라 404로 취급한다.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
     sections = await _sections_of(db, prompt_set.id)
     return AdminPromptSetDetailResponse(
         id=prompt_set.id,
+        lane=lane,
         version=prompt_set.version,
         status=prompt_set.status,
         note=prompt_set.note,
@@ -640,26 +684,36 @@ async def list_prompt_sets(
     prompt_sets = (
         await db.scalars(select(PromptSet).order_by(PromptSet.created_at.desc()))
     ).all()
-    active_id = await db.scalar(
-        select(PromptSet.id)
-        .where(PromptSet.status == "published")
-        .order_by(PromptSet.published_at.desc())
-        .limit(1)
-    )
-    return AdminPromptSetListResponse(
-        items=[
+    # 레인마다 "현재 활성본" 하나씩 — `chat/router.py:1183`의 DISTINCT ON 선례와 같은 모양.
+    active_ids = {
+        prompt_set.id
+        for prompt_set in (
+            await db.scalars(
+                select(PromptSet)
+                .where(PromptSet.status == "published")
+                .distinct(PromptSet.lane)
+                .order_by(PromptSet.lane, PromptSet.published_at.desc(), PromptSet.id.desc())
+            )
+        ).all()
+    }
+    items: list[AdminPromptSetSummary] = []
+    for prompt_set in prompt_sets:
+        lane = as_prompt_lane(prompt_set.lane)
+        if lane is None:
+            continue  # TS-C — legacy(PS-6의 과도기 격리 값)는 목록에서 뺀다.
+        items.append(
             AdminPromptSetSummary(
                 id=prompt_set.id,
+                lane=lane,
                 version=prompt_set.version,
                 status=prompt_set.status,
                 note=prompt_set.note,
                 created_at=prompt_set.created_at,
                 published_at=prompt_set.published_at,
-                is_active=prompt_set.id == active_id,
+                is_active=prompt_set.id in active_ids,
             )
-            for prompt_set in prompt_sets
-        ]
-    )
+        )
+    return AdminPromptSetListResponse(items=items)
 
 
 # ---- 미리보기 샘플 입력 --------------------------------------------------------

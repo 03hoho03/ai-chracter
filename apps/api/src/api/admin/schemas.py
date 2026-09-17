@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import EmailStr, Field
 
+from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
@@ -320,6 +321,7 @@ class AdminPromptSetSummary(CamelModel):
     note: str
     created_at: datetime
     published_at: datetime | None
+    lane: PromptLane
     is_active: bool
 
 
@@ -350,6 +352,7 @@ class AdminPromptSetDetailResponse(CamelModel):
     id: uuid.UUID
     version: str | None
     status: str
+    lane: PromptLane
     note: str
     created_at: datetime
     published_at: datetime | None
