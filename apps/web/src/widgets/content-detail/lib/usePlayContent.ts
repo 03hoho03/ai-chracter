@@ -53,11 +53,22 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       // 방 생성이 끝난 뒤에 닫는다 — 클릭 즉시 닫으면 생성을 기다리는 동안 아무 피드백 없이 리스트만 보인다.
       setModalState(undefined);
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id }, replace: isFromModal });
+      // 성공 경로에서는 래치를 **쥔 채로 둔다**(해제는 아래 `catch`에서만). `navigate`를 await하지 않으니
+      // 여기서 풀면 라우트가 커밋되기 전에 버튼이 다시 활성화되는데, 그 창은 짧지 않다:
+      // `apps/web/vite.config.ts`가 `tanstackRouter({ target: "react", autoCodeSplitting: true })`라
+      // `/chat/$roomId`의 컴포넌트가 별도 청크로 갈라진다 — `pnpm run build` 후
+      // `apps/web/dist/assets/chat._roomId-<해시>.js`가 생기고(해시는 빌드마다 바뀐다), 번들 안에서
+      // 그 라우트의 `component`가 `import("./chat._roomId-….js")`를 감싼 **지연 로더**로 바뀌어 있다
+      // (`routes/chat.$roomId.tsx` 원본은 평범한 `component: RouteComponent`다 — 플러그인이 한 일이다).
+      // 그래서 그 방으로 **처음** 갈 때는 청크를 네트워크로 받는 동안 이 상세 화면이 그대로 마운트돼
+      // 있다. 느린 네트워크일수록 창이 길어진다. 래치를 쥐고 있으면 곧 언마운트되므로 풀 이유도 없다.
+      //
+      // 트레이드오프: 내비게이션이 끝내 실패하면(청크 로드 실패 등) 버튼이 스피너인 채로 남는다.
+      // 성공 경로의 중복 방 생성을 막는 값이 그보다 크다고 봤고, 이 상태는 새로고침으로 벗어날 수 있다.
     } catch {
-      toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
-    } finally {
       isStartingRef.current = false;
       setIsStarting(false);
+      toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
     }
   }
 
@@ -108,7 +119,9 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
 
   return {
     handlePlay,
-    /** `POST /chat-rooms` 응답 대기 중. 호출부는 이 값으로 **`disabled`가 아니라 `aria-disabled`**를
+    /** 플레이 시작이 진행 중. `POST /chat-rooms`를 보낸 시점부터 **`/chat/$roomId`에 도착해 이 훅이
+     * 언마운트될 때까지** true다(실패했을 때만 false로 돌아간다 — 근거는 `start()`의 래치 주석).
+     * 호출부는 이 값으로 **`disabled`가 아니라 `aria-disabled`**를
      * 세운다 — `disabled`는 붙는 즉시 브라우저가 blur해서 누를 때마다 포커스가 `<body>`로 떨어진다
      * (실측 근거는 `entities/content/ui/ContentListLoadMore.tsx`). `aria-disabled`는 포인터만 막으므로
      * `start()` 첫 줄의 early return과 한 짝으로만 성립한다.
