@@ -18,9 +18,21 @@ type UsePlayContentOptions = {
  * `handlePlay`가 로그인 리다이렉트에 실어 보낸 일회성 파라미터를 소비 직후 URL에서 지운다. 남겨 두면
  * 그 주소가 히스토리에 그대로 박혀 재진입 때 자동재생이 다시 발화할 수 있다.
  *
- * `navigate({replace: true})`를 쓰지 않는 이유: 복귀 직후의 히스토리 엔트리를 덮으면 채팅방에서
- * 뒤로가기가 `/login`으로 간다. `useContentDetailModal`과 같은 이유로 `History.prototype.replaceState`를
- * 직접 호출해 라우터의 감시 래퍼를 우회한다 — 라우터는 이 호출을 모르므로 재매치하지 않고 주소만 바뀐다.
+ * `navigate({replace: true})`를 쓰지 않는 이유는 **히스토리 스택이 달라져서가 아니다.** 라우터의
+ * `replace`도 결국 `@tanstack/history`의 `queueHistoryAction("replace", …)` → `win.history.replaceState`라
+ * 프로토타입 직호출과 **똑같이 현재 엔트리 하나만** 덮는다 — 뒤로가기 행선지는 두 방법 모두 `/content/x`다
+ * (`handlePlay`의 `/login` 이동도 `LoginForm`의 복귀 이동도 push라 `/login`은 한 칸 앞 엔트리에 남는다).
+ * 갈리는 건 **알림**이다: 라우터의 `navigate`는 주소 변경을 인지해 재매치·재렌더를 일으키지만,
+ * `History.prototype.replaceState` 직호출은 라우터가 `window.history`에 own property로 덮어쓴 래퍼
+ * (`onPushPop` → `notify`)를 우회하므로 notify 없이 주소만 청소한다. 자동재생 `useEffect`가 막 발화한
+ * 시점이라 재렌더를 유발하지 않는 쪽이 필요하다(`useContentDetailModal`이 `pushState`에 쓰는 수법과 같다).
+ * `window.history.state`를 그대로 넘기는 것도 같은 맥락이다 — 라우터의 `stateIndexKey`/`key`가 보존돼
+ * `delta` 계산이 어긋나지 않는다.
+ *
+ * 부작용 1건(이 화면에서는 무해): 우회 때문에 라우터가 캐시한 `currentLocation`에는 `?autoplay=1`이 남는다.
+ * `content.$type.$id`에 `validateSearch`가 없고 이 페이지에서 `useSearch()`를 읽는 코드가 0건이며 모든
+ * navigate/Link가 절대 경로라 그 값을 읽는 쪽이 없기 때문이다 — **이 라우트에 `validateSearch`가 생기면
+ * 이 전제가 깨진다.**
  */
 function clearAutoplayParams() {
   const params = new URLSearchParams(window.location.search);
@@ -102,7 +114,15 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     /** `POST /chat-rooms` 응답 대기 중. 호출부는 이 값으로 **`disabled`가 아니라 `aria-disabled`**를
      * 세운다 — `disabled`는 붙는 즉시 브라우저가 blur해서 누를 때마다 포커스가 `<body>`로 떨어진다
      * (실측 근거는 `entities/content/ui/ContentListLoadMore.tsx`). `aria-disabled`는 포인터만 막으므로
-     * `start()` 첫 줄의 early return과 한 짝으로만 성립한다. */
+     * `start()` 첫 줄의 early return과 한 짝으로만 성립한다.
+     *
+     * **대비 한계 — 선례가 이 자리를 보증하지는 않는다.** 호출부가 함께 거는 `aria-disabled:opacity-65`의
+     * 65는 위 선례에서 왔지만 **그쪽은 `variant="outline"`**이다. outline은 채움이 곧 페이지 배경이라
+     * `opacity`가 텍스트만 흐려 @65%에서도 5.37(라이트)/7.00(다크)로 AA를 지킨다. 반면 **`primary` 솔리드
+     * 채움에 거는 건 이 자리(`CharacterPlayBar`·`StoryDetailBody`)가 처음**이라 텍스트와 채움이 같이
+     * 배경으로 합성돼 라벨 대비가 약 3.50~3.68:1로 내려간다(oklch→sRGB 계산, 캔버스 실측 아님).
+     * `aria-disabled="true"` 비활성 컨트롤이라 WCAG 1.4.3의 inactive component 예외에 들어 위반은 아니다.
+     * 포커스 링은 65%에서도 3.36~3.59로 1.4.11(3:1)을 통과한다. */
     isStarting: startChatMutation.isPending,
   };
 }
