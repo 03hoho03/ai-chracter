@@ -382,6 +382,10 @@ export interface paths {
          *     `reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와
          *     같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).
          *
+         *     **같은 값을 다시 적용해도(True→True) 막지 않는다** — 대입은 멱등하고 `admin_action_logs`에는
+         *     "누가 언제 눌렀다"가 한 행 더 남는다. 이미 정지된 유저의 재정지를 400으로 막지 않는
+         *     `suspend_user`와 같은 관례다.
+         *
          *     순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).
          */
         post: operations["set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post"];
