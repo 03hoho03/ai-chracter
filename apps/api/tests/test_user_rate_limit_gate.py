@@ -314,3 +314,33 @@ async def test_successful_request_does_not_touch_the_llm_when_limited(
     assert resp.status_code == 429
     assert resp.json()["detail"]["code"] == "USER_LIMIT"
     assert fake.received_prompt is None
+
+
+# ---- 8. 예외 플래그 컬럼 (RL-9) ----
+
+
+async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reload(
+    db_session: AsyncSession,
+) -> None:
+    """`users.rate_limit_exempt`(RL-9)는 이번 단계에서 컬럼만이다 — 게이트가 읽는 건 S5,
+    어드민이 뒤집는 건 S7이다. 그래서 여기서 검증할 건 "기본값이 켜져 있지 않다"와
+    "true 가 DB 를 왕복한다" 둘뿐이다.
+
+    ⚠️ 첫 단언이 `is None`인 건 오타가 아니다. `mapped_column(default=False)`는 **flush
+    시점** 기본값이고 `Base`는 `MappedAsDataclass`가 아니라 생성자를 건드리지 않는다(실측:
+    `default=False`가 있든 `server_default`만 있든 flush 전엔 똑같이 `None`이다). 그래서
+    S5 의 게이트는 flush 되지 않은 `User` 인스턴스가 아니라 **DB 에서 읽은 행**에만 이
+    플래그를 물어야 한다 — 그 자리에서 falsy 는 "예외가 아니다"가 아니라 "아직 모른다"다.
+    """
+    user = _make_user()
+    assert user.rate_limit_exempt is None
+
+    db_session.add(user)
+    await db_session.flush()
+    await db_session.refresh(user)
+    assert user.rate_limit_exempt is False
+
+    user.rate_limit_exempt = True
+    await db_session.flush()
+    await db_session.refresh(user)
+    assert user.rate_limit_exempt is True
