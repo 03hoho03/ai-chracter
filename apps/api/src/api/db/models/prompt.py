@@ -13,13 +13,23 @@ class PromptSet(Base):
     `status`는 Postgres enum이 아니라 Text다(`legal_documents` 선례) — draft/published
     외 값이 늘 여지가 있다. `version`은 draft일 때 null이고 게시 시점에 서버가 자동
     증가 정수 문자열을 부여한다(D-15). 부분 유니크 인덱스 2개(마이그레이션에서 생성)로
-    무결성을 지킨다 — 초안은 전역 최대 1개, published 버전 중복 금지.
+    무결성을 지킨다 — **초안은 레인별 최대 1개, published 는 `(lane, version)` 중복 금지**다
+    (`bcfbfd0cd960` 이전에는 둘 다 전역이었다 — 아래 `lane` 문단).
 
     `story_example_label`("서술자")과 `story_assistant_label`("진행자")이 둘로 갈리는
     것은 표류가 아니라 실측된 현재 동작이다(§1-1) — 전개 예시에서만 다른 라벨을 쓴다.
 
     `relationship()`은 선언하지 않는다(리포 규약) — `prompt_sections`와의 관계는 순수
     FK로만 두고 삭제 순서는 호출부가 직접 지킨다.
+
+    **`lane`**은 prompt-scope-techspec.md §2-1(PS-9)의 레인 분리 — `story`/`character`/
+    `publish_filter` 3종 + 과도기 값 `legacy`(아무 코드도 읽지 않는 격리 버킷). Postgres
+    enum이 아니라 Text다(같은 이유로 위 `status`와 동형). `server_default`는 모델에
+    남기지 않는다(PS-9a) — 마이그레이션(`bcfbfd0cd960`)이 기존 행을 `'legacy'`로 백필한
+    뒤 같은 리비전에서 기본값을 뗀다. 기본값을 남기면 `PromptSet(...)` 생성 지점이
+    `lane`을 빠뜨려도 조용히 `'legacy'`가 되어 증상이 없다 — 떼야 NOT NULL 위반으로
+    즉시 드러난다. 부분 유니크 인덱스 2개(초안 전역 1개·게시 버전 중복 금지)의 유니크
+    범위가 전역에서 **레인별**로 좁혀진다(아래 `__table_args__`).
     """
 
     __tablename__ = "prompt_sets"
@@ -27,6 +37,7 @@ class PromptSet(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     version: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str] = mapped_column(Text, nullable=False)
+    lane: Mapped[str] = mapped_column(Text, nullable=False)
     user_label: Mapped[str] = mapped_column(Text, nullable=False)
     story_assistant_label: Mapped[str] = mapped_column(Text, nullable=False)
     story_example_label: Mapped[str] = mapped_column(Text, nullable=False)
@@ -43,14 +54,16 @@ class PromptSet(Base):
     # 마이그레이션 소스에 `MappedColumn` 객체 repr이 박혀 `SyntaxError`가 난다(실측) —
     # `== "draft"`로 명시적 불리언 식을 만들어야 렌더러가 `sa.text(...)`로 정상 변환한다.
     __table_args__ = (
-        Index("ix_prompt_sets_draft", "status", unique=True, postgresql_where=status == "draft"),
+        Index("ix_prompt_sets_draft", "lane", unique=True, postgresql_where=status == "draft"),
         Index(
-            "ix_prompt_sets_version_published",
+            "ix_prompt_sets_lane_version_published",
+            "lane",
             "version",
             unique=True,
             postgresql_where=status == "published",
         ),
         Index("ix_prompt_sets_published_at", published_at.desc()),
+        Index("ix_prompt_sets_lane_published_at", "lane", published_at.desc()),
     )
 
 

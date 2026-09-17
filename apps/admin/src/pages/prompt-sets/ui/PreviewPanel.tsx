@@ -1,17 +1,22 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 
 import { usePreviewQuery } from "../api/usePreviewQuery";
+import type { PromptLane } from "../model/lane";
 
 type PreviewPanelProps = {
+  lane: PromptLane;
   isStale: boolean;
 };
 
 /** D-10 — 이 화면의 존재 이유. 문안 자체가 아니라 **샘플 입력으로 실제 렌더러를 태운 조립
- * 결과**를 보고 게시 여부를 판단한다. 13개 항목(채널×템플릿/발행 대상 조합)을 접이식
- * `<details>`로 늘어놓는다 — 항목마다 새 접근성 배선이 필요한 아코디언 프리미티브를 추가하는
- * 대신 네이티브 disclosure를 쓴다(키보드·스크린리더가 기본으로 지원한다). */
-export function PreviewPanel({ isStale }: PreviewPanelProps) {
-  const previewQuery = usePreviewQuery();
+ * 결과**를 보고 게시 여부를 판단한다. 레인마다 8/3/2개 항목(채널×템플릿/발행 대상 조합)을
+ * 접이식 `<details>`로 늘어놓는다 — 항목마다 새 접근성 배선이 필요한 아코디언 프리미티브를
+ * 추가하는 대신 네이티브 disclosure를 쓴다(키보드·스크린리더가 기본으로 지원한다).
+ * prompt-scope-techspec.md §6-7 — `open={index === 0}`은 무변경이다. 레인별 응답의 첫
+ * 항목이 이미 다르므로(story: system·스토리·basic / character: system·캐릭터 /
+ * publish_filter: publish_filter·캐릭터) 이 자리는 그대로 두고 `lane`만 흘려보낸다. */
+export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
+  const previewQuery = usePreviewQuery(lane);
 
   return (
     <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4">

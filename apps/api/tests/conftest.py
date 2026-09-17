@@ -67,7 +67,7 @@ os.environ["DATABASE_URL"] = os.environ.get(
 )
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
-from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY
+from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.session import engine
@@ -146,11 +146,16 @@ def _migrated_schema() -> Generator[None, None, None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _flush_prompt_set_cache() -> None:
-    """`prompt_set:active`(prompt-db-goal-prompt.md §8-1)는 고정 키라 나머지 Redis 모듈과
-    달리 세션ID/잡ID 같은 랜덤 값으로 테스트끼리 격리되지 않는다 — `db_session`은 테스트마다
-    롤백되지만 Redis는 그대로다. 한 테스트가 캐싱한 세트를 다음 테스트가 그대로 보게 되므로
-    매 테스트 전에 지운다."""
-    await redis_client.delete(ACTIVE_PROMPT_SET_KEY)
+    """`prompt_set:active:{lane}`(prompt-db-goal-prompt.md §8-1, prompt-scope-techspec.md
+    §3-4/PS-15)는 고정 키라 나머지 Redis 모듈과 달리 세션ID/잡ID 같은 랜덤 값으로 테스트끼리
+    격리되지 않는다 — `db_session`은 테스트마다 롤백되지만 Redis는 그대로다. 한 테스트가
+    캐싱한 세트를 다음 테스트가 그대로 보게 되므로 매 테스트 전에 지운다.
+
+    아래 `_flush_rate_limit_keys`와 같은 이유로 glob이다 — 레인이 늘 때 하드코딩된 키
+    나열 중 한쪽만 갱신되는 사고를 막는다(RS-8)."""
+    keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
 
 
 @pytest_asyncio.fixture(autouse=True)

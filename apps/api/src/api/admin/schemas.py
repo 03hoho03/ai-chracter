@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import EmailStr, Field
 
+from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
@@ -72,6 +73,43 @@ class AdminDashboardActivityResponse(CamelModel):
     recent_users: list[AdminDashboardRecentUser]
     recent_contents: list[AdminDashboardRecentContent]
     recent_reports: list[AdminDashboardRecentReport]
+
+
+class AdminDashboardCohortWeekPoint(CamelModel):
+    week_offset: int
+    retained_users: int
+    retention_rate: float
+
+
+class AdminDashboardCohort(CamelModel):
+    cohort_week_start: date
+    cohort_size: int
+    weeks: list[AdminDashboardCohortWeekPoint]
+
+
+class AdminDashboardGrowthResponse(CamelModel):
+    """가입자 성장 지표. 새 수집 없이 기존 DB만 재구성한다.
+
+    - `activation_rate`: 가입자→첫 대화 도달률(분모 `total_users`, 분자 `activated_users`).
+    - `publish_rate`: 제작자→발행 완료율(분모 `total_users`, 분자
+      `creators_with_published_content`).
+    - `withdrawn_rate`/`creator_rate`는 근사가 아닌 정확한 수치.
+    - `cohort_retention`: **근사다.** 로그인 이벤트가 DB에 없어(`last_login`류 필드 0건)
+      '재방문'을 '가입 후 그 주에 `ChatMessage.role == USER`를 보냈는가'로 대체한다 —
+      정확한 재방문율로 읽지 말 것.
+    """
+
+    total_users: int
+    activated_users: int
+    activation_rate: float
+    creators_with_published_content: int
+    publish_rate: float
+    total_signups: int
+    withdrawn_users: int
+    withdrawn_rate: float
+    users_with_content: int
+    creator_rate: float
+    cohort_retention: list[AdminDashboardCohort]
 
 
 class AdminContentListItem(CamelModel):
@@ -333,6 +371,7 @@ class AdminPromptSetSummary(CamelModel):
     note: str
     created_at: datetime
     published_at: datetime | None
+    lane: PromptLane
     is_active: bool
 
 
@@ -363,6 +402,7 @@ class AdminPromptSetDetailResponse(CamelModel):
     id: uuid.UUID
     version: str | None
     status: str
+    lane: PromptLane
     note: str
     created_at: datetime
     published_at: datetime | None

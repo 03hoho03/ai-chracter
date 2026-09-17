@@ -12,14 +12,18 @@
 """
 
 import uuid
+from typing import get_args
 
 from api.chat.prompt_builder import (
+    PromptLane,
+    _PROMPT_LANES,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
     render_prompt_channel,
+    select_sections_for_render,
     system_instruction_for,
 )
 from api.db.models.chat import ChatMessage, ChatMessageRole
@@ -169,6 +173,22 @@ def test_render_prompt_channel_default_variant_fallback_drops_section_when_value
     rendered = render_prompt_channel(sections, channel="generation", scope="story", variant="custom", values=values)
 
     assert rendered == ""
+
+
+def test_select_sections_for_render_matches_render_prompt_channel_selection() -> None:
+    """C5-T24(techspec §5-5, §5-7) — `select_sections_for_render`가 `render_prompt_channel`의
+    1~3단계(scope 필터 → variant 선택 → order 정렬)를 그대로 뽑아낸 것이라는 증거. 추출
+    함수가 고른 슬롯 순서가 렌더러의 최종 출력과 같은 순서로 이어져야 한다(골든이 본 증거를
+    단위 테스트로도 고정)."""
+    sections = [
+        _section(channel="system", scope="character", slot="character_only", body="CHAR", conditional=False, order=2),
+        _section(channel="system", scope="story", slot="story_only", body="STORY", conditional=False, order=1),
+        _section(channel="system", scope="both", slot="shared", body="SHARED", conditional=False, order=3),
+    ]
+
+    selected = select_sections_for_render(sections, channel="system", scope="story")
+    assert [s.slot for s in selected] == ["story_only", "shared"]
+    assert render_prompt_channel(sections, channel="system", scope="story", values={}) == "STORY\n\nSHARED"
 
 
 # ---- system_instruction_for — scope/variant 배선 ---------------------------
@@ -441,3 +461,10 @@ def test_migrated_development_example_pairs_preserve_narration_before_the_first_
     pairs = migration._parse_development_example(original)
 
     assert pairs == [{"userLine": "", "assistantLine": original.strip()}]
+
+
+def test_prompt_lanes_tuple_is_exhaustive_over_the_literal() -> None:
+    """prompt-scope-techspec.md §7-1 #25 (TS-K). mypy는 `_PROMPT_LANES`의 각 원소가
+    `PromptLane`인지는 잡지만, `PromptLane`의 원소를 전부 담았는지는 못 잡는다 — 예를 들어
+    `publish_filter`를 튜플에서 빠뜨려도 타입체커는 조용하다. 이 테스트가 그 칸을 메운다."""
+    assert set(_PROMPT_LANES) == set(get_args(PromptLane))

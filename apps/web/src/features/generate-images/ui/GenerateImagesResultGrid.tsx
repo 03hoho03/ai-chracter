@@ -71,12 +71,12 @@ export function GenerateImagesResultGrid({
     return (
       <div className="flex flex-col gap-3">
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />
+          <Loader2 aria-hidden className="size-4 animate-spin" />
           <span>생성 준비 중...</span>
         </div>
         <div className="grid grid-cols-3 gap-2">
           {Array.from({ length: requestedCount }, (_, i) => (
-            <div key={i} className="aspect-square rounded-md bg-muted motion-safe:animate-pulse" />
+            <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
           ))}
         </div>
       </div>
@@ -112,7 +112,7 @@ export function GenerateImagesResultGrid({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {!isTerminal && <Loader2 aria-hidden className="size-4 motion-safe:animate-spin" />}
+        {!isTerminal && <Loader2 aria-hidden className="size-4 animate-spin" />}
         <span>
           {isTerminal
             ? `${job.images.length}장 생성 완료`
@@ -132,7 +132,7 @@ export function GenerateImagesResultGrid({
           </div>
         ))}
         {Array.from({ length: skeletonCount }, (_, i) => (
-          <div key={`pending-${i}`} className="aspect-square rounded-md bg-muted motion-safe:animate-pulse" />
+          <div key={`pending-${i}`} className="aspect-square animate-pulse rounded-md bg-muted" />
         ))}
       </div>
       {/* my-works/ui/MyWorksPage.tsx:507 선례 — polite 라이브 리전은 조건부로 마운트하면 announce

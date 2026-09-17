@@ -1,7 +1,7 @@
 """users rate_limit_exempt
 
 Revision ID: d7d578597b6a
-Revises: 4e6d562bf8da
+Revises: a69cbd40dec8
 Create Date: 2026-09-18 00:07:52.061155
 
 limit-goal-prompt.md RL-9. 유저별 채팅 상한의 예외 플래그. 상한값 자체는 상수·재배포라
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = 'd7d578597b6a'
-down_revision: str | Sequence[str] | None = '4e6d562bf8da'
+down_revision: str | Sequence[str] | None = 'a69cbd40dec8'
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
