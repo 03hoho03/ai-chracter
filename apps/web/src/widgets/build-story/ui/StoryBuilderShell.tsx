@@ -64,7 +64,7 @@ const TABS = STORY_TABS;
 // 서버만 아는 상태가 남아 이 경로를 지우지 않는다(BP-4).
 // 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 9개 전부다(인덱스가 박힌
 // `startingSetups[0].prologue` 류는 fallback 문구로 접힌다, F-8/BP-4).
-const MISSING_FIELD_LABELS: Record<string, string> = {
+const MISSING_FIELD_LABELS = {
   name: "이름",
   oneLiner: "한줄소개",
   thumbnailAssetId: "대표 이미지",
@@ -76,9 +76,15 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
   target: "타겟",
 };
 
-// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다(builder-goal-prompt.md §5-2) — 키 집합은
-// MISSING_FIELD_LABELS와 같고, 값은 features/build-story/model/tabs.ts(STORY_TABS)의 fields 프리픽스
-// 아래에 들어간다(profile.*는 profile 탭, registration.*는 registration 탭).
+/** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
+ * 검사한다. 어긋난 키는 fieldLabelByFormPath가 조용히 버려 토스트가 "그 밖의 필수 항목"으로 접히는데,
+ * 두 맵을 손으로 맞추는 한 그 어긋남은 화면에서만 드러난다. */
+type MissingField = keyof typeof MISSING_FIELD_LABELS;
+
+// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다(builder-goal-prompt.md §5-2) — 값은
+// features/build-story/model/tabs.ts(STORY_TABS)의 fields 프리픽스 아래에 들어간다(profile.*는
+// profile 탭, registration.*는 registration 탭). 선언 타입이 string 인덱스인 것은 서버가 주는 임의
+// 문자열로 조회하기 때문이고(인덱스 경로 포함, F-8), 키 커버리지는 아래 `satisfies`가 잠근다.
 const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValues>>> = {
   name: "profile.name",
   oneLiner: "profile.oneLiner",
@@ -90,7 +96,7 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
   description: "registration.description",
   genreId: "registration.genre",
   target: "registration.target",
-};
+} satisfies Record<MissingField, Path<StoryBuilderFormValues>>;
 
 // 클라 검증 실패 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 위 두
 // 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다
