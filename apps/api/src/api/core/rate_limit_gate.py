@@ -12,21 +12,37 @@
 제너레이터 본문에서 `HTTPException`을 던지면 이미 시작된 스트림을 뚫고 나가 커넥션이 깨지고,
 최악에는 망가진 asyncpg 커넥션이 풀로 반환돼 무관한 요청이 500이 된다(`apps/api/CLAUDE.md`
 §SSE 스트리밍). 그래서 라우트 시그니처의 `Depends` 자리에서만 429를 낸다.
+
+**이미지 생성(S6, RL-5/RL-11/RL-16/RL-18)도 이 모듈이 맡는다.** 기구가 다르고(고정 창이
+아니라 토큰 버킷) 세는 단위도 다르지만(요청 1건이 아니라 이미지 장수), 정책이 한 모듈에
+모여 있어야 예외 계정 판정(`is_rate_limit_exempt`)과 Redis fail-open(`_report_redis_failure`)
+을 채팅과 **같은 구현**으로 공유한다 — 사본이 두 벌이 되면 한쪽만 고쳐진다. 그래서
+`api.images.schemas`를 이 모듈이 import한다(반대 방향은 없다 — `images/router.py`가 이
+게이트를 부르지만 이 모듈은 라우터를 모른다).
 """
 
 import logging
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from fastapi import Depends, HTTPException, status
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.rate_limit import KST, check_rate_limit, seconds_until_kst_midnight
+from api.core.rate_limit import (
+    KST,
+    check_rate_limit,
+    refund_tokens,
+    seconds_until_kst_midnight,
+    take_tokens,
+)
+from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.session import get_db_session
+from api.images.schemas import GenerateImageRequest
 from api.session.dependencies import get_current_user_id
 
 logger = logging.getLogger(__name__)
@@ -40,6 +56,22 @@ CHAT_BURST_WINDOW_SECONDS = 60
 # 위해 고른 수다. 실제 사용 분포가 나오면 그 숫자로 다시 정해야 한다.
 CHAT_DAILY_LIMIT = 30
 
+# RL-5(S6): 이미지는 고정 창이 아니라 토큰 버킷이다 — 10장을 모아 뒀다가 한 번에 쓰고
+# 시간당 1장씩 연속 충전된다. **토큰 1개 = 이미지 1장**이라 `count=2` 요청은 2를 깎는다
+# (비용은 요청 수가 아니라 장수에 붙는다 — 집 PC가 장당 한 번씩 돈다, LG-6).
+# 30과 마찬가지로 실측값이 아니라 정책값이다.
+IMAGE_TOKEN_CAPACITY = 10
+IMAGE_TOKEN_REFILL_SECONDS = 3600
+
+# RL-11: 큐가 찼을 때 주는 재시도 초. **큐 길이 추정이 아니라 잡 하나의 최대 소요**를 고정값
+# 으로 준다 — `core/config.py`의 `local_image_queue_limit` 주석이 근거로 쓰는 그 60초(장당
+# 약 30초 × `count` 상한 2)다. 앞선 대기자 수는 `local_image._queue_depth`가 정확히 들고
+# 있다 — 모르는 것은 **각 잡의 잔여 시간**이라 그 깊이를 초로 환산할 수 없다. 그래서 잡
+# 하나의 상한 60초를 고정값으로 답한다("최대 60초 뒤 다시").
+# ⚠️ config에는 이 60이 **설정값이 아니라 주석으로만** 있어서 여기에 상수로 둔다
+# (둘이 어긋나면 config 주석이 아니라 이 값이 응답에 나간다).
+QUEUE_FULL_RETRY_AFTER_SECONDS = 60
+
 # RL-21: Redis 장애 보고는 창당 1회. 장애는 초당 수십 요청에 그대로 곱해져서, 요청마다 보고하면
 # Bugsink 이벤트가 그 수만큼 쏟아진다.
 # ⚠️ **1워커 전제다.** 이 타임스탬프는 프로세스 전역이라 워커를 늘리면 워커 수만큼 보고된다
@@ -48,6 +80,11 @@ REDIS_FAILURE_REPORT_WINDOW_SECONDS = 60
 
 _BURST_SCOPE = "chat_burst"
 _DAY_SCOPE = "chat_day"
+_IMAGE_SCOPE = "image_tokens"
+# RL-11/RL-12: 이미지 429 두 종류(`USER_LIMIT`·`QUEUE_FULL`)는 같은 `window`를 쓴다 — 둘을
+# 가르는 것은 `code`고, `window`는 "어느 상한이냐"가 아니라 "어느 기능이냐"다(채팅은 창 길이가
+# 곧 재시도 안내라 minute/day를 싣지만, 이미지는 그 역할을 `retryAfterSeconds`가 한다).
+_IMAGE_WINDOW = "image"
 
 _last_redis_failure_reported_at: float | None = None
 
@@ -66,19 +103,30 @@ def _report_redis_failure() -> None:
     capture_dependency_failure(dependency="redis")
 
 
-def _too_many_requests(user_id: uuid.UUID, window: str, retry_after: int) -> HTTPException:
-    # RL-12: 검색 가능한 고정 토큰 하나(`user_limit_exceeded`) + user_id·window·retry_after까지.
-    # 이메일·프롬프트 본문 등 나머지는 절대 싣지 않는다. Bugsink 이벤트로는 승격하지 않는다 —
-    # 상한에 걸리는 것은 설계된 동작이지 장애가 아니다.
+def _too_many_requests(
+    user_id: uuid.UUID, window: str, retry_after: int, *, code: str = "USER_LIMIT"
+) -> HTTPException:
+    # RL-12: 검색 가능한 고정 토큰 하나(`user_limit_exceeded`) + code·user_id·window·retry_after
+    # 까지. 이메일·프롬프트 본문 등 나머지는 절대 싣지 않는다(`code`는 리터럴 2종이라 PII가
+    # 아니다). Bugsink 이벤트로는 승격하지 않는다 — 상한에 걸리는 것은 설계된 동작이지
+    # 장애가 아니다. `code`가 없으면 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)가 같은
+    # `window=image`로 찍혀 로그만으로는 갈리지 않는다(유저 쿼터냐 GPU 큐냐를 셀 수 없다).
     logger.warning(
-        "user_limit_exceeded user_id=%s window=%s retry_after=%s", user_id, window, retry_after
+        "user_limit_exceeded code=%s user_id=%s window=%s retry_after=%s",
+        code,
+        user_id,
+        window,
+        retry_after,
     )
     # RL-11: `headers={"Retry-After": ...}`를 주지 않는다. 브라우저가 CORS 응답에서 읽을 수 있는
     # 헤더는 `Access-Control-Expose-Headers`에 실린 것뿐이라 프런트가 못 읽는다 — 값은 본문에
     # 담아 보낸다(RL-15의 `window`도 같은 이유로 본문 필드다).
+    # RL-11(S6): `code`만 인자로 열려 있는 이유는 이미지 큐 거절(`QUEUE_FULL`)이 **같은 바디
+    # 모양·같은 로그 토큰**을 써야 하기 때문이다 — 예전 큐 429는 detail이 평문 문자열이라
+    # 클라이언트가 두 429를 구분할 수도, 재시도 시점을 알 수도 없었다.
     return HTTPException(
         status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-        detail={"code": "USER_LIMIT", "retryAfterSeconds": retry_after, "window": window},
+        detail={"code": code, "retryAfterSeconds": retry_after, "window": window},
     )
 
 
@@ -162,4 +210,101 @@ async def enforce_chat_rate_limit(
         # `is_user_suspended`는 그보다 뒤라 전면 장애에서는 호출조차 되지 않는다).
         # "Redis가 죽어도 채팅은 산다"는 뜻이 아니다.
         logger.warning("채팅 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
+        _report_redis_failure()
+
+
+@dataclass(frozen=True)
+class ImageCharge:
+    """`enforce_image_rate_limit`이 라우트에 넘기는 **차감 영수증**(RL-13/RL-16).
+
+    `charged=False`는 "차감이 일어나지 않았다"는 뜻이다(예외 계정 RL-10, Redis fail-open
+    RL-8). 환불이 이 플래그를 봐야 하는 이유가 여기 있다 — `refund_tokens`는 차감 여부를
+    모른 채 무조건 용량 천장까지 올리므로, 차감하지 않은 요청을 환불하면 면제 계정이 요청을
+    보낼 때마다 그 사용자의 버킷이 만땅으로 리셋된다(면제를 거둔 직후가 특히 그렇다)."""
+
+    count: int
+    charged: bool
+
+
+async def enforce_image_rate_limit(
+    payload: GenerateImageRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ImageCharge:
+    """`POST /images/generate` 게이트(RL-5/RL-13). 반환값이 라우트의 환불 근거가 된다.
+
+    **라우트와 같은 바디 모델을 같은 이름으로 선언한다.** 그래야 FastAPI가 같은 JSON을 한 번
+    파싱해 게이트와 라우트가 각각 검증한다 — 같은 값이지만 서로 **다른 인스턴스**다(202 요청
+    하나당 `GenerateImageRequest` 검증 2회, 실측). 같은 객체가 아니므로 한쪽에서 바디를
+    고쳐 다른 쪽에 넘기는 식의 배선은 성립하지 않는다(`chat/router.py`의 `_validate_shortcut`
+    선례, `apps/api/CLAUDE.md` §SSE). 게이트가 바디를 봐야 하는 이유는 차감량이 요청 수가
+    아니라 **장수**(`count`)이기 때문이다.
+
+    검사를 라우트 본문이 아니라 `Depends`에 두는 이유는 채팅(RL-13)과 **같지 않다** — 이
+    라우트는 SSE 제너레이터가 아니라 본문에서 raise해도 스트림이 깨지지 않는다. 여기서
+    `Depends`를 쓰는 이유는 둘이다: ① 잡 생성·가용성 확인 등 라우트 본문의 다른 검증보다
+    반드시 먼저 끊긴다(그래서 토큰이 없는 요청은 큐 칸도 건드리지 않는다), ② 채팅 게이트와
+    같은 자리에 있어야 "레이트리밋은 시그니처에서 본다"는 규칙이 경로마다 달라지지 않는다.
+
+    순서는 **면제 → 토큰**이다(RL-10/RL-18). 면제 계정은 토큰 버킷만 건너뛰고 큐(전역·유저별
+    1칸)는 그대로 받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량(LG-6)의 분배라서 면제 대상에게
+    열어 줄 이유가 없다. 큐 판정은 라우트 본문의 `try_admit`이 계속 맡는다(검사+증가가 한
+    동기 블록이어야 하는 P2-R 불변식이 그쪽에 있다).
+    """
+    try:
+        if await is_rate_limit_exempt(user_id, db):
+            return ImageCharge(count=payload.count, charged=False)
+
+        retry_after = await take_tokens(
+            redis_client,
+            _IMAGE_SCOPE,
+            str(user_id),
+            payload.count,
+            capacity=IMAGE_TOKEN_CAPACITY,
+            refill_seconds=IMAGE_TOKEN_REFILL_SECONDS,
+            # `now`는 주입값이다(`take_tokens` docstring) — 단조 증가하는 epoch 초라야
+            # 충전 계산이 맞는다. `time.monotonic()`은 프로세스 기준점이 매번 달라져
+            # Redis에 저장된 `updated_at`과 비교할 수 없다.
+            now=time.time(),
+        )
+    except RedisError:
+        # RL-8: 채팅과 같은 fail-open이고 같은 이유다 — 상한을 세는 장치가 죽었다고 기능까지
+        # 죽일 이유가 없다. 여기서 통과시킨 요청은 차감이 없었으므로 환불 대상도 아니다.
+        logger.warning("이미지 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
+        _report_redis_failure()
+        return ImageCharge(count=payload.count, charged=False)
+
+    if retry_after > 0:
+        raise _too_many_requests(user_id, _IMAGE_WINDOW, retry_after)
+    return ImageCharge(count=payload.count, charged=True)
+
+
+def image_queue_full(user_id: uuid.UUID) -> HTTPException:
+    """큐(전역·유저별) 거절 429(RL-11). 유저 상한 429와 바디 모양이 같고 `code`로만 갈린다."""
+    return _too_many_requests(
+        user_id, _IMAGE_WINDOW, QUEUE_FULL_RETRY_AFTER_SECONDS, code="QUEUE_FULL"
+    )
+
+
+async def refund_image_charge(user_id: uuid.UUID, charge: ImageCharge) -> None:
+    """RL-16: 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에 끝난 요청의
+    토큰을 돌려놓는다. 차감이 없었으면(`charged=False`) 아무 일도 하지 않는다.
+
+    `RedisError`를 여기서 삼키는 이유: 이 함수는 **이미 실패가 확정된 요청**(429/503/400)의
+    정리 작업이라, 예외가 새어 나가면 사용자가 받아야 할 429가 원인과 무관한 500으로 바뀐다.
+    환불 유실 자체는 조용히 사라지지 않는다 — `refund_tokens`도 여기도 로그를 남긴다."""
+    if not charge.charged:
+        return
+    try:
+        await refund_tokens(
+            redis_client,
+            _IMAGE_SCOPE,
+            str(user_id),
+            charge.count,
+            capacity=IMAGE_TOKEN_CAPACITY,
+            refill_seconds=IMAGE_TOKEN_REFILL_SECONDS,
+            now=time.time(),
+        )
+    except RedisError:
+        logger.warning("이미지 토큰 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
         _report_redis_failure()

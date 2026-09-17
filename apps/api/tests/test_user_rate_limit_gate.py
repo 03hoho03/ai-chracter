@@ -287,6 +287,8 @@ async def test_exceeded_request_logs_warning_with_fixed_token(
     records = [record for record in caplog.records if "user_limit_exceeded" in record.getMessage()]
     assert len(records) == 1
     line = records[0].getMessage()
+    # RL-11: `code`가 있어야 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)를 로그에서 가른다.
+    assert "code=USER_LIMIT" in line
     assert "window=minute" in line
     assert "retry_after=" in line
     assert str(user.id) in line

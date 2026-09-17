@@ -835,7 +835,7 @@ async def test_generate_returns_429_creates_no_request_row(
     await db_session.commit()
     await _login_as(db_client, user.id)
     _stub_capabilities_ready(monkeypatch)
-    monkeypatch.setattr("api.images.router.try_admit", lambda: False)
+    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
 
     resp = await db_client.post("/images/generate", json=_generate_payload())
 

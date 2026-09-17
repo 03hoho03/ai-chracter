@@ -7,6 +7,7 @@ LT-1/LT-2/LT-3. 전송 페이크는 아래 `_patch_httpx`가 `api.llm.local_imag
 
 import asyncio
 import json
+import uuid
 from collections.abc import Callable, Generator
 
 import httpx
@@ -14,6 +15,7 @@ import pytest
 
 from api.core.config import settings
 from api.images.models import ImageStylePreset
+from api.llm import local_image
 from api.llm.client import LLMClientError
 from api.llm.local_image import (
     UNAVAILABLE,
@@ -452,34 +454,64 @@ async def test_concurrent_generate_calls_never_overlap(monkeypatch: pytest.Monke
 async def test_try_admit_admits_up_to_the_limit_then_rejects_and_release_restores_capacity(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """상한(2)만큼만 admit되고 그 다음은 거절돼야 한다 — 안 그러면 한 사용자가 GPU 직렬
-    처리량을 독점한다. `release_admission` 한 번으로 슬롯 하나가 돌아오는지까지 고정한다."""
+    """전역 상한(2)만큼만 admit되고 그 다음은 거절돼야 한다 — 안 그러면 사용자들이 GPU 직렬
+    처리량을 독점한다. `release_admission` 한 번으로 슬롯 하나가 돌아오는지까지 고정한다.
+
+    limit-goal-prompt.md RL-5: 유저별 큐가 1칸이라 **서로 다른 유저**로 채워야 전역 상한을
+    본다. 같은 유저로 두 번 부르면 유저별 1칸에서 먼저 걸려 전역 상한을 아예 못 본다."""
     monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
+    monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
     monkeypatch.setattr(settings, "local_image_queue_limit", 2)
+    user_a, user_b, user_c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
 
-    assert try_admit() is True
-    assert try_admit() is True
-    assert try_admit() is False
+    assert try_admit(user_a) is True
+    assert try_admit(user_b) is True
+    assert try_admit(user_c) is False
 
-    release_admission()
-    assert try_admit() is True
+    release_admission(user_a)
+    assert try_admit(user_a) is True
 
-    release_admission()
-    release_admission()
+    release_admission(user_a)
+    release_admission(user_b)
 
 
 async def test_release_admission_does_not_go_below_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     """대응하는 admit 없이 여분으로 해제되면 카운터가 음수로 내려가, 그 뒤 admit 두 번이
-    상한(1)을 넘어 통과해버린다 — 0 바닥을 고정하지 않으면 상한이 사실상 무제한이 된다."""
+    상한(1)을 넘어 통과해버린다 — 0 바닥을 고정하지 않으면 상한이 사실상 무제한이 된다.
+
+    두 번째 admit은 **다른 유저**여야 한다 — 같은 유저면 유저별 1칸(RL-5)에서 거절돼
+    전역 카운터가 음수든 0이든 같은 결과가 나와(항진명제) 0 바닥을 전혀 논증하지 못한다."""
     monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
+    monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
     monkeypatch.setattr(settings, "local_image_queue_limit", 1)
+    user_a, user_b = uuid.uuid4(), uuid.uuid4()
 
-    release_admission()
+    release_admission(user_a)
 
-    assert try_admit() is True
-    assert try_admit() is False
+    assert try_admit(user_a) is True
+    assert try_admit(user_b) is False
 
-    release_admission()
+    release_admission(user_a)
+
+
+async def test_release_admission_drops_the_user_key_at_zero(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """limit-goal-prompt.md RL-5: 유저별 깊이 dict는 `_queue_depth`와 같은 프로세스 전역이라
+    0이 된 키를 지우지 않으면 **서비스 수명 동안 유저 수만큼 자란다**(무한 증가하는 누수).
+    카운터만 보는 테스트로는 안 잡힌다 — 0인 키가 남아 있어도 admit/reject 판정은 똑같기
+    때문이다. dict 자체를 들여다본다."""
+    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
+    monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
+    monkeypatch.setattr(settings, "local_image_queue_limit", 4)
+    user = uuid.uuid4()
+
+    assert try_admit(user) is True
+    assert local_image._user_queue_depth == {user: 1}
+
+    release_admission(user)
+
+    assert local_image._user_queue_depth == {}
 
 
 # ---- capabilities TTL 캐시 (LT-2/LG-18) --------------------------------------
