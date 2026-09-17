@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useAtom } from "jotai";
 import { toast } from "sonner";
@@ -62,6 +62,8 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
   const navigate = useNavigate();
   const params = useRawSearchParams();
   const hasAutoStartedRef = useRef(false);
+  const isStartingRef = useRef(false);
+  const [isStarting, setIsStarting] = useState(false);
   const startChatMutation = useStartChatMutation();
   const [modalState, setModalState] = useAtom(contentDetailModalAtom);
   const isFromModal = modalState !== undefined;
@@ -69,8 +71,19 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
   async function start(startingSetupId?: string) {
     // 연타 방지 — `POST /chat-rooms`에는 유니크 제약이 없어(설계다) 두 번 부르면 오프닝 메시지만 든
     // 빈 방이 하나 더 생기고, 스토리 콘텐츠에는 그 방을 지울 UI가 없다. 호출부의 `aria-disabled`는
-    // 포인터만 막고 키보드 Enter는 통과시키므로, 중복 생성을 실제로 막는 건 이 줄이다.
-    if (startChatMutation.isPending) return;
+    // 포인터만 막고 키보드 Enter는 통과시키므로, 중복 생성을 실제로 막는 건 이 래치다.
+    //
+    // 반응형 값(`startChatMutation.isPending`·`isStarting`)이 아니라 ref로 잡는 이유 둘:
+    // (1) 저 값들은 **렌더 클로저에 박힌 스냅샷**이라, 첫 호출이 일으킨 재렌더가 커밋되기 전에 두 번째
+    //     호출이 들어오면(연타·Enter 반복) 같은 `start` 인스턴스가 여전히 false를 읽는다. ref는 렌더를
+    //     기다리지 않는 동기 래치라 그 창이 없다.
+    // (2) 이 함수는 아래 자동재생 `useEffect`에서도 불린다 = "마운트 시 뮤테이션"이고, `apps/web/CLAUDE.md`는
+    //     그 경우 반응형 `isPending` 대신 `mutateAsync`+`await`+로컬 로딩 state를 쓰라고 정해 뒀다
+    //     (StrictMode의 마운트→언마운트→재마운트가 `MutationObserver`를 영구 제거해 `isPending`이 그 순간
+    //     값에 멈춘다). 선례는 `widgets/builder-preview/ui/PreviewSessionView.tsx`의 `startPreview`다.
+    if (isStartingRef.current) return;
+    isStartingRef.current = true;
+    setIsStarting(true);
     try {
       const room = await startChatMutation.mutateAsync({ contentId, contentType, startingSetupId });
       // 방 생성이 끝난 뒤에 닫는다 — 클릭 즉시 닫으면 생성을 기다리는 동안 아무 피드백 없이 리스트만 보인다.
@@ -78,6 +91,9 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id }, replace: isFromModal });
     } catch {
       toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } finally {
+      isStartingRef.current = false;
+      setIsStarting(false);
     }
   }
 
@@ -123,6 +139,6 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
      * 배경으로 합성돼 라벨 대비가 약 3.50~3.68:1로 내려간다(oklch→sRGB 계산, 캔버스 실측 아님).
      * `aria-disabled="true"` 비활성 컨트롤이라 WCAG 1.4.3의 inactive component 예외에 들어 위반은 아니다.
      * 포커스 링은 65%에서도 3.36~3.59로 1.4.11(3:1)을 통과한다. */
-    isStarting: startChatMutation.isPending,
+    isStarting,
   };
 }
