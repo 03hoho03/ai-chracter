@@ -12,8 +12,11 @@
 """
 
 import uuid
+from typing import get_args
 
 from api.chat.prompt_builder import (
+    PromptLane,
+    _PROMPT_LANES,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
@@ -458,3 +461,10 @@ def test_migrated_development_example_pairs_preserve_narration_before_the_first_
     pairs = migration._parse_development_example(original)
 
     assert pairs == [{"userLine": "", "assistantLine": original.strip()}]
+
+
+def test_prompt_lanes_tuple_is_exhaustive_over_the_literal() -> None:
+    """prompt-scope-techspec.md §7-1 #25 (TS-K). mypy는 `_PROMPT_LANES`의 각 원소가
+    `PromptLane`인지는 잡지만, `PromptLane`의 원소를 전부 담았는지는 못 잡는다 — 예를 들어
+    `publish_filter`를 튜플에서 빠뜨려도 타입체커는 조용하다. 이 테스트가 그 칸을 메운다."""
+    assert set(_PROMPT_LANES) == set(get_args(PromptLane))
