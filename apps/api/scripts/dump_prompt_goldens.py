@@ -24,10 +24,11 @@
 import asyncio
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 from uuid import UUID
 
 from api.chat.prompt_builder import (
+    PromptLane,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
@@ -142,50 +143,60 @@ def _starting_setup() -> StartingSetup:
 
 # ---- 골든 케이스 ------------------------------------------------------------
 #
-# (파일명, (prompt_set, sections) -> 프롬프트 문자열인 콜러블) 쌍의 목록. `build_*`가
-# 이제 `PromptSet`/`PromptSection` 목록을 받으므로 콜러블도 그 둘을 인자로 받는다 —
-# `tests/test_prompt_goldens.py`가 이 목록을 그대로 import해서, DB에서 읽은 활성
-# 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다.
+# (파일명, 레인, (prompt_set, sections) -> 프롬프트 문자열인 콜러블) 3-튜플의 목록.
+# `build_*`가 `PromptSet`/`PromptSection` 목록을 받으므로 콜러블도 그 둘을 인자로 받는다 —
+# `tests/test_prompt_goldens.py`가 이 목록을 그대로 import해서, 레인별로 DB에서 읽은
+# 활성 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다. 레인 배정은
+# prompt-scope-techspec.md §2-1(PS-3)의 채널→레인 매핑 그대로다 — system/generation은
+# scope(캐릭터/스토리)로, stat_judgment·ending_judgment는 story로, image_judgment는
+# character로, publish_filter는 publish_filter로 고정.
 
 GoldenBuilder = Callable[[PromptSet, list[PromptSection]], str]
 
-GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
+GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
     # -- system_instruction: 캐릭터 / 스토리×템플릿 4종 / 스토리-무템플릿 = 6 --
     (
         "system_instruction_character.txt",
+        "character",
         lambda ps, sections: system_instruction_for(sections, is_story_chat=False),
     ),
     (
         "system_instruction_story_basic.txt",
+        "story",
         lambda ps, sections: system_instruction_for(
             sections, is_story_chat=True, template=StoryPromptTemplate.BASIC
         ),
     ),
     (
         "system_instruction_story_emotional.txt",
+        "story",
         lambda ps, sections: system_instruction_for(
             sections, is_story_chat=True, template=StoryPromptTemplate.EMOTIONAL
         ),
     ),
     (
         "system_instruction_story_simulation.txt",
+        "story",
         lambda ps, sections: system_instruction_for(
             sections, is_story_chat=True, template=StoryPromptTemplate.SIMULATION
         ),
     ),
     (
         "system_instruction_story_custom.txt",
+        "story",
         lambda ps, sections: system_instruction_for(
             sections, is_story_chat=True, template=StoryPromptTemplate.CUSTOM
         ),
     ),
     (
         "system_instruction_story_no_template.txt",
+        "story",
         lambda ps, sections: system_instruction_for(sections, is_story_chat=True, template=None),
     ),
     # -- 생성 프롬프트: 캐릭터 1 × filled/empty + 경계(character_prompt="") --
     (
         "generation_character_filled.txt",
+        "character",
         lambda ps, sections: build_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -197,6 +208,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "generation_character_empty.txt",
+        "character",
         lambda ps, sections: build_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -208,6 +220,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "generation_character_empty_prompt.txt",
+        "character",
         lambda ps, sections: build_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -220,6 +233,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     # -- 생성 프롬프트: 스토리 CUSTOM/비-CUSTOM(BASIC 대표) × filled/empty --
     (
         "generation_story_custom_filled.txt",
+        "story",
         lambda ps, sections: build_story_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -238,6 +252,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "generation_story_custom_empty.txt",
+        "story",
         lambda ps, sections: build_story_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -256,6 +271,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "generation_story_basic_filled.txt",
+        "story",
         lambda ps, sections: build_story_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -274,6 +290,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "generation_story_basic_empty.txt",
+        "story",
         lambda ps, sections: build_story_generation_prompt(
             prompt_set=ps,
             sections=sections,
@@ -293,6 +310,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
     (
         "judgment_stat_filled.txt",
+        "story",
         lambda ps, sections: build_stat_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -304,6 +322,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "judgment_stat_empty.txt",
+        "story",
         lambda ps, sections: build_stat_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -315,6 +334,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "judgment_ending_filled.txt",
+        "story",
         lambda ps, sections: build_ending_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -326,6 +346,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "judgment_ending_empty.txt",
+        "story",
         lambda ps, sections: build_ending_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -337,6 +358,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "judgment_image_filled.txt",
+        "character",
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -348,6 +370,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "judgment_image_empty.txt",
+        "character",
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
@@ -360,6 +383,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     # -- 발행 검열: 캐릭터/스토리 × filled/empty --
     (
         "publish_filter_character_filled.txt",
+        "publish_filter",
         lambda ps, sections: build_character_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -373,6 +397,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "publish_filter_character_empty.txt",
+        "publish_filter",
         lambda ps, sections: build_character_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -386,6 +411,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "publish_filter_story_filled.txt",
+        "publish_filter",
         lambda ps, sections: build_story_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -403,6 +429,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "publish_filter_story_empty.txt",
+        "publish_filter",
         lambda ps, sections: build_story_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -426,6 +453,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     # 비워짐"도 사용자가 쌍을 전부 지우면 그대로 도달한다.
     (
         "publish_filter_story_pairs_only.txt",
+        "publish_filter",
         lambda ps, sections: build_story_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -443,6 +471,7 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
     ),
     (
         "publish_filter_story_legacy_only.txt",
+        "publish_filter",
         lambda ps, sections: build_story_publish_filter_prompt(
             prompt_set=ps,
             sections=sections,
@@ -461,15 +490,18 @@ GOLDEN_CASES: list[tuple[str, GoldenBuilder]] = [
 ]
 
 
-async def _load_active_prompt_set() -> tuple[PromptSet, list[PromptSection]]:
+async def _load_active_prompt_sets() -> dict[PromptLane, tuple[PromptSet, list[PromptSection]]]:
     async with async_session_factory() as session:
-        return await load_active_prompt_set(session)
+        return {
+            lane: await load_active_prompt_set(session, lane=lane) for lane in get_args(PromptLane)
+        }
 
 
 def main() -> None:
-    prompt_set, sections = asyncio.run(_load_active_prompt_set())
+    prompt_sets_by_lane = asyncio.run(_load_active_prompt_sets())
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
-    for filename, build in GOLDEN_CASES:
+    for filename, lane, build in GOLDEN_CASES:
+        prompt_set, sections = prompt_sets_by_lane[lane]
         (GOLDEN_DIR / filename).write_text(build(prompt_set, sections), encoding="utf-8")
     print(f"{len(GOLDEN_CASES)}개 골든 파일을 {GOLDEN_DIR}에 썼다.")
 

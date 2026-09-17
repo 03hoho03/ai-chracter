@@ -1368,7 +1368,7 @@ async def publish_content(
     # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
     # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
     content.has_unpublished_changes = False
-    prompt_set, prompt_sections = await load_active_prompt_set(db)
+    prompt_set, prompt_sections = await load_active_prompt_set(db, lane="publish_filter")
     if content.type == ContentType.CHARACTER:
         return await _publish_character_content(db, content, version, llm_client, prompt_set, prompt_sections)
     return await _publish_story_content(db, content, version, llm_client, prompt_set, prompt_sections)

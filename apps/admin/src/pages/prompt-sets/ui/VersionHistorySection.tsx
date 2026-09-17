@@ -6,6 +6,7 @@ import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { useVersionDetailQuery } from "../api/useVersionDetailQuery";
 import { useVersionListQuery } from "../api/useVersionListQuery";
+import { PROMPT_LANE_LABELS } from "../model/lane";
 import { RestorePromptSetDialog } from "./RestorePromptSetDialog";
 
 /** 제목은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 `VersionTable`로 갈라낸다
@@ -52,6 +53,7 @@ function VersionTable() {
           <TableHeader>
             <TableRow>
               <TableHead>버전</TableHead>
+              <TableHead>레인</TableHead>
               <TableHead>게시일</TableHead>
               <TableHead>메모</TableHead>
               <TableHead>상태</TableHead>
@@ -74,6 +76,7 @@ function VersionTable() {
                 }}
               >
                 <TableCell>v{item.version}</TableCell>
+                <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
                 <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
                 <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
                 <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
@@ -136,6 +139,7 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
               id: detail.id,
               version: detail.version,
               publishedAt: detail.publishedAt,
+              lane: detail.lane,
             })
           }
         >

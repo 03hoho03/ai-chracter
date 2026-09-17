@@ -217,7 +217,7 @@ async def test_prompt_set_cache_write_failure_local_variables_are_not_captured(
     """`chat/prompt_set_cache.py:set_cached_active_prompt_set`의 `except RedisError` 프레임에는
     직렬화 전 프롬프트 세트 전체(`cached`)가 산다(monitoring-techspec.md MT-5, 이 런이 새로 찾은
     경로 — `:158`~`:159`)."""
-    prompt_set, sections = await load_active_prompt_set(db_session)
+    prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     secret_marker = "".join(section.body for section in sections)
     assert secret_marker  # 전제: 실제 세트에 섹션 본문이 있다
 
@@ -229,7 +229,7 @@ async def test_prompt_set_cache_write_failure_local_variables_are_not_captured(
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(redis_client, "set", _raise_redis_error)
         mp.setattr(prompt_set_cache.logger, "warning", _capture_on_next_warning(client))
-        await prompt_set_cache.set_cached_active_prompt_set(prompt_set, sections)
+        await prompt_set_cache.set_cached_active_prompt_set("story", prompt_set, sections)
 
     assert len(transport.envelopes) == 1
     event = transport.envelopes[0].get_event()

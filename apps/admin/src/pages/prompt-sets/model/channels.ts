@@ -19,9 +19,19 @@ export function isPromptChannel(value: string): value is PromptChannel {
 export const PROMPT_CHANNELS = Object.keys(PROMPT_CHANNEL_LABELS).filter(isPromptChannel);
 
 /** §4-2의 `scope` 세 값. 섹션 자체는 채널 하나에 스토리/캐릭터가 공유(`both`)되거나 갈리는
- * (`story`/`character`) 행으로 존재한다 — 어드민이 만드는 값이 아니라 표시 전용이다. */
-export const PROMPT_SCOPE_LABELS: Record<string, string> = {
+ * (`story`/`character`) 행으로 존재한다 — 어드민이 만드는 값이 아니라 표시 전용이다.
+ * prompt-scope-techspec.md TS-F — BE `scope: str`을 좁히지 않는 **로컬** 유니온이라
+ * `as const`로 타입·술어·목록 3종 세트를 도출한다(channel과 같은 패턴). */
+export const PROMPT_SCOPE_LABELS = {
   both: "공통",
   story: "스토리",
   character: "캐릭터",
-};
+} as const;
+
+export type PromptScope = keyof typeof PROMPT_SCOPE_LABELS;
+
+export function isPromptScope(value: string): value is PromptScope {
+  return value in PROMPT_SCOPE_LABELS;
+}
+
+export const PROMPT_SCOPES = Object.keys(PROMPT_SCOPE_LABELS).filter(isPromptScope);
