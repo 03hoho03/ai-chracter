@@ -141,7 +141,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
             </Avatar>
             <Label
               htmlFor="edit-profile-image"
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50"
+              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-muted has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
             >
               <Camera aria-hidden className="size-4" />
               {isUploadingImage ? "업로드 중..." : "이미지 변경"}

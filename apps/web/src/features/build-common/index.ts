@@ -1,7 +1,9 @@
 export { useAutosave } from "./model/useAutosave";
 export { useDraftPersistence } from "./model/useDraftPersistence";
 export { errorTabs } from "./model/errorTabs";
+export { flattenFieldErrorPaths } from "./model/fieldErrorPaths";
 export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
+export { fieldLabelByFormPath, invalidFieldsMessage, missingFieldsMessage } from "./model/missingFieldsMessage";
 export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { BuilderLayout } from "./ui/BuilderLayout";

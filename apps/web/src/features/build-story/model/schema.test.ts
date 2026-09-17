@@ -199,6 +199,28 @@ describe("startingSetupSchema", () => {
     expect(result.success && result.data.openingSituation).toBeUndefined();
     expect(result.success && result.data.playGuide).toBeUndefined();
   });
+
+  it("accepts up to 4 suggested replies", () => {
+    const fourReplies = Array.from({ length: 4 }, (_, i) => `추천 답변 ${i}`);
+
+    const result = startingSetupSchema.safeParse({
+      ...validStartingSetup(),
+      suggestedReplies: fourReplies,
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a 5th suggested reply", () => {
+    const fiveReplies = Array.from({ length: 5 }, (_, i) => `추천 답변 ${i}`);
+
+    const result = startingSetupSchema.safeParse({
+      ...validStartingSetup(),
+      suggestedReplies: fiveReplies,
+    });
+
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("keywordNoteSchema", () => {
@@ -344,22 +366,26 @@ describe("endingSchema", () => {
   });
 });
 
-describe("storyBuilderSchema startingSetups", () => {
-  function validFullForm() {
-    return {
-      profile: { name: "여름밤의 항해", oneLiner: "바다 위 표류기", image: null },
-      storySetting: { promptTemplate: "basic" as const, worldSetting: "근미래 해양 도시" },
-      startingSetups: [validStartingSetup()],
-      registration: {
-        description: "표류한 선원들의 생존기",
-        genre: "genre-adventure",
-        target: "all" as const,
-        hashtags: [],
-        visibility: "public" as const,
-      },
-    };
-  }
+function validFullForm() {
+  return {
+    profile: {
+      name: "여름밤의 항해",
+      oneLiner: "바다 위 표류기",
+      image: { assetId: "asset-thumbnail-1" },
+    },
+    storySetting: { promptTemplate: "basic" as const, worldSetting: "근미래 해양 도시" },
+    startingSetups: [validStartingSetup()],
+    registration: {
+      description: "표류한 선원들의 생존기",
+      genre: "genre-adventure",
+      target: "all" as const,
+      hashtags: [],
+      visibility: "public" as const,
+    },
+  };
+}
 
+describe("storyBuilderSchema startingSetups", () => {
   it("requires at least one starting setup", () => {
     const empty = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: [] });
     const withOne = storyBuilderSchema.safeParse(validFullForm());
@@ -368,11 +394,94 @@ describe("storyBuilderSchema startingSetups", () => {
     expect(withOne.success).toBe(true);
   });
 
+  it("accepts up to 4 starting setups", () => {
+    const fourSetups = Array.from({ length: 4 }, (_, i) => ({
+      ...validStartingSetup(),
+      id: `setup-${i}`,
+    }));
+
+    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fourSetups });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a 5th starting setup", () => {
+    const fiveSetups = Array.from({ length: 5 }, (_, i) => ({
+      ...validStartingSetup(),
+      id: `setup-${i}`,
+    }));
+
+    const result = storyBuilderSchema.safeParse({ ...validFullForm(), startingSetups: fiveSetups });
+
+    expect(result.success).toBe(false);
+  });
+
   it("defaults keywordNotes/shortcuts to empty arrays when omitted", () => {
     const result = storyBuilderSchema.safeParse(validFullForm());
 
     expect(result.success).toBe(true);
     expect(result.success && result.data.keywordNotes).toEqual([]);
     expect(result.success && result.data.shortcuts).toEqual([]);
+  });
+});
+
+/** builder-publish-goal-prompt.md BP-1/BP-2 — 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
+ * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다. */
+describe("storyBuilderSchema publish-required nullable fields", () => {
+  it("rejects a null profile.image", () => {
+    const result = storyBuilderSchema.safeParse({
+      ...validFullForm(),
+      profile: { ...validFullForm().profile, image: null },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
+      "profile",
+      "image",
+    ]);
+  });
+
+  it("rejects a null registration.genre", () => {
+    const result = storyBuilderSchema.safeParse({
+      ...validFullForm(),
+      registration: { ...validFullForm().registration, genre: null },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
+      "registration",
+      "genre",
+    ]);
+  });
+
+  it("rejects a null registration.target", () => {
+    const result = storyBuilderSchema.safeParse({
+      ...validFullForm(),
+      registration: { ...validFullForm().registration, target: null },
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
+      "registration",
+      "target",
+    ]);
+  });
+
+  it("reports all three at once (누락 토스트가 한 번에 나열할 수 있어야 한다)", () => {
+    const form = validFullForm();
+    const result = storyBuilderSchema.safeParse({
+      ...form,
+      profile: { ...form.profile, image: null },
+      registration: { ...form.registration, genre: null, target: null },
+    });
+
+    const paths = result.success ? [] : result.error.issues.map((issue) => issue.path);
+    expect(paths).toContainEqual(["profile", "image"]);
+    expect(paths).toContainEqual(["registration", "genre"]);
+    expect(paths).toContainEqual(["registration", "target"]);
+  });
+
+  it("passes once all three are filled", () => {
+    expect(storyBuilderSchema.safeParse(validFullForm()).success).toBe(true);
   });
 });

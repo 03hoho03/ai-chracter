@@ -19,6 +19,11 @@ import { ChevronLeft } from "lucide-react";
  * `onClose`는 lg 미만 전체화면 모드에서만 온다 — lg 이상(2단)에서는 프리뷰가 상시 노출이라 닫을
  * 대상이 아니므로 버튼만 `lg:hidden`으로 숨긴다(BuilderLayout의 다른 lg 분기와 같은 원칙: 트리에는
  * 남고 화면에만 없다). "미리보기" 라벨은 onClose 유무와 무관하게 항상 보인다.
+ *
+ * 이 버튼의 `aria-label`이 "빌더로 돌아가기"인 이유(builder-publish-goal-prompt.md BP-6a): 상단바의
+ * 프리뷰 토글도 같은 구간(`lg:hidden`)에 보여 둘 다 "미리보기 닫기"면 스크린리더에 같은 항목이 연달아
+ * 읽힌다. apps/web/CLAUDE.md의 "같은 목적지로 가는 진입점이 한 화면에 둘이면 라벨로 가른다"에 따라
+ * 아이콘(ChevronLeft)이 이미 말하는 뒤로 가기 쪽으로 이 버튼만 갈랐다.
  */
 export function PreviewCloseHeader({ onClose, action }: { onClose?: () => void; action?: ReactNode }) {
   return (
@@ -29,7 +34,7 @@ export function PreviewCloseHeader({ onClose, action }: { onClose?: () => void; 
             <Button
               variant="ghost"
               size="icon-sm"
-              aria-label="미리보기 닫기"
+              aria-label="빌더로 돌아가기"
               onClick={onClose}
               className="lg:hidden"
             >

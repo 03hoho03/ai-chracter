@@ -18,12 +18,15 @@ import { useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
+  MAX_STARTING_SETUPS,
+  MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
-/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개
- * 필요(발행 버튼 활성화는 StoryBuilderShell의 storyBuilderSchema.safeParse가 이미 담당). */
+/** techspec-builder-story.md §1.1 AC — "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
+ * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
+ * 드러난다 — 발행 버튼 자체는 비활성화하지 않는다(apps/web/CLAUDE.md §빌더, D-3). */
 export function StartingSetupTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 
@@ -56,13 +59,19 @@ export function StartingSetupTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1" data-field-path="startingSetups">
-        <Label>시작설정 *</Label>
+        <Label>시작설정 * (최대 {MAX_STARTING_SETUPS}개)</Label>
         <p className="text-sm text-muted-foreground">
           여러 개의 시작 상황을 만들 수 있어요. 목록의 첫 번째 항목이 기본 선택이에요.
         </p>
-        {!!errors.startingSetups?.message && (
+        {/* 배열 자체의 위반(`.max(4)`)이 담기는 자리가 마운트 상태에 따라 갈린다(builder-publish-goal-prompt.md
+            BP-7) — Radix TabsContent가 비활성 탭을 언마운트하므로, 이 탭을 열지 않고 발행하면
+            `startingSetups`의 인덱스별 필드가 마운트돼 있지 않아 zodResolver가 그 필드 자체를 잎으로
+            보고 `.message`에 담고, 이 탭이 이미 열려 있어 필드들이 마운트돼 있으면 `@hookform/resolvers`의
+            isNameInFieldArray가 `startingSetups`를 필드배열로 판정해 배열 위반을 `.root.message`에
+            담는다(같은 [발행] 버튼을 두 번 눌러 실측). 둘 다 읽어야 어느 경로로도 안내가 사라지지 않는다. */}
+        {!!(errors.startingSetups?.message ?? errors.startingSetups?.root?.message) && (
           <p id="story-starting-setups-error" role="alert" className="text-xs text-destructive-text">
-            {errors.startingSetups.message}
+            {errors.startingSetups?.message ?? errors.startingSetups?.root?.message}
           </p>
         )}
       </div>
@@ -88,25 +97,29 @@ export function StartingSetupTab() {
         </DndContext>
       )}
 
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() =>
-          append({
-            id: crypto.randomUUID(),
-            name: "",
-            prologue: "",
-            openingSituation: "",
-            playGuide: "",
-            suggestedReplies: [],
-            stats: [],
-            endings: [],
-          })
-        }
-      >
-        설정 추가
-      </Button>
+      {/* builder-publish-goal-prompt.md BP-7 — 상한에 닿으면 추가 버튼을 렌더하지 않는다(SettingTab의
+          전개 예시와 같은 형태). 스키마의 `.max()`만으로는 발행 시점에야 막혀 5개째를 만들게 둔다. */}
+      {fields.length < MAX_STARTING_SETUPS ? (
+        <Button
+          type="button"
+          variant="secondary"
+          className="w-fit"
+          onClick={() =>
+            append({
+              id: crypto.randomUUID(),
+              name: "",
+              prologue: "",
+              openingSituation: "",
+              playGuide: "",
+              suggestedReplies: [],
+              stats: [],
+              endings: [],
+            })
+          }
+        >
+          설정 추가
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -137,6 +150,7 @@ function StartingSetupRow({
   const rowErrors = errors.startingSetups?.[index];
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
+  const canAddSuggestedReply = suggestedReplies.length < MAX_SUGGESTED_REPLIES;
   const [replyInput, setReplyInput] = useState("");
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(
     () =>
@@ -144,16 +158,22 @@ function StartingSetupRow({
       getValues(`startingSetups.${index}.suggestedReplies`).length > 0,
   );
 
-  function addSuggestedReply() {
+  function handleAddSuggestedReply() {
     const trimmed = replyInput.trim();
+    // builder-publish-goal-prompt.md BP-7 — 상한 가드가 여기 있는 이유는 둘이다. (1) 입력칸이나
+    // [추가] 버튼을 `disabled`로 막으면 그 속성이 붙는 순간 브라우저가 blur해 activeElement가
+    // <body>로 떨어진다(apps/web/CLAUDE.md §포커스, WCAG 2.4.3). (2) `aria-disabled`는 포인터만
+    // 막으므로(pointer-events-none) 키보드로 누른 Enter는 그대로 들어온다 — 실제 차단은 여기다
+    // (GenerateImagesPromptField.tsx와 같은 레시피).
+    if (!canAddSuggestedReply || !trimmed || suggestedReplies.includes(trimmed)) return;
+    // 막힌 경우에는 사용자가 쓴 글을 지우지 않는다 — 상한에서 글자만 사라지면 피드백이 0이 된다.
     setReplyInput("");
-    if (!trimmed || suggestedReplies.includes(trimmed)) return;
     setValue(`startingSetups.${index}.suggestedReplies`, [...suggestedReplies, trimmed], {
       shouldDirty: true,
     });
   }
 
-  function removeSuggestedReply(reply: string) {
+  function handleRemoveSuggestedReply(reply: string) {
     setValue(
       `startingSetups.${index}.suggestedReplies`,
       suggestedReplies.filter((item) => item !== reply),
@@ -274,7 +294,15 @@ function StartingSetupRow({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-reply-input`}>추천 답변</Label>
+            <Label htmlFor={`starting-setup-${id}-reply-input`}>
+              추천 답변 (최대 {MAX_SUGGESTED_REPLIES}개)
+            </Label>
+            {/* builder-publish-goal-prompt.md BP-7 — 상한에서도 입력칸과 [추가] 버튼을 트리에 남긴다.
+                `disabled`도, 조건부 렌더도 안 된다(apps/web/CLAUDE.md §포커스) — 둘 다 4번째를 넣는
+                순간 그 컨트롤이 blur/언마운트돼 포커스가 <body>로 떨어진다. 대신 `aria-disabled`로
+                잠그고(ContentListLoadMore와 같은 레시피) 실제 차단은 handleAddSuggestedReply가 한다.
+                같은 자리의 `설정 추가`는 useFieldArray.append()가 새 행으로 포커스를 옮겨 주므로
+                조건부 렌더로 둔다 — 두 버튼에서 실제로 다른 값이다. */}
             <div className="flex gap-2">
               <Input
                 id={`starting-setup-${id}-reply-input`}
@@ -284,10 +312,16 @@ function StartingSetupRow({
                 onKeyDown={(event) => {
                   if (event.key !== "Enter") return;
                   event.preventDefault();
-                  addSuggestedReply();
+                  handleAddSuggestedReply();
                 }}
               />
-              <Button type="button" variant="secondary" onClick={addSuggestedReply}>
+              <Button
+                type="button"
+                variant="secondary"
+                aria-disabled={!canAddSuggestedReply}
+                className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+                onClick={handleAddSuggestedReply}
+              >
                 추가
               </Button>
             </div>
@@ -305,13 +339,24 @@ function StartingSetupRow({
                       size="icon"
                       className="size-4"
                       aria-label={`${reply} 추천 답변 삭제`}
-                      onClick={() => removeSuggestedReply(reply)}
+                      onClick={() => handleRemoveSuggestedReply(reply)}
                     >
                       <X aria-hidden className="size-3" />
                     </Button>
                   </span>
                 ))}
               </div>
+            )}
+            {/* 배열 자체의 위반(`.max`)은 인덱스가 아니라 이 키에 `.message`로 온다 — zodResolver를
+                RHF가 부르는 모양대로 호출해 확인했다(builder-publish-goal-prompt.md BP-7). */}
+            {!!rowErrors?.suggestedReplies?.message && (
+              <p
+                id={`starting-setup-${id}-suggested-replies-error`}
+                role="alert"
+                className="text-xs text-destructive-text"
+              >
+                {rowErrors.suggestedReplies.message}
+              </p>
             )}
           </div>
         </div>

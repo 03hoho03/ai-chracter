@@ -22,9 +22,13 @@ import {
   BuilderTopBar,
   BuilderTopBarActions,
   errorTabs,
+  fieldLabelByFormPath,
   firstErrorLocation,
+  flattenFieldErrorPaths,
   getFilterRejectionReason,
   getMissingFields,
+  invalidFieldsMessage,
+  missingFieldsMessage,
   useAutosave,
   useDraftPersistence,
   useFocusFirstError,
@@ -54,31 +58,50 @@ type StoryBuilderShellProps = {
 // fields(에러 탭 매칭용 경로 프리픽스)·preview(D-2)가 이 배열에 함께 실려 있다.
 const TABS = STORY_TABS;
 
-// storyBuilderSchema의 profile.image/registration.genre/target은 초안 상태를 표현하기 위해
-// nullable이라(US-092/095), zodResolver 검증을 통과해도 서버(validate_story_publish)가 요구하는
-// 값이 비어 있을 수 있다(CharacterBuilderShell.tsx와 동일한 간극 — customPrompt/settingText/
-// startingSetups/description 등 나머지 필드는 이미 폼 스키마가 min(1)/min(10)으로 막아 이 경로에
-// 도달하지 않는다) — 그 필드명을 한국어 라벨로 보여준다.
-const MISSING_FIELD_LABELS: Record<string, string> = {
+// 서버(validate_story_publish)가 400으로 돌려주는 필드명을 한국어 라벨로 보여준다. 초안 상태를
+// 표현하느라 nullable인 3필드(profile.image/registration.genre/target, US-092/095)도 이제는 폼
+// 스키마의 refine이 먼저 막지만(builder-publish-goal-prompt.md BP-1), 다른 기기에서 편집된 초안처럼
+// 서버만 아는 상태가 남아 이 경로를 지우지 않는다(BP-4).
+// 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 9개 전부다(인덱스가 박힌
+// `startingSetups[0].prologue` 류는 fallback 문구로 접힌다, F-8/BP-4).
+const MISSING_FIELD_LABELS = {
   name: "이름",
   oneLiner: "한줄소개",
   thumbnailAssetId: "대표 이미지",
+  customPrompt: "커스텀 프롬프트",
+  settingText: "스토리 설정/정보",
+  startingSetups: "시작설정",
   description: "등록 설명",
   genreId: "장르",
   target: "타겟",
 };
 
-// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다(builder-goal-prompt.md §5-2) — 키 집합은
-// MISSING_FIELD_LABELS와 같고, 값은 features/build-story/model/tabs.ts(STORY_TABS)의 fields 프리픽스
-// 아래에 들어간다(profile.*는 profile 탭, registration.*는 registration 탭).
+/** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
+ * 검사한다. 어긋난 키는 fieldLabelByFormPath가 조용히 버려 토스트가 "그 밖의 필수 항목"으로 접히는데,
+ * 두 맵을 손으로 맞추는 한 그 어긋남은 화면에서만 드러난다. */
+type MissingField = keyof typeof MISSING_FIELD_LABELS;
+
+// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다(builder-goal-prompt.md §5-2) — 값은
+// features/build-story/model/tabs.ts(STORY_TABS)의 fields 프리픽스 아래에 들어간다(profile.*는
+// profile 탭, registration.*는 registration 탭). 선언 타입이 string 인덱스인 것은 서버가 주는 임의
+// 문자열로 조회하기 때문이고(인덱스 경로 포함, F-8), 키 커버리지는 아래 `satisfies`가 잠근다.
 const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValues>>> = {
   name: "profile.name",
   oneLiner: "profile.oneLiner",
   thumbnailAssetId: "profile.image",
+  customPrompt: "storySetting.customPrompt",
+  // 서버의 `settingText`가 폼에서는 `worldSetting`이다(formToServer.ts의 매핑).
+  settingText: "storySetting.worldSetting",
+  startingSetups: "startingSetups",
   description: "registration.description",
   genreId: "registration.genre",
   target: "registration.target",
-};
+} satisfies Record<MissingField, Path<StoryBuilderFormValues>>;
+
+// 클라 검증 실패 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 위 두
+// 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다
+// (builder-publish-goal-prompt.md BP-3).
+const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
 
 /** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 자동저장(US-096)/발행(US-085)/
  * 미리보기(US-088)를 CharacterBuilderShell.tsx(US-105)와 동일한 방식으로 연동한다.
@@ -168,8 +191,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         }
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
-        const missingLabels = missingFields.map((field) => MISSING_FIELD_LABELS[field] ?? field);
-        toast.error(`발행하려면 다음 항목을 입력해주세요: ${missingLabels.join(", ")}`);
+        toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -178,9 +200,13 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     }
   }
 
-  // zodResolver 검증 실패(폼 스키마 위반) 경로 — builder-techspec.md §9-1.
+  // zodResolver 검증 실패(폼 스키마 위반) 경로 — builder-techspec.md §9-1. 먼저 걸리는 쪽이 덜
+  // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
+  // 문장이 갈린다(builder-publish-goal-prompt.md BP-3) — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
+  // 온다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     focusFirstError(firstErrorLocation(errors, TABS));
+    toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
   }
 
   // builder-techspec.md §4-3/§6 — 폼과 프리뷰가 동시에 살아 있어야 하므로(D-1의 lg 이상 2단) 더 이상
@@ -215,7 +241,8 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         actions={
           <BuilderTopBarActions
             isPublishing={isPublishing}
-            onPreview={() => setIsPreviewOpen(true)}
+            isPreviewOpen={isPreviewOpen}
+            onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
           />

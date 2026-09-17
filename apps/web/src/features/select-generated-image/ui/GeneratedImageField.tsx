@@ -152,7 +152,7 @@ export function GeneratedImageField({
           htmlFor={inputId}
           className={cn(
             buttonVariants({ variant: "outline", size: "sm" }),
-            "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50"
+            "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
           )}
         >
           <Camera aria-hidden className="size-4" />
