@@ -76,7 +76,7 @@ export function ContentListLoadMore({
         onBlur={() => (hadFocusRef.current = false)}
         className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
       >
-        {isLoading && <Loader2 aria-hidden className="motion-safe:animate-spin" />}
+        {isLoading && <Loader2 aria-hidden className="animate-spin" />}
         더 보기
       </Button>
     </div>
