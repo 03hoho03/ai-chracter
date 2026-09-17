@@ -1,5 +1,6 @@
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
 import type { PromptLane } from "../model/lane";
@@ -57,6 +58,10 @@ export function LabelsCard({ lane }: LabelsCardProps) {
     formState: { errors },
   } = useFormContext<PromptSetFormValues>();
   const unusedInLane = UNUSED_LABELS_BY_LANE[lane];
+  // 레인 3개가 `forceMount`로 동시에 마운트된다(PromptSetsPage) — `field.id`가 정적이면
+  // 같은 id가 DOM에 3벌 생겨 `htmlFor`가 항상 첫 레인만 가리킨다. `useId()`로 레인(=컴포넌트
+  // 인스턴스)별 접두어를 섞는다(선례: `apps/web/.../ContentCard.tsx`의 `useId()`).
+  const uid = useId();
 
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-4">
@@ -65,21 +70,22 @@ export function LabelsCard({ lane }: LabelsCardProps) {
         {LABEL_FIELDS.map((field) => {
           const error = errors.labels?.[field.key];
           const isUnused = unusedInLane.includes(field.key);
+          const fieldId = `${uid}-${field.id}`;
           return (
             <div key={field.id} className="flex flex-col gap-1.5">
-              <Label htmlFor={field.id}>{field.title}</Label>
+              <Label htmlFor={fieldId}>{field.title}</Label>
               <Input
-                id={field.id}
+                id={fieldId}
                 aria-invalid={!!error}
-                aria-describedby={`${field.id}-hint${error ? ` ${field.id}-error` : ""}`}
+                aria-describedby={`${fieldId}-hint${error ? ` ${fieldId}-error` : ""}`}
                 {...register(`labels.${field.key}`)}
               />
               {error ? (
-                <p id={`${field.id}-error`} role="alert" className="text-xs text-destructive-text">
+                <p id={`${fieldId}-error`} role="alert" className="text-xs text-destructive-text">
                   {error.message}
                 </p>
               ) : (
-                <p id={`${field.id}-hint`} className="break-keep text-xs text-muted-foreground">
+                <p id={`${fieldId}-hint`} className="break-keep text-xs text-muted-foreground">
                   {isUnused ? "이 레인에서는 쓰이지 않아요. " : ""}
                   {field.hint}
                 </p>

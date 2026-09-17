@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useId } from "react";
 import { useFormContext } from "react-hook-form";
 
 import { allowedPlaceholdersFor } from "../model/allowedPlaceholders";
@@ -46,7 +47,12 @@ export function SectionRow({
   } = useFormContext<PromptSetFormValues>();
   const bodyError = errors.sections?.[fieldIndex]?.body;
   const placeholders = allowedPlaceholdersFor(channel, slot);
-  const bodyFieldId = `prompt-section-${fieldKey}-body`;
+  // 공통 슬롯(channel/scope/slot/variant)은 레인마다 사본으로 반복돼 `fieldKey`가 레인 사이에서
+  // 겹친다 — 레인 3개가 `forceMount`로 동시에 마운트되면(PromptSetsPage) 이 id도 DOM에 3벌
+  // 생겨 `aria-describedby`가 남의 레인 에러 노드를 가리킨다. `useId()`로 컴포넌트 인스턴스별
+  // 접두어를 섞는다(선례: `LabelsCard`).
+  const uid = useId();
+  const bodyFieldId = `${uid}-prompt-section-${fieldKey}-body`;
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3">
