@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { ChevronDown, Play } from "lucide-react";
+import { ChevronDown, Loader2, Play } from "lucide-react";
 
 import type { ContentDetailResponse } from "@/entities/content";
 
@@ -81,7 +81,7 @@ type StoryPlayBarProps = {
  * 스크롤 영역)과 물리적으로 떨어지므로, 지금 무엇을 시작하는지 보이도록 선택된 이름을 버튼 위
  * 한 줄에 노출한다. */
 export function StoryPlayBar({ contentId, startingSetups, selectedSetupId, onRestoreSetup }: StoryPlayBarProps) {
-  const { handlePlay } = usePlayContent(contentId, "story", { onRestoreSetup });
+  const { handlePlay, isStarting } = usePlayContent(contentId, "story", { onRestoreSetup });
 
   const selectedSetup = startingSetups.find((setup) => setup.id === selectedSetupId) ?? startingSetups[0];
 
@@ -90,8 +90,13 @@ export function StoryPlayBar({ contentId, startingSetups, selectedSetupId, onRes
   return (
     <div className="flex flex-col gap-1">
       <span className="truncate text-xs text-muted-foreground">{selectedSetup.name}</span>
-      <Button size="lg" className="h-12 w-full gap-2" onClick={() => handlePlay(selectedSetup.id)}>
-        <Play aria-hidden className="size-4" />
+      <Button
+        size="lg"
+        aria-disabled={isStarting}
+        onClick={() => handlePlay(selectedSetup.id)}
+        className="h-12 w-full gap-2 aria-disabled:pointer-events-none aria-disabled:opacity-65"
+      >
+        {isStarting ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Play aria-hidden className="size-4" />}
         플레이
       </Button>
     </div>

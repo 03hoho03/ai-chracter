@@ -1,7 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { useAtom } from "jotai";
-import { MessagesSquare, Play } from "lucide-react";
+import { Loader2, MessagesSquare, Play } from "lucide-react";
 
 import { contentDetailModalAtom } from "@/entities/content";
 import { useSessionQuery } from "@/entities/session";
@@ -16,11 +16,16 @@ type CharacterPlayBarProps = {
  * design-system-progress.md P-5(D-7) — 하단 고정 바(모달 flex 하단 · 풀페이지 fixed)로 뽑혀 나온
  * 자리라 스크롤 영역의 "내 대화 목록"(`CharacterChatHistoryLink`, 아래)과 분리되어 있다. */
 export function CharacterPlayBar({ contentId }: CharacterPlayBarProps) {
-  const { handlePlay } = usePlayContent(contentId, "character");
+  const { handlePlay, isStarting } = usePlayContent(contentId, "character");
 
   return (
-    <Button size="lg" className="h-12 w-full gap-2" onClick={() => handlePlay()}>
-      <Play aria-hidden className="size-4" />
+    <Button
+      size="lg"
+      aria-disabled={isStarting}
+      onClick={() => handlePlay()}
+      className="h-12 w-full gap-2 aria-disabled:pointer-events-none aria-disabled:opacity-65"
+    >
+      {isStarting ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <Play aria-hidden className="size-4" />}
       플레이
     </Button>
   );
