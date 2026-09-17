@@ -11,7 +11,7 @@ export function TypingIndicator() {
         {DOT_DELAY_CLASSES.map((delayClass, index) => (
           <span
             key={index}
-            className={cn("size-1.5 rounded-full bg-muted-foreground motion-safe:animate-pulse", delayClass)}
+            className={cn("size-1.5 animate-pulse rounded-full bg-muted-foreground", delayClass)}
           />
         ))}
       </div>
