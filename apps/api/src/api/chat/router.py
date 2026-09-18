@@ -7,7 +7,9 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
+from redis.exceptions import RedisError
 from sqlalchemy import delete, or_, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -168,11 +170,12 @@ async def _starting_setup_dependency(
 ) -> StartingSetup | None:
     """prompt-scope-techspec.md §3-2 (PS-14 / RS-6) — 레인 선택과 빌더 선택이 **같은 값**에서
     나오게 하는 단일 판별원. `room.starting_setup_entity_id is None`(조기 반환)이 아니라
-    `_resolve_starting_setup`의 결과를 쓴다 — 그쪽이 더 엄격하고(행의 실재까지 본다),
-    `_build_prompt`가 어차피 그 행을 필요로 한다. fastapi의 `Depends` 캐시(콜러블 동일성
-    기준, `use_cache=True`)가 있어 한 요청 안에서 `_resolve_starting_setup`이 두 번
-    불리지 않는다 — `_active_prompt_set_dependency`도 이 의존성을 거친다."""
-    return await _resolve_starting_setup(db, room)
+    `_require_starting_setup`의 결과를 쓴다 — 그쪽이 더 엄격하고(행의 실재까지 보고, 불일치면
+    `Depends` 단계에서 400을 던진다 — sse-assert-goal-prompt.md SA-12), `_build_prompt`가
+    어차피 그 행을 필요로 한다. fastapi의 `Depends` 캐시(콜러블 동일성 기준, `use_cache=True`)
+    가 있어 한 요청 안에서 `_require_starting_setup`이 두 번 불리지 않는다 —
+    `_active_prompt_set_dependency`도 이 의존성을 거친다."""
+    return await _require_starting_setup(db, room)
 
 
 def _lane_for_setup(setup: StartingSetup | None) -> PromptLane:
@@ -239,6 +242,21 @@ async def _resolve_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingS
             StartingSetup.entity_id == room.starting_setup_entity_id,
         )
     )
+    return setup
+
+
+async def _require_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingSetup | None:
+    """sse-assert-goal-prompt.md SA-12 — `_resolve_starting_setup`의 상류에서 "행이 정말
+    없어야 하는 경우"와 "불일치로 없는 경우"를 가른다. `starting_setup_entity_id is None`은
+    캐릭터 방의 정상 신호이므로 그대로 `None`을 돌려준다 — 400은 `entity_id`가 있는데 그
+    행이 방이 고정한 버전에서 사라졌을 때만 던진다. 세 호출부만 이걸 쓴다(`_to_response`는
+    제외 — SA-6)."""
+    setup = await _resolve_starting_setup(db, room)
+    if setup is None and room.starting_setup_entity_id is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Chat room's starting setup is missing from its pinned content version",
+        )
     return setup
 
 
@@ -361,16 +379,49 @@ async def _match_situational_image(
     단수라 "동시 매칭 시 order 최상위만 발동"은 buildJudgmentPrompt의 프롬프트 지시로 처리하고,
     여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다. 매칭된 이미지
     자체(entity_id뿐 아니라 image_asset_id도 필요, US-073의 인라인 렌더링 URL 조회용)를
-    그대로 반환한다."""
-    situational_images = list(
-        (
-            await db.scalars(
-                select(SituationalImage)
-                .where(SituationalImage.content_version_id == room.content_version_id)
-                .order_by(SituationalImage.order)
+    그대로 반환한다.
+
+    두 DB 호출(후보 조회·노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
+    (sse-assert-goal-prompt.md SA-4/N-5) — 호출부(`_stream_new_turn`)의 기존
+    `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아(F-6) 그대로 두면
+    제너레이터를 뚫는다. 어느 쪽이 실패하든 이번 턴의 이미지 매칭 자체를 포기한다(`None`) —
+    LLM 판단은 성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다.
+
+    두 DB 호출 모두 `db.begin_nested()`(SAVEPOINT)로 국소화한다(sse-assert-progress.md
+    SP-126, 적대적 리뷰 결함①) — 이 함수가 불리는 시점엔 `_stream_new_turn`이 이미
+    `db.add(assistant_message)`→`flush()`→`room.turn_count += 1`로 dirty 상태를 쌓아 둔
+    뒤다. SAVEPOINT 없이 여기서 진짜 Postgres 실행 오류(`DBAPIError` 계열)가 나면
+    트랜잭션이 aborted 상태가 되고, 이 `except`가 예외를 삼켜도 트랜잭션은 여전히
+    aborted라 뒤따르는 `_stream_new_turn`의 무방비 `await db.commit()`이 그 dirty
+    `room`을 autoflush하려다 그대로 부딪혀 `DBAPIError`를 던진다 — 이 함수가 막으려는
+    파열이 한 자리 뒤로 미뤄질 뿐이다. SAVEPOINT로 감싸면 실패가 그 SAVEPOINT에만 갇히고
+    바깥 트랜잭션(과 이미 flush된 dirty 상태)은 그대로 유효하게 남는다(SQLAlchemy 2.0.51
+    `AsyncSessionTransaction.__aexit__`이 예외 시 SAVEPOINT까지만 rollback하고 재전파함을
+    소스로 확인, 격리 재현으로 실측 검증도 마쳤다 — 진행 기록 참고)."""
+    try:
+        async with db.begin_nested():
+            situational_images = list(
+                (
+                    await db.scalars(
+                        select(SituationalImage)
+                        .where(
+                            SituationalImage.content_version_id == room.content_version_id,
+                            # sse-assert-goal-prompt.md SA-3/N-2: `PATCH /contents/{id}/draft`가
+                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고
+                            # (character.py의 SituationalImage docstring), 발행 검증은 이 필드를
+                            # 보지 않아 NULL이 발행본까지 간다(F-5). 그런 후보를 판단 프롬프트에
+                            # 싣지 않는다 — LLM이 존재하지 않는 이미지를 매칭할 원인을 여기서 끊는다.
+                            SituationalImage.image_asset_id.is_not(None),
+                        )
+                        .order_by(SituationalImage.order)
+                    )
+                ).all()
             )
-        ).all()
-    )
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 상황이미지 후보 조회 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+        return None
+
     if not situational_images:
         return None
 
@@ -393,21 +444,28 @@ async def _match_situational_image(
     if matched is None:
         return None
 
-    existing_exposure = await db.scalar(
-        select(CharacterImageExposure).where(
-            CharacterImageExposure.user_id == room.user_id,
-            CharacterImageExposure.content_id == room.content_id,
-            CharacterImageExposure.image_entity_id == matched.entity_id,
-        )
-    )
-    if existing_exposure is None:
-        db.add(
-            CharacterImageExposure(
-                user_id=room.user_id,
-                content_id=room.content_id,
-                image_entity_id=matched.entity_id,
+    try:
+        async with db.begin_nested():
+            existing_exposure = await db.scalar(
+                select(CharacterImageExposure).where(
+                    CharacterImageExposure.user_id == room.user_id,
+                    CharacterImageExposure.content_id == room.content_id,
+                    CharacterImageExposure.image_entity_id == matched.entity_id,
+                )
             )
-        )
+            if existing_exposure is None:
+                db.add(
+                    CharacterImageExposure(
+                        user_id=room.user_id,
+                        content_id=room.content_id,
+                        image_entity_id=matched.entity_id,
+                    )
+                )
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 이미지 노출 기록 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+        return None
+
     return matched
 
 
@@ -449,6 +507,32 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ).all()
         stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
 
+    # situational-image-goal-prompt.md SI-7: 이미지가 실린 메시지들의 entity_id를 모아
+    # SituationalImage·Asset을 각 1회만 조회하고 서명한다 — 메시지마다 db.get을 부르면
+    # 메시지 수만큼 쿼리가 늘어난다(N+1). image_id는 있는데 해석이 안 되면(SituationalImage
+    # 없음/image_asset_id None/Asset 없음) image_url만 None으로 두고 image_id는 그대로 둔다.
+    image_entity_ids = {m.image_id for m in messages if m.image_id is not None}
+    image_urls: dict[uuid.UUID, str] = {}
+    if image_entity_ids:
+        situational_images = (
+            await db.scalars(
+                select(SituationalImage).where(
+                    SituationalImage.content_version_id == room.content_version_id,
+                    SituationalImage.entity_id.in_(image_entity_ids),
+                )
+            )
+        ).all()
+        asset_ids = {si.image_asset_id for si in situational_images if si.image_asset_id is not None}
+        assets_by_id = {}
+        if asset_ids:
+            assets = (await db.scalars(select(Asset).where(Asset.id.in_(asset_ids)))).all()
+            assets_by_id = {asset.id: asset for asset in assets}
+        for si in situational_images:
+            asset = assets_by_id.get(si.image_asset_id) if si.image_asset_id is not None else None
+            if asset is None:
+                continue
+            image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
@@ -459,7 +543,14 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ending_reached=room.ending_reached,
         stats=stats,
         messages=[
-            ChatMessageResponse(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
+            ChatMessageResponse(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                image_id=m.image_id,
+                image_url=image_urls.get(m.image_id) if m.image_id is not None else None,
+            )
             for m in messages
         ],
         content_snapshot=content_snapshot,
@@ -554,7 +645,7 @@ async def get_play_guide(
     """방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —
     contentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2)."""
     room = await _get_owned_room(db, room_id, user_id)
-    setup = await _resolve_starting_setup(db, room)
+    setup = await _require_starting_setup(db, room)
     if setup is not None:
         return PlayGuideResponse(play_guide=setup.playguide)
 
@@ -711,13 +802,15 @@ async def _stream_new_turn(
     """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
     이어서 생성)가 공유한다 — 둘 다 실제로는 동일한 "새 턴"이고 차이는 호출부가 넘기는
-    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 done 이벤트의
-    finalMessage.imageId), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 — 서로의 판단 단계를
-    타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
+    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 `chat_messages.image_id`에
+    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 —
+    situational-image-goal-prompt.md SI-7), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
+    서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
     전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
 
-    `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
-    않는다 — 그 라우트의 docstring 참고.
+    `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
+    이미지 매칭은 재실행한다, situational-image-goal-prompt.md SI-4)는 이 헬퍼를 쓰지 않는다
+    — 그 라우트의 docstring 참고.
     """
     try:
         prompt, system_instruction = await _build_prompt(
@@ -865,16 +958,28 @@ async def _stream_new_turn(
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
+    if matched_image is not None:
+        assistant_message.image_id = matched_image.entity_id
+
     await db.commit()
 
     matched_image_url: str | None = None
     if matched_image is not None:
-        # A room only ever matches against a published version's situational_images
-        # (US-083 publish validation requires the image to be set by then).
-        assert matched_image.image_asset_id is not None
-        image_asset = await db.get(Asset, matched_image.image_asset_id)
-        assert image_asset is not None
-        matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        # sse-assert-goal-prompt.md SA-3/N-3: 매칭 필터(N-2)가 image_asset_id가 NULL인
+        # 후보를 판단 프롬프트에서 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)`
+        # 실패와 S3 presign 실패는 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면
+        # §SSE의 폭발 반경(커넥션 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면
+        # 이 턴의 이미지 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
+        try:
+            assert matched_image.image_asset_id is not None
+            image_asset = await db.get(Asset, matched_image.image_asset_id)
+            assert image_asset is not None
+            matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        except Exception as exc:
+            logger.warning("대화방 %s 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="s3")
+            matched_image = None
+            matched_image_url = None
 
     for stat_change_event in stat_change_events:
         yield stat_change_event
@@ -975,9 +1080,11 @@ async def regenerate_message(
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
-    판단·이미지 매칭도 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을
-    되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만
-    교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
+    판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
+    이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
+    (situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은
+    `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
+    않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
@@ -1027,11 +1134,58 @@ async def regenerate_message(
     await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
     new_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content)
     db.add(new_message)
+
+    matched_image: SituationalImage | None = None
+    # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
+    # 않고 그 턴의 이미지 매칭만 포기한다.
+    if setup is None:
+        try:
+            matched_image = await _match_situational_image(
+                db,
+                room,
+                llm_client,
+                prompt_set=prompt_set,
+                prompt_sections=prompt_sections,
+                history=history[:-1],
+                user_message=user_content,
+                assistant_message=assistant_content,
+            )
+        except (LLMClientError, PromptRenderError) as exc:
+            logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    if matched_image is not None:
+        new_message.image_id = matched_image.entity_id
+
     await db.commit()
+
+    matched_image_url: str | None = None
+    if matched_image is not None:
+        # send_message(_stream_new_turn)와 같은 이유(sse-assert-goal-prompt.md SA-3/N-3)로
+        # 미러링한다 — 매칭 필터(N-2)가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
+        # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
+        # 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
+        # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
+        # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
+        try:
+            assert matched_image.image_asset_id is not None
+            image_asset = await db.get(Asset, matched_image.image_asset_id)
+            assert image_asset is not None
+            matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        except Exception as exc:
+            logger.warning("대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="s3")
+            matched_image = None
+            matched_image_url = None
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(
-            id=new_message.id, role=new_message.role, content=new_message.content, created_at=new_message.created_at
+            id=new_message.id,
+            role=new_message.role,
+            content=new_message.content,
+            created_at=new_message.created_at,
+            image_id=matched_image.entity_id if matched_image is not None else None,
+            image_url=matched_image_url,
         )
     )
 
@@ -1320,7 +1474,7 @@ async def reset_chat_room(
     room.ending_entity_id = None
     room.ending_reached_at_turn = None
 
-    setup = await _resolve_starting_setup(db, room)
+    setup = await _require_starting_setup(db, room)
     if setup is not None:
         await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
         await _seed_initial_stats(db, room, setup)
@@ -1476,7 +1630,17 @@ async def get_image_archive(
     images = (
         await db.scalars(
             select(SituationalImage)
-            .where(SituationalImage.content_version_id == content.current_published_version_id)
+            .where(
+                SituationalImage.content_version_id == content.current_published_version_id,
+                # sse-assert-goal-prompt.md SA-4: `PATCH /contents/{id}/draft`가 이미지 파일
+                # 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고(SituationalImage
+                # docstring), 발행 검증은 이 필드를 보지 않아 NULL이 발행본까지 간다(F-5). 아직
+                # 이미지가 없는 슬롯은 보관함에도 내보내지 않는다 — `_match_situational_image`의
+                # 후보 필터(N-2)와 같은 판단이다. register_situational_image가
+                # image_asset_id/blurred_asset_id를 항상 함께 채우므로(assets/router.py) 이
+                # 필터 하나로 blurred_asset_id의 non-null도 함께 보증된다.
+                SituationalImage.image_asset_id.is_not(None),
+            )
             .order_by(SituationalImage.order)
         )
     ).all()
@@ -1496,8 +1660,10 @@ async def get_image_archive(
     for image in images:
         exposed = image.entity_id in exposed_entity_ids
         asset_id = image.image_asset_id if exposed else image.blurred_asset_id
-        # This endpoint only lists a published version's images (assert below mirrors
-        # the same US-083 publish-validation invariant as send_message's match above).
+        # The query filter above guarantees both asset id columns are non-null for every
+        # row reaching here (sse-assert-goal-prompt.md SA-4) — this assert only narrows the
+        # type. (The previous comment claimed US-083 publish validation guaranteed this;
+        # that was false — validate_character_publish never looks at situational_images.)
         assert asset_id is not None
         asset = await db.get(Asset, asset_id)
         assert asset is not None
@@ -1849,4 +2015,24 @@ async def send_preview_message(
     ):
         yield event
 
-    await update_preview_session(id, state)
+    # sse-assert-goal-prompt.md SA-4/N-4: 미리보기도 `require_legal_consent`가
+    # `get_db_session`을 쥐고 있어 실채팅과 같은 폭발 반경을 갖는다(F-6) — 이 SET이 실패해도
+    # 제너레이터를 뚫으면 안 된다. 이 시점엔 이미 `ChatDoneEvent`까지 yield된 뒤라(위 루프),
+    # 실패를 알리는 이벤트를 새로 추가해도 클라이언트가 듣고 있다는 보장이 없다 — 판정 실패를
+    # 흡수하는 기존 자리들(`_stream_preview_turn`의 판정 except, `prompt_set_cache.py`의 Redis
+    # GET/SET)과 같은 모양으로 조용히 흡수하고 로그+모니터링으로만 남긴다. 대가: 이번 턴은
+    # Redis에 반영되지 않아 다음 조회에서 사라진다(sse-assert-progress.md CP-4 기록 참고).
+    #
+    # `ValueError`도 함께 잡는다(sse-assert-progress.md SP-129, 적대적 리뷰 결함②) —
+    # `update_preview_session`은 `state.model_dump_json(by_alias=True)`를 **먼저** 계산한
+    # 뒤에 `redis_client.set(...)`을 부른다. 그 직렬화 실패는 `RedisError`가 아니라
+    # `PydanticSerializationError`(pydantic-core, `ValueError` 서브클래스로 직접 확인)라
+    # `except RedisError` 하나로는 못 잡고 그대로 제너레이터를 뚫는다. 두 실패(Redis 커맨드
+    # 자체의 실패·그 앞의 직렬화 실패)는 원인이 다르지만 이 자리에서 흡수해야 할 이유는
+    # 같다 — `update_preview_session` 호출 하나를 감싸는 자리라 호출 순서를 바꾸거나 함수를
+    # 쪼개는 대신 타입만 넓혔다.
+    try:
+        await update_preview_session(id, state)
+    except (RedisError, ValueError) as exc:
+        logger.warning("미리보기 세션 %s 상태 저장 실패 — 이번 턴은 다음 조회에 반영되지 않는다: %s", id, exc)
+        capture_dependency_failure(exc, dependency="redis")

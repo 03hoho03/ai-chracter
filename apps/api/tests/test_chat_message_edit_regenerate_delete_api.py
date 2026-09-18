@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 from typing import Any
 
 import httpx
@@ -8,8 +8,9 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import StatJudgmentResult
+from api.chat.prompt_builder import ImageMatchJudgmentResult, StatJudgmentResult
 from api.db.models import (
+    CharacterImageExposure,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -20,6 +21,7 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     ModerationStatus,
+    SituationalImage,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -28,6 +30,7 @@ from api.chat import router as chat_router
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
+    _FakeLLMClient as _StructuredFakeLLMClient,
     _get_genre,
     _login_as,
     _make_asset,
@@ -202,6 +205,29 @@ async def _room_messages(db_session: AsyncSession, room_id: uuid.UUID) -> list[C
     )
 
 
+async def _make_situational_image(
+    db_session: AsyncSession,
+    *,
+    content_version_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    order: int,
+    trigger_condition: str = "조건",
+) -> SituationalImage:
+    image_asset = await _make_asset(db_session, owner_user_id=owner_user_id)
+    blurred_asset = await _make_asset(db_session, owner_user_id=owner_user_id)
+    situational_image = SituationalImage(
+        entity_id=uuid.uuid4(),
+        content_version_id=content_version_id,
+        image_asset_id=image_asset.id,
+        blurred_asset_id=blurred_asset.id,
+        trigger_condition=trigger_condition,
+        order=order,
+    )
+    db_session.add(situational_image)
+    await db_session.flush()
+    return situational_image
+
+
 # ---------------------------------------------------------------------------
 # regenerate
 # ---------------------------------------------------------------------------
@@ -288,6 +314,18 @@ async def test_regenerate_last_message_not_assistant_returns_400(
     finally:
         _clear_llm_override()
 
+    # apps/api/CLAUDE.md §테스트 인프라: 한 트랜잭션 안의 created_at은 전부 같은 값이라
+    # (오프닝 메시지와 방금 저장된 사용자 메시지가 동률) `_regeneratable_last_message_dependency`
+    # 의 `ORDER BY created_at ASC`가 어느 쪽을 "마지막"으로 볼지 임의다 — 사용자 메시지를
+    # 명시적으로 나중 시각으로 밀어 "마지막 메시지가 user"라는 이 테스트의 전제를 고정한다.
+    user_message = next(m for m in await _room_messages(db_session, room_id) if m.content == "안녕")
+    await db_session.execute(
+        sa.update(ChatMessage)
+        .where(ChatMessage.id == user_message.id)
+        .values(created_at=user_message.created_at + timedelta(seconds=1))
+    )
+    await db_session.commit()
+
     _override_llm_client(_FakeLLMClient())
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
@@ -325,8 +363,9 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
     assert len(done_events) == 1
     assert done_events[0]["finalMessage"]["content"] == "새로운응답"
 
-    # 판단 단계는 재실행되지 않는다(캐릭터 챗의 유일한 판단은 이미지 매칭) — 등록된 이미지가
-    # 없어 애초에 호출 자체가 없어야 하는 것과 별개로, generate만 호출됐는지 확인한다.
+    # 이미지 매칭은 재실행되지만(situational-image-goal-prompt.md SI-4) 이 방엔 등록된 이미지가
+    # 없어 `_match_situational_image`가 판정 호출 없이 반환한다 — 그래서 `generate_structured`는
+    # 불리지 않아야 한다.
     assert not fake.generate_structured_called
     assert fake.received_prompt is not None
     assert "원래" not in fake.received_prompt
@@ -460,6 +499,237 @@ async def test_regenerate_llm_error_keeps_original_message(
     assert messages[2].content == "원래응답"
 
 
+async def test_regenerate_reruns_image_matching_and_stores_new_image_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """situational-image-goal-prompt.md SI-4 — `regenerate_message` docstring의 "이미지 매칭도
+    재실행하지 않는다" 문장이 깨진다: 재생성은 새 응답 텍스트에 맞춰 이미지 매칭을 다시 돌아
+    다른 이미지가 매칭될 수 있다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image_a = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    image_b = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=1
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래", "응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["새로운", "응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_b.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] == str(image_b.entity_id)
+    assert done_event["finalMessage"]["imageUrl"].startswith("http")
+
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.turn_count == 1  # 재생성은 새 턴이 아니다
+
+    messages = await _room_messages(db_session, room_id)
+    assert len(messages) == 3  # 오프닝 + 사용자 메시지 + (교체된) AI 응답
+    assistant_message = next(m for m in messages if m.content == "새로운응답")
+    assert assistant_message.image_id == image_b.entity_id
+    assert not any(m.content == "원래응답" for m in messages)
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert {e.image_entity_id for e in exposures} == {image_a.entity_id, image_b.entity_id}
+
+
+async def test_regenerate_image_matching_failure_replaces_message_without_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """situational-image-goal-prompt.md SI-4 — 이미지 매칭 실패는 판정 실패와 같은 흡수 경로를
+    탄다: 스트림은 정상 종료되고 새 응답 텍스트는 그대로 교체되지만 image_id는 None으로
+    남는다(원래 매칭된 이미지를 이월하지 않는다)."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image_a = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(tokens=["새응답"], structured_error=LLMClientError("judgment down"))
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events if e["type"] != "token"] == ["done"]
+    done_event = events[-1]
+    assert done_event["finalMessage"]["content"] == "새응답"
+    assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
+
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], LLMClientError)
+    assert captured[0][1] == "gemini"
+
+    messages = await _room_messages(db_session, room_id)
+    assert len(messages) == 3
+    assistant_message = next(m for m in messages if m.content == "새응답")
+    assert assistant_message.image_id is None
+    assert not any(m.content == "원래응답" for m in messages)
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert len(exposures) == 1
+    assert exposures[0].image_entity_id == image_a.entity_id
+
+
+async def test_regenerate_presigned_url_failure_still_completes_the_turn_without_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sse-assert-goal-prompt.md SA-3/N-3을 재생성 경로에 다시 미러링한 짝 테스트
+    (situational-image-goal-prompt.md SI-4) — 매칭 필터를 통과한 뒤의 S3 presign 실패를
+    흡수해 스트림은 정상 종료된다. `new_message.image_id`는 `db.commit()` 전에 대입되고
+    presign 실패는 그 뒤에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
+    이벤트의 imageId만 null이 된다 — send_message(`_stream_new_turn`)와 정확히 같은
+    성질이다(재조회 시 `_to_response`가 다시 서명을 시도한다)."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    def _raise_presign(storage_key: str) -> str:
+        raise RuntimeError("s3 presign boom")
+
+    monkeypatch.setattr(chat_router, "generate_presigned_get_url", _raise_presign)
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["새응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events if e["type"] != "token"] == ["done"]
+    done_event = events[-1]
+    assert done_event["finalMessage"]["content"] == "새응답"
+    assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
+
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], RuntimeError)
+    assert captured[0][1] == "s3"
+
+    messages = await _room_messages(db_session, room_id)
+    assert len(messages) == 3
+    assistant_message = next(m for m in messages if m.content == "새응답")
+    # ⚠️ commit 전에 image_id가 이미 대입돼 있어 presign 실패로도 DB 값은 되돌아가지 않는다.
+    assert assistant_message.image_id == image.entity_id
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert len(exposures) == 1
+    assert exposures[0].image_entity_id == image.entity_id
+
+
 # ---------------------------------------------------------------------------
 # edit
 # ---------------------------------------------------------------------------
@@ -572,6 +842,74 @@ async def test_edit_message_truncates_and_regenerates_from_edit_point(
     # 원래 turn_count=2였고, 트레일링에서 AI 응답 2개(봇1, 봇2)가 삭제된 뒤 이번 턴 하나가
     # 새로 생성되어 순대 결과는 1이어야 한다(실제 남은 대화 길이와 일치).
     assert room.turn_count == 1
+
+
+async def test_edit_message_reruns_image_matching_with_new_value(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """situational-image-goal-prompt.md SI-4/SI-5 — `edit_message`는 코드 변경 없이(`_stream_new_turn`
+    을 그대로 재사용해) 편집된 사용자 메시지에 맞춰 이미지 매칭을 다시 돈다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id, intro="안녕!")
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image_a = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    image_b = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=1
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    messages_before = await _room_messages(db_session, room_id)
+    user_message_id = next(m.id for m in messages_before if m.content == "반가워")
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["수정후응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_b.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.patch(
+            f"/chat-rooms/{room_id}/messages/{user_message_id}", json={"content": "수정된 메시지"}
+        )
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    done_event = _parse_sse_events(resp.text)[-1]
+    assert done_event["finalMessage"]["imageId"] == str(image_b.entity_id)
+    assert done_event["finalMessage"]["imageUrl"].startswith("http")
+
+    messages_after = await _room_messages(db_session, room_id)
+    assistant_message = next(m for m in messages_after if m.content == "수정후응답")
+    assert assistant_message.image_id == image_b.entity_id
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert {e.image_entity_id for e in exposures} == {image_a.entity_id, image_b.entity_id}
 
 
 async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_count_consistent(

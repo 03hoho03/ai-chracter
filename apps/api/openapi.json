@@ -4876,7 +4876,7 @@
           "chat"
         ],
         "summary": "Regenerate Message",
-        "description": "마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단·이미지 매칭도 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을\n되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만\n교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.",
+        "description": "마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별\n이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다\n(situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은\n`if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지\n않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.",
         "operationId": "regenerate_message_chat_rooms__room_id__regenerate_post",
         "parameters": [
           {

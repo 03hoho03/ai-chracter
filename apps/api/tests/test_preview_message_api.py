@@ -3,15 +3,20 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
+import pytest
+from pydantic_core import PydanticSerializationError
+from redis.exceptions import RedisError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat import router as chat_router
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     StatChangeJudgment,
     StatJudgmentResult,
 )
 from api.chat.preview_session import get_preview_session
+from api.chat.schemas import PreviewSessionState
 from api.db.models.chat import ChatMessageRole, ChatRoom
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
@@ -355,6 +360,109 @@ async def test_send_preview_message_judgment_llm_failure_still_completes_the_tur
     assert state.messages[-1].content == "이야기"
     assert state.turn_count == 1
     assert state.stats == {stat_id: 50.0}
+
+
+async def test_send_preview_message_redis_save_failure_still_completes_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sse-assert-goal-prompt.md SA-4/CP-4 판정① — `update_preview_session`(Redis SET)이
+    실패해도 이미 토큰까지 스트리밍된 뒤라 `done` 이벤트까지 정상적으로 나가고 스트림이
+    정상 종료된다(§SSE: `require_legal_consent`가 `get_db_session`을 잡고 있어 미리보기도
+    요청 스코프 DB 세션을 쥔 채 스트리밍한다, F-6). 설계 판단(progress.md CP-4 기록): 이
+    실패는 조용히 흡수한다 — `update_preview_session`은 이미 `ChatDoneEvent`가 yield된
+    *뒤에* 불리므로, 이 시점에 추가 이벤트를 보내도 클라이언트가 더 이상 듣고 있다는
+    보장이 없다. 대신 이번 턴은 Redis에 반영되지 않는다(다음 조회에서 사라진다) — 그
+    손실 자체는 남기고, 로그(`logger.warning`)+`capture_dependency_failure`로만 관측한다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
+    async def _raise_redis_error(session_id: str, state: PreviewSessionState) -> None:
+        raise RedisError("redis unavailable")
+
+    monkeypatch.setattr(chat_router, "update_preview_session", _raise_redis_error)
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
+
+    fake = _FakeLLMClient(tokens=["안", "녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "token", "done"]
+    assert events[-1]["finalMessage"]["content"] == "안녕"
+
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], RedisError)
+    assert captured[0][1] == "redis"
+
+    # 실측(설계 판단의 근거): Redis 쓰기가 실패했으므로 이번 턴은 저장된 세션에 반영되지
+    # 않는다 — `_start_session`이 만든 최초 상태(오프닝 메시지 하나뿐)만 여전히 조회된다.
+    stored_state = await get_preview_session(session_id)
+    assert stored_state is not None
+    assert [m.content for m in stored_state.messages] == ["안녕하세요, 아리아예요"]
+    assert stored_state.turn_count == 0
+
+
+async def test_send_preview_message_serialization_failure_at_save_still_completes_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sse-assert-progress.md SP-129/SP-130(적대적 리뷰 결함②) — `update_preview_session`
+    (`chat/preview_session.py`)은 `state.model_dump_json(by_alias=True)`을 먼저 계산한
+    **뒤에** `redis_client.set(...)`을 부른다. 직렬화 실패는 `RedisError`가 아니라 호출부
+    (`send_preview_message`)의 `except RedisError`를 그대로 통과해 SSE 제너레이터를 뚫는다
+    (§SSE 폭발 반경) — 위 Redis 저장 실패 테스트와는 다른 실패 지점을 잰다.
+
+    `update_preview_session` 자체는 몽키패치하지 않는다 — `PreviewSessionState.model_dump_json`
+    만 갈아 끼워 그 함수의 실제 호출 순서(직렬화 → `redis_client.set`)를 그대로 태우고,
+    pydantic이 직렬화 실패 시 실제로 던지는 타입(`PydanticSerializationError`, `ValueError`
+    서브클래스, pydantic-core 2.13.4로 직접 확인)으로 재현한다."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
+
+    # `_start_session`(→ `create_preview_session`)이 이미 끝난 뒤에 패치한다 — 그쪽 직렬화는
+    # 건드리지 않고 `update_preview_session`의 직렬화만 실패시킨다.
+    def _raise_serialization_error(self: PreviewSessionState, *args: Any, **kwargs: Any) -> str:
+        raise PydanticSerializationError("boom")
+
+    monkeypatch.setattr(PreviewSessionState, "model_dump_json", _raise_serialization_error)
+
+    fake = _FakeLLMClient(tokens=["안", "녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "token", "done"]
+    assert events[-1]["finalMessage"]["content"] == "안녕"
+
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], PydanticSerializationError)
+    assert captured[0][1] == "redis"
 
 
 async def test_send_preview_message_keyword_note_injected_into_prompt(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

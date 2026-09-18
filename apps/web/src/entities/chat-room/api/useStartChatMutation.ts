@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-import { toChatRoomState } from "../model/toChatRoomState";
+import { toChatRoomState } from "./toChatRoomState";
 import type { ChatRoomState } from "../model/chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
