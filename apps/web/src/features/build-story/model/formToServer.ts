@@ -25,7 +25,7 @@ type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"
 export type StoryBuilderDraftPayload = StoryDraftPayload;
 
 // FE는 techspec 의사코드의 비교 연산자 기호(>=, <= ...)를 쓰고 서버는 EndingRuleOperator(gte/lte/eq/gt/lt,
-// DB 컬럼 그대로)를 쓴다 — entities/chat-room/model/toChatRoomState.ts의 OPERATOR_MAP과 반대 방향(FE -> 서버) 매핑.
+// DB 컬럼 그대로)를 쓴다 — entities/chat-room/api/toChatRoomState.ts의 OPERATOR_MAP과 반대 방향(FE -> 서버) 매핑.
 // schema.ts가 이미 "!="을 제외해뒀으므로(서버 enum에 없음) 이 Record는 5개 키로 완전하다.
 const OPERATOR_TO_API: Record<SingleRuleValues["operator"], EndingRuleDraftItem["operator"]> = {
   ">=": "gte",

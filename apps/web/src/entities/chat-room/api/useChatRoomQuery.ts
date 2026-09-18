@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-import { toChatRoomState } from "../model/toChatRoomState";
+import { toChatRoomState } from "./toChatRoomState";
 import { chatRoomKeys } from "./keys";
 import type { ChatRoomState } from "../model/chatRoomState";
 
