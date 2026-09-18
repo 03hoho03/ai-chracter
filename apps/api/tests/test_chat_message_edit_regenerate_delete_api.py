@@ -1,6 +1,6 @@
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
 from typing import Any
 
 import httpx
@@ -313,6 +313,18 @@ async def test_regenerate_last_message_not_assistant_returns_400(
         await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()
+
+    # apps/api/CLAUDE.md §테스트 인프라: 한 트랜잭션 안의 created_at은 전부 같은 값이라
+    # (오프닝 메시지와 방금 저장된 사용자 메시지가 동률) `_regeneratable_last_message_dependency`
+    # 의 `ORDER BY created_at ASC`가 어느 쪽을 "마지막"으로 볼지 임의다 — 사용자 메시지를
+    # 명시적으로 나중 시각으로 밀어 "마지막 메시지가 user"라는 이 테스트의 전제를 고정한다.
+    user_message = next(m for m in await _room_messages(db_session, room_id) if m.content == "안녕")
+    await db_session.execute(
+        sa.update(ChatMessage)
+        .where(ChatMessage.id == user_message.id)
+        .values(created_at=user_message.created_at + timedelta(seconds=1))
+    )
+    await db_session.commit()
 
     _override_llm_client(_FakeLLMClient())
     try:
