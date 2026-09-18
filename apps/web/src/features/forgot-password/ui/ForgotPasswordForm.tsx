@@ -6,6 +6,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
+import { formatAuthRateLimitMessage, getAuthRateLimit } from "@/entities/session";
+
 import { useRequestPasswordResetMutation } from "../api/useRequestPasswordResetMutation";
 import {
   forgotPasswordDefaultValues,
@@ -18,6 +20,8 @@ export function ForgotPasswordForm() {
     register,
     handleSubmit,
     getValues,
+    setError,
+    clearErrors,
     formState: { errors },
   } = useForm<ForgotPasswordFormValues>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -27,11 +31,19 @@ export function ForgotPasswordForm() {
   const requestMutation = useRequestPasswordResetMutation();
 
   async function handleValidSubmit(values: ForgotPasswordFormValues) {
+    clearErrors("root");
     try {
       await requestMutation.mutateAsync(values);
       setIsRequested(true);
-    } catch {
-      toast.error("일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      // ED-21: 429는 카운터가 DB 조회보다 앞이라(`auth/router.py:436-448`) 미등록 이메일도 등록
+      // 이메일과 완전히 같은 429를 받는다 — 노출해도 "성공·실패를 같게 보이는" 은닉이 깨지지 않는다.
+      const rateLimit = getAuthRateLimit(error);
+      if (rateLimit) {
+        setError("root", { message: formatAuthRateLimitMessage(rateLimit, "password-reset") });
+      } else {
+        toast.error("일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.");
+      }
     }
   }
 
@@ -53,6 +65,12 @@ export function ForgotPasswordForm() {
         void handleSubmit(handleValidSubmit)(event);
       }}
     >
+      {errors.root && (
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
+          {errors.root.message}
+        </p>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="forgot-password-email">이메일</Label>
         <Input

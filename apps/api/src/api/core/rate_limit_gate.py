@@ -83,7 +83,11 @@ _DAY_SCOPE = "chat_day"
 _IMAGE_SCOPE = "image_tokens"
 # RL-11/RL-12: 이미지 429 두 종류(`USER_LIMIT`·`QUEUE_FULL`)는 같은 `window`를 쓴다 — 둘을
 # 가르는 것은 `code`고, `window`는 "어느 상한이냐"가 아니라 "어느 기능이냐"다(채팅은 창 길이가
-# 곧 재시도 안내라 minute/day를 싣지만, 이미지는 그 역할을 `retryAfterSeconds`가 한다).
+# 곧 재시도 안내라 minute/day를 싣지만, 이미지는 그 역할을 `retryAfterSeconds`가 한다). auth도
+# 같은 형태다(error-delivery-goal-prompt.md ED-11) — `window:"auth"` 아래 시간당 상한은
+# `code:"AUTH_LIMIT"`, 60초 쿨다운은 `code:"AUTH_COOLDOWN"`이다. 바디는 이 파일의
+# `_too_many_requests`가 아니라 `auth/router.py`의 지역 헬퍼가 만든다(ED-12 — 그 함수는
+# `user_id` 필수라 인증 전인 auth에 안 맞는다).
 _IMAGE_WINDOW = "image"
 
 _last_redis_failure_reported_at: float | None = None

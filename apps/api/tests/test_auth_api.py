@@ -502,6 +502,24 @@ async def test_signup_rate_limited_by_email_returns_429(db_client: httpx.AsyncCl
     assert resp.json()["detail"]["retryAfterSeconds"] > 0
 
 
+async def test_signup_rate_limited_returns_auth_limit_detail(db_client: httpx.AsyncClient) -> None:
+    """error-delivery-goal-prompt.md ED-11: signup 429는 시간당 창 상한 하나뿐이므로
+    code:"AUTH_LIMIT", window:"auth"를 낸다."""
+    for _ in range(rate_limit.SIGNUP_IP_LIMIT):
+        resp = await db_client.post("/auth/signup", json=_signup_payload())
+        assert resp.status_code == 201
+
+    resp = await db_client.post("/auth/signup", json=_signup_payload())
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail == {
+        "code": "AUTH_LIMIT",
+        "retryAfterSeconds": detail.get("retryAfterSeconds"),
+        "window": "auth",
+    }
+    assert detail["retryAfterSeconds"] > 0
+
+
 async def test_resend_rate_limited_by_email_returns_429(db_client: httpx.AsyncClient) -> None:
     """email-goal-prompt.md E-6: resend의 이메일당 시간당 5회는 기존 60초 쿨다운과 별개 규칙이다.
     매 반복 전에 sent_at을 과거로 되돌려 쿨다운을 우회하고, 시간당 상한만으로 6번째를 막는다."""
@@ -524,6 +542,45 @@ async def test_resend_rate_limited_by_email_returns_429(db_client: httpx.AsyncCl
     )
     assert resp.status_code == 429
     assert resp.json()["detail"]["retryAfterSeconds"] > 0
+
+
+async def test_resend_rate_limit_and_cooldown_have_different_codes(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """error-delivery-goal-prompt.md ED-11: 60초 쿨다운과 시간당 상한은 둘 다 429지만
+    code가 갈려야 한다(AUTH_COOLDOWN vs AUTH_LIMIT). retryAfterSeconds 크기로 먼저 어느
+    규칙이 막았는지 확인해, 셋업 실수로 두 429가 같은 경로(쿨다운)에서 나오는 것을 배제한다
+    — sent_at 때문에 어느 규칙이 막았는지 구분 못 하는 함정은 :527 근처 주석 참고."""
+    cooldown_payload = _signup_payload()
+    await db_client.post("/auth/signup", json=cooldown_payload)
+    cooldown_resp = await db_client.post(
+        "/auth/resend-verification-code", json={"email": cooldown_payload["email"]}
+    )
+    assert cooldown_resp.status_code == 429
+    cooldown_detail = cooldown_resp.json()["detail"]
+    assert cooldown_detail["retryAfterSeconds"] <= 60
+    assert cooldown_detail.get("code") == "AUTH_COOLDOWN"
+
+    hourly_payload = _signup_payload()
+    await db_client.post("/auth/signup", json=hourly_payload)
+    past = datetime.now(UTC) - timedelta(seconds=61)
+    for _ in range(rate_limit.RESEND_VERIFICATION_EMAIL_LIMIT):
+        await store_verification_code(str(hourly_payload["email"]), "000000", past)
+        resp = await db_client.post(
+            "/auth/resend-verification-code", json={"email": hourly_payload["email"]}
+        )
+        assert resp.status_code == 204
+
+    # 쿨다운도 다시 우회해둔다 — 안 그러면 방금 성공 호출이 새로 찍은 sent_at 때문에 60초
+    # 쿨다운으로도 429가 나서 어느 규칙이 막았는지 테스트가 구분하지 못한다.
+    await store_verification_code(str(hourly_payload["email"]), "000000", past)
+    hourly_resp = await db_client.post(
+        "/auth/resend-verification-code", json={"email": hourly_payload["email"]}
+    )
+    assert hourly_resp.status_code == 429
+    hourly_detail = hourly_resp.json()["detail"]
+    assert hourly_detail["retryAfterSeconds"] > 60
+    assert hourly_detail.get("code") == "AUTH_LIMIT"
 
 
 async def _signup_and_verify(db_client: httpx.AsyncClient, **overrides: object) -> dict[str, object]:

@@ -18,9 +18,8 @@ import {
   type GenerateImagesFormValues,
 } from "@/features/generate-images";
 import { isApiError } from "@/shared/api/client";
-import { getRateLimitDetail } from "@/shared/api/rateLimit";
 
-import { formatImageRateLimitMessage } from "../model/imageRateLimitMessage";
+import { formatImageRateLimitMessage, getImageRateLimit } from "../model/imageRateLimitMessage";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail } from "./ImageStudioOptionsRail";
@@ -80,7 +79,7 @@ export function ImageStudioShell({
     } catch (error) {
       // limit-goal-prompt.md RL-11 — 429는 두 코드(토큰 부족·큐 만석)가 서로 다음 행동이 달라
       // 문구도 갈린다. 나머지 실패는 기존 분기 그대로다.
-      const rateLimit = getRateLimitDetail(error);
+      const rateLimit = getImageRateLimit(error);
       if (rateLimit) {
         toast.error(formatImageRateLimitMessage(rateLimit));
         return;

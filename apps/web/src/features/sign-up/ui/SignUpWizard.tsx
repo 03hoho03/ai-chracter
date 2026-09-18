@@ -4,7 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { sessionKeys } from "@/entities/session";
+import { formatAuthRateLimitMessage, getAuthRateLimit, sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import {
@@ -66,13 +66,17 @@ export function SignUpWizard(props: SignUpWizardProps) {
   }
 
   async function handleEmailBasicInfoSubmit(onStepChange: (step: SignUpStep) => void) {
+    form.clearErrors("root");
     try {
       await signUpMutation.mutateAsync(toSignupRequest(form.getValues()));
       onStepChange("emailVerify");
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
+      const rateLimit = getAuthRateLimit(error);
       if (apiError?.status === 409) {
         form.setError("email", { message: "이미 가입된 이메일이에요." });
+      } else if (rateLimit) {
+        form.setError("root", { message: formatAuthRateLimitMessage(rateLimit, "signup") });
       } else {
         toast.error(GENERIC_ERROR_MESSAGE);
       }
@@ -91,8 +95,12 @@ export function SignUpWizard(props: SignUpWizardProps) {
     } catch (error) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 400) {
+        // ED-23: 서버가 미등록/만료/5회무효화/오답 네 경우를 한 400으로 합친다(서버조차 만료와
+        // 5회무효화를 구분 못 한다) — 사유를 가르지 않고 "확인 + 재전송 유도"로만 안내한다.
+        // `type: "server"`는 EmailVerifyStep이 재전송 줄 라벨을 바꿀지 판별하는 신호다.
         form.setError("emailVerificationCode", {
-          message: "인증 코드가 올바르지 않거나 만료되었어요.",
+          type: "server",
+          message: "인증코드를 확인해주세요. 맞지 않거나 이미 만료된 코드예요.",
         });
       } else {
         toast.error(GENERIC_ERROR_MESSAGE);

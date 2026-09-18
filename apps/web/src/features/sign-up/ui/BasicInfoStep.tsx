@@ -47,6 +47,12 @@ export function BasicInfoStep({ onSubmit, isSubmitting }: BasicInfoStepProps) {
         void handleSubmit();
       }}
     >
+      {errors.root && (
+        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
+          {errors.root.message}
+        </p>
+      )}
+
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="signup-email">이메일</Label>
         <Input

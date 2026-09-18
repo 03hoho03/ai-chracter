@@ -74,6 +74,19 @@ async def _reregistration_blocked(db: AsyncSession, email: str, now: datetime) -
     return withdrawn is not None and now - withdrawn.withdrawn_at < WITHDRAWN_EMAIL_BLOCK_PERIOD
 
 
+def _auth_too_many_requests(retry_after: int, *, code: str) -> HTTPException:
+    # error-delivery-goal-prompt.md ED-12: rate_limit_gate.py의 _too_many_requests를 재사용하지
+    # 않는다 — 그 함수는 user_id를 필수로 받아 로그에 찍는데, 이 파일의 세 엔드포인트는 인증 전이라
+    # user_id가 없고 키가 email/IP다. 이메일을 로그에 싣는 것은 RL-12가 금지한다.
+    # ED-14: Retry-After 헤더는 여기도 주지 않는다 — RL-11과 같은 이유(CORS가 노출하지 않는
+    # 헤더라 크로스오리진에서 못 읽는다). auth도 ddona.site→api.ddona.site로 크로스오리진이라
+    # 같은 판단이 적용된다.
+    return HTTPException(
+        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+        detail={"code": code, "retryAfterSeconds": retry_after, "window": "auth"},
+    )
+
+
 @router.post("/signup", status_code=status.HTTP_201_CREATED)
 async def signup(
     payload: SignupRequest,
@@ -93,10 +106,7 @@ async def signup(
     )
     retry_after = ip_retry_after or email_retry_after
     if retry_after > 0:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"retryAfterSeconds": retry_after},
-        )
+        raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
 
     existing = await db.scalar(select(User).where(User.email == payload.email))
     now = datetime.now(UTC)
@@ -212,10 +222,7 @@ async def resend_verification_code(
         "resend_verification_code_email", payload.email, rate_limit.RESEND_VERIFICATION_EMAIL_LIMIT
     )
     if retry_after > 0:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"retryAfterSeconds": retry_after},
-        )
+        raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
 
     # email-goal-prompt.md E-12a: 쿨다운 검사를 유저 조회보다 먼저 한다. 코드는 아래에서
     # 등록 여부와 무관하게 항상 저장되므로, 유저 조회를 먼저 하면 미등록 이메일은 쿨다운
@@ -228,10 +235,7 @@ async def resend_verification_code(
             sent_at, now, settings.email_verification_resend_cooldown_seconds
         )
         if retry_after > 0:
-            raise HTTPException(
-                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={"retryAfterSeconds": retry_after},
-            )
+            raise _auth_too_many_requests(retry_after, code="AUTH_COOLDOWN")
 
     user = await db.scalar(select(User).where(User.email == payload.email))
 
@@ -442,10 +446,7 @@ async def request_password_reset(
     )
     retry_after = ip_retry_after or email_retry_after
     if retry_after > 0:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail={"retryAfterSeconds": retry_after},
-        )
+        raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
 
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
