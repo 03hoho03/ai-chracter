@@ -78,7 +78,7 @@
   --popover-foreground: oklch(0.22 0 0);
   /* 핑크-레드 강조. 흰 텍스트를 얹어야 해서 라이트는 어둡게 간다 — 채움 위 흰 텍스트 6.70:1,
      hover(bg-primary/80) 상태에서도 4.77:1로 AA 유지.
-     destructive와의 구분: 구조적으로는 이미 갈라져 있고(destructive는 항상 /10 틴트, 솔리드 레드
+     destructive와의 구분: 구조적으로는 이미 갈라져 있고(destructive는 언제나 틴트, 솔리드 레드
      채움은 이 시스템에 없다) 그 위에 hue를 0 대 25로 25° 벌렸다. Oklab ΔE 라이트 0.096 / 다크
      0.114로 JND(~0.02)의 5배다. chroma는 sRGB 게멋 상한(hue 0, L 0.5에서 0.203)에 걸려 더 벌릴
      여지가 없어 hue와 명도로만 가른다 */
@@ -92,7 +92,7 @@
   --accent-foreground: oklch(0.22 0 0);
   --destructive: oklch(0.55 0.19 25);
   --destructive-foreground: oklch(1 0 0);
-  /* 텍스트·글리프 전용. 채움(`bg-destructive/10`·`/20`, `border-destructive/30`, `ring-destructive/20`)은
+  /* 텍스트·글리프 전용. 채움(`bg-destructive/5`·`/10`·`/20`, `border-destructive/30`, `ring-destructive/20`)은
      --destructive를 그대로 쓴다 — 둘을 갈라야 틴트 픽셀을 안 건드리고 텍스트 대비만 올릴 수 있다.
      0.55로는 틴트가 popover(사다리 한 칸 안쪽) 위에 얹히는 순간 AA가 깨진다(rest 4.2059 / hover 3.6035).
      0.49면 최악 조합(hover `/20` over popover)이 4.6907이다 — 브라우저 실측이고 여유가 0.19뿐이다.
