@@ -16,10 +16,23 @@ const chatMessageSchema = z.object({
   // **답변이 화면에 찍히다가 사라진다** — token은 통과해 글자가 흐르는데 done이 튕겨
   // finalMessage가 커밋되지 않고 스트리밍 버퍼만 비워지기 때문이다(2026-09-02 프로덕션 실측).
   // `packages/api-types`의 codegen은 처음부터 `imageId?: string | null`이라고 적고 있었다.
-  imageId: z.string().nullish(),
+  // 출력은 `null`을 `undefined`로 정규화한다(fe-typescript TS-08 — 앱 내부 타입에 null을 흘리지
+  // 않는다). 재조회 경로 `toChatMessage`의 `?? undefined`와 같은 값이 되어 SSE로 온 메시지와
+  // GET으로 온 메시지의 필드 모양이 갈리지 않는다. 앞의 `.nullish()`가 입력의 `null`을 그대로
+  // 통과시키므로 위 경고와 충돌하지 않고, 끝의 `.optional()`은 출력 키를 옵셔널로 유지하기 위한
+  // 것이다(`.transform`만 붙이면 `imageId: string | undefined` 필수 키가 된다 — zod 4.4.3 실측).
+  imageId: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
   // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용 — 재조회 응답에도 실린다, BE
-  // `ChatMessageResponse.image_url` 주석 참조). 같은 이유로 nullish.
-  imageUrl: z.string().nullish(),
+  // `ChatMessageResponse.image_url` 주석 참조). 같은 이유로 nullish + 같은 정규화.
+  imageUrl: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
   createdAt: z.string(),
 });
 
