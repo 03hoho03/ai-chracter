@@ -56,7 +56,15 @@ from api.db.models import (
 from api.llm.client import LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import (
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_user,
+    _NeverCalledLLMClient,
+    _override_llm_client,
+)
 
 
 async def _make_published_story(db_session: AsyncSession, *, creator_user_id: uuid.UUID, genre_id: uuid.UUID) -> Content:
@@ -222,7 +230,11 @@ async def test_send_message_on_mismatched_story_room_returns_400(
 
     room_id = await _make_mismatched_story_room(db_client, db_session, user, genre.id)
 
-    resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm_client(_NeverCalledLLMClient())
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 400
     assert resp.headers["content-type"].startswith("application/json")
@@ -261,7 +273,11 @@ async def test_regenerate_message_on_mismatched_story_room_returns_400(
     db_session.add(ChatMessage(chat_room_id=room_id, role=ChatMessageRole.ASSISTANT, content="추가 응답"))
     await db_session.flush()
 
-    resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    _override_llm_client(_NeverCalledLLMClient())
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 400
     assert resp.headers["content-type"].startswith("application/json")
@@ -288,9 +304,13 @@ async def test_edit_message_on_mismatched_story_room_returns_400(
     db_session.add(user_message)
     await db_session.flush()
 
-    resp = await db_client.patch(
-        f"/chat-rooms/{room_id}/messages/{user_message.id}", json={"content": "수정된 메시지"}
-    )
+    _override_llm_client(_NeverCalledLLMClient())
+    try:
+        resp = await db_client.patch(
+            f"/chat-rooms/{room_id}/messages/{user_message.id}", json={"content": "수정된 메시지"}
+        )
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 400
     assert resp.headers["content-type"].startswith("application/json")
