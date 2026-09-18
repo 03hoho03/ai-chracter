@@ -50,6 +50,7 @@ from factories import (
     _login_as,
     _make_asset,
     _make_user,
+    _NeverCalledLLMClient,
     _override_llm_client,
     _parse_sse_events,
 )
@@ -193,19 +194,6 @@ class _FakeLLMClient(LLMClient):
         if response_schema is StatJudgmentResult:
             return StatJudgmentResult(stat_changes=[])
         raise NotImplementedError
-
-
-class _NeverCalledLLMClient(LLMClient):
-    """렌더가 먼저 실패해야 하는 테스트용 — LLM이 조금이라도 불리면 그 자체가 실패다."""
-
-    async def generate(
-        self, prompt: str, system_instruction: str | None = None, stop_sequences: list[str] | None = None
-    ) -> AsyncIterator[str]:
-        raise AssertionError("렌더 실패보다 먼저 LLM 이 호출됐다")
-        yield ""  # pragma: no cover
-
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
-        raise AssertionError("렌더 실패보다 먼저 LLM 이 호출됐다")
 
 
 async def test_send_message_with_broken_section_body_ends_the_stream_with_an_error_event(

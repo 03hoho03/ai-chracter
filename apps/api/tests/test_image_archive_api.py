@@ -274,6 +274,40 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
     assert build_thumbnail_key(original.storage_key) in exposed_item["imageUrl"]
 
 
+async def test_image_archive_skips_slot_with_no_uploaded_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`PATCH /contents/{id}/draft`(US-082)가 이미지 파일 업로드 전에 `image_asset_id`·
+    `blurred_asset_id`가 둘 다 NULL인 행을 만들 수 있고(`SituationalImage` docstring), 발행
+    검증은 `situational_images`를 보지 않아(sse-assert-goal-prompt.md F-5) 그 상태로도 정상
+    발행된다. 그런 슬롯이 섞인 캐릭터의 보관함 조회가 `assert`로 500이 되면 안 되고,
+    `_stream_new_turn`의 상황이미지 URL 조립(SA-3/N-3)과 같은 판단으로 목록에서 빠져야
+    한다(SA-4)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    uploaded = await _add_situational_image(db_session, content, owner_user_id=user.id, order=1)
+    never_uploaded = await _add_situational_image(
+        db_session,
+        content,
+        owner_user_id=user.id,
+        order=2,
+        image_asset_id=None,
+        blurred_asset_id=None,
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.get(f"/characters/{content.id}/image-archive")
+
+    assert resp.status_code == 200
+    body_ids = [item["id"] for item in resp.json()]
+    assert body_ids == [str(uploaded.entity_id)]
+    assert str(never_uploaded.entity_id) not in body_ids
+
+
 async def test_image_archive_exposure_accumulates_across_chat_rooms_not_scoped_to_one_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

@@ -304,6 +304,19 @@ class _FakeLLMClient(LLMClient):
         return self.structured_result
 
 
+class _NeverCalledLLMClient(LLMClient):
+    """LLM보다 먼저 실패해야 하는 테스트용 — LLM이 조금이라도 불리면 그 자체가 실패다."""
+
+    async def generate(
+        self, prompt: str, system_instruction: str | None = None, stop_sequences: list[str] | None = None
+    ) -> AsyncIterator[str]:
+        raise AssertionError("먼저 실패해야 할 검증보다 앞서 LLM이 호출됐다")
+        yield ""  # pragma: no cover
+
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+        raise AssertionError("먼저 실패해야 할 검증보다 앞서 LLM이 호출됐다")
+
+
 # `LLMClient`로 받는다 — 이 저장소의 페이크는 파일마다 모양이 다르고(큐 기반·발행 심사용 등)
 # 전부 `LLMClient` 하위라, 구체 페이크로 좁히면 이 헬퍼를 공유할 수 없다.
 def _override_llm_client(fake: LLMClient) -> None:
