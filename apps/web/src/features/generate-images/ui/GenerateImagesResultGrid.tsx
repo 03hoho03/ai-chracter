@@ -135,8 +135,10 @@ export function GenerateImagesResultGrid({
           <div key={`pending-${i}`} className="aspect-square animate-pulse rounded-md bg-muted" />
         ))}
       </div>
-      {/* my-works/ui/MyWorksPage.tsx:507 선례 — polite 라이브 리전은 조건부로 마운트하면 announce
-          여부가 스크린리더/브라우저 조합마다 갈린다(그 파일 주석의 실측 근거). 그래서 이 <p>는
+      {/* polite 라이브 리전은 조건부로 마운트하면 announce 여부가 스크린리더/브라우저 조합마다
+          갈린다는 것이 업계 통설이다(이 파일에서 실측한 적은 없다) — 이 저장소의 polite 3곳
+          (MyWorksPage.tsx:507·GenerateImagesPromptField.tsx:89·여기)이 전부 항상 마운트인 것도
+          그 통설을 따른 선례다. 그래서 이 <p>는
           isTerminal이 아닌 동안(잡이 아직 진행 중일 때)부터 항상 DOM에 있고, 내용만 빈 문자열→
           문구로 바뀐다 — 완료 시점에 새 노드로 끼워 넣지 않는다. 아무것도 차단되지 않은 채
           끝나는 경우(오늘의 기본 화면)와 시각적으로 동일하도록 비어 있을 때는 sr-only로 접는다. */}

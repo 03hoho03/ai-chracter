@@ -153,17 +153,22 @@ export function PreviewSessionView({
               (status.rateLimit ? (
                 <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />
               ) : (
-                <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+                <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
                   <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
                 </div>
               ))}
 
-            {!!policyWarning && (
-              <div className="flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5">
-                <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{policyWarning}</span>
-              </div>
-            )}
+            {/* 오류 배너(위)는 이산적 실패라 assertive + 조건부 마운트, 이 경고는 메시지와 공존하는
+                정보라 polite + 항상 마운트다 — polite는 조건부 마운트에서 announce 여부가 갈린다는
+                것이 업계 통설이고, 이 저장소의 polite 3곳(MyWorksPage.tsx:507 등)도 전부 항상
+                마운트다. */}
+            <div
+              aria-live="polite"
+              className={policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only"}
+            >
+              <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+              <span className="text-xs text-muted-foreground">{policyWarning}</span>
+            </div>
 
             <div ref={bottomRef} />
           </div>

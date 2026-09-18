@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { RotateCw } from "lucide-react";
 
-import { formatChatRateLimitMessage, type ChatRateLimit } from "../model/chatRateLimit";
+import { formatChatRateLimitAnnouncement, formatChatRateLimitMessage, type ChatRateLimit } from "../model/chatRateLimit";
 
 type RateLimitNoticeProps = {
   rateLimit: ChatRateLimit;
@@ -47,8 +47,15 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
 
   return (
     <div className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-      <span className="min-w-0 break-keep text-xs text-destructive-text">
+      <span aria-hidden className="min-w-0 break-keep text-xs text-destructive-text">
         {formatChatRateLimitMessage(rateLimit, surface, secondsLeft)}
+      </span>
+      {/* ED-7 — role="alert" sr-only 쌍둥이. 보이는 문구는 매초 바뀌어 aria-hidden으로 숨기고,
+          이 문구는 formatChatRateLimitAnnouncement가 담당한다 — secondsLeft를 받지 않아 마운트
+          1회 말고는 값이 바뀔 길이 없다(뮤테이션이 원리적으로 불가능해 alert가 초마다 재발화하지
+          않는다). */}
+      <span role="alert" className="sr-only">
+        {formatChatRateLimitAnnouncement(rateLimit, surface)}
       </span>
       {/* day 창에는 재시도를 두지 않는다 — 자정까지 눌러도 같은 429가 돌아온다. */}
       {!!onRetry && rateLimit.window === "minute" && (
