@@ -90,7 +90,10 @@ class StoryEndingUnlock(Base):
 
 
 class CharacterImageExposure(Base):
-    """techspec-db-schema.md §6. US-028 이미지 보관함: accumulates per user+character."""
+    """techspec-db-schema.md §6. US-028 이미지 보관함: accumulates per user+character,
+    never revoked — not when the message that exposed the image is regenerated, edited or
+    deleted, and not on room reset or deletion. No code path deletes these rows; the
+    room-scoped state that IS torn down is ChatRoomStat (regenerate-ux-goal-prompt.md RU-7)."""
 
     __tablename__ = "character_image_exposures"
 
