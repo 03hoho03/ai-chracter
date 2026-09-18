@@ -9,6 +9,10 @@ export {
 } from "./api/useSuspendUserMutation";
 export { useUnsuspendUserMutation, type AdminUserUnsuspendRequest } from "./api/useUnsuspendUserMutation";
 export {
+  useSetRateLimitExemptMutation,
+  type AdminUserRateLimitExemptRequest,
+} from "./api/useSetRateLimitExemptMutation";
+export {
   SIGNUP_METHOD_LABELS,
   ACTION_TYPE_LABELS,
   CHAT_VIEW_REASON_CATEGORY_LABELS,

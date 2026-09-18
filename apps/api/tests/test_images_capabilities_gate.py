@@ -10,19 +10,31 @@ router가 그 결과를 어떻게 쓰는지만 본다. 503/429로 끝나는 사�
 admission(P2-R 결함 수정, LT-3)도 같은 이름-패치 규칙을 따른다: 라우터는
 `try_admit`/`release_admission`을 `api.llm.local_image`에서 이름으로 import해야
 `monkeypatch.setattr("api.images.router.try_admit", ...)`가 먹는다.
+
+limit-goal-prompt.md RL-5/RL-11/RL-13/RL-16(S6)의 유저별 상한 — 토큰 버킷(장수만큼 차감) ·
+유저별 큐 1칸 · 429 바디 통일(`USER_LIMIT`/`QUEUE_FULL`) · 202 전 실패의 환불 — 도 같은
+엔드포인트의 **사전 차단**이라 이 파일에 둔다(`test_user_rate_limit_gate.py`는 채팅 4경로 전용).
+정책 상수는 `api.core.rate_limit_gate`의 모듈 전역이라 `monkeypatch.setattr`로 낮춘다.
 """
 
 import asyncio
+import json
 import logging
+import time
 import uuid
+from contextlib import AsyncExitStack
+from typing import cast
 
 import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core import rate_limit_gate
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.db.models import User
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
+from api.llm import local_image
 from api.llm.client import LLMClientError
 from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient, ImageStylePreset
@@ -31,8 +43,10 @@ from api.main import app
 from factories import _login_as, _make_user
 
 
-async def _authed_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
-    user = _make_user()
+async def _authed_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
+) -> User:
+    user = _make_user(**overrides)
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -55,6 +69,88 @@ _READY_MATCHING_LOCAL = LocalCapabilities(
     ready=True,
     models=(ModelCapability(model_id="v1", styles=("soft_portrait",), aspect_ratios=("1:1",)),),
 )
+
+
+def _stub_ready_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def fake_get_capabilities() -> LocalCapabilities:
+        return _READY_MATCHING_LOCAL
+
+    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
+
+
+def _reset_admission(monkeypatch: pytest.MonkeyPatch, *, queue_limit: int) -> None:
+    """전역 깊이·유저별 깊이 둘 다 프로세스 전역이라(모듈 최상단 정수 + dict) 다른 테스트가
+    admit한 채 남긴 값과 격리해야 한다. monkeypatch가 teardown에서 원래 값(과 원래 dict
+    **객체**)을 되돌리므로 이 테스트들이 반납하지 않고 끝나도 뒤 테스트에 새지 않는다."""
+    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
+    monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
+    monkeypatch.setattr(settings, "local_image_queue_limit", queue_limit)
+
+
+def _stub_job_pipeline(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """`create_job`/`enqueue_generation`을 stub해 게이트 판정에만 좁힌다(생성 파이프라인은
+    `test_images_generate_api.py`가 다룬다). 반환 리스트에 만들어진 잡 id가 쌓이므로 "거절된
+    요청은 잡을 만들지 않았다"까지 같은 자리에서 본다. 잡이 안 돌아 admission이 저절로
+    반납되지 않는다 — 한 테스트 안에서 "이미 한 칸 차 있다"를 만드는 수단이기도 하다."""
+    created_job_ids: list[str] = []
+
+    async def fake_create_job(owner_user_id: uuid.UUID, requested_count: int) -> ImageGenerationJob:
+        job = ImageGenerationJob(
+            job_id=uuid.uuid4().hex,
+            owner_user_id=owner_user_id,
+            status=ImageGenerationJobStatus.QUEUED,
+            requested_count=requested_count,
+        )
+        created_job_ids.append(job.job_id)
+        return job
+
+    async def fake_enqueue_generation(*args: object, **kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr("api.images.router.create_job", fake_create_job)
+    monkeypatch.setattr("api.images.router.enqueue_generation", fake_enqueue_generation)
+    return created_job_ids
+
+
+async def _extra_logged_in_client(
+    stack: AsyncExitStack, db_session: AsyncSession, **overrides: object
+) -> httpx.AsyncClient:
+    """`db_client`의 유저와 **다른 유저**로 동시에 요청할 클라이언트. 유저별 큐 1칸(RL-5)은
+    유저가 여럿이어야 전역 상한과 구분되는데, 세션 쿠키는 클라이언트 단위라(요청 단위
+    `cookies=`는 httpx 0.28에서 deprecated) 유저마다 클라이언트를 따로 연다.
+
+    `app.dependency_overrides`는 전역이라 이 클라이언트도 `db_client`와 **같은 DB 세션·같은
+    트랜잭션**을 쓴다 — 그래서 여기서 만든 유저 행이 라우트에도 보이고 테스트 끝에 함께
+    롤백된다(`db_client` 픽스처를 함께 받아야 그 오버라이드가 설치돼 있다)."""
+    user = _make_user(**overrides)
+    db_session.add(user)
+    await db_session.commit()
+    client = await stack.enter_async_context(
+        httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://testserver")
+    )
+    await _login_as(client, user.id)
+    return client
+
+
+_IMAGE_TOKEN_KEY = "rate_limit:image_tokens:{user_id}"
+
+
+async def _bucket_tokens(user_id: uuid.UUID) -> float | None:
+    """토큰 버킷 키를 직접 읽는다 — 차감도 환불도 응답 본문에 드러나지 않아 Redis를 보는 것
+    말고는 "환불됐다"를 관측할 방법이 없다. 키가 아예 없으면 None(= 차감 자체가 없었다)이라
+    "차감 안 함"과 "차감 후 환불"이 구분된다."""
+    raw = cast(str | None, await redis_client.get(_IMAGE_TOKEN_KEY.format(user_id=user_id)))
+    if raw is None:
+        return None
+    return float(json.loads(raw)["tokens"])
+
+
+async def _set_bucket_tokens(user_id: uuid.UUID, tokens: float) -> None:
+    """`core/rate_limit.py`의 `_TokenBucket` 직렬화 형식 그대로 버킷을 심는다."""
+    await redis_client.set(
+        _IMAGE_TOKEN_KEY.format(user_id=user_id),
+        json.dumps({"tokens": tokens, "updated_at": time.time()}),
+    )
 
 
 # ---- GET /images/models 교차 (LT-6) ------------------------------------------
@@ -347,7 +443,7 @@ async def test_generate_returns_429_and_creates_no_job_when_admission_is_rejecte
         return _READY_MATCHING_LOCAL
 
     monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
-    monkeypatch.setattr("api.images.router.try_admit", lambda: False)
+    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
 
     create_job_calls = {"n": 0}
 
@@ -362,55 +458,66 @@ async def test_generate_returns_429_and_creates_no_job_when_admission_is_rejecte
     assert create_job_calls["n"] == 0
 
 
-async def test_concurrent_requests_admit_no_more_than_the_queue_limit(
+async def test_four_distinct_users_fill_the_global_queue_and_a_fifth_is_rejected(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P2-R 결함: 검사(구 `current_queue_depth`)와 증가가 서로 다른 시점에 있었다 — 증가는
-    백그라운드 태스크가 `generate_image`에 진입해서야 일어났는데, 그 사이 진짜 await
-    (`create_job`)가 있어 동시 도착 요청이 전부 증가 이전 값을 읽고 전부 통과했다(실제
-    모듈로 재현된 수치: admitted=10 rejected=0 limit=4). 카운터를 고정값으로 monkeypatch
-    하는 429 테스트는 이 경합을 볼 수 없다 — 여기는 실제 admission 경로를 실제 동시 요청
-    10개로 통과시켜 상한(4)을 정확히 지키는지 본다. `enqueue_generation`을 stub해 이
-    테스트를 admission 판정 자체에만 좁힌다(생성 파이프라인은 다른 테스트가 다룬다).
-    `_queue_depth`는 프로세스 전역이라(모듈 최상단 정수) 이 테스트가 admit한 4건이
-    저절로 반납되지 않는다 — 시작 값을 0으로 monkeypatch해 다른 테스트의 잔여 상태와
-    격리하고, 이 테스트가 남긴 값은 monkeypatch가 teardown에서 되돌린다."""
+    """P2-R 결함(검사와 증가가 서로 다른 await 경계에 걸쳐 있어 동시 도착 요청이 전부 증가
+    이전 값을 읽고 통과했다 — 실측 admitted=10 rejected=0 limit=4)의 회귀 가드였던
+    `test_concurrent_requests_admit_no_more_than_the_queue_limit`의 후신이다. 유저별 큐가
+    1칸이 되면서(RL-5) 같은 유저 10건으로는 전역 상한(4)을 더 이상 관측할 수 없다 — 두 번째
+    요청부터 유저별 칸에서 먼저 걸리기 때문이다. 서로 다른 유저 5명이 **동시에** 도착해야
+    전역 상한이 판정에 관여한다.
+
+    이 배치가 잡는 회귀가 하나 더 있다: `_queue_depth`(전역 정수)를 유저별 dict로 **교체**해
+    버리면 유저마다 1칸씩 무제한으로 열려 GPU 직렬 처리량(LG-6) 방어가 통째로 사라진다 —
+    그때 5번째 유저가 429가 아니라 202를 받는다."""
     await _authed_user(db_client, db_session)
-    monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
 
-    async def fake_get_capabilities() -> LocalCapabilities:
-        return _READY_MATCHING_LOCAL
-
-    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
-    monkeypatch.setattr(settings, "local_image_queue_limit", 4)
-
-    created_job_ids: list[str] = []
-
-    async def fake_create_job(owner_user_id: uuid.UUID, requested_count: int) -> ImageGenerationJob:
-        job = ImageGenerationJob(
-            job_id=uuid.uuid4().hex,
-            owner_user_id=owner_user_id,
-            status=ImageGenerationJobStatus.QUEUED,
-            requested_count=requested_count,
+    async with AsyncExitStack() as stack:
+        others = [await _extra_logged_in_client(stack, db_session) for _ in range(4)]
+        responses = await asyncio.gather(
+            db_client.post("/images/generate", json=_generate_payload()),
+            *[client.post("/images/generate", json=_generate_payload()) for client in others],
         )
-        created_job_ids.append(job.job_id)
-        return job
-
-    monkeypatch.setattr("api.images.router.create_job", fake_create_job)
-
-    async def fake_enqueue_generation(*args: object, **kwargs: object) -> None:
-        return None
-
-    monkeypatch.setattr("api.images.router.enqueue_generation", fake_enqueue_generation)
-
-    responses = await asyncio.gather(
-        *[db_client.post("/images/generate", json=_generate_payload()) for _ in range(10)]
-    )
 
     statuses = [resp.status_code for resp in responses]
     assert statuses.count(202) == 4
-    assert statuses.count(429) == 6
+    assert statuses.count(429) == 1
     assert len(created_job_ids) == 4
+    rejected = next(resp for resp in responses if resp.status_code == 429)
+    assert rejected.json()["detail"]["code"] == "QUEUE_FULL"
+
+
+async def test_same_user_second_concurrent_request_is_queue_full_while_another_user_passes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-5: 유저별 큐는 1칸이다 — 한 사용자가 잡 두 개를 동시에 큐에 세울 수 없다.
+
+    짝이 되는 **다른 유저의 202**가 없으면 이 테스트는 "전역 상한이 1"과 구분되지 않는다
+    (전역만 1로 낮춘 구현에서도 똑같이 초록이다). 전역 상한은 4로 열어 두고 같은 순간에 다른
+    유저가 통과하는 것까지 함께 단언해야 유저별 칸이 실제로 존재한다는 뜻이 된다."""
+    await _authed_user(db_client, db_session)
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+
+    async with AsyncExitStack() as stack:
+        other_client = await _extra_logged_in_client(stack, db_session)
+        first, second, other = await asyncio.gather(
+            db_client.post("/images/generate", json=_generate_payload()),
+            db_client.post("/images/generate", json=_generate_payload()),
+            other_client.post("/images/generate", json=_generate_payload()),
+        )
+
+    assert sorted([first.status_code, second.status_code]) == [202, 429]
+    assert other.status_code == 202
+    rejected = first if first.status_code == 429 else second
+    assert rejected.json()["detail"]["code"] == "QUEUE_FULL"
+    # 거절된 쪽은 잡을 만들지 않는다 — 통과한 A 1건 + B 1건뿐이다.
+    assert len(created_job_ids) == 2
 
 
 async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not_wedge(
@@ -440,9 +547,9 @@ async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not
 
     release_calls = {"n": 0}
 
-    def fake_release_admission() -> None:
+    def fake_release_admission(user_id: uuid.UUID) -> None:
         release_calls["n"] += 1
-        real_release_admission()
+        real_release_admission(user_id)
 
     monkeypatch.setattr("api.images.router.release_admission", fake_release_admission)
 
@@ -469,6 +576,41 @@ async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not
     resp = await db_client.post("/images/generate", json=_generate_payload())
 
     assert resp.status_code == 202
+
+
+async def test_non_http_failure_before_202_refunds_the_charged_tokens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-16: 환불 조건은 "202 전에 끝났다"이지 "`HTTPException`으로 끝났다"가 아니다.
+    차감 이후 202 전에는 `HTTPException`이 아닌 예외를 내는 지점이 둘 있다 —
+    `create_job`(Redis)과 `session.commit()`(Postgres). 바로 위 테스트가 그 경로에서
+    큐 칸 반납만 보므로, 토큰까지 보는 테스트가 없으면 환불이 `HTTPException`에만 걸린
+    구현이 초록으로 남는다(그때 사용자는 500만 보고 하루치가 조용히 깎인다).
+
+    `raise_app_exceptions=False` 클라이언트를 따로 여는 이유는 상태 코드를 보기 위해서다 —
+    기본 `db_client`는 앱 예외를 그대로 올려서 응답이 만들어지지 않는다(바로 위 테스트가
+    `pytest.raises(RuntimeError)`를 쓰는 이유)."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+
+    async def failing_create_job(*args: object, **kwargs: object) -> None:
+        raise RuntimeError("redis blip")
+
+    monkeypatch.setattr("api.images.router.create_job", failing_create_job)
+
+    user = await _authed_user(db_client, db_session)
+
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
+        base_url="http://testserver",
+        cookies=db_client.cookies,
+    ) as client:
+        resp = await client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert resp.status_code == 500
+    assert await _bucket_tokens(user.id) == pytest.approx(
+        float(rate_limit_gate.IMAGE_TOKEN_CAPACITY), abs=0.01
+    )
 
 
 class _ImmediatelyFailingImageClient(ImageClient):
@@ -512,9 +654,9 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
 
     release_calls = {"n": 0}
 
-    def fake_release_admission() -> None:
+    def fake_release_admission(user_id: uuid.UUID) -> None:
         release_calls["n"] += 1
-        real_release_admission()
+        real_release_admission(user_id)
 
     monkeypatch.setattr("api.images.router.release_admission", fake_release_admission)
 
@@ -533,3 +675,161 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
         app.dependency_overrides.pop(get_image_client, None)
 
     assert second.status_code == 202
+
+
+# ---- 유저별 토큰 버킷 · 429 바디 통일 · 환불 (RL-5/RL-11/RL-13/RL-16, S6) ----
+
+
+async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empty(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-5/RL-11: 토큰이 없으면 큐에 자리가 있어도 429 `USER_LIMIT`이고, 잡은 만들어지지
+    않는다. 용량을 0으로 낮춰 만든다 — 실제로 10장을 생성해 소진시키면 그 비용이 이 스위트에
+    그대로 붙는다(`test_user_rate_limit_gate.py`의 같은 결정)."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+
+    user = await _authed_user(db_client, db_session)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "USER_LIMIT"
+    # 다음 토큰이 찰 때까지의 초. 0이면 FE가 "지금 다시" 하라는 뜻으로 읽어 무한 재시도가 된다.
+    assert detail["retryAfterSeconds"] >= 1
+    assert created_job_ids == []
+    # 큐 칸은 건드리지 않았다 — 게이트가 `Depends`라 라우트 본문(try_admit) 전에 끊는다(RL-13).
+    assert local_image._user_queue_depth == {}
+    assert await _bucket_tokens(user.id) is None
+
+
+async def test_global_queue_429_now_uses_the_structured_detail_body(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-11: 전역 큐 거절의 detail은 평문 문자열("Too many generation requests are queued")
+    이었다 — 유저 상한 429와 본문 모양이 달라 FE가 둘을 가를 수 없고 재시도 시점도 모른다.
+    두 429를 `code`로 가르고 `retryAfterSeconds`를 함께 싣는다."""
+    await _authed_user(db_client, db_session)
+    _stub_ready_capabilities(monkeypatch)
+    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "QUEUE_FULL"
+    # 큐 길이 추정이 아니라 **잡 한 건의 최대 소요**(30초/장 × count 상한 2)를 고정값으로 준다.
+    assert detail["retryAfterSeconds"] == 60
+
+
+async def test_queue_full_refunds_the_charged_tokens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-16: 토큰은 잡이 실제로 생성(202)될 때만 소모된다. 차감은 `Depends`에서 일어나고
+    큐 거절은 그 뒤 라우트 본문이라, 환불이 없으면 **생성되지도 않은 이미지 2장**이 사용자의
+    하루치에서 사라진다(그 상태로 큐가 붐비면 상한이 실제 생성량보다 훨씬 빨리 마른다).
+
+    키가 아예 없으면(None) 차감 자체가 없었다는 뜻이라 이 단언은 "차감 후 환불"만 통과시킨다
+    — 환불이 빠지면 8.0, 차감이 빠지면 None이다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    monkeypatch.setattr("api.images.router.try_admit", lambda _user_id: False)
+
+    user = await _authed_user(db_client, db_session)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["code"] == "QUEUE_FULL"
+    assert await _bucket_tokens(user.id) == pytest.approx(
+        float(rate_limit_gate.IMAGE_TOKEN_CAPACITY), abs=0.01
+    )
+
+
+async def test_unavailable_503_refunds_the_charged_tokens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-16a: 환불은 `QUEUE_FULL` 전용이 아니다 — 차감 이후 202 전에 끝나는 경로는 전부
+    같다. 집 PC가 꺼져 있으면(503) 사용자는 이미지를 한 장도 못 받는데, 환불이 큐 거절에만
+    걸려 있으면 홈서버가 다운된 동안 재시도할 때마다 하루치가 조용히 깎인다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+
+    async def fake_get_capabilities() -> LocalCapabilities:
+        return LocalCapabilities(ready=False, models=())
+
+    monkeypatch.setattr("api.images.router.get_capabilities", fake_get_capabilities)
+
+    user = await _authed_user(db_client, db_session)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert resp.status_code == 503
+    assert await _bucket_tokens(user.id) == pytest.approx(
+        float(rate_limit_gate.IMAGE_TOKEN_CAPACITY), abs=0.01
+    )
+
+
+async def test_exempt_user_skips_token_bucket_but_still_has_one_queue_slot(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-10/RL-18: 예외 계정이 면제받는 것은 **토큰 버킷뿐**이다. 유저별 큐 1칸은 그대로
+    받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량(LG-6) 보호라서 예외 계정에 열어 줄 이유가
+    없다. 짝은 바로 위
+    `test_images_generate_returns_user_limit_body_when_token_bucket_is_empty`다(같은
+    `IMAGE_TOKEN_CAPACITY=0`에서 비면제 계정은 `USER_LIMIT` 429를 받는다) — 그 짝이 없으면
+    이 202는 "면제가 먹혔다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+
+    await _authed_user(db_client, db_session, rate_limit_exempt=True)
+
+    first, second = await asyncio.gather(
+        db_client.post("/images/generate", json=_generate_payload()),
+        db_client.post("/images/generate", json=_generate_payload()),
+    )
+
+    assert sorted([first.status_code, second.status_code]) == [202, 429]
+    rejected = first if first.status_code == 429 else second
+    assert rejected.json()["detail"]["code"] == "QUEUE_FULL"
+    assert len(created_job_ids) == 1
+
+
+async def test_token_charge_equals_requested_image_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """RL-5: 토큰 1개 = 이미지 1장이다. 요청당 1씩 깎으면 `count=2`로 보내는 사용자가 상한을
+    두 배로 쓴다 — 비용은 장수에 붙는다(LG-6: 집 PC가 장당 한 번씩 돈다).
+
+    뒷부분은 부분 차감 금지다: 남은 토큰(1)이 요청 장수(2)보다 적으면 1장만 만들지 않고
+    통째로 429다 — 부분 생성은 사용자에게 "2장 요청했는데 1장"으로 보이고 환불 회계도
+    두 갈래가 된다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+
+    user = await _authed_user(db_client, db_session)
+
+    accepted = await db_client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert accepted.status_code == 202
+    assert await _bucket_tokens(user.id) == pytest.approx(
+        float(rate_limit_gate.IMAGE_TOKEN_CAPACITY) - 2, abs=0.01
+    )
+
+    # 같은 유저의 두 번째 요청이라 유저별 큐 1칸이 아직 차 있다(잡이 stub이라 반납되지 않는다).
+    # 그 칸을 비워야 아래 429가 `QUEUE_FULL`이 아니라 토큰 부족 때문임이 확실해진다.
+    local_image._user_queue_depth.clear()
+    await _set_bucket_tokens(user.id, 1.0)
+
+    rejected = await db_client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert rejected.status_code == 429
+    assert rejected.json()["detail"]["code"] == "USER_LIMIT"
+    assert len(created_job_ids) == 1
+    # 부족하면 **부분 차감 없이** 거절이다 — 남은 1이 그대로 있어야 한다.
+    assert await _bucket_tokens(user.id) == pytest.approx(1.0, abs=0.01)

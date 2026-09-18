@@ -59,6 +59,14 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
             <span>{SIGNUP_METHOD_LABELS[userDetailQuery.data.signupMethod]}</span>
             <span aria-hidden>·</span>
             <span>{userDetailQuery.data.suspendedAt ? "정지" : "정상"}</span>
+            {/* limit-goal-prompt.md RL-19 — 면제는 상세에만 있는 플래그라 여기서만 읽을 수 있다.
+             * 정지 여부와 달리 "아님"일 때는 아무것도 붙이지 않는다(기본값이라 상태 줄이 길어지기만 한다). */}
+            {userDetailQuery.data.rateLimitExempt && (
+              <>
+                <span aria-hidden>·</span>
+                <span>레이트리밋 면제</span>
+              </>
+            )}
           </div>
           <p className="text-lg font-semibold text-foreground">{userDetailQuery.data.nickname}</p>
           <p className="text-sm text-muted-foreground">{userDetailQuery.data.email}</p>
@@ -246,6 +254,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
       <UserActionPanel
         userId={userDetailQuery.data.id}
         isSuspended={userDetailQuery.data.suspendedAt !== null}
+        isRateLimitExempt={userDetailQuery.data.rateLimitExempt}
         restrictableContentCount={userDetailQuery.data.restrictableContentCount}
       />
     </>

@@ -14,6 +14,7 @@ PC가 생성 전(프롬프트)·생성 후(이미지) 2단계로 돌리고(DEPLO
 """
 
 import time
+import uuid
 from asyncio import Semaphore
 from dataclasses import dataclass
 
@@ -90,22 +91,49 @@ _generation_semaphore = Semaphore(1)
 # 이상 이 카운터를 건드리지 않는다(세마포어만으로 GPU 보호는 그대로 유지된다).
 _queue_depth = 0
 
+# limit-goal-prompt.md RL-5: 유저별 큐는 1칸이다 — 전역 상한(`local_image_queue_limit`)만
+# 있으면 한 사용자가 그 칸을 전부 차지해 나머지 전원이 429를 받는다. 정책 상수를 여기 두는
+# 이유는 RL-14다 — 정책 상수는 게이트·큐 모듈에 둔다(전역 큐 상한 바로 옆 = 같은 기구의
+# 정책값이 한자리에 모인다). 전역 상한은 GPU 직렬 처리량(LG-6) 보호라 그대로 남고, 이 상한은
+# 그 자원의 **분배**를 맡는다.
+USER_QUEUE_LIMIT = 1
 
-def try_admit() -> bool:
+# 유저별 깊이. `_queue_depth`를 이 dict로 **대체하지 않는다** — 대체하면 유저마다 1칸씩
+# 무제한으로 열려 전역 상한이 사라진다. 두 카운터는 서로 다른 것을 지킨다.
+_user_queue_depth: dict[uuid.UUID, int] = {}
+
+
+def try_admit(user_id: uuid.UUID) -> bool:
     """상한 검사와 증가를 한 동기 블록에서 한다 — 그 사이에 await가 없어야 TOCTOU가
-    없다. 라우터가 `create_job` 이전에 호출하고, False면 잡을 만들지 않고 429."""
+    없다. 라우터가 `create_job` 이전에 호출하고, False면 잡을 만들지 않고 429.
+
+    RL-5로 검사가 둘(전역·유저별)이 됐지만 dict 조회·증가는 전부 동기라 이 블록의 불변식
+    (내부에 `await`가 0개)은 그대로다 — 하나라도 await가 끼면 동시 도착한 같은 유저의 두
+    요청이 둘 다 증가 이전 값을 읽고 통과한다(P2-R에서 실측된 그 결함)."""
     global _queue_depth
     if _queue_depth >= settings.local_image_queue_limit:
         return False
+    if _user_queue_depth.get(user_id, 0) >= USER_QUEUE_LIMIT:
+        return False
     _queue_depth += 1
+    _user_queue_depth[user_id] = _user_queue_depth.get(user_id, 0) + 1
     return True
 
 
-def release_admission() -> None:
-    """감소. 0 아래로 내려가지 않게 한다 — 안 그러면 상한이 사실상 무제한이 된다."""
+def release_admission(user_id: uuid.UUID) -> None:
+    """감소. 0 아래로 내려가지 않게 한다 — 안 그러면 상한이 사실상 무제한이 된다.
+
+    유저별 깊이는 0이 되면 **키 자체를 지운다**. 안 지우면 dict가 서비스 수명 동안 접속한
+    유저 수만큼 자라고(프로세스 전역이라 비워 주는 것도 없다), 판정은 그대로라 증상이
+    메모리 증가로만 나타난다."""
     global _queue_depth
     if _queue_depth > 0:
         _queue_depth -= 1
+    depth = _user_queue_depth.get(user_id, 0)
+    if depth > 1:
+        _user_queue_depth[user_id] = depth - 1
+    elif depth == 1:
+        del _user_queue_depth[user_id]
 
 
 _capabilities_cache: LocalCapabilities | None = None

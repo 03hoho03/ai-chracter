@@ -1,4 +1,3 @@
-import json
 import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timezone, UTC
@@ -27,9 +26,16 @@ from api.db.models import (
 )
 from api.chat import router as chat_router
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_published_story, _make_user
+from factories import (
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_published_story,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+)
 
 
 async def _make_published_character(
@@ -174,23 +180,6 @@ class _QueuedFakeLLMClient(LLMClient):
         return self._structured_results.pop(0)
 
 
-def _override_llm_client(fake: LLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
-
-
 async def _send_message(client: httpx.AsyncClient, room_id: uuid.UUID, content: str, tokens: list[str]) -> None:
     _override_llm_client(_FakeLLMClient(tokens=tokens))
     try:
@@ -201,6 +190,7 @@ async def _send_message(client: httpx.AsyncClient, room_id: uuid.UUID, content: 
 
 
 async def _room_messages(db_session: AsyncSession, room_id: uuid.UUID) -> list[ChatMessage]:
+    # created_at 은 한 트랜잭션 안에서 전부 같은 값이라 동률 정렬이 임의다 — 위치 인덱스 대신 content 로 고를 것.
     return list(
         (
             await db_session.execute(
@@ -547,7 +537,7 @@ async def test_edit_message_truncates_and_regenerates_from_edit_point(
 
     messages_before = await _room_messages(db_session, room_id)
     assert len(messages_before) == 5  # 오프닝 + (사용자+AI) * 2
-    first_user_message_id = messages_before[1].id
+    first_user_message_id = next(m.id for m in messages_before if m.content == "안녕")
 
     fake = _FakeLLMClient(tokens=["수정후응답"])
     _override_llm_client(fake)
@@ -610,7 +600,7 @@ async def test_edit_message_on_story_room_reruns_stat_judgment_and_keeps_turn_co
 
     messages_before = await _room_messages(db_session, room_id)
     assert len(messages_before) == 5
-    first_user_message_id = messages_before[1].id
+    first_user_message_id = next(m.id for m in messages_before if m.content == "행동1")
 
     fake = _QueuedFakeLLMClient(tokens=["수정후진행"], structured_results=[StatJudgmentResult(stat_changes=[])])
     _override_llm_client(fake)
@@ -706,8 +696,8 @@ async def test_delete_message_removes_user_and_assistant_messages(
 
     messages = await _room_messages(db_session, room_id)
     assert len(messages) == 3
-    user_message_id = messages[1].id
-    assistant_message_id = messages[2].id
+    user_message_id = next(m.id for m in messages if m.content == "안녕")
+    assistant_message_id = next(m.id for m in messages if m.content == "봇 응답")
 
     resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{user_message_id}")
     assert resp.status_code == 204

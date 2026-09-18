@@ -28,9 +28,15 @@ from api.db.models import (
     StoryVersionDetail,
 )
 from api.llm.client import LLMClient
-from api.llm.dependencies import get_llm_client
-from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import (
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_asset,
+    _make_user,
+    _override_llm_client,
+    _parse_sse_events,
+)
 
 
 async def _make_published_story(
@@ -155,23 +161,6 @@ class _FakeLLMClient(LLMClient):
         self.received_judgment_prompt = prompt
         assert self.structured_result is not None
         return self.structured_result
-
-
-def _override_llm_client(fake: _FakeLLMClient) -> None:
-    app.dependency_overrides[get_llm_client] = lambda: fake
-
-
-def _clear_llm_override() -> None:
-    app.dependency_overrides.pop(get_llm_client, None)
-
-
-def _parse_sse_events(body: str) -> list[dict[str, Any]]:
-    events = []
-    for chunk in body.split("\n\n"):
-        for line in chunk.splitlines():
-            if line.startswith("data: "):
-                events.append(json.loads(line.removeprefix("data: ")))
-    return events
 
 
 async def test_send_message_story_room_emits_stat_change_and_persists_it(

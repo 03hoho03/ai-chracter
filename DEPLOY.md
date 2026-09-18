@@ -749,7 +749,13 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 생성 잡은 기존과 동일하게 응답(202) 뒤 `asyncio.create_task`로 돌고, 이미지는 그대로 R2에 올라간다.
 서버는 모듈 수준 `asyncio.Semaphore(1)`로 GPU 호출을 직렬화하고(프로덕션이 uvicorn 단일 프로세스라 이
 정도로 충분하다 — §0-2), 별도 카운터(`LOCAL_IMAGE_QUEUE_LIMIT`, 기본 4)로 대기열 깊이를 제한해 초과
-요청은 잡을 만들지 않고 즉시 429로 거절한다. 생성 전에는 `GET /capabilities`를 TTL 캐시
+요청은 잡을 만들지 않고 즉시 429로 거절한다. **여기에 유저별 상한이 겹친다**(`core/rate_limit_gate.py`) —
+유저별 큐 1칸(같은 사람의 두 번째 동시 요청은 `QUEUE_FULL`)과 토큰 버킷(용량 10장·시간당 1장 충전, 초과는
+`USER_LIMIT`)이고, 세 거절 모두 `{"detail": {"code", "retryAfterSeconds", "window"}}` 한 모양이라 `code`로만
+갈린다. 예외 계정(`users.rate_limit_exempt`)은 **토큰 버킷만** 면제되고 큐 두 개는 그대로 받는다. 같은 모듈이
+채팅 4경로에도 429를 낸다(분당 10·일일 30, `window`가 `minute`/`day`) — 서버 로그의 `user_limit_exceeded`는
+이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
+비밀번호 재설정)는 `retryAfterSeconds`만 담는 다른 모양이다. 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 

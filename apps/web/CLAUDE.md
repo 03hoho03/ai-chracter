@@ -59,7 +59,7 @@
 
 ## 데이터 / 상태
 
-- **단일 `apiClient`**(직접 `axios.create` 금지). 인증은 httpOnly 세션 쿠키 + `withCredentials`. 응답 인터셉터가 모든 에러를 `ApiError`로 정규화한다 — `detail`이 string이면 메시지, dict면 구조값, 422 배열이면 `fields`. **서버 `detail`(영어 디버그 문구)을 그대로 노출하지 말고** `status`로 분기해 한국어 카피를 쓴다.
+- **단일 `apiClient`**(직접 `axios.create` 금지). 인증은 httpOnly 세션 쿠키 + `withCredentials`. 응답 인터셉터가 모든 에러를 `ApiError`로 정규화한다 — `detail`이 string이면 메시지, dict면 구조값, 422 배열이면 `fields`. **`fetch` 기반 SSE는 이 인터셉터를 안 타므로 `openChatStream`이 같은 `ApiErrorObject`를 직접 만든다**(아래 SSE 줄). **서버 `detail`(영어 디버그 문구)을 그대로 노출하지 말고** `status`로 분기해 한국어 카피를 쓴다.
 - **세션은 `sessionQueryOptions` 하나를 `useSessionQuery`와 `requireSession`이 공유한다**(키·함수·staleTime이 어긋나면 캐시가 갈린다). 세션 변경 뮤테이션은 invalidate만 한다. 단 **로그아웃처럼 즉시 반영이 필요하면 `resetQueries`** — `invalidateQueries`는 리페치까지 옛 값을 유지하고 `setQueryData(key, undefined)`는 문서화된 no-op이다.
 - 인증 과정에서만 쓰는 데이터(토큰·로그인 DTO)로 **별도 user entity를 만들지 않는다**(의존성 순환).
 - **캐시 처방은 "낡았다"와 "틀렸다"로 갈린다.** 서버 상태를 **버리는** 뮤테이션(편집 취소·삭제)에는 `invalidateQueries`가 아니라 **`removeQueries`**다 — invalidate는 관찰자 없는 쿼리를 stale로 **표시만 하고 데이터를 남겨서**, 재마운트 시 낡은 값이 즉시 서빙되고 그 값으로 폼이 굳은 뒤 다음 자동저장이 **방금 버린 것을 서버에 도로 써넣는다**(빌더에서 실측 재현). **한 뮤테이션 안에서도 캐시마다 갈린다** — 같은 편집 취소가 초안 캐시는 `removeQueries`(틀렸다), 작가 목록 캐시는 `invalidateQueries`(낡았다)다. 목록에 remove를 쓰면 보고 있던 `useInfiniteQuery`가 `isPending`으로 되돌아가 "더 보기"로 불러온 페이지가 날아간다. 판단 기준은 **"이 캐시에 방금 버린 값이 들어 있나"**다.
@@ -73,7 +73,7 @@
 - **낙관적 토글은 캐시 `onMutate`가 아니라 로컬 override state** + `useDebounce`로 네트워크만 지연 + `onSettled` 조건부 리셋. `setState`는 항상 함수형 업데이터(렌더 클로저를 캡처하면 배칭 시 스테일).
 - **마운트 시 뮤테이션은 `mutateAsync`+`await`** — `useEffect`에서 `.mutate(vars, {onSuccess})`에 의존하면 StrictMode의 마운트→언마운트→재마운트가 `MutationObserver`를 영구 제거해 콜백과 반응형 `isPending`이 그 순간 값에 멈춘다. "결과와 무관하게 항상 일어나야 할" 부수효과는 훅 정의의 `onSuccess`에 둔다.
 - **1회성 배너**: 뮤테이션 성공 즉시 꺼지는 서버 플래그를 렌더 조건으로 직접 쓰면 뜨자마자 사라진다 → "봤다"를 로컬 state로 분리한다.
-- **SSE는 `openChatStream`** (fetch 기반, `credentials: "include"`, `kind` 판별유니언). 스트리밍 중 텍스트는 로컬 버퍼에 두고(Query 캐시와 이중상태 금지) 종료 시 비운다. 캐시 조작은 훅이 아니라 `QueryClient`를 인자로 받는 **순수 함수**로 두면 `new QueryClient()`만으로 테스트된다.
+- **SSE는 `openChatStream`** (fetch 기반, `credentials: "include"`, `kind` 판별유니언). **실패 응답(`!response.ok`)은 바디를 읽어 `ApiErrorObject`로 던진다** — 429의 `retryAfterSeconds`도 재동의 403의 `code`도 `detail` 안에만 있고 헤더에는 없어(BE가 `Retry-After`를 일부러 안 준다) 여기 말고 읽을 자리가 없다. **SSE는 뮤테이션이 아니라 `AppProviders`의 `MutationCache.onError`가 못 본다** — 재동의 403은 전송·미리보기 훅의 `catch`가 직접 판정해 세션을 invalidate한다. 스트리밍 중 텍스트는 로컬 버퍼에 두고(Query 캐시와 이중상태 금지) 종료 시 비운다. 캐시 조작은 훅이 아니라 `QueryClient`를 인자로 받는 **순수 함수**로 두면 `new QueryClient()`만으로 테스트된다.
 - **rule-engine(엔딩 스탯 규칙 타입·평가)은 `entities/chat-room/model/endingRules.ts`가 SSOT** — BE `apps/api/src/api/chat/ending_rules.py`의 `evaluate_item`/`evaluate_rule_list`와 같은 techspec §1.5 의사코드를 각자 구현한 짝이고(연산자는 FE 6 · BE 5, FRONTEND_NOTES), 같은 슬라이스의 `chatRoomState`가 재수출해 index로 공개한다. 빌더 스키마(`features/build-story`)는 BE와 맞춘 5개 연산자로 독자 선언하고 타입만 구조적으로 맞춘다(FRONTEND_NOTES). `noUncheckedIndexedAccess` 때문에 배열은 인덱싱 대신 구조분해 + `for...of`.
 - **테마는 `themeAtom` 하나만 write**(localStorage 저장 + `<html>` dark 토글까지 이 atom 책임). 초기값 규칙("light" 저장값일 때만 라이트, 그 외 다크)은 `index.html`의 FOUC 방지 인라인 스크립트와 **반드시 동일**하게 유지한다.
 

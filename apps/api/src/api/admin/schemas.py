@@ -236,6 +236,9 @@ class AdminUserDetailResponse(CamelModel):
     # 달리 이미 restricted/deleted인 작품은 제외한다. `api/admin/users.py`의
     # `suspend_user()`가 실제로 UPDATE하는 조건과 정확히 같아야 한다.
     restrictable_content_count: int
+    # limit-goal-prompt.md RL-19: 레이트리밋 면제 플래그는 상세에만 실린다(목록·필터 없음).
+    # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/rate-limit-exempt`다(RL-9).
+    rate_limit_exempt: bool
     chat_room_count: int
     message_count: int
     last_active_at: datetime | None
@@ -264,6 +267,16 @@ class AdminUserUnsuspendRequest(CamelModel):
     참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은
     규칙)."""
 
+    admin_comment: str | None = None
+
+
+class AdminUserRateLimitExemptRequest(CamelModel):
+    """limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
+    쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는
+    `AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가
+    없고, 대신 "왜 면제했나"가 감사 로그에 남아야 한다(비어 있으면 422)."""
+
+    exempt: bool
     admin_comment: str | None = None
 
 

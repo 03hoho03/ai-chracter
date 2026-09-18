@@ -85,7 +85,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - **백그라운드 태스크에서 요청 스코프 `Depends(get_db_session)`을 재사용하면 안 된다.** 라우트가 반환하는 순간 FastAPI가 그 세션을 닫는다 — `Depends(get_session_factory)`를 라우트에서 받아 핸들러에 넘기고 `async with session_factory() as session:`으로 새로 연다.
 - "응답 후 가벼운 후처리"는 `asyncio.create_task`가 아니라 `BackgroundTasks`로 충분하다. 단 응답 객체가 필요한 일(쿠키 굽기 등)은 태스크로 넘기지 말 것 — 실행 시점엔 응답이 이미 나갔다.
 - **동시 호출 가능성이 있는 Redis read-modify-write는 pipeline + `WATCH`/`MULTI`/`EXEC`(+`WatchError` 재시도)**를 쓴다. `asyncio.gather`로 같은 잡을 갱신하다 갱신 유실이 실측으로 재현됐다. `unwatch()`/`multi()`는 타입 스텁이 없어 `# type: ignore[no-untyped-call]`이 필요하다.
-- Redis에 저장하는 상태는 `model_dump_json()`/`model_validate_json()`으로 pydantic 모델을 그대로 왕복시킨다(UUID·datetime을 알아서 처리). 키 프리픽스나 TTL이 다르면 기존 모듈을 파라미터화하지 말고 새 모듈로 분리하는 것이 이 코드베이스의 관례다.
+- Redis에 저장하는 상태는 `model_dump_json()`/`model_validate_json()`으로 pydantic 모델을 그대로 왕복시킨다(UUID·datetime을 알아서 처리). 키 프리픽스나 TTL이 다르면 기존 모듈을 파라미터화하지 말고 새 모듈로 분리하는 것이 이 코드베이스의 관례다. (예외 — `core/rate_limit.py`의 `check_rate_limit`은 창 길이를 `window_seconds` 인자로 받는다. 프리픽스(`rate_limit:`)도 알고리즘도 같고 창 길이만 다르며, 분리하면 `conftest.py`의 autouse `_flush_rate_limit_keys`가 `rate_limit:*` 하나로 전부 지우는 격리가 깨진다.)
 
 ## 테스트 정책 — 무엇을 얼마나 쓰는가
 

@@ -11,6 +11,12 @@ from starlette.concurrency import run_in_threadpool
 
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
 from api.core.config import settings
+from api.core.rate_limit_gate import (
+    ImageCharge,
+    enforce_image_rate_limit,
+    image_queue_full,
+    refund_image_charge,
+)
 from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigned_get_url, upload_object
 from api.core.sentry import capture_dependency_failure
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
@@ -301,7 +307,7 @@ async def _run_generation(
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
     finally:
-        release_admission()
+        release_admission(owner_user_id)
 
 
 def _style_items(served_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
@@ -395,84 +401,100 @@ async def list_image_models(
 async def generate_images(
     payload: GenerateImageRequest,
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
+    # limit-goal-prompt.md RL-13: 토큰 차감은 라우트 본문이 아니라 이 `Depends` 자리에서
+    # 일어난다(`require_legal_consent` 뒤 — 재동의 403이 429보다 먼저다). 게이트가 라우트와
+    # 같은 바디 모델을 선언해 장수(`count`)만큼 깎고, 그 영수증이 아래 환불의 근거가 된다.
+    charge: ImageCharge = Depends(enforce_image_rate_limit),
     image_client_factory: Callable[[ImageModelId], ImageClient] = Depends(get_image_client),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> GenerateImageResponse:
-    # local-image-gen-goal-prompt.md LG-8: 가용성 사전 확인을 맨 앞에 둔다 — 불가면 503,
-    # 일시적 상태이고 클라이언트 잘못이 아니다. capabilities 전체가 불가이거나, 요청한
-    # 모델이 로컬이 지금 보고하지 않는 모델이면 둘 다 같은 503으로 접는다.
-    #
-    # LG-19: 로컬은 공개 id(`payload.model`)가 아니라 와이어 id를 보고한다 — 조회 키를
-    # 와이어 id로 바꾸지 않으면 이 확인이 항상 실패해 모든 생성이 503으로 막힌다.
-    capabilities = await get_capabilities()
-    capability = None if not capabilities.ready else capabilities.capability_for(settings.local_image_model_wire_id)
-    if capability is None:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation is currently unavailable"
-        )
-
-    if payload.aspect_ratio not in capability.aspect_ratios:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"model '{payload.model}' does not support aspect ratio '{payload.aspect_ratio}'",
-        )
-    # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IS-5)가
-    # 요청된 스타일이 레지스트리에 있는지와 지금 서빙되고 있는지(available)를 함께 본다.
-    # image-style-7-goal-prompt.md IS-2: style 축은 공개 id와 와이어 id가 같아
-    # capability.styles를 매핑 없이 그대로 집합 비교한다. 사용자에게 보이는 detail은
-    # 공개 값(`payload.style.value`)을 그대로 쓴다.
-    style_items = _style_items(capability.styles)
-    if not any(item.available and item.id == payload.style.value for item in style_items):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"model '{payload.model}' does not support style '{payload.style.value}'",
-        )
-
-    # local-image-gen-techspec.md LT-3 / P2-R: 검사+증가가 `try_admit()` 하나의 동기
-    # 함수 안에 있어 그 사이에 await가 끼어들 수 없다(원자적인 것은 `+=1` 자체가 아니라
-    # 이 동기 블록이다) — 상한이 걸렸는데도 거절하지 않으면 한 사용자가 GPU 직렬
-    # 처리량(LG-6)을 몇 분씩 독점한다.
-    if not try_admit():
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many generation requests are queued"
-        )
-
+    # RL-16/RL-16a: 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에
+    # 끝나는 경로는 예외 종류를 가리지 않고 **전부** 환불한다(큐 가득·가용성 503·비율/스타일
+    # 400, 그리고 `create_job`/`session.commit()`의 500).
+    # 한 종류만 환불하면 나머지 경로에서 생성되지도 않은 이미지가 사용자의 상한에서 사라진다.
     try:
-        image_client = image_client_factory(payload.model)
-        job = await create_job(owner_user_id, payload.count)
-        # image-monitoring-goal-prompt.md IM-4: 접수 시 INSERT — 프롬프트·모델·비율·스타일이
-        # 전부 모여 있는 유일한 지점이 여기다. `create_job` 성공 뒤·`enqueue_generation` 앞에
-        # 둔다: 더 앞에 두면 429/503 사전 차단 경로(IM-6)에도 행이 생기고, asset의 FK 때문에
-        # 이 행은 백그라운드가 돌기 전에 이미 커밋돼 있어야 한다.
-        async with session_factory() as session:
-            request_row = ImageGenerationRequest(
-                owner_user_id=owner_user_id,
-                prompt=payload.prompt,
-                style=payload.style.value,
-                aspect_ratio=payload.aspect_ratio,
-                model=payload.model,
-                requested_count=payload.count,
-                status="pending",
+        # local-image-gen-goal-prompt.md LG-8: 가용성 사전 확인을 맨 앞에 둔다 — 불가면 503,
+        # 일시적 상태이고 클라이언트 잘못이 아니다. capabilities 전체가 불가이거나, 요청한
+        # 모델이 로컬이 지금 보고하지 않는 모델이면 둘 다 같은 503으로 접는다.
+        #
+        # LG-19: 로컬은 공개 id(`payload.model`)가 아니라 와이어 id를 보고한다 — 조회 키를
+        # 와이어 id로 바꾸지 않으면 이 확인이 항상 실패해 모든 생성이 503으로 막힌다.
+        capabilities = await get_capabilities()
+        capability = None if not capabilities.ready else capabilities.capability_for(settings.local_image_model_wire_id)
+        if capability is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Image generation is currently unavailable"
             )
-            session.add(request_row)
-            await session.commit()
-        await enqueue_generation(
-            _run_generation,
-            job.job_id,
-            owner_user_id,
-            request_row.id,
-            image_client,
-            session_factory,
-            payload.prompt,
-            payload.style,
-            payload.aspect_ratio,
-            payload.count,
-        )
+
+        if payload.aspect_ratio not in capability.aspect_ratios:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"model '{payload.model}' does not support aspect ratio '{payload.aspect_ratio}'",
+            )
+        # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IS-5)가
+        # 요청된 스타일이 레지스트리에 있는지와 지금 서빙되고 있는지(available)를 함께 본다.
+        # image-style-7-goal-prompt.md IS-2: style 축은 공개 id와 와이어 id가 같아
+        # capability.styles를 매핑 없이 그대로 집합 비교한다. 사용자에게 보이는 detail은
+        # 공개 값(`payload.style.value`)을 그대로 쓴다.
+        style_items = _style_items(capability.styles)
+        if not any(item.available and item.id == payload.style.value for item in style_items):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"model '{payload.model}' does not support style '{payload.style.value}'",
+            )
+
+        # local-image-gen-techspec.md LT-3 / P2-R: 검사+증가가 `try_admit()` 하나의 동기
+        # 함수 안에 있어 그 사이에 await가 끼어들 수 없다(원자적인 것은 `+=1` 자체가 아니라
+        # 이 동기 블록이다) — 상한이 걸렸는데도 거절하지 않으면 한 사용자가 GPU 직렬
+        # 처리량(LG-6)을 몇 분씩 독점한다. limit-goal-prompt.md RL-5로 검사가 전역 상한 +
+        # 유저별 1칸 둘이 됐고, 429 바디는 유저 상한 429와 `code`로만 갈린다(RL-11).
+        if not try_admit(owner_user_id):
+            raise image_queue_full(owner_user_id)
+
+        try:
+            image_client = image_client_factory(payload.model)
+            job = await create_job(owner_user_id, payload.count)
+            # image-monitoring-goal-prompt.md IM-4: 접수 시 INSERT — 프롬프트·모델·비율·스타일이
+            # 전부 모여 있는 유일한 지점이 여기다. `create_job` 성공 뒤·`enqueue_generation` 앞에
+            # 둔다: 더 앞에 두면 429/503 사전 차단 경로(IM-6)에도 행이 생기고, asset의 FK 때문에
+            # 이 행은 백그라운드가 돌기 전에 이미 커밋돼 있어야 한다.
+            async with session_factory() as session:
+                request_row = ImageGenerationRequest(
+                    owner_user_id=owner_user_id,
+                    prompt=payload.prompt,
+                    style=payload.style.value,
+                    aspect_ratio=payload.aspect_ratio,
+                    model=payload.model,
+                    requested_count=payload.count,
+                    status="pending",
+                )
+                session.add(request_row)
+                await session.commit()
+            await enqueue_generation(
+                _run_generation,
+                job.job_id,
+                owner_user_id,
+                request_row.id,
+                image_client,
+                session_factory,
+                payload.prompt,
+                payload.style,
+                payload.aspect_ratio,
+                payload.count,
+            )
+        except Exception:
+            # admit과 백그라운드 인계 사이(예: `create_job`의 Redis 순단)에서 실패하면
+            # `_run_generation`이 아예 시작되지 않아 그쪽의 finally가 못 돈다 — 여기서
+            # 직접 반납하지 않으면 이 슬롯이 영구 점유돼 상한에서 게이트가 막힌다.
+            release_admission(owner_user_id)
+            raise
     except Exception:
-        # admit과 백그라운드 인계 사이(예: `create_job`의 Redis 순단)에서 실패하면
-        # `_run_generation`이 아예 시작되지 않아 그쪽의 finally가 못 돈다 — 여기서
-        # 직접 반납하지 않으면 이 슬롯이 영구 점유돼 상한에서 게이트가 막힌다.
-        release_admission()
+        # 안쪽 `except Exception`(반납)보다 바깥이다 — 반납과 환불은 서로 다른 자원이고,
+        # 잡 인계 도중의 실패는 둘 다 필요하다. 환불은 차감이 실제로 있었을 때만 동작한다
+        # (`ImageCharge.charged`) — 예외 계정·Redis fail-open은 no-op이다.
+        # `HTTPException`만 잡으면 `create_job`(Redis)·`session.commit()`(Postgres)의 500에서
+        # 토큰이 유실돼 DB 순단 뒤 최대 10시간 429가 이어진다(리뷰 실측).
+        await refund_image_charge(owner_user_id, charge)
         raise
     return GenerateImageResponse(job_id=job.job_id)
 

@@ -14,6 +14,7 @@ from api.admin.schemas import (
     AdminUserDetailResponse,
     AdminUserListItem,
     AdminUserListResponse,
+    AdminUserRateLimitExemptRequest,
     AdminUserReportItem,
     AdminUserSuspendRequest,
     AdminUserSuspendResponse,
@@ -264,6 +265,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         signup_method="google" if user.google_sub is not None else "email",
         content_count=len(user_content_ids),
         restrictable_content_count=restrictable_content_count,
+        rate_limit_exempt=user.rate_limit_exempt,
         chat_room_count=chat_room_count,
         message_count=message_count,
         last_active_at=last_active_at,
@@ -496,3 +498,51 @@ async def unsuspend_user(
     await db.commit()
 
     await unmark_user_suspended(user_id)
+
+
+@router.post("/admin/users/{user_id}/rate-limit-exempt", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_rate_limit_exempt(
+    user_id: uuid.UUID,
+    body: AdminUserRateLimitExemptRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
+    Redis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)
+    이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.
+
+    면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외
+    계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.
+
+    **액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /
+    `user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은
+    없고, 두 타입을 나눠야 이력 표에서 "언제 켰고 언제 껐나"가 구분된다 — 한 타입에
+    코멘트로만 담으면 그 구분이 사람이 읽는 자유 문자열로 내려간다.
+
+    `reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와
+    같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).
+
+    **같은 값을 다시 적용해도(True→True) 막지 않는다** — 대입은 멱등하고 `admin_action_logs`에는
+    "누가 언제 눌렀다"가 한 행 더 남는다. 이미 정지된 유저의 재정지를 400으로 막지 않는
+    `suspend_user`와 같은 관례다.
+
+    순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).
+    """
+    if not (body.admin_comment or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="admin_comment is required"
+        )
+
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    user.rate_limit_exempt = body.exempt
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="user-rate-limit-exempt-on" if body.exempt else "user-rate-limit-exempt-off",
+        target_user_id=user_id,
+        reason_text=body.admin_comment or "",
+    )
+    await db.commit()

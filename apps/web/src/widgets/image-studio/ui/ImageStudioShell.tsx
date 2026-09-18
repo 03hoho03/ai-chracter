@@ -18,7 +18,9 @@ import {
   type GenerateImagesFormValues,
 } from "@/features/generate-images";
 import { isApiError } from "@/shared/api/client";
+import { getRateLimitDetail } from "@/shared/api/rateLimit";
 
+import { formatImageRateLimitMessage } from "../model/imageRateLimitMessage";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail } from "./ImageStudioOptionsRail";
@@ -76,6 +78,13 @@ export function ImageStudioShell({
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
     } catch (error) {
+      // limit-goal-prompt.md RL-11 — 429는 두 코드(토큰 부족·큐 만석)가 서로 다음 행동이 달라
+      // 문구도 갈린다. 나머지 실패는 기존 분기 그대로다.
+      const rateLimit = getRateLimitDetail(error);
+      if (rateLimit) {
+        toast.error(formatImageRateLimitMessage(rateLimit));
+        return;
+      }
       const apiError = isApiError(error) ? error : null;
       toast.error(apiError?.status === 422 ? "입력값을 다시 확인해주세요." : GENERIC_ERROR_MESSAGE);
     }
