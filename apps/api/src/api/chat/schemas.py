@@ -39,12 +39,12 @@ class ChatMessageResponse(CamelModel):
     role: ChatMessageRole
     content: str
     created_at: datetime
-    # US-072 상황별 이미지 매칭(캐릭터 챗 전용) 결과. 판단 시점에만 채워지는 세션 한정
-    # 필드라 chat_messages 테이블엔 컬럼이 없다 — GET 재조회 시 항상 None(techspec-chat-character.md
-    # §1: 별도 이벤트가 아니라 done 이벤트의 finalMessage에만 실려온다).
+    # US-072 상황이미지 매칭 결과(entity_id). done 이벤트의 finalMessage와
+    # `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 — chat_messages.image_id에 저장되고
+    # `_to_response`가 채운다(situational-image-goal-prompt.md SI-1/SI-7).
     image_id: uuid.UUID | None = None
-    # US-073 인라인 렌더링용 presigned GET URL. image_id와 동시에 채워지는 같은 세션 한정 필드 —
-    # image_id를 이미지 보관함(US-074) 조회 없이 즉시 렌더링할 수 있도록 함께 내려준다.
+    # US-073 인라인 렌더링용 presigned GET URL(원본 키, SI-6). 저장하지 않고 응답 시점에
+    # 서명한다(900초 만료). 해석이 안 되면 image_id는 남고 이 필드만 None(SI-7).
     image_url: str | None = None
 
 

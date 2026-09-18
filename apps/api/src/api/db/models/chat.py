@@ -55,6 +55,11 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # US-072 상황이미지 매칭 결과의 entity_id. FK 없음 — entity_id는 버전 간
+    # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례
+    # (situational-image-goal-prompt.md SI-2). 캐릭터 챗 assistant 메시지에만
+    # 채워지고 스토리 챗은 항상 NULL.
+    image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class ChatRoomStat(Base):

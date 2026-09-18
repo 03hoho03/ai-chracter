@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type { ChatMessage } from "../api/chatStream";
+import type { ChatMessage } from "./chatStream";
 import type {
   ChatRoomState,
   ComparisonOp,
@@ -9,7 +9,7 @@ import type {
   Shortcut,
   SingleRule,
   StatDef,
-} from "./chatRoomState";
+} from "../model/chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 type ChatMessageDto = ChatRoomResponseDto["messages"][number];

@@ -23,6 +23,7 @@ from api.db.models import (
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
+    _count_queries,
     _FakeLLMClient,
     _get_genre,
     _login_as,
@@ -957,6 +958,211 @@ async def test_send_message_image_exposure_lookup_real_sql_failure_is_isolated_b
     assert message_count == 3
     exposure_count = await db_session.scalar(sa.select(sa.func.count()).select_from(CharacterImageExposure))
     assert exposure_count == 0
+
+
+async def test_get_chat_room_reflects_matched_situational_image_in_message(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """GET 재조회 응답의 assistant 메시지에도 매칭된 상황이미지의 imageId/imageUrl이 실려야
+    한다 — chat_messages.image_id에 저장되지 않으면 done 이벤트 이후 다시 조회할 때 사라진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안아줄게"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+    )
+    _override_llm_client(fake)
+    try:
+        send_resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안아줘"})
+    finally:
+        _clear_llm_override()
+    assert send_resp.status_code == 200
+
+    get_resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert get_resp.status_code == 200
+    messages = get_resp.json()["messages"]
+    turn_messages = [m for m in messages if m["content"] == "안아줄게"]
+    assert len(turn_messages) == 1
+    turn_message = turn_messages[0]
+    assert turn_message["imageId"] == str(image.entity_id)
+    assert turn_message["imageUrl"].startswith("http")
+
+    assistant_row = (
+        await db_session.execute(
+            sa.select(ChatMessage).where(
+                ChatMessage.chat_room_id == room_id, ChatMessage.content == "안아줄게"
+            )
+        )
+    ).scalar_one()
+    assert assistant_row.image_id == image.entity_id
+
+
+async def test_get_chat_room_unmatched_turn_has_null_image_id_and_url(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """매칭 실패한 턴은 GET 재조회에서도 imageId/imageUrl 둘 다 None이어야 하고
+    chat_messages.image_id도 NULL로 남아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    await _make_situational_image(db_session, content_version_id=version_id, owner_user_id=user.id, order=0)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["잘 지냈어"], structured_result=ImageMatchJudgmentResult(matched_image_entity_id=None)
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    get_resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert get_resp.status_code == 200
+    turn_message = next(m for m in get_resp.json()["messages"] if m["content"] == "잘 지냈어")
+    assert turn_message["imageId"] is None
+    assert turn_message["imageUrl"] is None
+
+    assistant_row = (
+        await db_session.execute(
+            sa.select(ChatMessage).where(
+                ChatMessage.chat_room_id == room_id, ChatMessage.content == "잘 지냈어"
+            )
+        )
+    ).scalar_one()
+    assert assistant_row.image_id is None
+
+
+async def test_get_chat_room_unresolvable_image_id_returns_null_image_url(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """image_id가 가리키는 SituationalImage가 더 이상 없으면 GET이 500이 아니라 imageId는
+    그대로 두고 imageUrl만 None으로 내려야 한다(다형 참조라 FK로 무결성을 보장하지 않는다,
+    apps/api/CLAUDE.md 다형 참조 규약)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["오랜만이야"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    dangling_image_id = uuid.uuid4()
+    await db_session.execute(
+        sa.update(ChatMessage)
+        .where(ChatMessage.chat_room_id == room_id, ChatMessage.content == "오랜만이야")
+        .values(image_id=dangling_image_id)
+    )
+    await db_session.commit()
+
+    get_resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert get_resp.status_code == 200
+    turn_message = next(m for m in get_resp.json()["messages"] if m["content"] == "오랜만이야")
+    assert turn_message["imageId"] == str(dangling_image_id)
+    assert turn_message["imageUrl"] is None
+
+
+async def test_get_chat_room_query_count_independent_of_matched_image_count(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """GET의 SQL 문 수는 메시지에 실린 이미지 개수와 무관해야 한다 — 메시지마다 db.get으로
+    SituationalImage/Asset을 조회하면 이미지 수만큼 쿼리가 늘어난다(N+1)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image_a = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    image_b = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=1
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+
+    # 방 1: 매칭된 이미지가 실린 메시지 1개.
+    room_one_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    fake_one = _FakeLLMClient(
+        tokens=["안아줄게"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+    )
+    _override_llm_client(fake_one)
+    try:
+        resp_one = await db_client.post(f"/chat-rooms/{room_one_id}/messages", json={"content": "안아줘"})
+    finally:
+        _clear_llm_override()
+    assert resp_one.status_code == 200
+
+    # 방 2: 서로 다른 이미지가 매칭된 메시지 2개.
+    room_two_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    fake_two_a = _FakeLLMClient(
+        tokens=["안아줄게"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+    )
+    _override_llm_client(fake_two_a)
+    try:
+        resp_two_a = await db_client.post(f"/chat-rooms/{room_two_id}/messages", json={"content": "안아줘"})
+    finally:
+        _clear_llm_override()
+    assert resp_two_a.status_code == 200
+
+    fake_two_b = _FakeLLMClient(
+        tokens=["웃어줄게"],
+        structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_b.entity_id)),
+    )
+    _override_llm_client(fake_two_b)
+    try:
+        resp_two_b = await db_client.post(f"/chat-rooms/{room_two_id}/messages", json={"content": "웃어줘"})
+    finally:
+        _clear_llm_override()
+    assert resp_two_b.status_code == 200
+
+    with _count_queries() as count_one:
+        get_one = await db_client.get(f"/chat-rooms/{room_one_id}")
+    assert get_one.status_code == 200
+    queries_for_one_image = count_one()
+
+    with _count_queries() as count_two:
+        get_two = await db_client.get(f"/chat-rooms/{room_two_id}")
+    assert get_two.status_code == 200
+    queries_for_two_images = count_two()
+
+    assert queries_for_two_images == queries_for_one_image
 
 
 async def test_send_message_does_not_dump_prompt_by_default(

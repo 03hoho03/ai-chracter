@@ -507,6 +507,32 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ).all()
         stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
 
+    # situational-image-goal-prompt.md SI-7: 이미지가 실린 메시지들의 entity_id를 모아
+    # SituationalImage·Asset을 각 1회만 조회하고 서명한다 — 메시지마다 db.get을 부르면
+    # 메시지 수만큼 쿼리가 늘어난다(N+1). image_id는 있는데 해석이 안 되면(SituationalImage
+    # 없음/image_asset_id None/Asset 없음) image_url만 None으로 두고 image_id는 그대로 둔다.
+    image_entity_ids = {m.image_id for m in messages if m.image_id is not None}
+    image_urls: dict[uuid.UUID, str] = {}
+    if image_entity_ids:
+        situational_images = (
+            await db.scalars(
+                select(SituationalImage).where(
+                    SituationalImage.content_version_id == room.content_version_id,
+                    SituationalImage.entity_id.in_(image_entity_ids),
+                )
+            )
+        ).all()
+        asset_ids = {si.image_asset_id for si in situational_images if si.image_asset_id is not None}
+        assets_by_id = {}
+        if asset_ids:
+            assets = (await db.scalars(select(Asset).where(Asset.id.in_(asset_ids)))).all()
+            assets_by_id = {asset.id: asset for asset in assets}
+        for si in situational_images:
+            asset = assets_by_id.get(si.image_asset_id) if si.image_asset_id is not None else None
+            if asset is None:
+                continue
+            image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
@@ -517,7 +543,14 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ending_reached=room.ending_reached,
         stats=stats,
         messages=[
-            ChatMessageResponse(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
+            ChatMessageResponse(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                image_id=m.image_id,
+                image_url=image_urls.get(m.image_id) if m.image_id is not None else None,
+            )
             for m in messages
         ],
         content_snapshot=content_snapshot,
@@ -769,13 +802,15 @@ async def _stream_new_turn(
     """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
     이어서 생성)가 공유한다 — 둘 다 실제로는 동일한 "새 턴"이고 차이는 호출부가 넘기는
-    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 done 이벤트의
-    finalMessage.imageId), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 — 서로의 판단 단계를
-    타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
+    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 `chat_messages.image_id`에
+    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 —
+    situational-image-goal-prompt.md SI-7), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
+    서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
     전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
 
-    `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
-    않는다 — 그 라우트의 docstring 참고.
+    `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
+    이미지 매칭은 재실행한다, situational-image-goal-prompt.md SI-4)는 이 헬퍼를 쓰지 않는다
+    — 그 라우트의 docstring 참고.
     """
     try:
         prompt, system_instruction = await _build_prompt(
@@ -923,6 +958,9 @@ async def _stream_new_turn(
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
 
+    if matched_image is not None:
+        assistant_message.image_id = matched_image.entity_id
+
     await db.commit()
 
     matched_image_url: str | None = None
@@ -1042,9 +1080,11 @@ async def regenerate_message(
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
-    판단·이미지 매칭도 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을
-    되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만
-    교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
+    판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
+    이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
+    (situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은
+    `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
+    않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
@@ -1094,11 +1134,58 @@ async def regenerate_message(
     await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
     new_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content)
     db.add(new_message)
+
+    matched_image: SituationalImage | None = None
+    # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
+    # 않고 그 턴의 이미지 매칭만 포기한다.
+    if setup is None:
+        try:
+            matched_image = await _match_situational_image(
+                db,
+                room,
+                llm_client,
+                prompt_set=prompt_set,
+                prompt_sections=prompt_sections,
+                history=history[:-1],
+                user_message=user_content,
+                assistant_message=assistant_content,
+            )
+        except (LLMClientError, PromptRenderError) as exc:
+            logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    if matched_image is not None:
+        new_message.image_id = matched_image.entity_id
+
     await db.commit()
+
+    matched_image_url: str | None = None
+    if matched_image is not None:
+        # send_message(_stream_new_turn)와 같은 이유(sse-assert-goal-prompt.md SA-3/N-3)로
+        # 미러링한다 — 매칭 필터(N-2)가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
+        # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
+        # 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
+        # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
+        # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
+        try:
+            assert matched_image.image_asset_id is not None
+            image_asset = await db.get(Asset, matched_image.image_asset_id)
+            assert image_asset is not None
+            matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        except Exception as exc:
+            logger.warning("대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="s3")
+            matched_image = None
+            matched_image_url = None
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(
-            id=new_message.id, role=new_message.role, content=new_message.content, created_at=new_message.created_at
+            id=new_message.id,
+            role=new_message.role,
+            content=new_message.content,
+            created_at=new_message.created_at,
+            image_id=matched_image.entity_id if matched_image is not None else None,
+            image_url=matched_image_url,
         )
     )
 
