@@ -1161,12 +1161,22 @@ async def regenerate_message(
 
     matched_image_url: str | None = None
     if matched_image is not None:
-        # A room only ever matches against a published version's situational_images
-        # (US-083 publish validation requires the image to be set by then).
-        assert matched_image.image_asset_id is not None
-        image_asset = await db.get(Asset, matched_image.image_asset_id)
-        assert image_asset is not None
-        matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        # send_message(_stream_new_turn)와 같은 이유(sse-assert-goal-prompt.md SA-3/N-3)로
+        # 미러링한다 — 매칭 필터(N-2)가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
+        # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
+        # 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
+        # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
+        # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
+        try:
+            assert matched_image.image_asset_id is not None
+            image_asset = await db.get(Asset, matched_image.image_asset_id)
+            assert image_asset is not None
+            matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
+        except Exception as exc:
+            logger.warning("대화방 %s 재생성 상황이미지 URL 조립 실패 — 이미지 없이 진행한다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="s3")
+            matched_image = None
+            matched_image_url = None
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(

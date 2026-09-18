@@ -644,6 +644,92 @@ async def test_regenerate_image_matching_failure_replaces_message_without_image(
     assert exposures[0].image_entity_id == image_a.entity_id
 
 
+async def test_regenerate_presigned_url_failure_still_completes_the_turn_without_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """sse-assert-goal-prompt.md SA-3/N-3을 재생성 경로에 다시 미러링한 짝 테스트
+    (situational-image-goal-prompt.md SI-4) — 매칭 필터를 통과한 뒤의 S3 presign 실패를
+    흡수해 스트림은 정상 종료된다. `new_message.image_id`는 `db.commit()` 전에 대입되고
+    presign 실패는 그 뒤에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
+    이벤트의 imageId만 null이 된다 — send_message(`_stream_new_turn`)와 정확히 같은
+    성질이다(재조회 시 `_to_response`가 다시 서명을 시도한다)."""
+    captured: list[tuple[BaseException, str]] = []
+    monkeypatch.setattr(
+        chat_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append((exc, dependency)),
+    )
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    def _raise_presign(storage_key: str) -> str:
+        raise RuntimeError("s3 presign boom")
+
+    monkeypatch.setattr(chat_router, "generate_presigned_get_url", _raise_presign)
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["새응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events if e["type"] != "token"] == ["done"]
+    done_event = events[-1]
+    assert done_event["finalMessage"]["content"] == "새응답"
+    assert done_event["finalMessage"]["imageId"] is None
+    assert done_event["finalMessage"]["imageUrl"] is None
+
+    assert len(captured) == 1
+    assert isinstance(captured[0][0], RuntimeError)
+    assert captured[0][1] == "s3"
+
+    messages = await _room_messages(db_session, room_id)
+    assert len(messages) == 3
+    assistant_message = next(m for m in messages if m.content == "새응답")
+    # ⚠️ commit 전에 image_id가 이미 대입돼 있어 presign 실패로도 DB 값은 되돌아가지 않는다.
+    assert assistant_message.image_id == image.entity_id
+
+    exposures = (
+        await db_session.execute(
+            sa.select(CharacterImageExposure).where(CharacterImageExposure.content_id == content.id)
+        )
+    ).scalars().all()
+    assert len(exposures) == 1
+    assert exposures[0].image_entity_id == image.entity_id
+
+
 # ---------------------------------------------------------------------------
 # edit
 # ---------------------------------------------------------------------------
