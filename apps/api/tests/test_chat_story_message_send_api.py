@@ -654,3 +654,52 @@ async def test_send_message_story_room_ignores_situational_images(
 
     done_event = _parse_sse_events(resp.text)[-1]
     assert done_event["finalMessage"]["imageId"] is None
+
+
+async def test_get_story_room_messages_never_carry_image_id_or_url(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """스토리 챗 방을 GET으로 재조회해도 모든 메시지의 imageId/imageUrl은 항상 None이어야
+    한다 — 같은 content_version_id에 SituationalImage(캐릭터 전용)가 등록돼 있어도 스토리
+    메시지의 image_id는 애초에 채워지지 않으므로(_stream_new_turn) `_to_response`도
+    imageUrl을 서명해 내려보내면 안 된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50)
+    assert content.current_published_version_id is not None
+    image_asset = await _make_asset(db_session, owner_user_id=user.id)
+    blurred_asset = await _make_asset(db_session, owner_user_id=user.id)
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=content.current_published_version_id,
+            image_asset_id=image_asset.id,
+            blurred_asset_id=blurred_asset.id,
+            trigger_condition="조건",
+            order=0,
+        )
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    get_resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert get_resp.status_code == 200
+    messages = get_resp.json()["messages"]
+    assert len(messages) >= 1
+    for message in messages:
+        assert message["imageId"] is None
+        assert message["imageUrl"] is None

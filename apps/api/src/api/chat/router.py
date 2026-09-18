@@ -449,6 +449,32 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ).all()
         stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
 
+    # situational-image-goal-prompt.md SI-7: 이미지가 실린 메시지들의 entity_id를 모아
+    # SituationalImage·Asset을 각 1회만 조회하고 서명한다 — 메시지마다 db.get을 부르면
+    # 메시지 수만큼 쿼리가 늘어난다(N+1). image_id는 있는데 해석이 안 되면(SituationalImage
+    # 없음/image_asset_id None/Asset 없음) image_url만 None으로 두고 image_id는 그대로 둔다.
+    image_entity_ids = {m.image_id for m in messages if m.image_id is not None}
+    image_urls: dict[uuid.UUID, str] = {}
+    if image_entity_ids:
+        situational_images = (
+            await db.scalars(
+                select(SituationalImage).where(
+                    SituationalImage.content_version_id == room.content_version_id,
+                    SituationalImage.entity_id.in_(image_entity_ids),
+                )
+            )
+        ).all()
+        asset_ids = {si.image_asset_id for si in situational_images if si.image_asset_id is not None}
+        assets_by_id = {}
+        if asset_ids:
+            assets = (await db.scalars(select(Asset).where(Asset.id.in_(asset_ids)))).all()
+            assets_by_id = {asset.id: asset for asset in assets}
+        for si in situational_images:
+            asset = assets_by_id.get(si.image_asset_id) if si.image_asset_id is not None else None
+            if asset is None:
+                continue
+            image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
@@ -459,7 +485,14 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ending_reached=room.ending_reached,
         stats=stats,
         messages=[
-            ChatMessageResponse(id=m.id, role=m.role, content=m.content, created_at=m.created_at)
+            ChatMessageResponse(
+                id=m.id,
+                role=m.role,
+                content=m.content,
+                created_at=m.created_at,
+                image_id=m.image_id,
+                image_url=image_urls.get(m.image_id) if m.image_id is not None else None,
+            )
             for m in messages
         ],
         content_snapshot=content_snapshot,
@@ -864,6 +897,9 @@ async def _stream_new_turn(
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    if matched_image is not None:
+        assistant_message.image_id = matched_image.entity_id
 
     await db.commit()
 
