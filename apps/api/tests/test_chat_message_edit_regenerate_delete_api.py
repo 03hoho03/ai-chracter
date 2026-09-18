@@ -458,6 +458,57 @@ async def test_regenerate_policy_violation_keeps_original_message(
     assert messages[2].content == "원래응답"
 
 
+async def test_regenerate_policy_violation_refetch_restores_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """regenerate-ux-techspec.md §5 T-7 — "옛 메시지가 남는가"는
+    `test_regenerate_policy_violation_keeps_original_message`(:428)가 이미 DB 행으로
+    검증해 중복이라 신호가 없다. 여기서는 좁혀서 "재조회가 이미지까지 온전히 돌려주는가"만
+    본다 — `_to_response`의 presign 루프(:525-534)가 깨지거나 재생성 실패가 image_id를
+    날리면 이 단언만 깨진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version_id = content.current_published_version_id
+    assert version_id is not None
+    image_a = await _make_situational_image(
+        db_session, content_version_id=version_id, owner_user_id=user.id, order=0
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+
+    _override_llm_client(
+        _StructuredFakeLLMClient(
+            tokens=["원래응답"],
+            structured_result=ImageMatchJudgmentResult(matched_image_entity_id=str(image_a.entity_id)),
+        )
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    _override_llm_client(_FakeLLMClient(error=LLMPolicyViolationError("blocked")))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["policyWarning"]
+
+    resp = await db_client.get(f"/chat-rooms/{room_id}")
+    assert resp.status_code == 200
+    last_assistant = [m for m in resp.json()["messages"] if m["role"] == "assistant"][-1]
+    assert last_assistant["imageId"] == str(image_a.entity_id)
+    assert last_assistant["imageUrl"].startswith("http")
+
+
 async def test_regenerate_llm_error_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
