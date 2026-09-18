@@ -10,6 +10,7 @@ from api.db.models.chat import (
     ChatRoomStat,
     StoryEndingUnlock,
 )
+from api.db.models.clover import CloverLedger
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -69,6 +70,7 @@ __all__ = [
     "ChatMessageRole",
     "ChatRoom",
     "ChatRoomStat",
+    "CloverLedger",
     "Content",
     "ContentTarget",
     "ContentType",
