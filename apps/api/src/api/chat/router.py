@@ -1011,9 +1011,11 @@ async def regenerate_message(
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
-    판단·이미지 매칭도 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을
-    되돌릴 턴별 이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다 — 새 응답 텍스트만
-    교체하는 게 이 스토리 AC가 요구하는 전부다). 생성이 실패하면(policyWarning/error) 기존
+    판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
+    이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
+    (situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은
+    `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
+    않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
@@ -1063,11 +1065,48 @@ async def regenerate_message(
     await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
     new_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content)
     db.add(new_message)
+
+    matched_image: SituationalImage | None = None
+    # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
+    # 않고 그 턴의 이미지 매칭만 포기한다.
+    if setup is None:
+        try:
+            matched_image = await _match_situational_image(
+                db,
+                room,
+                llm_client,
+                prompt_set=prompt_set,
+                prompt_sections=prompt_sections,
+                history=history[:-1],
+                user_message=user_content,
+                assistant_message=assistant_content,
+            )
+        except (LLMClientError, PromptRenderError) as exc:
+            logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+
+    if matched_image is not None:
+        new_message.image_id = matched_image.entity_id
+
     await db.commit()
+
+    matched_image_url: str | None = None
+    if matched_image is not None:
+        # A room only ever matches against a published version's situational_images
+        # (US-083 publish validation requires the image to be set by then).
+        assert matched_image.image_asset_id is not None
+        image_asset = await db.get(Asset, matched_image.image_asset_id)
+        assert image_asset is not None
+        matched_image_url = await run_in_threadpool(generate_presigned_get_url, image_asset.storage_key)
 
     yield ChatDoneEvent(
         final_message=ChatMessageResponse(
-            id=new_message.id, role=new_message.role, content=new_message.content, created_at=new_message.created_at
+            id=new_message.id,
+            role=new_message.role,
+            content=new_message.content,
+            created_at=new_message.created_at,
+            image_id=matched_image.entity_id if matched_image is not None else None,
+            image_url=matched_image_url,
         )
     )
 
