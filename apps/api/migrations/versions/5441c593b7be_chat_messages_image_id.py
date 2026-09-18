@@ -5,8 +5,9 @@ Revises: d7d578597b6a
 Create Date: 2026-09-18 15:07:25.937655
 
 situational-image-goal-prompt.md SI-1. `chat_messages`에 상황이미지 매칭 결과를
-남기는 nullable 컬럼을 하나 추가한다. 과거 행은 이미지가 없었고 백필 대상이
-0건이라 지금이 NULL로 둘 수 있는 유일한 시점이다.
+남기는 nullable 컬럼을 하나 추가한다. 프로덕션의 노출 기록(`character_image_exposures`)이
+0건이라(2026-09-18 read-only 실측) 복원할 매칭 자체가 없다 — 백필하지 않는다
+(situational-image-goal-prompt.md SI-8).
 
 FK 없음: 값은 물리 PK가 아니라 상황이미지의 entity_id이고, entity_id는 버전마다
 행이 복제돼 유니크가 아니라 FK를 걸 수 없다(situational-image-goal-prompt.md
