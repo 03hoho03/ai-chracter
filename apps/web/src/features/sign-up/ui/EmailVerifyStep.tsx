@@ -5,7 +5,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
-import { isApiError } from "@/shared/api/client";
+import { formatAuthRateLimitMessage, getAuthRateLimit } from "@/entities/session";
 
 import { useResendVerificationCodeMutation } from "../api/mutations";
 import { toResendVerificationCodeRequest } from "../model/formToServer";
@@ -28,6 +28,9 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
   } = form;
   const email = form.getValues("email");
   const [secondsLeft, setSecondsLeft] = useState(RESEND_COOLDOWN_SECONDS);
+  // AUTH_LIMIT(시간당 상한, ≤3600초)은 초 카운트다운에 꽂지 않는다 — 별도 줄의 분 단위 정적 문구로만
+  // 보여준다(ED-19). AUTH_COOLDOWN(60초 쿨다운)은 그대로 `secondsLeft`가 카운트다운한다.
+  const [limitMessage, setLimitMessage] = useState<string | null>(null);
   const resendMutation = useResendVerificationCodeMutation();
 
   useEffect(() => {
@@ -46,17 +49,22 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
     try {
       await resendMutation.mutateAsync(toResendVerificationCodeRequest(email));
       setSecondsLeft(RESEND_COOLDOWN_SECONDS);
+      setLimitMessage(null);
       toast.success("인증코드를 다시 보냈어요");
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
-      const retryAfterSeconds =
-        apiError?.status === 429 && apiError?.detail && typeof apiError?.detail === "object"
-          ? apiError?.detail.retryAfterSeconds
-          : undefined;
-      if (typeof retryAfterSeconds === "number") {
-        setSecondsLeft(retryAfterSeconds);
-      } else {
+      const detail = getAuthRateLimit(error);
+      if (detail === undefined) {
         toast.error("인증코드 재전송에 실패했어요. 잠시 후 다시 시도해주세요.");
+        return;
+      }
+      switch (detail.code) {
+        case "AUTH_COOLDOWN":
+          setSecondsLeft(detail.retryAfterSeconds);
+          setLimitMessage(null);
+          break;
+        case "AUTH_LIMIT":
+          setLimitMessage(formatAuthRateLimitMessage(detail, "resend"));
+          break;
       }
     }
   }
@@ -102,7 +110,12 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
       </div>
 
       <div className="flex items-center justify-between text-sm">
-        <span className="text-muted-foreground">코드를 받지 못하셨나요?</span>
+        {/* ED-23 — 이 폼이 400을 받은 적 있으면(서버가 `type: "server"`로 지은 에러) 재전송을 권한다. */}
+        <span className="text-muted-foreground">
+          {errors.emailVerificationCode?.type === "server"
+            ? "코드가 계속 안 되면 새로 받아주세요."
+            : "코드를 받지 못하셨나요?"}
+        </span>
         <Button
           type="button"
           variant="ghost"
@@ -113,6 +126,12 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
           {secondsLeft > 0 ? `재전송 (${secondsLeft}초)` : "인증코드 재전송"}
         </Button>
       </div>
+
+      {limitMessage && (
+        <p role="alert" className="text-xs text-destructive-text">
+          {limitMessage}
+        </p>
+      )}
 
       <Button type="submit" size="lg" disabled={isSubmitting}>
         {isSubmitting ? "확인 중..." : "인증하기"}
