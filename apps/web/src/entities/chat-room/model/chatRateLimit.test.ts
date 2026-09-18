@@ -22,6 +22,21 @@ describe("getChatRateLimit", () => {
       }),
     ).toBeUndefined();
   });
+
+  // T3(error-delivery-goal-prompt.md §5-1) — auth 창도 undefined다. 이 케이스는 런타임 신호가 아니라
+  // 타입 신호였다: `getChatRateLimit`이 배제 목록(`window === "image"`만 걸러 undefined)이던 동안은
+  // `window` enum에 `"auth"`를 더하는 순간 `ChatRateLimit["window"]`(`"minute" | "day"`)에 안 들어가
+  // *컴파일이 안 됐다*(단언 실패가 아니라 타입 에러, 실측: `chatRateLimit.ts(14,12): error TS2322`).
+  // 허용 목록(minute/day만 통과)으로 뒤집은 지금은 이 케이스가 평범한 런타임 단언으로 통과한다.
+  it("auth 창도 undefined다 — 배제 목록이던 동안은 이 케이스가 타입 에러였다(ED-16)", () => {
+    expect(
+      getChatRateLimit({
+        status: 429,
+        detail: { code: "AUTH_LIMIT", retryAfterSeconds: 3540, window: "auth" },
+        message: "x",
+      }),
+    ).toBeUndefined();
+  });
 });
 
 describe("formatChatRateLimitMessage", () => {

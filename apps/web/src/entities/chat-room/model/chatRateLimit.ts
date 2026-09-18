@@ -6,11 +6,12 @@ import { assertNever } from "@/shared/lib/assertNever";
  * shared가 알 일이 아니다(`shared/api/rateLimit.ts`에는 BE 계약 그대로인 제네릭만 남는다). */
 export type ChatRateLimit = { window: "minute" | "day"; retryAfterSeconds: number };
 
-/** 이미지 창(`image`)은 채팅 배너가 말할 문구가 없다 — 채팅 경로에 그 값이 오면(BE상 불가능)
- * undefined로 떨어져 기존 일반 오류 배너가 받는다. */
+/** 채팅이 말할 문구가 없는 창(현재 `image`·`auth`)은 undefined로 떨어져 기존 일반 오류 배너가
+ * 받는다. 허용 목록(minute/day만 통과)인 이유: 배제 목록이면 `window` enum에 값이 늘 때마다
+ * 조용히 새 값이 채팅 배너로 새 나간다 — 허용 목록은 값이 늘어도 기본이 "안 받는다"다(ED-16). */
 export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
   const detail = getRateLimitDetail(error);
-  if (detail === null || detail.window === "image") return undefined;
+  if (detail === null || (detail.window !== "minute" && detail.window !== "day")) return undefined;
   return { window: detail.window, retryAfterSeconds: detail.retryAfterSeconds };
 }
 

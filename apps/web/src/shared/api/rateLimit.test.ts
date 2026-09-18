@@ -25,6 +25,28 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "QUEUE_FULL", retryAfterSeconds: 60, window: "image" });
   });
 
+  // T4(error-delivery-goal-prompt.md §5-1, ED-15) — auth 429(4224ea1) 바디 2종도 같은 스키마로
+  // 그대로 파싱된다. 전용 파서를 따로 두지 않는 근거이므로, 값이 그대로 돌아오는지가 신호다.
+  it("429 + auth AUTH_LIMIT 바디를 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "AUTH_LIMIT", retryAfterSeconds: 3540, window: "auth" },
+        message: "x",
+      }),
+    ).toEqual({ code: "AUTH_LIMIT", retryAfterSeconds: 3540, window: "auth" });
+  });
+
+  it("429 + auth AUTH_COOLDOWN 바디를 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "AUTH_COOLDOWN", retryAfterSeconds: 47, window: "auth" },
+        message: "x",
+      }),
+    ).toEqual({ code: "AUTH_COOLDOWN", retryAfterSeconds: 47, window: "auth" });
+  });
+
   it("429여도 detail이 string이면 null이다 — 구조화 dict를 쓰지 않는 429와 구분돼야 한다", () => {
     expect(getRateLimitDetail({ status: 429, detail: "Too Many Requests", message: "x" })).toBeNull();
   });
