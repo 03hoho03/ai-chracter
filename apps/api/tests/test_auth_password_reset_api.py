@@ -135,6 +135,27 @@ async def test_request_password_reset_rate_limited_by_ip_returns_429(
     assert resp.json()["detail"]["retryAfterSeconds"] > 0
 
 
+async def test_request_password_reset_rate_limited_returns_auth_limit_detail(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """error-delivery-goal-prompt.md ED-11: password-reset 429는 시간당 창 상한 하나뿐이므로
+    code:"AUTH_LIMIT", window:"auth"를 낸다."""
+    email = "nobody@example.com"
+    for _ in range(rate_limit.PASSWORD_RESET_EMAIL_LIMIT):
+        resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+        assert resp.status_code == 204
+
+    resp = await db_client.post("/auth/password-reset/request", json={"email": email})
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail == {
+        "code": "AUTH_LIMIT",
+        "retryAfterSeconds": detail.get("retryAfterSeconds"),
+        "window": "auth",
+    }
+    assert detail["retryAfterSeconds"] > 0
+
+
 async def test_validate_valid_token_returns_200(db_client: httpx.AsyncClient) -> None:
     payload = await _signup_and_verify(db_client, birthDate="2000-01-01")
     token = await _request_reset_and_capture_token(db_client, str(payload["email"]))
