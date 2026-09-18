@@ -45,4 +45,5 @@ export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { toChatRoomState } from "./api/toChatRoomState";
 export { truncateAndEdit } from "./model/truncateAndEdit";
+export { dropLastMessage, restoreMessage } from "./model/dropLastMessage";
 export { chatStreamEventSchema } from "./api/chatStream";
