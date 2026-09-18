@@ -744,13 +744,15 @@ async def _stream_new_turn(
     """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
     이어서 생성)가 공유한다 — 둘 다 실제로는 동일한 "새 턴"이고 차이는 호출부가 넘기는
-    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 done 이벤트의
-    finalMessage.imageId), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 — 서로의 판단 단계를
-    타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
+    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 `chat_messages.image_id`에
+    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 —
+    situational-image-goal-prompt.md SI-7), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
+    서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
     전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
 
-    `regenerate_message`(같은 턴의 응답만 교체, 판단/turn_count 재실행 없음)는 이 헬퍼를 쓰지
-    않는다 — 그 라우트의 docstring 참고.
+    `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
+    이미지 매칭은 재실행한다, situational-image-goal-prompt.md SI-4)는 이 헬퍼를 쓰지 않는다
+    — 그 라우트의 docstring 참고.
     """
     try:
         prompt, system_instruction = await _build_prompt(

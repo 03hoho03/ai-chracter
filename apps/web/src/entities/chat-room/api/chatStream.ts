@@ -17,7 +17,8 @@ const chatMessageSchema = z.object({
   // finalMessage가 커밋되지 않고 스트리밍 버퍼만 비워지기 때문이다(2026-09-02 프로덕션 실측).
   // `packages/api-types`의 codegen은 처음부터 `imageId?: string | null`이라고 적고 있었다.
   imageId: z.string().nullish(),
-  // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용, 세션 한정). 같은 이유로 nullish.
+  // imageId와 함께 채워지는 presigned GET URL(인라인 렌더링용 — 재조회 응답에도 실린다, BE
+  // `ChatMessageResponse.image_url` 주석 참조). 같은 이유로 nullish.
   imageUrl: z.string().nullish(),
   createdAt: z.string(),
 });
