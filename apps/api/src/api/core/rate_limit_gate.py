@@ -26,11 +26,13 @@ import time
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Literal, assert_never
 
 from fastapi import Depends, HTTPException, status
 from redis.exceptions import RedisError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from api.core import clover
 from api.core.rate_limit import (
     KST,
     check_rate_limit,
@@ -41,7 +43,7 @@ from api.core.rate_limit import (
 from api.core.redis import redis_client
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
-from api.db.session import get_db_session
+from api.db.session import get_db_session, get_session_factory
 from api.images.schemas import GenerateImageRequest
 from api.session.dependencies import get_current_user_id
 
@@ -90,6 +92,12 @@ _IMAGE_SCOPE = "image_tokens"
 # `user_id` 필수라 인증 전인 auth에 안 맞는다).
 _IMAGE_WINDOW = "image"
 
+# clover-techspec.md CT-8: 클로버 부족은 **새 `code`**다. `window`는 경로마다 다르다 — 채팅은
+# 신규 `"clover"`, 이미지는 기존 `"image"`를 유지한다(위 주석의 규칙 그대로 — `window`는
+# "어느 기능이냐"고 이미지에서 상한 종류를 가르는 축은 이미 `code`다).
+_CLOVER_CODE = "CLOVER_REQUIRED"
+_CLOVER_WINDOW = "clover"
+
 _last_redis_failure_reported_at: float | None = None
 
 
@@ -111,8 +119,10 @@ def _too_many_requests(
     user_id: uuid.UUID, window: str, retry_after: int, *, code: str = "USER_LIMIT"
 ) -> HTTPException:
     # RL-12: 검색 가능한 고정 토큰 하나(`user_limit_exceeded`) + code·user_id·window·retry_after
-    # 까지. 이메일·프롬프트 본문 등 나머지는 절대 싣지 않는다(`code`는 리터럴 2종이라 PII가
-    # 아니다). Bugsink 이벤트로는 승격하지 않는다 — 상한에 걸리는 것은 설계된 동작이지
+    # 까지. 이메일·프롬프트 본문 등 나머지는 절대 싣지 않는다(`code`는 이 모듈이 내는 리터럴
+    # 3종 — `USER_LIMIT`/`QUEUE_FULL`/`CLOVER_REQUIRED` — 이라 PII가 아니다. auth의 2종은
+    # `auth/router.py`의 지역 헬퍼가 따로 만든다).
+    # Bugsink 이벤트로는 승격하지 않는다 — 상한에 걸리는 것은 설계된 동작이지
     # 장애가 아니다. `code`가 없으면 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)가 같은
     # `window=image`로 찍혀 로그만으로는 갈리지 않는다(유저 쿼터냐 GPU 큐냐를 셀 수 없다).
     logger.warning(
@@ -155,10 +165,28 @@ async def is_rate_limit_exempt(user_id: uuid.UUID, db: AsyncSession) -> bool:
     return user is not None and user.rate_limit_exempt is True
 
 
+@dataclass(frozen=True)
+class ChatCharge:
+    """채팅 게이트가 라우트에 넘기는 **차감 영수증**(clover-techspec.md CT-7).
+
+    `source`가 환불 대상을 가른다:
+    - `"free"` — 일일 창 안에서 통과. 환불할 것이 없다(`check_rate_limit`에 역연산이 없어
+      무료분은 애초에 되돌릴 수 없다).
+    - `"clover"` — 클로버를 깎았다. 실패 시 `clover_amount`만큼 되돌린다(S4).
+    - `"skipped"` — 예외 계정(RL-10) 또는 Redis fail-open(RL-8). 아무것도 깎지 않았다.
+    """
+
+    source: Literal["free", "clover", "skipped"]
+    # `source != "clover"`이면 0이다. 되돌릴 양을 라우트가 상수에서 다시 계산하지 않고
+    # 영수증에서 읽게 한다 — 상수가 바뀌어도 진행 중이던 요청의 환불액이 어긋나지 않는다.
+    clover_amount: int = 0
+
+
 async def enforce_chat_rate_limit(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
-) -> None:
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> ChatCharge:
     """채팅 4경로 공용 게이트(RL-1). 키는 `user_id`다(RL-2) — IP가 아니라 계정이 비용의 단위다.
 
     `get_current_user_id`는 재동의 게이트(`require_legal_consent`)도 이미 `Depends`로 쓰고 있어
@@ -173,9 +201,11 @@ async def enforce_chat_rate_limit(
     히트다 — **그 경로 집합에 한정된 사실**이고, 재동의 게이트가 없는 경로에 이 게이트를 붙이면
     SELECT가 하나 는다.
 
-    순서는 **버스트 → 면제 → 일일**이다(RL-10). 짧은 창이 먼저 걸리는 게 사용자에게 유용한
-    `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고, 일일 창이 먼저면 몇 시간짜리 값이
-    앞서 나간다. 면제가 그 사이에 있는 이유는 면제 대상도 버스트는 받기 때문이다.
+    순서는 **버스트 → 면제 → 일일 → 클로버**다(RL-10, clover-goal-prompt.md CL-1·CL-2). 짧은
+    창이 먼저 걸리는 게 사용자에게 유용한 `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고,
+    일일 창이 먼저면 몇 시간짜리 값이 앞서 나간다. 면제가 그 사이에 있는 이유는 면제 대상도
+    버스트는 받기 때문이다. 클로버가 맨 뒤인 이유는 두 가지다 — 분당 버스트는 **폭주 방어라
+    돈으로 끌 수 없고**(CL-1), 예외 계정은 애초에 차감 대상이 아니다(CL-2).
     """
     now = datetime.now(UTC)
     key = str(user_id)
@@ -190,7 +220,7 @@ async def enforce_chat_rate_limit(
         # 카운터도 올라가지 않는다 — 어드민이 도중에 면제를 거두면(S7) 그날 그때까지의 요청은
         # 일일 창에 세어져 있지 않다.
         if await is_rate_limit_exempt(user_id, db):
-            return
+            return ChatCharge(source="skipped")
 
         # RL-4: 일일 창은 KST 자정에 끊긴다. 기구에는 "자정"이라는 개념이 없으므로 호출자가
         # 키에 KST 날짜를 섞고(날짜가 바뀌면 키 자체가 바뀐다) TTL로 남은 초를 넘긴다 —
@@ -203,7 +233,34 @@ async def enforce_chat_rate_limit(
             window_seconds=seconds_until_kst_midnight(now),
         )
         if day_retry_after > 0:
-            raise _too_many_requests(user_id, "day", day_retry_after)
+            # clover-goal-prompt.md CL-1 / clover-techspec.md CT-5: 무료 일일분을 다 쓴
+            # 뒤에만 클로버가 대신 낸다.
+            #
+            # 🔴 **이 분기는 반드시 `try` 블록 안에 있어야 한다.** Redis 장애에서는
+            # `check_rate_limit`이 `RedisError`를 던져 아래 `except`로 빠지므로 여기 도달하지
+            # 않는다 — CL-2가 옳다고 정한 동작이다(장애 중에는 무료로 통과시킨다). `try`
+            # 바깥(함수 끝)으로 옮기면 fail-open으로 빠져나온 뒤에도 실행돼 **장애 동안
+            # 전원이 차감된다.** 코드만 보면 어느 쪽도 자연스러워 보여서 이 주석을 남긴다.
+            #
+            # 차감은 **자기 트랜잭션**이다(CT-4) — 채팅 4경로의 커밋 시점이 제각각이라
+            # 요청 세션에 얹으면 미리보기는 영원히 공짜가 된다(CL-9).
+            spent = await clover.spend_in_new_transaction(
+                session_factory,
+                user_id=user_id,
+                amount=clover.CHAT_TURN_COST,
+                kind="chat_spend",
+            )
+            if spent is None:
+                # CT-8 채팅 행: 자정까지 남은 초는 거짓이 아니다 — 그때 무료 일일분이
+                # 돌아오므로 실제로 다시 보낼 수 있다.
+                raise _too_many_requests(
+                    user_id,
+                    _CLOVER_WINDOW,
+                    seconds_until_kst_midnight(now),
+                    code=_CLOVER_CODE,
+                )
+            return ChatCharge(source="clover", clover_amount=clover.CHAT_TURN_COST)
+        return ChatCharge(source="free")
     except RedisError:
         # RL-8: fail-open. 상한을 세는 장치가 죽었다고 채팅까지 죽일 이유가 없다 —
         # 최악의 결과는 그 창 동안 상한이 느슨해지는 것이고, fail-closed의 최악은 전면 장애다.
@@ -215,25 +272,34 @@ async def enforce_chat_rate_limit(
         # "Redis가 죽어도 채팅은 산다"는 뜻이 아니다.
         logger.warning("채팅 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
         _report_redis_failure()
+        # 차감이 없었으므로 환불 대상도 아니다 — 이미지 쪽 `:279`와 같은 결론이다.
+        return ChatCharge(source="skipped")
 
 
 @dataclass(frozen=True)
 class ImageCharge:
     """`enforce_image_rate_limit`이 라우트에 넘기는 **차감 영수증**(RL-13/RL-16).
 
-    `charged=False`는 "차감이 일어나지 않았다"는 뜻이다(예외 계정 RL-10, Redis fail-open
-    RL-8). 환불이 이 플래그를 봐야 하는 이유가 여기 있다 — `refund_tokens`는 차감 여부를
+    `source="skipped"`는 "차감이 일어나지 않았다"는 뜻이다(예외 계정 RL-10, Redis fail-open
+    RL-8). 환불이 이 값을 봐야 하는 이유가 여기 있다 — `refund_tokens`는 차감 여부를
     모른 채 무조건 용량 천장까지 올리므로, 차감하지 않은 요청을 환불하면 면제 계정이 요청을
-    보낼 때마다 그 사용자의 버킷이 만땅으로 리셋된다(면제를 거둔 직후가 특히 그렇다)."""
+    보낼 때마다 그 사용자의 버킷이 만땅으로 리셋된다(면제를 거둔 직후가 특히 그렇다).
+
+    🔴 **`charged: bool`을 `source`로 바꿨다**(clover-techspec.md CT-7). 불리언 하나로는
+    "토큰이냐 클로버냐"를 못 가려 환불이 **엉뚱한 자원을 돌려놓는다** — 클로버로 낸 요청을
+    `refund_tokens`로 되돌리면 안 깎은 토큰이 늘고 깎인 클로버는 그대로 사라진다."""
 
     count: int
-    charged: bool
+    source: Literal["token", "clover", "skipped"]
+    # `source != "clover"`이면 0. 채팅의 `ChatCharge`와 같은 이유로 영수증에 담는다.
+    clover_amount: int = 0
 
 
 async def enforce_image_rate_limit(
     payload: GenerateImageRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ImageCharge:
     """`POST /images/generate` 게이트(RL-5/RL-13). 반환값이 라우트의 환불 근거가 된다.
 
@@ -257,7 +323,7 @@ async def enforce_image_rate_limit(
     """
     try:
         if await is_rate_limit_exempt(user_id, db):
-            return ImageCharge(count=payload.count, charged=False)
+            return ImageCharge(count=payload.count, source="skipped")
 
         retry_after = await take_tokens(
             redis_client,
@@ -276,11 +342,26 @@ async def enforce_image_rate_limit(
         # 죽일 이유가 없다. 여기서 통과시킨 요청은 차감이 없었으므로 환불 대상도 아니다.
         logger.warning("이미지 레이트리밋 검사 실패 — fail-open으로 통과시킨다", exc_info=True)
         _report_redis_failure()
-        return ImageCharge(count=payload.count, charged=False)
+        return ImageCharge(count=payload.count, source="skipped")
 
     if retry_after > 0:
-        raise _too_many_requests(user_id, _IMAGE_WINDOW, retry_after)
-    return ImageCharge(count=payload.count, charged=True)
+        # 🔴 clover-techspec.md §3-4-1: 여기는 채팅과 달리 `try` **바깥**인데도 CL-2가 지켜진다 —
+        # Redis 장애는 위 `except`가 `return`으로 함수를 끝내므로 이 줄에 **도달하지 못한다.**
+        # 채팅의 "반드시 `try` 안" 규칙을 기계적으로 옮기면 안 된다. 판정 기준은 "`try` 안이냐"가
+        # 아니라 **"fail-open 경로가 이 줄에 도달할 수 있느냐"**다.
+        clover_amount = payload.count * clover.IMAGE_UNIT_COST
+        spent = await clover.spend_in_new_transaction(
+            session_factory, user_id=user_id, amount=clover_amount, kind="image_spend"
+        )
+        if spent is None:
+            # CT-8 이미지 행: `window`는 `"image"`를 유지하고 `retryAfterSeconds`는 방금
+            # `take_tokens`가 준 값을 그대로 쓴다. 🔴 자정까지 초를 쓰면 **최대 24시간짜리
+            # 거짓값**이다 — 이미지 무료분은 시간당 충전이지 자정 리셋이 아니다.
+            raise _too_many_requests(
+                user_id, _IMAGE_WINDOW, retry_after, code=_CLOVER_CODE
+            )
+        return ImageCharge(count=payload.count, source="clover", clover_amount=clover_amount)
+    return ImageCharge(count=payload.count, source="token")
 
 
 def image_queue_full(user_id: uuid.UUID) -> HTTPException:
@@ -290,25 +371,45 @@ def image_queue_full(user_id: uuid.UUID) -> HTTPException:
     )
 
 
-async def refund_image_charge(user_id: uuid.UUID, charge: ImageCharge) -> None:
+async def refund_image_charge(
+    user_id: uuid.UUID,
+    charge: ImageCharge,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     """RL-16: 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에 끝난 요청의
-    토큰을 돌려놓는다. 차감이 없었으면(`charged=False`) 아무 일도 하지 않는다.
+    차감을 돌려놓는다. 차감이 없었으면(`source="skipped"`) 아무 일도 하지 않는다.
+
+    🔴 **무엇으로 냈는지에 따라 돌려놓는 자원이 다르다**(clover-techspec.md CT-7). `assert_never`로
+    망라성을 강제하므로 새 `source`가 생기면 mypy가 여기를 잡는다(`images/router.py`의
+    `assert_never(result.outcome)` 관례).
 
     `RedisError`를 여기서 삼키는 이유: 이 함수는 **이미 실패가 확정된 요청**(429/503/400)의
     정리 작업이라, 예외가 새어 나가면 사용자가 받아야 할 429가 원인과 무관한 500으로 바뀐다.
-    환불 유실 자체는 조용히 사라지지 않는다 — `refund_tokens`도 여기도 로그를 남긴다."""
-    if not charge.charged:
-        return
-    try:
-        await refund_tokens(
-            redis_client,
-            _IMAGE_SCOPE,
-            str(user_id),
-            charge.count,
-            capacity=IMAGE_TOKEN_CAPACITY,
-            refill_seconds=IMAGE_TOKEN_REFILL_SECONDS,
-            now=time.time(),
-        )
-    except RedisError:
-        logger.warning("이미지 토큰 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
-        _report_redis_failure()
+    환불 유실 자체는 조용히 사라지지 않는다 — `refund_tokens`도 여기도 로그를 남긴다.
+    클로버 환불도 같은 이유로 예외를 삼킨다(`clover.refund_in_new_transaction`이 자체적으로)."""
+    match charge.source:
+        case "skipped":
+            return
+        case "clover":
+            await clover.refund_in_new_transaction(
+                session_factory,
+                user_id=user_id,
+                amount=charge.clover_amount,
+                kind="image_refund",
+            )
+        case "token":
+            try:
+                await refund_tokens(
+                    redis_client,
+                    _IMAGE_SCOPE,
+                    str(user_id),
+                    charge.count,
+                    capacity=IMAGE_TOKEN_CAPACITY,
+                    refill_seconds=IMAGE_TOKEN_REFILL_SECONDS,
+                    now=time.time(),
+                )
+            except RedisError:
+                logger.warning("이미지 토큰 환불 실패 — 그 요청의 차감이 남는다", exc_info=True)
+                _report_redis_failure()
+        case _:
+            assert_never(charge.source)

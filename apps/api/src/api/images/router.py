@@ -491,10 +491,12 @@ async def generate_images(
     except Exception:
         # 안쪽 `except Exception`(반납)보다 바깥이다 — 반납과 환불은 서로 다른 자원이고,
         # 잡 인계 도중의 실패는 둘 다 필요하다. 환불은 차감이 실제로 있었을 때만 동작한다
-        # (`ImageCharge.charged`) — 예외 계정·Redis fail-open은 no-op이다.
+        # (`ImageCharge.source`) — 예외 계정·Redis fail-open은 no-op이다.
         # `HTTPException`만 잡으면 `create_job`(Redis)·`session.commit()`(Postgres)의 500에서
         # 토큰이 유실돼 DB 순단 뒤 최대 10시간 429가 이어진다(리뷰 실측).
-        await refund_image_charge(owner_user_id, charge)
+        # `session_factory`를 넘기는 이유는 클로버로 낸 요청의 환불이 별도 트랜잭션이기
+        # 때문이다(clover-techspec.md CT-4/CT-7).
+        await refund_image_charge(owner_user_id, charge, session_factory)
         raise
     return GenerateImageResponse(job_id=job.job_id)
 

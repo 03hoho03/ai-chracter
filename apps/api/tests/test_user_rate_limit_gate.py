@@ -166,7 +166,7 @@ async def test_four_chat_routes_share_one_bucket(
         assert detail["window"] == "minute"
 
 
-# ---- 2. 일일 상한 초과 → window=day, KST 자정까지 (RL-4·RL-15) ----
+# ---- 2. 일일 상한 초과 → 429, KST 자정까지 (RL-4·RL-15 + clover-techspec.md CT-8) ----
 
 
 @pytest.mark.parametrize(("method", "path_template", "body"), _CHAT_ROUTES, ids=_ROUTE_IDS)
@@ -180,7 +180,15 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
 ) -> None:
     """버스트는 기본값 그대로 두고 일일만 0으로 낮춘다 — 그래야 "버스트 → 일일"
     순서(RL-10 파생 / 게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는 것까지 함께
-    증명된다."""
+    증명된다.
+
+    🔴 **클로버 도입으로 바디가 바뀌었다**(clover-techspec.md CT-8). 무료 일일분을 다 쓴
+    뒤에는 클로버가 대신 내므로, **낼 클로버가 없을 때** 나가는 것이 이 429다 —
+    `USER_LIMIT`/`window=day`가 아니라 `CLOVER_REQUIRED`/`window=clover`다.
+    `_make_user`의 기본 잔액이 0이라 이 셋업이 곧 "낼 것이 없는 사용자"다.
+    ⇒ **채팅에서 `window="day"`는 이제 도달할 수 없다** — 일일 초과는 전부 클로버 분기로
+    넘어간다(잔액이 있으면 통과, 없으면 이 429).
+    """
     await _consented_user(db_client, db_session)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -188,8 +196,8 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
-    assert detail["code"] == "USER_LIMIT"
-    assert detail["window"] == "day"
+    assert detail["code"] == "CLOVER_REQUIRED"
+    assert detail["window"] == "clover"
     retry_after = detail["retryAfterSeconds"]
     assert isinstance(retry_after, int)
     assert 1 <= retry_after <= 86400
@@ -454,9 +462,10 @@ async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
     resp = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
 
     assert resp.status_code == 429
+    # 잔액 0이라 클로버로도 못 낸다(clover-techspec.md CT-8) — 면제 계정과의 대비는 그대로다.
     detail = resp.json()["detail"]
-    assert detail["code"] == "USER_LIMIT"
-    assert detail["window"] == "day"
+    assert detail["code"] == "CLOVER_REQUIRED"
+    assert detail["window"] == "clover"
 
 
 async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
@@ -492,6 +501,7 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     after = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
 
     assert after.status_code == 429
+    # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다(CT-8).
     detail = after.json()["detail"]
-    assert detail["code"] == "USER_LIMIT"
-    assert detail["window"] == "day"
+    assert detail["code"] == "CLOVER_REQUIRED"
+    assert detail["window"] == "clover"

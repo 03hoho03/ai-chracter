@@ -72,7 +72,7 @@ from api.content.schemas import (
     StoryDraftPayload,
 )
 from api.core.config import settings
-from api.core.rate_limit_gate import enforce_chat_rate_limit
+from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -1007,7 +1007,11 @@ async def send_message(
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
     # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7: 반환형이 `None`에서
+    # `ChatCharge`로 바뀌었다(무엇으로 냈는지가 환불 대상을 가른다).
+    # 🔴 mypy는 이 어노테이션을 **검증하지 않는다** — `Depends(...)`가 `Any`라 `None`으로
+    # 둬도 통과한다. 게이트 반환형을 바꿀 때 이 4곳은 손으로 찾아야 한다.
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
     room: ChatRoom = Depends(_owned_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
@@ -1069,7 +1073,9 @@ async def _regeneratable_last_message_dependency(
 async def regenerate_message(
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다 —
+    # `send_message`의 같은 자리 주석 참조)
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
     room: ChatRoom = Depends(_owned_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1211,7 +1217,9 @@ async def edit_message(
     payload: ChatMessageEditRequest,
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다 —
+    # `send_message`의 같은 자리 주석 참조)
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
     room: ChatRoom = Depends(_owned_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
@@ -1991,7 +1999,14 @@ async def send_preview_message(
     payload: ChatMessageCreateRequest,
     # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다 —
+    # `send_message`의 같은 자리 주석 참조)
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
+    # 🔴 clover-techspec.md CT-7: **이 라우트만** 세션 팩토리를 새로 받는다. 나머지 3경로는
+    # `db: AsyncSession = Depends(get_db_session)`을 이미 갖고 있지만 미리보기는 요청 스코프
+    # 세션을 아예 받지 않아(`_preview_prompt_set_dependency`가 풀 상한 때문에 피한다) 환불이
+    # 그 세션을 쓸 수 없다. 실제 사용처는 S4의 제너레이터 환불이다.
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
