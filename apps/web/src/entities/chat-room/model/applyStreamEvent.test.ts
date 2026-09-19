@@ -85,7 +85,8 @@ describe("applyStreamEvent", () => {
     ).toBeUndefined();
   });
 
-  it("done appends the final message and increments turnCount by default (mode: append)", () => {
+  // 대조군 — kind 미지정(= newTurn)은 꼬리가 assistant여도 걷어내지 않는다(RT-1 회귀 방어).
+  it("done appends the final message and increments turnCount by default (kind: newTurn)", () => {
     const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" };
 
     applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage });
@@ -95,14 +96,45 @@ describe("applyStreamEvent", () => {
     expect(next?.turnCount).toBe(4);
   });
 
-  it("done replaces the last message when mode is replaceLast, and still increments turnCount", () => {
+  // regenerate-ux-techspec.md RT-1 — turnCount는 3(서버도 안 올린다, chat/router.py:1121, 테스트
+  // test_..._without_new_turn).
+  it("done on regenerate drops the trailing assistant and does NOT increment turnCount", () => {
     const finalMessage: ChatMessage = { id: "m1-regen", role: "assistant", content: "다시 생성됨", createdAt: "2026-07-08T00:02:00Z" };
 
-    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { mode: "replaceLast" });
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { kind: "regenerate" });
 
     const next = queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID));
     expect(next?.messages).toEqual([finalMessage]);
-    expect(next?.turnCount).toBe(4);
+    expect(next?.turnCount).toBe(3);
+  });
+
+  // regenerate-ux-goal-prompt.md RU-11(1) / regenerate-ux-techspec.md RT-1 — 역할 가드는
+  // kind === "regenerate"일 때만 걸고, 마지막이 assistant일 때만 걷어낸다.
+  it("done on regenerate drops a trailing assistant revived by a mid-stream refetch, but not a trailing user message", () => {
+    const u1: ChatMessage = { id: "u1", role: "user", content: "다시 해줘", createdAt: "2026-07-08T00:00:00Z" };
+    const a1: ChatMessage = { id: "a1", role: "assistant", content: "옛 답변", createdAt: "2026-07-08T00:01:00Z" };
+    const finalMessage: ChatMessage = {
+      id: "m1-regen",
+      role: "assistant",
+      content: "다시 생성됨",
+      createdAt: "2026-07-08T00:02:00Z",
+    };
+
+    // 낙관적 제거가 이미 끝난 정상 경로 — 끝이 user라 가드 무발동
+    queryClient.setQueryData(chatRoomKeys.detail(ROOM_ID), buildState({ messages: [u1] }));
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { kind: "regenerate" });
+    expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.messages).toEqual([
+      u1,
+      finalMessage,
+    ]);
+
+    // 탭 복귀 재조회가 옛 답변을 되살린 경우 — 끝이 assistant라 걷어낸다
+    queryClient.setQueryData(chatRoomKeys.detail(ROOM_ID), buildState({ messages: [u1, a1] }));
+    applyStreamEvent(queryClient, ROOM_ID, { type: "done", finalMessage }, { kind: "regenerate" });
+    expect(queryClient.getQueryData<ChatRoomState>(chatRoomKeys.detail(ROOM_ID))?.messages).toEqual([
+      u1,
+      finalMessage,
+    ]);
   });
 
   it("done calls onDone with the final message and the pre-update state", () => {

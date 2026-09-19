@@ -8,7 +8,9 @@ import {
   buildRegeneratePayload,
   buildSendPayload,
   chatRoomKeys,
+  dropLastMessage,
   getChatRateLimit,
+  restoreMessage,
   truncateAndEdit,
 } from "@/entities/chat-room";
 import { chatStreamEventSchema } from "@/entities/chat-room";
@@ -19,7 +21,7 @@ import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
-type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLast" };
+type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerate" };
 
 // TS-04 — isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
@@ -80,6 +82,22 @@ export function useSendMessage(
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다.
     let hasErrored = false;
+    // RU-1·RU-2·RU-11(2) — 재생성 클릭 즉시 옛 답변을 지운다(retry()도 pending.kind를 그대로
+    // 승계해 같은 분기를 탄다). 진행 중인 재조회를 먼저 끊지 않으면 뒤늦게 도착한 응답이 그 제거를
+    // 되돌린다.
+    // 🔴 cancelQueries를 재생성일 때만 부르는 이유: 기본값이 `revert: true`라 취소되는 fetch가
+    // *시작된 시점의* 캐시로 되돌린다(query-core `query.js`의 #revertState). send()/editMessage()는
+    // 낙관적 변경을 openStream 호출 *전에* 하므로, 무조건 부르면 방금 추가한 사용자 메시지나 편집
+    // 절단이 조용히 사라진다. 재생성은 제거가 이 줄 *뒤*라 그 창이 없다.
+    let dropped: ChatMessage | undefined;
+    if (pending.kind === "regenerate") {
+      await queryClient.cancelQueries({ queryKey: chatRoomKeys.detail(roomId) });
+      dropped = dropLastMessage(queryClient, roomId);
+    }
+    // RU-3 — "done을 봤다"가 아니라 "done을 캐시에 반영했다"다(onDone은 setQueryData 업데이터
+    // 안에서 불리므로 캐시가 없으면 호출되지 않는다). 실패 분기를 열거하지 않고 이 값 하나로
+    // 복원 여부를 판단한다.
+    let hasCommitted = false;
 
     try {
       for await (const event of openChatStream(pending.payload, chatStreamEventSchema)) {
@@ -93,8 +111,9 @@ export function useSendMessage(
           setStatus({ kind: "error", retryPayload: pending });
         }
         applyStreamEvent(queryClient, roomId, event, {
-          mode: pending.mode,
+          kind: pending.kind,
           onDone: (message) => {
+            hasCommitted = true;
             if (message.imageId && characterId) {
               void queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
             }
@@ -131,6 +150,12 @@ export function useSendMessage(
       });
     } finally {
       setStreamingText("");
+      // RU-4 — 동기 롤백 + invalidate 둘 다. 롤백만으로는 서버가 실제로 커밋한 경우 화면이 서버와
+      // 어긋난 채 남고, invalidate만으로는 왕복 동안 메시지가 빠진 화면이 유지된다.
+      if (dropped && !hasCommitted) {
+        restoreMessage(queryClient, roomId, dropped);
+        void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
+      }
       if (!hasErrored) setStatus({ kind: "idle" });
     }
   }
@@ -147,14 +172,14 @@ export function useSendMessage(
       (prev) => prev && { ...prev, messages: [...prev.messages, optimisticMessage] },
     );
 
-    void openStream({ payload: buildSendPayload({ roomId, text, shortcutId }), mode: "append" });
+    void openStream({ payload: buildSendPayload({ roomId, text, shortcutId }), kind: "newTurn" });
   }
 
   // techspec-chat-common.md §2.1 — 마지막 AI 응답만 새 텍스트로 교체(같은 턴), 새 사용자
   // 메시지를 추가하지 않는다.
   function regenerate(): void {
     if (status.kind === "sending") return;
-    void openStream({ payload: buildRegeneratePayload({ roomId }), mode: "replaceLast" });
+    void openStream({ payload: buildRegeneratePayload({ roomId }), kind: "regenerate" });
   }
 
   // truncateAndEdit로 그 메시지 이후를 먼저 잘라낸 뒤, 일반 전송과 동일한 스트리밍 흐름을
@@ -163,7 +188,7 @@ export function useSendMessage(
   function editMessage(messageId: string, text: string): void {
     if (status.kind === "sending") return;
     truncateAndEdit(queryClient, roomId, messageId, text);
-    void openStream({ payload: buildEditPayload({ roomId, messageId, text }), mode: "append" });
+    void openStream({ payload: buildEditPayload({ roomId, messageId, text }), kind: "newTurn" });
   }
 
   function retry(): void {
