@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { getChatRateLimit, type ChatRateLimit } from "@/entities/chat-room";
+import { cloverKeys } from "@/entities/clover";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   applyPreviewStreamEvent,
@@ -89,6 +90,14 @@ export function usePreviewSendMessage() {
     } finally {
       setStreamingText("");
       setStatus(hasErrored ? { kind: "error", rateLimit } : { kind: "idle" });
+      // clover-techspec.md CT-12 — 미리보기도 채팅 4경로의 같은 게이트를 지나므로 무료 일일분을
+      // 넘기면 클로버가 깎인다(RL-23 — 미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).
+      //
+      // `useSendMessage`와 달리 `onDone`을 쓰지 않는다 — `applyPreviewStreamEvent`에는 그 확장 훅이
+      // 없고(`entities/preview-session`은 별도 쿼리 키만 건드린다), 여기에 훅을 새로 뚫는 것보다
+      // 호출부에서 한 줄 부르는 쪽이 작다. `finally`인 것은 덤으로 정확하다: 차감된 뒤 실패한 턴도
+      // (환불됐든 정책 위반으로 소모됐든) 잔액이 바뀌므로 성공 경로만 보면 놓친다.
+      void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
     }
   }
 

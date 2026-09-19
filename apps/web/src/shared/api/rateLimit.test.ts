@@ -47,6 +47,30 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "AUTH_COOLDOWN", retryAfterSeconds: 47, window: "auth" });
   });
 
+  // T-21(clover-techspec.md CT-8) — 클로버 부족 429. 채팅은 신규 `window: "clover"`를 쓰고
+  // 이미지는 기존 `"image"`를 유지하되 `code`로 갈린다(BE `core/rate_limit_gate.py`의
+  // `_CLOVER_CODE`/`_CLOVER_WINDOW`). 🔴 이 스키마가 1관문이라 여기서 막히면 `safeParse`가
+  // 실패해 `getRateLimitDetail`이 null을 돌려주고 **429인 줄도 모른 채** 일반 오류로 떨어진다.
+  it("429 + 채팅 CLOVER_REQUIRED 바디를 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "CLOVER_REQUIRED", retryAfterSeconds: 12345, window: "clover" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 12345, window: "clover" });
+  });
+
+  it("429 + 이미지 CLOVER_REQUIRED 바디를 파싱한다 — window는 image를 유지한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "CLOVER_REQUIRED", retryAfterSeconds: 3600, window: "image" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 3600, window: "image" });
+  });
+
   it("429여도 detail이 string이면 null이다 — 구조화 dict를 쓰지 않는 429와 구분돼야 한다", () => {
     expect(getRateLimitDetail({ status: 429, detail: "Too Many Requests", message: "x" })).toBeNull();
   });

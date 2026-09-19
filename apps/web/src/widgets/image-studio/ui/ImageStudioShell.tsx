@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Images, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
+import { cloverKeys } from "@/entities/clover";
 import { generatedImagesKeys } from "@/entities/generated-image";
 import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
 import {
@@ -70,12 +71,28 @@ export function ImageStudioShell({
     void queryClient.invalidateQueries({ queryKey: generatedImagesKeys.list() });
   }, [jobStatus, queryClient]);
 
+  // clover-techspec.md CT-12 — 잔액은 보관함과 **다른 시점**에 바뀐다. 위 효과가 `succeeded`만
+  // 보는 이유는 실패한 잡이 보관함에 새 이미지를 안 남기기 때문인데, 클로버는 정반대다:
+  // 🔴 `blocked`·`input_error`·`failed`·부분 성공이 전부 **환불을 낳으므로**(clover-goal-prompt.md
+  // CL-24) 터미널 상태 전부에서 잔액이 바뀐다. 그래서 효과를 합치지 않고 따로 둔다.
+  const hasInvalidatedCloverRef = useRef(false);
+  useEffect(() => {
+    if (jobStatus !== "succeeded" && jobStatus !== "failed") return;
+    if (hasInvalidatedCloverRef.current) return;
+    hasInvalidatedCloverRef.current = true;
+    void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
+  }, [jobStatus, queryClient]);
+
   async function handleSubmit(values: GenerateImagesFormValues) {
     setJobId(undefined);
     hasInvalidatedGalleryRef.current = false;
+    hasInvalidatedCloverRef.current = false;
     try {
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
+      // 202 시점에 이미 차감이 끝났다(게이트가 `Depends`에서 깎는다) — 잡이 끝나기를 기다리지
+      // 않고 여기서 한 번 반영한다. 위 효과는 그 뒤의 **환불**을 잡는다.
+      void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
     } catch (error) {
       // limit-goal-prompt.md RL-11 — 429는 두 코드(토큰 부족·큐 만석)가 서로 다음 행동이 달라
       // 문구도 갈린다. 나머지 실패는 기존 분기 그대로다.

@@ -5,7 +5,11 @@ import { assertNever } from "@/shared/lib/assertNever";
  * `assertNever`가 다시 총망라(exhaustive)가 된다(ED-17). `window`를 `"image"`로 좁혀서 그대로 남기는
  * 이유: 아래 테스트의 기존 리터럴이 `window: "image"`를 이미 채워서 넘긴다 — 필드를 뺐다면 그
  * 리터럴들이 초과 속성 검사(excess property check)에 걸려 무변경으로 못 남는다. */
-export type ImageRateLimit = { code: "USER_LIMIT" | "QUEUE_FULL"; retryAfterSeconds: number; window: "image" };
+export type ImageRateLimit = {
+  code: "USER_LIMIT" | "QUEUE_FULL" | "CLOVER_REQUIRED";
+  retryAfterSeconds: number;
+  window: "image";
+};
 
 /** shared는 BE 계약 그대로의 제네릭 `RateLimitDetail`만 준다(`shared/api/rateLimit.ts`) — "이미지
  * 429만 이 위젯이 받는다"는 화면 결정이라 shared가 알 일이 아니다(`entities/chat-room`의
@@ -19,7 +23,13 @@ export type ImageRateLimit = { code: "USER_LIMIT" | "QUEUE_FULL"; retryAfterSeco
 export function getImageRateLimit(error: unknown): ImageRateLimit | undefined {
   const detail = getRateLimitDetail(error);
   if (detail === null || detail.window !== "image") return undefined;
-  if (detail.code !== "USER_LIMIT" && detail.code !== "QUEUE_FULL") return undefined;
+  // 🔴 clover-techspec.md §5-7 — 이 허용 목록은 **컴파일이 잡아 주지 않는다.** 위 유니언(`:8`)을
+  // 먼저 넓히면 아래 `switch`의 `assertNever`는 깨지지만, 여기는 평범한 `if`라 값을 안 더해도
+  // 타입 에러가 나지 않는다 — 이미지 클로버 부족이 조용히 `undefined`로 떨어져 **토스트가 아예
+  // 뜨지 않는다.** 세 자리를 손으로 맞춰야 하고 `imageRateLimitMessage.test.ts`가 이를 고정한다.
+  if (detail.code !== "USER_LIMIT" && detail.code !== "QUEUE_FULL" && detail.code !== "CLOVER_REQUIRED") {
+    return undefined;
+  }
   return { code: detail.code, retryAfterSeconds: detail.retryAfterSeconds, window: detail.window };
 }
 
@@ -41,6 +51,13 @@ export function formatImageRateLimitMessage(detail: ImageRateLimit): string {
     }
     case "QUEUE_FULL":
       return "지금 만들고 있는 이미지가 있어요 · 잠시 뒤 다시 시도해 주세요";
+    // 🔴 clover-techspec.md CT-8-2 — 채팅 문구("자정에 무료 한도가 돌아와요")를 **재사용하면 안 된다.**
+    // 이미지 무료분은 자정 리셋이 아니라 **시간당 충전**이라(BE `IMAGE_TOKEN_REFILL_SECONDS = 3600`)
+    // 자정을 말하면 최대 24시간짜리 거짓이 된다. 시점을 약속하지 않고 할 수 있는 일만 말한다 —
+    // `retryAfterSeconds`(참값)는 "무료 토큰이 찰 때까지"이지 "클로버가 생길 때까지"가 아니므로
+    // 이 문구에 쓰지 않는다(클로버는 시간이 지난다고 늘지 않는다).
+    case "CLOVER_REQUIRED":
+      return "클로버가 부족해요 · 무료 생성 횟수가 다시 찰 때까지 기다려 주세요";
     default:
       return assertNever(detail.code);
   }
