@@ -46,7 +46,7 @@ from api.auth.verification import (
     seconds_until_resend_allowed,
     store_verification_code,
 )
-from api.core import rate_limit
+from api.core import clover, rate_limit
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
 from api.core.email import EmailSender, get_email_sender
@@ -661,6 +661,18 @@ async def withdraw(
                     ImageGenerationRequest.id.in_(emptied_request_ids)
                 )
             )
+
+    # clover-goal-prompt.md CL-32: 잔액은 0으로 소멸시키고 **원장은 남긴다**. 탈퇴는 soft
+    # delete라 `users` 행이 그대로 남으므로, 한 줄을 안 쓰면 "아무것도 안 함"이 기본값이고
+    # 잔액이 그대로 살아 있게 된다.
+    # 🔴 `user.clover_balance`를 넘기지 않는다. 그 값은 이 함수 초입에서 로드된 것이고 위의
+    # 삭제들을 거치는 동안 다른 탭의 차감이 커밋될 수 있어 **낡았을 수 있다** — 낡은 값으로
+    # `spend`를 부르면 조건부 가드에 걸려 아무것도 안 지워진 채 204가 나간다.
+    # `burn_all`은 금액을 받지 않고 자기가 다시 읽어 0으로 덮는다. 잔액 0이면 원장 행도 없다.
+    # 🔴 `core/clover.py`의 자기-트랜잭션 래퍼가 아니라 **호출자 세션**을 쓴다
+    # (clover-techspec.md CT-4). 그래야 소멸이 아래 `db.commit()` 하나에 얹혀 탈퇴 전체와
+    # 같이 커밋되거나 같이 롤백된다 — 갈라 놓으면 "탈퇴는 실패했는데 잔액만 사라진" 상태가 생긴다.
+    await clover.burn_all(db, user_id=user_id)
 
     await db.commit()
 

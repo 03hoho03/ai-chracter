@@ -1153,8 +1153,20 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     _stub_capabilities_ready(monkeypatch)
     user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
 
+    # 🔴 이 테스트의 태스크는 **환불 이후에도 계속 돈다** — 정산(`refund_settled`) 뒤에 요청 행
+    # UPDATE(`images/router.py`의 `async with session_factory()` 블록)가 남아 있고, 그건 conftest가
+    # 오버라이드한 **테스트 커넥션**을 쓴다. `_wait_for_clover_refund`는 환불 행만 보고 돌아오므로
+    # 그대로 두면 테스트 종료(롤백)와 그 UPDATE가 경쟁해 teardown에서
+    # `InterfaceError: cannot use Connection.transaction() in a manually started transaction`이 나고,
+    # 망가진 커넥션이 풀로 돌아가 **무관한 다른 파일의 테스트가 setup에서 깨진다**(실측: 그 두 번째
+    # 에러는 실행마다 다른 테스트로 옮겨 다녔다). 형제 테스트들이 쓰는 `_wait_for_job_completion`은
+    # 여기서 못 쓴다 — 이 스텁이 터뜨려서 잡이 터미널 상태에 못 간다. 그래서 **마지막 DB 쓰기 뒤에**
+    # 호출되는 이 스텁 자체를 태스크의 DB 작업 종료 신호로 쓴다(그 뒤로는 Redis뿐이다).
+    db_work_done = asyncio.Event()
+
     async def failing_update_job(job_id: str, **kwargs: Any) -> None:
         if kwargs.get("status") is ImageGenerationJobStatus.SUCCEEDED:
+            db_work_done.set()
             raise RedisError("redis down")
 
     monkeypatch.setattr(images_router, "update_job", failing_update_job)
@@ -1173,6 +1185,9 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     finally:
         _clear_image_override()
     assert resp.status_code == 202
+
+    # 태스크의 마지막 DB 쓰기가 끝날 때까지 기다린다 — 위 스텁 주석 참조.
+    await asyncio.wait_for(db_work_done.wait(), timeout=5)
 
     rows = await _wait_for_clover_refund(db_session, user.id)
     spent, refunded = _spent_and_refunded(rows)

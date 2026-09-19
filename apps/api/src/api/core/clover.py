@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.rate_limit import KST
@@ -143,6 +143,37 @@ async def revoke(
         idempotency_key=idempotency_key,
         guard=True,
     )
+
+
+async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
+    """탈퇴 시 남은 잔액 전부를 소멸시킨다(clover-goal-prompt.md CL-32). 소멸된 금액을 돌려준다.
+
+    🔴 **금액을 인자로 받지 않는 것이 이 함수의 요점이다.** 소멸은 "얼마를 쓴다"가 아니라
+    "남은 걸 없앤다"라 `spend(amount=…)`로 표현하면 두 가지가 틀어진다 — 호출자가 읽어 둔
+    잔액이 낡았을 때 ① 조건부 가드(`WHERE clover_balance >= amount`)가 걸려 **아무것도 안
+    지워지고** ② 반환값을 버리면 그 실패가 조용하다. 탈퇴 라우트는 `user`를 초입에서 로드하고
+    그 뒤 채팅방·메시지·asset 삭제를 거치므로 그 창이 실제로 존재한다.
+
+    잔액이 0이면 아무것도 하지 않는다 — 의미 없는 0원 원장 행을 만들지 않는다.
+
+    ⚠️ 남은 창: 아래 `SELECT`와 `_apply`의 `UPDATE` 사이에 다른 트랜잭션의 차감이 커밋되면
+    원장 `amount`가 그만큼 과대 기재된다(**잔액은 그래도 정확히 0이 된다** — `_apply`가
+    `guard=False`라 무조건 덮는다). 같은 트랜잭션의 인접한 두 문장이라 창이 극히 좁고, 이걸
+    닫으려면 `FOR UPDATE`(이 저장소 선례 0건)가 필요하며 검증에도 독립 커넥션이 있어야 한다 —
+    S11의 `independent_session_factory` 항목으로 넘긴다.
+    """
+    current = await db.scalar(select(User.clover_balance).where(User.id == user_id))
+    if not current:
+        return 0
+    await _apply(
+        db,
+        user_id=user_id,
+        delta=-current,
+        kind="withdrawal_burn",
+        idempotency_key=None,
+        guard=False,
+    )
+    return current
 
 
 async def spend_in_new_transaction(
