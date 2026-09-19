@@ -1,4 +1,5 @@
 import asyncio
+import dataclasses
 import logging
 import uuid
 from collections.abc import Callable
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
+from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit_gate import (
     ImageCharge,
@@ -143,6 +145,45 @@ async def _generate_and_store_one(
         return _GenerationResult(outcome="failed")
 
 
+async def _refund_unmade_images(
+    owner_user_id: uuid.UUID,
+    charge: ImageCharge,
+    unmade_count: int,
+    session_factory: async_sessionmaker[AsyncSession],
+    job_id: str,
+) -> None:
+    """clover-goal-prompt.md CL-24 / clover-techspec.md §3-5-2: 202 이후의 실패는 이 저장소에서
+    환불이 0건이었다 — 무료 토큰버킷일 때는 감내할 수 있었지만 클로버는 사용자가 지불한 것이라,
+    가드 차단·입력 오류·생성 실패·부분 성공이 전부 "돈만 사라지고 이미지는 0장"이 된다.
+
+    되돌리는 양은 **못 만든 장수**다: 부분 성공에서 전량을 돌려주면 받은 이미지가 공짜가 되고,
+    전량을 소모하면 못 받은 몫까지 낸다. `_run_generation`의 정상 경로와 예외 경로가 **이 함수
+    하나**를 공유한다 — 두 자리에 식을 복제하면 나중에 한쪽만 고쳐진다.
+
+    🔴 이 함수의 예외가 호출부로 새면 잡이 RUNNING에 무기한 멈추거나(정상 경로) 원래 예외를
+    가린다(예외 경로). `refund_image_charge`는 자원별로 예외를 삼키지만, 삼키지 않는 경로가 새로
+    생겨도 그렇게 되지 않도록 여기서 한 겹 더 막는다 — 환불 기록은 부가 기능이고 잡 종료와 원래
+    예외 전파는 불변식이다."""
+    if unmade_count <= 0:
+        return
+    try:
+        await refund_image_charge(
+            owner_user_id,
+            # `clover_amount`는 장수에 비례하므로(게이트가 `count * IMAGE_UNIT_COST`로 만든다)
+            # 못 만든 장수만큼 다시 계산한다. 나눗셈이 아니라 곱셈인 이유는 게이트의 생성식과
+            # 같은 형태라 어긋날 여지가 없어서다. `source="token"`·`"skipped"`면 안 쓰인다.
+            dataclasses.replace(
+                charge,
+                count=unmade_count,
+                clover_amount=(unmade_count * clover.IMAGE_UNIT_COST if charge.source == "clover" else 0),
+            ),
+            session_factory,
+        )
+    except Exception as exc:
+        logger.warning("image generation refund failed: job=%s error=%s", job_id, type(exc).__name__)
+        capture_dependency_failure(exc, dependency="clover")
+
+
 async def _run_generation(
     job_id: str,
     owner_user_id: uuid.UUID,
@@ -152,11 +193,17 @@ async def _run_generation(
     prompt: str,
     style: ImageStylePreset,
     aspect_ratio: AspectRatio,
-    count: int,
+    charge: ImageCharge,
 ) -> None:
     # local-image-gen-progress.md P2-R: 이 잡을 위한 admission은 라우터의 `try_admit()`
     # 호출 하나에 대응한다(이미지 개수와 무관) — 잡이 끝나면(성공/실패 모두) 반드시
     # 반납해야 한다. 안 그러면 이 잡이 상한 슬롯을 영구 점유해 게이트가 막힌다.
+    #
+    # clover-techspec.md §3-5-1a: 이 둘은 `try` **밖**에서 초기화한다 — 아래 `except`가
+    # 집계 도중 터진 경우에도 "그 시점까지 성공한 장수"를 읽어야 하기 때문이다. `try` 안에
+    # 두면 `update_job(RUNNING)`이 터졌을 때 이름 자체가 없어 `UnboundLocalError`가 난다.
+    succeeded_count = 0
+    refund_settled = False
     try:
         await update_job(job_id, status=ImageGenerationJobStatus.RUNNING)
         results = await asyncio.gather(
@@ -164,7 +211,7 @@ async def _run_generation(
                 _generate_and_store_one(
                     image_client, session_factory, job_id, owner_user_id, request_id, prompt, style, aspect_ratio
                 )
-                for _ in range(count)
+                for _ in range(charge.count)
             ]
         )
 
@@ -173,7 +220,6 @@ async def _run_generation(
         # 멤버를 전부 truthy로 보므로 전부 차단(succeeded 0건)이어도 이 줄이 True가
         # 되어 잡이 SUCCEEDED로 잘못 끝난다. 성공/차단을 직접 센다 — `assert_never`가
         # 세 번째 outcome을 빠짐없이 처리했는지 mypy로 강제한다.
-        succeeded_count = 0
         failed_count = 0
         blocked_reasons: list[ImageBlockedReason] = []
         input_errors: list[ImageInputError] = []
@@ -190,6 +236,15 @@ async def _run_generation(
                 failed_count += 1
             else:
                 assert_never(result.outcome)
+
+        # 집계가 끝났으므로 여기서 환불액이 확정된다(`_refund_unmade_images` 참조).
+        # `refund_settled`를 세우는 것이 **이 지점 이후의 실패에서 아래 `except`가 두 번째
+        # 환불을 하지 않게** 막는다 — 두 번 돌려주면 없던 돈이 생긴다. 돌려줄 것이 0장이어도
+        # "정산은 끝났다"가 참이므로 `if` 밖에서 세운다.
+        await _refund_unmade_images(
+            owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id
+        )
+        refund_settled = True
 
         blocked_count = len(blocked_reasons)
         blocked_reason: ImageBlockedReason | None = None
@@ -306,6 +361,24 @@ async def _run_generation(
             )
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
+    except Exception:
+        # clover-techspec.md §3-5-1a: 차감(게이트) 이후 · 정산(`refund_settled`) 이전에 터지는
+        # 구간. `update_job(RUNNING)`의 Redis 순단과 집계 루프의 `assert`가 여기 들어온다 —
+        # 그동안 이 구간에는 환불할 자리가 아예 없어서 사용자가 이미지를 한 장도 못 받고
+        # 클로버만 잃었다. S4가 채팅에서 같은 구간을 닫았으므로(`chat/router.py`의
+        # `_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
+        #
+        # 되돌리는 양은 정상 경로와 같은 **"진행된 만큼"**이다 — `succeeded_count`가 루프에서
+        # 증가하므로 집계 도중 터져도 그 시점까지 성공한 장수는 사용자가 실제로 받았다.
+        #
+        # `Exception`이지 `BaseException`이 아니다 — `CancelledError`까지 삼키면 취소 전파가
+        # 바뀐다(`core/clover.py`의 같은 판단과 일관). bare `raise`라 원래 예외를 가리지 않고,
+        # `finally`가 그 뒤에 돌아 admission 반납도 그대로다.
+        if not refund_settled:
+            await _refund_unmade_images(
+                owner_user_id, charge, charge.count - succeeded_count, session_factory, job_id
+            )
+        raise
     finally:
         release_admission(owner_user_id)
 
@@ -480,7 +553,10 @@ async def generate_images(
                 payload.prompt,
                 payload.style,
                 payload.aspect_ratio,
-                payload.count,
+                # `charge.count`가 곧 `payload.count`다(게이트가 네 분기 전부 그렇게 만든다).
+                # 영수증을 통째로 넘기는 이유는 202 이후 환불이 **무엇으로 냈는지**를 알아야
+                # 하기 때문이다(clover-techspec.md CT-7) — 장수만 넘기면 자원을 못 가린다.
+                charge,
             )
         except Exception:
             # admit과 백그라운드 인계 사이(예: `create_job`의 Redis 순단)에서 실패하면
