@@ -4,13 +4,17 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import ColumnElement, and_, func, or_, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.admin.schemas import (
+    AdminCloverLedgerItem,
+    AdminCloverLedgerListResponse,
     AdminUserActionLogItem,
     AdminUserChatRoomItem,
+    AdminUserCloverRequest,
     AdminUserDetailResponse,
     AdminUserListItem,
     AdminUserListResponse,
@@ -21,7 +25,9 @@ from api.admin.schemas import (
     AdminUserUnsuspendRequest,
     AdminUserWarnRequest,
 )
+from api.core import clover
 from api.db.models.auth import User
+from api.db.models.clover import CloverLedger
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
@@ -266,6 +272,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         content_count=len(user_content_ids),
         restrictable_content_count=restrictable_content_count,
         rate_limit_exempt=user.rate_limit_exempt,
+        clover_balance=user.clover_balance,
         chat_room_count=chat_room_count,
         message_count=message_count,
         last_active_at=last_active_at,
@@ -546,3 +553,141 @@ async def set_user_rate_limit_exempt(
         reason_text=body.admin_comment or "",
     )
     await db.commit()
+
+
+@router.post("/admin/users/{user_id}/clover", status_code=status.HTTP_204_NO_CONTENT)
+async def adjust_user_clover(
+    user_id: uuid.UUID,
+    body: AdminUserCloverRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """clover-techspec.md §4-3 — 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
+    구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.
+
+    🔴 **토글의 *"같은 값을 다시 적용해도 막지 않는다"*를 여기로 옮기면 안 된다.** 그 문장이
+    성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라
+    두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고
+    `ux_clover_ledger_idempotency_key`가 그걸 강제한다(clover-goal-prompt.md CL-8).
+
+    **호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만
+    남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트
+    전용이다(clover-techspec.md CT-4): 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
+    어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.
+
+    ⇒ **"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지"의 구간이 생기지 않는다.** 지급이
+    커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면
+    둘 다 롤백된다. 이 런에서 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
+    갈려 있던** 경로였다.
+
+    `amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —
+    `burn_all`이 잔액 0에서 아무것도 하지 않는 것과 같은 규칙이다.
+    """
+    if not (body.admin_comment or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="admin_comment is required"
+        )
+    if body.amount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="amount must not be zero"
+        )
+
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    # 멱등키 중복은 `_apply`의 `flush()`에서 `IntegrityError`로 터진다. SAVEPOINT로 감싸는
+    # 이유는 `auth/router.py`의 가입이 이메일 중복을 다루는 방식과 같다 — 요청 세션을 통째로
+    # 롤백하면 유니크 위반 하나 때문에 이 요청이 이미 한 일(없지만, 앞으로 생길 수 있다)까지
+    # 버리게 되고, 무엇보다 세션이 죽어 409를 만들 때 쓸 수도 없다.
+    # 컨텍스트 매니저 형태를 쓰는 이유는 `auth/router.py:168-169`가 적은 것과 같다 —
+    # CM이 SAVEPOINT까지만 되감아 세션을 정리하므로 `db.rollback()`도, 실패 경로마다
+    # 손으로 부르는 `savepoint.rollback()`도 필요 없다. 아래 두 탈출구(422·409)가 전부
+    # CM을 뚫고 나가며 되감기므로, 세 번째 탈출구가 생겨도 되감기를 빠뜨릴 수 없다.
+    try:
+        async with db.begin_nested():
+            if body.amount > 0:
+                await clover.grant(
+                    db,
+                    user_id=user_id,
+                    amount=body.amount,
+                    kind="admin_grant",
+                    idempotency_key=body.idempotency_key,
+                )
+            else:
+                balance_after = await clover.revoke(
+                    db, user_id=user_id, amount=-body.amount, idempotency_key=body.idempotency_key
+                )
+                if balance_after is None:
+                    # `revoke`의 `guard=True`가 막은 것이다 — 오지급 회수가 이미 쓴 만큼을 빚으로
+                    # 남기지 않는다(clover-goal-prompt.md CL-5는 정수이고 음수 잔액은 없다).
+                    raise HTTPException(
+                        status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                        detail="amount exceeds the current balance",
+                    )
+    except IntegrityError:
+        # 409는 "재시도가 안전하다"는 신호다 — 같은 키로 다시 보내도 잔액이 더 늘지 않는다.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="idempotency_key already used"
+        ) from None
+
+    # 🔴 금액을 `admin_action_logs`에 담지 않는다 — 그 테이블에 숫자 컬럼이 0개라
+    # `reason_text`에 문자열로 넣는 수밖에 없고, 그러면 "얼마를 줬나"의 집계가 영구히
+    # 불가능해진다. **금액의 소재지는 원장**이고 이 로그는 "누가 언제 무엇을 했다"만 담는다.
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="user-clover-grant" if body.amount > 0 else "user-clover-revoke",
+        target_user_id=user_id,
+        reason_text=body.admin_comment or "",
+    )
+    await db.commit()
+
+
+@router.get("/admin/users/{user_id}/clover-ledger")
+async def list_user_clover_ledger(
+    user_id: uuid.UUID,
+    page: int = Query(1, ge=1),
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> AdminCloverLedgerListResponse:
+    """clover-techspec.md §4-5 — 원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+
+    🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
+    페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이
+    같은 요청에서 난다) `created_at`의 `server_default`(트랜잭션 시작 시각) 동률이
+    `image_generation_requests`보다 흔하다. 선례는 `admin/image_generations.py`의
+    `_list_owner_requests_page`.
+    """
+    total_count = (
+        await db.scalar(
+            select(func.count()).select_from(CloverLedger).where(CloverLedger.user_id == user_id)
+        )
+    ) or 0
+    total_pages = -(-total_count // ADMIN_USER_PAGE_SIZE) if total_count else 0
+
+    rows = (
+        await db.scalars(
+            select(CloverLedger)
+            .where(CloverLedger.user_id == user_id)
+            .order_by(CloverLedger.created_at.desc(), CloverLedger.id)
+            .offset((page - 1) * ADMIN_USER_PAGE_SIZE)
+            .limit(ADMIN_USER_PAGE_SIZE)
+        )
+    ).all()
+
+    return AdminCloverLedgerListResponse(
+        items=[
+            AdminCloverLedgerItem(
+                id=row.id,
+                amount=row.amount,
+                balance_after=row.balance_after,
+                kind=row.kind,
+                created_at=row.created_at,
+            )
+            for row in rows
+        ],
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+    )
