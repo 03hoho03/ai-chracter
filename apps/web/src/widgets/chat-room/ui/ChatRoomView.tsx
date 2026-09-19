@@ -49,7 +49,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     characterId,
-    (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST),
+    (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
   // clover-techspec.md CT-16 — 무료 일일분을 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).

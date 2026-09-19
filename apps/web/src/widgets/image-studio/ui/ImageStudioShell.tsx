@@ -119,7 +119,7 @@ export function ImageStudioShell({
       // 단가는 BE 게이트와 같은 계산(`payload.count * IMAGE_UNIT_COST`)이다 — 채팅과 달리 장수를
       // 곱한다.
       const confirmOutcome = allowCloverConfirm
-        ? await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST)
+        ? await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST, "image")
         : "unhandled";
       if (confirmOutcome === "retry") {
         await generate(values, false);

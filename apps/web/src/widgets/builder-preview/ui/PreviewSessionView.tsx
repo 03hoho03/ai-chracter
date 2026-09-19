@@ -54,7 +54,8 @@ export function PreviewSessionView({
   // `ChatRoomView`와 같다 — 한 턴 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
   const { send, status, policyWarning, streamingText } = usePreviewSendMessage((error) =>
-    confirmCloverSpend(error, CHAT_TURN_CLOVER_COST),
+    // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
+    confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
   const [text, setText] = useState("");

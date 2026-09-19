@@ -8,6 +8,7 @@ import {
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 
 import { ConfirmCloverSpendModal } from "../ui/ConfirmCloverSpendModal";
+import type { CloverSpendSurface } from "./confirmCloverSpendCopy";
 
 /** 오류 하나를 받아 **무엇을 할지**를 돌려준다(clover-goal-prompt.md CL-19).
  *
@@ -29,11 +30,12 @@ import { ConfirmCloverSpendModal } from "../ui/ConfirmCloverSpendModal";
 export function useConfirmCloverSpend(): (
   error: unknown,
   cost: number,
+  surface: CloverSpendSurface,
 ) => Promise<CloverSpendConfirmOutcome> {
   const queryClient = useQueryClient();
   const { mutateAsync } = useConfirmCloverSpendMutation();
 
-  return async function confirmCloverSpend(error, cost) {
+  return async function confirmCloverSpend(error, cost, surface) {
     if (!isCloverSpendConfirmRequired(error)) return "unhandled";
 
     const balance = await queryClient
@@ -42,7 +44,7 @@ export function useConfirmCloverSpend(): (
       .catch(() => 0);
 
     // 🔴 여기가 `declined`다 — 모달이 `false`를 돌려준 것은 **사용자의 선택**이지 실패가 아니다.
-    if (!(await ConfirmCloverSpendModal.call({ balance, cost }))) return "declined";
+    if (!(await ConfirmCloverSpendModal.call({ balance, cost, surface }))) return "declined";
 
     try {
       // 성공하면 이 뮤테이션의 `onSuccess`가 잔액을 invalidate 한다(사본을 두지 않는다).
