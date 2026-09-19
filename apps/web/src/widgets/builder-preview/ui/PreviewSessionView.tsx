@@ -13,7 +13,9 @@ import {
   TypingIndicator,
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
+import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
+import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -47,7 +49,13 @@ export function PreviewSessionView({
   // 스켈레톤이 된다.
   const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload());
 
-  const { send, status, policyWarning, streamingText } = usePreviewSendMessage();
+  // clover-goal-prompt.md CL-19 — 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로(CT-12) 같은
+  // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
+  // `ChatRoomView`와 같다 — 한 턴 단가다.
+  const confirmCloverSpend = useConfirmCloverSpend();
+  const { send, status, policyWarning, streamingText } = usePreviewSendMessage((error) =>
+    confirmCloverSpend(error, CHAT_TURN_CLOVER_COST),
+  );
   const isSending = status.kind === "sending";
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);

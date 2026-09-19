@@ -18,12 +18,14 @@ import {
   useDeleteMessageMutation,
 } from "@/entities/chat-room";
 import {
+  CHAT_TURN_CLOVER_COST,
   CloverBalance,
   isCloverInsufficient,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
+import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -33,10 +35,6 @@ import { ChatMoreSidebar } from "./ChatMoreSidebar";
 // techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
 // 스토리 챗은 room.contentSnapshot이 있을 때만 스탯 게이지가 추가로 붙는다(캐릭터 챗은 undefined).
-// clover-goal-prompt.md CL-10 — 채팅 1턴 = 10클로버. BE의 `CHAT_TURN_COST`와 같은 값이며
-// 코드젠을 타지 않는 수동 사본이다(단가는 OpenAPI 스키마에 나가지 않는다).
-const CHAT_TURN_CLOVER_COST = 10;
-
 export function ChatRoomView({ roomId }: { roomId: string }) {
   const roomQuery = useChatRoomQuery(roomId);
   const room = roomQuery.data;
@@ -44,9 +42,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
+  // clover-goal-prompt.md CL-19 — 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
+  // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
+  // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
+  const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     characterId,
+    (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST),
   );
   const isSending = status.kind === "sending";
   // clover-techspec.md CT-16 — 무료 일일분을 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).

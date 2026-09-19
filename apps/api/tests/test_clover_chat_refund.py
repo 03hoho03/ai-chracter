@@ -15,6 +15,7 @@ LLM 을 실제로 태웠다(CL-22). **이 비대칭이 의도라는 것을 테�
 """
 
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -125,7 +126,13 @@ async def _run_failing_turn(
     상한 패치는 **셋업이 끝난 뒤** 건다 — 방 생성과 첫 전송은 무료분으로 통과해야 원장에
     셋업 잡음이 안 남는다.
     """
-    user = _make_user(clover_balance=_START_BALANCE)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
+    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    user = _make_user(
+        clover_balance=_START_BALANCE, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    )
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -328,7 +335,13 @@ async def _run_body_failure(
     정상**이고, `ASGITransport`는 기본값(`raise_app_exceptions=True`)이라 그 예외가 테스트까지
     전파된다. 즉 **고친 뒤에도 예외는 그대로 올라온다** — 달라지는 건 돈뿐이다.
     """
-    user = _make_user(clover_balance=_START_BALANCE)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
+    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    user = _make_user(
+        clover_balance=_START_BALANCE, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    )
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -439,7 +452,13 @@ async def test_dependency_failure_does_not_spend_clover(
     상한을 0 으로 낮춰 **클로버를 낼 수밖에 없는 상태**로 만든 뒤 요청한다 — 안 그러면
     무료분으로 통과해 단언이 항진명제가 된다(S3 적대적 리뷰 L-1 과 같은 함정).
     """
-    user = _make_user(clover_balance=_START_BALANCE)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
+    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    user = _make_user(
+        clover_balance=_START_BALANCE, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    )
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)

@@ -18,7 +18,7 @@
 """
 
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
@@ -50,6 +50,18 @@ async def _consented_user(
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user
+
+
+def _confirmed_today() -> dict[str, object]:
+    """clover-goal-prompt.md CL-19 / clover-techspec.md CT-17 — 클로버 차감에는 **오늘치 동의**가
+    선행한다. 게이트가 미확인이면 차감하지 않고 `CLOVER_CONFIRM_REQUIRED`로 끊으므로, "차감이
+    일어난다"를 보는 테스트는 그 선행 조건을 셋업에 명시해야 한다.
+
+    `_make_user`의 기본값은 `None`(한 번도 확인한 적 없음)으로 **그대로 둔다** — 새로 만든
+    사용자의 참값이고, 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트를 검증하는 테스트가
+    셋업만으로 통과해 버린다.
+    """
+    return {"clover_spend_confirmed_on": clover.kst_today(datetime.now(UTC))}
 
 
 async def _setup_room(
@@ -110,7 +122,7 @@ async def test_daily_exhausted_with_balance_spends_clover_and_passes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """clover-goal-prompt.md CL-1: 클로버가 뚫는 것은 **일일 상한 초과분**이다."""
-    user = await _consented_user(db_client, db_session, clover_balance=100)
+    user = await _consented_user(db_client, db_session, clover_balance=100, **_confirmed_today())
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -137,7 +149,7 @@ async def test_daily_exhausted_without_balance_is_the_control(
 ) -> None:
     """위 테스트의 짝. 셋업이 글자까지 같고 `clover_balance`만 0이다 — 이 짝이 없으면 위의
     200은 "클로버가 뚫었다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다."""
-    user = await _consented_user(db_client, db_session, clover_balance=0)
+    user = await _consented_user(db_client, db_session, clover_balance=0, **_confirmed_today())
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -156,7 +168,9 @@ async def test_insufficient_clover_returns_clover_required_body(
 ) -> None:
     """clover-techspec.md CT-8 채팅 행. `retryAfterSeconds`가 자정까지 초인 이유는 그때 무료
     30턴이 돌아오기 때문이다 — 값이 거짓이 아니다."""
-    user = await _consented_user(db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1)
+    user = await _consented_user(
+        db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1, **_confirmed_today()
+    )
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -181,7 +195,9 @@ async def test_insufficient_clover_does_not_write_a_ledger_row(
 ) -> None:
     """부족해서 거절된 요청은 잔액도 원장도 건드리지 않는다 — 조건부 UPDATE가 행을 못 잡으면
     원장 INSERT까지 가지 않는다(`core/clover.py`의 `_apply`)."""
-    user = await _consented_user(db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1)
+    user = await _consented_user(
+        db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1, **_confirmed_today()
+    )
     room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
@@ -338,4 +354,111 @@ async def test_within_daily_limit_does_not_spend_clover(
 
     await db_session.refresh(user)
     assert user.clover_balance == 100
+    assert await _ledger_for(db_session, user.id) == []
+
+
+# ---- CT-17. 오늘치 동의가 없으면 차감하지 않고 CLOVER_CONFIRM_REQUIRED로 끊는다 (CL-19) ----
+
+
+async def test_unconfirmed_spend_is_blocked_before_charging(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """clover-goal-prompt.md CL-19 — "소진 시 하루 1회 확인 **후** 자동 차감"의 *후*가 이 테스트다.
+
+    🔴 **FE는 이 판정을 할 수 없다.** `GET /me/clover`는 잔액·확인여부·출석가능만 주고 "이번
+    전송이 무료분을 넘는가"는 모른다 — 미확인인 모든 첫 전송에 모달을 띄우면 무료분을 안 쓴
+    사용자까지 매일 붙잡는다. 그래서 **BE가 단일 판정자**가 되고, 그 판정이 곧 이 429다.
+
+    셋업이 `test_daily_exhausted_with_balance_spends_clover_and_passes`와 **글자까지 같고
+    `_confirmed_today()`만 없다** — 그 짝이 없으면 이 429가 "동의가 없어서"인지 "원래 이
+    셋업에서는 아무도 못 지나서"인지 갈리지 않는다.
+    """
+    user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "CLOVER_CONFIRM_REQUIRED"
+    # `window`는 "어느 기능이냐"라 부족(`CLOVER_REQUIRED`)과 같은 값을 쓴다 — 둘을 가르는 축은
+    # `code`다(이 모듈의 `_IMAGE_WINDOW` 주석이 세운 규칙 그대로).
+    assert detail["window"] == "clover"
+
+    # 🔴 차감이 **일어나지 않았다**. 동의 전에 깎으면 CL-19가 무의미해진다.
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+    assert await _ledger_for(db_session, user.id) == []
+
+
+async def test_confirmation_from_yesterday_does_not_count_for_today(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CL-19의 "KST 자정마다 리셋". 어제 동의는 오늘치가 아니다.
+
+    이 테스트가 없으면 판정을 `is not None`("한 번이라도 확인했으면 끝")으로 짜도 초록이다 —
+    그러면 **하루 1회가 평생 1회가 된다**(무단 차감).
+    """
+    yesterday = clover.kst_today(datetime.now(UTC)) - timedelta(days=1)
+    user = await _consented_user(
+        db_client, db_session, clover_balance=100, clover_spend_confirmed_on=yesterday
+    )
+    room_id = await _setup_room(db_client, db_session, user)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["code"] == "CLOVER_CONFIRM_REQUIRED"
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+
+
+async def test_confirmation_gate_is_after_the_free_quota(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+) -> None:
+    """🔴 미확인이어도 **무료 한도 안에서는 아무 일도 없어야 한다.**
+
+    확인 검사를 클로버 분기 **밖**으로 옮기면 무료분이 남은 사용자까지 429를 받는다 — 그게
+    S9-b가 보고한 *"무료분을 안 쓴 사용자까지 매일 붙잡는다"*의 서버쪽 판본이다. 상한을
+    패치하지 않는 것이 이 테스트의 핵심이다.
+    """
+    user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 200
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+    assert await _ledger_for(db_session, user.id) == []
+
+
+async def test_exempt_user_is_not_asked_to_confirm(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CL-2 — 예외 계정은 차감 대상이 아니므로 동의를 물을 일도 없다.
+
+    게이트 순서가 **버스트 → 면제 → 일일 → 확인 → 차감**이라 면제가 먼저 `return`한다.
+    확인 검사를 면제보다 앞에 두면 이 테스트가 429로 빨개진다.
+    """
+    user = await _consented_user(
+        db_client, db_session, clover_balance=0, rate_limit_exempt=True
+    )
+    room_id = await _setup_room(db_client, db_session, user)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 200
+    await db_session.refresh(user)
+    assert user.clover_balance == 0
     assert await _ledger_for(db_session, user.id) == []

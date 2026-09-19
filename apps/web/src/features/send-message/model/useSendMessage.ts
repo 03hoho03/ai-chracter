@@ -33,13 +33,29 @@ type SendMessageStatus =
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
  * characterId는 캐릭터 챗일 때만(스토리 챗은 undefined) 전달 — 상황별 이미지가 트리거된
  * 메시지가 도착하면 이미지 보관함(US-074) 쿼리를 무효화한다(techspec-chat-character.md §1.2). */
-export function useSendMessage(roomId: string, characterId?: string) {
+export function useSendMessage(
+  roomId: string,
+  characterId?: string,
+  /** clover-goal-prompt.md CL-19 — 오류를 받아 **"재시도해도 되는가"** 를 돌려준다.
+   *
+   * 🔴 위젯이 주입하는 이유는 FSD다 — 모달은 `features/confirm-clover-spend`에 있고 feature가
+   * 다른 feature를 import하는 선례가 이 저장소에 **0건**이다(`.call()` 호출부는 전부
+   * `widgets`/`pages`이거나 같은 슬라이스 안이다). 단가도 표면마다 달라 위젯이 **미리 묶어**
+   * 넘긴다 — 그래서 이 훅은 클로버 단가를 알 필요가 없다.
+   *
+   * 안 넘기면 확인 429가 평소의 오류 배너로 떨어질 뿐 동작은 깨지지 않는다 — 다만 그 화면에서는
+   * 클로버를 영영 못 쓴다. */
+  confirmCloverSpend?: (error: unknown) => Promise<boolean>,
+) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
   const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
 
-  async function openStream(pending: PendingRequest) {
+  /** `allowCloverConfirm`은 **무한 루프 차단기**다(clover-goal-prompt.md CL-19). 동의 뒤 재시도는
+   * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도(동의 POST가 실패했거나
+   * 자정을 막 넘겨 상태가 초기화된 경우) 모달을 다시 띄우지 않고 평범한 오류로 끝난다. */
+  async function openStream(pending: PendingRequest, allowCloverConfirm = true) {
     setStatus({ kind: "sending" });
     setPolicyWarning(undefined);
     setStreamingText("");
@@ -79,6 +95,13 @@ export function useSendMessage(roomId: string, characterId?: string) {
       // ReconsentModal이 `GET /me`의 플래그로 뜬다 — CG-12와 같은 처리다).
       if (isLegalReconsentRequiredError(error)) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
+      }
+      // clover-goal-prompt.md CL-19 — 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
+      // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
+      // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).
+      if (allowCloverConfirm && (await confirmCloverSpend?.(error))) {
+        await openStream(pending, false);
+        return;
       }
       setStatus({ kind: "error", retryPayload: pending, rateLimit: getChatRateLimit(error) });
     } finally {

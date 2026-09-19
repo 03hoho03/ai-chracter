@@ -5,6 +5,7 @@ import { useFormContext, useWatch } from "react-hook-form";
 
 import {
   CloverBalance,
+  IMAGE_CLOVER_COST,
   isCloverInsufficient,
   shouldShowCloverBalance,
   useCloverBalanceQuery,
@@ -18,11 +19,6 @@ import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 // Animagine 시그니처 문구라 FE 번들에도 넣지 않는다).
 const PROMPT_PLACEHOLDER =
   "1girl, solo, long hair, school uniform, cherry blossoms, looking at viewer, upper body";
-
-// clover-goal-prompt.md CL-11 — 이미지 1장 = 30클로버(= 채팅 3턴분). BE의 `IMAGE_UNIT_COST`와
-// 같은 값이며 코드젠을 타지 않는 수동 사본이다(429 계약과 같은 성질 — 단가는 OpenAPI 스키마에
-// 나가지 않는다). BE 상수를 바꾸면 여기도 손으로 고쳐야 한다.
-const IMAGE_CLOVER_COST = 30;
 
 // image-refact-techspec.md IT-9 — `<form>` 엘리먼트는 이 조각(중앙 열)이 감싼다. FormProvider는
 // React context라 DOM 위치와 무관하므로, 다른 열/시트의 필드도 이 제출에 포함된다.

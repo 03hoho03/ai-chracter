@@ -23,7 +23,17 @@ import { isApiError } from "./client";
  * 지웠다가 BE가 롤백 등으로 다시 보내면 **429 전체가 인식되지 않는다**(위 1관문 실패 모드). 화면
  * 결정인 "채팅 배너가 무엇을 말하나"는 `entities/chat-room`의 투영이 지고, 거기서는 `"day"`를 뺐다. */
 const rateLimitDetailSchema = z.object({
-  code: z.enum(["USER_LIMIT", "QUEUE_FULL", "AUTH_LIMIT", "AUTH_COOLDOWN", "CLOVER_REQUIRED"]),
+  code: z.enum([
+    "USER_LIMIT",
+    "QUEUE_FULL",
+    "AUTH_LIMIT",
+    "AUTH_COOLDOWN",
+    "CLOVER_REQUIRED",
+    // clover-goal-prompt.md CL-19 — "부족"이 아니라 **"오늘치 동의가 없다"**다. 둘 다
+    // `window: "clover"`(채팅) / `"image"`(이미지)로 오고 `code`로만 갈린다. 화면 동작이
+    // 정반대라(배너 vs 모달) 투영이 이 값을 배너 쪽으로 흘리면 안 된다.
+    "CLOVER_CONFIRM_REQUIRED",
+  ]),
   retryAfterSeconds: z.number(),
   window: z.enum(["minute", "day", "image", "auth", "clover"]),
 });

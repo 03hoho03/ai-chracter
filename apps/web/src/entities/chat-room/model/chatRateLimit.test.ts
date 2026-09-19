@@ -123,3 +123,29 @@ describe("formatChatRateLimitAnnouncement", () => {
     );
   });
 });
+
+/** 🔴 clover-goal-prompt.md CL-19 — 확인 429는 `window: "clover"`로 오지만 **배너가 아니다.**
+ * 이 줄이 없으면 동의를 물어야 할 상황에 "클로버가 없어요"라는 틀린 배너가 뜬다 — 잔액은
+ * 충분한데(BE는 모자라면 아예 묻지 않는다). 허용 목록은 `assertNever`가 안 잡는 자리라
+ * 런타임 단언이 유일한 방어다. */
+describe("getChatRateLimit — 확인 코드", () => {
+  it("CLOVER_CONFIRM_REQUIRED는 배너로 새지 않는다", () => {
+    expect(
+      getChatRateLimit({
+        status: 429,
+        detail: { code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 3600, window: "clover" },
+        message: "x",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("부족(CLOVER_REQUIRED)은 그대로 배너로 간다 — 짝 테스트", () => {
+    expect(
+      getChatRateLimit({
+        status: 429,
+        detail: { code: "CLOVER_REQUIRED", retryAfterSeconds: 3600, window: "clover" },
+        message: "x",
+      }),
+    ).toEqual({ window: "clover", retryAfterSeconds: 3600 });
+  });
+});

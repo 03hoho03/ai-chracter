@@ -3,7 +3,7 @@ import io
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Literal
 
 import boto3
@@ -949,7 +949,13 @@ async def _clover_paid_user(
     "클로버가 환불됐다"를 묻는 이 파일의 단언들이 **검사 대상을 아예 안 타는 항진명제**가
     된다(clover-techspec.md §3-4-1)."""
     monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
-    user = _make_user(clover_balance=balance)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
+    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    user = _make_user(
+        clover_balance=balance, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    )
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)

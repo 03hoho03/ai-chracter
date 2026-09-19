@@ -27,6 +27,10 @@ export function getImageRateLimit(error: unknown): ImageRateLimit | undefined {
   // 먼저 넓히면 아래 `switch`의 `assertNever`는 깨지지만, 여기는 평범한 `if`라 값을 안 더해도
   // 타입 에러가 나지 않는다 — 이미지 클로버 부족이 조용히 `undefined`로 떨어져 **토스트가 아예
   // 뜨지 않는다.** 세 자리를 손으로 맞춰야 하고 `imageRateLimitMessage.test.ts`가 이를 고정한다.
+  // 🔴 `CLOVER_CONFIRM_REQUIRED`는 **일부러 빼 둔다**(clover-goal-prompt.md CL-19). 같은
+  // `window: "image"`로 오지만 토스트가 아니라 **모달 → 동의 → 재시도**로 끝나므로, 여기서
+  // 통과시키면 `assertNever`가 깨지거나(유니언에 넣으면) 틀린 토스트가 뜬다(문구를 지으면).
+  // 호출부가 `isCloverSpendConfirmRequired`로 먼저 가로챈다.
   if (detail.code !== "USER_LIMIT" && detail.code !== "QUEUE_FULL" && detail.code !== "CLOVER_REQUIRED") {
     return undefined;
   }

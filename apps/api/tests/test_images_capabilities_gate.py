@@ -22,6 +22,7 @@ import json
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from contextlib import AsyncExitStack
 from typing import cast
 
@@ -860,7 +861,14 @@ async def test_token_exhaustion_spends_clover_and_creates_the_job(
     created_job_ids = _stub_job_pipeline(monkeypatch)
     monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
 
-    user = await _authed_user(db_client, db_session, clover_balance=100)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감량을 보는 테스트라 그 선행 조건을 셋업에 명시한다.
+    user = await _authed_user(
+        db_client,
+        db_session,
+        clover_balance=100,
+        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
+    )
 
     resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
 

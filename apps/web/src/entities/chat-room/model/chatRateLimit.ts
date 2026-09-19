@@ -22,6 +22,11 @@ export type ChatRateLimit = { window: "minute" | "clover"; retryAfterSeconds: nu
 export function getChatRateLimit(error: unknown): ChatRateLimit | undefined {
   const detail = getRateLimitDetail(error);
   if (detail === null || (detail.window !== "minute" && detail.window !== "clover")) return undefined;
+  // 🔴 clover-goal-prompt.md CL-19 — `CLOVER_CONFIRM_REQUIRED`는 `window: "clover"`로 오지만
+  // **배너가 아니라 모달**로 끝난다. 이 줄이 없으면 동의를 물어야 할 상황에 "클로버가 없어요"라는
+  // 틀린 배너가 뜬다(잔액은 충분한데 — BE는 모자라면 아예 묻지 않는다). 호출부가
+  // `isCloverSpendConfirmRequired`로 먼저 가로채지만, 투영도 스스로 안전해야 한다.
+  if (detail.code === "CLOVER_CONFIRM_REQUIRED") return undefined;
   return { window: detail.window, retryAfterSeconds: detail.retryAfterSeconds };
 }
 

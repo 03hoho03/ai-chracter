@@ -98,6 +98,16 @@ _IMAGE_WINDOW = "image"
 _CLOVER_CODE = "CLOVER_REQUIRED"
 _CLOVER_WINDOW = "clover"
 
+# clover-goal-prompt.md CL-19 / clover-techspec.md CT-17: "소진 시 하루 1회 확인 **후** 자동
+# 차감"의 *후*를 강제하는 코드다. `_CLOVER_CODE`와 같은 `window`를 쓰고 `code`로만 갈린다 —
+# 둘은 같은 기능("클로버로 계속하기")의 서로 다른 단계이지 다른 기능이 아니다.
+#
+# 🔴 **판정이 BE에 있어야 하는 이유**: FE는 "이번 요청이 무료분을 넘는가"를 보내기 전에 알 수
+# 없다(`GET /me/clover`는 잔액·확인여부·출석가능만 준다). 미확인인 모든 첫 요청에 모달을
+# 띄우면 **무료분을 안 쓴 사용자까지 매일 붙잡는다.** 게이트만이 그 시점을 알고, 그래서 게이트가
+# 단일 판정자다 — 경쟁 조건도 여기서 사라진다.
+_CLOVER_CONFIRM_CODE = "CLOVER_CONFIRM_REQUIRED"
+
 _last_redis_failure_reported_at: float | None = None
 
 
@@ -120,8 +130,8 @@ def _too_many_requests(
 ) -> HTTPException:
     # RL-12: 검색 가능한 고정 토큰 하나(`user_limit_exceeded`) + code·user_id·window·retry_after
     # 까지. 이메일·프롬프트 본문 등 나머지는 절대 싣지 않는다(`code`는 이 모듈이 내는 리터럴
-    # 3종 — `USER_LIMIT`/`QUEUE_FULL`/`CLOVER_REQUIRED` — 이라 PII가 아니다. auth의 2종은
-    # `auth/router.py`의 지역 헬퍼가 따로 만든다).
+    # 4종 — `USER_LIMIT`/`QUEUE_FULL`/`CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED` — 이라 PII가
+    # 아니다. auth의 2종은 `auth/router.py`의 지역 헬퍼가 따로 만든다).
     # Bugsink 이벤트로는 승격하지 않는다 — 상한에 걸리는 것은 설계된 동작이지
     # 장애가 아니다. `code`가 없으면 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)가 같은
     # `window=image`로 찍혀 로그만으로는 갈리지 않는다(유저 쿼터냐 GPU 큐냐를 셀 수 없다).
@@ -163,6 +173,34 @@ async def is_rate_limit_exempt(user_id: uuid.UUID, db: AsyncSession) -> bool:
     # 경로는 모두 바로 앞 `require_legal_consent`가 그 상태에 이미 401을 내므로 여기까지 오지
     # 않지만, 판정 함수 혼자서도 안전한 쪽으로 떨어져야 한다.
     return user is not None and user.rate_limit_exempt is True
+
+
+async def _needs_clover_spend_confirmation(
+    user_id: uuid.UUID, db: AsyncSession, now: datetime, cost: int
+) -> bool:
+    """오늘(KST) 동의가 없고, **동의하면 실제로 쓸 수 있을 때만** True(clover-goal-prompt.md CL-19).
+
+    `is_rate_limit_exempt`와 같은 `db.get`이라 identity map 히트다 — 이 게이트가 붙은 경로들은
+    바로 앞 `require_legal_consent`가 같은 세션으로 이미 그 행을 읽었다(SELECT가 늘지 않는다).
+
+    🔴 **잔액이 모자라면 묻지 않는다.** 0원인 사용자에게 *"지금부터 클로버를 써요"*를 물어 놓고
+    동의 직후 *"부족해요"*를 내는 것은 두 단계를 헛되이 쓰는 것이다. 그 경우는 그대로 아래
+    차감으로 떨어져 `CLOVER_REQUIRED`가 나간다.
+
+    ⚠️ 여기 읽은 잔액은 **판정의 권한이 아니다** — 권한은 `spend`의 조건부 UPDATE에 있다(CT-4).
+    이 읽기가 고르는 것은 "어느 429를 낼 것인가" 하나뿐이고, 읽은 뒤 잔액이 줄어드는 경쟁이
+    나도 차감이 실패해 `CLOVER_REQUIRED`로 떨어지므로 틀린 결과가 나오지 않는다.
+
+    🔴 날짜 판정을 `is not None`("한 번이라도 확인했으면 끝")으로 쓰면 **하루 1회가 평생 1회**가
+    되어 이튿날부터 무단 차감이 된다. 비교는 `core/clover.py`의 순수 함수에 맡긴다 — 시간을
+    얼리지 않고 `now`를 인자로 받는 것이 이 저장소의 유일한 KST 테스트 선례다(freezegun 0건).
+
+    행이 없으면 묻지 않는다 — 그 상태는 바로 앞 `require_legal_consent`가 이미 401로 끊는다.
+    """
+    user = await db.get(User, user_id)
+    if user is None or clover.is_same_kst_day(user.clover_spend_confirmed_on, now):
+        return False
+    return user.clover_balance >= cost
 
 
 @dataclass(frozen=True)
@@ -242,6 +280,24 @@ async def enforce_chat_rate_limit(
             # 바깥(함수 끝)으로 옮기면 fail-open으로 빠져나온 뒤에도 실행돼 **장애 동안
             # 전원이 차감된다.** 코드만 보면 어느 쪽도 자연스러워 보여서 이 주석을 남긴다.
             #
+            # clover-goal-prompt.md CL-19 — **차감보다 먼저** 오늘치 동의를 확인한다. 이 순서가
+            # 뒤집히면 "확인 후 자동 차감"이 "차감 후 확인"이 되어 결정 자체가 무의미해진다.
+            #
+            # 🔴 이 검사는 **일일 분기 안**이다. 밖으로 옮기면 무료분이 남은 사용자까지 429를
+            # 받는다 — CL-19의 "소진 시"가 지켜지지 않는다. 그리고 면제 `return`(위)보다 뒤라
+            # 예외 계정에게는 묻지 않는다(CL-2).
+            if await _needs_clover_spend_confirmation(
+                user_id, db, now, clover.CHAT_TURN_COST
+            ):
+                # `retryAfterSeconds`는 부족(`CLOVER_REQUIRED`)과 같은 자정까지 초다 — 동의를
+                # 안 하고 기다리기만 해도 그때 무료 일일분이 돌아오므로 여전히 참값이다.
+                raise _too_many_requests(
+                    user_id,
+                    _CLOVER_WINDOW,
+                    seconds_until_kst_midnight(now),
+                    code=_CLOVER_CONFIRM_CODE,
+                )
+
             # 차감은 **자기 트랜잭션**이다(CT-4) — 채팅 4경로의 커밋 시점이 제각각이라
             # 요청 세션에 얹으면 미리보기는 영원히 공짜가 된다(CL-9).
             spent = await clover.spend_in_new_transaction(
@@ -349,7 +405,19 @@ async def enforce_image_rate_limit(
         # Redis 장애는 위 `except`가 `return`으로 함수를 끝내므로 이 줄에 **도달하지 못한다.**
         # 채팅의 "반드시 `try` 안" 규칙을 기계적으로 옮기면 안 된다. 판정 기준은 "`try` 안이냐"가
         # 아니라 **"fail-open 경로가 이 줄에 도달할 수 있느냐"**다.
+        # clover-goal-prompt.md CL-19 — 채팅과 같은 이유로 차감보다 먼저 오늘치 동의를 본다.
+        # 확인 상태는 `users` 컬럼 하나라 **채팅과 이미지가 같은 동의를 공유한다**(하루 한 번
+        # 묻는다는 결정이 기능마다 따로 물으면 하루 두 번이 된다).
+        # `retryAfterSeconds`는 `take_tokens`가 준 값 그대로다 — 🔴 자정까지 초를 쓰면 이미지는
+        # 시간당 충전이라 최대 24시간짜리 거짓이 된다(CT-8 이미지 행과 같은 이유).
         clover_amount = payload.count * clover.IMAGE_UNIT_COST
+        if await _needs_clover_spend_confirmation(
+            user_id, db, datetime.now(UTC), clover_amount
+        ):
+            raise _too_many_requests(
+                user_id, _IMAGE_WINDOW, retry_after, code=_CLOVER_CONFIRM_CODE
+            )
+
         spent = await clover.spend_in_new_transaction(
             session_factory, user_id=user_id, amount=clover_amount, kind="image_spend"
         )

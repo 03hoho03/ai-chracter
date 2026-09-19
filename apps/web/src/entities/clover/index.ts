@@ -6,5 +6,7 @@ export { useClaimAttendanceMutation } from "./api/useClaimAttendanceMutation";
 export type { CloverAttendanceResponse } from "./api/useClaimAttendanceMutation";
 export { useConfirmCloverSpendMutation } from "./api/useConfirmCloverSpendMutation";
 export { useCloverAutoAttendance } from "./api/useCloverAutoAttendance";
+export { CHAT_TURN_CLOVER_COST, IMAGE_CLOVER_COST } from "./model/cloverCost";
 export { isCloverInsufficient, shouldShowCloverBalance } from "./model/cloverBalanceDisplay";
+export { isCloverSpendConfirmRequired } from "./model/cloverSpendConfirm";
 export { CloverBalance } from "./ui/CloverBalance";

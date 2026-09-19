@@ -79,3 +79,27 @@ describe("formatImageRateLimitMessage", () => {
     ).not.toBe(formatImageRateLimitMessage({ code: "USER_LIMIT", retryAfterSeconds: 3600, window: "image" }));
   });
 });
+
+/** 🔴 clover-goal-prompt.md CL-19 — 이미지도 같다. 확인 코드는 토스트가 아니라 모달로 끝나므로
+ * 투영이 `undefined`를 줘야 하고, 그래야 호출부의 모달 분기가 유일한 처리 경로가 된다. */
+describe("getImageRateLimit — 확인 코드", () => {
+  it("CLOVER_CONFIRM_REQUIRED는 토스트로 새지 않는다", () => {
+    expect(
+      getImageRateLimit({
+        status: 429,
+        detail: { code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 120, window: "image" },
+        message: "x",
+      }),
+    ).toBeUndefined();
+  });
+
+  it("부족(CLOVER_REQUIRED)은 그대로 토스트로 간다 — 짝 테스트", () => {
+    expect(
+      getImageRateLimit({
+        status: 429,
+        detail: { code: "CLOVER_REQUIRED", retryAfterSeconds: 120, window: "image" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_REQUIRED", retryAfterSeconds: 120, window: "image" });
+  });
+});

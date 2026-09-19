@@ -27,6 +27,29 @@ describe("getRateLimitDetail", () => {
 
   // T4(error-delivery-goal-prompt.md §5-1, ED-15) — auth 429(4224ea1) 바디 2종도 같은 스키마로
   // 그대로 파싱된다. 전용 파서를 따로 두지 않는 근거이므로, 값이 그대로 돌아오는지가 신호다.
+  // 🔴 clover-goal-prompt.md CL-19 — 1관문이 이 값을 모르면 `safeParse`가 실패해 `null`이
+  // 되고, 화면은 **429인 줄도 모른 채** 일반 오류로 떨어져 확인 모달이 영원히 안 뜬다.
+  // 이 계약은 코드젠을 타지 않아(`openapi.json`의 429 선언 0개) 이 테스트가 유일한 방어다.
+  it("429 + CLOVER_CONFIRM_REQUIRED 바디를 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 3600, window: "clover" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 3600, window: "clover" });
+  });
+
+  it("429 + 이미지의 CLOVER_CONFIRM_REQUIRED 바디도 같은 스키마로 파싱한다", () => {
+    expect(
+      getRateLimitDetail({
+        status: 429,
+        detail: { code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 120, window: "image" },
+        message: "x",
+      }),
+    ).toEqual({ code: "CLOVER_CONFIRM_REQUIRED", retryAfterSeconds: 120, window: "image" });
+  });
+
   it("429 + auth AUTH_LIMIT 바디를 파싱한다", () => {
     expect(
       getRateLimitDetail({

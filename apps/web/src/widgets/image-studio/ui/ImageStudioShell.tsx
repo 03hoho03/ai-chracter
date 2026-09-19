@@ -5,9 +5,10 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Images, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 
-import { cloverKeys } from "@/entities/clover";
+import { cloverKeys, IMAGE_CLOVER_COST } from "@/entities/clover";
 import { generatedImagesKeys } from "@/entities/generated-image";
 import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
+import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import {
   GenerateImagesFormProvider,
   GenerateImagesPromptField,
@@ -63,6 +64,9 @@ export function ImageStudioShell({
   // 그 쿼리는 gcTime: 0이라 시트가 닫혀 있으면(좁은 화면) 무효화가 no-op이고 다음에 열 때 새로 받는다.
   // failed는 새로 생긴 게 없으므로 제외한다.
   const queryClient = useQueryClient();
+  // clover-goal-prompt.md CL-19 — 확인 게이트의 트리거. `features/generate-images`가 아니라 이
+  // 위젯이 만드는 이유는 FSD다(feature끼리 import하지 않는다) — 제출을 소유한 자리도 여기다.
+  const confirmCloverSpend = useConfirmCloverSpend();
   const jobStatus = jobQuery.data?.status;
   const hasInvalidatedGalleryRef = useRef(false);
   useEffect(() => {
@@ -87,6 +91,13 @@ export function ImageStudioShell({
     setJobId(undefined);
     hasInvalidatedGalleryRef.current = false;
     hasInvalidatedCloverRef.current = false;
+    await generate(values);
+  }
+
+  /** `allowCloverConfirm`은 **무한 루프 차단기**다(clover-goal-prompt.md CL-19) — 동의 뒤 재시도는
+   * `false`로 들어가므로, 그 재시도가 또 확인 429를 받아도(동의 POST가 실패했거나 자정을 막
+   * 넘겼거나) 모달을 다시 띄우지 않고 평범한 실패로 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다. */
+  async function generate(values: GenerateImagesFormValues, allowCloverConfirm = true) {
     try {
       const response = await generateMutation.mutateAsync(values);
       setJobId(response.jobId);
@@ -94,6 +105,15 @@ export function ImageStudioShell({
       // 않고 여기서 한 번 반영한다. 위 효과는 그 뒤의 **환불**을 잡는다.
       void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
     } catch (error) {
+      // 🔴 clover-goal-prompt.md CL-19 — **`getImageRateLimit`보다 먼저** 판정해야 한다. 확인 429도
+      // 같은 `window: "image"`로 오지만 토스트가 아니라 모달 → 동의 → 재시도로 끝나므로,
+      // 순서가 뒤집히면 저 투영이 코드를 모른 채 `undefined`를 주고 일반 오류 토스트가 뜬다.
+      // 단가는 BE 게이트와 같은 계산(`payload.count * IMAGE_UNIT_COST`)이다 — 채팅과 달리 장수를
+      // 곱한다.
+      if (allowCloverConfirm && (await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST))) {
+        await generate(values, false);
+        return;
+      }
       // limit-goal-prompt.md RL-11 — 429는 두 코드(토큰 부족·큐 만석)가 서로 다음 행동이 달라
       // 문구도 갈린다. 나머지 실패는 기존 분기 그대로다.
       const rateLimit = getImageRateLimit(error);
