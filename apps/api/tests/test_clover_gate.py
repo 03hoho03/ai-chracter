@@ -3,9 +3,13 @@
 
 셋업 관례는 `test_user_rate_limit_gate.py`를 그대로 따른다 — 상한을 진짜로 소진시키지 않고
 `monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)`으로 만든다(채팅 경로는 한 번만
-통과해도 LLM을 태운다). 경로 파라미터도 실존할 필요가 없다: 게이트가 `_owned_room_dependency`
-앞의 `Depends`라 **게이트를 통과한 요청은 404로 떨어진다** — 이 파일에서 404는 "통과했다"는
-뜻이다.
+통과해도 LLM을 태운다).
+
+🔴 **경로 파라미터는 실존해야 한다.** 예전에는 게이트가 `_owned_room_dependency` 앞의
+`Depends`라 더미 방 id로도 게이트에 닿았고 "통과 = 404"였다. S4(clover-techspec.md CT-7)가
+게이트를 조회·검증 의존성 **뒤**로 옮기면서 그 지름길이 막혔다 — 없는 방은 게이트에 닿기도
+전에 404다. 그래서 이 파일은 `_setup_room`으로 진짜 방을 만들어 쓰고, **이 파일에서 통과는
+이제 200이다**(LLM은 `_send`가 스텁한다).
 
 ⚠️ 잔액 단언은 `db_session.refresh(user)`로 다시 읽는다. 차감이 **별도 세션·별도 트랜잭션**
 (clover-techspec.md CT-4)에서 일어나므로 테스트 세션이 들고 있는 인스턴스는 낡아 있다.
@@ -28,7 +32,9 @@ from api.db.models.clover import CloverLedger
 from factories import (
     _clear_llm_override,
     _FakeLLMClient,
+    _get_genre,
     _login_as,
+    _make_published_character,
     _make_user,
     _override_llm_client,
 )
@@ -46,6 +52,26 @@ async def _consented_user(
     return user
 
 
+async def _setup_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, user: User
+) -> uuid.UUID:
+    """그 사용자가 소유한 캐릭터 채팅방을 실제로 만든다.
+
+    `POST /chat-rooms`는 RL-1의 채팅 4경로가 아니라 게이트가 안 붙는다 — 셋업이 상한이나
+    클로버를 소모하지 않는다(그래서 상한 패치를 셋업 뒤에 걸 필요도 없다).
+    """
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    await db_session.commit()
+    resp = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "character"}
+    )
+    assert resp.status_code == 201
+    return uuid.UUID(resp.json()["id"])
+
+
 async def _ledger_for(db_session: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
     # `id`는 uuid4라 이 정렬은 "결정적"일 뿐 "삽입 순서"가 아니다 — 여러 행을 볼 때는 순서가
     # 아니라 내용으로 비교한다(`test_core_clover.py`의 같은 주의).
@@ -60,13 +86,17 @@ async def _ledger_for(db_session: AsyncSession, user_id: uuid.UUID) -> list[Clov
     )
 
 
-async def _send(db_client: httpx.AsyncClient, room_id: uuid.UUID | None = None) -> httpx.Response:
-    """LLM을 스텁해 두고 전송 1회. 게이트를 통과하면 소유권 검사에서 404가 난다."""
+async def _send(db_client: httpx.AsyncClient, room_id: uuid.UUID) -> httpx.Response:
+    """LLM을 스텁해 두고 전송 1회. 게이트를 통과하면 턴이 끝까지 돌아 200이다.
+
+    🔴 `room_id`는 **필수**다(기본값 `uuid.uuid4()`를 두지 않는다). S4가 게이트를 조회·검증
+    의존성 뒤로 옮긴 뒤로 더미 방은 게이트에 닿기도 전에 404라, 기본값이 있으면 "차감 없음"을
+    단언하는 테스트가 **게이트를 한 번도 실행하지 않은 채 초록**이 된다 — 항진명제다.
+    실수로 되살아나지 않게 타입으로 막는다.
+    """
     _override_llm_client(_FakeLLMClient())
     try:
-        return await db_client.post(
-            f"/chat-rooms/{room_id or uuid.uuid4()}/messages", json=_SEND_BODY
-        )
+        return await db_client.post(f"/chat-rooms/{room_id}/messages", json=_SEND_BODY)
     finally:
         _clear_llm_override()
 
@@ -81,12 +111,14 @@ async def test_daily_exhausted_with_balance_spends_clover_and_passes(
 ) -> None:
     """clover-goal-prompt.md CL-1: 클로버가 뚫는 것은 **일일 상한 초과분**이다."""
     user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
-    # 429가 아니다 = 게이트를 통과했다. 그 뒤 소유권 검사에서 404.
-    assert resp.status_code == 404
+    # 429가 아니다 = 게이트를 통과했다. 게이트가 조회 뒤로 내려간 뒤로는(CT-7) 방이 실존하므로
+    # 턴이 끝까지 돌아 200이다 — 예전의 404는 "소유권 검사에서 막혔다"는 뜻이었다.
+    assert resp.status_code == 200
 
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.CHAT_TURN_COST
@@ -104,11 +136,12 @@ async def test_daily_exhausted_without_balance_is_the_control(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """위 테스트의 짝. 셋업이 글자까지 같고 `clover_balance`만 0이다 — 이 짝이 없으면 위의
-    404는 "클로버가 뚫었다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다."""
-    await _consented_user(db_client, db_session, clover_balance=0)
+    200은 "클로버가 뚫었다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다."""
+    user = await _consented_user(db_client, db_session, clover_balance=0)
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
     assert resp.status_code == 429
 
@@ -123,10 +156,11 @@ async def test_insufficient_clover_returns_clover_required_body(
 ) -> None:
     """clover-techspec.md CT-8 채팅 행. `retryAfterSeconds`가 자정까지 초인 이유는 그때 무료
     30턴이 돌아오기 때문이다 — 값이 거짓이 아니다."""
-    await _consented_user(db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1)
+    user = await _consented_user(db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1)
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -148,9 +182,10 @@ async def test_insufficient_clover_does_not_write_a_ledger_row(
     """부족해서 거절된 요청은 잔액도 원장도 건드리지 않는다 — 조건부 UPDATE가 행을 못 잡으면
     원장 INSERT까지 가지 않는다(`core/clover.py`의 `_apply`)."""
     user = await _consented_user(db_client, db_session, clover_balance=clover.CHAT_TURN_COST - 1)
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    assert (await _send(db_client)).status_code == 429
+    assert (await _send(db_client, room_id)).status_code == 429
 
     await db_session.refresh(user)
     assert user.clover_balance == clover.CHAT_TURN_COST - 1
@@ -169,9 +204,10 @@ async def test_burst_limit_is_not_bypassed_by_clover(
     없다. 잔액이 넉넉해도 `window=minute` 429가 나가야 하고 **잔액이 깎이면 안 된다** —
     삽입 지점이 버스트 `raise`(`:187`)보다 앞이면 여기서 깎인다."""
     user = await _consented_user(db_client, db_session, clover_balance=1000)
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -193,15 +229,20 @@ async def test_exempt_user_passes_without_spending_clover(
 ) -> None:
     """🔴 clover-goal-prompt.md CL-2: 면제 판정(`:192-193`)이 클로버 검사보다 **앞**이라
     예외 계정은 일일 상한도 클로버도 건드리지 않고 통과한다. 삽입 지점이 면제 `return`보다
-    앞이면 예외 계정의 잔액이 깎인다."""
+    앞이면 예외 계정의 잔액이 깎인다.
+
+    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아(S4가 게이트를 조회 뒤로
+    옮겼다 — 모듈 docstring) "차감 없음"이 항진명제가 된다.
+    """
     user = await _consented_user(
         db_client, db_session, rate_limit_exempt=True, clover_balance=100
     )
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
-    assert resp.status_code == 404  # 통과
+    assert resp.status_code == 200  # 통과
 
     await db_session.refresh(user)
     assert user.clover_balance == 100
@@ -214,11 +255,18 @@ async def test_exempt_user_with_zero_balance_still_passes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """면제가 클로버 **앞**이라는 것의 더 강한 증거 — 잔액이 0인데도 통과한다. 순서가 뒤집혀
-    있으면 여기서 `CLOVER_REQUIRED` 429가 난다."""
-    await _consented_user(db_client, db_session, rate_limit_exempt=True, clover_balance=0)
+    있으면 여기서 `CLOVER_REQUIRED` 429가 난다.
+
+    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아 이 통과가 면제 때문인지
+    404 때문인지 구분되지 않는다(S4가 게이트를 조회 뒤로 옮겼다 — 모듈 docstring).
+    """
+    user = await _consented_user(
+        db_client, db_session, rate_limit_exempt=True, clover_balance=0
+    )
+    room_id = await _setup_room(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    assert (await _send(db_client)).status_code == 404
+    assert (await _send(db_client, room_id)).status_code == 200
 
 
 # ---- Redis 장애에서는 클로버 분기에 도달하지 않는다 (CL-2 / CT-5) ----
@@ -231,10 +279,16 @@ async def test_redis_failure_fails_open_without_touching_clover(
 ) -> None:
     """🔴 clover-techspec.md CT-5: 클로버 검사가 `try` 블록 **안**이라 `check_rate_limit`이
     `RedisError`를 던지면 `except`로 빠져 **클로버 분기에 도달하지 않는다**. 바깥에 두면
-    Redis 장애 동안 전원이 차감된다."""
+    Redis 장애 동안 전원이 차감된다.
+
+    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아 "차감 없음"이 항진명제가
+    된다(S4가 게이트를 조회 뒤로 옮겼다 — 모듈 docstring). 방을 먼저 만들고 그 뒤에 Redis를
+    고장내는 순서인 이유도 같다 — 셋업이 게이트를 안 타야 한다.
+    """
     from redis.exceptions import ConnectionError as RedisConnectionError
 
     user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
 
     async def _raise_redis_error(*args: object, **kwargs: object) -> int:
         raise RedisConnectionError("redis down")
@@ -242,9 +296,9 @@ async def test_redis_failure_fails_open_without_touching_clover(
     monkeypatch.setattr(rate_limit_gate, "check_rate_limit", _raise_redis_error)
     monkeypatch.setattr(rate_limit_gate, "_last_redis_failure_reported_at", None)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
-    assert resp.status_code == 404  # fail-open 통과
+    assert resp.status_code == 200  # fail-open 통과
 
     await db_session.refresh(user)
     assert user.clover_balance == 100
@@ -269,13 +323,18 @@ async def test_within_daily_limit_does_not_spend_clover(
     셋업의 핵심은 **상한을 패치하지 않는 것**이다(`CHAT_BURST_LIMIT` 10 · `CHAT_DAILY_LIMIT`
     30 에 요청 1건이라 둘 다 여유가 있다). clover-goal-prompt.md CL-1 이 정한 *"무료 한도
     **초과분**만 클로버"*가 지켜지면 잔액도 원장도 그대로여야 한다.
+
+    🔴 **방이 실존해야 한다.** 더미 방이면 게이트가 실행되지 않아(S4가 게이트를 조회 뒤로
+    옮겼다 — 모듈 docstring) "차감 없음"이 항진명제가 되고, 위에 적은 구멍을 **이 테스트가
+    더 이상 덮지 못한다.**
     """
     user = await _consented_user(db_client, db_session, clover_balance=100)
+    room_id = await _setup_room(db_client, db_session, user)
 
-    resp = await _send(db_client)
+    resp = await _send(db_client, room_id)
 
     # 429가 아니다 = 게이트를 통과했다. 클로버를 안 쓰고 무료분으로 지났다는 뜻이다.
-    assert resp.status_code == 404
+    assert resp.status_code == 200
 
     await db_session.refresh(user)
     assert user.clover_balance == 100

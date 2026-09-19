@@ -1,10 +1,14 @@
 """limit-goal-prompt.md RL-1·RL-3·RL-4·RL-8·RL-11~RL-15·RL-21, S2+S3: 유저별 채팅
 레이트리밋 게이트(`api.core.rate_limit_gate`)가 채팅 4경로에 실제로 물려 있는지 검증한다.
 
-경로 테이블은 `test_consent_gate_endpoints.py`의 `_BLOCKED_REQUESTS`와 같은 모양이고, 같은
-이유로 **경로 파라미터가 실존할 필요가 없다** — 게이트가 `_owned_room_dependency`(404) 앞의
-`Depends`라 소유권 조회 전에 먼저 막는다. 바꿔 말해 이 파일의 429 테스트들은 "게이트가
-소유권 검사보다 앞에 있다"까지 함께 증명한다.
+경로 테이블은 `test_consent_gate_endpoints.py`의 `_BLOCKED_REQUESTS`와 같은 모양이다.
+
+🔴 **경로 파라미터는 실존해야 한다 — 그리고 이 스위트는 더 이상 "게이트가 소유권 검사보다
+앞에 있다"를 증명하지 않는다.** 예전에는 게이트가 `_owned_room_dependency`(404) 앞의
+`Depends`라 더미 id로도 429를 받아낼 수 있었고, 그 사실 자체가 부수 증명이었다.
+S4(clover-techspec.md CT-7)가 **게이트를 조회·검증 의존성 뒤로 옮겼다** — 차감이 일어난 뒤
+404/400이 나면 클로버가 사라지기 때문이다. 그래서 이제 순서가 반대이고(404가 429보다 먼저),
+이 스위트는 `_real_route_ids`로 실물을 만들어 게이트에 닿는다.
 
 ⚠️ 429를 만드는 방법은 `monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)`이다 —
 요청을 10번 보내서 만들지 않는다. 채팅 경로는 한 번만 통과해도 LLM을 태우므로(그리고 통과
@@ -23,12 +27,13 @@ from typing import cast
 import httpx
 import pytest
 from redis.exceptions import ConnectionError as RedisConnectionError
-from sqlalchemy import text
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import rate_limit_gate
 from api.core.redis import redis_client
 from api.db.models import User
+from api.db.models.chat import ChatMessage, ChatMessageRole
 from factories import (
     _clear_llm_override,
     _FakeLLMClient,
@@ -52,12 +57,6 @@ _CHAT_ROUTES: list[tuple[str, str, dict[str, object] | None]] = [
 
 _ROUTE_IDS = [f"{method} {path}" for method, path, _body in _CHAT_ROUTES]
 
-_DUMMY_IDS = {
-    "room_id": str(uuid.uuid4()),
-    "message_id": str(uuid.uuid4()),
-    "id": uuid.uuid4().hex,
-}
-
 
 # ---- 이 스위트 전용 셋업 (나머지 헬퍼는 factories.py) ----
 
@@ -74,21 +73,95 @@ async def _consented_user(
     return user
 
 
-async def _logged_in_user_with_room(db_client: httpx.AsyncClient, db_session: AsyncSession) -> str:
-    """로그인한 사용자와 그 사용자가 소유한 캐릭터 채팅방까지 만들고 방 id를 돌려준다.
-    `POST /chat-rooms`는 RL-1의 4경로가 아니라 게이트가 붙지 않으므로 상한을 소모하지 않는다."""
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
+_PREVIEW_PAYLOAD: dict[str, object] = {
+    "name": "아리아",
+    "oneLiner": "한 줄 소개",
+    "thumbnailAssetId": None,
+    "intro": "안녕하세요, 아리아예요",
+    "exampleDialogues": [],
+    "characterPrompt": "너는 아리아다.",
+    "playguide": None,
+    "situationalImages": [],
+    "description": "상세 설명",
+    "genreId": None,
+    "target": None,
+    "hashtags": [],
+    "visibility": "private",
+}
+
+
+async def _clear_rate_limit_counters() -> None:
+    """셋업이 남긴 카운터를 지운다.
+
+    `conftest.py`의 autouse `_flush_rate_limit_keys`는 테스트 **시작 전**에만 돈다. 한 테스트
+    안에서 셋업 전송을 한 뒤 상한을 패치하면 버킷이 0에서 시작하지 않아 산술이 어긋난다.
+    """
+    keys = await redis_client.keys("rate_limit:*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+async def _real_room_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, user: User
+) -> str:
+    """그 사용자가 소유한 캐릭터 채팅방을 실제로 만든다.
+
+    🔴 S4(clover-techspec.md CT-7)가 게이트를 조회·검증 의존성 **뒤**로 옮기면서 이 스위트가
+    쓰던 더미 id 지름길이 막혔다 — 없는 방은 게이트에 닿기도 전에 404다.
+
+    `POST /chat-rooms`는 RL-1의 채팅 4경로가 아니라 게이트가 안 붙는다 — 이 셋업만으로는
+    버킷이 소모되지 않는다.
+    """
     genre = await _get_genre(db_session)
-    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    content = await _make_published_character(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
     await db_session.commit()
-    await _login_as(db_client, user.id)
-    resp = await db_client.post("/chat-rooms", json={"contentId": str(content.id), "contentType": "character"})
-    assert resp.status_code == 201
-    room_id = resp.json()["id"]
-    assert isinstance(room_id, str)
-    return room_id
+
+    created = await db_client.post(
+        "/chat-rooms", json={"contentId": str(content.id), "contentType": "character"}
+    )
+    assert created.status_code == 201
+    return str(created.json()["id"])
+
+
+async def _real_route_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, user: User
+) -> dict[str, str]:
+    """4경로가 쓸 **실존** 경로 파라미터(방·메시지·미리보기 세션)를 만든다.
+
+    셋업 전송 1회가 버킷을 소모하므로 마지막에 카운터를 지운다 — 호출부는 **이 함수 뒤에**
+    상한을 패치해야 한다.
+    """
+    room_id = await _real_room_id(db_client, db_session, user)
+
+    # 편집 대상 사용자 메시지와 재생성 대상 AI 응답을 성공 전송 한 번으로 함께 만든다.
+    _override_llm_client(_FakeLLMClient(tokens=["첫", "응답"]))
+    try:
+        sent = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
+    assert sent.status_code == 200
+
+    rows = (
+        await db_session.scalars(
+            select(ChatMessage).where(
+                ChatMessage.chat_room_id == uuid.UUID(room_id),
+                ChatMessage.role == ChatMessageRole.USER,
+            )
+        )
+    ).all()
+    assert len(rows) == 1
+
+    preview = await db_client.post("/preview-sessions", json=_PREVIEW_PAYLOAD)
+    assert preview.status_code == 201
+
+    await _clear_rate_limit_counters()
+    return {
+        "room_id": room_id,
+        "message_id": str(rows[0].id),
+        "id": str(preview.json()["previewSessionId"]),
+    }
 
 
 # ---- 1. 분당 버스트 초과 → 429 USER_LIMIT / window=minute (RL-11·RL-15) ----
@@ -103,10 +176,11 @@ async def test_chat_routes_return_429_with_user_limit_body_when_burst_exceeded(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    resp = await db_client.request(method, path_template.format(**_DUMMY_IDS), json=body)
+    resp = await db_client.request(method, path_template.format(**ids), json=body)
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -135,28 +209,29 @@ async def test_four_chat_routes_share_one_bucket(
     RL-3이 단일 버킷을 고른 이유가 정확히 이 우회로다 — 전송으로 상한을 소진한 뒤 재생성·편집
     으로 계속 태울 수 있으면 상한이 상한이 아니다.
     """
-    await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 2)
 
     _override_llm_client(_FakeLLMClient())
     try:
         sent = await db_client.post(
-            f"/chat-rooms/{_DUMMY_IDS['room_id']}/messages", json={"content": "안녕"}
+            f"/chat-rooms/{ids['room_id']}/messages", json={"content": "안녕"}
         )
-        regenerated = await db_client.post(f"/chat-rooms/{_DUMMY_IDS['room_id']}/regenerate")
+        regenerated = await db_client.post(f"/chat-rooms/{ids['room_id']}/regenerate")
     finally:
         _clear_llm_override()
-    # 4번 테스트와 같은 판정 — 게이트는 통과했고(429가 아니다) 그 뒤 소유권 검사에서 막혔다.
-    # 서로 다른 두 경로가 같은 버킷의 2칸을 썼다는 뜻이다.
-    assert sent.status_code == 404
-    assert regenerated.status_code == 404
+    # 게이트를 통과했다(429가 아니다). 게이트가 조회 뒤로 내려간 뒤로는(CT-7) 방이 실존하므로
+    # 턴이 끝까지 돌아 200이다 — 서로 다른 두 경로가 같은 버킷의 2칸을 썼다는 뜻이다.
+    assert sent.status_code == 200
+    assert regenerated.status_code == 200
 
     edited = await db_client.patch(
-        f"/chat-rooms/{_DUMMY_IDS['room_id']}/messages/{_DUMMY_IDS['message_id']}",
+        f"/chat-rooms/{ids['room_id']}/messages/{ids['message_id']}",
         json={"content": "안녕"},
     )
     previewed = await db_client.post(
-        f"/preview-sessions/{_DUMMY_IDS['id']}/messages", json={"content": "안녕"}
+        f"/preview-sessions/{ids['id']}/messages", json={"content": "안녕"}
     )
 
     for resp in (edited, previewed):
@@ -189,10 +264,11 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     ⇒ **채팅에서 `window="day"`는 이제 도달할 수 없다** — 일일 초과는 전부 클로버 분기로
     넘어간다(잔액이 있으면 통과, 없으면 이 429).
     """
-    await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.request(method, path_template.format(**_DUMMY_IDS), json=body)
+    resp = await db_client.request(method, path_template.format(**ids), json=body)
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -215,11 +291,12 @@ async def test_burst_check_runs_before_daily_check(
     낮추지 않은 쪽은 기본 상한(10/30)에 안 걸려 그냥 통과하고, 같은 `window`가 나온다. 순서를
     구분하는 유일한 상태는 둘 다 넘긴 사용자이고, 그때 나와야 하는 값은 몇 시간짜리 `day`가
     아니라 몇 초짜리 `minute`이다(게이트 docstring의 UX 결정)."""
-    await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+    resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -257,15 +334,16 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
 ) -> None:
     """`conftest.py`의 autouse `_flush_rate_limit_keys`가 `rate_limit:*`만 지운다 — 새 scope가
     그 프리픽스 밖이면 카운터가 테스트 사이에 남아 뒤 테스트가 실행 순서에 따라 429를 받는다."""
-    await _consented_user(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    room_id = await _real_room_id(db_client, db_session, user)
 
     _override_llm_client(_FakeLLMClient())
     try:
-        resp = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
     finally:
         _clear_llm_override()
-    # 게이트는 통과했고(429가 아니다) 그 뒤 소유권 검사에서 막혔다.
-    assert resp.status_code == 404
+    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 그 과정에서 두 scope의 키가 찍힌다.
+    assert resp.status_code == 200
 
     # `core/redis.py`의 클라이언트는 `decode_responses=True`라 런타임 값이 `str`인데 redis
     # 타입 스텁은 항상 `bytes`로 본다(디코딩 여부를 타입으로 표현하지 않는다) — 스텁의 한계라
@@ -283,7 +361,8 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
 async def test_gate_fails_open_and_reports_redis_dependency_failure(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    room_id = await _logged_in_user_with_room(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    room_id = await _real_room_id(db_client, db_session, user)
 
     calls: list[str] = []
 
@@ -333,11 +412,12 @@ async def test_exceeded_request_logs_warning_with_fixed_token(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     user = await _consented_user(db_client, db_session)
+    room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
     with caplog.at_level(logging.WARNING):
         resp = await db_client.post(
-            f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "비밀 프롬프트 문장"}
+            f"/chat-rooms/{room_id}/messages", json={"content": "비밀 프롬프트 문장"}
         )
 
     assert resp.status_code == 429
@@ -363,7 +443,8 @@ async def test_successful_request_does_not_touch_the_llm_when_limited(
 ) -> None:
     """실존하는 자기 방에 보내므로 게이트가 없었다면 200 스트림이 됐을 요청이다 — 그래서
     `received_prompt is None`이 "게이트가 SSE 제너레이터 앞에서 끊었다"를 실제로 증명한다."""
-    room_id = await _logged_in_user_with_room(db_client, db_session)
+    user = await _consented_user(db_client, db_session)
+    room_id = await _real_room_id(db_client, db_session, user)
 
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
@@ -425,22 +506,23 @@ async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst
     """RL-10: 면제의 범위는 일일 상한(과 S6의 이미지 토큰버킷)이지 "상한 해제"가 아니다.
     분당 버스트는 예외 계정도 그대로 받는다 — 버스트는 쿼터가 아니라 폭주 방어라서 면제
     대상에게 열어 줄 이유가 없다."""
-    await _consented_user(db_client, db_session, rate_limit_exempt=True)
+    user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
+    room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
         passed = await db_client.post(
-            f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"}
+            f"/chat-rooms/{room_id}/messages", json={"content": "안녕"}
         )
     finally:
         _clear_llm_override()
-    # 4번 테스트와 같은 판정이다 — 게이트를 통과했고(429가 아니다) 그 뒤 소유권 검사에서 막혔다.
-    assert passed.status_code == 404
+    # 게이트를 통과해 턴이 끝까지 돌았다(429가 아니다) — 면제가 일일 상한을 비껴갔다는 뜻이다.
+    assert passed.status_code == 200
 
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    blocked = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+    blocked = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
 
     assert blocked.status_code == 429
     detail = blocked.json()["detail"]
@@ -456,10 +538,11 @@ async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
     """위 테스트의 짝. 셋업이 글자까지 같고 `rate_limit_exempt`만 다르다 — 이 짝이 없으면 위의
     통과는 "면제가 먹혔다"가 아니라 "이 셋업에서는 원래 아무도 안 걸린다"일 수 있다(그 경우
     면제 판정을 통째로 지워도 두 테스트가 다 초록이다)."""
-    await _consented_user(db_client, db_session, rate_limit_exempt=False)
+    user = await _consented_user(db_client, db_session, rate_limit_exempt=False)
+    room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+    resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
 
     assert resp.status_code == 429
     # 잔액 0이라 클로버로도 못 낸다(clover-techspec.md CT-8) — 면제 계정과의 대비는 그대로다.
@@ -477,16 +560,17 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     세션에 굳는 사본도 없다. 그래서 로그인한 **뒤에** 행을 뒤집으면 같은 쿠키로 보낸 다음
     요청이 바로 일일 상한에 걸린다. 무효화할 캐시가 없다는 것이 이 단언의 내용이다."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
+    room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
     _override_llm_client(_FakeLLMClient())
     try:
         before = await db_client.post(
-            f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"}
+            f"/chat-rooms/{room_id}/messages", json={"content": "안녕"}
         )
     finally:
         _clear_llm_override()
-    assert before.status_code == 404
+    assert before.status_code == 200
 
     # ORM 대입이 아니라 raw UPDATE 다 — 대입은 이 세션의 인스턴스를 고쳐 버려서 "게이트가 DB 를
     # 읽었는가"를 구분할 수 없게 만든다.
@@ -498,7 +582,7 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     # "새 요청의 새 세션"을 재현한다.
     db_session.expire_all()
 
-    after = await db_client.post(f"/chat-rooms/{uuid.uuid4()}/messages", json={"content": "안녕"})
+    after = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
 
     assert after.status_code == 429
     # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다(CT-8).
