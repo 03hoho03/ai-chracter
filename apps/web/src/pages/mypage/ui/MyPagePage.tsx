@@ -5,6 +5,7 @@ import { useAtom } from "jotai";
 import { Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
+import { CloverBalance, useCloverBalanceQuery } from "@/entities/clover";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
@@ -89,6 +90,8 @@ export function MyPagePage() {
 
       <ThemeSection />
 
+      <CloverSection />
+
       <section className="flex flex-col gap-4">
         <SectionHeading>비밀번호 변경</SectionHeading>
         <ChangePasswordForm />
@@ -106,6 +109,37 @@ export function MyPagePage() {
  * 이 화면에서 제목과 섹션을 가르는 축이 태그 이름밖에 없었다는 뜻이다. */
 function SectionHeading({ children }: { children: string }) {
   return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
+}
+
+/** clover-techspec.md CT-16 (clover-goal-prompt.md CL-25) — 여기만 **상시** 노출이다. 채팅·이미지
+ * 쪽은 무료 한도를 쓴 뒤에만 나타나지만, 설정 화면은 "지금 내 상태를 확인하러 오는 곳"이라
+ * 조건을 걸면 사용자가 잔액을 볼 방법이 없어진다.
+ *
+ * 🔴 **CL-26의 축소 1순위가 이 섹션이다** — 런이 무거워지면 여기부터 덜어내고 채팅·이미지의
+ * "필요할 때만 노출"만 남긴다(사용자 결정).
+ *
+ * 컬럼이 `max-w-md`(448px)라 표를 넣지 않는다(DESIGN.md §5 Layout containers) — 잔액 한 줄과
+ * 짧은 설명뿐이다. 사용 내역은 어드민 전용이고 유저용 화면은 범위 밖이다. */
+function CloverSection() {
+  const { data, isPending } = useCloverBalanceQuery();
+
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading>클로버</SectionHeading>
+      <div className="flex flex-col gap-1.5">
+        {/* 로딩 중에는 자리만 비워 둔다 — 스켈레톤을 쓰기엔 한 줄이라 과하고(§5 Components),
+            0을 먼저 그리면 "잔액이 0"이라는 틀린 사실을 잠깐 말한다. */}
+        {isPending ? (
+          <span className="text-sm text-muted-foreground">불러오는 중…</span>
+        ) : (
+          <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
+        )}
+        <p className="text-sm break-keep text-muted-foreground">
+          무료 한도를 다 쓴 뒤 대화와 이미지 생성에 쓰여요. 매일 출석하면 자동으로 받아요.
+        </p>
+      </div>
+    </section>
+  );
 }
 
 function ThemeSection() {

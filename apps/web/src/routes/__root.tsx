@@ -16,6 +16,7 @@ import { UpdateInfoModal } from "@/features/update-info";
 import { ContentDetailModalOutlet } from "@/widgets/content-detail";
 import { Header } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
+import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
 
 export type RouterContext = {
   queryClient: QueryClient;
@@ -64,6 +65,7 @@ function RootComponent() {
       <DeleteContentDraftModal />
       <ResetContentDraftModal />
       <ReconsentModal />
+      <ConfirmCloverSpendModal />
     </>
   );
 }

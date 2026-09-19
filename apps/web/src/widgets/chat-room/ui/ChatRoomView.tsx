@@ -17,6 +17,12 @@ import {
   useChatRoomQuery,
   useDeleteMessageMutation,
 } from "@/entities/chat-room";
+import {
+  CloverBalance,
+  isCloverInsufficient,
+  shouldShowCloverBalance,
+  useCloverBalanceQuery,
+} from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
@@ -27,6 +33,10 @@ import { ChatMoreSidebar } from "./ChatMoreSidebar";
 // techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
 // 스토리 챗은 room.contentSnapshot이 있을 때만 스탯 게이지가 추가로 붙는다(캐릭터 챗은 undefined).
+// clover-goal-prompt.md CL-10 — 채팅 1턴 = 10클로버. BE의 `CHAT_TURN_COST`와 같은 값이며
+// 코드젠을 타지 않는 수동 사본이다(단가는 OpenAPI 스키마에 나가지 않는다).
+const CHAT_TURN_CLOVER_COST = 10;
+
 export function ChatRoomView({ roomId }: { roomId: string }) {
   const roomQuery = useChatRoomQuery(roomId);
   const room = roomQuery.data;
@@ -39,6 +49,17 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     characterId,
   );
   const isSending = status.kind === "sending";
+  // clover-techspec.md CT-16 — 무료 일일분을 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).
+  // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
+  const { data: clover } = useCloverBalanceQuery();
+  const cloverBalance = clover?.balance ?? 0;
+  const isCloverShort = isCloverInsufficient(cloverBalance, CHAT_TURN_CLOVER_COST);
+  const showClover =
+    clover !== undefined &&
+    shouldShowCloverBalance({
+      spendConfirmedToday: clover.spendConfirmedToday,
+      hasCloverShortage: isCloverShort,
+    });
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
   const [text, setText] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<string>();
@@ -257,6 +278,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   ))}
                 </div>
               )}
+
+            {/* clover-techspec.md §5-4 — 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
+                칩 줄 자체가 조건부라 "필요할 때만 노출"(clover-goal-prompt.md CL-25)과 형태가 같다.
+                429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
+            {showClover && (
+              <div className="mb-2 flex justify-end">
+                <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
+              </div>
+            )}
 
             <div className="flex items-end gap-2">
               <div className="relative flex-1">

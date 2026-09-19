@@ -6,3 +6,5 @@ export { useClaimAttendanceMutation } from "./api/useClaimAttendanceMutation";
 export type { CloverAttendanceResponse } from "./api/useClaimAttendanceMutation";
 export { useConfirmCloverSpendMutation } from "./api/useConfirmCloverSpendMutation";
 export { useCloverAutoAttendance } from "./api/useCloverAutoAttendance";
+export { isCloverInsufficient, shouldShowCloverBalance } from "./model/cloverBalanceDisplay";
+export { CloverBalance } from "./ui/CloverBalance";
