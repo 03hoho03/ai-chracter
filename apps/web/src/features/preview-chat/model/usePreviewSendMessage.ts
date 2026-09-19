@@ -44,7 +44,11 @@ export function usePreviewSendMessage(
   const [streamingText, setStreamingText] = useState("");
 
   /** `allowCloverConfirm`은 **무한 루프 차단기**다 — 동의 뒤 재시도는 `false`로 들어가므로
-   * 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않는다. */
+   * 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않는다.
+   *
+   * 미리보기도 채팅 일일 창을 공유하므로 막는 대상이 `useSendMessage`와 같다 — **서버가 커밋된
+   * 동의를 인정하지 않는 경우** 하나뿐이고, 동의 POST 실패나 자정 넘김은 여기서 성립하지 않는다.
+   * 사유는 그쪽 주석에 적어 뒀다(사본을 두지 않는다). */
   async function send(
     previewSessionId: string,
     text: string,

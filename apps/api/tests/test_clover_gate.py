@@ -440,6 +440,37 @@ async def test_confirmation_gate_is_after_the_free_quota(
     assert await _ledger_for(db_session, user.id) == []
 
 
+async def test_unconfirmed_without_balance_gets_shortage_not_confirmation(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """🔴 잔액이 모자라면 **묻지 않고** 곧장 `CLOVER_REQUIRED`다 — 동의를 물어 놓고 직후
+    "부족해요"를 내는 두 단계 헛걸음을 막는 조건(`rate_limit_gate.py`의 `clover_balance >= cost`).
+
+    `test_unconfirmed_spend_is_blocked_before_charging`의 **짝**이다. 그쪽은 "잔액 있음 +
+    미확인 → 확인 429", 이쪽은 "잔액 없음 + 미확인 → 부족 429". 두 테스트가 `clover_balance`
+    하나만 다르므로 **`code`를 가르는 것이 잔액이라는 것**이 그 대조로 증명된다.
+
+    🔴 이 테스트가 없으면 잔액 조건에 회귀 가드가 0이다 — 그 줄을 `return True`로 바꿔도
+    스위트가 전부 초록이었다(잔액이 단가 미만인 다른 셋업은 전부 `_confirmed_today()`이거나
+    `rate_limit_exempt=True`라 확인 게이트에 도달조차 안 한다). 그 커버리지는 원래 우연이었고,
+    확인 게이트를 넣은 커밋이 같은 셋업에 `_confirmed_today()`를 주입하며 걷어 갔다.
+    """
+    user = await _consented_user(db_client, db_session, clover_balance=0)
+    room_id = await _setup_room(db_client, db_session, user)
+    monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
+
+    resp = await _send(db_client, room_id)
+
+    assert resp.status_code == 429
+    assert resp.json()["detail"]["code"] == "CLOVER_REQUIRED"
+
+    await db_session.refresh(user)
+    assert user.clover_balance == 0
+    assert await _ledger_for(db_session, user.id) == []
+
+
 async def test_exempt_user_is_not_asked_to_confirm(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,

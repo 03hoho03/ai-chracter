@@ -53,8 +53,21 @@ export function useSendMessage(
   const [streamingText, setStreamingText] = useState("");
 
   /** `allowCloverConfirm`은 **무한 루프 차단기**다(clover-goal-prompt.md CL-19). 동의 뒤 재시도는
-   * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도(동의 POST가 실패했거나
-   * 자정을 막 넘겨 상태가 초기화된 경우) 모달을 다시 띄우지 않고 평범한 오류로 끝난다. */
+   * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도 모달을 다시 띄우지 않고
+   * 평범한 오류로 끝난다.
+   *
+   * ⚠️ 이 차단기가 막는 것은 **"서버가 동의를 인정하지 않는 경우"** 하나뿐이다. 흔히 드는 두 사유는
+   * 여기서 성립하지 않는다:
+   * - *동의 POST 실패* — `useConfirmCloverSpend`가 그때 `false`를 돌려주므로 **재시도 자체가 없다**.
+   * - *자정을 막 넘김* — 채팅 일일 키에는 KST 날짜가 섞여 있어(`core/rate_limit_gate.py`의
+   *   `_DAY_SCOPE` 키 조립) 자정에 카운트가 0으로 리셋되고, 그러면 클로버 분기에 **도달조차
+   *   하지 않아** 재전송이 무료로 통과한다. 이 사유가 참인 것은 시간당 충전이라 자정과 무관한
+   *   **이미지 쪽**이다.
+   *
+   * 그래서 재시도는 **커밋된 동의** 뒤에만 일어나고 서버는 통과시켜야 정상이다. 차단기는 그
+   * "정상"을 FE가 증명할 수 없다는 사실에 대한 보험이다 — 게이트 조건이 나중에 바뀌는 등으로
+   * 둘의 판단이 갈리면, 없을 때 그 불일치가 **무한 왕복**이 된다. 사용자 조작 한 번당 모달을
+   * 한 번으로 묶는 것이 이 인자의 전부다. */
   async function openStream(pending: PendingRequest, allowCloverConfirm = true) {
     setStatus({ kind: "sending" });
     setPolicyWarning(undefined);

@@ -95,8 +95,16 @@ export function ImageStudioShell({
   }
 
   /** `allowCloverConfirm`은 **무한 루프 차단기**다(clover-goal-prompt.md CL-19) — 동의 뒤 재시도는
-   * `false`로 들어가므로, 그 재시도가 또 확인 429를 받아도(동의 POST가 실패했거나 자정을 막
-   * 넘겼거나) 모달을 다시 띄우지 않고 평범한 실패로 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다. */
+   * `false`로 들어가므로, 그 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않고 평범한 실패로
+   * 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다.
+   *
+   * ⚠️ 동의 POST가 실패한 경우는 여기까지 오지 않는다 — `useConfirmCloverSpend`가 그때 `false`를
+   * 돌려주므로(`useConfirmCloverSpend.ts:45-47`) 재시도 자체가 없다.
+   *
+   * 🔴 재시도가 정말로 확인 429를 다시 받는 경로는 **이미지에만 있다**: 토큰 버킷은 시간당
+   * 충전이라(`core/rate_limit.py`) 자정에 차지 않으므로, 어제 동의하고 오늘 재시도하면 서버가
+   * 다시 확인을 요구한다. 채팅은 일일 키에 KST 날짜가 섞여 자정에 리셋되므로 그 경로 자체가
+   * 없다 — 같은 차단기를 두지만 막는 대상이 다르다. */
   async function generate(values: GenerateImagesFormValues, allowCloverConfirm = true) {
     try {
       const response = await generateMutation.mutateAsync(values);
