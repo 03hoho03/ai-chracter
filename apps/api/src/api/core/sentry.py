@@ -78,10 +78,15 @@ def build_sentry_options() -> dict[str, Any]:
 
 def capture_dependency_failure(exc: BaseException | None = None, *, dependency: str) -> None:
     """monitoring-techspec.md MT-6: 흡수(사용자 응답 유지 + `logger.warning`)는 그대로 두고
-    Bugsink 이벤트로도 승격한다. `dependency` 태그(`gemini`/`gemini_rate_limit`/`local_image`/
-    `redis`/`email`/`prompt_render`)로만 Bugsink에서 묶어 본다 — **태그·컨텍스트에는 이
-    리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·이메일 주소는 호출부가
-    절대 넘기지 말 것(MT-6 설계 제약 1, PII 금지).
+    Bugsink 이벤트로도 승격한다. `dependency` 태그(`clover`/`db`/`email`/`gemini`/
+    `gemini_rate_limit`/`local_image`/`prompt_render`/`redis`/`s3`)로만 Bugsink에서 묶어 본다 —
+    **태그·컨텍스트에는 이 리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·
+    이메일 주소는 호출부가 절대 넘기지 말 것(MT-6 설계 제약 1, PII 금지).
+
+    이 목록은 호출부 실사용과 대조해 다시 썼다(clover-techspec.md CT-14). ⚠️ 리터럴
+    `dependency="..."`만 grep하면 **`gemini`/`gemini_rate_limit`/`prompt_render` 셋을 놓친다** —
+    그 셋은 `chat/router.py`의 `_llm_dependency_tag(exc)`가 계산해서 넘기므로 호출부 9곳에
+    문자열로 나타나지 않는다.
 
     `exc`를 생략하면 `sentry_sdk.capture_exception`이 `sys.exc_info()`를 쓴다 — 호출부의
     `except` 절이 예외를 `as exc`로 바인딩하지 않은 경우(`prompt_set_cache.py`·

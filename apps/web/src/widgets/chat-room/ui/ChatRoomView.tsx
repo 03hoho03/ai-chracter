@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
@@ -17,7 +17,15 @@ import {
   useChatRoomQuery,
   useDeleteMessageMutation,
 } from "@/entities/chat-room";
+import {
+  CHAT_TURN_CLOVER_COST,
+  CloverBalance,
+  isCloverInsufficient,
+  shouldShowCloverBalance,
+  useCloverBalanceQuery,
+} from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
+import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -34,11 +42,27 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
+  // clover-goal-prompt.md CL-19 — 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
+  // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
+  // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
+  const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
     characterId,
+    (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
+  // clover-techspec.md CT-16 — 무료 일일분을 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).
+  // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
+  const { data: clover } = useCloverBalanceQuery();
+  const cloverBalance = clover?.balance ?? 0;
+  const isCloverShort = isCloverInsufficient(cloverBalance, CHAT_TURN_CLOVER_COST);
+  const showClover =
+    clover !== undefined &&
+    shouldShowCloverBalance({
+      spendConfirmedToday: clover.spendConfirmedToday,
+      hasCloverShortage: isCloverShort,
+    });
   const deleteMessageMutation = useDeleteMessageMutation(roomId);
   const [text, setText] = useState("");
   const [editingMessageId, setEditingMessageId] = useState<string>();
@@ -109,6 +133,37 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
         <p className="text-sm text-destructive-text">대화방을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
       </div>
     );
+  }
+
+  // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  let errorNotice: ReactNode = null;
+  if (status.kind === "error") {
+    if (status.rateLimit) {
+      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
+    } else if (status.declined) {
+      // S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
+      // 쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만
+      // 말하고 다시 보낼 길은 열어 둔다(낙관적 사용자 메시지가 이미 목록에 있다).
+      errorNotice = (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
+          <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요</span>
+          <Button variant="outline" size="sm" onClick={retry}>
+            <RotateCw aria-hidden className="size-3.5" />
+            다시 보내기
+          </Button>
+        </div>
+      );
+    } else {
+      errorNotice = (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+          <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
+          <Button variant="destructive" size="sm" onClick={retry}>
+            <RotateCw aria-hidden className="size-3.5" />
+            다시 시도
+          </Button>
+        </div>
+      );
+    }
   }
 
   return (
@@ -201,18 +256,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   <TypingIndicator />
                 ))}
 
-              {status.kind === "error" &&
-                (status.rateLimit ? (
-                  <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />
-                ) : (
-                  <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-                    <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
-                    <Button variant="destructive" size="sm" onClick={retry}>
-                      <RotateCw aria-hidden className="size-3.5" />
-                      다시 시도
-                    </Button>
-                  </div>
-                ))}
+              {errorNotice}
 
               {/* 오류 배너(위)는 이산적 실패라 assertive + 조건부 마운트, 이 경고는 메시지와 공존하는
                   정보라 polite + 항상 마운트다 — polite는 조건부 마운트에서 announce 여부가 갈린다는
@@ -257,6 +301,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   ))}
                 </div>
               )}
+
+            {/* clover-techspec.md §5-4 — 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
+                칩 줄 자체가 조건부라 "필요할 때만 노출"(clover-goal-prompt.md CL-25)과 형태가 같다.
+                429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
+            {showClover && (
+              <div className="mb-2 flex justify-end">
+                <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
+              </div>
+            )}
 
             <div className="flex items-end gap-2">
               <div className="relative flex-1">

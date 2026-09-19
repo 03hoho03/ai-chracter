@@ -191,6 +191,13 @@ _ADMIN_SESSION_GUARD_CASES = [
         {"exempt": True, "adminComment": "면제합니다"},
         id="rate-limit-exempt",
     ),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/clover",
+        {"amount": 100, "adminComment": "지급합니다", "idempotencyKey": "k"},
+        id="clover",
+    ),
+    pytest.param("get", f"/admin/users/{uuid.uuid4()}/clover-ledger?page=1", None, id="clover-ledger"),
 ]
 
 

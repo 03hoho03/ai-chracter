@@ -2,6 +2,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 
@@ -72,7 +73,8 @@ from api.content.schemas import (
     StoryDraftPayload,
 )
 from api.core.config import settings
-from api.core.rate_limit_gate import enforce_chat_rate_limit
+from api.core.clover import refund_in_new_transaction
+from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -670,6 +672,60 @@ def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
     return "gemini"
 
 
+async def _refund_clover(
+    charge: ChatCharge,
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+) -> None:
+    """clover-techspec.md §3-5-1 — 우리 쪽 실패로 턴이 0 이 됐을 때 차감을 되돌린다.
+
+    6 지점이 공유한다(프롬프트 렌더 실패 3 + LLM 호출 실패 3). **정책 위반 3 지점은 부르지
+    않는다** — 사용자 입력이 원인이고 LLM 을 실제로 태웠다(clover-goal-prompt.md CL-22).
+
+    `source` 가드가 여기 있는 이유는 호출부 6곳이 같은 `if` 를 여섯 벌 갖지 않게 하기
+    위해서다. `"free"`(무료 창으로 통과)와 `"skipped"`(예외 계정·Redis fail-open)는 애초에
+    깎은 것이 없어 되돌릴 대상이 없다.
+
+    🔴 **`refund_in_new_transaction` 은 예외를 밖으로 내지 않는다**(그 docstring 참고) —
+    여기가 SSE 제너레이터 본문이라 예외가 새면 이미 시작된 스트림을 뚫고 나가 태스크가
+    취소되고 망가진 asyncpg 커넥션이 풀로 반환된다(`core/rate_limit_gate.py` 모듈 docstring).
+    """
+    if charge.source != "clover":
+        return
+    await refund_in_new_transaction(
+        session_factory, user_id=user_id, amount=charge.clover_amount, kind="chat_refund"
+    )
+
+
+@asynccontextmanager
+async def _refund_clover_on_failure(
+    charge: ChatCharge,
+    session_factory: async_sessionmaker[AsyncSession],
+    user_id: uuid.UUID,
+) -> AsyncIterator[None]:
+    """clover-techspec.md §3-5-1 — 차감은 커밋됐는데 라우트 본문이 **첫 `yield` 전에** 터지는
+    창을 닫는다(적대적 리뷰 S4 M-1).
+
+    게이트가 `Depends` 단계에서 클로버를 별도 트랜잭션으로 커밋하므로(CT-4), 본문이 제너레이터
+    안의 환불 6지점에 닿기 전에 실패하면 차감만 남는다. `clover-goal-prompt.md CL-21`("우리 쪽
+    실패만 환불")을 일관되게 적용하려면 이 창도 되돌려야 한다.
+
+    🔴 **예외를 삼키지 않고 다시 올린다** — 6지점과 성격이 다르다. 거기는 스트림이 이미 열려
+    있어 예외가 새면 커넥션이 깨지지만, 여기는 아직 첫 `yield` 전이라 깨끗한 500 이 정상
+    경로다(`apps/api/CLAUDE.md` §SSE). 환불이 원래 예외를 가리면 안 되고,
+    `refund_in_new_transaction` 이 자체 예외를 밖으로 내지 않으므로 그 성질이 유지된다.
+
+    `BaseException` 이 아니라 `Exception` 을 잡는다 — 클라이언트가 끊어 생긴
+    `asyncio.CancelledError` 까지 여기서 처리하면 취소 전파가 바뀐다(`core/clover.py` 의
+    `refund_in_new_transaction` 과 같은 이유). 끊긴 요청의 차감은 그대로 남는다.
+    """
+    try:
+        yield
+    except Exception:
+        await _refund_clover(charge, session_factory, user_id)
+        raise
+
+
 async def _build_prompt(
     db: AsyncSession,
     room: ChatRoom,
@@ -798,6 +854,8 @@ async def _stream_new_turn(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    charge: ChatCharge,
+    session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[ChatStreamEvent]:
     """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
@@ -822,6 +880,8 @@ async def _stream_new_turn(
         # 게 없다 — 아직 아무 것도 스트리밍되지 않았다.
         logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # 환불은 `yield` **앞**이다 — 뒤에 두면 클라이언트가 이미 끊었을 때 실행되지 않는다.
+        await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -838,11 +898,14 @@ async def _stream_new_turn(
         ):
             yield token_event
     except LLMPolicyViolationError:
+        # clover-goal-prompt.md CL-22: 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
+        # 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과 결론이 갈리는 자리다.
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1007,36 +1070,69 @@ async def send_message(
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
     # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
+    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7: 반환형이 `None`에서
+    # `ChatCharge`로 바뀌었다(무엇으로 냈는지가 환불 대상을 가른다).
+    # 🔴 mypy는 이 어노테이션을 **검증하지 않는다** — `Depends(...)`가 `Any`라 `None`으로
+    # 둬도 통과한다. 게이트 반환형을 바꿀 때 이 4곳은 손으로 찾아야 한다.
+    #
+    # 🔴 **조회·검증 의존성 전부보다 뒤에 둔다**(clover-goal-prompt.md CL-1). `Depends`는
+    # 시그니처 순서대로 순차 resolve되고 앞의 것이 raise하면 뒤는 호출조차 안 되므로
+    # (`apps/api/CLAUDE.md` §API 라우터), 게이트가 앞에 있으면 404(없는 방)·400(단축어·시작설정
+    # 불일치)·`get_llm_client`의 ValueError에서 **차감만 남고 환불되지 않는다**. 그 창은 정상
+    # 운영 중에도 열린다(지워진 방, 남의 방).
+    # `_consent`(403)만 게이트보다 앞이다 — "재동의가 429보다 먼저"라는 기존 계약을 지킨다
+    # (`images/router.py`의 같은 주석).
+    # 대가: 실패하는 요청은 분당 버스트 상한에 세지지 않는다. 그게 상한의 목적(Gemini·GPU
+    # 폭주 방어)에는 오히려 맞다 — 실패한 요청은 둘 다 안 태운다. "상한이 DB를 보호한다"는
+    # 근거로는 쓸 수 없는데, 재동의 검사가 이미 게이트보다 앞에서 DB를 치고 있어 그 명제는
+    # 이 변경 전에도 부분적으로만 참이었다.
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
     """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
     prompt_set, prompt_sections = prompt_set_data
 
-    history = list(
-        (
-            await db.scalars(
-                select(ChatMessage)
-                .where(ChatMessage.chat_room_id == room.id)
-                .order_by(ChatMessage.created_at.asc())
-            )
-        ).all()
-    )
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        history = list(
+            (
+                await db.scalars(
+                    select(ChatMessage)
+                    .where(ChatMessage.chat_room_id == room.id)
+                    .order_by(ChatMessage.created_at.asc())
+                )
+            ).all()
+        )
 
-    # 사용자 메시지는 Gemini 호출 전에 먼저 커밋한다 — 이후 생성이 실패해도
-    # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문 (US-053 AC).
-    user_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content=payload.content)
-    db.add(user_message)
-    await db.commit()
+        # 사용자 메시지는 Gemini 호출 전에 먼저 커밋한다 — 이후 생성이 실패해도
+        # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문 (US-053 AC).
+        user_message = ChatMessage(
+            chat_room_id=room.id, role=ChatMessageRole.USER, content=payload.content
+        )
+        db.add(user_message)
+        await db.commit()
 
     async for event in _stream_new_turn(
-        db, room, llm_client, setup, history, payload.content, shortcut, prompt_set, prompt_sections
+        db,
+        room,
+        llm_client,
+        setup,
+        history,
+        payload.content,
+        shortcut,
+        prompt_set,
+        prompt_sections,
+        charge,
+        session_factory,
     ):
         yield event
 
@@ -1069,13 +1165,18 @@ async def _regeneratable_last_message_dependency(
 async def regenerate_message(
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
+    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
     """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
@@ -1088,16 +1189,20 @@ async def regenerate_message(
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
-    history = list(
-        (
-            await db.scalars(
-                select(ChatMessage)
-                .where(ChatMessage.chat_room_id == room.id, ChatMessage.id != last_message.id)
-                .order_by(ChatMessage.created_at.asc())
-            )
-        ).all()
-    )
-    user_content = history[-1].content
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
+    # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
+    async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        history = list(
+            (
+                await db.scalars(
+                    select(ChatMessage)
+                    .where(ChatMessage.chat_room_id == room.id, ChatMessage.id != last_message.id)
+                    .order_by(ChatMessage.created_at.asc())
+                )
+            ).all()
+        )
+        user_content = history[-1].content
     try:
         prompt, system_instruction = await _build_prompt(
             db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
@@ -1105,6 +1210,8 @@ async def regenerate_message(
     except PromptRenderError as exc:
         logger.warning("대화방 %s 재생성 프롬프트 렌더 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # 환불은 `yield` 앞이다(`_stream_new_turn`의 같은 자리 주석 참조).
+        await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1122,11 +1229,13 @@ async def regenerate_message(
         ):
             yield token_event
     except LLMPolicyViolationError:
+        # clover-goal-prompt.md CL-22: 환불하지 않는다.
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1211,13 +1320,18 @@ async def edit_message(
     payload: ChatMessageEditRequest,
     # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
     room: ChatRoom = Depends(_owned_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
+    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
     생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
@@ -1232,29 +1346,44 @@ async def edit_message(
     """
     prompt_set, prompt_sections = prompt_set_data
 
-    all_messages = list(
-        (
-            await db.scalars(
-                select(ChatMessage)
-                .where(ChatMessage.chat_room_id == room.id)
-                .order_by(ChatMessage.created_at.asc())
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    # 세 라우트 중 위험이 가장 큰 자리다: 조회·DELETE·커밋이 다 들어 있다.
+    async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        all_messages = list(
+            (
+                await db.scalars(
+                    select(ChatMessage)
+                    .where(ChatMessage.chat_room_id == room.id)
+                    .order_by(ChatMessage.created_at.asc())
+                )
+            ).all()
+        )
+        edited_index = next(i for i, m in enumerate(all_messages) if m.id == message.id)
+        history = all_messages[:edited_index]
+        trailing = all_messages[edited_index + 1 :]
+
+        if trailing:
+            removed_turns = sum(1 for m in trailing if m.role == ChatMessageRole.ASSISTANT)
+            room.turn_count -= removed_turns
+            await db.execute(
+                delete(ChatMessage).where(ChatMessage.id.in_([m.id for m in trailing]))
             )
-        ).all()
-    )
-    edited_index = next(i for i, m in enumerate(all_messages) if m.id == message.id)
-    history = all_messages[:edited_index]
-    trailing = all_messages[edited_index + 1 :]
 
-    if trailing:
-        removed_turns = sum(1 for m in trailing if m.role == ChatMessageRole.ASSISTANT)
-        room.turn_count -= removed_turns
-        await db.execute(delete(ChatMessage).where(ChatMessage.id.in_([m.id for m in trailing])))
-
-    message.content = payload.content
-    await db.commit()
+        message.content = payload.content
+        await db.commit()
 
     async for event in _stream_new_turn(
-        db, room, llm_client, setup, history, payload.content, None, prompt_set, prompt_sections
+        db,
+        room,
+        llm_client,
+        setup,
+        history,
+        payload.content,
+        None,
+        prompt_set,
+        prompt_sections,
+        charge,
+        session_factory,
     ):
         yield event
 
@@ -1862,6 +1991,11 @@ async def _stream_preview_turn(
     shortcut: ShortcutDraftItem | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    charge: ChatCharge,
+    session_factory: async_sessionmaker[AsyncSession],
+    # `_stream_new_turn`은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
+    # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
+    user_id: uuid.UUID,
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
@@ -1883,6 +2017,9 @@ async def _stream_preview_turn(
         # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
         logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # 🔴 goal-prompt §4-2가 빠뜨렸던 자리다(clover-techspec.md §3-5-1 7행) — 미리보기도
+        # 같은 게이트를 지나므로 클로버가 깎인다. 환불은 `yield` 앞이다.
+        await _refund_clover(charge, session_factory, user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1900,11 +2037,14 @@ async def _stream_preview_turn(
         ):
             yield token_event
     except LLMPolicyViolationError:
+        # clover-goal-prompt.md CL-22: 환불하지 않는다.
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # 🔴 goal-prompt §4-2가 빠뜨렸던 자리다(clover-techspec.md §3-5-1 9행).
+        await _refund_clover(charge, session_factory, user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
 
@@ -1991,11 +2131,22 @@ async def send_preview_message(
     payload: ChatMessageCreateRequest,
     # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    _rate_limit: None = Depends(enforce_chat_rate_limit),  # limit-goal-prompt.md RL-1/RL-13
+    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션으로는 못 한다.
+    # 미리보기는 애초에 요청 스코프 세션을 받지 않는다(`_preview_prompt_set_dependency`가 풀
+    # 상한 때문에 피한다) — 나머지 3경로도 `db`는 있지만 같은 이유로 팩토리를 따로 받는다.
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+    # `_stream_new_turn`은 `room.user_id`를 쓰는데 `PreviewSessionState`에는 user_id가 없어
+    # (`_owned_preview_session_dependency` docstring) 이 경로만 명시적으로 받는다. 같은
+    # `Depends`를 게이트·재동의가 이미 쓰고 있어 요청 스코프 캐시로 한 번만 해석된다.
+    user_id: uuid.UUID = Depends(get_current_user_id),
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조). 미리보기에서 앞에
+    # 두면 만료·남의 세션(404)에서 차감만 남는다.
+    charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
     """미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
@@ -2011,7 +2162,16 @@ async def send_preview_message(
     )
 
     async for event in _stream_preview_turn(
-        state, llm_client, history, payload.content, shortcut, prompt_set, prompt_sections
+        state,
+        llm_client,
+        history,
+        payload.content,
+        shortcut,
+        prompt_set,
+        prompt_sections,
+        charge,
+        session_factory,
+        user_id,
     ):
         yield event
 

@@ -12,9 +12,16 @@ export {
   useSetRateLimitExemptMutation,
   type AdminUserRateLimitExemptRequest,
 } from "./api/useSetRateLimitExemptMutation";
+export { useAdjustCloverMutation, type AdminUserCloverRequest } from "./api/useAdjustCloverMutation";
+export {
+  useCloverLedgerQuery,
+  type AdminCloverLedgerListResponse,
+  type AdminCloverLedgerItem,
+} from "./api/useCloverLedgerQuery";
 export {
   SIGNUP_METHOD_LABELS,
   ACTION_TYPE_LABELS,
+  CLOVER_KIND_LABELS,
   CHAT_VIEW_REASON_CATEGORY_LABELS,
   CHAT_VIEW_REASON_CATEGORY_VALUES,
   CHAT_VIEW_REASON_CATEGORY_OPTIONS,

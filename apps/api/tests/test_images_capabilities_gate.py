@@ -22,17 +22,20 @@ import json
 import logging
 import time
 import uuid
+from datetime import UTC, datetime
 from contextlib import AsyncExitStack
 from typing import cast
 
 import httpx
 import pytest
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core import rate_limit_gate
+from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.models import User
+from api.db.models.clover import CloverLedger
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
 from api.llm import local_image
 from api.llm.client import LLMClientError
@@ -683,9 +686,16 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
 async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empty(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-5/RL-11: 토큰이 없으면 큐에 자리가 있어도 429 `USER_LIMIT`이고, 잡은 만들어지지
+    """RL-5/RL-11: 토큰이 없으면 큐에 자리가 있어도 429이고, 잡은 만들어지지
     않는다. 용량을 0으로 낮춰 만든다 — 실제로 10장을 생성해 소진시키면 그 비용이 이 스위트에
-    그대로 붙는다(`test_user_rate_limit_gate.py`의 같은 결정)."""
+    그대로 붙는다(`test_user_rate_limit_gate.py`의 같은 결정).
+
+    🔴 **클로버 도입으로 `code`가 바뀌었다**(clover-techspec.md CT-8 이미지 행). 토큰이 없으면
+    클로버가 대신 내므로, **낼 클로버도 없을 때** 나가는 것이 이 429다. `_authed_user`의 기본
+    잔액이 0이라 이 셋업이 곧 "낼 것이 없는 사용자"다.
+    ⇒ **이미지에서 `USER_LIMIT`은 이제 도달할 수 없다** — 토큰 부족은 전부 클로버 분기로 넘어간다.
+    `window`는 `"image"`를 유지하고(둘을 가르는 축은 `code`다) `retryAfterSeconds`도 `take_tokens`가
+    준 값 그대로다 — 자정까지 초를 쓰면 최대 24시간짜리 거짓값이 된다."""
     _reset_admission(monkeypatch, queue_limit=4)
     _stub_ready_capabilities(monkeypatch)
     created_job_ids = _stub_job_pipeline(monkeypatch)
@@ -697,7 +707,8 @@ async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empt
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
-    assert detail["code"] == "USER_LIMIT"
+    assert detail["code"] == "CLOVER_REQUIRED"
+    assert detail["window"] == "image"
     # 다음 토큰이 찰 때까지의 초. 0이면 FE가 "지금 다시" 하라는 뜻으로 읽어 무한 재시도가 된다.
     assert detail["retryAfterSeconds"] >= 1
     assert created_job_ids == []
@@ -829,7 +840,95 @@ async def test_token_charge_equals_requested_image_count(
     rejected = await db_client.post("/images/generate", json=_generate_payload(count=2))
 
     assert rejected.status_code == 429
-    assert rejected.json()["detail"]["code"] == "USER_LIMIT"
+    # 토큰 부족 + 잔액 0 → CT-8 이미지 행. `QUEUE_FULL`이 아니라는 것이 이 단언의 내용이다.
+    assert rejected.json()["detail"]["code"] == "CLOVER_REQUIRED"
     assert len(created_job_ids) == 1
     # 부족하면 **부분 차감 없이** 거절이다 — 남은 1이 그대로 있어야 한다.
     assert await _bucket_tokens(user.id) == pytest.approx(1.0, abs=0.01)
+
+
+# ---- 이미지 클로버 분기 (clover-techspec.md CT-7·CT-8 이미지 행, §3-4-1) ----
+
+
+async def test_token_exhaustion_spends_clover_and_creates_the_job(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """clover-goal-prompt.md CL-1: 이미지도 무료 토큰버킷을 다 쓴 뒤에는 클로버가 대신 낸다.
+    차감량은 **장수 × 단가**다(`count`가 2면 두 배) — 비용이 요청 수가 아니라 장수에 붙는
+    것과 같은 이유다(RL-5)."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감량을 보는 테스트라 그 선행 조건을 셋업에 명시한다.
+    user = await _authed_user(
+        db_client,
+        db_session,
+        clover_balance=100,
+        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
+    )
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+
+    assert resp.status_code == 202
+    assert len(created_job_ids) == 1
+
+    await db_session.refresh(user)
+    assert user.clover_balance == 100 - 2 * clover.IMAGE_UNIT_COST
+
+    rows = list(
+        (
+            await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user.id))
+        ).all()
+    )
+    assert len(rows) == 1
+    assert rows[0].kind == "image_spend"
+    assert rows[0].amount == -2 * clover.IMAGE_UNIT_COST
+
+
+async def test_image_clover_rejection_uses_the_refill_retry_after_not_midnight(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 clover-techspec.md CT-8: 이미지 무료분은 **시간당 충전**이지 자정 리셋이 아니다.
+    `retryAfterSeconds`에 자정까지 초를 실으면 **최대 24시간짜리 거짓값**이 나간다 —
+    `take_tokens`가 돌려준 값(다음 토큰까지 남은 초)을 그대로 써야 참이다.
+
+    충전 주기를 작은 값으로 낮춰 두 값이 **실제로 갈리게** 만든다. 그렇게 하지 않으면
+    자정까지 초와 충전 초가 우연히 같은 범위에 들어 이 단언이 항진명제가 된다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_REFILL_SECONDS", 120)
+
+    await _authed_user(db_client, db_session, clover_balance=0)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 429
+    detail = resp.json()["detail"]
+    assert detail["code"] == "CLOVER_REQUIRED"
+    assert detail["window"] == "image"
+    # 충전 주기(120초) 안이다. 자정까지 초였다면 이 값을 훌쩍 넘는다(최대 86400).
+    assert 1 <= detail["retryAfterSeconds"] <= 120
+
+
+async def test_image_exempt_user_does_not_spend_clover(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """clover-goal-prompt.md CL-2: 면제 판정이 토큰·클로버보다 앞이라 예외 계정은 잔액이
+    깎이지 않는다(`ImageCharge.source == "skipped"`)."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+
+    user = await _authed_user(db_client, db_session, rate_limit_exempt=True, clover_balance=100)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload())
+
+    assert resp.status_code == 202
+    await db_session.refresh(user)
+    assert user.clover_balance == 100

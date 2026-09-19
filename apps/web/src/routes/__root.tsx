@@ -13,9 +13,11 @@ import { ReportContentModal } from "@/features/report-content";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { AppealModal } from "@/features/submit-appeal";
 import { UpdateInfoModal } from "@/features/update-info";
+import { CloverAttendanceMount } from "@/widgets/clover-attendance";
 import { ContentDetailModalOutlet } from "@/widgets/content-detail";
 import { Header } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
+import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
 
 export type RouterContext = {
   queryClient: QueryClient;
@@ -64,6 +66,13 @@ function RootComponent() {
       <DeleteContentDraftModal />
       <ResetContentDraftModal />
       <ReconsentModal />
+      <ConfirmCloverSpendModal />
+      {/* clover-techspec.md CT-10 / S12 D-1 — 출석 지급은 화면이 아니라 앱에 매달린다. 여기인
+          이유: 이 컴포넌트는 라우트가 바뀌어도 **리마운트되지 않으므로**(루트 컴포넌트는
+          `Outlet` 위에 산다) 세션당 POST 가 사실상 1회이고, 잔액을 읽는 특정 화면에 달았다면
+          그 화면에 한 번도 안 들어간 사용자는 출석분을 영영 못 받는다. 비로그인 가드는
+          위젯 안에 있다. */}
+      <CloverAttendanceMount />
     </>
   );
 }

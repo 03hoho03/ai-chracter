@@ -1,7 +1,19 @@
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Text, Uuid, false, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Date,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Text,
+    Uuid,
+    false,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import INET
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -53,6 +65,25 @@ class User(Base):
     # 버스트는 유지한다(RL-10). 값은 어드민 토글로만 바뀐다(RL-9) — 상한값 자체는 상수라
     # 여기 담기지 않는다(RL-14).
     rate_limit_exempt: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # clover-techspec.md CT-1 (clover-goal-prompt.md CL-4). 잔액은 원장의 파생이 아니라
+    # **불변식의 소재지**다 — 판정은 반드시 이 컬럼의 조건부 UPDATE로 하고 원장은 그
+    # 트랜잭션에 얹는 기록이다. 순서를 뒤집어 원장 SUM으로 판정하면 이중 지불이 돌아온다.
+    clover_balance: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    # clover-techspec.md CT-1 (clover-goal-prompt.md CL-18·CL-19). KST 날짜 두 개. NULL은
+    # "한 번도 없었다"다. 게이트가 이미 이 행을 들고 있어(`is_rate_limit_exempt`) 추가 왕복이
+    # 0이고, Redis와 달리 매일 pg_dump 백업을 탄다.
+    clover_attendance_granted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    clover_spend_confirmed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+
+    # clover-techspec.md CT-3. 정상 경로는 조건부 UPDATE(`clover_balance >= :amount`)가 이미
+    # 막으므로 이 제약이 발동할 일이 없다 — 갈리는 것은 우회 경로(어드민 회수 버그·수동 SQL·
+    # 미래의 새 경로)에서 **조용히 음수가 되느냐 IntegrityError로 터지느냐** 하나뿐이고,
+    # 돈이라 터지는 쪽을 골랐다.
+    # 🔴 `alembic check`는 이 제약을 검증하지 못한다(alembic 1.18.5에 CHECK 비교자가 없다 —
+    # `db/models/story.py`의 `EndingRule` docstring 참고). 검증은 행위 테스트가 유일하다.
+    __table_args__ = (
+        CheckConstraint("clover_balance >= 0", name="ck_users_clover_balance_non_negative"),
+    )
 
 
 class WithdrawnEmail(Base):

@@ -239,6 +239,10 @@ class AdminUserDetailResponse(CamelModel):
     # limit-goal-prompt.md RL-19: 레이트리밋 면제 플래그는 상세에만 실린다(목록·필터 없음).
     # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/rate-limit-exempt`다(RL-9).
     rate_limit_exempt: bool
+    # clover-techspec.md §4-5: 잔액도 상세에만 실린다(목록·필터 없음). 변동 **이력**은 이
+    # 응답에 넣지 않고 `GET /admin/users/{id}/clover-ledger`가 따로 준다 — 상세 응답은 이미
+    # reports·action_logs·chat_rooms 셋을 싣고 있어 네 번째 목록을 더하면 한 요청이 무거워진다.
+    clover_balance: int
     chat_room_count: int
     message_count: int
     last_active_at: datetime | None
@@ -278,6 +282,47 @@ class AdminUserRateLimitExemptRequest(CamelModel):
 
     exempt: bool
     admin_comment: str | None = None
+
+
+class AdminUserCloverRequest(CamelModel):
+    """clover-techspec.md §4-2 — 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
+    쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은
+    관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를
+    인용할 자리가 없고 대신 "왜 줬나"가 감사 로그에 남아야 한다.
+
+    `±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 "왜 2인가"를 적은 관례):
+    clover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
+    운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이
+    이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도
+    낫다.
+
+    🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).
+    출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
+    **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
+    **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다.
+    """
+
+    amount: int = Field(ge=-100_000, le=100_000)
+    admin_comment: str | None = None
+    idempotency_key: str = Field(min_length=1, max_length=64)
+
+
+class AdminCloverLedgerItem(CamelModel):
+    id: uuid.UUID
+    # 부호 있는 증감. 지급은 양수, 소모·회수·소멸은 음수(`db/models/clover.py`).
+    amount: int
+    balance_after: int
+    # `db/models/clover.py`의 `kind` — Text라 값이 늘어도 마이그레이션이 없다. 그래서 여기도
+    # `Literal`로 좁히지 않는다(좁히면 BE가 값을 늘릴 때마다 FE 코드젠이 깨진다).
+    kind: str
+    created_at: datetime
+
+
+class AdminCloverLedgerListResponse(CamelModel):
+    items: list[AdminCloverLedgerItem]
+    page: int
+    total_pages: int
+    total_count: int
 
 
 class AdminLegalDraftItem(CamelModel):

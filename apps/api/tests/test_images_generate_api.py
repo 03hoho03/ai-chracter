@@ -3,7 +3,7 @@ import io
 import logging
 import uuid
 from collections.abc import Callable
-from datetime import timezone
+from datetime import UTC, datetime, timezone
 from typing import Any, Literal
 
 import boto3
@@ -11,10 +11,14 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from PIL import Image
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
+from api.db.models.auth import User
+from api.db.models.clover import CloverLedger
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.images import router as images_router
 from api.images.jobs import ImageGenerationJob, ImageGenerationJobStatus, get_job
@@ -907,3 +911,293 @@ async def test_generate_request_row_update_failure_still_marks_job_terminal(
     job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
     assert job.status == ImageGenerationJobStatus.SUCCEEDED
     assert job.completed_count == 1
+
+
+# ---- T-13: 202 이후(`_run_generation`)의 클로버 환불 (clover-goal-prompt.md CL-24) ----
+#
+# 202를 받은 뒤의 실패는 이 저장소에서 **환불이 0건**이었다(clover-techspec.md §3-5-2).
+# 무료 토큰버킷일 때는 감내할 수 있었지만 클로버는 사용자가 지불한 것이라, 가드 차단·
+# 입력 오류·생성 실패·부분 성공이 전부 "돈만 사라지고 이미지는 0장"이 된다.
+
+
+async def _clover_ledger(db_session: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
+    """이 사용자의 원장 전체. `id`가 uuid4라 `created_at` 정렬은 삽입 순서를 보장하지 않으므로
+    호출부는 순서가 아니라 **내용과 개수**로 단언한다."""
+    return list(
+        (await db_session.scalars(sa.select(CloverLedger).where(CloverLedger.user_id == user_id))).all()
+    )
+
+
+def _spent_and_refunded(rows: list[CloverLedger]) -> tuple[int, int]:
+    """(차감 합, 환불 합). 부호를 그대로 더해 돌려준다 — 차감은 음수, 환불은 양수다."""
+    return (
+        sum(row.amount for row in rows if row.kind == "image_spend"),
+        sum(row.amount for row in rows if row.kind == "image_refund"),
+    )
+
+
+async def _clover_paid_user(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    balance: int,
+) -> User:
+    """무료 토큰버킷을 0으로 막아 **클로버로 낼 수밖에 없는** 사용자를 만든다.
+
+    🔴 토큰 용량을 안 막으면 게이트가 토큰으로 결제해 `source="token"`이 되고, 그러면
+    "클로버가 환불됐다"를 묻는 이 파일의 단언들이 **검사 대상을 아예 안 타는 항진명제**가
+    된다(clover-techspec.md §3-4-1)."""
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
+    # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
+    # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
+    user = _make_user(
+        clover_balance=balance, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return user
+
+
+async def test_partial_success_refunds_only_the_images_that_were_not_made(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """clover-techspec.md §3-5-2: 부분 성공은 **`count - succeeded_count` 장분만** 환불한다.
+    2장을 요청해 1장이 나왔으면 사용자는 그 1장을 실제로 받았으므로 전량 환불은 공짜로
+    주는 것이고, 전량 소모는 못 받은 1장까지 받는 것이다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 1
+
+    rows = await _clover_ledger(db_session, user.id)
+    spent, refunded = _spent_and_refunded(rows)
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만
+    await db_session.refresh(user)
+    assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+
+
+@pytest.mark.parametrize(
+    ("failure", "raiser"),
+    [
+        pytest.param("blocked", lambda: LocalImageBlockedError(reason="image"), id="blocked"),
+        pytest.param("input_error", lambda: LocalImageInputError(input_error="too_long"), id="input_error"),
+        pytest.param("failed", lambda: LLMClientError("local down"), id="failed"),
+    ],
+)
+async def test_zero_images_refunds_the_whole_charge(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+    raiser: Callable[[], Exception],
+) -> None:
+    """clover-goal-prompt.md CL-21: 가드 차단·입력 오류·생성 실패 셋 다 환불 대상이다.
+    이미지가 0장 나왔는데 사용자는 프롬프트를 고쳐 다시 내야 하고, 환불이 없으면 고칠
+    때마다 사라진다. 가드는 우리 모델의 판정이라 오판도 있다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+
+    def generate() -> tuple[bytes, str]:
+        raise raiser()
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 0
+
+    rows = await _clover_ledger(db_session, user.id)
+    spent, refunded = _spent_and_refunded(rows)
+    assert spent == -clover.IMAGE_UNIT_COST
+    assert refunded == clover.IMAGE_UNIT_COST
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+
+
+async def test_full_success_does_not_refund_anything(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """환불 대상은 **못 만든 장수**다 — 전부 나왔으면 0장이라 환불 행 자체가 없어야 한다.
+    이 가드가 없으면 `count - succeeded_count`를 `count`로 잘못 써도 아무도 못 잡는다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+
+    _override_image_client(lambda: (_png_bytes(), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 2
+
+    rows = await _clover_ledger(db_session, user.id)
+    assert [row.kind for row in rows] == ["image_spend"]
+    await db_session.refresh(user)
+    assert user.clover_balance == 100 - 2 * clover.IMAGE_UNIT_COST
+
+
+async def test_token_paid_failure_does_not_touch_clover(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 clover-techspec.md CT-7: 무엇으로 냈는지에 따라 **돌려놓는 자원이 다르다.**
+    토큰으로 낸 요청을 클로버로 환불하면 안 깎은 잔액이 조용히 늘어난다 — 토큰 용량을
+    막지 않아 `source="token"`인 상태에서 원장이 비어 있어야 한다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = _make_user(clover_balance=100)
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    def generate() -> tuple[bytes, str]:
+        raise LLMClientError("local down")
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.completed_count == 0
+
+    assert await _clover_ledger(db_session, user.id) == []
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+
+
+# clover-techspec.md §3-5-1a — 차감 뒤 **되돌릴 수 있는 첫 지점 앞**의 구간. S4가 채팅에서
+# 같은 구간을 닫았으므로(`_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가
+# 다르게 동작한다. `_run_generation`의 `try`에는 `except`가 없고 `finally: release_admission`만
+# 있어서, 집계에 닿기 전에 터지면 환불할 자리가 아예 없었다.
+
+
+async def _wait_for_clover_refund(db_session: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
+    """환불 행이 원장에 나타날 때까지 기다린다.
+
+    `_wait_for_job_completion`을 쓸 수 없는 경로 전용이다 — 집계 이전에 터지면 마지막
+    `update_job`에 닿지 못해 잡이 RUNNING에 남는다. 그 hang 자체는 이 구간의 성질이고,
+    환불은 그와 **무관하게** 일어나야 한다는 것이 여기서 검증하는 것이다."""
+    for _ in range(200):
+        rows = await _clover_ledger(db_session, user_id)
+        if any(row.kind == "image_refund" for row in rows):
+            return rows
+        await asyncio.sleep(0.01)
+    raise AssertionError("clover refund did not land in time")
+
+
+async def test_failure_before_aggregation_refunds_the_whole_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """집계 이전(`update_job(RUNNING)`의 Redis 순단)에 터지면 **진행된 만큼**, 즉 0장
+    성공이므로 전량이 돌아온다. 이 구간이 열려 있으면 사용자는 이미지를 한 장도 못 받고
+    클로버만 잃는다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+
+    async def failing_update_job(job_id: str, **kwargs: Any) -> None:
+        if kwargs.get("status") is ImageGenerationJobStatus.RUNNING:
+            raise RedisError("redis down")
+
+    monkeypatch.setattr(images_router, "update_job", failing_update_job)
+
+    def generate() -> tuple[bytes, str]:
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    rows = await _wait_for_clover_refund(db_session, user.id)
+    spent, refunded = _spent_and_refunded(rows)
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == 2 * clover.IMAGE_UNIT_COST  # 0장 성공 → 전량
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+
+
+async def test_failure_after_aggregation_does_not_refund_twice(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """🔴 집계 **이후**에 터져도 새 `except`가 다시 환불하면 안 된다 — 정상 경로가 이미
+    못 만든 1장분을 돌려줬으므로 두 번째 환불은 **없던 돈을 만든다.**
+
+    2장 중 1장 성공 → 정상 경로가 1장분 환불 → 마지막 `update_job`이 터진다. 환불액이
+    `charge.count - succeeded_count`로 한 번만 계산돼야 하므로, 이 테스트는 "진행된 만큼"
+    식이 두 자리에서 중복 적용되지 않는다는 것까지 함께 고정한다."""
+    _stub_capabilities_ready(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+
+    # 🔴 이 테스트의 태스크는 **환불 이후에도 계속 돈다** — 정산(`refund_settled`) 뒤에 요청 행
+    # UPDATE(`images/router.py`의 `async with session_factory()` 블록)가 남아 있고, 그건 conftest가
+    # 오버라이드한 **테스트 커넥션**을 쓴다. `_wait_for_clover_refund`는 환불 행만 보고 돌아오므로
+    # 그대로 두면 테스트 종료(롤백)와 그 UPDATE가 경쟁해 teardown에서
+    # `InterfaceError: cannot use Connection.transaction() in a manually started transaction`이 나고,
+    # 망가진 커넥션이 풀로 돌아가 **무관한 다른 파일의 테스트가 setup에서 깨진다**(실측: 그 두 번째
+    # 에러는 실행마다 다른 테스트로 옮겨 다녔다). 형제 테스트들이 쓰는 `_wait_for_job_completion`은
+    # 여기서 못 쓴다 — 이 스텁이 터뜨려서 잡이 터미널 상태에 못 간다. 그래서 **마지막 DB 쓰기 뒤에**
+    # 호출되는 이 스텁 자체를 태스크의 DB 작업 종료 신호로 쓴다(그 뒤로는 Redis뿐이다).
+    db_work_done = asyncio.Event()
+
+    async def failing_update_job(job_id: str, **kwargs: Any) -> None:
+        if kwargs.get("status") is ImageGenerationJobStatus.SUCCEEDED:
+            db_work_done.set()
+            raise RedisError("redis down")
+
+    monkeypatch.setattr(images_router, "update_job", failing_update_job)
+
+    call_count = {"n": 0}
+
+    def generate() -> tuple[bytes, str]:
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            raise LocalImageBlockedError(reason="image")
+        return _png_bytes(), "image/png"
+
+    _override_image_client(generate)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=2))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    # 태스크의 마지막 DB 쓰기가 끝날 때까지 기다린다 — 위 스텁 주석 참조.
+    await asyncio.wait_for(db_work_done.wait(), timeout=5)
+
+    rows = await _wait_for_clover_refund(db_session, user.id)
+    spent, refunded = _spent_and_refunded(rows)
+    assert spent == -2 * clover.IMAGE_UNIT_COST
+    assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만, 두 번이 아니라 한 번
+    await db_session.refresh(user)
+    assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
