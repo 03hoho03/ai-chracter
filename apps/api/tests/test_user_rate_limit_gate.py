@@ -180,7 +180,14 @@ async def test_chat_routes_return_429_with_user_limit_body_when_burst_exceeded(
     ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    resp = await db_client.request(method, path_template.format(**ids), json=body)
+    # apps/api/CLAUDE.md "테스트 인프라" — 게이트가 조회 뒤로 내려간 뒤(CT-7)는 `llm_client`가
+    # 게이트보다 먼저 resolve된다. 429로 막혀 실제로 쓰이지 않아도 오버라이드가 없으면 진짜
+    # 클라이언트를 만들다 API 키 부재로 500이 난다.
+    _override_llm_client(_FakeLLMClient())
+    try:
+        resp = await db_client.request(method, path_template.format(**ids), json=body)
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -226,13 +233,19 @@ async def test_four_chat_routes_share_one_bucket(
     assert sent.status_code == 200
     assert regenerated.status_code == 200
 
-    edited = await db_client.patch(
-        f"/chat-rooms/{ids['room_id']}/messages/{ids['message_id']}",
-        json={"content": "안녕"},
-    )
-    previewed = await db_client.post(
-        f"/preview-sessions/{ids['id']}/messages", json={"content": "안녕"}
-    )
+    # 429로 막힐 요청이지만 게이트보다 먼저 `llm_client`가 resolve된다(CT-7) — 위 두 요청과
+    # 같은 이유로 오버라이드가 필요하다.
+    _override_llm_client(_FakeLLMClient())
+    try:
+        edited = await db_client.patch(
+            f"/chat-rooms/{ids['room_id']}/messages/{ids['message_id']}",
+            json={"content": "안녕"},
+        )
+        previewed = await db_client.post(
+            f"/preview-sessions/{ids['id']}/messages", json={"content": "안녕"}
+        )
+    finally:
+        _clear_llm_override()
 
     for resp in (edited, previewed):
         assert resp.status_code == 429
@@ -268,7 +281,11 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.request(method, path_template.format(**ids), json=body)
+    _override_llm_client(_FakeLLMClient())
+    try:
+        resp = await db_client.request(method, path_template.format(**ids), json=body)
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -296,7 +313,11 @@ async def test_burst_check_runs_before_daily_check(
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm_client(_FakeLLMClient())
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 429
     detail = resp.json()["detail"]
@@ -415,10 +436,14 @@ async def test_exceeded_request_logs_warning_with_fixed_token(
     room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    with caplog.at_level(logging.WARNING):
-        resp = await db_client.post(
-            f"/chat-rooms/{room_id}/messages", json={"content": "비밀 프롬프트 문장"}
-        )
+    _override_llm_client(_FakeLLMClient())
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post(
+                f"/chat-rooms/{room_id}/messages", json={"content": "비밀 프롬프트 문장"}
+            )
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 429
     records = [record for record in caplog.records if "user_limit_exceeded" in record.getMessage()]
@@ -522,7 +547,11 @@ async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst
 
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    blocked = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm_client(_FakeLLMClient())
+    try:
+        blocked = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     assert blocked.status_code == 429
     detail = blocked.json()["detail"]
@@ -542,7 +571,11 @@ async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
     room_id = await _real_room_id(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_DAILY_LIMIT", 0)
 
-    resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm_client(_FakeLLMClient())
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     assert resp.status_code == 429
     # 잔액 0이라 클로버로도 못 낸다(clover-techspec.md CT-8) — 면제 계정과의 대비는 그대로다.
@@ -582,7 +615,11 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     # "새 요청의 새 세션"을 재현한다.
     db_session.expire_all()
 
-    after = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    _override_llm_client(_FakeLLMClient())
+    try:
+        after = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
+    finally:
+        _clear_llm_override()
 
     assert after.status_code == 429
     # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다(CT-8).
