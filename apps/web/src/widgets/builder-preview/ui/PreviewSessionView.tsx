@@ -160,6 +160,12 @@ export function PreviewSessionView({
             {status.kind === "error" &&
               (status.rateLimit ? (
                 <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />
+              ) : status.declined ? (
+                /* S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
+                   `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다). */
+                <div className="flex items-center gap-2 rounded-lg border border-border px-3.5 py-2.5">
+                  <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요.</span>
+                </div>
               ) : (
                 <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
                   <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>

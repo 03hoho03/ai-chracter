@@ -14,6 +14,7 @@ import {
 import { chatStreamEventSchema } from "@/entities/chat-room";
 import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } from "@/entities/chat-room";
 import { cloverKeys } from "@/entities/clover";
+import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
@@ -24,10 +25,14 @@ type PendingRequest = { payload: ChatStreamRequest; mode: "append" | "replaceLas
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
 // limit-goal-prompt.md RL-15 — 429는 안내 문구와 다음 행동이 다른 오류라(기다리면 풀린다) 배너가
 // 분기할 수 있게 `rateLimit`을 함께 싣는다. 429가 아닌 실패는 값이 없고 기존 배너 그대로다.
+// clover-goal-prompt.md CL-19 / S12 C-3 — `declined`는 **사용자가 확인 모달에서 그만둔 것**이라
+// 실패가 아니다. 같은 `error` 자리를 쓰는 이유는 낙관적 사용자 메시지가 이미 목록에 있어
+// 아무것도 안 보여 주면 멈춘 것처럼 읽히기 때문이고(재시도 버튼도 그대로 유용하다), 문구만
+// 배너가 갈라 쓴다 — 실패하지 않은 일에 "실패했습니다"를 쓰면 거짓이다.
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit };
+  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit; declined?: boolean };
 
 /** techspec-chat-common.md §1 — 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
@@ -45,7 +50,7 @@ export function useSendMessage(
    *
    * 안 넘기면 확인 429가 평소의 오류 배너로 떨어질 뿐 동작은 깨지지 않는다 — 다만 그 화면에서는
    * 클로버를 영영 못 쓴다. */
-  confirmCloverSpend?: (error: unknown) => Promise<boolean>,
+  confirmCloverSpend?: (error: unknown) => Promise<CloverSpendConfirmOutcome>,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<SendMessageStatus>({ kind: "idle" });
@@ -112,11 +117,18 @@ export function useSendMessage(
       // clover-goal-prompt.md CL-19 — 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).
-      if (allowCloverConfirm && (await confirmCloverSpend?.(error))) {
+      const confirmOutcome = allowCloverConfirm ? await confirmCloverSpend?.(error) : undefined;
+      if (confirmOutcome === "retry") {
         await openStream(pending, false);
         return;
       }
-      setStatus({ kind: "error", retryPayload: pending, rateLimit: getChatRateLimit(error) });
+      setStatus({
+        kind: "error",
+        retryPayload: pending,
+        rateLimit: getChatRateLimit(error),
+        // S12 C-3 — 그만두기는 실패가 아니다. 배너가 이 값으로 문구를 가른다.
+        declined: confirmOutcome === "declined",
+      });
     } finally {
       setStreamingText("");
       if (!hasErrored) setStatus({ kind: "idle" });

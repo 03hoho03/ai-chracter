@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 
 import { getChatRateLimit, type ChatRateLimit } from "@/entities/chat-room";
 import { cloverKeys } from "@/entities/clover";
+import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
 import {
   applyPreviewStreamEvent,
@@ -17,10 +18,12 @@ import { openChatStream } from "@/shared/api/sse/openChatStream";
 // TS-04 — isSending(boolean) + error(boolean)의 조합은 "전송 중이면서 동시에 에러"라는 불가능 상태를
 // 타입으로 막지 못했다(useSendMessage와 동일한 처방). 재시도가 없어 useSendMessage와 달리 retryPayload는
 // 필요 없다. limit-goal-prompt.md RL-23 — 429만 배너 문구가 갈리므로 그 값만 함께 싣는다.
+// S12 C-3 — `declined`는 확인 모달에서 **사용자가 그만둔 것**이라 실패가 아니다. 문구만 배너가
+// 갈라 쓴다(`useSendMessage`와 같은 처방).
 type PreviewSendStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; rateLimit?: ChatRateLimit };
+  | { kind: "error"; rateLimit?: ChatRateLimit; declined?: boolean };
 
 /**
  * features/send-message의 useSendMessage(techspec-chat-common.md §1)와 동일한 낙관적 업데이트+SSE
@@ -36,7 +39,7 @@ export function usePreviewSendMessage(
   /** clover-goal-prompt.md CL-19 — 오류를 받아 **"재시도해도 되는가"** 를 돌려준다.
    * `useSendMessage`와 같은 이유로 위젯이 주입한다(feature끼리 import하지 않는다, 선례 0건).
    * 미리보기도 채팅 4경로의 같은 게이트를 지나므로 같은 확인이 필요하다. */
-  confirmCloverSpend?: (error: unknown) => Promise<boolean>,
+  confirmCloverSpend?: (error: unknown) => Promise<CloverSpendConfirmOutcome>,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<PreviewSendStatus>({ kind: "idle" });
@@ -78,6 +81,8 @@ export function usePreviewSendMessage(
     // 안 된다**(`return`은 `finally`를 건너뛰지 않는다). 안쪽이 이미 자기 상태를 세웠으므로
     // 여기서는 아무것도 하지 않는다.
     let handedOffToRetry = false;
+    // S12 C-3 — 그만두기를 실패와 구분한다(`finally`가 상태를 세우므로 바깥에 둔다).
+    let declined = false;
 
     try {
       for await (const event of openChatStream(
@@ -110,7 +115,9 @@ export function usePreviewSendMessage(
       // 텍스트로 한 번 더 보낸다. 🔴 재전송은 `send`를 다시 부르므로 **낙관적 사용자 메시지가
       // 한 번 더 추가된다** — 그래서 아래 `finally`가 끝난 뒤가 아니라 여기서 `return`하지 않고,
       // 재전송 전에 방금 넣은 낙관적 메시지를 되돌린다.
-      if (allowCloverConfirm && (await confirmCloverSpend?.(error))) {
+      const confirmOutcome = allowCloverConfirm ? await confirmCloverSpend?.(error) : undefined;
+      declined = confirmOutcome === "declined";
+      if (confirmOutcome === "retry") {
         queryClient.setQueryData<PreviewSessionState>(
           previewSessionKeys.detail(previewSessionId),
           (prev) =>
@@ -125,7 +132,7 @@ export function usePreviewSendMessage(
     } finally {
       if (!handedOffToRetry) {
         setStreamingText("");
-        setStatus(hasErrored ? { kind: "error", rateLimit } : { kind: "idle" });
+        setStatus(hasErrored ? { kind: "error", rateLimit, declined } : { kind: "idle" });
       }
       // clover-techspec.md CT-12 — 미리보기도 채팅 4경로의 같은 게이트를 지나므로 무료 일일분을
       // 넘기면 클로버가 깎인다(RL-23 — 미리보기 문구가 "같은 한도를 쓴다"고 먼저 말하는 이유).

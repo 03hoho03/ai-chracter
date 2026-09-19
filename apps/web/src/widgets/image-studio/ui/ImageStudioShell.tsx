@@ -98,8 +98,8 @@ export function ImageStudioShell({
    * `false`로 들어가므로, 그 재시도가 또 확인 429를 받아도 모달을 다시 띄우지 않고 평범한 실패로
    * 끝난다. 채팅 쪽(`useSendMessage`)과 같은 모양이다.
    *
-   * ⚠️ 동의 POST가 실패한 경우는 여기까지 오지 않는다 — `useConfirmCloverSpend`가 그때 `false`를
-   * 돌려주므로(`useConfirmCloverSpend.ts:45-47`) 재시도 자체가 없다.
+   * ⚠️ 동의 POST가 실패한 경우는 여기까지 오지 않는다 — `useConfirmCloverSpend`가 그때
+   * `"unhandled"`를 돌려주므로 재시도 자체가 없다(그건 진짜 실패라 오류 토스트가 뜬다).
    *
    * 🔴 재시도가 정말로 확인 429를 다시 받는 경로는 **이미지에만 있다**: 토큰 버킷은 시간당
    * 충전이라(`core/rate_limit.py`) 자정에 차지 않으므로, 어제 동의하고 오늘 재시도하면 서버가
@@ -118,10 +118,18 @@ export function ImageStudioShell({
       // 순서가 뒤집히면 저 투영이 코드를 모른 채 `undefined`를 주고 일반 오류 토스트가 뜬다.
       // 단가는 BE 게이트와 같은 계산(`payload.count * IMAGE_UNIT_COST`)이다 — 채팅과 달리 장수를
       // 곱한다.
-      if (allowCloverConfirm && (await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST))) {
+      const confirmOutcome = allowCloverConfirm
+        ? await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST)
+        : "unhandled";
+      if (confirmOutcome === "retry") {
         await generate(values, false);
         return;
       }
+      // S12 C-3 — 그만두기는 실패가 아니므로 오류 토스트를 띄우지 않는다. 🔴 채팅 3표면과 달리
+      // 여기서는 **아무것도 띄우지 않는다**: 채팅은 낙관적 사용자 메시지가 이미 목록에 남아
+      // 있어 침묵하면 멈춘 것처럼 읽히지만, 이미지는 화면에 생긴 흔적이 없어 모달을 닫은 것이
+      // 곧 완결된 피드백이다(잡도 만들어지지 않아 되돌릴 것도 없다).
+      if (confirmOutcome === "declined") return;
       // limit-goal-prompt.md RL-11 — 429는 두 코드(토큰 부족·큐 만석)가 서로 다음 행동이 달라
       // 문구도 갈린다. 나머지 실패는 기존 분기 그대로다.
       const rateLimit = getImageRateLimit(error);

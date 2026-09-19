@@ -6,8 +6,10 @@ import { useCloverBalanceQuery } from "./useCloverBalanceQuery";
 /** clover-techspec.md CT-10 — 출석 지급의 **호출 자리**다.
  *
  * 🔴 `GET /me/clover`에 부작용을 두지 않기로 했으므로(전용 POST), **FE가 부르는 걸 빠뜨리면
- * 아무도 출석분을 못 받는다.** 컴파일도 테스트도 그 누락을 잡지 못하기 때문에 문서가 자리를
- * 하나로 못박았고, 잔액을 읽는 화면이 이 훅을 함께 부른다.
+ * 아무도 출석분을 못 받는다.** 컴파일도 테스트도 그 누락을 잡지 못한다 — 실제로 한동안
+ * 호출부가 0건이었고 브라우저 실검증(S12 D-1)에서야 드러났다. 지금 호출부는
+ * `widgets/clover-attendance`의 `CloverAttendanceMount` **하나**이고, 그게
+ * `routes/__root.tsx`에 마운트된다(비로그인 가드도 거기 있다 — 이 훅은 로그인 상태를 모른다).
  *
  * **멱등은 서버가 보장한다** — `users.clover_attendance_granted_on`이 오늘(KST)이면 `granted=false`로
  * 돌려주고 아무것도 하지 않는다(원장 유니크 제약이 동시 요청까지 막는다, clover-goal-prompt.md CL-8).

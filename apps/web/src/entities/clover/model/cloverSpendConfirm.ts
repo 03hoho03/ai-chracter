@@ -16,3 +16,17 @@ import { getRateLimitDetail } from "@/shared/api/rateLimit";
 export function isCloverSpendConfirmRequired(error: unknown): boolean {
   return getRateLimitDetail(error)?.code === "CLOVER_CONFIRM_REQUIRED";
 }
+
+/** 확인 요청의 결과(S12 C-3).
+ *
+ * - `retry` — 동의가 서버에 기록됐다. 호출부는 같은 요청을 한 번 더 보낸다.
+ * - `declined` — 사용자가 스스로 그만뒀다. 🔴 **아무것도 실패하지 않았으므로 오류 문구를 쓰면
+ *   거짓이다**(불리언이었을 때 세 표면이 전부 *"응답 생성에 실패했습니다"* 를 띄웠다).
+ * - `unhandled` — 확인이 필요한 오류가 아니거나 **동의 기록이 실패**했다. 둘 다 실제 실패라
+ *   호출부는 평소의 오류 처리를 그대로 한다.
+ *
+ * 🔴 **이 타입이 `entities`에 있는 이유**는 FSD다. 판정·모달은 `features/confirm-clover-spend`에
+ * 있지만 소비하는 곳이 `features/send-message`·`features/preview-chat`·`widgets/image-studio`로
+ * 갈리는데, **feature가 다른 feature를 import하는 선례가 이 저장소에 0건**이다. 함수는 위젯이
+ * 주입해 그 문제를 피했고, 타입은 공통 상위인 여기 둔다. */
+export type CloverSpendConfirmOutcome = "retry" | "declined" | "unhandled";

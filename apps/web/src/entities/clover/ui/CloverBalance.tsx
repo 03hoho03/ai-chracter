@@ -16,6 +16,14 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
  * 하나"로 관리하는 것은 솔리드 채움이고(채팅=전송 버튼, 이미지=생성 버튼), 잉크는 그 예산을
  * 쓰지 않는다. `text-primary`의 대비 대역은 5.78~7.18:1로 DESIGN.md §2에 실측돼 있다.
  *
+ * 🔴 **부족은 색으로만 말하지 않는다**(WCAG 1.4.1, S12 B-3). `text-primary`만으로 갈랐을 때
+ * 색각 이상이나 저대비 환경에서는 충분/부족이 **같은 숫자 한 줄**로 보였다 — 스크린리더는
+ * `sr-only` 문장으로 이미 구분했지만 그건 눈으로 보는 쪽을 구제하지 않는다. 그래서 그 문장이
+ * 쓰던 말을 화면에도 꺼낸다. 어휘는 DESIGN.md §5 Status badges가 정한 그대로다 — **상태는
+ * 글자와 잉크 명도로 가르고 색상(hue)으로 가르지 않는다**(같은 절: "중립 상태 안의 위계는
+ * 잉크 명도로 만든다"). 가운뎃점 구분은 `TabsTrigger`의 `변형 · 준비 중`과 같은 관용구다.
+ * 새 색·새 토큰·새 채움을 만들지 않았다.
+ *
  * 정지 상태 그림자 없음(§4 Flat-at-Rest), 채움 없음(§5 Status badges — `bg-muted`는 카드·팝오버
  * 위에서 1.0000:1로 사라진다). 크기는 본문 기본보다 한 단 아래인 `text-xs`로, 조회수와 같다. */
 export function CloverBalance({
@@ -39,7 +47,10 @@ export function CloverBalance({
       <span className="sr-only">
         클로버 {balance.toLocaleString()}개{isInsufficient ? " — 부족해요" : ""}
       </span>
-      <span aria-hidden>{balance.toLocaleString()}</span>
+      <span aria-hidden>
+        {balance.toLocaleString()}
+        {isInsufficient ? " · 부족해요" : ""}
+      </span>
     </span>
   );
 }
