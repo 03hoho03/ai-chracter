@@ -68,6 +68,27 @@ export function UserActionPanel({
         >
           {isRateLimitExempt ? "면제 해제" : "레이트리밋 면제"}
         </Button>
+        {/* clover-goal-prompt.md CL-16 — 지급·회수는 둘 다 있어야 오지급을 되돌릴 수 있다.
+         * 면제 토글과 달리 **상태로 갈리지 않는다** — 잔액이 있든 없든 지급은 늘 가능하고,
+         * 회수 가능 여부는 금액에 달려 있어 BE만 판정할 수 있다(422). 그래서 두 버튼을 함께 둔다. */}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void UserActionConfirmModal.call({ userId, action: "clover-grant", restrictableContentCount })}
+        >
+          클로버 지급
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            void UserActionConfirmModal.call({ userId, action: "clover-revoke", restrictableContentCount })
+          }
+        >
+          클로버 회수
+        </Button>
       </div>
     </section>
   );

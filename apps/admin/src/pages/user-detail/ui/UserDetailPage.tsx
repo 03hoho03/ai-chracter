@@ -5,7 +5,9 @@ import { Link } from "@tanstack/react-router";
 import {
   ACTION_TYPE_LABELS,
   CHAT_VIEW_REASON_CATEGORY_LABELS,
+  CLOVER_KIND_LABELS,
   SIGNUP_METHOD_LABELS,
+  useCloverLedgerQuery,
   useUserDetailQuery,
 } from "@/entities/admin-user";
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
@@ -93,7 +95,10 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
           </div>
         </dl>
 
-        <dl className="grid grid-cols-3 gap-x-6 gap-y-2 text-sm">
+        {/* 클로버 잔액을 여기 넣는 이유: 작품·채팅방·메시지와 같은 "이 유저의 현재 수치"이고,
+         * 조치 패널의 지급·회수가 바로 이 숫자를 움직인다. 별도 섹션으로 떼면 조치와 그 대상이
+         * 화면에서 멀어진다(clover-techspec.md §6). */}
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">작품수</dt>
             <dd className="tabular-nums text-foreground">{formatCount(userDetailQuery.data.contentCount)}</dd>
@@ -105,6 +110,10 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
           <div>
             <dt className="text-muted-foreground">메시지수</dt>
             <dd className="tabular-nums text-foreground">{formatCount(userDetailQuery.data.messageCount)}</dd>
+          </div>
+          <div>
+            <dt className="text-muted-foreground">클로버</dt>
+            <dd className="tabular-nums text-foreground">{formatCount(userDetailQuery.data.cloverBalance)}</dd>
           </div>
         </dl>
       </section>
@@ -189,6 +198,8 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
         )}
       </section>
 
+      <CloverLedgerSection userId={userId} />
+
       <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">채팅방</h2>
         {userDetailQuery.data.chatRooms.length === 0 ? (
@@ -259,6 +270,76 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
       />
     </>
   );
+}
+
+type CloverLedgerSectionProps = {
+  userId: string;
+};
+
+/** 원장은 상세 응답이 아니라 별도 라우트다(clover-techspec.md §4-5) — 상세가 이미 목록 셋을
+ * 싣고 있어 네 번째를 얹으면 한 요청이 무거워진다. 그래서 로딩·에러도 이 섹션이 따로 진다.
+ *
+ * 🔴 **첫 페이지 20건만** 쓴다(사용자 결정 — 전용 목록 페이지는 만들지 않는다). 그보다 오래된
+ * 내역이 필요한 일은 아직 없고, 필요해지면 그때 `page`를 올리는 화면만 더하면 된다. */
+function CloverLedgerSection({ userId }: CloverLedgerSectionProps) {
+  const ledgerQuery = useCloverLedgerQuery(userId);
+
+  return (
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="text-lg font-semibold text-foreground">클로버 원장</h2>
+        {ledgerQuery.isSuccess && ledgerQuery.data.totalCount > ledgerQuery.data.items.length && (
+          <p className="text-xs text-muted-foreground">
+            최근 {formatCount(ledgerQuery.data.items.length)}건 / 전체 {formatCount(ledgerQuery.data.totalCount)}건
+          </p>
+        )}
+      </div>
+
+      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-muted" />}
+
+      {ledgerQuery.isError && (
+        <p className="text-sm text-destructive-text">원장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
+      )}
+
+      {ledgerQuery.isSuccess &&
+        (ledgerQuery.data.items.length === 0 ? (
+          <p className="text-sm text-muted-foreground">클로버가 오간 기록이 없어요.</p>
+        ) : (
+          <div className="overflow-hidden rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>종류</TableHead>
+                  <TableHead className="text-right">증감</TableHead>
+                  <TableHead className="text-right">이후 잔액</TableHead>
+                  <TableHead>일시</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {ledgerQuery.data.items.map((item) => (
+                  <TableRow key={item.id}>
+                    <TableCell>{CLOVER_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
+                    {/* 부호를 숫자에 붙여 방향을 읽게 한다 — 색으로 가르지 않는 것은 이 앱의
+                     * 규칙이다(유채색은 위험 액션에만, PRODUCT.md). 차감이 위험은 아니다. */}
+                    <TableCell className="text-right tabular-nums">{formatSignedCount(item.amount)}</TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {formatCount(item.balanceAfter)}
+                    </TableCell>
+                    <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        ))}
+    </section>
+  );
+}
+
+/** 원장은 증감이라 부호가 값의 일부다 — `formatCount`는 음수에 `-`만 붙이므로 지급 쪽에 `+`를
+ * 손으로 붙인다. 0은 원장에 들어오지 않는다(BE가 `amount=0`을 거부한다). */
+function formatSignedCount(amount: number) {
+  return amount > 0 ? `+${formatCount(amount)}` : formatCount(amount);
 }
 
 /** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접

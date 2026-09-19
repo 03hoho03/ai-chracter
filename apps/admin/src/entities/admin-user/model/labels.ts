@@ -15,12 +15,33 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   "user-unsuspend": "정지 해제",
   "user-rate-limit-exempt-on": "레이트리밋 면제",
   "user-rate-limit-exempt-off": "레이트리밋 면제 해제",
+  // clover-goal-prompt.md CL-16 — `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
+  // 🔴 이 `Record<string, string>`은 타입 강제 밖이라 키를 빠뜨려도 컴파일이 통과하고, 그때
+  // 조치 이력 표에 영문 액션 타입이 그대로 찍힌다(호출부의 `?? log.actionType` 폴백).
+  // 값은 BE 리터럴과 글자 단위로 대조했다.
+  "user-clover-grant": "클로버 지급",
+  "user-clover-revoke": "클로버 회수",
   restrict: "이용제한 부과",
   delete: "삭제",
   "lift-restriction": "이용제한 해제",
   reject: "반려",
   "chat-view": "채팅 열람",
   "image-view": "이미지 열람",
+};
+
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 8종이다. `AdminCloverLedgerItem.kind`가
+ * `Literal`이 아니라 `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE
+ * 코드젠도 깨지지 않게 한 것). 그래서 여기도 `Record<string, string>`이고, 모르는 값은 호출부가
+ * 원문 그대로 보여준다 — ACTION_TYPE_LABELS와 같은 관례이자 같은 약점이다. */
+export const CLOVER_KIND_LABELS: Record<string, string> = {
+  admin_grant: "운영자 지급",
+  admin_revoke: "운영자 회수",
+  attendance_grant: "출석 지급",
+  chat_spend: "채팅 사용",
+  image_spend: "이미지 사용",
+  chat_refund: "채팅 환불",
+  image_refund: "이미지 환불",
+  withdrawal_burn: "탈퇴 소멸",
 };
 
 export type ChatViewReasonCategory = components["schemas"]["ChatViewReasonCategory"];
