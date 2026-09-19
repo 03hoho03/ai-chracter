@@ -13,7 +13,7 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from sqlalchemy import select, update
+from sqlalchemy import Integer, literal_column, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.core.rate_limit import KST
@@ -154,26 +154,42 @@ async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     지워지고** ② 반환값을 버리면 그 실패가 조용하다. 탈퇴 라우트는 `user`를 초입에서 로드하고
     그 뒤 채팅방·메시지·asset 삭제를 거치므로 그 창이 실제로 존재한다.
 
-    잔액이 0이면 아무것도 하지 않는다 — 의미 없는 0원 원장 행을 만들지 않는다.
+    잔액이 0이면 아무것도 하지 않는다 — 의미 없는 0원 원장 행을 만들지 않는다. `WHERE
+    clover_balance > 0`이 그 규칙과 "유저가 없다"를 한꺼번에 처리한다(둘 다 행이 안 돌아온다).
 
-    ⚠️ 남은 창: 아래 `SELECT`와 `_apply`의 `UPDATE` 사이에 다른 트랜잭션의 차감이 커밋되면
-    원장 `amount`가 그만큼 과대 기재된다(**잔액은 그래도 정확히 0이 된다** — `_apply`가
-    `guard=False`라 무조건 덮는다). 같은 트랜잭션의 인접한 두 문장이라 창이 극히 좁고, 이걸
-    닫으려면 `FOR UPDATE`(이 저장소 선례 0건)가 필요하며 검증에도 독립 커넥션이 있어야 한다 —
-    S11의 `independent_session_factory` 항목으로 넘긴다.
+    🔴 **`_apply`를 쓰지 않고 자기 UPDATE를 갖는다.** `_apply`는 **상대 증감**
+    (`clover_balance + delta`)이라 소멸에는 맞지 않는다 — 읽어 둔 값으로 빼는 형태가 되어,
+    그 사이 차감이 커밋되면 `90 - 100 = -10`으로 `ck_users_clover_balance_non_negative`에
+    걸려 **탈퇴 요청이 500이 된다**. `guard=False`는 `WHERE` 조건을 빼는 것이지 대입을
+    절대값으로 만들지 않는다(앞선 판본의 docstring이 그 둘을 혼동했다).
+
+    소멸은 **절대 대입**(`SET clover_balance = 0`)이고 소멸액은 `RETURNING OLD`로 받는다 —
+    읽기와 쓰기가 한 문장이라 그 사이에 낄 창이 **없다**. PostgreSQL 18의 문법이고 CI·dev·prod가
+    전부 18이다(`docker-compose.*.yml`, `api.yml`). `NEW`는 항상 0이라 볼 것이 없다.
     """
-    current = await db.scalar(select(User.clover_balance).where(User.id == user_id))
-    if not current:
-        return 0
-    await _apply(
-        db,
-        user_id=user_id,
-        delta=-current,
-        kind="withdrawal_burn",
-        idempotency_key=None,
-        guard=False,
+    # `literal_column`에 타입을 주는 이유: 안 주면 `.returning()`이 `Update`를 그대로 돌려
+    # `db.scalar`가 `-> None` 오버로드로 잡혀 mypy strict가 막는다.
+    result = await db.execute(
+        update(User)
+        .where(User.id == user_id, User.clover_balance > 0)
+        .values(clover_balance=0)
+        .returning(literal_column("OLD.clover_balance", Integer))
     )
-    return current
+    burned = result.scalar_one_or_none()
+    if burned is None:
+        return 0
+    db.add(
+        CloverLedger(
+            user_id=user_id,
+            amount=-burned,
+            balance_after=0,
+            kind="withdrawal_burn",
+            idempotency_key=None,
+        )
+    )
+    # `_apply`와 같은 이유로 여기서 flush한다 — 예외가 이 자리에서 터져야 호출부가 안다.
+    await db.flush()
+    return int(burned)
 
 
 async def spend_in_new_transaction(
