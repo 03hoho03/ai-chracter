@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
@@ -135,6 +135,37 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     );
   }
 
+  // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  let errorNotice: ReactNode = null;
+  if (status.kind === "error") {
+    if (status.rateLimit) {
+      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
+    } else if (status.declined) {
+      // S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
+      // 쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만
+      // 말하고 다시 보낼 길은 열어 둔다(낙관적 사용자 메시지가 이미 목록에 있다).
+      errorNotice = (
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
+          <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요</span>
+          <Button variant="outline" size="sm" onClick={retry}>
+            <RotateCw aria-hidden className="size-3.5" />
+            다시 보내기
+          </Button>
+        </div>
+      );
+    } else {
+      errorNotice = (
+        <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+          <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
+          <Button variant="destructive" size="sm" onClick={retry}>
+            <RotateCw aria-hidden className="size-3.5" />
+            다시 시도
+          </Button>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="flex h-below-header flex-col">
       {/* border-b를 <header>가 아니라 안쪽 컬럼 div에 건다 — 뷰포트를 가로지르는 선은 전역 헤더의
@@ -225,29 +256,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   <TypingIndicator />
                 ))}
 
-              {status.kind === "error" &&
-                (status.rateLimit ? (
-                  <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />
-                ) : status.declined ? (
-                  /* S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
-                     쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만
-                     말하고 다시 보낼 길은 열어 둔다(낙관적 사용자 메시지가 이미 목록에 있다). */
-                  <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3.5 py-2.5">
-                    <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요</span>
-                    <Button variant="outline" size="sm" onClick={retry}>
-                      <RotateCw aria-hidden className="size-3.5" />
-                      다시 보내기
-                    </Button>
-                  </div>
-                ) : (
-                  <div role="alert" className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-                    <span className="text-xs text-destructive-text">응답 생성에 실패했습니다 · 다시 시도</span>
-                    <Button variant="destructive" size="sm" onClick={retry}>
-                      <RotateCw aria-hidden className="size-3.5" />
-                      다시 시도
-                    </Button>
-                  </div>
-                ))}
+              {errorNotice}
 
               {/* 오류 배너(위)는 이산적 실패라 assertive + 조건부 마운트, 이 경고는 메시지와 공존하는
                   정보라 polite + 항상 마운트다 — polite는 조건부 마운트에서 announce 여부가 갈린다는

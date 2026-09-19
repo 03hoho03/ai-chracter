@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { RotateCw, Send, TriangleAlert } from "lucide-react";
@@ -121,6 +121,28 @@ export function PreviewSessionView({
     void sendWithSession(reply);
   }
 
+  // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  let errorNotice: ReactNode = null;
+  if (status.kind === "error") {
+    if (status.rateLimit) {
+      errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />;
+    } else if (status.declined) {
+      // S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
+      // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).
+      errorNotice = (
+        <div className="flex items-center gap-2 rounded-lg border border-border px-3.5 py-2.5">
+          <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요.</span>
+        </div>
+      );
+    } else {
+      errorNotice = (
+        <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
+          <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
+        </div>
+      );
+    }
+  }
+
   return (
     <div className="flex h-below-header flex-col">
       <PreviewCloseHeader
@@ -158,20 +180,7 @@ export function PreviewSessionView({
                 <TypingIndicator />
               ))}
 
-            {status.kind === "error" &&
-              (status.rateLimit ? (
-                <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />
-              ) : status.declined ? (
-                /* S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
-                   `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다). */
-                <div className="flex items-center gap-2 rounded-lg border border-border px-3.5 py-2.5">
-                  <span className="text-xs text-muted-foreground">클로버를 쓰지 않았어요.</span>
-                </div>
-              ) : (
-                <div role="alert" className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-3.5 py-2.5">
-                  <span className="text-xs text-destructive-text">응답 생성에 실패했습니다.</span>
-                </div>
-              ))}
+            {errorNotice}
 
             {/* 오류 배너(위)는 이산적 실패라 assertive + 조건부 마운트, 이 경고는 메시지와 공존하는
                 정보라 polite + 항상 마운트다 — polite는 조건부 마운트에서 announce 여부가 갈린다는
