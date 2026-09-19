@@ -421,6 +421,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users/{user_id}/clover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Adjust User Clover
+         * @description clover-techspec.md §4-3 — 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
+         *     구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.
+         *
+         *     🔴 **토글의 *"같은 값을 다시 적용해도 막지 않는다"*를 여기로 옮기면 안 된다.** 그 문장이
+         *     성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라
+         *     두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고
+         *     `ux_clover_ledger_idempotency_key`가 그걸 강제한다(clover-goal-prompt.md CL-8).
+         *
+         *     **호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만
+         *     남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트
+         *     전용이다(clover-techspec.md CT-4): 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
+         *     어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.
+         *
+         *     ⇒ **"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지"의 구간이 생기지 않는다.** 지급이
+         *     커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면
+         *     둘 다 롤백된다. 이 런에서 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
+         *     갈려 있던** 경로였다.
+         *
+         *     `amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —
+         *     `burn_all`이 잔액 0에서 아무것도 하지 않는 것과 같은 규칙이다.
+         */
+        post: operations["adjust_user_clover_admin_users__user_id__clover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/clover-ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List User Clover Ledger
+         * @description clover-techspec.md §4-5 — 원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+         *
+         *     🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
+         *     페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이
+         *     같은 요청에서 난다) `created_at`의 `server_default`(트랜잭션 시작 시각) 동률이
+         *     `image_generation_requests`보다 흔하다. 선례는 `admin/image_generations.py`의
+         *     `_list_owner_requests_page`.
+         */
+        get: operations["list_user_clover_ledger_admin_users__user_id__clover_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/legal/{kind}": {
         parameters: {
             query?: never;
@@ -2198,6 +2263,89 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/clover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Balance
+         * @description 🔴 **부작용이 없다**(clover-techspec.md CT-10) — 출석 지급은 전용 POST다.
+         *
+         *     GET이 지급까지 하면 프리페치·재조회가 곧 지급이 되고, 그때 멱등을 보장하는 것은
+         *     `clover_attendance_granted_on` 하나뿐이라 실패 모드가 조용해진다.
+         */
+        get: operations["get_clover_balance_me_clover_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/clover/attendance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Clover Attendance
+         * @description 일일 출석 지급. 오늘(KST) 이미 받았으면 `granted=false`이고 **에러가 아니다.**
+         *
+         *     멱등이 **두 겹**이다. 둘이 막는 것이 다르다:
+         *
+         *     - `clover_attendance_granted_on` 검사 — **순차 재호출**을 막는다(FE가 여러 번 부르는 경우).
+         *       빠른 길이고, 이것만으로는 동시 요청을 못 막는다.
+         *     - 원장 **멱등키의 유니크 인덱스** — **동시 요청**을 막는다. 아래 `except` 참조.
+         *
+         *     🔴 **지급과 멱등 표지가 한 트랜잭션이다.** 둘을 갈라 커밋하면 그 사이에서 실패할 때
+         *     "돈은 나갔는데 표지가 없는" 상태가 남고, 재시도가 곧 이중 지급이 된다 — S4·S5가 두 번
+         *     겪은 "자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간"이 여기서는 **아예 생기지 않는다.**
+         *     ⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.
+         */
+        post: operations["claim_clover_attendance_me_clover_attendance_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/clover/spend-confirmation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Clover Spend
+         * @description clover-goal-prompt.md CL-19 — "오늘 클로버를 쓴다"에 하루 1회 동의한 사실을 남긴다.
+         *
+         *     잔액 변동이 아니라 원장에 자리가 없다. 같은 날 다시 불러도 같은 날짜를 덮어쓸 뿐이라
+         *     멱등이고, 그래서 이미 확인했는지 미리 보지 않는다(조회 한 번을 아끼는 것이 아니라
+         *     분기를 하나 없애는 것이다). 🔴 돈이 움직이지 않으므로 위 출석의 멱등키가 여기엔 필요 없다.
+         *
+         *     ⚠️ `_consent`를 데코레이터의 `dependencies=`가 아니라 **파라미터로** 받는 것은 위 둘과
+         *     형태가 다르다. 반환형·상태코드와는 무관하고(`dependencies=`는 그것들을 안 건드린다),
+         *     이유는 이 라우트만 반환할 값이 없어서다 — 본문이 두 줄뿐이라 의존성이 시그니처에 보이는
+         *     쪽이 "무엇을 거쳐 왔는지"를 읽기 쉽다. 한 파일에 두 형태가 섞인 것은 의도다.
+         */
+        post: operations["confirm_clover_spend_me_clover_spend_confirmation_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
         parameters: {
             query?: never;
@@ -2502,6 +2650,36 @@ export interface components {
             reasonCategory: components["schemas"]["ChatViewReasonCategory"];
             /** Reasontext */
             reasonText: string;
+        };
+        /** AdminCloverLedgerItem */
+        AdminCloverLedgerItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Amount */
+            amount: number;
+            /** Balanceafter */
+            balanceAfter: number;
+            /** Kind */
+            kind: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /** AdminCloverLedgerListResponse */
+        AdminCloverLedgerListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminCloverLedgerItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
         };
         /**
          * AdminContentActionRequest
@@ -3415,6 +3593,32 @@ export interface components {
              */
             createdAt: string;
         };
+        /**
+         * AdminUserCloverRequest
+         * @description clover-techspec.md §4-2 — 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
+         *     쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은
+         *     관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를
+         *     인용할 자리가 없고 대신 "왜 줬나"가 감사 로그에 남아야 한다.
+         *
+         *     `±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 "왜 2인가"를 적은 관례):
+         *     clover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
+         *     운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이
+         *     이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도
+         *     낫다.
+         *
+         *     🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).
+         *     출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
+         *     **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
+         *     **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다.
+         */
+        AdminUserCloverRequest: {
+            /** Amount */
+            amount: number;
+            /** Admincomment */
+            adminComment?: string | null;
+            /** Idempotencykey */
+            idempotencyKey: string;
+        };
         /** AdminUserDetailResponse */
         AdminUserDetailResponse: {
             /**
@@ -3448,6 +3652,8 @@ export interface components {
             restrictableContentCount: number;
             /** Ratelimitexempt */
             rateLimitExempt: boolean;
+            /** Cloverbalance */
+            cloverBalance: number;
             /** Chatroomcount */
             chatRoomCount: number;
             /** Messagecount */
@@ -3874,6 +4080,25 @@ export interface components {
          * @enum {string}
          */
         ChatViewReasonCategory: "report-investigation" | "appeal-review" | "legal-request" | "other";
+        /** CloverAttendanceResponse */
+        CloverAttendanceResponse: {
+            /** Granted */
+            granted: boolean;
+            /** Balance */
+            balance: number;
+        };
+        /**
+         * CloverBalanceResponse
+         * @description clover-techspec.md §4-2. Python은 snake_case, JSON은 camelCase다.
+         */
+        CloverBalanceResponse: {
+            /** Balance */
+            balance: number;
+            /** Spendconfirmedtoday */
+            spendConfirmedToday: boolean;
+            /** Attendanceclaimable */
+            attendanceClaimable: boolean;
+        };
         /**
          * ContentAccessStatus
          * @description Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:
@@ -5614,6 +5839,72 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adjust_user_clover_admin_users__user_id__clover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserCloverRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_user_clover_ledger_admin_users__user_id__clover_ledger_get: {
+        parameters: {
+            query?: {
+                page?: number;
+            };
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCloverLedgerListResponse"];
+                };
             };
             /** @description Validation Error */
             422: {
@@ -8585,6 +8876,64 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MyChatRoomListItem"][];
                 };
+            };
+        };
+    };
+    get_clover_balance_me_clover_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverBalanceResponse"];
+                };
+            };
+        };
+    };
+    claim_clover_attendance_me_clover_attendance_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverAttendanceResponse"];
+                };
+            };
+        };
+    };
+    confirm_clover_spend_me_clover_spend_confirmation_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
