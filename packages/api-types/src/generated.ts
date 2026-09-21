@@ -2346,6 +2346,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/clover/missions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Missions
+         * @description clover-page-goal-prompt.md CE-13 — 3종(`first_publish`·`first_message`·`first_image`)
+         *     달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로(T-13) 이 응답은
+         *     캐시된 값이 아니라 그 순간의 진실이다.
+         */
+        get: operations["get_clover_missions_me_clover_missions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/clover/missions/{key}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Clover Mission
+         * @description 미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
+         *     **에러가 아니다** — 위 출석과 같은 패턴이다.
+         *
+         *     🔴 달성 여부를 **저장하지 않으므로**(CE-13) 이 판정도 매 요청 EXISTS다 — 청구 직전에
+         *     달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
+         *     달성하면 다시 청구할 수 있다(T-13).
+         */
+        post: operations["claim_clover_mission_me_clover_missions__key__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
         parameters: {
             query?: never;
@@ -4098,6 +4145,33 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Attendanceclaimable */
             attendanceClaimable: boolean;
+        };
+        /** CloverMissionClaimResponse */
+        CloverMissionClaimResponse: {
+            /** Granted */
+            granted: boolean;
+            /** Balance */
+            balance: number;
+        };
+        /**
+         * CloverMissionItem
+         * @description clover-page-goal-prompt.md CE-13. `achieved`·`claimed`는 매 조회마다 EXISTS로 다시
+         *     계산한다 — 저장된 상태가 아니다(T-13).
+         */
+        CloverMissionItem: {
+            /** Key */
+            key: string;
+            /** Reward */
+            reward: number;
+            /** Achieved */
+            achieved: boolean;
+            /** Claimed */
+            claimed: boolean;
+        };
+        /** CloverMissionsResponse */
+        CloverMissionsResponse: {
+            /** Missions */
+            missions: components["schemas"]["CloverMissionItem"][];
         };
         /**
          * ContentAccessStatus
@@ -8934,6 +9008,57 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_clover_missions_me_clover_missions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverMissionsResponse"];
+                };
+            };
+        };
+    };
+    claim_clover_mission_me_clover_missions__key__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: "first_publish" | "first_message" | "first_image";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverMissionClaimResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

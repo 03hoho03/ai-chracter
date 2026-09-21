@@ -10,7 +10,7 @@
 
 import logging
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 from sqlalchemy import Integer, literal_column, select, update
@@ -210,7 +210,9 @@ async def grant(
 
     🔴 `expires_at`은 호출 지점이 명시해야 한다(CE-11) — 만료가 붙는 지급은 출석·미션·기존
     잔액 백필뿐이고, 어드민 지급과 환불은 `None`(무기한)이다. 기본값을 `None`으로 둔 이유는
-    출석·미션 라우터가 아직 이 인자를 넘기지 않아서다 — S3가 붙인다.
+    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석(`clover/
+    router.py`)·미션(`clover/missions.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을
+    명시적으로 넘긴다.
     """
     balance_after = await _apply(
         db,
@@ -383,3 +385,21 @@ def kst_today(now: datetime) -> date:
 def is_same_kst_day(last: date | None, now: datetime) -> bool:
     """`last`가 `now`와 같은 KST 날짜인가. `last`가 `None`(한 번도 없음)이면 `False`."""
     return last == kst_today(now)
+
+
+def earned_lot_expiry(now: datetime) -> datetime:
+    """출석·미션 지급이 만드는 로트의 만료 시각 — 지급일(KST) 자정 + 8일(clover-page-goal-
+    prompt.md CE-7·CE-11). `kst_today`를 재사용해 날짜를 구하고(naive `now` 거부도 그쪽에
+    위임한다), 그 날의 KST 자정에 8일을 더한다.
+
+    🔴 7이 아니라 8인 이유: 자정으로 정규화하면 "+7일"은 실제 보유 기간을 6~7일로 만든다
+    (늦게 지급될수록 짧아진다) — "7일 유효기간" 고지와 어긋난다. "+8일"이면 보유 기간이
+    7~8일이라 누구도 7일보다 적게 받지 않는다(CE-7 예시 참고).
+
+    🔴 마이그레이션(`cf74d6d53561_clover_lots.py`)의 `_legacy_lot_expiry`가 같은 계산을
+    별도로 갖는다 — 마이그레이션이 `api.*`를 import하지 않는 것이 이 저장소 관례라(사전 점검
+    PA-5) 사본이 둘인 것은 의도다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필
+    로트와 출석·미션 로트의 유효기간 규칙이 갈린다.
+    """
+    midnight_kst = datetime.combine(kst_today(now), time.min, tzinfo=KST)
+    return midnight_kst + timedelta(days=8)

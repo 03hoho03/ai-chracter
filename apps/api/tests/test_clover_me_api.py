@@ -12,7 +12,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.core.clover import ATTENDANCE_GRANT_AMOUNT, grant, kst_today
+from api.core.clover import ATTENDANCE_GRANT_AMOUNT, earned_lot_expiry, grant, kst_today
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
 from factories import _login_as, _make_user
@@ -52,6 +52,28 @@ async def test_attendance_first_call_grants_and_increases_balance(
     assert resp.json() == {"granted": True, "balance": ATTENDANCE_GRANT_AMOUNT}
     assert await _balance(db_session, user.id) == ATTENDANCE_GRANT_AMOUNT
     assert await _ledger_kinds(db_session, user.id) == ["attendance_grant"]
+
+
+async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eight_days(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """clover-page-goal-prompt.md CE-11 — 출석 지급도 만료가 붙는다(CE-7과 같은 규칙: 지급일
+    KST 자정 + 8일). 이 테스트가 빨개지는 조건: `claim_clover_attendance`가 `grant()`에
+    `expires_at`을 안 넘기면(S2가 인자만 열어 둔 상태 그대로 남으면) 로트가 무기한
+    (`expires_at IS NULL`)으로 생긴다."""
+    user = await _logged_in(db_client, db_session)
+
+    resp = await db_client.post("/me/clover/attendance")
+    assert resp.json()["granted"] is True
+
+    lot = (
+        await db_session.scalars(
+            select(CloverLot).where(
+                CloverLot.user_id == user.id, CloverLot.kind == "attendance_grant"
+            )
+        )
+    ).one()
+    assert lot.expires_at == earned_lot_expiry(datetime.now(UTC))
 
 
 async def test_attendance_is_idempotent_within_the_same_kst_day(

@@ -89,6 +89,23 @@ def test_legacy_lot_expiry_guarantees_at_least_seven_days_even_at_end_of_day() -
     assert result - now >= timedelta(days=7)
 
 
+def test_legacy_lot_expiry_matches_the_runtime_copy_in_core_clover() -> None:
+    """clover-page-goal-prompt.md CE-11(S3) — `core/clover.py`의 `earned_lot_expiry`(출석·미션
+    지급용)가 이 마이그레이션의 `_legacy_lot_expiry`(백필 전용)와 값이 같아야 한다는 것이 두
+    docstring이 각각 적어 둔 불변식이다. 사본이 둘인 것은 의도(마이그레이션은 `api.*`를
+    import하지 않는 관례, 사전 점검 PA-5)이지만, **의도가 갈라져도 되는 것은 아니다** — 이
+    테스트가 그 근거를 실제로 지킨다."""
+    from api.core.clover import earned_lot_expiry
+
+    migration = _load_migration()
+    for now in (
+        datetime(2026, 9, 21, 0, 0, tzinfo=UTC),
+        datetime(2026, 9, 21, 15, 30, tzinfo=UTC),  # KST 날짜 경계를 넘는 시각
+        datetime(2026, 9, 21, 23, 59, tzinfo=migration.KST),  # type: ignore[attr-defined]
+    ):
+        assert earned_lot_expiry(now) == migration._legacy_lot_expiry(now)  # type: ignore[attr-defined]
+
+
 # ── T-5 — 백필 INSERT ────────────────────────────────────────────────────────
 async def test_backfill_creates_one_lot_matching_balance_and_skips_zero_balance(
     db_session: AsyncSession,

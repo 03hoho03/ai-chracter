@@ -10,6 +10,7 @@ from api.core.clover import (
     ATTENDANCE_GRANT_AMOUNT,
     CHAT_TURN_COST,
     IMAGE_UNIT_COST,
+    earned_lot_expiry,
     grant,
     is_same_kst_day,
     kst_today,
@@ -340,6 +341,30 @@ def test_is_same_kst_day_boundary() -> None:
 def test_is_same_kst_day_rejects_naive_datetime() -> None:
     with pytest.raises(ValueError, match="tz-aware"):
         is_same_kst_day(date(2026, 9, 17), datetime(2026, 9, 17, 12, 0))
+
+
+# ── earned_lot_expiry(CE-7·CE-11, 출석·미션 지급용) ───────────────────────────
+def test_earned_lot_expiry_is_kst_midnight_plus_eight_days() -> None:
+    """마이그레이션의 `_legacy_lot_expiry` T-15와 같은 예시 — 지급일이 2026-09-21(KST)이면
+    2026-09-29 00:00 KST가 나와야 한다."""
+    kst = timezone(timedelta(hours=9))
+    now = datetime(2026, 9, 21, 0, 0, tzinfo=kst)
+
+    assert earned_lot_expiry(now) == datetime(2026, 9, 29, 0, 0, tzinfo=kst)
+
+
+def test_earned_lot_expiry_guarantees_at_least_seven_days_even_at_end_of_day() -> None:
+    """CE-7의 존재 이유: 그 날 23:59(KST)에 지급돼도 보유 기간이 7일 이상이어야 한다.
+    "+7일"로 되돌리면 자정 정규화 때문에 보유 기간이 6일대로 떨어져 이 단언이 깨진다."""
+    kst = timezone(timedelta(hours=9))
+    now = datetime(2026, 9, 21, 23, 59, tzinfo=kst)
+
+    assert earned_lot_expiry(now) - now >= timedelta(days=7)
+
+
+def test_earned_lot_expiry_rejects_naive_datetime() -> None:
+    with pytest.raises(ValueError, match="tz-aware"):
+        earned_lot_expiry(datetime(2026, 9, 21, 0, 0))
 
 
 # ── 정책 상수 ────────────────────────────────────────────────────────────────

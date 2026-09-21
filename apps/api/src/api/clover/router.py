@@ -17,8 +17,28 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.clover.schemas import CloverAttendanceResponse, CloverBalanceResponse
-from api.core.clover import ATTENDANCE_GRANT_AMOUNT, grant, is_same_kst_day, kst_today
+from api.clover.missions import (
+    MISSION_KEYS,
+    MISSION_REWARDS,
+    MissionKey,
+    mission_achieved,
+    mission_claimed,
+    mission_idempotency_key,
+)
+from api.clover.schemas import (
+    CloverAttendanceResponse,
+    CloverBalanceResponse,
+    CloverMissionClaimResponse,
+    CloverMissionItem,
+    CloverMissionsResponse,
+)
+from api.core.clover import (
+    ATTENDANCE_GRANT_AMOUNT,
+    earned_lot_expiry,
+    grant,
+    is_same_kst_day,
+    kst_today,
+)
 from api.db.models.auth import User
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
@@ -93,6 +113,9 @@ async def claim_clover_attendance(
                 amount=ATTENDANCE_GRANT_AMOUNT,
                 kind="attendance_grant",
                 idempotency_key=f"attendance:{user_id}:{today}",
+                # clover-page-goal-prompt.md CE-11 — 출석 지급도 만료가 붙는다(CE-7과 같은
+                # 규칙: 지급일 KST 자정 + 8일).
+                expires_at=earned_lot_expiry(now),
             )
     except IntegrityError:
         # 🔴 동시 요청의 둘째다. 위 `is_same_kst_day` 검사는 **격리를 논증하지 못한다** —
@@ -132,3 +155,69 @@ async def confirm_clover_spend(
     user = await _require_active_user(db, user_id)
     user.clover_spend_confirmed_on = kst_today(datetime.now(UTC))
     await db.commit()
+
+
+@me_router.get("/clover/missions", dependencies=[Depends(require_legal_consent)])
+async def get_clover_missions(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CloverMissionsResponse:
+    """clover-page-goal-prompt.md CE-13 — 3종(`first_publish`·`first_message`·`first_image`)
+    달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로(T-13) 이 응답은
+    캐시된 값이 아니라 그 순간의 진실이다.
+    """
+    await _require_active_user(db, user_id)
+    missions = [
+        CloverMissionItem(
+            key=key,
+            reward=MISSION_REWARDS[key],
+            achieved=await mission_achieved(db, user_id=user_id, key=key),
+            claimed=await mission_claimed(db, user_id=user_id, key=key),
+        )
+        for key in MISSION_KEYS
+    ]
+    return CloverMissionsResponse(missions=missions)
+
+
+@me_router.post("/clover/missions/{key}/claim", dependencies=[Depends(require_legal_consent)])
+async def claim_clover_mission(
+    key: MissionKey,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CloverMissionClaimResponse:
+    """미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
+    **에러가 아니다** — 위 출석과 같은 패턴이다.
+
+    🔴 달성 여부를 **저장하지 않으므로**(CE-13) 이 판정도 매 요청 EXISTS다 — 청구 직전에
+    달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
+    달성하면 다시 청구할 수 있다(T-13).
+    """
+    await _require_active_user(db, user_id)
+    if not await mission_achieved(db, user_id=user_id, key=key):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="mission not achieved"
+        )
+
+    now = datetime.now(UTC)
+    try:
+        # 출석과 같은 패턴(SAVEPOINT + IntegrityError) — 선례는 위 `claim_clover_attendance`.
+        async with db.begin_nested():
+            balance_after = await grant(
+                db,
+                user_id=user_id,
+                amount=MISSION_REWARDS[key],
+                kind="mission_grant",
+                idempotency_key=mission_idempotency_key(user_id=user_id, key=key),
+                # clover-page-goal-prompt.md CE-11 — 미션 지급도 만료가 붙는다(CE-7과 같은
+                # 규칙).
+                expires_at=earned_lot_expiry(now),
+            )
+    except IntegrityError:
+        # 이미 청구됨(순차 재호출이든 동시 요청이든 — 여기는 출석과 달리 사전 컬럼 검사가
+        # 없어 멱등키 유니크 인덱스 하나가 두 경우를 전부 막는다). SAVEPOINT가 되감겼으므로
+        # 지급이 없다 — 잔액은 DB에서 다시 읽는다.
+        refreshed = await _require_active_user(db, user_id)
+        return CloverMissionClaimResponse(granted=False, balance=refreshed.clover_balance)
+
+    await db.commit()
+    return CloverMissionClaimResponse(granted=True, balance=balance_after)

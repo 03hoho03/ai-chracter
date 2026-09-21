@@ -64,6 +64,11 @@ def _legacy_lot_expiry(now: datetime) -> datetime:
     함수로 분리한 이유는 T-15가 마이그레이션을 다시 돌리지 않고 리터럴 `datetime`을 주입해
     경계를 검증하기 위해서다(사전 점검 PA-5 — `conftest.py`의 `_migrated_schema`가
     `upgrade(head)`를 세션당 1회만 실행해 실행 시각을 테스트가 통제할 수 없다).
+
+    🔴 `core/clover.py`의 `earned_lot_expiry`(출석·미션 지급용, S3)가 같은 계산을 별도로
+    갖는다 — 이쪽은 마이그레이션이라 `api.*`를 import하지 않는 저장소 관례(위 참고) 때문에
+    사본을 둔다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필 로트와 출석·미션
+    로트의 유효기간 규칙이 갈린다.
     """
     if now.tzinfo is None:
         raise ValueError("tz-aware `now`가 필요하다 — `datetime.now(KST)`류를 넘길 것")
