@@ -720,6 +720,53 @@ tail -f /var/log/ddona-image-request-purge.log
 `ddona-backup`(18:00 UTC, §3-4)과는 겹치지 않는다. 이 작업(DELETE 한 번)도 pg_dump보다 훨씬
 가벼워 시간대를 더 정교하게 고를 이유가 없다.
 
+### 3-9. 클로버 만료 — expire cron
+
+`clover-page-goal-prompt.md` CE-7~CE-9. 출석·미션(과 백필) 클로버는 지급일(KST) 자정 + 8일에
+만료된다. CE-8: 차감·잔액 판정 경로(`core/clover.py`)는 만료 필터를 걸지 않는다 — **만료의
+진실은 이 크론뿐이다.** 이 크론이 며칠 죽어도 Σ 불변식은 깨지지 않지만(배치 실행 전에 쓰인
+만료분은 이미 `remaining`이 줄어 있다), 만료분이 계속 쓰이는 유저에게 유리한 방향의 오차가
+생긴다 — 그래서 크론이 실제로 도는지 아래 검증 절차로 확인한다.
+
+`apps/api/scripts/ops/expire_clover.py`가 `ops.pg.run_sh`로 컨테이너 안 `psql`을 직접 띄워
+운영 DB에 붙어, 만료 로트를 `remaining = 0`으로 줄이고 `users.clover_balance`를 차감하고
+`clover_ledger`에 `expire_burn` 행을 남기는 것을 **한 트랜잭션**(`BEGIN`~`COMMIT`)으로 실행한다
+(§3-8과 같은 방식 — `docker exec`가 아니라 직접 접속).
+
+**최초 1회 — `ops/expire-clover.sh` + cron.d 심볼릭 링크 설치**(§3-8과 같은 이유 —
+`/opt/ddona/app`은 배포마다 `git reset --hard`되므로 링크해두면 재설치 없이 다음 배포부터
+반영된다):
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/expire-clover.sh /opt/ddona/expire-clover.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-clover-expire /etc/cron.d/ddona-clover-expire
+```
+
+`ops/expire-clover.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 `DATABASE_URL`·
+`DISCORD_WEBHOOK_URL`만 뽑아 export한 뒤 `PG_DOCKER_NETWORK=ddona_default`를 고정하고
+`PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.expire_clover`를 부른다 — §3-8과 같은
+이유로 필요한 키만 뽑되, 운영 DB에 직접 붙는 만큼 `DATABASE_URL`·`PG_DOCKER_NETWORK`가 반드시
+있어야 한다(운영 Postgres는 포트를 게시하지 않는다).
+
+**검증 — "설치했다"가 아니라 "실제로 소멸되는 것"을 확인한다**(§3-6·§3-8과 같은 이유 — 설치만
+확인하면 만료 처리가 조용히 안 도는 드리프트를 놓친다. 이 배치는 되돌릴 수 없는 소멸이므로
+특히 중요하다):
+
+```sh
+# 1. 수동 1회 실행 — 정상 종료·"clover_lots 만료: N명 잔액 차감" 또는 "만료 대상 없음" 로그 확인
+sudo -u root /opt/ddona/expire-clover.sh
+tail /var/log/ddona-clover-expire.log
+
+# 2. 다음 15:05 UTC(KST 00:05)에 크론이 실제로 도는지
+tail -f /var/log/ddona-clover-expire.log
+```
+
+**DB 접속이 안 되면**(`PG_DOCKER_NETWORK` 누락 등) `run_sh`가 nonzero exit + stderr를 내고
+`expire_clover.py`는 이 실패를 삼키지 않고 `ops/notify.py`로 Discord에 알린다.
+
+⚠️ 매일 15:05 UTC(= KST 00:05, 다음날) — 만료 시각(KST 자정) 직후로 골랐다.
+`ddona-bugsink-vacuum`(05:00 UTC)·`ddona-image-request-purge`(06:00 UTC)와 겹치지 않는다.
+
 ---
 
 ## 4. 배포 후 스모크 검증

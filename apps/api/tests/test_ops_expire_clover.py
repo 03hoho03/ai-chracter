@@ -210,6 +210,46 @@ def test_missing_dash_q_would_overcount_by_one(monkeypatch: pytest.MonkeyPatch) 
     assert " -Atq " in captured["script"]
 
 
+# ── S5 적대적 리뷰(review-S5.md) 중요 1건: 부분 실패의 종료 코드 ──────────────────
+def test_psql_is_invoked_with_on_error_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """🔴 review-S5.md §7 — `BEGIN;...COMMIT;`을 한 `-c` 인자로 보내는 다중 문장 스크립트는
+    `-v ON_ERROR_STOP=1` 없이 돌리면 중간 문장이 실패해도 psql이 0을 반환할 수 있다고
+    문서만으로는 단정할 수 없는 함정이다(리뷰가 지적).
+
+    🔴 **실측(2026-09-21, 로컬 dev DB `ai_character_chat`, `postgres:18-alpine` psql
+    클라이언트, `PG_DOCKER_NETWORK=ai-character-chat-dev_default`)**: `-v ON_ERROR_STOP=1`
+    없이 이 파일과 같은 형태(`BEGIN; 성공 SELECT; 실패하는 UPDATE(CHECK 제약 위반);
+    COMMIT;`)를 실행해도 이미 종료 코드 **1**이 나왔다(`-c` 인자 하나에 담긴 다중 문장이
+    백엔드에 단일 쿼리 메시지로 전달돼, 중간 문장이 실패하면 이후 문장이 아예 실행되지 않고
+    배치 전체가 롤백되기 때문 — Σ 불변식도 그대로 지켜졌다). 즉 "조용한 0 반환"은 이 코드
+    형태·이 psql 버전에서는 재현되지 않았다.
+
+    그래도 이 동작은 psql이 `-c` 다중 문장을 실제로 어떻게 배치하는지(문서화된 보장이
+    아니라 관찰된 동작)에 기대고 있어, 버전이나 스크립트 형태가 바뀌면 달라질 수 있다 —
+    CE-8이 전제하는 "배치 실행 여부 감지"가 여기 걸려 있으므로 실패 감지 의도를 명시적으로
+    고정해 둔다.
+
+    깨지는 시나리오: 이 플래그가 빠지면(또는 `-c` 뒤로 밀리면) 위 실측 결과가 우연이었던
+    환경(다른 psql 버전 등)에서 부분 실패가 조용히 성공으로 읽혀 Discord 알림이 영원히
+    안 뜬다.
+    """
+    captured: dict[str, str] = {}
+
+    def _fake(
+        script: str, *, url: str, stdin: object = None, stdout: object = None
+    ) -> subprocess.CompletedProcess[bytes]:
+        captured["script"] = script
+        return subprocess.CompletedProcess(args=[], returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr(expire_clover, "run_sh", _fake)
+
+    expire_clover.expire_clover_lots("postgresql://unused", cutoff=datetime.now(UTC))
+
+    script = captured["script"]
+    assert " -v ON_ERROR_STOP=1 " in script
+    assert script.index("-v ON_ERROR_STOP=1") < script.index(" -c ")
+
+
 def test_raises_when_psql_fails(monkeypatch: pytest.MonkeyPatch) -> None:
     """깨지는 시나리오: `run_sh`가 실패(nonzero exit)했는데 예외로 전파하지 않으면, 만료
     처리가 실제로는 안 됐는데도 크론이 성공으로 남아 실패 알림도 나가지 않는다."""

@@ -78,9 +78,17 @@ def expire_clover_lots(url: str, *, cutoff: datetime) -> int:
 
     `purge_image_requests.py`와 같은 이유로 `-Atq`를 쓴다 — RETURNING 뒤 psql이 찍는 명령
     태그(`INSERT 0 n`)가 `-q` 없이는 결과 줄과 섞인다.
+
+    🔴 `-v ON_ERROR_STOP=1` — 이 스크립트는 `BEGIN;...COMMIT;`으로 묶인 다중 문장을 `-c`
+    인자 하나로 보낸다(다른 ops 모듈은 전부 단일 문장이라 이 위험이 없다). 실측(로컬 dev DB,
+    2026-09-21)으로는 이 플래그 없이도 중간 문장 실패에서 이미 0이 아닌 종료 코드가 나왔지만,
+    이는 psql이 `-c` 다중 문장을 처리하는 구체 동작에 기댄 것이라 버전이 바뀌면 달라질 수
+    있다 — CE-8이 전제하는 "배치 실행 여부 감지"가 걸려 있으므로 명시적으로 고정해 둔다.
     """
     sql = _EXPIRE_SQL_TEMPLATE.format(cutoff=cutoff.isoformat())
-    result = run_sh(f'psql "$PGURL" -Atq -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE)
+    result = run_sh(
+        f'psql "$PGURL" -v ON_ERROR_STOP=1 -Atq -c {shell_quote(sql)}', url=url, stdout=subprocess.PIPE
+    )
     if result.returncode != 0:
         raise RuntimeError(f"클로버 만료 배치 실패:\n{result.stderr.decode().strip()}")
     return len([line for line in result.stdout.decode().splitlines() if line.strip()])
