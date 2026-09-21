@@ -20,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.db.models import AdminActionLog
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
-from factories import _create_admin, _login_as_admin, _make_user
+from factories import _create_admin, _login_as_admin, _make_user, _make_user_with_clover_lot
 
 
 async def _ledger_rows(db: AsyncSession, user_id: uuid.UUID) -> list[CloverLedger]:
@@ -49,14 +49,19 @@ async def _balance(db: AsyncSession, user_id: uuid.UUID) -> int:
 
 
 async def _seed_user(db: AsyncSession, **overrides: object) -> uuid.UUID:
-    """유저를 만들고 **id만** 돌려준다.
+    """유저와, `clover_balance`가 있으면 그 값과 매칭되는 로트 1행을 만들고 **id만** 돌려준다.
 
     🔴 ORM 인스턴스를 들고 다니지 않는 것이 요점이다. 라우트가 409로 끝나며 SAVEPOINT를
     되감으면 테스트 세션의 그 인스턴스가 만료 상태로 남고, 이후 `user_id` 한 번이
     지연 로드를 일으켜 `MissingGreenlet`으로 터진다(실측). id는 파이썬 값이라 그 경로가 없다.
+
+    clover-page-goal-prompt.md CE-35 — `revoke()`가 로트 인지로 바뀌어, 로트 0행인 유저를
+    회수하면 `CloverLotShortfallError`가 난다(`[revoke]` 파라미터 케이스). 매칭 로트를
+    항상 만들어 두면 지급(양수) 케이스는 영향 없이 그대로 통과한다.
     """
-    user = _make_user(**overrides)
-    db.add(user)
+    balance = overrides.pop("clover_balance", 0)
+    assert isinstance(balance, int)
+    user = await _make_user_with_clover_lot(db, clover_balance=balance, **overrides)
     await db.commit()
     user_id = user.id
     assert isinstance(user_id, uuid.UUID)

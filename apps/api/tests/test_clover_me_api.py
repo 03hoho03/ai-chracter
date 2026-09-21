@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.clover import ATTENDANCE_GRANT_AMOUNT, grant, kst_today
 from api.db.models.auth import User
-from api.db.models.clover import CloverLedger
+from api.db.models.clover import CloverLedger, CloverLot
 from factories import _login_as, _make_user
 
 
@@ -236,6 +236,12 @@ async def test_withdraw_burns_the_balance_and_keeps_the_ledger(
     assert burn.amount == -100
     assert burn.balance_after == 0
 
+    # clover-page-goal-prompt.md T-9(CE-29) — `grant()`가 만든 로트도 함께 0이 됐다.
+    # 유령 로트 금지: 잔액만 0이 되고 로트가 남으면 안 된다.
+    lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
+    assert lot is not None
+    assert lot.remaining == 0
+
 
 async def test_withdraw_burns_whatever_the_row_actually_holds(
     db_client: httpx.AsyncClient, db_session: AsyncSession
@@ -275,6 +281,13 @@ async def test_withdraw_burns_whatever_the_row_actually_holds(
     # 낡은 100이 아니라 **실제로 있던 40**이 소멸된다.
     assert burn.amount == -40
     assert burn.balance_after == 0
+
+    # T-9(CE-29) — 로트는 잔액(40)이 아니라 **그 유저의 로트 전부**가 0이 된다(전량 무효화,
+    # `revoke`의 부분 무효화와 다르다). 로트가 여전히 100을 들고 있던(원래의 불일치) 상태라도
+    # 소멸이 유령 로트를 남기지 않는다.
+    lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
+    assert lot is not None
+    assert lot.remaining == 0
 
 
 async def test_withdraw_with_zero_balance_writes_no_ledger_row(

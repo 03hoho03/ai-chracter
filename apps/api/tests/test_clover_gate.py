@@ -35,7 +35,7 @@ from factories import (
     _get_genre,
     _login_as,
     _make_published_character,
-    _make_user,
+    _make_user_with_clover_lot,
     _override_llm_client,
 )
 
@@ -45,8 +45,12 @@ _SEND_BODY = {"content": "안녕"}
 async def _consented_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
 ) -> User:
-    user = _make_user(**overrides)
-    db_session.add(user)
+    """clover-page-goal-prompt.md CE-35 — `clover_balance`가 있으면 매칭 로트도 함께 만든다.
+    게이트가 실제로 차감하는 테스트(`test_daily_exhausted_with_balance_spends_clover_and_passes`)
+    가 로트 0행 상태에서 `CloverLotShortfallError`를 맞지 않도록."""
+    balance = overrides.pop("clover_balance", 0)
+    assert isinstance(balance, int)
+    user = await _make_user_with_clover_lot(db_session, clover_balance=balance, **overrides)
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user
