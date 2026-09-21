@@ -13,7 +13,7 @@ prefix를 실제로 가진 본보기는 `inquiry/router.py:22`·`chat/router.py:
 import base64
 import json
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import select, tuple_
@@ -84,6 +84,12 @@ _CATEGORY_KINDS: dict[CloverLedgerCategory, list[str]] = {
     "expire": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "expire"],
 }
 
+# clover-page-goal-prompt.md CE-22 원문: "임박 임계값은 3일이다 — 만료까지 3일 이내인 로트가
+# 있을 때만 expiringSoon을 채우고, 아니면 null이다. 근거: 유효기간 7일의 절반이 지난 시점."
+# 값(3일)과 주체(BE가 채운다)는 문서가 이미 정했다 — 사전 점검 I-1이 이 게이트가 누락됐다고
+# 지적했다.
+EXPIRING_SOON_THRESHOLD = timedelta(days=3)
+
 
 def _encode_cursor(parts: list[str]) -> str:
     # content/router.py의 `_encode_cursor` 복제(사전 점검 PA-7) — 모듈 로컬 비공개 함수라
@@ -115,6 +121,11 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
     "0일 뒤 소멸"·음수 D-day가 화면에 뜬다. 이건 **표시 전용 필터**라 CE-8(차감·잔액 판정
     경로에는 만료 필터를 걸지 않는다)과 충돌하지 않는다 — 표시와 판정은 다른 경로다.
 
+    🔴 **3일 임박 게이트(CE-22)** — `expires_at <= now + EXPIRING_SOON_THRESHOLD`인 로트가
+    없으면 `None`을 돌려준다. 경계(정확히 3일 남음)는 **포함**으로 뒀다 — 이건 이 함수가
+    고른 값이다(CE-22는 "3일 이내"의 등호 포함 여부까지는 정하지 않았다. "이내"의 통상 의미를
+    따라 포함 쪽을 골랐다).
+
     유저당 활성 로트가 10행 미만이라는 가정(CE-6)을 재사용해 Python에서 최솟값을 고르고
     합산한다 — 집계 SQL(`GROUP BY`)을 새로 안 쓴다.
     """
@@ -126,6 +137,7 @@ async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime)
                 CloverLot.remaining > 0,
                 CloverLot.expires_at.is_not(None),
                 CloverLot.expires_at > now,
+                CloverLot.expires_at <= now + EXPIRING_SOON_THRESHOLD,
             )
             .order_by(CloverLot.expires_at.asc())
         )

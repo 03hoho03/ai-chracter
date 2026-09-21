@@ -28,9 +28,11 @@ class CloverBalanceResponse(CamelModel):
     attendance_claimable: bool
     # clover-page-goal-prompt.md CE-22 — `expires_at > now()`인 로트만 본다(이미 만료됐지만
     # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 CE-8(차감·잔액 판정 경로에는
-    # 만료 필터를 걸지 않는다)과 충돌하지 않는다 — 표시와 판정은 다른 경로다. 만료까지 3일
-    # 이내인지(배지 노출 임계값)는 BE가 판정하지 않는다 — FE가 D-day 문구와 함께 판정한다
-    # (progress.md 기록 — 문서가 축을 정하지 않아 이 런이 정했다).
+    # 만료 필터를 걸지 않는다)과 충돌하지 않는다 — 표시와 판정은 다른 경로다. **만료까지 3일
+    # 이내인지는 BE가 판정한다**(`clover/router.py`의 `EXPIRING_SOON_THRESHOLD`) — CE-22가
+    # 값(3일)과 주체(채우는 쪽)를 이미 명시했다. 🔴 정정: 이전 버전은 "문서가 축을 정하지
+    # 않아 이 런이 정했다"고 적었으나 사실이 아니었다 — 그 이탈은 오케스트레이터의 브리프
+    # 오류였다(사전 점검 I-1).
     expiring_soon: CloverExpiringSoon | None
 
 

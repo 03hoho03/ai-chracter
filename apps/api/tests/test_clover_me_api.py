@@ -12,6 +12,7 @@ import httpx
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.clover.router import _expiring_soon
 from api.core.clover import ATTENDANCE_GRANT_AMOUNT, earned_lot_expiry, grant, kst_today
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger, CloverLot
@@ -304,6 +305,125 @@ async def test_expiring_soon_excludes_lots_that_already_expired(
     resp = await db_client.get("/me/clover")
 
     assert resp.json()["expiringSoon"] is None
+
+
+async def test_expiring_soon_is_null_when_only_lots_are_more_than_three_days_out(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """clover-page-goal-prompt.md CE-22 — 임박 임계값은 3일이다(사전 점검 I-1).
+
+    빨개지는 조건: 3일 상한 필터가 없으면 7일 남은 로트도 `expiringSoon`을 채워 "곧
+    사라진다"는 거짓 신호를 준다.
+    """
+    now = datetime.now(UTC)
+    user = await _logged_in(db_client, db_session)
+    db_session.add(
+        CloverLot(
+            user_id=user.id,
+            granted_amount=100,
+            remaining=100,
+            expires_at=now + timedelta(days=7),
+            kind="attendance_grant",
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"] is None
+
+
+async def test_expiring_soon_threshold_includes_a_lot_expiring_in_exactly_three_days(
+    db_session: AsyncSession,
+) -> None:
+    """경계(정확히 3일 남음)는 **포함**으로 정했다 — 이 런의 발명이다(CE-22는 "3일 이내"의
+    등호 포함 여부까지는 정하지 않았다. "이내"의 통상 의미(초과가 아님)를 따라 포함 쪽을
+    골랐다). `_expiring_soon`에 리터럴 `now`를 직접 주입해 HTTP 왕복의 시각 오차 없이
+    경계를 정확히 맞춘다.
+    """
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
+    db_session.add(
+        CloverLot(
+            user_id=user.id,
+            granted_amount=30,
+            remaining=30,
+            expires_at=now + timedelta(days=3),
+            kind="attendance_grant",
+        )
+    )
+    await db_session.commit()
+
+    result = await _expiring_soon(db_session, user_id=user.id, now=now)
+
+    assert result is not None
+    assert result.amount == 30
+
+
+async def test_expiring_soon_threshold_excludes_a_lot_expiring_just_past_three_days(
+    db_session: AsyncSession,
+) -> None:
+    """위 테스트의 반대쪽 경계 — 3일을 조금이라도 넘기면 제외된다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    now = datetime(2026, 9, 21, 12, 0, tzinfo=UTC)
+    db_session.add(
+        CloverLot(
+            user_id=user.id,
+            granted_amount=30,
+            remaining=30,
+            expires_at=now + timedelta(days=3, seconds=1),
+            kind="attendance_grant",
+        )
+    )
+    await db_session.commit()
+
+    result = await _expiring_soon(db_session, user_id=user.id, now=now)
+
+    assert result is None
+
+
+async def test_expiring_soon_excludes_a_lot_that_is_already_exhausted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """사전 점검 I-2 — `remaining = 0`인 소진 로트는 만료 전이어도 대상에서 빠진다.
+
+    빨개지는 조건: `CloverLot.remaining > 0` 필터를 빼면 소진 로트가 더 이른 만료라
+    "가장 임박한 묶음"으로 잘못 골라져 `amount`가 어긋난다.
+    """
+    now = datetime.now(UTC)
+    user = await _logged_in(db_client, db_session)
+    exhausted_expiry = now + timedelta(days=1)
+    remaining_expiry = now + timedelta(days=2)
+    db_session.add_all(
+        [
+            CloverLot(
+                user_id=user.id,
+                granted_amount=50,
+                remaining=0,
+                expires_at=exhausted_expiry,
+                kind="attendance_grant",
+            ),
+            CloverLot(
+                user_id=user.id,
+                granted_amount=20,
+                remaining=20,
+                expires_at=remaining_expiry,
+                kind="mission_grant",
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"] == {
+        "amount": 20,
+        "expiresAt": remaining_expiry.isoformat().replace("+00:00", "Z"),
+    }
 
 
 # ── 소진 확인 ────────────────────────────────────────────────────────────────
