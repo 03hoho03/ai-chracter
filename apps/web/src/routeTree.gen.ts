@@ -23,6 +23,7 @@ import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
+import { Route as CloverIndexRouteImport } from './routes/clover.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
@@ -104,6 +105,11 @@ const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
   path: '/inquiries/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverIndexRoute = CloverIndexRouteImport.update({
+  id: '/clover/',
+  path: '/clover/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BuilderIndexRoute = BuilderIndexRouteImport.update({
   id: '/builder/',
   path: '/builder/',
@@ -176,6 +182,7 @@ export interface FileRoutesByFullPath {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder': typeof BuilderIndexRoute
+  '/clover': typeof CloverIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -229,6 +237,7 @@ export interface FileRoutesById {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -257,6 +266,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/clover/'
     | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
@@ -283,6 +293,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder'
+    | '/clover'
     | '/inquiries'
     | '/notices'
     | '/builder/$type/$draftId'
@@ -309,6 +320,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/clover/'
     | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
@@ -336,6 +348,7 @@ export interface RootRouteChildren {
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
+  CloverIndexRoute: typeof CloverIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
@@ -442,6 +455,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/': {
+      id: '/clover/'
+      path: '/clover'
+      fullPath: '/clover/'
+      preLoaderRoute: typeof CloverIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/builder/': {
       id: '/builder/'
       path: '/builder'
@@ -536,6 +556,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
   BuilderIndexRoute: BuilderIndexRoute,
+  CloverIndexRoute: CloverIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,

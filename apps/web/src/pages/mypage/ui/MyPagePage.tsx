@@ -119,7 +119,8 @@ function SectionHeading({ children }: { children: string }) {
  * "필요할 때만 노출"만 남긴다(사용자 결정).
  *
  * 컬럼이 `max-w-md`(448px)라 표를 넣지 않는다(DESIGN.md §5 Layout containers) — 잔액 한 줄과
- * 짧은 설명뿐이다. 사용 내역은 어드민 전용이고 유저용 화면은 범위 밖이다. */
+ * 짧은 설명뿐이다. 🔴 유저용 원장·허브 화면은 더 이상 범위 밖이 아니다(clover-page-goal-prompt.md
+ * CE-20·CE-24) — 아래 링크가 `/clover`로 이어진다. */
 function CloverSection() {
   const { data, isPending } = useCloverBalanceQuery();
 
@@ -134,9 +135,17 @@ function CloverSection() {
         ) : (
           <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
         )}
+        {/* clover-page-goal-prompt.md CE-19가 자동 출석 지급을 걷어냈다 — "매일 출석하면
+            자동으로 받아요"는 더 이상 사실이 아니다. 클릭형으로 바뀌었으므로 그 사실만 말한다. */}
         <p className="text-sm break-keep text-muted-foreground">
-          무료 한도를 다 쓴 뒤 대화와 이미지 생성에 쓰여요. 매일 출석하면 자동으로 받아요.
+          무료 한도를 다 쓴 뒤 대화와 이미지 생성에 쓰여요. 출석체크와 미션으로도 받을 수 있어요.
         </p>
+        <Link
+          to="/clover"
+          className="w-fit font-medium text-primary hover:underline focus-visible:underline"
+        >
+          클로버 더 보기
+        </Link>
       </div>
     </section>
   );

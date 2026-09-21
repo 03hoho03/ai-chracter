@@ -3,4 +3,5 @@
 export const cloverKeys = {
   all: ["clover"] as const,
   balance: () => [...cloverKeys.all, "balance"] as const,
+  missions: () => [...cloverKeys.all, "missions"] as const,
 };
