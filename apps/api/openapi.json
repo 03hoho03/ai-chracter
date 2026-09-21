@@ -5495,6 +5495,70 @@
         }
       }
     },
+    "/me/clover/ledger": {
+      "get": {
+        "tags": [
+          "clover"
+        ],
+        "summary": "Get Clover Ledger",
+        "description": "clover-page-goal-prompt.md CE-20 — 자기 자신의 원장만. 어드민 엔드포인트\n(`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고\n임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다(§1-8) — 그래서 복제하지 않고 새로\n만들었다.\n\n커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다\n(사전 점검 PA-7 — 모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은\n`created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개\n들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`\n(`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의\n같은 이유, `admin/users.py:list_user_clover_ledger`).",
+        "operationId": "get_clover_ledger_me_clover_ledger_get",
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "enum": [
+                "use",
+                "earn",
+                "expire"
+              ],
+              "type": "string",
+              "title": "Category"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CloverLedgerListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
       "get": {
         "tags": [
@@ -9504,16 +9568,122 @@
           "attendanceClaimable": {
             "type": "boolean",
             "title": "Attendanceclaimable"
+          },
+          "expiringSoon": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CloverExpiringSoon"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
         "required": [
           "balance",
           "spendConfirmedToday",
-          "attendanceClaimable"
+          "attendanceClaimable",
+          "expiringSoon"
         ],
         "title": "CloverBalanceResponse",
         "description": "clover-techspec.md §4-2. Python은 snake_case, JSON은 camelCase다."
+      },
+      "CloverExpiringSoon": {
+        "properties": {
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "amount",
+          "expiresAt"
+        ],
+        "title": "CloverExpiringSoon",
+        "description": "clover-page-goal-prompt.md CE-22. 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산."
+      },
+      "CloverLedgerItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "amount": {
+            "type": "integer",
+            "title": "Amount"
+          },
+          "balanceAfter": {
+            "type": "integer",
+            "title": "Balanceafter"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "use",
+              "earn",
+              "expire"
+            ],
+            "title": "Category"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "amount",
+          "balanceAfter",
+          "kind",
+          "category",
+          "createdAt"
+        ],
+        "title": "CloverLedgerItem",
+        "description": "clover-page-goal-prompt.md CE-20·CE-21. `category`는 BE의 `kind`→범주 맵\n(`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을\n다시 두지 않는다(§8 확인 완료 2)."
+      },
+      "CloverLedgerListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CloverLedgerItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "CloverLedgerListResponse",
+        "description": "`DraftListResponse`(`content/schemas.py`)와 같은 커서 페이지네이션 봉투."
       },
       "CloverMissionClaimResponse": {
         "properties": {

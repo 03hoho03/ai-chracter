@@ -10,10 +10,13 @@ prefix를 실제로 가진 본보기는 `inquiry/router.py:22`·`chat/router.py:
 태우지 않는다. `require_legal_consent`는 다른 `/me` 라우트와 같게 붙인다.
 """
 
+import base64
+import json
 import uuid
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select, tuple_
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,6 +31,10 @@ from api.clover.missions import (
 from api.clover.schemas import (
     CloverAttendanceResponse,
     CloverBalanceResponse,
+    CloverExpiringSoon,
+    CloverLedgerCategory,
+    CloverLedgerItem,
+    CloverLedgerListResponse,
     CloverMissionClaimResponse,
     CloverMissionItem,
     CloverMissionsResponse,
@@ -40,11 +47,53 @@ from api.core.clover import (
     kst_today,
 )
 from api.db.models.auth import User
+from api.db.models.clover import CloverLedger, CloverLot
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.session.dependencies import get_current_user_id
 
 me_router = APIRouter(prefix="/me", tags=["clover"])
+
+# clover-page-goal-prompt.md CE-20 — 유저 대면 목록의 저장소 표준(커서 페이징), 페이지 크기는
+# 서버 상수로 고정한다(클라이언트가 못 바꾼다). `content/router.py`의 `CONTENT_LIST_PAGE_SIZE`와
+# 같은 관례.
+CLOVER_LEDGER_PAGE_SIZE = 20
+
+# clover-page-goal-prompt.md CE-21 — 가르는 축은 부호가 아니라 "유저가 왜 그렇게 됐는가"다.
+# 사용은 유저가 쓴 것만, 소멸은 유저 의지와 무관하게 사라진 것 전부다. 환불이 획득인 것은
+# 양수라서가 아니라 되돌려받은 것이라서고, 어드민 회수·탈퇴 소멸이 소멸인 것도 음수라서가
+# 아니라 유저가 쓴 게 아니라서다. 🔴 맵은 여기 한 벌만 둔다 — 응답(`CloverLedgerItem.category`)에
+# 그대로 실어 보내 FE가 같은 맵을 다시 두지 않게 한다(사전 점검 §8 확인 완료 2). 새 `kind`를
+# 추가하면 여기도 반드시 추가해야 한다 — 누락을 잡는 그물이 T-14다.
+CLOVER_KIND_CATEGORY: dict[str, CloverLedgerCategory] = {
+    "attendance_grant": "earn",
+    "mission_grant": "earn",
+    "admin_grant": "earn",
+    "chat_refund": "earn",
+    "image_refund": "earn",
+    "chat_spend": "use",
+    "image_spend": "use",
+    "expire_burn": "expire",
+    "admin_revoke": "expire",
+    "withdrawal_burn": "expire",
+}
+
+_CATEGORY_KINDS: dict[CloverLedgerCategory, list[str]] = {
+    "use": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "use"],
+    "earn": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "earn"],
+    "expire": [kind for kind, category in CLOVER_KIND_CATEGORY.items() if category == "expire"],
+}
+
+
+def _encode_cursor(parts: list[str]) -> str:
+    # content/router.py의 `_encode_cursor` 복제(사전 점검 PA-7) — 모듈 로컬 비공개 함수라
+    # import해서 공유하지 않고 각 리스트 엔드포인트가 자기 것을 갖는 게 이 저장소 관례다.
+    return base64.urlsafe_b64encode(json.dumps(parts).encode()).decode()
+
+
+def _decode_cursor(cursor: str) -> list[str]:
+    decoded: list[str] = json.loads(base64.urlsafe_b64decode(cursor.encode()).decode())
+    return decoded
 
 
 async def _require_active_user(db: AsyncSession, user_id: uuid.UUID) -> User:
@@ -57,6 +106,36 @@ async def _require_active_user(db: AsyncSession, user_id: uuid.UUID) -> User:
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     return user
+
+
+async def _expiring_soon(db: AsyncSession, *, user_id: uuid.UUID, now: datetime) -> CloverExpiringSoon | None:
+    """clover-page-goal-prompt.md CE-22 — 가장 임박한 만료 묶음(같은 시각 만료 로트는 합산).
+
+    🔴 `expires_at > now`인 로트만 본다 — 배치가 아직 못 지운 이미 만료된 로트를 포함하면
+    "0일 뒤 소멸"·음수 D-day가 화면에 뜬다. 이건 **표시 전용 필터**라 CE-8(차감·잔액 판정
+    경로에는 만료 필터를 걸지 않는다)과 충돌하지 않는다 — 표시와 판정은 다른 경로다.
+
+    유저당 활성 로트가 10행 미만이라는 가정(CE-6)을 재사용해 Python에서 최솟값을 고르고
+    합산한다 — 집계 SQL(`GROUP BY`)을 새로 안 쓴다.
+    """
+    lots = (
+        await db.scalars(
+            select(CloverLot)
+            .where(
+                CloverLot.user_id == user_id,
+                CloverLot.remaining > 0,
+                CloverLot.expires_at.is_not(None),
+                CloverLot.expires_at > now,
+            )
+            .order_by(CloverLot.expires_at.asc())
+        )
+    ).all()
+    if not lots:
+        return None
+    soonest = lots[0].expires_at
+    assert soonest is not None  # 위 `.is_not(None)` 필터가 보장한다
+    amount = sum(lot.remaining for lot in lots if lot.expires_at == soonest)
+    return CloverExpiringSoon(amount=amount, expires_at=soonest)
 
 
 @me_router.get("/clover", dependencies=[Depends(require_legal_consent)])
@@ -75,6 +154,7 @@ async def get_clover_balance(
         balance=user.clover_balance,
         spend_confirmed_today=is_same_kst_day(user.clover_spend_confirmed_on, now),
         attendance_claimable=not is_same_kst_day(user.clover_attendance_granted_on, now),
+        expiring_soon=await _expiring_soon(db, user_id=user_id, now=now),
     )
 
 
@@ -221,3 +301,65 @@ async def claim_clover_mission(
 
     await db.commit()
     return CloverMissionClaimResponse(granted=True, balance=balance_after)
+
+
+@me_router.get("/clover/ledger", dependencies=[Depends(require_legal_consent)])
+async def get_clover_ledger(
+    category: CloverLedgerCategory,
+    cursor: str | None = None,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> CloverLedgerListResponse:
+    """clover-page-goal-prompt.md CE-20 — 자기 자신의 원장만. 어드민 엔드포인트
+    (`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고
+    임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다(§1-8) — 그래서 복제하지 않고 새로
+    만들었다.
+
+    커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다
+    (사전 점검 PA-7 — 모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은
+    `created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개
+    들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`
+    (`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의
+    같은 이유, `admin/users.py:list_user_clover_ledger`).
+    """
+    await _require_active_user(db, user_id)
+
+    query = (
+        select(CloverLedger)
+        .where(
+            CloverLedger.user_id == user_id,
+            CloverLedger.kind.in_(_CATEGORY_KINDS[category]),
+        )
+        .order_by(CloverLedger.created_at.desc(), CloverLedger.id.desc())
+    )
+    if cursor is not None:
+        created_at, last_id = _decode_cursor(cursor)
+        # mypy strict 함정(apps/api/CLAUDE.md) — 오른쪽은 평범한 파이썬 튜플로 둔다.
+        query = query.where(
+            tuple_(CloverLedger.created_at, CloverLedger.id)
+            < (datetime.fromisoformat(created_at), uuid.UUID(last_id))
+        )
+
+    rows = (await db.scalars(query.limit(CLOVER_LEDGER_PAGE_SIZE + 1))).all()
+    has_more = len(rows) > CLOVER_LEDGER_PAGE_SIZE
+    page = rows[:CLOVER_LEDGER_PAGE_SIZE]
+
+    next_cursor: str | None = None
+    if has_more and page:
+        last = page[-1]
+        next_cursor = _encode_cursor([last.created_at.isoformat(), str(last.id)])
+
+    return CloverLedgerListResponse(
+        items=[
+            CloverLedgerItem(
+                id=row.id,
+                amount=row.amount,
+                balance_after=row.balance_after,
+                kind=row.kind,
+                category=CLOVER_KIND_CATEGORY[row.kind],
+                created_at=row.created_at,
+            )
+            for row in page
+        ],
+        next_cursor=next_cursor,
+    )

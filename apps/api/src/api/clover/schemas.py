@@ -1,4 +1,19 @@
+import uuid
+from datetime import datetime
+from typing import Literal
+
 from api.core.schema import CamelModel
+
+# clover-page-goal-prompt.md CE-20·CE-21 — 원장 조회 쿼리 파라미터와 응답 `category` 필드가
+# 같은 타입을 공유한다.
+CloverLedgerCategory = Literal["use", "earn", "expire"]
+
+
+class CloverExpiringSoon(CamelModel):
+    """clover-page-goal-prompt.md CE-22. 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산."""
+
+    amount: int
+    expires_at: datetime
 
 
 class CloverBalanceResponse(CamelModel):
@@ -11,6 +26,12 @@ class CloverBalanceResponse(CamelModel):
     # 오늘(KST) 출석을 아직 안 받았는가 — true면 FE가 attendance를 POST한다
     # (clover-techspec.md CT-10).
     attendance_claimable: bool
+    # clover-page-goal-prompt.md CE-22 — `expires_at > now()`인 로트만 본다(이미 만료됐지만
+    # 배치가 아직 못 지운 로트는 제외). 이건 표시 전용 필터라 CE-8(차감·잔액 판정 경로에는
+    # 만료 필터를 걸지 않는다)과 충돌하지 않는다 — 표시와 판정은 다른 경로다. 만료까지 3일
+    # 이내인지(배지 노출 임계값)는 BE가 판정하지 않는다 — FE가 D-day 문구와 함께 판정한다
+    # (progress.md 기록 — 문서가 축을 정하지 않아 이 런이 정했다).
+    expiring_soon: CloverExpiringSoon | None
 
 
 class CloverAttendanceResponse(CamelModel):
@@ -40,3 +61,25 @@ class CloverMissionClaimResponse(CamelModel):
     # **에러가 아니다**.
     granted: bool
     balance: int
+
+
+class CloverLedgerItem(CamelModel):
+    """clover-page-goal-prompt.md CE-20·CE-21. `category`는 BE의 `kind`→범주 맵
+    (`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을
+    다시 두지 않는다(§8 확인 완료 2)."""
+
+    id: uuid.UUID
+    amount: int
+    balance_after: int
+    # `db/models/clover.py`의 `kind`와 같은 이유로 `Literal`이 아니라 `str`이다 — `AdminCloverLedgerItem`
+    # 선례(`admin/schemas.py`)와 같다.
+    kind: str
+    category: CloverLedgerCategory
+    created_at: datetime
+
+
+class CloverLedgerListResponse(CamelModel):
+    """`DraftListResponse`(`content/schemas.py`)와 같은 커서 페이지네이션 봉투."""
+
+    items: list[CloverLedgerItem]
+    next_cursor: str | None

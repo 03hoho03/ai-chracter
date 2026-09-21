@@ -167,6 +167,7 @@ async def test_balance_reports_flags_for_a_fresh_user(
         "balance": 30,
         "spendConfirmedToday": False,
         "attendanceClaimable": True,
+        "expiringSoon": None,
     }
 
 
@@ -189,6 +190,7 @@ async def test_balance_flags_flip_once_today_is_recorded(
         "balance": 30,
         "spendConfirmedToday": True,
         "attendanceClaimable": False,
+        "expiringSoon": None,
     }
 
 
@@ -202,6 +204,101 @@ async def test_balance_does_not_grant_attendance(
 
     assert await _balance(db_session, user.id) == 0
     assert await _ledger_kinds(db_session, user.id) == []
+
+
+# ── expiringSoon (CE-22) ─────────────────────────────────────────────────────
+async def test_expiring_soon_is_null_when_no_lot_has_an_expiry(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = await _logged_in(db_client, db_session, clover_balance=30)
+    db_session.add(
+        CloverLot(user_id=user.id, granted_amount=30, remaining=30, expires_at=None, kind="legacy_balance")
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"] is None
+
+
+async def test_expiring_soon_reports_the_soonest_bucket_and_ignores_the_later_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """가장 임박한 묶음만 보고한다 — 더 늦게 만료되는 로트는 무시한다.
+
+    빨개지는 조건: 임박 순 정렬 없이 아무 로트나 고르면(또는 전부 합산하면) `amount`가
+    30(soon)이 아니라 30+70=100이 되거나 `expiresAt`이 later가 될 수 있다.
+    """
+    now = datetime.now(UTC)
+    user = await _logged_in(db_client, db_session)
+    soon_expiry = now + timedelta(days=1)
+    later_expiry = now + timedelta(days=5)
+    db_session.add_all(
+        [
+            CloverLot(
+                user_id=user.id, granted_amount=30, remaining=30, expires_at=soon_expiry, kind="attendance_grant"
+            ),
+            CloverLot(
+                user_id=user.id, granted_amount=70, remaining=70, expires_at=later_expiry, kind="mission_grant"
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"] == {
+        "amount": 30,
+        "expiresAt": soon_expiry.isoformat().replace("+00:00", "Z"),
+    }
+
+
+async def test_expiring_soon_sums_lots_sharing_the_same_expiry(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    now = datetime.now(UTC)
+    user = await _logged_in(db_client, db_session)
+    expiry = now + timedelta(days=2)
+    db_session.add_all(
+        [
+            CloverLot(
+                user_id=user.id, granted_amount=10, remaining=10, expires_at=expiry, kind="attendance_grant"
+            ),
+            CloverLot(
+                user_id=user.id, granted_amount=20, remaining=20, expires_at=expiry, kind="mission_grant"
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"]["amount"] == 30
+
+
+async def test_expiring_soon_excludes_lots_that_already_expired(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """CE-22 — 배치가 아직 못 지운 이미 만료된 로트(`expires_at <= now`)는 제외한다.
+
+    빨개지는 조건: `expires_at > now` 필터를 빼면 이미 지난 로트가 골라져 음수 D-day가 뜬다.
+    """
+    now = datetime.now(UTC)
+    user = await _logged_in(db_client, db_session)
+    db_session.add(
+        CloverLot(
+            user_id=user.id,
+            granted_amount=30,
+            remaining=30,
+            expires_at=now - timedelta(minutes=1),
+            kind="attendance_grant",
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.get("/me/clover")
+
+    assert resp.json()["expiringSoon"] is None
 
 
 # ── 소진 확인 ────────────────────────────────────────────────────────────────
