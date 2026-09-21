@@ -17,6 +17,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.core.clover import CloverLotShortfallError
 from api.db.models import AdminActionLog
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
@@ -192,6 +193,44 @@ async def test_revoke_more_than_balance_returns_422_and_leaves_balance_untouched
     assert resp.status_code == 422
 
     assert await _balance(db_session, user_id) == 30
+    assert await _ledger_rows(db_session, user_id) == []
+
+
+async def test_revoke_rolls_back_the_balance_cas_when_lots_are_insufficient(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """clover-page-goal-prompt.md CE-35 — 로트 없이 잔액만 있는 비정상 상태(Σ 불변식이 이미
+    깨진 상태, 예: 백필 누락)에서 회수하면 `CloverLotShortfallError`가 나고, 그 예외가
+    `admin/users.py`의 `db.begin_nested()` SAVEPOINT를 되감아 총액 CAS까지 롤백돼야 한다.
+
+    `_seed_user`(매칭 로트를 항상 만드는 헬퍼)를 일부러 쓰지 않는다 — 로트가 0행인 상태를
+    직접 만들어야 하기 때문이다(`_make_user`는 DB를 안 건드리는 순수 팩토리라 로트가 안 생긴다).
+
+    🔴 **`user.id`를 요청 뒤에 다시 읽지 않는다** — `db.begin_nested()`가 예외로 되감기면
+    (`_seed_user`의 docstring과 같은 이유) 세션의 그 인스턴스가 만료 상태로 남아, 이후
+    `user.id` 접근 한 번이 지연 로드를 일으켜 `MissingGreenlet`으로 터진다(실측). 그래서
+    요청 **전에** `user_id`를 파이썬 값으로 미리 뽑아 둔다.
+
+    빨개지는 조건: SAVEPOINT 롤백이 안 되면 잔액만 30만큼 줄고 로트는 그대로라 Σ 불변식이
+    깨진 채로 커밋된다 — 이 테스트는 잔액이 회수 시도 **전과 같은 값**으로 남는지를 본다.
+    """
+    user = _make_user(clover_balance=100)
+    db_session.add(user)
+    await db_session.commit()
+    user_id = user.id
+    await _admin_login(db_client, db_session)
+
+    with pytest.raises(CloverLotShortfallError):
+        await db_client.post(
+            f"/admin/users/{user_id}/clover",
+            json={
+                "amount": -30,
+                "adminComment": "로트 없는 유저 회수",
+                "idempotencyKey": str(uuid.uuid4()),
+            },
+        )
+
+    assert await _balance(db_session, user_id) == 100
     assert await _ledger_rows(db_session, user_id) == []
 
 

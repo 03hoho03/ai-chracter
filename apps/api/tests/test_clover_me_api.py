@@ -63,6 +63,11 @@ async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eigh
     (`expires_at IS NULL`)으로 생긴다."""
     user = await _logged_in(db_client, db_session)
 
+    # 🔴 리터럴 주입 — 요청 전에 한 번만 `now`를 잡는다. 응답을 받은 뒤 다시
+    # `datetime.now(UTC)`를 부르면(예전 버전) 그 사이 KST 자정을 걸쳐 실시간 평가가
+    # 플레이크를 낸다(같은 파일의 `test_attendance_opens_again_on_the_next_kst_day` 등이
+    # 이미 쓰는 "한 번만 잡은 값을 그대로 재사용" 패턴).
+    now = datetime.now(UTC)
     resp = await db_client.post("/me/clover/attendance")
     assert resp.json()["granted"] is True
 
@@ -73,7 +78,7 @@ async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eigh
             )
         )
     ).one()
-    assert lot.expires_at == earned_lot_expiry(datetime.now(UTC))
+    assert lot.expires_at == earned_lot_expiry(now)
 
 
 async def test_attendance_is_idempotent_within_the_same_kst_day(
@@ -422,3 +427,31 @@ async def test_withdraw_with_zero_balance_writes_no_ledger_row(
 
     assert resp.status_code == 204
     assert await _ledger_kinds(db_session, user.id) == []
+
+
+async def test_withdraw_with_zero_balance_still_zeroes_out_leftover_lots(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """T-9(CE-29) — 잔액은 이미 0인데 로트만 남은 비정상 상태(Σ 불변식이 이미 깨진 경우)도
+    탈퇴가 정리한다.
+
+    빨개지는 조건: `burn_all`이 잔액 기준(`clover_balance > 0`)으로 일찍 빠져나가며 로트
+    UPDATE를 건너뛰면, 탈퇴 후에도 "만료 예정"으로 남은 유령 로트가 그대로 남는다.
+    """
+    user = await _logged_in(db_client, db_session)
+    db_session.add(
+        CloverLot(
+            user_id=user.id, granted_amount=50, remaining=50, expires_at=None, kind="legacy_balance"
+        )
+    )
+    await db_session.commit()
+    assert await _balance(db_session, user.id) == 0  # 잔액은 이미 0 — 로트만 남은 상태
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert await _ledger_kinds(db_session, user.id) == []
+
+    lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
+    assert lot is not None
+    assert lot.remaining == 0
