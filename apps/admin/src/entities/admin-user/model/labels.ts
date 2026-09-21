@@ -29,18 +29,23 @@ export const ACTION_TYPE_LABELS: Record<string, string> = {
   "image-view": "이미지 열람",
 };
 
-/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 8종이다. `AdminCloverLedgerItem.kind`가
- * `Literal`이 아니라 `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE
- * 코드젠도 깨지지 않게 한 것). 그래서 여기도 `Record<string, string>`이고, 모르는 값은 호출부가
- * 원문 그대로 보여준다 — ACTION_TYPE_LABELS와 같은 관례이자 같은 약점이다. */
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 10종이다(clover-page-goal-prompt.md CE-10이
+ * `mission_grant`·`expire_burn` 2종을 더했다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
+ * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
+ * 것). 그래서 여기도 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
+ * ACTION_TYPE_LABELS와 같은 관례이자 같은 약점이다. `apps/web`의 동명 맵
+ * (`entities/clover/model/cloverKindLabel.ts`)과 별도 번들이라 공유하지 않는 것이 결정이고
+ * (CE-23), 문구는 그쪽과 맞춰 뒀다. */
 export const CLOVER_KIND_LABELS: Record<string, string> = {
   admin_grant: "운영자 지급",
   admin_revoke: "운영자 회수",
   attendance_grant: "출석 지급",
+  mission_grant: "미션 보상",
   chat_spend: "채팅 사용",
   image_spend: "이미지 사용",
   chat_refund: "채팅 환불",
   image_refund: "이미지 환불",
+  expire_burn: "유효기간 소멸",
   withdrawal_burn: "탈퇴 소멸",
 };
 
