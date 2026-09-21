@@ -31,6 +31,7 @@ import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
+import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
@@ -145,6 +146,11 @@ const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverHistoryRoute = CloverHistoryRouteImport.update({
+  id: '/clover/history',
+  path: '/clover/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
   id: '/chat/$roomId',
   path: '/chat/$roomId',
@@ -175,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -202,6 +209,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -230,6 +238,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -259,6 +268,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -313,6 +324,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -341,6 +353,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UiDemoRoute: typeof UiDemoRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
+  CloverHistoryRoute: typeof CloverHistoryRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
@@ -511,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/history': {
+      id: '/clover/history'
+      path: '/clover/history'
+      fullPath: '/clover/history'
+      preLoaderRoute: typeof CloverHistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat/$roomId': {
       id: '/chat/$roomId'
       path: '/chat/$roomId'
@@ -549,6 +569,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UiDemoRoute: UiDemoRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
+  CloverHistoryRoute: CloverHistoryRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,

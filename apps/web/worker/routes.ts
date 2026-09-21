@@ -12,6 +12,7 @@ export const KNOWN_ROUTES = [
   "/chat/$roomId",
   "/chats",
   "/clover",
+  "/clover/history",
   "/content/$type/$id",
   "/favorites",
   "/forgot-password",

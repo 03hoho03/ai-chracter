@@ -1,4 +1,5 @@
 import { Button } from "@ai-character-chat/ui/components/button";
+import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import {
@@ -19,9 +20,6 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
  *
  * 컨테이너 폭은 마이페이지(`pages/mypage/ui/MyPagePage.tsx:56`)와 같은 `max-w-md`다(CE-36) —
  * 진입점이 마이페이지라 폭이 이어지면 이동이 자연스럽다.
- *
- * 🔴 **내역 화면(`/clover/history`) 링크는 여기 없다** — S7이 그 라우트를 만들기 전까지는
- * 링크를 걸면 404다(clover-page-progress.md S6). S7이 이 섹션 근처에 링크를 붙인다.
  */
 export function CloverHubPage() {
   return (
@@ -67,6 +65,15 @@ function BalanceSection() {
             같은 처방). */}
         {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
       </div>
+      {/* clover-page-goal-prompt.md S7 — 내역 화면 진입점. `pages/mypage/ui/MyPagePage.tsx`의
+          "내 작품" 링크와 같은 관용구(`font-medium ... text-primary hover:underline
+          focus-visible:underline`). */}
+      <Link
+        to="/clover/history"
+        className="w-fit text-sm font-medium whitespace-nowrap text-primary hover:underline focus-visible:underline"
+      >
+        내역 보기
+      </Link>
     </section>
   );
 }
