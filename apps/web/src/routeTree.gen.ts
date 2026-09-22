@@ -23,6 +23,7 @@ import { Route as ChatsRouteImport } from './routes/chats'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
+import { Route as CloverIndexRouteImport } from './routes/clover.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
@@ -30,6 +31,7 @@ import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
 import { Route as InquiriesInquiryIdRouteImport } from './routes/inquiries.$inquiryId'
+import { Route as CloverHistoryRouteImport } from './routes/clover.history'
 import { Route as ChatRoomIdRouteImport } from './routes/chat.$roomId'
 import { Route as ContentTypeIdRouteImport } from './routes/content.$type.$id'
 import { Route as BuilderTypeDraftIdRouteImport } from './routes/builder.$type.$draftId'
@@ -104,6 +106,11 @@ const InquiriesIndexRoute = InquiriesIndexRouteImport.update({
   path: '/inquiries/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverIndexRoute = CloverIndexRouteImport.update({
+  id: '/clover/',
+  path: '/clover/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const BuilderIndexRoute = BuilderIndexRouteImport.update({
   id: '/builder/',
   path: '/builder/',
@@ -139,6 +146,11 @@ const InquiriesInquiryIdRoute = InquiriesInquiryIdRouteImport.update({
   path: '/inquiries/$inquiryId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CloverHistoryRoute = CloverHistoryRouteImport.update({
+  id: '/clover/history',
+  path: '/clover/history',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatRoomIdRoute = ChatRoomIdRouteImport.update({
   id: '/chat/$roomId',
   path: '/chat/$roomId',
@@ -169,6 +181,7 @@ export interface FileRoutesByFullPath {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -176,6 +189,7 @@ export interface FileRoutesByFullPath {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -195,6 +209,7 @@ export interface FileRoutesByTo {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -202,6 +217,7 @@ export interface FileRoutesByTo {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder': typeof BuilderIndexRoute
+  '/clover': typeof CloverIndexRoute
   '/inquiries': typeof InquiriesIndexRoute
   '/notices': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -222,6 +238,7 @@ export interface FileRoutesById {
   '/terms': typeof TermsRoute
   '/ui-demo': typeof UiDemoRoute
   '/chat/$roomId': typeof ChatRoomIdRoute
+  '/clover/history': typeof CloverHistoryRoute
   '/inquiries/$inquiryId': typeof InquiriesInquiryIdRoute
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
@@ -229,6 +246,7 @@ export interface FileRoutesById {
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
+  '/clover/': typeof CloverIndexRoute
   '/inquiries/': typeof InquiriesIndexRoute
   '/notices/': typeof NoticesIndexRoute
   '/builder/$type/$draftId': typeof BuilderTypeDraftIdRoute
@@ -250,6 +268,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -257,6 +276,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/clover/'
     | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
@@ -276,6 +296,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -283,6 +304,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder'
+    | '/clover'
     | '/inquiries'
     | '/notices'
     | '/builder/$type/$draftId'
@@ -302,6 +324,7 @@ export interface FileRouteTypes {
     | '/terms'
     | '/ui-demo'
     | '/chat/$roomId'
+    | '/clover/history'
     | '/inquiries/$inquiryId'
     | '/inquiries/new'
     | '/notices/$noticeId'
@@ -309,6 +332,7 @@ export interface FileRouteTypes {
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
+    | '/clover/'
     | '/inquiries/'
     | '/notices/'
     | '/builder/$type/$draftId'
@@ -329,6 +353,7 @@ export interface RootRouteChildren {
   TermsRoute: typeof TermsRoute
   UiDemoRoute: typeof UiDemoRoute
   ChatRoomIdRoute: typeof ChatRoomIdRoute
+  CloverHistoryRoute: typeof CloverHistoryRoute
   InquiriesInquiryIdRoute: typeof InquiriesInquiryIdRoute
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
@@ -336,6 +361,7 @@ export interface RootRouteChildren {
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
+  CloverIndexRoute: typeof CloverIndexRoute
   InquiriesIndexRoute: typeof InquiriesIndexRoute
   NoticesIndexRoute: typeof NoticesIndexRoute
   BuilderTypeDraftIdRoute: typeof BuilderTypeDraftIdRoute
@@ -442,6 +468,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/': {
+      id: '/clover/'
+      path: '/clover'
+      fullPath: '/clover/'
+      preLoaderRoute: typeof CloverIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/builder/': {
       id: '/builder/'
       path: '/builder'
@@ -491,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InquiriesInquiryIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clover/history': {
+      id: '/clover/history'
+      path: '/clover/history'
+      fullPath: '/clover/history'
+      preLoaderRoute: typeof CloverHistoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat/$roomId': {
       id: '/chat/$roomId'
       path: '/chat/$roomId'
@@ -529,6 +569,7 @@ const rootRouteChildren: RootRouteChildren = {
   TermsRoute: TermsRoute,
   UiDemoRoute: UiDemoRoute,
   ChatRoomIdRoute: ChatRoomIdRoute,
+  CloverHistoryRoute: CloverHistoryRoute,
   InquiriesInquiryIdRoute: InquiriesInquiryIdRoute,
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
@@ -536,6 +577,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
   BuilderIndexRoute: BuilderIndexRoute,
+  CloverIndexRoute: CloverIndexRoute,
   InquiriesIndexRoute: InquiriesIndexRoute,
   NoticesIndexRoute: NoticesIndexRoute,
   BuilderTypeDraftIdRoute: BuilderTypeDraftIdRoute,

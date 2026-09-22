@@ -2346,6 +2346,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/me/clover/missions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Missions
+         * @description clover-page-goal-prompt.md CE-13 — 3종(`first_publish`·`first_message`·`first_image`)
+         *     달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로(T-13) 이 응답은
+         *     캐시된 값이 아니라 그 순간의 진실이다.
+         */
+        get: operations["get_clover_missions_me_clover_missions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/clover/missions/{key}/claim": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Claim Clover Mission
+         * @description 미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
+         *     **에러가 아니다** — 위 출석과 같은 패턴이다.
+         *
+         *     🔴 달성 여부를 **저장하지 않으므로**(CE-13) 이 판정도 매 요청 EXISTS다 — 청구 직전에
+         *     달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
+         *     달성하면 다시 청구할 수 있다(T-13).
+         */
+        post: operations["claim_clover_mission_me_clover_missions__key__claim_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/clover/ledger": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Clover Ledger
+         * @description clover-page-goal-prompt.md CE-20 — 자기 자신의 원장만. 어드민 엔드포인트
+         *     (`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고
+         *     임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다(§1-8) — 그래서 복제하지 않고 새로
+         *     만들었다.
+         *
+         *     커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다
+         *     (사전 점검 PA-7 — 모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은
+         *     `created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개
+         *     들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`
+         *     (`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의
+         *     같은 이유, `admin/users.py:list_user_clover_ledger`).
+         */
+        get: operations["get_clover_ledger_me_clover_ledger_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/stories/starting-setups/{starting_setup_id}/ending-collection": {
         parameters: {
             query?: never;
@@ -4098,6 +4175,86 @@ export interface components {
             spendConfirmedToday: boolean;
             /** Attendanceclaimable */
             attendanceClaimable: boolean;
+            expiringSoon: components["schemas"]["CloverExpiringSoon"] | null;
+        };
+        /**
+         * CloverExpiringSoon
+         * @description clover-page-goal-prompt.md CE-22. 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산.
+         */
+        CloverExpiringSoon: {
+            /** Amount */
+            amount: number;
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+        };
+        /**
+         * CloverLedgerItem
+         * @description clover-page-goal-prompt.md CE-20·CE-21. `category`는 BE의 `kind`→범주 맵
+         *     (`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을
+         *     다시 두지 않는다(§8 확인 완료 2).
+         */
+        CloverLedgerItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Amount */
+            amount: number;
+            /** Balanceafter */
+            balanceAfter: number;
+            /** Kind */
+            kind: string;
+            /**
+             * Category
+             * @enum {string}
+             */
+            category: "use" | "earn" | "expire";
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+        };
+        /**
+         * CloverLedgerListResponse
+         * @description `DraftListResponse`(`content/schemas.py`)와 같은 커서 페이지네이션 봉투.
+         */
+        CloverLedgerListResponse: {
+            /** Items */
+            items: components["schemas"]["CloverLedgerItem"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /** CloverMissionClaimResponse */
+        CloverMissionClaimResponse: {
+            /** Granted */
+            granted: boolean;
+            /** Balance */
+            balance: number;
+        };
+        /**
+         * CloverMissionItem
+         * @description clover-page-goal-prompt.md CE-13. `achieved`·`claimed`는 매 조회마다 EXISTS로 다시
+         *     계산한다 — 저장된 상태가 아니다(T-13).
+         */
+        CloverMissionItem: {
+            /** Key */
+            key: string;
+            /** Reward */
+            reward: number;
+            /** Achieved */
+            achieved: boolean;
+            /** Claimed */
+            claimed: boolean;
+        };
+        /** CloverMissionsResponse */
+        CloverMissionsResponse: {
+            /** Missions */
+            missions: components["schemas"]["CloverMissionItem"][];
         };
         /**
          * ContentAccessStatus
@@ -8934,6 +9091,89 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    get_clover_missions_me_clover_missions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverMissionsResponse"];
+                };
+            };
+        };
+    };
+    claim_clover_mission_me_clover_missions__key__claim_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: "first_publish" | "first_message" | "first_image";
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverMissionClaimResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_clover_ledger_me_clover_ledger_get: {
+        parameters: {
+            query: {
+                category: "use" | "earn" | "expire";
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloverLedgerListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
             };
         };
     };

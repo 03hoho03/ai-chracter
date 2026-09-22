@@ -1,14 +1,15 @@
-"""S5-e 재발 방지 + `monitoring-techspec.md` MT-9·MT-13·`monitoring-legal-draft.md` §7-6(MT-16):
-프로덕션 크론이 시스템 python3로 직접 부르는 ops 모듈들이 실제로 그 환경에서 import 가능한지
-고정한다.
+"""S5-e 재발 방지 + `monitoring-techspec.md` MT-9·MT-13·`monitoring-legal-draft.md` §7-6(MT-16)
++ `clover-page-goal-prompt.md` CE-9: 프로덕션 크론이 시스템 python3로 직접 부르는 ops 모듈들이
+실제로 그 환경에서 import 가능한지 고정한다.
 
 **대상은 `backup_db.py`·`restore_db.py`·`check_resources.py`·`vacuum_bugsink.py`·
-`purge_image_requests.py`, 그리고 이 다섯이 `ops.`로 top-level import하는 형제 모듈
-`notify.py`·`db_url.py`·`pg.py`다.** VM 시스템 python3로 실제 불리는 건 앞의 다섯이다 —
+`purge_image_requests.py`·`expire_clover.py`, 그리고 이 여섯이 `ops.`로 top-level import하는
+형제 모듈 `notify.py`·`db_url.py`·`pg.py`다.** VM 시스템 python3로 실제 불리는 건 앞의 여섯이다 —
 `DEPLOY.md` §3-4가 복원 절차를 `PYTHONPATH=. python3 -m ops.restore_db`로 명시하고,
 `ops/cron.d/ddona-resource-check`(MT-13)가 리소스 감시를, `ops/cron.d/ddona-bugsink-vacuum`
 (MT-16)가 Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`
-(image-monitoring-goal-prompt.md IM-7a)가 이미지 생성 요청 파기를 같은 방식으로 돌린다.
+(image-monitoring-goal-prompt.md IM-7a)가 이미지 생성 요청 파기를, `ops/cron.d/ddona-clover-expire`
+(clover-page-goal-prompt.md CE-9)가 출석·미션 클로버 만료를 같은 방식으로 돌린다.
 **형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
 `requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 테스트들이 전부 통과했다(실측). `snapshot_redis.py`·
@@ -44,6 +45,7 @@ from pathlib import Path
 import ops.backup_db as backup_db
 import ops.check_resources as check_resources
 import ops.db_url as db_url
+import ops.expire_clover as expire_clover
 import ops.notify as notify
 import ops.pg as pg
 import ops.purge_image_requests as purge_image_requests
@@ -99,6 +101,17 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
     # (ops/cron.d/ddona-image-request-purge). `backup_db.py`의 만료 삭제와 같은 이유로 stdlib +
     # `ops` 형제 모듈만 쓴다 — DB 삭제는 `run_sh`(컨테이너 안 `psql`)를 통해서만 한다.
     "purge_image_requests": {
+        "argparse",
+        "os",
+        "subprocess",
+        "sys",
+        "datetime",
+        "ops",
+    },
+    # clover-page-goal-prompt.md CE-9: 클로버 만료 배치도 시스템 python3로 돈다
+    # (ops/cron.d/ddona-clover-expire). `purge_image_requests.py`와 같은 이유로 stdlib +
+    # `ops` 형제 모듈만 쓴다 — 만료 처리는 `run_sh`(컨테이너 안 `psql`)를 통해서만 한다.
+    "expire_clover": {
         "argparse",
         "os",
         "subprocess",
@@ -196,6 +209,19 @@ def test_purge_image_requests_top_level_imports_are_satisfied_by_production_cron
         f"ops/purge_image_requests.py 최상단 import {disallowed}는 이미지 요청 파기 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
         "크론이 import 시점에 죽어 IM-7a의 90일 파기 약속이 조용히 깨진다."
+    )
+
+
+def test_expire_clover_top_level_imports_are_satisfied_by_production_cron_environment() -> None:
+    path = Path(expire_clover.__file__)
+    imports = _top_level_import_names(path)
+
+    disallowed = imports - _ALLOWED_TOP_LEVEL_MODULES["expire_clover"]
+    assert not disallowed, (
+        f"ops/expire_clover.py 최상단 import {disallowed}는 클로버 만료 배치 크론의 시스템 "
+        "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
+        "크론이 import 시점에 죽어 clover-page-goal-prompt.md CE-7의 7일 유효기간 약속이 조용히 "
+        "깨진다."
     )
 
 

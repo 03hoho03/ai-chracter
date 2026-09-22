@@ -11,6 +11,8 @@ export const KNOWN_ROUTES = [
   "/builder/$type/$draftId",
   "/chat/$roomId",
   "/chats",
+  "/clover",
+  "/clover/history",
   "/content/$type/$id",
   "/favorites",
   "/forgot-password",

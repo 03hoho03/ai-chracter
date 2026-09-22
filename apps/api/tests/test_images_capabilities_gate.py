@@ -43,14 +43,18 @@ from api.llm.dependencies import get_image_client
 from api.llm.image import ImageClient, ImageStylePreset
 from api.llm.local_image import LocalCapabilities, ModelCapability
 from api.main import app
-from factories import _login_as, _make_user
+from factories import _login_as, _make_user, _make_user_with_clover_lot
 
 
 async def _authed_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
 ) -> User:
-    user = _make_user(**overrides)
-    db_session.add(user)
+    """clover-page-goal-prompt.md CE-35 — `clover_balance`가 있으면 매칭 로트도 함께 만든다.
+    이미지 게이트가 실제로 image_spend를 태우는 테스트가 로트 0행 상태에서
+    `CloverLotShortfallError`를 맞지 않도록."""
+    balance = overrides.pop("clover_balance", 0)
+    assert isinstance(balance, int)
+    user = await _make_user_with_clover_lot(db_session, clover_balance=balance, **overrides)
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user

@@ -32,7 +32,7 @@ from api.llm.local_image import (
     ModelCapability,
 )
 from api.main import app
-from factories import _login_as, _make_user
+from factories import _login_as, _make_user, _make_user_with_clover_lot
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
@@ -953,10 +953,13 @@ async def _clover_paid_user(
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
     # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
     # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    user = _make_user(
-        clover_balance=balance, clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC))
+    # clover-page-goal-prompt.md CE-35 — 이 유저는 실제로 image_spend를 태우므로 매칭 로트가
+    # 없으면 `CloverLotShortfallError`가 난다.
+    user = await _make_user_with_clover_lot(
+        db_session,
+        clover_balance=balance,
+        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
     )
-    db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
     return user

@@ -28,6 +28,7 @@ from api.db.models import (
     AssetKind,
     AssetStatus,
     CharacterVersionDetail,
+    CloverLot,
     Content,
     ContentTarget,
     ContentType,
@@ -68,6 +69,41 @@ def _make_user(**overrides: object) -> User:
     }
     defaults.update(overrides)
     return User(**defaults)
+
+
+async def _make_user_with_clover_lot(
+    db_session: AsyncSession, *, clover_balance: int, **overrides: object
+) -> User:
+    """`clover_balance`를 세팅한 유저와, 그 값과 정확히 같은 **무기한** 로트 1행
+    (`kind="legacy_balance"`)을 함께 커밋한다.
+
+    clover-page-goal-prompt.md CE-4의 Σ(`clover_lots.remaining`) == `users.clover_balance`
+    불변식을 테스트 셋업부터 지키기 위한 공용 헬퍼다(CE-35). 기존 51곳이 쓰는
+    `_make_user(clover_balance=N)`는 DB를 안 건드리는 순수 팩토리라 로트를 만들 수 없다 —
+    이 헬퍼는 `_make_asset`처럼 `db_session`을 받아 직접 커밋하는 변종이다. `clover_balance`가
+    0이면 로트를 만들지 않는다(마이그레이션 백필과 같은 규칙 — T-5).
+
+    🔴 **만료 있는 로트가 필요한 테스트는 이 헬퍼를 쓰지 않고 `CloverLot`을 직접 만든다.**
+    만료 인자를 받게 열어 두지 않는 이유는 둘이다 — ① 지금 그걸 쓰는 호출부가 0곳이고
+    ② 명명 인자로 열어 두면 `**overrides`로 전달하는 호출부(`test_clover_gate.py` 등 3곳)에서
+    mypy가 `dict[str, object]`를 `datetime | None`에 못 맞춰 `[arg-type]`으로 막는다.
+    """
+    overrides["clover_balance"] = clover_balance
+    user = _make_user(**overrides)
+    db_session.add(user)
+    await db_session.flush()
+    if clover_balance > 0:
+        db_session.add(
+            CloverLot(
+                user_id=user.id,
+                granted_amount=clover_balance,
+                remaining=clover_balance,
+                expires_at=None,
+                kind="legacy_balance",
+            )
+        )
+        await db_session.flush()
+    return user
 
 
 # secure-issue-goal-prompt.md SEC-2: 인증 없이 임의 `user_id`로 쿠키를 굽던
