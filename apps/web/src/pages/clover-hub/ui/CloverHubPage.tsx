@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
 
 import {
+  CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_MISSION_LABELS,
   CloverBalance,
   formatCloverExpiringSoonMessage,
@@ -27,11 +28,10 @@ export function CloverHubPage() {
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버</h1>
         {/* clover-page-goal-prompt.md CE-33 — "클로버 페이지·내역 화면에도 상시 고지를 둔다."
-            용어 "소멸"과 7일 유효기간은 CE-7·CE-11이 이미 확정한 사실이라 새로 판단한 것이
-            아니다. */}
-        <p className="text-sm break-keep text-muted-foreground">
-          출석·미션으로 받은 클로버는 7일 뒤 소멸돼요.
-        </p>
+            문구는 entities/clover의 단일 소스(cloverExpiryNotice.ts)를 쓴다 — 내역 화면과
+            리터럴을 각자 복사해 갖고 있다가 "7일"과 게시된 공지("7~8일")가 어긋났던 전례가
+            있다. */}
+        <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
       </div>
 
       <BalanceSection />

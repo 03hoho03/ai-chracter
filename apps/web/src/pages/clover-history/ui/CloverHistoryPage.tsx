@@ -3,6 +3,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/
 import { useRef } from "react";
 
 import {
+  CLOVER_EXPIRY_NOTICE_MESSAGE,
   CLOVER_KIND_LABELS,
   formatCloverLedgerAmount,
   useCloverLedgerQuery,
@@ -54,10 +55,9 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
     <main className="mx-auto flex max-w-md flex-col gap-6 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버 내역</h1>
-        {/* clover-page-goal-prompt.md CE-33 — 허브 페이지(clover-hub)와 같은 상시 고지. */}
-        <p className="text-sm break-keep text-muted-foreground">
-          출석·미션으로 받은 클로버는 7일 뒤 소멸돼요.
-        </p>
+        {/* clover-page-goal-prompt.md CE-33 — 허브 페이지(clover-hub)와 같은 상시 고지, 같은
+            단일 소스(entities/clover의 cloverExpiryNotice.ts)를 쓴다. */}
+        <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
       </div>
 
       {/* apps/web/CLAUDE.md — 탭은 variant="line"(활성 탭은 primary가 아니라 foreground 밑줄). */}

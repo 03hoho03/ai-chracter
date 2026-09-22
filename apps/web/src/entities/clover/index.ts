@@ -19,6 +19,7 @@ export { isCloverInsufficient, shouldShowCloverBalance } from "./model/cloverBal
 export { isCloverSpendConfirmRequired } from "./model/cloverSpendConfirm";
 export type { CloverSpendConfirmOutcome } from "./model/cloverSpendConfirm";
 export { formatCloverExpiringSoonMessage } from "./model/cloverExpiringSoonDisplay";
+export { CLOVER_EXPIRY_NOTICE_MESSAGE } from "./model/cloverExpiryNotice";
 export { projectCloverMissionState } from "./model/cloverMissionState";
 export type { CloverMissionState } from "./model/cloverMissionState";
 export { CLOVER_MISSION_LABELS } from "./model/cloverMissionLabel";
