@@ -57,6 +57,7 @@ from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
 from api.db.models.content import Content, ContentVisibility
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
+from api.db.models.persona import UserPersona
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
@@ -586,6 +587,8 @@ async def withdraw(
     # 매치(google_callback)에 영구히 걸려, 이메일 가입자와 달리 1년이 지나도 재가입이 안 열린다.
     user.google_sub = None
     user.profile_image_asset_id = None
+    # persona-goal-prompt.md UP-15: 아래 프로필 DELETE 전에 기본 참조를 끊는다(같은 flush에 실린다).
+    user.default_persona_id = None
 
     # legal-revision-goal-prompt.md LR-7·LR-8: 평문 이메일 대신 키 있는 HMAC 한 행을 남긴다.
     # 같은 이메일이 만료 후 재사용됐다가 다시 탈퇴할 수 있어 PK 충돌이면 갱신한다.
@@ -613,6 +616,10 @@ async def withdraw(
     # T-4 적대적 리뷰: `profile_image_asset_id = None` 대입(위 574줄)이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.
     await db.flush()
+
+    # persona-goal-prompt.md UP-15: 대화 프로필을 지운다. 참조하는 쪽(방은 위에서 DELETE,
+    # `default_persona_id`는 위 flush로 NULL)이 먼저 끊겨 있어야 FK 위반이 나지 않는다.
+    await db.execute(delete(UserPersona).where(UserPersona.user_id == user_id))
 
     # image-monitoring-goal-prompt.md IM-7: 탈퇴한 유저의 GENERATED asset과 요청 행을
     # "이미지와 같은 수명"으로 파기한다. profile_image_asset_id는 위에서 이미 None으로

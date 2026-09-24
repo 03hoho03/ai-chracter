@@ -112,6 +112,8 @@ from api.llm.client import (
     LLMRateLimitError,
 )
 from api.llm.dependencies import get_llm_client
+from api.persona.router import get_owned_persona, lock_user_default_persona
+from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
 
 # LLM 실패(특히 429 쿼터 소진)는 화면에 "대화 품질 문제"와 구분되지 않게 보이므로 반드시
@@ -571,21 +573,33 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         content_snapshot=content_snapshot,
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
+        persona_id=room.persona_id,
         created_at=room.created_at,
         updated_at=room.updated_at,
     )
 
 
 async def _create_room(
-    db: AsyncSession, user_id: uuid.UUID, content: Content, setup: StartingSetup | None
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    content: Content,
+    setup: StartingSetup | None,
+    *,
+    persona_id: uuid.UUID | None,
 ) -> ChatRoom:
     """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`(US-080)가 공유하는
-    방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다."""
+    방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다.
+
+    `persona_id`는 받은 값만 쓴다(persona-goal-prompt.md UP-24). "새 방 = 기본"(UP-7)과 "원래
+    방 승계"(UP-24) 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
+    읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다(§3-1, R-20). 키워드 전용 필수라 새
+    호출부가 값을 빠뜨리면 mypy가 잡는다."""
     room = ChatRoom(
         user_id=user_id,
         content_id=content.id,
         content_version_id=content.current_published_version_id,
         starting_setup_entity_id=setup.entity_id if setup is not None else None,
+        persona_id=persona_id,
     )
     db.add(room)
     await db.flush()
@@ -635,7 +649,10 @@ async def create_chat_room(
             )
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    room = await _create_room(db, user_id, content, setup)
+    # persona-goal-prompt.md UP-7 — 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
+    # 읽는다(`db.get(User)`는 `require_legal_consent`가 채운 identity map의 옛 값이고 락도 없다).
+    default_persona_id = await lock_user_default_persona(db, user_id)
+    room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
     await db.commit()
 
     return await _to_response(db, room)
@@ -1698,10 +1715,35 @@ async def change_starting_setup(
     assert content is not None
     setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    new_room = await _create_room(db, user_id, content, setup)
+    # persona-goal-prompt.md UP-24 — 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는
+    # 락 전에 읽은 값이라 그 사이 프로필 삭제로 NULL이 됐을 수 있다 — 유저 행을 잠근 뒤 컬럼
+    # select로 다시 읽는다(READ COMMITTED에서 락 뒤의 새 문장은 삭제 커밋을 본다, §3-3).
+    # 같은 유저의 방에서 복사하므로 소유권 재검사는 필요 없다.
+    await lock_user_default_persona(db, user_id)
+    persona_id = await db.scalar(select(ChatRoom.persona_id).where(ChatRoom.id == room.id))
+    new_room = await _create_room(db, user_id, content, setup, persona_id=persona_id)
     await db.commit()
 
     return await _to_response(db, new_room)
+
+
+@router.put("/{room_id}/persona", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-3
+async def set_room_persona(
+    room_id: uuid.UUID,
+    payload: PersonaSelectRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> RoomPersonaResponse:
+    """persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
+    과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를
+    **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다."""
+    room = await _get_owned_room(db, room_id, user_id)
+    await lock_user_default_persona(db, user_id)
+    if payload.persona_id is not None:
+        await get_owned_persona(db, payload.persona_id, user_id)
+    room.persona_id = payload.persona_id
+    await db.commit()
+    return RoomPersonaResponse(persona_id=room.persona_id)
 
 
 @router.post(

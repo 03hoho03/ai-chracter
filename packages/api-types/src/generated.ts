@@ -2219,6 +2219,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Room Persona
+         * @description persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
+         *     과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를
+         *     **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다.
+         */
+        put: operations["set_room_persona_chat_rooms__room_id__persona_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
         parameters: {
             query?: never;
@@ -2416,6 +2438,67 @@ export interface paths {
          */
         get: operations["get_clover_ledger_me_clover_ledger_get"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/personas": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Personas */
+        get: operations["list_personas_me_personas_get"];
+        put?: never;
+        /** Create Persona */
+        post: operations["create_persona_me_personas_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/personas/{persona_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update Persona */
+        put: operations["update_persona_me_personas__persona_id__put"];
+        post?: never;
+        /**
+         * Delete Persona
+         * @description persona-goal-prompt.md UP-14 — 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
+         *     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.
+         */
+        delete: operations["delete_persona_me_personas__persona_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/default-persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Default Persona
+         * @description `/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아
+         *     `"default"`를 UUID로 파싱하다 422가 난다(persona-goal-prompt.md §3-3, R-16).
+         */
+        put: operations["set_default_persona_me_default_persona_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -4142,6 +4225,8 @@ export interface components {
             latestVersionAvailable: boolean;
             /** Versionautoupgraded */
             versionAutoUpgraded: boolean;
+            /** Personaid */
+            personaId?: string | null;
             /**
              * Createdat
              * Format: date-time
@@ -5119,6 +5204,72 @@ export interface components {
              */
             email: string;
         };
+        /** PersonaCreateRequest */
+        PersonaCreateRequest: {
+            /** Name */
+            name: string;
+            /** Gender */
+            gender: ("male" | "female") | null;
+            /** Description */
+            description: string;
+            /** Setasdefault */
+            setAsDefault: boolean;
+        };
+        /** PersonaListResponse */
+        PersonaListResponse: {
+            /** Items */
+            items: components["schemas"]["PersonaResponse"][];
+            /** Defaultpersonaid */
+            defaultPersonaId: string | null;
+            /** Maxcount */
+            maxCount: number;
+        };
+        /** PersonaResponse */
+        PersonaResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Gender */
+            gender: ("male" | "female") | null;
+            /** Description */
+            description: string;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /**
+         * PersonaSelectRequest
+         * @description `PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는
+         *     필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다.
+         */
+        PersonaSelectRequest: {
+            /** Personaid */
+            personaId: string | null;
+        };
+        /**
+         * PersonaUpsertRequest
+         * @description `PUT /me/personas/{id}`는 전체 교체라 필드에 기본값을 두지 않는다 — 빠진 필드가
+         *     조용히 "선택 안 함"·빈 설명으로 덮어쓰이지 않게.
+         */
+        PersonaUpsertRequest: {
+            /** Name */
+            name: string;
+            /** Gender */
+            gender: ("male" | "female") | null;
+            /** Description */
+            description: string;
+        };
         /** PlayGuideResponse */
         PlayGuideResponse: {
             /** Playguide */
@@ -5194,6 +5345,11 @@ export interface components {
              * Format: email
              */
             email: string;
+        };
+        /** RoomPersonaResponse */
+        RoomPersonaResponse: {
+            /** Personaid */
+            personaId: string | null;
         };
         /** ShortcutDraftItem */
         ShortcutDraftItem: {
@@ -8988,6 +9144,41 @@ export interface operations {
             };
         };
     };
+    set_room_persona_chat_rooms__room_id__persona_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaSelectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomPersonaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post: {
         parameters: {
             query?: never;
@@ -9168,6 +9359,154 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CloverLedgerListResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_personas_me_personas_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaListResponse"];
+                };
+            };
+        };
+    };
+    create_persona_me_personas_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_persona_me_personas__persona_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                persona_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaUpsertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PersonaResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_persona_me_personas__persona_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                persona_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_persona_me_default_persona_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PersonaSelectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
