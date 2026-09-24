@@ -14,11 +14,13 @@ import {
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
 import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
+import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
+import { previewPersonaLabel } from "../model/previewPersonaLabel";
 import { PreviewCloseHeader } from "./PreviewCloseHeader";
 
 // techspec-builder-common.md §3 — 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
@@ -57,6 +59,10 @@ export function PreviewSessionView({
     // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
     confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
+  // persona-progress.md S8 ⚪-3 — 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
+  // 위에 한 줄로 보인다. `isSuccess`만 넘기는 건 재조회 실패(옛 data가 남은 error)에도 숨기기 위해서다.
+  const personasQuery = usePersonasQuery();
+  const personaCaption = previewPersonaLabel(personasQuery.isSuccess ? personasQuery.data : undefined);
   const isSending = status.kind === "sending";
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);
@@ -191,7 +197,7 @@ export function PreviewSessionView({
               className={policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only"}
             >
               <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">{policyWarning}</span>
+              <span className="text-xs break-keep text-muted-foreground">{policyWarning}</span>
             </div>
 
             <div ref={bottomRef} />
@@ -199,6 +205,10 @@ export function PreviewSessionView({
         </div>
 
         <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
+          {/* 헤더(`PreviewCloseHeader`)가 아니라 여기인 이유: 헤더 행은 `h-8` 고정 한 줄이라 360px에서
+              `미리보기 초기화` 옆에 두면 "대화 프로필:…"로 말줄임돼 이름이 통째로 안 보였다(S8 후속 실측). 입력창 위는 전체 폭을
+              쓰고, 작가가 말을 거는 바로 그 자리에서 "누구로 대화하는지"를 읽는다. */}
+          {personaCaption && <p className="mb-2 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>}
           {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
               사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
               동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}

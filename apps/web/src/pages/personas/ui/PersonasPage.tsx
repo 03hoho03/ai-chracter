@@ -1,4 +1,5 @@
-import { useId, useState } from "react";
+import { useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Plus } from "lucide-react";
 
@@ -61,11 +62,27 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
   const { items, defaultPersonaId, maxCount } = personaList;
   const isAtLimit = items.length >= maxCount;
   const isCreating = editing?.kind === "create";
+  // 폼을 연 트리거 — 빈 상태의 `첫 프로필 만들기`와 목록의 `새 프로필`은 동시에 마운트되지 않아 ref 하나를 나눠 쓴다.
+  const createTriggerRef = useRef<HTMLButtonElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
 
   function handleCreateClick() {
     if (isAtLimit) return;
     onEditingChange({ kind: "create" });
   }
+
+  /** 인라인 폼을 닫고 그 폼을 연 트리거로 포커스를 돌려준다(persona-progress.md S8 🟡-3). 폼이 열려 있는
+   * 동안 트리거(`새 프로필`·그 행의 ⋯)는 언마운트돼 있어 "바꾸기 전에 옮기기"(apps/web/CLAUDE.md §포커스)가
+   * 불가능하다 — 그래서 `flushSync`로 닫힘을 동기 커밋한 뒤 되살아난 트리거로 옮긴다. 안 하면 누른 버튼과
+   * 함께 폼이 사라져 포커스가 `<body>`로 떨어진다. */
+  function closeFormAndRestoreFocus(getTrigger: () => HTMLElement | null | undefined) {
+    flushSync(() => onEditingChange(undefined));
+    getTrigger()?.focus();
+  }
+
+  const focusCreateTrigger = () => createTriggerRef.current;
+  const focusMenuTrigger = (personaId: string) => () =>
+    listRef.current?.querySelector<HTMLElement>(`[data-persona-menu-trigger="${personaId}"]`);
 
   const createForm = (
     <section aria-labelledby={createHeadingId} className="flex flex-col gap-4 rounded-xl border border-border p-4">
@@ -74,8 +91,8 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
       </h2>
       <CreatePersonaForm
         defaultPersonaId={defaultPersonaId}
-        onCreated={() => onEditingChange(undefined)}
-        onCancel={() => onEditingChange(undefined)}
+        onCreated={() => closeFormAndRestoreFocus(focusCreateTrigger)}
+        onCancel={() => closeFormAndRestoreFocus(focusCreateTrigger)}
       />
     </section>
   );
@@ -89,7 +106,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
         <p className="text-sm break-keep text-muted-foreground">
           이름과 성별, 나에 대한 설명을 적어 두면 캐릭터가 그걸 알고 대화해요.
         </p>
-        <Button type="button" variant="outline" className="mt-2" onClick={handleCreateClick}>
+        <Button ref={createTriggerRef} type="button" variant="outline" className="mt-2" onClick={handleCreateClick}>
           <Plus aria-hidden />첫 프로필 만들기
         </Button>
       </div>
@@ -105,6 +122,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
           </p>
           {!isCreating && (
             <Button
+              ref={createTriggerRef}
               type="button"
               variant="outline"
               aria-disabled={isAtLimit}
@@ -125,7 +143,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
 
       {isCreating && createForm}
 
-      <ul className="flex flex-col gap-2">
+      <ul ref={listRef} className="flex flex-col gap-2">
         {items.map((persona) => {
           const isDefault = persona.id === defaultPersonaId;
           const isEditing = editing?.kind === "edit" && editing.personaId === persona.id;
@@ -136,8 +154,8 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
                 <div className="p-4">
                   <EditPersonaForm
                     persona={persona}
-                    onSaved={() => onEditingChange(undefined)}
-                    onCancel={() => onEditingChange(undefined)}
+                    onSaved={() => closeFormAndRestoreFocus(focusMenuTrigger(persona.id))}
+                    onCancel={() => closeFormAndRestoreFocus(focusMenuTrigger(persona.id))}
                   />
                 </div>
               ) : (

@@ -46,6 +46,8 @@ export function PersonaActionMenu({ persona, isDefault, onEdit }: PersonaActionM
           variant="ghost"
           size="icon-sm"
           aria-label={`${persona.name} 프로필 메뉴`}
+          // 인라인 편집을 닫을 때 관리 페이지가 포커스를 돌려줄 자리(PersonasPage `closeFormAndRestoreFocus`).
+          data-persona-menu-trigger={persona.id}
           className="shrink-0 hover:bg-secondary aria-expanded:bg-secondary"
         >
           <MoreHorizontal aria-hidden />

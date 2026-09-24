@@ -219,9 +219,11 @@ function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidSubmit, 
         />
       )}
 
-      {/* 취소 먼저, 실행 나중(packages/ui/CLAUDE.md — 확인 모달 버튼 순서와 같은 DOM 순서) */}
+      {/* 취소 먼저, 실행 나중(packages/ui/CLAUDE.md — 확인 모달 버튼 순서와 같은 DOM 순서).
+          `hover:bg-secondary` — 성별 토글과 같은 이유: ghost의 `hover:bg-muted`는 모달(`popover`) 위에서
+          표면과 같은 값이라 hover가 1.000:1로 사라졌다(persona-progress.md S8 🟡-2). */}
       <div className="flex justify-end gap-2">
-        <Button type="button" variant="ghost" onClick={onCancel}>
+        <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={onCancel}>
           취소
         </Button>
         <Button type="submit" aria-disabled={isSubmitting} className="aria-disabled:opacity-65">

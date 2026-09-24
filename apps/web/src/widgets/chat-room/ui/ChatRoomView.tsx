@@ -268,7 +268,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 className={policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only"}
               >
                 <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{policyWarning}</span>
+                <span className="text-xs break-keep text-muted-foreground">{policyWarning}</span>
               </div>
 
               <div ref={bottomRef} />
