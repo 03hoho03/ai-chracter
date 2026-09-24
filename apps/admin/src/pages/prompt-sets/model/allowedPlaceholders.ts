@@ -17,6 +17,7 @@ const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {
   "generation:user_goal": ["user_goal"],
   "generation:development_examples": ["example_lines"],
   "generation:prologue": ["prologue"],
+  "generation:user_persona": ["user_persona"],
   "generation:history": ["history_lines"],
   "generation:keyword_notes": ["keyword_note_lines"],
   "generation:shortcut_prompt": ["shortcut_prompt"],

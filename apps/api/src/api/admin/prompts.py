@@ -51,7 +51,8 @@ router = APIRouter(tags=["admin"])
 logger = logging.getLogger(__name__)
 
 # prompt-scope-goal-prompt.md PS-13 — 코드가 레인별로 아는 (channel, scope, slot, variant)
-# 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행과 정확히 같다.
+# 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행에 b72c33c70240이 story·
+# character generation에 `user_persona`를 한 행씩 더한 27/14/16행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -86,6 +87,9 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("story", "user_goal", ""),
                 ("story", "development_examples", ""),
                 ("story", "prologue", ""),
+                # persona-goal-prompt.md UP-13 — M2(`b72c33c70240`)가 DB에 넣는 행과 같이 간다.
+                # 코드만 있으면 R-1 "누락", DB만 있으면 "잉여"로 게시가 전부 막힌다.
+                ("both", "user_persona", ""),
                 ("both", "history", ""),
                 ("story", "keyword_notes", ""),
                 ("story", "shortcut_prompt", ""),
@@ -122,6 +126,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
             {
                 ("character", "character_prompt", ""),
                 ("character", "example_dialogues", ""),
+                ("both", "user_persona", ""),  # persona-goal-prompt.md UP-13 — 위 story와 같다
                 ("both", "history", ""),
                 ("both", "final_frame", ""),
             }

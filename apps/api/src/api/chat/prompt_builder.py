@@ -72,6 +72,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "user_goal"): frozenset({"user_goal"}),
     ("generation", "development_examples"): frozenset({"example_lines"}),
     ("generation", "prologue"): frozenset({"prologue"}),
+    # persona-goal-prompt.md §3-4-1 (UP-9) — 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
+    ("generation", "user_persona"): frozenset({"user_persona"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
