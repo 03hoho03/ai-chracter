@@ -39,6 +39,7 @@ from api.db.models.moderation import (
     ReportStatus,
 )
 from api.db.models.notice import Notice
+from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
@@ -110,5 +111,6 @@ __all__ = [
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
+    "UserPersona",
     "WithdrawnEmail",
 ]
