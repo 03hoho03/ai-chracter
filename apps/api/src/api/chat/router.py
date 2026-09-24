@@ -31,6 +31,7 @@ from api.chat.prompt_builder import (
     format_user_persona,
     load_active_prompt_set,
     system_instruction_for,
+    user_persona_rendered,
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.schemas import (
@@ -687,7 +688,16 @@ async def get_play_guide(
 
 
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
+# persona-goal-prompt.md UP-21 (a) — 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
+_PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+
+
+def _policy_warning_message(persona_rendered: bool) -> str:
+    """persona-goal-prompt.md UP-21 (a) — 그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
+    들어갔을 때만(`user_persona_rendered`) 프로필 안내를 붙인다. 원인이 프로필인지는 알 수
+    없어서 "~일 수 있다"로 쓴다. `yield ChatPolicyWarningEvent` 3곳이 공유한다."""
+    return _PERSONA_POLICY_WARNING_MESSAGE if persona_rendered else _POLICY_WARNING_MESSAGE
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
@@ -773,7 +783,7 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
-) -> tuple[str, str]:
+) -> tuple[str, str, bool]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
     (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
@@ -785,7 +795,10 @@ async def _build_prompt(
 
     방이 고른 대화 프로필은 이 턴에 **락 없이** 읽는다(persona-goal-prompt.md §3-1). 방 안에서
     바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다(UP-7 ②). 그 사이 프로필이
-    지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다(UP-14)."""
+    지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다(UP-14).
+
+    세 번째 값은 그 프로필 섹션이 이 프롬프트에 **실제로 들어갔는가**다(`user_persona_rendered`,
+    UP-21 (a)의 정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     user_persona = _format_persona(persona)
 
@@ -817,8 +830,12 @@ async def _build_prompt(
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
-        return prompt, system_instruction_for(
-            prompt_sections, is_story_chat=True, template=story_detail.prompt_template
+        return (
+            prompt,
+            system_instruction_for(prompt_sections, is_story_chat=True, template=story_detail.prompt_template),
+            user_persona_rendered(
+                prompt_sections, is_story_chat=True, template=story_detail.prompt_template, user_persona=user_persona
+            ),
         )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
@@ -832,7 +849,11 @@ async def _build_prompt(
         user_message=user_content,
         user_persona=user_persona,
     )
-    return prompt, system_instruction_for(prompt_sections, is_story_chat=False)
+    return (
+        prompt,
+        system_instruction_for(prompt_sections, is_story_chat=False),
+        user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
+    )
 
 
 def _dump_prompt(
@@ -920,7 +941,7 @@ async def _stream_new_turn(
     — 그 라우트의 docstring 참고.
     """
     try:
-        prompt, system_instruction = await _build_prompt(
+        prompt, system_instruction, persona_rendered = await _build_prompt(
             db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -949,7 +970,7 @@ async def _stream_new_turn(
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
         # 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과 결론이 갈리는 자리다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
@@ -1259,7 +1280,7 @@ async def regenerate_message(
         )
         user_content = history[-1].content
     try:
-        prompt, system_instruction = await _build_prompt(
+        prompt, system_instruction, persona_rendered = await _build_prompt(
             db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -1285,7 +1306,7 @@ async def regenerate_message(
             yield token_event
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
@@ -2128,6 +2149,13 @@ async def _stream_preview_turn(
         system_instruction = system_instruction_for(
             prompt_sections, is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template
         )
+        # 활성 세트는 미리보기가 쓰는 것(`_preview_prompt_set_dependency`), 값은 작가의 기본 프로필.
+        persona_rendered = user_persona_rendered(
+            prompt_sections,
+            is_story_chat=isinstance(state.payload, StoryDraftPayload),
+            template=template,
+            user_persona=user_persona,
+        )
     except PromptRenderError as exc:
         # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
         logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
@@ -2153,7 +2181,7 @@ async def _stream_preview_turn(
             yield token_event
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)

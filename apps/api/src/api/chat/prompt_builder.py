@@ -256,6 +256,35 @@ def format_user_persona(*, name: str, gender: str | None, description: str) -> s
     return "\n".join(lines)
 
 
+def _story_generation_variant(template: StoryPromptTemplate) -> str:
+    """스토리 generation 채널의 variant — `build_story_generation_prompt`와
+    `user_persona_rendered`가 같은 규칙을 쓰도록 한 자리에 둔다."""
+    return "custom" if template == StoryPromptTemplate.CUSTOM else ""
+
+
+def user_persona_rendered(
+    sections: Sequence[PromptSection],
+    *,
+    is_story_chat: bool,
+    template: StoryPromptTemplate | None = None,
+    user_persona: str,
+) -> bool:
+    """persona-goal-prompt.md UP-21 (a) · §3-4-1 — 그 턴 생성 프롬프트에 대화 프로필 섹션이
+    **실제로** 들어갔는가.
+
+    값이 비지 않았고, 그 턴의 scope·variant로 렌더러와 **같은 선택 함수**
+    (`select_sections_for_render`)가 `user_persona` 슬롯을 골랐을 때만 참이다. conditional
+    섹션은 값이 비지 않으면 반드시 렌더되므로 이 둘이 "포함됨"과 같다. 값만 보면 캐시 TTL 창
+    (R-17)처럼 활성 세트에 슬롯이 아직 없을 때도 참이 된다. 인자 모양은 `system_instruction_for`와
+    같다 — `template`은 스토리 챗에서만 의미가 있다."""
+    if not user_persona:
+        return False
+    scope = "story" if is_story_chat else "character"
+    variant = _story_generation_variant(template) if template is not None else ""
+    selected = select_sections_for_render(sections, channel="generation", scope=scope, variant=variant)
+    return any(section.slot == "user_persona" for section in selected)
+
+
 def build_generation_prompt(
     *,
     prompt_set: PromptSet,
@@ -356,8 +385,9 @@ def build_story_generation_prompt(
         "user_message": user_message,
         "assistant_label": prompt_set.story_assistant_label,
     }
-    variant = "custom" if prompt_template == StoryPromptTemplate.CUSTOM else ""
-    return render_prompt_channel(sections, channel="generation", scope="story", variant=variant, values=values)
+    return render_prompt_channel(
+        sections, channel="generation", scope="story", variant=_story_generation_variant(prompt_template), values=values
+    )
 
 
 def build_stat_judgment_prompt(
