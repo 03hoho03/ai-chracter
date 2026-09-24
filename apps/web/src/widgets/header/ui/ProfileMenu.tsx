@@ -32,6 +32,8 @@ import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDes
  * `개인정보처리방침`을 더하며(구분선 추가 없음) 10→12개가 됐다. **아래 390×844 실측치(`scrollHeight`
  * 457px, 여유 339px)는 T-17 기준이라 이 항목 2개 추가로 무효다 — 재실측 필요**(390×844 뷰포트에서
  * `[data-slot=dropdown-menu-content]`의 `scrollHeight`를 `max-h` 796px와 대조).
+ * persona-goal-prompt.md UP-12가 `계정` 그룹에 `대화 프로필`을 더해(구분선 추가 없음) 12→13개가 됐다 —
+ * 재실측은 같은 문서 §6 R-15(§5-1, S8)가 맡는다.
  */
 export function ProfileMenu({ me }: { me: MeResponse }) {
   const navigate = useNavigate();
