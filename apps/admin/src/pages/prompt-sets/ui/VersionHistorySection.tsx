@@ -96,6 +96,7 @@ function VersionTable() {
                     >
                       <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
                       v{item.version}
+                      <span className="sr-only">, {PROMPT_LANE_LABELS[item.lane]}</span>
                     </button>
                   </TableCell>
                   <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
