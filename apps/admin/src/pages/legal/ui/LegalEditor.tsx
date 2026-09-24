@@ -129,7 +129,7 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
           >
             게시
           </Button>
-          {publishDisabledReason && (
+          {publishDisabledReason !== undefined && (
             <span className="text-xs text-muted-foreground">{publishDisabledReason}</span>
           )}
         </div>

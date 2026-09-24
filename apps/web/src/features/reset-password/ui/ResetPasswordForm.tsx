@@ -42,7 +42,7 @@ export function ResetPasswordForm({ token }: ResetPasswordFormProps) {
       await confirmMutation.mutateAsync(formToServer(values, token));
       await navigate({ to: "/login" });
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       if (apiError?.status === 400) {
         setError("root", { message: "링크가 만료되었거나 유효하지 않아요. 재설정을 다시 요청해주세요." });
       } else {

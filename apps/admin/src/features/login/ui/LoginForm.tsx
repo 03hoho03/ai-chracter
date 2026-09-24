@@ -41,7 +41,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       if (apiError?.status === 401) {
         setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
       } else {

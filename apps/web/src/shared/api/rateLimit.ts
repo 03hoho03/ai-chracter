@@ -47,7 +47,7 @@ export type RateLimitDetail = z.infer<typeof rateLimitDetailSchema>;
  * 말한다" 같은 화면 결정은 `entities/chat-room`의 `chatRateLimit.ts`가 진다(FSD-06). 그래서 위
  * enum은 BE가 낼 수 있는 값을 전부 담고(`"day"` 포함), 투영이 그중 화면이 말할 것만 고른다. */
 export function getRateLimitDetail(error: unknown): RateLimitDetail | null {
-  const apiError = isApiError(error) ? error : null;
+  const apiError = isApiError(error) ? error : undefined;
   if (apiError?.status !== 429 || !apiError.detail || typeof apiError.detail !== "object") return null;
   const parsed = rateLimitDetailSchema.safeParse(apiError.detail);
   return parsed.success ? parsed.data : null;

@@ -7,7 +7,7 @@ import { isApiError } from "@/shared/api/client";
  * `EmailVerifyStep`(429의 retryAfterSeconds)·`publishRejection`(400의 reason/missingFields)과
  * 같다. */
 export function isLegalReconsentRequiredError(error: unknown): boolean {
-  const apiError = isApiError(error) ? error : null;
+  const apiError = isApiError(error) ? error : undefined;
   if (apiError?.status !== 403 || !apiError.detail || typeof apiError.detail !== "object") return false;
   return apiError.detail.code === "LEGAL_RECONSENT_REQUIRED";
 }

@@ -8,12 +8,17 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
+import { isSuspendedError, sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import { useLoginMutation } from "../api/useLoginMutation";
 import { buildGoogleLoginUrl } from "../lib/buildGoogleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+
+type LoginFormProps = {
+  redirectTo?: string;
+  errorCode?: string;
+}
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -31,11 +36,6 @@ const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
   account_deleted: "탈퇴한 계정이에요.",
   account_age_restricted: MINIMUM_AGE_ERROR_MESSAGE,
 };
-
-type LoginFormProps = {
-  redirectTo?: string;
-  errorCode?: string;
-}
 
 export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   const {
@@ -67,10 +67,10 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       if (apiError?.status === 401) {
         setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
-      } else if (apiError?.status === 403 && apiError.detail === "Account suspended") {
+      } else if (isSuspendedError(error)) {
         setError("root", { message: SUSPENDED_ERROR_MESSAGE });
       } else if (apiError?.status === 403 && apiError.detail === "Minimum age not met") {
         setError("root", { message: MINIMUM_AGE_ERROR_MESSAGE });
@@ -83,7 +83,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   }
 
   const googleErrorMessage =
-    errorCode && !isGoogleErrorDismissed ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : null;
+    errorCode && !isGoogleErrorDismissed ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : undefined;
   const bannerMessage = errors.root?.message ?? googleErrorMessage;
 
   return (
@@ -96,7 +96,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
           void handleSubmit(handleValidSubmit)(event);
         }}
       >
-        {bannerMessage && (
+        {!!bannerMessage && (
           <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
             {bannerMessage}
           </p>

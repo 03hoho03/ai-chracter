@@ -18,9 +18,9 @@ import { DeleteConfirmModal } from "./DeleteConfirmModal";
 
 type ReportActionPanelProps = {
   reportId: string;
-  reportPending: boolean;
+  isReportPending: boolean;
   contentName: string;
-  contentRestricted: boolean;
+  isContentRestricted: boolean;
 };
 
 const SUCCESS_MESSAGE: Record<ProcessAction, string> = {
@@ -36,7 +36,7 @@ const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주
  * 처리 방식·코멘트는 useState 버퍼가 아니라 RHF+zod가 든다(`apps/web/CLAUDE.md` 폼 규약). 미선택
  * 제출은 zod가 막고 사유를 화면에 남긴다. 코멘트 입력창은 `restrict`/`delete`에서만 나타나므로
  * 그 값은 `useWatch`로 읽는다 — 폼 상태가 단일 소스라 탭을 바꿔도 값이 흩어지지 않는다. */
-export function ReportActionPanel({ reportId, reportPending, contentName, contentRestricted }: ReportActionPanelProps) {
+export function ReportActionPanel({ reportId, isReportPending, contentName, isContentRestricted }: ReportActionPanelProps) {
   const {
     register,
     control,
@@ -51,7 +51,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
   const moderationAction = useModerationActionMutation(reportId);
   const action = useWatch({ control, name: "action" });
 
-  if (!reportPending && !contentRestricted) {
+  if (!isReportPending && !isContentRestricted) {
     return null;
   }
 
@@ -102,7 +102,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
     <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold text-foreground">처리</h2>
 
-      {contentRestricted && (
+      {isContentRestricted && (
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
           <p className="text-sm text-muted-foreground">현재 이용제한 상태입니다.</p>
           <Button
@@ -117,7 +117,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
         </div>
       )}
 
-      {reportPending && (
+      {isReportPending && (
         <form
           className="flex flex-col gap-3"
           noValidate

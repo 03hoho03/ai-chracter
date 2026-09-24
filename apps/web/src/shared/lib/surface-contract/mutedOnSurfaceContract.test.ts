@@ -76,20 +76,20 @@ const MUTED_FILL = /(?<![\w-])bg-muted(?:\/\d+)?(?![\w-])/g;
 function stripComments(source: string): string {
   let out = "";
   let i = 0;
-  let quote: string | null = null;
+  let quote: string | undefined;
 
   while (i < source.length) {
     const char = source[i];
     const next = source[i + 1];
 
-    if (quote !== null) {
+    if (quote !== undefined) {
       out += char;
       if (char === "\\") {
         out += next ?? "";
         i += 2;
         continue;
       }
-      if (char === quote || (char === "\n" && quote !== "`")) quote = null;
+      if (char === quote || (char === "\n" && quote !== "`")) quote = undefined;
       i += 1;
       continue;
     }

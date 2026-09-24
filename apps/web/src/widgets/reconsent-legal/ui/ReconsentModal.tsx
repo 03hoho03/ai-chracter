@@ -62,12 +62,12 @@ export function ReconsentModal() {
   // 취급) — isPending 기반 집계는 재시도 backoff 구간(isPending && failureCount>0)을 "로딩 아님"으로
   // 잘못 읽어 handleConsent의 동기 throw 경로를 열어버렸다. 문서별 로딩·에러 UI는
   // ReconsentDocumentBody가 각자의 docQuery.isPending/isError로 그대로 그린다.
-  const allDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
+  const areAllDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
   // 🔴 legal-revision-goal-prompt.md LR-3 — privacy가 pending일 때 두 체크박스를 반영하지 않으면
   // 국외이전 미체크 상태로 동의 버튼이 눌린다(§2-1이 지적한 위반을 UI가 재생산한다).
   const isPrivacyConsentReady =
     !pendingKinds.includes("privacy") || (isPrivacyCollectionChecked && isTransferChecked);
-  const canConsent = allDocsLoaded && !isConsenting && isPrivacyConsentReady;
+  const canConsent = areAllDocsLoaded && !isConsenting && isPrivacyConsentReady;
 
   function handleConsentClick() {
     if (!canConsent) return;
@@ -80,7 +80,7 @@ export function ReconsentModal() {
       await Promise.all(
         pendingKinds.map((kind) => {
           const version = docQueryByKind[kind].data?.version;
-          // allDocsLoaded가 버튼을 게이트하므로 handleConsent 호출 시점엔 모든 pendingKinds가
+          // areAllDocsLoaded가 버튼을 게이트하므로 handleConsent 호출 시점엔 모든 pendingKinds가
           // data를 갖고 있음이 보장돼 이 분기는 도달 불가능하다 — 타입만 optional이라 남겨둔다.
           if (version === undefined) throw new Error(`${kind} 문서를 아직 불러오지 못했어요`);
           return consentMutation.mutateAsync({ kind, version });

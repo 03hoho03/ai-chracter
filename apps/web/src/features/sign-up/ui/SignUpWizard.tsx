@@ -4,14 +4,9 @@ import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import {
-  formatAuthRateLimitMessage,
-  getAuthFormErrorBanner,
-  getAuthRateLimit,
-  LOGIN_LINK_ERROR_TYPE,
-  sessionKeys,
-} from "@/entities/session";
+import { formatAuthRateLimitMessage, getAuthRateLimit, LOGIN_LINK_ERROR_TYPE, sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import {
   useSignUpLoginMutation,
@@ -25,12 +20,11 @@ import {
   toSignupRequest,
   toVerifyEmailRequest,
 } from "../model/formToServer";
+import { getOnboardingErrorBanner } from "../model/onboardingErrorBanner";
 import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../model/signUpSchema";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
 import { GoogleBasicInfoStep } from "./GoogleBasicInfoStep";
-
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 export type SignUpStep = "basicInfo" | "emailVerify";
 
@@ -51,6 +45,8 @@ type SignUpWizardProps =
       step: GoogleSignUpStep;
       onStepChange: (step: GoogleSignUpStep) => void;
     };
+
+const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 export function SignUpWizard(props: SignUpWizardProps) {
   const form = useForm<SignUpFormValues>({
@@ -77,7 +73,7 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await signUpMutation.mutateAsync(toSignupRequest(form.getValues()));
       onStepChange("emailVerify");
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       const rateLimit = getAuthRateLimit(error);
       if (apiError?.status === 409) {
         form.setError("email", { message: "이미 가입된 이메일이에요." });
@@ -99,7 +95,7 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await loginMutation.mutateAsync(toSignUpLoginRequest(values));
       await completeSignUp();
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       if (apiError?.status === 400) {
         // ED-23: 서버가 미등록/만료/5회무효화/오답 네 경우를 한 400으로 합친다(서버조차 만료와
         // 5회무효화를 구분 못 한다) — 사유를 가르지 않고 "확인 + 재전송 유도"로만 안내한다.
@@ -123,10 +119,10 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await completeSignUp();
     } catch (error) {
       // 400·409·403은 이 폼을 다시 내서는 풀리지 않아 배너 + 로그인 링크로, 판별 못 한 실패만 toast로 간다.
-      const banner = getAuthFormErrorBanner(error, "onboarding-google");
+      const banner = getOnboardingErrorBanner(error);
       if (banner) {
         form.setError("root", {
-          type: banner.showsLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
+          type: banner.shouldShowLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
           message: banner.message,
         });
       } else {
@@ -137,37 +133,46 @@ export function SignUpWizard(props: SignUpWizardProps) {
 
   // 스텝 분기를 평범한 함수로 뽑아 `FormProvider`가 모든 갈래를 한 번에 감싸게 한다
   // (컴포넌트가 아니라 함수라 호출부에서 새 identity가 생기지 않는다 — 스텝 전환에 리마운트 없음).
-  // `mode === "google"` 분기를 `emailVerify`보다 먼저 두는 이유: 이메일 전용 `onStepChange`(`SignUpStep` 콜백)를
-  // 꺼내려면 구글 갈래가 먼저 return해야 narrowing이 된다. 구글이 이메일 인증 스텝에 닿지 않는 보증 자체는
-  // 이 순서가 아니라 props 유니언(`GoogleSignUpStep`)이 page 경계에서 이미 하고 있다.
+  // `mode`로 먼저 가르는 이유: 이메일 전용 `onStepChange`(`SignUpStep` 콜백)는 `email` 갈래에서만 narrowing으로
+  // 꺼낼 수 있다. 구글이 이메일 인증 스텝에 닿지 않는 보증 자체는 props 유니언(`GoogleSignUpStep`)이 page 경계에서
+  // 이미 하고 있다.
   function renderStep() {
-    if (props.mode === "google") {
-      const { token } = props;
-      return (
-        <GoogleBasicInfoStep
-          onSubmit={() => void handleGoogleBasicInfoSubmit(token)}
-          isSubmitting={onboardingMutation.isPending}
-        />
-      );
+    switch (props.mode) {
+      case "google": {
+        const { token } = props;
+        return (
+          <GoogleBasicInfoStep
+            onSubmit={() => void handleGoogleBasicInfoSubmit(token)}
+            isSubmitting={onboardingMutation.isPending}
+          />
+        );
+      }
+      case "email":
+        return renderEmailStep(props.step, props.onStepChange);
+      default:
+        return assertNever(props);
     }
+  }
 
-    const { step, onStepChange } = props;
-
-    if (step === "emailVerify") {
-      return (
-        <EmailVerifyStep
-          onSubmit={() => void handleEmailVerifySubmit()}
-          isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
-        />
-      );
+  function renderEmailStep(step: SignUpStep, onStepChange: (step: SignUpStep) => void) {
+    switch (step) {
+      case "emailVerify":
+        return (
+          <EmailVerifyStep
+            onSubmit={() => void handleEmailVerifySubmit()}
+            isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
+          />
+        );
+      case "basicInfo":
+        return (
+          <BasicInfoStep
+            onSubmit={() => void handleEmailBasicInfoSubmit(onStepChange)}
+            isSubmitting={signUpMutation.isPending}
+          />
+        );
+      default:
+        return assertNever(step);
     }
-
-    return (
-      <BasicInfoStep
-        onSubmit={() => void handleEmailBasicInfoSubmit(onStepChange)}
-        isSubmitting={signUpMutation.isPending}
-      />
-    );
   }
 
   return <FormProvider {...form}>{renderStep()}</FormProvider>;

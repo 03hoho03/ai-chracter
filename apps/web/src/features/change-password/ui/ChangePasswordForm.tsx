@@ -6,9 +6,10 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { getAuthFormErrorBanner, LOGIN_LINK_ERROR_TYPE } from "@/entities/session";
+import { LOGIN_LINK_ERROR_TYPE } from "@/entities/session";
 
 import { useChangePasswordMutation } from "../api/useChangePasswordMutation";
+import { getChangePasswordErrorBanner } from "../model/changePasswordErrorBanner";
 import {
   changePasswordDefaultValues,
   changePasswordSchema,
@@ -42,9 +43,9 @@ export function ChangePasswordForm() {
       reset(changePasswordDefaultValues);
     } catch (error) {
       // 401(세션 소멸)은 자동으로 로그인 화면에 보내지 않는다 — 입력 중이던 값을 잃지 않게 링크만 준다(BS-9).
-      const banner = getAuthFormErrorBanner(error, "change-password");
+      const banner = getChangePasswordErrorBanner(error);
       setError("root", {
-        type: banner?.showsLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
+        type: banner?.shouldShowLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
         message: banner?.message ?? GENERIC_ERROR_MESSAGE,
       });
     }
