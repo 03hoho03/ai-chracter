@@ -82,7 +82,12 @@ function DialogContent({
             넣은 임시 다이얼로그로 실측). admin `DeleteConfirmModal`이 이 경로에 있다. */}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            <Button variant="ghost" className="absolute top-2 right-2" size="icon-sm">
+            {/* ghost의 `hover:bg-muted`는 popover 표면과 같은 값이라 사라진다 — 호출부가 못 덮는 자리라 여기서 secondary로 덮는다(backlog-l-goal-prompt.md BL-9). */}
+            <Button
+              variant="ghost"
+              className="absolute top-2 right-2 hover:bg-secondary aria-expanded:bg-secondary"
+              size="icon-sm"
+            >
               <XIcon />
               <span className="sr-only">닫기</span>
             </Button>
