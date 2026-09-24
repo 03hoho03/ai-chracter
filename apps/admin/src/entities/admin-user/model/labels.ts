@@ -5,36 +5,43 @@ export const SIGNUP_METHOD_LABELS: Record<components["schemas"]["AdminUserDetail
   email: "이메일",
 };
 
-/** `AdminUserActionLogItem.actionType`은 enum이 아니라 자유 문자열이다(user-warn/user-suspend/
- * user-unsuspend/restrict/delete/lift-restriction/reject 등, 작품 직접 조치와 유저 조치가 같은
- * 로그 테이블을 쓴다). 여기 없는 값은 호출부가 원문 그대로 보여준다(Record<string,string> 인덱싱은
- * noUncheckedIndexedAccess로 `string | undefined`라 `??` 폴백이 강제된다). */
-export const ACTION_TYPE_LABELS: Record<string, string> = {
+/** BE `AdminActionType`(`db/models/moderation.py`의 `Literal` 17종)이 코드젠으로 넘어온 유니언이다. */
+type AdminActionType = components["schemas"]["AdminUserActionLogItem"]["actionType"];
+
+/** `satisfies Record<AdminActionType, string>`이라 BE에 조치 종류가 늘면 여기서 컴파일이 깨지고, 목록에
+ * 없는 키(예전의 `restrict`·`reject` 같은 데드 키)는 초과 속성으로 거부된다 — 그래서 호출부는 원문
+ * 폴백 없이 인덱싱한다. 조치 이력 표(`pages/user-detail`)는 대상 유저·작품이 있는 로그만 보여 주므로
+ * 대상이 없는 운영 조치 5종(문의 답변·약관·공지·프롬프트 세트)은 실제로는 그 표에 나오지 않는다 — 그래도
+ * 타입이 17종 전부를 요구하므로 라벨을 둔다. `content-*` 3종의 문구는 작품 상세의 조치 버튼·확인
+ * 모달(`ContentActionPanel`·`ContentActionConfirmModal`)과 같은 말이고, 대상은 같은 행의 "대상 작품"
+ * 칸이 보여 주므로 "작품"을 덧붙이지 않는다. */
+export const ACTION_TYPE_LABELS = {
   "user-warn": "경고",
   "user-suspend": "정지",
   "user-unsuspend": "정지 해제",
   "user-rate-limit-exempt-on": "레이트리밋 면제",
   "user-rate-limit-exempt-off": "레이트리밋 면제 해제",
   // clover-goal-prompt.md CL-16 — `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
-  // 🔴 이 `Record<string, string>`은 타입 강제 밖이라 키를 빠뜨려도 컴파일이 통과하고, 그때
-  // 조치 이력 표에 영문 액션 타입이 그대로 찍힌다(호출부의 `?? log.actionType` 폴백).
-  // 값은 BE 리터럴과 글자 단위로 대조했다.
   "user-clover-grant": "클로버 지급",
   "user-clover-revoke": "클로버 회수",
-  restrict: "이용제한 부과",
-  delete: "삭제",
-  "lift-restriction": "이용제한 해제",
-  reject: "반려",
+  "content-restrict": "이용제한 부과",
+  "content-delete": "삭제",
+  "content-lift": "이용제한 해제",
   "chat-view": "채팅 열람",
   "image-view": "이미지 열람",
-};
+  "inquiry-reply": "문의 답변",
+  "legal-publish": "약관·정책 게시",
+  "notice-publish": "공지 게시",
+  "notice-unpublish": "공지 숨김",
+  "prompt-set-publish": "프롬프트 세트 게시",
+} satisfies Record<AdminActionType, string>;
 
 /** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 10종이다(clover-page-goal-prompt.md CE-10이
  * `mission_grant`·`expire_burn` 2종을 더했다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
  * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
- * 것). 그래서 여기도 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
- * ACTION_TYPE_LABELS와 같은 관례이자 같은 약점이다. `apps/web`의 동명 맵
- * (`entities/clover/model/cloverKindLabel.ts`)과 별도 번들이라 공유하지 않는 것이 결정이고
+ * 것). 그래서 여기는 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
+ * 키를 빠뜨려도 컴파일이 못 잡는다(유니언으로 좁혀 강제하는 ACTION_TYPE_LABELS와 다르다).
+ * `apps/web`의 동명 맵(`entities/clover/model/cloverKindLabel.ts`)과 별도 번들이라 공유하지 않는 것이 결정이고
  * (CE-23), 문구는 그쪽과 맞춰 뒀다. */
 export const CLOVER_KIND_LABELS: Record<string, string> = {
   admin_grant: "운영자 지급",
