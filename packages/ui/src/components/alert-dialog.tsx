@@ -88,7 +88,9 @@ function AlertDialogHeader({
 }
 
 /** `DialogFooter`와 같은 이유로 `flex-col`이다(상류 shadcn은 `flex-col-reverse`) — 사유는 그쪽 주석에
- * 한 번만 적어 뒀다. `size="sm"`의 2열 그리드 경로는 원래 순서를 안 뒤집으므로 영향이 없다. */
+ * 한 번만 적어 뒀다. `size="sm"`의 2열 그리드 경로는 원래 순서를 안 뒤집으므로 영향이 없다.
+ * 띠 채움 `bg-secondary/50`(상류 `bg-muted/50`)과 아래 `AlertDialogMedia`의 `bg-secondary`(상류
+ * `bg-muted`)도 `DialogFooter`와 같은 이유다 — `muted`는 `popover`와 같은 값이다. */
 function AlertDialogFooter({
   className,
   ...props
@@ -97,7 +99,7 @@ function AlertDialogFooter({
     <div
       data-slot="alert-dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col gap-2 rounded-b-xl border-t bg-muted/50 p-4 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col gap-2 rounded-b-xl border-t bg-secondary/50 p-4 group-data-[size=sm]/alert-dialog-content:grid group-data-[size=sm]/alert-dialog-content:grid-cols-2 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
@@ -113,7 +115,7 @@ function AlertDialogMedia({
     <div
       data-slot="alert-dialog-media"
       className={cn(
-        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-muted sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-6",
+        "mb-2 inline-flex size-10 items-center justify-center rounded-md bg-secondary sm:group-data-[size=default]/alert-dialog-content:row-span-2 *:[svg:not([class*='size-'])]:size-6",
         className
       )}
       {...props}

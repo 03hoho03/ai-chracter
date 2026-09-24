@@ -30,7 +30,7 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 
 - **`dark:` variant 클래스는 제거한다** — 토큰 기반이라 대부분 `.dark` 블록만으로 동작한다. 다크에서 토큰만으로 대비가 안 나오는 경우에만 선별 복원한다.
 - 사용자 노출 텍스트("Close" 등)는 한국어로 교체한다.
-- **상류 기본값이 이 시스템과 충돌하는 자리가 있다** — 예: `toggle`의 선택 상태 `bg-muted`, 메뉴 비활성 항목 `opacity-50`. `shadcn add`로 재생성하면 되돌아오므로 재생성 후에는 `DESIGN.md` §5의 해당 컴포넌트 항목과 대조할 것.
+- **상류 기본값이 이 시스템과 충돌하는 자리가 있다** — 예: `toggle`의 선택 상태 `bg-muted`, 메뉴 비활성 항목 `opacity-50`, `DialogFooter`/`AlertDialogFooter`의 `bg-muted/50`과 `AlertDialogMedia`의 `bg-muted`(`popover` 위라 사라진다 — 지금은 `secondary`, `DESIGN.md` §2 "표면 위 채움"). `shadcn add`로 재생성하면 되돌아오므로 재생성 후에는 `DESIGN.md` §5의 해당 컴포넌트 항목과 대조할 것.
 - Toast는 deprecated된 `toast`가 아니라 **`sonner`**다. `<Toaster />`는 앱 루트에 한 번만 마운트하고 호출은 각 기능 코드에서 `import { toast } from "sonner"` — 패키지가 재노출하지 않으므로 **쓰는 앱의 `package.json`에 `sonner`를 직접 넣어야 한다**(pnpm 워크스페이스는 간접 의존성을 안 끌어온다). `Toaster`의 `theme` prop 기본값은 `"light"`라 web은 `AppToaster`가 현재 테마를 넘기고, admin은 라이트 고정이라 넘기지 않는다.
 
 ## 호출부에서 처방하는 것 (프리미티브를 고치면 안 되는 자리)
