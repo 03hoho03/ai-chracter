@@ -15,6 +15,7 @@ import {
   type ReportActionFormValues,
 } from "../model/schema";
 import { DeleteConfirmModal } from "./DeleteConfirmModal";
+import { LiftRestrictionConfirmModal } from "./LiftRestrictionConfirmModal";
 
 type ReportActionPanelProps = {
   reportId: string;
@@ -88,14 +89,20 @@ export function ReportActionPanel({ reportId, isReportPending, contentName, isCo
     }
   }
 
+  // backlog-l-goal-prompt.md BL-7 — 대화방 일괄 전환이 되돌릴 수 없어 확인 모달을 거친다.
   const handleLiftRestriction = () => {
-    moderationAction.mutate(
-      { action: "lift-restriction" },
-      {
-        onSuccess: () => toast.success("이용제한을 해제했어요."),
-        onError: () => toast.error(ERROR_MESSAGE),
+    void LiftRestrictionConfirmModal.call({
+      contentName,
+      mutationFn: async (call) => {
+        try {
+          await moderationAction.mutateAsync({ action: "lift-restriction" });
+          toast.success("이용제한을 해제했어요.");
+          call.end();
+        } catch {
+          toast.error(ERROR_MESSAGE);
+        }
       },
-    );
+    });
   };
 
   return (
