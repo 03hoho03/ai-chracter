@@ -16,11 +16,23 @@ import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { UserActionPanel } from "./UserActionPanel";
 
+type UserDetailPageProps = {
+  userId: string;
+};
+
 // 문장 속 링크는 `font-medium text-primary hover:underline`이 저장소 관용구다(MyPagePage 동형).
 const INLINE_LINK_CLASS = "font-medium text-primary hover:underline focus-visible:underline focus-visible:outline-none";
 
-type UserDetailPageProps = {
-  userId: string;
+/** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
+ * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS)와 채팅 열람 로그(별도 사유 4종,
+ * CHAT_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 두 사유 체계가 섞여 들어온다. `other`는
+ * 두 집합 모두에 있지만 한글 라벨이 둘 다 "기타"로 같으므로(entities/report, entities/admin-user
+ * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
+ * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
+ * 동일한 관례 — 유니언으로 강제하는 ACTION_TYPE_LABELS와는 다르다). */
+const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
+  ...REPORT_REASON_LABELS,
+  ...CHAT_VIEW_REASON_CATEGORY_LABELS,
 };
 
 export function UserDetailPage({ userId }: UserDetailPageProps) {
@@ -77,7 +89,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
           </p>
         </div>
 
-        {userDetailQuery.data.bio && (
+        {!!userDetailQuery.data.bio && (
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-foreground">자기소개</h3>
             <p className="whitespace-pre-wrap text-sm text-muted-foreground">{userDetailQuery.data.bio}</p>
@@ -295,44 +307,56 @@ function CloverLedgerSection({ userId }: CloverLedgerSectionProps) {
         )}
       </div>
 
-      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-secondary" />}
-
-      {ledgerQuery.isError && (
-        <p className="text-sm text-destructive-text">원장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
-      )}
-
-      {ledgerQuery.isSuccess &&
-        (ledgerQuery.data.items.length === 0 ? (
-          <p className="text-sm text-muted-foreground">클로버가 오간 기록이 없어요.</p>
-        ) : (
-          <div className="overflow-hidden rounded-lg border border-border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>종류</TableHead>
-                  <TableHead className="text-right">증감</TableHead>
-                  <TableHead className="text-right">이후 잔액</TableHead>
-                  <TableHead>일시</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {ledgerQuery.data.items.map((item) => (
-                  <TableRow key={item.id}>
-                    <TableCell>{CLOVER_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
-                    {/* 부호를 숫자에 붙여 방향을 읽게 한다 — 색으로 가르지 않는 것은 이 앱의
-                     * 규칙이다(유채색은 위험 액션에만, PRODUCT.md). 차감이 위험은 아니다. */}
-                    <TableCell className="text-right tabular-nums">{formatSignedCount(item.amount)}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
-                      {formatCount(item.balanceAfter)}
-                    </TableCell>
-                    <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ))}
+      <CloverLedgerBody ledgerQuery={ledgerQuery} />
     </section>
+  );
+}
+
+type CloverLedgerBodyProps = {
+  ledgerQuery: ReturnType<typeof useCloverLedgerQuery>;
+};
+
+/** 섹션 제목은 로딩·에러에도 남아야 해서 원장에 의존하는 본문만 갈라내 early return으로 가른다(COMP-04). */
+function CloverLedgerBody({ ledgerQuery }: CloverLedgerBodyProps) {
+  if (ledgerQuery.isPending) {
+    return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
+  }
+
+  if (ledgerQuery.isError) {
+    return <p className="text-sm text-destructive-text">원장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
+  }
+
+  if (ledgerQuery.data.items.length === 0) {
+    return <p className="text-sm text-muted-foreground">클로버가 오간 기록이 없어요.</p>;
+  }
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>종류</TableHead>
+            <TableHead className="text-right">증감</TableHead>
+            <TableHead className="text-right">이후 잔액</TableHead>
+            <TableHead>일시</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {ledgerQuery.data.items.map((item) => (
+            <TableRow key={item.id}>
+              <TableCell>{CLOVER_KIND_LABELS[item.kind] ?? item.kind}</TableCell>
+              {/* 부호를 숫자에 붙여 방향을 읽게 한다 — 색으로 가르지 않는 것은 이 앱의
+               * 규칙이다(유채색은 위험 액션에만, PRODUCT.md). 차감이 위험은 아니다. */}
+              <TableCell className="text-right tabular-nums">{formatSignedCount(item.amount)}</TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground">
+                {formatCount(item.balanceAfter)}
+              </TableCell>
+              <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -341,18 +365,6 @@ function CloverLedgerSection({ userId }: CloverLedgerSectionProps) {
 function formatSignedCount(amount: number) {
   return amount > 0 ? `+${formatCount(amount)}` : formatCount(amount);
 }
-
-/** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
- * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS)와 채팅 열람 로그(별도 사유 4종,
- * CHAT_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 두 사유 체계가 섞여 들어온다. `other`는
- * 두 집합 모두에 있지만 한글 라벨이 둘 다 "기타"로 같으므로(entities/report, entities/admin-user
- * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
- * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
- * 동일한 관례 — 유니언으로 강제하는 ACTION_TYPE_LABELS와는 다르다). */
-const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
-  ...REPORT_REASON_LABELS,
-  ...CHAT_VIEW_REASON_CATEGORY_LABELS,
-};
 
 function reasonCategoryLabel(reasonCategory: string | null) {
   if (!reasonCategory) return "-";

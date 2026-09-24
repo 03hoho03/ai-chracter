@@ -40,43 +40,65 @@ export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
         </p>
       )}
 
-      {previewQuery.isPending && <div className="h-48 animate-pulse rounded-lg bg-secondary" />}
-
-      {previewQuery.isError && (
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="text-sm text-destructive-text">
-            미리보기를 만들지 못했어요. 초안의 필수 섹션이 비어 있지 않은지 확인해 주세요.
-          </p>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={previewQuery.isFetching}
-            onClick={() => void previewQuery.refetch()}
-          >
-            {previewQuery.isFetching ? "다시 시도하는 중..." : "다시 시도"}
-          </Button>
-        </div>
-      )}
-
-      {previewQuery.data && (
-        <div className="flex flex-col gap-2">
-          {previewQuery.data.items.map((item, index) => (
-            <details
-              key={`${item.channel}-${item.label}`}
-              className="rounded-lg border border-border p-3"
-              open={index === 0}
-            >
-              <summary className="cursor-pointer text-sm font-medium text-foreground">
-                {item.label}
-              </summary>
-              <pre className="mt-2 max-h-96 overflow-y-auto rounded-lg bg-secondary p-3 text-xs whitespace-pre-wrap text-foreground">
-                {item.text}
-              </pre>
-            </details>
-          ))}
-        </div>
-      )}
+      <PreviewBody previewQuery={previewQuery} />
     </section>
+  );
+}
+
+type PreviewBodyProps = {
+  previewQuery: ReturnType<typeof usePreviewQuery>;
+};
+
+/** 제목·안내문은 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라내 early return으로 가른다(COMP-04).
+ * 재조회가 실패하면 `isError`와 `data`가 함께 참이다(직전 결과를 유지한다) — 그때는 에러 줄과 직전
+ * 미리보기를 같이 그린다(`ProfileContentBody` 선례). */
+function PreviewBody({ previewQuery }: PreviewBodyProps) {
+  if (previewQuery.isPending) {
+    return <div className="h-48 animate-pulse rounded-lg bg-secondary" />;
+  }
+
+  if (previewQuery.data === undefined) {
+    return <PreviewErrorNotice previewQuery={previewQuery} />;
+  }
+
+  return (
+    <>
+      {previewQuery.isError && <PreviewErrorNotice previewQuery={previewQuery} />}
+      <div className="flex flex-col gap-2">
+        {previewQuery.data.items.map((item, index) => (
+          <details
+            key={`${item.channel}-${item.label}`}
+            className="rounded-lg border border-border p-3"
+            open={index === 0}
+          >
+            <summary className="cursor-pointer text-sm font-medium text-foreground">
+              {item.label}
+            </summary>
+            <pre className="mt-2 max-h-96 overflow-y-auto rounded-lg bg-secondary p-3 text-xs whitespace-pre-wrap text-foreground">
+              {item.text}
+            </pre>
+          </details>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function PreviewErrorNotice({ previewQuery }: PreviewBodyProps) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-sm text-destructive-text">
+        미리보기를 만들지 못했어요. 초안의 필수 섹션이 비어 있지 않은지 확인해 주세요.
+      </p>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        disabled={previewQuery.isFetching}
+        onClick={() => void previewQuery.refetch()}
+      >
+        {previewQuery.isFetching ? "다시 시도하는 중..." : "다시 시도"}
+      </Button>
+    </div>
   );
 }

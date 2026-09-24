@@ -7,6 +7,15 @@ import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 import { GeneratedImageDetailModal } from "./GeneratedImageDetailModal";
 
+type GeneratedImageLibraryPanelProps = {
+  onNavigateToGenerate?: () => void;
+  gridColumnsClassName?: string;
+  // 브라우저 실측 피드백 — 좌열(98px 셀)에서는 날짜 캡션이 3행이면 72px을 먹는다. 시트는
+  // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
+  // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
+  isCreatedAtVisible?: boolean;
+};
+
 // image-refact-goal-prompt.md IR-3 — 좌열(p-4 → 208px 콘텐츠)에서는 grid-cols-2 고정이라야
 // 98×98 정사각 타일이 나온다(크랙 108). sm:/md: 이스케일은 뷰포트 폭 기준이라 lg 이상(=isWide)에서
 // 이 208px 고정 열에도 그대로 걸려 4열까지 욱여넣는다 — 옛 '내 이미지' 탭(뷰포트 폭에 맞춰 늘어나는
@@ -19,15 +28,6 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   month: "2-digit",
   day: "2-digit",
 });
-
-type GeneratedImageLibraryPanelProps = {
-  onNavigateToGenerate?: () => void;
-  gridColumnsClassName?: string;
-  // 브라우저 실측 피드백 — 좌열(98px 셀)에서는 날짜 캡션이 3행이면 72px을 먹는다. 시트는
-  // 폭이 넓어 이 문제가 없으므로 기본값 true를 유지하고 레일(wide) 호출부만 false를 넘긴다
-  // (ImageStudioLibraryRail.tsx). aria-label의 날짜는 이 prop과 무관하게 항상 남는다.
-  isCreatedAtVisible?: boolean;
-};
 
 /** prd-image-library US-004/US-005/US-006 — 보관함(좌열/바텀시트). 생성 이미지를 최신순 그리드로
  * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,

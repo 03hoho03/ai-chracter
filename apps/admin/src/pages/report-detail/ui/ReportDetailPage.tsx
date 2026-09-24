@@ -68,7 +68,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
               </Link>
             </dd>
           </div>
-          {reportDetailQuery.data.resolvedAt && (
+          {!!reportDetailQuery.data.resolvedAt && (
             <div>
               <dt className="text-muted-foreground">처리일시</dt>
               <dd className="text-foreground">
@@ -84,7 +84,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
 
         <div className="flex gap-4">
           <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
-            {reportDetailQuery.data.content.thumbnailUrl && (
+            {!!reportDetailQuery.data.content.thumbnailUrl && (
               <img
                 src={reportDetailQuery.data.content.thumbnailUrl}
                 alt=""
@@ -111,7 +111,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
           </p>
         </div>
 
-        {reportDetailQuery.data.content.prompt && (
+        {!!reportDetailQuery.data.content.prompt && (
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-foreground">프롬프트</h3>
             <p className="whitespace-pre-wrap rounded-lg bg-secondary p-3 text-sm text-foreground">
@@ -123,9 +123,9 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
 
       <ReportActionPanel
         reportId={reportDetailQuery.data.id}
-        reportPending={reportDetailQuery.data.status === "pending"}
+        isReportPending={reportDetailQuery.data.status === "pending"}
         contentName={reportDetailQuery.data.content.name || "(이름 없음)"}
-        contentRestricted={reportDetailQuery.data.content.moderationStatus === "restricted"}
+        isContentRestricted={reportDetailQuery.data.content.moderationStatus === "restricted"}
       />
     </>
   );

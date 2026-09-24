@@ -51,7 +51,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
   const updateProfileMutation = useUpdateProfileMutation(userId);
 
   const previewUrl = useMemo(
-    () => (selectedFile ? URL.createObjectURL(selectedFile) : null),
+    () => (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
     [selectedFile],
   );
   useEffect(() => {
@@ -96,7 +96,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
       toast.success("프로필이 저장되었어요.");
       setIsOpen(false);
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       form.setError("root", {
         message: apiError?.status === 400 ? "프로필 이미지를 다시 업로드한 뒤 시도해주세요." : GENERIC_ERROR_MESSAGE,
       });

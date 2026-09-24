@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
@@ -21,6 +21,7 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
 import { CharacterPlayBar } from "./CharacterPlayBar";
@@ -29,6 +30,15 @@ import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
+
+type ContentDetailViewProps = {
+  id: string;
+  /** image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
+   * 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
+   * 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다). */
+  type: ContentType;
+  variant: "modal" | "page";
+};
 
 const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   year: "numeric",
@@ -52,27 +62,9 @@ const CHARACTER_HERO_WIDTH_CLASS = "sm:max-w-[60dvh]";
 // 이미 고정인 2열 레이아웃에서는 의미가 없어져 뺐다.
 const STORY_HERO_WIDTH_CLASS = "sm:w-64 sm:shrink-0";
 
-// image-crop-goal-prompt.md IC-11 — 실제 hero와 스켈레톤이 이 함수 하나를 같이 써야 도착 시 폭이 안
-// 밀린다(스켈레톤이 실제와 다른 모양이면 도착 순간 화면이 밀린 전례, card-grid-goal-prompt.md F-1).
-function toHeroClassName(type: ContentType, aspect: ThumbnailAspect, visualClass: string): string {
-  if (type === "character") {
-    return cn("mx-auto w-full", visualClass, toThumbnailAspectClass(aspect), CHARACTER_HERO_WIDTH_CLASS);
-  }
-  return cn("w-full", visualClass, toThumbnailAspectClass(aspect), STORY_HERO_WIDTH_CLASS);
-}
-
 // techspec-overview.md §11 — 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
 // 화면 표시는 isLikeDesired/isFavoriteDesired로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
-
-type ContentDetailViewProps = {
-  id: string;
-  /** image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
-   * 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
-   * 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다). */
-  type: ContentType;
-  variant: "modal" | "page";
-};
 
 /** hero 웰·스켈레톤의 채움. 모달은 `DialogContent`(`popover`) 위라 `muted`가 표면과 같은 값이 되어
  * 1.0000:1로 사라지므로 `secondary`를 쓰고, 페이지는 `background` 위라 `muted`가 맞다
@@ -207,17 +199,24 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
   const isFavorited = isFavoriteDesired ?? content.isFavorited;
   const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
 
-  const footer =
-    content.type === "story" ? (
-      <StoryPlayBar
-        contentId={content.id}
-        startingSetups={content.startingSetups ?? []}
-        selectedSetupId={selectedSetupId}
-        onRestoreSetup={setSelectedSetupIdOverride}
-      />
-    ) : (
-      <CharacterPlayBar contentId={content.id} />
-    );
+  let footer: ReactNode;
+  switch (content.type) {
+    case "story":
+      footer = (
+        <StoryPlayBar
+          contentId={content.id}
+          startingSetups={content.startingSetups ?? []}
+          selectedSetupId={selectedSetupId}
+          onRestoreSetup={setSelectedSetupIdOverride}
+        />
+      );
+      break;
+    case "character":
+      footer = <CharacterPlayBar contentId={content.id} />;
+      break;
+    default:
+      assertNever(content.type);
+  }
 
   // image-crop-goal-prompt.md IC-11 — hero 비율은 카드 그리드와 같은 도메인→표현 매핑
   // (`toThumbnailAspect`)을 재사용한다: 캐릭터 1:1, 스토리 2:3.
@@ -415,6 +414,15 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
       </div>
     </>
   );
+}
+
+// image-crop-goal-prompt.md IC-11 — 실제 hero와 스켈레톤이 이 함수 하나를 같이 써야 도착 시 폭이 안
+// 밀린다(스켈레톤이 실제와 다른 모양이면 도착 순간 화면이 밀린 전례, card-grid-goal-prompt.md F-1).
+function toHeroClassName(type: ContentType, aspect: ThumbnailAspect, visualClass: string): string {
+  if (type === "character") {
+    return cn("mx-auto w-full", visualClass, toThumbnailAspectClass(aspect), CHARACTER_HERO_WIDTH_CLASS);
+  }
+  return cn("w-full", visualClass, toThumbnailAspectClass(aspect), STORY_HERO_WIDTH_CLASS);
 }
 
 // image-crop-goal-prompt.md IC-11 — content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴

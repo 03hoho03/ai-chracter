@@ -107,7 +107,7 @@ function VersionTable() {
         </Table>
       </div>
 
-      {selectedId && <VersionDetailPanel id={selectedId} />}
+      {selectedId !== undefined && <VersionDetailPanel id={selectedId} />}
     </>
   );
 }

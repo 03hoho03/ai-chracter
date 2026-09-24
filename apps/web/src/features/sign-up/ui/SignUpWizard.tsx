@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { formatAuthRateLimitMessage, getAuthRateLimit, LOGIN_LINK_ERROR_TYPE, sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import {
   useSignUpLoginMutation,
@@ -72,7 +73,7 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await signUpMutation.mutateAsync(toSignupRequest(form.getValues()));
       onStepChange("emailVerify");
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       const rateLimit = getAuthRateLimit(error);
       if (apiError?.status === 409) {
         form.setError("email", { message: "이미 가입된 이메일이에요." });
@@ -94,7 +95,7 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await loginMutation.mutateAsync(toSignUpLoginRequest(values));
       await completeSignUp();
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       if (apiError?.status === 400) {
         // ED-23: 서버가 미등록/만료/5회무효화/오답 네 경우를 한 400으로 합친다(서버조차 만료와
         // 5회무효화를 구분 못 한다) — 사유를 가르지 않고 "확인 + 재전송 유도"로만 안내한다.
@@ -148,21 +149,24 @@ export function SignUpWizard(props: SignUpWizardProps) {
 
     const { step, onStepChange } = props;
 
-    if (step === "emailVerify") {
-      return (
-        <EmailVerifyStep
-          onSubmit={() => void handleEmailVerifySubmit()}
-          isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
-        />
-      );
+    switch (step) {
+      case "emailVerify":
+        return (
+          <EmailVerifyStep
+            onSubmit={() => void handleEmailVerifySubmit()}
+            isSubmitting={verifyEmailMutation.isPending || loginMutation.isPending}
+          />
+        );
+      case "basicInfo":
+        return (
+          <BasicInfoStep
+            onSubmit={() => void handleEmailBasicInfoSubmit(onStepChange)}
+            isSubmitting={signUpMutation.isPending}
+          />
+        );
+      default:
+        return assertNever(step);
     }
-
-    return (
-      <BasicInfoStep
-        onSubmit={() => void handleEmailBasicInfoSubmit(onStepChange)}
-        isSubmitting={signUpMutation.isPending}
-      />
-    );
   }
 
   return <FormProvider {...form}>{renderStep()}</FormProvider>;

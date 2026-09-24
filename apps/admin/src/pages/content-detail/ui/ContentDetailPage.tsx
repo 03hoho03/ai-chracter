@@ -47,7 +47,7 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
         <div className="flex gap-4">
           <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
-            {contentDetailQuery.data.thumbnailUrl && (
+            {!!contentDetailQuery.data.thumbnailUrl && (
               <img src={contentDetailQuery.data.thumbnailUrl} alt="" className="size-full object-cover" />
             )}
           </div>
@@ -90,7 +90,7 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
           </p>
         </div>
 
-        {contentDetailQuery.data.prompt && (
+        {!!contentDetailQuery.data.prompt && (
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-foreground">프롬프트 원문</h3>
             <p className="whitespace-pre-wrap rounded-lg bg-secondary p-3 text-sm text-foreground">
