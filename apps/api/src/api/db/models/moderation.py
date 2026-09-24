@@ -188,9 +188,10 @@ class AdminActionLog(Base):
     조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다.
 
     `action_type` 컬럼은 native enum이 아니라 Text다 — 값이 늘 때 마이그레이션 없이 넓히기
-    위해서다. 값 범위는 ORM 속성 타입 `AdminActionType`(위 Literal)이 강제하지만 그건 파이썬
-    쪽 검사일 뿐 DB 제약은 없다. 목록 밖 값이 든 행이 있으면 유저 상세 응답 직렬화가 실패한다
-    (backlog-sweep-goal-prompt.md Q-6)."""
+    위해서다. 값 범위(`AdminActionType`, 위 Literal)는 mypy가 `record_admin_action` 파라미터와
+    속성 대입에서만 검사한다 — 선언형 생성자 kwargs는 `**kw: Any`라 검사되지 않으므로 행은
+    `record_admin_action`으로만 만든다. 이것도 파이썬 쪽 검사일 뿐 DB 제약은 없다. 목록 밖 값이
+    든 행이 있으면 유저 상세 응답 직렬화가 실패한다 (backlog-sweep-goal-prompt.md Q-6)."""
 
     __tablename__ = "admin_action_logs"
 
