@@ -18,7 +18,7 @@ import type { ChatMessage, ChatRateLimit, ChatRoomState, ChatStreamRequest } fro
 import { cloverKeys } from "@/entities/clover";
 import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { isLegalReconsentRequiredError } from "@/entities/legal";
-import { sessionKeys } from "@/entities/session";
+import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerate" };
@@ -133,6 +133,8 @@ export function useSendMessage(
       if (isLegalReconsentRequiredError(error)) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       }
+      // backlog-l-goal-prompt.md BL-6 — 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
+      resetSessionIfLost(queryClient, error);
       // clover-goal-prompt.md CL-19 — 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).

@@ -12,7 +12,7 @@ import {
 } from "@/entities/preview-session";
 import { previewStreamEventSchema } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
-import { sessionKeys } from "@/entities/session";
+import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 // TS-04 — isSending(boolean) + error(boolean)의 조합은 "전송 중이면서 동시에 에러"라는 불가능 상태를
@@ -111,6 +111,8 @@ export function usePreviewSendMessage(
       if (isLegalReconsentRequiredError(error)) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       }
+      // backlog-l-goal-prompt.md BL-6 — 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
+      resetSessionIfLost(queryClient, error);
       // clover-goal-prompt.md CL-19 — 동의가 필요하면 배너가 아니라 모달이고, 동의하면 같은
       // 텍스트로 한 번 더 보낸다. 🔴 재전송은 `send`를 다시 부르므로 **낙관적 사용자 메시지가
       // 한 번 더 추가된다** — 그래서 아래 `finally`가 끝난 뒤가 아니라 여기서 `return`하지 않고,
