@@ -6,6 +6,14 @@ import { PersonaSummary, type PersonaList } from "@/entities/persona";
 
 import { useSetRoomPersonaMutation } from "../api/useSetRoomPersonaMutation";
 
+type RoomPersonaPickerProps = {
+  roomId: string;
+  /** 방 상세 캐시의 `personaId`. undefined = "선택 안 함". */
+  currentPersonaId: string | undefined;
+  personaList: PersonaList;
+  onChanged: () => void;
+};
+
 /** 토글 값으로 "선택 안 함"을 담는 표식. 프로필 id는 UUID라 겹치지 않는다. */
 const NO_PERSONA_VALUE = "none";
 
@@ -19,14 +27,6 @@ const ITEM_CLASS =
  * 12.64 — oklch 토큰 → sRGB 합성 계산). 쉬는 행은 `muted-foreground` 그대로라 이름과의 위계가 남는다. */
 const SECONDARY_TEXT_CLASS =
   "text-muted-foreground group-hover/persona-option:text-foreground group-data-[state=on]/persona-option:text-foreground";
-
-type RoomPersonaPickerProps = {
-  roomId: string;
-  /** 방 상세 캐시의 `personaId`. undefined = "선택 안 함". */
-  currentPersonaId: string | undefined;
-  personaList: PersonaList;
-  onChanged: () => void;
-};
 
 /** 대화방의 대화 프로필 목록("선택 안 함" 포함). 누르면 바로 `PUT`한다 — 확인 단계가 없는 이유는 되돌리기가
  * 같은 동작 한 번이고 과거 메시지는 바뀌지 않기 때문이다(persona-goal-prompt.md UP-7, 다음 턴부터 반영).
