@@ -39,9 +39,11 @@ async def get_current_user_id(request: Request, db: AsyncSession = Depends(get_d
     if user_id is None or not await _is_active_user(db, user_id):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    # 정지 차단(techspec §2-1). Redis에 user_id 역인덱스가 없어(goal-prompt §3-3) 정지된
-    # 유저의 세션을 전부 지울 수 없다 — 그래서 세션은 "만료"되지 않고 그대로 유효한 채,
-    # 매 요청마다 이 마커로 통과만 막는 "요청 차단" 방식이다. user_id를 먼저 알아야
+    # 정지 차단(techspec §2-1). 역인덱스로 세션을 전부 지울 수 있게 됐지만 정지는 일부러
+    # 지우지 않는다(backlog-sweep-goal-prompt.md BS-6) — 세션이 살아 있어야 다음 요청이 401이
+    # 아니라 이 403이 되고, 403이어야 FE가 정지 안내를 띄운다. 새 로그인은 마커가 아니라 DB의
+    # `suspended_at`이 막는다. 그래서 세션은 그대로 유효한 채 매 요청마다 이 마커로 통과만
+    # 막는 "요청 차단" 방식이다. user_id를 먼저 알아야
     # 마커 키(suspended_user:{user_id})를 만들 수 있어 위 세션 조회와 파이프라인으로
     # 묶을 수 없다 — Redis 왕복이 요청당 1회 늘어난다.
     if await is_user_suspended(user_id):
