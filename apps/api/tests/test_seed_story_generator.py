@@ -14,7 +14,7 @@ import pytest
 from pydantic import BaseModel
 
 import generate_seed_stories
-from api.llm.client import LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from generate_seed_stories import (
     MAX_ATTEMPTS,
     MAX_SIMILARITY_ROUNDS,
@@ -123,6 +123,8 @@ class FakeLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:  # pragma: no cover - 미사용
         raise NotImplementedError
 
@@ -131,6 +133,8 @@ class FakeLLMClient(LLMClient):
         prompt: str,
         response_schema: type[T],
         images: list[tuple[bytes, str]] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> T:
         self.prompts.append(prompt)
         result = self.results.pop(0)

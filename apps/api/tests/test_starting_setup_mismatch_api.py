@@ -53,7 +53,7 @@ from api.db.models import (
     StoryVersionDetail,
     User,
 )
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
 from factories import (
@@ -452,12 +452,17 @@ class _MinimalFakeLLMClient(LLMClient):
         self.tokens = tokens
 
     async def generate(
-        self, prompt: str, system_instruction: str | None = None, stop_sequences: list[str] | None = None
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         for token in self.tokens:
             yield token
 
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         raise NotImplementedError
 
 

@@ -101,7 +101,13 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
+from api.llm.client import (
+    LLMCallContext,
+    LLMClient,
+    LLMClientError,
+    LLMPolicyViolationError,
+    LLMRateLimitError,
+)
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id
 
@@ -435,7 +441,11 @@ async def _match_situational_image(
         user_message=user_message,
         assistant_message=assistant_message,
     )
-    judgment = await llm_client.generate_structured(judgment_prompt, ImageMatchJudgmentResult)
+    judgment = await llm_client.generate_structured(
+        judgment_prompt,
+        ImageMatchJudgmentResult,
+        usage=LLMCallContext(call_site="chat_situational_image", user_id=room.user_id, room_id=room.id),
+    )
     if judgment.matched_image_entity_id is None:
         return None
 
@@ -816,7 +826,7 @@ async def _stream_generated_tokens(
     system_instruction: str,
     user_label: str,
     *,
-    room_id: uuid.UUID | None,
+    usage: LLMCallContext,
     turn: int,
 ) -> AsyncIterator[ChatTokenEvent]:
     """`llm_client.generate()`의 각 델타를 그대로 relay하며 호출부가 넘긴 빈 리스트 `chunks`에
@@ -835,11 +845,13 @@ async def _stream_generated_tokens(
     if settings.prompt_dump_path is not None:
         try:
             _dump_prompt(
-                room_id=room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
+                room_id=usage.room_id, turn=turn, prompt=prompt, system_instruction=system_instruction
             )
         except Exception:
-            logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", room_id, turn, exc_info=True)
-    async for delta in llm_client.generate(prompt, system_instruction, stop_sequences=[f"\n{user_label}:"]):
+            logger.warning("프롬프트 덤프 실패 (room=%s, turn=%s)", usage.room_id, turn, exc_info=True)
+    async for delta in llm_client.generate(
+        prompt, system_instruction, stop_sequences=[f"\n{user_label}:"], usage=usage
+    ):
         chunks.append(delta)
         yield ChatTokenEvent(delta=delta)
 
@@ -893,7 +905,7 @@ async def _stream_new_turn(
             chunks,
             system_instruction,
             prompt_set.user_label,
-            room_id=room.id,
+            usage=LLMCallContext(call_site="chat_generate", user_id=room.user_id, room_id=room.id),
             turn=room.turn_count + 1,
         ):
             yield token_event
@@ -946,7 +958,11 @@ async def _stream_new_turn(
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+            judgment = await llm_client.generate_structured(
+                judgment_prompt,
+                StatJudgmentResult,
+                usage=LLMCallContext(call_site="chat_stat_judgment", user_id=room.user_id, room_id=room.id),
+            )
             changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
             updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
@@ -977,7 +993,9 @@ async def _stream_new_turn(
                     assistant_message=assistant_content,
                 )
                 ending_judgment = await llm_client.generate_structured(
-                    ending_judgment_prompt, EndingJudgmentResult
+                    ending_judgment_prompt,
+                    EndingJudgmentResult,
+                    usage=LLMCallContext(call_site="chat_ending_judgment", user_id=room.user_id, room_id=room.id),
                 )
                 if not ending_judgment.triggered:
                     continue
@@ -1223,7 +1241,7 @@ async def regenerate_message(
             chunks,
             system_instruction,
             prompt_set.user_label,
-            room_id=room.id,
+            usage=LLMCallContext(call_site="chat_generate", user_id=room.user_id, room_id=room.id),
             # 재생성은 turn_count 를 올리지 않는다 — 같은 턴의 응답을 교체하는 것이다.
             turn=room.turn_count,
         ):
@@ -2032,7 +2050,7 @@ async def _stream_preview_turn(
             system_instruction,
             prompt_set.user_label,
             # 미리보기는 DB 방이 없다(Redis 세션).
-            room_id=None,
+            usage=LLMCallContext(call_site="preview_generate", user_id=user_id, room_id=None),
             turn=state.turn_count + 1,
         ):
             yield token_event
@@ -2079,7 +2097,11 @@ async def _stream_preview_turn(
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+            judgment = await llm_client.generate_structured(
+                judgment_prompt,
+                StatJudgmentResult,
+                usage=LLMCallContext(call_site="preview_stat_judgment", user_id=user_id, room_id=None),
+            )
             changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
             updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
@@ -2100,7 +2122,9 @@ async def _stream_preview_turn(
                     assistant_message=assistant_content,
                 )
                 ending_judgment = await llm_client.generate_structured(
-                    ending_judgment_prompt, EndingJudgmentResult
+                    ending_judgment_prompt,
+                    EndingJudgmentResult,
+                    usage=LLMCallContext(call_site="preview_ending_judgment", user_id=user_id, room_id=None),
                 )
                 if not ending_judgment.triggered:
                     continue

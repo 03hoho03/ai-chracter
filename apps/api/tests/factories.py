@@ -42,7 +42,7 @@ from api.db.models import (
     User,
 )
 from api.db.session import engine
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
 from api.session.store import create_session
@@ -321,6 +321,8 @@ class _FakeLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         self.received_prompt = prompt
         if self.error is not None:
@@ -329,7 +331,7 @@ class _FakeLLMClient(LLMClient):
             yield token
 
     async def generate_structured(
-        self, prompt: str, response_schema: Any, images: Any = None
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.generate_structured_called = True
         self.received_judgment_prompt = prompt
@@ -344,12 +346,17 @@ class _NeverCalledLLMClient(LLMClient):
     """LLM보다 먼저 실패해야 하는 테스트용 — LLM이 조금이라도 불리면 그 자체가 실패다."""
 
     async def generate(
-        self, prompt: str, system_instruction: str | None = None, stop_sequences: list[str] | None = None
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         raise AssertionError("먼저 실패해야 할 검증보다 앞서 LLM이 호출됐다")
         yield ""  # pragma: no cover
 
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         raise AssertionError("먼저 실패해야 할 검증보다 앞서 LLM이 호출됐다")
 
 
