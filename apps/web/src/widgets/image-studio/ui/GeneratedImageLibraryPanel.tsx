@@ -36,7 +36,12 @@ type GeneratedImageLibraryPanelProps = {
  * image-refact-goal-prompt.md IR-4/IR-5 — '내 이미지'는 더 이상 탭이 아니라서 전환할 "생성 탭"이
  * 없다(중앙 열이 이미 항상 그 화면이다). `onNavigateToGenerate`는 좁은 화면(바텀시트)에서만 의미가
  * 있어 optional로 바꿨다 — 시트를 닫으면 뒤에 있던 생성 화면이 그대로 드러난다. 넓은 화면(좌열)은
- * 생성 화면과 나란히 상시 보이므로 이 버튼을 렌더하지 않는다(호출부가 prop을 생략). */
+ * 생성 화면과 나란히 상시 보이므로 이 버튼을 렌더하지 않는다(호출부가 prop을 생략).
+ *
+ * 표면이 둘이다 — 넓은 화면 좌열은 `background`, 좁은 화면은 `SheetContent`(`popover`). 그래서 셀·
+ * 스켈레톤은 두 표면 모두에서 보이는 `secondary`이고(`muted`는 시트 안에서 1.0000:1로 사라진다),
+ * 사용처 배지는 채움 없는 윤곽이다(DESIGN.md §5 Status badges — 중립 상태는 윤곽). 이 파일에는 표면
+ * 표식이 없어 `mutedOnSurfaceContract` 가드가 못 잡는 자리다(backlog-sweep M-7). */
 export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
   gridColumnsClassName = DEFAULT_GRID_COLUMNS_CLASSNAME,
@@ -100,7 +105,7 @@ export function GeneratedImageLibraryPanel({
                 // 렌더 여부만 바꾼다.
                 aria-label={`${createdAtLabel} 생성 이미지 상세 보기`}
                 onClick={() => setSelectedAssetId(image.assetId)}
-                className="aspect-square overflow-hidden rounded-lg bg-muted motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="aspect-square overflow-hidden rounded-lg bg-secondary motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
               >
                 <img
                   src={image.imageUrl}
@@ -114,7 +119,7 @@ export function GeneratedImageLibraryPanel({
                 <figcaption className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-muted-foreground">
                   {isCreatedAtVisible && <time dateTime={image.createdAt}>{createdAtLabel}</time>}
                   {hasUsageBadge && (
-                    <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-badge font-medium text-muted-foreground">
+                    <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
                       {image.usages.length}곳에서 사용 중
                     </span>
                   )}
@@ -140,8 +145,8 @@ function LibraryGridSkeleton({ gridColumnsClassName }: { gridColumnsClassName: s
     <div className={cn("grid gap-3", gridColumnsClassName)}>
       {[0, 1, 2, 3, 4, 5, 6, 7].map((key) => (
         <div key={key} className="flex flex-col gap-1.5">
-          <div className="aspect-square animate-pulse rounded-lg bg-muted" />
-          <div className="h-3 w-16 animate-pulse rounded bg-muted" />
+          <div className="aspect-square animate-pulse rounded-lg bg-secondary" />
+          <div className="h-3 w-16 animate-pulse rounded bg-secondary" />
         </div>
       ))}
     </div>
