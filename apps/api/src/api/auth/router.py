@@ -689,12 +689,14 @@ async def withdraw(
 
     await db.commit()
 
-    # 현재 세션을 포함해 전부 폐기한다(backlog-sweep-goal-prompt.md BS-6). 실패해 500이 나도
-    # 탈퇴는 이미 커밋됐고, 남은 세션은 `get_current_user_id`의 `users` 조회가 401로 막는다.
-    await revoke_user_sessions(user_id)
-    # 역인덱스 배포 전에 만든 세션은 인덱스에 없어 위 폐기가 못 지운다 — 현재 세션만은 쿠키로 직접 지운다.
+    # 역인덱스 배포 전에 만든 세션은 인덱스에 없어 아래 폐기가 못 지운다 — 현재 세션만은 쿠키로
+    # 직접 지운다. 폐기보다 **먼저** 부르는 건 S2 이전 순서 그대로다: 폐기의 Redis 호출이 중간에
+    # 실패해도 현재 세션은 이미 지워져 있다(tasks/review-S3.md ⚪-2). 두 호출은 서로 독립이다.
     session_id = get_session_id_from_request(request)
     if session_id is not None:
         await delete_session(session_id)
+    # 현재 세션을 포함해 전부 폐기한다(backlog-sweep-goal-prompt.md BS-6). 실패해 500이 나도
+    # 탈퇴는 이미 커밋됐고, 남은 세션은 `get_current_user_id`의 `users` 조회가 401로 막는다.
+    await revoke_user_sessions(user_id)
     clear_session_cookie(response)
     return None
