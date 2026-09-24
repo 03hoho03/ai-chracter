@@ -93,6 +93,7 @@ export function ReportActionPanel({ reportId, isReportPending, contentName, isCo
   const handleLiftRestriction = () => {
     void LiftRestrictionConfirmModal.call({
       contentName,
+      isReportPending,
       mutationFn: async (call) => {
         try {
           await moderationAction.mutateAsync({ action: "lift-restriction" });
