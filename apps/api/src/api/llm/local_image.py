@@ -147,9 +147,11 @@ _capabilities_cached_at: float = 0.0
 _capabilities_lock = Lock()
 
 # backlog-l-goal-prompt.md BL-3: 조회 전용 타임아웃. 생성용 `local_image_timeout_seconds`(90초)와
-# 분리한 이유는 이 대기 동안 요청 세션이 DB 커넥션을 쥐고 있어서다 — 점유 상한이 곧 이 값이다.
-# 집 PC의 `/capabilities`는 추론을 스레드로 위탁해 생성 중에도 0.018초에 답하므로(계약 LC-6
-# 실측) 5초는 Cloudflare Tunnel 왕복 여유를 넉넉히 둔 값이다.
+# 분리한 이유는 이 대기 동안 요청 세션이 DB 커넥션을 쥐고 있어서다 — 점유를 이 값 수준으로
+# 묶는다(httpx 타임아웃은 연결·쓰기·읽기·풀 단계별이라 엄밀한 총 상한은 아니다).
+# 집 PC의 `/capabilities`는 추론을 스레드로 위탁해 생성 중에도 즉시 답한다 — 계약 LC-6의
+# 요구이고, 집 PC 준수 확인서(`CONTRACT_COMPLIANCE_V2.md`)에서 0.018초로 실측됐다. 5초는
+# Cloudflare Tunnel 왕복 여유를 넉넉히 둔 값이다.
 _CAPABILITIES_TIMEOUT_SECONDS = 5
 
 
@@ -185,10 +187,10 @@ async def get_capabilities() -> LocalCapabilities:
     (local-image-gen-goal-prompt.md LG-18). 연결 실패·타임아웃·비200·파싱 실패 등 어떤
     프로브 실패도 종류를 구분하지 않고 전부 UNAVAILABLE로 접는다(contract LC-1).
 
-    프로브는 `_CAPABILITIES_TIMEOUT_SECONDS`(5초)로 끊고, 동시 호출은 락으로 하나만
-    나가게 한다. 기록 시각은 프로브가 **끝난 뒤**에 잡는다 — 시작 시각을 기록하면 TTL보다
-    오래 걸린 느린 실패가 기록 즉시 만료돼 다음 요청이 또 기다린다(backlog-l-goal-prompt.md
-    BL-2). 캐시 적중 경로는 락을 잡지 않는다."""
+    프로브는 `_CAPABILITIES_TIMEOUT_SECONDS`(5초, httpx 단계별 타임아웃)로 끊고, 동시
+    호출은 락으로 하나만 나가게 한다. 기록 시각은 프로브가 **끝난 뒤**에 잡는다 — 시작
+    시각을 기록하면 TTL보다 오래 걸린 느린 실패가 기록 즉시 만료돼 다음 요청이 또
+    기다린다(backlog-l-goal-prompt.md BL-2). 캐시 적중 경로는 락을 잡지 않는다."""
     global _capabilities_cache, _capabilities_cached_at
 
     cached = _fresh_cached_capabilities()
