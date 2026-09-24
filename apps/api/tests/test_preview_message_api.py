@@ -1,3 +1,4 @@
+import inspect
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -17,7 +18,9 @@ from api.chat.prompt_builder import (
 )
 from api.chat.preview_session import get_preview_session
 from api.chat.schemas import PreviewSessionState
+from api.core.rate_limit_gate import enforce_chat_rate_limit
 from api.db.models.chat import ChatMessageRole, ChatRoom
+from api.db.models.persona import UserPersona
 from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
@@ -627,3 +630,76 @@ async def test_preview_messages_do_not_touch_chat_rooms(
     assert resp.status_code == 200
     count = await db_session.scalar(select(func.count()).select_from(ChatRoom))
     assert count == 0
+
+
+# ---- 대화 프로필 (persona-goal-prompt.md UP-10 · §3-5 · §4 S4 ⑤) ---------------------
+
+
+async def test_send_preview_message_injects_the_authors_default_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """미리보기는 작가 본인의 **기본** 프로필을 쓴다. 기본이 아닌 프로필을 하나 더 둬서
+    "유저의 아무 프로필"이 아니라 기본을 고른다는 것을 가른다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    not_default = UserPersona(user_id=user.id, name="바다", gender="male", description="기본 아님")
+    default = UserPersona(user_id=user.id, name="하늘", gender="female", description="밤하늘을 좋아한다")
+    db_session.add_all([not_default, default])
+    await db_session.flush()
+    user.default_persona_id = default.id
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "이름: 하늘\n성별: 여성\n설명: 밤하늘을 좋아한다" in fake.received_prompt
+    assert "바다" not in fake.received_prompt
+
+
+async def test_send_preview_message_without_default_persona_has_no_persona_section(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """UP-6·UP-10: 기본이 없으면 빈 상태다 — 프로필을 갖고 있어도 기본이 아니면 들어가지
+    않는다. 섹션 머리글(§3-4-3 확정 문안의 첫 줄)이 없는 것으로 섹션째 드롭됐음을 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    db_session.add(UserPersona(user_id=user.id, name="바다", gender=None, description=""))
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _character_payload())
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "[사용자 정보]" not in fake.received_prompt
+    assert "바다" not in fake.received_prompt
+
+
+def test_send_preview_message_resolves_persona_before_the_clover_charge() -> None:
+    """persona-goal-prompt.md §3-5 (clover-goal-prompt.md CL-1) — `Depends`는 시그니처
+    순서대로 resolve되고 앞의 것이 raise하면 뒤는 불리지 않는다. 프로필 조회가 차감
+    게이트보다 뒤에 있으면 조회 실패(DB 장애) 때 차감만 남는다."""
+    dependencies = [
+        param.default.dependency
+        for param in inspect.signature(chat_router.send_preview_message).parameters.values()
+        if hasattr(param.default, "dependency")
+    ]
+    assert dependencies.index(chat_router._preview_persona_dependency) < dependencies.index(
+        enforce_chat_rate_limit
+    )

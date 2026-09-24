@@ -22,6 +22,7 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    format_user_persona,
     render_prompt_channel,
     select_sections_for_render,
     system_instruction_for,
@@ -240,6 +241,7 @@ def test_build_generation_prompt_uses_character_labels_not_story_labels() -> Non
             _message(ChatMessageRole.USER, "이전 메시지"),
         ],
         user_message="이번 메시지",
+        user_persona="",
     )
 
     assert f"{prompt_set.user_label}: 안녕" in prompt
@@ -285,6 +287,7 @@ def test_build_story_generation_prompt_uses_example_label_only_for_development_e
             _message(ChatMessageRole.USER, "이전 메시지"),
         ],
         user_message="이번 메시지",
+        user_persona="",
     )
 
     assert f"{prompt_set.story_example_label}: 환영" in prompt
@@ -429,6 +432,7 @@ def test_migrated_development_example_pairs_reconstruct_to_the_original_free_tex
         prologue="",
         history=[],
         user_message="메시지",
+        user_persona="",
     )
 
     reconstructed = prompt.split("[전개 예시]\n", 1)[1].split("\n\n[시작 상황]", 1)[0]
@@ -468,3 +472,29 @@ def test_prompt_lanes_tuple_is_exhaustive_over_the_literal() -> None:
     `PromptLane`인지는 잡지만, `PromptLane`의 원소를 전부 담았는지는 못 잡는다 — 예를 들어
     `publish_filter`를 튜플에서 빠뜨려도 타입체커는 조용하다. 이 테스트가 그 칸을 메운다."""
     assert set(_PROMPT_LANES) == set(get_args(PromptLane))
+
+
+# ---- format_user_persona — persona-goal-prompt.md §3-4-1 (UP-4·UP-22) ------------
+#
+# 기대값을 문자열 전체로 비교한다 — 라벨 단어·줄 구분자·줄 순서 중 하나만 바뀌어도 깨지게
+# (`in` 검사로는 구분자 변경이 안 잡힌다). 성별은 두 값을 모두 넣는다 — 한 값만 쓰면 라벨
+# 맵이 두 값을 같은 말로 옮겨도 모른다.
+
+
+def test_format_user_persona_joins_name_gender_description_lines() -> None:
+    assert (
+        format_user_persona(name="하늘", gender="female", description="밤하늘을 좋아한다")
+        == "이름: 하늘\n성별: 여성\n설명: 밤하늘을 좋아한다"
+    )
+    assert (
+        format_user_persona(name="바다", gender="male", description="말수가 적다")
+        == "이름: 바다\n성별: 남성\n설명: 말수가 적다"
+    )
+
+
+def test_format_user_persona_omits_gender_line_when_none_and_description_line_when_empty() -> None:
+    """UP-4: 성별 "선택 안 함"(None)이면 `성별:` 줄 자체가 없다(빈 칸을 두면 모델이 억지로
+    채울 여지가 생긴다). UP-22: 설명이 비면 `설명:` 줄이 없다."""
+    assert format_user_persona(name="별", gender=None, description="조용한 편") == "이름: 별\n설명: 조용한 편"
+    assert format_user_persona(name="바다", gender="male", description="") == "이름: 바다\n성별: 남성"
+    assert format_user_persona(name="달", gender=None, description="") == "이름: 달"

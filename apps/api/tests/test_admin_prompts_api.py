@@ -566,6 +566,25 @@ async def test_preview_item_count_per_lane(
     assert len(resp.json()["items"]) == expected_count
 
 
+@pytest.mark.parametrize("lane", [pytest.param("story", id="story"), pytest.param("character", id="character")])
+async def test_preview_renders_the_persona_section_only_in_generation_items(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
+) -> None:
+    """persona-goal-prompt.md §3-4-1 — generation 미리보기는 샘플 프로필을 채운다. 비워 두면
+    conditional 드롭(F1)으로 섹션이 사라져 운영자가 `user_persona` 문안이 어떻게 렌더되는지
+    볼 수 없다. 판정 채널 항목에는 들어가지 않는다(UP-9). 머리글은 §3-4-3 확정 문안의 첫 줄."""
+    await _login_new_admin(db_client, db_session)
+
+    resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
+    assert resp.status_code == 200
+    items = resp.json()["items"]
+    generation = [item for item in items if item["channel"] == "generation"]
+    others = [item for item in items if item["channel"] != "generation"]
+    assert generation and others
+    assert all("[사용자 정보]" in item["text"] for item in generation)
+    assert all("[사용자 정보]" not in item["text"] for item in others)
+
+
 # ---- 게시 — happy path ----------------------------------------------------------
 
 
