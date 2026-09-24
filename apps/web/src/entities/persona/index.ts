@@ -7,5 +7,5 @@ export {
   type PersonaGender,
   type PersonaList,
 } from "./model/persona";
-export { PERSONA_GENDER_LABEL } from "./model/personaGender";
+export { PERSONA_GENDER_LABEL, PERSONA_GENDERS } from "./model/personaGender";
 export { PersonaSummary } from "./ui/PersonaSummary";
