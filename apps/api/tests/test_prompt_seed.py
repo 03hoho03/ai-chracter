@@ -1,11 +1,13 @@
-"""prompt-db-goal-prompt.md §6 (1단계) — 마이그레이션이 심은 초기 프롬프트 세트 검증.
+"""prompt-db-goal-prompt.md §6 (1단계) — 마이그레이션이 심은 프롬프트 세트 검증.
 
 `_migrated_schema`(세션 스코프 autouse, `conftest.py`)가 `alembic upgrade head`로 시드를
-이미 넣어 두므로, 여기서는 그 결과를 `db_session`으로 읽기만 한다 — 이 단계는 렌더러가
-없으므로(2단계 범위) `PromptSet`/`PromptSection`을 실제로 소비하는 코드는 아직 없다.
+이미 넣어 두므로, 여기서는 그 결과를 `db_session`으로 읽기만 한다. 읽는 대상은 **head 상태의
+활성 세트**(`load_active_prompt_set`, 프로덕션이 고르는 규칙과 같다)다 — 초기 시드
+(`a69cbd40dec8`)가 아니다. persona-goal-prompt.md UP-13 이후 M2(`b72c33c70240`)가 슬롯을
+더한 새 published 세트를 만들어 레인마다 published가 여럿이다.
 
 세 갈래:
-1. 시드된 (channel, scope, slot, variant) 집합이 prompt-db-progress.md §B와 정확히 일치
+1. head 활성 세트의 (channel, scope, slot, variant) 집합이 아래 표와 정확히 일치
    (누락·잉여 0).
 2. `system` 채널 시드를 scope로 거르고 order로 정렬해 "\\n\\n"으로 이은 결과가
    `system_instruction_for()`의 실제 출력과 바이트 단위로 같다(D-13) — 6가지 경우 전부.
@@ -21,19 +23,19 @@ import uuid
 from datetime import UTC, datetime
 
 import pytest
-from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import system_instruction_for
+from api.chat.prompt_builder import PromptLane, load_active_prompt_set, system_instruction_for
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
 # prompt-scope-techspec.md §2-3(M2) — 레인 분리 이후 (channel, scope, slot, variant) 전수는
-# 레인별로 갈린다(story 26 / character 13 / publish_filter 16, 마이그레이션
-# `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for`와 정확히 같은 배정). system/generation
-# 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다(PS-4).
-_EXPECTED_SLOTS_BY_LANE: dict[str, dict[str, set[tuple[str, str, str]]]] = {
+# 레인별로 갈린다(story 27 / character 14 / publish_filter 16 — 마이그레이션
+# `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정 26/13/16에 persona-goal-prompt.md
+# UP-13의 M2 `b72c33c70240`이 story·character generation에 `user_persona`를 한 행씩 더했다).
+# system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다(PS-4).
+_EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] = {
     "story": {
         "system": {
             ("story", "self_definition", ""),
@@ -54,6 +56,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[str, dict[str, set[tuple[str, str, str]]]] = {
             ("story", "user_goal", ""),
             ("story", "development_examples", ""),
             ("story", "prologue", ""),
+            ("both", "user_persona", ""),
             ("both", "history", ""),
             ("story", "keyword_notes", ""),
             ("story", "shortcut_prompt", ""),
@@ -82,6 +85,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[str, dict[str, set[tuple[str, str, str]]]] = {
         "generation": {
             ("character", "character_prompt", ""),
             ("character", "example_dialogues", ""),
+            ("both", "user_persona", ""),
             ("both", "history", ""),
             ("both", "final_frame", ""),
         },
@@ -114,16 +118,9 @@ _EXPECTED_SLOTS_BY_LANE: dict[str, dict[str, set[tuple[str, str, str]]]] = {
 }
 
 
-async def _active_sections(db_session: AsyncSession, *, lane: str) -> list[PromptSection]:
-    active_set_id = (
-        await db_session.execute(
-            select(PromptSet.id).where(PromptSet.status == "published", PromptSet.lane == lane)
-        )
-    ).scalar_one()
-    result = await db_session.execute(
-        select(PromptSection).where(PromptSection.prompt_set_id == active_set_id)
-    )
-    return list(result.scalars())
+async def _active_sections(db_session: AsyncSession, *, lane: PromptLane) -> list[PromptSection]:
+    _prompt_set, sections = await load_active_prompt_set(db_session, lane=lane)
+    return sections
 
 
 async def test_seeded_slot_set_matches_spec_exactly(db_session: AsyncSession) -> None:
@@ -180,7 +177,7 @@ def _reconstruct_system_instruction(
     ],
 )
 async def test_system_channel_reconstruction_matches_current_code(
-    db_session: AsyncSession, lane: str, is_story_chat: bool, template: StoryPromptTemplate | None
+    db_session: AsyncSession, lane: PromptLane, is_story_chat: bool, template: StoryPromptTemplate | None
 ) -> None:
     sections = await _active_sections(db_session, lane=lane)
     reconstructed = _reconstruct_system_instruction(

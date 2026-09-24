@@ -1,5 +1,5 @@
 import { useSetAtom } from "jotai";
-import { BookOpen, History, Images, Repeat, Sparkles } from "lucide-react";
+import { BookOpen, History, IdCard, Images, Repeat, Sparkles } from "lucide-react";
 
 import { ChangeStartingSetupModal } from "@/features/change-starting-setup";
 import { EndingCollectionModal } from "@/features/ending-collection";
@@ -8,6 +8,7 @@ import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
 
 import { chatMorePanelOpenAtom } from "../model/atoms";
+import { RoomPersonaModal } from "./RoomPersonaModal";
 
 type MorePanelItem = {
   key: string;
@@ -20,6 +21,7 @@ const CHARACTER_ITEMS: MorePanelItem[] = [
   { key: "play-guide", label: "플레이가이드", icon: BookOpen, isActive: true },
   { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
   { key: "image-archive", label: "이미지 보관함", icon: Images, isActive: true },
+  { key: "persona", label: "대화 프로필", icon: IdCard, isActive: true },
 ];
 
 const STORY_ITEMS: MorePanelItem[] = [
@@ -27,6 +29,7 @@ const STORY_ITEMS: MorePanelItem[] = [
   { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
   { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, isActive: true },
   { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, isActive: true },
+  { key: "persona", label: "대화 프로필", icon: IdCard, isActive: true },
 ];
 
 export type ChatMoreNavProps = {
@@ -53,6 +56,8 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
     if (item.key === "ending-collection" && startingSetupId) {
       void EndingCollectionModal.call({ startingSetupId });
     }
+    // persona-goal-prompt.md UP-12 — 선택 UI를 모달로 둔 근거는 RoomPersonaModal 주석(S0 N-2).
+    if (item.key === "persona") void RoomPersonaModal.call({ roomId });
     if (item.key === "image-archive" && characterId) {
       void ImageArchiveModal.call({ characterId });
     }

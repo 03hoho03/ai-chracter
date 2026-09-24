@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, Numeric, Text, Uuid, false, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, Text, Uuid, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -39,6 +39,16 @@ class ChatRoom(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+    # persona-goal-prompt.md §3-1 (UP-7). 방이 고른 대화 프로필 — **참조**다(스냅샷 아님).
+    # NULL이 "선택 없음"이고 그때 생성 프롬프트는 현행과 바이트까지 같다(UP-6). 프로필을
+    # 지우면 호출부가 이 값을 NULL로 먼저 끊는다(UP-14, `ondelete` 없음).
+    persona_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("user_personas.id", name="fk_chat_rooms_persona_id"), nullable=True
+    )
+
+    # 프로필 삭제의 `UPDATE chat_rooms SET persona_id=NULL WHERE persona_id=…`가 전체
+    # 스캔이 되지 않게 한다(persona-goal-prompt.md §3-1).
+    __table_args__ = (Index("ix_chat_rooms_persona_id", "persona_id"),)
 
 
 class ChatMessage(Base):

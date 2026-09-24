@@ -26,6 +26,8 @@ class User(Base):
     `profile_image_asset_id` -> assets.id is declared with use_alter because
     assets.owner_user_id -> users.id creates a table-creation cycle between
     users and assets; use_alter defers this FK to a post-create ALTER TABLE.
+    `default_persona_id` -> user_personas.id is the same cycle
+    (user_personas.user_id -> users.id).
     """
 
     __tablename__ = "users"
@@ -74,6 +76,14 @@ class User(Base):
     # 0이고, Redis와 달리 매일 pg_dump 백업을 탄다.
     clover_attendance_granted_on: Mapped[date | None] = mapped_column(Date, nullable=True)
     clover_spend_confirmed_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    # persona-goal-prompt.md §3-1 (UP-7·UP-23). 유저의 기본 대화 프로필 — 새 방이 이 값으로
+    # 시작한다. 컬럼 하나라 "기본은 최대 1개"가 구조적으로 성립한다. FK는 "그 프로필이
+    # **본인 것**인가"를 보장하지 못하므로 소유권은 API가 검사한다.
+    default_persona_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("user_personas.id", use_alter=True, name="fk_users_default_persona_id"),
+        nullable=True,
+    )
 
     # clover-techspec.md CT-3. 정상 경로는 조건부 UPDATE(`clover_balance >= :amount`)가 이미
     # 막으므로 이 제약이 발동할 일이 없다 — 갈리는 것은 우회 경로(어드민 회수 버그·수동 SQL·

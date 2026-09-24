@@ -7,6 +7,7 @@ import { ImageCropModal } from "@/features/crop-image";
 import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal } from "@/features/image-archive";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
+import { DeletePersonaModal } from "@/features/manage-persona";
 import { DeleteContentDraftModal, ResetContentDraftModal } from "@/features/manage-content-draft";
 import { PlayGuideModal } from "@/features/play-guide";
 import { ReportContentModal } from "@/features/report-content";
@@ -66,6 +67,7 @@ function RootComponent() {
       <ResetContentDraftModal />
       <ReconsentModal />
       <ConfirmCloverSpendModal />
+      <DeletePersonaModal />
     </>
   );
 }

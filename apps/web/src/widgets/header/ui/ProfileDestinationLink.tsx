@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import {
   FileText,
+  IdCard,
   ImagePlus,
   LayoutGrid,
   LifeBuoy,
@@ -27,6 +28,7 @@ export type ProfileDestinationKey =
   | "chats"
   | "favorites"
   | "profile"
+  | "personas"
   | "mypage"
   | "notices"
   | "inquiry-new"
@@ -36,7 +38,7 @@ export type ProfileDestinationKey =
 export const PROFILE_DESTINATION_GROUPS: readonly { label: string; keys: readonly ProfileDestinationKey[] }[] = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
-  { label: "계정", keys: ["profile", "mypage"] },
+  { label: "계정", keys: ["profile", "personas", "mypage"] },
   { label: "고객센터", keys: ["notices", "inquiry-new", "terms", "privacy"] },
 ];
 
@@ -94,6 +96,14 @@ export const ProfileDestinationLink = forwardRef<
         <Link ref={ref} to="/profile/$userId" params={{ userId: me.id }} className={className} {...rest}>
           <User aria-hidden />
           내 프로필
+        </Link>
+      );
+    case "personas":
+      // persona-goal-prompt.md UP-12 — 라벨은 페이지 h1(`대화 프로필`)과 같은 문자열이다(`설정` 선례, US-013).
+      return (
+        <Link ref={ref} to="/personas" className={className} {...rest}>
+          <IdCard aria-hidden />
+          대화 프로필
         </Link>
       );
     case "mypage":

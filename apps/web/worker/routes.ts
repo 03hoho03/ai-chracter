@@ -25,6 +25,7 @@ export const KNOWN_ROUTES = [
   "/notices",
   "/notices/$noticeId",
   "/onboarding/google",
+  "/personas",
   "/privacy",
   "/profile/$userId",
   "/reset-password",

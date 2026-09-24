@@ -28,8 +28,10 @@ from api.chat.prompt_builder import (
     build_image_judgment_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
+    format_user_persona,
     load_active_prompt_set,
     system_instruction_for,
+    user_persona_rendered,
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.schemas import (
@@ -77,6 +79,7 @@ from api.core.clover import refund_in_new_transaction
 from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
+from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
@@ -88,6 +91,7 @@ from api.db.models.chat import (
 )
 from api.db.models.content import Content, ContentType
 from api.db.models.media import Asset
+from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
@@ -109,6 +113,8 @@ from api.llm.client import (
     LLMRateLimitError,
 )
 from api.llm.dependencies import get_llm_client
+from api.persona.router import get_owned_persona, lock_user_default_persona
+from api.persona.schemas import PersonaSelectRequest, RoomPersonaResponse
 from api.session.dependencies import get_current_user_id
 
 # LLM 실패(특히 429 쿼터 소진)는 화면에 "대화 품질 문제"와 구분되지 않게 보이므로 반드시
@@ -568,21 +574,33 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         content_snapshot=content_snapshot,
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
+        persona_id=room.persona_id,
         created_at=room.created_at,
         updated_at=room.updated_at,
     )
 
 
 async def _create_room(
-    db: AsyncSession, user_id: uuid.UUID, content: Content, setup: StartingSetup | None
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    content: Content,
+    setup: StartingSetup | None,
+    *,
+    persona_id: uuid.UUID | None,
 ) -> ChatRoom:
     """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`(US-080)가 공유하는
-    방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다."""
+    방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다.
+
+    `persona_id`는 받은 값만 쓴다(persona-goal-prompt.md UP-24). "새 방 = 기본"(UP-7)과 "원래
+    방 승계"(UP-24) 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
+    읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다(§3-1, R-20). 키워드 전용 필수라 새
+    호출부가 값을 빠뜨리면 mypy가 잡는다."""
     room = ChatRoom(
         user_id=user_id,
         content_id=content.id,
         content_version_id=content.current_published_version_id,
         starting_setup_entity_id=setup.entity_id if setup is not None else None,
+        persona_id=persona_id,
     )
     db.add(room)
     await db.flush()
@@ -632,7 +650,10 @@ async def create_chat_room(
             )
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    room = await _create_room(db, user_id, content, setup)
+    # persona-goal-prompt.md UP-7 — 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
+    # 읽는다(`db.get(User)`는 락을 걸지 않는다 — `persona/router.py` 모듈 docstring).
+    default_persona_id = await lock_user_default_persona(db, user_id)
+    room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
     await db.commit()
 
     return await _to_response(db, room)
@@ -667,7 +688,16 @@ async def get_play_guide(
 
 
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
+# persona-goal-prompt.md UP-21 (a) — 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
+_PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
+
+
+def _policy_warning_message(persona_rendered: bool) -> str:
+    """persona-goal-prompt.md UP-21 (a) — 그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
+    들어갔을 때만(`user_persona_rendered`) 프로필 안내를 붙인다. 원인이 프로필인지는 알 수
+    없어서 "~일 수 있다"로 쓴다. `yield ChatPolicyWarningEvent` 3곳이 공유한다."""
+    return _PERSONA_POLICY_WARNING_MESSAGE if persona_rendered else _POLICY_WARNING_MESSAGE
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
@@ -736,6 +766,14 @@ async def _refund_clover_on_failure(
         raise
 
 
+def _format_persona(persona: UserPersona | None) -> str:
+    """실채팅(`_build_prompt`)과 미리보기(`_preview_persona_dependency`)가 공유한다 — 프로필이
+    없으면 `""`라 생성 프롬프트가 현행과 바이트까지 같다(persona-goal-prompt.md UP-6)."""
+    if persona is None:
+        return ""
+    return format_user_persona(name=persona.name, gender=persona.gender, description=persona.description)
+
+
 async def _build_prompt(
     db: AsyncSession,
     room: ChatRoom,
@@ -745,7 +783,7 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
-) -> tuple[str, str]:
+) -> tuple[str, str, bool]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
     (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
@@ -753,7 +791,17 @@ async def _build_prompt(
     `(prompt, system_instruction)` 튜플을 돌려준다 — 스토리 챗의 L0.5 템플릿별 지시
     (`system_instruction_for`)를 고르려면 `story_detail.prompt_template`이 필요한데, 그 조회가
     이 함수 안에서만 일어나 호출부는 모른다(chat-techspec.md §4-2). 조회를 한 번 더 하는 대신
-    여기서 함께 고른다."""
+    여기서 함께 고른다.
+
+    방이 고른 대화 프로필은 이 턴에 **락 없이** 읽는다(persona-goal-prompt.md §3-1). 방 안에서
+    바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다(UP-7 ②). 그 사이 프로필이
+    지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다(UP-14).
+
+    세 번째 값은 그 프로필 섹션이 이 프롬프트에 **실제로 들어갔는가**다(`user_persona_rendered`,
+    UP-21 (a)의 정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
+    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
+    user_persona = _format_persona(persona)
+
     if setup is not None:
         story_detail = await db.get(StoryVersionDetail, room.content_version_id)
         assert story_detail is not None
@@ -778,11 +826,16 @@ async def _build_prompt(
             prologue=setup.prologue,
             history=history,
             user_message=user_content,
+            user_persona=user_persona,
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
-        return prompt, system_instruction_for(
-            prompt_sections, is_story_chat=True, template=story_detail.prompt_template
+        return (
+            prompt,
+            system_instruction_for(prompt_sections, is_story_chat=True, template=story_detail.prompt_template),
+            user_persona_rendered(
+                prompt_sections, is_story_chat=True, template=story_detail.prompt_template, user_persona=user_persona
+            ),
         )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
@@ -794,8 +847,13 @@ async def _build_prompt(
         example_dialogues=detail.example_dialogues,
         history=history,
         user_message=user_content,
+        user_persona=user_persona,
     )
-    return prompt, system_instruction_for(prompt_sections, is_story_chat=False)
+    return (
+        prompt,
+        system_instruction_for(prompt_sections, is_story_chat=False),
+        user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
+    )
 
 
 def _dump_prompt(
@@ -883,7 +941,7 @@ async def _stream_new_turn(
     — 그 라우트의 docstring 참고.
     """
     try:
-        prompt, system_instruction = await _build_prompt(
+        prompt, system_instruction, persona_rendered = await _build_prompt(
             db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -912,7 +970,7 @@ async def _stream_new_turn(
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
         # 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과 결론이 갈리는 자리다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
@@ -1222,7 +1280,7 @@ async def regenerate_message(
         )
         user_content = history[-1].content
     try:
-        prompt, system_instruction = await _build_prompt(
+        prompt, system_instruction, persona_rendered = await _build_prompt(
             db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -1248,7 +1306,7 @@ async def regenerate_message(
             yield token_event
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
@@ -1678,10 +1736,35 @@ async def change_starting_setup(
     assert content is not None
     setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    new_room = await _create_room(db, user_id, content, setup)
+    # persona-goal-prompt.md UP-24 — 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는
+    # 락 전에 읽은 값이라 그 사이 프로필 삭제로 NULL이 됐을 수 있다 — 유저 행을 잠근 뒤 컬럼
+    # select로 다시 읽는다(READ COMMITTED에서 락 뒤의 새 문장은 삭제 커밋을 본다, §3-3).
+    # 같은 유저의 방에서 복사하므로 소유권 재검사는 필요 없다.
+    await lock_user_default_persona(db, user_id)
+    persona_id = await db.scalar(select(ChatRoom.persona_id).where(ChatRoom.id == room.id))
+    new_room = await _create_room(db, user_id, content, setup, persona_id=persona_id)
     await db.commit()
 
     return await _to_response(db, new_room)
+
+
+@router.put("/{room_id}/persona", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-3
+async def set_room_persona(
+    room_id: uuid.UUID,
+    payload: PersonaSelectRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> RoomPersonaResponse:
+    """persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
+    과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를
+    **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다."""
+    room = await _get_owned_room(db, room_id, user_id)
+    await lock_user_default_persona(db, user_id)
+    if payload.persona_id is not None:
+        await get_owned_persona(db, payload.persona_id, user_id)
+    room.persona_id = payload.persona_id
+    await db.commit()
+    return RoomPersonaResponse(persona_id=room.persona_id)
 
 
 @router.post(
@@ -1899,6 +1982,35 @@ async def _preview_prompt_set_dependency(
     return prompt_set, sections
 
 
+async def _preview_persona_dependency(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> str:
+    """persona-goal-prompt.md §3-5 (UP-10). 미리보기는 작가 본인의 **기본** 프로필을 쓴다 —
+    없으면 `""`(현행과 같다, UP-6). 턴마다 읽고 `PreviewSessionState`에는 저장하지 않는다(작가가
+    도중에 기본을 바꾸면 다음 턴에 반영된다).
+
+    세션은 짧게 열고 바로 닫는다(persona-goal-prompt.md §9-2 행 11 확인 결과). 이 경로에도
+    요청 스코프 세션이 있다 — `require_legal_consent`가 `Depends(get_db_session)`으로 열어
+    `db.get(User)`로 트랜잭션을 시작한 채 커밋하지 않고, FastAPI는 yield 의존성을 응답
+    스트리밍이 끝난 뒤에 닫으므로(`fastapi/routing.py`의 `fastapi_inner_astack`) 그 커넥션은
+    스트리밍 내내 잡혀 있다. 이 조회를 그 세션에 얹어도 커넥션이 늘지는 않지만, 그러면 이
+    의존성이 `get_db_session`을 요구하게 되어 재동의 게이트가 이 경로에서 빠지는 순간 이
+    의존성 혼자 스트리밍 내내 커넥션을 쥐게 된다. 짧은 세션은 의존성 해석 중에만 커넥션을
+    빌리고 스트리밍 전에 돌려준다 — 두 방식 모두 지금은 스트리밍 중 점유를 늘리지 않고,
+    게이트 유무와 무관하게 그 성질이 유지되는 쪽이 이것이다.
+
+    `charge`(차감 게이트)보다 앞에 둔다(clover-goal-prompt.md CL-1, `send_preview_message`).
+    도메인 예외는 없다 — DB 장애만 예외가 되고, 그때는 차감 전에 실패한다."""
+    async with session_factory() as session:
+        persona = await session.scalar(
+            select(UserPersona)
+            .join(User, User.default_persona_id == UserPersona.id)
+            .where(User.id == user_id)
+        )
+        return _format_persona(persona)
+
+
 async def _validate_preview_shortcut(
     payload: ChatMessageCreateRequest,
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
@@ -1965,6 +2077,7 @@ def _build_preview_prompt(
     shortcut: ShortcutDraftItem | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    user_persona: str,
 ) -> str:
     """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
     읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면(US-088과 동일한
@@ -1977,6 +2090,7 @@ def _build_preview_prompt(
             example_dialogues=[dialogue.model_dump(by_alias=True) for dialogue in payload.example_dialogues],
             history=history,
             user_message=user_content,
+            user_persona=user_persona,
         )
 
     setup = payload.starting_setups[0] if payload.starting_setups else None
@@ -1996,6 +2110,7 @@ def _build_preview_prompt(
         prologue=setup.prologue if setup is not None else "",
         history=history,
         user_message=user_content,
+        user_persona=user_persona,
         keyword_note_texts=[note.info_text for note in matched_notes],
         shortcut_prompt=shortcut.prompt if shortcut is not None else None,
     )
@@ -2009,6 +2124,7 @@ async def _stream_preview_turn(
     shortcut: ShortcutDraftItem | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
+    user_persona: str,
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
     # `_stream_new_turn`은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
@@ -2027,9 +2143,18 @@ async def _stream_preview_turn(
     # 튜플 반환으로 우회할 필요가 없다 — template을 여기서 바로 뽑는다.
     template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
     try:
-        prompt = _build_preview_prompt(state.payload, history, user_content, shortcut, prompt_set, prompt_sections)
+        prompt = _build_preview_prompt(
+            state.payload, history, user_content, shortcut, prompt_set, prompt_sections, user_persona
+        )
         system_instruction = system_instruction_for(
             prompt_sections, is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template
+        )
+        # 활성 세트는 미리보기가 쓰는 것(`_preview_prompt_set_dependency`), 값은 작가의 기본 프로필.
+        persona_rendered = user_persona_rendered(
+            prompt_sections,
+            is_story_chat=isinstance(state.payload, StoryDraftPayload),
+            template=template,
+            user_persona=user_persona,
         )
     except PromptRenderError as exc:
         # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
@@ -2056,7 +2181,7 @@ async def _stream_preview_turn(
             yield token_event
     except LLMPolicyViolationError:
         # clover-goal-prompt.md CL-22: 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
@@ -2156,8 +2281,9 @@ async def send_preview_message(
     # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션으로는 못 한다.
-    # 미리보기는 애초에 요청 스코프 세션을 받지 않는다(`_preview_prompt_set_dependency`가 풀
-    # 상한 때문에 피한다) — 나머지 3경로도 `db`는 있지만 같은 이유로 팩토리를 따로 받는다.
+    # 미리보기 라우트는 `db`를 받지 않는다(`_preview_prompt_set_dependency`가 풀 상한 때문에
+    # 피한다. 다만 `require_legal_consent`가 연 요청 스코프 세션은 있다 — persona-goal-prompt.md
+    # §9-2 행 11) — 나머지 3경로도 `db`는 있지만 같은 이유로 팩토리를 따로 받는다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     # `_stream_new_turn`은 `room.user_id`를 쓰는데 `PreviewSessionState`에는 user_id가 없어
     # (`_owned_preview_session_dependency` docstring) 이 경로만 명시적으로 받는다. 같은
@@ -2167,6 +2293,8 @@ async def send_preview_message(
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
+    # persona-goal-prompt.md §3-5 (UP-10) — 작가의 기본 대화 프로필. `charge`보다 앞이다(CL-1).
+    user_persona: str = Depends(_preview_persona_dependency),
     # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조). 미리보기에서 앞에
     # 두면 만료·남의 세션(404)에서 차감만 남는다.
@@ -2193,6 +2321,7 @@ async def send_preview_message(
         shortcut,
         prompt_set,
         prompt_sections,
+        user_persona,
         charge,
         session_factory,
         user_id,

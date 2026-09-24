@@ -127,6 +127,10 @@ class ChatRoomResponse(CamelModel):
     content_snapshot: ChatRoomContentSnapshot | None = None
     latest_version_available: bool
     version_auto_upgraded: bool
+    # persona-goal-prompt.md §3-3 — 방이 고른 대화 프로필. None이 "선택 없음"(UP-6).
+    # 옆의 nullable 필드들처럼 `= None`을 둔다 — 생성 타입에서 선택 필드가 되어 이 필드를 모르는
+    # 기존 FE 픽스처(`toChatRoomState.test.ts`)가 깨지지 않는다. 응답에는 항상 실린다.
+    persona_id: uuid.UUID | None = None
     created_at: datetime
     updated_at: datetime
 

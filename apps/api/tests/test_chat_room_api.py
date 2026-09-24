@@ -28,6 +28,8 @@ from api.db.models import (
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
+    User,
+    UserPersona,
 )
 from factories import _get_genre, _login_as, _make_asset, _make_user
 
@@ -884,6 +886,142 @@ async def test_change_starting_setup_creates_new_room_and_keeps_old_one(
         await db_session.execute(sa.select(ChatMessage).where(ChatMessage.chat_room_id == old_room_id))
     ).scalars().all()
     assert len(old_messages) == 2
+
+
+# ---- 대화 프로필 — 새 방의 `persona_id` (persona-goal-prompt.md UP-7·UP-24, §3-3 `_create_room`) ----
+
+
+async def _persona_room_fixture(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> tuple[User, Content, StartingSetup, UserPersona, UserPersona]:
+    """스토리 1개(시작설정 2개) + 프로필 2개(`default`가 유저의 기본, `other`는 기본 아님)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await _add_starting_setup(db_session, story, order=1)
+    second_setup = await _add_starting_setup(db_session, story, opening_message="다른 시작", order=2)
+    default = UserPersona(user_id=user.id, name="기본")
+    other = UserPersona(user_id=user.id, name="다른")
+    db_session.add_all([default, other])
+    await db_session.flush()
+    user.default_persona_id = default.id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return user, story, second_setup, default, other
+
+
+async def _room_persona_id(db_session: AsyncSession, room_id: str) -> uuid.UUID | None:
+    return await db_session.scalar(sa.select(ChatRoom.persona_id).where(ChatRoom.id == uuid.UUID(room_id)))
+
+
+async def _story_room_with_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, story: Content, persona_id: uuid.UUID | None
+) -> str:
+    """방을 API로 만든 뒤 `persona_id`를 원하는 값으로 직접 맞춘다(방 선택 API는 `test_persona_api.py`)."""
+    assert story.current_published_version_id is not None
+    first_setup_id = await db_session.scalar(
+        sa.select(StartingSetup.id).where(
+            StartingSetup.content_version_id == story.current_published_version_id, StartingSetup.order == 1
+        )
+    )
+    assert first_setup_id is not None
+    room_id: str = (
+        await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=first_setup_id)
+    ).json()["id"]
+    await db_session.execute(
+        sa.update(ChatRoom).where(ChatRoom.id == uuid.UUID(room_id)).values(persona_id=persona_id)
+    )
+    await db_session.commit()
+    return room_id
+
+
+async def test_create_chat_room_starts_with_the_default_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """UP-7: 새 방은 기본 프로필로 시작한다."""
+    _, story, _, default, _ = await _persona_room_fixture(db_client, db_session)
+    setup_id = await db_session.scalar(
+        sa.select(StartingSetup.id).where(
+            StartingSetup.content_version_id == story.current_published_version_id, StartingSetup.order == 1
+        )
+    )
+    assert setup_id is not None
+
+    resp = await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=setup_id)
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] == str(default.id)
+    assert await _room_persona_id(db_session, resp.json()["id"]) == default.id
+
+
+async def test_create_chat_room_without_default_persona_has_no_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    db_session.add(UserPersona(user_id=user.id, name="기본 아님"))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await _create_room_via_api(db_client, content.id)
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] is None
+
+
+async def test_change_starting_setup_inherits_the_original_rooms_non_default_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """UP-24: 기본이 아니라 원래 방의 선택을 잇는다 — 기본과 **다른** 프로필이라야 "기본을
+    넣었다"와 구별된다."""
+    _, story, second_setup, _, other = await _persona_room_fixture(db_client, db_session)
+    room_id = await _story_room_with_persona(db_client, db_session, story, other.id)
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] == str(other.id)
+    assert await _room_persona_id(db_session, resp.json()["id"]) == other.id
+
+
+async def test_change_starting_setup_inherits_no_persona_even_when_a_default_exists(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """UP-24: 원래 방이 "선택 없음"이면 기본이 있어도 새 방도 "선택 없음"이다."""
+    _, story, second_setup, _, _ = await _persona_room_fixture(db_client, db_session)
+    room_id = await _story_room_with_persona(db_client, db_session, story, None)
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] is None
+    assert await _room_persona_id(db_session, resp.json()["id"]) is None
+
+
+async def test_change_starting_setup_after_the_original_persona_was_deleted_has_no_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """UP-14 × UP-24 (§4 S5, R-20): 원래 방의 프로필을 지우면 그 방은 NULL이 되고, 거기서
+    시작설정을 바꾼 새 방도 NULL이다(지워진 id를 싣다 FK 위반 500이 나지 않는다)."""
+    _, story, second_setup, _, other = await _persona_room_fixture(db_client, db_session)
+    room_id = await _story_room_with_persona(db_client, db_session, story, other.id)
+    assert (await db_client.delete(f"/me/personas/{other.id}")).status_code == 204
+
+    resp = await db_client.post(
+        f"/chat-rooms/{room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+
+    assert resp.status_code == 201
+    assert resp.json()["personaId"] is None
 
 
 async def test_change_starting_setup_rejects_character_chat_room(

@@ -72,6 +72,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "user_goal"): frozenset({"user_goal"}),
     ("generation", "development_examples"): frozenset({"example_lines"}),
     ("generation", "prologue"): frozenset({"prologue"}),
+    # persona-goal-prompt.md §3-4-1 (UP-9) — 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
+    ("generation", "user_persona"): frozenset({"user_persona"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
@@ -225,6 +227,64 @@ def system_instruction_for(
     return render_prompt_channel(sections, channel="system", scope=scope, variant=variant, values={})
 
 
+# persona-goal-prompt.md §3-4-1 — 프로필 필드 라벨은 코드 상수다(히스토리 줄의 `라벨: 내용`을
+# 코드가 조립하는 것과 같은 자리). 지시문은 전부 DB의 `generation/user_persona` body에 있다.
+_PERSONA_NAME_LABEL = "이름"
+_PERSONA_GENDER_LABEL = "성별"
+_PERSONA_DESCRIPTION_LABEL = "설명"
+# 키가 `str | None`인 이유: `UserPersona.gender`(`Mapped[str | None]`)를 그대로 `.get`에 넣는다.
+# 허용값은 요청 스키마가 강제하고(persona-goal-prompt.md UP-4), 맵에 없는 값은 None과 같이
+# 줄을 생략한다 — 이 함수는 SSE 제너레이터 본문(`_build_prompt`)에서 불려서 예외를 내면
+# 안 된다(apps/api/CLAUDE.md §SSE).
+_PERSONA_GENDER_TEXT: dict[str | None, str] = {"male": "남성", "female": "여성"}
+
+
+def format_user_persona(*, name: str, gender: str | None, description: str) -> str:
+    """persona-goal-prompt.md §3-4-1 — 대화 프로필을 `{user_persona}` 값으로 조립한다.
+
+    `이름: …` / `성별: 남성|여성` / `설명: …`을 줄바꿈으로 잇는다. 성별이 None("선택 안 함")이면
+    성별 줄을(UP-4), 설명이 비면 설명 줄을(UP-22) 생략한다. 이름의 금지 문자(`:`·개행, UP-5)는
+    요청 스키마가 막는다 — 여기서는 거르거나 고치지 않는다(이번 런에서 이름은 라벨·stop
+    sequence에 들어가지 않는다, UP-9). 키워드 전용인 이유: `name`과 `description`이 둘 다
+    `str`이라 위치 인자로 바뀌어 들어와도 타입 체커가 못 잡는다."""
+    lines = [f"{_PERSONA_NAME_LABEL}: {name}"]
+    gender_text = _PERSONA_GENDER_TEXT.get(gender)
+    if gender_text is not None:
+        lines.append(f"{_PERSONA_GENDER_LABEL}: {gender_text}")
+    if description:
+        lines.append(f"{_PERSONA_DESCRIPTION_LABEL}: {description}")
+    return "\n".join(lines)
+
+
+def _story_generation_variant(template: StoryPromptTemplate) -> str:
+    """스토리 generation 채널의 variant — `build_story_generation_prompt`와
+    `user_persona_rendered`가 같은 규칙을 쓰도록 한 자리에 둔다."""
+    return "custom" if template == StoryPromptTemplate.CUSTOM else ""
+
+
+def user_persona_rendered(
+    sections: Sequence[PromptSection],
+    *,
+    is_story_chat: bool,
+    template: StoryPromptTemplate | None = None,
+    user_persona: str,
+) -> bool:
+    """persona-goal-prompt.md UP-21 (a) · §3-4-1 — 그 턴 생성 프롬프트에 대화 프로필 섹션이
+    **실제로** 들어갔는가.
+
+    값이 비지 않았고, 그 턴의 scope·variant로 렌더러와 **같은 선택 함수**
+    (`select_sections_for_render`)가 `user_persona` 슬롯을 골랐을 때만 참이다. conditional
+    섹션은 값이 비지 않으면 반드시 렌더되므로 이 둘이 "포함됨"과 같다. 값만 보면 캐시 TTL 창
+    (R-17)처럼 활성 세트에 슬롯이 아직 없을 때도 참이 된다. 인자 모양은 `system_instruction_for`와
+    같다 — `template`은 스토리 챗에서만 의미가 있다."""
+    if not user_persona:
+        return False
+    scope = "story" if is_story_chat else "character"
+    variant = _story_generation_variant(template) if template is not None else ""
+    selected = select_sections_for_render(sections, channel="generation", scope=scope, variant=variant)
+    return any(section.slot == "user_persona" for section in selected)
+
+
 def build_generation_prompt(
     *,
     prompt_set: PromptSet,
@@ -233,12 +293,18 @@ def build_generation_prompt(
     example_dialogues: list[dict[str, Any]],
     history: list[ChatMessage],
     user_message: str,
+    user_persona: str,
 ) -> str:
     """techspec-backend-chat.md §3.1 buildGenerationPrompt — 캐릭터 챗 전용.
 
     캐릭터 프롬프트 뒤에 예시 대화("말투 예시")를 매 턴 포함하고, 최근 메시지
     히스토리와 이번 턴의 사용자 메시지로 마무리한다. 화자 라벨(`사용자`/`캐릭터`)은
     코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다(prompt-db-goal-prompt.md §4-4).
+
+    `user_persona`는 `format_user_persona`의 결과이거나 `""`(프로필 없음·선택 없음)다.
+    `""`이면 conditional 섹션째 드롭되어 이 인자가 없던 시절과 바이트까지 같다
+    (persona-goal-prompt.md UP-6). 기본값이 없는 이유는 호출부 누락을 mypy가 잡게 하려는
+    것이다(§3-4-1).
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.character_assistant_label}: {pair['characterLine']}"
@@ -252,6 +318,7 @@ def build_generation_prompt(
     values = {
         "character_prompt": character_prompt,
         "example_lines": example_lines,
+        "user_persona": user_persona,
         "history_lines": history_lines,
         "user_label": prompt_set.user_label,
         "user_message": user_message,
@@ -273,10 +340,13 @@ def build_story_generation_prompt(
     prologue: str,
     history: list[ChatMessage],
     user_message: str,
+    user_persona: str,
     keyword_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
 ) -> str:
     """techspec-backend-chat.md §3.1 buildGenerationPrompt — 스토리 챗 전용.
+
+    `user_persona`는 `build_generation_prompt`와 같다(persona-goal-prompt.md UP-6, 필수 인자).
 
     "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리, 매칭된 키워드북 정보
     (사용자에게는 비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), (단축어
@@ -307,6 +377,7 @@ def build_story_generation_prompt(
         "user_goal": user_goal or "",
         "example_lines": example_lines,
         "prologue": prologue,
+        "user_persona": user_persona,
         "history_lines": history_lines,
         "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
         "shortcut_prompt": shortcut_prompt or "",
@@ -314,8 +385,9 @@ def build_story_generation_prompt(
         "user_message": user_message,
         "assistant_label": prompt_set.story_assistant_label,
     }
-    variant = "custom" if prompt_template == StoryPromptTemplate.CUSTOM else ""
-    return render_prompt_channel(sections, channel="generation", scope="story", variant=variant, values=values)
+    return render_prompt_channel(
+        sections, channel="generation", scope="story", variant=_story_generation_variant(prompt_template), values=values
+    )
 
 
 def build_stat_judgment_prompt(

@@ -5296,6 +5296,60 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/persona": {
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Set Room Persona",
+        "description": "persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고\n과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를\n**둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다.",
+        "operationId": "set_room_persona_chat_rooms__room_id__persona_put",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaSelectRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RoomPersonaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/chat-rooms/{room_id}/acknowledge-version-upgrade": {
       "post": {
         "tags": [
@@ -5545,6 +5599,189 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/personas": {
+      "get": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "List Personas",
+        "operationId": "list_personas_me_personas_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaListResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Create Persona",
+        "operationId": "create_persona_me_personas_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/personas/{persona_id}": {
+      "put": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Update Persona",
+        "operationId": "update_persona_me_personas__persona_id__put",
+        "parameters": [
+          {
+            "name": "persona_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Persona Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaUpsertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PersonaResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Delete Persona",
+        "description": "persona-goal-prompt.md UP-14 — 참조하던 방은 \"선택 없음\", 기본이었으면 기본도 없음.\nFK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.",
+        "operationId": "delete_persona_me_personas__persona_id__delete",
+        "parameters": [
+          {
+            "name": "persona_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Persona Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/default-persona": {
+      "put": {
+        "tags": [
+          "persona"
+        ],
+        "summary": "Set Default Persona",
+        "description": "`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아\n`\"default\"`를 UUID로 파싱하다 422가 난다(persona-goal-prompt.md §3-3, R-16).",
+        "operationId": "set_default_persona_me_default_persona_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PersonaSelectRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
           },
           "422": {
             "description": "Validation Error",
@@ -9518,6 +9755,18 @@
             "type": "boolean",
             "title": "Versionautoupgraded"
           },
+          "personaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaid"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -11843,6 +12092,194 @@
         ],
         "title": "PasswordResetRequestRequest"
       },
+      "PersonaCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Description"
+          },
+          "setAsDefault": {
+            "type": "boolean",
+            "title": "Setasdefault"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "gender",
+          "description",
+          "setAsDefault"
+        ],
+        "title": "PersonaCreateRequest"
+      },
+      "PersonaListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PersonaResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "defaultPersonaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaultpersonaid"
+          },
+          "maxCount": {
+            "type": "integer",
+            "title": "Maxcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "defaultPersonaId",
+          "maxCount"
+        ],
+        "title": "PersonaListResponse"
+      },
+      "PersonaResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "gender",
+          "description",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PersonaResponse"
+      },
+      "PersonaSelectRequest": {
+        "properties": {
+          "personaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "personaId"
+        ],
+        "title": "PersonaSelectRequest",
+        "description": "`PUT /me/default-persona`와 `PUT /chat-rooms/{id}/persona`가 공유한다. `persona_id`는\n필수다 — null(해제)은 명시해야 하고, 필드를 빼먹은 요청은 422다."
+      },
+      "PersonaUpsertRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 20,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "gender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "male",
+                  "female"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gender"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "gender",
+          "description"
+        ],
+        "title": "PersonaUpsertRequest",
+        "description": "`PUT /me/personas/{id}`는 전체 교체라 필드에 기본값을 두지 않는다 — 빠진 필드가\n조용히 \"선택 안 함\"·빈 설명으로 덮어쓰이지 않게."
+      },
       "PlayGuideResponse": {
         "properties": {
           "playGuide": {
@@ -12018,6 +12455,27 @@
           "email"
         ],
         "title": "ResendVerificationCodeRequest"
+      },
+      "RoomPersonaResponse": {
+        "properties": {
+          "personaId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personaid"
+          }
+        },
+        "type": "object",
+        "required": [
+          "personaId"
+        ],
+        "title": "RoomPersonaResponse"
       },
       "ShortcutDraftItem": {
         "properties": {

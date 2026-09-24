@@ -19,6 +19,7 @@ from api.db.models import (
     ChatRoom,
     Content,
     SituationalImage,
+    UserPersona,
 )
 from api.llm.client import LLMClientError, LLMPolicyViolationError
 from factories import (
@@ -168,6 +169,38 @@ async def test_send_message_streams_tokens_and_saves_final_message(
     assert messages[1].content == "반가워"
     assert messages[2].role == ChatMessageRole.ASSISTANT
     assert messages[2].content == "안녕하세요"
+
+
+async def test_send_message_character_room_injects_room_persona_into_generation_prompt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """persona-goal-prompt.md UP-9 · §4 S4 ④ — `_build_prompt`의 **캐릭터** 분기도 방의 대화
+    프로필을 생성 프롬프트에 싣는다(스토리 분기는 `test_chat_story_message_send_api.py`).
+    방의 `persona_id`는 DB에 직접 넣는다 — 이 테스트의 관심은 읽기 경로다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    persona = UserPersona(user_id=user.id, name="하늘이", gender="male", description="바다를 좋아한다")
+    db_session.add(persona)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(persona_id=persona.id))
+    await db_session.commit()
+
+    fake = _FakeLLMClient(tokens=["안녕"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "이름: 하늘이\n성별: 남성\n설명: 바다를 좋아한다" in fake.received_prompt
 
 
 async def test_send_message_policy_violation_emits_policy_warning_and_skips_save(

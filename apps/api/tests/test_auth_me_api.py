@@ -32,8 +32,10 @@ from api.db.models import (
     InquiryStatus,
     ModerationStatus,
     User,
+    UserPersona,
     WithdrawnEmail,
 )
+from factories import _get_genre, _make_published_character
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -260,6 +262,42 @@ async def test_withdraw_purges_pii_and_records_withdrawn_email_hash(
         )
     )
     assert withdrawn_row is not None
+
+
+async def test_withdraw_deletes_personas_referenced_by_default_and_rooms(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """persona-goal-prompt.md UP-15 — 탈퇴하면 대화 프로필도 지운다. 기본 지정과 방 참조가
+    둘 다 걸린 상태여야 "참조를 먼저 끊는 순서"가 검증된다(끊지 않으면 FK 위반으로 500)."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    user_id = user.id
+    default = UserPersona(user_id=user_id, name="기본")
+    other = UserPersona(user_id=user_id, name="다른")
+    db_session.add_all([default, other])
+    await db_session.flush()
+    user.default_persona_id = default.id
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user_id, genre_id=genre.id)
+    db_session.add(
+        ChatRoom(
+            user_id=user_id,
+            content_id=content.id,
+            content_version_id=content.current_published_version_id,
+            persona_id=other.id,
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    remaining = await db_session.scalar(
+        select(sa.func.count()).select_from(UserPersona).where(UserPersona.user_id == user_id)
+    )
+    assert remaining == 0
+    assert await db_session.scalar(select(User.default_persona_id).where(User.id == user_id)) is None
 
 
 async def test_withdraw_deletes_profile_image_from_object_storage(

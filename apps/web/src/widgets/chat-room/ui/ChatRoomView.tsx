@@ -31,6 +31,7 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
+import { RoomPersonaModal } from "./RoomPersonaModal";
 
 // techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
@@ -267,7 +268,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 className={policyWarning ? "flex items-center gap-2 rounded-lg border border-border bg-secondary/50 px-3.5 py-2.5" : "sr-only"}
               >
                 <TriangleAlert aria-hidden className="size-4 shrink-0 text-muted-foreground" />
-                <span className="text-xs text-muted-foreground">{policyWarning}</span>
+                <span className="text-xs break-keep text-muted-foreground">{policyWarning}</span>
               </div>
 
               <div ref={bottomRef} />
@@ -350,6 +351,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           characterId={characterId}
         />
       </div>
+
+      {/* 다른 Callable과 달리 `__root`가 아니라 여기 마운트한다 — 루트가 `@/widgets/chat-room`을 import하면
+          ChatRoomView까지 메인 청크로 끌려온다(vite build A/B: chat 라우트 청크 17.07kB → 0.25kB, index
+          733 → 755kB). 이 모달을 여는 곳은 이 위젯의 `ChatMoreNav` 하나뿐이다. */}
+      <RoomPersonaModal />
     </div>
   );
 }

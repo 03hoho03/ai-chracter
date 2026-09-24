@@ -37,6 +37,7 @@ from api.inquiry.router import me_router as inquiry_me_router, router as inquiry
 from api.legal.router import router as legal_router
 from api.moderation.router import router as moderation_router
 from api.notice.router import router as notice_router
+from api.persona.router import me_router as persona_me_router
 from api.session.suspension import rebuild_suspended_user_markers
 
 
@@ -124,6 +125,7 @@ app.include_router(moderation_router)
 app.include_router(chat_router)
 app.include_router(chat_me_router)
 app.include_router(clover_me_router)
+app.include_router(persona_me_router)
 app.include_router(stories_router)
 app.include_router(characters_router)
 app.include_router(preview_router)

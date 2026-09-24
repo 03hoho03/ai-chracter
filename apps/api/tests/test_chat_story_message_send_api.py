@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import StatChangeJudgment, StatJudgmentResult
 from api.db.models import (
     CharacterVersionDetail,
+    ChatRoom,
     ChatRoomStat,
     Content,
     ContentTarget,
@@ -26,6 +27,7 @@ from api.db.models import (
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
+    UserPersona,
 )
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
@@ -339,6 +341,43 @@ async def test_send_message_story_room_builds_generation_prompt_from_story_setti
     assert "옛날 옛적, 낯선 마을에 도착했다." in fake.received_prompt
     assert "다시 만났네요!" in fake.received_prompt
     assert "모험을 시작한다" in fake.received_prompt
+
+
+async def test_send_message_story_room_injects_room_persona_into_generation_prompt_only(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """persona-goal-prompt.md UP-9 · §4 S4 ④ — 방이 고른 대화 프로필은 생성 프롬프트에만
+    들어가고 같은 턴의 스탯 판정 프롬프트에는 없다. 방의 `persona_id`는 방 생성 API가 아직
+    채우지 않아(S5) 여기서 직접 넣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_stat_def(db_session, setup)
+    persona = UserPersona(user_id=user.id, name="하늘이", gender="female", description="밤하늘을 좋아한다")
+    db_session.add(persona)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(persona_id=persona.id))
+    await db_session.commit()
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_result=StatJudgmentResult(stat_changes=[]))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "모험을 시작한다"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "이름: 하늘이\n성별: 여성\n설명: 밤하늘을 좋아한다" in fake.received_prompt
+    assert fake.received_judgment_prompt is not None
+    assert "하늘이" not in fake.received_judgment_prompt
+    assert "밤하늘을 좋아한다" not in fake.received_judgment_prompt
 
 
 async def test_send_message_story_room_selects_template_instruction(
