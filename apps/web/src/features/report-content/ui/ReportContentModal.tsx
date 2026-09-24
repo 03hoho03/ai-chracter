@@ -82,7 +82,7 @@ export const ReportContentModal = createCallable<ReportContentModalProps, void>(
                   className="w-full"
                 >
                   {REPORT_REASON_OPTIONS.map((option) => (
-                    <ToggleGroupItem key={option.value} value={option.value} className="h-11 w-full justify-start px-3">
+                    <ToggleGroupItem key={option.value} value={option.value} className="h-11 w-full justify-start px-3 hover:bg-secondary">
                       {option.label}
                     </ToggleGroupItem>
                   ))}

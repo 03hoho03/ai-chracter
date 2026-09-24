@@ -53,7 +53,13 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
     >
       <div className="flex shrink-0 items-center justify-between gap-2 px-4 py-3">
         <h2 className="font-heading text-lg font-medium text-foreground">더보기</h2>
-        <Button variant="ghost" size="icon-sm" aria-label="더보기 닫기" onClick={() => setIsOpen(false)}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="더보기 닫기"
+          className="hover:bg-secondary"
+          onClick={() => setIsOpen(false)}
+        >
           <X aria-hidden className="size-4" />
         </Button>
       </div>

@@ -2,10 +2,12 @@ import uuid
 from datetime import datetime, timezone, UTC
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    AdminActionLog,
     Asset,
     AssetKind,
     CharacterVersionDetail,
@@ -434,6 +436,61 @@ async def test_report_action_reject_leaves_content_status_untouched(
         await db_session.scalars(sa.select(Notification).where(Notification.content_id == character.id))
     ).all()
     assert notifications == []
+
+
+@pytest.mark.parametrize(
+    ("action", "initial_status", "expected_action_type"),
+    [
+        pytest.param("restrict", ModerationStatus.NORMAL, "content-restrict", id="restrict"),
+        pytest.param("delete", ModerationStatus.NORMAL, "content-delete", id="delete"),
+        pytest.param(
+            "lift-restriction", ModerationStatus.RESTRICTED, "content-lift", id="lift-restriction"
+        ),
+        pytest.param("reject", ModerationStatus.NORMAL, "report-reject", id="reject"),
+    ],
+)
+async def test_report_action_records_admin_action_log(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    action: str,
+    initial_status: ModerationStatus,
+    expected_action_type: str,
+) -> None:
+    """backlog-l-goal-prompt.md BL-4. 신고 경로 조치도 직접 조치와 같은 감사 로그를 남긴다.
+    대상은 작품만(`target_user_id` 없음) — 유저 상세는 작품 소유로 이 행을 찾는다."""
+    reporter = _make_user()
+    creator = _make_user()
+    db_session.add_all([reporter, creator])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    character.moderation_status = initial_status
+    report = await _make_report(
+        db_session,
+        reporter_user_id=reporter.id,
+        content_id=character.id,
+        reason_category=ReportReasonCategory.HATE,
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/reports/{report.id}/action", json={"action": action, "adminComment": "처리 사유"}
+    )
+    assert resp.status_code == 200
+
+    logs = (await db_session.scalars(sa.select(AdminActionLog))).all()
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.action_type == expected_action_type
+    assert log.admin_id == admin_payload["id"]
+    assert log.target_content_id == character.id
+    assert log.target_user_id is None
+    assert log.reason_category == "hate"
+    assert log.reason_text == "처리 사유"
 
 
 async def test_report_action_lift_restriction_requires_restricted_content(

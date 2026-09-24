@@ -18,6 +18,7 @@ from api.auth.google_oauth import (
     delete_pending_google_signup,
     get_google_profile,
     get_pending_google_signup,
+    safe_redirect_path,
     store_oauth_state,
     store_pending_google_signup,
 )
@@ -249,7 +250,7 @@ async def resend_verification_code(
 
 @router.get("/google")
 async def google_login(redirect: str = "/") -> RedirectResponse:
-    state = await store_oauth_state(redirect)
+    state = await store_oauth_state(safe_redirect_path(redirect))
     return RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
 
 
@@ -268,7 +269,9 @@ async def _get_oauth_redirect_target(state: str) -> str:
             detail="Invalid or expired state",
             headers={"Location": f"{settings.frontend_base_url}/login?error=google_state"},
         )
-    return redirect_target
+    # 저장 전(google_login)에도 거르지만, 이 검증이 배포되기 전에 Redis 에 들어간 state 까지
+    # 막기 위해 꺼낼 때 한 번 더 거른다(backlog-l-goal-prompt.md BL-1).
+    return safe_redirect_path(redirect_target)
 
 
 @router.get("/google/callback")

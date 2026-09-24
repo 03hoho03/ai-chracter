@@ -5,14 +5,14 @@ export const SIGNUP_METHOD_LABELS: Record<components["schemas"]["AdminUserDetail
   email: "이메일",
 };
 
-/** BE `AdminActionType`(`db/models/moderation.py`의 `Literal` 17종)이 코드젠으로 넘어온 유니언이다. */
+/** BE `AdminActionType`(`db/models/moderation.py`의 `Literal` 19종)이 코드젠으로 넘어온 유니언이다. */
 type AdminActionType = components["schemas"]["AdminUserActionLogItem"]["actionType"];
 
 /** `satisfies Record<AdminActionType, string>`이라 BE에 조치 종류가 늘면 여기서 컴파일이 깨지고, 목록에
  * 없는 키(예전의 `restrict`·`reject` 같은 데드 키)는 초과 속성으로 거부된다 — 그래서 호출부는 원문
  * 폴백 없이 인덱싱한다. 조치 이력 표(`pages/user-detail`)는 대상 유저·작품이 있는 로그만 보여 주므로
  * 대상이 없는 운영 조치 5종(문의 답변·약관·공지·프롬프트 세트)은 실제로는 그 표에 나오지 않는다 — 그래도
- * 타입이 17종 전부를 요구하므로 라벨을 둔다. `content-*` 3종의 문구는 작품 상세의 조치 버튼·확인
+ * 타입이 19종 전부를 요구하므로 라벨을 둔다. `content-*` 3종의 문구는 작품 상세의 조치 버튼·확인
  * 모달(`ContentActionPanel`·`ContentActionConfirmModal`)과 같은 말이고, 대상은 같은 행의 "대상 작품"
  * 칸이 보여 주므로 "작품"을 덧붙이지 않는다. */
 export const ACTION_TYPE_LABELS = {
@@ -27,6 +27,9 @@ export const ACTION_TYPE_LABELS = {
   "content-restrict": "이용제한 부과",
   "content-delete": "삭제",
   "content-lift": "이용제한 해제",
+  // backlog-l-goal-prompt.md BL-4·BL-11 — 문구는 신고 목록의 "반려"·이의제기 처리 버튼의 "인용"과 같은 말이다.
+  "report-reject": "신고 반려",
+  "appeal-accept": "이의제기 인용",
   "chat-view": "채팅 열람",
   "image-view": "이미지 열람",
   "inquiry-reply": "문의 답변",

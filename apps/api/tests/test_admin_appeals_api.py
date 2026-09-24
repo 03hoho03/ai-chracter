@@ -2,9 +2,11 @@ import uuid
 from datetime import datetime, timezone, UTC
 
 import httpx
+import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
+    AdminActionLog,
     Appeal,
     AppealStatus,
     AppealTargetKind,
@@ -230,6 +232,8 @@ async def test_resolve_appeal_rejected_updates_status_without_content_change(
 
     await db_session.refresh(character)
     assert character.moderation_status == ModerationStatus.RESTRICTED
+    # backlog-l-goal-prompt.md BL-11: 기각은 상태를 바꾸지 않으므로 감사 로그도 없다.
+    assert (await db_session.scalars(sa.select(AdminActionLog))).all() == []
 
 
 async def test_resolve_appeal_reprocessing_already_resolved_appeal_returns_400(
@@ -285,6 +289,8 @@ async def test_resolve_appeal_accepted_publish_rejection_has_no_content_side_eff
 
     await db_session.refresh(character)
     assert character.moderation_status == ModerationStatus.RESTRICTED
+    # backlog-l-goal-prompt.md BL-11: 발행 반려 수용은 되돌릴 상태가 없어 감사 로그도 없다.
+    assert (await db_session.scalars(sa.select(AdminActionLog))).all() == []
 
 
 async def test_resolve_appeal_accepted_moderation_action_unknown_target_returns_404(
@@ -364,3 +370,14 @@ async def test_resolve_appeal_accepted_moderation_action_reverts_content_and_mig
     await db_session.refresh(room)
     assert room.content_version_id == new_version.id
     assert room.version_auto_upgraded is True
+
+    # backlog-l-goal-prompt.md BL-11: 조치를 되돌린 수용은 원 조치 작품을 대상으로 로그를 남긴다.
+    logs = (await db_session.scalars(sa.select(AdminActionLog))).all()
+    assert len(logs) == 1
+    log = logs[0]
+    assert log.action_type == "appeal-accept"
+    assert log.admin_id == admin_payload["id"]
+    assert log.target_content_id == character.id
+    assert log.target_user_id is None
+    assert log.reason_category is None
+    assert log.reason_text == ""

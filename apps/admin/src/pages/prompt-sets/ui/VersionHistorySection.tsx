@@ -72,29 +72,32 @@ function VersionTable() {
               const isSelected = item.id === selectedId;
               return (
                 // 선택 채움은 `secondary`다 — 공용 `TableRow`의 `bg-muted`는 이 표가 앉은 `bg-card`와
-                // 같은 값이라 선택이 1.0000:1로 사라진다(Q-9: 공용 기본값은 두고 호출부만 덮는다).
-                // 채움은 card 대비 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다
-                // (`foreground` on `secondary` 14.06:1, BS-22). 자리를 늘 비워 두어 선택이 바뀌어도
-                // 열 폭이 흔들리지 않는다.
+                // 같은 값이라 선택이 1.0000:1로 사라지고, 공용 hover `muted/50`도 같은 이유로 안 보여
+                // 호출부에서 둘 다 덮는다(Q-9: 공용 기본값은 두고 호출부만 덮는다). 채움은 card 대비
+                // 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다(`foreground` on
+                // `secondary` 14.06:1, BS-22). 자리를 늘 비워 두어 선택이 바뀌어도 열 폭이 흔들리지 않는다.
+                // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 네이티브 버튼이다 — `<tr
+                // role="button">`은 표의 행·열 의미를 지우고 `aria-selected`도 무효가 된다. 버튼엔
+                // onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
+                // 버블된다(backlog-l-goal-prompt.md BL-8).
                 <TableRow
                   key={item.id}
-                  tabIndex={0}
-                  role="button"
-                  aria-selected={isSelected}
-                  className="cursor-pointer aria-selected:bg-secondary"
+                  className={cn(
+                    "cursor-pointer hover:bg-secondary/50",
+                    isSelected && "bg-secondary hover:bg-secondary",
+                  )}
                   onClick={() => setSelectedId(item.id)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedId(item.id);
-                    }
-                  }}
                 >
                   <TableCell>
-                    <span className="inline-flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-current={isSelected || undefined}
+                      className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
                       <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
                       v{item.version}
-                    </span>
+                      <span className="sr-only">, {PROMPT_LANE_LABELS[item.lane]}</span>
+                    </button>
                   </TableCell>
                   <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
                   <TableCell>{formatDateTime(item.publishedAt)}</TableCell>

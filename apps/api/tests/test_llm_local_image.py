@@ -629,3 +629,88 @@ async def test_malformed_json_probe_collapses_to_unavailable(
     monkeypatch.setattr(settings, "local_image_capabilities_ttl_seconds", 30)
 
     assert await get_capabilities() == UNAVAILABLE
+
+
+async def test_slow_failure_is_cached_for_the_ttl(
+    monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
+) -> None:
+    """backlog-l-goal-prompt.md BL-2 ①: 조회가 TTL보다 오래 걸린 뒤 실패해도 그 결과는
+    TTL 동안 캐시돼야 한다. 기록 시각을 조회 **전**에 잡으면 기록 즉시 만료돼, 집 PC가
+    느리게 죽어 있는 동안 매 요청이 DB 커넥션을 쥔 채 조회를 다시 기다린다."""
+    calls = {"n": 0}
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        await asyncio.sleep(0.1)
+        return httpx.Response(503)
+
+    _patch_httpx(monkeypatch, handler)
+    monkeypatch.setattr(settings, "local_image_base_url", "https://local.example")
+    monkeypatch.setattr(settings, "local_image_capabilities_ttl_seconds", 0.05)
+
+    assert await get_capabilities() == UNAVAILABLE
+    assert await get_capabilities() == UNAVAILABLE
+
+    assert calls["n"] == 1
+
+
+async def test_concurrent_cold_calls_share_one_probe(
+    monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
+) -> None:
+    """backlog-l-goal-prompt.md BL-2 ②: 콜드/만료 시점에 동시에 들어온 호출이 각자 조회하면
+    조회 N개가 각자 요청 세션(DB 커넥션)을 쥔 채 기다린다 — 조회는 하나만 나가야 한다."""
+    calls = {"n": 0}
+    release = asyncio.Event()
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        await release.wait()
+        return httpx.Response(200, json=_capabilities_body())
+
+    _patch_httpx(monkeypatch, handler)
+    monkeypatch.setattr(settings, "local_image_base_url", "https://local.example")
+    monkeypatch.setattr(settings, "local_image_capabilities_ttl_seconds", 30)
+
+    async def release_after_yield() -> None:
+        for _ in range(10):
+            await asyncio.sleep(0)
+        release.set()
+
+    *results, _ = await asyncio.gather(*(get_capabilities() for _ in range(5)), release_after_yield())
+
+    assert calls["n"] == 1
+    assert results == [
+        LocalCapabilities(
+            ready=True, models=(ModelCapability(model_id="v1", styles=("base",), aspect_ratios=("1:1",)),)
+        )
+    ] * 5
+
+
+async def test_probe_uses_its_own_short_timeout_not_the_generation_timeout(
+    monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
+) -> None:
+    """backlog-l-goal-prompt.md BL-3: 조회를 기다리는 동안 요청 세션이 DB 커넥션을 쥐므로
+    조회 타임아웃은 생성용(`local_image_timeout_seconds`)과 분리된 5초여야 한다. 생성 경로는
+    그대로 설정값을 쓴다."""
+    real_client = httpx.AsyncClient
+    timeouts: list[object] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/capabilities"):
+            return httpx.Response(200, json=_capabilities_body())
+        return httpx.Response(200, content=b"webp-bytes", headers={"content-type": "image/webp"})
+
+    def factory(**kwargs: object) -> httpx.AsyncClient:
+        timeouts.append(kwargs.get("timeout"))
+        kwargs.pop("transport", None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
+    monkeypatch.setattr(settings, "local_image_base_url", "https://local.example")
+    monkeypatch.setattr(settings, "local_image_capabilities_ttl_seconds", 30)
+    monkeypatch.setattr(settings, "local_image_timeout_seconds", 90)
+
+    await get_capabilities()
+    await _client().generate_image("a cat wizard", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+
+    assert timeouts == [5, 90]

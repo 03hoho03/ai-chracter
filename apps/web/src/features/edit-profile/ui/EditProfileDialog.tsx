@@ -137,7 +137,7 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
           <div className="flex items-center gap-4">
             <Avatar className="size-16">
               <AvatarImage src={displayImageUrl} alt="" />
-              <AvatarFallback className="text-lg">{profile.nickname.slice(0, 1)}</AvatarFallback>
+              <AvatarFallback className="bg-secondary text-lg text-foreground">{profile.nickname.slice(0, 1)}</AvatarFallback>
             </Avatar>
             <Label
               htmlFor="edit-profile-image"

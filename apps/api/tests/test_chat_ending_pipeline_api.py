@@ -104,6 +104,7 @@ class _FakeLLMClient(LLMClient):
         self.tokens = tokens
         self._structured_results = list(structured_results)
         self.generate_structured_calls: list[Any] = []
+        self.usages: list[LLMCallContext] = []
 
     async def generate(
         self,
@@ -113,12 +114,14 @@ class _FakeLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
+        self.usages.append(usage)
         for token in self.tokens:
             yield token
 
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
+        self.usages.append(usage)
         self.generate_structured_calls.append(response_schema)
         result = self._structured_results.pop(0)
         if isinstance(result, Exception):
@@ -166,6 +169,10 @@ async def test_send_message_reaches_ending_when_judgment_triggers_with_no_stat_r
 
     unlock = await db_session.get(StoryEndingUnlock, (user.id, setup.entity_id, ending.entity_id))
     assert unlock is not None
+
+    # 로그의 호출부 귀속 — stat↔ending 이 뒤바뀌거나 다른 방·유저로 찍히면 비용 집계가 틀린다.
+    assert [u.call_site for u in fake.usages] == ["chat_generate", "chat_stat_judgment", "chat_ending_judgment"]
+    assert {(u.user_id, u.room_id) for u in fake.usages} == {(user.id, room_id)}
 
 
 async def test_send_message_skips_ending_judgment_before_turn_gate(

@@ -161,6 +161,7 @@ class Appeal(Base):
 # 했지만 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피, progress F-9).
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
 AdminActionType = Literal[
+    "appeal-accept",
     "chat-view",
     "content-delete",
     "content-lift",
@@ -171,6 +172,7 @@ AdminActionType = Literal[
     "notice-publish",
     "notice-unpublish",
     "prompt-set-publish",
+    "report-reject",
     "user-clover-grant",
     "user-clover-revoke",
     "user-rate-limit-exempt-off",
@@ -185,7 +187,9 @@ class AdminActionLog(Base):
     """techspec.md §1-3, goal-prompt.md §3-2. 콘텐츠 조치는 `moderation_actions`와 이 테이블
     양쪽에 기록된다 — 중복이 아니라 계층이다. `moderation_actions`는 콘텐츠 조치의 실체
     레코드이자 `Notification.action_id`의 FK 대상이라 없앨 수 없고, 이 테이블은 콘텐츠
-    조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다.
+    조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다. 직접 조치와 신고 조치 둘 다
+    그렇다(backlog-l-goal-prompt.md BL-4). 예외는 이의제기 수용(`appeal-accept`)으로, 조치를
+    되돌릴 뿐 새 조치가 아니라 이 테이블에만 남는다(BL-11).
 
     `action_type` 컬럼은 native enum이 아니라 Text다 — 값이 늘 때 마이그레이션 없이 넓히기
     위해서다. 값 범위(`AdminActionType`, 위 Literal)는 mypy가 `record_admin_action` 파라미터와

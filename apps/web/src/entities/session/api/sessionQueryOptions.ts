@@ -14,4 +14,8 @@ export const sessionQueryOptions = queryOptions({
   queryFn: async () => (await apiClient.get<MeResponse>("/me")).data,
   staleTime: Infinity,
   retry: false,
+  // backlog-l-goal-prompt.md BL-6 — staleTime: Infinity라 기본값(true)으로는 포커스 복귀에도 다시 묻지
+  // 않는다. 다른 탭에서 로그아웃했거나 정지된 탭이 돌아왔을 때 로그인된 척하지 않도록 이 쿼리만 매번 묻는다
+  // (401이면 `resetSessionIfLost`가 옛 data를 비운다).
+  refetchOnWindowFocus: "always",
 });

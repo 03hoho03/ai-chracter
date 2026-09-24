@@ -51,10 +51,10 @@ export function CountCards() {
         to="/reports"
         className={cn(
           CARD_CLASS,
-          "outline-none motion-safe:transition-colors hover:bg-accent/50 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+          "group outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
         )}
       >
-        <span className="text-sm text-muted-foreground">처리 대기 신고</span>
+        <span className="text-sm text-muted-foreground group-hover:text-foreground">처리 대기 신고</span>
         <span className={NUMBER_CLASS}>{formatCount(countsQuery.data.pendingReports)}</span>
       </Link>
     </div>

@@ -69,6 +69,31 @@ async def get_google_profile(code: str) -> GoogleProfile:
     return await exchange_code_for_profile(code)
 
 
+def safe_redirect_path(value: str) -> str:
+    """로그인 후 돌아갈 경로를 같은 오리진 경로로 제한한다(backlog-l-goal-prompt.md BL-1).
+
+    콜백은 `frontend_base_url` 뒤에 이 값을 그대로 이어 붙이므로 "@evil.com"(userinfo)·
+    ".evil.com"(서브도메인)처럼 호스트를 바꾸는 값이 들어오면 로그인 직후 외부로 튄다.
+    어긋나면 거부하지 않고 "/"로 대체한다 — 로그인 자체는 정상 흐름이다.
+
+    이 이어 붙이기에서 실제로 호스트를 바꾸는 것은 "/"로 시작하지 않는 값뿐이다
+    ("https://ddona.site" + "//evil.com"은 호스트가 그대로다). 아래 나머지 조건은 같은 값이
+    상대 URL로 해석되는 순간(프런트가 이 경로로 이동하거나 이어 붙이기 방식이 바뀌면)
+    외부로 튀는 형태를 미리 막는 것이다 — 상대 URL로는 "//evil.com"·"/\\evil.com"
+    (브라우저는 "\\"를 "/"로 읽는다)·"/<탭>/evil.com"(파싱 전에 탭·개행을 지운다)이
+    모두 evil.com 으로 간다.
+
+    - "\\"는 두 번째 글자만이 아니라 위치와 무관하게 거부한다: 앱 라우트(apps/web/src/routes)
+      어디에도 역슬래시가 없어 잃는 정상 경로가 없고, 규칙이 더 단순하다.
+    - 제어문자(0x00-0x1f, 0x7f)는 위 탭·개행 제거 외에 Location 헤더에 실리는 값이라 거부한다.
+    """
+    if not value.startswith("/") or value.startswith("//") or "\\" in value:
+        return "/"
+    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
+        return "/"
+    return value
+
+
 def _state_key(state: str) -> str:
     return f"google_oauth_state:{state}"
 

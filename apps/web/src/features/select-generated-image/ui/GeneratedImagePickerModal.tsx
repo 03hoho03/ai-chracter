@@ -30,7 +30,7 @@ export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedIma
             <DialogDescription>이전에 생성해 둔 이미지 중 하나를 골라 등록해요.</DialogDescription>
           </DialogHeader>
 
-          <Button variant="ghost" size="sm" className="w-fit" asChild>
+          <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
             <a href="/studio/images" target="_blank" rel="noopener noreferrer">
               새로 생성하기
               <ExternalLink aria-hidden />

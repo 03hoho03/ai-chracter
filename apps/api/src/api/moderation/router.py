@@ -7,6 +7,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from api.admin.action_log import ADMIN_ACTION_TYPE_BY_MODERATION_ACTION, record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
@@ -406,6 +407,17 @@ async def act_on_report(
     report.resolved_by_admin_id = admin_id
     report.resolved_at = datetime.now(UTC)
 
+    # backlog-l-goal-prompt.md BL-4: 직접 조치(`admin/contents.py`)와 같은 감사 로그. 대상은
+    # 작품만 — 유저 상세는 `target_content_id`의 작품 소유로 크리에이터 이력에 이 행을 건다.
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type=ADMIN_ACTION_TYPE_BY_MODERATION_ACTION[body.action],
+        target_content_id=content.id,
+        reason_category=report.reason_category.value,
+        reason_text=body.admin_comment or "",
+    )
+
     await db.commit()
 
     return AdminReportDetailResponse(
@@ -471,7 +483,7 @@ async def list_admin_appeals(
 async def resolve_appeal(
     appeal_id: uuid.UUID,
     body: AppealResolveRequest,
-    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminAppealListItem:
     """techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal
@@ -498,6 +510,15 @@ async def resolve_appeal(
 
         content.moderation_status = ModerationStatus.NORMAL
         await upgrade_content_chat_rooms_to_latest_version(db, content)
+
+        # backlog-l-goal-prompt.md BL-11: 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만
+        # 남긴다(발행 반려 수용·기각은 바뀌는 상태가 없다). `moderation_actions` 행은 추가하지 않는다.
+        await record_admin_action(
+            db,
+            admin_id=admin_id,
+            action_type="appeal-accept",
+            target_content_id=action.content_id,
+        )
 
     appeal.status = AppealStatus.RESOLVED
     appeal.verdict = body.verdict

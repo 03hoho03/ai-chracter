@@ -2,16 +2,20 @@ import uuid
 from datetime import UTC, date, datetime
 
 import httpx
+import pytest
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import (
     GoogleProfile,
+    _state_key,
     get_google_profile,
     get_pending_google_signup,
+    safe_redirect_path,
     store_pending_google_signup,
 )
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.core.security import hash_password
 from api.db.models.auth import User
 from api.main import app
@@ -411,3 +415,82 @@ async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdr
         },
     )
     assert resp.status_code == 409
+
+
+# backlog-l-goal-prompt.md BL-1: redirect 는 콜백에서 frontend_base_url 뒤에 그대로 이어 붙으므로
+# "https://ddona.site" + "@evil.com" 처럼 호스트를 바꾸는 값이 들어오면 로그인 직후 외부로 튄다.
+_UNSAFE_REDIRECTS = [
+    "@evil.com",
+    ".evil.com",
+    "//evil.com",
+    "/\\evil.com",
+    "/foo\\bar",
+    "https://evil.com",
+    "javascript:alert(1)",
+    "",
+    "/\t/evil.com",
+    "/\n/evil.com",
+    "/\x00x",
+    "/\x7fx",
+]
+_SAFE_REDIRECTS = ["/", "/content/1?x=1", "/my#tab"]
+
+
+@pytest.mark.parametrize("value", _UNSAFE_REDIRECTS)
+def test_safe_redirect_path_falls_back_to_root(value: str) -> None:
+    assert safe_redirect_path(value) == "/"
+
+
+@pytest.mark.parametrize("value", _SAFE_REDIRECTS)
+def test_safe_redirect_path_keeps_same_origin_path(value: str) -> None:
+    assert safe_redirect_path(value) == value
+
+
+async def test_google_login_stores_sanitized_redirect(db_client: httpx.AsyncClient) -> None:
+    """저장 전에 걸러지는지 — 콜백 쪽 재검증만 있어도 아래 엔드포인트 테스트는 통과하므로 따로 본다."""
+    state = await _start_google_login(db_client, redirect="@evil.com")
+    assert await redis_client.get(_state_key(state)) == "/"
+
+
+async def test_google_callback_unsafe_redirect_lands_on_frontend_root(
+    db_client: httpx.AsyncClient,
+) -> None:
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+    db_client.cookies.clear()
+
+    state = await _start_google_login(db_client, redirect="@evil.com")
+    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/"
+
+
+async def test_google_callback_revalidates_redirect_stored_before_fix(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """배포 전에 Redis 에 들어간 state(검증 없이 저장된 악성 값)도 콜백에서 막는다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+    db_client.cookies.clear()
+
+    state = f"pre-fix-{uuid.uuid4()}"
+    await redis_client.set(_state_key(state), "@evil.com", ex=60)
+    _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/"
