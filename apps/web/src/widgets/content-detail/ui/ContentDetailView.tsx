@@ -362,13 +362,14 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
           선택)을 끊지 않게 맨 아래에 둔다.
           hover 표면이 `bg-muted`가 아닌 이유: `--muted`와 `--popover`가 다크 0.210 / 라이트 0.970으로
           **값이 같아** 모달 안에서 hover가 통째로 사라진다(같은 함정을 Slider 트랙에서 겪었다).
-          `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. */}
+          `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. hover에서 글자도 `foreground`로 올린다 —
+          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md §2 "표면 위 채움 규칙"). */}
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">업데이트</h2>
         <button
           type="button"
           onClick={() => setIsVersionHistoryOpen(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <History aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 break-keep">

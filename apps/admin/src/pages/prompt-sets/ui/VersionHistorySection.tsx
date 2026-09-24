@@ -54,7 +54,13 @@ function VersionTable() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>버전</TableHead>
+              <TableHead>
+                {/* 값 칸의 체크 글리프 슬롯(size-4 + gap-1.5)만큼 비워 `버전`과 `vN`의 왼쪽 끝을 맞춘다. */}
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="size-4" />
+                  버전
+                </span>
+              </TableHead>
               <TableHead>레인</TableHead>
               <TableHead>게시일</TableHead>
               <TableHead>메모</TableHead>
