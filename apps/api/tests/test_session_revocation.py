@@ -127,3 +127,20 @@ async def test_suspend_keeps_existing_sessions(
 
     assert resp.status_code == 200
     assert await _session_alive(session_id)
+
+
+async def test_withdraw_deletes_current_session_missing_from_index(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """역인덱스 배포 전에 만든 세션은 인덱스에 없다 — 탈퇴는 쿠키의 현재 세션도 직접 지운다
+    (tasks/review-S2.md ⚪-2)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    current = db_client.cookies[settings.session_cookie_name]
+    await redis_client.zrem(f"user_sessions:{user.id}", current)
+
+    assert (await db_client.delete("/me")).status_code == 204
+
+    assert not await _session_alive(current)
