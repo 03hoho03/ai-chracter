@@ -359,13 +359,15 @@ async def onboarding_google(
         )
         db.add(user)
     else:
+        # backlog-sweep BS-8: 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
+        # 닉네임·생년월일이 덮어써진 채 커밋되고, 토큰이 지워져 재시도가 400으로 바뀐다.
+        # 신규 유저 분기는 방금 만든 행이라 suspended_at이 정의상 None이다.
+        if user.suspended_at is not None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
         user.birth_date = payload.birth_date
     await db.commit()
     await delete_pending_google_signup(payload.token)
-
-    if user.suspended_at is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
     session_id = await create_session(user.id)
     set_session_cookie(response, session_id)
