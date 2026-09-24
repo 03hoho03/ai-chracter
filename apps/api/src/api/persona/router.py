@@ -9,8 +9,11 @@
 거친다. 예외는 `change_starting_setup`의 승계뿐이다 — 같은 유저의 방에서 복사한다(§3-3).
 
 **동시성(§3-1)**: 프로필을 참조하거나 바꾸는 쓰기는 먼저 유저 행을 잠근다(락 순서 users →
-user_personas → chat_rooms). 락 뒤의 값은 컬럼 select로 새로 읽는다 — `require_legal_consent`가
-같은 세션에서 이미 `db.get(User)`를 해서 `db.get`은 identity map의 옛 값을 돌려준다(§9-2 정정 5).
+user_personas → chat_rooms). 락 뒤의 값은 `with_for_update()`를 건 컬럼 select로 읽는다 —
+`db.get(User)`는 락을 걸지 않는다. 엔티티 select 대신 컬럼 select인 이유는, 같은 세션에 살아 있는
+`User` 인스턴스가 있으면 엔티티 select는 `populate_existing` 없이 옛 속성을 유지하기 때문이다
+(§9-2 정정 5. identity map은 약참조라 보통은 앞 의존성이 읽은 `User`가 이미 수거돼 있다 —
+`session/dependencies.py`의 `_is_active_user` 참고).
 """
 
 import uuid

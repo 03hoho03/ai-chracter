@@ -651,7 +651,7 @@ async def create_chat_room(
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
     # persona-goal-prompt.md UP-7 — 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
-    # 읽는다(`db.get(User)`는 `require_legal_consent`가 채운 identity map의 옛 값이고 락도 없다).
+    # 읽는다(`db.get(User)`는 락을 걸지 않는다 — `persona/router.py` 모듈 docstring).
     default_persona_id = await lock_user_default_persona(db, user_id)
     room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
     await db.commit()
