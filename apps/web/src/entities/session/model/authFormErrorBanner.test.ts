@@ -56,12 +56,6 @@ describe("getAuthFormErrorBanner — change-password", () => {
     });
   });
 
-  it("정지가 아닌 403(재동의 게이트)을 정지로 오분류하지 않는다", () => {
-    const error = apiError(403, { code: "LEGAL_RECONSENT_REQUIRED" });
-
-    expect(getAuthFormErrorBanner(error, "change-password")).toBeNull();
-  });
-
   it("400(현재 비밀번호 오답)은 기존 문구 그대로다", () => {
     expect(getAuthFormErrorBanner(apiError(400, "Current password is incorrect"), "change-password")).toEqual({
       message: "현재 비밀번호가 올바르지 않아요.",
@@ -72,6 +66,19 @@ describe("getAuthFormErrorBanner — change-password", () => {
   it("500은 null", () => {
     expect(getAuthFormErrorBanner(apiError(500), "change-password")).toBeNull();
   });
+});
+
+describe("getAuthFormErrorBanner — 두 폼 공통", () => {
+  // 온보딩 라우트는 지금 재동의 게이트를 거치지 않지만, 403을 status만으로 정지로 읽는 회귀는
+  // 두 폼 어디서든 같은 오분류다(review-S7 ⚪-1).
+  it.each(["onboarding-google", "change-password"] as const)(
+    "정지가 아닌 403(재동의 게이트)을 정지로 오분류하지 않는다 (%s)",
+    (surface) => {
+      const error = apiError(403, { code: "LEGAL_RECONSENT_REQUIRED" });
+
+      expect(getAuthFormErrorBanner(error, surface)).toBeNull();
+    },
+  );
 });
 
 describe("getAuthFormErrorBanner — J-1 회귀", () => {
