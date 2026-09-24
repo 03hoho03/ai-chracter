@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { cn } from "@ai-character-chat/ui/lib/utils";
+import { Check } from "lucide-react";
 
 import {
   APPEAL_STATUS_LABELS,
@@ -85,32 +87,48 @@ function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>대상 종류</TableHead>
+              <TableHead>
+                {/* 값 칸의 체크 글리프 슬롯(size-4 + gap-1.5)만큼 비워 제목과 값의 왼쪽 끝을 맞춘다. */}
+                <span className="inline-flex items-center gap-1.5">
+                  <span aria-hidden className="size-4" />
+                  대상 종류
+                </span>
+              </TableHead>
               <TableHead>접수일시</TableHead>
               <TableHead>처리상태</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
-            {appealListQuery.data.items.map((item) => (
-              <TableRow
-                key={item.id}
-                tabIndex={0}
-                role="button"
-                aria-selected={item.id === selectedAppealId}
-                className="cursor-pointer aria-selected:bg-muted"
-                onClick={() => setSelectedAppealId(item.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedAppealId(item.id);
-                  }
-                }}
-              >
-                <TableCell>{APPEAL_TARGET_KIND_LABELS[item.targetKind]}</TableCell>
-                <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-                <TableCell>{APPEAL_STATUS_LABELS[item.status]}</TableCell>
-              </TableRow>
-            ))}
+            {appealListQuery.data.items.map((item) => {
+              const isSelected = item.id === selectedAppealId;
+              return (
+                // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 네이티브 버튼 하나다 —
+                // `<tr role="button">`은 표의 행·열 의미를 지우고 `aria-selected`도 무효가 된다.
+                // 버튼엔 onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
+                // 버블된다(`tr`에 keydown 처리를 두면 preventDefault가 그 click을 죽인다).
+                // 선택 채움 `secondary`는 background 대비 1.23:1이라 3:1 단서로 체크 글리프를 둔다
+                // (`foreground` on `secondary` 14.09:1). 선택 행은 hover에서도 채움을 유지한다
+                // (backlog-l-goal-prompt.md BL-8).
+                <TableRow
+                  key={item.id}
+                  className={cn("cursor-pointer", isSelected && "bg-secondary hover:bg-secondary")}
+                  onClick={() => setSelectedAppealId(item.id)}
+                >
+                  <TableCell>
+                    <button
+                      type="button"
+                      aria-current={isSelected || undefined}
+                      className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                    >
+                      <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
+                      {APPEAL_TARGET_KIND_LABELS[item.targetKind]}
+                    </button>
+                  </TableCell>
+                  <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                  <TableCell>{APPEAL_STATUS_LABELS[item.status]}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

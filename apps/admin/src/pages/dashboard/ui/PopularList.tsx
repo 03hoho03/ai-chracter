@@ -1,5 +1,5 @@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
-import { useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import { formatCount } from "@/shared/lib/format/formatCount";
@@ -51,20 +51,28 @@ function PopularTable() {
         </TableHeader>
         <TableBody>
           {popularQuery.data.map((item) => (
+            // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 `Link`다 — `<tr role="button">`은
+            // 표의 행·열 의미를 지우고 새 탭 열기도 막는다. 클릭이 링크 안에서 났으면 `tr`은 손을 뗀다:
+            // 일반 클릭은 `Link`가 이미 이동했고, Cmd/Ctrl+클릭은 새 탭만 열어야 한다.
+            // hover는 `bg-card` 위라 공용 `muted/50`이 안 보여 `secondary/50`으로 덮는다
+            // (backlog-l-goal-prompt.md BL-12).
             <TableRow
               key={item.id}
-              tabIndex={0}
-              role="button"
-              className="cursor-pointer"
-              onClick={() => void navigate({ to: "/contents/$contentId", params: { contentId: item.id } })}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") {
-                  event.preventDefault();
-                  void navigate({ to: "/contents/$contentId", params: { contentId: item.id } });
-                }
+              className="cursor-pointer hover:bg-secondary/50"
+              onClick={(event) => {
+                if (event.target instanceof Element && event.target.closest("a")) return;
+                void navigate({ to: "/contents/$contentId", params: { contentId: item.id } });
               }}
             >
-              <TableCell>{item.name || "(이름 없음)"}</TableCell>
+              <TableCell>
+                <Link
+                  to="/contents/$contentId"
+                  params={{ contentId: item.id }}
+                  className="block w-full rounded-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                >
+                  {item.name || "(이름 없음)"}
+                </Link>
+              </TableCell>
               <TableCell className="text-muted-foreground">{CONTENT_TYPE_LABELS[item.type]}</TableCell>
               <TableCell className="text-right tabular-nums">{formatCount(item.chatCount)}</TableCell>
               <TableCell className="text-right tabular-nums">{formatCount(item.viewCount)}</TableCell>
