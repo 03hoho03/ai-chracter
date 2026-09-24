@@ -4,13 +4,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import {
-  formatAuthRateLimitMessage,
-  getAuthFormErrorBanner,
-  getAuthRateLimit,
-  LOGIN_LINK_ERROR_TYPE,
-  sessionKeys,
-} from "@/entities/session";
+import { formatAuthRateLimitMessage, getAuthRateLimit, LOGIN_LINK_ERROR_TYPE, sessionKeys } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import {
@@ -25,6 +19,7 @@ import {
   toSignupRequest,
   toVerifyEmailRequest,
 } from "../model/formToServer";
+import { getOnboardingErrorBanner } from "../model/onboardingErrorBanner";
 import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../model/signUpSchema";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
@@ -123,10 +118,10 @@ export function SignUpWizard(props: SignUpWizardProps) {
       await completeSignUp();
     } catch (error) {
       // 400·409·403은 이 폼을 다시 내서는 풀리지 않아 배너 + 로그인 링크로, 판별 못 한 실패만 toast로 간다.
-      const banner = getAuthFormErrorBanner(error, "onboarding-google");
+      const banner = getOnboardingErrorBanner(error);
       if (banner) {
         form.setError("root", {
-          type: banner.showsLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
+          type: banner.shouldShowLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
           message: banner.message,
         });
       } else {

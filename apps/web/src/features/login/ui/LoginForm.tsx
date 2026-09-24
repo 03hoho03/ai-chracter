@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
+import { isSuspendedError, sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import { useLoginMutation } from "../api/useLoginMutation";
@@ -70,7 +70,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
       const apiError = isApiError(error) ? error : null;
       if (apiError?.status === 401) {
         setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
-      } else if (apiError?.status === 403 && apiError.detail === "Account suspended") {
+      } else if (isSuspendedError(error)) {
         setError("root", { message: SUSPENDED_ERROR_MESSAGE });
       } else if (apiError?.status === 403 && apiError.detail === "Minimum age not met") {
         setError("root", { message: MINIMUM_AGE_ERROR_MESSAGE });

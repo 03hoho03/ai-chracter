@@ -1,10 +1,9 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { redirect } from "@tanstack/react-router";
 
-import { isApiError } from "@/shared/api/client";
-
 import type { MeResponse } from "../api/sessionQueryOptions";
 import { sessionQueryOptions } from "../api/sessionQueryOptions";
+import { isSuspendedError } from "../model/suspendedMessage";
 
 /** techspec-auth-onboarding.md §1 — 인증이 필요한 라우트의 `beforeLoad`에서 호출한다.
  * 세션이 없으면(GET /me가 401) 로그인 화면으로 리다이렉트하고 원래 목적지를 보존한다.
@@ -19,7 +18,7 @@ export async function requireSession(
     return { session: await queryClient.ensureQueryData(sessionQueryOptions) };
   } catch (error) {
     // GET /me가 403 "Account suspended"면 정지 사유를 로그인 화면에 전달한다(tasks/techspec.md §1-1).
-    const isSuspended = isApiError(error) && error.status === 403 && error.detail === "Account suspended";
+    const isSuspended = isSuspendedError(error);
     throw redirect({
       to: "/login",
       search: { redirect: href, error: isSuspended ? "account_suspended" : undefined },
