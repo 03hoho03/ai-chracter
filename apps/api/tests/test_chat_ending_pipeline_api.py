@@ -21,7 +21,7 @@ from api.db.models import (
     StatDef,
     StoryEndingUnlock,
 )
-from api.llm.client import LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from factories import (
     _clear_llm_override,
     _get_genre,
@@ -110,12 +110,14 @@ class _FakeLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         for token in self.tokens:
             yield token
 
     async def generate_structured(
-        self, prompt: str, response_schema: Any, images: Any = None
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.generate_structured_calls.append(response_schema)
         result = self._structured_results.pop(0)

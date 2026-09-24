@@ -152,7 +152,7 @@ function VersionHistory({ kind }: VersionHistoryProps) {
   const versionsQuery = useVersionsQuery(kind);
 
   if (versionsQuery.isPending) {
-    return <div className="h-32 animate-pulse rounded-lg bg-muted" />;
+    return <div className="h-32 animate-pulse rounded-lg bg-secondary" />;
   }
 
   if (versionsQuery.isError) {

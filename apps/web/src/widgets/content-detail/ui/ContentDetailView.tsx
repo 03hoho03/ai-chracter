@@ -74,6 +74,14 @@ type ContentDetailViewProps = {
   variant: "modal" | "page";
 };
 
+/** hero 웰·스켈레톤의 채움. 모달은 `DialogContent`(`popover`) 위라 `muted`가 표면과 같은 값이 되어
+ * 1.0000:1로 사라지므로 `secondary`를 쓰고, 페이지는 `background` 위라 `muted`가 맞다
+ * (DESIGN.md §2 "표면 위 채움"). */
+const SURFACE_FILL_CLASS = {
+  modal: "bg-secondary",
+  page: "bg-muted",
+} as const satisfies Record<ContentDetailViewProps["variant"], string>;
+
 /** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
  * `variant`는 design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 하단에 고정하는 방식이
@@ -174,7 +182,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
     [isFavoriteDesired],
   );
 
-  if (detailQuery.isPending) return <ContentDetailSkeleton type={type} />;
+  if (detailQuery.isPending) return <ContentDetailSkeleton type={type} variant={variant} />;
 
   if (detailQuery.isError) {
     return (
@@ -222,7 +230,13 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
       <div
         className={cn("flex flex-col gap-5", content.type === "story" && "sm:flex-row sm:items-start sm:gap-6")}
       >
-        <div className={toHeroClassName(content.type, heroAspect, "overflow-hidden rounded-lg bg-muted")}>
+        <div
+          className={toHeroClassName(
+            content.type,
+            heroAspect,
+            cn("overflow-hidden rounded-lg", SURFACE_FILL_CLASS[variant]),
+          )}
+        >
           {/* US-013 — 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
           {content.thumbnailUrl ? (
             <img src={content.thumbnailUrl} alt="" decoding="async" className="size-full object-cover" />
@@ -348,13 +362,14 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
           선택)을 끊지 않게 맨 아래에 둔다.
           hover 표면이 `bg-muted`가 아닌 이유: `--muted`와 `--popover`가 다크 0.210 / 라이트 0.970으로
           **값이 같아** 모달 안에서 hover가 통째로 사라진다(같은 함정을 Slider 트랙에서 겪었다).
-          `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. */}
+          `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. hover에서 글자도 `foreground`로 올린다 —
+          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md §2 "표면 위 채움 규칙"). */}
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">업데이트</h2>
         <button
           type="button"
           onClick={() => setIsVersionHistoryOpen(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <History aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 break-keep">
@@ -405,20 +420,21 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
 // image-crop-goal-prompt.md IC-11 — content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴
 // `type`(모달: 상태에 이미 있음, 페이지: URL 세그먼트)으로 같은 비율을 흉내 낸다. 어긋나면 도착 시
 // 화면이 밀린다(card-grid-goal-prompt.md F-1 전례).
-function ContentDetailSkeleton({ type }: { type: ContentType }) {
+function ContentDetailSkeleton({ type, variant }: Pick<ContentDetailViewProps, "type" | "variant">) {
   const heroAspect = toThumbnailAspect(type);
+  const fill = SURFACE_FILL_CLASS[variant];
   return (
     <div className="flex flex-col gap-4 p-1">
       {/* image-crop-goal-prompt.md IC-11 — 실제 본문과 같은 2열 분기(스토리만 ≥sm에서 flex-row)를
           흉내 내지 않으면 도착 시 화면이 밀린다(card-grid-goal-prompt.md F-1 전례). */}
       <div className={cn("flex flex-col gap-4", type === "story" && "sm:flex-row sm:items-start sm:gap-6")}>
-        <div className={toHeroClassName(type, heroAspect, "animate-pulse rounded-lg bg-muted")} />
+        <div className={toHeroClassName(type, heroAspect, cn("animate-pulse rounded-lg", fill))} />
         <div className="flex min-w-0 flex-1 flex-col gap-4">
-          <div className="h-6 w-2/3 animate-pulse rounded bg-muted" />
-          <div className="h-4 w-1/3 animate-pulse rounded bg-muted" />
+          <div className={cn("h-6 w-2/3 animate-pulse rounded", fill)} />
+          <div className={cn("h-4 w-1/3 animate-pulse rounded", fill)} />
         </div>
       </div>
-      <div className="h-20 w-full animate-pulse rounded bg-muted" />
+      <div className={cn("h-20 w-full animate-pulse rounded", fill)} />
     </div>
   );
 }

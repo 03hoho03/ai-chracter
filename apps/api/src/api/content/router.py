@@ -87,7 +87,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1431,7 +1431,10 @@ async def _publish_character_content(
         detail_description=version.detail_description,
     )
     filter_result = await llm_client.generate_structured(
-        filter_prompt, PublishFilterResult, images=filter_images
+        filter_prompt,
+        PublishFilterResult,
+        images=filter_images,
+        usage=LLMCallContext(call_site="publish_filter_character", user_id=content.creator_user_id, room_id=None),
     )
     if not filter_result.passed:
         raise HTTPException(
@@ -1685,7 +1688,10 @@ async def _publish_story_content(
         starting_setups=starting_setups,
     )
     filter_result = await llm_client.generate_structured(
-        filter_prompt, PublishFilterResult, images=filter_images
+        filter_prompt,
+        PublishFilterResult,
+        images=filter_images,
+        usage=LLMCallContext(call_site="publish_filter_story", user_id=content.creator_user_id, room_id=None),
     )
     if not filter_result.passed:
         raise HTTPException(

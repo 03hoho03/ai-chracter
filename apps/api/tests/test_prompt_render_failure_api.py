@@ -43,7 +43,7 @@ from api.db.models import (
     StoryVersionDetail,
 )
 from api.db.models.prompt import PromptSection, PromptSet
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _clear_llm_override,
     _get_genre,
@@ -184,12 +184,17 @@ class _FakeLLMClient(LLMClient):
         self.generate_structured_calls = 0
 
     async def generate(
-        self, prompt: str, system_instruction: str | None = None, stop_sequences: list[str] | None = None
+        self,
+        prompt: str,
+        system_instruction: str | None = None,
+        stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         for token in self.tokens:
             yield token
 
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         self.generate_structured_calls += 1
         if response_schema is StatJudgmentResult:
             return StatJudgmentResult(stat_changes=[])

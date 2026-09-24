@@ -173,7 +173,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
               <TableBody>
                 {userDetailQuery.data.actionLogs.map((log) => (
                   <TableRow key={log.id}>
-                    <TableCell>{ACTION_TYPE_LABELS[log.actionType] ?? log.actionType}</TableCell>
+                    <TableCell>{ACTION_TYPE_LABELS[log.actionType]}</TableCell>
                     <TableCell className="text-muted-foreground">
                       {log.targetContentId ? (
                         <Link
@@ -295,7 +295,7 @@ function CloverLedgerSection({ userId }: CloverLedgerSectionProps) {
         )}
       </div>
 
-      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-muted" />}
+      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-secondary" />}
 
       {ledgerQuery.isError && (
         <p className="text-sm text-destructive-text">원장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
@@ -347,8 +347,8 @@ function formatSignedCount(amount: number) {
  * CHAT_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 두 사유 체계가 섞여 들어온다. `other`는
  * 두 집합 모두에 있지만 한글 라벨이 둘 다 "기타"로 같으므로(entities/report, entities/admin-user
  * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
- * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(ACTION_TYPE_LABELS와
- * 동일한 관례). */
+ * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
+ * 동일한 관례 — 유니언으로 강제하는 ACTION_TYPE_LABELS와는 다르다). */
 const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
   ...REPORT_REASON_LABELS,
   ...CHAT_VIEW_REASON_CATEGORY_LABELS,

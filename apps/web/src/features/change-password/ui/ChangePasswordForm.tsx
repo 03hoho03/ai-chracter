@@ -2,10 +2,11 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { zodResolver } from "@hookform/resolvers/zod";
+import { Link, useRouterState } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { isApiError } from "@/shared/api/client";
+import { getAuthFormErrorBanner, LOGIN_LINK_ERROR_TYPE } from "@/entities/session";
 
 import { useChangePasswordMutation } from "../api/useChangePasswordMutation";
 import {
@@ -30,6 +31,8 @@ export function ChangePasswordForm() {
   });
 
   const changePasswordMutation = useChangePasswordMutation();
+  // 다시 로그인한 뒤 이 화면으로 돌아오게 한다(`requireSession`이 `redirect`에 현재 href를 싣는 것과 같다).
+  const currentHref = useRouterState({ select: (state) => state.location.href });
 
   async function handleValidSubmit(values: ChangePasswordFormValues) {
     clearErrors("root");
@@ -38,12 +41,12 @@ export function ChangePasswordForm() {
       toast.success("비밀번호가 변경되었어요.");
       reset(changePasswordDefaultValues);
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
-      if (apiError?.status === 400) {
-        setError("root", { message: "현재 비밀번호가 올바르지 않아요." });
-      } else {
-        setError("root", { message: GENERIC_ERROR_MESSAGE });
-      }
+      // 401(세션 소멸)은 자동으로 로그인 화면에 보내지 않는다 — 입력 중이던 값을 잃지 않게 링크만 준다(BS-9).
+      const banner = getAuthFormErrorBanner(error, "change-password");
+      setError("root", {
+        type: banner?.showsLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
+        message: banner?.message ?? GENERIC_ERROR_MESSAGE,
+      });
     }
   }
 
@@ -57,9 +60,19 @@ export function ChangePasswordForm() {
       }}
     >
       {errors.root && (
-        <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
-          {errors.root.message}
-        </p>
+        <div role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
+          <p>{errors.root.message}</p>
+          {/* 링크 모양의 근거는 `GoogleBasicInfoStep`의 같은 배너 주석. */}
+          {errors.root.type === LOGIN_LINK_ERROR_TYPE && (
+            <Link
+              to="/login"
+              search={{ redirect: currentHref }}
+              className="mt-2 inline-block rounded-sm font-medium underline underline-offset-4 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              다시 로그인하기
+            </Link>
+          )}
+        </div>
       )}
 
       <div className="flex flex-col gap-1.5">

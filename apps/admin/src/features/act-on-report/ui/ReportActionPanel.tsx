@@ -103,7 +103,7 @@ export function ReportActionPanel({ reportId, reportPending, contentName, conten
       <h2 className="text-lg font-semibold text-foreground">처리</h2>
 
       {contentRestricted && (
-        <div className="flex items-center justify-between gap-3 rounded-lg bg-muted p-3">
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border p-3">
           <p className="text-sm text-muted-foreground">현재 이용제한 상태입니다.</p>
           <Button
             type="button"

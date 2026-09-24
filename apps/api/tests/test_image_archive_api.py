@@ -19,7 +19,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
 from factories import _get_genre, _login_as, _make_asset, _make_user, _parse_sse_events
@@ -98,10 +98,12 @@ class _ImageMatchingLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         yield "그럼요."
 
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         return ImageMatchJudgmentResult(matched_image_entity_id=str(self.matched_entity_id))
 
 

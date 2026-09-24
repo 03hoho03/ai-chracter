@@ -26,9 +26,11 @@ type ContentCardActionMenuProps = {
  * - **click·keydown 양쪽 stopPropagation**: 메뉴 콘텐츠는 body로 포털되지만 React 합성 이벤트는 컴포넌트
  *   트리를 타고 올라온다. 항목을 **키보드로** 고를 때의 Enter는 click이 아니라 keydown으로 카드에 닿아,
  *   막지 않으면 확인 모달과 카드의 상세 모달이 함께 열린다.
- * - **`hover:bg-secondary aria-expanded:bg-secondary`**: 포인터가 이 버튼 위에 있으면 카드도 동시에
- *   hover라 카드가 `bg-muted`가 되는데 `ghost`의 hover도 `bg-muted`라 정확히 1.0000:1로 사라진다.
- *   `secondary`는 카드의 두 표면(`background`/`muted`) 양쪽에서 살아남는다(실측 다크 1.1439 / 라이트 1.1239).
+ * - **`hover:bg-secondary aria-expanded:bg-secondary`**: 카드가 `bg-background`+`hover:bg-muted` 표면을
+ *   갖던 때의 처방이다 — 포인터가 버튼 위에 있으면 카드도 hover라 `ghost`의 hover(`bg-muted`)와 정확히
+ *   1.0000:1로 사라졌다. 2026-09-11에 `ContentCard`의 표면(배경·보더·hover)을 걷어내 그 충돌은 없어졌고,
+ *   지금 버튼 뒤는 페이지 배경(`background`)뿐이라 `ghost` 기본값으로도 보인다. 해롭지 않아 남겨 뒀다
+ *   (`apps/web/CLAUDE.md` "카드 · 목록"의 ⚠️ 항목).
  * - **`w-auto`**: `DropdownMenuContent`의 폭이 트리거 폭(32px → `min-w-32`)에 고정돼 있어 조금만 긴
  *   라벨이 두 줄로 깨진다. 프리미티브를 고치면 헤더·알림 메뉴 폭이 함께 바뀌므로 call-site 처방이다.
  * - **`collisionPadding`**: Radix 기본값이 0이라, 좌측 열 카드의 `align="end"` 메뉴가 뷰포트를 넘칠 때

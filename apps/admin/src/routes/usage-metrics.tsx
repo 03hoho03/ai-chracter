@@ -7,8 +7,8 @@ import { UsageMetricsPage } from "../pages/usage-metrics";
 const isoDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 const usageMetricsSearchSchema = z.object({
-  from: isoDateSchema.optional(),
-  to: isoDateSchema.optional(),
+  from: isoDateSchema.optional().catch(undefined),
+  to: isoDateSchema.optional().catch(undefined),
 });
 
 function toIsoDate(date: Date) {
@@ -31,7 +31,11 @@ export const Route = createFileRoute("/usage-metrics")({
 function RouteComponent() {
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
-  const { from, to } = { ...defaultDateRange(), ...search };
+  // 스프레드 병합(`{ ...defaults, ...search }`) 금지: `.catch(undefined)`는 잘못된 값의 키를
+  // 남기고 값만 undefined로 주므로 기본값을 덮는다. 필드별 `??`로 채운다.
+  const defaults = defaultDateRange();
+  const from = search.from ?? defaults.from;
+  const to = search.to ?? defaults.to;
 
   return (
     <UsageMetricsPage

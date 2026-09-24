@@ -178,8 +178,8 @@ function ReconsentDocumentBody({ docQuery }: ReconsentDocumentBodyProps) {
   if (docQuery.isPending) {
     return (
       <div className="flex flex-col gap-2">
-        <div className="h-4 w-full animate-pulse rounded bg-muted" />
-        <div className="h-4 w-3/4 animate-pulse rounded bg-muted" />
+        <div className="h-4 w-full animate-pulse rounded bg-secondary" />
+        <div className="h-4 w-3/4 animate-pulse rounded bg-secondary" />
       </div>
     );
   }

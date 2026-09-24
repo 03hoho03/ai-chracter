@@ -53,7 +53,8 @@ function getPartialBlockNotice(count: number): string {
 
 // US-008 — 폴링 상태를 그리드로 보여준다. 완료 전엔 남은 칸을 스켈레톤으로 채워 진행률을 드러내고,
 // 완료(succeeded)되면 실제 결과만, 실패(failed)면 에러 메시지를 보여준다.
-// 그리드 스타일은 select-generated-image/GeneratedImagePickerModal과 동일(grid-cols-3 gap-2 + aspect-square rounded-md bg-muted).
+// 그리드 스타일은 select-generated-image/GeneratedImagePickerModal과 동일(grid-cols-3 gap-2 + aspect-square rounded-md).
+// 채움만 표면 따라 다르다 — 여기는 background 위라 `bg-muted`, 피커는 모달(popover) 위라 `bg-secondary`(DESIGN.md §2).
 export function GenerateImagesResultGrid({
   job,
   requestedCount,

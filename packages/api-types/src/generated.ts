@@ -3626,8 +3626,11 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Actiontype */
-            actionType: string;
+            /**
+             * Actiontype
+             * @enum {string}
+             */
+            actionType: "chat-view" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */

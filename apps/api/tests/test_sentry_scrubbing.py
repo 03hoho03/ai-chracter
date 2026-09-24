@@ -42,7 +42,7 @@ from api.chat.prompt_builder import load_active_prompt_set
 from api.core.email import EmailSendError
 from api.core.redis import redis_client
 from api.core.sentry import _strip_query_string, build_sentry_options
-from api.llm.client import LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 
 # ---- 테스트 인프라 — 전역 init() 없이 Client 하나를 직접 만든다 -------------------------
 
@@ -180,11 +180,13 @@ async def test_chat_generation_prompt_local_variables_are_not_captured() -> None
             prompt: str,
             system_instruction: str | None = None,
             stop_sequences: list[str] | None = None,
+            *,
+            usage: LLMCallContext,
         ) -> AsyncIterator[str]:
             raise LLMClientError("Gemini 호출 실패(스크러빙 테스트)")
             yield ""  # pragma: no cover - async generator 타입을 맞추기 위한 무도달 yield
 
-        async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+        async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
             raise NotImplementedError
 
     client, transport = _make_client()
@@ -196,7 +198,7 @@ async def test_chat_generation_prompt_local_variables_are_not_captured() -> None
             chunks,
             secret_system_instruction,
             "user_label",
-            room_id=None,
+            usage=LLMCallContext(call_site="chat_generate", user_id=None, room_id=None),
             turn=1,
         ):
             pass

@@ -83,7 +83,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
         <h2 className="text-lg font-semibold text-foreground">대상 콘텐츠</h2>
 
         <div className="flex gap-4">
-          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-muted">
+          <div className="flex size-24 shrink-0 items-center justify-center overflow-hidden rounded-lg bg-secondary">
             {reportDetailQuery.data.content.thumbnailUrl && (
               <img
                 src={reportDetailQuery.data.content.thumbnailUrl}
@@ -114,7 +114,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
         {reportDetailQuery.data.content.prompt && (
           <div className="flex flex-col gap-1">
             <h3 className="text-sm font-medium text-foreground">프롬프트</h3>
-            <p className="whitespace-pre-wrap rounded-lg bg-muted p-3 text-sm text-muted-foreground">
+            <p className="whitespace-pre-wrap rounded-lg bg-secondary p-3 text-sm text-foreground">
               {reportDetailQuery.data.content.prompt}
             </p>
           </div>

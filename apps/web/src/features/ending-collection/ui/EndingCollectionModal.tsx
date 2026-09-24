@@ -86,7 +86,7 @@ function EndingListBody({
     return (
       <ul className="flex flex-col gap-2">
         {[0, 1, 2].map((i) => (
-          <li key={i} className="h-12 animate-pulse rounded-md bg-muted" />
+          <li key={i} className="h-12 animate-pulse rounded-md bg-secondary" />
         ))}
       </ul>
     );

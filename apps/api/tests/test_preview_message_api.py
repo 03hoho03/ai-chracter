@@ -18,7 +18,7 @@ from api.chat.prompt_builder import (
 from api.chat.preview_session import get_preview_session
 from api.chat.schemas import PreviewSessionState
 from api.db.models.chat import ChatMessageRole, ChatRoom
-from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
     _login_as,
@@ -138,6 +138,8 @@ class _FakeLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         self.received_prompt = prompt
         self.received_system_instruction = system_instruction
@@ -146,7 +148,7 @@ class _FakeLLMClient(LLMClient):
         for token in self.tokens:
             yield token
 
-    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None) -> Any:
+    async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
         self.generate_structured_calls.append(response_schema)
         result = self._structured_results.pop(0)
         if isinstance(result, Exception):

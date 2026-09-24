@@ -5,7 +5,12 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth.google_oauth import GoogleProfile, get_google_profile
+from api.auth.google_oauth import (
+    GoogleProfile,
+    get_google_profile,
+    get_pending_google_signup,
+    store_pending_google_signup,
+)
 from api.core.config import settings
 from api.core.security import hash_password
 from api.db.models.auth import User
@@ -255,6 +260,50 @@ async def test_google_callback_redirects_suspended_existing_user(
     assert resp.status_code == 302
     assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=account_suspended"
     assert settings.session_cookie_name not in resp.cookies
+
+
+async def test_onboarding_google_suspended_existing_user_is_rejected_without_side_effects(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """backlog-sweep BS-8(J-1): 정지 검사가 `db.commit()`·pending 토큰 삭제보다 **앞**에 있어야
+    한다. 이 403은 `google_sub` 매치 기존 유저 분기에서만 난다(신규 유저는 `suspended_at`이
+    정의상 `None`) — 콜백은 정지 유저를 리다이렉트해 토큰을 주지 않으므로 토큰을 직접 만든다.
+    이 분기에 실제로 닿는 드문 경로는 둘이다(완료 뒤 재제출은 토큰이 지워져 400이라 아니다):
+    (a) 같은 토큰을 **동시에** 두 번 제출해 한쪽이 먼저 커밋한 뒤 관리자가 정지한 경우,
+    (b) pending 토큰을 받은 뒤 같은 이메일로 비밀번호 가입 → 두 번째 구글 콜백이 그 행에
+    `google_sub`를 연결 → 관리자 정지 → 옛 토큰 제출.
+    403만 보면 순서가 틀려도 초록이다 — 닉네임 원복·토큰 잔존·재시도 403이 신호다."""
+    sub = f"google-sub-{uuid.uuid4()}"
+    user = _make_user(
+        google_sub=sub,
+        nickname="원래",
+        birth_date=date(1999, 5, 5),
+        suspended_at=datetime.now(UTC),
+    )
+    db_session.add(user)
+    await db_session.flush()
+    token = await store_pending_google_signup(GoogleProfile(sub=sub, email=user.email))
+    payload = {
+        "token": token,
+        "nickname": "바뀜",
+        "birthDate": "2000-01-01",
+        "termsAgreed": True,
+        "privacyAgreed": True,
+        "transferAgreed": True,
+    }
+
+    resp = await db_client.post("/auth/onboarding/google", json=payload)
+
+    assert resp.status_code == 403
+    assert resp.json()["detail"] == "Account suspended"
+    assert settings.session_cookie_name not in resp.cookies
+    await db_session.refresh(user)
+    assert user.nickname == "원래"
+    assert user.birth_date == date(1999, 5, 5)
+    assert await get_pending_google_signup(token) is not None
+
+    retry = await db_client.post("/auth/onboarding/google", json=payload)
+    assert retry.status_code == 403
 
 
 async def test_google_callback_rejects_existing_minor_account_matched_by_google_sub(

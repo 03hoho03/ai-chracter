@@ -4,7 +4,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { formatAuthRateLimitMessage, getAuthRateLimit, sessionKeys } from "@/entities/session";
+import {
+  formatAuthRateLimitMessage,
+  getAuthFormErrorBanner,
+  getAuthRateLimit,
+  LOGIN_LINK_ERROR_TYPE,
+  sessionKeys,
+} from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import {
@@ -109,13 +115,20 @@ export function SignUpWizard(props: SignUpWizardProps) {
   }
 
   async function handleGoogleBasicInfoSubmit(token: string) {
+    // `GoogleBasicInfoStep`은 `handleSubmit`이 아니라 `trigger()`로 제출해 RHF가 root 에러를 자동으로
+    // 지워 주지 않는다 — 안 지우면 성공한 재제출 위에도 지난 배너가 남는다(이메일 갈래와 같은 처방).
+    form.clearErrors("root");
     try {
       await onboardingMutation.mutateAsync(toOnboardingGoogleRequest(form.getValues(), token));
       await completeSignUp();
     } catch (error) {
-      const apiError = isApiError(error) ? error : null;
-      if (apiError?.status === 400) {
-        toast.error("인증이 만료되었어요. 처음부터 다시 시도해주세요.");
+      // 400·409·403은 이 폼을 다시 내서는 풀리지 않아 배너 + 로그인 링크로, 판별 못 한 실패만 toast로 간다.
+      const banner = getAuthFormErrorBanner(error, "onboarding-google");
+      if (banner) {
+        form.setError("root", {
+          type: banner.showsLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",
+          message: banner.message,
+        });
       } else {
         toast.error(GENERIC_ERROR_MESSAGE);
       }

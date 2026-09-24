@@ -41,7 +41,7 @@ function ImageArchiveBody({ query }: { query: ReturnType<typeof useCharacterImag
     return (
       <div className="grid grid-cols-3 gap-2">
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
+          <div key={i} className="aspect-square animate-pulse rounded-md bg-secondary" />
         ))}
       </div>
     );
@@ -63,7 +63,7 @@ function ImageArchiveBody({ query }: { query: ReturnType<typeof useCharacterImag
   return (
     <div className="grid grid-cols-3 gap-2">
       {images.map((image) => (
-        <div key={image.id} className="relative aspect-square overflow-hidden rounded-md bg-muted">
+        <div key={image.id} className="relative aspect-square overflow-hidden rounded-md bg-secondary">
           {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
           <img
             src={image.imageUrl}

@@ -187,9 +187,9 @@ function ImageGenerationRequestCard({ item, brokenAssetIds, onImageError }: Imag
       {item.images.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {item.images.map((image) => (
-            <div key={image.assetId} className="aspect-square overflow-hidden rounded-md bg-muted">
+            <div key={image.assetId} className="aspect-square overflow-hidden rounded-md bg-secondary">
               {brokenAssetIds.has(image.assetId) ? (
-                <div className="flex size-full items-center justify-center p-1 text-center text-xs text-muted-foreground">
+                <div className="flex size-full items-center justify-center p-1 text-center text-xs text-foreground">
                   이미지를 불러오지 못했어요
                 </div>
               ) : (

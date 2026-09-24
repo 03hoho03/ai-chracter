@@ -169,9 +169,9 @@ async def is_rate_limit_exempt(user_id: uuid.UUID, db: AsyncSession) -> bool:
     한다 — 그 자리에서 falsy는 "예외가 아니다"가 아니라 "아직 모른다"다.
     """
     user = await db.get(User, user_id)
-    # 행이 없으면(세션은 살아 있는데 유저 행이 없는 경우) 면제가 아니다. 이 게이트가 붙은 네
-    # 경로는 모두 바로 앞 `require_legal_consent`가 그 상태에 이미 401을 내므로 여기까지 오지
-    # 않지만, 판정 함수 혼자서도 안전한 쪽으로 떨어져야 한다.
+    # 행이 없으면(세션은 살아 있는데 유저 행이 없는 경우) 면제가 아니다. 그 상태는
+    # `get_current_user_id`가 이미 401로 끊으므로(backlog-sweep-goal-prompt.md BS-3) 여기까지
+    # 오지 않지만, 판정 함수 혼자서도 안전한 쪽으로 떨어져야 한다.
     return user is not None and user.rate_limit_exempt is True
 
 
@@ -180,8 +180,8 @@ async def _needs_clover_spend_confirmation(
 ) -> bool:
     """오늘(KST) 동의가 없고, **동의하면 실제로 쓸 수 있을 때만** True(clover-goal-prompt.md CL-19).
 
-    `is_rate_limit_exempt`와 같은 `db.get`이라 identity map 히트다 — 이 게이트가 붙은 경로들은
-    바로 앞 `require_legal_consent`가 같은 세션으로 이미 그 행을 읽었다(SELECT가 늘지 않는다).
+    `is_rate_limit_exempt`와 같은 행을 다시 `db.get`한다 — 같은 세션이어도 SELECT가 한 번 더
+    나간다(identity map은 약참조라 앞 호출이 읽은 `User`는 이미 수거됐다).
 
     🔴 **잔액이 모자라면 묻지 않는다.** 0원인 사용자에게 *"지금부터 클로버를 써요"*를 물어 놓고
     동의 직후 *"부족해요"*를 내는 것은 두 단계를 헛되이 쓰는 것이다. 그 경우는 그대로 아래
@@ -195,7 +195,7 @@ async def _needs_clover_spend_confirmation(
     되어 이튿날부터 무단 차감이 된다. 비교는 `core/clover.py`의 순수 함수에 맡긴다 — 시간을
     얼리지 않고 `now`를 인자로 받는 것이 이 저장소의 유일한 KST 테스트 선례다(freezegun 0건).
 
-    행이 없으면 묻지 않는다 — 그 상태는 바로 앞 `require_legal_consent`가 이미 401로 끊는다.
+    행이 없으면 묻지 않는다 — 그 상태는 `get_current_user_id`가 이미 401로 끊는다.
     """
     user = await db.get(User, user_id)
     if user is None or clover.is_same_kst_day(user.clover_spend_confirmed_on, now):
@@ -233,11 +233,10 @@ async def enforce_chat_rate_limit(
     `db`도 같은 요청 스코프 캐시로 받는다 — 전송·재생성·편집 3경로에서는 라우트 본문·
     `require_legal_consent`와 같은 세션이다. 미리보기 경로만은 라우트 본문이 세션을 받지 않아
     (`_preview_prompt_set_dependency`가 풀 상한 때문에 `Depends(get_db_session)`을 피한다)
-    재동의 게이트와 이 게이트만 그 세션을 쓴다 — 의존성 캐시라 커넥션이 더 열리지는 않는다.
-    ⚠️ 지금 이 게이트가 붙은 경로들에서는 바로 앞 `require_legal_consent`가 같은 세션으로
-    `db.get(User, user_id)`를 이미 했으므로 `is_rate_limit_exempt`의 조회가 identity map
-    히트다 — **그 경로 집합에 한정된 사실**이고, 재동의 게이트가 없는 경로에 이 게이트를 붙이면
-    SELECT가 하나 는다.
+    `get_current_user_id`·재동의 게이트·이 게이트만 그 세션을 쓴다 — 의존성 캐시라 커넥션이
+    더 열리지는 않는다. ⚠️ 같은 세션이어도 `is_rate_limit_exempt`의 `db.get(User, user_id)`는
+    identity map 히트가 **아니다** — 앞 의존성들이 읽은 `User`는 아무도 붙잡지 않아 이미
+    수거됐으므로(약참조) SELECT가 따로 나간다.
 
     순서는 **버스트 → 면제 → 일일 → 클로버**다(RL-10, clover-goal-prompt.md CL-1·CL-2). 짧은
     창이 먼저 걸리는 게 사용자에게 유용한 `retryAfterSeconds`(몇 초 뒤 재시도)를 주기 때문이고,

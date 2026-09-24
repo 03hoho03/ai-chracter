@@ -73,7 +73,7 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
               (명시적 높이)가 필요하다: Cropper는 `position:absolute`로 부모를 채우는데, `flex-1`만으로는
               부모(auto-height flex column)가 실제로 자라지 않아 0높이로 접힌다 — `min-h-64`가 hypothetical
               main size에 반영돼야 DialogContent 자체가 그만큼 자란다. */}
-          <div className="relative min-h-64 flex-1 overflow-hidden rounded-md bg-muted">
+          <div className="relative min-h-64 flex-1 overflow-hidden rounded-md bg-secondary">
             {imageUrl === undefined ? (
               <div className="flex size-full items-center justify-center">
                 <Loader2 aria-hidden className="size-6 animate-spin text-muted-foreground" />

@@ -36,7 +36,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from api.llm.client import LLMClient
+from api.llm.client import LLMCallContext, LLMClient
 from factories import _clear_llm_override, _get_genre, _login_as, _make_user, _override_llm_client
 
 
@@ -302,12 +302,14 @@ class _FakeLLMClient(LLMClient):
         prompt: str,
         system_instruction: str | None = None,
         stop_sequences: list[str] | None = None,
+        *,
+        usage: LLMCallContext,
     ) -> AsyncIterator[str]:
         raise NotImplementedError
         yield ""  # pragma: no cover - unreachable, keeps this an async generator
 
     async def generate_structured(
-        self, prompt: str, response_schema: Any, images: Any = None
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.received_prompt = prompt
         self.received_images = images

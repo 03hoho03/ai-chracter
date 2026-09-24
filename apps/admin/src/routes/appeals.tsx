@@ -5,8 +5,8 @@ import { requireSession } from "../entities/session";
 import { AppealsListPage } from "../pages/appeals";
 
 const appealsSearchSchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  status: z.enum(["pending", "resolved"]).optional(),
+  page: z.coerce.number().int().min(1).optional().catch(undefined),
+  status: z.enum(["pending", "resolved"]).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/appeals")({

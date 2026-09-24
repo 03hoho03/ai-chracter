@@ -61,7 +61,7 @@ from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
-from api.session.store import create_session, delete_session
+from api.session.store import create_session, delete_session, revoke_user_sessions
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
@@ -315,7 +315,7 @@ async def google_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    session_id = await create_session({"user_id": str(user.id)})
+    session_id = await create_session(user.id)
     response = RedirectResponse(
         f"{settings.frontend_base_url}{redirect_target}", status_code=status.HTTP_302_FOUND
     )
@@ -359,15 +359,17 @@ async def onboarding_google(
         )
         db.add(user)
     else:
+        # backlog-sweep BS-8: 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
+        # 닉네임·생년월일이 덮어써진 채 커밋되고, 토큰이 지워져 재시도가 400으로 바뀐다.
+        # 신규 유저 분기는 방금 만든 행이라 suspended_at이 정의상 None이다.
+        if user.suspended_at is not None:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
         user.nickname = payload.nickname
         user.birth_date = payload.birth_date
     await db.commit()
     await delete_pending_google_signup(payload.token)
 
-    if user.suspended_at is not None:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
-
-    session_id = await create_session({"user_id": str(user.id)})
+    session_id = await create_session(user.id)
     set_session_cookie(response, session_id)
     return OnboardingGoogleResponse(email=user.email)
 
@@ -413,7 +415,7 @@ async def login(
         # 살아있는 채 막히는 것과 로그인 시도가 막히는 것이 같은 메시지를 줘야 일관적이다).
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
-    session_id = await create_session({"user_id": str(user.id)})
+    session_id = await create_session(user.id)
     set_session_cookie(response, session_id)
     return None
 
@@ -422,6 +424,8 @@ async def login(
 async def logout(request: Request, response: Response) -> None:
     session_id = get_session_id_from_request(request)
     if session_id is not None:
+        # 역인덱스(`user_sessions:{user_id}`)의 멤버는 남겨 둔다 — 키 없는 멤버는 폐기 때 DEL이
+        # 헛돌 뿐이고 만료 score가 지나면 다음 로그인에서 정리된다(backlog-sweep-goal-prompt.md BS-5).
         await delete_session(session_id)
     clear_session_cookie(response)
     return None
@@ -475,11 +479,17 @@ async def confirm_password_reset(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user = await db.get(User, uuid.UUID(stored["user_id"]))
-    if user is None:
+    # 탈퇴 전에 발급된 토큰이 탈퇴 때 파기한 `password_hash`를 되살리지 못하게 한다
+    # (backlog-sweep-goal-prompt.md M-5). 탈퇴 계정은 이메일이 자리표시자라 새 토큰은 못 받는다.
+    if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user.password_hash = hash_password(payload.new_password)
     await db.commit()
+    # 재설정은 계정이 털렸을 때 쓰는 경로라 현재 세션 개념 없이 전부 폐기한다(backlog-sweep-goal-prompt.md
+    # BS-6). 토큰 삭제보다 먼저 한다 — 폐기가 실패해 500이 나도 토큰이 남아 있어야 같은 링크로 재시도하면
+    # 폐기까지 끝난다(토큰을 먼저 지우면 옛 세션이 남은 채 재시도 수단이 사라진다).
+    await revoke_user_sessions(user.id)
     # Invalidate immediately so the token can't be replayed.
     await delete_reset_token(payload.token)
     return None
@@ -516,6 +526,7 @@ async def get_me(
 @me_router.patch("/me/password", status_code=status.HTTP_204_NO_CONTENT)
 async def change_password(
     payload: ChangePasswordRequest,
+    request: Request,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
@@ -532,6 +543,8 @@ async def change_password(
 
     user.password_hash = hash_password(payload.new_password)
     await db.commit()
+    # 다른 기기 세션만 폐기한다 — 바꾼 사람은 지금 이 세션이다(backlog-sweep-goal-prompt.md BS-6).
+    await revoke_user_sessions(user_id, except_session_id=get_session_id_from_request(request))
     return None
 
 
@@ -676,8 +689,14 @@ async def withdraw(
 
     await db.commit()
 
+    # 역인덱스 배포 전에 만든 세션은 인덱스에 없어 아래 폐기가 못 지운다 — 현재 세션만은 쿠키로
+    # 직접 지운다. 폐기보다 **먼저** 부르는 건 S2 이전 순서 그대로다: 폐기의 Redis 호출이 중간에
+    # 실패해도 현재 세션은 이미 지워져 있다(tasks/review-S3.md ⚪-2). 두 호출은 서로 독립이다.
     session_id = get_session_id_from_request(request)
     if session_id is not None:
         await delete_session(session_id)
+    # 현재 세션을 포함해 전부 폐기한다(backlog-sweep-goal-prompt.md BS-6). 실패해 500이 나도
+    # 탈퇴는 이미 커밋됐고, 남은 세션은 `get_current_user_id`의 `users` 조회가 401로 막는다.
+    await revoke_user_sessions(user_id)
     clear_session_cookie(response)
     return None

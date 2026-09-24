@@ -41,7 +41,7 @@ from api.content.schemas import (
 )
 from api.core.config import settings
 from api.db.models.story import StoryPromptTemplate
-from api.llm.client import LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from api.llm.dependencies import get_llm_client
 from seed_content.loader import STORIES_DIR, SeedContentError, parse_story
 from seed_content.matrix import MatrixSlot, load_matrix
@@ -567,7 +567,9 @@ async def _apply_similarity_gate(
         print(f"  · 유사도 심사 중… ({len(entries)}개)")
         try:
             review = await client.generate_structured(
-                build_similarity_prompt(entries), SimilarityReview
+                build_similarity_prompt(entries),
+                SimilarityReview,
+                usage=LLMCallContext(call_site="seed_similarity_review", user_id=None, room_id=None),
             )
         except LLMClientError as exc:
             print(f"  ! 유사도 심사 호출 실패 — {exc}")
@@ -706,7 +708,9 @@ async def _generate_slot(
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             generated = await client.generate_structured(
-                build_prompt(slot, previous, errors, overlaps), GeneratedStory
+                build_prompt(slot, previous, errors, overlaps),
+                GeneratedStory,
+                usage=LLMCallContext(call_site="seed_story_generate", user_id=None, room_id=None),
             )
         except LLMClientError as exc:
             print(f"    ! {attempt}차 생성 호출 실패 — {exc}")

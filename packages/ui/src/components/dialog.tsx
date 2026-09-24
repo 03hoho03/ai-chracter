@@ -110,7 +110,13 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
  * 수 없으므로 두 폭 중 하나를 골라야 하는데, `sm` 이상의 `취소 왼쪽 · 실행 오른쪽`을 그대로 두려면
  * DOM이 `[취소, 실행]`이어야 하고 그러면 좁은 화면의 세로 배치는 `취소` 위 · 실행 아래로 정해진다.
  * 즉 "확인 버튼이 위"는 접근성과 맞바꿀 수 있는 취향이 아니라 이 DOM 순서가 배제하는 배치다.
- * 되돌리려면 `sm` 이상까지 함께 뒤집어야 한다. */
+ * 되돌리려면 `sm` 이상까지 함께 뒤집어야 한다.
+ *
+ * 띠 채움은 상류의 `bg-muted/50`이 아니라 `bg-secondary/50`이다 — `muted`는 이 푸터가 앉는
+ * `popover`와 같은 값이라 띠가 1.0000:1로 사라진다(DESIGN.md §2 "표면 위 채움"). 알파를 50으로
+ * 남긴 이유: 불투명 `secondary`면 그 위 outline 버튼의 `border-input`이 3:1 아래(라이트 2.97 /
+ * 다크 2.83)로, `muted-foreground` 글자가 4.5:1 아래(라이트 4.29)로 떨어진다. `/50`은 3.14 / 3.04,
+ * 4.53 / 5.78로 둘 다 지킨다(`shadcn add dialog`로 재생성하면 `bg-muted/50`이 되돌아온다). */
 function DialogFooter({
   className,
   showCloseButton = false,
@@ -123,7 +129,7 @@ function DialogFooter({
     <div
       data-slot="dialog-footer"
       className={cn(
-        "-mx-4 -mb-4 flex flex-col gap-2 rounded-b-xl border-t bg-muted/50 p-4 sm:flex-row sm:justify-end",
+        "-mx-4 -mb-4 flex flex-col gap-2 rounded-b-xl border-t bg-secondary/50 p-4 sm:flex-row sm:justify-end",
         className
       )}
       {...props}
