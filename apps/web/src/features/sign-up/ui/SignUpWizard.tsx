@@ -26,8 +26,6 @@ import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
 import { GoogleBasicInfoStep } from "./GoogleBasicInfoStep";
 
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
-
 export type SignUpStep = "basicInfo" | "emailVerify";
 
 /** 구글 온보딩은 비밀번호를 받지 않아 이메일 인증 스텝에 도달하지 않는다. */
@@ -47,6 +45,8 @@ type SignUpWizardProps =
       step: GoogleSignUpStep;
       onStepChange: (step: GoogleSignUpStep) => void;
     };
+
+const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 export function SignUpWizard(props: SignUpWizardProps) {
   const form = useForm<SignUpFormValues>({
