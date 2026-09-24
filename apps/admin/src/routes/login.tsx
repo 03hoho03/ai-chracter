@@ -4,7 +4,7 @@ import { z } from "zod";
 import { LoginPage } from "../pages/login";
 
 const loginSearchSchema = z.object({
-  redirect: z.string().optional(),
+  redirect: z.string().optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/login")({

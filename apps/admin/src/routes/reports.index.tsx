@@ -5,8 +5,8 @@ import { requireSession } from "../entities/session";
 import { ReportsListPage } from "../pages/reports";
 
 const reportsSearchSchema = z.object({
-  page: z.coerce.number().int().min(1).optional(),
-  status: z.enum(["pending", "resolved", "rejected"]).optional(),
+  page: z.coerce.number().int().min(1).optional().catch(undefined),
+  status: z.enum(["pending", "resolved", "rejected"]).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/reports/")({
