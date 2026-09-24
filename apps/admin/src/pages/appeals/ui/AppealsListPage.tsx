@@ -107,7 +107,7 @@ function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
                 // 버튼엔 onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
                 // 버블된다(`tr`에 keydown 처리를 두면 preventDefault가 그 click을 죽인다).
                 // 선택 채움 `secondary`는 background 대비 1.23:1이라 3:1 단서로 체크 글리프를 둔다
-                // (`foreground` on `secondary` 14.09:1). 선택 행은 hover에서도 채움을 유지한다
+                // (`foreground` on `secondary` 14.06:1). 선택 행은 hover에서도 채움을 유지한다
                 // (backlog-l-goal-prompt.md BL-8).
                 <TableRow
                   key={item.id}
@@ -122,6 +122,7 @@ function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
                     >
                       <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
                       {APPEAL_TARGET_KIND_LABELS[item.targetKind]}
+                      <span className="sr-only">, {formatDateTime(item.createdAt)} 접수</span>
                     </button>
                   </TableCell>
                   <TableCell>{formatDateTime(item.createdAt)}</TableCell>
