@@ -38,18 +38,19 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
   const personasQuery = usePersonasQuery();
   const setRoomPersonaMutation = useSetRoomPersonaMutation(roomId);
 
-  function handleCreated(persona: Persona) {
-    setRoomPersonaMutation.mutate(persona.id, {
-      onSuccess: () => {
-        toast.success("새 프로필을 만들고 이 대화방에 적용했어요. 다음 대화부터 반영돼요.");
-        call.end();
-      },
-      onError: () => {
-        // 프로필은 이미 만들어졌다 — 폼으로 되돌리면 같은 것을 또 만들게 되므로 목록으로 보낸다.
-        toast.error("프로필은 만들었지만 이 대화방에 적용하지 못했어요. 목록에서 다시 골라주세요.");
-        setView("select");
-      },
-    });
+  // 폼이 이 Promise를 기다린다 — 방 적용 PUT이 끝날 때까지 "저장 중"으로 남아 재제출(프로필 중복 생성)을
+  // 막는다(review-s7.md 🟡-1). 적용 실패는 여기서 삼킨다 — 폼으로 던지면 루트 에러가 되어 폼에 머문다.
+  async function handleCreated(persona: Persona) {
+    try {
+      await setRoomPersonaMutation.mutateAsync(persona.id);
+    } catch {
+      // 프로필은 이미 만들어졌다 — 폼으로 되돌리면 같은 것을 또 만들게 되므로 목록으로 보낸다.
+      toast.error("프로필은 만들었지만 이 대화방에 적용하지 못했어요. 목록에서 다시 골라주세요.");
+      setView("select");
+      return;
+    }
+    toast.success("새 프로필을 만들고 이 대화방에 적용했어요. 다음 대화부터 반영돼요.");
+    call.end();
   }
 
   const personaList = personasQuery.data;
