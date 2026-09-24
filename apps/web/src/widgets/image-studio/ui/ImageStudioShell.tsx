@@ -137,7 +137,7 @@ export function ImageStudioShell({
         toast.error(formatImageRateLimitMessage(rateLimit));
         return;
       }
-      const apiError = isApiError(error) ? error : null;
+      const apiError = isApiError(error) ? error : undefined;
       toast.error(apiError?.status === 422 ? "입력값을 다시 확인해주세요." : GENERIC_ERROR_MESSAGE);
     }
   }
