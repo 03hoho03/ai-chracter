@@ -665,6 +665,34 @@ async def test_send_preview_message_injects_the_authors_default_persona(
     assert "바다" not in fake.received_prompt
 
 
+async def test_send_preview_message_story_injects_the_authors_default_persona(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`_build_preview_prompt`의 **스토리** 분기도 기본 프로필을 싣는다(위 테스트는 캐릭터
+    payload라 캐릭터 분기만 탄다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    persona = UserPersona(user_id=user.id, name="하늘", gender="male", description="바다를 좋아한다")
+    db_session.add(persona)
+    await db_session.flush()
+    user.default_persona_id = persona.id
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    session_id = await _start_session(db_client, _story_payload(startingSetups=[_starting_setup_item()]))
+
+    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "안녕!"})
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    assert "이름: 하늘\n성별: 남성\n설명: 바다를 좋아한다" in fake.received_prompt
+
+
 async def test_send_preview_message_without_default_persona_has_no_persona_section(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
