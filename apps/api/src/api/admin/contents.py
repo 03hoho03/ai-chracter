@@ -28,7 +28,12 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset
-from api.db.models.moderation import ModerationAction, ModerationActionType, Notification
+from api.db.models.moderation import (
+    AdminActionType,
+    ModerationAction,
+    ModerationActionType,
+    Notification,
+)
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
 from api.moderation.router import upgrade_content_chat_rooms_to_latest_version
@@ -371,7 +376,9 @@ async def act_on_content(
             )
         )
 
-    action_type_by_moderation_action = {
+    # backlog-sweep Q-5: 값 타입을 적지 않으면 `dict[..., str]`로 추론돼 아래 `record_admin_action`
+    # 인자가 mypy에 걸린다. 적어 두면 값 오타도 이 딕셔너리 줄에서 걸린다.
+    action_type_by_moderation_action: dict[ModerationActionType, AdminActionType] = {
         ModerationActionType.RESTRICT: "content-restrict",
         ModerationActionType.DELETE: "content-delete",
         ModerationActionType.LIFT_RESTRICTION: "content-lift",

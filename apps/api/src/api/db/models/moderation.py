@@ -1,6 +1,7 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import Literal
 
 from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Text, Uuid, false, func
 from sqlalchemy.orm import Mapped, mapped_column
@@ -154,17 +155,48 @@ class Appeal(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+# backlog-sweep BS-16(K-5): 감사 로그 액션 종류의 단일 소스. `record_admin_action`의 파라미터와
+# 응답 스키마 `AdminUserActionLogItem.action_type`이 이 타입을 쓰므로, 목록 밖 값은 호출부에서
+# mypy가 막고 응답은 OpenAPI 유니언으로 FE에 내려간다. BS-16은 `admin/action_log.py`에 두라고
+# 했지만 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피, progress F-9).
+# 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
+AdminActionType = Literal[
+    "chat-view",
+    "content-delete",
+    "content-lift",
+    "content-restrict",
+    "image-view",
+    "inquiry-reply",
+    "legal-publish",
+    "notice-publish",
+    "notice-unpublish",
+    "prompt-set-publish",
+    "user-clover-grant",
+    "user-clover-revoke",
+    "user-rate-limit-exempt-off",
+    "user-rate-limit-exempt-on",
+    "user-suspend",
+    "user-unsuspend",
+    "user-warn",
+]
+
+
 class AdminActionLog(Base):
     """techspec.md §1-3, goal-prompt.md §3-2. 콘텐츠 조치는 `moderation_actions`와 이 테이블
     양쪽에 기록된다 — 중복이 아니라 계층이다. `moderation_actions`는 콘텐츠 조치의 실체
     레코드이자 `Notification.action_id`의 FK 대상이라 없앨 수 없고, 이 테이블은 콘텐츠
-    조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다."""
+    조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다.
+
+    `action_type` 컬럼은 native enum이 아니라 Text다 — 값이 늘 때 마이그레이션 없이 넓히기
+    위해서다. 값 범위는 ORM 속성 타입 `AdminActionType`(위 Literal)이 강제하지만 그건 파이썬
+    쪽 검사일 뿐 DB 제약은 없다. 목록 밖 값이 든 행이 있으면 유저 상세 응답 직렬화가 실패한다
+    (backlog-sweep-goal-prompt.md Q-6)."""
 
     __tablename__ = "admin_action_logs"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
-    action_type: Mapped[str] = mapped_column(Text, nullable=False)
+    action_type: Mapped[AdminActionType] = mapped_column(Text, nullable=False)
     target_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
     target_content_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("contents.id"), nullable=True

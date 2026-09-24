@@ -2,14 +2,14 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models.moderation import AdminActionLog
+from api.db.models.moderation import AdminActionLog, AdminActionType
 
 
 async def record_admin_action(
     db: AsyncSession,
     *,
     admin_id: uuid.UUID,
-    action_type: str,
+    action_type: AdminActionType,
     target_user_id: uuid.UUID | None = None,
     target_content_id: uuid.UUID | None = None,
     target_chat_room_id: uuid.UUID | None = None,

@@ -9,7 +9,12 @@ from api.chat.prompt_builder import PromptLane
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType, ContentVisibility, ModerationStatus
-from api.db.models.moderation import ModerationActionType, ReportReasonCategory, ReportStatus
+from api.db.models.moderation import (
+    AdminActionType,
+    ModerationActionType,
+    ReportReasonCategory,
+    ReportStatus,
+)
 from api.legal.schemas import LegalDocumentKind
 
 
@@ -203,7 +208,7 @@ class AdminUserReportItem(CamelModel):
 
 class AdminUserActionLogItem(CamelModel):
     id: uuid.UUID
-    action_type: str
+    action_type: AdminActionType
     target_content_id: uuid.UUID | None
     content_name: str | None
     reason_category: str | None
