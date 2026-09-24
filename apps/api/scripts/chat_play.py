@@ -12,7 +12,7 @@
 쿼터(분당 15요청, 1턴=LLM 2회+엔딩판정)를 넘기지 않도록 직전 호출 시각을 `--log` 옆 파일에 남겨
 간격을 강제한다 — 프로세스가 매번 새로 뜨므로 메모리에 둘 수 없다.
 
-종료 코드(chat-longrun-goal-prompt.md LB-4·LB-29): 0 정상 · 2 HTTP 401/403(로그인 포함) ·
+종료 코드(chat-longrun-goal-prompt.md LB-4·LB-29): 0 정상 · 2 HTTP 401/403(로그인 포함)·`--cred-file` 거부 ·
 3 엔딩 도달 · 4 앱 429(같은 명령을 다시 실행하면 retryAfterSeconds 만큼 기다린다) ·
 5 Gemini 한도(`--trace` 에 이 방의 LLMRateLimitError). 인자 오류도 argparse 가 2 로 끝낸다.
 
@@ -23,6 +23,9 @@
 
 import argparse
 import json
+import os
+import stat
+import subprocess
 import sys
 import time
 from datetime import datetime
@@ -41,7 +44,36 @@ RATE_LIMIT_NOTICE = "측정 중단: 외부 한도 — 오케스트레이터에�
 
 
 class _AuthError(Exception):
-    """401/403 — 종료 코드 2 로 끝낸다."""
+    """401/403·`--cred-file` 거부 — 종료 코드 2 로 끝낸다."""
+
+
+def _load_cred(raw: str) -> tuple[str, str]:
+    """저장소 밖 0600 JSON 에서 email/password 를 읽는다. 메시지엔 경로만 — 값·내용은 내보내지 않는다
+    (chat-rollout-goal-prompt.md RO-16)."""
+    path = Path(raw).resolve()
+    top = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=Path(__file__).parent,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if path.is_relative_to(Path(top).resolve()):
+        raise _AuthError(f"--cred-file 가 저장소 안에 있다: {path}")
+    try:
+        mode = stat.S_IMODE(os.stat(path).st_mode)
+    except OSError:
+        raise _AuthError(f"--cred-file 을 읽을 수 없다: {path}") from None
+    if mode != 0o600:
+        raise _AuthError(f"--cred-file 권한이 0600 이 아니다({mode:o}): {path}")
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        email, password = data["email"], data["password"]
+    except (OSError, ValueError, KeyError, TypeError):
+        raise _AuthError(f"--cred-file 은 email·password 키를 가진 JSON 이어야 한다: {path}") from None
+    if not (isinstance(email, str) and isinstance(password, str)):
+        raise _AuthError(f"--cred-file 의 email·password 는 문자열이어야 한다: {path}")
+    return email, password
 
 
 def _pace(stamp: Path, retry_at: Path) -> None:
@@ -56,11 +88,11 @@ def _pace(stamp: Path, retry_at: Path) -> None:
     stamp.write_text(str(time.time()))
 
 
-def _client(base: str) -> httpx.Client:
+def _client(base: str, email: str, password: str) -> httpx.Client:
     """로그인까지 마친 클라이언트. 첫 요청이 `__enter__` 전에 나가면 httpx가 재진입으로
     막으므로, 호출부는 `with` 없이 그대로 받아 쓴다."""
     client = httpx.Client(base_url=base, timeout=300)
-    login = client.post("/auth/login", json={"email": EMAIL, "password": PASSWORD})
+    login = client.post("/auth/login", json={"email": email, "password": password})
     if login.status_code in (401, 403):
         raise _AuthError(f"HTTP {login.status_code}: {login.text[:300]}")
     login.raise_for_status()
@@ -141,6 +173,7 @@ def main() -> int:
     ap.add_argument("--log", help="턴 로그 JSONL (--new·--say 필수). 간격 스탬프도 이 옆에 둔다")
     ap.add_argument("--trace", help="서버 trace.jsonl (--say 필수). Gemini 429 감지용")
     ap.add_argument("--intent", choices=["목표", "반응", "탐색"], help="로그에만 남긴다")
+    ap.add_argument("--cred-file", help="저장소 밖 0600 JSON {email, password}. 없으면 로컬 테스트 계정")
     args = ap.parse_args()
     if (args.new or args.say is not None) and not args.log:
         ap.error("--new·--say 에는 --log 가 필요하다")
@@ -148,7 +181,8 @@ def main() -> int:
         ap.error("--say 에는 --trace 가 필요하다")
 
     try:
-        client = _client(args.base)
+        email, password = _load_cred(args.cred_file) if args.cred_file else (EMAIL, PASSWORD)
+        client = _client(args.base, email, password)
     except _AuthError as exc:
         print(exc)
         return 2
