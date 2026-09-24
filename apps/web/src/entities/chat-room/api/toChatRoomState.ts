@@ -112,6 +112,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     stats: dto.stats ?? {},
     endingStatus: { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: dto.turnCount,
+    personaId: dto.personaId ?? undefined,
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,
   };

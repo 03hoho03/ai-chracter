@@ -32,6 +32,25 @@ describe("toChatRoomState", () => {
     });
   });
 
+  // persona-goal-prompt.md §3-3 — 방의 대화 프로필 선택. 서버 `null`(선택 없음)과 필드 부재는 둘 다 undefined다.
+  it("carries personaId and folds a null personaId to undefined", () => {
+    const base = {
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "character" as const,
+      name: "대화 1",
+      turnCount: 0,
+      endingReached: false,
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    };
+    expect(toChatRoomState({ ...base, personaId: "persona-1" }).personaId).toBe("persona-1");
+    expect(toChatRoomState({ ...base, personaId: null })).toHaveProperty("personaId", undefined);
+  });
+
   it("carries the endingReached flag through into endingStatus.reached", () => {
     const state = toChatRoomState({
       id: "room-1",
