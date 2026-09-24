@@ -8,64 +8,11 @@ import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/t
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm, useWatch } from "react-hook-form";
 
-import { PERSONA_DESCRIPTION_MAX_LENGTH, type Persona } from "@/entities/persona";
+import { PERSONA_DESCRIPTION_MAX_LENGTH } from "@/entities/persona";
 
-import { useCreatePersonaMutation } from "../api/useCreatePersonaMutation";
-import { useUpdatePersonaMutation } from "../api/useUpdatePersonaMutation";
-import { formToCreateRequest, formToUpdateRequest } from "../model/formToServer";
 import { personaErrorMessage } from "../model/personaErrorMessage";
 import { PERSONA_GENDER_OPTIONS, PERSONA_GENDER_OPTION_LABEL, toPersonaGenderOption } from "../model/personaGenderOption";
 import { personaFormSchema, type PersonaFormValues } from "../model/schema";
-import { createFormDefaults, serverToForm } from "../model/serverToForm";
-
-type CreatePersonaFormProps = {
-  /** `GET /me/personas`의 `defaultPersonaId` — "기본으로 지정" 체크박스의 초기값을 정한다(UP-23). */
-  defaultPersonaId: string | null;
-  /** Promise를 돌려주면 그것이 끝날 때까지 폼이 "저장 중"으로 남는다 — 생성 뒤 후속 요청(방 적용 등)이 도는
-   * 동안 다시 제출해 같은 프로필을 또 만들지 않게(review-s7.md 🟡-1). 거부하면 폼 루트 에러가 되므로 후속
-   * 실패는 호출부에서 처리하고 resolve한다. */
-  onCreated: (persona: Persona) => void | Promise<void>;
-  onCancel: () => void;
-};
-
-/** 관리 페이지와 대화방 "새로 만들기"가 같은 폼·같은 규칙을 쓴다(persona-goal-prompt.md §3-3 UP-23). */
-export function CreatePersonaForm({ defaultPersonaId, onCreated, onCancel }: CreatePersonaFormProps) {
-  const createMutation = useCreatePersonaMutation();
-
-  return (
-    <PersonaFormBody
-      defaultValues={createFormDefaults(defaultPersonaId)}
-      isCreate
-      submitLabel="만들기"
-      onCancel={onCancel}
-      onValidSubmit={async (values) => {
-        await onCreated(await createMutation.mutateAsync(formToCreateRequest(values)));
-      }}
-    />
-  );
-}
-
-type EditPersonaFormProps = {
-  persona: Persona;
-  onSaved: (persona: Persona) => void;
-  onCancel: () => void;
-};
-
-export function EditPersonaForm({ persona, onSaved, onCancel }: EditPersonaFormProps) {
-  const updateMutation = useUpdatePersonaMutation();
-
-  return (
-    <PersonaFormBody
-      defaultValues={serverToForm(persona)}
-      isCreate={false}
-      submitLabel="저장"
-      onCancel={onCancel}
-      onValidSubmit={async (values) =>
-        onSaved(await updateMutation.mutateAsync({ personaId: persona.id, payload: formToUpdateRequest(values) }))
-      }
-    />
-  );
-}
 
 type PersonaFormBodyProps = {
   defaultValues: PersonaFormValues;
@@ -76,7 +23,7 @@ type PersonaFormBodyProps = {
   onCancel: () => void;
 };
 
-function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidSubmit, onCancel }: PersonaFormBodyProps) {
+export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidSubmit, onCancel }: PersonaFormBodyProps) {
   const fieldId = useId();
   const form = useForm<PersonaFormValues>({
     resolver: zodResolver(personaFormSchema),

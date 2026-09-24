@@ -208,7 +208,7 @@ export function PreviewSessionView({
           {/* 헤더(`PreviewCloseHeader`)가 아니라 여기인 이유: 헤더 행은 `h-8` 고정 한 줄이라 360px에서
               `미리보기 초기화` 옆에 두면 "대화 프로필:…"로 말줄임돼 이름이 통째로 안 보였다(S8 후속 실측). 입력창 위는 전체 폭을
               쓰고, 작가가 말을 거는 바로 그 자리에서 "누구로 대화하는지"를 읽는다. */}
-          {personaCaption && <p className="mb-2 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>}
+          {personaCaption !== undefined && <p className="mb-2 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>}
           {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.
               사용자 메시지가 전송 즉시 캐시에 추가되므로, turnCount가 오르기를 기다리는
               동안(스트리밍 구간) 죽은 칩 줄이 남는 것도 이 항이 함께 막는다. */}

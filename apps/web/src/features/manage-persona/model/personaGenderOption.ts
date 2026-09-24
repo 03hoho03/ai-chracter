@@ -1,8 +1,9 @@
-import { PERSONA_GENDER_LABEL } from "@/entities/persona";
+import { PERSONA_GENDER_LABEL, PERSONA_GENDERS } from "@/entities/persona";
 
 /** 폼의 성별 선택지(persona-goal-prompt.md UP-4). 서버의 `null`(선택 안 함)을 토글 값으로 담으려고
- * `"unspecified"`를 둔다 — 서버 값과의 변환은 `formToServer`/`serverToForm`만 한다. */
-export const PERSONA_GENDER_OPTIONS = ["unspecified", "male", "female"] as const;
+ * `"unspecified"`를 둔다 — 서버 값과의 변환은 `formToServer`/`serverToForm`만 한다. 서버 멤버는
+ * `PERSONA_GENDERS`에서 도출하므로 멤버가 늘면 아래 라벨 맵에서 컴파일이 깨진다. */
+export const PERSONA_GENDER_OPTIONS = ["unspecified", ...PERSONA_GENDERS] as const;
 export type PersonaGenderOption = (typeof PERSONA_GENDER_OPTIONS)[number];
 
 export const PERSONA_GENDER_OPTION_LABEL: Record<PersonaGenderOption, string> = {
