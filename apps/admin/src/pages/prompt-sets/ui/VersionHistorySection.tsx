@@ -1,5 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { cn } from "@ai-character-chat/ui/lib/utils";
+import { Check } from "lucide-react";
 import { useState } from "react";
 
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
@@ -29,7 +31,7 @@ function VersionTable() {
   const [selectedId, setSelectedId] = useState<string>();
 
   if (versionListQuery.isPending) {
-    return <div className="h-32 animate-pulse rounded-lg bg-muted" />;
+    return <div className="h-32 animate-pulse rounded-lg bg-secondary" />;
   }
 
   if (versionListQuery.isError) {
@@ -60,28 +62,41 @@ function VersionTable() {
             </TableRow>
           </TableHeader>
           <TableBody>
-            {publishedVersions.map((item) => (
-              <TableRow
-                key={item.id}
-                tabIndex={0}
-                role="button"
-                aria-selected={item.id === selectedId}
-                className="cursor-pointer aria-selected:bg-muted"
-                onClick={() => setSelectedId(item.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    setSelectedId(item.id);
-                  }
-                }}
-              >
-                <TableCell>v{item.version}</TableCell>
-                <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
-                <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
-                <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
-                <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
-              </TableRow>
-            ))}
+            {publishedVersions.map((item) => {
+              const isSelected = item.id === selectedId;
+              return (
+                // 선택 채움은 `secondary`다 — 공용 `TableRow`의 `bg-muted`는 이 표가 앉은 `bg-card`와
+                // 같은 값이라 선택이 1.0000:1로 사라진다(Q-9: 공용 기본값은 두고 호출부만 덮는다).
+                // 채움은 card 대비 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다
+                // (`foreground` on `secondary` 14.06:1, BS-22). 자리를 늘 비워 두어 선택이 바뀌어도
+                // 열 폭이 흔들리지 않는다.
+                <TableRow
+                  key={item.id}
+                  tabIndex={0}
+                  role="button"
+                  aria-selected={isSelected}
+                  className="cursor-pointer aria-selected:bg-secondary"
+                  onClick={() => setSelectedId(item.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      setSelectedId(item.id);
+                    }
+                  }}
+                >
+                  <TableCell>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
+                      v{item.version}
+                    </span>
+                  </TableCell>
+                  <TableCell>{PROMPT_LANE_LABELS[item.lane]}</TableCell>
+                  <TableCell>{formatDateTime(item.publishedAt)}</TableCell>
+                  <TableCell className="max-w-64 truncate">{item.note || "-"}</TableCell>
+                  <TableCell>{item.isActive ? "활성" : "-"}</TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -99,7 +114,7 @@ function VersionDetailPanel({ id }: VersionDetailPanelProps) {
   const versionDetailQuery = useVersionDetailQuery(id);
 
   if (versionDetailQuery.isPending) {
-    return <div className="h-24 animate-pulse rounded-lg bg-muted" />;
+    return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;
   }
 
   if (versionDetailQuery.isError) {

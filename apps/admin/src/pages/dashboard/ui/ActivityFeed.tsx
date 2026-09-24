@@ -21,7 +21,7 @@ function ActivityFeedBody() {
   const activityQuery = useActivityQuery();
 
   if (activityQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
+    return <div className="h-64 animate-pulse rounded-xl bg-secondary" />;
   }
 
   if (activityQuery.isError) {
@@ -45,10 +45,10 @@ function ActivityFeedBody() {
                 <Link
                   to="/users/$userId"
                   params={{ userId: user.id }}
-                  className="-mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="group -mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <span className="truncate text-foreground">{user.nickname}</span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground group-hover:text-foreground">
                     {formatMonthDayTime(user.createdAt)}
                   </span>
                 </Link>
@@ -69,13 +69,13 @@ function ActivityFeedBody() {
                 <Link
                   to="/contents/$contentId"
                   params={{ contentId: content.id }}
-                  className="-mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="group -mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <span className="truncate text-foreground">
-                    <span className="text-muted-foreground">{CONTENT_TYPE_LABELS[content.type]}</span>{" "}
+                    <span className="text-muted-foreground group-hover:text-foreground">{CONTENT_TYPE_LABELS[content.type]}</span>{" "}
                     {content.name || "(이름 없음)"}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground group-hover:text-foreground">
                     {formatMonthDayTime(content.createdAt)}
                   </span>
                 </Link>
@@ -96,13 +96,13 @@ function ActivityFeedBody() {
                 <Link
                   to="/reports/$reportId"
                   params={{ reportId: report.id }}
-                  className="-mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+                  className="group -mx-1 flex items-center justify-between gap-2 rounded-md px-1 text-sm outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:ring-3 focus-visible:ring-ring/50"
                 >
                   <span className="truncate text-foreground">
-                    <span className="text-muted-foreground">{REPORT_REASON_LABELS[report.reasonCategory]}</span>{" "}
+                    <span className="text-muted-foreground group-hover:text-foreground">{REPORT_REASON_LABELS[report.reasonCategory]}</span>{" "}
                     {report.contentName || "(이름 없음)"}
                   </span>
-                  <span className="shrink-0 text-xs text-muted-foreground">
+                  <span className="shrink-0 text-xs text-muted-foreground group-hover:text-foreground">
                     {formatMonthDayTime(report.createdAt)}
                   </span>
                 </Link>

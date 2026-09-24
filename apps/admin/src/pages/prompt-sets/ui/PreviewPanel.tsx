@@ -40,7 +40,7 @@ export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
         </p>
       )}
 
-      {previewQuery.isPending && <div className="h-48 animate-pulse rounded-lg bg-muted" />}
+      {previewQuery.isPending && <div className="h-48 animate-pulse rounded-lg bg-secondary" />}
 
       {previewQuery.isError && (
         <div className="flex flex-wrap items-center gap-2">
@@ -70,7 +70,7 @@ export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {
               <summary className="cursor-pointer text-sm font-medium text-foreground">
                 {item.label}
               </summary>
-              <pre className="mt-2 max-h-96 overflow-y-auto rounded-lg bg-muted p-3 text-xs whitespace-pre-wrap text-foreground">
+              <pre className="mt-2 max-h-96 overflow-y-auto rounded-lg bg-secondary p-3 text-xs whitespace-pre-wrap text-foreground">
                 {item.text}
               </pre>
             </details>

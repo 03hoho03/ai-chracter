@@ -71,7 +71,7 @@ function InquiryDetailBody({ inquiryId }: InquiryDetailBodyProps) {
         <p className="whitespace-pre-wrap break-keep text-sm text-foreground">{inquiry.body}</p>
 
         {inquiry.attachmentUrl && (
-          <div className="flex h-64 w-full max-w-md items-center justify-center overflow-hidden rounded-lg border border-border bg-muted">
+          <div className="flex h-64 w-full max-w-md items-center justify-center overflow-hidden rounded-lg border border-border bg-secondary">
             <img
               src={inquiry.attachmentUrl}
               alt=""

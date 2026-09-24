@@ -32,7 +32,7 @@ export function AdminSidebar() {
               key={item.to}
               to={item.to}
               className={cn(
-                "rounded-lg border border-input px-3 py-2 text-sm font-medium text-foreground outline-none motion-safe:transition-colors hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+                "rounded-lg border border-input px-3 py-2 text-sm font-medium text-foreground outline-none motion-safe:transition-colors hover:bg-secondary focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
                 isActive && "border-primary bg-primary/10 text-primary hover:bg-primary/15",
               )}
             >

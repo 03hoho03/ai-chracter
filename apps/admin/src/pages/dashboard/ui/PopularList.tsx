@@ -22,7 +22,7 @@ function PopularTable() {
   const navigate = useNavigate();
 
   if (popularQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
+    return <div className="h-64 animate-pulse rounded-xl bg-secondary" />;
   }
 
   if (popularQuery.isError) {

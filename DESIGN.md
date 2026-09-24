@@ -176,6 +176,14 @@ components:
 - 다크 `muted-foreground` on `background`: **6.74:1**, on `secondary`: **5.39:1** — 두 레이어 모두 AA 통과
 - 라이트 `muted-foreground` on `background`: **5.28:1**, on `card`: **4.84:1** — 통과. 단 **on `accent`(0.930)에서는 4.30:1로 AA 미달**이므로, 라이트에서 `accent` 표면 위에 `muted-foreground`로 본문을 올리지 않는다(배지처럼 큰 텍스트가 아닌 이상).
 
+**표면 위 채움 규칙 — `card`/`popover` 위의 채움·hover·선택 배경은 `secondary`다. `muted`는 `background` 위 첫 레이어(스켈레톤·웰) 전용이다**(backlog H-2, `backlog-sweep-goal-prompt.md` BS-12~14). 표의 둘째 줄처럼 셋이 **같은 값**이라, 모달(`DialogContent`·`AlertDialogContent`·`SheetContent`)이나 `bg-card` 섹션 안에 깐 `bg-muted` 스켈레톤·웰·hover·선택은 표면 대비 **1.0000:1로 사라진다** — 라이트만의 문제가 아니라 두 테마 모두다. `secondary`로 올리면 대 `card`/`popover` **1.1239 라이트 / 1.1439 다크**(`background` 위 `muted`의 1.0902 / 1.0946과 같은 급)로 보이게 된다.
+- **그 채움 위 글자는 `muted-foreground`가 아니라 `foreground`다** — 위 목록대로 라이트 `muted-foreground` on `secondary`는 4.30:1로 AA 미달이다. hover에만 채움이 생기는 행이면 `group` + `group-hover:text-foreground`로 채움과 함께 올린다.
+- **안에 outline 컨트롤이 있는 박스는 채움 대신 윤곽(`border border-border`)으로 만든다** — `secondary` 위 `border-input`은 아래 문단대로 3:1 미달이다(2.9714 / 2.8276).
+- **`DialogFooter`/`AlertDialogFooter`의 띠만 `secondary/50`이다** — 불투명 `secondary`면 그 위 outline 버튼 보더와 `muted-foreground` 문장이 위 두 줄에 걸린다. `/50`은 띠 1.0642 / 1.0651, 보더 3.1380 / 3.0367, 글자 라이트 4.5259로 셋 다 지킨다.
+- **정보를 싣는 선택 상태**(어느 행을 골랐는가)는 채움 1.12~1.14만으로 WCAG 1.4.11(3:1)에 못 닿으므로 3:1 이상의 단서를 하나 더 둔다(예: admin `VersionHistorySection`의 체크 글리프, `foreground` on `secondary` 14.06:1). 스켈레톤·웰·hover처럼 정보를 싣지 않는 채움은 위 수치로 충분하다(BS-22).
+- **강제**: `apps/web/src/shared/lib/surface-contract/mutedOnSurfaceContract.test.ts`가 web + `packages/ui` 소스를 스캔한다(주석 제거 후, 표면 표식이 있는 파일의 `bg-muted` 토큰을 실패로 본다). **파일 단위라 표식과 채움이 다른 파일에 있으면 못 잡고**(예: `SheetContent` 안에 렌더되는 `GeneratedImageLibraryPanel`), **admin은 스캔하지 않는다**(형제 앱, vitest 없음) — 둘 다 손으로 조상을 확인한다.
+- ⚠️ **공용 프리미티브의 기본값은 아직 이 규칙 밖이다**(backlog-sweep M-3): `button.tsx` outline·ghost의 `hover:bg-muted`(아래 §5 Buttons와 프론트매터 `button-ghost-hover`가 그 값을 적는다), `toggle.tsx`의 `hover:bg-muted`, `tabs.tsx` default 리스트, `avatar.tsx` 폴백, `markdown.tsx` 인라인 코드, `table.tsx`의 hover·선택·footer. 이들이 card/popover 위에 오면 같은 이유로 사라진다 — 기본값을 바꿀 때까지는 **card/popover 위 호출부에서 덮는다**(예: `ContentCardActionMenu`의 `hover:bg-secondary`, `VersionHistorySection`의 `aria-selected:bg-secondary`). §5의 해당 문장은 "`background` 위에서"로 읽는다.
+
 **`border`와 `input`은 값이 다르다 — 사다리에서 갈라져 나온 유일한 무채색 토큰이다(US-004).** 둘은 규범이 다르다: `border`가 그리는 구분선·카드 테두리는 장식이라 WCAG 대비 요건이 없지만, `input`이 그리는 컨트롤 테두리는 **비텍스트 대비 1.4.11(3:1)**을 진다 — 인풋·outline 버튼·선택 안 된 토글은 내부 채움이 페이지 배경과 `1.0000`이라 그 한 줄이 "여기 컨트롤이 있다"는 **유일한 신호**이기 때문이다. 사다리 값(0.300/0.890)으로는 **1.4312 다크 / 1.3845 라이트**로 절반도 안 됐다.
 - 고친 값의 실측(스크린샷 픽셀 디코드): 인풋 보더 대 `background` **3.5403 다크 / 3.6408 라이트**, 대 `card`(=`popover`·`muted`) **3.2344 / 3.3395**. 스위치 off 트랙(`bg-input`)과 그 위 흰 썸(`bg-background`)도 같은 값을 얻는다(전 1.4312 → 후 3.5403).
 - **`secondary`·`accent`(다크 0.260 / 라이트 0.930) 표면 위에서는 2.8276 / 2.9714로 여전히 미달이다.** 그 두 표면 위에는 보더로만 식별되는 컨트롤을 올리지 않는다 — 올려야 한다면 채움이나 링을 함께 준다.
@@ -247,7 +255,7 @@ components:
 - **Primary:** 핑크-레드 `primary` 채움 + `primary-foreground` 텍스트, hover 시 `bg-primary/80`. 다크에서는 밝힌 핑크 + 어두운 텍스트, 라이트에서는 어두운 핑크 + 흰 텍스트 — **규칙은 "채움 위 텍스트를 뒤집는다"로 동일하다**(§2 Primary).
 - **Outline:** `border-input` + `background`, hover 시 `bg-muted`. **보더는 `border`가 아니라 `input`이다** — 채움이 배경과 같아 이 한 줄이 유일한 식별 신호이고 3:1을 진다(§2 Neutral).
 - **Secondary:** `secondary` 채움, hover는 `color-mix(in oklch, var(--secondary), var(--foreground) 5%)` — 사다리를 벗어나지 않도록 토큰에서 파생시킨다.
-- **Ghost:** 투명, hover 시 `bg-muted`.
+- **Ghost:** 투명, hover 시 `bg-muted`. **`background` 위 기준이다** — card/popover 위에서는 hover가 사라지므로 호출부에서 `hover:bg-secondary`로 덮는다(§2 "표면 위 채움 규칙", 기본값 변경은 backlog-sweep M-3).
 - **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive-text`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다. **포커스는 하우스 레시피의 hue만 바꾼다** — `focus-visible:border-destructive` + `ring-destructive/50`. 알파를 낮추지 말 것: 보더 40% · 링 20%였을 때 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 배경 1.2371 다크 / 1.3694 라이트, 링 대 자기 채움 1.1312 / 1.1728 — 이 앱에서 포커스가 사실상 안 보이는 유일한 컨트롤이었다). 불투명 보더는 자기 채움 대비 **4.8431 / 4.5795**, 배경 대비 **5.2933 / 5.3328**이다.
 - **Link:** `text-primary` + underline-offset-4.
 - **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).

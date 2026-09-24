@@ -295,7 +295,7 @@ function CloverLedgerSection({ userId }: CloverLedgerSectionProps) {
         )}
       </div>
 
-      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-muted" />}
+      {ledgerQuery.isPending && <div className="h-24 animate-pulse rounded-lg bg-secondary" />}
 
       {ledgerQuery.isError && (
         <p className="text-sm text-destructive-text">원장을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>
