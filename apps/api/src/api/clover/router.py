@@ -103,7 +103,9 @@ def _decode_cursor(cursor: str) -> list[str]:
 
 
 async def _require_active_user(db: AsyncSession, user_id: uuid.UUID) -> User:
-    """`require_legal_consent`가 같은 세션으로 이미 조회한 행이라 여기서는 identity map 히트다.
+    """탈퇴·부재는 `get_current_user_id`가 이미 401로 막는다(backlog-sweep-goal-prompt.md BS-3).
+    앞 의존성들이 같은 세션으로 읽은 행이지만 아무도 붙잡지 않아 수거됐으므로(identity map은
+    약참조) 여기서 SELECT가 다시 나간다 — 어차피 잔액을 읽으려면 행이 필요하다.
 
     그래도 한 번 더 확인하는 이유는 탈퇴 여부 판정을 이 파일이 갖기 위해서다 — 게이트가
     빠지거나 순서가 바뀌어도 라우트가 스스로 막는다.

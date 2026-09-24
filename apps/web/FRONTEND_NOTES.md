@@ -34,7 +34,7 @@ CLAUDE.md에서 분리한, **특정 코드를 만질 때만** 필요한 함정·
 
 ## 검증 환경 (로컬)
 
-- **Redis 세션 > Postgres**: 로컬 재시딩으로 세션 쿠키의 `user_id`가 `users`에 없어지면, 로그인 필요 뮤테이션이 BE FK 위반 500을 내고 브라우저는 이를 "CORS policy"(`net::ERR_FAILED`)로 **오표시**한다(프리플라이트는 정상 200). CORS 의심 전에 `/login`에서 시드 계정(`test@example.com` / `password1234`, `DEV.md` §시드 콘텐츠 → 계정)으로 재로그인해 쿠키를 갱신한다 — 로그인 응답이 같은 이름 쿠키를 덮어쓰므로 기존 쿠키를 지울 필요는 없다. 시드 계정 자체가 없으면 `apps/api`에서 `uv run --env-file .env python scripts/seed_dev.py` 재실행.
+- **Redis 세션 > Postgres**: 로컬 재시딩으로 세션 쿠키의 `user_id`가 `users`에 없어지면 BE가 그 세션을 **401**로 끊는다(`get_current_user_id`가 `users` 행을 확인한다 — `tasks/backlog-sweep-goal-prompt.md` BS-3, 2026-09-24). 그 전에는 로그인 필요 뮤테이션이 FK 위반 500을 냈고 브라우저가 이를 "CORS policy"(`net::ERR_FAILED`)로 오표시했다 — 지금 CORS 오류가 보이면 이 원인이 아니다. 로그인이 풀리면 `/login`에서 시드 계정(`test@example.com` / `password1234`, `DEV.md` §시드 콘텐츠 → 계정)으로 재로그인해 쿠키를 갱신한다 — 로그인 응답이 같은 이름 쿠키를 덮어쓰므로 기존 쿠키를 지울 필요는 없다. 시드 계정 자체가 없으면 `apps/api`에서 `uv run --env-file .env python scripts/seed_dev.py` 재실행.
 - **LLM 없는 화면 검증**: `GEMINI_API_KEY` 없으면 SSE 토큰 스트림/정책위반/발행 필터 분기를 재현 못 한다. BE를 임시 수정(하드코딩 토큰 목록 / `raise LLMPolicyViolationError` / `get_llm_client`에 `DEV_FAKE_LLM=1` 페이크) 후 브라우저 확인 → `git checkout -- <file>`로 완전 원복(커밋 전 `git status` 확인). FastAPI `Depends()`가 라우트 본문 전에 resolve되므로, LLM 불필요 분기(`missingFields`)조차 `get_llm_client()` 생성 시점 `ValueError`로 막히는 점 주의.
 - **MCP drag 한계**: chrome-devtools MCP의 범용 `drag`(uid→uid)는 dnd-kit `PointerSensor`(실제 pointerdown/move/up 이벤트 필요)에 반응하지 않는다 → `evaluate_script`로 `PointerEvent`(pointerdown → 여러 pointermove → pointerup, `bubbles:true`/`pointerId`/`isPrimary:true`) 시퀀스를 직접 디스패치해 확인(코드 버그가 아니라 툴 한계).
 

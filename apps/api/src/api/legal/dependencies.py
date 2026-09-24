@@ -48,17 +48,16 @@ async def require_legal_consent(
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
     """consent-gate-goal-prompt.md CG-5·CG-6·CG-7: 약관·처리방침 중 하나라도 재동의가
-    필요하면 403 + 기계 판독 가능한 detail(CG-6)로 막는다. `get_current_user_id`는
-    Depends로 그대로 쓸 뿐 건드리지 않는다(CG-7) — 그 의존성은 읽기 엔드포인트와
-    CG-4의 예외 15개에도 함께 쓰이므로, 재동의 검사를 거기 끼워넣으면 읽기까지 막힌다."""
+    필요하면 403 + 기계 판독 가능한 detail(CG-6)로 막는다. `get_current_user_id`에는
+    재동의(버전) 검사를 끼워넣지 않는다(CG-7) — 그 의존성은 읽기 엔드포인트와 CG-4의
+    예외 15개에도 함께 쓰이므로, 거기 넣으면 읽기까지 막힌다. 존재·탈퇴(`deleted_at`)
+    확인은 이 제약 밖이라 그쪽이 한다(backlog-sweep-goal-prompt.md BS-3)."""
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
-        # consent-gate-goal-prompt.md S2: S1의 `assert`는 "get_current_user_id를 통과했으면
-        # User 행이 존재한다"고 가정했지만, `get_current_user_id`(session/dependencies.py)는
-        # 세션만 보고 User 테이블을 조회하지 않는다 — 이 게이트를 `/preview-sessions`류에
-        # 붙이자 실제로 깨졌다(그 라우트들의 테스트가 원래 User 조회가 필요 없어 실존하지
-        # 않는 user_id로 로그인한다). `auth/router.py`의 나머지 엔드포인트(get_me·withdraw
-        # 등)와 같은 401로 통일한다.
+        # `get_current_user_id`가 같은 조건으로 먼저 401을 내므로 요청 경로에서는 여기 닿지
+        # 않는다(backlog-sweep-goal-prompt.md BS-3). 그래도 남긴다 — `db.get`이 `User | None`이라
+        # 좁히기는 어차피 필요하고(`assert`면 500이다), 앞 의존성이 바뀌어도 이 게이트가
+        # 스스로 막는다. `auth/router.py`의 get_me·withdraw 등 같은 모양의 분기도 같은 이유다.
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
     required_terms_version = await _latest_published_legal_version(db, "terms", requires_reconsent=True)
