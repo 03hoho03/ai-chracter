@@ -102,6 +102,10 @@ class Settings(BaseSettings):
     # 남길 파일 경로. None = 아무 일도 안 함(프로덕션 기본값이자 방어) — 프롬프트에는
     # 창작자의 비공개 설정이 들어 있어 기본으로 켜지면 안 된다.
     prompt_dump_path: str | None = None
+    # chat-longrun-goal-prompt.md LB-9·LB-27: 턴 계측 trace(JSONL)를 남길 파일 경로. None = 아무 일도
+    # 안 함(prompt_dump_path 와 같은 3상태). `.env` 에 넣지 않고 서버 기동 명령의 인라인 env 로만
+    # 준다(LB-28) — 넣으면 pytest 도 같은 파일에 가짜 방 레코드를 append 한다.
+    longrun_trace_path: str | None = None
     # tasks/archive/prd-image-generation.md §3/US-003: 생성 잡 Redis 레코드 TTL(확정값 1시간).
     image_generation_job_ttl_seconds: int = 60 * 60
 

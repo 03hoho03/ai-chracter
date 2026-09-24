@@ -1,4 +1,5 @@
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any, TypeVar
 
@@ -9,6 +10,7 @@ from google.genai import types as genai_types
 from pydantic import BaseModel
 
 from api.core.config import settings
+from api.core.longrun_trace import trace_enabled, write_usage
 from api.llm.client import LLMClient, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 
 T = TypeVar("T", bound=BaseModel)
@@ -53,6 +55,13 @@ class GeminiLLMClient(LLMClient):
             # None 이면 seed 를 아예 넘기지 않아 지금과 같은 매 회차 난수 동작을 유지한다
             # (chat-techspec.md §3-1). generate_structured()에는 붙이지 않는다.
             config.seed = settings.gemini_seed
+        # chat-longrun-goal-prompt.md LB-27: 토큰은 인터페이스가 돌려주지 않아 여기서만 잡힌다.
+        # 스트림의 어느 청크에 usage 가 실리는지 모르므로 마지막 non-null 값을 쓴다.
+        tracing = trace_enabled()
+        started = time.monotonic()
+        last_usage: Any = None
+        model_version: str | None = None
+        finish_reason: Any = None
         try:
             stream = await self._client.aio.models.generate_content_stream(
                 model=self._model_name,
@@ -60,6 +69,11 @@ class GeminiLLMClient(LLMClient):
                 config=config,
             )
             async for chunk in stream:
+                if tracing:
+                    last_usage = getattr(chunk, "usage_metadata", None) or last_usage
+                    model_version = getattr(chunk, "model_version", None) or model_version
+                    for traced in getattr(chunk, "candidates", None) or []:
+                        finish_reason = getattr(traced, "finish_reason", None) or finish_reason
                 prompt_feedback = getattr(chunk, "prompt_feedback", None)
                 if prompt_feedback is not None and prompt_feedback.block_reason is not None:
                     raise LLMPolicyViolationError("Gemini blocked the prompt via safetySettings")
@@ -76,6 +90,13 @@ class GeminiLLMClient(LLMClient):
                         )
                 if chunk.text:
                     yield chunk.text
+            write_usage(
+                call="generation",
+                usage_metadata=last_usage,
+                model_version=model_version,
+                elapsed_ms=round((time.monotonic() - started) * 1000),
+                finish_reason=finish_reason,
+            )
         except (genai_errors.APIError, httpx.HTTPError) as exc:
             # monitoring-techspec.md MT-6: 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
             # `httpx.HTTPError`에는 `.code`가 없으므로 `isinstance` 가드가 먼저다(순서를
@@ -97,6 +118,7 @@ class GeminiLLMClient(LLMClient):
                 *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
             ]
 
+        started = time.monotonic()
         try:
             response = await self._client.aio.models.generate_content(
                 model=self._model_name,
@@ -114,6 +136,14 @@ class GeminiLLMClient(LLMClient):
                 raise LLMRateLimitError(f"Gemini generate_structured() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc
 
+        # chat-longrun-goal-prompt.md LB-27: call 은 스키마 이름(StatJudgmentResult 등). 파싱 실패로
+        # 아래에서 raise 해도 토큰은 이미 썼으므로 그 전에 남긴다.
+        write_usage(
+            call=response_schema.__name__,
+            usage_metadata=getattr(response, "usage_metadata", None),
+            model_version=getattr(response, "model_version", None),
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+        )
         if not isinstance(response.parsed, response_schema):
             raise LLMClientError(
                 f"Gemini structured response could not be parsed into {response_schema.__name__}"

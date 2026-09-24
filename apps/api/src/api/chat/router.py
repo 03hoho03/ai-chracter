@@ -74,6 +74,7 @@ from api.content.schemas import (
 )
 from api.core.config import settings
 from api.core.clover import refund_in_new_transaction
+from api.core.longrun_trace import set_trace_context, trace_enabled, write_trace
 from api.core.rate_limit_gate import ChatCharge, enforce_chat_rate_limit
 from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -844,6 +845,30 @@ async def _stream_generated_tokens(
         yield ChatTokenEvent(delta=delta)
 
 
+async def _trace_ending_check(
+    db: AsyncSession, ending: Ending, triggered: bool, updated_stats: dict[str, float]
+) -> None:
+    """chat-longrun-goal-prompt.md LB-14: `triggered` 와 무관하게 판정한 엔딩의 규칙을 **따로** 평가해
+    남긴다 — 엔딩 루프는 `triggered=false` 면 규칙을 보지도 않아 "LLM 이 거부했다"와 "스탯이
+    모자랐다"를 가를 수 없다. 추가 조회(`_ending_rule_items`)는 trace 가 켜졌을 때만 한다
+    (호출부가 `trace_enabled()` 로 가드, progress IV-4 사용자 결정). 판정 흐름에는 관여하지 않고,
+    조회 실패도 여기서 삼킨다 — 흡수 `except` 는 `LLMClientError` 만 잡으므로 새면 SSE 를 뚫는다."""
+    try:
+        rules_pass: bool | None = evaluate_rule_list(await _ending_rule_items(db, ending), updated_stats)
+    except Exception:
+        logger.warning("longrun trace 규칙 평가 실패 (ending=%s)", ending.id, exc_info=True)
+        rules_pass = None
+    write_trace(
+        "ending_check",
+        name=ending.name,
+        order=ending.order,
+        gate=ending.turn_count_gate,
+        triggered=triggered,
+        rulesPass=rules_pass,
+        statsAtCheck=updated_stats,
+    )
+
+
 async def _stream_new_turn(
     db: AsyncSession,
     room: ChatRoom,
@@ -869,7 +894,12 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
     이미지 매칭은 재실행한다, situational-image-goal-prompt.md SI-4)는 이 헬퍼를 쓰지 않는다
     — 그 라우트의 docstring 참고.
+
+    chat-longrun-goal-prompt.md LB-9·LB-27: `settings.longrun_trace_path` 가 설정되면 턴 계측
+    레코드를 남긴다(`core/longrun_trace.py`). 기록은 전부 해당 `yield` **앞**이고(클라이언트가
+    끊으면 뒤는 안 돈다) 실패를 삼킨다. 꺼져 있으면 동작·쿼리가 기존과 같다.
     """
+    set_trace_context(reset=True, roomId=str(room.id), turn=room.turn_count + 1)
     try:
         prompt, system_instruction = await _build_prompt(
             db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
@@ -880,6 +910,10 @@ async def _stream_new_turn(
         # 게 없다 — 아직 아무 것도 스트리밍되지 않았다.
         logger.warning("대화방 %s 프롬프트 렌더 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # 생성 전 실패도 유실 턴이라 generation 으로 남긴다(프롬프트가 없어 길이는 null).
+        write_trace(
+            "generation", promptChars=None, systemChars=None, ok=False, errorType=type(exc).__name__
+        )
         # 환불은 `yield` **앞**이다 — 뒤에 두면 클라이언트가 이미 끊었을 때 실행되지 않는다.
         await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
@@ -897,17 +931,34 @@ async def _stream_new_turn(
             turn=room.turn_count + 1,
         ):
             yield token_event
-    except LLMPolicyViolationError:
+    except LLMPolicyViolationError as exc:
         # clover-goal-prompt.md CL-22: 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
         # 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과 결론이 갈리는 자리다.
+        write_trace(
+            "generation",
+            promptChars=len(prompt),
+            systemChars=len(system_instruction),
+            ok=False,
+            errorType=type(exc).__name__,
+        )
         yield ChatPolicyWarningEvent(message=_POLICY_WARNING_MESSAGE)
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        # chat-longrun-goal-prompt.md LB-29: 생성 429 는 SSE 에 일반 문구로만 가므로 errorType 이
+        # 드라이버의 유일한 감지 근거다.
+        write_trace(
+            "generation",
+            promptChars=len(prompt),
+            systemChars=len(system_instruction),
+            ok=False,
+            errorType=type(exc).__name__,
+        )
         await _refund_clover(charge, session_factory, room.user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
+    write_trace("generation", promptChars=len(prompt), systemChars=len(system_instruction), ok=True)
 
     assistant_content = "".join(chunks)
     assistant_message = ChatMessage(
@@ -920,6 +971,9 @@ async def _stream_new_turn(
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
     matched_image: SituationalImage | None = None
+    # chat-longrun-goal-prompt.md LB-27: 흡수 `except` 가 어느 단계에서 실패했는지 읽는 자리.
+    stage: str | None = None
+    stage_order: int | None = None
     # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
     # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
     # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
@@ -938,6 +992,8 @@ async def _stream_new_turn(
             }
             current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
 
+            stage = "stat"
+            set_trace_context(call="stat")
             judgment_prompt = build_stat_judgment_prompt(
                 prompt_set=prompt_set,
                 sections=prompt_sections,
@@ -947,8 +1003,16 @@ async def _stream_new_turn(
                 assistant_message=assistant_content,
             )
             judgment = await llm_client.generate_structured(judgment_prompt, StatJudgmentResult)
+            write_trace("stat_judgment", promptChars=len(judgment_prompt))
             changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
             updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
+            write_trace(
+                "stat_outcome",
+                before=current_stats,
+                changes=[{"statId": c.stat_id, "newValue": c.new_value} for c in changes],
+                after=updated_stats,
+                counterApplied=any(d.per_turn_delta is not None for d in stat_defs),
+            )
 
             for stat_id, new_value in updated_stats.items():
                 if new_value != current_stats.get(stat_id):
@@ -968,6 +1032,8 @@ async def _stream_new_turn(
             for ending in endings:
                 if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
                     continue
+                stage, stage_order = "ending", ending.order
+                set_trace_context(call="ending", name=ending.name, order=ending.order)
                 ending_judgment_prompt = build_ending_judgment_prompt(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
@@ -979,6 +1045,14 @@ async def _stream_new_turn(
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt, EndingJudgmentResult
                 )
+                if trace_enabled():
+                    write_trace(
+                        "ending_judgment",
+                        name=ending.name,
+                        order=ending.order,
+                        promptChars=len(ending_judgment_prompt),
+                    )
+                    await _trace_ending_check(db, ending, ending_judgment.triggered, updated_stats)
                 if not ending_judgment.triggered:
                     continue
                 rule_items = await _ending_rule_items(db, ending)
@@ -988,6 +1062,7 @@ async def _stream_new_turn(
                 room.ending_reached = True
                 room.ending_entity_id = ending.entity_id
                 room.ending_reached_at_turn = room.turn_count
+                write_trace("ending_reached", name=ending.name, order=ending.order)
 
                 existing_unlock = await db.scalar(
                     select(StoryEndingUnlock).where(
@@ -1020,6 +1095,13 @@ async def _stream_new_turn(
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("대화방 %s 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        write_trace(
+            "judgment_failed",
+            stage=stage,
+            order=stage_order,
+            errorType=type(exc).__name__,
+            message=str(exc)[:200],
+        )
 
     if matched_image is not None:
         assistant_message.image_id = matched_image.entity_id
