@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { ApiErrorObject } from "@/shared/api/client";
 
-import { isSuspendedError } from "./suspendedMessage";
+import { isSuspendedError } from "./suspendedAccount";
 
 function apiError(status: number, detail: string | Record<string, unknown> = "x") {
   return new ApiErrorObject({ status, message: "x", detail });

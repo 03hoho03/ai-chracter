@@ -2,7 +2,17 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useQueryClient } from "@tanstack/react-query";
 import { useSetAtom } from "jotai";
-import { BookOpen, ChevronRight, Heart, History, ImageOff, MessageCircle, Star, UserRound } from "lucide-react";
+import {
+  BookOpen,
+  ChevronRight,
+  Heart,
+  History,
+  ImageOff,
+  MessageCircle,
+  Star,
+  UserRound,
+  type LucideIcon,
+} from "lucide-react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useDebounce } from "react-use";
 import { toast } from "sonner";
@@ -49,6 +59,11 @@ const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
 const TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
   story: "스토리",
+};
+
+const TYPE_ICON: Record<ContentType, LucideIcon> = {
+  character: UserRound,
+  story: BookOpen,
 };
 
 // image-crop-goal-prompt.md IC-11 — 캐릭터(1열)는 모바일에서 `w-full` 그대로, 데스크톱은 높이 예산
@@ -221,6 +236,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
   // image-crop-goal-prompt.md IC-11 — hero 비율은 카드 그리드와 같은 도메인→표현 매핑
   // (`toThumbnailAspect`)을 재사용한다: 캐릭터 1:1, 스토리 2:3.
   const heroAspect = toThumbnailAspect(content.type);
+  const TypeIcon = TYPE_ICON[content.type];
 
   const body = (
     <article className="flex flex-col gap-5 p-1">
@@ -251,11 +267,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
           <div className="flex flex-col gap-2">
             <div className="flex items-center justify-between">
               <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-badge font-medium text-secondary-foreground">
-                {content.type === "character" ? (
-                  <UserRound aria-hidden className="size-3.5" />
-                ) : (
-                  <BookOpen aria-hidden className="size-3.5" />
-                )}
+                <TypeIcon aria-hidden className="size-3.5" />
                 {TYPE_LABEL[content.type]}
               </span>
 
@@ -419,10 +431,14 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
 // image-crop-goal-prompt.md IC-11 — 실제 hero와 스켈레톤이 이 함수 하나를 같이 써야 도착 시 폭이 안
 // 밀린다(스켈레톤이 실제와 다른 모양이면 도착 순간 화면이 밀린 전례, card-grid-goal-prompt.md F-1).
 function toHeroClassName(type: ContentType, aspect: ThumbnailAspect, visualClass: string): string {
-  if (type === "character") {
-    return cn("mx-auto w-full", visualClass, toThumbnailAspectClass(aspect), CHARACTER_HERO_WIDTH_CLASS);
+  switch (type) {
+    case "character":
+      return cn("mx-auto w-full", visualClass, toThumbnailAspectClass(aspect), CHARACTER_HERO_WIDTH_CLASS);
+    case "story":
+      return cn("w-full", visualClass, toThumbnailAspectClass(aspect), STORY_HERO_WIDTH_CLASS);
+    default:
+      return assertNever(type);
   }
-  return cn("w-full", visualClass, toThumbnailAspectClass(aspect), STORY_HERO_WIDTH_CLASS);
 }
 
 // image-crop-goal-prompt.md IC-11 — content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴

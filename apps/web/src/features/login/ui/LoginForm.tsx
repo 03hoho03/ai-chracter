@@ -96,7 +96,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
           void handleSubmit(handleValidSubmit)(event);
         }}
       >
-        {bannerMessage && (
+        {!!bannerMessage && (
           <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm text-destructive-text">
             {bannerMessage}
           </p>

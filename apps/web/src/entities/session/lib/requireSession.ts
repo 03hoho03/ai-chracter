@@ -3,7 +3,7 @@ import { redirect } from "@tanstack/react-router";
 
 import type { MeResponse } from "../api/sessionQueryOptions";
 import { sessionQueryOptions } from "../api/sessionQueryOptions";
-import { isSuspendedError } from "../model/suspendedMessage";
+import { isSuspendedError } from "../model/suspendedAccount";
 
 /** techspec-auth-onboarding.md §1 — 인증이 필요한 라우트의 `beforeLoad`에서 호출한다.
  * 세션이 없으면(GET /me가 401) 로그인 화면으로 리다이렉트하고 원래 목적지를 보존한다.

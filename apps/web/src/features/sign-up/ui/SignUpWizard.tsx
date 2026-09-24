@@ -133,22 +133,28 @@ export function SignUpWizard(props: SignUpWizardProps) {
 
   // 스텝 분기를 평범한 함수로 뽑아 `FormProvider`가 모든 갈래를 한 번에 감싸게 한다
   // (컴포넌트가 아니라 함수라 호출부에서 새 identity가 생기지 않는다 — 스텝 전환에 리마운트 없음).
-  // `mode === "google"` 분기를 `emailVerify`보다 먼저 두는 이유: 이메일 전용 `onStepChange`(`SignUpStep` 콜백)를
-  // 꺼내려면 구글 갈래가 먼저 return해야 narrowing이 된다. 구글이 이메일 인증 스텝에 닿지 않는 보증 자체는
-  // 이 순서가 아니라 props 유니언(`GoogleSignUpStep`)이 page 경계에서 이미 하고 있다.
+  // `mode`로 먼저 가르는 이유: 이메일 전용 `onStepChange`(`SignUpStep` 콜백)는 `email` 갈래에서만 narrowing으로
+  // 꺼낼 수 있다. 구글이 이메일 인증 스텝에 닿지 않는 보증 자체는 props 유니언(`GoogleSignUpStep`)이 page 경계에서
+  // 이미 하고 있다.
   function renderStep() {
-    if (props.mode === "google") {
-      const { token } = props;
-      return (
-        <GoogleBasicInfoStep
-          onSubmit={() => void handleGoogleBasicInfoSubmit(token)}
-          isSubmitting={onboardingMutation.isPending}
-        />
-      );
+    switch (props.mode) {
+      case "google": {
+        const { token } = props;
+        return (
+          <GoogleBasicInfoStep
+            onSubmit={() => void handleGoogleBasicInfoSubmit(token)}
+            isSubmitting={onboardingMutation.isPending}
+          />
+        );
+      }
+      case "email":
+        return renderEmailStep(props.step, props.onStepChange);
+      default:
+        return assertNever(props);
     }
+  }
 
-    const { step, onStepChange } = props;
-
+  function renderEmailStep(step: SignUpStep, onStepChange: (step: SignUpStep) => void) {
     switch (step) {
       case "emailVerify":
         return (
