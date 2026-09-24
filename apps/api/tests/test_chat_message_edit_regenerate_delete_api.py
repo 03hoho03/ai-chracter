@@ -429,6 +429,42 @@ async def test_regenerate_story_room_selects_template_instruction(
     )
 
 
+async def test_regenerate_story_room_logs_only_chat_generate_call_site(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재생성은 판정을 다시 돌리지 않는다 — 로그에 생성 1회만, 그 방·유저로 찍혀야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    _override_llm_client(
+        _QueuedFakeLLMClient(tokens=["원래"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    )
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "반가워"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+
+    fake = _StructuredFakeLLMClient(tokens=["새로운"])
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert [u.call_site for u in fake.usages] == ["chat_generate"]
+    assert {(u.user_id, u.room_id) for u in fake.usages} == {(user.id, room_id)}
+
+
 async def test_regenerate_policy_violation_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

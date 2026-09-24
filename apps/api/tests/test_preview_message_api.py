@@ -135,6 +135,7 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.received_system_instruction: str | None = None
         self.error = error
+        self.usages: list[LLMCallContext] = []
 
     async def generate(
         self,
@@ -144,6 +145,7 @@ class _FakeLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
+        self.usages.append(usage)
         self.received_prompt = prompt
         self.received_system_instruction = system_instruction
         if self.error is not None:
@@ -152,6 +154,7 @@ class _FakeLLMClient(LLMClient):
             yield token
 
     async def generate_structured(self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext) -> Any:
+        self.usages.append(usage)
         self.generate_structured_calls.append(response_schema)
         result = self._structured_results.pop(0)
         if isinstance(result, Exception):
@@ -578,6 +581,10 @@ async def test_send_preview_message_reaches_ending(db_client: httpx.AsyncClient,
     state = await get_preview_session(session_id)
     assert state is not None
     assert state.ending_reached is True
+
+    # 미리보기는 방이 없다(room_id=None) — chat_ 값이 섞이면 미리보기 원가가 실사용으로 집계된다.
+    assert [u.call_site for u in fake.usages] == ["preview_generate", "preview_stat_judgment", "preview_ending_judgment"]
+    assert {(u.user_id, u.room_id) for u in fake.usages} == {(user.id, None)}
 
 
 async def test_send_preview_message_skips_judgment_after_ending_reached(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

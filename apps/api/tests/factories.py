@@ -315,6 +315,7 @@ class _FakeLLMClient(LLMClient):
         self.received_prompt: str | None = None
         self.received_judgment_prompt: str | None = None
         self.generate_structured_called = False
+        self.usages: list[LLMCallContext] = []
 
     async def generate(
         self,
@@ -324,6 +325,7 @@ class _FakeLLMClient(LLMClient):
         *,
         usage: LLMCallContext,
     ) -> AsyncIterator[str]:
+        self.usages.append(usage)
         self.received_prompt = prompt
         if self.error is not None:
             raise self.error
@@ -333,6 +335,7 @@ class _FakeLLMClient(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
+        self.usages.append(usage)
         self.generate_structured_called = True
         self.received_judgment_prompt = prompt
         if self.structured_error is not None:
