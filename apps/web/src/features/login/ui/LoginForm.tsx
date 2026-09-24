@@ -8,7 +8,7 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { sessionKeys } from "@/entities/session";
+import { sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 
 import { useLoginMutation } from "../api/useLoginMutation";
@@ -16,9 +16,6 @@ import { buildGoogleLoginUrl } from "../lib/buildGoogleLoginUrl";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
-
-const SUSPENDED_ERROR_MESSAGE =
-  "이용정지된 계정이에요. 문의사항은 ghwjd32123@gmail.com으로 연락해주세요.";
 
 // legal-revision-goal-prompt.md LR-30: 만 14세 미만은 해결책이 없는 상태다 — "인증하면
 // 된다"처럼 읽히는 문구를 주지 않는다.
