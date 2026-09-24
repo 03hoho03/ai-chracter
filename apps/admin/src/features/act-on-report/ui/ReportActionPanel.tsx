@@ -150,7 +150,7 @@ export function ReportActionPanel({ reportId, isReportPending, contentName, isCo
                   className="w-full"
                 >
                   {PROCESS_OPTIONS.map((option) => (
-                    <ToggleGroupItem key={option.value} value={option.value} className="flex-1">
+                    <ToggleGroupItem key={option.value} value={option.value} className="flex-1 hover:bg-secondary">
                       {option.label}
                     </ToggleGroupItem>
                   ))}

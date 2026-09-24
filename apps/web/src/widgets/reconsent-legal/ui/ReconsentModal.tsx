@@ -188,5 +188,5 @@ function ReconsentDocumentBody({ docQuery }: ReconsentDocumentBodyProps) {
     return <p className="text-sm text-destructive-text">불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
   }
 
-  return <Markdown content={docQuery.data.bodyMarkdown} />;
+  return <Markdown content={docQuery.data.bodyMarkdown} className="[&_code]:bg-secondary" />;
 }

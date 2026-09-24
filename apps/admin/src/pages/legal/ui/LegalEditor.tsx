@@ -104,7 +104,7 @@ export function LegalEditor({ kind, documentQuery, draftBody, onDraftBodyChange 
           />
           <div className="max-h-128 overflow-y-auto rounded-lg border border-border bg-card p-4">
             {draftBody.trim() ? (
-              <Markdown content={draftBody} />
+              <Markdown content={draftBody} className="[&_code]:bg-secondary" />
             ) : (
               <p className="text-sm text-muted-foreground">미리볼 내용이 없어요.</p>
             )}

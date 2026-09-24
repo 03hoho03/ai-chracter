@@ -127,7 +127,7 @@ export function NoticeEditor({ notice, onCreated }: NoticeEditorProps) {
         <Label>미리보기</Label>
         <div className="max-w-2xl rounded-lg border border-border bg-card p-4">
           {bodyMarkdown.trim() ? (
-            <Markdown content={bodyMarkdown} />
+            <Markdown content={bodyMarkdown} className="[&_code]:bg-secondary" />
           ) : (
             <p className="text-sm text-muted-foreground">미리볼 내용이 없어요.</p>
           )}

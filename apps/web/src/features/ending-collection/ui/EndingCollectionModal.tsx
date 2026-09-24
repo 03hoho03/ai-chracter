@@ -42,7 +42,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
                 variant="ghost"
                 size="sm"
                 onClick={() => setSelectedEnding(undefined)}
-                className="-ml-2 w-fit"
+                className="-ml-2 w-fit hover:bg-secondary"
               >
                 <ArrowLeft aria-hidden className="size-3.5" />
                 목록으로

@@ -70,6 +70,7 @@ export function SectionRow({
             type="button"
             variant="ghost"
             size="icon-xs"
+            className="hover:bg-secondary"
             aria-label="위로 이동"
             disabled={!canMoveUp}
             onClick={onMoveUp}
@@ -80,6 +81,7 @@ export function SectionRow({
             type="button"
             variant="ghost"
             size="icon-xs"
+            className="hover:bg-secondary"
             aria-label="아래로 이동"
             disabled={!canMoveDown}
             onClick={onMoveDown}
