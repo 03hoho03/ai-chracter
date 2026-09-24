@@ -585,6 +585,43 @@ async def test_user_detail_includes_action_logs_targeting_user_or_their_content(
     assert content_log["contentName"] == "조치대상작품"
 
 
+async def test_user_detail_includes_action_log_from_report_action_on_their_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """backlog-l-goal-prompt.md BL-4. 신고 경로 조치 로그는 `target_user_id` 없이
+    `target_content_id`만 채운다 — 그래도 작품 소유 조건으로 크리에이터 상세에 걸려야 한다."""
+    creator = _make_user()
+    reporter = _make_user()
+    db_session.add_all([creator, reporter])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=creator.id, name="신고조치작품")
+    report = await _make_report(
+        db_session,
+        reporter_user_id=reporter.id,
+        content_id=content.id,
+        reason_category=ReportReasonCategory.HATE,
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    action_resp = await db_client.post(
+        f"/admin/reports/{report.id}/action",
+        json={"action": "restrict", "adminComment": "신고 처리"},
+    )
+    assert action_resp.status_code == 200
+
+    resp = await db_client.get(f"/admin/users/{creator.id}")
+    assert resp.status_code == 200
+    action_logs = resp.json()["actionLogs"]
+    assert len(action_logs) == 1
+    assert action_logs[0]["actionType"] == "content-restrict"
+    assert action_logs[0]["targetContentId"] == str(content.id)
+    assert action_logs[0]["contentName"] == "신고조치작품"
+
+
 async def test_user_detail_includes_chat_view_action_log(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

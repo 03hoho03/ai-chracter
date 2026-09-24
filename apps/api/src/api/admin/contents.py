@@ -6,7 +6,7 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.admin.action_log import record_admin_action
+from api.admin.action_log import ADMIN_ACTION_TYPE_BY_MODERATION_ACTION, record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.admin.schemas import (
     AdminContentActionRequest,
@@ -29,7 +29,6 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset
 from api.db.models.moderation import (
-    AdminActionType,
     ModerationAction,
     ModerationActionType,
     Notification,
@@ -376,17 +375,10 @@ async def act_on_content(
             )
         )
 
-    # backlog-sweep Q-5: 값 타입을 적지 않으면 `dict[..., str]`로 추론돼 아래 `record_admin_action`
-    # 인자가 mypy에 걸린다. 적어 두면 값 오타도 이 딕셔너리 줄에서 걸린다.
-    action_type_by_moderation_action: dict[ModerationActionType, AdminActionType] = {
-        ModerationActionType.RESTRICT: "content-restrict",
-        ModerationActionType.DELETE: "content-delete",
-        ModerationActionType.LIFT_RESTRICTION: "content-lift",
-    }
     await record_admin_action(
         db,
         admin_id=admin_id,
-        action_type=action_type_by_moderation_action[body.action],
+        action_type=ADMIN_ACTION_TYPE_BY_MODERATION_ACTION[body.action],
         target_content_id=content.id,
         reason_category=body.reason_category.value if body.reason_category is not None else None,
         reason_text=body.admin_comment or "",

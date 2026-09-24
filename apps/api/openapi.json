@@ -8456,6 +8456,7 @@
           "actionType": {
             "type": "string",
             "enum": [
+              "appeal-accept",
               "chat-view",
               "content-delete",
               "content-lift",
@@ -8466,6 +8467,7 @@
               "notice-publish",
               "notice-unpublish",
               "prompt-set-publish",
+              "report-reject",
               "user-clover-grant",
               "user-clover-revoke",
               "user-rate-limit-exempt-off",
