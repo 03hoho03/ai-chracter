@@ -492,7 +492,7 @@ async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reloa
     db_session: AsyncSession,
 ) -> None:
     """`users.rate_limit_exempt` 컬럼 자체만 본다 — 게이트가 그 값으로 무엇을 하는지는
-    아래 9번 절이고, 어드민이 뒤집는 건 어드민 토글(`test_admin_users_api.py`)이 본다. 그래서 여기서 검증할 건 "기본값이 켜져 있지
+    아래 9번 절이고, 어드민이 뒤집는 건 `test_admin_users_api.py`의 토글 테스트가 본다. 그래서 여기서 검증할 건 "기본값이 켜져 있지
     않다"와 "true 가 DB 를 왕복한다" 둘뿐이다.
 
     ⚠️ 첫 단언이 `is None`인 건 오타가 아니다. `Base`는 `MappedAsDataclass`가 아니라

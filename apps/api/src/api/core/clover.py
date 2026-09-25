@@ -209,9 +209,8 @@ async def grant(
 
     🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 지급은 출석·미션·기존
     잔액 백필뿐이고, 어드민 지급과 환불은 `None`(무기한)이다. 기본값을 `None`으로 둔 이유는
-    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석(`clover/
-    router.py`)·미션(`clover/missions.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을
-    명시적으로 넘긴다.
+    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석·미션(둘 다
+    `clover/router.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을 명시적으로 넘긴다.
     """
     balance_after = await _apply(
         db,

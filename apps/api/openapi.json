@@ -687,7 +687,7 @@
           "admin"
         ],
         "summary": "Unsuspend User",
-        "description": "계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,\n관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, 이후\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** 요구사항이 경고·정지와 달리 해제에는 알림 발송을\n요구하지 않고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
+        "description": "계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,\n관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, 이후\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** 경고·정지와 달리 요구사항에 해제 알림은 없고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
         "operationId": "unsuspend_user_admin_users__user_id__unsuspend_post",
         "parameters": [
           {
@@ -1354,7 +1354,7 @@
           "admin"
         ],
         "summary": "List Admin Inquiries",
-        "description": "offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.",
+        "description": "offset 페이징 — `moderation/router.py`의 `list_admin_reports`와 같은 모양.",
         "operationId": "list_admin_inquiries_admin_inquiries_get",
         "parameters": [
           {

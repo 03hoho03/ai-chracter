@@ -368,8 +368,7 @@ export interface paths {
          *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은
          *     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
          *
-         *     **해제 알림은 보내지 않는다.** 요구사항이 경고·정지와 달리 해제에는 알림 발송을
-         *     요구하지 않고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+         *     **해제 알림은 보내지 않는다.** 경고·정지와 달리 요구사항에 해제 알림은 없고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
          *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
          *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
          *
@@ -686,7 +685,7 @@ export interface paths {
         };
         /**
          * List Admin Inquiries
-         * @description offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.
+         * @description offset 페이징 — `moderation/router.py`의 `list_admin_reports`와 같은 모양.
          */
         get: operations["list_admin_inquiries_admin_inquiries_get"];
         put?: never;
