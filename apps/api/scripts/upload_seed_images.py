@@ -59,7 +59,7 @@ def collect_uploads() -> tuple[list[Upload], list[str]]:
         if blurred:
             body = generate_blurred_image(body)
         uploads.append(Upload(slug, key, body))
-        # READY 자산에는 항상 `_thumb.webp`가 있다는 불변식(US-004~) — 원본을 갈아끼우면
+        # READY 자산에는 항상 `_thumb.webp`가 있다는 불변식 — 원본을 갈아끼우면
         # 썸네일도 같은 바이트에서 다시 만들어 함께 올린다.
         uploads.append(
             Upload(slug, build_thumbnail_key(key), generate_thumbnail(body), THUMBNAIL_CONTENT_TYPE)

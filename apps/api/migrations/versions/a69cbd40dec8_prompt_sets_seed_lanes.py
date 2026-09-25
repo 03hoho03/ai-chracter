@@ -4,36 +4,35 @@ Revision ID: a69cbd40dec8
 Revises: bcfbfd0cd960
 Create Date: 2026-09-17 21:25:14.117263
 
-prompt-scope-techspec.md §2-3 (M2), prompt-scope-goal-prompt.md PS-3·PS-4·PS-6·PS-12. 프롬프트
-레인 분리의 두 번째 단계 — 현행 활성 프롬프트 세트(옛 코드가 `WHERE status='published' ORDER BY
+프롬프트 레인 분리의 두 번째 리비전 — 현행 활성 프롬프트 세트(옛 코드가 `WHERE status='published' ORDER BY
 published_at DESC LIMIT 1`로 집는 바로 그 1행) 하나를 읽어 `story`/`character`/`publish_filter`
 3레인 헤더 + 섹션으로 쪼개 새로 심는다. 기존 행(활성본 포함)은 손대지 않는다 —
-`lane='legacy'` 백필은 이미 M1(`bcfbfd0cd960`)의 `server_default`가 끝냈다(PS-6).
+`lane='legacy'` 백필은 이미 앞 리비전(`bcfbfd0cd960`)의 `server_default`가 끝냈다.
 
 **PK 58개(헤더 3 + 섹션 55)는 작성 시점에 뽑아 하드코딩한 리터럴 UUID다.** 마이그레이션
 실행 시점에 `uuid.uuid4()`를 호출하지 않는다 — 환경마다 값이 달라지는 것을 막기 위해서다
 (`bd258b26c34a:PROMPT_SET_ID`·`c49014ae5b62:TERMS_ID`/`PRIVACY_ID` 선례). `NEW_SECTION_IDS`의
 키 `(lane, channel, scope, slot, variant)` 55개는 `admin/prompts.py:_EXPECTED_ROWS`에
-`_lanes_for`(PS-3)를 기계적으로 적용해 뽑았다 — story 26 / character 13 / publish_filter 16.
+`_lanes_for`를 기계적으로 적용해 뽑았다 — story 26 / character 13 / publish_filter 16.
 
 **`system`(5행) + `generation`(2행)의 `scope='both'` 행은 story·character 두 레인에 사본으로
-들어간다(PS-4).** 사본은 `scope='both'`·`body`·`order`를 그대로 유지한다 — 그래야 렌더러의
-`s.scope in ("both", scope)`가 무변경이고(PS-10) 골든 25개가 바이트 동일이다(PS-16).
+들어간다.** 사본은 `scope='both'`·`body`·`order`를 그대로 유지한다 — 그래야 렌더러의
+`s.scope in ("both", scope)`가 무변경이고 골든 25개가 바이트 동일이다.
 `publish_filter` 채널의 `scope='both'` 4행은 레인이 하나뿐이라 복제되지 않는다.
 
-**새 헤더 3개의 `published_at`은 현행 활성본보다 엄격히 과거다(PS-12 — 배포 창을 닫는
-트릭).** 옛 코드의 `ORDER BY published_at DESC LIMIT 1`이 M1·M2 적용 후에도 여전히
+**새 헤더 3개의 `published_at`은 현행 활성본보다 엄격히 과거다(배포 창을 닫는
+트릭).** 옛 코드의 `ORDER BY published_at DESC LIMIT 1`이 앞 리비전과 이 리비전 적용 후에도 여전히
 `lane='legacy'`의 완전한 48행 세트를 집도록 만든다 — 코드 배포 전까지 읽기 경로의 배포 창이
 0이다. `published_at`이 NULL인 published 행이 있으면(옛 코드가 이미 그 행을 활성본으로 집고
 있었다는 뜻) `None - timedelta(...)`가 `TypeError`를 내어 이 마이그레이션 자체가 실패한다 —
-별도 방어 코드를 넣지 않는다(techspec §2-5, 의도된 동작).
+별도 방어 코드를 넣지 않는다(의도된 동작).
 
 새 3행의 `version`은 현행 활성본과 **같은 문자열**이다 — `(lane, version)` 부분 유니크라
 충돌하지 않고, "분리 시점에 vN을 3레인으로 옮겼다"가 이력에 남는다. 라벨 4컬럼도 세 헤더에
-그대로 복사한다(PS-5, 드리프트는 감수한 위험).
+그대로 복사한다(드리프트는 감수한 위험).
 
-⚠️ **`lane='legacy'` UPDATE는 쓰지 않는다.** M1의 `server_default`가 이미 모든 기존 행을
-백필했다 — 쓰면 죽은 코드이고, "M1이 백필한다"는 사실을 가린다.
+⚠️ **`lane='legacy'` UPDATE는 쓰지 않는다.** 앞 리비전의 `server_default`가 이미 모든 기존 행을
+백필했다 — 쓰면 죽은 코드이고, "앞 리비전이 백필한다"는 사실을 가린다.
 
 **드리프트 감지기 둘**: `NEW_SECTION_IDS[(lane, channel, scope, slot, variant)]`의 `KeyError`는
 현행 활성본에 예상 밖 행이 있으면 터진다. `len(section_rows) != len(NEW_SECTION_IDS)`는 예상한
@@ -45,7 +44,7 @@ published_at DESC LIMIT 1`로 집는 바로 그 1행) 하나를 읽어 `story`/`
 `downgrade()`는 리터럴 헤더 id 3개로 **섹션을 먼저** `prompt_set_id IN (...)`로 지우고 그다음
 헤더를 지운다(`c49014ae5b62:downgrade` 선례). ⚠️ 섹션을 리터럴 섹션 id 55개로 지우지 않는다 —
 그 사이 어드민이 초안을 게시해 섹션이 교체됐으면 고아 섹션이 남고 그다음 헤더 DELETE가 FK
-위반으로 터진다. 테이블은 drop하지 않는다(M1 소관).
+위반으로 터진다. 테이블은 drop하지 않는다(앞 리비전 `bcfbfd0cd960` 소관).
 """
 import uuid
 from collections.abc import Sequence
@@ -97,7 +96,7 @@ NEW_SET_IDS: dict[str, uuid.UUID] = {
 }
 
 # 섹션 55개. 키는 (lane, channel, scope, slot, variant) — admin/prompts.py:_EXPECTED_ROWS에
-# _lanes_for(PS-3)를 기계적으로 적용해 뽑은 것과 정확히 같은 집합이다(story 26 / character
+# _lanes_for를 기계적으로 적용해 뽑은 것과 정확히 같은 집합이다(story 26 / character
 # 13 / publish_filter 16).
 NEW_SECTION_IDS: dict[tuple[str, str, str, str, str], uuid.UUID] = {
     ("character", "generation", "both", "final_frame", ""): uuid.UUID('61c6caa9-0c8e-4892-b363-fa13e91017e8'),
@@ -195,14 +194,14 @@ NEW_SECTION_IDS: dict[tuple[str, str, str, str, str], uuid.UUID] = {
 
 
 def _lanes_for(channel: str, scope: str) -> tuple[str, ...]:
-    """prompt-scope-goal-prompt.md PS-3의 레인 정의를 코드로 옮긴 것."""
+    """레인 3개(`story`/`character`/`publish_filter`)의 정의를 코드로 옮긴 것."""
     if channel == "publish_filter":
         return ("publish_filter",)
     if channel in ("stat_judgment", "ending_judgment"):
         return ("story",)
     if channel == "image_judgment":
         return ("character",)
-    # system / generation — scope='both' 행만 두 레인에 사본으로 들어간다(PS-4).
+    # system / generation — scope='both' 행만 두 레인에 사본으로 들어간다.
     if scope == "both":
         return ("story", "character")
     return (scope,)
@@ -212,7 +211,7 @@ def upgrade() -> None:
     """Upgrade schema."""
     bind = op.get_bind()
     # 옛 코드(load_active_prompt_set)와 글자 그대로 같은 기준이다 — 이 SELECT가 고르는 행이
-    # 곧 배포 창 동안 옛 코드가 계속 읽을 행이다(PS-12).
+    # 곧 배포 창 동안 옛 코드가 계속 읽을 행이다.
     (
         source_id,
         source_version,
@@ -238,7 +237,7 @@ def upgrade() -> None:
         {"id": source_id},
     ).fetchall()
 
-    # PS-12 역순 트릭. published_at이 NULL이면(techspec §2-5) TypeError로 여기서 시끄럽게
+    # 역순 트릭(새 헤더를 활성본보다 1초 과거로). published_at이 NULL이면 TypeError로 여기서 시끄럽게
     # 실패한다 — 별도 방어 코드를 넣지 않는다.
     new_published_at = source_published_at - timedelta(seconds=1)
 
@@ -250,10 +249,10 @@ def upgrade() -> None:
                     "id": NEW_SECTION_IDS[(lane, channel, scope, slot, variant)],
                     "prompt_set_id": NEW_SET_IDS[lane],
                     "channel": channel,
-                    "scope": scope,  # ⚠️ 'both'를 그대로 유지한다(PS-10)
+                    "scope": scope,  # ⚠️ 'both'를 그대로 유지한다
                     "slot": slot,
                     "variant": variant,
-                    "body": body,  # ⚠️ 바이트 그대로 — 손대지 않는다(PS-16)
+                    "body": body,  # ⚠️ 바이트 그대로 — 손대지 않는다
                     "conditional": conditional,
                     "order": order,  # ⚠️ 그대로 — 골든 바이트 동일의 조건
                 }

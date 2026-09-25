@@ -4,8 +4,8 @@ Revision ID: 6040220ae77b
 Revises: c49014ae5b62
 Create Date: 2026-09-07 23:11:03.033981
 
-goal-prompt.md §3-1, techspec.md §3-1·§3-3(리비전 1/3). `notices`는 제목 + 마크다운
-본문 + 게시/숨김 토글의 단순 CRUD다(goal-prompt D-7) — `legal_documents`처럼 초안/버전
+공지·문의 리비전 1/3. `notices`는 제목 + 마크다운
+본문 + 게시/숨김 토글의 단순 CRUD다 — `legal_documents`처럼 초안/버전
 이력을 갖는 문서가 아니라 시점별 알림글이라 부분 유니크 인덱스 같은 무결성 장치는
 필요 없다.
 

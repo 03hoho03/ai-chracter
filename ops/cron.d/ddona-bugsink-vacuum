@@ -1,13 +1,11 @@
-# monitoring-legal-draft.md §7-6 (MT-16)
-#
 # Bugsink가 보관하는 오류 이벤트 중 `MAX_EVENT_AGE_DAYS`(현재 30일,
 # docker-compose.monitoring.yml)보다 오래된 것을 지운다. compose env로 이 값을 고정하는 것과
 # 그 값이 실제로 지켜지는 것은 다르다 — Bugsink 공식 이미지는 gunicorn+snappea만 상시 실행하고
 # (Dockerfile CMD 확인) 날짜 기준 삭제(`bugsink-manage vacuum --old-events`)를 도는 스케줄러를
-# 컨테이너 안에 두지 않는다. 이 크론이 그 역할을 host에서 대신한다 — ddona-resource-check(MT-13)
-# 와 같은 이유.
+# 컨테이너 안에 두지 않는다. 이 크론이 그 역할을 host에서 대신한다 — ddona-resource-check와
+# 같은 이유.
 #
-# 매일 05:00 UTC — `ddona-backup`(매일 18:00 UTC, DEPLOY.md §3-4)과 겹치지 않는 시간을 고른 것
+# 매일 05:00 UTC — `ddona-backup`(매일 18:00 UTC, DEPLOY.md "백업 · 복원" 절)과 겹치지 않는 시간을 고른 것
 # 뿐이고, 이 작업(이벤트 삭제 쿼리 한 번) 자체는 pg_dump보다 훨씬 가벼워 시간대를 더 정교하게
 # 고를 이유는 없다. 일 1회로 충분한 이유는 보관기간이 30일 단위라 몇 시간 단위 지연이 그
 # 약속(수집일로부터 30일간 보관 후 파기)을 깨지 않기 때문이다.

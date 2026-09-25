@@ -1,5 +1,5 @@
 #!/bin/sh
-# monitoring-legal-draft.md §7-6 (MT-16): `ops/cron.d/ddona-bugsink-vacuum`가 매일 이 스크립트를 부른다.
+# `ops/cron.d/ddona-bugsink-vacuum`가 매일 이 스크립트를 부른다.
 #
 # `/opt/ddona/.env`를 통째로 source하지 않는다 — `resource-check.sh`·`backup.sh`와 같은 이유(JSON
 # 값이 쉘 문법과 부딪친다). `DISCORD_WEBHOOK_URL` 하나만 뽑아 export한다 — 값이 없어도 안전하다

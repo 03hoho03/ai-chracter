@@ -4,55 +4,54 @@ Revision ID: b72c33c70240
 Revises: 59d627a75fbf
 Create Date: 2026-09-24 17:10:00.000000
 
-persona-goal-prompt.md §3-2 M2 (UP-13·UP-18·UP-19). 대화 생성 채널에 conditional 섹션
+대화 생성 채널에 conditional 섹션
 `('generation', 'both', 'user_persona', '')`을 넣는다. story·character 두 레인에 같은 규칙을
 적용한다.
 
-**기존 published 세트는 건드리지 않는다(UP-13).** 레인의 활성 세트를 복사한 **새 published
+**기존 published 세트는 건드리지 않는다.** 레인의 활성 세트를 복사한 **새 published
 세트**를 만들고, 거기에 행 하나를 더한다. 어드민 UI에는 행을 추가하는 기능이 없어서 데이터
 마이그레이션이 넣는다.
 
-**위치는 절대 order가 아니라 `history` 바로 앞이다(UP-18 (a) + 보충).** 운영자는 어드민의
-위·아래 버튼으로 order를 맞바꿀 수 있다(F10). 그래서 `history`의 현재 order를 `H`로 읽고,
+**위치는 절대 order가 아니라 `history` 바로 앞이다.** 운영자는 어드민의
+위·아래 버튼으로 order를 맞바꿀 수 있다. 그래서 `history`의 현재 order를 `H`로 읽고,
 generation 채널에서 `order >= H`인 행을 전부 +1 한 뒤 새 행을 `H`에 둔다. 나머지 행의 상대
-순서가 그대로라서, 프로필 값이 비면(섹션 드롭, F1) 렌더 결과가 바이트까지 같다(UP-6).
+순서가 그대로라서, 프로필 값이 비면(섹션 드롭) 렌더 결과가 바이트까지 같다.
 
 **가정이 어긋나면 배포를 멈춘다**(`_assert_generation_layout`). 조용히 이상한 세트를 게시하지
-않기 위해서다. 체인이 한 트랜잭션이라(`migrations/env.py` `do_run_migrations`) M1도 함께
-롤백된다. 멈추는 경우: generation 슬롯 집합이 M2 이전 기대 집합과 다름, `user_persona`가 이미
-있음, story에서 `prologue`가 `history` 뒤에 있음(UP-18 (a)의 "prologue 뒤, history 앞"을
+않기 위해서다. 체인이 한 트랜잭션이라(`migrations/env.py` `do_run_migrations`) 앞 스키마 리비전
+`59d627a75fbf`도 함께 롤백된다. 멈추는 경우: generation 슬롯 집합이 이 리비전 이전 기대 집합과 다름, `user_persona`가 이미
+있음, story에서 `prologue`가 `history` 뒤에 있음("prologue 뒤, history 앞"을
 동시에 만족할 수 없다 — 사용자에게 물을 일이다).
 
 **`published_at`은 SQL `now()`가 아니라 파이썬 `max(now, 원본 + 1초)`다.** 체인이 한
 트랜잭션이라 SQL `now()`는 체인 **시작** 시각이다. 테스트 DB처럼 체인 도중에 원본 세트가
-만들어진 경우(`a69cbd40dec8`) 새 세트가 원본보다 과거가 되어 활성이 되지 못할 수 있다
-(persona-goal-prompt.md R-21). 삽입 뒤에는 활성 SELECT를 다시 돌려 새 세트가 뽑히는지
+만들어진 경우(`a69cbd40dec8`) 새 세트가 원본보다 과거가 되어 활성이 되지 못할 수 있다.
+삽입 뒤에는 활성 SELECT를 다시 돌려 새 세트가 뽑히는지
 확인한다.
 
-**초안(UP-19 (a))**: 레인에 초안이 있으면 초안에도 같은 행을 **제자리에서** 넣고 order를 민다
-(`_patch_draft`). body는 건드리지 않는다. 없으면 no-op이다(2026-09-24 프로덕션 실측은 0건,
-`tasks/persona-research/s0-prod.md`).
+**초안**: 레인에 초안이 있으면 초안에도 같은 행을 **제자리에서** 넣고 order를 민다
+(`_patch_draft`). body는 건드리지 않는다. 없으면 no-op이다(2026-09-24 프로덕션 실측은 0건).
 
 **PK**: 새 세트 2개는 리터럴 UUID(`NEW_SET_IDS`). 섹션은 세트마다 개수가 달라 리터럴을 나열할
 수 없으므로 `uuid5(_SECTION_ID_NAMESPACE, "{lane}:{channel}:{scope}:{slot}:{variant}")`로
 결정적으로 만든다(`uuid4()` 호출 금지 규약). 초안에 넣는 행은 같은 키와 겹치지 않게 `draft:`
 접두사를 붙인다.
 
-⚠️ **운영 메모** (persona-goal-prompt.md R-6·R-7·R-8):
+⚠️ **운영 메모**:
 - 이 슬롯의 body에서 `{user_persona}`를 지우면 드롭 조건(`bool(fields)`)이 거짓이 되어
   **모든 유저에게 머리글만 나간다**. 게시 검증 R-4는 "허용 밖 이름"만 막고 "필수 이름의 존재"는
   보지 않는다.
 - 배포 전부터 열어 둔 어드민 프롬프트 편집 탭에서 저장하면 초안이 섹션 전체 교체로
   `user_persona` 행을 잃고 게시가 R-1 "누락"으로 막힌다. **배포 뒤에는 편집 탭을 새로고침한다.**
   이미 그렇게 됐으면 이 리비전의 세트(또는 그 뒤 게시본)를 복원해 초안을 다시 만든다.
-- **슬롯 추가 이전 버전은 복원해도 게시할 수 없다**(R-1 "누락", UP-20 (a)에서 제약으로
+- **슬롯 추가 이전 버전은 복원해도 게시할 수 없다**(R-1 "누락", 제약으로
   받아들임). 문안 롤백은 슬롯 추가 이후 버전끼리만 한다. 이 리비전의 세트는 직전 세트 body를
   그대로 복사하고 행 하나만 더한 것이라 직전 세트의 대체물이 된다.
 - 마이그레이션은 활성 세트 캐시를 지우지 않는다 — 배포 직후 최대 300초
   (`prompt_set_cache_ttl_seconds`) 동안 옛 세트가 나간다. 옛 세트에는 슬롯이 없어 프로필이
   반영되지 않을 뿐 해가 없다.
 
-**롤백**(persona-goal-prompt.md §3-2 롤백 절차, R-9): 1순위는 태그 롤백(이미지만 되돌리고
+**롤백**: 1순위는 태그 롤백(이미지만 되돌리고
 스키마·세트는 그대로)이다. 옛 코드는 값을 넘기지 않으므로 새 섹션은 드롭되어 안전하다. 다만
 옛 R-1이 새 세트를 "잉여"로 거부하므로 그 상태에서 다음 게시가 필요하면 슬롯 추가 이전 버전을
 복원해서 게시한다. revert 커밋을 main에 push하면 자동 배포의 `alembic upgrade head`가 이
@@ -122,7 +121,7 @@ _LANES: tuple[str, ...] = ("story", "character")
 
 _NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"
 
-# persona-goal-prompt.md §3-4-3 확정 문안(UP-17). `{user_persona}`가 빠지면 이 섹션은 절대
+# 확정 문안. `{user_persona}`가 빠지면 이 섹션은 절대
 # 드롭되지 않는다(위 운영 메모).
 PERSONA_BODY = (
     "[사용자 정보]\n"
@@ -132,10 +131,10 @@ PERSONA_BODY = (
 )
 _PERSONA_SLOT = "user_persona"
 
-# M2 **이전**의 generation `(scope, slot, variant)` 기대 집합(persona-goal-prompt.md F9).
+# 이 리비전 **이전**의 generation `(scope, slot, variant)` 기대 집합.
 # `admin/prompts.py`의 `_EXPECTED_ROWS_BY_LANE`에서 `user_persona`를 뺀 것과 같다 — 앱 코드를
 # import하지 않으므로 여기 다시 적는다. R-1이 이 집합을 고정하고 어드민 UI로는 행을 더하거나
-# 뺄 수 없어서(F10) 재배치와 무관하게 성립한다.
+# 뺄 수 없어서 재배치와 무관하게 성립한다.
 _EXPECTED_GENERATION_BEFORE: dict[str, frozenset[tuple[str, str, str]]] = {
     "story": frozenset(
         {
@@ -175,7 +174,7 @@ _SECTIONS_SQL = sa.text(
 
 
 def _assert_generation_layout(rows: Sequence[tuple[str, str, str, str, int]], lane: str) -> int:
-    """M2가 기대는 배치 가정을 검사하고 삽입 order `H`(= `history`의 현재 order)를 돌려준다.
+    """이 리비전이 기대는 배치 가정을 검사하고 삽입 order `H`(= `history`의 현재 order)를 돌려준다.
 
     `rows`는 `(channel, scope, slot, variant, order)` 목록이다. generation 밖의 행은 보지
     않는다. 어긋나면 레인과 실제 배치를 담은 `RuntimeError`다(배포를 멈춘다)."""
@@ -250,7 +249,7 @@ def _build_published_rows(
 
 
 def _patch_draft(conn: Connection, lane: str) -> bool:
-    """UP-19 (a). 레인에 초안이 없으면 `False`. 있으면 초안 **자신의** 배치로 가정을 검사한 뒤
+    """레인에 초안이 없으면 `False`. 있으면 초안 **자신의** 배치로 가정을 검사한 뒤
     (초안의 `H`는 활성 세트와 다를 수 있다) 기존 행은 order만 민다(`order >= H` +1, body 불변).
     그다음 `user_persona` 행을 order `H`로 더하고 `True`를 돌려준다. 초안은 레인당 1개라
     (`ix_prompt_sets_draft`) 새 세트를 만들지 않고 제자리에서 고친다.
@@ -292,7 +291,7 @@ def _patch_draft(conn: Connection, lane: str) -> bool:
 def upgrade() -> None:
     """Upgrade schema."""
     bind = op.get_bind()
-    for lane in _LANES:  # story 먼저 — version 번호 순서(§3-2 M2 3번)
+    for lane in _LANES:  # story 먼저 — version 번호 순서
         source = bind.execute(_ACTIVE_SET_SQL, {"lane": lane}).one()
         rows = bind.execute(_SECTIONS_SQL, {"id": source.id}).fetchall()
         insert_order = _assert_generation_layout(
@@ -316,7 +315,7 @@ def upgrade() -> None:
                     "story_example_label": source.story_example_label,
                     "character_assistant_label": source.character_assistant_label,
                     "note": _NOTE,
-                    # SQL now()가 아니다 — 위 docstring(R-21).
+                    # SQL now()가 아니다 — 위 docstring.
                     "published_at": max(datetime.now(UTC), source.published_at + timedelta(seconds=1)),
                 }
             ],

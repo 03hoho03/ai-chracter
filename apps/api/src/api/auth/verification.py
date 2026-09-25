@@ -13,7 +13,7 @@ class VerificationCode(TypedDict):
     sent_at: str
 
 
-# email-goal-prompt.md E-7: 인증 코드 1건의 수명 동안 허용하는 오답 횟수.
+# 인증 코드 1건의 수명 동안 허용하는 오답 횟수.
 VERIFICATION_ATTEMPTS_LIMIT = 5
 
 
@@ -35,8 +35,8 @@ async def increment_verification_attempts(email: str) -> int:
     최초 오답이 코드 발급보다 늦으면 카운터가 코드보다 그만큼 늦게 만료돼, "코드는 만료됐는데
     카운터만 살아있는" 상태가 가능하다. 동작에는 영향 없다 — 코드가 없으면 `get_verification_code`가
     None을 반환해 오답과 같은 분기를 타고, 새 코드가 발급되면 `store_verification_code`가 카운터를
-    지운다(E-7a). `rate_limit.check_rate_limit`과 같은 이유로 INCR과 EXPIRE NX를 한 파이프라인
-    (MULTI/EXEC)에 묶는다(email-goal-prompt.md E-7)."""
+    지운다. `rate_limit.check_rate_limit`과 같은 이유로 INCR과 EXPIRE NX를 한 파이프라인
+    (MULTI/EXEC)에 묶는다."""
     key = _attempts_key(email)
     async with redis_client.pipeline(transaction=True) as pipe:
         pipe.incr(key)
@@ -54,7 +54,7 @@ async def store_verification_code(email: str, code: str, sent_at: datetime) -> N
     await redis_client.set(
         _key(email), json.dumps(payload), ex=settings.email_verification_code_ttl_seconds
     )
-    # email-goal-prompt.md E-7: 새 코드가 저장되면 이전 코드의 오답 횟수는 의미가 없다 —
+    # 새 코드가 저장되면 이전 코드의 오답 횟수는 의미가 없다 —
     # 재전송이 "복구"가 되려면 시도 횟수도 함께 초기화돼야 한다.
     await clear_verification_attempts(email)
 

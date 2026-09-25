@@ -4,7 +4,7 @@ Revision ID: 5bef71fc8f50
 Revises: 0741a91285ed
 Create Date: 2026-09-06 18:18:37.710623
 
-techspec.md §1-4. `kind`/`status`는 native Postgres enum이 아니라 Text로 간다 — 값이
+`kind`/`status`는 native Postgres enum이 아니라 Text로 간다 — 값이
 늘어날 여지가 있고(신고·조치 사유 등 다른 목적의 카테고리 확장과 별개로, 약관 종류나
 상태 값이 추가될 수 있다), `notifications.type`·`admin_action_logs.action_type`이
 이미 이 선례다.

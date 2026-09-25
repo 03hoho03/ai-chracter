@@ -21,9 +21,9 @@ async def _session_user_id(request: Request) -> uuid.UUID | None:
 
 
 async def _is_active_user(db: AsyncSession, user_id: uuid.UUID) -> bool:
-    """세션이 살아 있어도 `users` 행이 없거나(dev 재시딩) 탈퇴했으면 로그인으로 치지 않는다
-    (backlog-sweep-goal-prompt.md BS-3). 재동의 버전은 보지 않는다 — 그건 `require_legal_consent`의
-    몫이다(consent-gate-goal-prompt.md CG-7). 정지도 DB 컬럼이 아니라 아래 Redis 마커가 본다.
+    """세션이 살아 있어도 `users` 행이 없거나(dev 재시딩) 탈퇴했으면 로그인으로 치지 않는다.
+    재동의 버전은 보지 않는다 — 그건 `require_legal_consent`의
+    몫이다. 정지도 DB 컬럼이 아니라 아래 Redis 마커가 본다.
 
     `db`는 요청 스코프 의존성 캐시라 라우트 본문·다른 게이트와 같은 세션이지만, 뒤에서 같은
     행을 다시 `db.get`해도 SELECT가 또 나간다 — identity map은 약참조라 여기서 읽은 `User`는
@@ -39,8 +39,8 @@ async def get_current_user_id(request: Request, db: AsyncSession = Depends(get_d
     if user_id is None or not await _is_active_user(db, user_id):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    # 정지 차단(techspec §2-1). 역인덱스로 세션을 전부 지울 수 있게 됐지만 정지는 일부러
-    # 지우지 않는다(backlog-sweep-goal-prompt.md BS-6) — 세션이 살아 있어야 다음 요청이 401이
+    # 정지 차단. 역인덱스로 세션을 전부 지울 수 있게 됐지만 정지는 일부러
+    # 지우지 않는다 — 세션이 살아 있어야 다음 요청이 401이
     # 아니라 이 403이 되고, 403이어야 FE가 정지 안내를 띄운다. 새 로그인은 마커가 아니라 DB의
     # `suspended_at`이 막는다. 그래서 세션은 그대로 유효한 채 매 요청마다 이 마커로 통과만
     # 막는 "요청 차단" 방식이다. user_id를 먼저 알아야

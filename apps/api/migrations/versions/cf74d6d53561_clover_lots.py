@@ -4,26 +4,26 @@ Revision ID: cf74d6d53561
 Revises: 7d7106509dc9
 Create Date: 2026-09-21 13:40:58.526302
 
-clover-page-goal-prompt.md CE-3. 지급 1건 = 로트 1행. `remaining`이 CE-5(소진 순서, 만료
-임박 우선) 대로 줄어드는 잔여량이고, `users.clover_balance`는 이 테이블 `remaining` 합의
-캐시다(CE-4: `SUM(remaining) == clover_balance`). 컬럼·인덱스·CHECK 근거는
+지급 1건 = 로트 1행. `remaining`이 소진 순서(만료
+임박 우선)대로 줄어드는 잔여량이고, `users.clover_balance`는 이 테이블 `remaining` 합의
+캐시다(`SUM(remaining) == clover_balance`). 컬럼·인덱스·CHECK 근거는
 `db/models/clover.py`의 `CloverLot` docstring 참고 — 여기서 되풀이하지 않는다.
 
-**같은 리비전 안에서 기존 잔액을 로트로 백필한다(CE-3 §3-1)** — 안 하면 위 Σ 불변식이
+**같은 리비전 안에서 기존 잔액을 로트로 백필한다** — 안 하면 위 Σ 불변식이
 이 리비전 직후부터 깨진다(로트가 0행인데 `clover_balance`는 기존 값을 유지하므로). 백필
-로트는 무기한이 아니라 CE-7과 같은 규칙(지급일 KST 자정 + 8일, CE-11)으로 만료가 붙는다 —
+로트는 무기한이 아니라 출석·미션 지급과 같은 규칙(지급일 KST 자정 + 8일)으로 만료가 붙는다 —
 자정 정규화 때문에 "+7일"은 보유 기간이 6~7일이 되어 "7일 유효기간" 고지와 어긋난다,
-"+8일"이면 7~8일이라 누구도 7일 미만을 받지 않는다(CE-7).
+"+8일"이면 7~8일이라 누구도 7일 미만을 받지 않는다.
 
 🔴 **`cutoff`는 이 파일을 작성한 날이 아니라 `upgrade()`가 *실행되는* 날 기준이다** — 병합과
 실제 배포 사이 지연만큼 틀리므로 `upgrade()` 안에서 실행 시점에 계산한다(`_legacy_lot_expiry`,
-아래 순수 함수로 분리 — T-15는 이 함수에 리터럴 `datetime`을 주입해 검증하고 마이그레이션
+아래 순수 함수로 분리 — 테스트는 이 함수에 리터럴 `datetime`을 주입해 검증하고 마이그레이션
 자체를 다시 돌리지 않는다). `date.today()`를 안 쓰는 이유는 `core/clover.py`의 `kst_today`
 독스트링과 같다 — 프로세스 로컬 시간대를 쓴다.
 
 `KST = timezone(timedelta(hours=9))`는 `core/rate_limit.py:50`과 같은 고정 오프셋이다.
 마이그레이션이 `api.*`(애플리케이션 코드)를 import하는 선례가 이 저장소에 없어(전수
-`grep -rln "^from api\\.\\|^import api\\." migrations/versions/*.py` → 0건, 사전 점검 PA-5)
+`grep -rln "^from api\\.\\|^import api\\." migrations/versions/*.py` → 0건)
 `core.rate_limit.KST`를 가져다 쓰지 않고 여기 다시 적는다 — 값은 반드시 같아야 한다(고정
 오프셋이라 두 정의가 갈릴 일이 없다).
 """
@@ -43,7 +43,7 @@ depends_on: str | Sequence[str] | None = None
 
 KST = timezone(timedelta(hours=9))
 
-# T-5(백필 검증)가 이 문자열을 마이그레이션에서 그대로 불러와 실행한다 — 테스트에
+# 백필 검증 테스트(`tests/test_clover_lots.py`)가 이 문자열을 마이그레이션에서 그대로 불러와 실행한다 — 테스트에
 # 다시 타이핑하면 이 SQL이 나중에 바뀌었을 때 테스트가 낡은 사본을 계속 검증하게 된다.
 _LEGACY_BACKFILL_SQL = (
     "INSERT INTO clover_lots (user_id, granted_amount, remaining, expires_at, kind, created_at)"
@@ -53,7 +53,7 @@ _LEGACY_BACKFILL_SQL = (
 
 
 def _legacy_lot_expiry(now: datetime) -> datetime:
-    """백필 로트의 만료 시각 — `now`(tz-aware)를 KST로 바꾼 날의 자정 + 8일(CE-7·CE-11).
+    """백필 로트의 만료 시각 — `now`(tz-aware)를 KST로 바꾼 날의 자정 + 8일.
 
     🔴 7이 아니라 8인 이유: 자정으로 정규화하면 "+7일"은 실제 보유 기간을 6~7일로 만든다
     (늦은 시각에 실행될수록 짧아진다) — "7일 유효기간" 고지와 어긋난다. "+8일"이면 보유
@@ -61,11 +61,11 @@ def _legacy_lot_expiry(now: datetime) -> datetime:
 
     `core/clover.py`의 `kst_today`와 같은 이유로 naive `now`는 거부한다 — naive는
     `astimezone`이 프로세스 로컬 시간대로 재해석해 컨테이너 TZ마다 다른 값을 낸다. 순수
-    함수로 분리한 이유는 T-15가 마이그레이션을 다시 돌리지 않고 리터럴 `datetime`을 주입해
-    경계를 검증하기 위해서다(사전 점검 PA-5 — `conftest.py`의 `_migrated_schema`가
+    함수로 분리한 이유는 테스트가 마이그레이션을 다시 돌리지 않고 리터럴 `datetime`을 주입해
+    경계를 검증하기 위해서다(`conftest.py`의 `_migrated_schema`가
     `upgrade(head)`를 세션당 1회만 실행해 실행 시각을 테스트가 통제할 수 없다).
 
-    🔴 `core/clover.py`의 `earned_lot_expiry`(출석·미션 지급용, S3)가 같은 계산을 별도로
+    🔴 `core/clover.py`의 `earned_lot_expiry`(출석·미션 지급용)가 같은 계산을 별도로
     갖는다 — 이쪽은 마이그레이션이라 `api.*`를 import하지 않는 저장소 관례(위 참고) 때문에
     사본을 둔다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필 로트와 출석·미션
     로트의 유효기간 규칙이 갈린다.
@@ -95,7 +95,7 @@ def upgrade() -> None:
     op.create_index('ix_clover_lots_user_id_expires_at_created_at', 'clover_lots', ['user_id', 'expires_at', 'created_at'], unique=False, postgresql_where=sa.text('remaining > 0'))
     # ### end Alembic commands ###
 
-    # 기존 잔액 백필(CE-3 §3-1) — `id`는 명시하지 않는다(위 `server_default`가 채운다).
+    # 기존 잔액 백필 — `id`는 명시하지 않는다(위 `server_default`가 채운다).
     cutoff = _legacy_lot_expiry(datetime.now(KST))
     bind = op.get_bind()
     bind.execute(sa.text(_LEGACY_BACKFILL_SQL), {"cutoff": cutoff})

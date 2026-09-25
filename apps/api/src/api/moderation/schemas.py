@@ -26,7 +26,7 @@ class NotificationResponse(CamelModel):
     # NOTIFICATION_TITLE_BY_TYPE이 문구를 만든다.
     title: str | None
     # 조치 통지 3종(moderation-action/user-warned/user-suspended)은 계속 채우지만,
-    # 공지·문의답변은 인용할 사유가 없어 nullable이다(tasks/techspec.md §3-3).
+    # 공지·문의답변은 인용할 사유가 없어 nullable이다.
     reason_category: str | None
     admin_comment: str | None
     created_at: datetime

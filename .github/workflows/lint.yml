@@ -1,7 +1,7 @@
 name: lint
 
 # eslint는 루트에서 **한 번만** 돈다 — 패키지별로 돌리면 `no-relative-import-paths`의 `rootDir`가
-# cwd 기준이라 IMP-01 검사가 통째로 빠진다(합계 210 vs 루트 368으로 실측). 그래서 web/admin
+# cwd 기준이라 상대 경로 import 금지 검사가 통째로 빠진다(합계 210 vs 루트 368으로 실측). 그래서 web/admin
 # 워크플로에 끼워 넣지 않고 별도 워크플로로 뒀다 — 저장소 전체가 대상이라 앱별로 나눌 이유도 없다.
 #
 # `eslint.config.mjs`가 경로 필터에 있는 이유: 규칙만 바뀐 커밋도 검사돼야 한다. web/admin
@@ -49,7 +49,7 @@ jobs:
 
       - run: pnpm run lint
 
-      # backlog.md D-5: `generated.ts` 도 커밋되는 생성물이다(`openapi.json` → 이 파일).
+      # `generated.ts` 도 커밋되는 생성물이다(`openapi.json` → 이 파일).
       # 체인의 앞쪽 절반은 `api.yml` 이 검사하고, 뒤쪽인 이 파일을 여기서 검사하는 이유는
       # openapi-typescript 가 node 워크플로에만 깔려 있어서다.
       #

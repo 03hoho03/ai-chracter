@@ -4,7 +4,7 @@ Revision ID: 59d627a75fbf
 Revises: cf74d6d53561
 Create Date: 2026-09-24 16:56:33.562610
 
-persona-goal-prompt.md §3-1·§3-2 M1 — 대화 프로필 스키마. 컬럼·인덱스 근거는
+대화 프로필 스키마. 컬럼·인덱스 근거는
 `db/models/persona.py`의 `UserPersona` docstring과 `User.default_persona_id`·
 `ChatRoom.persona_id` 주석에 있다 — 여기서 되풀이하지 않는다.
 
@@ -14,12 +14,11 @@ persona-goal-prompt.md §3-1·§3-2 M1 — 대화 프로필 스키마. 컬럼·�
 downgrade는 FK 두 개를 먼저 `drop_constraint(type_='foreignkey')`로 끊고 컬럼·인덱스·테이블을
 역순으로 지운다.
 
-FK에 `ondelete`를 주지 않는다(저장소 규약) — 참조를 끊는 순서는 호출부가 지킨다
-(persona-goal-prompt.md UP-14·UP-15).
+FK에 `ondelete`를 주지 않는다(저장소 규약) — 참조를 끊는 순서는 호출부가 지킨다.
 
-프롬프트 슬롯 데이터(`generation/user_persona`)는 다음 리비전(M2)이 넣는다 — 스키마와
-데이터를 나눠 두면 M2의 가정 검증이 실패했을 때 원인이 어느 쪽인지 분명하다. 체인이 한
-트랜잭션이라(`migrations/env.py`) M2가 raise하면 이 리비전도 함께 롤백된다.
+프롬프트 슬롯 데이터(`generation/user_persona`)는 다음 리비전(`b72c33c70240`)이 넣는다 — 스키마와
+데이터를 나눠 두면 그 리비전의 가정 검증이 실패했을 때 원인이 어느 쪽인지 분명하다. 체인이 한
+트랜잭션이라(`migrations/env.py`) 그 리비전이 raise하면 이 리비전도 함께 롤백된다.
 """
 from collections.abc import Sequence
 

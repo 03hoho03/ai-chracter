@@ -37,7 +37,7 @@ import httpx
 sys.path.insert(0, str(Path(__file__).parent))
 from seed_content.upsert import story_content_id
 
-# chat-techspec.md D-14 처럼 서버 재기동으로 정해지는 값과 달리, 이건 이 스크립트를 실행하는
+# 서버 재기동으로 정해지는 값과 달리, 이건 이 스크립트를 실행하는
 # 사람이 매번 바꿀 수 있어야 한다 — `--base`가 우선, 없으면 CHAT_PROBE_BASE 환경변수, 그것도
 # 없으면 지금까지의 기본값을 그대로 쓴다.
 DEFAULT_BASE = os.environ.get("CHAT_PROBE_BASE", "http://localhost:8000")
@@ -47,7 +47,7 @@ EMAIL, PASSWORD = "test@example.com", "password1234"
 # 섞는다. 어느 스토리에나 말이 되도록 세계관 고유명사를 쓰지 않는다.
 #
 # `--script`(기본 default)로 고른다. 대본과 스토리는 짝이다 — guildkitchen-closing은 밥집
-# 방 a435d603의 실제 사용자 입력 4개(chat-goal-prompt.md §3-4)라 요리 맥락이고,
+# 방 a435d603의 실제 사용자 입력 4개라 요리 맥락이고,
 # fantasy-guildkitchen 재현 전용이다. 다른 스토리에 쓰지 않는다.
 SCRIPTS: dict[str, list[str]] = {
     "default": [

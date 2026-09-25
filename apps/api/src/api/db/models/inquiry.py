@@ -22,10 +22,8 @@ class InquiryStatus(str, enum.Enum):
 
 
 class Inquiry(Base):
-    """goal-prompt.md §3-2, techspec.md §3-2.
-
-    D-11: 답변은 별도 `inquiry_replies` 테이블이 아니라 `reply_body`/`replied_by_admin_id`/
-    `answered_at` 컬럼 3개로 둔다. 인터뷰 프리뷰에는 테이블로 적었으나, 왕복 1회 모델에서
+    """답변은 별도 `inquiry_replies` 테이블이 아니라 `reply_body`/`replied_by_admin_id`/
+    `answered_at` 컬럼 3개로 둔다. 처음 설계에는 테이블로 적었으나, 왕복 1회 모델에서
     1:N 테이블은 쓰이지 않는 유연성이다. 다회 왕복이 실제로 필요해지면 그때 테이블로
     승격한다.
 

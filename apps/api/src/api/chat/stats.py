@@ -18,7 +18,7 @@ def apply_stat_changes(
     changes: list[StatChange],
     defs: list[StatDef],
 ) -> dict[str, float]:
-    """techspec-backend-chat.md §3.1 판단 로직 — LLM이 판단한 절대값(newValue)을
+    """LLM이 판단한 절대값(newValue)을
     stat_defs의 min/max 범위로 clamp한다. defs에 없는 statId는 무시하고 나머지
     스탯은 영향받지 않는다.
 

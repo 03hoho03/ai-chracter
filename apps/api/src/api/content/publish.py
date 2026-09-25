@@ -14,7 +14,7 @@ from api.db.models.story import Ending, StartingSetup, StoryPromptTemplate, Stor
 def validate_character_publish(
     content: Content, version: ContentVersion, detail: CharacterVersionDetail
 ) -> list[str]:
-    """techspec-backend-content.md §1.2/§1.3 (US-083). Pure required-field check for
+    """Pure required-field check for
     character publish — DB I/O happens in the router, this only inspects already-loaded
     rows (same split as api/chat/stats.py's apply_stat_changes). Returns the camelCase
     field names FE would recognize as missing; empty list means the draft is publishable.
@@ -57,12 +57,11 @@ def build_character_publish_filter_prompt(
     character_prompt: str,
     detail_description: str,
 ) -> str:
-    """techspec-backend-content.md §1.3. 텍스트 검열 지시문 — 첨부된 이미지(대표이미지/
+    """텍스트 검열 지시문 — 첨부된 이미지(대표이미지/
     상황별이미지)는 같은 LLMClient.generate_structured() 호출의 멀티모달 파트로 함께
     전달되므로(images 인자), 이 프롬프트가 그 이미지들도 함께 심사하도록 명시한다.
 
-    `[예시 대화]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다
-    (prompt-db-goal-prompt.md §4-4).
+    `[예시 대화]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다.
     """
     dialogue_lines = "\n".join(
         f"- {prompt_set.user_label}: {pair['userLine']} / {prompt_set.character_assistant_label}: "
@@ -87,7 +86,7 @@ def validate_story_publish(
     starting_setups: Sequence[StartingSetup],
     endings_by_setup_id: dict[uuid.UUID, Sequence[Ending]],
 ) -> list[str]:
-    """techspec-backend-content.md §1.2/§1.3 (US-085), mirrors `validate_character_publish`'s
+    """Mirrors `validate_character_publish`'s
     shape. `endings_by_setup_id` is keyed by `StartingSetup.id` (physical) since that's how the
     router naturally loads them (one query per setup) — the caller passes in whatever it already
     fetched, this function does no DB I/O itself.
@@ -140,14 +139,14 @@ def build_story_publish_filter_prompt(
     detail_description: str,
     starting_setups: Sequence[StartingSetup],
 ) -> str:
-    """techspec-backend-content.md §1.3. 스토리는 상황별 이미지가 없어 첨부 이미지는 대표
-    이미지 하나뿐이다(techspec-db-schema.md §5) — 그 이미지는 호출부가 같은 `generate_structured`
+    """스토리는 상황별 이미지가 없어 첨부 이미지는 대표
+    이미지 하나뿐이다 — 그 이미지는 호출부가 같은 `generate_structured`
     호출의 `images` 인자로 함께 전달한다.
 
-    chat-goal-prompt.md §8: `developmentExamples`/`userGoal`/`rules`도 창작자가 적는 텍스트라
-    `development_example`과 함께 심사 대상에 넣는다(D-19의 발행 필수화 제외와는 별개 — 값이
+    `developmentExamples`/`userGoal`/`rules`도 창작자가 적는 텍스트라
+    `development_example`과 함께 심사 대상에 넣는다(발행 필수 항목이 아니라는 것과는 별개 — 값이
     있으면 걸러야 한다). `[전개 예시(쌍)]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도
-    `prompt_set`에서 읽는다(§4-4) — 전개 예시 자리는 `story_example_label`("서술자")을 쓴다(§1-1).
+    `prompt_set`에서 읽는다 — 전개 예시 자리는 `story_example_label`("서술자")을 쓴다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"

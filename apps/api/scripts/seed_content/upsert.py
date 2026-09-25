@@ -2,7 +2,7 @@
 
 빌더 API 의 자동저장 로직(`api.content.router._update_story_draft` /
 `_update_character_draft`)을 그대로 재사용하고, 그 앞뒤로 시드에만 필요한 것 — 결정적
-UUID, 발행 검증, 발행 포인터 — 만 붙인다(PRD §8 의 선택지 (a)). 자식 행 조정(entity_id
+UUID, 발행 검증, 발행 포인터 — 만 붙인다. 자식 행 조정(entity_id
 업서트 + 사라진 항목 삭제) 로직을 두 벌 유지하지 않으려는 것이고, 그래서 draft 스키마가
 바뀌면 시드도 자동으로 따라간다.
 
@@ -128,7 +128,7 @@ async def upsert_character(
     썸네일(`payload.thumbnail_asset_id`)만 스토리와 동일하게 호출부가 채워서 넘긴다.
 
     이미지 하나마다 원본(`kind=ORIGINAL`)과 블러(`kind=BLURRED`) 자산 두 행이 생긴다 —
-    이미지 보관함이 아직 노출되지 않은 이미지를 블러본으로 보여주기 때문이다(US-074).
+    이미지 보관함이 아직 노출되지 않은 이미지를 블러본으로 보여주기 때문이다.
 
     발행 검증에 실패하면 DB 를 **전혀 건드리지 않고** `SeedPublishError` 를 던진다.
     """
@@ -177,7 +177,7 @@ async def upsert_character(
         await _update_character_draft(session, content, version, payload)
         await session.flush()
 
-        # 자동저장 로직은 이미지 자산 필드를 의도적으로 건드리지 않으므로(US-082) 여기서 채운다.
+        # 자동저장 로직은 이미지 자산 필드를 의도적으로 건드리지 않으므로 여기서 채운다.
         rows = {
             row.entity_id: row
             for row in (
@@ -277,7 +277,7 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
     """DB 를 건드리기 전에 `validate_story_publish()` + 엔딩 규칙 참조 검사를 돌린다.
 
     검증 함수가 요구하는 건 ORM 행의 값뿐이라 세션 없이 생성자로만 채운 인메모리 인스턴스로
-    충분하다(US-089 의 미리보기 어댑팅과 같은 패턴). 시작설정의 물리적 id 자리에는 entity_id
+    충분하다(빌더 미리보기가 `chat/router.py` 의 `_preview_*` 헬퍼로 하는 것과 같은 패턴). 시작설정의 물리적 id 자리에는 entity_id
     를 그대로 쓴다 — 여기서는 엔딩 목록을 되찾는 dict 키로만 쓰인다.
     """
     endings_by_setup_id: dict[uuid.UUID, Sequence[Ending]] = {
@@ -308,7 +308,7 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
 def _dangling_stat_refs(payload: StoryDraftPayload) -> list[str]:
     """엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 그 필드 경로를 돌려준다.
 
-    `statId` 는 스탯의 entity_id 참조인데(§1 원칙 4) 시드 JSON 의 entity_id 는 loader 가
+    `statId` 는 스탯의 entity_id 참조인데 시드 JSON 의 entity_id 는 loader 가
     파일 안의 위치로 파생하므로, 손으로 쓴 참조는 어긋나기 쉽다. 어긋난 규칙은 발행도
     채팅도 에러 없이 통과한 뒤 엔딩이 조용히 영영 안 열리는 형태로만 드러나므로,
     시드 시점에 발행 검증과 같은 통로로 막는다.

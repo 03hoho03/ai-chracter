@@ -1,4 +1,4 @@
-"""장면컷(aspectRatio == "3:4") PNG 를 정확한 3:4 로 중앙 크롭한다 — seed-migration-goal-prompt.md SM-17.
+"""장면컷(aspectRatio == "3:4") PNG 를 정확한 3:4 로 중앙 크롭한다.
 
 채팅 화면의 상황컷 웰은 `aspect-3/4`(정확히 0.750) + `object-contain` 이다
 (`apps/web/src/entities/chat-room/ui/MessageBubble.tsx:105,111,171,177`). 집 PC 의 `3:4`
@@ -15,7 +15,7 @@
 대상은 `image_prompts.json` 에서 `aspectRatio == "3:4"` 인 slug 뿐이다(현재 장면컷 4건).
 스토리(2:3)·캐릭터(1:1)는 `object-cover` 라 CSS 가 비율 차이를 흡수하므로 건드리지 않는다.
 
-이미 정확히 3:4 인 파일은 건너뛴다(재실행 안전 — SM-14 재시도 루프와 섞인다). 로컬에 PNG 가
+이미 정확히 3:4 인 파일은 건너뛴다(재실행 안전 — 시드 이미지 재생성 재시도 루프와 섞인다). 로컬에 PNG 가
 없는 slug 는 조용히 넘기지 않고 목록으로 보고한다(`upload_seed_images.py` 의 침묵 스킵이
 이 저장소의 알려진 함정이다).
 """

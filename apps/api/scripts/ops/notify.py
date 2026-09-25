@@ -1,4 +1,4 @@
-"""Discord 웹훅 알림 + healthchecks.io ping — 공통 stdlib 유틸(monitoring-techspec.md MT-10).
+"""Discord 웹훅 알림 + healthchecks.io ping — 공통 stdlib 유틸.
 
 `backup_db.py`·`check_resources.py`가 여기에 얹는다. **stdlib(`urllib.request`)만 쓴다** —
 `requests`/`httpx`를 쓰면 프로덕션 크론의 시스템 python3(boto3만 설치돼 있음)에서 import

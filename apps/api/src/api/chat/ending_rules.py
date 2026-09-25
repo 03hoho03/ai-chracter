@@ -14,15 +14,15 @@ _COMPARATORS: dict[EndingRuleOperator, Callable[[float, float], bool]] = {
 
 
 def evaluate_item(item: EndingRuleListItem, stat_values: dict[str, float]) -> bool:
-    """techspec-builder-story.md §1.5 evaluateItem 포팅. 그룹은 내부 rules에 동일
-    알고리즘(evaluate_rule_list)을 재귀 적용한다(1단계 중첩만 허용, FR-59)."""
+    """FE `endingRules.ts`의 `evaluateItem`과 같은 알고리즘. 그룹은 내부 rules에 동일
+    알고리즘(evaluate_rule_list)을 재귀 적용한다(1단계 중첩만 허용)."""
     if isinstance(item, EndingRuleGroupItem):
         return evaluate_rule_list(item.rules, stat_values)
     return _COMPARATORS[item.operator](stat_values[str(item.stat_id)], item.threshold)
 
 
 def evaluate_rule_list(items: Sequence[EndingRuleListItem], stat_values: dict[str, float]) -> bool:
-    """techspec-builder-story.md §1.5 evaluateRuleList 포팅. 비어있으면 True(judgmentPrompt만으로
+    """FE `endingRules.ts`의 `evaluateRuleList`와 같은 알고리즘. 비어있으면 True(judgmentPrompt만으로
     판정), 그 외엔 각 항목의 next_op(and/or)로 좌에서 우로 순차 누적한다."""
     if not items:
         return True
@@ -35,6 +35,6 @@ def evaluate_rule_list(items: Sequence[EndingRuleListItem], stat_values: dict[st
 
 
 def is_ending_check_due(turn_count: int, turn_count_gate: int) -> bool:
-    """FR-58 — turn_count_gate(최소 10)를 넘긴 시점부터 5턴마다만 엔딩 판정을 호출하고,
+    """turn_count_gate(최소 10)를 넘긴 시점부터 5턴마다만 엔딩 판정을 호출하고,
     그 외 턴은 스킵한다."""
     return turn_count >= turn_count_gate and (turn_count - turn_count_gate) % 5 == 0

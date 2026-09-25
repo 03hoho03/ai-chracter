@@ -8,7 +8,7 @@ from api.db.base import Base
 
 
 class LegalDocument(Base):
-    """techspec.md §1-4. `kind`/`status`는 Postgres enum이 아니라 Text다 — 값이 늘어날
+    """`kind`/`status`는 Postgres enum이 아니라 Text다 — 값이 늘어날
     여지가 있고(`notifications.type`이 이미 이 선례), admin_action_logs.action_type도
     같은 이유로 Text를 쓴다. `version`은 draft일 때 null이고 게시 시점에 부여된다.
 

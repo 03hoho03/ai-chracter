@@ -3,7 +3,7 @@ import logging
 from api.core.email import EmailSendError, EmailSender
 from api.core.sentry import capture_dependency_failure
 
-# email-goal-prompt.md E-2: 발송은 BackgroundTasks로 응답 이후 실행되므로 실패해도 가입/재전송/
+# 발송은 BackgroundTasks로 응답 이후 실행되므로 실패해도 가입/재전송/
 # 비밀번호 재설정 응답에는 영향이 없다 — 대신 로그에 남긴다. uvicorn은 root logger에 핸들러를
 # 안 붙여 info/debug는 조용히 사라지지만 logging.lastResort가 WARNING 이상은 stderr로 내보낸다
 # (chat/router.py:100-102 선례).
@@ -32,11 +32,11 @@ async def _send(sender: EmailSender, to: str, subject: str, body: str) -> None:
     try:
         await sender(to, subject, body)
     except EmailSendError as exc:
-        # monitoring-techspec.md MT-5: `EventScrubber`는 구조화 필드만 훑고 로그 메시지의 자유
+        # `EventScrubber`는 구조화 필드만 훑고 로그 메시지의 자유
         # 텍스트는 안 건드린다 — 수신자 이메일을 메시지 문자열에 박으면 그대로 Sentry(Bugsink)에
         # 남는다. 전체 주소 대신 도메인만 남긴다 — 특정 메일 제공자 전체가 실패 중인지는
         # 식별하면서 개인 식별은 피한다.
         domain = to.split("@", 1)[1] if "@" in to else "(no-at)"
         logger.warning("email send failed subject=%r domain=%s: %s", subject, domain, exc)
-        # monitoring-techspec.md MT-6: 흡수는 그대로 두고 Bugsink 이벤트로도 승격한다.
+        # 흡수는 그대로 두고 Bugsink 이벤트로도 승격한다.
         capture_dependency_failure(exc, dependency="email")

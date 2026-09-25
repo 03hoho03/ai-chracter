@@ -22,8 +22,8 @@
 (자산이 브라우저에 노출되는 문제는 없다 — R2의 CORS는 읽기 권한을 주지 않고, S3 엔드포인트는
 항상 SigV4 서명을 요구한다. 공개 접근은 별도 `r2.dev` 도메인을 켜야 생기는데 켜져 있지 않다.)
 
-**백업(덤프+업로드+prune)이 전부 성공한 뒤에만 만료된 `withdrawn_emails` 행도 지운다**
-(legal-revision-goal-prompt.md LR-32). 처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년간
+**백업(덤프+업로드+prune)이 전부 성공한 뒤에만 만료된 `withdrawn_emails` 행도 지운다**.
+처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년간
 보관하고 그 기간이 지나면 파기합니다"를 실제로 수행하는 유일한 코드다 — `auth/router.py`의
 `_reregistration_blocked`는 조회 시 만료를 무시할 뿐 행을 지우지 않는다. 삭제를 백업 뒤에
 두는 이유는 지우기 전 상태를 그날 백업에 남기기 위해서다. `--no-upload`(로컬 전용 덤프)
@@ -32,9 +32,9 @@
 ⚠️ **이 파일은 SQLAlchemy/asyncpg/`api.*`를 import 하면 안 된다.** 프로덕션 크론은
 `/opt/ddona/backup.sh`(VM 실측)가 `PYTHONPATH=/opt/ddona/scripts` 아래 시스템
 `/usr/bin/python3 -m ops.backup_db`로 돌리는데, 그 경로엔 `api` 패키지가 없고 그 python3엔
-SQLAlchemy/asyncpg가 안 깔려 있다(boto3만 있다). S5-d가 만료 `withdrawn_emails` 삭제를
+SQLAlchemy/asyncpg가 안 깔려 있다(boto3만 있다). 만료 `withdrawn_emails` 삭제를
 SQLAlchemy로 구현해 배포했다가 매일 18:00 UTC 크론이 import 시점에 죽어 백업이 통째로
-멈췄다(S5-e에서 되돌림) — 그래서 삭제도 `pg_dump`와 같은 방식(`run_sh`로 컨테이너 안
+멈춘 적이 있다(이후 되돌림) — 그래서 삭제도 `pg_dump`와 같은 방식(`run_sh`로 컨테이너 안
 `psql`을 부름)으로 한다. `tests/test_ops_production_cron_importable.py`가 이 제약을 `ast`로 고정한다.
 """
 
@@ -55,11 +55,11 @@ AWS_IMAGE = "amazon/aws-cli:latest"
 DAILY_KEEP = 7
 WEEKLY_KEEP = 4
 
-# monitoring-techspec.md MT-12: R2 무료 한도(DEPLOY.md §1-1). 새 토큰·새 크론을 만들지 않고
+# R2 무료 한도(DEPLOY.md "Cloudflare R2" 절). 새 토큰·새 크론을 만들지 않고
 # 이미 있는 `aws()`/prune 경로로 총 사용량을 재는 김에 임계값만 비교한다.
 DEFAULT_R2_CAPACITY_THRESHOLD_BYTES = 10 * 1024**3
 
-# legal-revision-goal-prompt.md LR-7·LR-32: `auth/router.py`의 `_reregistration_blocked`(조회)와
+# `auth/router.py`의 `_reregistration_blocked`(조회)와
 # 같은 1년을 써야 "차단이 풀리는 시점"과 "행이 파기되는 시점"이 갈라지지 않는다. 원본은
 # `api.core.constants.WITHDRAWN_EMAIL_BLOCK_PERIOD`지만 VM에 `api` 패키지가 없어 이 파일에서는
 # import 할 수 없다(위 경고 참고) — 그래서 로컬로 값을 복제하고,
@@ -163,10 +163,10 @@ def parse_s3_summary(text: str) -> int:
 
 
 def check_r2_capacity(bucket: str) -> None:
-    """`monitoring-techspec.md` MT-12: 버킷 전체 용량이 임계값을 넘을 때만 Discord로 알린다.
+    """버킷 전체 용량이 임계값을 넘을 때만 Discord로 알린다.
 
     새 스크립트·새 크론·새 Cloudflare 토큰을 만들지 않는다 — 이미 있는 `aws()` 헬퍼로 한 번 더
-    호출할 뿐이다(Cloudflare GraphQL 대신인 이유는 techspec MT-12 참고: 현재 토큰에 Analytics
+    호출할 뿐이다(Cloudflare GraphQL 대신인 이유: 현재 토큰에 Analytics
     권한이 없다).
     """
     listing = aws(["s3", "ls", f"s3://{bucket}/", "--recursive", "--summarize"])
@@ -185,7 +185,7 @@ def check_r2_capacity(bucket: str) -> None:
         threshold = int(raw_threshold) if raw_threshold is not None else DEFAULT_R2_CAPACITY_THRESHOLD_BYTES
     except ValueError as error:
         # ValueError를 그대로 두면 `__main__`의 좁은 `except (RuntimeError, KeyError)` 밖으로
-        # 새 나가 실패 ping도 못 보낸다(MT-11) — 이 파일의 다른 설정 오류(KeyError)와 같은
+        # 새 나가 실패 ping도 못 보낸다 — 이 파일의 다른 설정 오류(KeyError)와 같은
         # 급으로 다루도록 RuntimeError로 갈아 끼운다.
         raise RuntimeError(f"R2_CAPACITY_THRESHOLD_BYTES 값이 잘못됐다: {raw_threshold!r}") from error
 
@@ -196,7 +196,7 @@ def check_r2_capacity(bucket: str) -> None:
 
 
 def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
-    """legal-revision-goal-prompt.md LR-32: `withdrawn_at + WITHDRAWN_EMAIL_BLOCK_PERIOD`가
+    """`withdrawn_at + WITHDRAWN_EMAIL_BLOCK_PERIOD`가
     지난 `withdrawn_emails` 행을 지우고 지운 개수를 돌려준다. 처리방침 제4조 2항·약관 제14조
     4항이 "1년이 지나면 파기합니다"라고 약속하는 대상이 바로 이 행이다.
 
@@ -225,7 +225,7 @@ def delete_expired_withdrawn_emails(url: str, *, now: datetime) -> int:
 
 
 def _healthcheck(suffix: str = "") -> None:
-    """monitoring-techspec.md MT-11: healthchecks.io check-in.
+    """healthchecks.io check-in.
 
     healthchecks.io 관례대로 base URL에 접미사를 붙여 start(`/start`)·성공(빈 접미사)·
     실패(`/fail`)를 구분한다. `HEALTHCHECKS_BACKUP_PING_URL`이 없으면(알림 미설정) 아무 일도
@@ -244,7 +244,7 @@ def main() -> int:
     parser.add_argument("--keep-local", action="store_true", help="업로드 후에도 로컬 파일을 남긴다")
     args = parser.parse_args()
 
-    _healthcheck("/start")  # MT-11: "예정 시각에 안 돌았음"을 잡으려면 시작부터 찍어야 한다.
+    _healthcheck("/start")  # "예정 시각에 안 돌았음"을 잡으려면 시작부터 찍어야 한다.
 
     url = to_libpq_url(os.environ["DATABASE_URL"])
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
@@ -258,7 +258,7 @@ def main() -> int:
 
     if args.no_upload:
         print("↷ 업로드 건너뜀(--no-upload)")
-        # ⚠️ MT-11: 여기서 성공 ping을 보내지 않는다 — 크론은 이 플래그를 쓰지 않으므로, 보내면
+        # ⚠️ 여기서 성공 ping을 보내지 않는다 — 크론은 이 플래그를 쓰지 않으므로, 보내면
         # 실제로는 R2에 아무것도 안 올라간 로컬 전용 실행이 healthchecks.io에는 "오늘 백업
         # 성공"으로 찍힌다.
         return 0
@@ -279,9 +279,9 @@ def main() -> int:
         if removed:
             print(f"🗑 {base}{kind} 정리: {len(removed)}개 삭제 ({', '.join(removed)})")
 
-    check_r2_capacity(bucket)  # MT-12: prune 직후 총 용량을 재서 임계 초과일 때만 알린다.
+    check_r2_capacity(bucket)  # prune 직후 총 용량을 재서 임계 초과일 때만 알린다.
 
-    # legal-revision-goal-prompt.md LR-32: 여기 도달했다는 것 자체가 덤프·업로드·prune이 전부
+    # 여기 도달했다는 것 자체가 덤프·업로드·prune이 전부
     # 성공했다는 뜻이다 — 앞선 어느 단계든 실패하면 예외가 여기까지 오기 전에 전파되어 삭제도
     # 함께 건너뛴다. 순서 고정: 백업 뒤에 지워야 지우기 전 상태가 오늘 백업에 남는다.
     expired_count = delete_expired_withdrawn_emails(url, now=datetime.now(UTC))
@@ -291,19 +291,19 @@ def main() -> int:
     if not args.keep_local:
         target.unlink()
 
-    _healthcheck()  # MT-11: 성공 신호. 접미사 없음이 healthchecks.io의 "성공" 규약이다.
+    _healthcheck()  # 성공 신호. 접미사 없음이 healthchecks.io의 "성공" 규약이다.
     return 0
 
 
 def _on_failure(error: Exception) -> int:
     """`__main__`이 잡은 예외를 stderr에 남기고 실패 ping을 보낸다. 반환값은 그대로 exit code다.
 
-    MT-11: 아래 `except (RuntimeError, KeyError)` **밖**의 예외(예: docker 미기동으로 인한
+    아래 `except (RuntimeError, KeyError)` **밖**의 예외(예: docker 미기동으로 인한
     `FileNotFoundError`)는 여기 도달하지 못해 실패 ping도 나가지 않는다 — 그 경우는 start ping
     이후 healthchecks.io 자체의 grace time 초과 감지가 대신 잡는다(두 경로가 서로를 덮는다).
     이 except를 넓히지 않는 이유: 원래 이 가드는 "사전에 식별한 실패 모드"만 좁게 잡도록
-    설계돼 있다(S5-d/S5-e 회귀 — 예상 못한 예외까지 뭉뚱그려 삼키면 새 버그 클래스를 조용히
-    숨긴다) — 이 설계를 MT-11 때문에 흔들지 않는다.
+    설계돼 있다(예상 못한 예외까지 뭉뚱그려 삼키면 새 버그 클래스를 조용히
+    숨긴다) — 이 설계를 실패 ping 때문에 흔들지 않는다.
     """
     print(f"실패: {error}", file=sys.stderr)
     _healthcheck("/fail")

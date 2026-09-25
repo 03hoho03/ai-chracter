@@ -1,10 +1,10 @@
 """Provider 무관 이미지 생성 인터페이스.
 
-구현체는 provider별 파일에 있다(`local_image.py`, local-image-gen-goal-prompt.md LG-13으로
+구현체는 provider별 파일에 있다(`local_image.py`;
 Cloudflare/Gemini 경로는 제거됨). 이 모듈은 `google.genai`를 import하지 않는다 — Gemini
 구현을 여기로 되돌리지 말 것.
 
-`ImageStylePreset`은 local-image-gen-techspec.md LT-4로 `api.images.models`로 옮겼다(id
+`ImageStylePreset`은 `api.images.models`로 옮겼다(id
 옆이 라벨의 집이라는 이유 — 그 파일이 서버가 내리는 스타일 라벨도 함께 갖는다).
 """
 

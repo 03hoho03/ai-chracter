@@ -5,7 +5,7 @@
     cd apps/api && uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rdloop --force
 
 생성은 집 PC 자가 호스팅 추론 서버로 나간다(`build_image_client` → `LocalImageClient`,
-DEPLOY.md §5). 프롬프트 파일은 커밋하고 생성물(`seed_content/images/{slug}.png`)은 gitignore
+DEPLOY.md "이미지 생성" 절). 프롬프트 파일은 커밋하고 생성물(`seed_content/images/{slug}.png`)은 gitignore
 다 — 다른 머신에서는 이 스크립트로 다시 뽑는다(요청 본문에 시드값이 없어 — `_call_generate`
 가 싣는 건 prompt·model·style·aspect_ratio 넷뿐이다 — 원본과 픽셀이 같지는 않다). 이미지가
 없는 머신은 시드가 목업 썸네일로 대체하므로 이 단계는 선택이다.
@@ -54,9 +54,9 @@ RETRY_DELAYS: tuple[float, ...] = (5.0, 20.0)
 
 # JSON 의 문자열을 Literal 타입으로 좁히는 통로 (캐스트 없이).
 _MODEL_IDS: dict[str, ImageModelId] = {model_id: model_id for model_id in IMAGE_MODELS_BY_ID}
-# local-image-gen-progress.md §0: 모델이 하나뿐이고 그 하나가 6종 비율을 전부 지원하므로
-# (local-image-gen-techspec.md LT-4가 모델별 supported_aspect_ratios를 정적 선언에서
-# 뺐다) 모델별 검사는 더 이상 의미가 없다 — AspectRatio Literal 자체로만 좁힌다.
+# 모델이 하나뿐이고 그 하나가 6종 비율을 전부 지원하므로
+# (모델별 supported_aspect_ratios는 정적 선언에서
+# 빠졌다) 모델별 검사는 더 이상 의미가 없다 — AspectRatio Literal 자체로만 좁힌다.
 _ASPECT_RATIOS: dict[str, AspectRatio] = {ratio: ratio for ratio in get_args(AspectRatio)}
 _STYLE_NAMES = sorted(style.value for style in ImageStylePreset)
 
@@ -170,12 +170,12 @@ async def _generate_with_retry(
 ) -> tuple[bytes, str]:
     """마지막 시도의 실패는 그대로 올린다 — 배치 전체를 멈출지는 호출부가 정한다.
 
-    image-style-7-goal-prompt.md IS-15: `LocalImageInputError`(400 길이·422 문법)와
+    `LocalImageInputError`(400 길이·422 문법)와
     `LocalImageBlockedError`(422 콘텐츠 차단)는 결정적 실패다 — 같은 프롬프트를 다시
     보내도 같은 실패가 나므로 재시도하면 `RETRY_DELAYS` 합(25초)을 확실히 낭비한다.
     둘 다 `LLMClientError`의 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야
     한다(순서가 바뀌면 상위 절이 먼저 걸린다). 429·타임아웃·5xx 등 나머지는 그대로
-    재시도한다(429를 재시도 불가로 바꾸지 않는다 — local-image-gen-techspec.md LT-12).
+    재시도한다(429를 재시도 불가로 바꾸지 않는다).
     """
     client = build_image_client(spec.model)
     for delay in retry_delays:

@@ -4,13 +4,13 @@ Revision ID: 10f9f8e5e5c0
 Revises: bd258b26c34a
 Create Date: 2026-09-15 00:00:00.000000
 
-image-style-7-goal-prompt.md IS-6. `assets`에 어떤 style로 생성됐는지 기록하는
+`assets`에 어떤 style로 생성됐는지 기록하는
 nullable 컬럼을 하나 추가한다. 과거 행은 NULL로 남는다 — 지금이 백필할 값이
 없는 유일한 시점이다(그 사실 자체가 이 마이그레이션의 존재 이유이지, NOT NULL을
 막는 이유가 아니라 애초에 NOT NULL이 불가능한 이유다).
 
 `Text`이지 native Postgres enum이 아니다: `kind`/`status`(같은 테이블)는 내부
-상태기계라 enum이 맞지만, style은 외부 계약값이고 이번 런 자체가 4종→7종 완전
+상태기계라 enum이 맞지만, style은 외부 계약값이고 이 컬럼을 낳은 변경 자체가 4종→7종 완전
 교체라 "다음 개편"이 이미 실증됐다 — enum이면 멤버 추가를 autogenerate가 감지
 못 하고, Postgres에 `DROP VALUE`가 없어 멤버 제거가 사실상 불가능해 옛 값이
 타입에 영구히 쌓인다(`db/models/media.py`의 `Asset.style` 주석 참고).

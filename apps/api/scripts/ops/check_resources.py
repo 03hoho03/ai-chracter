@@ -1,14 +1,14 @@
-"""VM 메모리·디스크를 직접 읽어 임계 초과 시 Discord로 알린다(monitoring-techspec.md MT-13).
+"""VM 메모리·디스크를 직접 읽어 임계 초과 시 Discord로 알린다.
 
     # VM 크론 (5분마다, ops/cron.d/ddona-resource-check 로 설치)
     cd /opt/ddona/app/apps/api && PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources
 
 GCP의 balloon 메트릭(`instance/memory/balloon/ram_used`) 대신 `free`/`df`를 직접 읽는 이유는
-techspec MT-13 참고 — 우리 VM에서 실측 1.78GB로 `free -m`의 890MB와 2배 차이가 났고, 그
-메트릭은 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라진다.
+우리 VM에서 실측 1.78GB로 `free -m`의 890MB와 2배 차이가 났고, 그
+메트릭은 e2 계열 전용이라 인스턴스 타입을 바꾸면 조용히 사라지기 때문이다.
 
 같은 실행이 healthchecks.io로도 ping한다 — VM 자체의 생사를 VM 밖에서 보기 위해서다
-(`ops/backup_db.py`의 MT-11과 같은 이유).
+(`ops/backup_db.py`의 healthchecks.io check-in과 같은 이유).
 
 ⚠️ **이 파일은 `backup_db.py`와 같은 이유로 SQLAlchemy/asyncpg/`api.*`를 import 하면 안 된다**
 — 프로덕션 크론은 시스템 `/usr/bin/python3`(boto3만 있고 SQLAlchemy는 없음)로 돈다.
@@ -38,7 +38,7 @@ def parse_memory_used_percent(free_output: str) -> float:
     """`free -m`의 `Mem:` 줄에서 `(total - available) / total`을 퍼센트로 돌려준다.
 
     `used` 컬럼이 아니라 `available`을 쓴다 — `used`는 회수 가능한 buff/cache를 실사용량에
-    포함시켜, 캐시가 쌓이기만 해도 거의 항상 높게 나온다(MT-13).
+    포함시켜, 캐시가 쌓이기만 해도 거의 항상 높게 나온다.
     """
     for line in free_output.splitlines():
         if line.startswith("Mem:"):
@@ -102,7 +102,7 @@ def main() -> int:
     if not alerts:
         print("✅ 리소스 정상")
 
-    # MT-13: dead man's switch — 크론이 죽으면 healthchecks.io가 grace time 초과로 잡는다.
+    # dead man's switch — 크론이 죽으면 healthchecks.io가 grace time 초과로 잡는다.
     # 임계 초과 여부와 무관하게 매번 ping한다(살아서 돌았다는 사실 자체가 신호이기 때문에
     # `alerts` 분기 밖에 둔다).
     ping_url = os.environ.get("HEALTHCHECKS_RESOURCE_PING_URL")

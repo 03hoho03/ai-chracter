@@ -46,8 +46,6 @@ class AppealVerdict(str, enum.Enum):
 
 
 class Report(Base):
-    """techspec-db-schema.md §8."""
-
     __tablename__ = "reports"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -67,8 +65,6 @@ class Report(Base):
 
 
 class ModerationAction(Base):
-    """techspec-db-schema.md §8."""
-
     __tablename__ = "moderation_actions"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -83,9 +79,7 @@ class ModerationAction(Base):
 
 
 class Notification(Base):
-    """techspec-db-schema.md §8, tasks/techspec.md §3-3.
-
-    `type`은 지금 5종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
+    """`type`은 지금 5종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
     처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
     (`admin/users.py`의 정지), `notice`(`admin/notices.py`의 공지 게시 fan-out),
     `inquiry-reply`(`admin/inquiries.py`의 문의 답변). `type`이 Postgres enum이 아니라 `Text`인 이유가
@@ -119,7 +113,7 @@ class Notification(Base):
     # notice_id 참조는 위 컬럼 정의가 먼저 실행돼 클래스 바디 네임스페이스에 바인딩된
     # 뒤라야 동작한다 — 그래서 __table_args__를 컬럼들 다음에 둔다(`AdminActionLog` 참고).
     # postgresql_where=notice_id(bare 컬럼 참조)는 autogenerate가 `MappedColumn` 객체의
-    # repr을 마이그레이션 소스에 그대로 박아 SyntaxError를 낸다(T-6에서 실측 재현,
+    # repr을 마이그레이션 소스에 그대로 박아 SyntaxError를 낸다(실측 재현,
     # `apps/api/CLAUDE.md` §마이그레이션) — `.is_not(None)`로 식을 만들어야 한다.
     __table_args__ = (
         Index(
@@ -133,7 +127,7 @@ class Notification(Base):
 
 
 class Appeal(Base):
-    """techspec-db-schema.md §8. `target_id`는 target_kind에 따라 발행거부 이력 또는
+    """`target_id`는 target_kind에 따라 발행거부 이력 또는
     moderation_actions.id를 가리키는 다형(polymorphic) 참조라 DB FK를 걸지 않는다."""
 
     __tablename__ = "appeals"
@@ -155,10 +149,10 @@ class Appeal(Base):
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
-# backlog-sweep BS-16(K-5): 감사 로그 액션 종류의 단일 소스. `record_admin_action`의 파라미터와
+# 감사 로그 액션 종류의 단일 소스. `record_admin_action`의 파라미터와
 # 응답 스키마 `AdminUserActionLogItem.action_type`이 이 타입을 쓰므로, 목록 밖 값은 호출부에서
-# mypy가 막고 응답은 OpenAPI 유니언으로 FE에 내려간다. BS-16은 `admin/action_log.py`에 두라고
-# 했지만 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피, progress F-9).
+# mypy가 막고 응답은 OpenAPI 유니언으로 FE에 내려간다. 처음 계획은 `admin/action_log.py`였지만
+# 그 모듈이 이 파일을 import하므로 여기 둔다(순환 import 회피).
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
 AdminActionType = Literal[
     "appeal-accept",
@@ -184,18 +178,18 @@ AdminActionType = Literal[
 
 
 class AdminActionLog(Base):
-    """techspec.md §1-3, goal-prompt.md §3-2. 콘텐츠 조치는 `moderation_actions`와 이 테이블
+    """콘텐츠 조치는 `moderation_actions`와 이 테이블
     양쪽에 기록된다 — 중복이 아니라 계층이다. `moderation_actions`는 콘텐츠 조치의 실체
     레코드이자 `Notification.action_id`의 FK 대상이라 없앨 수 없고, 이 테이블은 콘텐츠
     조치·유저 제재·채팅 열람을 한 형식으로 담는 감사 로그다. 직접 조치와 신고 조치 둘 다
-    그렇다(backlog-l-goal-prompt.md BL-4). 예외는 이의제기 수용(`appeal-accept`)으로, 조치를
-    되돌릴 뿐 새 조치가 아니라 이 테이블에만 남는다(BL-11).
+    그렇다. 예외는 이의제기 수용(`appeal-accept`)으로, 조치를
+    되돌릴 뿐 새 조치가 아니라 이 테이블에만 남는다.
 
     `action_type` 컬럼은 native enum이 아니라 Text다 — 값이 늘 때 마이그레이션 없이 넓히기
     위해서다. 값 범위(`AdminActionType`, 위 Literal)는 mypy가 `record_admin_action` 파라미터와
     속성 대입에서만 검사한다 — 선언형 생성자 kwargs는 `**kw: Any`라 검사되지 않으므로 행은
     `record_admin_action`으로만 만든다. 이것도 파이썬 쪽 검사일 뿐 DB 제약은 없다. 목록 밖 값이
-    든 행이 있으면 유저 상세 응답 직렬화가 실패한다 (backlog-sweep-goal-prompt.md Q-6)."""
+    든 행이 있으면 유저 상세 응답 직렬화가 실패한다."""
 
     __tablename__ = "admin_action_logs"
 

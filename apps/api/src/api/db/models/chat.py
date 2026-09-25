@@ -15,8 +15,8 @@ class ChatMessageRole(str, enum.Enum):
 
 
 class ChatRoom(Base):
-    """techspec-db-schema.md §6. Pinned to the content_version it was created against
-    (PRD "이미 생성된 대화방은 생성 시점 버전에 고정")."""
+    """Pinned to the content_version it was created against
+    ("이미 생성된 대화방은 생성 시점 버전에 고정")."""
 
     __tablename__ = "chat_rooms"
 
@@ -39,21 +39,19 @@ class ChatRoom(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # persona-goal-prompt.md §3-1 (UP-7). 방이 고른 대화 프로필 — **참조**다(스냅샷 아님).
-    # NULL이 "선택 없음"이고 그때 생성 프롬프트는 현행과 바이트까지 같다(UP-6). 프로필을
-    # 지우면 호출부가 이 값을 NULL로 먼저 끊는다(UP-14, `ondelete` 없음).
+    # 방이 고른 대화 프로필 — **참조**다(스냅샷 아님).
+    # NULL이 "선택 없음"이고 그때 생성 프롬프트는 현행과 바이트까지 같다. 프로필을
+    # 지우면 호출부가 이 값을 NULL로 먼저 끊는다(`ondelete` 없음).
     persona_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("user_personas.id", name="fk_chat_rooms_persona_id"), nullable=True
     )
 
     # 프로필 삭제의 `UPDATE chat_rooms SET persona_id=NULL WHERE persona_id=…`가 전체
-    # 스캔이 되지 않게 한다(persona-goal-prompt.md §3-1).
+    # 스캔이 되지 않게 한다.
     __table_args__ = (Index("ix_chat_rooms_persona_id", "persona_id"),)
 
 
 class ChatMessage(Base):
-    """techspec-db-schema.md §6."""
-
     __tablename__ = "chat_messages"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
@@ -65,15 +63,14 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # US-072 상황이미지 매칭 결과의 entity_id. FK 없음 — entity_id는 버전 간
-    # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례
-    # (situational-image-goal-prompt.md SI-2). 캐릭터 챗 assistant 메시지에만
+    # 상황이미지 매칭 결과의 entity_id. FK 없음 — entity_id는 버전 간
+    # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례. 캐릭터 챗 assistant 메시지에만
     # 채워지고 스토리 챗은 항상 NULL.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
 class ChatRoomStat(Base):
-    """techspec-db-schema.md §6. The chat room's current value for a stat_defs entity_id
+    """The chat room's current value for a stat_defs entity_id
     (referenced by entity_id, not id, so it keeps matching across a version switch)."""
 
     __tablename__ = "chat_room_stats"
@@ -86,7 +83,7 @@ class ChatRoomStat(Base):
 
 
 class StoryEndingUnlock(Base):
-    """techspec-db-schema.md §6. US-057 엔딩 컬렉션: accumulates per user+starting_setup,
+    """엔딩 컬렉션: accumulates per user+starting_setup,
     never deleted/replaced once a row exists for a given ending."""
 
     __tablename__ = "story_ending_unlocks"
@@ -100,10 +97,10 @@ class StoryEndingUnlock(Base):
 
 
 class CharacterImageExposure(Base):
-    """techspec-db-schema.md §6. US-028 이미지 보관함: accumulates per user+character,
+    """이미지 보관함: accumulates per user+character,
     never revoked — not when the message that exposed the image is regenerated, edited or
     deleted, and not on room reset or deletion. No code path deletes these rows; the
-    room-scoped state that IS torn down is ChatRoomStat (regenerate-ux-goal-prompt.md RU-7)."""
+    room-scoped state that IS torn down is ChatRoomStat."""
 
     __tablename__ = "character_image_exposures"
 

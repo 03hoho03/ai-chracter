@@ -11,11 +11,11 @@ from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StatDef, StoryPromptTemplate
 
-# prompt-scope-techspec.md §3-1 (PS-1). `"legacy"`를 이 유니온에 넣지 않는다(TS-C) — 넣는
+# `"legacy"`를 이 유니온에 넣지 않는다 — 넣는
 # 순간 `list_prompt_sets`가 legacy를 걸러야 할 이유가 사라지고 FE가 4번째 탭을 만들게 된다.
 PromptLane = Literal["story", "character", "publish_filter"]
 
-# TS-K: mypy는 각 원소가 PromptLane인지는 보지만 "전부 들어 있는지"는 못 본다 — 그 한 칸은
+# mypy는 각 원소가 PromptLane인지는 보지만 "전부 들어 있는지"는 못 본다 — 그 한 칸은
 # tests가 typing.get_args로 메운다.
 _PROMPT_LANES: tuple[PromptLane, ...] = ("story", "character", "publish_filter")
 
@@ -30,7 +30,7 @@ def as_prompt_lane(value: str) -> PromptLane | None:
 
 
 class PromptSetNotFoundError(RuntimeError):
-    """prompt-db-goal-prompt.md D-5. 활성(published) 프롬프트 세트가 없을 때 조용히 빈
+    """활성(published) 프롬프트 세트가 없을 때 조용히 빈
     프롬프트를 내는 대신 명시적으로 실패한다."""
 
 
@@ -38,18 +38,18 @@ class PromptRenderError(RuntimeError):
     """`PromptSection.body`(DB 값)를 `values`로 채우다가 실패했을 때 던진다.
 
     이전 코드(f-string 리터럴 조립, 4-멤버 enum을 전수 커버하는 dict lookup)에는 이 실패
-    경로가 아예 없었다 — "DB 값을 신뢰하고 `.format()` 한다"는 이 런이 처음 연 것이다.
+    경로가 아예 없었다 — "DB 값을 신뢰하고 `.format()` 한다"는 문안을 DB로 옮기며 처음 생겼다.
     `LLMClientError`를 재사용하지 않는다 — 원인이 LLM이 아니라 운영자가 편집한 문안이라
     성격이 다르고, 호출부가 "이 턴만 포기"할지 "생성 자체를 포기"할지 다르게 판단해야
     한다. `KeyError`/`ValueError`/`IndexError`를 그대로 두지 않고 여기로 정규화하는 이유는
-    apps/api/CLAUDE.md §SSE — 정규화 안 된 원시 예외가 SSE 제너레이터 본문에서 새면
+    apps/api/CLAUDE.md "SSE 스트리밍" 절 — 정규화 안 된 원시 예외가 SSE 제너레이터 본문에서 새면
     `except LLMClientError`가 못 잡아 태스크 취소 → 커넥션 강제종료로 번진다(실측)."""
 
 
-# prompt-db-goal-prompt.md §9-2 R-4. `(channel, slot)` -> 그 슬롯의 `body`가 쓸 수 있는
+# `(channel, slot)` -> 그 슬롯의 `body`가 쓸 수 있는
 # `{name}` 플레이스홀더 전체 — 이 아래 `build_*`/`content/publish.py`의 `build_*_filter_prompt`
 # 호출부가 각자 만드는 `values` 딕셔너리 키를 그대로 옮긴 것이다(지금까지는 그 딕셔너리
-# 리터럴에만 암묵적으로 있었다). 어드민 게시 검증(R-4)이 이 목록 밖의 이름을 거부하려면
+# 리터럴에만 암묵적으로 있었다). 어드민 게시 검증이 이 목록 밖의 이름을 거부하려면
 # "허용되는 이름이 뭔지" 코드 어딘가에 명시적으로 있어야 하는데, 그 정의를 여기 하나로만
 # 두고 `admin/prompts.py`가 이 상수를 그대로 import해서 쓴다 — 값을 다시 나열하면 둘 중
 # 하나가 바뀔 때 나머지가 조용히 갈린다. `variant`별로 다른 슬롯(`base_content`)은 두
@@ -72,7 +72,7 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "user_goal"): frozenset({"user_goal"}),
     ("generation", "development_examples"): frozenset({"example_lines"}),
     ("generation", "prologue"): frozenset({"prologue"}),
-    # persona-goal-prompt.md §3-4-1 (UP-9) — 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
+    # 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
     ("generation", "user_persona"): frozenset({"user_persona"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
@@ -112,7 +112,7 @@ async def load_active_prompt_set(
 ) -> tuple[PromptSet, list[PromptSection]]:
     """`lane`의 활성 세트(published 중 `published_at`이 가장 최신인 것)와 그 섹션 전부를
     읽는다. `legal_documents`의 `_get_latest_published`와 같은 모양이다. 활성 세트가 없으면
-    `PromptSetNotFoundError`(D-5) — downgrade 직후처럼 테이블 자체가 없는 게 아니라
+    `PromptSetNotFoundError` — downgrade 직후처럼 테이블 자체가 없는 게 아니라
     행만 없는 상태는 만들어지기 어렵지만, 그 경우에도 조용히 넘어가지 않는다.
 
     `lane`은 키워드 전용이다 — 현행 호출부가 전부 단일 인자였으므로, 위치 인자로 두면
@@ -147,8 +147,8 @@ def select_sections_for_render(
     sections: Sequence[PromptSection], *, channel: str, scope: str, variant: str = ""
 ) -> list[PromptSection]:
     """`render_prompt_channel`의 1~3단계(scope 필터 → variant 선택 → order 정렬) — 렌더러와
-    `admin/prompts.py`의 R-8(prompt-scope-goal-prompt.md PS-13)이 **같은 함수**를 부른다.
-    사본을 두면 렌더러가 바뀔 때 R-8이 조용히 딴 것을 검사하게 된다.
+    `admin/prompts.py`의 렌더 order 중복 검사가 **같은 함수**를 부른다.
+    사본을 두면 렌더러가 바뀔 때 그 검사가 조용히 딴 것을 검사하게 된다.
 
     1. `channel`이 같고 `scope ∈ {both, 요청한 scope}`인 섹션만 후보로 남긴다.
     2. 같은 `slot`끼리 묶어 `variant`가 일치하는 행을 고르고, 없으면 기본(`variant=""`)
@@ -181,14 +181,14 @@ def render_prompt_channel(
     variant: str = "",
     values: dict[str, str],
 ) -> str:
-    """prompt-db-goal-prompt.md §4-3 렌더링 규약을 구현하는 순수 함수 — DB에 닿지 않는다.
+    """렌더링 규약을 구현하는 순수 함수 — DB에 닿지 않는다.
 
     1~3단계(scope 필터 → variant 선택 → order 정렬)는 `select_sections_for_render`가 한다.
 
     4. `conditional=True`인 슬롯은 body가 참조하는 플레이스홀더 값이 전부 비어 있으면
        (`values`에서 falsy) 섹션째 드롭한다. `conditional=False`는 값이 비어도 유지한다
        — "비어 있으면 드롭"만으로는 재현되지 않는다(`generation_character_empty_prompt`
-       골든이 그 증거, §4-3).
+       골든이 그 증거).
     5. 남은 섹션의 body를 `values`로 채우고 `"\\n\\n"`으로 잇는다.
     """
     selected = select_sections_for_render(sections, channel=channel, scope=scope, variant=variant)
@@ -227,25 +227,25 @@ def system_instruction_for(
     return render_prompt_channel(sections, channel="system", scope=scope, variant=variant, values={})
 
 
-# persona-goal-prompt.md §3-4-1 — 프로필 필드 라벨은 코드 상수다(히스토리 줄의 `라벨: 내용`을
+# 프로필 필드 라벨은 코드 상수다(히스토리 줄의 `라벨: 내용`을
 # 코드가 조립하는 것과 같은 자리). 지시문은 전부 DB의 `generation/user_persona` body에 있다.
 _PERSONA_NAME_LABEL = "이름"
 _PERSONA_GENDER_LABEL = "성별"
 _PERSONA_DESCRIPTION_LABEL = "설명"
 # 키가 `str | None`인 이유: `UserPersona.gender`(`Mapped[str | None]`)를 그대로 `.get`에 넣는다.
-# 허용값은 요청 스키마가 강제하고(persona-goal-prompt.md UP-4), 맵에 없는 값은 None과 같이
+# 허용값은 요청 스키마가 강제하고, 맵에 없는 값은 None과 같이
 # 줄을 생략한다 — 이 함수는 SSE 제너레이터 본문(`_build_prompt`)에서 불려서 예외를 내면
-# 안 된다(apps/api/CLAUDE.md §SSE).
+# 안 된다(apps/api/CLAUDE.md "SSE 스트리밍" 절).
 _PERSONA_GENDER_TEXT: dict[str | None, str] = {"male": "남성", "female": "여성"}
 
 
 def format_user_persona(*, name: str, gender: str | None, description: str) -> str:
-    """persona-goal-prompt.md §3-4-1 — 대화 프로필을 `{user_persona}` 값으로 조립한다.
+    """대화 프로필을 `{user_persona}` 값으로 조립한다.
 
     `이름: …` / `성별: 남성|여성` / `설명: …`을 줄바꿈으로 잇는다. 성별이 None("선택 안 함")이면
-    성별 줄을(UP-4), 설명이 비면 설명 줄을(UP-22) 생략한다. 이름의 금지 문자(`:`·개행, UP-5)는
-    요청 스키마가 막는다 — 여기서는 거르거나 고치지 않는다(이번 런에서 이름은 라벨·stop
-    sequence에 들어가지 않는다, UP-9). 키워드 전용인 이유: `name`과 `description`이 둘 다
+    성별 줄을, 설명이 비면 설명 줄을 생략한다. 이름의 금지 문자(`:`·개행)는
+    요청 스키마가 막는다 — 여기서는 거르거나 고치지 않는다(이름은 라벨·stop
+    sequence에 들어가지 않는다). 키워드 전용인 이유: `name`과 `description`이 둘 다
     `str`이라 위치 인자로 바뀌어 들어와도 타입 체커가 못 잡는다."""
     lines = [f"{_PERSONA_NAME_LABEL}: {name}"]
     gender_text = _PERSONA_GENDER_TEXT.get(gender)
@@ -269,13 +269,13 @@ def user_persona_rendered(
     template: StoryPromptTemplate | None = None,
     user_persona: str,
 ) -> bool:
-    """persona-goal-prompt.md UP-21 (a) · §3-4-1 — 그 턴 생성 프롬프트에 대화 프로필 섹션이
+    """그 턴 생성 프롬프트에 대화 프로필 섹션이
     **실제로** 들어갔는가.
 
     값이 비지 않았고, 그 턴의 scope·variant로 렌더러와 **같은 선택 함수**
     (`select_sections_for_render`)가 `user_persona` 슬롯을 골랐을 때만 참이다. conditional
-    섹션은 값이 비지 않으면 반드시 렌더되므로 이 둘이 "포함됨"과 같다. 값만 보면 캐시 TTL 창
-    (R-17)처럼 활성 세트에 슬롯이 아직 없을 때도 참이 된다. 인자 모양은 `system_instruction_for`와
+    섹션은 값이 비지 않으면 반드시 렌더되므로 이 둘이 "포함됨"과 같다. 값만 보면 캐시 TTL 창처럼
+    활성 세트에 슬롯이 아직 없을 때도 참이 된다. 인자 모양은 `system_instruction_for`와
     같다 — `template`은 스토리 챗에서만 의미가 있다."""
     if not user_persona:
         return False
@@ -295,16 +295,16 @@ def build_generation_prompt(
     user_message: str,
     user_persona: str,
 ) -> str:
-    """techspec-backend-chat.md §3.1 buildGenerationPrompt — 캐릭터 챗 전용.
+    """생성 프롬프트를 조립한다 — 캐릭터 챗 전용.
 
     캐릭터 프롬프트 뒤에 예시 대화("말투 예시")를 매 턴 포함하고, 최근 메시지
     히스토리와 이번 턴의 사용자 메시지로 마무리한다. 화자 라벨(`사용자`/`캐릭터`)은
-    코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다(prompt-db-goal-prompt.md §4-4).
+    코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다.
 
     `user_persona`는 `format_user_persona`의 결과이거나 `""`(프로필 없음·선택 없음)다.
-    `""`이면 conditional 섹션째 드롭되어 이 인자가 없던 시절과 바이트까지 같다
-    (persona-goal-prompt.md UP-6). 기본값이 없는 이유는 호출부 누락을 mypy가 잡게 하려는
-    것이다(§3-4-1).
+    `""`이면 conditional 섹션째 드롭되어 이 인자가 없던 시절과 바이트까지 같다.
+    기본값이 없는 이유는 호출부 누락을 mypy가 잡게 하려는
+    것이다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.character_assistant_label}: {pair['characterLine']}"
@@ -344,22 +344,22 @@ def build_story_generation_prompt(
     keyword_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
 ) -> str:
-    """techspec-backend-chat.md §3.1 buildGenerationPrompt — 스토리 챗 전용.
+    """생성 프롬프트를 조립한다 — 스토리 챗 전용.
 
-    `user_persona`는 `build_generation_prompt`와 같다(persona-goal-prompt.md UP-6, 필수 인자).
+    `user_persona`는 `build_generation_prompt`와 같다(필수 인자).
 
     "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리, 매칭된 키워드북 정보
     (사용자에게는 비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), (단축어
     실행 시) 단축어 프롬프트, 이번 턴의 사용자 메시지 순으로 마무리한다.
 
-    chat-goal-prompt.md §7-1 / chat-techspec.md §5-1: `[키워드북]`은 `[대화 기록]`
+    `[키워드북]`은 `[대화 기록]`
     **뒤**에 온다 — 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
     안정된다는 이유는 `prompt_sections.order` 시드값이 이미 반영하고 있다.
 
     전개 예시(`development_examples`)는 `story_example_label`("서술자")을, 그 외
-    자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다(§1-1) —
+    자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다 —
     같은 스토리 챗인데 자리마다 라벨이 다른 것은 표류가 아니라 실측된 현재 동작이라
-    이 런에서 통일하지 않는다.
+    여기서 통일하지 않는다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
@@ -399,12 +399,12 @@ def build_stat_judgment_prompt(
     user_message: str,
     assistant_message: str,
 ) -> str:
-    """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 스탯 변경 판단(스토리 챗 전용).
+    """판단 프롬프트를 조립한다 — 스탯 변경 판단(스토리 챗 전용).
 
     스탯 정의(설명/범위/현재값)와 **이번 턴만**을 근거로 LLMClient.generateStructured()가
     StatJudgmentResult(구조화 출력)로 각 스탯의 변경 여부를 판단하게 한다.
 
-    chat-goal-prompt.md §7-2 / chat-techspec.md §5-2: 히스토리 전체를 안 싣는다. 스탯
+    히스토리 전체를 안 싣는다. 스탯
     변화는 "이번 턴에" 무엇이 일어났는지의 함수이지 누적 서사가 아니다 — 아래 지시
     문구가 이미 "마지막 사용자 행동과 그에 대한 응답"만 근거로 명시하고 있었으니 실제
     입력도 거기 맞춘다. `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다 —
@@ -451,21 +451,20 @@ def build_ending_judgment_prompt(
     user_message: str,
     assistant_message: str,
 ) -> str:
-    """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 엔딩 판정(스토리 챗 전용).
+    """판단 프롬프트를 조립한다 — 엔딩 판정(스토리 챗 전용).
 
     엔딩 하나의 judgment_prompt(판정 기준)와 이번 턴까지의 대화를 근거로
     LLMClient.generateStructured()가 EndingJudgmentResult(구조화 출력)로 그 엔딩의
     발동 조건 충족 여부를 판단하게 한다. 여러 엔딩이 있으면 이 함수를 엔딩별로 호출한다.
 
-    여긴 `history`를 싣는다 — `build_stat_judgment_prompt`는 뺐다(chat-goal-prompt.md
-    §7-2). 엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴
+    여긴 `history`를 싣는다 — `build_stat_judgment_prompt`는 뺐다.
+    엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴
     만으로는 판정할 수 없지만, 스탯 변화는 이번 턴에 무엇이 일어났는지의 함수라 히스토리가
     필요 없다. 이 비대칭이 그 변경의 핵심이다.
 
     `turn_lines`는 히스토리와 이번 턴을 한 블롭으로 만들어 라벨을 플레이스홀더로 뽑을 수
     없다(히스토리가 비면 개행 아티팩트가 낀다) — 그래도 그 블롭을 만드는 이 코드가
-    `prompt_set.story_assistant_label`을 읽으므로 라벨은 여전히 DB에서 온다
-    (prompt-db-goal-prompt.md §4-4·§4-5).
+    `prompt_set.story_assistant_label`을 읽으므로 라벨은 여전히 DB에서 온다.
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
@@ -497,13 +496,12 @@ def build_image_judgment_prompt(
     user_message: str,
     assistant_message: str,
 ) -> str:
-    """techspec-backend-chat.md §3.1 buildJudgmentPrompt — 상황별 이미지 매칭(캐릭터 챗 전용).
+    """판단 프롬프트를 조립한다 — 상황별 이미지 매칭(캐릭터 챗 전용).
 
     등록된 이미지의 노출 조건(trigger_condition)과 이번 턴까지의 대화를 근거로
     LLMClient.generateStructured()가 ImageMatchJudgmentResult(구조화 출력)로 매칭되는 이미지가
     있는지 판단하게 한다. 목록을 order 오름차순으로 제시하고, 여러 조건이 동시에 충족돼도
-    응답은 항상 단수이므로 더 앞(우선순위가 높은) 이미지 하나만 고르도록 명시적으로 지시한다
-    (techspec-chat-character.md §1.1 "동시 매칭 처리").
+    응답은 항상 단수이므로 더 앞(우선순위가 높은) 이미지 하나만 고르도록 명시적으로 지시한다.
     """
     image_lines = "\n".join(
         f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}"

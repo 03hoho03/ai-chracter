@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 def _log_usage(usage: LLMCallContext, model: str, usage_metadata: object | None) -> None:
-    """backlog-sweep-goal-prompt.md BS-18: 호출 한 건의 토큰 사용량을 고정 토큰 `gemini_usage`로
+    """호출 한 건의 토큰 사용량을 고정 토큰 `gemini_usage`로
     한 줄 남긴다(`info`는 프로덕션에서 사라지므로 `warning`). 🔴 프롬프트·응답 텍스트는 인자로
     받지도 않는다 — 개수와 id만 찍는다. 메타데이터가 없으면 토큰을 None으로 두고 `usage=missing`을
     붙인다(없다는 사실이 로그에 보여야 한다).
@@ -70,7 +70,7 @@ class GeminiLLMClient(LLMClient):
     ) -> AsyncIterator[str]:
         # 출력 상한이 사고 토큰과 응답이 나눠 쓰는 예산이라는 점과 기본값의 근거는
         # core/config.py 의 gemini_max_output_tokens 주석 참고. stop_sequences 는 호출부가
-        # 화자 라벨(prompt_set.user_label)에서 파생시켜 넘긴다(prompt-db-goal-prompt.md §4-5) —
+        # 화자 라벨(prompt_set.user_label)에서 파생시켜 넘긴다 —
         # 프롬프트가 `{user_label}: {입력}\n{assistant_label}:` 라는 대본 프레임으로 끝나서
         # 모델이 이어서 사용자의 다음 턴까지 지어낼 수 있는 구조이기 때문이다.
         config = genai_types.GenerateContentConfig(
@@ -86,9 +86,9 @@ class GeminiLLMClient(LLMClient):
             )
         if settings.gemini_seed is not None:
             # None 이면 seed 를 아예 넘기지 않아 지금과 같은 매 회차 난수 동작을 유지한다
-            # (chat-techspec.md §3-1). generate_structured()에는 붙이지 않는다.
+            # generate_structured()에는 붙이지 않는다.
             config.seed = settings.gemini_seed
-        # BS-18: 메타데이터가 마지막 청크에만 온다고 가정하지 않는다 — 마지막으로 본 비-None 값을
+        # 메타데이터가 마지막 청크에만 온다고 가정하지 않는다 — 마지막으로 본 비-None 값을
         # 쓴다. `getattr` 기본값은 이 속성이 없는 테스트용 청크(SimpleNamespace)를 위한 것이다.
         usage_metadata: object | None = None
         try:
@@ -118,14 +118,14 @@ class GeminiLLMClient(LLMClient):
                 if chunk.text:
                     yield chunk.text
         except (genai_errors.APIError, httpx.HTTPError) as exc:
-            # monitoring-techspec.md MT-6: 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
+            # 쿼터 소진(429)과 네트워크 타임아웃을 구분한다 —
             # `httpx.HTTPError`에는 `.code`가 없으므로 `isinstance` 가드가 먼저다(순서를
             # 바꾸면 네트워크 쪽에서 AttributeError가 원래 예외를 가린다).
             if isinstance(exc, genai_errors.APIError) and exc.code == 429:
                 raise LLMRateLimitError(f"Gemini generate() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate() call failed: {exc}") from exc
         # 정상 종료한 스트림만 여기 닿는다 — 정책 차단·SDK 예외는 위에서 올라가고, 소비자가 중간에
-        # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다(M-8).
+        # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다.
         _log_usage(usage, self._model_name, usage_metadata)
 
     async def generate_structured(
@@ -155,7 +155,7 @@ class GeminiLLMClient(LLMClient):
         except (genai_errors.APIError, httpx.HTTPError) as exc:
             # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
             # APIError가 아니라 내부적으로 쓰는 httpx 예외로 올라온다. 429 구분도 `generate()`와
-            # 대칭을 유지한다(monitoring-techspec.md MT-6).
+            # 대칭을 유지한다.
             if isinstance(exc, genai_errors.APIError) and exc.code == 429:
                 raise LLMRateLimitError(f"Gemini generate_structured() call failed: {exc}") from exc
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc

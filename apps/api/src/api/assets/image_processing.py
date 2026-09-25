@@ -16,7 +16,7 @@ THUMBNAIL_CONTENT_TYPE = "image/webp"
 
 
 def generate_blurred_image(image_bytes: bytes, radius: float = BLUR_RADIUS) -> bytes:
-    """techspec-backend-media.md §2. CPU-bound (Pillow) — run via `run_in_threadpool`.
+    """CPU-bound (Pillow) — run via `run_in_threadpool`.
 
     Always normalizes to RGBA/PNG regardless of the source format, so the blur
     filter (which chokes on palette-mode GIFs/etc.) and the output encoding both

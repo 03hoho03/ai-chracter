@@ -20,7 +20,7 @@ class ImageGenerationJobStatus(str, enum.Enum):
 
 
 class ImageGenerationJob(BaseModel):
-    """Redis에 그대로 직렬화되는 생성 잡 레코드 (tasks/archive/prd-image-generation.md §3/US-003)."""
+    """Redis에 그대로 직렬화되는 생성 잡 레코드."""
 
     job_id: str
     owner_user_id: uuid.UUID
@@ -29,12 +29,12 @@ class ImageGenerationJob(BaseModel):
     completed_count: int = 0
     asset_ids: list[uuid.UUID] = Field(default_factory=list)
     error: str | None = None
-    # guard-techspec.md GT-4: 둘 다 기본값이 필수다 — 잡 TTL이 1시간이라 배포 직후
+    # 둘 다 기본값이 필수다 — 잡 TTL이 1시간이라 배포 직후
     # 최대 1시간 동안 이 필드가 없는 옛 레코드가 Redis에 남아 있고, 기본값이 없으면
-    # `model_validate_json`이 터져 폴링 엔드포인트가 500이 된다(guard-progress.md I-1).
+    # `model_validate_json`이 터져 폴링 엔드포인트가 500이 된다.
     blocked_count: int = 0
     blocked_reason: ImageBlockedReason | None = None
-    # image-style-7-goal-prompt.md IS-8: 같은 이유로 같은 패턴 — 기본값 없이 배포하면
+    # 같은 이유로 같은 패턴 — 기본값 없이 배포하면
     # TTL 만료 전 옛 레코드에서 `ValidationError`가 나 폴링 엔드포인트가 500이 된다.
     input_error_count: int = 0
     input_error: ImageInputError | None = None
@@ -63,7 +63,7 @@ async def create_job(owner_user_id: uuid.UUID, requested_count: int) -> ImageGen
 
 async def get_job(job_id: str, owner_user_id: uuid.UUID) -> ImageGenerationJob | None:
     """Returns None if the job doesn't exist, has expired, or isn't owned by
-    `owner_user_id` — callers (US-005) surface all three cases as 404."""
+    `owner_user_id` — callers surface all three cases as 404."""
     raw = await redis_client.get(_job_key(job_id))
     if raw is None:
         return None
@@ -90,13 +90,13 @@ async def update_job(
     succeeded/failed transition once generation finishes).
 
     `blocked_count`/`blocked_reason` (and `input_error_count`/`input_error`,
-    image-style-7-goal-prompt.md IS-8, same shape) are set as absolute values,
-    not increments (guard-techspec.md GT-3) — unlike `completed_increment`, the
+    same shape) are set as absolute values,
+    not increments — unlike `completed_increment`, the
     tally is decided once by `_run_generation`'s aggregation after
     `asyncio.gather` completes, not by concurrently-running callers.
 
     Uses Redis WATCH/MULTI/EXEC (optimistic locking, retried on conflict)
-    instead of a plain GET-then-SET: US-004's `asyncio.gather`'d generation
+    instead of a plain GET-then-SET: POST /images/generate's `asyncio.gather`'d generation
     calls each call this concurrently for the same job, and a bare
     GET-then-SET loses updates under that concurrency (confirmed empirically —
     `completed_count`/`asset_ids` under-counted with 2 concurrent callers)."""
@@ -138,10 +138,10 @@ _background_tasks: set[asyncio.Task[None]] = set()
 
 
 async def enqueue_generation(handler: Callable[..., Coroutine[Any, Any, None]], *args: Any) -> None:
-    """생성 잡 실행 인터페이스 (tasks/archive/prd-image-generation.md §8).
+    """생성 잡 실행 인터페이스.
 
     인프로세스 asyncio 구현: `handler(*args)`를 백그라운드 태스크로 즉시 실행하고
-    반환한다. 호출부(US-004의 POST /images/generate)는 이 함수만 호출하면 되므로,
+    반환한다. 호출부(POST /images/generate)는 이 함수만 호출하면 되므로,
     내구성이 필요해지면 이 함수 본문만 arq `enqueue_job` 호출로 교체하면 된다(호출
     시그니처는 유지).
     """
