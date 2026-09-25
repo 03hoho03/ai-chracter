@@ -90,7 +90,7 @@ function UserSearchForm({ defaultQuery, onSearch }: UserSearchFormProps) {
       }}
       className="flex items-center gap-2"
     >
-      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다(design-system-progress.md P-3-8). */}
+      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다. */}
       <Input placeholder="이메일 또는 닉네임 검색" aria-label="이메일 또는 닉네임 검색" className="h-8 w-48 sm:w-64" {...register("q")} />
       <Button type="submit" variant="outline" size="sm">
         검색
@@ -174,7 +174,7 @@ function UsersTable({ params, onPageChange }: UsersTableProps) {
   );
 }
 
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03, ContentsListPage 동형). */
+/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(ContentsListPage 동형). */
 function isSuspendedFilterValue(value: string): value is SuspendedFilterValue {
   return SUSPENDED_FILTER_OPTIONS.some((option) => option.value === value);
 }

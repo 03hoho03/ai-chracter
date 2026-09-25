@@ -16,7 +16,7 @@ type SortedSection = {
 
 /** 같은 슬롯의 variant끼리(예: `template_instruction`의 4종), 또는 scope로만 갈리는 짝
  * (`self_definition`의 스토리/캐릭터)은 서로 `order`가 같다 — 한쪽만 실제로 렌더되는 상호
- * 배타 관계라 둘 사이의 상대 순서엔 의미가 없기 때문이다(§4-2). 이 동률 두 행끼리
+ * 배타 관계라 둘 사이의 상대 순서엔 의미가 없기 때문이다. 이 동률 두 행끼리
  * `order`를 맞바꾸면 값이 같아 아무 일도 안 일어나므로, 값이 실제로 다른 가장 가까운
  * 이웃을 찾아 그 이웃과 맞바꾼다 — 동률 블록을 한 번에 건너뛰는 것과 같다. */
 function findDistinctOrderNeighbor<T extends SortedSection>(
@@ -38,8 +38,8 @@ function findDistinctOrderNeighbor<T extends SortedSection>(
  * `_sections_of`가 조립 직전에 `(channel, order, slot, variant)`로 정렬하는 것과 같은 기준이라,
  * 여기 보이는 순서가 곧 실제로 이어붙는 순서다.
  *
- * 위/아래 버튼은 배열 위치가 아니라 `order` 값을 맞바꾼다 — `order`만이 서버가 보는 값이고
- * (§4-2), 필드 배열 위치 자체는 의미가 없다. 동률인 이웃은 건너뛴다(`findDistinctOrderNeighbor`).
+ * 위/아래 버튼은 배열 위치가 아니라 `order` 값을 맞바꾼다 — `order`만이 서버가 보는 값이고,
+ * 필드 배열 위치 자체는 의미가 없다. 동률인 이웃은 건너뛴다(`findDistinctOrderNeighbor`).
  * 정렬에 쓰는 `order`는
  * `useWatch`로 그 필드들만 구독한다 — body를 고치는 키 입력마다 48행 전체가 다시 정렬되는
  * 것을 막기 위해서다(body는 `register`로 각자 구독하므로 여기 영향이 없다). */

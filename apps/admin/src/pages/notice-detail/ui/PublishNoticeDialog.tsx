@@ -18,8 +18,7 @@ type PublishNoticeDialogProps = {
 
 /** `PublishDialog`(`pages/legal/ui/`) 선례 — 다만 공지는 버전·재동의 입력이 없는 단순 확인이라
  * 폼 대신 `DeleteConfirmModal`(`features/act-on-report`)의 `useMutationFlow` 구조를 따른다.
- * 게시는 전체 유저에게 알림을 보내는 되돌리기 어려운 동작이라 확인 문구에 그 사실을 적는다
- * (techspec.md §6-2). */
+ * 게시는 전체 유저에게 알림을 보내는 되돌리기 어려운 동작이라 확인 문구에 그 사실을 적는다. */
 export const PublishNoticeDialog = createCallable<PublishNoticeDialogProps, void>(
   ({ call, title, action, mutationFn }) => {
     const submit = useMutationFlow(call, mutationFn);

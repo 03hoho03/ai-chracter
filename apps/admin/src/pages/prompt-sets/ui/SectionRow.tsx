@@ -26,7 +26,7 @@ type SectionRowProps = {
 };
 
 /** 섹션 하나 — 편집 가능한 건 body와(위/아래 버튼을 통한) order뿐이다. channel/scope/slot/
- * variant/conditional은 코드가 고정한 값이라(D-7) 배지로만 보여주고 폼은 그대로 들고 있다가
+ * variant/conditional은 코드가 고정한 값이라 배지로만 보여주고 폼은 그대로 들고 있다가
  * 되돌려 보낸다. */
 export function SectionRow({
   fieldKey,

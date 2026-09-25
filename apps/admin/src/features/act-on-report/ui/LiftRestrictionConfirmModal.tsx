@@ -16,7 +16,7 @@ type LiftRestrictionConfirmModalProps = {
   mutationFn: MutationFn<void>;
 };
 
-/** backlog-l-goal-prompt.md BL-7 — 신고 경유 해제는 작품 복구에 그치지 않고 신고를 처리 완료로 기록하며(처리자·시각을 덮어씀),
+/** 신고 경유 해제는 작품 복구에 그치지 않고 신고를 처리 완료로 기록하며(처리자·시각을 덮어씀),
  * 그 작품의 대화방을 최신 게시 버전으로 일괄 전환한다(되돌릴 수 없다). 그래서 버튼 한 번으로 실행하지 않고
  * 부수효과를 보여 준 뒤 확정받는다. 입력 게이트는 없다 — 삭제와 달리 작품 자체는 되돌릴 수 있어서다. */
 export const LiftRestrictionConfirmModal = createCallable<LiftRestrictionConfirmModalProps, void>(

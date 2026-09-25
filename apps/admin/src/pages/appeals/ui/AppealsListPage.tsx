@@ -62,7 +62,7 @@ type AppealsTableProps = {
 };
 
 /** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. 선택된 항목의
- * 상세도 목록 응답에서 바로 찾으므로(US-124 — 별도 detail API가 없다) 여기 함께 둔다. */
+ * 상세도 목록 응답에서 바로 찾으므로(별도 detail API가 없다) 여기 함께 둔다. */
 function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
   const appealListQuery = useAppealListQuery({ page, status });
   const [selectedAppealId, setSelectedAppealId] = useState<string>();
@@ -107,8 +107,7 @@ function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
                 // 버튼엔 onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
                 // 버블된다(`tr`에 keydown 처리를 두면 preventDefault가 그 click을 죽인다).
                 // 선택 채움 `secondary`는 background 대비 1.23:1이라 3:1 단서로 체크 글리프를 둔다
-                // (`foreground` on `secondary` 14.06:1). 선택 행은 hover에서도 채움을 유지한다
-                // (backlog-l-goal-prompt.md BL-8).
+                // (`foreground` on `secondary` 14.06:1). 선택 행은 hover에서도 채움을 유지한다.
                 <TableRow
                   key={item.id}
                   className={cn("cursor-pointer", isSelected && "bg-secondary hover:bg-secondary")}
@@ -164,7 +163,7 @@ function AppealsTable({ page, status, onPageChange }: AppealsTableProps) {
   );
 }
 
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03).
+/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다.
  * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다 — 술어가 false면 호출부가
  * `undefined`를 넘긴다. */
 function isAppealStatus(value: string): value is AppealStatusFilter {

@@ -82,7 +82,7 @@ function DialogContent({
             넣은 임시 다이얼로그로 실측). admin `DeleteConfirmModal`이 이 경로에 있다. */}
         {showCloseButton && (
           <DialogPrimitive.Close data-slot="dialog-close" asChild>
-            {/* ghost의 `hover:bg-muted`는 popover 표면과 같은 값이라 사라진다 — 호출부가 못 덮는 자리라 여기서 secondary로 덮는다(backlog-l-goal-prompt.md BL-9). */}
+            {/* ghost의 `hover:bg-muted`는 popover 표면과 같은 값이라 사라진다 — 호출부가 못 덮는 자리라 여기서 secondary로 덮는다. */}
             <Button
               variant="ghost"
               className="absolute top-2 right-2 hover:bg-secondary aria-expanded:bg-secondary"
@@ -118,7 +118,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
  * 되돌리려면 `sm` 이상까지 함께 뒤집어야 한다.
  *
  * 띠 채움은 상류의 `bg-muted/50`이 아니라 `bg-secondary/50`이다 — `muted`는 이 푸터가 앉는
- * `popover`와 같은 값이라 띠가 1.0000:1로 사라진다(DESIGN.md §2 "표면 위 채움"). 알파를 50으로
+ * `popover`와 같은 값이라 띠가 1.0000:1로 사라진다(DESIGN.md Colors 절 "표면 위 채움"). 알파를 50으로
  * 남긴 이유: 불투명 `secondary`면 그 위 outline 버튼의 `border-input`이 3:1 아래(라이트 2.97 /
  * 다크 2.83)로, `muted-foreground` 글자가 4.5:1 아래(라이트 4.29)로 떨어진다. `/50`은 3.14 / 3.04,
  * 4.53 / 5.78로 둘 다 지킨다(`shadcn add dialog`로 재생성하면 `bg-muted/50`이 되돌아온다). */

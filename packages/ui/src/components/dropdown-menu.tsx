@@ -101,7 +101,7 @@ function DropdownMenuGroup({
   )
 }
 
-/** **포커스 표시는 채움이 아니라 링이 진다**(US-004). 상류 shadcn은 `outline-hidden` + `focus:bg-accent`
+/** **포커스 표시는 채움이 아니라 링이 진다**. 상류 shadcn은 `outline-hidden` + `focus:bg-accent`
  * 하나로 끝내는데, 이 시스템의 명도 사다리에서 그 채움 변화는 popover 대비 **1.1439 다크 / 1.1239 라이트**
  * (destructive 항목은 1.1119 / 1.1598)로 WCAG 1.4.11(3:1)의 절반도 안 된다. 사다리로는 못 고친다 —
  * 최상단 `border`를 채움으로 써도 popover 대비 약 1.3이다. 그래서 `focus:inset-ring-1 focus:inset-ring-ring`을
@@ -116,7 +116,7 @@ function DropdownMenuGroup({
  * **3.2515 라이트 / 4.4959 다크**로 AA(4.5:1) 아래인데, 이 앱은 비활성 항목에 "왜 못 누르는지"를
  * 읽혀야 하는 자리가 있다(이용제한 작품 메뉴). 65%면 **5.1882 / 6.7086**이다.
  *
- * **`aria-disabled:`가 같은 값을 함께 받는 것도 그 자리 때문이다**(US-008). Radix는 `disabled` 항목을
+ * **`aria-disabled:`가 같은 값을 함께 받는 것도 그 자리 때문이다**. Radix는 `disabled` 항목을
  * `RovingFocusGroup.Item`의 `focusable: !disabled`로 포커스 순회와 타입어헤드에서 통째로 빼므로,
  * 사유를 읽혀야 하는 비활성 항목은 `disabled` 대신 `aria-disabled` + `onSelect` `preventDefault`로 만든다
  * (`VisibilityTransitionMenuItems`). 그러면 `data-disabled`가 안 붙어 흐림이 사라지므로 두 선택자가

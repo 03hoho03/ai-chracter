@@ -21,7 +21,7 @@ type DeleteConfirmModalProps = {
   mutationFn: MutationFn<void>;
 };
 
-/** techspec-admin.md §1/§4 — 삭제는 되돌릴 수 없으므로, 콘텐츠명을 정확히 입력해야만 확정 버튼이 활성화된다.
+/** 삭제는 되돌릴 수 없으므로, 콘텐츠명을 정확히 입력해야만 확정 버튼이 활성화된다.
  * 관리자 코멘트는 호출부가 이미 받아 mutationFn 클로저에 담아 넘기므로 이 모달은 입력을 다시 받지 않는다.
  *
  * "일치해야 활성화"는 `apps/admin/CLAUDE.md`가 정한 규약이라 버튼 게이트를 그대로 두되, 그 판정을

@@ -24,7 +24,7 @@ type TrendMetricKey = (typeof MINI_CHARTS)[number]["key"];
 
 /** 최근 30일 추이를 신규 가입/신규 작품/메시지 세 차트로 나눠 보여준다. 세 차트가
  * `useTrendQuery` 하나를 공유하므로(요청 1개) 로딩·에러도 이 블록 전체 단위로 한 번만
- * 렌더한다 — counts/popular/activity 세 영역과는 여전히 독립이다(T-4). 데이터 없는 날은
+ * 렌더한다 — counts/popular/activity 세 영역과는 여전히 독립이다. 데이터 없는 날은
  * API가 이미 0으로 채워서 준다. */
 export function TrendChart() {
   return (

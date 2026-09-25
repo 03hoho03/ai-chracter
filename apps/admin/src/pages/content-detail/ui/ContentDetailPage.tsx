@@ -102,7 +102,7 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
 
       <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">제작자</h2>
-        {/* 유저 상세 화면은 3단계에서 생긴다 — 그때 이메일/닉네임에 링크를 건다. */}
+        {/* 할 일: 이메일/닉네임에 유저 상세 화면 링크를 건다. */}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
           <div>
             <dt className="text-muted-foreground">이메일</dt>

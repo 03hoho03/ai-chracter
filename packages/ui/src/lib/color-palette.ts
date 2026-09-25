@@ -6,7 +6,7 @@ export type ColorPaletteSwatch = {
 }
 
 /**
- * 사전 정의 색상 팔레트(techspec-builder-story.md §1.2) — 스탯 등 사용자가 색상을 직접 고르는
+ * 사전 정의 색상 팔레트 — 스탯 등 사용자가 색상을 직접 고르는
  * 도메인에서 공유한다. 자유 hex 입력이 아니라 이 10개 중에서만 고르게 해 디자인 일관성을 유지한다.
  */
 export const COLOR_PALETTE: ColorPaletteSwatch[] = [

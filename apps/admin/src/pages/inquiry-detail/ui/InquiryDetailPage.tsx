@@ -67,7 +67,7 @@ function InquiryDetailBody({ inquiryId }: InquiryDetailBodyProps) {
       <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">{inquiry.title}</h2>
 
-        {/* 문의 본문은 유저가 쓴 일반 텍스트다(D-19) — `Markdown`을 쓰지 않는다. */}
+        {/* 문의 본문은 유저가 쓴 일반 텍스트다 — `Markdown`을 쓰지 않는다. */}
         <p className="whitespace-pre-wrap break-keep text-sm text-foreground">{inquiry.body}</p>
 
         {!!inquiry.attachmentUrl && (
@@ -78,7 +78,7 @@ function InquiryDetailBody({ inquiryId }: InquiryDetailBodyProps) {
               className="size-full object-cover"
               // `report-detail/ui/ReportDetailPage.tsx:85-94` 선례에는 없는 핸들러다: 그 썸네일은
               // 정적 자산이라 만료가 없지만, 문의 첨부는 presigned GET URL이라
-              // `settings.s3_presigned_url_expires_seconds` 후 깨진다(techspec.md §6-3). 상세를
+              // `settings.s3_presigned_url_expires_seconds` 후 깨진다. 상세를
               // 열어둔 채 오래 두는 경우를 대비해 실패 시 상세 쿼리를 refetch해 새 URL을 받는다.
               onError={() => void inquiryDetailQuery.refetch()}
             />

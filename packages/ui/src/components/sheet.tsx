@@ -68,7 +68,7 @@ function SheetContent({
         {children}
         {showCloseButton && (
           <SheetPrimitive.Close data-slot="sheet-close" asChild>
-            {/* ghost의 `hover:bg-muted`는 popover 표면과 같은 값이라 사라진다 — 호출부가 못 덮는 자리라 여기서 secondary로 덮는다(backlog-l-goal-prompt.md BL-9). */}
+            {/* ghost의 `hover:bg-muted`는 popover 표면과 같은 값이라 사라진다 — 호출부가 못 덮는 자리라 여기서 secondary로 덮는다. */}
             <Button
               variant="ghost"
               className="absolute top-3 right-3 hover:bg-secondary aria-expanded:bg-secondary"

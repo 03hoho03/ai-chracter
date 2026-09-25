@@ -5,7 +5,7 @@ import { isPromptLane, PROMPT_LANE_LABELS, PROMPT_LANES, type PromptLane } from 
 import { PromptLaneEditor } from "./PromptLaneEditor";
 import { VersionHistorySection } from "./VersionHistorySection";
 
-/** prompt-scope-techspec.md TS-A — 레인 축은 페이지 안 상위 탭이다. `TabsContent`에
+/** 레인 축은 페이지 안 상위 탭이다. `TabsContent`에
  * `forceMount` + `data-[state=inactive]:hidden`을 함께 써서(관용구 선례
  * `apps/web/src/widgets/image-studio/ui/ImageStudioShell.tsx:180`) 세 레인이 항상
  * 마운트된 채로 숨어 있게 한다 — 레인을 바꿔도 각 레인의 `useForm` 인스턴스(미저장 편집)가

@@ -26,7 +26,7 @@ type PublishPromptSetDialogProps = {
   lane: PromptLane;
 };
 
-// prompt-scope-techspec.md §6-8 — 레인화로 "다음 채팅 턴부터"가 거짓이 되는 레인이 있다.
+// 레인화로 "다음 채팅 턴부터"가 거짓이 되는 레인이 있다.
 // `publish_filter`는 채팅 턴이 아니라 제작자가 발행 버튼을 누를 때(다음 발행 심사부터) 읽힌다.
 const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
   story: "다음 채팅 턴부터 전 서비스에 즉시 반영되고",
@@ -34,11 +34,11 @@ const PUBLISH_EFFECT_COPY: Record<PromptLane, string> = {
   publish_filter: "다음 발행 심사부터 즉시 반영되고",
 };
 
-/** 게시는 전 서비스 채팅에 즉시 반영되는 되돌리기 어려운 행동이라(§11) 다이얼로그로 한 번
+/** 게시는 전 서비스 채팅에 즉시 반영되는 되돌리기 어려운 행동이라 다이얼로그로 한 번
  * 더 확인받는다 — legal의 `PublishDialog`와 같은 어휘(react-call, 자체 호출형). 버전은
- * 서버가 자동 증가로 부여하므로(D-15) 입력받지 않고 `note`만 받는다.
+ * 서버가 자동 증가로 부여하므로 입력받지 않고 `note`만 받는다.
  *
- * R-1~R-7 위반(422)은 이 다이얼로그의 어느 입력값과도 무관한 구조적 문제라 필드 에러로
+ * 게시 검증 규칙 위반(422)은 이 다이얼로그의 어느 입력값과도 무관한 구조적 문제라 필드 에러로
  * 붙이지 않는다 — 닫고 토스트로 알려 어드민이 어느 섹션을 고쳐야 하는지 보게 한다. */
 export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps, void>(({ call, lane }) => {
   const publishMutation = usePublishMutation(lane);
@@ -51,7 +51,7 @@ export const PublishPromptSetDialog = createCallable<PublishPromptSetDialogProps
   const onSubmit = async (values: PublishFormValues) => {
     try {
       const published = await publishMutation.mutateAsync({ note: values.note });
-      // PS-2 — 버전은 레인과 무관하게 전역 단조라 이 레인의 직전 버전과 번호가 안 이어질 수
+      // 버전은 레인과 무관하게 전역 단조라 이 레인의 직전 버전과 번호가 안 이어질 수
       // 있다(예: story v3 다음이 v5).
       toast.success(`v${published.version}을(를) 게시했어요. 버전 번호는 레인과 무관하게 전역으로 매겨져요.`);
       call.end();

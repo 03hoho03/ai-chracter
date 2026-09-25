@@ -13,7 +13,7 @@ type AppealResolvePanelProps = {
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
 
-/** techspec-admin.md §2 — US-123이 만든 POST /admin/appeals/{id}/resolve의 첫 FE 소비처. */
+/** POST /admin/appeals/{id}/resolve의 첫 FE 소비처. */
 export function AppealResolvePanel({ appeal }: AppealResolvePanelProps) {
   const resolveAppeal = useResolveAppealMutation(appeal.id);
 

@@ -7,7 +7,7 @@ type PromptLaneEditorProps = {
   lane: PromptLane;
 };
 
-/** prompt-scope-techspec.md §6-1 — `draft`가 non-null이어야 `PromptLaneForm`의
+/** `draft`가 non-null이어야 `PromptLaneForm`의
  * `useMemo(() => serverToForm(draft), [draft])`가 안전하다는 불변식을 이 로딩/에러 분기가
  * 지킨다. 활성 버전 배지는 자기 쿼리 상태를 직접 가르는 `ActiveVersionBadge`로 갈라낸다
  * (`VersionHistorySection`의 `VersionTable`과 같은 결) — 합쳐서 읽으면 목록 요청이 로딩·실패

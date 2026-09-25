@@ -15,7 +15,7 @@ type AdminContentActionPayload = {
   adminComment?: string;
 };
 
-/** techspec.md §4-2 — 신고 없이 내리는 직접 조치. `restrict`/`delete`는 `reasonCategory`가
+/** 신고 없이 내리는 직접 조치. `restrict`/`delete`는 `reasonCategory`가
  * 필수라 누락하면 422다. `lift-restriction`은 `Notification`을 만들지 않아 `reasonCategory`가
  * 필요 없는 대신 `adminComment`가 필수다(비어 있으면 422) — `ContentActionConfirmModal`이
  * 조치별로 이 둘을 갈라 채운다. 성공 시 목록·상세 쿼리를 모두 무효화한다. */

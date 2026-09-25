@@ -26,7 +26,7 @@ type PromptLaneFormProps = {
   draft: AdminPromptDraftResponse;
 };
 
-/** prompt-scope-techspec.md §6-1 — 현행 `PromptSetsEditor`의 몸통 그대로. `PromptLaneEditor`와
+/** 레인 분리 전 단일 편집기(`PromptSetsEditor`)의 몸통을 그대로 옮겼다. `PromptLaneEditor`와
  * 2단으로 갈린 이유가 아래 `values`의 불변식이다 — 한 컴포넌트로 합치지 않는다. */
 export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
   // `values`는 참조가 바뀔 때마다 RHF의 동기화 effect를 다시 태운다 — 매 렌더 새 객체를
@@ -41,11 +41,11 @@ export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
   const saveDraftMutation = useSaveDraftMutation(lane);
   // `PreviewPanel`도 같은 queryKey로 이 쿼리를 부른다 — react-query가 캐시를 공유해 요청이
   // 중복되지 않는다(`PageHeader`/`VersionHistorySection`이 `useVersionListQuery`를 각자
-  // 부르는 것과 같은 패턴). 게시 버튼이 "미리보기를 실제로 봤는가"를 알아야(D-10) 해서 여기서도
+  // 부르는 것과 같은 패턴). 게시 버튼이 "미리보기를 실제로 봤는가"를 알아야 해서 여기서도
   // 구독한다.
   const previewQuery = usePreviewQuery(lane);
 
-  // prompt-scope-techspec.md §6-2 — 채널은 이 레인의 초안이 실제로 들고 있는 섹션에서
+  // 채널은 이 레인의 초안이 실제로 들고 있는 섹션에서
   // 도출한다. 손으로 `Record<PromptLane, PromptChannel[]>`을 적으면 BE
   // `_EXPECTED_ROWS_BY_LANE`(admin/prompts.py)과 같은 사실의 두 번째 사본이 된다.
   const channels = PROMPT_CHANNELS.filter((c) => draft.sections.some((s) => s.channel === c));
@@ -68,7 +68,7 @@ export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
     () => toast.error("입력값을 확인해주세요."),
   );
 
-  // D-10 — 조립 결과를 실제로 본 뒤에만 게시할 수 있어야 한다. 초안이 이미 저장돼 있는(가장
+  // 조립 결과를 실제로 본 뒤에만 게시할 수 있어야 한다. 초안이 이미 저장돼 있는(가장
   // 흔한) 상태로 페이지에 막 들어오면 `isDirty`도 false, `draftId`도 non-null이라 그 둘만
   // 보면 미리보기가 아직 로딩 중이거나 실패했어도 게시 버튼이 활성으로 뜬다(적대적 리뷰가
   // 브라우저로 재현) — `previewQuery` 상태를 반드시 함께 봐야 한다.

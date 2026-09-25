@@ -5,7 +5,7 @@ import { GrowthCards } from "./GrowthCards";
 import { PopularList } from "./PopularList";
 import { TrendChart } from "./TrendChart";
 
-/** 각 영역이 자기 로딩·에러를 렌더한다(T-4) — 여기서는 전체를 막는 조기 반환을
+/** 각 영역이 자기 로딩·에러를 렌더한다 — 여기서는 전체를 막는 조기 반환을
  * 하지 않는다. 하나가 500을 내도 나머지 영역은 정상 표시돼야 한다. */
 export function DashboardPage() {
   return (

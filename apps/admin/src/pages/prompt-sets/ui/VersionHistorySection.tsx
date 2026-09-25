@@ -23,8 +23,8 @@ export function VersionHistorySection() {
 }
 
 /** `GET /admin/prompt-sets`는 게시된 버전뿐 아니라 현재 초안 행(`status: "draft"`, `version:
- * null`)도 함께 내려온다(D-16이 말하는 "이력"이 아니다) — 그래서 여기서 `published`만 걸러
- * 보여준다. 선택한 행의 라벨·섹션 개수는 목록에 없어(메타만, D-16) `GET /{id}`로 따로 받는다
+ * null`)도 함께 내려온다(버전 이력이 아니다) — 그래서 여기서 `published`만 걸러
+ * 보여준다. 선택한 행의 라벨·섹션 개수는 목록에 없어(메타만) `GET /{id}`로 따로 받는다
  * (appeals의 "목록에서 find" 패턴을 못 쓰는 이유이기도 하다). */
 function VersionTable() {
   const versionListQuery = useVersionListQuery();
@@ -73,13 +73,13 @@ function VersionTable() {
               return (
                 // 선택 채움은 `secondary`다 — 공용 `TableRow`의 `bg-muted`는 이 표가 앉은 `bg-card`와
                 // 같은 값이라 선택이 1.0000:1로 사라지고, 공용 hover `muted/50`도 같은 이유로 안 보여
-                // 호출부에서 둘 다 덮는다(Q-9: 공용 기본값은 두고 호출부만 덮는다). 채움은 card 대비
+                // 호출부에서 둘 다 덮는다(공용 기본값은 두고 호출부만 덮는다). 채움은 card 대비
                 // 1.12:1뿐이라 선택을 전달하는 3:1 단서로 체크 글리프를 함께 둔다(`foreground` on
-                // `secondary` 14.06:1, BS-22). 자리를 늘 비워 두어 선택이 바뀌어도 열 폭이 흔들리지 않는다.
+                // `secondary` 14.06:1). 자리를 늘 비워 두어 선택이 바뀌어도 열 폭이 흔들리지 않는다.
                 // 행 전체 클릭은 두되 키보드·보조기술 진입점은 첫 셀의 네이티브 버튼이다 — `<tr
                 // role="button">`은 표의 행·열 의미를 지우고 `aria-selected`도 무효가 된다. 버튼엔
                 // onClick이 없다: Enter/Space가 만든 네이티브 click이 `tr`의 onClick으로 한 번만
-                // 버블된다(backlog-l-goal-prompt.md BL-8).
+                // 버블된다.
                 <TableRow
                   key={item.id}
                   className={cn(

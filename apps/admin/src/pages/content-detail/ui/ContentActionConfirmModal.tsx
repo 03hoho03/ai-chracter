@@ -59,7 +59,7 @@ type ContentActionConfirmModalProps = {
   action: ContentConfirmAction;
 };
 
-/** goal-prompt.md 2단계 T-10 — 조치 확인 다이얼로그. `restrict`/`delete`는 사유 카테고리가
+/** 조치 확인 다이얼로그. `restrict`/`delete`는 사유 카테고리가
  * 필수다(API도 `reasonCategory` 누락 시 422를 낸다). `lift-restriction`은 `Notification`을 만들지
  * 않아 사유 카테고리를 고를 근거가 없다 — 대신 관리자 코멘트가 필수다(비어 있으면 API가 422).
  * 삭제는 기존 `DeleteConfirmModal`(features/act-on-report)의 콘텐츠명 정확 입력 패턴을 그대로

@@ -8,7 +8,7 @@ import { appealKeys } from "./keys";
 export type AppealVerdict = components["schemas"]["AppealVerdict"];
 export type AdminAppealListItem = components["schemas"]["AdminAppealListItem"];
 
-/** techspec-admin.md §2 — 처리 확정 후 이의제기 목록 쿼리를 무효화한다(US-124 AC3). */
+/** 처리 확정 후 이의제기 목록 쿼리를 무효화한다. */
 export function useResolveAppealMutation(appealId: string) {
   const queryClient = useQueryClient();
 
