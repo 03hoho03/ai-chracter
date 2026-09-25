@@ -8,8 +8,8 @@
 잡는 것 (추가된 줄만, `--all` 이면 추적 파일 전체):
   (a) 추적되지 않는 `*.md` 이름 — 모든 파일의 줄 전체(테스트 이름·describe 문자열도 포함)
       `tasks/<무언가>` 경로 — 코드는 주석 안만, 문서는 줄 전체. 디렉터리 이름만 말하는 `tasks/` 는 인용이 아니다.
-  (b) 결정 번호 패턴·수용 기준 번호(`AC3`·`AC 3`)와 `§숫자` — 코드 파일의 주석·docstring 안만.
-      문자열 리터럴·식별자는 보지 않는다.
+  (b) 결정 번호 패턴·수용 기준 번호(`AC3`·`AC 3`)와 `§숫자` — 코드는 주석·docstring 안만(문자열
+      리터럴·식별자는 보지 않는다), 문서는 줄 전체. 추적 문서를 가리킬 때도 `§숫자` 대신 절 제목을 쓴다.
 억제: 같은 줄에 `cite-ok` 를 적는다(그 줄이 왜 예외인지 옆에 한 마디 남길 것).
       줄에 주석을 달 수 없는 예외는 `SCHEMA_DOCSTRING_CLASSES`·`FROZEN_LINES` 에 등록한다.
 
@@ -327,13 +327,13 @@ def id_hits(text: str, allow_rule_code: bool) -> list[str]:
 
 
 def line_findings(line: str, comments: list[str], kind: str, path: str, tracked_md: set[str]) -> list[str]:
-    """비추적 문서는 줄 전체에서(문자열 속 테스트 이름도 인용이다), 나머지는 코드면 주석 안에서만 본다."""
+    """비추적 문서는 줄 전체에서(문자열 속 테스트 이름도 인용이다), 나머지는 문서면 줄 전체, 코드면 주석 안에서만 본다."""
     if SUPPRESS in line:
         return []
     hits = [f"저장소에 없는 문서 `{m.group(1)}`" for m in md_refs(line, tracked_md)]
-    if kind == "doc":
-        return hits + tasks_hits(line, tracked_md)
     allow_rule_code = bool(RULE_CODE_PATHS.search(path))
+    if kind == "doc":
+        return hits + tasks_hits(line, tracked_md) + id_hits(line, allow_rule_code)
     for text in comments:
         hits += tasks_hits(text, tracked_md) + id_hits(text, allow_rule_code)
     return hits
