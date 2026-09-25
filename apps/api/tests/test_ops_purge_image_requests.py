@@ -1,4 +1,4 @@
-"""`ops/purge_image_requests.py` — image-monitoring-goal-prompt.md IM-7a: 이미지가 남지 않은
+"""`ops/purge_image_requests.py` — 이미지가 남지 않은
 생성 요청(`status IN ('blocked', 'failed')`)을 `created_at`으로부터 90일 뒤 파기한다.
 
 `test_ops_backup_withdrawn_emails.py`(같은 `run_sh` 경계 모킹 패턴)를 그대로 베꼈다. Postgres가
@@ -46,7 +46,7 @@ def test_generates_delete_sql_scoped_to_blocked_and_failed_with_correct_cutoff(
 def test_status_filter_excludes_succeeded_and_pending(monkeypatch: pytest.MonkeyPatch) -> None:
     """깨지는 시나리오: status 필터가 `IN ('blocked', 'failed')`에서 벗어나(예: 조건이 통째로
     빠지거나 `!=` 로 반전되어) `succeeded`·`pending` 행까지 SQL 대상에 걸리면, 이미지가 남아
-    있는(IM-7이 별도로 정한) 요청이나 아직 진행 중인 요청까지 지우는 SQL이 나간다."""
+    있는(보유기간이 이미지와 같은 수명으로 따로 정해진) 요청이나 아직 진행 중인 요청까지 지우는 SQL이 나간다."""
     captured: dict[str, str] = {}
 
     def _fake_run_sh(

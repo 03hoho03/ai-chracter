@@ -1,11 +1,11 @@
 """다양성 매트릭스 — 30개 스토리 슬롯의 좌표 스펙.
 
-`data/diversity_matrix.json` 은 `tasks/archive/prd-genre-seed-content.md` §7 을 기계가 읽는 형태로
+`data/diversity_matrix.json` 은 30개 스토리 콘셉트 명세를 기계가 읽는 형태로
 전사한 것이다. 콘셉트(제목·한줄·세계관·좌표·스탯 축·target)는 여기서 확정이고, 배치
-생성기(US-013)는 이 좌표를 입력으로 받아 **본문만** 채운다 — 생성기가 콘셉트를 새로
+생성기는 이 좌표를 입력으로 받아 **본문만** 채운다 — 생성기가 콘셉트를 새로
 발명하지 않아야 같은 장르 3개의 겹침을 생성 후가 아니라 생성 전에 막을 수 있다.
 
-`load_matrix()` 는 읽으면서 항상 `validate_matrix()` 를 거치므로, 슬롯을 고치다 §7 의
+`load_matrix()` 는 읽으면서 항상 `validate_matrix()` 를 거치므로, 슬롯을 고치다
 분포(축마다 10/10/10)나 "같은 장르 3슬롯은 최소 4개 축이 다르다" 규칙을 깨면 파일을 읽는
 순간 죽는다.
 """
@@ -26,12 +26,12 @@ from .loader import DATA_DIR, SeedContentError
 
 MATRIX_PATH = DATA_DIR / "diversity_matrix.json"
 
-# §7 이 정한 규모: 장르 10종 × 슬롯 3개. 축 값도 3종씩이라 값 하나당 정확히 10슬롯이다.
+# 규모: 장르 10종 × 슬롯 3개. 축 값도 3종씩이라 값 하나당 정확히 10슬롯이다.
 SLOTS_PER_GENRE = 3
 SLOTS_PER_AXIS_VALUE = 10
 MIN_AXIS_DIFFERENCE = 4
 
-# 이미지에서 역산해 손으로 집필한 메이저 슬롯(US-007~009). 생성기 대상에서 제외된다.
+# 이미지에서 역산해 손으로 집필한 메이저 슬롯. 생성기 대상에서 제외된다.
 MAJOR_SLUG = "romance-3rdloop"
 
 Tone = Literal["순애", "피폐", "격정"]
@@ -43,7 +43,7 @@ Target = Literal["female", "male", "all"]
 
 
 class MatrixAxes(CamelModel):
-    """§6 의 다양성 축 5종. §7 의 괄호 주석(`밀실(학교)` 등)은 대표값으로 정규화했다."""
+    """다양성 축 5종. 콘셉트 명세의 괄호 주석(`밀실(학교)` 등)은 대표값으로 정규화했다."""
 
     tone: Tone
     relation: Relation
@@ -87,7 +87,7 @@ def load_matrix(path: Path = MATRIX_PATH) -> list[MatrixSlot]:
 
 
 def validate_matrix(slots: list[MatrixSlot]) -> None:
-    """§7 이 스스로 주장하는 성질들을 실제로 만족하는지 본다 — 위반이면 `SeedContentError`."""
+    """콘셉트 명세가 스스로 주장하는 성질들을 실제로 만족하는지 본다 — 위반이면 `SeedContentError`."""
     _validate_slugs(slots)
     _validate_genre_slots(slots)
     _validate_axis_differences(slots)
@@ -119,7 +119,7 @@ def _validate_genre_slots(slots: list[MatrixSlot]) -> None:
 
 
 def _validate_axis_differences(slots: list[MatrixSlot]) -> None:
-    """같은 장르 3슬롯은 5개 축 중 최소 4개가 서로 달라야 한다(§6 규칙)."""
+    """같은 장르 3슬롯은 5개 축 중 최소 4개가 서로 달라야 한다."""
     for genre, group in _by_genre(slots).items():
         for left, right in combinations(sorted(group, key=lambda s: s.slot), 2):
             different = sum(
@@ -134,7 +134,7 @@ def _validate_axis_differences(slots: list[MatrixSlot]) -> None:
 
 
 def _validate_distribution(slots: list[MatrixSlot]) -> None:
-    """축 값별 전체 분포가 §7 말미의 검증 표(전부 10/10/10)와 일치하는지 본다."""
+    """축 값별 전체 분포가 콘셉트 명세의 분포 검증 표(전부 10/10/10)와 일치하는지 본다."""
     axis_values: dict[str, Sequence[str]] = {
         "tone": [s.axes.tone for s in slots],
         "relation": [s.axes.relation for s in slots],

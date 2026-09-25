@@ -51,7 +51,7 @@ router = APIRouter(tags=["admin"])
 
 logger = logging.getLogger(__name__)
 
-# prompt-scope-goal-prompt.md PS-13 — 코드가 레인별로 아는 (channel, scope, slot, variant)
+# 코드가 레인별로 아는 (channel, scope, slot, variant)
 # 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행에 b72c33c70240이 story·
 # character generation에 `user_persona`를 한 행씩 더한 27/14/16행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
@@ -88,7 +88,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("story", "user_goal", ""),
                 ("story", "development_examples", ""),
                 ("story", "prologue", ""),
-                # persona-goal-prompt.md UP-13 — M2(`b72c33c70240`)가 DB에 넣는 행과 같이 간다.
+                # 마이그레이션 `b72c33c70240`이 DB에 넣는 행과 같이 간다.
                 # 코드만 있으면 R-1 "누락", DB만 있으면 "잉여"로 게시가 전부 막힌다.
                 ("both", "user_persona", ""),
                 ("both", "history", ""),
@@ -127,7 +127,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
             {
                 ("character", "character_prompt", ""),
                 ("character", "example_dialogues", ""),
-                ("both", "user_persona", ""),  # persona-goal-prompt.md UP-13 — 위 story와 같다
+                ("both", "user_persona", ""),  # 위 story와 같다
                 ("both", "history", ""),
                 ("both", "final_frame", ""),
             }
@@ -175,11 +175,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str]]]]
     for lane, by_channel in _EXPECTED_ROWS_BY_LANE.items()
 }
 
-# prompt-scope-goal-prompt.md PS-13 R-2 — variant 전종이 반드시 있어야 하는 슬롯. story
+# R-2 — variant 전종이 반드시 있어야 하는 슬롯. story
 # 레인에만 있다 — `template_instruction`/`base_content` 둘 다 story 레인 전용 슬롯이라,
 # 안 쪼개면 character·publish_filter 레인은 그 `(channel, scope, slot)` 행 자체가 없어
 # `present`가 빈 집합이 되고 `missing`이 required 전체가 되어 **영원히 게시할 수 없다**
-# (techspec §11#4 정정 — "공허 통과"가 아니라 "레인 필터가 없으면 거부"였다).
+# ("공허 통과"가 아니라 "레인 필터가 없으면 거부"다).
 #
 # `template_instruction`은 요청한 variant가 없으면 폴백할 기본(`variant=""`) 행 자체가
 # 없어 슬롯째 조용히 드롭된다.
@@ -203,10 +203,10 @@ _REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], fro
     "publish_filter": {},
 }
 
-# prompt-scope-techspec.md §5-3 — 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
+# 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
 # 라벨 사용을 전수 추출해 도출했다: story={user,story_assistant,story_example} /
 # character={user,character_assistant} / publish_filter={user,character_assistant,
-# story_example}. 헤더 컬럼 4개는 레인과 무관하게 그대로 남는다(PS-5).
+# story_example}. 헤더 컬럼 4개는 레인과 무관하게 그대로 남는다.
 _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
     "story": (
         ("userLabel", "user_label"),
@@ -232,7 +232,7 @@ def _validation_error(rule: str, message: str) -> HTTPException:
 def _validate_prompt_draft_for_publish(
     prompt_set: PromptSet, sections: list[PromptSection], *, lane: PromptLane
 ) -> None:
-    """prompt-db-goal-prompt.md §9-2 · prompt-scope-goal-prompt.md PS-13 — R-1~R-8. 규칙
+    """R-1~R-8. 규칙
     이름이 붙은 순서대로 검사하고 첫 위반에서 멈춘다("순서대로 본다") — 뒤의 규칙들은
     앞이 통과했다는 것에 기대어 있다(예: R-2는 슬롯 자체가 있다는 R-1의 결과를 전제한다).
     `lane`은 키워드 전용이다 — 앞 두 인자가 위치 인자라 세 번째 위치 인자가 붙으면 순서
@@ -289,11 +289,11 @@ def _validate_prompt_draft_for_publish(
             raise _validation_error("R-5", f"{query_name}은(는) 개행이나 ':'을 포함할 수 없습니다.")
 
     # R-6. `(channel, scope, variant)`로 묶는다 — `self_definition`/`intro_instruction`처럼
-    # 같은 슬롯이 scope만 다르게 두 행으로 존재하는 경우(§4-2) 서로 다른 실제 렌더 호출
+    # 같은 슬롯이 scope만 다르게 두 행으로 존재하는 경우 서로 다른 실제 렌더 호출
     # (story-scope 렌더와 character-scope 렌더)에서만 각각 쓰이므로 같은 order를 공유해도
     # 충돌이 아니다 — 그래서 scope를 그룹 키에서 빼면 이 정상 케이스를 오탐한다. 이 사각
     # 지대는 R-8이 렌더 결과 쪽에서 다시 본다(scope가 달라도 렌더 선택에는 같이 들어갈
-    # 수 있다, prompt-scope-goal-prompt.md PS-13).
+    # 수 있다).
     seen_orders: dict[tuple[str, str, str], dict[int, str]] = {}
     for section in sections:
         group = seen_orders.setdefault((section.channel, section.scope, section.variant), {})
@@ -306,8 +306,8 @@ def _validate_prompt_draft_for_publish(
         group[section.order] = section.slot
 
     # R-7 — priority_tail은 both 행이라 `publish_filter` 레인에는 존재하지 않는다(그 레인엔
-    # system 채널 자체가 없다). 기본값 없는 next()는 그 레인에서 StopIteration -> 500이었다
-    # (prompt-scope-techspec.md §5-5 F-7②). `other_orders`가 비어 있을 때도 건드리지
+    # system 채널 자체가 없다). 기본값 없는 next()는 그 레인에서 StopIteration -> 500이었다.
+    # `other_orders`가 비어 있을 때도 건드리지
     # 않는다 — tail 하나만 있고 비교 대상이 없으면 검사할 것이 없다.
     system_sections = [s for s in sections if s.channel == "system"]
     tail = next((s for s in system_sections if s.slot == "priority_tail"), None)
@@ -316,9 +316,9 @@ def _validate_prompt_draft_for_publish(
         if other_orders and tail.order <= max(other_orders):
             raise _validation_error("R-7", "system 채널에서 priority_tail의 order가 가장 크지 않습니다.")
 
-    # R-8 (prompt-scope-goal-prompt.md PS-13, 신설) — R-6의 그룹 키에 scope가 들어 있어
+    # R-8 — R-6의 그룹 키에 scope가 들어 있어
     # (system, both, '', 5)와 (system, story, '', 5)를 **다른 그룹**으로 본다. 렌더러는
-    # 둘을 한 리스트에 담아 안정 정렬하므로 동률이면 입력 순서가 출력을 정한다(F-7③).
+    # 둘을 한 리스트에 담아 안정 정렬하므로 동률이면 입력 순서가 출력을 정한다.
     # R-6을 고치는 것은 답이 아니다 — 그 scope는 self_definition의 정상 케이스를
     # 오탐하지 않으려고 들어간 것이다. R-8이 렌더 결과 쪽에서 같은 불변식을 다시 본다.
     # `select_sections_for_render`(chat/prompt_builder.py)는 렌더러(render_prompt_channel)와
@@ -341,7 +341,7 @@ def _validate_prompt_draft_for_publish(
 
 
 async def _next_published_version(db: AsyncSession) -> str:
-    """D-15 — 서버가 부여하는 자동 증가 정수(문자열로 저장). 별도 함수로 뺀 이유는
+    """서버가 부여하는 자동 증가 정수(문자열로 저장). 별도 함수로 뺀 이유는
     `test_admin_prompts_api.py`가 이 반환값만 몽키패치해 두 게시가 같은 버전을 계산하는
     경쟁을 흉내내기 위해서다(legal의 동시성 테스트가 `_get_draft`를 패치하는 것과 같은
     방식)."""
@@ -352,10 +352,10 @@ async def _next_published_version(db: AsyncSession) -> str:
 
 
 async def _get_draft(db: AsyncSession, lane: PromptLane) -> PromptSet | None:
-    """prompt-scope-techspec.md §3-5 (PS-1). `lane`이 없는 `db.scalar()`는 레인 필터가
+    """`lane`이 없는 `db.scalar()`는 레인 필터가
     빠져도 조용히 첫 행을 반환한다 — `.scalars(...).one_or_none()`으로 두면 레인 필터가
     빠졌을 때(부분 유니크 인덱스가 레인별이라 초안이 여러 행일 수 있다) `MultipleResultsFound`로
-    시끄럽게 터진다(F-7①)."""
+    시끄럽게 터진다."""
     return (
         await db.scalars(select(PromptSet).where(PromptSet.status == "draft", PromptSet.lane == lane))
     ).one_or_none()
@@ -424,7 +424,7 @@ def _find_duplicate_section_keys(sections: list[_SectionFields]) -> list[tuple[s
 async def _replace_draft_content(
     db: AsyncSession, *, lane: PromptLane, labels: AdminPromptLabels, sections: list[_SectionFields]
 ) -> PromptSet:
-    """초안 upsert(§9-1) — 섹션 전체 교체다. `PUT /{lane}/draft`와 `POST /{id}/restore`가
+    """초안 upsert — 섹션 전체 교체다. `PUT /{lane}/draft`와 `POST /{id}/restore`가
     공유한다.
 
     `admin/legal.py`의 SAVEPOINT 패턴을 그대로 따른다: 세션이 이미 이 요청(또는 테스트의
@@ -437,7 +437,7 @@ async def _replace_draft_content(
     읽어 이 요청의 내용으로 덮어쓴다(legal의 draft upsert와 같은 판단). 자식(섹션) 삭제→삽입도
     같은 SAVEPOINT 안에서 한다 — `relationship()`이 없어 순서를 직접 지켜야 한다.
 
-    prompt-scope-techspec.md §3-5(F-7①) — `try`/`except IntegrityError` 두 블록 모두
+    `try`/`except IntegrityError` 두 블록 모두
     `_get_draft(db, lane)`로 **이 레인의** 초안만 찾고, `delete(PromptSection)` 직전에
     `assert draft.lane == lane`을 둔다. 한쪽만 고치면 정상 경로는 멀쩡한데 경쟁 상황에서만
     다른 레인 초안의 섹션이 통째로 삭제될 수 있다 — 재현 난이도가 가장 높은 부류의
@@ -475,7 +475,7 @@ async def _replace_draft_content(
                 draft.story_example_label = labels.story_example_label
                 draft.character_assistant_label = labels.character_assistant_label
 
-            assert draft.lane == lane  # F-7① — 이 레인의 초안만 지운다
+            assert draft.lane == lane  # 이 레인의 초안만 지운다
             await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
             await db.flush()
             for item in sections:
@@ -500,7 +500,7 @@ async def _replace_draft_content(
         draft.story_assistant_label = labels.story_assistant_label
         draft.story_example_label = labels.story_example_label
         draft.character_assistant_label = labels.character_assistant_label
-        assert draft.lane == lane  # F-7① — except 복구 경로도 이 레인의 초안만 지운다
+        assert draft.lane == lane  # except 복구 경로도 이 레인의 초안만 지운다
         await db.execute(delete(PromptSection).where(PromptSection.prompt_set_id == draft.id))
         await db.flush()
         for item in sections:
@@ -531,7 +531,7 @@ async def get_prompt_draft(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptDraftResponse:
-    """prompt-scope-techspec.md §4-2 — 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
+    """라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
     `GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다
     도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —
     만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
@@ -581,7 +581,7 @@ async def preview_prompt_draft(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminPromptPreviewResponse:
-    """T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
+    """샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
     LLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다
     (`GET .../draft`와 같은 폴백)."""
     draft = await _get_draft(db, lane)
@@ -609,7 +609,7 @@ async def publish_prompt_set(
 
     _validate_prompt_draft_for_publish(draft, sections, lane=lane)
 
-    # PS-2 — 레인 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
+    # 레인 필터가 없다("안 넣는 것"이 결정이다). 버전 문자열 하나가 "언제 게시됐는가"를
     # 전역 시간축 위에 놓는다 — story의 v3 다음 게시가 v5일 수 있다(중간 v4는 다른 레인 게시).
     next_version = await _next_published_version(db)
 
@@ -664,7 +664,7 @@ async def publish_prompt_set(
     # legal과 같다 — 게시 후에도 초안 행은 지우지 않는다(오타 하나 고쳐 재게시하는 흐름).
     await db.commit()
 
-    # ⚠️ 반드시 커밋 **뒤에** 무효화한다(prompt-db-goal-prompt.md §8-1) — 커밋 전에 지우면
+    # ⚠️ 반드시 커밋 **뒤에** 무효화한다 — 커밋 전에 지우면
     # 그 사이의 캐시 미스가 아직 커밋되지 않은(=옛) 값을 다시 캐싱해 이 게시가 통째로
     # 씹힌다. `invalidate_active_prompt_set`은 `RedisError`를 삼키지 않는데, 여기서는
     # 그걸 삼키고 경고만 남긴다 — **DB 커밋(진짜 소스)이 이미 성공했다는 것은 곧 게시가
@@ -675,7 +675,7 @@ async def publish_prompt_set(
         await invalidate_active_prompt_set(lane)
     except RedisError:
         logger.warning("게시 후 프롬프트 세트 캐시 무효화 실패", exc_info=True)
-        # monitoring-techspec.md MT-6: 낡은 프롬프트가 TTL만큼 계속 나가는 신호라 이벤트로도 남긴다.
+        # 낡은 프롬프트가 TTL만큼 계속 나가는 신호라 이벤트로도 남긴다.
         capture_dependency_failure(dependency="redis")
 
     return AdminPromptSetDetailResponse(
@@ -700,8 +700,8 @@ async def restore_prompt_set(
     """옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
 
-    레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다(prompt-scope-goal-prompt.md
-    CP-4 판정 4). `source.lane`이 `legacy`(PS-6의 과도기 격리 값)면 422로 거부한다 — 레인
+    레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.
+    `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
     분리 이전 버전은 복원 대상이 아니다."""
     source = await db.get(PromptSet, id)
     if source is None:
@@ -745,8 +745,8 @@ async def get_prompt_set(
     prompt_set = await db.get(PromptSet, id)
     lane = as_prompt_lane(prompt_set.lane) if prompt_set is not None else None
     if prompt_set is None or lane is None:
-        # `lane`이 `legacy`(PS-6)면 응답의 `lane: PromptLane`(C4-9)을 채울 수 없다 — 새
-        # 코드는 legacy를 읽지 않는다는 원칙(PS-6)을 그대로 따라 404로 취급한다.
+        # `lane`이 `legacy`면 응답의 `lane: PromptLane`을 채울 수 없다 — 새
+        # 코드는 legacy를 읽지 않는다는 원칙을 그대로 따라 404로 취급한다.
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="해당 버전을 찾을 수 없습니다.")
     sections = await _sections_of(db, prompt_set.id)
     return AdminPromptSetDetailResponse(
@@ -786,7 +786,7 @@ async def list_prompt_sets(
     for prompt_set in prompt_sets:
         lane = as_prompt_lane(prompt_set.lane)
         if lane is None:
-            continue  # TS-C — legacy(PS-6의 과도기 격리 값)는 목록에서 뺀다.
+            continue  # legacy(레인 분리 과도기의 격리 값)는 목록에서 뺀다.
         items.append(
             AdminPromptSetSummary(
                 id=prompt_set.id,
@@ -804,7 +804,7 @@ async def list_prompt_sets(
 
 # ---- 미리보기 샘플 입력 --------------------------------------------------------
 #
-# T-44/D-10: 별도 조립 코드를 만들지 않는다 — 위 `build_*` 함수들(실제 채팅·발행 검열이
+# 별도 조립 코드를 만들지 않는다 — 위 `build_*` 함수들(실제 채팅·발행 검열이
 # 쓰는 바로 그 함수)에 지어낸 샘플 값을 넣어 호출할 뿐이다. DB에 닿지 않는 순수 함수라
 # (`chat/stats.py` 류와 같은 리포 관례) ORM 모델을 세션 없이 생성자로만 채운다.
 
@@ -814,7 +814,7 @@ _SAMPLE_HISTORY = [
 ]
 _SAMPLE_EXAMPLE_DIALOGUES = [{"userLine": "[샘플] 뭐 하고 있었어?", "characterLine": "[샘플] 너 기다리고 있었지."}]
 _SAMPLE_DEVELOPMENT_EXAMPLES = [{"userLine": "[샘플] 이 방향으로 가보자", "assistantLine": "[샘플] 그러자, 앞장설게"}]
-# persona-goal-prompt.md §3-4-1 — 비우면 conditional 드롭(F1)으로 섹션이 안 보여 운영자가
+# 비우면 conditional 드롭으로 섹션이 안 보여 운영자가
 # `user_persona` 문안이 어떻게 렌더되는지 볼 수 없다. 실채팅과 같은 조립 함수를 거친다.
 _SAMPLE_USER_PERSONA = format_user_persona(
     name="[샘플] 하늘", gender="female", description="[샘플] 밤하늘을 좋아하는 대학생"
@@ -973,7 +973,7 @@ def _publish_filter_preview_items(
 ) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
 
-    # ⚠️ techspec §5-4 — 이 두 label 문자열을 다듬지 않는다. 응답에 scope 필드가 없어
+    # ⚠️ 이 두 label 문자열을 다듬지 않는다. 응답에 scope 필드가 없어
     # "· 캐릭터"/"· 스토리" 구분이 오직 label에만 있다.
     items.append(
         AdminPromptPreviewItem(

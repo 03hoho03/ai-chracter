@@ -173,7 +173,7 @@ export interface paths {
         };
         /**
          * List Admin Contents
-         * @description techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이
+         * @description `q`는 작품 이름 ILIKE 부분일치인데 이름이
          *     `contents`가 아니라 `character_version_details`/`story_version_details`에 있어
          *     `current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는
          *     (초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만
@@ -217,16 +217,16 @@ export interface paths {
         /**
          * Act On Content
          * @description 신고 없이 내리는 직접 조치. `reject`는 "신고를 반려한다"는 뜻이라, 애초에 신고가
-         *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).
+         *     없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.
          *
          *     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
          *     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
          *     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
-         *     근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로
+         *     근거로 들었지만, 이후 그 컬럼이 nullable로
          *     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
          *     `lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를
          *     강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신
-         *     T-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유
+         *     "위험 조치는 확인 다이얼로그 + 사유 필수" 요건을 만족시키는 건 `admin_comment`(자유
          *     텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로
          *     바꿨다(비어 있으면 422).
          */
@@ -246,9 +246,9 @@ export interface paths {
         };
         /**
          * List Admin Users
-         * @description techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는
-         *     제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
-         *     한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
+         * @description 탈퇴 유저(`deleted_at IS NOT NULL`)는
+         *     제외한다. 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
+         *     한 조회에 붙인다 — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
          *     본 조회 1개, 총 2개로 끝난다.
          */
         get: operations["list_admin_users_admin_users_get"];
@@ -288,15 +288,15 @@ export interface paths {
         put?: never;
         /**
          * Warn User
-         * @description 알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지
+         * @description 알림만 보낸다 — 이용 제한 없음. `reason_category`가 필수인 이유는 통지
          *     문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는
-         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),
-         *     T-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
+         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만,
+         *     이후 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
          *     사라졌다.
          *
          *     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
          *     다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로
-         *     주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.
+         *     주의를 주고 싶을 수 있다. 이를 금지하는 요구사항도 없다.
          */
         post: operations["warn_user_admin_users__user_id__warn_post"];
         delete?: never;
@@ -316,12 +316,12 @@ export interface paths {
         put?: never;
         /**
          * Suspend User
-         * @description techspec.md §2-2의 6단계를 정확한 순서로 수행한다.
+         * @description 아래 6단계를 정확한 순서로 수행한다.
          *
          *     ```
          *     1. users.suspended_at = now()
          *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
-         *        (visibility는 불변, T-1; PRIVATE는 제외 — D-6)
+         *        (visibility는 불변; PRIVATE는 제외)
          *     3. Notification(type='user-suspended', content_id=None, action_id=None)
          *     4. record_admin_action(action_type='user-suspend')
          *     5. db.commit()                  ← 여기까지 원자적
@@ -358,18 +358,17 @@ export interface paths {
         put?: never;
         /**
          * Unsuspend User
-         * @description 계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,
-         *     관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
+         * @description 계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,
+         *     관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
          *     한다.
          *
          *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
          *     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
-         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서
-         *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은
+         *     `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, 이후
+         *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은
          *     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
          *
-         *     **해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을
-         *     명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+         *     **해제 알림은 보내지 않는다.** 경고·정지와 달리 요구사항에 해제 알림은 없고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
          *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
          *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
          *
@@ -393,12 +392,12 @@ export interface paths {
         put?: never;
         /**
          * Set User Rate Limit Exempt
-         * @description limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
+         * @description `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
          *     Redis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)
          *     이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.
          *
          *     면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외
-         *     계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.
+         *     계정에도 그대로 적용된다 — 그 범위는 어드민 확인 모달이 문장으로 알린다.
          *
          *     **액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /
          *     `user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은
@@ -432,22 +431,22 @@ export interface paths {
         put?: never;
         /**
          * Adjust User Clover
-         * @description clover-techspec.md §4-3 — 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
+         * @description 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
          *     구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.
          *
          *     🔴 **토글의 *"같은 값을 다시 적용해도 막지 않는다"*를 여기로 옮기면 안 된다.** 그 문장이
          *     성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라
          *     두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고
-         *     `ux_clover_ledger_idempotency_key`가 그걸 강제한다(clover-goal-prompt.md CL-8).
+         *     `ux_clover_ledger_idempotency_key`가 그걸 강제한다.
          *
          *     **호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만
          *     남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트
-         *     전용이다(clover-techspec.md CT-4): 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
+         *     전용이다: 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
          *     어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.
          *
          *     ⇒ **"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지"의 구간이 생기지 않는다.** 지급이
          *     커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면
-         *     둘 다 롤백된다. 이 런에서 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
+         *     둘 다 롤백된다. 클로버 도입 때 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
          *     갈려 있던** 경로였다.
          *
          *     `amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —
@@ -469,7 +468,7 @@ export interface paths {
         };
         /**
          * List User Clover Ledger
-         * @description clover-techspec.md §4-5 — 원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+         * @description 어드민용 원장 조회다 — 임의 유저를 본다(유저 본인용은 `GET /me/clover/ledger`).
          *
          *     🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
          *     페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이
@@ -513,7 +512,7 @@ export interface paths {
         get?: never;
         /**
          * Upsert Legal Draft
-         * @description 초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만
+         * @description 초안 저장은 게시본을 건드리지 않는다 — status='draft'인 행만
          *     upsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.
          *
          *     `_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면
@@ -587,8 +586,8 @@ export interface paths {
         };
         /**
          * List Admin Notices
-         * @description 어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
-         *     (`moderation/router.py:216`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가
+         * @description 어드민 목록은 미게시 포함, offset 페이징 — `moderation/router.py`의
+         *     `list_admin_reports`와 같은 모양. 유저용 `/notices`가
          *     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
          *     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.
          */
@@ -631,7 +630,7 @@ export interface paths {
         put?: never;
         /**
          * Publish Admin Notice
-         * @description 게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다(techspec.md §4-3, D-16).
+         * @description 게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다.
          *
          *     - `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.
          *     - `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이
@@ -651,7 +650,7 @@ export interface paths {
          *     - fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE
          *       deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 "동기 실행이 프로덕션
          *       규모에서도 감당 가능하다"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이
-         *       가정(D-16)을 다시 실측해 재검증할 것.
+         *       가정(동기 fan-out)을 다시 실측해 재검증할 것.
          */
         post: operations["publish_admin_notice_admin_notices__id__publish_post"];
         delete?: never;
@@ -686,7 +685,7 @@ export interface paths {
         };
         /**
          * List Admin Inquiries
-         * @description offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.
+         * @description offset 페이징 — `moderation/router.py`의 `list_admin_reports`와 같은 모양.
          */
         get: operations["list_admin_inquiries_admin_inquiries_get"];
         put?: never;
@@ -748,8 +747,8 @@ export interface paths {
         };
         /**
          * List Admin Image Generations
-         * @description image-monitoring-goal-prompt.md IM-11: 유저 식별(닉네임·이메일)·상태·스타일·요청/완료
-         *     이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트(IM-2) 뒤에서만
+         * @description 유저 식별(닉네임·이메일)·상태·스타일·요청/완료
+         *     이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트 뒤에서만
          *     노출한다.
          */
         get: operations["list_admin_image_generations_admin_image_generations_get"];
@@ -772,7 +771,7 @@ export interface paths {
         put?: never;
         /**
          * View User Image Generations
-         * @description image-monitoring-goal-prompt.md IM-2. **열람 1회 = 로그 1행**(`chat_view.py`와 같은
+         * @description **열람 1회 = 로그 1행**(`chat_view.py`와 같은
          *     규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를
          *     쌓지 않는다.
          */
@@ -792,7 +791,7 @@ export interface paths {
         };
         /**
          * List User Image Generations
-         * @description 더보기 — **로그를 절대 쌓지 않는다**(IM-2): "열람 1회 = 로그 1행"을 여기서
+         * @description 더보기 — **로그를 절대 쌓지 않는다**: "열람 1회 = 로그 1행"을 여기서
          *     깨면 더보기 3번에 3행이 쌓인다.
          */
         get: operations["list_user_image_generations_admin_users__user_id__image_generations_get"];
@@ -815,7 +814,7 @@ export interface paths {
         put?: never;
         /**
          * View Chat Room
-         * @description techspec §4-5. **열람 1회 = 로그 1행**(T-6) — 로그는 이 엔드포인트에서만 쌓는다.
+         * @description **열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.
          *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.
          */
         post: operations["view_chat_room_admin_chat_rooms__room_id__view_post"];
@@ -834,7 +833,7 @@ export interface paths {
         };
         /**
          * List Chat Room Messages
-         * @description 더보기 — **로그를 절대 쌓지 않는다**(T-6): "열람 1회 = 로그 1행"을 메서드로
+         * @description 더보기 — **로그를 절대 쌓지 않는다**: "열람 1회 = 로그 1행"을 메서드로
          *     보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다.
          */
         get: operations["list_chat_room_messages_admin_chat_rooms__room_id__messages_get"];
@@ -855,7 +854,7 @@ export interface paths {
         };
         /**
          * Get Prompt Draft
-         * @description prompt-scope-techspec.md §4-2 — 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
+         * @description 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,
          *     `GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다
          *     도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —
          *     만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이
@@ -882,7 +881,7 @@ export interface paths {
         put?: never;
         /**
          * Preview Prompt Draft
-         * @description T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
+         * @description 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.
          *     LLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다
          *     (`GET .../draft`와 같은 폴백).
          */
@@ -924,8 +923,8 @@ export interface paths {
          * @description 옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이
          *     없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.
          *
-         *     레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다(prompt-scope-goal-prompt.md
-         *     CP-4 판정 4). `source.lane`이 `legacy`(PS-6의 과도기 격리 값)면 422로 거부한다 — 레인
+         *     레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.
+         *     `source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인
          *     분리 이전 버전은 복원 대상이 아니다.
          */
         post: operations["restore_prompt_set_admin_prompt_sets__id__restore_post"];
@@ -1014,7 +1013,7 @@ export interface paths {
         put?: never;
         /**
          * Register Situational Image
-         * @description techspec-backend-media.md §2. Downloads the original asset, synchronously
+         * @description Downloads the original asset, synchronously
          *     generates a Gaussian-blurred variant (no queue — a single-image blur is
          *     sub-second), and upserts the situational_images row keyed by entity_id.
          */
@@ -1034,7 +1033,7 @@ export interface paths {
         };
         /**
          * List Generated Images
-         * @description techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회.
+         * @description "생성한 이미지에서 선택" 갤러리 조회.
          */
         get: operations["list_generated_images_me_generated_images_get"];
         put?: never;
@@ -1057,7 +1056,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Generated Image
-         * @description US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.
+         * @description 생성 이미지 삭제.
          *
          *     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
          *     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
@@ -1348,13 +1347,13 @@ export interface paths {
         };
         /**
          * List Notices
-         * @description 공개 목록 — 인증 없음(techspec.md §4-1, D-5). `legal/router.py`의
+         * @description 공개 목록 — 인증 없음. `legal/router.py`의
          *     `GET /legal/{kind}`와 같은 취급.
          *
-         *     **페이징하지 않는다**(D-13) — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
+         *     **페이징하지 않는다** — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
          *     인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서
-         *     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/
-         *     :1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지
+         *     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`를
+         *     그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지
          *     않는 추가라 지금 미리 만들어 둘 이유가 없다.
          */
         get: operations["list_notices_notices_get"];
@@ -1413,7 +1412,7 @@ export interface paths {
         };
         /**
          * List My Inquiries
-         * @description 페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다.
+         * @description 페이징하지 않는다 — 공지 목록처럼 항목이 제목·상태·날짜뿐이라 작고, 내 문의는 공지보다도 적다.
          */
         get: operations["list_my_inquiries_me_inquiries_get"];
         put?: never;
@@ -1454,14 +1453,14 @@ export interface paths {
         };
         /**
          * List My Drafts
-         * @description 한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
+         * @description 한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다.
          *
          *     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
          *     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
          *     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
          *     단위로 `current_published_version_id IS NULL`을 함께 본다.
          *
-         *     커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
+         *     커서 페이징의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
          *     `published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는
          *     `updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을
          *     그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라
@@ -1485,7 +1484,7 @@ export interface paths {
         };
         /**
          * List My Favorites
-         * @description techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story
+         * @description Without `type`, mixes character/story
          *     types, so details are resolved per-type like `/me/drafts` rather than joined against
          *     a single `_detail_model`. Excludes moderation_status=deleted content (same precedent as
          *     `/users/{id}/contents`'s owner "all" filter) since that's the fully-hidden equivalent of
@@ -1543,7 +1542,7 @@ export interface paths {
         };
         /**
          * List User Contents
-         * @description 커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
+         * @description 커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
          *     두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.
          */
         get: operations["list_user_contents_users__id__contents_get"];
@@ -1581,9 +1580,7 @@ export interface paths {
         };
         /**
          * List Contents
-         * @description techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.
-         *
-         *     `sort=popular` prioritizes chat_count over like_count/view_count by ordering on
+         * @description `sort=popular` prioritizes chat_count over like_count/view_count by ordering on
          *     all three columns lexicographically (chat_count first) instead of a single
          *     weighted score, so chat_count strictly dominates ties by construction — the
          *     actual weighted-score formula is still a PRD-level open question for later
@@ -1593,7 +1590,7 @@ export interface paths {
         put?: never;
         /**
          * Create Content Draft
-         * @description techspec-backend-content.md §1.2. The new detail row is genuinely empty (see
+         * @description The new detail row is genuinely empty (see
          *     character.py/story.py docstrings) — text columns get `""`, `thumbnail_asset_id` stays
          *     unset until an image is uploaded. type='story' creates no child rows (starting_setups
          *     etc.) yet — those are added via `PATCH /contents/{id}/draft`.
@@ -1618,25 +1615,25 @@ export interface paths {
         post?: never;
         /**
          * Delete Content Draft
-         * @description US-003. Deletes a never-published content outright (draft version + content row).
+         * @description Deletes a never-published content outright (draft version + content row).
          *
-         *     Deletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id
+         *     Deletable == exactly what `GET /me/drafts` returns: `current_published_version_id
          *     IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
          *     fresh draft version, so a published work always has a draft row too, and throwing that
          *     away would delete the published work with it. Discarding *edits* to a published work is
-         *     `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.
+         *     `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 정책상 없다.
          */
         delete: operations["delete_content_draft_contents__id__draft_delete"];
         options?: never;
         head?: never;
         /**
          * Update Content Draft
-         * @description techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
+         * @description Autosave: no
          *     business validation (publish is where that happens) — the version-detail row is
          *     overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
          *     directly rather than the per-type detail table, since they're shared across versions,
-         *     not per-version snapshot data (techspec-db-schema.md §3).
+         *     not per-version snapshot data.
          */
         patch: operations["update_content_draft_contents__id__draft_patch"];
         trace?: never;
@@ -1652,12 +1649,12 @@ export interface paths {
         put?: never;
         /**
          * Reset Content Draft
-         * @description US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with
+         * @description 편집 취소 — throws away in-progress edits by rewriting the draft version with
          *     the current published version's content. The published version itself is untouched.
          *
          *     Deliberately not a delete: publishing auto-clones a draft version, and that clone is the
          *     row `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.
-         *     `DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.
+         *     `DELETE /contents/{id}/draft` is the opposite case and refuses this one with 409.
          *
          *     No dirty check — resetting a draft that already matches the published version succeeds
          *     and simply rewrites identical rows.
@@ -1680,8 +1677,7 @@ export interface paths {
         put?: never;
         /**
          * Publish Content
-         * @description techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,
-         *     US-085 story).
+         * @description Publish the draft of a character or story.
          */
         post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
@@ -1705,11 +1701,11 @@ export interface paths {
         head?: never;
         /**
          * Update Content Visibility
-         * @description techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change
+         * @description The only content state-change
          *     endpoint; there is no delete API. Writes `Content.visibility` directly regardless of
          *     draft/publish state, so the existing `Content.visibility == PUBLIC` filter already used
          *     by home/search/other-profile discovery queries excludes it immediately, matching
-         *     techspec-content-versioning.md §1's `canDiscoverPublicly`.
+         *     the FE's `canDiscoverPublicly`.
          */
         patch: operations["update_content_visibility_contents__id__visibility_patch"];
         trace?: never;
@@ -1723,11 +1719,9 @@ export interface paths {
         };
         /**
          * Get Content Detail
-         * @description techspec-backend-content.md §1, techspec-content-versioning.md §1.
-         *
-         *     Access control is query-response-based, not a 403/404 gate here: the full detail
+         * @description Access control is query-response-based, not a 403/404 gate here: the full detail
          *     (including `accessStatus`/`isOwner`) is always returned for any existing, published
-         *     content, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides
+         *     content, and `canViewDetailPage` on the FE decides
          *     whether to render it or an "unavailable" state instead.
          */
         get: operations["get_content_detail_contents__id__get"];
@@ -1748,7 +1742,7 @@ export interface paths {
         };
         /**
          * List Content Versions
-         * @description techspec-backend-content.md §1, US-017 — history only, no version-switch action.
+         * @description History only, no version-switch action.
          */
         get: operations["list_content_versions_contents__id__versions_get"];
         put?: never;
@@ -1770,8 +1764,8 @@ export interface paths {
         put?: never;
         /**
          * Like Content
-         * @description techspec-backend-content.md §1.1, US-039. Idempotent: a repeat like is a no-op
-         *     rather than a second row/double increment (techspec-content-detail.md §4 does an FE
+         * @description Idempotent: a repeat like is a no-op
+         *     rather than a second row/double increment (the FE does an
          *     optimistic update and never reads this response body, hence 204).
          */
         post: operations["like_content_contents__id__like_post"];
@@ -1811,8 +1805,8 @@ export interface paths {
         put?: never;
         /**
          * Report Content
-         * @description techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):
-         *     each call inserts a new pending report row, matching techspec-db-schema.md §8's
+         * @description Not idempotent (unlike like/favorite):
+         *     each call inserts a new pending report row, matching the
          *     reports table having no unique constraint on (reporter_user_id, content_id).
          */
         post: operations["report_content_contents__id__report_post"];
@@ -1867,7 +1861,7 @@ export interface paths {
         put?: never;
         /**
          * Create Appeal
-         * @description techspec-backend-admin-moderation.md §1/§3. `target_kind='publish-rejection'`일 때
+         * @description `target_kind='publish-rejection'`일 때
          *     `target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다.
          */
         post: operations["create_appeal_appeals_post"];
@@ -1886,8 +1880,7 @@ export interface paths {
         };
         /**
          * List Admin Reports
-         * @description techspec-backend-admin-moderation.md §1, techspec-admin.md §1 — traditional
-         *     (offset) pagination, unlike the cursor pagination `GET /contents` uses, since
+         * @description Traditional (offset) pagination, unlike the cursor pagination `GET /contents` uses, since
          *     admin review work benefits from jumping to a specific page number.
          */
         get: operations["list_admin_reports_admin_reports_get"];
@@ -1908,7 +1901,7 @@ export interface paths {
         };
         /**
          * Get Admin Report Detail
-         * @description techspec-backend-admin-moderation.md §1. `reports.content_id` is a plain FK to an
+         * @description `reports.content_id` is a plain FK to an
          *     existing `contents` row (rows are never hard-deleted, only moderation_status-flagged),
          *     so the target content is always found.
          */
@@ -1932,7 +1925,7 @@ export interface paths {
         put?: never;
         /**
          * Act On Report
-         * @description techspec-backend-admin-moderation.md §2.
+         * @description Resolve a report with a moderation action.
          */
         post: operations["act_on_report_admin_reports__report_id__action_post"];
         delete?: never;
@@ -1950,9 +1943,9 @@ export interface paths {
         };
         /**
          * List Admin Appeals
-         * @description techspec-backend-admin-moderation.md §1/§3. No separate detail endpoint — unlike
+         * @description No separate detail endpoint — unlike
          *     reports, an appeal's full reason text lives on the same row, so the list item already
-         *     carries everything the review screen needs (techspec-admin.md §2 only defines
+         *     carries everything the review screen needs (the admin app only has
          *     useAppealListQuery/useResolveAppealMutation, no detail query).
          */
         get: operations["list_admin_appeals_admin_appeals_get"];
@@ -1975,10 +1968,10 @@ export interface paths {
         put?: never;
         /**
          * Resolve Appeal
-         * @description techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal
+         * @description `accepted` on a `moderation-action` appeal
          *     reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
          *     that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
-         *     persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
+         *     persisted content-side state to revert, so `accepted` there is a no-op beyond the
          *     appeal's own status/verdict.
          */
         post: operations["resolve_appeal_admin_appeals__appeal_id__resolve_post"];
@@ -1997,12 +1990,12 @@ export interface paths {
         };
         /**
          * Get Usage Metrics
-         * @description techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은
+         * @description '메시지 전송'은
          *     사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라
          *     이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id
          *     distinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해
-         *     유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한
-         *     재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖).
+         *     유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(이
+         *     정의를 다시 볼 정확한 기준은 아직 정하지 않았다).
          */
         get: operations["get_usage_metrics_admin_usage_metrics_get"];
         put?: never;
@@ -2063,8 +2056,8 @@ export interface paths {
         };
         /**
          * Get Play Guide
-         * @description 방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —
-         *     contentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2).
+         * @description 방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다 —
+         *     contentSnapshot에는 의도적으로 포함하지 않는다.
          */
         get: operations["get_play_guide_chat_rooms__room_id__play_guide_get"];
         put?: never;
@@ -2086,7 +2079,7 @@ export interface paths {
         put?: never;
         /**
          * Send Message
-         * @description text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
+         * @description text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
          *     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.
          */
         post: operations["send_message_chat_rooms__room_id__messages_post"];
@@ -2107,12 +2100,12 @@ export interface paths {
         put?: never;
         /**
          * Regenerate Message
-         * @description 마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
+         * @description 마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트
          *     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
          *     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
          *     판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
          *     이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
-         *     (situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은
+         *     — 노출 기록(`CharacterImageExposure`)은
          *     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
          *     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
          *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.
@@ -2136,7 +2129,7 @@ export interface paths {
         post?: never;
         /**
          * Delete Message
-         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다(US-023 AC).
+         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다.
          */
         delete: operations["delete_message_chat_rooms__room_id__messages__message_id__delete"];
         options?: never;
@@ -2144,15 +2137,15 @@ export interface paths {
         /**
          * Edit Message
          * @description 수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
-         *     생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
+         *     생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
          *     (판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를
          *     추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.
          *
          *     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의
          *     +=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
          *     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-         *     건 이번 스토리 범위 밖이다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
-         *     (알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.
+         *     건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
+         *     (알려진 한계), 요구사항에도 이 롤백은 없다.
          */
         patch: operations["edit_message_chat_rooms__room_id__messages__message_id__patch"];
         trace?: never;
@@ -2185,9 +2178,9 @@ export interface paths {
         put?: never;
         /**
          * Pin Latest Version
-         * @description US-078, techspec-content-versioning.md §3. `messages`는 그대로 두고 방이 고정한
+         * @description `messages`는 그대로 두고 방이 고정한
          *     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상).
+         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
          */
         post: operations["pin_latest_version_chat_rooms__room_id__pin_latest_version_post"];
         delete?: never;
@@ -2207,7 +2200,7 @@ export interface paths {
         put?: never;
         /**
          * Change Starting Setup
-         * @description US-080, techspec-backend-chat.md §1. 기존 방은 그대로 두고, 선택한 시작설정으로 새
+         * @description 기존 방은 그대로 두고, 선택한 시작설정으로 새
          *     대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행
          *     버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가
          *     없으므로(room.starting_setup_entity_id is None) 400으로 거부한다.
@@ -2229,7 +2222,7 @@ export interface paths {
         get?: never;
         /**
          * Set Room Persona
-         * @description persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
+         * @description 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
          *     과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를
          *     **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다.
          */
@@ -2252,7 +2245,7 @@ export interface paths {
         put?: never;
         /**
          * Acknowledge Version Upgrade
-         * @description techspec-content-versioning.md §4. `GET /chat-rooms/{id}`는 순수 조회라 스스로
+         * @description `GET /chat-rooms/{id}`는 순수 조회라 스스로
          *     플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가
          *     `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점).
          */
@@ -2294,7 +2287,7 @@ export interface paths {
         };
         /**
          * Get Clover Balance
-         * @description 🔴 **부작용이 없다**(clover-techspec.md CT-10) — 출석 지급은 전용 POST다.
+         * @description 🔴 **부작용이 없다** — 출석 지급은 전용 POST다.
          *
          *     GET이 지급까지 하면 프리페치·재조회가 곧 지급이 되고, 그때 멱등을 보장하는 것은
          *     `clover_attendance_granted_on` 하나뿐이라 실패 모드가 조용해진다.
@@ -2328,8 +2321,8 @@ export interface paths {
          *     - 원장 **멱등키의 유니크 인덱스** — **동시 요청**을 막는다. 아래 `except` 참조.
          *
          *     🔴 **지급과 멱등 표지가 한 트랜잭션이다.** 둘을 갈라 커밋하면 그 사이에서 실패할 때
-         *     "돈은 나갔는데 표지가 없는" 상태가 남고, 재시도가 곧 이중 지급이 된다 — S4·S5가 두 번
-         *     겪은 "자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간"이 여기서는 **아예 생기지 않는다.**
+         *     "돈은 나갔는데 표지가 없는" 상태가 남고, 재시도가 곧 이중 지급이 된다 — 채팅·이미지 차감
+         *     경로가 겪은 "자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간"이 여기서는 **아예 생기지 않는다.**
          *     ⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.
          */
         post: operations["claim_clover_attendance_me_clover_attendance_post"];
@@ -2350,7 +2343,7 @@ export interface paths {
         put?: never;
         /**
          * Confirm Clover Spend
-         * @description clover-goal-prompt.md CL-19 — "오늘 클로버를 쓴다"에 하루 1회 동의한 사실을 남긴다.
+         * @description "오늘 클로버를 쓴다"에 하루 1회 동의한 사실을 남긴다.
          *
          *     잔액 변동이 아니라 원장에 자리가 없다. 같은 날 다시 불러도 같은 날짜를 덮어쓸 뿐이라
          *     멱등이고, 그래서 이미 확인했는지 미리 보지 않는다(조회 한 번을 아끼는 것이 아니라
@@ -2377,8 +2370,8 @@ export interface paths {
         };
         /**
          * Get Clover Missions
-         * @description clover-page-goal-prompt.md CE-13 — 3종(`first_publish`·`first_message`·`first_image`)
-         *     달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로(T-13) 이 응답은
+         * @description 3종(`first_publish`·`first_message`·`first_image`)
+         *     달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로 이 응답은
          *     캐시된 값이 아니라 그 순간의 진실이다.
          */
         get: operations["get_clover_missions_me_clover_missions_get"];
@@ -2404,9 +2397,9 @@ export interface paths {
          * @description 미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고
          *     **에러가 아니다** — 위 출석과 같은 패턴이다.
          *
-         *     🔴 달성 여부를 **저장하지 않으므로**(CE-13) 이 판정도 매 요청 EXISTS다 — 청구 직전에
+         *     🔴 달성 여부를 **저장하지 않으므로** 이 판정도 매 요청 EXISTS다 — 청구 직전에
          *     달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시
-         *     달성하면 다시 청구할 수 있다(T-13).
+         *     달성하면 다시 청구할 수 있다.
          */
         post: operations["claim_clover_mission_me_clover_missions__key__claim_post"];
         delete?: never;
@@ -2424,13 +2417,13 @@ export interface paths {
         };
         /**
          * Get Clover Ledger
-         * @description clover-page-goal-prompt.md CE-20 — 자기 자신의 원장만. 어드민 엔드포인트
+         * @description 자기 자신의 원장만. 어드민 엔드포인트
          *     (`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고
-         *     임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다(§1-8) — 그래서 복제하지 않고 새로
+         *     임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다 — 그래서 복제하지 않고 새로
          *     만들었다.
          *
          *     커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다
-         *     (사전 점검 PA-7 — 모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은
+         *     (모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은
          *     `created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개
          *     들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`
          *     (`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의
@@ -2476,7 +2469,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Persona
-         * @description persona-goal-prompt.md UP-14 — 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
+         * @description 프로필을 지운다. 이 프로필을 참조하던 방은 "선택 없음"이 되고, 기본 프로필이었으면
+         *     기본도 비운다.
          *     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.
          */
         delete: operations["delete_persona_me_personas__persona_id__delete"];
@@ -2496,7 +2490,7 @@ export interface paths {
         /**
          * Set Default Persona
          * @description `/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아
-         *     `"default"`를 UUID로 파싱하다 422가 난다(persona-goal-prompt.md §3-3, R-16).
+         *     `"default"`를 UUID로 파싱하다 422가 난다.
          */
         put: operations["set_default_persona_me_default_persona_put"];
         post?: never;
@@ -2515,9 +2509,9 @@ export interface paths {
         };
         /**
          * Get Ending Collection
-         * @description techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
+         * @description `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
          *     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
-         *     여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로
+         *     여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
          *     새 대화방을 만들어도 이전 기록이 유지되게 한다.
          */
         get: operations["get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get"];
@@ -2538,7 +2532,7 @@ export interface paths {
         };
         /**
          * Get Image Archive
-         * @description techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
+         * @description `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
          *     동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
          *     노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
          *     존재 여부로 사용자+캐릭터 단위 누적 판정한다.
@@ -2563,7 +2557,7 @@ export interface paths {
         put?: never;
         /**
          * Start Preview Session
-         * @description techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever
+         * @description `payload` is whatever
          *     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
          *     and is stored in Redis with no validation, mirroring autosave's unvalidated path.
          */
@@ -2585,11 +2579,11 @@ export interface paths {
         put?: never;
         /**
          * Send Preview Message
-         * @description 미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
+         * @description 미리보기 메시지 전송 SSE. `_stream_preview_turn`이
          *     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
          *     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
          *     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
-         *     때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2).
+         *     때만 짧게 연 세션으로 활성 세트를 읽는다.
          */
         post: operations["send_preview_message_preview_sessions__id__messages_post"];
         delete?: never;
@@ -2608,14 +2602,14 @@ export interface paths {
         /**
          * List Image Models
          * @description 생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명
-         *     id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다(local-image-gen-
-         *     techspec.md LT-6). 로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는
-         *     무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다(contract LC-1).
+         *     id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다.
+         *     로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는
+         *     무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다.
          *
-         *     local-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를
+         *     로컬은 공개 id가 아니라 **와이어** id를
          *     보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.
          *
-         *     LG-20: `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
+         *     `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
          *     매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).
          */
         get: operations["list_image_models_images_models_get"];
@@ -2700,7 +2694,7 @@ export interface paths {
          *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
          *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
          *
-         *     HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+         *     HEAD 를 함께 허용하는 이유: UptimeRobot 이 HEAD 로
          *     찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
          *
          *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
@@ -2722,7 +2716,7 @@ export interface paths {
          *     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
          *     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
          *
-         *     HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+         *     HEAD 를 함께 허용하는 이유: UptimeRobot 이 HEAD 로
          *     찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
          *
          *     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는
@@ -2790,7 +2784,7 @@ export interface components {
          * AdminChatMessagesResponse
          * @description `POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다
          *     같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`
-         *     평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null.
+         *     평문 페어로 내려준다 — 더 불러올 게 없으면 둘 다 null.
          */
         AdminChatMessagesResponse: {
             /** Items */
@@ -3126,7 +3120,7 @@ export interface components {
         };
         /**
          * AdminImageGenerationDetailItem
-         * @description 사유 게이트(IM-2)를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다.
+         * @description 사유 게이트를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다.
          */
         AdminImageGenerationDetailItem: {
             /**
@@ -3189,7 +3183,7 @@ export interface components {
         };
         /**
          * AdminImageGenerationListItem
-         * @description IM-11: 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다.
+         * @description 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다.
          */
         AdminImageGenerationListItem: {
             /**
@@ -3233,7 +3227,7 @@ export interface components {
         };
         /**
          * AdminImageGenerationViewRequest
-         * @description IM-2: `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유
+         * @description `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유
          *     enum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다.
          */
         AdminImageGenerationViewRequest: {
@@ -3464,7 +3458,7 @@ export interface components {
          * AdminPromptDraftResponse
          * @description `id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
          *     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
-         *     조회, prompt-db-goal-prompt.md §9-1).
+         *     조회).
          */
         AdminPromptDraftResponse: {
             /** Id */
@@ -3475,7 +3469,7 @@ export interface components {
         };
         /**
          * AdminPromptDraftUpsertRequest
-         * @description 섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다.
+         * @description 섹션 전체 교체 — 부분 패치가 아니다.
          */
         AdminPromptDraftUpsertRequest: {
             labels: components["schemas"]["AdminPromptLabels"];
@@ -3509,7 +3503,7 @@ export interface components {
         };
         /**
          * AdminPromptPublishRequest
-         * @description `version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
+         * @description `version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
          *     바꿨나"를 대신 받는다.
          */
         AdminPromptPublishRequest: {
@@ -3558,7 +3552,7 @@ export interface components {
         };
         /**
          * AdminPromptSetDetailResponse
-         * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16).
+         * @description `GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문.
          */
         AdminPromptSetDetailResponse: {
             /**
@@ -3595,7 +3589,7 @@ export interface components {
         };
         /**
          * AdminPromptSetSummary
-         * @description prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은
+         * @description 이력 목록은 메타만. 섹션 전문은
          *     `GET /admin/prompt-sets/{id}`로 뺀다.
          */
         AdminPromptSetSummary: {
@@ -3758,18 +3752,18 @@ export interface components {
         };
         /**
          * AdminUserCloverRequest
-         * @description clover-techspec.md §4-2 — 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
+         * @description 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
          *     쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은
          *     관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를
          *     인용할 자리가 없고 대신 "왜 줬나"가 감사 로그에 남아야 한다.
          *
          *     `±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 "왜 2인가"를 적은 관례):
-         *     clover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
+         *     현행 단가(채팅 1턴 10, 출석 1회 100) 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
          *     운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이
          *     이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도
          *     낫다.
          *
-         *     🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).
+         *     🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**.
          *     출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
          *     **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
          *     **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다.
@@ -3866,7 +3860,7 @@ export interface components {
         };
         /**
          * AdminUserRateLimitExemptRequest
-         * @description limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
+         * @description 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
          *     쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는
          *     `AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가
          *     없고, 대신 "왜 면제했나"가 감사 로그에 남아야 한다(비어 있으면 422).
@@ -3914,7 +3908,7 @@ export interface components {
          * AdminUserUnsuspendRequest
          * @description `reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는
          *     알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring
-         *     참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은
+         *     참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 콘텐츠 직접 조치 `lift-restriction`과 같은
          *     규칙).
          */
         AdminUserUnsuspendRequest: {
@@ -3977,13 +3971,13 @@ export interface components {
         };
         /**
          * AssetPurpose
-         * @description techspec-backend-media.md §1. Extend as new upload flows need a purpose.
+         * @description Extend as new upload flows need a purpose.
          * @enum {string}
          */
         AssetPurpose: "profile-image" | "content-thumbnail" | "situational-image" | "inquiry-attachment";
         /**
          * AssetStatus
-         * @description techspec-backend-media.md §1: row is created pending at presigned-upload
+         * @description Row is created pending at presigned-upload
          *     time, and flipped to ready once POST /assets/{id}/complete confirms the S3
          *     object exists.
          * @enum {string}
@@ -4080,7 +4074,7 @@ export interface components {
          * CharacterSituationalImageDraftInput
          * @description `PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.
          *     `imageAssetId`/blurred variant are exclusively written by
-         *     `POST /assets/{id}/register-situational-image` (US-071).
+         *     `POST /assets/{id}/register-situational-image`.
          */
         CharacterSituationalImageDraftInput: {
             /**
@@ -4240,7 +4234,7 @@ export interface components {
         };
         /**
          * ChatViewReasonCategory
-         * @description techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+         * @description 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
          *     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다.
          * @enum {string}
          */
@@ -4254,7 +4248,7 @@ export interface components {
         };
         /**
          * CloverBalanceResponse
-         * @description clover-techspec.md §4-2. Python은 snake_case, JSON은 camelCase다.
+         * @description Python은 snake_case, JSON은 camelCase다.
          */
         CloverBalanceResponse: {
             /** Balance */
@@ -4267,7 +4261,7 @@ export interface components {
         };
         /**
          * CloverExpiringSoon
-         * @description clover-page-goal-prompt.md CE-22. 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산.
+         * @description 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산.
          */
         CloverExpiringSoon: {
             /** Amount */
@@ -4280,9 +4274,9 @@ export interface components {
         };
         /**
          * CloverLedgerItem
-         * @description clover-page-goal-prompt.md CE-20·CE-21. `category`는 BE의 `kind`→범주 맵
+         * @description `category`는 BE의 `kind`→범주 맵
          *     (`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을
-         *     다시 두지 않는다(§8 확인 완료 2).
+         *     다시 두지 않는다.
          */
         CloverLedgerItem: {
             /**
@@ -4326,8 +4320,8 @@ export interface components {
         };
         /**
          * CloverMissionItem
-         * @description clover-page-goal-prompt.md CE-13. `achieved`·`claimed`는 매 조회마다 EXISTS로 다시
-         *     계산한다 — 저장된 상태가 아니다(T-13).
+         * @description `achieved`·`claimed`는 매 조회마다 EXISTS로 다시
+         *     계산한다 — 저장된 상태가 아니다.
          */
         CloverMissionItem: {
             /** Key */
@@ -4346,7 +4340,7 @@ export interface components {
         };
         /**
          * ContentAccessStatus
-         * @description Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:
+         * @description Mirrors the FE `resolveAccessStatus` union (`entities/content`):
          *     `visibility` is only meaningful when `kind == "accessible"`.
          */
         ContentAccessStatus: {
@@ -4359,7 +4353,7 @@ export interface components {
         };
         /**
          * ContentCreateRequest
-         * @description techspec-backend-content.md §1.2.
+         * @description Body of `POST /contents` — creates an empty draft.
          */
         ContentCreateRequest: {
             /**
@@ -4475,7 +4469,7 @@ export interface components {
          *
          *     `has_unpublished_changes` is the explicit `Content` flag, not something derived from the
          *     draft version's existence — publishing auto-clones a draft, so every published content has
-         *     one (US-002).
+         *     one.
          */
         ContentSummary: {
             /**
@@ -4550,7 +4544,7 @@ export interface components {
         };
         /**
          * DevelopmentExampleItem
-         * @description chat-goal-prompt.md §8-3/D-10, chat-techspec.md §6-1 (D-12). `ExampleDialogueItem`의
+         * @description `ExampleDialogueItem`의
          *     입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고
          *     순서가 곧 정체성이다.
          */
@@ -4630,7 +4624,7 @@ export interface components {
         /**
          * EndingRuleDraftItem
          * @description A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —
-         *     matches `EndingRule.stat_def_entity_id` (techspec-db-schema.md §5, §1 원칙 4: the chat
+         *     matches `EndingRule.stat_def_entity_id` (the chat
          *     runtime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is
          *     entity_id even though within one draft this is otherwise just a same-version reference).
          */
@@ -4657,7 +4651,7 @@ export interface components {
         };
         /**
          * EndingRuleGroupDraftItem
-         * @description One level of nesting only (techspec-db-schema.md §5) — `rules` never contains groups.
+         * @description One level of nesting only — `rules` never contains groups.
          */
         EndingRuleGroupDraftItem: {
             /**
@@ -4774,7 +4768,7 @@ export interface components {
         };
         /**
          * GeneratedImageItem
-         * @description techspec-backend-media.md §3: `GET /me/generated-images` item shape.
+         * @description `GET /me/generated-images` item shape.
          */
         GeneratedImageItem: {
             /**
@@ -4794,7 +4788,7 @@ export interface components {
         };
         /**
          * GeneratedImageUsage
-         * @description One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).
+         * @description One content referencing a generated asset.
          *
          *     Draft and published versions both count as "in use"; versions of the same
          *     content referencing the asset with the same field are merged into one entry.

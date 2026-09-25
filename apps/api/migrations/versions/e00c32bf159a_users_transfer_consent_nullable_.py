@@ -4,15 +4,14 @@ Revision ID: e00c32bf159a
 Revises: 10f9f8e5e5c0
 Create Date: 2026-09-15 00:54:08.738796
 
-legal-revision-goal-prompt.md §3 LR-2·LR-6·LR-7, §3-2 LR-16·LR-18·LR-19·LR-20. S1 단계 —
-탈퇴 시 계정정보를 파기할 수 있도록 스키마를 먼저 여는 마이그레이션(로직은 후속 단계).
+탈퇴 시 계정정보를 파기할 수 있도록 스키마를 먼저 여는 마이그레이션(로직은 별도 변경).
 
-- `withdrawn_emails(email_hmac PK, withdrawn_at)` 신설. LR-7·LR-8 — 탈퇴 시 `users.email`이
-  자리표시자로 바뀌므로(LR-6) 재가입 차단은 이 테이블의 키 있는 HMAC 조회로 옮긴다.
-- `users.transfer_agreed_at`·`users.transfer_version` 추가, **둘 다 nullable**(LR-16 —
-  LR-2 정정). non-null로 두면 기존 회원 행을 채울 참값이 없다(국외이전 동의를 요구받은
+- `withdrawn_emails(email_hmac PK, withdrawn_at)` 신설. 탈퇴 시 `users.email`이
+  자리표시자로 바뀌므로 재가입 차단은 이 테이블의 키 있는 HMAC 조회로 옮긴다.
+- `users.transfer_agreed_at`·`users.transfer_version` 추가, **둘 다 nullable**.
+  non-null로 두면 기존 회원 행을 채울 참값이 없다(국외이전 동의를 요구받은
   적이 없다). `server_default`도 필요 없다 — 시행일 재동의 게이트를 거치며 채워진다.
-- `users.nickname`·`users.birth_date`를 `NOT NULL` → nullable로 완화(LR-20·LR-6). 기존
+- `users.nickname`·`users.birth_date`를 `NOT NULL` → nullable로 완화. 기존
   행이 있는 컬럼의 제약 완화라 백필이 필요 없다.
 
 `password_hash`·`bio`·`profile_image_asset_id`·`google_sub`는 이미 nullable이라

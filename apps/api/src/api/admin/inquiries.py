@@ -72,7 +72,7 @@ async def list_admin_inquiries(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminInquiryListResponse:
-    """offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양."""
+    """offset 페이징 — `moderation/router.py`의 `list_admin_reports`와 같은 모양."""
     filters = []
     if status_filter is not None:
         filters.append(Inquiry.status == status_filter)

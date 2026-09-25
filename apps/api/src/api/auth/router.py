@@ -77,10 +77,10 @@ async def _reregistration_blocked(db: AsyncSession, email: str, now: datetime) -
 
 
 def _auth_too_many_requests(retry_after: int, *, code: str) -> HTTPException:
-    # error-delivery-goal-prompt.md ED-12: rate_limit_gate.py의 _too_many_requests를 재사용하지
+    # rate_limit_gate.py의 _too_many_requests를 재사용하지
     # 않는다 — 그 함수는 user_id를 필수로 받아 로그에 찍는데, 이 파일의 세 엔드포인트는 인증 전이라
-    # user_id가 없고 키가 email/IP다. 이메일을 로그에 싣는 것은 RL-12가 금지한다.
-    # ED-14: Retry-After 헤더는 여기도 주지 않는다 — RL-11과 같은 이유(CORS가 노출하지 않는
+    # user_id가 없고 키가 email/IP다. 이메일은 PII라 로그에 싣지 않는다(`user_id`까지가 한계다).
+    # Retry-After 헤더는 여기도 주지 않는다 — 채팅 429와 같은 이유(CORS가 노출하지 않는
     # 헤더라 크로스오리진에서 못 읽는다). auth도 ddona.site→api.ddona.site로 크로스오리진이라
     # 같은 판단이 적용된다.
     return HTTPException(
@@ -97,7 +97,7 @@ async def signup(
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> SignupResponse:
-    # email-goal-prompt.md E-6: 카운터는 DB 조회보다 먼저, 무조건 올린다. IP·이메일 둘 다 매
+    # 카운터는 DB 조회보다 먼저, 무조건 올린다. IP·이메일 둘 다 매
     # 요청마다 증가해야(성공/실패와 무관하게) 한쪽이 이미 상한을 넘겨도 다른 쪽 카운트가 누락되지 않는다.
     client_ip = request.client.host if request.client else "unknown"
     ip_retry_after = await rate_limit.check_rate_limit(
@@ -113,13 +113,13 @@ async def signup(
     existing = await db.scalar(select(User).where(User.email == payload.email))
     now = datetime.now(UTC)
 
-    # legal-revision-goal-prompt.md LR-7: 탈퇴 시 users.email이 자리표시자로 바뀌므로(LR-6)
+    # 탈퇴 시 users.email이 자리표시자로 바뀌므로
     # 위 existing 조회는 탈퇴 행을 더 이상 찾지 못한다 — 재가입 차단은 이 HMAC 조회로 옮긴다.
     if await _reregistration_blocked(db, payload.email, now):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     if existing is not None:
-        # email-goal-prompt.md E-5: 인증 완료 또는 구글 연동이 있으면 "방치된 미인증 가입"이
+        # 인증 완료 또는 구글 연동이 있으면 "방치된 미인증 가입"이
         # 아니라 실사용 중인 계정이므로 409로 막는다(google_callback이 email_verified_at을
         # 보지 않고 세션을 발급해 미인증인 채 실사용 중인 계정이 있을 수 있다 —
         # tests/test_auth_google_api.py:196-224). 정지도 마찬가지로 보호 대상이다.
@@ -143,7 +143,7 @@ async def signup(
         existing.terms_version = await _latest_published_legal_version(db, "terms")
         privacy_version = await _latest_published_legal_version(db, "privacy")
         existing.privacy_version = privacy_version
-        # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+        # 국외이전 동의는 처리방침 버전에 묶인다.
         existing.transfer_version = privacy_version
         await db.commit()
     else:
@@ -158,7 +158,7 @@ async def signup(
             transfer_agreed_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
             privacy_version=privacy_version,
-            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            # 국외이전 동의는 처리방침 버전에 묶인다.
             transfer_version=privacy_version,
         )
         try:
@@ -166,7 +166,7 @@ async def signup(
                 db.add(user)
                 await db.flush()
         except IntegrityError:
-            # email-goal-prompt.md E-11: select와 이 insert 사이의 경합에서 진 요청.
+            # select와 이 insert 사이의 경합에서 진 요청.
             # admin/legal.py의 SAVEPOINT 패턴과 같은 이유로 db.rollback()은 쓰지 않는다 —
             # begin_nested()의 컨텍스트 매니저가 SAVEPOINT까지만 되감아 세션을 정리한다.
             raise HTTPException(
@@ -185,14 +185,14 @@ async def signup(
 async def verify_email(
     payload: VerifyEmailRequest, db: AsyncSession = Depends(get_db_session)
 ) -> VerifyEmailResponse:
-    # email-goal-prompt.md E-12: 계정 존재 여부를 새지 않도록 "유저 없음"도 오답 코드와 완전히
+    # 계정 존재 여부를 새지 않도록 "유저 없음"도 오답 코드와 완전히
     # 같은 400을 낸다. 응답뿐 아니라 **Redis 왕복 횟수까지 같아야** 타이밍으로도 안 샌다 —
     # 그래서 user 존재 여부와 무관하게 get_verification_code/increment_verification_attempts를
     # 항상 실행한 뒤 한 조건문에서 같이 판정한다.
     user = await db.scalar(select(User).where(User.email == payload.email))
     stored = await get_verification_code(payload.email)
     if user is None or stored is None or stored["code"] != payload.code:
-        # email-goal-prompt.md E-7: 오답마다 증가, 상한에 닿으면 코드를 삭제해 무효화한다.
+        # 오답마다 증가, 상한에 닿으면 코드를 삭제해 무효화한다.
         # 별도 잠금 상태는 만들지 않는다 — 재전송이 곧 복구다.
         attempts = await increment_verification_attempts(payload.email)
         if attempts >= VERIFICATION_ATTEMPTS_LIMIT:
@@ -216,7 +216,7 @@ async def resend_verification_code(
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
-    # email-goal-prompt.md E-6: 시간당 상한을 60초 쿨다운보다 먼저 검사한다 — 카운터 증분이
+    # 시간당 상한을 60초 쿨다운보다 먼저 검사한다 — 카운터 증분이
     # 핸들러 최상단, DB 조회보다 앞에 있어야 하므로 자연스럽게 이 순서가 된다. 둘 다 429지만
     # retryAfterSeconds가 다르다: 상한을 넘긴 사용자는 (대개 더 긴) 창 잔여 시간을 보고,
     # 그 아래에서는 기존 60초 쿨다운이 그대로 동작한다.
@@ -226,7 +226,7 @@ async def resend_verification_code(
     if retry_after > 0:
         raise _auth_too_many_requests(retry_after, code="AUTH_LIMIT")
 
-    # email-goal-prompt.md E-12a: 쿨다운 검사를 유저 조회보다 먼저 한다. 코드는 아래에서
+    # 쿨다운 검사를 유저 조회보다 먼저 한다. 코드는 아래에서
     # 등록 여부와 무관하게 항상 저장되므로, 유저 조회를 먼저 하면 미등록 이메일은 쿨다운
     # 429를 낼 코드가 없어 등록 이메일과 다른 응답이 나온다(존재 여부 누설).
     now = datetime.now(UTC)
@@ -270,7 +270,7 @@ async def _get_oauth_redirect_target(state: str) -> str:
             headers={"Location": f"{settings.frontend_base_url}/login?error=google_state"},
         )
     # 저장 전(google_login)에도 거르지만, 이 검증이 배포되기 전에 Redis 에 들어간 state 까지
-    # 막기 위해 꺼낼 때 한 번 더 거른다(backlog-l-goal-prompt.md BL-1).
+    # 막기 위해 꺼낼 때 한 번 더 거른다.
     return safe_redirect_path(redirect_target)
 
 
@@ -296,7 +296,7 @@ async def google_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    # 탈퇴(deleted_at)한 계정은 비밀번호 로그인(US-024)부터 막혀 있었지만 구글 로그인은
+    # 탈퇴(deleted_at)한 계정은 비밀번호 로그인부터 막혀 있었지만 구글 로그인은
     # 이 확인이 없던 기존 갭이었다 — 정지 확인을 넣는 김에 같이 메운다. 비밀번호 로그인과
     # 달리 탈퇴 여부를 숨기지 않는다: 여긴 실제 자격증명(비밀번호) 추측 공격 표면이 없다
     # (호출자가 이미 그 구글 계정을 실제로 소유하고 있어야 여기 도달한다).
@@ -307,10 +307,10 @@ async def google_callback(
             status_code=status.HTTP_302_FOUND,
         )
 
-    # legal-revision-goal-prompt.md LR-30(2026-09-15 정정판): login()과 같은 게이트를 여기에도
+    # login()과 같은 게이트를 여기에도
     # 둔다 — google_sub 직접 매치와 이메일 매칭으로 google_sub를 붙이는 두 분기가 모두 여기로
     # 수렴하므로 한 곳만 막으면 둘 다 막힌다. 위 조건문이 deleted_at is not None인 계정을
-    # 이미 배제했다 — birth_date는 탈퇴(S5 파기) 시에만 None이 된다. 집계에서 0건 확인되면
+    # 이미 배제했다 — birth_date는 탈퇴 파기 시에만 None이 된다. 집계에서 0건 확인되면
     # 이 블록을 걷어낼 것(login()의 동일 게이트와 짝).
     assert user.birth_date is not None
     if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
@@ -340,7 +340,7 @@ async def onboarding_google(
     now = datetime.now(UTC)
     user = await db.scalar(select(User).where(User.google_sub == pending["sub"]))
     if user is None:
-        # legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+        # 탈퇴 시 google_sub도 파기되므로
         # 재가입 시도는 위 google_sub 매치가 아니라 항상 이 신규 유저 생성 분기를 타게 된다.
         if await _reregistration_blocked(db, pending["email"], now):
             raise HTTPException(
@@ -358,12 +358,12 @@ async def onboarding_google(
             email_verified_at=now,
             terms_version=await _latest_published_legal_version(db, "terms"),
             privacy_version=privacy_version,
-            # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+            # 국외이전 동의는 처리방침 버전에 묶인다.
             transfer_version=privacy_version,
         )
         db.add(user)
     else:
-        # backlog-sweep BS-8: 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
+        # 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
         # 닉네임·생년월일이 덮어써진 채 커밋되고, 토큰이 지워져 재시도가 400으로 바뀐다.
         # 신규 유저 분기는 방금 만든 행이라 suspended_at이 정의상 None이다.
         if user.suspended_at is not None:
@@ -400,10 +400,10 @@ async def login(
             status_code=status.HTTP_403_FORBIDDEN, detail="Email verification required"
         )
 
-    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — birth_date는 탈퇴(S5 파기)
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — birth_date는 탈퇴 파기
     # 시에만 None이 된다.
     assert user.birth_date is not None
-    # legal-revision-goal-prompt.md LR-30: LR-9가 신규 가입을 막으므로 이 분기는 시행일
+    # 만 14세 미만 신규 가입은 서버가 거부하므로 이 분기는 시행일
     # 이전에 가입한 기존 미성년 계정만 겨냥한다. 법정대리인 동의 여부와 무관하게 연령만
     # 본다 — 프로덕션 집계를 받지 못해 안전한 쪽(로그인 차단)을 택했다. 집계가 0건으로
     # 확인되면 이 블록을 걷어낼 것.
@@ -415,7 +415,7 @@ async def login(
     if user.suspended_at is not None:
         # deleted_at과 달리 숨기지 않는다 — 탈퇴는 "이메일 또는 비밀번호가 올바르지 않음"에
         # 묻어 탈퇴 사실 자체를 노출하지 않지만, 정지는 사용자가 알아야 이의를 제기할 수
-        # 있다(techspec §2가 정지를 "요청 차단"으로 설계한 것과 짝을 이루는 판단 — 세션이
+        # 있다(정지를 "요청 차단"으로 설계한 것과 짝을 이루는 판단 — 세션이
         # 살아있는 채 막히는 것과 로그인 시도가 막히는 것이 같은 메시지를 줘야 일관적이다).
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account suspended")
 
@@ -429,7 +429,7 @@ async def logout(request: Request, response: Response) -> None:
     session_id = get_session_id_from_request(request)
     if session_id is not None:
         # 역인덱스(`user_sessions:{user_id}`)의 멤버는 남겨 둔다 — 키 없는 멤버는 폐기 때 DEL이
-        # 헛돌 뿐이고 만료 score가 지나면 다음 로그인에서 정리된다(backlog-sweep-goal-prompt.md BS-5).
+        # 헛돌 뿐이고 만료 score가 지나면 다음 로그인에서 정리된다.
         await delete_session(session_id)
     clear_session_cookie(response)
     return None
@@ -443,7 +443,7 @@ async def request_password_reset(
     db: AsyncSession = Depends(get_db_session),
     email_sender: EmailSender = Depends(get_email_sender),
 ) -> None:
-    # email-goal-prompt.md E-6: 카운터를 계정 존재 여부와 무관하게, DB 조회보다 먼저 올린다 —
+    # 카운터를 계정 존재 여부와 무관하게, DB 조회보다 먼저 올린다 —
     # 안 그러면 등록된 이메일에서만 429가 나서 아래의 204 고정 응답이 지키려는 은닉이 429로 깨진다.
     client_ip = request.client.host if request.client else "unknown"
     ip_retry_after = await rate_limit.check_rate_limit(
@@ -484,14 +484,14 @@ async def confirm_password_reset(
 
     user = await db.get(User, uuid.UUID(stored["user_id"]))
     # 탈퇴 전에 발급된 토큰이 탈퇴 때 파기한 `password_hash`를 되살리지 못하게 한다
-    # (backlog-sweep-goal-prompt.md M-5). 탈퇴 계정은 이메일이 자리표시자라 새 토큰은 못 받는다.
+    # 탈퇴 계정은 이메일이 자리표시자라 새 토큰은 못 받는다.
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user.password_hash = hash_password(payload.new_password)
     await db.commit()
-    # 재설정은 계정이 털렸을 때 쓰는 경로라 현재 세션 개념 없이 전부 폐기한다(backlog-sweep-goal-prompt.md
-    # BS-6). 토큰 삭제보다 먼저 한다 — 폐기가 실패해 500이 나도 토큰이 남아 있어야 같은 링크로 재시도하면
+    # 재설정은 계정이 털렸을 때 쓰는 경로라 현재 세션 개념 없이 전부 폐기한다.
+    # 토큰 삭제보다 먼저 한다 — 폐기가 실패해 500이 나도 토큰이 남아 있어야 같은 링크로 재시도하면
     # 폐기까지 끝난다(토큰을 먼저 지우면 옛 세션이 남은 채 재시도 수단이 사라진다).
     await revoke_user_sessions(user.id)
     # Invalidate immediately so the token can't be replayed.
@@ -513,7 +513,7 @@ async def get_me(
         db, "privacy", requires_reconsent=True
     )
 
-    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴 파기
     # 시에만 None이 된다.
     assert user.nickname is not None
     return MeResponse(
@@ -547,7 +547,7 @@ async def change_password(
 
     user.password_hash = hash_password(payload.new_password)
     await db.commit()
-    # 다른 기기 세션만 폐기한다 — 바꾼 사람은 지금 이 세션이다(backlog-sweep-goal-prompt.md BS-6).
+    # 다른 기기 세션만 폐기한다 — 바꾼 사람은 지금 이 세션이다.
     await revoke_user_sessions(user_id, except_session_id=get_session_id_from_request(request))
     return None
 
@@ -566,7 +566,7 @@ async def withdraw(
     now = datetime.now(UTC)
     original_email = user.email
 
-    # legal-revision-goal-prompt.md LR-19: 프로필 이미지 R2 오브젝트를 지운다 —
+    # 프로필 이미지 R2 오브젝트를 지운다 —
     # core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다.
     if user.profile_image_asset_id is not None:
         asset = await db.get(Asset, user.profile_image_asset_id)
@@ -579,21 +579,21 @@ async def withdraw(
             await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
 
     user.deleted_at = now
-    # legal-revision-goal-prompt.md LR-6: users.email이 unique=True, nullable=False라
+    # users.email이 unique=True, nullable=False라
     # NULL을 못 쓴다 — 복원 불가능한 자리표시자로 유일성을 유지한다.
     user.email = f"withdrawn:{user_id}"
     user.password_hash = None
     user.nickname = None
     user.bio = None
     user.birth_date = None
-    # legal-revision-goal-prompt.md LR-18: 파기하지 않으면 구글 가입자는 google_sub 직접
+    # 파기하지 않으면 구글 가입자는 google_sub 직접
     # 매치(google_callback)에 영구히 걸려, 이메일 가입자와 달리 1년이 지나도 재가입이 안 열린다.
     user.google_sub = None
     user.profile_image_asset_id = None
-    # persona-goal-prompt.md UP-15: 아래 프로필 DELETE 전에 기본 참조를 끊는다(같은 flush에 실린다).
+    # 아래 프로필 DELETE 전에 기본 참조를 끊는다(같은 flush에 실린다).
     user.default_persona_id = None
 
-    # legal-revision-goal-prompt.md LR-7·LR-8: 평문 이메일 대신 키 있는 HMAC 한 행을 남긴다.
+    # 평문 이메일 대신 키 있는 HMAC 한 행을 남긴다.
     # 같은 이메일이 만료 후 재사용됐다가 다시 탈퇴할 수 있어 PK 충돌이면 갱신한다.
     email_hmac = hash_withdrawn_email(original_email)
     withdrawn_row = await db.scalar(
@@ -616,17 +616,17 @@ async def withdraw(
         await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
         await db.execute(delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))
 
-    # T-4 적대적 리뷰: `profile_image_asset_id = None` 대입(위 574줄)이 DB에 반영된
+    # 위 `profile_image_asset_id = None` 대입이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.
     await db.flush()
 
-    # persona-goal-prompt.md UP-15: 대화 프로필을 지운다. 참조하는 쪽(방은 위에서 DELETE,
+    # 대화 프로필을 지운다. 참조하는 쪽(방은 위에서 DELETE,
     # `default_persona_id`는 위 flush로 NULL)이 먼저 끊겨 있어야 FK 위반이 나지 않는다.
     await db.execute(delete(UserPersona).where(UserPersona.user_id == user_id))
 
-    # image-monitoring-goal-prompt.md IM-7: 탈퇴한 유저의 GENERATED asset과 요청 행을
+    # 탈퇴한 유저의 GENERATED asset과 요청 행을
     # "이미지와 같은 수명"으로 파기한다. profile_image_asset_id는 위에서 이미 None으로
-    # 끊었으므로(LR-19 블록) 여기서 지워도 프로필 FK가 안전하다.
+    # 끊었으므로(프로필 이미지 삭제 블록) 여기서 지워도 프로필 FK가 안전하다.
     generated_assets = (
         await db.scalars(
             select(Asset).where(Asset.owner_user_id == user_id, Asset.kind == AssetKind.GENERATED)
@@ -663,7 +663,7 @@ async def withdraw(
             await db.delete(asset)
 
         # 요청 행은 asset이 하나도 안 남은 것만 지운다. 남은 asset을 가진 요청 행과,
-        # 애초에 asset이 없던 요청 행(차단·실패 — IM-7a의 몫)은 남긴다. 이 유저의
+        # 애초에 asset이 없던 요청 행(차단·실패 — 90일 뒤 지우는 `purge_image_requests` 크론의 몫)은 남긴다. 이 유저의
         # GENERATED asset을 전부 조회했으므로(generated_assets), 다른 유저의 asset이
         # 같은 요청 행을 참조할 수 없어(요청 행과 asset은 항상 같은 소유자) 이 목록만으로
         # "남은 asset이 있는가"를 판단할 수 있다.
@@ -685,27 +685,27 @@ async def withdraw(
                 )
             )
 
-    # clover-goal-prompt.md CL-32: 잔액은 0으로 소멸시키고 **원장은 남긴다**. 탈퇴는 soft
+    # 잔액은 0으로 소멸시키고 **원장은 남긴다**. 탈퇴는 soft
     # delete라 `users` 행이 그대로 남으므로, 한 줄을 안 쓰면 "아무것도 안 함"이 기본값이고
     # 잔액이 그대로 살아 있게 된다.
     # 🔴 `user.clover_balance`를 넘기지 않는다. 그 값은 이 함수 초입에서 로드된 것이고 위의
     # 삭제들을 거치는 동안 다른 탭의 차감이 커밋될 수 있어 **낡았을 수 있다** — 낡은 값으로
     # `spend`를 부르면 조건부 가드에 걸려 아무것도 안 지워진 채 204가 나간다.
     # `burn_all`은 금액을 받지 않고 자기가 다시 읽어 0으로 덮는다. 잔액 0이면 원장 행도 없다.
-    # 🔴 `core/clover.py`의 자기-트랜잭션 래퍼가 아니라 **호출자 세션**을 쓴다
-    # (clover-techspec.md CT-4). 그래야 소멸이 아래 `db.commit()` 하나에 얹혀 탈퇴 전체와
+    # 🔴 `core/clover.py`의 자기-트랜잭션 래퍼가 아니라 **호출자 세션**을 쓴다.
+    # 그래야 소멸이 아래 `db.commit()` 하나에 얹혀 탈퇴 전체와
     # 같이 커밋되거나 같이 롤백된다 — 갈라 놓으면 "탈퇴는 실패했는데 잔액만 사라진" 상태가 생긴다.
     await clover.burn_all(db, user_id=user_id)
 
     await db.commit()
 
     # 역인덱스 배포 전에 만든 세션은 인덱스에 없어 아래 폐기가 못 지운다 — 현재 세션만은 쿠키로
-    # 직접 지운다. 폐기보다 **먼저** 부르는 건 S2 이전 순서 그대로다: 폐기의 Redis 호출이 중간에
-    # 실패해도 현재 세션은 이미 지워져 있다(tasks/review-S3.md ⚪-2). 두 호출은 서로 독립이다.
+    # 직접 지운다. 폐기보다 **먼저** 부르는 건 역인덱스 도입 전 순서 그대로다: 폐기의 Redis 호출이 중간에
+    # 실패해도 현재 세션은 이미 지워져 있다. 두 호출은 서로 독립이다.
     session_id = get_session_id_from_request(request)
     if session_id is not None:
         await delete_session(session_id)
-    # 현재 세션을 포함해 전부 폐기한다(backlog-sweep-goal-prompt.md BS-6). 실패해 500이 나도
+    # 현재 세션을 포함해 전부 폐기한다. 실패해 500이 나도
     # 탈퇴는 이미 커밋됐고, 남은 세션은 `get_current_user_id`의 `users` 조회가 401로 막는다.
     await revoke_user_sessions(user_id)
     clear_session_cookie(response)

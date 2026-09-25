@@ -4,8 +4,8 @@ Revision ID: e933fcbb7938
 Revises: bdb8e2ebcf5c
 Create Date: 2026-09-08 07:51:27.062093
 
-goal-prompt.md §3-2·§6(T-13), techspec.md §3-1·§3-3(리비전 3/3). 문의 접수 + 답변 3컬럼
-(D-11 — 별도 `inquiry_replies` 테이블이 아니라 `reply_body`/`replied_by_admin_id`/
+공지·문의 리비전 3/3. 문의 접수 + 답변 3컬럼
+(별도 `inquiry_replies` 테이블이 아니라 `reply_body`/`replied_by_admin_id`/
 `answered_at`)과 `notifications.inquiry_id` FK를 함께 추가한다.
 
 - **`op.create_foreign_key`에 autogenerate가 이름을 `None`으로 냈다** — 그대로 두면

@@ -21,7 +21,7 @@ on:
       - "Caddyfile"
       # 저장소 루트 ops/(예: ops/logrotate.d)도 VM이 /opt/ddona/app의 git reset --hard로만
       # 받아간다 — 트리거가 없으면 ops/ 단독 변경은 배포되지 않고 다음 무관한 api 배포 때
-      # 조용히 따라 들어간다(DEPLOY.md, monitoring-techspec.md MT-9).
+      # 조용히 따라 들어간다(DEPLOY.md).
       - "ops/**"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch: # 롤백·재배포용 수동 실행
@@ -102,8 +102,8 @@ jobs:
           $C run --rm -T api alembic upgrade head < /dev/null
           $C up -d --wait api caddy
           # Caddyfile은 bind mount라 내용만 바뀌어서는 compose의 config-hash에 안 잡히고,
-          # 위 up -d는 caddy 컨테이너를 재생성하지 않는다(legal-revision-goal-prompt.md
-          # LR-25). caddy 이미지 자체에는 --watch 같은 자동 재적용 기능이 없다.
+          # 위 up -d는 caddy 컨테이너를 재생성하지 않는다.
+          # caddy 이미지 자체에는 --watch 같은 자동 재적용 기능이 없다.
           #
           # 그래서 reload로 명시적으로 재적용을 시도한다 — caddy가 방금 새로 뜬 경우(예:
           # volumes 목록이 바뀌어 재생성된 경우)는 이미 최신 Caddyfile로 시작했으므로 reload가
@@ -111,7 +111,7 @@ jobs:
           # ⚠️ 계속 떠 있던 컨테이너에서는 이 reload가 새 Caddyfile을 반영한다는 보장이 없다 —
           # `Caddyfile`은 파일 단위 bind mount라, git reset --hard가 호스트 파일을 덮어쓰지 않고
           # 새 inode로 만들면 컨테이너 쪽 마운트는 옛 inode를 계속 보고, reload는 그 옛 내용을
-          # "성공적으로" 재적재할 뿐이다(2026-09-15 실측 — DEPLOY.md §3-1 "Caddyfile만 바뀐 배포는
+          # "성공적으로" 재적재할 뿐이다(2026-09-15 실측 — DEPLOY.md "BE → GCE VM" 절의 "Caddyfile만 바뀐 배포는
           # caddy reload가 성공해도 컨테이너 안 내용이 안 바뀔 수 있다" 참조). 배포 뒤 반영 여부는
           # 컨테이너 안 파일로 확인하고, 안 바뀌었으면 `up -d --force-recreate --wait caddy`.
           # ⚠️ 방금 재생성된 caddy 에 곧바로 reload 를 걸면 **admin API(127.0.0.1:2019)가 아직

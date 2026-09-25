@@ -4,18 +4,18 @@ Revision ID: 4e6d562bf8da
 Revises: e00c32bf159a
 Create Date: 2026-09-16 19:05:21.733216
 
-image-monitoring-goal-prompt.md IM-4. 지금 이미지 생성 요청(프롬프트·모델·비율·차단
+지금 이미지 생성 요청(프롬프트·모델·비율·차단
 사유)은 아무 데도 남지 않는다 — 성공한 이미지는 `assets` 행이 되지만 왜·무엇으로
 만들었는지는 호출 직후 휘발된다. `assets`에 컬럼을 붙이지 않고 별도 테이블로 두는
 이유 둘: ① `requested_count`가 2면 같은 프롬프트가 두 asset 행에 중복된다, ②
 이미지가 안 나온 요청(차단·실패)은 asset 행 자체가 없어 기록할 자리가 없다.
 
-`status`는 `assets.style`(IS-6)과 같은 이유로 native enum이 아니라 `Text`다 — 값이
+`status`는 `assets.style`과 같은 이유로 native enum이 아니라 `Text`다 — 값이
 늘 때 마이그레이션 없이 넓히기 위해서다.
 
 `assets.request_id`는 nullable이다 — 이 기능 이전에 생성된 자산은 요청 행이 없다.
 
-이 리비전은 스키마만이다. 요청 행을 쓰는 라우터·비즈니스 로직은 후속 단계에서 붙는다.
+이 리비전은 스키마만이다. 요청 행을 쓰는 라우터·비즈니스 로직은 별도 변경에서 붙는다.
 
 - **`op.create_foreign_key`에 autogenerate가 이름을 `None`으로 냈다** — 그대로 두면
   downgrade의 `op.drop_constraint(None, ...)`가 실제 제약 이름을 모른 채 호출돼

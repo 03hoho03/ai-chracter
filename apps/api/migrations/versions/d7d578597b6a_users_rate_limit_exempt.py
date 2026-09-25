@@ -4,10 +4,10 @@ Revision ID: d7d578597b6a
 Revises: a69cbd40dec8
 Create Date: 2026-09-18 00:07:52.061155
 
-limit-goal-prompt.md RL-9. 유저별 채팅 상한의 예외 플래그. 상한값 자체는 상수·재배포라
-(RL-14 · email-goal-prompt.md E-6) 이 컬럼은 값이 아니라 "예외인가"만 담는다.
+유저별 채팅 상한의 예외 플래그. 상한값 자체는 상수·재배포라
+이 컬럼은 값이 아니라 "예외인가"만 담는다.
 
-이 리비전은 스키마만이다 — 게이트가 이 값을 읽는 건 S5, 어드민 토글은 S7이다.
+이 리비전은 스키마만이다 — 이 값을 읽는 게이트(`core/rate_limit_gate.py`)와 어드민 토글(`admin/users.py`)은 별도 변경이다.
 
 """
 from typing import Union

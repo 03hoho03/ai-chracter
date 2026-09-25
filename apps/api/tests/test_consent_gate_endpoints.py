@@ -1,6 +1,6 @@
-"""consent-gate-goal-prompt.md CG-3·CG-4·CG-9, S2: `require_legal_consent`가 "막는다" 25개에
-붙어 있고 "연다" 16개에는 안 붙어 있는지 3층으로 검증한다(consent-gate-progress.md I-2).
-개수는 persona-goal-prompt.md §3-3이 출처다(대화 프로필 차단 4·개방 1 추가 — CG-4 표의 21+15는 역사 기록).
+"""`require_legal_consent`가 "막는다" 25개에
+붙어 있고 "연다" 16개에는 안 붙어 있는지 3층으로 검증한다.
+개수에는 대화 프로필 차단 4·개방 1이 들어 있다(그 전에는 21+15였다).
 
 (a) 라우트 테이블 내성검사 — `app.routes`를 순회해 25개/16개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
@@ -13,7 +13,7 @@
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
 (c) 16개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
-    `get_current_user_id`에 잘못 넣는 변이(CG-7이 금지한 것)를 이 층만이 잡는다.
+    `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
 채워 "이미 동의한 사용자"를 만든다 — 그래서 (b)·(c) 모두 자신이 테스트하려는 재동의-필요
@@ -72,7 +72,7 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
             "order": 1,
         },
     ),
-    # persona-goal-prompt.md §3-3 — 대화 프로필 쓰기 4개(삭제는 아래 "연다")
+    # 대화 프로필 쓰기 4개(삭제는 아래 "연다")
     ("POST", "/me/personas", {"name": "하늘", "gender": None, "description": "", "setAsDefault": False}),
     ("PUT", "/me/personas/{persona_id}", {"name": "하늘", "gender": None, "description": ""}),
     ("PUT", "/me/default-persona", {"personaId": None}),
@@ -97,7 +97,7 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/me/generated-images/{asset_id}"),
     ("DELETE", "/chat-rooms/{room_id}"),
     ("DELETE", "/chat-rooms/{room_id}/messages/{message_id}"),
-    ("DELETE", "/me/personas/{persona_id}"),  # persona-goal-prompt.md §3-3 — CG-4 "자기 데이터 삭제"
+    ("DELETE", "/me/personas/{persona_id}"),  # "자기 데이터 삭제"는 예외
 ]
 
 

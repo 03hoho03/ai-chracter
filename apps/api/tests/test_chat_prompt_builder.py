@@ -1,4 +1,4 @@
-"""prompt-db-goal-prompt.md D-17. 조립 결과를 되읊는 테스트는 골든 대조
+"""조립 결과를 되읊는 테스트는 골든 대조
 (`tests/test_prompt_goldens.py`)가 이미 바이트 단위로 증명하므로 지웠다 — 여기 남기는
 것은 렌더러 자체의 분기뿐이다: 조건부 드롭·`order` 정렬·`scope` 필터·`variant` 선택·
 라벨 매핑(`story_assistant_label`/`character_assistant_label`/`story_example_label`을
@@ -71,7 +71,7 @@ def test_render_prompt_channel_drops_conditional_section_when_value_is_empty() -
 
 
 def test_render_prompt_channel_keeps_non_conditional_section_when_value_is_empty() -> None:
-    """§4-3 실측: "비어 있으면 드롭"만으로는 재현되지 않는다 — `conditional=False` 슬롯은
+    """실측: "비어 있으면 드롭"만으로는 재현되지 않는다 — `conditional=False` 슬롯은
     빈 값이어도 섹션 자체(와 그 앞의 `\\n\\n` 구분자)가 남는다(`generation_character_empty_prompt`
     골든이 이 사실의 증거)."""
     sections = [
@@ -157,7 +157,7 @@ def test_render_prompt_channel_falls_back_to_default_variant_when_requested_vari
 
 
 def test_render_prompt_channel_default_variant_fallback_drops_section_when_value_is_empty() -> None:
-    """§9-2 R-2 사각지대(적대적 리뷰가 시드 body로 재현) — `base_content`처럼 기본
+    """게시 검증의 variant 전종 필수 규칙이 못 보는 사각지대(시드 body로 재현) — `base_content`처럼 기본
     (`variant=''`) 행이 있는 슬롯도, 요청한 variant(`custom`)가 없어 그 기본 행으로
     폴백했는데 기본 행이 참조하는 값이 비어 있으면 `conditional=True`인 이 섹션은
     통째로 드롭된다. CUSTOM 템플릿 스토리는 `setting_text`가 비어 있는 게 정상이라
@@ -177,7 +177,7 @@ def test_render_prompt_channel_default_variant_fallback_drops_section_when_value
 
 
 def test_select_sections_for_render_matches_render_prompt_channel_selection() -> None:
-    """C5-T24(techspec §5-5, §5-7) — `select_sections_for_render`가 `render_prompt_channel`의
+    """`select_sections_for_render`가 `render_prompt_channel`의
     1~3단계(scope 필터 → variant 선택 → order 정렬)를 그대로 뽑아낸 것이라는 증거. 추출
     함수가 고른 슬롯 순서가 렌더러의 최종 출력과 같은 순서로 이어져야 한다(골든이 본 증거를
     단위 테스트로도 고정)."""
@@ -254,7 +254,7 @@ def test_build_generation_prompt_uses_character_labels_not_story_labels() -> Non
 
 
 def test_build_story_generation_prompt_uses_example_label_only_for_development_examples() -> None:
-    """§1-1: 전개 예시 자리만 `story_example_label`("서술자")을 쓰고, 대화 기록·마지막
+    """전개 예시 자리만 `story_example_label`("서술자")을 쓰고, 대화 기록·마지막
     프레임은 `story_assistant_label`("진행자")을 쓴다 — 같은 스토리 챗인데 자리마다 라벨이
     갈리는 것은 표류가 아니라 실측된 현재 동작이라 섞이면 안 된다."""
     prompt_set = _prompt_set()
@@ -389,7 +389,7 @@ def _development_examples_prompt_set_and_sections() -> tuple[PromptSet, list[Pro
 
 
 def test_migrated_development_example_pairs_reconstruct_to_the_original_free_text() -> None:
-    """chat-goal-prompt.md §8 '가장 중요한 제약': 마이그레이션(리비전 ①)이 옛 자유 텍스트
+    """개발 예시 분리 마이그레이션의 핵심 제약: 옛 자유 텍스트
     `development_example`을 쪼갠 쌍을, `build_story_generation_prompt`가 다시 조립했을 때
     원래 문자열이 나와야 한다 — 그래야 기존 시드 30개의 프롬프트가 안 바뀐다. 실측(발행 30개
     중 21개)으로 확인된 흔한 형식(단일 개행, `서술자:` 라벨)으로 이 성질이 성립함을 마이그레이션
@@ -441,7 +441,7 @@ def test_migrated_development_example_pairs_reconstruct_to_the_original_free_tex
 
 def test_migrated_development_example_pairs_preserve_narration_before_the_first_user_label() -> None:
     """마이그레이션 파서는 첫 라벨의 *종류*가 아니라 텍스트가 사용자 라벨로 *시작하는지*를
-    봐야 한다(모듈 docstring, chat-techspec.md §6-2). 첫 라벨이 `사용자:`라도 그 앞에 서술
+    봐야 한다(모듈 docstring). 첫 라벨이 `사용자:`라도 그 앞에 서술
     텍스트가 있으면 안전하게 재구성할 수 없으므로 원문 전체를 손실 없이 보존해야 한다."""
     import importlib.util
     from pathlib import Path
@@ -468,13 +468,13 @@ def test_migrated_development_example_pairs_preserve_narration_before_the_first_
 
 
 def test_prompt_lanes_tuple_is_exhaustive_over_the_literal() -> None:
-    """prompt-scope-techspec.md §7-1 #25 (TS-K). mypy는 `_PROMPT_LANES`의 각 원소가
+    """mypy는 `_PROMPT_LANES`의 각 원소가
     `PromptLane`인지는 잡지만, `PromptLane`의 원소를 전부 담았는지는 못 잡는다 — 예를 들어
     `publish_filter`를 튜플에서 빠뜨려도 타입체커는 조용하다. 이 테스트가 그 칸을 메운다."""
     assert set(_PROMPT_LANES) == set(get_args(PromptLane))
 
 
-# ---- format_user_persona — persona-goal-prompt.md §3-4-1 (UP-4·UP-22) ------------
+# ---- format_user_persona ---------------------------------------------------------
 #
 # 기대값을 문자열 전체로 비교한다 — 라벨 단어·줄 구분자·줄 순서 중 하나만 바뀌어도 깨지게
 # (`in` 검사로는 구분자 변경이 안 잡힌다). 성별은 두 값을 모두 넣는다 — 한 값만 쓰면 라벨
@@ -493,8 +493,8 @@ def test_format_user_persona_joins_name_gender_description_lines() -> None:
 
 
 def test_format_user_persona_omits_gender_line_when_none_and_description_line_when_empty() -> None:
-    """UP-4: 성별 "선택 안 함"(None)이면 `성별:` 줄 자체가 없다(빈 칸을 두면 모델이 억지로
-    채울 여지가 생긴다). UP-22: 설명이 비면 `설명:` 줄이 없다."""
+    """성별 "선택 안 함"(None)이면 `성별:` 줄 자체가 없다(빈 칸을 두면 모델이 억지로
+    채울 여지가 생긴다). 설명이 비면 `설명:` 줄이 없다."""
     assert format_user_persona(name="별", gender=None, description="조용한 편") == "이름: 별\n설명: 조용한 편"
     assert format_user_persona(name="바다", gender="male", description="") == "이름: 바다\n성별: 남성"
     assert format_user_persona(name="달", gender=None, description="") == "이름: 달"

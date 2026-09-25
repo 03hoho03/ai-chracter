@@ -1,5 +1,5 @@
 #!/bin/sh
-# monitoring-techspec.md MT-13: `ops/cron.d/ddona-resource-check`가 5분마다 이 스크립트를 부른다.
+# `ops/cron.d/ddona-resource-check`가 5분마다 이 스크립트를 부른다.
 #
 # `/opt/ddona/.env`를 통째로 source하지 않는다 — `CORS_ALLOW_ORIGINS` 같은 JSON 값이 쉘 문법과
 # 부딪친다(`backup.sh`가 같은 이유로 이미 이렇게 한다, DEPLOY.md 참고). 필요한 키 둘만 뽑아

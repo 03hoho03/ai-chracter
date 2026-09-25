@@ -37,7 +37,7 @@ async def test_admin_inquiries_rejects_non_admin_user_session(
     await db_session.commit()
 
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 테스트와 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -146,7 +146,7 @@ async def test_replying_again_updates_body_without_duplicate_notification(
 async def test_admin_inquiry_list_filter_persists_across_pages(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """techspec.md §4-4 — status·category 필터가 offset 페이징 경계(20건)를 넘어도
+    """status·category 필터가 offset 페이징 경계(20건)를 넘어도
     유지돼야 한다. 노이즈(다른 카테고리·다른 상태)를 섞어 필터가 실제로 걸러내는지도
     같이 확인한다."""
     user = _make_user()

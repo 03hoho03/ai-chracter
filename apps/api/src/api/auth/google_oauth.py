@@ -70,7 +70,7 @@ async def get_google_profile(code: str) -> GoogleProfile:
 
 
 def safe_redirect_path(value: str) -> str:
-    """로그인 후 돌아갈 경로를 같은 오리진 경로로 제한한다(backlog-l-goal-prompt.md BL-1).
+    """로그인 후 돌아갈 경로를 같은 오리진 경로로 제한한다.
 
     콜백은 `frontend_base_url` 뒤에 이 값을 그대로 이어 붙이므로 "@evil.com"(userinfo)·
     ".evil.com"(서브도메인)처럼 호스트를 바꾸는 값이 들어오면 로그인 직후 외부로 튄다.

@@ -1,4 +1,4 @@
-"""3단계 §2 — 유저 정지 차단 메커니즘 (TS-2~TS-5).
+"""유저 정지 차단 메커니즘.
 
 유저 제재 API(`POST /admin/users/{id}/suspend` 등)는 아직 없으므로, `suspended_at`과
 Redis 마커를 테스트에서 직접 세팅해 차단 메커니즘만 검증한다.
@@ -71,7 +71,7 @@ async def _signup_and_login(db_client: httpx.AsyncClient, **overrides: object) -
 
 
 # ---------------------------------------------------------------------------
-# 마커 CRUD (TS-3) — Redis만, HTTP 없음
+# 마커 CRUD — Redis만, HTTP 없음
 # ---------------------------------------------------------------------------
 
 
@@ -87,14 +87,14 @@ async def test_mark_unmark_is_suspended_round_trip() -> None:
 
 
 # ---------------------------------------------------------------------------
-# 차단 지점 (§2-1) — get_current_user_id / get_current_user_id_optional
+# 차단 지점 — get_current_user_id / get_current_user_id_optional
 # ---------------------------------------------------------------------------
 
 
 async def test_suspended_marker_blocks_existing_session_with_403(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """회귀: 정지는 재로그인 없이 기존 세션에 즉시 발효돼야 한다(D-6) — 401(미인증)이
+    """회귀: 정지는 재로그인 없이 기존 세션에 즉시 발효돼야 한다 — 401(미인증)이
     아니라 403(인증은 됐지만 권한이 막힘)이어야 한다."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
@@ -168,7 +168,7 @@ async def test_login_rejects_suspended_account(
 async def test_admin_endpoints_ignore_suspended_user_marker(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`admin_users`는 `users`와 별개 테이블·별개 인증 스택이다(techspec §2-1) —
+    """`admin_users`는 `users`와 별개 테이블·별개 인증 스택이다 —
     어드민 본인의 id로 정지 마커가 세팅돼 있어도(우연한 UUID 충돌을 흉내) 어드민
     세션은 영향을 받지 않아야 한다."""
     email = f"admin-{uuid.uuid4()}@example.com"
@@ -188,7 +188,7 @@ async def test_admin_endpoints_ignore_suspended_user_marker(
 
 
 # ---------------------------------------------------------------------------
-# lifespan 마커 재구축 (TS-4) — 훅 자체가 아니라 분리된 함수를 직접 호출해 검증한다
+# lifespan 마커 재구축 — 훅 자체가 아니라 분리된 함수를 직접 호출해 검증한다
 # (테스트 클라이언트가 httpx.ASGITransport라 lifespan 프로토콜 자체가 오지 않는다)
 # ---------------------------------------------------------------------------
 

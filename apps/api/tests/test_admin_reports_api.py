@@ -456,7 +456,7 @@ async def test_report_action_records_admin_action_log(
     initial_status: ModerationStatus,
     expected_action_type: str,
 ) -> None:
-    """backlog-l-goal-prompt.md BL-4. 신고 경로 조치도 직접 조치와 같은 감사 로그를 남긴다.
+    """신고 경로 조치도 직접 조치와 같은 감사 로그를 남긴다.
     대상은 작품만(`target_user_id` 없음) — 유저 상세는 작품 소유로 이 행을 찾는다."""
     reporter = _make_user()
     creator = _make_user()
@@ -569,8 +569,8 @@ async def test_report_action_lift_restriction_migrates_chat_rooms_to_latest_vers
 async def test_report_submission_does_not_auto_change_content_moderation_status(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-121 AC3: reports.status/action 처리 전까지는 신고 접수 자체가 moderation_status를
-    바꾸지 않는다 (US-051)."""
+    """reports.status/action 처리 전까지는 신고 접수 자체가 moderation_status를
+    바꾸지 않는다."""
     reporter = _make_user()
     creator = _make_user()
     db_session.add_all([reporter, creator])

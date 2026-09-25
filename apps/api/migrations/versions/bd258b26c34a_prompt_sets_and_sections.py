@@ -4,10 +4,10 @@ Revision ID: bd258b26c34a
 Revises: 45c1a3d8b69e
 Create Date: 2026-09-10 00:07:40.066022
 
-prompt-db-goal-prompt.md §4, §6 (1단계) — 프롬프트 문안을 코드 상수에서 DB로 옮기는
+프롬프트 문안을 코드 상수에서 DB로 옮기는
 첫 단계. 테이블 둘(`prompt_sets`/`prompt_sections`)을 만들고 같은 리비전에 지금
-코드가 실제로 쓰는 문안을 초기 세트로 시드한다. 렌더러 교체(2단계)는 이 런의 범위
-밖이다 — 지금은 상수도 그대로 남아 있고 아무 호출부도 이 테이블을 읽지 않는다.
+코드가 실제로 쓰는 문안을 초기 세트로 시드한다. 렌더러 교체는 이 리비전의 범위
+밖이다 — 이 리비전 시점에는 상수도 그대로 남아 있었고 아무 호출부도 이 테이블을 읽지 않았다.
 
 **시드 문안은 손으로 옮겨 적지 않았다.** `chat/prompt_builder.py`의 `_COMMON_RULES`·
 `STORY_CHAT_SYSTEM_INSTRUCTION`·`CHARACTER_CHAT_SYSTEM_INSTRUCTION`·
@@ -17,7 +17,7 @@ prompt-db-goal-prompt.md §4, §6 (1단계) — 프롬프트 문안을 코드 �
 호출해 `"\\n\\n"` 섹션으로 쪼개고 각 섹션의 헤더 줄을 취하는 방식). `tests/
 test_prompt_seed.py`가 시드된 `system` 채널 7슬롯을 `scope`로 거르고 `order`로
 정렬해 이은 결과가 `system_instruction_for()`의 실제 출력 6종과 바이트 단위로
-같음을 재확인한다(D-13).
+같음을 재확인한다.
 
 **부분 유니크 인덱스 2개**는 `legal_documents`(`5bef71fc8f50`) 선례를 그대로
 따른다 — `postgresql_where`에 bare `Mapped` 컬럼을 주면 autogenerate가 만드는
@@ -26,15 +26,15 @@ test_prompt_seed.py`가 시드된 `system` 채널 7슬롯을 `scope`로 거르�
 정상이다.
 
 **`prompt_sections`의 유니크 키는 `(prompt_set_id, channel, slot, variant)`가
-아니라 `(prompt_set_id, channel, scope, slot, variant)`다.** 목표 문서
-(prompt-db-goal-prompt.md) §4-1의 문면은 scope를 뺀 4열이지만, 그 문서 §4-2가
+아니라 `(prompt_set_id, channel, scope, slot, variant)`다.** 설계
+문서의 키 문면은 scope를 뺀 4열이지만, 같은 문서가
 확정한 시드 표를 `(channel, slot, variant)`만으로 묶어 보면 **충돌 그룹이 둘**이다
 — `('system', 'self_definition', '')`가 `scope=story`/`character` 두 행,
 `('publish_filter', 'intro_instruction', '')`가 `scope=character`/`story` 두 행
 (실제 시드로 재현 확인). scope 없이 그대로 만들면 이 네 행이 유니크 위반으로
 삽입되지 않는다(dev Postgres에서 실측: `duplicate key value violates unique
 constraint`). scope를 포함한 5열 키로는 충돌이 없다. 문서의 두 확정 사항이 서로
-모순돼 실행 가능한 쪽(§4-2 시드 표)을 따랐다.
+모순돼 실행 가능한 쪽(시드 표)을 따랐다.
 
 **`variant`를 nullable로 두지 않는다** — 기본값 `''`. Postgres UNIQUE는 NULL끼리
 중복으로 보지 않으므로 nullable이면 `(set, channel, scope, slot, NULL)` 행이
@@ -92,7 +92,7 @@ prompt_sections_table = sa.table(
     sa.column("order", sa.Integer()),
 )
 
-# 슬롯 정의는 prompt-db-progress.md §B(16/16 바이트 동일 검증 완료)와 정확히 같다.
+# 슬롯 정의는 작성 시점에 16/16 바이트 동일로 검증했다.
 # body는 스크래치 스크립트가 실제 코드 상수/함수 호출에서 뽑아낸 문자열이다(위 docstring).
 SEED_SECTIONS: list[dict[str, object]] = [
     {

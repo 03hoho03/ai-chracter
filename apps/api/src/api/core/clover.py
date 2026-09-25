@@ -3,7 +3,7 @@
 `core/`에 두는 이유는 게이트(`core/rate_limit_gate.py`)가 이걸 부르기 때문이다. HTTP 표면은
 별도 패키지(`clover/router.py`)로 가른다.
 
-**불변식은 `users.clover_balance`의 조건부 UPDATE 하나다**(clover-goal-prompt.md CL-4). 원장은
+**불변식은 `users.clover_balance`의 조건부 UPDATE 하나다**. 원장은
 같은 트랜잭션에 얹는 기록이지 판정 근거가 아니다 — 순서를 뒤집어 원장을 먼저 INSERT하고 잔액을
 `SUM()`으로 계산하면 동시 트랜잭션 둘이 서로의 미커밋 행을 못 봐서 **둘 다 통과한다**.
 """
@@ -23,7 +23,7 @@ from api.db.models.clover import CloverLedger, CloverLot
 
 logger = logging.getLogger(__name__)
 
-# clover-goal-prompt.md CL-10~CL-12. **정책값이지 실측 원가가 아니다**(CL-15) — 턴당 원가는
+# **정책값이지 실측 원가가 아니다** — 턴당 원가는
 # 8.3~91.1원으로 11배 흔들리고 그 분포를 측정한 적이 없다.
 # 게이트 함수는 이 이름들을 **호출 시점에 모듈 전역으로** 읽는다 — 기본 인자로 캡처하면
 # `monkeypatch.setattr`가 통하지 않는다(`core/rate_limit.py`의 상한 상수와 같은 규칙).
@@ -42,19 +42,18 @@ CloverKind = Literal[
     "chat_refund",
     "image_refund",
     "withdrawal_burn",
-    # clover-page-goal-prompt.md CE-10. 소비자(미션 청구 API, 만료 배치)는 아직 없다 —
-    # 모델·서비스와 같은 배포(S1·S2)에서 값만 미리 갖춰 둔다(CE-32).
+    # 미션 청구(`clover/router.py`)와 만료 배치(`scripts/ops/expire_clover.py`)가 쓴다.
     "mission_grant",
     "expire_burn",
 ]
 
-# clover-page-goal-prompt.md CE-5(소진, 만료 임박 우선) / CE-34(회수, 최근 지급분부터) — 둘 다
+# 소진은 만료 임박 우선, 회수는 최근 지급분부터 — 둘 다
 # `_apply`의 음수-delta 분기(`guard=True`)를 공유하지만 로트를 잡는 정렬이 정반대다.
 _LotOrder = Literal["expiry_first", "recency_first"]
 
 
 class CloverLotShortfallError(Exception):
-    """clover-page-goal-prompt.md CE-35 — 총액 CAS(`users.clover_balance`)는 통과했는데
+    """총액 CAS(`users.clover_balance`)는 통과했는데
     로트 합계가 부족한 비정상 상태(Σ 불변식이 이미 깨졌다는 뜻, 예컨대 백필 누락). 이 예외를
     잡지 않고 그대로 낸다 — 트랜잭션이 롤백돼 총액 CAS까지 되돌아가는 것이 목적이다.
     """
@@ -65,13 +64,13 @@ async def _consume_lots(
 ) -> None:
     """로트를 `SELECT ... FOR UPDATE`로 잠가 `amount`만큼 순서대로 깎는다.
 
-    호출 전에 총액 CAS가 이미 통과했다는 전제다(CE-6 — 락 순서는 `_apply`가 users를 먼저
+    호출 전에 총액 CAS가 이미 통과했다는 전제다(락 순서는 `_apply`가 users를 먼저
     잠근 뒤에야 이 함수가 clover_lots를 잠그는 순서로 고정된다). 여기서 부족이 나오면
     잔액 자체가 모자란 정상 부족이 아니라 Σ 불변식이 깨진 비정상 상태라
-    `CloverLotShortfallError`를 던진다(CE-35).
+    `CloverLotShortfallError`를 던진다.
 
-    `order`가 정렬을 가른다 — `expiry_first`는 소진(CE-5), `recency_first`는 회수(CE-34)다.
-    만료 여부로 거르지 않는다(CE-8) — `remaining > 0`만 본다. 만료의 진실은 배치뿐이다.
+    `order`가 정렬을 가른다 — `expiry_first`는 소진, `recency_first`는 회수다.
+    만료 여부로 거르지 않는다 — `remaining > 0`만 본다. 만료의 진실은 배치뿐이다.
     """
     order_by: tuple[object, ...]
     if order == "expiry_first":
@@ -122,8 +121,8 @@ async def _apply(
     않는다(`admin/users.py:411-412`). `RETURNING clover_balance`가 **행을 돌려줬는가**로 가른다.
     선례는 `admin/users.py:416-423`.
 
-    clover-page-goal-prompt.md CE-3/CE-6 — `guard`가 그대로 로트 처리 분기를 가른다.
-    `guard=False`는 항상 `grant()`(양수 `delta`)만 타므로 로트 1행을 새로 만들고(CE-11),
+    `guard`가 그대로 로트 처리 분기를 가른다.
+    `guard=False`는 항상 `grant()`(양수 `delta`)만 타므로 로트 1행을 새로 만들고,
     `guard=True`는 `spend()`/`revoke()`(음수 `delta`)라 기존 로트를 `lot_order`대로 잠가
     깎는다. `kind`는 `grant()`가 이 분기를 탈 때만 넘어오는 지급 종류라 로트 `kind`로 그대로
     재사용한다(`db/models/clover.py`의 `CloverLot` docstring — 로트 kind는 지급 종류의 부분
@@ -174,12 +173,12 @@ async def spend(
     """조건부 UPDATE + 원장 INSERT. 잔액이 모자라면 **아무것도 하지 않고 `None`**.
 
     성공하면 차감 후 잔액을 돌려준다. **커밋은 호출자가 한다** — 게이트만 별도 트랜잭션이
-    필요하고(clover-techspec.md CT-4) 어드민·출석·탈퇴는 호출자 세션에 얹혀야 조치와 원장이
+    필요하고 어드민·출석·탈퇴는 호출자 세션에 얹혀야 조치와 원장이
     같이 커밋되거나 같이 롤백된다. 그래서 커밋 정책을 이 함수가 갖지 않는다.
 
-    clover-page-goal-prompt.md CE-5/CE-6/CE-8 — 총액 CAS가 통과한 뒤 로트를 만료 임박 우선
-    순서로 잠가 깎는다. 만료 필터는 걸지 않는다 — 만료의 진실은 배치뿐이다(CE-8). 로트
-    합계가 모자라면 `CloverLotShortfallError`가 나 총액 CAS까지 롤백된다(CE-35).
+    총액 CAS가 통과한 뒤 로트를 만료 임박 우선
+    순서로 잠가 깎는다. 만료 필터는 걸지 않는다 — 만료의 진실은 배치뿐이다. 로트
+    합계가 모자라면 `CloverLotShortfallError`가 나 총액 CAS까지 롤백된다.
     """
     return await _apply(
         db,
@@ -205,14 +204,13 @@ async def grant(
     호출자가 한다.**
 
     `idempotency_key`가 중복이면 `IntegrityError`가 그대로 올라온다 — 라우트가 409로 번역한다.
-    유니크 인덱스가 그걸 막는 유일한 수단이고(clover-goal-prompt.md CL-8), 더블클릭·재시도가
+    유니크 인덱스가 그걸 막는 유일한 수단이고, 더블클릭·재시도가
     곧 중복 지급이라 어드민 경로는 반드시 키를 넣는다.
 
-    🔴 `expires_at`은 호출 지점이 명시해야 한다(CE-11) — 만료가 붙는 지급은 출석·미션·기존
+    🔴 `expires_at`은 호출 지점이 명시해야 한다 — 만료가 붙는 지급은 출석·미션·기존
     잔액 백필뿐이고, 어드민 지급과 환불은 `None`(무기한)이다. 기본값을 `None`으로 둔 이유는
-    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석(`clover/
-    router.py`)·미션(`clover/missions.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을
-    명시적으로 넘긴다.
+    어드민 지급·환불 호출부가 만료를 안 넘겨 기본값에 기대기 때문이다 — 출석·미션(둘 다
+    `clover/router.py`)은 `core.clover.earned_lot_expiry`로 계산한 값을 명시적으로 넘긴다.
     """
     balance_after = await _apply(
         db,
@@ -238,8 +236,8 @@ async def revoke(
     잔액이 모자라면 `None` — 라우트가 422로 번역한다. **음수로 내려가지 않는다**: 오지급 회수는
     이미 쓴 만큼을 빚으로 남기지 않는다는 뜻이고, 그게 유상화 시점에 환불 계산을 단순하게 둔다.
 
-    🔴 로트 소진 순서가 `spend`(CE-5, 만료 임박 우선)와 **정반대**다 — 회수는 최근 지급분부터
-    (`created_at DESC`, CE-34). 회수의 실제 쓰임이 "방금 잘못 준 걸 도로 빼는 것"이라 최근
+    🔴 로트 소진 순서가 `spend`(만료 임박 우선)와 **정반대**다 — 회수는 최근 지급분부터
+    (`created_at DESC`). 회수의 실제 쓰임이 "방금 잘못 준 걸 도로 빼는 것"이라 최근
     로트부터 빼야 오지급한 그 로트가 깨끗하게 되돌려진다.
     """
     return await _apply(
@@ -254,7 +252,7 @@ async def revoke(
 
 
 async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
-    """탈퇴 시 남은 잔액 전부를 소멸시킨다(clover-goal-prompt.md CL-32). 소멸된 금액을 돌려준다.
+    """탈퇴 시 남은 잔액 전부를 소멸시킨다. 소멸된 금액을 돌려준다.
 
     🔴 **금액을 인자로 받지 않는 것이 이 함수의 요점이다.** 소멸은 "얼마를 쓴다"가 아니라
     "남은 걸 없앤다"라 `spend(amount=…)`로 표현하면 두 가지가 틀어진다 — 호출자가 읽어 둔
@@ -275,7 +273,7 @@ async def burn_all(db: AsyncSession, *, user_id: uuid.UUID) -> int:
     읽기와 쓰기가 한 문장이라 그 사이에 낄 창이 **없다**. PostgreSQL 18의 문법이고 CI·dev·prod가
     전부 18이다(`docker-compose.*.yml`, `api.yml`). `NEW`는 항상 0이라 볼 것이 없다.
 
-    🔴 그 유저의 미소진 로트도 함께 0으로 만든다(clover-page-goal-prompt.md CE-29) — 안 그러면
+    🔴 그 유저의 미소진 로트도 함께 0으로 만든다 — 안 그러면
     탈퇴 후에도 "만료 예정"으로 남은 유령 로트가 생긴다. `revoke`의 **부분** 무효화와 달리
     **전량** 무효화라 `_apply`/`_consume_lots`를 쓰지 않는다. 잔액이 이미 0이었어도(`burned`가
     `None`이어도) 실행한다 — 불변식이 이미 깨진 상태에서도 유령 로트를 남기지 않기 위해서다.
@@ -319,12 +317,12 @@ async def spend_in_new_transaction(
     amount: int,
     kind: CloverKind,
 ) -> int | None:
-    """clover-techspec.md CT-4 — **게이트 전용**. 요청 스코프 세션의 커밋 타이밍과 무관하게
+    """**게이트 전용**. 요청 스코프 세션의 커밋 타이밍과 무관하게
     즉시 커밋한다.
 
     채팅 4경로의 커밋 시점이 제각각이라(전송·편집은 생성 **전**, 재생성은 생성 **후**,
     빌더 미리보기는 `db.commit()`이 **0건**) 요청 세션에 얹으면 같은 차감이 경로마다 다르게
-    동작한다 — 미리보기는 영원히 공짜가 된다(clover-goal-prompt.md CL-9).
+    동작한다 — 미리보기는 영원히 공짜가 된다.
 
     🔴 `session_factory`는 반드시 `Depends(get_session_factory)`로 받은 것이어야 한다.
     모듈에서 `async_session_factory`를 직접 import하면 `tests/conftest.py`의 오버라이드를 안
@@ -347,13 +345,13 @@ async def refund_in_new_transaction(
 ) -> None:
     """차감을 되돌린다. 🔴 **절대 예외를 밖으로 내지 않는다.**
 
-    호출 자리가 SSE 제너레이터 본문이라(clover-techspec.md §3-5) 예외가 새면 이미 시작된
+    호출 자리가 SSE 제너레이터 본문이라 예외가 새면 이미 시작된
     스트림을 뚫고 나가 태스크가 취소되고, **망가진 asyncpg 커넥션이 풀로 반환돼 무관한 요청이
     500**이 된다(`core/rate_limit_gate.py`의 모듈 docstring이 같은 이유로 `Depends`만 쓰라고
     적는다).
 
     실패는 `logger.warning` + `capture_dependency_failure(dependency="clover")`로만 남는다 —
-    자동 재시도를 만들지 않기로 했으므로(clover-goal-prompt.md CL-23) 이게 유일한 발견
+    자동 재시도를 만들지 않기로 했으므로 이게 유일한 발견
     수단이다. 남는 결과는 "그 요청의 차감이 되돌아가지 않은 것"이고 보정은 어드민 지급이다.
     """
     try:
@@ -388,17 +386,17 @@ def is_same_kst_day(last: date | None, now: datetime) -> bool:
 
 
 def earned_lot_expiry(now: datetime) -> datetime:
-    """출석·미션 지급이 만드는 로트의 만료 시각 — 지급일(KST) 자정 + 8일(clover-page-goal-
-    prompt.md CE-7·CE-11). `kst_today`를 재사용해 날짜를 구하고(naive `now` 거부도 그쪽에
+    """출석·미션 지급이 만드는 로트의 만료 시각 — 지급일(KST) 자정 + 8일.
+    `kst_today`를 재사용해 날짜를 구하고(naive `now` 거부도 그쪽에
     위임한다), 그 날의 KST 자정에 8일을 더한다.
 
     🔴 7이 아니라 8인 이유: 자정으로 정규화하면 "+7일"은 실제 보유 기간을 6~7일로 만든다
     (늦게 지급될수록 짧아진다) — "7일 유효기간" 고지와 어긋난다. "+8일"이면 보유 기간이
-    7~8일이라 누구도 7일보다 적게 받지 않는다(CE-7 예시 참고).
+    7~8일이라 누구도 7일보다 적게 받지 않는다.
 
     🔴 마이그레이션(`cf74d6d53561_clover_lots.py`)의 `_legacy_lot_expiry`가 같은 계산을
-    별도로 갖는다 — 마이그레이션이 `api.*`를 import하지 않는 것이 이 저장소 관례라(사전 점검
-    PA-5) 사본이 둘인 것은 의도다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필
+    별도로 갖는다 — 마이그레이션이 `api.*`를 import하지 않는 것이 이 저장소 관례라
+    사본이 둘인 것은 의도다. **다만 두 값은 반드시 같아야 한다** — 한쪽만 고치면 백필
     로트와 출석·미션 로트의 유효기간 규칙이 갈린다.
     """
     midnight_kst = datetime.combine(kst_today(now), time.min, tzinfo=KST)

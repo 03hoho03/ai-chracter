@@ -146,13 +146,12 @@ def _migrated_schema() -> Generator[None, None, None]:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _flush_prompt_set_cache() -> None:
-    """`prompt_set:active:{lane}`(prompt-db-goal-prompt.md §8-1, prompt-scope-techspec.md
-    §3-4/PS-15)는 고정 키라 나머지 Redis 모듈과 달리 세션ID/잡ID 같은 랜덤 값으로 테스트끼리
+    """`prompt_set:active:{lane}`는 고정 키라 나머지 Redis 모듈과 달리 세션ID/잡ID 같은 랜덤 값으로 테스트끼리
     격리되지 않는다 — `db_session`은 테스트마다 롤백되지만 Redis는 그대로다. 한 테스트가
     캐싱한 세트를 다음 테스트가 그대로 보게 되므로 매 테스트 전에 지운다.
 
     아래 `_flush_rate_limit_keys`와 같은 이유로 glob이다 — 레인이 늘 때 하드코딩된 키
-    나열 중 한쪽만 갱신되는 사고를 막는다(RS-8)."""
+    나열 중 한쪽만 갱신되는 사고를 막는다."""
     keys = await redis_client.keys(f"{ACTIVE_PROMPT_SET_KEY_PREFIX}*")
     if keys:
         await redis_client.delete(*keys)
@@ -160,7 +159,7 @@ async def _flush_prompt_set_cache() -> None:
 
 @pytest_asyncio.fixture(autouse=True)
 async def _flush_rate_limit_keys() -> None:
-    """email-goal-prompt.md E-6 S3-8: `rate_limit:*` 키도 위 `_flush_prompt_set_cache`와 같은
+    """`rate_limit:*` 키도 위 `_flush_prompt_set_cache`와 같은
     범주다 — IP 기반 키(`rate_limit:signup_ip:...` 등)는 `httpx.ASGITransport`의 client
     기본값이 모든 테스트에서 `('127.0.0.1', 123)`이라 랜덤 값(email/session_id/token)으로
     자연 격리되지 않는다. 안 지우면 무관한 테스트가 쌓아둔 IP 카운터 때문에 뒤에 실행되는

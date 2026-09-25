@@ -1,12 +1,10 @@
-# legal-revision-goal-prompt.md LR-29
-#
 # Caddy 내장 롤링(Caddyfile 의 roll_size/roll_keep_for)만으로는 개정 처리방침 제4조 5항의
 # "기록일로부터 30일간 보관"을 못 지킨다. Caddy 공식 문서: "roll_keep_for is how long to
 # keep rolled files ... Triggers when a new log file is created." — roll_keep_for 는 이미
 # 회전된 파일만 정리하고, 회전 자체는 크기(roll_size 10MB) 기준이다. 트래픽이 적어
 # access.log 가 30일 안에 10MB 에 못 미치면 활성 파일 하나에 30일 넘은 기록이 계속 쌓인다.
 # 그래서 호스트 logrotate 가 트래픽과 무관하게 daily 로 강제 회전시킨다. roll_size 기준
-# 회전은 폭주 트래픽에 대한 2차 방어로 Caddyfile 에 그대로 남겨둔다(LR-24).
+# 회전은 폭주 트래픽에 대한 2차 방어로 Caddyfile 에 그대로 남겨둔다.
 #
 # 설치 절차·dry-run 검증은 DEPLOY.md 참고.
 

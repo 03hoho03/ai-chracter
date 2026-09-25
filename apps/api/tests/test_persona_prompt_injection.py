@@ -1,10 +1,10 @@
-"""persona-goal-prompt.md §4 S4 ① (UP-18 (a)). 프로필 값이 있으면 `generation/user_persona`
+"""프로필 값이 있으면 `generation/user_persona`
 섹션이 **렌더 결과**에서 story는 `prologue` 바로 뒤·`history` 바로 앞, character는
 `example_dialogues` 바로 뒤·`history` 바로 앞에 온다.
 
-S3 ③은 M2 뒤 DB의 섹션 배치(`order`)를 봤다. 여기는 `build_*`가 값을 실제로 `values`에
+`test_persona_prompt_slot_migration.py`는 슬롯 추가 마이그레이션 뒤 DB의 섹션 배치(`order`)를 봤다. 여기는 `build_*`가 값을 실제로 `values`에
 넣어 그 자리에 **글자로** 나오는지를 본다 — 인자를 받고도 `values`에 안 넣으면 conditional
-드롭(F1)으로 조용히 사라지고, 배치 테스트는 그걸 모른다. 세트는 `_migrated_schema`가 심은
+드롭으로 조용히 사라지고, 배치 테스트는 그걸 모른다. 세트는 `_migrated_schema`가 심은
 활성 세트를 `load_active_prompt_set`으로 읽는다(프로덕션이 고르는 규칙과 같다). 이웃 섹션의
 기대 텍스트는 같은 세트의 body를 `format_map`해서 만든다 — 문안을 테스트에 복제하지 않는다.
 """

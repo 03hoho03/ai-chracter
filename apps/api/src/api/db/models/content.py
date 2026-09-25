@@ -32,7 +32,7 @@ class ModerationStatus(str, enum.Enum):
 
 
 class Genre(Base):
-    """techspec-db-schema.md §3. Master data, seeded via migration."""
+    """Master data, seeded via migration."""
 
     __tablename__ = "genres"
 
@@ -42,7 +42,7 @@ class Genre(Base):
 
 
 class Content(Base):
-    """techspec-db-schema.md §3. Shared character/story content header.
+    """Shared character/story content header.
 
     `current_published_version_id` -> content_versions.id is declared with use_alter
     because content_versions.content_id -> contents.id creates a table-creation cycle
@@ -50,8 +50,8 @@ class Content(Base):
     ALTER TABLE (same pattern as users/assets, see auth.py).
 
     `genre_id`/`target` are nullable even though the registration tab treats them as
-    required (US-083 publish validation enforces that) — a brand-new draft
-    (`POST /contents`, US-082) has neither set yet, so the DB must allow the empty state.
+    required (publish validation enforces that) — a brand-new draft
+    (`POST /contents`) has neither set yet, so the DB must allow the empty state.
     """
 
     __tablename__ = "contents"
@@ -95,7 +95,7 @@ class Content(Base):
 
 
 class ContentVersion(Base):
-    """techspec-db-schema.md §3. Immutable snapshot; draft = the row with published_at IS NULL."""
+    """Immutable snapshot; draft = the row with published_at IS NULL."""
 
     __tablename__ = "content_versions"
 
@@ -110,8 +110,6 @@ class ContentVersion(Base):
 
 
 class Favorite(Base):
-    """techspec-db-schema.md §7."""
-
     __tablename__ = "favorites"
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
@@ -122,8 +120,6 @@ class Favorite(Base):
 
 
 class Like(Base):
-    """techspec-db-schema.md §7."""
-
     __tablename__ = "likes"
 
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)

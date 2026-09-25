@@ -1,4 +1,4 @@
-"""limit-goal-prompt.md RL-1·RL-3·RL-4·RL-8·RL-11~RL-15·RL-21, S2+S3: 유저별 채팅
+"""유저별 채팅
 레이트리밋 게이트(`api.core.rate_limit_gate`)가 채팅 4경로에 실제로 물려 있는지 검증한다.
 
 경로 테이블은 `test_consent_gate_endpoints.py`의 `_BLOCKED_REQUESTS`와 같은 모양이다.
@@ -6,7 +6,7 @@
 🔴 **경로 파라미터는 실존해야 한다 — 그리고 이 스위트는 더 이상 "게이트가 소유권 검사보다
 앞에 있다"를 증명하지 않는다.** 예전에는 게이트가 `_owned_room_dependency`(404) 앞의
 `Depends`라 더미 id로도 429를 받아낼 수 있었고, 그 사실 자체가 부수 증명이었다.
-S4(clover-techspec.md CT-7)가 **게이트를 조회·검증 의존성 뒤로 옮겼다** — 차감이 일어난 뒤
+클로버 도입이 **게이트를 조회·검증 의존성 뒤로 옮겼다** — 차감이 일어난 뒤
 404/400이 나면 클로버가 사라지기 때문이다. 그래서 이제 순서가 반대이고(404가 429보다 먼저),
 이 스위트는 `_real_route_ids`로 실물을 만들어 게이트에 닿는다.
 
@@ -46,7 +46,7 @@ from factories import (
     _parse_sse_events,
 )
 
-# ---- 4경로 테이블 (RL-1). body는 그 경로의 최소 유효 요청 ----
+# ---- 4경로 테이블. body는 그 경로의 최소 유효 요청 ----
 
 _CHAT_ROUTES: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms/{room_id}/messages", {"content": "안녕"}),
@@ -106,10 +106,10 @@ async def _real_room_id(
 ) -> str:
     """그 사용자가 소유한 캐릭터 채팅방을 실제로 만든다.
 
-    🔴 S4(clover-techspec.md CT-7)가 게이트를 조회·검증 의존성 **뒤**로 옮기면서 이 스위트가
+    🔴 클로버 도입이 게이트를 조회·검증 의존성 **뒤**로 옮기면서 이 스위트가
     쓰던 더미 id 지름길이 막혔다 — 없는 방은 게이트에 닿기도 전에 404다.
 
-    `POST /chat-rooms`는 RL-1의 채팅 4경로가 아니라 게이트가 안 붙는다 — 이 셋업만으로는
+    `POST /chat-rooms`는 채팅 4경로가 아니라 게이트가 안 붙는다 — 이 셋업만으로는
     버킷이 소모되지 않는다.
     """
     genre = await _get_genre(db_session)
@@ -164,7 +164,7 @@ async def _real_route_ids(
     }
 
 
-# ---- 1. 분당 버스트 초과 → 429 USER_LIMIT / window=minute (RL-11·RL-15) ----
+# ---- 1. 분당 버스트 초과 → 429 USER_LIMIT / window=minute ----
 
 
 @pytest.mark.parametrize(("method", "path_template", "body"), _CHAT_ROUTES, ids=_ROUTE_IDS)
@@ -180,7 +180,7 @@ async def test_chat_routes_return_429_with_user_limit_body_when_burst_exceeded(
     ids = await _real_route_ids(db_client, db_session, user)
     monkeypatch.setattr(rate_limit_gate, "CHAT_BURST_LIMIT", 0)
 
-    # apps/api/CLAUDE.md "테스트 인프라" — 게이트가 조회 뒤로 내려간 뒤(CT-7)는 `llm_client`가
+    # apps/api/CLAUDE.md "테스트 인프라" — 게이트가 조회 뒤로 내려간 뒤는 `llm_client`가
     # 게이트보다 먼저 resolve된다. 429로 막혀 실제로 쓰이지 않아도 오버라이드가 없으면 진짜
     # 클라이언트를 만들다 API 키 부재로 500이 난다.
     _override_llm_client(_FakeLLMClient())
@@ -199,7 +199,7 @@ async def test_chat_routes_return_429_with_user_limit_body_when_burst_exceeded(
     assert 1 <= retry_after <= 60
 
 
-# ---- 1-1. 채팅 4경로가 버킷 하나를 공유한다 (RL-3) ----
+# ---- 1-1. 채팅 4경로가 버킷 하나를 공유한다 ----
 
 
 async def test_four_chat_routes_share_one_bucket(
@@ -213,7 +213,7 @@ async def test_four_chat_routes_share_one_bucket(
     그때 막혀야 하는 것은 아직 한 번도 안 쓴 나머지 두 경로다. 버킷이 갈리면 그 둘은 자기 몫의
     첫 요청이라 통과해 404로 떨어진다.
 
-    RL-3이 단일 버킷을 고른 이유가 정확히 이 우회로다 — 전송으로 상한을 소진한 뒤 재생성·편집
+    단일 버킷을 고른 이유가 정확히 이 우회로다 — 전송으로 상한을 소진한 뒤 재생성·편집
     으로 계속 태울 수 있으면 상한이 상한이 아니다.
     """
     user = await _consented_user(db_client, db_session)
@@ -228,12 +228,12 @@ async def test_four_chat_routes_share_one_bucket(
         regenerated = await db_client.post(f"/chat-rooms/{ids['room_id']}/regenerate")
     finally:
         _clear_llm_override()
-    # 게이트를 통과했다(429가 아니다). 게이트가 조회 뒤로 내려간 뒤로는(CT-7) 방이 실존하므로
+    # 게이트를 통과했다(429가 아니다). 게이트가 조회 뒤로 내려간 뒤로는 방이 실존하므로
     # 턴이 끝까지 돌아 200이다 — 서로 다른 두 경로가 같은 버킷의 2칸을 썼다는 뜻이다.
     assert sent.status_code == 200
     assert regenerated.status_code == 200
 
-    # 429로 막힐 요청이지만 게이트보다 먼저 `llm_client`가 resolve된다(CT-7) — 위 두 요청과
+    # 429로 막힐 요청이지만 게이트보다 먼저 `llm_client`가 resolve된다 — 위 두 요청과
     # 같은 이유로 오버라이드가 필요하다.
     _override_llm_client(_FakeLLMClient())
     try:
@@ -254,7 +254,7 @@ async def test_four_chat_routes_share_one_bucket(
         assert detail["window"] == "minute"
 
 
-# ---- 2. 일일 상한 초과 → 429, KST 자정까지 (RL-4·RL-15 + clover-techspec.md CT-8) ----
+# ---- 2. 일일 상한 초과 → 429, KST 자정까지 ----
 
 
 @pytest.mark.parametrize(("method", "path_template", "body"), _CHAT_ROUTES, ids=_ROUTE_IDS)
@@ -267,10 +267,10 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """버스트는 기본값 그대로 두고 일일만 0으로 낮춘다 — 그래야 "버스트 → 일일"
-    순서(RL-10 파생 / 게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는 것까지 함께
+    순서(게이트 docstring)에서 뒤쪽 검사가 실제로 실행된다는 것까지 함께
     증명된다.
 
-    🔴 **클로버 도입으로 바디가 바뀌었다**(clover-techspec.md CT-8). 무료 일일분을 다 쓴
+    🔴 **클로버 도입으로 바디가 바뀌었다**. 무료 일일분을 다 쓴
     뒤에는 클로버가 대신 내므로, **낼 클로버가 없을 때** 나가는 것이 이 429다 —
     `USER_LIMIT`/`window=day`가 아니라 `CLOVER_REQUIRED`/`window=clover`다.
     `_make_user`의 기본 잔액이 0이라 이 셋업이 곧 "낼 것이 없는 사용자"다.
@@ -296,7 +296,7 @@ async def test_chat_routes_return_429_with_day_window_when_daily_exceeded(
     assert 1 <= retry_after <= 86400
 
 
-# ---- 2-1. 둘 다 넘겼을 때 이기는 쪽 = 버스트 (RL-10 파생 / 게이트 docstring) ----
+# ---- 2-1. 둘 다 넘겼을 때 이기는 쪽 = 버스트 (게이트 docstring) ----
 
 
 async def test_burst_check_runs_before_daily_check(
@@ -327,7 +327,7 @@ async def test_burst_check_runs_before_daily_check(
     assert detail["retryAfterSeconds"] <= 60
 
 
-# ---- 3. Depends 순서: 재동의 403이 429보다 먼저 (RL-13) ----
+# ---- 3. Depends 순서: 재동의 403이 429보다 먼저 ----
 
 
 async def test_reconsent_403_wins_over_429(
@@ -347,7 +347,7 @@ async def test_reconsent_403_wins_over_429(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- 4. 새 scope도 `rate_limit:` 프리픽스 (RL-6) ----
+# ---- 4. 새 scope도 `rate_limit:` 프리픽스 ----
 
 
 async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_them(
@@ -376,7 +376,7 @@ async def test_new_scopes_use_the_rate_limit_prefix_so_the_autouse_flush_covers_
     assert all(key.startswith(("rate_limit:chat_burst:", "rate_limit:chat_day:")) for key in keys)
 
 
-# ---- 5. Redis 장애 시 fail-open + 창당 1회 보고 (RL-8·RL-21) ----
+# ---- 5. Redis 장애 시 fail-open + 창당 1회 보고 ----
 
 
 async def test_gate_fails_open_and_reports_redis_dependency_failure(
@@ -409,7 +409,7 @@ async def test_gate_fails_open_and_reports_redis_dependency_failure(
     assert first.status_code == 200
     assert [e["type"] for e in _parse_sse_events(first.text)] == ["token", "token", "done"]
     assert second.status_code == 200
-    # RL-21: 창(60초) 안의 두 번째 장애는 보고하지 않는다.
+    # 창(60초) 안의 두 번째 장애는 보고하지 않는다.
     assert calls == ["redis"]
 
     monkeypatch.setattr(rate_limit_gate, "REDIS_FAILURE_REPORT_WINDOW_SECONDS", 0)
@@ -423,7 +423,7 @@ async def test_gate_fails_open_and_reports_redis_dependency_failure(
     assert calls == ["redis", "redis"]
 
 
-# ---- 6. 초과 로그 (RL-12) ----
+# ---- 6. 초과 로그 ----
 
 
 async def test_exceeded_request_logs_warning_with_fixed_token(
@@ -449,18 +449,18 @@ async def test_exceeded_request_logs_warning_with_fixed_token(
     records = [record for record in caplog.records if "user_limit_exceeded" in record.getMessage()]
     assert len(records) == 1
     line = records[0].getMessage()
-    # RL-11: `code`가 있어야 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)를 로그에서 가른다.
+    # `code`가 있어야 이미지의 두 429(`USER_LIMIT`/`QUEUE_FULL`)를 로그에서 가른다.
     assert "code=USER_LIMIT" in line
     assert "window=minute" in line
     assert "retry_after=" in line
     assert str(user.id) in line
-    # RL-12: user_id·window·retry_after까지. 이메일도 프롬프트 본문도 실리지 않는다.
+    # user_id·window·retry_after까지. 이메일도 프롬프트 본문도 실리지 않는다.
     assert user.email is not None
     assert user.email not in line
     assert "비밀 프롬프트 문장" not in line
 
 
-# ---- 7. 429는 제너레이터 전에 끊는다 (RL-13) ----
+# ---- 7. 429는 제너레이터 전에 끊는다 ----
 
 
 async def test_successful_request_does_not_touch_the_llm_when_limited(
@@ -485,25 +485,25 @@ async def test_successful_request_does_not_touch_the_llm_when_limited(
     assert fake.received_prompt is None
 
 
-# ---- 8. 예외 플래그 컬럼 (RL-9) ----
+# ---- 8. 예외 플래그 컬럼 ----
 
 
 async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reload(
     db_session: AsyncSession,
 ) -> None:
-    """`users.rate_limit_exempt`(RL-9) 컬럼 자체만 본다 — 게이트가 그 값으로 무엇을 하는지는
-    아래 9번 절이고, 어드민이 뒤집는 건 S7이다. 그래서 여기서 검증할 건 "기본값이 켜져 있지
+    """`users.rate_limit_exempt` 컬럼 자체만 본다 — 게이트가 그 값으로 무엇을 하는지는
+    아래 9번 절이고, 어드민이 뒤집는 건 `test_admin_users_api.py`의 토글 테스트가 본다. 그래서 여기서 검증할 건 "기본값이 켜져 있지
     않다"와 "true 가 DB 를 왕복한다" 둘뿐이다.
 
     ⚠️ 첫 단언이 `is None`인 건 오타가 아니다. `Base`는 `MappedAsDataclass`가 아니라
     생성자를 건드리지 않고 `server_default=false()`는 INSERT 가 실행돼야 값이 생기므로,
     flush 전 속성은 `None`이다(`default=False`를 붙여도 그건 flush 시점 기본값이라
-    flush 전에는 똑같이 `None`이다 — S5 리뷰 D-A 에서 A/B 로 실측하고 인자를 지웠다). 그래서
-    S5 의 게이트는 flush 되지 않은 `User` 인스턴스가 아니라 **DB 에서 읽은 행**에만 이
+    flush 전에는 똑같이 `None`이다 — A/B 로 실측하고 인자를 지웠다). 그래서
+    면제를 판정하는 게이트는 flush 되지 않은 `User` 인스턴스가 아니라 **DB 에서 읽은 행**에만 이
     플래그를 물어야 한다 — 그 자리에서 falsy 는 "예외가 아니다"가 아니라 "아직 모른다"다.
     """
     user = _make_user()
-    # ⚠️ `object`로 한 번 끊어서 단언한다(S4 리뷰 D-1). `Mapped[bool]` 속성을 그대로
+    # ⚠️ `object`로 한 번 끊어서 단언한다. `Mapped[bool]` 속성을 그대로
     # `is None`으로 단언하면 mypy 가 그 뒤를 unreachable 로 좁혀 **아래 왕복 세 줄을 아예
     # 검사하지 않는다** — A/B 로 실측했다.
     before: object = user.rate_limit_exempt
@@ -520,7 +520,7 @@ async def test_user_rate_limit_exempt_is_none_before_flush_and_false_after_reloa
     assert user.rate_limit_exempt is True
 
 
-# ---- 9. 예외 판정: 일일만 면제하고 버스트는 유지한다 (RL-9·RL-10) ----
+# ---- 9. 예외 판정: 일일만 면제하고 버스트는 유지한다 ----
 
 
 async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst(
@@ -528,7 +528,7 @@ async def test_exempt_user_bypasses_the_daily_limit_but_not_the_per_minute_burst
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """RL-10: 면제의 범위는 일일 상한(과 S6의 이미지 토큰버킷)이지 "상한 해제"가 아니다.
+    """면제의 범위는 일일 상한(과 이미지 토큰버킷)이지 "상한 해제"가 아니다.
     분당 버스트는 예외 계정도 그대로 받는다 — 버스트는 쿼터가 아니라 폭주 방어라서 면제
     대상에게 열어 줄 이유가 없다."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
@@ -578,7 +578,7 @@ async def test_non_exempt_user_hits_the_same_daily_limit_under_the_same_setup(
         _clear_llm_override()
 
     assert resp.status_code == 429
-    # 잔액 0이라 클로버로도 못 낸다(clover-techspec.md CT-8) — 면제 계정과의 대비는 그대로다.
+    # 잔액 0이라 클로버로도 못 낸다 — 면제 계정과의 대비는 그대로다.
     detail = resp.json()["detail"]
     assert detail["code"] == "CLOVER_REQUIRED"
     assert detail["window"] == "clover"
@@ -589,7 +589,7 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """RL-9: 판정의 소스는 `users.rate_limit_exempt` 행 하나다 — Redis 미러도, 로그인 시점에
+    """판정의 소스는 `users.rate_limit_exempt` 행 하나다 — Redis 미러도, 로그인 시점에
     세션에 굳는 사본도 없다. 그래서 로그인한 **뒤에** 행을 뒤집으면 같은 쿠키로 보낸 다음
     요청이 바로 일일 상한에 걸린다. 무효화할 캐시가 없다는 것이 이 단언의 내용이다."""
     user = await _consented_user(db_client, db_session, rate_limit_exempt=True)
@@ -622,7 +622,7 @@ async def test_exemption_is_read_from_the_db_row_not_the_session_cookie(
         _clear_llm_override()
 
     assert after.status_code == 429
-    # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다(CT-8).
+    # 면제가 풀린 뒤에는 일일 상한에 걸리고, 잔액이 0이라 클로버로도 못 낸다.
     detail = after.json()["detail"]
     assert detail["code"] == "CLOVER_REQUIRED"
     assert detail["window"] == "clover"

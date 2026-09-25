@@ -1,6 +1,6 @@
 """`api.images.router._style_items()` 단위 테스트 — DB 없이, private 함수를 직접 import한다.
 
-image-style-7-goal-prompt.md IS-5(2차 인터뷰 결정 3): 이 저장소에 private 라우터 함수를
+이 저장소에 private 라우터 함수를
 직접 import해 테스트한 선례가 없지만 여기서 도입한다. `apps/api/CLAUDE.md`가 "DB I/O가
 없는 순수 함수(스탯 클램핑, 규칙 평가, 키워드 매칭)는 ORM 모델을 세션 없이 생성자로만
 채워" 테스트하라고 두는 원칙과 결이 같고, 뮤테이션 테스트를 싸게 돌리기 위한 목적이 크다
@@ -14,7 +14,7 @@ from api.images.router import _style_items
 
 
 def test_partial_serving_marks_exactly_the_served_styles_available() -> None:
-    """IS-5: 7종 중 2종(`chapel_glass`=2번째, `watercolor`=5번째)만 서빙되면 그 둘만
+    """7종 중 2종(`chapel_glass`=2번째, `watercolor`=5번째)만 서빙되면 그 둘만
     `available=True`인 벡터가 나와야 한다. 전부/전무 서빙 픽스처는 검출력이 0이다(①
     `served`를 bool로 만들어 "하나라도 서빙되면 전부 available"이 되는 버그, ② 특정
     슬롯을 하드코딩하는 버그 둘 다 그 두 픽스처에서 우연히 정답과 일치한다) —

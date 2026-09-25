@@ -15,7 +15,7 @@ def verify_password(password: str, password_hash: str) -> bool:
 
 
 def hash_withdrawn_email(email: str) -> str:
-    """legal-revision-goal-prompt.md LR-8: 재가입 차단 대조는 salt 없는 **조회**라 bcrypt를
+    """재가입 차단 대조는 salt 없는 **조회**라 bcrypt를
     쓸 수 없고(매번 다른 해시가 나와 조회가 불가능하다), 순수 SHA-256은 이메일 공간이 좁아
     사전 공격으로 되돌릴 수 있다. 서버 비밀키를 붙인 HMAC-SHA256으로 그 둘을 피한다."""
     return hmac.new(

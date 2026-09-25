@@ -52,7 +52,7 @@ def test_generate_thumbnail_small_source_is_not_upscaled() -> None:
 
 
 def test_generate_thumbnail_preserves_transparency_from_a_non_alpha_source() -> None:
-    """뮤테이션(8단계 T-13 #5): image_processing.py:48 의 `convert("RGBA")`가 `convert(None)`
+    """뮤테이션: image_processing.py:48 의 `convert("RGBA")`가 `convert(None)`
     으로 바뀌어도 기존 4개 테스트가 안 죽었다 — 전부 불투명 `Image.new("RGB", ...)` 소스였다.
 
     계획서는 "실제 알파 채널이 있는 소스"를 쓰라고 했지만 실측해 보니 그걸로는 이 변형이 안

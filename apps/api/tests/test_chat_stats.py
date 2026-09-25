@@ -99,7 +99,7 @@ def test_apply_stat_changes_clamps_per_turn_counter_at_boundary() -> None:
 
 
 def test_apply_stat_changes_falls_back_to_initial_value_when_counter_not_seeded() -> None:
-    """뮤테이션(8단계 T-13 #1·#2): stats.py:42 의 `.get(stat_id, float(initial_value))` 폴백을
+    """뮤테이션: stats.py:42 의 `.get(stat_id, float(initial_value))` 폴백을
     `.get(stat_id, None)`으로 바꿔도 기존 테스트가 안 죽었다 — 전부 `per_turn_delta` 스탯을
     `current`에 미리 심어서 폴백을 안 탔다. 첫 턴처럼 `current`에 아직 없는 케이스를 넣는다 —
     폴백이 없으면 `None + delta`로 TypeError 가 나야 한다.
@@ -113,7 +113,7 @@ def test_apply_stat_changes_falls_back_to_initial_value_when_counter_not_seeded(
 
 
 def test_apply_stat_changes_applies_valid_change_after_an_invalid_one_in_list() -> None:
-    """뮤테이션(8단계 T-13 #3): stats.py:48 의 `continue`가 `break`로 바뀌어도 기존 테스트가
+    """뮤테이션: stats.py:48 의 `continue`가 `break`로 바뀌어도 기존 테스트가
     안 죽었다 — `changes`에 무효 항목(미정의 statId)이 있는 케이스는 있었지만 그게 항상
     마지막이었다. 무효 항목을 중간에 두고 뒤에 유효 항목을 이어 붙여, `break`라면 뒤쪽이
     조용히 사라지는 것을 잡는다.

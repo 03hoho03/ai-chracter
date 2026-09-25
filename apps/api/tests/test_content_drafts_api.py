@@ -58,7 +58,7 @@ async def _add_version(
     await db_session.flush()
     if published:
         # `_publish_character_content`/`_publish_story_content` also point the content at the
-        # version they just published — the flag US-002's filter reads.
+        # version they just published — the flag the drafts-list filter reads.
         content.current_published_version_id = version.id
         await db_session.flush()
     if created_at is not None:
@@ -185,7 +185,7 @@ async def test_list_drafts_excludes_content_with_no_draft(
 async def test_list_drafts_excludes_published_content_with_auto_cloned_draft(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-002. 발행하면 다음 편집용 초안이 자동 복제되므로 발행작에도 미발행 버전이 항상 딸려
+    """발행하면 다음 편집용 초안이 자동 복제되므로 발행작에도 미발행 버전이 항상 딸려
     있다 — 그래도 초안 목록에는 나오지 않아야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -209,7 +209,7 @@ async def test_list_drafts_excludes_published_content_with_auto_cloned_draft(
 async def test_list_drafts_drops_content_once_it_is_published(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-002. 같은 콘텐츠를 발행 전/후 두 상태에서 본다 — 발행 전에는 초안으로 잡히고,
+    """같은 콘텐츠를 발행 전/후 두 상태에서 본다 — 발행 전에는 초안으로 잡히고,
     발행하는 순간 목록에서 빠진다."""
     user = _make_user()
     db_session.add(user)
@@ -291,7 +291,7 @@ async def test_list_drafts_uses_latest_draft_row_when_multiple_exist(
 async def test_list_drafts_paginates_at_page_size_without_duplicates(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-001. `/me/drafts`도 `/users/{id}/contents`와 같은 페이지 크기(24)·같은 봉투를 쓴다.
+    """`/me/drafts`도 `/users/{id}/contents`와 같은 페이지 크기(24)·같은 봉투를 쓴다.
 
     `Content.updated_at`은 server default라 이 테스트의 25건이 **전부 같은 시각**을 갖는다(하나의
     바깥 트랜잭션 안에서 `now()`가 고정되기 때문 — apps/api/CLAUDE.md). 그래서 순서는 tiebreaker인
@@ -352,7 +352,7 @@ async def test_list_drafts_paginates_at_page_size_without_duplicates(
 async def test_list_drafts_cursor_excludes_published_content_across_pages(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-001. 커서에는 정렬 키만 들어 있으므로 "발행작 제외" 조건이 페이지마다 다시 걸려야 한다.
+    """커서에는 정렬 키만 들어 있으므로 "발행작 제외" 조건이 페이지마다 다시 걸려야 한다.
     발행작을 초안들 사이에 끼워 두고 페이지 경계를 넘겨도 새지 않는지 본다."""
     user = _make_user()
     db_session.add(user)

@@ -1,6 +1,6 @@
-"""테스트 전역에서 본문이 글자까지 같았던 셋업 헬퍼. `goal-prompt.md §4 T-2`가 80개
-파일에 복사돼 있던 것 중 완전 동일본(또는 docstring만 다른 것)만 여기로 옮겼다.
-`goal-prompt.md §4 T-3`이 변종이 있던 나머지(호출부를 안 깨는 시그니처로 합친 것)를 더했다.
+"""테스트 전역에서 본문이 글자까지 같았던 셋업 헬퍼. 80개
+파일에 복사돼 있던 것 중 완전 동일본(또는 docstring만 다른 것)을 여기로 옮겼고,
+변종이 있던 나머지(호출부를 안 깨는 시그니처로 합친 것)도 더했다.
 
 LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`_parse_sse_events`)·
 `_make_published_character`도 같은 기준으로 합쳤다 — 여기 있는 것과 **의미가 같은** 사본만
@@ -48,7 +48,7 @@ from api.main import app
 from api.session.store import create_session
 
 
-# consent-gate-goal-prompt.md CG-3/CG-4: migration c49014ae5b62가 시드해둔 terms/privacy
+# migration c49014ae5b62가 시드해둔 terms/privacy
 # 게시본(version "2026-09-06", requires_reconsent=True)이 세션 내내 사라지지 않는 ambient
 # 상태다 — `_make_user`는 DB를 조회하지 않는 순수 헬퍼라 "현재 게시본이 몇 버전인지"를 알
 # 수 없으므로, 어떤 게시본보다 큰 값을 기본값으로 둬 "이미 동의한 사용자"를 재현한다.
@@ -77,11 +77,11 @@ async def _make_user_with_clover_lot(
     """`clover_balance`를 세팅한 유저와, 그 값과 정확히 같은 **무기한** 로트 1행
     (`kind="legacy_balance"`)을 함께 커밋한다.
 
-    clover-page-goal-prompt.md CE-4의 Σ(`clover_lots.remaining`) == `users.clover_balance`
-    불변식을 테스트 셋업부터 지키기 위한 공용 헬퍼다(CE-35). 기존 51곳이 쓰는
+    Σ(`clover_lots.remaining`) == `users.clover_balance`
+    불변식을 테스트 셋업부터 지키기 위한 공용 헬퍼다. 기존 51곳이 쓰는
     `_make_user(clover_balance=N)`는 DB를 안 건드리는 순수 팩토리라 로트를 만들 수 없다 —
     이 헬퍼는 `_make_asset`처럼 `db_session`을 받아 직접 커밋하는 변종이다. `clover_balance`가
-    0이면 로트를 만들지 않는다(마이그레이션 백필과 같은 규칙 — T-5).
+    0이면 로트를 만들지 않는다(마이그레이션 백필과 같은 규칙).
 
     🔴 **만료 있는 로트가 필요한 테스트는 이 헬퍼를 쓰지 않고 `CloverLot`을 직접 만든다.**
     만료 인자를 받게 열어 두지 않는 이유는 둘이다 — ① 지금 그걸 쓰는 호출부가 0곳이고
@@ -106,8 +106,8 @@ async def _make_user_with_clover_lot(
     return user
 
 
-# secure-issue-goal-prompt.md SEC-2: 인증 없이 임의 `user_id`로 쿠키를 굽던
-# `POST /dev/session-echo`(SEC-1 에서 삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 호출
+# 인증 없이 임의 `user_id`로 쿠키를 굽던
+# `POST /dev/session-echo`(삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 호출
 # `create_session(user_id)`는 프로덕션 로그인 경로 세 곳(`auth/router.py`의 `google_callback`(구글
 # 콜백) · `onboarding_google`(구글 온보딩) · `login`(비밀번호 로그인))과 같은 형태라 세션 값과
 # 유저별 역인덱스(`user_sessions:{user_id}`)까지 똑같이 쌓인다 — 그래서 이 헬퍼로 선 세션은 실제
@@ -388,5 +388,5 @@ _GOLDEN_PROMPTS_DIR = Path(__file__).parent / "golden" / "prompts"
 def _read_golden_prompt(filename: str) -> str:
     """`CHARACTER_CHAT_SYSTEM_INSTRUCTION` 같은 삭제된 프롬프트 상수 대신, 실제로 나가는
     문안과 바이트 단위로 같음이 이미 증명된 골든 파일에서 기대값을 읽는다
-    (prompt-db-goal-prompt.md D-13, tests/test_prompt_goldens.py)."""
+    (tests/test_prompt_goldens.py)."""
     return (_GOLDEN_PROMPTS_DIR / filename).read_text(encoding="utf-8")

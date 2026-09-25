@@ -76,7 +76,7 @@ async def test_start_preview_session_requires_login(api_client: httpx.AsyncClien
 async def test_start_preview_session_character_seeds_intro_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    # consent-gate-goal-prompt.md CG-9: /preview-sessions가 이제 재동의 게이트를 거치므로
+    # /preview-sessions가 이제 재동의 게이트를 거치므로
     # (require_legal_consent가 User 행을 조회한다) 실존하지 않는 user_id로는 로그인할 수
     # 없다 — 실제 User 행을 만들어 로그인한다.
     user = _make_user()

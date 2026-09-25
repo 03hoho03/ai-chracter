@@ -4,7 +4,7 @@
 
 파일을 여러 개 주면 준 순서대로 열을 나란히 낸다(N개 모델 비교용). 열 라벨은 파일 메타의
 model(없으면 파일명)이다. `--json` 은 표 대신 같은 수치를 기계가 읽을 JSON 으로 낸다
-(다음 단계 HTML 리포트의 입력).
+(HTML 리포트의 입력).
 
 **지표 정의를 코드로 고정해 두는 것이 이 파일의 존재 이유다.** 눈대중으로 세면 회차마다
 관대함이 달라져 비교가 무의미해지고, 실제로 다음 두 함정을 밟았다:
@@ -53,12 +53,11 @@ WINDOWS = ("chars250", "sent2", "pct30")
 
 _SENTENCE = re.compile(r'(?<=[.!?…”"\'])\s+|\n+')
 # 여는 괄호·따옴표·별표를 허용한다 — 줄머리만 보던 이전 버전은 `(서술자: 낡은 스테인리스…`
-# 처럼 여는 괄호 뒤에 오는 라벨을 놓쳤다(2026-09-08 실측, chat-techspec.md §3-3).
+# 처럼 여는 괄호 뒤에 오는 라벨을 놓쳤다(2026-09-08 실측).
 _LABEL = re.compile(r"(^|\n)[\s(\[\"“'*]*(사용자|서술자|진행자|캐릭터)\s*:")
 _USER_TURN = re.compile(r"(^|\n)\s*사용자\s*:")
-# 턴 열기 지표 4종(chat-techspec.md §3-2) — 밥집(닫힘)·이도윤(열림) 두 방 실측으로 판정력을
-# 확인한 것만 담는다. 물음표·따옴표 대사 후보는 항진명제/역방향으로 판정력이 없어 버렸다
-# (tasks/fixtures/README.md).
+# 턴 열기 지표 4종 — 밥집(닫힘)·이도윤(열림) 두 방 실측으로 판정력을
+# 확인한 것만 담는다. 물음표·따옴표 대사 후보는 항진명제/역방향으로 판정력이 없어 버렸다.
 _SOLICIT = re.compile(
     r"(까요|나요|ㄹ까|을까|는지요|습니까|십시오|세요|주세요|보실|하실|드릴까)[.?…\"”\s]*(?:$|[.\"?…”])",
     re.M,
@@ -68,7 +67,7 @@ _IGNORE = re.compile(r"(대꾸 없이|대답(을)? (하지|않)|답하지 않|�
 # 장면 이동형 열기 — 의문·청유(질문 형태)가 못 잡는 나머지 두 갈래(상황 변화·사실 노출)를
 # "마지막 문장이 정적·종결 어휘로 끝나는가"의 반대로 잡는다. "진행 중" 을 직접 정의하려 하면
 # `스쳐 지나가는 듯합니다` 처럼 여닫힘 양쪽에 다 나오는 표현이 섞여 판정력이 없다 — 종결
-# 어휘를 걸러내는 쪽이 실측에서 갈렸다. 3단계 A세트(밥집 재현, 09-09 아카이브) 마지막 문장
+# 어휘를 걸러내는 쪽이 실측에서 갈렸다. 밥집 재현 A세트(09-09 아카이브) 마지막 문장
 # 기준: 기준선은 4/12 가 "정적만이 가득하며"·"침묵합니다"·"눈치채지 못한"·"기대하지 않는"
 # 로 끝나 닫힘, 처방(L0)은 0/12. 정답지(밥집 4턴·이도윤 6턴)도 같은 방향(3/4 vs 6/6).
 _SCENE_CLOSE = re.compile(
@@ -131,7 +130,7 @@ class Summary:
     truncated: int = 0
     self_copies: int = 0
     hits: Counter[str] = field(default_factory=Counter)
-    # 턴 열기 지표 4종(chat-techspec.md §3-2 · D-18). solicit/ignored/scene_open은 턴 단위라
+    # 턴 열기 지표 4종. solicit/ignored/scene_open은 턴 단위라
     # scored로 나눈다. monotonic_rooms/total_rooms는 **방 단위**(길이 수열이 끝까지 비증가인가)라
     # scored를 분모로 섞지 않는다 — 별도 분모를 갖는다.
     solicit: int = 0
@@ -156,7 +155,7 @@ class Summary:
     def ratio(self, hit: int) -> str:
         return f"{hit}/{self.scored} ({round(100 * hit / max(1, self.scored))}%)"
 
-    # ratio()와 달리 분모가 scored(턴 수)가 아니라 total_rooms(방 수)다 — D-18.
+    # ratio()와 달리 분모가 scored(턴 수)가 아니라 total_rooms(방 수)다.
     def room_ratio(self) -> str:
         return (
             f"{self.monotonic_rooms}/{self.total_rooms} "
@@ -272,7 +271,7 @@ def main() -> None:
                 "empty_replies": s.empty_replies,
                 "truncated": s.truncated,
                 "self_copies": s.self_copies,
-                # 턴 열기 지표(D-18): solicit/ignored/scene_open은 scored(턴 단위) 분모,
+                # 턴 열기 지표: solicit/ignored/scene_open은 scored(턴 단위) 분모,
                 # monotonic_rooms는 total_rooms(방 단위) 분모 — 서로 섞지 않는다.
                 "solicit": s.solicit,
                 "ignored": s.ignored,
@@ -309,7 +308,7 @@ def main() -> None:
     _row("의문·청유 어미", [s.ratio(s.solicit) for s in summaries], width)
     _row("무시 표현(앞120자)", [s.ratio(s.ignored) for s in summaries], width)
     _row("장면 이동형 열기", [s.ratio(s.scene_open) for s in summaries], width)
-    # 턴 단위가 아니라 방 단위(길이 수열이 끝까지 비증가인가) — 분모가 다르다(D-18).
+    # 턴 단위가 아니라 방 단위(길이 수열이 끝까지 비증가인가) — 분모가 다르다.
     _row("길이 단조감소(방 단위)", [s.room_ratio() for s in summaries], width)
     # 스토리 하나를 여러 회차로 돌리는 실험부터 "스토리 간"이 아니라 "항목 간"(스토리 ×
     # 시작설정 × 회차) 편차다. 항목이 1개면 항상 1.0 이라 표시하지 않는다.

@@ -23,7 +23,7 @@ async def _assert_requires_admin_session(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -155,7 +155,7 @@ async def test_view_creates_exactly_one_action_log(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """깨지는 시나리오: record_admin_action을 잘못 부르거나 두 번 부르면 행 수·필드가
-    IM-2 규약과 어긋난다."""
+    열람 1회당 로그 1행이라는 규약과 어긋난다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -187,8 +187,8 @@ async def test_view_creates_exactly_one_action_log(
 async def test_view_response_includes_prompt_and_image_url(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """깨지는 시나리오: 사유 게이트를 통과하고도 프롬프트·이미지 URL이 빠지면(IM-2의
-    "이 응답에는 들어간다" 약속 위반) 관리자가 실제로 확인할 게 없다."""
+    """깨지는 시나리오: 사유 게이트를 통과하고도 프롬프트·이미지 URL이 빠지면(열람
+    응답에는 들어간다는 약속 위반) 관리자가 실제로 확인할 게 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -229,7 +229,7 @@ async def test_view_response_includes_prompt_and_image_url(
 async def test_more_three_times_still_zero_log_rows(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-6/IM-2 검증 기준의 핵심 — 더보기(GET)를 몇 번 불러도 로그는 늘지 않는다.
+    """더보기(GET)를 몇 번 불러도 로그는 늘지 않는다.
     깨지는 시나리오: 더보기에 record_admin_action을 실수로 붙이면 3번 호출에 3행이 쌓인다."""
     user = _make_user()
     db_session.add(user)
@@ -253,14 +253,14 @@ async def test_more_three_times_still_zero_log_rows(
     assert logs == []
 
 
-# ---- IM-11 회귀 방지 -----------------------------------------------------------
+# ---- 전역 목록에는 프롬프트·이미지 URL을 싣지 않는다 ------------------------------
 
 
 async def test_list_response_omits_prompt_and_image_url(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """깨지는 시나리오(IM-11 회귀): 전역 목록 스키마에 프롬프트나 이미지 URL 필드가 섞여
-    들어가면 사유 게이트(IM-2)가 무의미해진다."""
+    """깨지는 시나리오: 전역 목록 스키마에 프롬프트나 이미지 URL 필드가 섞여
+    들어가면 사유 게이트가 무의미해진다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()

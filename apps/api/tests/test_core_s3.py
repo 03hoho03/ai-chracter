@@ -10,7 +10,7 @@ def test_build_object_key_content_thumbnail_webp() -> None:
 
 
 def test_build_object_key_falls_back_to_no_extension_for_unrecognized_content_type() -> None:
-    """뮤테이션(8단계 T-13 #9): s3.py:31 의 `guess_extension(content_type) or ""` 가
+    """뮤테이션: s3.py:31 의 `guess_extension(content_type) or ""` 가
     `or "XXXX"`로 바뀌어도 죽지 않았다 — `image/webp`만 테스트해 `guess_extension`이 None을
     내는 폴백 분기를 아무도 안 탔다.
     """

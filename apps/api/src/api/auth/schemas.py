@@ -19,7 +19,7 @@ class SignupRequest(CamelModel):
     @field_validator("birth_date")
     @classmethod
     def _must_meet_minimum_age(cls, value: date) -> date:
-        # legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다.
+        # 만 14세 미만은 가입을 거부한다.
         if is_under_minimum_age(value, datetime.now(UTC).date()):
             raise ValueError("만 14세 미만은 가입할 수 없습니다.")
         return value
@@ -65,7 +65,7 @@ class OnboardingGoogleRequest(CamelModel):
     @field_validator("birth_date")
     @classmethod
     def _must_meet_minimum_age(cls, value: date) -> date:
-        # legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다.
+        # 만 14세 미만은 가입을 거부한다.
         if is_under_minimum_age(value, datetime.now(UTC).date()):
             raise ValueError("만 14세 미만은 가입할 수 없습니다.")
         return value

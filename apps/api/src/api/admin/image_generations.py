@@ -27,7 +27,7 @@ from api.images.schemas import (
 
 router = APIRouter(tags=["admin"])
 
-# image-monitoring-goal-prompt.md IM-12: limit을 클라이언트에 노출하지 않는다.
+# limit을 클라이언트에 노출하지 않는다.
 ADMIN_IMAGE_GENERATION_PAGE_SIZE = 20
 
 
@@ -36,7 +36,7 @@ async def _list_owner_requests_page(
 ) -> AdminImageGenerationDetailListResponse:
     """유저 단위 열람(view)과 더보기(list)의 공용 페이지 조립 — `admin/chat_view.py`의
     `_list_messages_page`와 같은 이유로 한 파일 안에서 공유한다. 사유 게이트를 통과한
-    뒤에만 불리므로 프롬프트·이미지 URL을 그대로 채운다(IM-2)."""
+    뒤에만 불리므로 프롬프트·이미지 URL을 그대로 채운다."""
     filters: list[ColumnElement[bool]] = [ImageGenerationRequest.owner_user_id == owner_user_id]
 
     total_count = (
@@ -110,8 +110,8 @@ async def list_admin_image_generations(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminImageGenerationListResponse:
-    """image-monitoring-goal-prompt.md IM-11: 유저 식별(닉네임·이메일)·상태·스타일·요청/완료
-    이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트(IM-2) 뒤에서만
+    """유저 식별(닉네임·이메일)·상태·스타일·요청/완료
+    이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트 뒤에서만
     노출한다."""
     if from_date is not None and to_date is not None and to_date < from_date:
         raise HTTPException(
@@ -185,7 +185,7 @@ async def view_user_image_generations(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminImageGenerationDetailListResponse:
-    """image-monitoring-goal-prompt.md IM-2. **열람 1회 = 로그 1행**(`chat_view.py`와 같은
+    """**열람 1회 = 로그 1행**(`chat_view.py`와 같은
     규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를
     쌓지 않는다."""
     if not body.reason_text.strip():
@@ -219,7 +219,7 @@ async def list_user_image_generations(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminImageGenerationDetailListResponse:
-    """더보기 — **로그를 절대 쌓지 않는다**(IM-2): "열람 1회 = 로그 1행"을 여기서
+    """더보기 — **로그를 절대 쌓지 않는다**: "열람 1회 = 로그 1행"을 여기서
     깨면 더보기 3번에 3행이 쌓인다."""
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:

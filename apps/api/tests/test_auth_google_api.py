@@ -131,8 +131,8 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
 
 
 async def test_onboarding_google_rejects_under_minimum_age(db_client: httpx.AsyncClient) -> None:
-    """legal-revision-goal-prompt.md LR-9: 이메일 가입과 마찬가지로 구글 온보딩도 만 14세
-    미만을 거부한다 — 두 경로가 비대칭으로 새지 않는지가 이 런의 반복된 위험이다."""
+    """이메일 가입과 마찬가지로 구글 온보딩도 만 14세
+    미만을 거부한다 — 두 경로가 비대칭으로 새는 것이 반복된 위험이다."""
     minor_birth_date = date.today().replace(year=date.today().year - 13).isoformat()
     ctx = await _onboard_new_google_user(db_client, minor_birth_date)
 
@@ -155,7 +155,7 @@ async def test_onboarding_google_rejects_missing_transfer_agreement(db_client: h
 async def test_onboarding_google_rejects_transfer_agreement_field_omitted(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """legal-revision-goal-prompt.md LR-1: SignupRequest와 마찬가지로 transferAgreed는
+    """SignupRequest와 마찬가지로 transferAgreed는
     OnboardingGoogleRequest에서도 필수 필드다 — 두 클래스의 validator는 복붙본이라
     한쪽만 고치면 이 경로에서만 422가 안 걸리는 비대칭이 생길 수 있다."""
     ctx = await _onboard_new_google_user(db_client, "2000-01-01")
@@ -269,7 +269,7 @@ async def test_google_callback_redirects_suspended_existing_user(
 async def test_onboarding_google_suspended_existing_user_is_rejected_without_side_effects(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """backlog-sweep BS-8(J-1): 정지 검사가 `db.commit()`·pending 토큰 삭제보다 **앞**에 있어야
+    """정지 검사가 `db.commit()`·pending 토큰 삭제보다 **앞**에 있어야
     한다. 이 403은 `google_sub` 매치 기존 유저 분기에서만 난다(신규 유저는 `suspended_at`이
     정의상 `None`) — 콜백은 정지 유저를 리다이렉트해 토큰을 주지 않으므로 토큰을 직접 만든다.
     이 분기에 실제로 닿는 드문 경로는 둘이다(완료 뒤 재제출은 토큰이 지워져 400이라 아니다):
@@ -313,8 +313,8 @@ async def test_onboarding_google_suspended_existing_user_is_rejected_without_sid
 async def test_google_callback_rejects_existing_minor_account_matched_by_google_sub(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-30 정정판: S2 적대적 리뷰가 찾은 구멍 — 연령 게이트가
-    `login()`에만 있고 `google_callback`엔 없었다. LR-9가 신규 가입을 막아 더 이상
+    """리뷰가 찾은 구멍 — 연령 게이트가
+    `login()`에만 있고 `google_callback`엔 없었다. 만 14세 미만 가입 거부로 더 이상
     `/auth/signup`으로는 만들 수 없는 기존 미성년 계정을, 시행일 이전 가입분을 흉내 내
     DB에 직접 만들어 재현한다. google_sub 직접 매치 분기가 세션 없이 되돌리는지 본다."""
     sub = f"google-sub-{uuid.uuid4()}"
@@ -375,9 +375,9 @@ async def test_google_callback_rejects_existing_minor_account_linked_by_email(
 async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdrawal(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """legal-revision-goal-prompt.md LR-7·LR-18: 탈퇴 시 google_sub도 파기되므로(LR-18)
+    """탈퇴 시 google_sub도 파기되므로
     google_sub 직접 매치가 아니라 onboarding_google의 신규 유저 생성 분기를 타게 되고,
-    거기서 withdrawn_emails의 HMAC 조회가 막는다. 이 런에서 반복된 비대칭 위험(이메일
+    거기서 withdrawn_emails의 HMAC 조회가 막는다. 반복된 비대칭 위험(이메일
     경로만 막고 구글 경로가 새는 것)을 가장 직접적으로 확인하는 테스트다."""
     ctx = await _onboard_new_google_user(db_client, "2000-01-01")
     onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
@@ -417,7 +417,7 @@ async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdr
     assert resp.status_code == 409
 
 
-# backlog-l-goal-prompt.md BL-1: redirect 는 콜백에서 frontend_base_url 뒤에 그대로 이어 붙으므로
+# redirect 는 콜백에서 frontend_base_url 뒤에 그대로 이어 붙으므로
 # "https://ddona.site" + "@evil.com" 처럼 호스트를 바꾸는 값이 들어오면 로그인 직후 외부로 튄다.
 _UNSAFE_REDIRECTS = [
     "@evil.com",

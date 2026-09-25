@@ -1,10 +1,10 @@
-"""persona-goal-prompt.md §3-3 · §4 S5 — 대화 프로필 CRUD·기본 지정·방 선택 API.
+"""대화 프로필 CRUD·기본 지정·방 선택 API.
 
 🔴 쓰기 경로의 소유권 검사가 이 기능의 유일한 방어선이다. 읽기 경로(`_build_prompt`,
-`_preview_persona_dependency`)는 프로필 소유자를 다시 보지 않는다(review-s4.md ⚪-2). 그래서
+`_preview_persona_dependency`)는 프로필 소유자를 다시 보지 않는다. 그래서
 남의 프로필을 기본·방에 거는 모든 경로가 403인지를 여기서 하나씩 확인한다.
 
-방 생성 두 경로(새 방 = 기본, UP-24 승계)는 `test_chat_room_api.py`, 탈퇴는
+방 생성 두 경로(새 방 = 기본, 시작설정 변경 = 원래 방의 선택 승계)는 `test_chat_room_api.py`, 탈퇴는
 `test_auth_me_api.py`, 재동의 게이트 분류는 `test_consent_gate_endpoints.py`에 있다.
 """
 
@@ -202,7 +202,7 @@ async def test_create_persona_follows_set_as_default(
     db_client: httpx.AsyncClient,
     db_session: AsyncSession,
 ) -> None:
-    """persona-goal-prompt.md UP-23 — BE는 받은 `setAsDefault`만 따른다(자체 추론 없음)."""
+    """BE는 받은 `setAsDefault`만 따른다(자체 추론 없음)."""
     user = await _logged_in_user(db_client, db_session)
     existing_default = None
     if has_default:
@@ -221,7 +221,7 @@ async def test_create_persona_follows_set_as_default(
 async def test_create_persona_without_set_as_default_returns_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-23: `setAsDefault`는 기본값 없는 필수 필드다 — 규칙이 두 곳에 생기지 않게."""
+    """`setAsDefault`는 기본값 없는 필수 필드다 — 규칙이 두 곳에 생기지 않게."""
     await _logged_in_user(db_client, db_session)
     await db_session.commit()
     body = _create_body()
@@ -294,7 +294,7 @@ async def test_update_persona_of_other_user_returns_403_and_unknown_returns_404(
 async def test_delete_default_persona_nulls_referencing_rooms_and_default(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """persona-goal-prompt.md UP-14 — 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
+    """프로필을 지우면 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
     다른 프로필을 가리키는 방은 그대로다."""
     user = await _logged_in_user(db_client, db_session)
     target = await _make_persona(db_session, user.id, name="지울 것")

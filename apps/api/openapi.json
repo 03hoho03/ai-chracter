@@ -245,7 +245,7 @@
           "admin"
         ],
         "summary": "List Admin Contents",
-        "description": "techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이\n`contents`가 아니라 `character_version_details`/`story_version_details`에 있어\n`current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는\n(초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만\n(이름이 없으니 맞는 동작), `q` 없이 목록을 볼 땐 outer join이라 그대로 나온다.",
+        "description": "`q`는 작품 이름 ILIKE 부분일치인데 이름이\n`contents`가 아니라 `character_version_details`/`story_version_details`에 있어\n`current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는\n(초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만\n(이름이 없으니 맞는 동작), `q` 없이 목록을 볼 땐 outer join이라 그대로 나온다.",
         "operationId": "list_admin_contents_admin_contents_get",
         "parameters": [
           {
@@ -412,7 +412,7 @@
           "admin"
         ],
         "summary": "Act On Content",
-        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\nT-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
+        "description": "신고 없이 내리는 직접 조치. `reject`는 \"신고를 반려한다\"는 뜻이라, 애초에 신고가\n없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.\n\n사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을\n만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가\n필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을\n근거로 들었지만, 이후 그 컬럼이 nullable로\n바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면\n`lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를\n강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신\n\"위험 조치는 확인 다이얼로그 + 사유 필수\" 요건을 만족시키는 건 `admin_comment`(자유\n텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로\n바꿨다(비어 있으면 422).",
         "operationId": "act_on_content_admin_contents__content_id__action_post",
         "parameters": [
           {
@@ -466,7 +466,7 @@
           "admin"
         ],
         "summary": "List Admin Users",
-        "description": "techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는\n제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해\n한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +\n본 조회 1개, 총 2개로 끝난다.",
+        "description": "탈퇴 유저(`deleted_at IS NOT NULL`)는\n제외한다. 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해\n한 조회에 붙인다 — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +\n본 조회 1개, 총 2개로 끝난다.",
         "operationId": "list_admin_users_admin_users_get",
         "parameters": [
           {
@@ -586,7 +586,7 @@
           "admin"
         ],
         "summary": "Warn User",
-        "description": "알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지\n문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),\nT-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가\n사라졌다.\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다.",
+        "description": "알림만 보낸다 — 이용 제한 없음. `reason_category`가 필수인 이유는 통지\n문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만,\n이후 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가\n사라졌다.\n\n**이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로\n다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로\n주의를 주고 싶을 수 있다. 이를 금지하는 요구사항도 없다.",
         "operationId": "warn_user_admin_users__user_id__warn_post",
         "parameters": [
           {
@@ -633,7 +633,7 @@
           "admin"
         ],
         "summary": "Suspend User",
-        "description": "techspec.md §2-2의 6단계를 정확한 순서로 수행한다.\n\n```\n1. users.suspended_at = now()\n2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'\n   (visibility는 불변, T-1; PRIVATE는 제외 — D-6)\n3. Notification(type='user-suspended', content_id=None, action_id=None)\n4. record_admin_action(action_type='user-suspend')\n5. db.commit()                  ← 여기까지 원자적\n6. mark_user_suspended(user_id) ← Redis. 실패하면 500\n```\n\n**순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도\ntry/except 없이 그대로 예외가 전파돼 500이 된다) \"DB엔 정지인데 마커가 없는\" 상태로\n끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시\n시도된다.\n\n**이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위\n재시도 시나리오(6 실패 후 재호출)가 정확히 \"이미 `suspended_at`이 있는 유저에 대한\n두 번째 suspend 호출\"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은\n멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가\n`_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은\n다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.",
+        "description": "아래 6단계를 정확한 순서로 수행한다.\n\n```\n1. users.suspended_at = now()\n2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'\n   (visibility는 불변; PRIVATE는 제외)\n3. Notification(type='user-suspended', content_id=None, action_id=None)\n4. record_admin_action(action_type='user-suspend')\n5. db.commit()                  ← 여기까지 원자적\n6. mark_user_suspended(user_id) ← Redis. 실패하면 500\n```\n\n**순서가 중요하다 — DB가 진실이므로 먼저 확정한다.** 6이 실패하면(여기서 별도\ntry/except 없이 그대로 예외가 전파돼 500이 된다) \"DB엔 정지인데 마커가 없는\" 상태로\n끝나고, 관리자가 다시 이 엔드포인트를 누르면 1~5는 멱등하게 재실행되며 6만 다시\n시도된다.\n\n**이미 정지된 유저를 다시 정지시켜도 400을 던지지 않고 그대로 통과시킨다.** 위\n재시도 시나리오(6 실패 후 재호출)가 정확히 \"이미 `suspended_at`이 있는 유저에 대한\n두 번째 suspend 호출\"이라, 여기서 막으면 그 복구 경로 자체가 사라진다. 매 호출은\n멱등하게 동작한다 — `suspended_at`은 호출 시각으로 다시 세팅되고, 아래 2단계가\n`_RESTRICTABLE_CONTENT_CONDITION`을 만족하는 작품만 내리므로 이미 내려간 작품은\n다시 세지 않아 재호출 시 `restricted_content_count`는 자연히 0에 수렴한다.",
         "operationId": "suspend_user_admin_users__user_id__suspend_post",
         "parameters": [
           {
@@ -687,7 +687,7 @@
           "admin"
         ],
         "summary": "Unsuspend User",
-        "description": "계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,\n관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을\n명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
+        "description": "계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,\n관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야\n한다.\n\n`reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가\n없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔\n`Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, 이후\n그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은\n규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.\n\n**해제 알림은 보내지 않는다.** 경고·정지와 달리 요구사항에 해제 알림은 없고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로\n상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인\n것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.\n\n순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.",
         "operationId": "unsuspend_user_admin_users__user_id__unsuspend_post",
         "parameters": [
           {
@@ -734,7 +734,7 @@
           "admin"
         ],
         "summary": "Set User Rate Limit Exempt",
-        "description": "limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.\nRedis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)\n이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.\n\n면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외\n계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.\n\n**액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /\n`user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은\n없고, 두 타입을 나눠야 이력 표에서 \"언제 켰고 언제 껐나\"가 구분된다 — 한 타입에\n코멘트로만 담으면 그 구분이 사람이 읽는 자유 문자열로 내려간다.\n\n`reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와\n같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).\n\n**같은 값을 다시 적용해도(True→True) 막지 않는다** — 대입은 멱등하고 `admin_action_logs`에는\n\"누가 언제 눌렀다\"가 한 행 더 남는다. 이미 정지된 유저의 재정지를 400으로 막지 않는\n`suspend_user`와 같은 관례다.\n\n순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).",
+        "description": "`users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.\nRedis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)\n이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.\n\n면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외\n계정에도 그대로 적용된다 — 그 범위는 어드민 확인 모달이 문장으로 알린다.\n\n**액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /\n`user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은\n없고, 두 타입을 나눠야 이력 표에서 \"언제 켰고 언제 껐나\"가 구분된다 — 한 타입에\n코멘트로만 담으면 그 구분이 사람이 읽는 자유 문자열로 내려간다.\n\n`reason_category`를 받지 않고 `admin_comment`를 필수로 받는 규칙은 `unsuspend_user`와\n같다(`Notification`을 만들지 않아 인용할 사유 자리가 없다).\n\n**같은 값을 다시 적용해도(True→True) 막지 않는다** — 대입은 멱등하고 `admin_action_logs`에는\n\"누가 언제 눌렀다\"가 한 행 더 남는다. 이미 정지된 유저의 재정지를 400으로 막지 않는\n`suspend_user`와 같은 관례다.\n\n순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).",
         "operationId": "set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post",
         "parameters": [
           {
@@ -781,7 +781,7 @@
           "admin"
         ],
         "summary": "Adjust User Clover",
-        "description": "clover-techspec.md §4-3 — 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.\n구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.\n\n🔴 **토글의 *\"같은 값을 다시 적용해도 막지 않는다\"*를 여기로 옮기면 안 된다.** 그 문장이\n성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라\n두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고\n`ux_clover_ledger_idempotency_key`가 그걸 강제한다(clover-goal-prompt.md CL-8).\n\n**호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만\n남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트\n전용이다(clover-techspec.md CT-4): 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,\n어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.\n\n⇒ **\"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지\"의 구간이 생기지 않는다.** 지급이\n커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면\n둘 다 롤백된다. 이 런에서 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이\n갈려 있던** 경로였다.\n\n`amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —\n`burn_all`이 잔액 0에서 아무것도 하지 않는 것과 같은 규칙이다.",
+        "description": "클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.\n구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.\n\n🔴 **토글의 *\"같은 값을 다시 적용해도 막지 않는다\"*를 여기로 옮기면 안 된다.** 그 문장이\n성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라\n두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고\n`ux_clover_ledger_idempotency_key`가 그걸 강제한다.\n\n**호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만\n남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트\n전용이다: 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,\n어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.\n\n⇒ **\"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지\"의 구간이 생기지 않는다.** 지급이\n커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면\n둘 다 롤백된다. 클로버 도입 때 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이\n갈려 있던** 경로였다.\n\n`amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —\n`burn_all`이 잔액 0에서 아무것도 하지 않는 것과 같은 규칙이다.",
         "operationId": "adjust_user_clover_admin_users__user_id__clover_post",
         "parameters": [
           {
@@ -828,7 +828,7 @@
           "admin"
         ],
         "summary": "List User Clover Ledger",
-        "description": "clover-techspec.md §4-5 — 원장 조회는 어드민만이다(유저용 \"사용 내역\" 화면은 범위 밖).\n\n🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두\n페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이\n같은 요청에서 난다) `created_at`의 `server_default`(트랜잭션 시작 시각) 동률이\n`image_generation_requests`보다 흔하다. 선례는 `admin/image_generations.py`의\n`_list_owner_requests_page`.",
+        "description": "어드민용 원장 조회다 — 임의 유저를 본다(유저 본인용은 `GET /me/clover/ledger`).\n\n🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두\n페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이\n같은 요청에서 난다) `created_at`의 `server_default`(트랜잭션 시작 시각) 동률이\n`image_generation_requests`보다 흔하다. 선례는 `admin/image_generations.py`의\n`_list_owner_requests_page`.",
         "operationId": "list_user_clover_ledger_admin_users__user_id__clover_ledger_get",
         "parameters": [
           {
@@ -929,7 +929,7 @@
           "admin"
         ],
         "summary": "Upsert Legal Draft",
-        "description": "초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만\nupsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.\n\n`_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면\n부분 유니크 인덱스(`ix_legal_documents_kind_draft`)에 걸린다.\n`publish_legal_document`와 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다.\n다만 이 엔드포인트는 게시(발행)와 달리 upsert이므로, 경쟁에서 진 요청을 409로\n거부하지 않는다 — \"초안이 이 내용이 되게 하라\"는 upsert의 의미는 먼저 커밋된 게\n자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시\n읽어 이 요청의 내용으로 덮어쓴다.",
+        "description": "초안 저장은 게시본을 건드리지 않는다 — status='draft'인 행만\nupsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.\n\n`_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면\n부분 유니크 인덱스(`ix_legal_documents_kind_draft`)에 걸린다.\n`publish_legal_document`와 같은 이유로 `begin_nested()`(SAVEPOINT)로 감싼다.\n다만 이 엔드포인트는 게시(발행)와 달리 upsert이므로, 경쟁에서 진 요청을 409로\n거부하지 않는다 — \"초안이 이 내용이 되게 하라\"는 upsert의 의미는 먼저 커밋된 게\n자신인지 남인지와 무관하게 그대로 성립하므로, 방금 다른 요청이 만든 초안을 다시\n읽어 이 요청의 내용으로 덮어쓴다.",
         "operationId": "upsert_legal_draft_admin_legal__kind__draft_put",
         "parameters": [
           {
@@ -1089,7 +1089,7 @@
           "admin"
         ],
         "summary": "List Admin Notices",
-        "description": "어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`\n(`moderation/router.py:216`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가\n커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정\n페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.",
+        "description": "어드민 목록은 미게시 포함, offset 페이징 — `moderation/router.py`의\n`list_admin_reports`와 같은 모양. 유저용 `/notices`가\n커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정\n페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.",
         "operationId": "list_admin_notices_admin_notices_get",
         "parameters": [
           {
@@ -1267,7 +1267,7 @@
           "admin"
         ],
         "summary": "Publish Admin Notice",
-        "description": "게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다(techspec.md §4-3, D-16).\n\n- `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.\n- `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이\n  있으므로 원래 게시일이 유지된다(`db/models/notice.py`의 모델 docstring 근거와\n  같다).\n- **`already_sent` 선행 확인 + `ux_notifications_notice_user` 부분 유니크\n  인덱스로 2중 방어한다.** 전자가 숨김 → 재게시 경로에서 알림을 또 안 만들게\n  막고, 후자는 경쟁 상황에서도 DB 제약으로 같은 결론을 보장한다.\n- **`gen_random_uuid()`는 이 저장소에서 여기가 유일하다.** 다른 모든 PK는\n  파이썬 쪽 `default=uuid.uuid4`로 채워지는데, `INSERT ... SELECT`는 ORM을\n  거치지 않아 그 default를 우회한다 — Postgres 18이라 내장 함수라서 확장 설치가\n  따로 필요 없다(`docker-compose.{dev,prod}.yml`이 postgres:18).\n- 생존 유저 판정은 `User.deleted_at IS NULL`이다 — `session/suspension.py`의\n  `rebuild_suspended_user_markers`가 같은 조건을 쓰는 선례다.\n- **알려진 대가**: 게시 후 가입한 유저는 이 fan-out의 대상이 아니라 그 공지의\n  알림을 받지 못한다. 목록 `/notices`에는 항상 보이므로 알림만 못 받는 것이다.\n- fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE\n  deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 \"동기 실행이 프로덕션\n  규모에서도 감당 가능하다\"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이\n  가정(D-16)을 다시 실측해 재검증할 것.",
+        "description": "게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다.\n\n- `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.\n- `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이\n  있으므로 원래 게시일이 유지된다(`db/models/notice.py`의 모델 docstring 근거와\n  같다).\n- **`already_sent` 선행 확인 + `ux_notifications_notice_user` 부분 유니크\n  인덱스로 2중 방어한다.** 전자가 숨김 → 재게시 경로에서 알림을 또 안 만들게\n  막고, 후자는 경쟁 상황에서도 DB 제약으로 같은 결론을 보장한다.\n- **`gen_random_uuid()`는 이 저장소에서 여기가 유일하다.** 다른 모든 PK는\n  파이썬 쪽 `default=uuid.uuid4`로 채워지는데, `INSERT ... SELECT`는 ORM을\n  거치지 않아 그 default를 우회한다 — Postgres 18이라 내장 함수라서 확장 설치가\n  따로 필요 없다(`docker-compose.{dev,prod}.yml`이 postgres:18).\n- 생존 유저 판정은 `User.deleted_at IS NULL`이다 — `session/suspension.py`의\n  `rebuild_suspended_user_markers`가 같은 조건을 쓰는 선례다.\n- **알려진 대가**: 게시 후 가입한 유저는 이 fan-out의 대상이 아니라 그 공지의\n  알림을 받지 못한다. 목록 `/notices`에는 항상 보이므로 알림만 못 받는 것이다.\n- fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE\n  deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 \"동기 실행이 프로덕션\n  규모에서도 감당 가능하다\"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이\n  가정(동기 fan-out)을 다시 실측해 재검증할 것.",
         "operationId": "publish_admin_notice_admin_notices__id__publish_post",
         "parameters": [
           {
@@ -1354,7 +1354,7 @@
           "admin"
         ],
         "summary": "List Admin Inquiries",
-        "description": "offset 페이징 — `list_admin_reports`(`moderation/router.py:216`)와 같은 모양.",
+        "description": "offset 페이징 — `moderation/router.py`의 `list_admin_reports`와 같은 모양.",
         "operationId": "list_admin_inquiries_admin_inquiries_get",
         "parameters": [
           {
@@ -1528,7 +1528,7 @@
           "admin"
         ],
         "summary": "List Admin Image Generations",
-        "description": "image-monitoring-goal-prompt.md IM-11: 유저 식별(닉네임·이메일)·상태·스타일·요청/완료\n이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트(IM-2) 뒤에서만\n노출한다.",
+        "description": "유저 식별(닉네임·이메일)·상태·스타일·요청/완료\n이미지 수·생성 시각까지만 싣는다 — 프롬프트와 이미지 URL은 사유 게이트 뒤에서만\n노출한다.",
         "operationId": "list_admin_image_generations_admin_image_generations_get",
         "parameters": [
           {
@@ -1661,7 +1661,7 @@
           "admin"
         ],
         "summary": "View User Image Generations",
-        "description": "image-monitoring-goal-prompt.md IM-2. **열람 1회 = 로그 1행**(`chat_view.py`와 같은\n규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를\n쌓지 않는다.",
+        "description": "**열람 1회 = 로그 1행**(`chat_view.py`와 같은\n규약) — 로그는 이 엔드포인트에서만 쌓는다. 더보기는 아래 GET이 맡고 그쪽은 절대 로그를\n쌓지 않는다.",
         "operationId": "view_user_image_generations_admin_users__user_id__image_generations_view_post",
         "parameters": [
           {
@@ -1715,7 +1715,7 @@
           "admin"
         ],
         "summary": "List User Image Generations",
-        "description": "더보기 — **로그를 절대 쌓지 않는다**(IM-2): \"열람 1회 = 로그 1행\"을 여기서\n깨면 더보기 3번에 3행이 쌓인다.",
+        "description": "더보기 — **로그를 절대 쌓지 않는다**: \"열람 1회 = 로그 1행\"을 여기서\n깨면 더보기 3번에 3행이 쌓인다.",
         "operationId": "list_user_image_generations_admin_users__user_id__image_generations_get",
         "parameters": [
           {
@@ -1770,7 +1770,7 @@
           "admin"
         ],
         "summary": "View Chat Room",
-        "description": "techspec §4-5. **열람 1회 = 로그 1행**(T-6) — 로그는 이 엔드포인트에서만 쌓는다.\n더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.",
+        "description": "**열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.\n더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.",
         "operationId": "view_chat_room_admin_chat_rooms__room_id__view_post",
         "parameters": [
           {
@@ -1824,7 +1824,7 @@
           "admin"
         ],
         "summary": "List Chat Room Messages",
-        "description": "더보기 — **로그를 절대 쌓지 않는다**(T-6): \"열람 1회 = 로그 1행\"을 메서드로\n보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다.",
+        "description": "더보기 — **로그를 절대 쌓지 않는다**: \"열람 1회 = 로그 1행\"을 메서드로\n보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다.",
         "operationId": "list_chat_room_messages_admin_chat_rooms__room_id__messages_get",
         "parameters": [
           {
@@ -1914,7 +1914,7 @@
           "admin"
         ],
         "summary": "Get Prompt Draft",
-        "description": "prompt-scope-techspec.md §4-2 — 라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,\n`GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다\n도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —\n만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이\n404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패).",
+        "description": "라우트 순서 규약. `/{lane}/draft`는 세그먼트가 2개,\n`GET /admin/prompt-sets/{id}`는 1개라 정규식이 겹치지 않아 등록 순서와 무관하게 둘 다\n도달 가능하다. **`GET /admin/prompt-sets/{lane}`(1세그먼트) 라우트는 만들지 않는다** —\n만들면 `GET /{id}`와 정규식이 글자 그대로 같아져 한쪽이 도달 불가가 되고, 정상 요청이\n404가 아니라 422를 받는다(`{id}`가 먼저 등록돼 있으면 레인 문자열의 UUID 파싱 실패).",
         "operationId": "get_prompt_draft_admin_prompt_sets__lane__draft_get",
         "parameters": [
           {
@@ -2017,7 +2017,7 @@
           "admin"
         ],
         "summary": "Preview Prompt Draft",
-        "description": "T-44/D-10 — 샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.\nLLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다\n(`GET .../draft`와 같은 폴백).",
+        "description": "샘플 입력으로 **실제 렌더러**를 태워 조립된 전문을 채널별로 돌려준다.\nLLM은 부르지 않는다. 이 레인의 초안이 없으면 이 레인의 활성 세트로 미리보기한다\n(`GET .../draft`와 같은 폴백).",
         "operationId": "preview_prompt_draft_admin_prompt_sets__lane__draft_preview_post",
         "parameters": [
           {
@@ -2122,7 +2122,7 @@
           "admin"
         ],
         "summary": "Restore Prompt Set",
-        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다(prompt-scope-goal-prompt.md\nCP-4 판정 4). `source.lane`이 `legacy`(PS-6의 과도기 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
+        "description": "옛 버전을 초안으로 복제한다(= 롤백 경로). 게시하지 않는 한 서비스에는 아무 영향이\n없다 — 실제 롤백은 이 뒤에 이어지는 `POST /publish`가 한다.\n\n레인은 요청에서 따로 받지 않는다 — `source.lane`에서만 나온다.\n`source.lane`이 `legacy`(레인 분리 과도기의 격리 값)면 422로 거부한다 — 레인\n분리 이전 버전은 복원 대상이 아니다.",
         "operationId": "restore_prompt_set_admin_prompt_sets__id__restore_post",
         "parameters": [
           {
@@ -2314,7 +2314,7 @@
           "assets"
         ],
         "summary": "Register Situational Image",
-        "description": "techspec-backend-media.md §2. Downloads the original asset, synchronously\ngenerates a Gaussian-blurred variant (no queue — a single-image blur is\nsub-second), and upserts the situational_images row keyed by entity_id.",
+        "description": "Downloads the original asset, synchronously\ngenerates a Gaussian-blurred variant (no queue — a single-image blur is\nsub-second), and upserts the situational_images row keyed by entity_id.",
         "operationId": "register_situational_image_assets__asset_id__register_situational_image_post",
         "parameters": [
           {
@@ -2368,7 +2368,7 @@
           "assets"
         ],
         "summary": "List Generated Images",
-        "description": "techspec-backend-media.md §3: \"생성한 이미지에서 선택\" 갤러리 조회.",
+        "description": "\"생성한 이미지에서 선택\" 갤러리 조회.",
         "operationId": "list_generated_images_me_generated_images_get",
         "responses": {
           "200": {
@@ -2394,7 +2394,7 @@
           "assets"
         ],
         "summary": "Delete Generated Image",
-        "description": "US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.\n\n존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset\n존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아\n발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.",
+        "description": "생성 이미지 삭제.\n\n존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset\n존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아\n발행·초안 참조가 깨지는 삭제를 구조적으로 막는다.",
         "operationId": "delete_generated_image_me_generated_images__asset_id__delete",
         "parameters": [
           {
@@ -2983,7 +2983,7 @@
           "notice"
         ],
         "summary": "List Notices",
-        "description": "공개 목록 — 인증 없음(techspec.md §4-1, D-5). `legal/router.py`의\n`GET /legal/{kind}`와 같은 취급.\n\n**페이징하지 않는다**(D-13) — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서\n인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서\n페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/\n:1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지\n않는 추가라 지금 미리 만들어 둘 이유가 없다.",
+        "description": "공개 목록 — 인증 없음. `legal/router.py`의\n`GET /legal/{kind}`와 같은 취급.\n\n**페이징하지 않는다** — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서\n인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서\n페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`를\n그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지\n않는 추가라 지금 미리 만들어 둘 이유가 없다.",
         "operationId": "list_notices_notices_get",
         "responses": {
           "200": {
@@ -3090,7 +3090,7 @@
           "inquiry"
         ],
         "summary": "List My Inquiries",
-        "description": "페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다.",
+        "description": "페이징하지 않는다 — 공지 목록처럼 항목이 제목·상태·날짜뿐이라 작고, 내 문의는 공지보다도 적다.",
         "operationId": "list_my_inquiries_me_inquiries_get",
         "responses": {
           "200": {
@@ -3156,7 +3156,7 @@
           "content"
         ],
         "summary": "List My Drafts",
-        "description": "한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).\n\n발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /\n`_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.\n`published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠\n단위로 `current_published_version_id IS NULL`을 함께 본다.\n\n커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는\n`published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는\n`updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을\n그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라\n커서가 가리키는 행이 페이지 사이에 움직이지 않는다는 뜻이기도 하다.",
+        "description": "한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다.\n\n발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /\n`_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.\n`published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠\n단위로 `current_published_version_id IS NULL`을 함께 본다.\n\n커서 페이징의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는\n`published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는\n`updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을\n그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라\n커서가 가리키는 행이 페이지 사이에 움직이지 않는다는 뜻이기도 하다.",
         "operationId": "list_my_drafts_me_drafts_get",
         "parameters": [
           {
@@ -3206,7 +3206,7 @@
           "content"
         ],
         "summary": "List My Favorites",
-        "description": "techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story\ntypes, so details are resolved per-type like `/me/drafts` rather than joined against\na single `_detail_model`. Excludes moderation_status=deleted content (same precedent as\n`/users/{id}/contents`'s owner \"all\" filter) since that's the fully-hidden equivalent of\nnon-existence; otherwise still shows the bookmark regardless of visibility/restriction.",
+        "description": "Without `type`, mixes character/story\ntypes, so details are resolved per-type like `/me/drafts` rather than joined against\na single `_detail_model`. Excludes moderation_status=deleted content (same precedent as\n`/users/{id}/contents`'s owner \"all\" filter) since that's the fully-hidden equivalent of\nnon-existence; otherwise still shows the bookmark regardless of visibility/restriction.",
         "operationId": "list_my_favorites_me_favorites_get",
         "parameters": [
           {
@@ -3356,7 +3356,7 @@
           "content"
         ],
         "summary": "List User Contents",
-        "description": "커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그\n두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.",
+        "description": "커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그\n두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다.",
         "operationId": "list_user_contents_users__id__contents_get",
         "parameters": [
           {
@@ -3471,7 +3471,7 @@
           "content"
         ],
         "summary": "Create Content Draft",
-        "description": "techspec-backend-content.md §1.2. The new detail row is genuinely empty (see\ncharacter.py/story.py docstrings) — text columns get `\"\"`, `thumbnail_asset_id` stays\nunset until an image is uploaded. type='story' creates no child rows (starting_setups\netc.) yet — those are added via `PATCH /contents/{id}/draft`.",
+        "description": "The new detail row is genuinely empty (see\ncharacter.py/story.py docstrings) — text columns get `\"\"`, `thumbnail_asset_id` stays\nunset until an image is uploaded. type='story' creates no child rows (starting_setups\netc.) yet — those are added via `PATCH /contents/{id}/draft`.",
         "operationId": "create_content_draft_contents_post",
         "requestBody": {
           "required": true,
@@ -3511,7 +3511,7 @@
           "content"
         ],
         "summary": "List Contents",
-        "description": "techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.\n\n`sort=popular` prioritizes chat_count over like_count/view_count by ordering on\nall three columns lexicographically (chat_count first) instead of a single\nweighted score, so chat_count strictly dominates ties by construction — the\nactual weighted-score formula is still a PRD-level open question for later\ntuning. `sort=genre` orders by the genre master's sort_order.",
+        "description": "`sort=popular` prioritizes chat_count over like_count/view_count by ordering on\nall three columns lexicographically (chat_count first) instead of a single\nweighted score, so chat_count strictly dominates ties by construction — the\nactual weighted-score formula is still a PRD-level open question for later\ntuning. `sort=genre` orders by the genre master's sort_order.",
         "operationId": "list_contents_contents_get",
         "parameters": [
           {
@@ -3699,7 +3699,7 @@
           "content"
         ],
         "summary": "Update Content Draft",
-        "description": "techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data (techspec-db-schema.md §3).",
+        "description": "Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data.",
         "operationId": "update_content_draft_contents__id__draft_patch",
         "parameters": [
           {
@@ -3767,7 +3767,7 @@
           "content"
         ],
         "summary": "Delete Content Draft",
-        "description": "US-003. Deletes a never-published content outright (draft version + content row).\n\nDeletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id\nIS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a\nfresh draft version, so a published work always has a draft row too, and throwing that\naway would delete the published work with it. Discarding *edits* to a published work is\n`POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.",
+        "description": "Deletes a never-published content outright (draft version + content row).\n\nDeletable == exactly what `GET /me/drafts` returns: `current_published_version_id\nIS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a\nfresh draft version, so a published work always has a draft row too, and throwing that\naway would delete the published work with it. Discarding *edits* to a published work is\n`POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 정책상 없다.",
         "operationId": "delete_content_draft_contents__id__draft_delete",
         "parameters": [
           {
@@ -3804,7 +3804,7 @@
           "content"
         ],
         "summary": "Reset Content Draft",
-        "description": "US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with\nthe current published version's content. The published version itself is untouched.\n\nDeliberately not a delete: publishing auto-clones a draft version, and that clone is the\nrow `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.\n`DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.\n\nNo dirty check — resetting a draft that already matches the published version succeeds\nand simply rewrites identical rows.",
+        "description": "편집 취소 — throws away in-progress edits by rewriting the draft version with\nthe current published version's content. The published version itself is untouched.\n\nDeliberately not a delete: publishing auto-clones a draft version, and that clone is the\nrow `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.\n`DELETE /contents/{id}/draft` is the opposite case and refuses this one with 409.\n\nNo dirty check — resetting a draft that already matches the published version succeeds\nand simply rewrites identical rows.",
         "operationId": "reset_content_draft_contents__id__draft_reset_post",
         "parameters": [
           {
@@ -3841,7 +3841,7 @@
           "content"
         ],
         "summary": "Publish Content",
-        "description": "techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,\nUS-085 story).",
+        "description": "Publish the draft of a character or story.",
         "operationId": "publish_content_contents__id__publish_post",
         "parameters": [
           {
@@ -3885,7 +3885,7 @@
           "content"
         ],
         "summary": "Update Content Visibility",
-        "description": "techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change\nendpoint; there is no delete API. Writes `Content.visibility` directly regardless of\ndraft/publish state, so the existing `Content.visibility == PUBLIC` filter already used\nby home/search/other-profile discovery queries excludes it immediately, matching\ntechspec-content-versioning.md §1's `canDiscoverPublicly`.",
+        "description": "The only content state-change\nendpoint; there is no delete API. Writes `Content.visibility` directly regardless of\ndraft/publish state, so the existing `Content.visibility == PUBLIC` filter already used\nby home/search/other-profile discovery queries excludes it immediately, matching\nthe FE's `canDiscoverPublicly`.",
         "operationId": "update_content_visibility_contents__id__visibility_patch",
         "parameters": [
           {
@@ -3932,7 +3932,7 @@
           "content"
         ],
         "summary": "Get Content Detail",
-        "description": "techspec-backend-content.md §1, techspec-content-versioning.md §1.\n\nAccess control is query-response-based, not a 403/404 gate here: the full detail\n(including `accessStatus`/`isOwner`) is always returned for any existing, published\ncontent, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides\nwhether to render it or an \"unavailable\" state instead.",
+        "description": "Access control is query-response-based, not a 403/404 gate here: the full detail\n(including `accessStatus`/`isOwner`) is always returned for any existing, published\ncontent, and `canViewDetailPage` on the FE decides\nwhether to render it or an \"unavailable\" state instead.",
         "operationId": "get_content_detail_contents__id__get",
         "parameters": [
           {
@@ -3976,7 +3976,7 @@
           "content"
         ],
         "summary": "List Content Versions",
-        "description": "techspec-backend-content.md §1, US-017 — history only, no version-switch action.",
+        "description": "History only, no version-switch action.",
         "operationId": "list_content_versions_contents__id__versions_get",
         "parameters": [
           {
@@ -4024,7 +4024,7 @@
           "content"
         ],
         "summary": "Like Content",
-        "description": "techspec-backend-content.md §1.1, US-039. Idempotent: a repeat like is a no-op\nrather than a second row/double increment (techspec-content-detail.md §4 does an FE\noptimistic update and never reads this response body, hence 204).",
+        "description": "Idempotent: a repeat like is a no-op\nrather than a second row/double increment (the FE does an\noptimistic update and never reads this response body, hence 204).",
         "operationId": "like_content_contents__id__like_post",
         "parameters": [
           {
@@ -4165,7 +4165,7 @@
           "content"
         ],
         "summary": "Report Content",
-        "description": "techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):\neach call inserts a new pending report row, matching techspec-db-schema.md §8's\nreports table having no unique constraint on (reporter_user_id, content_id).",
+        "description": "Not idempotent (unlike like/favorite):\neach call inserts a new pending report row, matching the\nreports table having no unique constraint on (reporter_user_id, content_id).",
         "operationId": "report_content_contents__id__report_post",
         "parameters": [
           {
@@ -4280,7 +4280,7 @@
           "moderation"
         ],
         "summary": "Create Appeal",
-        "description": "techspec-backend-admin-moderation.md §1/§3. `target_kind='publish-rejection'`일 때\n`target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다.",
+        "description": "`target_kind='publish-rejection'`일 때\n`target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다.",
         "operationId": "create_appeal_appeals_post",
         "requestBody": {
           "content": {
@@ -4322,7 +4322,7 @@
           "moderation"
         ],
         "summary": "List Admin Reports",
-        "description": "techspec-backend-admin-moderation.md §1, techspec-admin.md §1 — traditional\n(offset) pagination, unlike the cursor pagination `GET /contents` uses, since\nadmin review work benefits from jumping to a specific page number.",
+        "description": "Traditional (offset) pagination, unlike the cursor pagination `GET /contents` uses, since\nadmin review work benefits from jumping to a specific page number.",
         "operationId": "list_admin_reports_admin_reports_get",
         "parameters": [
           {
@@ -4383,7 +4383,7 @@
           "moderation"
         ],
         "summary": "Get Admin Report Detail",
-        "description": "techspec-backend-admin-moderation.md §1. `reports.content_id` is a plain FK to an\nexisting `contents` row (rows are never hard-deleted, only moderation_status-flagged),\nso the target content is always found.",
+        "description": "`reports.content_id` is a plain FK to an\nexisting `contents` row (rows are never hard-deleted, only moderation_status-flagged),\nso the target content is always found.",
         "operationId": "get_admin_report_detail_admin_reports__report_id__get",
         "parameters": [
           {
@@ -4427,7 +4427,7 @@
           "moderation"
         ],
         "summary": "Act On Report",
-        "description": "techspec-backend-admin-moderation.md §2.",
+        "description": "Resolve a report with a moderation action.",
         "operationId": "act_on_report_admin_reports__report_id__action_post",
         "parameters": [
           {
@@ -4481,7 +4481,7 @@
           "moderation"
         ],
         "summary": "List Admin Appeals",
-        "description": "techspec-backend-admin-moderation.md §1/§3. No separate detail endpoint — unlike\nreports, an appeal's full reason text lives on the same row, so the list item already\ncarries everything the review screen needs (techspec-admin.md §2 only defines\nuseAppealListQuery/useResolveAppealMutation, no detail query).",
+        "description": "No separate detail endpoint — unlike\nreports, an appeal's full reason text lives on the same row, so the list item already\ncarries everything the review screen needs (the admin app only has\nuseAppealListQuery/useResolveAppealMutation, no detail query).",
         "operationId": "list_admin_appeals_admin_appeals_get",
         "parameters": [
           {
@@ -4542,7 +4542,7 @@
           "moderation"
         ],
         "summary": "Resolve Appeal",
-        "description": "techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal\nreuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)\nthat `act_on_report` exports for this purpose. `publish-rejection` appeals have no\npersisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the\nappeal's own status/verdict.",
+        "description": "`accepted` on a `moderation-action` appeal\nreuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)\nthat `act_on_report` exports for this purpose. `publish-rejection` appeals have no\npersisted content-side state to revert, so `accepted` there is a no-op beyond the\nappeal's own status/verdict.",
         "operationId": "resolve_appeal_admin_appeals__appeal_id__resolve_post",
         "parameters": [
           {
@@ -4596,7 +4596,7 @@
           "moderation"
         ],
         "summary": "Get Usage Metrics",
-        "description": "techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은\n사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라\n이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id\ndistinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해\n유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한\n재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖).",
+        "description": "'메시지 전송'은\n사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라\n이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id\ndistinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해\n유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(이\n정의를 다시 볼 정확한 기준은 아직 정하지 않았다).",
         "operationId": "get_usage_metrics_admin_usage_metrics_get",
         "parameters": [
           {
@@ -4865,7 +4865,7 @@
           "chat"
         ],
         "summary": "Get Play Guide",
-        "description": "방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —\ncontentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2).",
+        "description": "방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다 —\ncontentSnapshot에는 의도적으로 포함하지 않는다.",
         "operationId": "get_play_guide_chat_rooms__room_id__play_guide_get",
         "parameters": [
           {
@@ -4909,7 +4909,7 @@
           "chat"
         ],
         "summary": "Send Message",
-        "description": "text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은\n`_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.",
+        "description": "text/event-stream SSE 응답. 실제 생성+판단 파이프라인은\n`_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다.",
         "operationId": "send_message_chat_rooms__room_id__messages_post",
         "parameters": [
           {
@@ -4978,7 +4978,7 @@
           "chat"
         ],
         "summary": "Regenerate Message",
-        "description": "마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별\n이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다\n(situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은\n`if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지\n않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.",
+        "description": "마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별\n이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다\n— 노출 기록(`CharacterImageExposure`)은\n`if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지\n않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.",
         "operationId": "regenerate_message_chat_rooms__room_id__regenerate_post",
         "parameters": [
           {
@@ -5037,7 +5037,7 @@
           "chat"
         ],
         "summary": "Edit Message",
-        "description": "수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서\n생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`\n(판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를\n추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.\n\n삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의\n+=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).\n다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는\n건 이번 스토리 범위 밖이다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고\n(알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.",
+        "description": "수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서\n생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`\n(판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를\n추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.\n\n삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의\n+=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).\n다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는\n건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고\n(알려진 한계), 요구사항에도 이 롤백은 없다.",
         "operationId": "edit_message_chat_rooms__room_id__messages__message_id__patch",
         "parameters": [
           {
@@ -5114,7 +5114,7 @@
           "chat"
         ],
         "summary": "Delete Message",
-        "description": "개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다(US-023 AC).",
+        "description": "개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다.",
         "operationId": "delete_message_chat_rooms__room_id__messages__message_id__delete",
         "parameters": [
           {
@@ -5204,7 +5204,7 @@
           "chat"
         ],
         "summary": "Pin Latest Version",
-        "description": "US-078, techspec-content-versioning.md §3. `messages`는 그대로 두고 방이 고정한\n`content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터\n새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상).",
+        "description": "`messages`는 그대로 두고 방이 고정한\n`content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터\n새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).",
         "operationId": "pin_latest_version_chat_rooms__room_id__pin_latest_version_post",
         "parameters": [
           {
@@ -5248,7 +5248,7 @@
           "chat"
         ],
         "summary": "Change Starting Setup",
-        "description": "US-080, techspec-backend-chat.md §1. 기존 방은 그대로 두고, 선택한 시작설정으로 새\n대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행\n버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가\n없으므로(room.starting_setup_entity_id is None) 400으로 거부한다.",
+        "description": "기존 방은 그대로 두고, 선택한 시작설정으로 새\n대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행\n버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가\n없으므로(room.starting_setup_entity_id is None) 400으로 거부한다.",
         "operationId": "change_starting_setup_chat_rooms__room_id__change_starting_setup_post",
         "parameters": [
           {
@@ -5302,7 +5302,7 @@
           "chat"
         ],
         "summary": "Set Room Persona",
-        "description": "persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고\n과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를\n**둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다.",
+        "description": "방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고\n과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를\n**둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다.",
         "operationId": "set_room_persona_chat_rooms__room_id__persona_put",
         "parameters": [
           {
@@ -5356,7 +5356,7 @@
           "chat"
         ],
         "summary": "Acknowledge Version Upgrade",
-        "description": "techspec-content-versioning.md §4. `GET /chat-rooms/{id}`는 순수 조회라 스스로\n플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가\n`version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 \"봤는지\"의 유일한 기준점).",
+        "description": "`GET /chat-rooms/{id}`는 순수 조회라 스스로\n플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가\n`version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 \"봤는지\"의 유일한 기준점).",
         "operationId": "acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post",
         "parameters": [
           {
@@ -5426,7 +5426,7 @@
           "clover"
         ],
         "summary": "Get Clover Balance",
-        "description": "🔴 **부작용이 없다**(clover-techspec.md CT-10) — 출석 지급은 전용 POST다.\n\nGET이 지급까지 하면 프리페치·재조회가 곧 지급이 되고, 그때 멱등을 보장하는 것은\n`clover_attendance_granted_on` 하나뿐이라 실패 모드가 조용해진다.",
+        "description": "🔴 **부작용이 없다** — 출석 지급은 전용 POST다.\n\nGET이 지급까지 하면 프리페치·재조회가 곧 지급이 되고, 그때 멱등을 보장하는 것은\n`clover_attendance_granted_on` 하나뿐이라 실패 모드가 조용해진다.",
         "operationId": "get_clover_balance_me_clover_get",
         "responses": {
           "200": {
@@ -5448,7 +5448,7 @@
           "clover"
         ],
         "summary": "Claim Clover Attendance",
-        "description": "일일 출석 지급. 오늘(KST) 이미 받았으면 `granted=false`이고 **에러가 아니다.**\n\n멱등이 **두 겹**이다. 둘이 막는 것이 다르다:\n\n- `clover_attendance_granted_on` 검사 — **순차 재호출**을 막는다(FE가 여러 번 부르는 경우).\n  빠른 길이고, 이것만으로는 동시 요청을 못 막는다.\n- 원장 **멱등키의 유니크 인덱스** — **동시 요청**을 막는다. 아래 `except` 참조.\n\n🔴 **지급과 멱등 표지가 한 트랜잭션이다.** 둘을 갈라 커밋하면 그 사이에서 실패할 때\n\"돈은 나갔는데 표지가 없는\" 상태가 남고, 재시도가 곧 이중 지급이 된다 — S4·S5가 두 번\n겪은 \"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간\"이 여기서는 **아예 생기지 않는다.**\n⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.",
+        "description": "일일 출석 지급. 오늘(KST) 이미 받았으면 `granted=false`이고 **에러가 아니다.**\n\n멱등이 **두 겹**이다. 둘이 막는 것이 다르다:\n\n- `clover_attendance_granted_on` 검사 — **순차 재호출**을 막는다(FE가 여러 번 부르는 경우).\n  빠른 길이고, 이것만으로는 동시 요청을 못 막는다.\n- 원장 **멱등키의 유니크 인덱스** — **동시 요청**을 막는다. 아래 `except` 참조.\n\n🔴 **지급과 멱등 표지가 한 트랜잭션이다.** 둘을 갈라 커밋하면 그 사이에서 실패할 때\n\"돈은 나갔는데 표지가 없는\" 상태가 남고, 재시도가 곧 이중 지급이 된다 — 채팅·이미지 차감\n경로가 겪은 \"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지의 구간\"이 여기서는 **아예 생기지 않는다.**\n⚠️ 그건 **원자성** 논증이고 **격리**는 논증하지 않는다 — 격리는 위의 멱등키가 맡는다.",
         "operationId": "claim_clover_attendance_me_clover_attendance_post",
         "responses": {
           "200": {
@@ -5470,7 +5470,7 @@
           "clover"
         ],
         "summary": "Confirm Clover Spend",
-        "description": "clover-goal-prompt.md CL-19 — \"오늘 클로버를 쓴다\"에 하루 1회 동의한 사실을 남긴다.\n\n잔액 변동이 아니라 원장에 자리가 없다. 같은 날 다시 불러도 같은 날짜를 덮어쓸 뿐이라\n멱등이고, 그래서 이미 확인했는지 미리 보지 않는다(조회 한 번을 아끼는 것이 아니라\n분기를 하나 없애는 것이다). 🔴 돈이 움직이지 않으므로 위 출석의 멱등키가 여기엔 필요 없다.\n\n⚠️ `_consent`를 데코레이터의 `dependencies=`가 아니라 **파라미터로** 받는 것은 위 둘과\n형태가 다르다. 반환형·상태코드와는 무관하고(`dependencies=`는 그것들을 안 건드린다),\n이유는 이 라우트만 반환할 값이 없어서다 — 본문이 두 줄뿐이라 의존성이 시그니처에 보이는\n쪽이 \"무엇을 거쳐 왔는지\"를 읽기 쉽다. 한 파일에 두 형태가 섞인 것은 의도다.",
+        "description": "\"오늘 클로버를 쓴다\"에 하루 1회 동의한 사실을 남긴다.\n\n잔액 변동이 아니라 원장에 자리가 없다. 같은 날 다시 불러도 같은 날짜를 덮어쓸 뿐이라\n멱등이고, 그래서 이미 확인했는지 미리 보지 않는다(조회 한 번을 아끼는 것이 아니라\n분기를 하나 없애는 것이다). 🔴 돈이 움직이지 않으므로 위 출석의 멱등키가 여기엔 필요 없다.\n\n⚠️ `_consent`를 데코레이터의 `dependencies=`가 아니라 **파라미터로** 받는 것은 위 둘과\n형태가 다르다. 반환형·상태코드와는 무관하고(`dependencies=`는 그것들을 안 건드린다),\n이유는 이 라우트만 반환할 값이 없어서다 — 본문이 두 줄뿐이라 의존성이 시그니처에 보이는\n쪽이 \"무엇을 거쳐 왔는지\"를 읽기 쉽다. 한 파일에 두 형태가 섞인 것은 의도다.",
         "operationId": "confirm_clover_spend_me_clover_spend_confirmation_post",
         "responses": {
           "204": {
@@ -5485,7 +5485,7 @@
           "clover"
         ],
         "summary": "Get Clover Missions",
-        "description": "clover-page-goal-prompt.md CE-13 — 3종(`first_publish`·`first_message`·`first_image`)\n달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로(T-13) 이 응답은\n캐시된 값이 아니라 그 순간의 진실이다.",
+        "description": "3종(`first_publish`·`first_message`·`first_image`)\n달성·청구 여부를 매 조회마다 다시 계산한다. 상태를 저장하지 않으므로 이 응답은\n캐시된 값이 아니라 그 순간의 진실이다.",
         "operationId": "get_clover_missions_me_clover_missions_get",
         "responses": {
           "200": {
@@ -5507,7 +5507,7 @@
           "clover"
         ],
         "summary": "Claim Clover Mission",
-        "description": "미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고\n**에러가 아니다** — 위 출석과 같은 패턴이다.\n\n🔴 달성 여부를 **저장하지 않으므로**(CE-13) 이 판정도 매 요청 EXISTS다 — 청구 직전에\n달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시\n달성하면 다시 청구할 수 있다(T-13).",
+        "description": "미션 청구. 달성하지 못했으면 422. 이미 청구했으면(멱등키 중복) `granted=false`이고\n**에러가 아니다** — 위 출석과 같은 패턴이다.\n\n🔴 달성 여부를 **저장하지 않으므로** 이 판정도 매 요청 EXISTS다 — 청구 직전에\n달성 신호가 사라져 있으면(방·메시지 삭제 등) 422로 막힌다. 영구 손실은 아니다: 다시\n달성하면 다시 청구할 수 있다.",
         "operationId": "claim_clover_mission_me_clover_missions__key__claim_post",
         "parameters": [
           {
@@ -5555,7 +5555,7 @@
           "clover"
         ],
         "summary": "Get Clover Ledger",
-        "description": "clover-page-goal-prompt.md CE-20 — 자기 자신의 원장만. 어드민 엔드포인트\n(`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고\n임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다(§1-8) — 그래서 복제하지 않고 새로\n만들었다.\n\n커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다\n(사전 점검 PA-7 — 모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은\n`created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개\n들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`\n(`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의\n같은 이유, `admin/users.py:list_user_clover_ledger`).",
+        "description": "자기 자신의 원장만. 어드민 엔드포인트\n(`GET /admin/users/{id}/clover-ledger`, `admin/users.py`)는 인증 스코프가 어드민이고\n임의 `user_id`를 URL로 받아 그대로 재사용할 수 없다 — 그래서 복제하지 않고 새로\n만들었다.\n\n커서 페이징은 `content/router.py`의 `_encode_cursor`/`_decode_cursor` 선례를 복제한다\n(모듈 로컬 함수라 import 공유가 아니라 각자 갖는 게 관례). 정렬은\n`created_at DESC, id DESC` — 2차 키가 필수인 이유는 한 트랜잭션에 원장 행이 여러 개\n들어갈 수 있어(차감+환불이 같은 요청에서 난다) `created_at`\n(`server_default=func.now()`, 트랜잭션 시작 시각 고정) 동률이 흔해서다(어드민 원장의\n같은 이유, `admin/users.py:list_user_clover_ledger`).",
         "operationId": "get_clover_ledger_me_clover_ledger_get",
         "parameters": [
           {
@@ -5730,7 +5730,7 @@
           "persona"
         ],
         "summary": "Delete Persona",
-        "description": "persona-goal-prompt.md UP-14 — 참조하던 방은 \"선택 없음\", 기본이었으면 기본도 없음.\nFK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.",
+        "description": "프로필을 지운다. 이 프로필을 참조하던 방은 \"선택 없음\"이 되고, 기본 프로필이었으면\n기본도 비운다.\nFK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.",
         "operationId": "delete_persona_me_personas__persona_id__delete",
         "parameters": [
           {
@@ -5767,7 +5767,7 @@
           "persona"
         ],
         "summary": "Set Default Persona",
-        "description": "`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아\n`\"default\"`를 UUID로 파싱하다 422가 난다(persona-goal-prompt.md §3-3, R-16).",
+        "description": "`/me/personas/default`가 아닌 이유: `/me/personas/{persona_id}`와 모양이 같아\n`\"default\"`를 UUID로 파싱하다 422가 난다.",
         "operationId": "set_default_persona_me_default_persona_put",
         "requestBody": {
           "content": {
@@ -5802,7 +5802,7 @@
           "chat"
         ],
         "summary": "Get Ending Collection",
-        "description": "techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의\n`startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달\n여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로\n새 대화방을 만들어도 이전 기록이 유지되게 한다.",
+        "description": "`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의\n`startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달\n여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로\n새 대화방을 만들어도 이전 기록이 유지되게 한다.",
         "operationId": "get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get",
         "parameters": [
           {
@@ -5850,7 +5850,7 @@
           "chat"
         ],
         "summary": "Get Image Archive",
-        "description": "techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와\n동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,\n노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`\n존재 여부로 사용자+캐릭터 단위 누적 판정한다.",
+        "description": "`id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와\n동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,\n노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`\n존재 여부로 사용자+캐릭터 단위 누적 판정한다.",
         "operationId": "get_image_archive_characters__id__image_archive_get",
         "parameters": [
           {
@@ -5898,7 +5898,7 @@
           "chat"
         ],
         "summary": "Start Preview Session",
-        "description": "techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever\n`formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)\nand is stored in Redis with no validation, mirroring autosave's unvalidated path.",
+        "description": "`payload` is whatever\n`formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)\nand is stored in Redis with no validation, mirroring autosave's unvalidated path.",
         "operationId": "start_preview_session_preview_sessions_post",
         "requestBody": {
           "content": {
@@ -5948,7 +5948,7 @@
           "chat"
         ],
         "summary": "Send Preview Message",
-        "description": "미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이\n실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도\n이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트\n세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일\n때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2).",
+        "description": "미리보기 메시지 전송 SSE. `_stream_preview_turn`이\n실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도\n이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트\n세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일\n때만 짧게 연 세션으로 활성 세트를 읽는다.",
         "operationId": "send_preview_message_preview_sessions__id__messages_post",
         "parameters": [
           {
@@ -6016,7 +6016,7 @@
           "images"
         ],
         "summary": "List Image Models",
-        "description": "생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명\nid + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다(local-image-gen-\ntechspec.md LT-6). 로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는\n무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다(contract LC-1).\n\nlocal-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를\n보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.\n\nLG-20: `available`은 capability 존재 여부가 아니라 \"실제로 생성 가능\"을 뜻해야 한다 —\n매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).",
+        "description": "생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명\nid + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다.\n로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는\n무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다.\n\n로컬은 공개 id가 아니라 **와이어** id를\n보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.\n\n`available`은 capability 존재 여부가 아니라 \"실제로 생성 가능\"을 뜻해야 한다 —\n매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).",
         "operationId": "list_image_models_images_models_get",
         "responses": {
           "200": {
@@ -6145,7 +6145,7 @@
     "/ready": {
       "get": {
         "summary": "Ready",
-        "description": "DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**\n\n`/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가\n죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).\nUptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.\n\nHEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로\n찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.\n\n하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는\n본문에 담아 사람이 로그 없이도 구분하게 한다.\n\n각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,\n그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.",
+        "description": "DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**\n\n`/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가\n죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).\nUptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.\n\nHEAD 를 함께 허용하는 이유: UptimeRobot 이 HEAD 로\n찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.\n\n하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는\n본문에 담아 사람이 로그 없이도 구분하게 한다.\n\n각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,\n그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.",
         "operationId": "ready_ready_get",
         "responses": {
           "200": {
@@ -6164,7 +6164,7 @@
       },
       "head": {
         "summary": "Ready",
-        "description": "DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**\n\n`/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가\n죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).\nUptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.\n\nHEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로\n찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.\n\n하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는\n본문에 담아 사람이 로그 없이도 구분하게 한다.\n\n각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,\n그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.",
+        "description": "DB·Redis 까지 실제로 찔러 본다 — **외부 업타임 모니터가 보는 엔드포인트다.**\n\n`/health` 와 나눈 이유가 이것이다. `/health` 만 감시하면 **API 는 살아 있고 Postgres 가\n죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).\nUptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.\n\nHEAD 를 함께 허용하는 이유: UptimeRobot 이 HEAD 로\n찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.\n\n하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는\n본문에 담아 사람이 로그 없이도 구분하게 한다.\n\n각 검사에 타임아웃을 건다 — 죽은 자원은 보통 거부가 아니라 **응답 없음**으로 나타나고,\n그러면 모니터가 실패 대신 타임아웃을 보게 되어 원인이 흐려진다.",
         "operationId": "ready_ready_head",
         "responses": {
           "200": {
@@ -6343,7 +6343,7 @@
           "beforeId"
         ],
         "title": "AdminChatMessagesResponse",
-        "description": "`POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다\n같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`\n평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null."
+        "description": "`POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다\n같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`\n평문 페어로 내려준다 — 더 불러올 게 없으면 둘 다 null."
       },
       "AdminChatRoomViewRequest": {
         "properties": {
@@ -7179,7 +7179,7 @@
           "images"
         ],
         "title": "AdminImageGenerationDetailItem",
-        "description": "사유 게이트(IM-2)를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다."
+        "description": "사유 게이트를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다."
       },
       "AdminImageGenerationDetailListResponse": {
         "properties": {
@@ -7286,7 +7286,7 @@
           "createdAt"
         ],
         "title": "AdminImageGenerationListItem",
-        "description": "IM-11: 전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다."
+        "description": "전역 목록은 메타데이터만 — 프롬프트 문자열과 이미지 URL을 싣지 않는다."
       },
       "AdminImageGenerationListResponse": {
         "properties": {
@@ -7335,7 +7335,7 @@
           "reasonText"
         ],
         "title": "AdminImageGenerationViewRequest",
-        "description": "IM-2: `admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유\nenum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다."
+        "description": "`admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유\nenum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다."
       },
       "AdminInquiryDetailResponse": {
         "properties": {
@@ -7899,7 +7899,7 @@
           "sections"
         ],
         "title": "AdminPromptDraftResponse",
-        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회, prompt-db-goal-prompt.md §9-1)."
+        "description": "`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성\n세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는\n조회)."
       },
       "AdminPromptDraftUpsertRequest": {
         "properties": {
@@ -7920,7 +7920,7 @@
           "sections"
         ],
         "title": "AdminPromptDraftUpsertRequest",
-        "description": "섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다."
+        "description": "섹션 전체 교체 — 부분 패치가 아니다."
       },
       "AdminPromptLabels": {
         "properties": {
@@ -7999,7 +7999,7 @@
         },
         "type": "object",
         "title": "AdminPromptPublishRequest",
-        "description": "`version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 \"왜\n바꿨나\"를 대신 받는다."
+        "description": "`version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 \"왜\n바꿨나\"를 대신 받는다."
       },
       "AdminPromptSectionInput": {
         "properties": {
@@ -8163,7 +8163,7 @@
           "sections"
         ],
         "title": "AdminPromptSetDetailResponse",
-        "description": "`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16)."
+        "description": "`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문."
       },
       "AdminPromptSetListResponse": {
         "properties": {
@@ -8250,7 +8250,7 @@
           "isActive"
         ],
         "title": "AdminPromptSetSummary",
-        "description": "prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은\n`GET /admin/prompt-sets/{id}`로 뺀다."
+        "description": "이력 목록은 메타만. 섹션 전문은\n`GET /admin/prompt-sets/{id}`로 뺀다."
       },
       "AdminReportContentDetail": {
         "properties": {
@@ -8632,7 +8632,7 @@
           "idempotencyKey"
         ],
         "title": "AdminUserCloverRequest",
-        "description": "clover-techspec.md §4-2 — 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로\n쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은\n관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를\n인용할 자리가 없고 대신 \"왜 줬나\"가 감사 로그에 남아야 한다.\n\n`±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 \"왜 2인가\"를 적은 관례):\nclover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.\n운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이\n이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도\n낫다.\n\n🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).\n출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을\n**의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 \"두 번 주는 것\"이 아니라\n**한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다."
+        "description": "지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로\n쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은\n관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를\n인용할 자리가 없고 대신 \"왜 줬나\"가 감사 로그에 남아야 한다.\n\n`±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 \"왜 2인가\"를 적은 관례):\n현행 단가(채팅 1턴 10, 출석 1회 100) 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.\n운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이\n이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도\n낫다.\n\n🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**.\n출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을\n**의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 \"두 번 주는 것\"이 아니라\n**한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다."
       },
       "AdminUserDetailResponse": {
         "properties": {
@@ -8885,7 +8885,7 @@
           "exempt"
         ],
         "title": "AdminUserRateLimitExemptRequest",
-        "description": "limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로\n쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는\n`AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가\n없고, 대신 \"왜 면제했나\"가 감사 로그에 남아야 한다(비어 있으면 422)."
+        "description": "켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로\n쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는\n`AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가\n없고, 대신 \"왜 면제했나\"가 감사 로그에 남아야 한다(비어 있으면 422)."
       },
       "AdminUserReportItem": {
         "properties": {
@@ -8978,7 +8978,7 @@
         },
         "type": "object",
         "title": "AdminUserUnsuspendRequest",
-        "description": "`reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는\n알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring\n참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은\n규칙)."
+        "description": "`reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는\n알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring\n참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 콘텐츠 직접 조치 `lift-restriction`과 같은\n규칙)."
       },
       "AdminUserWarnRequest": {
         "properties": {
@@ -9108,7 +9108,7 @@
           "inquiry-attachment"
         ],
         "title": "AssetPurpose",
-        "description": "techspec-backend-media.md §1. Extend as new upload flows need a purpose."
+        "description": "Extend as new upload flows need a purpose."
       },
       "AssetStatus": {
         "type": "string",
@@ -9117,7 +9117,7 @@
           "ready"
         ],
         "title": "AssetStatus",
-        "description": "techspec-backend-media.md §1: row is created pending at presigned-upload\ntime, and flipped to ready once POST /assets/{id}/complete confirms the S3\nobject exists."
+        "description": "Row is created pending at presigned-upload\ntime, and flipped to ready once POST /assets/{id}/complete confirms the S3\nobject exists."
       },
       "ChangePasswordRequest": {
         "properties": {
@@ -9420,7 +9420,7 @@
           "triggerCondition"
         ],
         "title": "CharacterSituationalImageDraftInput",
-        "description": "`PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.\n`imageAssetId`/blurred variant are exclusively written by\n`POST /assets/{id}/register-situational-image` (US-071)."
+        "description": "`PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.\n`imageAssetId`/blurred variant are exclusively written by\n`POST /assets/{id}/register-situational-image`."
       },
       "CharacterSituationalImageItem": {
         "properties": {
@@ -9805,7 +9805,7 @@
           "other"
         ],
         "title": "ChatViewReasonCategory",
-        "description": "techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
+        "description": "기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와\n다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."
       },
       "CloverAttendanceResponse": {
         "properties": {
@@ -9858,7 +9858,7 @@
           "expiringSoon"
         ],
         "title": "CloverBalanceResponse",
-        "description": "clover-techspec.md §4-2. Python은 snake_case, JSON은 camelCase다."
+        "description": "Python은 snake_case, JSON은 camelCase다."
       },
       "CloverExpiringSoon": {
         "properties": {
@@ -9878,7 +9878,7 @@
           "expiresAt"
         ],
         "title": "CloverExpiringSoon",
-        "description": "clover-page-goal-prompt.md CE-22. 가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산."
+        "description": "가장 임박한 만료 묶음 — 같은 시각 만료 로트는 합산."
       },
       "CloverLedgerItem": {
         "properties": {
@@ -9924,7 +9924,7 @@
           "createdAt"
         ],
         "title": "CloverLedgerItem",
-        "description": "clover-page-goal-prompt.md CE-20·CE-21. `category`는 BE의 `kind`→범주 맵\n(`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을\n다시 두지 않는다(§8 확인 완료 2)."
+        "description": "`category`는 BE의 `kind`→범주 맵\n(`clover/router.py`의 `CLOVER_KIND_CATEGORY`)을 그대로 실어 보낸 것이다 — FE가 같은 맵을\n다시 두지 않는다."
       },
       "CloverLedgerListResponse": {
         "properties": {
@@ -10000,7 +10000,7 @@
           "claimed"
         ],
         "title": "CloverMissionItem",
-        "description": "clover-page-goal-prompt.md CE-13. `achieved`·`claimed`는 매 조회마다 EXISTS로 다시\n계산한다 — 저장된 상태가 아니다(T-13)."
+        "description": "`achieved`·`claimed`는 매 조회마다 EXISTS로 다시\n계산한다 — 저장된 상태가 아니다."
       },
       "CloverMissionsResponse": {
         "properties": {
@@ -10045,7 +10045,7 @@
           "kind"
         ],
         "title": "ContentAccessStatus",
-        "description": "Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:\n`visibility` is only meaningful when `kind == \"accessible\"`."
+        "description": "Mirrors the FE `resolveAccessStatus` union (`entities/content`):\n`visibility` is only meaningful when `kind == \"accessible\"`."
       },
       "ContentCreateRequest": {
         "properties": {
@@ -10063,7 +10063,7 @@
           "type"
         ],
         "title": "ContentCreateRequest",
-        "description": "techspec-backend-content.md §1.2."
+        "description": "Body of `POST /contents` — creates an empty draft."
       },
       "ContentCreateResponse": {
         "properties": {
@@ -10381,7 +10381,7 @@
           "updatedAt"
         ],
         "title": "ContentSummary",
-        "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time).\n\n`has_unpublished_changes` is the explicit `Content` flag, not something derived from the\ndraft version's existence — publishing auto-clones a draft, so every published content has\none (US-002)."
+        "description": "`updated_at` is the current published version's `published_at`, not `Content.updated_at`\n(that column has no `onupdate`, so it never moves off the creation time).\n\n`has_unpublished_changes` is the explicit `Content` flag, not something derived from the\ndraft version's existence — publishing auto-clones a draft, so every published content has\none."
       },
       "ContentSummaryListResponse": {
         "properties": {
@@ -10486,7 +10486,7 @@
           "assistantLine"
         ],
         "title": "DevelopmentExampleItem",
-        "description": "chat-goal-prompt.md §8-3/D-10, chat-techspec.md §6-1 (D-12). `ExampleDialogueItem`의\n입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고\n순서가 곧 정체성이다."
+        "description": "`ExampleDialogueItem`의\n입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고\n순서가 곧 정체성이다."
       },
       "DraftListResponse": {
         "properties": {
@@ -10736,7 +10736,7 @@
           "threshold"
         ],
         "title": "EndingRuleDraftItem",
-        "description": "A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —\nmatches `EndingRule.stat_def_entity_id` (techspec-db-schema.md §5, §1 원칙 4: the chat\nruntime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is\nentity_id even though within one draft this is otherwise just a same-version reference)."
+        "description": "A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —\nmatches `EndingRule.stat_def_entity_id` (the chat\nruntime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is\nentity_id even though within one draft this is otherwise just a same-version reference)."
       },
       "EndingRuleGroupDraftItem": {
         "properties": {
@@ -10775,7 +10775,7 @@
           "rules"
         ],
         "title": "EndingRuleGroupDraftItem",
-        "description": "One level of nesting only (techspec-db-schema.md §5) — `rules` never contains groups."
+        "description": "One level of nesting only — `rules` never contains groups."
       },
       "EndingRuleGroupItem": {
         "properties": {
@@ -11061,7 +11061,7 @@
           "usages"
         ],
         "title": "GeneratedImageItem",
-        "description": "techspec-backend-media.md §3: `GET /me/generated-images` item shape."
+        "description": "`GET /me/generated-images` item shape."
       },
       "GeneratedImageUsage": {
         "properties": {
@@ -11094,7 +11094,7 @@
           "field"
         ],
         "title": "GeneratedImageUsage",
-        "description": "One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).\n\nDraft and published versions both count as \"in use\"; versions of the same\ncontent referencing the asset with the same field are merged into one entry."
+        "description": "One content referencing a generated asset.\n\nDraft and published versions both count as \"in use\"; versions of the same\ncontent referencing the asset with the same field are merged into one entry."
       },
       "GenreResponse": {
         "properties": {

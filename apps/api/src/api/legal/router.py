@@ -77,7 +77,7 @@ async def consent_legal_document(
     else:
         user.privacy_version = document.version
         user.privacy_agreed_at = now
-        # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다.
+        # 국외이전 동의는 처리방침 버전에 묶인다.
         # 이미 위에서 조회해 둔 document(privacy 게시본)를 그대로 재사용한다 — 여기서
         # _latest_published를 다시 부르면 그 사이 재게시될 경우 privacy·transfer 버전이
         # 어긋날 수 있다.

@@ -14,7 +14,7 @@ async def create_admin_session(data: dict[str, Any]) -> str:
     """Store `data` under a new random session id and return that id.
 
     Mirrors api/session/store.py's create_session/get_session/delete_session
-    shape, but under the `admin_session:` prefix (techspec-backend-auth.md §2)
+    shape, but under the `admin_session:` prefix
     so it can never collide with a regular user session id.
     """
     session_id = uuid.uuid4().hex

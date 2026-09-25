@@ -279,12 +279,12 @@ async def test_image_archive_marks_image_exposed_right_after_chat_match(
 async def test_image_archive_skips_slot_with_no_uploaded_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """`PATCH /contents/{id}/draft`(US-082)가 이미지 파일 업로드 전에 `image_asset_id`·
+    """`PATCH /contents/{id}/draft`가 이미지 파일 업로드 전에 `image_asset_id`·
     `blurred_asset_id`가 둘 다 NULL인 행을 만들 수 있고(`SituationalImage` docstring), 발행
-    검증은 `situational_images`를 보지 않아(sse-assert-goal-prompt.md F-5) 그 상태로도 정상
+    검증은 `situational_images`를 보지 않아 그 상태로도 정상
     발행된다. 그런 슬롯이 섞인 캐릭터의 보관함 조회가 `assert`로 500이 되면 안 되고,
-    `_stream_new_turn`의 상황이미지 URL 조립(SA-3/N-3)과 같은 판단으로 목록에서 빠져야
-    한다(SA-4)."""
+    `_stream_new_turn`의 상황이미지 URL 조립과 같은 판단으로 목록에서 빠져야
+    한다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -313,7 +313,7 @@ async def test_image_archive_skips_slot_with_no_uploaded_image(
 async def test_image_archive_exposure_accumulates_across_chat_rooms_not_scoped_to_one_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """AC3: 노출 기록은 방 단위가 아니라 사용자+캐릭터 단위로 누적된다 — 어떤 대화방에서
+    """노출 기록은 방 단위가 아니라 사용자+캐릭터 단위로 누적된다 — 어떤 대화방에서
     기록됐는지와 무관하게 (user_id, content_id, image_entity_id) 존재만으로 판정해야 하므로,
     특정 chat_room을 전혀 참조하지 않고도 exposed=True가 나와야 한다."""
     user = _make_user()

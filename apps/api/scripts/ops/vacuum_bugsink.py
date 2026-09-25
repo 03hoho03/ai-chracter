@@ -1,5 +1,4 @@
-"""Bugsink 가 보관하는 오류 이벤트를 `MAX_EVENT_AGE_DAYS`보다 오래된 것부터 지운다
-(monitoring-legal-draft.md §7-6, MT-16).
+"""Bugsink 가 보관하는 오류 이벤트를 `MAX_EVENT_AGE_DAYS`보다 오래된 것부터 지운다.
 
     # VM 크론 (매일, ops/cron.d/ddona-bugsink-vacuum 로 설치)
     cd /opt/ddona/app/apps/api && PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.vacuum_bugsink

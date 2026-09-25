@@ -39,7 +39,7 @@ class MyInquiryDetailResponse(CamelModel):
     body: str
     attachment_url: str | None  # presigned GET
     status: InquiryStatus
-    reply_body: str | None  # plain text (D-19)
+    reply_body: str | None  # plain text
     answered_at: datetime | None
     created_at: datetime
 

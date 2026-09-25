@@ -1,4 +1,4 @@
-"""`scripts/seed_content` 의 결정적 UUID 헬퍼와 데이터 파일 로더 (US-002)."""
+"""`scripts/seed_content` 의 결정적 UUID 헬퍼와 데이터 파일 로더."""
 
 import json
 import re

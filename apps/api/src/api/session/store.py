@@ -16,8 +16,7 @@ def _user_sessions_key(user_id: uuid.UUID) -> str:
 
 
 async def create_session(user_id: uuid.UUID) -> str:
-    """새 세션을 만들고 그 유저의 역인덱스 ZSET(score = 세션 만료 epoch)에 올린다
-    (backlog-sweep-goal-prompt.md BS-5).
+    """새 세션을 만들고 그 유저의 역인덱스 ZSET(score = 세션 만료 epoch)에 올린다.
 
     세션 TTL은 읽을 때 갱신되지 않으므로 방금 만든 세션이 그 유저의 가장 늦게 만료되는
     세션이다 — 그래서 인덱스 키 TTL을 매번 세션 TTL로 다시 걸면 키 수명이 가장 최근 세션의
@@ -51,10 +50,10 @@ async def delete_session(session_id: str) -> None:
 
 
 async def revoke_user_sessions(user_id: uuid.UUID, *, except_session_id: str | None = None) -> None:
-    """그 유저의 색인된 세션을 전부(`except_session_id`만 빼고) 지운다(backlog-sweep-goal-prompt.md BS-6).
+    """그 유저의 색인된 세션을 전부(`except_session_id`만 빼고) 지운다.
 
     인덱스 키를 통째로 DEL하지 않고 읽은 멤버만 ZREM한다 — 읽은 뒤 동시 로그인이 추가한 멤버를
-    날리지 않기 위해서다. WATCH는 쓰지 않는다(BS-5): 고쳐 쓸 값이 없어 갱신 유실이 없고, 남는
+    날리지 않기 위해서다. WATCH는 쓰지 않는다: 고쳐 쓸 값이 없어 갱신 유실이 없고, 남는
     경합은 "ZRANGE 뒤에 ZADD된 세션이 산다" 하나다. 탈퇴 뒤의 세션은 `get_current_user_id`의
     `users` 조회가 401로 막는다. 비밀번호 변경·재설정 때는 커밋 전에 옛 비밀번호로 검증을 통과한
     로그인이 ZRANGE 뒤에 세션을 올리면 산다(창 ≈ 비밀번호 해시 검증 한 번) — 받아들인다.

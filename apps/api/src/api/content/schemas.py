@@ -35,7 +35,7 @@ class ContentSummary(CamelModel):
 
     `has_unpublished_changes` is the explicit `Content` flag, not something derived from the
     draft version's existence — publishing auto-clones a draft, so every published content has
-    one (US-002)."""
+    one."""
 
     id: uuid.UUID
     type: ContentType
@@ -102,7 +102,7 @@ AccessStatusKind = Literal["accessible", "restricted", "deleted"]
 
 
 class ContentAccessStatus(CamelModel):
-    """Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` union:
+    """Mirrors the FE `resolveAccessStatus` union (`entities/content`):
     `visibility` is only meaningful when `kind == "accessible"`."""
 
     kind: AccessStatusKind
@@ -142,7 +142,7 @@ class ReportRequest(CamelModel):
 
 
 class ContentCreateRequest(CamelModel):
-    """techspec-backend-content.md §1.2."""
+    """Body of `POST /contents` — creates an empty draft."""
 
     type: Literal["character", "story"]
 
@@ -158,7 +158,7 @@ class ExampleDialogueItem(CamelModel):
 
 
 class DevelopmentExampleItem(CamelModel):
-    """chat-goal-prompt.md §8-3/D-10, chat-techspec.md §6-1 (D-12). `ExampleDialogueItem`의
+    """`ExampleDialogueItem`의
     입출력 쌍 모양을 따르되 `id`는 두지 않는다 — 다른 레코드가 참조하는 대상이 아니고
     순서가 곧 정체성이다."""
 
@@ -169,7 +169,7 @@ class DevelopmentExampleItem(CamelModel):
 class CharacterSituationalImageDraftInput(CamelModel):
     """`PATCH /contents/{id}/draft` payload item — only the fields this endpoint owns.
     `imageAssetId`/blurred variant are exclusively written by
-    `POST /assets/{id}/register-situational-image` (US-071)."""
+    `POST /assets/{id}/register-situational-image`."""
 
     id: uuid.UUID
     trigger_condition: str
@@ -200,14 +200,14 @@ class CharacterSituationalImageItem(CamelModel):
 class CharacterDraftResponse(CamelModel):
     id: uuid.UUID
     # Needed by the FE builder to call `POST /assets/{id}/register-situational-image`
-    # (US-071), which is content_version_id-scoped and otherwise unreachable from this
+    # which is content_version_id-scoped and otherwise unreachable from this
     # response (`id` above is the content's physical id, not the draft version's).
     content_version_id: uuid.UUID
     type: Literal["character"] = "character"
     name: str
     one_liner: str
     thumbnail_asset_id: uuid.UUID | None
-    # builder-techspec.md §7: same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
+    # Same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
     # not a new generation rule.
     thumbnail_url: str | None
     intro: str
@@ -249,7 +249,7 @@ class StatDefDraftItem(CamelModel):
 
 class EndingRuleDraftItem(CamelModel):
     """A single stat comparison. `stat_id` references a `StatDefDraftItem.id` (entity_id) —
-    matches `EndingRule.stat_def_entity_id` (techspec-db-schema.md §5, §1 원칙 4: the chat
+    matches `EndingRule.stat_def_entity_id` (the chat
     runtime evaluates rules against a `stat_entity_id`-keyed value dict, so the reference is
     entity_id even though within one draft this is otherwise just a same-version reference)."""
 
@@ -262,7 +262,7 @@ class EndingRuleDraftItem(CamelModel):
 
 
 class EndingRuleGroupDraftItem(CamelModel):
-    """One level of nesting only (techspec-db-schema.md §5) — `rules` never contains groups."""
+    """One level of nesting only — `rules` never contains groups."""
 
     kind: Literal["group"] = "group"
     id: uuid.UUID
@@ -317,13 +317,13 @@ class StoryDraftPayload(CamelModel):
     thumbnail_asset_id: uuid.UUID | None
     prompt_template: StoryPromptTemplate
     setting_text: str | None
-    # chat-techspec.md D-13: FE가 더 이상 이 필드를 폼에서 관리하지 않는다. 안 보내면(리비전②가
+    # FE가 더 이상 이 필드를 폼에서 관리하지 않는다. 안 보내면(후속 리비전이
     # 컬럼을 드롭할 때까지) 롤백 안전망인 구 컬럼 값을 그대로 둬야 하므로, 값을 지우려는 명시적
     # `null`과 "안 보냄"을 구분해야 한다 — router.py가 `model_fields_set`으로 그 둘을 가른다.
     development_example: str | None = None
     custom_prompt: str | None
-    # chat-goal-prompt.md §8 (D-9/D-10): 필수화하지 않는다 — 기존 33건이 비어 있는 채로
-    # 발행돼 있다. 시드도 이 기본값 덕에 JSON에 새 키를 추가하지 않고 통과한다(D-2).
+    # 필수화하지 않는다 — 기존 33건이 비어 있는 채로
+    # 발행돼 있다. 시드도 이 기본값 덕에 JSON에 새 키를 추가하지 않고 통과한다.
     development_examples: list[DevelopmentExampleItem] = Field(default_factory=list)
     user_goal: str | None = None
     rules: str | None = None
@@ -343,7 +343,7 @@ class StoryDraftResponse(CamelModel):
     name: str
     one_liner: str
     thumbnail_asset_id: uuid.UUID | None
-    # builder-techspec.md §7: same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
+    # Same S3 presigned URL as DraftSummary/_resolve_thumbnail_url,
     # not a new generation rule.
     thumbnail_url: str | None
     prompt_template: StoryPromptTemplate

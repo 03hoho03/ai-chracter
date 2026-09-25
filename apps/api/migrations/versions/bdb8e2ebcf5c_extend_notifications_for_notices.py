@@ -4,7 +4,7 @@ Revision ID: bdb8e2ebcf5c
 Revises: 6040220ae77b
 Create Date: 2026-09-07 23:18:46.541505
 
-tasks/techspec.md §3-2·§3-3(리비전 2/3). 조치 통지 전용이던 `notifications`를 공지도
+공지·문의 리비전 2/3. 조치 통지 전용이던 `notifications`를 공지도
 담을 수 있게 넓힌다 — `inquiry_id`는 여기서 넣지 않는다(`inquiries` 테이블이 아직 없어
 FK를 걸 수 없다, 리비전 3에서 추가).
 

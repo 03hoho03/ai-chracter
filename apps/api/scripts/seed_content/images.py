@@ -115,7 +115,7 @@ def situational_image_slug(character_slug: str, order: int) -> str:
     """캐릭터의 n 번째 상황별 이미지가 쓰는 이미지 slug.
 
     상황별 이미지는 JSON 에 자기 이름이 없고 리스트 안의 위치가 곧 정체성이라(entity_id 도
-    같은 규약으로 파생된다) 파일명도 위치에서 만든다. `image_prompts.json`(US-007)이 이
+    같은 규약으로 파생된다) 파일명도 위치에서 만든다. `image_prompts.json`이 이
     함수와 같은 이름을 써야 생성한 PNG 가 시드에 실제로 붙는다.
     """
     return f"{character_slug}-scene{order + 1}"

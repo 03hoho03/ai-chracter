@@ -1,4 +1,4 @@
-"""어드민 클로버 지급·회수·원장 조회 (clover-techspec.md §4-3·§4-5, clover-goal-prompt.md CL-8).
+"""어드민 클로버 지급·회수·원장 조회.
 
 이 파일이 고정하는 성질 셋:
 
@@ -56,7 +56,7 @@ async def _seed_user(db: AsyncSession, **overrides: object) -> uuid.UUID:
     되감으면 테스트 세션의 그 인스턴스가 만료 상태로 남고, 이후 `user_id` 한 번이
     지연 로드를 일으켜 `MissingGreenlet`으로 터진다(실측). id는 파이썬 값이라 그 경로가 없다.
 
-    clover-page-goal-prompt.md CE-35 — `revoke()`가 로트 인지로 바뀌어, 로트 0행인 유저를
+    `revoke()`가 로트 인지로 바뀌어, 로트 0행인 유저를
     회수하면 `CloverLotShortfallError`가 난다(`[revoke]` 파라미터 케이스). 매칭 로트를
     항상 만들어 두면 지급(양수) 케이스는 영향 없이 그대로 통과한다.
     """
@@ -75,7 +75,7 @@ async def _admin_login(db_client: httpx.AsyncClient, db_session: AsyncSession) -
     await _login_as_admin(db_client, admin_payload)
 
 
-# ---- T-17 지급·회수가 원장과 감사 로그를 한 트랜잭션에 남긴다 --------------------------
+# ---- 지급·회수가 원장과 감사 로그를 한 트랜잭션에 남긴다 --------------------------
 
 
 @pytest.mark.parametrize(
@@ -92,7 +92,7 @@ async def test_admin_clover_writes_ledger_and_exactly_one_action_log(
     expected_kind: str,
     expected_action_type: str,
 ) -> None:
-    """T-17. 지급/회수 양방향을 한 함수로 본다 — 한쪽만 보면 삼항(`grant`/`revoke`)의 반대편이
+    """지급/회수 양방향을 한 함수로 본다 — 한쪽만 보면 삼항(`grant`/`revoke`)의 반대편이
     통째로 미검증으로 남는다.
 
     **빨개지는 조건**: 원장과 액션 로그를 갈라 커밋하면 한쪽만 남는 상태가 생기고, 삼항을
@@ -124,13 +124,13 @@ async def test_admin_clover_writes_ledger_and_exactly_one_action_log(
     assert logs[0].reason_text == "운영 보상"
 
 
-# ---- T-4 멱등키가 더블클릭을 막는다 --------------------------------------------------
+# ---- 멱등키가 더블클릭을 막는다 --------------------------------------------------
 
 
 async def test_same_idempotency_key_twice_returns_409_and_grants_once(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """🔴 clover-goal-prompt.md CL-8이 `ux_clover_ledger_idempotency_key`를 만든 **원래 목적**이
+    """🔴 `ux_clover_ledger_idempotency_key`를 만든 **원래 목적**이
     이 경로다. 토글 선례의 *"같은 값 재적용을 막지 않는다"*를 그대로 옮기면 더블클릭이 곧
     중복 지급이 된다 — 지급은 대입이 아니라 누적이기 때문이다.
 
@@ -173,13 +173,13 @@ async def test_different_idempotency_keys_grant_twice_on_purpose(
     assert len(await _ledger_rows(db_session, user_id)) == 2
 
 
-# ---- T-18 회수가 음수로 내려가지 않는다 ------------------------------------------------
+# ---- 회수가 음수로 내려가지 않는다 ------------------------------------------------
 
 
 async def test_revoke_more_than_balance_returns_422_and_leaves_balance_untouched(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-18. `revoke`의 `guard=True`(`WHERE clover_balance >= -delta`)가 이 자리다. 오지급
+    """`revoke`의 `guard=True`(`WHERE clover_balance >= -delta`)가 이 자리다. 오지급
     회수가 이미 쓴 만큼을 빚으로 남기지 않는다.
 
     **빨개지는 조건**: `revoke`를 `guard=False`로 바꾸면 잔액이 -20이 되고 원장 행이 생긴다."""
@@ -199,7 +199,7 @@ async def test_revoke_more_than_balance_returns_422_and_leaves_balance_untouched
 async def test_revoke_rolls_back_the_balance_cas_when_lots_are_insufficient(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """clover-page-goal-prompt.md CE-35 — 로트 없이 잔액만 있는 비정상 상태(Σ 불변식이 이미
+    """로트 없이 잔액만 있는 비정상 상태(Σ 불변식이 이미
     깨진 상태, 예: 백필 누락)에서 회수하면 `CloverLotShortfallError`가 나고, 그 예외가
     `admin/users.py`의 `db.begin_nested()` SAVEPOINT를 되감아 총액 CAS까지 롤백돼야 한다.
 
@@ -234,7 +234,7 @@ async def test_revoke_rolls_back_the_balance_cas_when_lots_are_insufficient(
     assert await _ledger_rows(db_session, user_id) == []
 
 
-# ---- 오류 번역 (clover-techspec.md §4-3) ----------------------------------------------
+# ---- 오류 번역 ----------------------------------------------
 
 
 async def test_blank_admin_comment_returns_422_without_touching_balance(
@@ -285,7 +285,7 @@ async def test_deleted_user_returns_404(
     assert await _ledger_rows(db_session, user_id) == []
 
 
-# ---- T-19 유저 상세의 잔액 + 원장 조회 -------------------------------------------------
+# ---- 유저 상세의 잔액 + 원장 조회 -------------------------------------------------
 
 
 async def test_user_detail_exposes_clover_balance(
@@ -311,7 +311,7 @@ async def test_user_detail_exposes_clover_balance(
 async def test_clover_ledger_list_is_newest_first_and_paginates(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-19. 원장 조회는 어드민만이고 오프셋 3종 세트를 돌려준다.
+    """원장 조회는 어드민만이고 오프셋 3종 세트를 돌려준다.
 
     행을 **서로 다른 `created_at`으로** 심는다 — 같은 트랜잭션의 동률에 기대면 정렬 단언이
     무엇을 논증하는지 흐려진다(2차 키 `id`는 uuid4라 삽입 순서가 아니다).

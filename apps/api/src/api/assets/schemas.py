@@ -11,7 +11,7 @@ from api.db.models.media import AssetStatus
 
 
 class AssetPurpose(str, enum.Enum):
-    """techspec-backend-media.md §1. Extend as new upload flows need a purpose."""
+    """Extend as new upload flows need a purpose."""
 
     PROFILE_IMAGE = "profile-image"
     CONTENT_THUMBNAIL = "content-thumbnail"
@@ -20,7 +20,7 @@ class AssetPurpose(str, enum.Enum):
 
 
 # Per-purpose upload size limits in bytes, applied to the *resized* result the FE
-# uploads (tasks/archive/prd-image-delivery-optimization.md) — the normal path stays far
+# uploads — the normal path stays far
 # below these, so the server-side check is purely a bypass safety net.
 #
 # ⚠️ This dict is `dict[AssetPurpose, int]`, not `Record<AssetPurpose, ...>` — mypy does
@@ -72,7 +72,7 @@ GeneratedImageUsageField = Literal["thumbnail", "situationalImage"]
 
 
 class GeneratedImageUsage(CamelModel):
-    """One content referencing a generated asset (US-001, tasks/archive/prd-image-library.md).
+    """One content referencing a generated asset.
 
     Draft and published versions both count as "in use"; versions of the same
     content referencing the asset with the same field are merged into one entry.
@@ -85,7 +85,7 @@ class GeneratedImageUsage(CamelModel):
 
 
 class GeneratedImageItem(CamelModel):
-    """techspec-backend-media.md §3: `GET /me/generated-images` item shape."""
+    """`GET /me/generated-images` item shape."""
 
     asset_id: uuid.UUID
     image_url: str

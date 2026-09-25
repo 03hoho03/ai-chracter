@@ -124,8 +124,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/chat-rooms", tags=["chat"])
 
-# `/stories/*`, `/characters/*`는 techspec-backend-chat.md §1에 `/chat-rooms/*`와 함께 나열돼
-# 있지만 URL prefix가 달라 같은 파일 안에 별도 APIRouter를 둔다 (`api/auth/router.py`의
+# `/stories/*`, `/characters/*`는 `/chat-rooms/*`와 같은 채팅 API에
+# 속하지만 URL prefix가 달라 같은 파일 안에 별도 APIRouter를 둔다 (`api/auth/router.py`의
 # `me_router`와 동일 패턴).
 stories_router = APIRouter(prefix="/stories", tags=["chat"])
 characters_router = APIRouter(prefix="/characters", tags=["chat"])
@@ -182,10 +182,10 @@ async def _starting_setup_dependency(
     room: ChatRoom = Depends(_owned_room_dependency),
     db: AsyncSession = Depends(get_db_session),
 ) -> StartingSetup | None:
-    """prompt-scope-techspec.md §3-2 (PS-14 / RS-6) — 레인 선택과 빌더 선택이 **같은 값**에서
+    """레인 선택과 빌더 선택이 **같은 값**에서
     나오게 하는 단일 판별원. `room.starting_setup_entity_id is None`(조기 반환)이 아니라
     `_require_starting_setup`의 결과를 쓴다 — 그쪽이 더 엄격하고(행의 실재까지 보고, 불일치면
-    `Depends` 단계에서 400을 던진다 — sse-assert-goal-prompt.md SA-12), `_build_prompt`가
+    `Depends` 단계에서 400을 던진다), `_build_prompt`가
     어차피 그 행을 필요로 한다. fastapi의 `Depends` 캐시(콜러블 동일성 기준, `use_cache=True`)
     가 있어 한 요청 안에서 `_require_starting_setup`이 두 번 불리지 않는다 —
     `_active_prompt_set_dependency`도 이 의존성을 거친다."""
@@ -205,10 +205,10 @@ async def _active_prompt_set_dependency(
     db: AsyncSession = Depends(get_db_session),
 ) -> tuple[PromptSet, list[PromptSection]]:
     """실제 채팅은 요청 스코프 `db` 세션을 이미 갖고 있으므로 그대로 재사용한다
-    (prompt-db-goal-prompt.md §7 — 미리보기의 `_preview_prompt_set_dependency`와 달리
+    (미리보기의 `_preview_prompt_set_dependency`와 달리
     세션을 짧게 여닫을 이유가 없다). 레인은 `_starting_setup_dependency`가 넘겨준 `setup`
-    으로 정한다(PS-14) — 라우트 본문이 따로 판별하지 않는다. 캐시 히트면 `db`를 조회하지
-    않고 그대로 반환한다(§8-1, 3단계). `PromptSetNotFoundError`(D-5)가 여기서 나면 SSE
+    으로 정한다 — 라우트 본문이 따로 판별하지 않는다. 캐시 히트면 `db`를 조회하지
+    않고 그대로 반환한다. `PromptSetNotFoundError`가 여기서 나면 SSE
     제너레이터 본문이 시작되기 전이라 정상적인 에러 응답이 된다 — 이 예외는 캐싱하지
     않는다(negative caching 금지)."""
     lane = _lane_for_setup(setup)
@@ -228,7 +228,7 @@ async def _active_prompt_set_dependency(
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
     """All of this user's rooms for one content, oldest first — the creation order
-    that "대화 N" auto-numbering (AC 3) is based on."""
+    that "대화 N" auto-numbering is based on."""
     return list(
         (
             await db.scalars(
@@ -246,7 +246,7 @@ def _display_name(room: ChatRoom, ordinal: int) -> str:
 
 async def _resolve_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingSetup | None:
     """Story chat rooms only. `room.starting_setup_entity_id` is the version-stable
-    reference (§1 원칙 4) — resolve it back to the physical row belonging to the room's
+    reference — resolve it back to the physical row belonging to the room's
     *pinned* `content_version_id` (not necessarily the content's current version)."""
     if room.starting_setup_entity_id is None:
         return None
@@ -260,11 +260,11 @@ async def _resolve_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingS
 
 
 async def _require_starting_setup(db: AsyncSession, room: ChatRoom) -> StartingSetup | None:
-    """sse-assert-goal-prompt.md SA-12 — `_resolve_starting_setup`의 상류에서 "행이 정말
+    """`_resolve_starting_setup`의 상류에서 "행이 정말
     없어야 하는 경우"와 "불일치로 없는 경우"를 가른다. `starting_setup_entity_id is None`은
     캐릭터 방의 정상 신호이므로 그대로 `None`을 돌려준다 — 400은 `entity_id`가 있는데 그
     행이 방이 고정한 버전에서 사라졌을 때만 던진다. 세 호출부만 이걸 쓴다(`_to_response`는
-    제외 — SA-6)."""
+    제외)."""
     setup = await _resolve_starting_setup(db, room)
     if setup is None and room.starting_setup_entity_id is not None:
         raise HTTPException(
@@ -297,8 +297,8 @@ def _ending_rule_item(rule: EndingRule) -> EndingRuleItem:
 
 async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRuleListItem]:
     """`ending_rules`(top-level)와 `ending_rule_groups`(1단계 중첩) 두 테이블을 하나의
-    `order` 공유 시퀀스로 합쳐 재구성한다 — 엔딩 규칙 평가 엔진(`evaluate_rule_list`,
-    US-061)과 §4 contentSnapshot 응답 양쪽이 이 결과를 그대로 재사용한다."""
+    `order` 공유 시퀀스로 합쳐 재구성한다 — 엔딩 규칙 평가 엔진(`evaluate_rule_list`)과
+    contentSnapshot 응답 양쪽이 이 결과를 그대로 재사용한다."""
     top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending.id))).all()
     top_groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending.id))).all()
 
@@ -336,8 +336,8 @@ async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
 async def _build_content_snapshot(
     db: AsyncSession, room: ChatRoom, setup: StartingSetup
 ) -> ChatRoomContentSnapshot:
-    """techspec-content-versioning.md §2 — stats/endings는 방이 고정한 시작설정(setup) 기준,
-    단축어는 작품 전역(content_version_id) 기준(techspec-db-schema.md §5)."""
+    """stats/endings는 방이 고정한 시작설정(setup) 기준,
+    단축어는 작품 전역(content_version_id) 기준."""
     stat_defs = (
         await db.scalars(
             select(StatDef).where(StatDef.starting_setup_id == setup.id).order_by(StatDef.order)
@@ -388,21 +388,19 @@ async def _match_situational_image(
     user_message: str,
     assistant_message: str,
 ) -> SituationalImage | None:
-    """캐릭터 챗 전용 상황별 이미지 매칭(techspec-chat-character.md §1.1, techspec-backend-chat.md
-    §3.1). 등록된 이미지가 없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상
+    """캐릭터 챗 전용 상황별 이미지 매칭. 등록된 이미지가 없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상
     단수라 "동시 매칭 시 order 최상위만 발동"은 buildJudgmentPrompt의 프롬프트 지시로 처리하고,
     여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다. 매칭된 이미지
-    자체(entity_id뿐 아니라 image_asset_id도 필요, US-073의 인라인 렌더링 URL 조회용)를
+    자체(entity_id뿐 아니라 image_asset_id도 필요, 인라인 렌더링 URL 조회용)를
     그대로 반환한다.
 
     두 DB 호출(후보 조회·노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
-    (sse-assert-goal-prompt.md SA-4/N-5) — 호출부(`_stream_new_turn`)의 기존
-    `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아(F-6) 그대로 두면
+    — 호출부(`_stream_new_turn`)의 기존
+    `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아 그대로 두면
     제너레이터를 뚫는다. 어느 쪽이 실패하든 이번 턴의 이미지 매칭 자체를 포기한다(`None`) —
     LLM 판단은 성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다.
 
-    두 DB 호출 모두 `db.begin_nested()`(SAVEPOINT)로 국소화한다(sse-assert-progress.md
-    SP-126, 적대적 리뷰 결함①) — 이 함수가 불리는 시점엔 `_stream_new_turn`이 이미
+    두 DB 호출 모두 `db.begin_nested()`(SAVEPOINT)로 국소화한다 — 이 함수가 불리는 시점엔 `_stream_new_turn`이 이미
     `db.add(assistant_message)`→`flush()`→`room.turn_count += 1`로 dirty 상태를 쌓아 둔
     뒤다. SAVEPOINT 없이 여기서 진짜 Postgres 실행 오류(`DBAPIError` 계열)가 나면
     트랜잭션이 aborted 상태가 되고, 이 `except`가 예외를 삼켜도 트랜잭션은 여전히
@@ -420,10 +418,10 @@ async def _match_situational_image(
                         select(SituationalImage)
                         .where(
                             SituationalImage.content_version_id == room.content_version_id,
-                            # sse-assert-goal-prompt.md SA-3/N-2: `PATCH /contents/{id}/draft`가
+                            # `PATCH /contents/{id}/draft`가
                             # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고
                             # (character.py의 SituationalImage docstring), 발행 검증은 이 필드를
-                            # 보지 않아 NULL이 발행본까지 간다(F-5). 그런 후보를 판단 프롬프트에
+                            # 보지 않아 NULL이 발행본까지 간다. 그런 후보를 판단 프롬프트에
                             # 싣지 않는다 — LLM이 존재하지 않는 이미지를 매칭할 원인을 여기서 끊는다.
                             SituationalImage.image_asset_id.is_not(None),
                         )
@@ -525,7 +523,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ).all()
         stats = {str(row.stat_entity_id): float(row.current_value) for row in stat_rows}
 
-    # situational-image-goal-prompt.md SI-7: 이미지가 실린 메시지들의 entity_id를 모아
+    # 이미지가 실린 메시지들의 entity_id를 모아
     # SituationalImage·Asset을 각 1회만 조회하고 서명한다 — 메시지마다 db.get을 부르면
     # 메시지 수만큼 쿼리가 늘어난다(N+1). image_id는 있는데 해석이 안 되면(SituationalImage
     # 없음/image_asset_id None/Asset 없음) image_url만 None으로 두고 image_id는 그대로 둔다.
@@ -588,12 +586,12 @@ async def _create_room(
     *,
     persona_id: uuid.UUID | None,
 ) -> ChatRoom:
-    """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`(US-080)가 공유하는
+    """`POST /chat-rooms`와 `POST /chat-rooms/{id}/change-starting-setup`이 공유하는
     방 생성 핵심 로직 — 항상 콘텐츠의 현재 발행 버전에 고정한다.
 
-    `persona_id`는 받은 값만 쓴다(persona-goal-prompt.md UP-24). "새 방 = 기본"(UP-7)과 "원래
-    방 승계"(UP-24) 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
-    읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다(§3-1, R-20). 키워드 전용 필수라 새
+    `persona_id`는 받은 값만 쓴다. "새 방 = 기본"과 "원래
+    방 승계" 규칙은 두 호출부가 각자 한 번씩 정한다. 둘 다 유저 행을 잠근 뒤에 값을
+    읽어야 프로필 삭제와 엇갈려 FK 위반 500이 나지 않는다. 키워드 전용 필수라 새
     호출부가 값을 빠뜨리면 mypy가 잡는다."""
     room = ChatRoom(
         user_id=user_id,
@@ -626,7 +624,7 @@ async def _resolve_setup_for_content(
     return setup
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-3/CG-4: 재동의 게이트
+@router.post(  # 재동의 게이트
     "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
 )
 async def create_chat_room(
@@ -650,7 +648,7 @@ async def create_chat_room(
             )
         setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    # persona-goal-prompt.md UP-7 — 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
+    # 새 방은 기본 프로필로 시작한다. 유저 행을 잠그면서 컬럼으로
     # 읽는다(`db.get(User)`는 락을 걸지 않는다 — `persona/router.py` 모듈 docstring).
     default_persona_id = await lock_user_default_persona(db, user_id)
     room = await _create_room(db, user_id, content, setup, persona_id=default_persona_id)
@@ -675,8 +673,8 @@ async def get_play_guide(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> PlayGuideResponse:
-    """방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다(techspec-backend-chat.md §1) —
-    contentSnapshot에는 의도적으로 포함하지 않는다(techspec-content-versioning.md §2)."""
+    """방이 고정한 버전 기준으로 플레이가이드를 온디맨드 조회한다 —
+    contentSnapshot에는 의도적으로 포함하지 않는다."""
     room = await _get_owned_room(db, room_id, user_id)
     setup = await _require_starting_setup(db, room)
     if setup is not None:
@@ -688,22 +686,22 @@ async def get_play_guide(
 
 
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
-# persona-goal-prompt.md UP-21 (a) — 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
+# 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
 _PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
 def _policy_warning_message(persona_rendered: bool) -> str:
-    """persona-goal-prompt.md UP-21 (a) — 그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
+    """그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
     들어갔을 때만(`user_persona_rendered`) 프로필 안내를 붙인다. 원인이 프로필인지는 알 수
     없어서 "~일 수 있다"로 쓴다. `yield ChatPolicyWarningEvent` 3곳이 공유한다."""
     return _PERSONA_POLICY_WARNING_MESSAGE if persona_rendered else _POLICY_WARNING_MESSAGE
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
-    """monitoring-techspec.md MT-6: 이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
+    """이 파일의 생성/판정 흡수 지점 8곳이 공유하는 승격 태그
     분류다. `PromptRenderError`는 외부 의존이 아니라 우리 템플릿 결함이라 별도 태그로 갈라
-    묶어 본다. Gemini 429(쿼터 소진)는 `llm/gemini.py`의 `LLMRateLimitError`(선행 조건, MT-6)로
+    묶어 본다. Gemini 429(쿼터 소진)는 `llm/gemini.py`의 `LLMRateLimitError`로
     다른 실패와 구분한다 — 안 갈라 붙이면 승격된 이벤트가 행동 가능하지 않다."""
     if isinstance(exc, PromptRenderError):
         return "prompt_render"
@@ -717,10 +715,10 @@ async def _refund_clover(
     session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
 ) -> None:
-    """clover-techspec.md §3-5-1 — 우리 쪽 실패로 턴이 0 이 됐을 때 차감을 되돌린다.
+    """우리 쪽 실패로 턴이 0 이 됐을 때 차감을 되돌린다.
 
     6 지점이 공유한다(프롬프트 렌더 실패 3 + LLM 호출 실패 3). **정책 위반 3 지점은 부르지
-    않는다** — 사용자 입력이 원인이고 LLM 을 실제로 태웠다(clover-goal-prompt.md CL-22).
+    않는다** — 사용자 입력이 원인이고 LLM 을 실제로 태웠다.
 
     `source` 가드가 여기 있는 이유는 호출부 6곳이 같은 `if` 를 여섯 벌 갖지 않게 하기
     위해서다. `"free"`(무료 창으로 통과)와 `"skipped"`(예외 계정·Redis fail-open)는 애초에
@@ -743,12 +741,12 @@ async def _refund_clover_on_failure(
     session_factory: async_sessionmaker[AsyncSession],
     user_id: uuid.UUID,
 ) -> AsyncIterator[None]:
-    """clover-techspec.md §3-5-1 — 차감은 커밋됐는데 라우트 본문이 **첫 `yield` 전에** 터지는
-    창을 닫는다(적대적 리뷰 S4 M-1).
+    """차감은 커밋됐는데 라우트 본문이 **첫 `yield` 전에** 터지는
+    창을 닫는다.
 
-    게이트가 `Depends` 단계에서 클로버를 별도 트랜잭션으로 커밋하므로(CT-4), 본문이 제너레이터
-    안의 환불 6지점에 닿기 전에 실패하면 차감만 남는다. `clover-goal-prompt.md CL-21`("우리 쪽
-    실패만 환불")을 일관되게 적용하려면 이 창도 되돌려야 한다.
+    게이트가 `Depends` 단계에서 클로버를 별도 트랜잭션으로 커밋하므로, 본문이 제너레이터
+    안의 환불 6지점에 닿기 전에 실패하면 차감만 남는다. "우리 쪽
+    실패만 환불한다"는 원칙을 일관되게 적용하려면 이 창도 되돌려야 한다.
 
     🔴 **예외를 삼키지 않고 다시 올린다** — 6지점과 성격이 다르다. 거기는 스트림이 이미 열려
     있어 예외가 새면 커넥션이 깨지지만, 여기는 아직 첫 `yield` 전이라 깨끗한 500 이 정상
@@ -768,7 +766,7 @@ async def _refund_clover_on_failure(
 
 def _format_persona(persona: UserPersona | None) -> str:
     """실채팅(`_build_prompt`)과 미리보기(`_preview_persona_dependency`)가 공유한다 — 프로필이
-    없으면 `""`라 생성 프롬프트가 현행과 바이트까지 같다(persona-goal-prompt.md UP-6)."""
+    없으면 `""`라 생성 프롬프트가 프로필 기능 이전과 바이트까지 같다."""
     if persona is None:
         return ""
     return format_user_persona(name=persona.name, gender=persona.gender, description=persona.description)
@@ -785,20 +783,20 @@ async def _build_prompt(
     prompt_sections: list[PromptSection],
 ) -> tuple[str, str, bool]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
-    프롤로그로 생성 프롬프트를 조립한다(techspec-backend-chat.md §3.1). `send_message`/`edit_message`
+    프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
     (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
 
-    `(prompt, system_instruction)` 튜플을 돌려준다 — 스토리 챗의 L0.5 템플릿별 지시
+    `(prompt, system_instruction)` 튜플을 돌려준다 — 스토리 챗의 템플릿별 지시
     (`system_instruction_for`)를 고르려면 `story_detail.prompt_template`이 필요한데, 그 조회가
-    이 함수 안에서만 일어나 호출부는 모른다(chat-techspec.md §4-2). 조회를 한 번 더 하는 대신
+    이 함수 안에서만 일어나 호출부는 모른다. 조회를 한 번 더 하는 대신
     여기서 함께 고른다.
 
-    방이 고른 대화 프로필은 이 턴에 **락 없이** 읽는다(persona-goal-prompt.md §3-1). 방 안에서
-    바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다(UP-7 ②). 그 사이 프로필이
-    지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다(UP-14).
+    방이 고른 대화 프로필은 이 턴에 **락 없이** 읽는다. 방 안에서
+    바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다. 그 사이 프로필이
+    지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다.
 
     세 번째 값은 그 프로필 섹션이 이 프롬프트에 **실제로 들어갔는가**다(`user_persona_rendered`,
-    UP-21 (a)의 정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
+    정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     user_persona = _format_persona(persona)
 
@@ -859,10 +857,10 @@ async def _build_prompt(
 def _dump_prompt(
     *, room_id: uuid.UUID | None, turn: int, prompt: str, system_instruction: str
 ) -> None:
-    """tasks/chat-techspec.md §3-5(D-21·D-22): 회차 재현용으로 조립된 프롬프트를 JSONL 한
+    """회차 재현용으로 조립된 프롬프트를 JSONL 한
     줄로 남긴다. 호출부는 `settings.prompt_dump_path is not None`일 때만 부른다.
 
-    바닥 지시문도 함께 남긴다 — 이 런이 바꾸는 것이 바로 그것이라, 대화록만 남고 그때
+    바닥 지시문도 함께 남긴다 — 실험에서 바꿔 가며 비교하는 것이 바로 그것이라, 대화록만 남고 그때
     어떤 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다."""
     record = {
         "roomId": str(room_id) if room_id is not None else None,
@@ -893,11 +891,10 @@ async def _stream_generated_tokens(
 
     바닥 지시문은 호출부가 골라 넘긴다(`system_instruction_for`) — 여기서 고를 수 없다.
     스토리/캐릭터 구분이 실제 방·미리보기에서 서로 다른 값(`setup`/`payload` 타입)으로
-    드러나기 때문이다. `stop_sequences`는 `user_label`에서 파생한다(prompt-db-goal-prompt.md
-    §4-5) — 이 함수가 실채팅·미리보기 공용이라 한 번만 고치면 둘 다 덮인다.
+    드러나기 때문이다. `stop_sequences`는 `user_label`에서 파생한다 — 이 함수가 실채팅·미리보기 공용이라 한 번만 고치면 둘 다 덮인다.
 
     진입부에서 `settings.prompt_dump_path`가 설정돼 있으면(기본값 None, 프로덕션 방어) 조립된
-    프롬프트와 그때 실린 지시문을 그 파일에 덤프한다(D-21·D-22). **덤프 실패는 절대 스트림을
+    프롬프트와 그때 실린 지시문을 그 파일에 덤프한다. **덤프 실패는 절대 스트림을
     막지 않는다** — SSE 제너레이터 본문에서 새 예외가 새면 요청 스코프 DB 세션이 강제 종료돼
     무관한 다른 요청까지 500이 된다(apps/api/CLAUDE.md §SSE 스트리밍)."""
     if settings.prompt_dump_path is not None:
@@ -927,17 +924,17 @@ async def _stream_new_turn(
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
 ) -> AsyncIterator[ChatStreamEvent]:
-    """생성 + 판단(§3.1 buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
+    """생성 + 판단(buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
     이어서 생성)가 공유한다 — 둘 다 실제로는 동일한 "새 턴"이고 차이는 호출부가 넘기는
-    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(US-072, 결과는 `chat_messages.image_id`에
-    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 —
-    situational-image-goal-prompt.md SI-7), 스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
+    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(결과는 `chat_messages.image_id`에
+    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다),
+    스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
     서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
-    전체(스탯/엔딩 모두)가 중단된다(FR-41) — 메시지 생성 자체는 계속 허용.
+    전체(스탯/엔딩 모두)가 중단된다 — 메시지 생성 자체는 계속 허용.
 
     `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
-    이미지 매칭은 재실행한다, situational-image-goal-prompt.md SI-4)는 이 헬퍼를 쓰지 않는다
+    이미지 매칭은 재실행한다)는 이 헬퍼를 쓰지 않는다
     — 그 라우트의 docstring 참고.
     """
     try:
@@ -968,8 +965,8 @@ async def _stream_new_turn(
         ):
             yield token_event
     except LLMPolicyViolationError:
-        # clover-goal-prompt.md CL-22: 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
-        # 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과 결론이 갈리는 자리다.
+        # 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
+        # 태웠다. 이미지 가드 차단이 환불되는 것과 결론이 갈리는 자리다.
         yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
@@ -1029,9 +1026,9 @@ async def _stream_new_turn(
                     stat_rows[stat_id].current_value = Decimal(str(new_value))
                     stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
-            # 엔딩 판정(FR-58): 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
+            # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
             # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
-            # 첫 충족 엔딩에서 멈춘다(FR-61, 동시 충족 시 최상위 하나만 발동).
+            # 첫 충족 엔딩에서 멈춘다(동시 충족 시 최상위 하나만 발동).
             endings = list(
                 (
                     await db.scalars(
@@ -1104,9 +1101,9 @@ async def _stream_new_turn(
 
     matched_image_url: str | None = None
     if matched_image is not None:
-        # sse-assert-goal-prompt.md SA-3/N-3: 매칭 필터(N-2)가 image_asset_id가 NULL인
+        # 매칭 필터가 image_asset_id가 NULL인
         # 후보를 판단 프롬프트에서 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)`
-        # 실패와 S3 presign 실패는 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면
+        # 실패와 S3 presign 실패는 남는다 — 이미 db.commit() 뒤라 예외가 여기서 새면
         # §SSE의 폭발 반경(커넥션 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면
         # 이 턴의 이미지 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
         try:
@@ -1141,7 +1138,7 @@ async def _stream_new_turn(
 @router.post("/{room_id}/messages", response_class=EventSourceResponse)
 async def send_message(
     payload: ChatMessageCreateRequest,
-    # consent-gate-goal-prompt.md CG-4/§2-5: SSE 제너레이터라 시그니처에 Depends로 붙인다
+    # SSE 제너레이터라 시그니처에 Depends로 붙인다
     # (dependencies=처럼 본문 실행 전에 해석되지만, 이 파일의 `_owned_room_dependency`
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
     # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
@@ -1149,18 +1146,18 @@ async def send_message(
     room: ChatRoom = Depends(_owned_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
-    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
-    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7: 반환형이 `None`에서
+    # 차감 게이트: 반환형이 `None`에서
     # `ChatCharge`로 바뀌었다(무엇으로 냈는지가 환불 대상을 가른다).
     # 🔴 mypy는 이 어노테이션을 **검증하지 않는다** — `Depends(...)`가 `Any`라 `None`으로
     # 둬도 통과한다. 게이트 반환형을 바꿀 때 이 4곳은 손으로 찾아야 한다.
     #
-    # 🔴 **조회·검증 의존성 전부보다 뒤에 둔다**(clover-goal-prompt.md CL-1). `Depends`는
+    # 🔴 **조회·검증 의존성 전부보다 뒤에 둔다**. `Depends`는
     # 시그니처 순서대로 순차 resolve되고 앞의 것이 raise하면 뒤는 호출조차 안 되므로
     # (`apps/api/CLAUDE.md` §API 라우터), 게이트가 앞에 있으면 404(없는 방)·400(단축어·시작설정
     # 불일치)·`get_llm_client`의 ValueError에서 **차감만 남고 환불되지 않는다**. 그 창은 정상
@@ -1173,11 +1170,11 @@ async def send_message(
     # 이 변경 전에도 부분적으로만 참이었다.
     charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
-    """text/event-stream SSE 응답 (techspec-backend-chat.md §2, §3). 실제 생성+판단 파이프라인은
+    """text/event-stream SSE 응답. 실제 생성+판단 파이프라인은
     `_stream_new_turn`(이 방의 새 사용자 메시지를 커밋한 뒤 호출)이 담당한다."""
     prompt_set, prompt_sections = prompt_set_data
 
-    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
         history = list(
             (
@@ -1190,7 +1187,7 @@ async def send_message(
         )
 
         # 사용자 메시지는 Gemini 호출 전에 먼저 커밋한다 — 이후 생성이 실패해도
-        # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문 (US-053 AC).
+        # 이미 저장된 사용자 메시지는 영향받지 않아야 하기 때문.
         user_message = ChatMessage(
             chat_room_id=room.id, role=ChatMessageRole.USER, content=payload.content
         )
@@ -1239,33 +1236,33 @@ async def _regeneratable_last_message_dependency(
 
 @router.post("/{room_id}/regenerate", response_class=EventSourceResponse)
 async def regenerate_message(
-    # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
+    # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
-    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
-    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
     charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
-    """마지막 AI 응답만 새로 생성해 교체한다(US-023 AC, 기존 메시지 전송과 동일한 SSE 이벤트
+    """마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
     판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
     이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
-    (situational-image-goal-prompt.md SI-4) — 노출 기록(`CharacterImageExposure`)은
+    — 노출 기록(`CharacterImageExposure`)은
     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
-    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
     # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
@@ -1305,7 +1302,7 @@ async def regenerate_message(
         ):
             yield token_event
     except LLMPolicyViolationError:
-        # clover-goal-prompt.md CL-22: 환불하지 않는다.
+        # 환불하지 않는다.
         yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
@@ -1346,10 +1343,10 @@ async def regenerate_message(
 
     matched_image_url: str | None = None
     if matched_image is not None:
-        # send_message(_stream_new_turn)와 같은 이유(sse-assert-goal-prompt.md SA-3/N-3)로
-        # 미러링한다 — 매칭 필터(N-2)가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
+        # send_message(_stream_new_turn)와 같은 이유로
+        # 미러링한다 — 매칭 필터가 image_asset_id가 NULL인 후보를 판단 프롬프트에서
         # 걸러내지만, 그 필터를 통과한 뒤에도 `db.get(Asset, ...)` 실패와 S3 presign 실패는
-        # 남는다(F-6) — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
+        # 남는다 — 이미 db.commit() 뒤라 예외가 여기서 새면 §SSE의 폭발 반경(커넥션
         # 강제종료 → 무관한 다른 요청 500)이 그대로 열린다. 실패하면 이번 재생성의 이미지
         # 매칭만 포기하고 이미지 없이 done 이벤트로 마무리한다.
         try:
@@ -1382,7 +1379,7 @@ async def _editable_user_message_dependency(
 ) -> ChatMessage:
     """소유권 검증과 같은 이유로 별도 Depends로 분리(SSE 제너레이터 본문에서 HTTPException 금지).
     수정 대상은 반드시 이 방에 속한 사용자 메시지여야 한다 — AI 메시지 수정은 지원하지 않는다
-    (US-023 AC는 "사용자 메시지 수정"만 요구)."""
+    (요구사항은 "사용자 메시지 수정"뿐이다)."""
     message = await db.get(ChatMessage, message_id)
     if message is None or message.chat_room_id != room.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
@@ -1394,35 +1391,35 @@ async def _editable_user_message_dependency(
 @router.patch("/{room_id}/messages/{message_id}", response_class=EventSourceResponse)
 async def edit_message(
     payload: ChatMessageEditRequest,
-    # consent-gate-goal-prompt.md CG-4/§2-5: send_message와 같은 이유로 시그니처 Depends
+    # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
-    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션(`db`)으로는 못 한다
+    # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
     # — 차감이 이미 커밋된 뒤라 같은 세션에 얹으면 라우트가 롤백될 때 환불만 사라진다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_active_prompt_set_dependency),
     setup: StartingSetup | None = Depends(_starting_setup_dependency),
-    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조)
     charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
     """수정된 메시지 이후의 모든 메시지를 삭제하고 수정된 내용부터 새 AI 응답을 이어서
-    생성한다(US-023 AC). `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
+    생성한다. `send_message`와 마찬가지로 완전히 새로운 턴이라 `_stream_new_turn`
     (판단 단계 + turn_count 증가 포함)을 그대로 재사용한다 — 차이는 새 사용자 메시지를
     추가하는 대신 기존 메시지를 갱신하고, history가 그 메시지 이전까지로 잘린다는 점뿐이다.
 
     삭제되는 메시지 중 AI 응답 개수만큼 turn_count를 미리 되돌려둔다(그래야 `_stream_new_turn`의
     +=1과 합쳐 실제 남은 대화 길이와 일치하고, 이후 엔딩 턴게이트 판정이 어긋나지 않는다).
     다만 삭제된 턴들이 이미 반영해 둔 chat_room_stats/ending_reached 등의 상태까지 되돌리는
-    건 이번 스토리 범위 밖이다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
-    (알려진 한계), US-023 AC도 이 롤백을 요구하지 않는다.
+    건 하지 않는다 — 되돌릴 근거가 되는 턴별 변경 이력 자체가 저장되어 있지 않고
+    (알려진 한계), 요구사항에도 이 롤백은 없다.
     """
     prompt_set, prompt_sections = prompt_set_data
 
-    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다(S4 M-1).
+    # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # 세 라우트 중 위험이 가장 큰 자리다: 조회·DELETE·커밋이 다 들어 있다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
         all_messages = list(
@@ -1471,7 +1468,7 @@ async def delete_message(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다(US-023 AC)."""
+    """개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다."""
     room = await _get_owned_room(db, room_id, user_id)
     message = await db.get(ChatMessage, message_id)
     if message is None or message.chat_room_id != room.id:
@@ -1652,7 +1649,7 @@ async def list_my_chat_rooms(
     return items
 
 
-@router.patch("/{room_id}", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-4
+@router.patch("/{room_id}", dependencies=[Depends(require_legal_consent)])
 async def rename_chat_room(
     room_id: uuid.UUID,
     payload: ChatRoomRenameRequest,
@@ -1665,7 +1662,7 @@ async def rename_chat_room(
     return await _to_response(db, room)
 
 
-@router.post("/{room_id}/reset", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-4
+@router.post("/{room_id}/reset", dependencies=[Depends(require_legal_consent)])
 async def reset_chat_room(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
@@ -1692,15 +1689,15 @@ async def reset_chat_room(
 
 @router.post(
     "/{room_id}/pin-latest-version", dependencies=[Depends(require_legal_consent)]
-)  # consent-gate-goal-prompt.md CG-4
+)
 async def pin_latest_version(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
-    """US-078, techspec-content-versioning.md §3. `messages`는 그대로 두고 방이 고정한
+    """`messages`는 그대로 두고 방이 고정한
     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상)."""
+    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상)."""
     room = await _get_owned_room(db, room_id, user_id)
     content = await db.get(Content, room.content_id)
     assert content is not None
@@ -1710,7 +1707,7 @@ async def pin_latest_version(
     return await _to_response(db, room)
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-4
+@router.post(
     "/{room_id}/change-starting-setup",
     status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_legal_consent)],
@@ -1721,7 +1718,7 @@ async def change_starting_setup(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
-    """US-080, techspec-backend-chat.md §1. 기존 방은 그대로 두고, 선택한 시작설정으로 새
+    """기존 방은 그대로 두고, 선택한 시작설정으로 새
     대화방을 생성한다 — `_create_room`(`POST /chat-rooms`와 공유)이 항상 콘텐츠의 현재 발행
     버전에 고정하므로 이 엔드포인트도 동일하게 동작한다. 캐릭터 챗 대화방은 시작설정 자체가
     없으므로(room.starting_setup_entity_id is None) 400으로 거부한다."""
@@ -1736,9 +1733,9 @@ async def change_starting_setup(
     assert content is not None
     setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
-    # persona-goal-prompt.md UP-24 — 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는
+    # 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는
     # 락 전에 읽은 값이라 그 사이 프로필 삭제로 NULL이 됐을 수 있다 — 유저 행을 잠근 뒤 컬럼
-    # select로 다시 읽는다(READ COMMITTED에서 락 뒤의 새 문장은 삭제 커밋을 본다, §3-3).
+    # select로 다시 읽는다(READ COMMITTED에서 락 뒤의 새 문장은 삭제 커밋을 본다).
     # 같은 유저의 방에서 복사하므로 소유권 재검사는 필요 없다.
     await lock_user_default_persona(db, user_id)
     persona_id = await db.scalar(select(ChatRoom.persona_id).where(ChatRoom.id == room.id))
@@ -1748,14 +1745,14 @@ async def change_starting_setup(
     return await _to_response(db, new_room)
 
 
-@router.put("/{room_id}/persona", dependencies=[Depends(require_legal_consent)])  # consent-gate-goal-prompt.md CG-3
+@router.put("/{room_id}/persona", dependencies=[Depends(require_legal_consent)])  # 재동의 게이트
 async def set_room_persona(
     room_id: uuid.UUID,
     payload: PersonaSelectRequest,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> RoomPersonaResponse:
-    """persona-goal-prompt.md §3-3 (UP-7) — 방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
+    """방의 대화 프로필을 바꾼다. 다음 턴부터 반영되고
     과거 메시지는 그대로다. 🔴 방 소유(`_get_owned_room`)와 프로필 소유(`get_owned_persona`)를
     **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다."""
     room = await _get_owned_room(db, room_id, user_id)
@@ -1769,13 +1766,13 @@ async def set_room_persona(
 
 @router.post(
     "/{room_id}/acknowledge-version-upgrade", dependencies=[Depends(require_legal_consent)]
-)  # consent-gate-goal-prompt.md CG-4
+)
 async def acknowledge_version_upgrade(
     room_id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ChatRoomResponse:
-    """techspec-content-versioning.md §4. `GET /chat-rooms/{id}`는 순수 조회라 스스로
+    """`GET /chat-rooms/{id}`는 순수 조회라 스스로
     플래그를 끄지 않는다 — 배너를 노출한 뒤 FE가 이 엔드포인트를 호출해야 서버가
     `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점)."""
     room = await _get_owned_room(db, room_id, user_id)
@@ -1806,9 +1803,9 @@ async def get_ending_collection(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[EndingCollectionItem]:
-    """techspec-backend-chat.md §1. `starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
+    """`starting_setup_id`는 물리적 PK(`_build_content_snapshot`의
     `startingSetupId`와 동일한 값 — `POST /chat-rooms`의 startingSetupId 관례를 따른다), 도달
-    여부는 `story_ending_unlocks`를 entity_id(§1 원칙 4, 버전 불변)로 조인해 같은 시작설정으로
+    여부는 `story_ending_unlocks`를 entity_id(버전 불변)로 조인해 같은 시작설정으로
     새 대화방을 만들어도 이전 기록이 유지되게 한다."""
     setup = await db.get(StartingSetup, starting_setup_id)
     if setup is None:
@@ -1849,7 +1846,7 @@ async def get_image_archive(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ImageArchiveItem]:
-    """techspec-backend-chat.md §4. `id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
+    """`id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
     동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
     노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
     존재 여부로 사용자+캐릭터 단위 누적 판정한다."""
@@ -1862,11 +1859,11 @@ async def get_image_archive(
             select(SituationalImage)
             .where(
                 SituationalImage.content_version_id == content.current_published_version_id,
-                # sse-assert-goal-prompt.md SA-4: `PATCH /contents/{id}/draft`가 이미지 파일
+                # `PATCH /contents/{id}/draft`가 이미지 파일
                 # 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고(SituationalImage
-                # docstring), 발행 검증은 이 필드를 보지 않아 NULL이 발행본까지 간다(F-5). 아직
+                # docstring), 발행 검증은 이 필드를 보지 않아 NULL이 발행본까지 간다. 아직
                 # 이미지가 없는 슬롯은 보관함에도 내보내지 않는다 — `_match_situational_image`의
-                # 후보 필터(N-2)와 같은 판단이다. register_situational_image가
+                # 후보 필터와 같은 판단이다. register_situational_image가
                 # image_asset_id/blurred_asset_id를 항상 함께 채우므로(assets/router.py) 이
                 # 필터 하나로 blurred_asset_id의 non-null도 함께 보증된다.
                 SituationalImage.image_asset_id.is_not(None),
@@ -1891,8 +1888,8 @@ async def get_image_archive(
         exposed = image.entity_id in exposed_entity_ids
         asset_id = image.image_asset_id if exposed else image.blurred_asset_id
         # The query filter above guarantees both asset id columns are non-null for every
-        # row reaching here (sse-assert-goal-prompt.md SA-4) — this assert only narrows the
-        # type. (The previous comment claimed US-083 publish validation guaranteed this;
+        # row reaching here — this assert only narrows the
+        # type. (The previous comment claimed publish validation guaranteed this;
         # that was false — validate_character_publish never looks at situational_images.)
         assert asset_id is not None
         asset = await db.get(Asset, asset_id)
@@ -1906,9 +1903,9 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
     """First-turn state for a preview session — the same opening-message/initial-stats
     shape `_create_room`/`_insert_opening_message`/`_seed_initial_stats` build for a real
     chat room, computed directly from the unsaved draft payload instead of DB rows (there's
-    no persisted `Content`/`StartingSetup` to query yet, per techspec-builder-common.md §3).
+    no persisted `Content`/`StartingSetup` to query yet).
     A story with multiple starting setups previews its first one — the payload carries no
-    startingSetupId to choose another (AC only asks for the formToServer payload as-is)."""
+    startingSetupId to choose another (the requirement only asks for the formToServer payload as-is)."""
     now = datetime.now(UTC)
     if isinstance(payload, CharacterDraftPayload):
         messages = [
@@ -1930,14 +1927,14 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
     return PreviewSessionState(payload=payload, messages=messages, stats=stats)
 
 
-@preview_router.post(  # consent-gate-goal-prompt.md CG-4/CG-9
+@preview_router.post(
     "", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
 )
 async def start_preview_session(
     payload: CharacterDraftPayload | StoryDraftPayload,
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> PreviewSessionStartResponse:
-    """techspec-builder-common.md §3, techspec-backend-chat.md §1. `payload` is whatever
+    """`payload` is whatever
     `formToServer(getValues())` produced (same shape as `PATCH /contents/{id}/draft`'s body)
     and is stored in Redis with no validation, mirroring autosave's unvalidated path."""
     state = _build_preview_start_state(payload)
@@ -1950,7 +1947,7 @@ async def _owned_preview_session_dependency(
     user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> PreviewSessionState:
     """미리보기 세션 접근도 `_owned_room_dependency`와 같은 이유(SSE 제너레이터 본문 안에서
-    HTTPException 금지)로 평범한 Depends로 분리한다. `PreviewSessionState`(US-088)엔 저장된
+    HTTPException 금지)로 평범한 Depends로 분리한다. `PreviewSessionState`엔 저장된
     user_id가 없어 실제 소유권 대조는 불가능하다 — 로그인 요구 + 추측 불가능한 세션 id 자체가
     접근 통제라는 점에서 비밀번호 재설정 토큰과 같은 처지(apps/api/CLAUDE.md 참고)."""
     state = await get_preview_session(id)
@@ -1963,15 +1960,15 @@ async def _preview_prompt_set_dependency(
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """prompt-db-goal-prompt.md §8-2. 미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
+    """미리보기는 요청 스코프 DB 세션이 없다 — `Depends`가
     세션이 아니라 값(활성 세트)을 반환하게 만들어, 세션을 짧게 열고 즉시 닫는다. 레인은
-    `state.payload`의 판별 유니언 타입으로 정한다(PS-14) — DB 조회도, 별도 판별자도
+    `state.payload`의 판별 유니언 타입으로 정한다 — DB 조회도, 별도 판별자도
     필요 없다.
 
     캐시 히트면 `session_factory()`를 아예 호출하지 않는다 — DB 세션을 열지 않는 것이
-    이 함수의 핵심이다(3단계, §8-1). 캐시 미스일 때만 짧게 열고 즉시 닫은 뒤 다음 조회를
+    이 함수의 핵심이다. 캐시 미스일 때만 짧게 열고 즉시 닫은 뒤 다음 조회를
     위해 캐시를 채운다. `Depends(get_db_session)`을 쓰지 않는 이유는 커넥션 풀 상한(15개)
-    대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(§8-2 실측)."""
+    대비 미리보기 한 턴이 LLM 호출 2회 이상으로 수십 초 걸리기 때문이다(실측)."""
     lane = _lane_for_preview_payload(state.payload)
     cached = await get_cached_active_prompt_set(lane)
     if cached is not None:
@@ -1986,11 +1983,11 @@ async def _preview_persona_dependency(
     user_id: uuid.UUID = Depends(get_current_user_id),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> str:
-    """persona-goal-prompt.md §3-5 (UP-10). 미리보기는 작가 본인의 **기본** 프로필을 쓴다 —
-    없으면 `""`(현행과 같다, UP-6). 턴마다 읽고 `PreviewSessionState`에는 저장하지 않는다(작가가
+    """미리보기는 작가 본인의 **기본** 프로필을 쓴다 —
+    없으면 `""`(프로필 기능 이전과 같다). 턴마다 읽고 `PreviewSessionState`에는 저장하지 않는다(작가가
     도중에 기본을 바꾸면 다음 턴에 반영된다).
 
-    세션은 짧게 열고 바로 닫는다(persona-goal-prompt.md §9-2 행 11 확인 결과). 이 경로에도
+    세션은 짧게 열고 바로 닫는다. 이 경로에도
     요청 스코프 세션이 있다 — `require_legal_consent`가 `Depends(get_db_session)`으로 열어
     `db.get(User)`로 트랜잭션을 시작한 채 커밋하지 않고, FastAPI는 yield 의존성을 응답
     스트리밍이 끝난 뒤에 닫으므로(`fastapi/routing.py`의 `fastapi_inner_astack`) 그 커넥션은
@@ -2000,7 +1997,7 @@ async def _preview_persona_dependency(
     빌리고 스트리밍 전에 돌려준다 — 두 방식 모두 지금은 스트리밍 중 점유를 늘리지 않고,
     게이트 유무와 무관하게 그 성질이 유지되는 쪽이 이것이다.
 
-    `charge`(차감 게이트)보다 앞에 둔다(clover-goal-prompt.md CL-1, `send_preview_message`).
+    `charge`(차감 게이트)보다 앞에 둔다(`send_preview_message`).
     도메인 예외는 없다 — DB 장애만 예외가 되고, 그때는 차감 전에 실패한다."""
     async with session_factory() as session:
         persona = await session.scalar(
@@ -2061,7 +2058,7 @@ def _preview_ending_rule_list_item(item: EndingRuleListDraftItem) -> EndingRuleL
 
 
 def _preview_keyword_notes(payload: StoryDraftPayload, setup_id: uuid.UUID | None) -> list[KeywordNote]:
-    """실제 방의 `starting_setup_id IS NULL OR == 현재 setup` DB 필터(US-065)와 동일한
+    """실제 방의 `starting_setup_id IS NULL OR == 현재 setup` DB 필터와 동일한
     스코프 규칙을 payload 안에서 그대로 적용한다."""
     return [
         KeywordNote(info_text=note.info_text, trigger_keywords=note.trigger_keywords)
@@ -2080,8 +2077,8 @@ def _build_preview_prompt(
     user_persona: str,
 ) -> str:
     """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
-    읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면(US-088과 동일한
-    "미완성 상태에서도 테스트 가능" 원칙) 빈 프롤로그로 진행한다."""
+    읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면("미완성 상태에서도
+    테스트 가능" 원칙) 빈 프롤로그로 진행한다."""
     if isinstance(payload, CharacterDraftPayload):
         return build_generation_prompt(
             prompt_set=prompt_set,
@@ -2135,9 +2132,9 @@ async def _stream_preview_turn(
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
     클램핑(`apply_stat_changes`)/엔딩 규칙 평가(`evaluate_rule_list`)/턴게이트
     (`is_ending_check_due`)/키워드 매칭(`match_keyword_notes`) 엔진과 SSE 이벤트 스키마는
-    실제 채팅과 완전히 동일하게 재사용한다(US-089 AC) — `ChatRoom`/`chat_room_stats` 등 방
+    실제 채팅과 완전히 동일하게 재사용한다 — `ChatRoom`/`chat_room_stats` 등 방
     상태는 DB 대신 Redis 상태 갱신으로 대체했다. 프롬프트 세트(`prompt_set`/`prompt_sections`)는
-    호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다(§8-2) — 이
+    호출부(`send_preview_message`)의 `Depends`가 DB에서 값으로 읽어 넘긴 것이다 — 이
     함수 자체는 세션을 열지 않는다."""
     # `_build_prompt`(실제 방)와 달리 `payload`가 이미 이 스코프에 있어(DB 조회가 아니다)
     # 튜플 반환으로 우회할 필요가 없다 — template을 여기서 바로 뽑는다.
@@ -2160,7 +2157,7 @@ async def _stream_preview_turn(
         # apps/api/CLAUDE.md §SSE — LLM 호출 전이므로 여기서 흡수해도 잃는 게 없다.
         logger.warning("미리보기 프롬프트 렌더 실패: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        # 🔴 goal-prompt §4-2가 빠뜨렸던 자리다(clover-techspec.md §3-5-1 7행) — 미리보기도
+        # 🔴 처음 설계가 빠뜨렸던 환불 자리다 — 미리보기도
         # 같은 게이트를 지나므로 클로버가 깎인다. 환불은 `yield` 앞이다.
         await _refund_clover(charge, session_factory, user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
@@ -2180,13 +2177,13 @@ async def _stream_preview_turn(
         ):
             yield token_event
     except LLMPolicyViolationError:
-        # clover-goal-prompt.md CL-22: 환불하지 않는다.
+        # 환불하지 않는다.
         yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
-        # 🔴 goal-prompt §4-2가 빠뜨렸던 자리다(clover-techspec.md §3-5-1 9행).
+        # 🔴 처음 설계가 빠뜨렸던 환불 자리다.
         await _refund_clover(charge, session_factory, user_id)
         yield ChatErrorEvent(message=_GENERATION_ERROR_MESSAGE)
         return
@@ -2278,12 +2275,11 @@ async def _stream_preview_turn(
 async def send_preview_message(
     id: str,
     payload: ChatMessageCreateRequest,
-    # consent-gate-goal-prompt.md CG-4/CG-9/§2-5: send_message와 같은 이유로 시그니처 Depends
+    # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    # clover-techspec.md §3-5-1: 환불은 별도 트랜잭션이라(CT-4) 요청 세션으로는 못 한다.
+    # 환불은 별도 트랜잭션이라 요청 세션으로는 못 한다.
     # 미리보기 라우트는 `db`를 받지 않는다(`_preview_prompt_set_dependency`가 풀 상한 때문에
-    # 피한다. 다만 `require_legal_consent`가 연 요청 스코프 세션은 있다 — persona-goal-prompt.md
-    # §9-2 행 11) — 나머지 3경로도 `db`는 있지만 같은 이유로 팩토리를 따로 받는다.
+    # 피한다. 다만 `require_legal_consent`가 연 요청 스코프 세션은 있다) — 나머지 3경로도 `db`는 있지만 같은 이유로 팩토리를 따로 받는다.
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
     # `_stream_new_turn`은 `room.user_id`를 쓰는데 `PreviewSessionState`에는 user_id가 없어
     # (`_owned_preview_session_dependency` docstring) 이 경로만 명시적으로 받는다. 같은
@@ -2293,18 +2289,18 @@ async def send_preview_message(
     shortcut: ShortcutDraftItem | None = Depends(_validate_preview_shortcut),
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
-    # persona-goal-prompt.md §3-5 (UP-10) — 작가의 기본 대화 프로필. `charge`보다 앞이다(CL-1).
+    # 작가의 기본 대화 프로필. `charge`보다 앞이다.
     user_persona: str = Depends(_preview_persona_dependency),
-    # limit-goal-prompt.md RL-1/RL-13 + clover-techspec.md CT-7 (mypy가 안 잡는다, 조회·검증
+    # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조). 미리보기에서 앞에
     # 두면 만료·남의 세션(404)에서 차감만 남는다.
     charge: ChatCharge = Depends(enforce_chat_rate_limit),
 ) -> AsyncIterator[ChatStreamEvent]:
-    """미리보기 메시지 전송 SSE (US-089, techspec-backend-chat.md §1). `_stream_preview_turn`이
+    """미리보기 메시지 전송 SSE. `_stream_preview_turn`이
     실제 생성+판단 파이프라인을 담당한다 — `chat_rooms`/조회수/대화수 등 어떤 지표 테이블도
     이 경로에서는 전혀 건드리지 않는다(Redis의 `PreviewSessionState` 하나만 갱신). 프롬프트
     세트만은 예외다 — `_preview_prompt_set_dependency`가 캐시 히트면 DB에 닿지 않고, 미스일
-    때만 짧게 연 세션으로 활성 세트를 읽는다(§8-2)."""
+    때만 짧게 연 세션으로 활성 세트를 읽는다."""
     prompt_set, prompt_sections = prompt_set_data
     history = [_preview_chat_message(message) for message in state.messages]
     state.messages.append(
@@ -2328,15 +2324,15 @@ async def send_preview_message(
     ):
         yield event
 
-    # sse-assert-goal-prompt.md SA-4/N-4: 미리보기도 `require_legal_consent`가
-    # `get_db_session`을 쥐고 있어 실채팅과 같은 폭발 반경을 갖는다(F-6) — 이 SET이 실패해도
+    # 미리보기도 `require_legal_consent`가
+    # `get_db_session`을 쥐고 있어 실채팅과 같은 폭발 반경을 갖는다 — 이 SET이 실패해도
     # 제너레이터를 뚫으면 안 된다. 이 시점엔 이미 `ChatDoneEvent`까지 yield된 뒤라(위 루프),
     # 실패를 알리는 이벤트를 새로 추가해도 클라이언트가 듣고 있다는 보장이 없다 — 판정 실패를
     # 흡수하는 기존 자리들(`_stream_preview_turn`의 판정 except, `prompt_set_cache.py`의 Redis
     # GET/SET)과 같은 모양으로 조용히 흡수하고 로그+모니터링으로만 남긴다. 대가: 이번 턴은
-    # Redis에 반영되지 않아 다음 조회에서 사라진다(sse-assert-progress.md CP-4 기록 참고).
+    # Redis에 반영되지 않아 다음 조회에서 사라진다.
     #
-    # `ValueError`도 함께 잡는다(sse-assert-progress.md SP-129, 적대적 리뷰 결함②) —
+    # `ValueError`도 함께 잡는다 —
     # `update_preview_session`은 `state.model_dump_json(by_alias=True)`를 **먼저** 계산한
     # 뒤에 `redis_client.set(...)`을 부른다. 그 직렬화 실패는 `RedisError`가 아니라
     # `PydanticSerializationError`(pydantic-core, `ValueError` 서브클래스로 직접 확인)라

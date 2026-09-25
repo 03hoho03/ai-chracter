@@ -1,4 +1,4 @@
-"""clover-techspec.md CT-9·CT-10 — `/me/clover` 3경로와 탈퇴 시 잔액 소멸(clover-goal-prompt.md CL-32).
+"""`/me/clover` 3경로와 탈퇴 시 잔액 소멸.
 
 🔴 시간을 얼리지 않는다 — 이 저장소에 `freezegun`·`time-machine`이 0건이라 KST 경계 검증은
 `clover_attendance_granted_on` 컬럼에 리터럴 날짜를 넣어 확인한다(`core/clover.py`의
@@ -41,7 +41,7 @@ async def _balance(db: AsyncSession, user_id: uuid.UUID) -> int:
     return balance
 
 
-# ── T-14. 출석 ──────────────────────────────────────────────────────────────
+# ── 출석 ──────────────────────────────────────────────────────────────
 async def test_attendance_first_call_grants_and_increases_balance(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -58,9 +58,9 @@ async def test_attendance_first_call_grants_and_increases_balance(
 async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eight_days(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """clover-page-goal-prompt.md CE-11 — 출석 지급도 만료가 붙는다(CE-7과 같은 규칙: 지급일
+    """출석 지급도 만료가 붙는다(백필 로트와 같은 규칙: 지급일
     KST 자정 + 8일). 이 테스트가 빨개지는 조건: `claim_clover_attendance`가 `grant()`에
-    `expires_at`을 안 넘기면(S2가 인자만 열어 둔 상태 그대로 남으면) 로트가 무기한
+    `expires_at`을 안 넘기면 로트가 무기한
     (`expires_at IS NULL`)으로 생긴다."""
     user = await _logged_in(db_client, db_session)
 
@@ -85,7 +85,7 @@ async def test_attendance_grant_creates_a_lot_expiring_at_kst_midnight_plus_eigh
 async def test_attendance_is_idempotent_within_the_same_kst_day(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """🔴 멱등을 서버가 보장한다(clover-techspec.md CT-10) — FE가 여러 번 불러도 안전해야 한다.
+    """🔴 멱등을 서버가 보장한다 — FE가 여러 번 불러도 안전해야 한다.
 
     이 테스트가 빨개지는 조건: `clover_attendance_granted_on` 검사를 빼면 두 번째 호출이
     `granted=true` + 잔액 200이 된다.
@@ -114,7 +114,7 @@ async def test_attendance_does_not_double_grant_when_the_marker_is_missed(
 
     빨개지는 조건: 멱등이 `is_same_kst_day` 검사 하나에만 걸려 있으면(= 원장 멱등키가 없으면)
     두 번째 호출이 `granted=true` + 잔액 200 + 원장 2행이 된다. 진짜 동시 요청 재현은
-    `independent_session_factory`가 필요해 S11 몫이고, 여기서는 **기구의 존재**를 고정한다.
+    `independent_session_factory`가 필요해 `test_clover_concurrency.py` 몫이고, 여기서는 **기구의 존재**를 고정한다.
     """
     user = await _logged_in(db_client, db_session)
 
@@ -203,7 +203,7 @@ async def test_balance_flags_flip_once_today_is_recorded(
 async def test_balance_does_not_grant_attendance(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """🔴 GET에 부작용을 두지 않는다(clover-techspec.md CT-10). 조회만으로 지급되면 빨개진다."""
+    """🔴 GET에 부작용을 두지 않는다. 조회만으로 지급되면 빨개진다."""
     user = await _logged_in(db_client, db_session)
 
     await db_client.get("/me/clover")
@@ -212,7 +212,7 @@ async def test_balance_does_not_grant_attendance(
     assert await _ledger_kinds(db_session, user.id) == []
 
 
-# ── expiringSoon (CE-22) ─────────────────────────────────────────────────────
+# ── expiringSoon ─────────────────────────────────────────────────────
 async def test_expiring_soon_is_null_when_no_lot_has_an_expiry(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -285,7 +285,7 @@ async def test_expiring_soon_sums_lots_sharing_the_same_expiry(
 async def test_expiring_soon_excludes_lots_that_already_expired(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """CE-22 — 배치가 아직 못 지운 이미 만료된 로트(`expires_at <= now`)는 제외한다.
+    """배치가 아직 못 지운 이미 만료된 로트(`expires_at <= now`)는 제외한다.
 
     빨개지는 조건: `expires_at > now` 필터를 빼면 이미 지난 로트가 골라져 음수 D-day가 뜬다.
     """
@@ -310,7 +310,7 @@ async def test_expiring_soon_excludes_lots_that_already_expired(
 async def test_expiring_soon_is_null_when_only_lots_are_more_than_three_days_out(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """clover-page-goal-prompt.md CE-22 — 임박 임계값은 3일이다(사전 점검 I-1).
+    """임박 임계값은 3일이다.
 
     빨개지는 조건: 3일 상한 필터가 없으면 7일 남은 로트도 `expiringSoon`을 채워 "곧
     사라진다"는 거짓 신호를 준다.
@@ -336,7 +336,7 @@ async def test_expiring_soon_is_null_when_only_lots_are_more_than_three_days_out
 async def test_expiring_soon_threshold_includes_a_lot_expiring_in_exactly_three_days(
     db_session: AsyncSession,
 ) -> None:
-    """경계(정확히 3일 남음)는 **포함**으로 정했다 — 이 런의 발명이다(CE-22는 "3일 이내"의
+    """경계(정확히 3일 남음)는 **포함**으로 정했다("3일 이내"라는 규칙은
     등호 포함 여부까지는 정하지 않았다. "이내"의 통상 의미(초과가 아님)를 따라 포함 쪽을
     골랐다). `_expiring_soon`에 리터럴 `now`를 직접 주입해 HTTP 왕복의 시각 오차 없이
     경계를 정확히 맞춘다.
@@ -389,7 +389,7 @@ async def test_expiring_soon_threshold_excludes_a_lot_expiring_just_past_three_d
 async def test_expiring_soon_excludes_a_lot_that_is_already_exhausted(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """사전 점검 I-2 — `remaining = 0`인 소진 로트는 만료 전이어도 대상에서 빠진다.
+    """`remaining = 0`인 소진 로트는 만료 전이어도 대상에서 빠진다.
 
     빨개지는 조건: `CloverLot.remaining > 0` 필터를 빼면 소진 로트가 더 이른 만료라
     "가장 임박한 묶음"으로 잘못 골라져 `amount`가 어긋난다.
@@ -452,11 +452,11 @@ async def test_clover_routes_require_a_session(db_client: httpx.AsyncClient) -> 
     assert (await db_client.post("/me/clover/spend-confirmation")).status_code == 401
 
 
-# ── T-16. 탈퇴 시 잔액 소멸 ──────────────────────────────────────────────────
+# ── 탈퇴 시 잔액 소멸 ──────────────────────────────────────────────────
 async def test_withdraw_burns_the_balance_and_keeps_the_ledger(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """clover-goal-prompt.md CL-32 — 잔액은 0으로 소멸시키고 원장은 남긴다.
+    """잔액은 0으로 소멸시키고 원장은 남긴다.
 
     빨개지는 조건: 소멸을 빼면 잔액이 100으로 남는다(탈퇴는 soft delete라 행이 그대로다).
     원장을 지우면 `attendance_grant`가 사라진다.
@@ -469,7 +469,7 @@ async def test_withdraw_burns_the_balance_and_keeps_the_ledger(
 
     assert resp.status_code == 204
     assert await _balance(db_session, user.id) == 0
-    # 기존 행이 남고 소멸 행이 더해진다 — 원장은 불변이다(clover-goal-prompt.md CL-6).
+    # 기존 행이 남고 소멸 행이 더해진다 — 원장은 불변이다.
     assert await _ledger_kinds(db_session, user.id) == ["attendance_grant", "withdrawal_burn"]
     burn = await db_session.scalar(
         select(CloverLedger).where(
@@ -480,7 +480,7 @@ async def test_withdraw_burns_the_balance_and_keeps_the_ledger(
     assert burn.amount == -100
     assert burn.balance_after == 0
 
-    # clover-page-goal-prompt.md T-9(CE-29) — `grant()`가 만든 로트도 함께 0이 됐다.
+    # `grant()`가 만든 로트도 함께 0이 됐다.
     # 유령 로트 금지: 잔액만 0이 되고 로트가 남으면 안 된다.
     lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
     assert lot is not None
@@ -526,7 +526,7 @@ async def test_withdraw_burns_whatever_the_row_actually_holds(
     assert burn.amount == -40
     assert burn.balance_after == 0
 
-    # T-9(CE-29) — 로트는 잔액(40)이 아니라 **그 유저의 로트 전부**가 0이 된다(전량 무효화,
+    # 로트는 잔액(40)이 아니라 **그 유저의 로트 전부**가 0이 된다(전량 무효화,
     # `revoke`의 부분 무효화와 다르다). 로트가 여전히 100을 들고 있던(원래의 불일치) 상태라도
     # 소멸이 유령 로트를 남기지 않는다.
     lot = await db_session.scalar(select(CloverLot).where(CloverLot.user_id == user.id))
@@ -537,7 +537,7 @@ async def test_withdraw_burns_whatever_the_row_actually_holds(
 async def test_withdraw_with_zero_balance_writes_no_ledger_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """잔액 0이면 의미 없는 원장 행을 만들지 않는다(§3-8).
+    """잔액 0이면 의미 없는 원장 행을 만들지 않는다.
 
     빨개지는 조건: `if user.clover_balance > 0:` 가드를 빼면 `withdrawal_burn` 0원 행이 생긴다.
     """
@@ -552,7 +552,7 @@ async def test_withdraw_with_zero_balance_writes_no_ledger_row(
 async def test_withdraw_with_zero_balance_still_zeroes_out_leftover_lots(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-9(CE-29) — 잔액은 이미 0인데 로트만 남은 비정상 상태(Σ 불변식이 이미 깨진 경우)도
+    """잔액은 이미 0인데 로트만 남은 비정상 상태(Σ 불변식이 이미 깨진 경우)도
     탈퇴가 정리한다.
 
     빨개지는 조건: `burn_all`이 잔액 기준(`clover_balance > 0`)으로 일찍 빠져나가며 로트

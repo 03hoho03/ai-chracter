@@ -39,17 +39,17 @@ class ChatMessageResponse(CamelModel):
     role: ChatMessageRole
     content: str
     created_at: datetime
-    # US-072 상황이미지 매칭 결과(entity_id). done 이벤트의 finalMessage와
+    # 상황이미지 매칭 결과(entity_id). done 이벤트의 finalMessage와
     # `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 — chat_messages.image_id에 저장되고
-    # `_to_response`가 채운다(situational-image-goal-prompt.md SI-1/SI-7).
+    # `_to_response`가 채운다.
     image_id: uuid.UUID | None = None
-    # US-073 인라인 렌더링용 presigned GET URL(원본 키, SI-6). 저장하지 않고 응답 시점에
-    # 서명한다(900초 만료). 해석이 안 되면 image_id는 남고 이 필드만 None(SI-7).
+    # 인라인 렌더링용 presigned GET URL(원본 키). 저장하지 않고 응답 시점에
+    # 서명한다(900초 만료). 해석이 안 되면 image_id는 남고 이 필드만 None.
     image_url: str | None = None
 
 
-# 스토리 챗 전용 스냅샷 (techspec-content-versioning.md §2). entity_id 기반 id를 쓴다 —
-# 물리적 PK가 아니라 버전이 바뀌어도 안정적인 참조(§1 원칙 4)라 SSE statChange/endingReached,
+# 스토리 챗 전용 스냅샷. entity_id 기반 id를 쓴다 —
+# 물리적 PK가 아니라 버전이 바뀌어도 안정적인 참조라 SSE statChange/endingReached,
 # chat_room_stats, story_ending_unlocks가 참조하는 값과 그대로 일치한다.
 class StatDefSnapshot(CamelModel):
     id: uuid.UUID
@@ -107,8 +107,8 @@ class ChatRoomContentSnapshot(CamelModel):
     endings: list[EndingSnapshot]
     shortcuts: list[ShortcutSnapshot]
     suggested_replies: list[str]
-    # US-070 — 유일하게 물리적 PK인 필드(위 entity_id 기반 id들과 다름). GET /stories/starting-setups/
-    # {id}/ending-collection(US-069)이 물리적 PK를 요구하는데(POST /chat-rooms의 startingSetupId 관례와
+    # 유일하게 물리적 PK인 필드(위 entity_id 기반 id들과 다름). GET /stories/starting-setups/
+    # {id}/ending-collection이 물리적 PK를 요구하는데(POST /chat-rooms의 startingSetupId 관례와
     # 동일), ChatRoomResponse.startingSetupId(entity_id, 이미 테스트로 고정됨)로는 그 호출을 만들 수
     # 없어 room이 고정한 물리적 StartingSetup 행의 id를 별도로 노출한다.
     pinned_starting_setup_id: uuid.UUID
@@ -127,7 +127,7 @@ class ChatRoomResponse(CamelModel):
     content_snapshot: ChatRoomContentSnapshot | None = None
     latest_version_available: bool
     version_auto_upgraded: bool
-    # persona-goal-prompt.md §3-3 — 방이 고른 대화 프로필. None이 "선택 없음"(UP-6).
+    # 방이 고른 대화 프로필. None이 "선택 없음".
     # 옆의 nullable 필드들처럼 `= None`을 둔다 — 생성 타입에서 선택 필드가 되어 이 필드를 모르는
     # 기존 FE 픽스처(`toChatRoomState.test.ts`)가 깨지지 않는다. 응답에는 항상 실린다.
     persona_id: uuid.UUID | None = None
@@ -172,11 +172,11 @@ class PlayGuideResponse(CamelModel):
     play_guide: str | None
 
 
-# techspec-builder-common.md §3 — 빌더 미리보기 세션. 실제 ChatRoom과 형태는 비슷하지만
+# 빌더 미리보기 세션. 실제 ChatRoom과 형태는 비슷하지만
 # Postgres에 전혀 기록되지 않고 Redis에만 저장되는 별도 상태다(지표 미반영, TTL 자동 소멸).
 class PreviewSessionState(CamelModel):
     """Redis에 그대로 직렬화되는 세션 상태. `payload`는 발행/자동저장과 동일한
-    formToServer 결과(검증 없이 그대로 저장, techspec-builder-common.md §3)이고,
+    formToServer 결과(검증 없이 그대로 저장)이고,
     `messages`/`stats`는 그 payload로부터 계산한 첫 턴 상태(오프닝 메시지/스탯 초기값)다."""
 
     payload: CharacterDraftPayload | StoryDraftPayload
@@ -190,7 +190,7 @@ class PreviewSessionStartResponse(CamelModel):
     preview_session_id: str
 
 
-# SSE 이벤트 스키마 (techspec-backend-chat.md §2, techspec-chat-story.md §1.2가 유일한 정의처).
+# SSE 이벤트 스키마.
 class ChatTokenEvent(CamelModel):
     type: Literal["token"] = "token"
     delta: str

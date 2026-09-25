@@ -36,7 +36,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - **DB URL의 단일 소스는 `api.core.config.settings.database_url`이다.** `alembic.ini`의 `sqlalchemy.url`은 플레이스홀더이고 `migrations/env.py`가 기동 시 덮어쓴다 — 마이그레이션용 URL을 따로 관리하지 않는다.
 - 새 모델은 `db/models/{domain}.py`에 두고 **`db/models/__init__.py`에 import**해야 한다. 빠뜨리면 `Base.metadata`가 비어 autogenerate가 조용히 빈 diff를 낸다.
 - **Dockerfile**은 uv 멀티스테이지. `uv:` 이미지 태그를 `[build-system] uv_build` 버전과 맞춰 고정한다(어긋나면 빌드 백엔드 호환성 문제).
-- **이메일 발송(`core/email.py`)은 운영에 배포돼 실제로 나간다** — 2026-09-12 프로덕션 왕복 검증 완료(실메일 가입: `signup`→수신함 도착→`verify-email`, 비밀번호 재설정 링크 1회용까지. `tasks/email-progress.md` S5-5·S5-6). VM env가 `EMAIL_PROVIDER=resend`+`RESEND_API_KEY`+`EMAIL_FROM`을 싣는다(`DEPLOY.md §2-1`). **다만 코드 기본값은 `console`이다**(`core/config.py`) — 로컬·pytest는 설정 없이 돌면 로그만 찍으므로 "메일이 안 온다"가 로컬에서는 정상 동작이다.
+- **이메일 발송(`core/email.py`)은 운영에 배포돼 실제로 나간다** — 2026-09-12 프로덕션 왕복 검증 완료(실메일 가입: `signup`→수신함 도착→`verify-email`, 비밀번호 재설정 링크 1회용까지). VM env가 `EMAIL_PROVIDER=resend`+`RESEND_API_KEY`+`EMAIL_FROM`을 싣는다(`DEPLOY.md`의 "BE 런타임" 절). **다만 코드 기본값은 `console`이다**(`core/config.py`) — 로컬·pytest는 설정 없이 돌면 로그만 찍으므로 "메일이 안 온다"가 로컬에서는 정상 동작이다.
 
 ## 마이그레이션 (autogenerate가 못 만드는 것들)
 
@@ -95,7 +95,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ### 순서: 테스트를 먼저 쓰고, 실패를 눈으로 본 뒤 구현한다
 
-1. 테스트 작성 → 2. `uv run pytest -k <신규>` **→ 실패 확인(실측)** → 3. 실패 메시지를 `progress.md`에 한 줄 → 4. 구현 → 5. `uv run pytest` 전체 초록 → 6. 커밋(src + tests 하나)
+1. 테스트 작성 → 2. `uv run pytest -k <신규>` **→ 실패 확인(실측)** → 3. 실패 메시지를 진행 기록에 한 줄 → 4. 구현 → 5. `uv run pytest` 전체 초록 → 6. 커밋(src + tests 하나)
 
 **2번을 건너뛰지 않는다. 이유는 커버리지가 못 하는 것에 있다.**
 
@@ -198,9 +198,9 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 시드 콘텐츠 · 이미지 생성
 
-- 시드의 UUID는 리터럴이 아니라 **uuid5 파생**(`seed_uuid`)이고 `seed_dev.py`는 `session.merge` 업서트라 "이 파일이 곧 시드의 단일 진실"이다. 상세 규약은 `scripts/seed_content/` 코드 주석과 `tasks/archive/prd-genre-seed-content.md` §7·§8에 있다.
+- 시드의 UUID는 리터럴이 아니라 **uuid5 파생**(`seed_uuid`)이고 `seed_dev.py`는 `session.merge` 업서트라 "이 파일이 곧 시드의 단일 진실"이다. 상세 규약은 `scripts/seed_content/` 코드 주석에 있다.
 - **`settingText`는 사용자용 소개문이 아니라 서술자에게 주는 지시문이다** — "당신은 …입니다"처럼 사용자를 주인공으로 부르면 서술자가 자기를 주인공으로 착각해 화자가 뒤집힌다(발행 검증도 유사도 게이트도 못 잡는다).
-- **SDXL 프롬프트는 더 이상 조용히 잘리지 않는다** — 1000자/320토큰 초과는 로컬이 `400`으로 거절한다(계약 v3, `tasks/local-image-gen-contract.md` LC-11). 긴 산문 대신 짧은 태그 나열로 쓰고 가장 중요한 지시(인물 수·시선·조명)를 앞에 둘 것.
+- **SDXL 프롬프트는 더 이상 조용히 잘리지 않는다** — 1000자/320토큰 초과는 로컬이 `400`으로 거절한다(집 PC 계약 v3). 긴 산문 대신 짧은 태그 나열로 쓰고 가장 중요한 지시(인물 수·시선·조명)를 앞에 둘 것.
 - 이미 시딩된 환경의 이미지만 교체할 때는 `scripts/upload_seed_images.py`(DB 무변경) — `Asset.id`도 storage key도 slug 파생 고정값이라 바뀌어야 하는 건 바이트뿐이다.
 
 ## 알려진 갭

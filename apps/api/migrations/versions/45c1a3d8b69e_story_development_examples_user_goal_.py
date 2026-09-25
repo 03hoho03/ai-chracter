@@ -4,12 +4,12 @@ Revision ID: 45c1a3d8b69e
 Revises: e933fcbb7938
 Create Date: 2026-09-09 01:12:17.016730
 
-chat-goal-prompt.md §8-3 / chat-techspec.md §6-2 (D-13) — revision ① of two: adds the new
+Revision ① of two: adds the new
 columns and backfills `development_examples` by parsing the existing `development_example`
-free text in Python (not SQL regex). Revision ② (dropping `development_example`) is out of
-scope for this run — it happens after the backfill is eyeballed in production.
+free text in Python (not SQL regex). Revision ② (dropping `development_example`) is a separate,
+later revision — it happens after the backfill is eyeballed in production.
 
-Parsing rule (chat-techspec.md §6-2, 실측): 발행 30개 전수 — `사용자:` 30/30, `서술자:` 29/30,
+Parsing rule (실측): 발행 30개 전수 — `사용자:` 30/30, `서술자:` 29/30,
 `진행자:` 1/30(우리 프롬프트가 실제로 쓰는 라벨). Text is split at those two label kinds and
 paired up in order. If no label is found at all, or the text doesn't *start* with a user
 label (one seed entry opens with a narrator line before any user line), we can't confidently

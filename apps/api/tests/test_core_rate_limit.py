@@ -82,7 +82,7 @@ def test_seconds_until_kst_midnight_rejects_naive_datetime() -> None:
     # naive를 받아주면 `astimezone`이 프로세스 로컬 시간으로 재해석한다 — 같은
     # `datetime(2026, 9, 17, 12, 0)`이 이 머신(KST)에선 43200, `TZ=UTC` 컨테이너에선 10800이
     # 나온다(실측). `datetime.utcnow()`처럼 naive를 넘기면 일일 창이 KST 자정이 아니라 UTC
-    # 자정(=KST 09:00)에서 끊기는데 예외도 로그도 없어 RL-4가 조용히 깨진다.
+    # 자정(=KST 09:00)에서 끊기는데 예외도 로그도 없어 조용히 깨진다.
     with pytest.raises(ValueError, match="tz-aware"):
         seconds_until_kst_midnight(datetime(2026, 9, 17, 12, 0))
 

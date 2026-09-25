@@ -1,4 +1,4 @@
-"""R2 용량 임계 알림(monitoring-techspec.md MT-12).
+"""R2 용량 임계 알림.
 
 새 스크립트·새 크론·새 Cloudflare 토큰 없이 기존 `aws()` 헬퍼로 `aws s3 ls --recursive
 --summarize`를 한 번 더 불러 총 바이트를 읽는다. `prune()`이 이미 밟아 둔 함정(빈 프리픽스에서

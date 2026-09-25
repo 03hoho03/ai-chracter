@@ -46,7 +46,7 @@ router = APIRouter(prefix="/assets", tags=["assets"])
 me_router = APIRouter(prefix="/me", tags=["assets"])
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-4
+@router.post(
     "/presigned-upload", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
 )
 async def create_presigned_upload(
@@ -89,7 +89,7 @@ def _upload_size_limit(storage_key: str) -> int | None:
 
 @router.post(
     "/{asset_id}/complete", dependencies=[Depends(require_legal_consent)]
-)  # consent-gate-goal-prompt.md CG-4
+)
 async def complete_asset_upload(
     asset_id: uuid.UUID,
     current_user_id: uuid.UUID = Depends(get_current_user_id),
@@ -150,7 +150,7 @@ async def complete_asset_upload(
     return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-4
+@router.post(
     "/{asset_id}/register-situational-image", dependencies=[Depends(require_legal_consent)]
 )
 async def register_situational_image(
@@ -159,7 +159,7 @@ async def register_situational_image(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> SituationalImageResponse:
-    """techspec-backend-media.md §2. Downloads the original asset, synchronously
+    """Downloads the original asset, synchronously
     generates a Gaussian-blurred variant (no queue — a single-image blur is
     sub-second), and upserts the situational_images row keyed by entity_id.
     """
@@ -241,13 +241,13 @@ async def register_situational_image(
 async def collect_asset_usages(
     db: AsyncSession, asset_ids: Sequence[uuid.UUID]
 ) -> dict[uuid.UUID, list[GeneratedImageUsage]]:
-    """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다 (US-001, tasks/archive/prd-image-library.md).
+    """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다.
 
     assets.id를 참조하는 4개 컬럼(character/story thumbnail_asset_id,
     situational_images.image/blurred_asset_id)을 컬럼별 일괄 select로 훑는다 —
     이미지마다 개별 조회하지 않는다(N+1 금지). 초안/발행 버전을 구분하지 않고 둘 다
     '사용 중'으로 보며, 같은 (content_id, field) 참조는 하나로 합친다(제목은 최신
-    버전의 detail name이 남는다). US-002의 삭제 사전 판정도 이 함수를 재사용한다.
+    버전의 detail name이 남는다). 생성 이미지 삭제의 사전 판정도 이 함수를 재사용한다.
     """
     if not asset_ids:
         return {}
@@ -320,7 +320,7 @@ async def list_generated_images(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> list[GeneratedImageItem]:
-    """techspec-backend-media.md §3: "생성한 이미지에서 선택" 갤러리 조회."""
+    """"생성한 이미지에서 선택" 갤러리 조회."""
     assets = list(
         await db.scalars(
             select(Asset)
@@ -354,7 +354,7 @@ async def delete_generated_image(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """US-002 (tasks/archive/prd-image-library.md): 생성 이미지 삭제.
+    """생성 이미지 삭제.
 
     존재하지 않음/타인 소유/GENERATED 아님을 전부 404 하나로 답한다 — 남의 asset
     존재 여부를 노출하지 않기 위함. 사용 중이면 409에 사용처 목록을 담아
@@ -380,7 +380,7 @@ async def delete_generated_image(
     # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다(고아 레코드 대신
     # 고아 파일을 피한다).
     await run_in_threadpool(delete_object, asset.storage_key)
-    # image-monitoring-goal-prompt.md IM-16: READY asset은 항상 `_thumb.webp`
+    # READY asset은 항상 `_thumb.webp`
     # 변형을 갖는다(list_generated_images가 이걸 내보낸다) — 안 지우면 고아로 남는다.
     await run_in_threadpool(delete_object, build_thumbnail_key(asset.storage_key))
     await db.delete(asset)

@@ -47,10 +47,10 @@ async def _balance(db: AsyncSession, user_id: uuid.UUID) -> int:
     return balance
 
 
-# ── T-1 ─────────────────────────────────────────────────────────────────────
+# ── 차감 ────────────────────────────────────────────────────────────────────
 async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: AsyncSession) -> None:
-    # clover-page-goal-prompt.md CE-6: `spend()`가 이제 로트를 잠가 깎으므로 셋업이 매칭되는
-    # 로트도 만들어야 한다(CE-35) — `_make_user(clover_balance=N)`만으로는 로트가 0행이라
+    # `spend()`가 이제 로트를 잠가 깎으므로 셋업이 매칭되는
+    # 로트도 만들어야 한다 — `_make_user(clover_balance=N)`만으로는 로트가 0행이라
     # 부족 예외(`CloverLotShortfallError`)가 난다.
     user = await _make_user_with_clover_lot(db_session, clover_balance=100)
 
@@ -68,7 +68,7 @@ async def test_spend_deducts_balance_and_writes_one_ledger_row(db_session: Async
     assert rows[0].balance_after == 90
 
 
-# ── T-2 ─────────────────────────────────────────────────────────────────────
+# ── 잔액 부족 ───────────────────────────────────────────────────────────────
 async def test_spend_returns_none_and_changes_nothing_when_insufficient(
     db_session: AsyncSession,
 ) -> None:
@@ -106,9 +106,9 @@ async def test_spend_twice_cannot_overdraw(db_session: AsyncSession) -> None:
     assert len(await _ledger_rows(db_session, user.id)) == 1
 
 
-# ── T-3 ─────────────────────────────────────────────────────────────────────
+# ── CHECK 제약 ──────────────────────────────────────────────────────────────
 async def test_check_constraint_rejects_negative_balance(db_session: AsyncSession) -> None:
-    """clover-techspec.md §2-5 — `alembic check`가 CHECK 제약을 비교하지 않으므로
+    """`alembic check`가 CHECK 제약을 비교하지 않으므로
     (alembic 1.18.5, `db/models/story.py:190-196`) **이 행위 테스트가 유일한 검증**이다.
     조건부 UPDATE를 우회하는 경로(어드민 직접 수정·수동 SQL·환불 버그)를 여기서 막는다.
     """
@@ -142,7 +142,7 @@ async def test_grant_increases_balance_and_writes_ledger(db_session: AsyncSessio
 
 
 async def test_revoke_returns_none_when_amount_exceeds_balance(db_session: AsyncSession) -> None:
-    # 회수는 음수로 내려가지 않는다 — 라우트가 이 `None`을 422로 번역한다(clover-techspec.md §4-3).
+    # 회수는 음수로 내려가지 않는다 — 라우트가 이 `None`을 422로 번역한다.
     user = _make_user(clover_balance=30)
     db_session.add(user)
     await db_session.flush()
@@ -153,7 +153,7 @@ async def test_revoke_returns_none_when_amount_exceeds_balance(db_session: Async
 
 
 async def test_revoke_writes_admin_revoke_kind(db_session: AsyncSession) -> None:
-    # `revoke()`도 `_apply()`를 공유해 로트를 잠가 깎는다(CE-34) — 셋업이 매칭 로트를 필요로 한다.
+    # `revoke()`도 `_apply()`를 공유해 로트를 잠가 깎는다 — 셋업이 매칭 로트를 필요로 한다.
     user = await _make_user_with_clover_lot(db_session, clover_balance=30)
 
     assert await revoke(db_session, user_id=user.id, amount=30, idempotency_key="key-1") == 0
@@ -165,7 +165,7 @@ async def test_revoke_writes_admin_revoke_kind(db_session: AsyncSession) -> None
     assert rows[0].idempotency_key == "key-1"
 
 
-# ── CE-11: grant()가 매칭되는 로트를 만든다 ───────────────────────────────────
+# ── grant()가 매칭되는 로트를 만든다 ───────────────────────────────────
 async def test_grant_creates_a_matching_lot(db_session: AsyncSession) -> None:
     user = _make_user(clover_balance=0)
     db_session.add(user)
@@ -190,7 +190,7 @@ async def test_grant_creates_a_matching_lot(db_session: AsyncSession) -> None:
 
 
 async def test_grant_defaults_to_a_permanent_lot(db_session: AsyncSession) -> None:
-    """clover-page-goal-prompt.md CE-11 — `expires_at`을 안 주면(어드민 지급·환불) 무기한
+    """`expires_at`을 안 주면(어드민 지급·환불) 무기한
     로트가 생긴다."""
     user = _make_user(clover_balance=0)
     db_session.add(user)
@@ -203,9 +203,9 @@ async def test_grant_defaults_to_a_permanent_lot(db_session: AsyncSession) -> No
     assert lot.expires_at is None
 
 
-# ── CE-5/CE-6: 로트 소진 순서와 경계 ──────────────────────────────────────────
+# ── 로트 소진 순서와 경계 ──────────────────────────────────────────
 async def test_spend_consumes_the_soonest_expiring_lot_first(db_session: AsyncSession) -> None:
-    """CE-5 — 소진 순서는 만료 임박 우선. 깨지는 시나리오: 순서를 어기면 무기한 로트가 먼저
+    """소진 순서는 만료 임박 우선. 깨지는 시나리오: 순서를 어기면 무기한 로트가 먼저
     깎여 유저가 만료로 잃는 양이 늘어난다."""
     user = _make_user(clover_balance=50)
     db_session.add(user)
@@ -232,7 +232,7 @@ async def test_spend_consumes_the_soonest_expiring_lot_first(db_session: AsyncSe
 
 
 async def test_spend_crosses_a_lot_boundary(db_session: AsyncSession) -> None:
-    """CE-6 — 로트 경계를 걸친 차감(로트 A 3개 남음 + 로트 B로 7개 더 필요, 총 10 차감).
+    """로트 경계를 걸친 차감(로트 A 3개 남음 + 로트 B로 7개 더 필요, 총 10 차감).
     깨지는 시나리오: 단일 로트만 보는 구현이면 부족한데도 성공 처리되거나 잔액이 어긋난다."""
     user = _make_user(clover_balance=10)
     db_session.add(user)
@@ -258,7 +258,7 @@ async def test_spend_crosses_a_lot_boundary(db_session: AsyncSession) -> None:
     assert second.remaining == 0
 
 
-# ── CE-34: 회수는 최근 지급분부터, 차감(CE-5)과 정반대 ─────────────────────────
+# ── 회수는 최근 지급분부터, 차감과 정반대 ─────────────────────────
 async def test_revoke_consumes_the_most_recent_lot_first(db_session: AsyncSession) -> None:
     """깨지는 시나리오: 차감과 같은 정렬을 타면 오지급분이 아니라 만료 임박분이 먼저 사라진다."""
     user = _make_user(clover_balance=80)
@@ -291,7 +291,7 @@ async def test_revoke_consumes_the_most_recent_lot_first(db_session: AsyncSessio
 
 # ── 환불 래퍼가 예외를 밖으로 내지 않는다 ────────────────────────────────────
 async def test_refund_in_new_transaction_swallows_failures() -> None:
-    """clover-techspec.md §3-5 — 환불은 제너레이터 본문에서 불린다. 예외가 새면 이미 시작된
+    """환불은 제너레이터 본문에서 불린다. 예외가 새면 이미 시작된
     SSE 스트림을 뚫고 나가 태스크가 취소되고, 망가진 asyncpg 커넥션이 풀로 반환돼 **무관한
     요청이 500**이 된다(`core/rate_limit_gate.py:11-14`).
     """
@@ -308,7 +308,7 @@ async def test_refund_in_new_transaction_swallows_failures() -> None:
         await dead_engine.dispose()
 
 
-# ── T-15: KST 순수 함수 ──────────────────────────────────────────────────────
+# ── KST 순수 함수 ──────────────────────────────────────────────────────
 def test_kst_today_uses_fixed_plus_nine_offset() -> None:
     # 구현의 KST 상수를 빌려 쓰지 않는다 — 여기서 오프셋을 직접 만들어야 오프셋이 틀렸을 때 깨진다
     # (`tests/test_core_rate_limit.py`의 같은 관례).
@@ -343,9 +343,9 @@ def test_is_same_kst_day_rejects_naive_datetime() -> None:
         is_same_kst_day(date(2026, 9, 17), datetime(2026, 9, 17, 12, 0))
 
 
-# ── earned_lot_expiry(CE-7·CE-11, 출석·미션 지급용) ───────────────────────────
+# ── earned_lot_expiry(출석·미션 지급용) ───────────────────────────
 def test_earned_lot_expiry_is_kst_midnight_plus_eight_days() -> None:
-    """마이그레이션의 `_legacy_lot_expiry` T-15와 같은 예시 — 지급일이 2026-09-21(KST)이면
+    """마이그레이션의 `_legacy_lot_expiry` 테스트와 같은 예시 — 지급일이 2026-09-21(KST)이면
     2026-09-29 00:00 KST가 나와야 한다."""
     kst = timezone(timedelta(hours=9))
     now = datetime(2026, 9, 21, 0, 0, tzinfo=kst)
@@ -354,7 +354,7 @@ def test_earned_lot_expiry_is_kst_midnight_plus_eight_days() -> None:
 
 
 def test_earned_lot_expiry_guarantees_at_least_seven_days_even_at_end_of_day() -> None:
-    """CE-7의 존재 이유: 그 날 23:59(KST)에 지급돼도 보유 기간이 7일 이상이어야 한다.
+    """"+8일"의 존재 이유: 그 날 23:59(KST)에 지급돼도 보유 기간이 7일 이상이어야 한다.
     "+7일"로 되돌리면 자정 정규화 때문에 보유 기간이 6일대로 떨어져 이 단언이 깨진다."""
     kst = timezone(timedelta(hours=9))
     now = datetime(2026, 9, 21, 23, 59, tzinfo=kst)
@@ -369,8 +369,8 @@ def test_earned_lot_expiry_rejects_naive_datetime() -> None:
 
 # ── 정책 상수 ────────────────────────────────────────────────────────────────
 def test_policy_constants_match_decisions() -> None:
-    # clover-goal-prompt.md CL-10~CL-12. 값이 조용히 바뀌면 원장에 쌓인 과거 수치의 의미가
-    # 달라지므로(CL-15) 문서와 코드를 한자리에서 묶어 둔다.
+    # 값이 조용히 바뀌면 원장에 쌓인 과거 수치의 의미가
+    # 달라지므로 정한 값을 여기서 고정한다.
     assert CHAT_TURN_COST == 10
     assert IMAGE_UNIT_COST == 30
     assert ATTENDANCE_GRANT_AMOUNT == 100

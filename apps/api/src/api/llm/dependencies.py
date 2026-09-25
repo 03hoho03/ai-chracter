@@ -27,9 +27,9 @@ def get_llm_client() -> LLMClient:
 
 
 def build_image_client(model_id: ImageModelId) -> ImageClient:
-    """모델 id → 구체 ImageClient. local-image-gen-techspec.md LT-7: 집 PC로 전환한 뒤에도
+    """모델 id → 구체 ImageClient. 집 PC로 전환한 뒤에도
     `assert_never` 분기 형태를 유지한다 — 체크포인트가 늘 때 분기 누락을 mypy가 잡는 성질이
-    로컬 전환(여러 체크포인트 예정, local-image-gen-goal-prompt.md LG-9)에서 더 필요해진다."""
+    로컬 전환(여러 체크포인트 예정)에서 더 필요해진다."""
     if model_id == "v1":
         return LocalImageClient(model_id)
     assert_never(model_id)

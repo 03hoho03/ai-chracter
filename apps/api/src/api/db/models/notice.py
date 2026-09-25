@@ -8,9 +8,7 @@ from api.db.base import Base
 
 
 class Notice(Base):
-    """goal-prompt.md §3-1, techspec.md §3-1.
-
-    `published`를 `published_at IS NOT NULL`로 대신하지 않는다 — 숨김 → 재게시 시
+    """`published`를 `published_at IS NOT NULL`로 대신하지 않는다 — 숨김 → 재게시 시
     원래 게시일이 유지돼야 목록 정렬과 "언제 고지했는가"가 흔들리지 않는다.
     `published_at`은 최초 게시 시각이고 숨김으로 되돌려도 지우지 않는다.
     `LegalDocument`(`db/models/legal.py`)도 `status`와 `published_at`을 따로 둔 같은

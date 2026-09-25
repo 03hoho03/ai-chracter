@@ -1,19 +1,19 @@
-"""프롬프트 DB 이관 0단계 — 이관 전 코드가 실제로 내는 프롬프트 전문을 골든 파일로 뜬 스크립트.
+"""프롬프트 DB 이관 직전에 이관 전 코드가 실제로 내는 프롬프트 전문을 골든 파일로 뜬 스크립트.
 
 여기서 만든 파일들(`tests/golden/prompts/*.txt`)은 이관 전후 바이트 동일을 증명하는
-기준선이다(D-13). `tests/test_prompt_goldens.py`가 아래 `GOLDEN_CASES`를 그대로
+기준선이다. `tests/test_prompt_goldens.py`가 아래 `GOLDEN_CASES`를 그대로
 재사용해 지금 렌더러의 출력과 골든 파일을 대조한다 — 픽스처가 두 곳에서 갈리면 그
 대조는 무의미해지므로 이 모듈이 픽스처의 유일한 정의처다("자기 사본 함정" 방지,
 `25a6ae1`이 겪은 것과 같은 종류의 실수를 물리적으로 막는다).
 
-**2단계(렌더러 교체) 이후: `main()`은 더 이상 DB 없이 못 돈다.** `build_*` 함수들이
+**렌더러를 DB 기반으로 교체한 뒤로는 `main()`이 더 이상 DB 없이 못 돈다.** `build_*` 함수들이
 `PromptSet`/`PromptSection`을 받게 바뀌어서, 이 스크립트도 활성 세트를 DB에서 읽어야
 호출할 수 있다. `GOLDEN_CASES`의 각 콜러블 자체는 여전히 `(prompt_set, sections)`를
 받는 순수 함수 호출일 뿐이라 import 시점에는 DB가 필요 없다 — DB가 필요한 것은
 `main()`을 실제로 실행할 때뿐이다.
 
 ⚠️ **`main()`을 다시 실행해 골든 파일을 덮어쓰지 마라.** 골든은 이관 *전* 코드가 낸
-문자열을 영구 보존한 기준선이다(D-13) — 지금 렌더러로 다시 뜨면 렌더러의 버그까지
+문자열을 영구 보존한 기준선이다 — 지금 렌더러로 다시 뜨면 렌더러의 버그까지
 "정답"으로 덮어써 버려 이 대조가 원리적으로 무력화된다. 이 파일이 남아 있는 이유는
 오직 `GOLDEN_CASES`/픽스처 리터럴을 테스트와 공유하기 위해서다.
 
@@ -147,7 +147,7 @@ def _starting_setup() -> StartingSetup:
 # `build_*`가 `PromptSet`/`PromptSection` 목록을 받으므로 콜러블도 그 둘을 인자로 받는다 —
 # `tests/test_prompt_goldens.py`가 이 목록을 그대로 import해서, 레인별로 DB에서 읽은
 # 활성 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다. 레인 배정은
-# prompt-scope-techspec.md §2-1(PS-3)의 채널→레인 매핑 그대로다 — system/generation은
+# 채널→레인 매핑 그대로다 — system/generation은
 # scope(캐릭터/스토리)로, stat_judgment·ending_judgment는 story로, image_judgment는
 # character로, publish_filter는 publish_filter로 고정.
 
@@ -193,7 +193,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         "story",
         lambda ps, sections: system_instruction_for(sections, is_story_chat=True, template=None),
     ),
-    # persona-goal-prompt.md UP-6: 생성 7건은 `user_persona=""`(프로필 없음·선택 없음)다 — 이
+    # 생성 7건은 `user_persona=""`(프로필 없음·선택 없음)다 — 이
     # 인자가 없던 시절의 골든과 바이트까지 같아야 한다(골든은 다시 뜨지 않는다).
     # -- 생성 프롬프트: 캐릭터 1 × filled/empty + 경계(character_prompt="") --
     (

@@ -1,18 +1,18 @@
-"""이미지가 남지 않은 생성 요청(차단·실패)을 90일 뒤 파기한다(image-monitoring-goal-prompt.md IM-7a).
+"""이미지가 남지 않은 생성 요청(차단·실패)을 90일 뒤 파기한다.
 
     # VM 크론 (매일, ops/cron.d/ddona-image-request-purge 로 설치)
     cd /opt/ddona/app/apps/api && PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.purge_image_requests
 
-`image_generation_requests`의 `status IN ('blocked', 'failed')` 행은 IM-5 결정으로 프롬프트
+`image_generation_requests`의 `status IN ('blocked', 'failed')` 행은 프롬프트
 원문을 그대로 담는다 — 그중 상당수가 성적·폭력 시도문일 가능성이 높은, 이 서비스에서 가장
-민감한 텍스트다. 이미지가 나온 요청(`succeeded`)의 보유기간은 IM-7("이미지와 같은 수명")이
-따로 정하고, 이미지가 안 나온 요청은 삭제 트리거가 없어 그대로 두면 탈퇴 전까지 무기한
+민감한 텍스트다. 이미지가 나온 요청(`succeeded`)의 보유기간은 "이미지와 같은 수명"으로
+따로 정해져 있고, 이미지가 안 나온 요청은 삭제 트리거가 없어 그대로 두면 탈퇴 전까지 무기한
 남는다 — 그래서 `created_at`으로부터 90일 뒤 이 크론이 지운다. **`succeeded`·`pending`은
 나이와 무관하게 손대지 않는다.**
 
 **구조는 `vacuum_bugsink.py`에서, DB 삭제 방식은 `backup_db.py`의
-`delete_expired_withdrawn_emails`에서 베꼈다** — 이 문서 초고가 하나로 뭉뚱그렸던 것을 조사가
-갈랐다. `vacuum_bugsink.py`는 `docker exec ... bugsink-manage vacuum`을 부를 뿐 Postgres에
+`delete_expired_withdrawn_emails`에서 베꼈다**.
+`vacuum_bugsink.py`는 `docker exec ... bugsink-manage vacuum`을 부를 뿐 Postgres에
 직접 접속하지 않아 테이블 삭제의 선례가 못 된다. 여기서는 `delete_expired_withdrawn_emails`와
 같은 방식(`ops.pg.run_sh`로 컨테이너 안 `psql "$PGURL" -Atq -c <SQL>`)으로 실제 DELETE를 날리고,
 삭제 건수는 `.rowcount`(SQLAlchemy 전용) 대신 `DELETE ... RETURNING`이 찍는 줄 수로 센다.
@@ -34,7 +34,7 @@ from ops.db_url import to_libpq_url
 from ops.notify import notify
 from ops.pg import run_sh, shell_quote
 
-# image-monitoring-goal-prompt.md IM-7a: 90일. `backup_db.py`의 `WITHDRAWN_EMAIL_BLOCK_PERIOD`와
+# 90일. `backup_db.py`의 `WITHDRAWN_EMAIL_BLOCK_PERIOD`와
 # 달리 대조할 원본 상수가 없다 — 이 90일은 애플리케이션 코드(`api.core.constants` 등) 어디에도
 # 쓰이지 않고 이 크론 자신이 유일한 시행처다(2026-09-16 저장소 전수 확인). 그래서 로컬 상수
 # 하나로 두고, 두 값을 대조하는 테스트는 만들지 않는다 — 대조할 짝이 없다.

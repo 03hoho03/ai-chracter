@@ -53,7 +53,7 @@ def _extract_reset_link(body: str) -> str:
 
 
 async def _request_reset_and_capture_token(db_client: httpx.AsyncClient, email: str) -> str:
-    """email-goal-prompt.md E-10: 발송자는 이제 Depends 경계라 monkeypatch가 아니라
+    """발송자는 이제 Depends 경계라 monkeypatch가 아니라
     app.dependency_overrides[get_email_sender]로 갈아끼운다(apps/api/CLAUDE.md의
     `mock.patch` 금지 규약과 일치)."""
     captured: dict[str, str] = {}
@@ -104,7 +104,7 @@ async def test_request_password_reset_for_unknown_email_returns_same_response(
 async def test_request_password_reset_rate_limited_by_email_hides_registration_status(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """email-goal-prompt.md E-6 성공기준 6: 미등록 이메일도 상한까지 반복하면 똑같이 429가
+    """미등록 이메일도 상한까지 반복하면 똑같이 429가
     떠야 한다 — 등록된 이메일만 429가 나면 그 자체로 가입 여부가 새어나간다(request_password_reset의
     204 고정 응답과 같은 은닉 원칙)."""
     email = "nobody@example.com"
@@ -120,7 +120,7 @@ async def test_request_password_reset_rate_limited_by_email_hides_registration_s
 async def test_request_password_reset_rate_limited_by_ip_returns_429(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """email-goal-prompt.md E-6: IP당 시간당 10회. 서로 다른(미등록) 이메일을 써서 이메일별
+    """IP당 시간당 10회. 서로 다른(미등록) 이메일을 써서 이메일별
     상한이 아니라 IP 상한만으로 트리거한다."""
     for i in range(rate_limit.PASSWORD_RESET_IP_LIMIT):
         resp = await db_client.post(
@@ -138,7 +138,7 @@ async def test_request_password_reset_rate_limited_by_ip_returns_429(
 async def test_request_password_reset_rate_limited_returns_auth_limit_detail(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """error-delivery-goal-prompt.md ED-11: password-reset 429는 시간당 창 상한 하나뿐이므로
+    """password-reset 429는 시간당 창 상한 하나뿐이므로
     code:"AUTH_LIMIT", window:"auth"를 낸다."""
     email = "nobody@example.com"
     for _ in range(rate_limit.PASSWORD_RESET_EMAIL_LIMIT):

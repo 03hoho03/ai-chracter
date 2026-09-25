@@ -1,4 +1,4 @@
-"""Viewer identity and 24h dedup for content view counting (tasks/archive/prd-view-count.md).
+"""Viewer identity and 24h dedup for content view counting.
 
 Guest cookies follow the same policy family as session cookies (see
 api/session/cookies.py) but are not sessions, so this module keeps its own
@@ -52,7 +52,7 @@ async def try_mark_viewed(content_id: uuid.UUID, viewer_key: str) -> bool:
     """Atomically mark (content, viewer) as viewed; True only on the first view in the TTL window.
 
     SET NX doubles as the dedup check. Redis failures are swallowed into False
-    so a dead Redis never leaks an exception into the request path (FR-5).
+    so a dead Redis never leaks an exception into the request path.
     """
     try:
         was_set = await redis_client.set(

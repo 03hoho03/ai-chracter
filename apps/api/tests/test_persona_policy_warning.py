@@ -1,14 +1,14 @@
-"""persona-goal-prompt.md UP-21 (a) · §3-4-1 · §4 S6 — 정책 차단 안내 문구의 분기.
+"""정책 차단 안내 문구의 분기.
 
 `ChatPolicyWarningEvent.message`는 **그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
 렌더됐을 때만** 프로필 안내 문구로 바뀐다. 판정 기준은 "값이 비지 않았다" **그리고** "그 턴의
-활성 세트에서 `select_sections_for_render`가 `user_persona` 슬롯을 골랐다"다(§3-4-1).
+활성 세트에서 `select_sections_for_render`가 `user_persona` 슬롯을 골랐다"다.
 
 - 프로필 있음/없음 × 실채팅/재생성/미리보기(3곳의 `yield ChatPolicyWarningEvent`).
-- 프로필은 있는데 활성 세트에 슬롯이 없는 경우(캐시 TTL 창, §6 R-17): 배포 직후 Redis 캐시에
-  M2 이전 세트가 남아 있는 상황을 그대로 만든다 — 테스트 DB에 남아 있는 `a69cbd40dec8`의 레인
-  세트(M2가 복사한 원본, 슬롯 없는 character 게시본)를 캐시에 심는다. 이때는 섹션이 들어가지 않았으므로 기존 문구다.
-- 어느 경우든 클로버는 되돌리지 않는다(clover-goal-prompt.md CL-22). 셋업은
+- 프로필은 있는데 활성 세트에 슬롯이 없는 경우(캐시 TTL 창): 배포 직후 Redis 캐시에
+  슬롯 추가 마이그레이션(`b72c33c70240`) 이전 세트가 남아 있는 상황을 그대로 만든다 — 테스트 DB에
+  남아 있는 `a69cbd40dec8`의 레인 세트(그 마이그레이션이 복사한 원본, 슬롯 없는 character 게시본)를 캐시에 심는다. 이때는 섹션이 들어가지 않았으므로 기존 문구다.
+- 어느 경우든 클로버는 되돌리지 않는다. 셋업은
   `test_clover_chat_refund.py`의 관례(셋업 뒤에 상한을 0으로 패치)를 따른다.
 """
 
@@ -37,7 +37,7 @@ from factories import (
     _parse_sse_events,
 )
 
-# 문서(persona-goal-prompt.md UP-21, 기존 `_POLICY_WARNING_MESSAGE`)에서 글자 그대로 옮겼다.
+# 확정 문구(기존 `_POLICY_WARNING_MESSAGE`)에서 글자 그대로 옮겼다.
 # 라우터 상수를 import해 비교하지 않는 이유: 상수끼리 비교하면 상수가 틀려도 통과한다.
 _DEFAULT_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
 _PERSONA_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다. 대화 프로필 내용이 원인일 수 있어요."
@@ -54,7 +54,7 @@ async def _cache_pre_m2_character_set(db_session: AsyncSession) -> None:
         .where(PromptSection.prompt_set_id == PromptSet.id, PromptSection.slot == "user_persona")
         .exists()
     )
-    # M2 이전 character 게시본 — 테스트 DB에서는 `a69cbd40dec8`이 심은 레인 세트 하나다.
+    # 슬롯 추가 마이그레이션 이전 character 게시본 — 테스트 DB에서는 `a69cbd40dec8`이 심은 레인 세트 하나다.
     prompt_set = await db_session.scalar(
         select(PromptSet).where(PromptSet.lane == "character", PromptSet.status == "published", ~has_persona_slot)
     )
@@ -76,8 +76,8 @@ async def _run_policy_turn(
 ) -> tuple[User, list[dict[str, Any]]]:
     """기본 프로필이 있는(또는 없는) 유저로 `surface`에서 정책 위반 턴을 일으킨다.
 
-    프로필은 **기본**으로 걸어 둔다 — 새 방은 기본으로 시작하고(UP-7), 미리보기는 작가의 기본을
-    쓴다(UP-10). 그래서 세 경로가 같은 셋업으로 프로필을 싣는다.
+    프로필은 **기본**으로 걸어 둔다 — 새 방은 기본으로 시작하고, 미리보기는 작가의 기본을
+    쓴다. 그래서 세 경로가 같은 셋업으로 프로필을 싣는다.
     """
     user = await _make_user_with_clover_lot(
         db_session,
@@ -151,7 +151,7 @@ async def _run_policy_turn(
 
 
 async def _assert_not_refunded(db_session: AsyncSession, user: User) -> None:
-    """CL-22 — 정책 위반은 소모로 둔다. 원장에 차감 한 행만 있고 환불 행이 없다."""
+    """정책 위반은 소모로 둔다. 원장에 차감 한 행만 있고 환불 행이 없다."""
     assert user.clover_balance == _START_BALANCE - clover.CHAT_TURN_COST
     rows = (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user.id))).all()
     assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -clover.CHAT_TURN_COST)]
@@ -186,8 +186,8 @@ async def test_policy_warning_keeps_default_message_when_the_active_set_has_no_p
     monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
-    """캐시 TTL 창(§6 R-17) — 프로필 값은 비어 있지 않지만 그 턴의 세트에 슬롯이 없어 섹션이
-    들어가지 않았다. 값만 보고 판정하면 여기서 문구가 잘못 바뀐다(§3-4-1 판정 기준)."""
+    """캐시 TTL 창 — 프로필 값은 비어 있지 않지만 그 턴의 세트에 슬롯이 없어 섹션이
+    들어가지 않았다. 값만 보고 판정하면 여기서 문구가 잘못 바뀐다(모듈 docstring의 판정 기준)."""
     user, events = await _run_policy_turn(
         db_client, db_session, monkeypatch, surface=surface, with_persona=True, stale_cache=True
     )

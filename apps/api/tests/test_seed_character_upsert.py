@@ -1,4 +1,4 @@
-"""`scripts/seed_content/upsert.py` 의 캐릭터 시드 업서트 (US-005)."""
+"""`scripts/seed_content/upsert.py` 의 캐릭터 시드 업서트."""
 
 import json
 import uuid

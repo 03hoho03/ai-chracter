@@ -231,7 +231,7 @@ async def test_withdraw_requires_session(db_client: httpx.AsyncClient) -> None:
 async def test_withdraw_purges_pii_and_records_withdrawn_email_hash(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-6·LR-7·LR-8·LR-18·LR-20: 탈퇴 시 평문 이메일이
+    """탈퇴 시 평문 이메일이
     복원 불가능한 자리표시자로 바뀌고, 비밀번호 해시·닉네임·자기소개·생년월일·구글 식별자가
     파기되며, 재가입 차단용 HMAC 한 행이 withdrawn_emails에 남는다."""
     payload = await _signup_and_login(db_client)
@@ -267,7 +267,7 @@ async def test_withdraw_purges_pii_and_records_withdrawn_email_hash(
 async def test_withdraw_deletes_personas_referenced_by_default_and_rooms(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """persona-goal-prompt.md UP-15 — 탈퇴하면 대화 프로필도 지운다. 기본 지정과 방 참조가
+    """탈퇴하면 대화 프로필도 지운다. 기본 지정과 방 참조가
     둘 다 걸린 상태여야 "참조를 먼저 끊는 순서"가 검증된다(끊지 않으면 FK 위반으로 500)."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
@@ -303,7 +303,7 @@ async def test_withdraw_deletes_personas_referenced_by_default_and_rooms(
 async def test_withdraw_deletes_profile_image_from_object_storage(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """legal-revision-goal-prompt.md LR-19: 프로필 이미지 R2 오브젝트도 탈퇴 시 지운다 —
+    """프로필 이미지 R2 오브젝트도 탈퇴 시 지운다 —
     core/s3.py의 delete_object·assets/router.py의 호출 선례(:116,133,382)를 따른다.
     assets/router.py:124의 불변식(READY 이미지 asset은 항상 `_thumb.webp` 변형을 갖는다)에
     따라 원본과 함께 썸네일도 미리 업로드해두고, 탈퇴 후 둘 다 사라졌는지 확인한다 —
@@ -347,8 +347,8 @@ async def test_withdraw_deletes_profile_image_from_object_storage(
 async def test_signup_with_same_email_is_blocked_within_one_year_of_withdrawal(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """legal-revision-goal-prompt.md LR-7: users.email 조회가 아니라 withdrawn_emails의
-    HMAC 조회로 재가입을 막는다(LR-6이 탈퇴 시 email을 자리표시자로 바꾸므로 옛 방식은
+    """users.email 조회가 아니라 withdrawn_emails의
+    HMAC 조회로 재가입을 막는다(탈퇴 시 email을 자리표시자로 바꾸므로 옛 방식은
     더 이상 작동하지 않는다)."""
     payload = await _signup_and_login(db_client)
     withdraw_resp = await db_client.delete("/me")
@@ -361,8 +361,8 @@ async def test_signup_with_same_email_is_blocked_within_one_year_of_withdrawal(
 async def test_signup_with_same_email_succeeds_after_withdrawn_block_period_expires(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-7: withdrawn_at + 1년이 지난 행은 조회 시점에
-    무시된다(행 자체의 삭제는 백업 크론이 담당한다 — LR-32)."""
+    """withdrawn_at + 1년이 지난 행은 조회 시점에
+    무시된다(행 자체의 삭제는 백업 크론이 담당한다)."""
     payload = await _signup_and_login(db_client)
     withdraw_resp = await db_client.delete("/me")
     assert withdraw_resp.status_code == 204
@@ -383,9 +383,9 @@ async def test_signup_with_same_email_succeeds_after_withdrawn_block_period_expi
 async def test_verify_email_with_original_email_after_withdrawal_returns_400(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """legal-revision-goal-prompt.md LR-27 실측: 탈퇴 후 users.email이 자리표시자로
+    """탈퇴 후 users.email이 자리표시자로
     바뀌어 원래 이메일로는 이 조회가 더는 유저를 찾지 못한다 — 크래시가 아니라 '유저
-    없음'과 같은 400이어야 한다(E-12, 계정 존재 여부 비노출)."""
+    없음'과 같은 400이어야 한다(계정 존재 여부 비노출)."""
     payload = await _signup_and_login(db_client)
     withdraw_resp = await db_client.delete("/me")
     assert withdraw_resp.status_code == 204
@@ -399,7 +399,7 @@ async def test_verify_email_with_original_email_after_withdrawal_returns_400(
 async def test_verify_email_rejects_withdrawn_placeholder_email_format(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """legal-revision-goal-prompt.md LR-27 실측: 자리표시자(withdrawn:{uuid})는 이메일
+    """자리표시자(withdrawn:{uuid})는 이메일
     형식이 아니라 EmailStr 검증에서 먼저 막힌다 — 이 값으로는 이 엔드포인트를 호출조차
     할 수 없다."""
     resp = await db_client.post(
@@ -411,7 +411,7 @@ async def test_verify_email_rejects_withdrawn_placeholder_email_format(
 async def test_withdraw_deletes_unused_generated_asset_and_its_request_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-7: 탈퇴한 유저의 미사용 GENERATED asset은
+    """탈퇴한 유저의 미사용 GENERATED asset은
     S3 원본·썸네일과 함께 지워지고, 그 asset이 전부였던 요청 행도 같이 지워진다."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
@@ -463,7 +463,7 @@ async def test_withdraw_deletes_unused_generated_asset_and_its_request_row(
 async def test_withdraw_deletes_own_generated_asset_used_as_profile_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """T-4 적대적 리뷰: `profile_image_asset_id = None` 대입(574줄)이 생성 이미지 파기
+    """`profile_image_asset_id = None` 대입(574줄)이 생성 이미지 파기
     블록보다 뒤로 옮겨지면, users.profile_image_asset_id가 여전히 이 asset을 참조한 채로
     `DELETE FROM assets`가 나가 FK 위반(IntegrityError)으로 탈퇴 전체가 500이 된다."""
     payload = await _signup_and_login(db_client)
@@ -491,7 +491,7 @@ async def test_withdraw_deletes_own_generated_asset_used_as_profile_image(
 async def test_withdraw_keeps_generated_asset_used_as_content_thumbnail(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-7: 콘텐츠 썸네일로 쓰이는 GENERATED asset은
+    """콘텐츠 썸네일로 쓰이는 GENERATED asset은
     탈퇴해도 지우면 안 된다(발행 콘텐츠 썸네일이 깨지면 안 된다) — 그 요청 행도 남는다
     (asset이 남아 있으므로 "같은 수명"에 따라 요청 행도 같이 남아야 한다)."""
     payload = await _signup_and_login(db_client)
@@ -567,7 +567,7 @@ async def test_withdraw_keeps_generated_asset_used_as_content_thumbnail(
 async def test_withdraw_keeps_generated_asset_used_as_inquiry_attachment(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-7 (🔴): collect_asset_usages는 문의 첨부
+    """🔴 collect_asset_usages는 문의 첨부
     (inquiries.attachment_asset_id)를 보지 않는다. 문의는 소유자만 검사하고 kind를 안
     보며(inquiry/router.py:42-51) 탈퇴해도 삭제되지 않으므로, 제외하지 않고 지우면 FK
     위반으로 탈퇴 트랜잭션 전체가 500으로 죽는다 — 이 테스트가 없으면 그 회귀를 아무도
@@ -608,8 +608,8 @@ async def test_withdraw_keeps_generated_asset_used_as_inquiry_attachment(
 async def test_withdraw_keeps_blocked_request_row_without_images(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-7: 이미지가 아예 없는 요청 행(차단·실패)은
-    IM-7a(90일 파기)의 몫이라 탈퇴로는 건드리지 않는다 — 여기서 지우면 그 경계가 깨진다."""
+    """이미지가 아예 없는 요청 행(차단·실패)은
+    90일 파기 작업의 몫이라 탈퇴로는 건드리지 않는다 — 여기서 지우면 그 경계가 깨진다."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
     assert user is not None

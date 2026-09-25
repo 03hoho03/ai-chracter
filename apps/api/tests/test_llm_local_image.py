@@ -1,7 +1,6 @@
 """`api.llm.local_image` — `LocalImageClient`(집 PC 호출), 생성 직렬화, capabilities TTL 캐시.
 
-계약은 `local-image-gen-contract.md` LC-1/LC-2/LC-7, 설계는 `local-image-gen-techspec.md`
-LT-1/LT-2/LT-3. 전송 페이크는 아래 `_patch_httpx`가 `api.llm.local_image.httpx.AsyncClient`에
+전송 페이크는 아래 `_patch_httpx`가 `api.llm.local_image.httpx.AsyncClient`에
 `MockTransport`를 주입하는 monkeypatch 방식이다.
 """
 
@@ -70,7 +69,7 @@ async def test_generate_image_returns_bytes_and_content_type_as_mime(monkeypatch
 
 
 async def test_non_200_raises_llm_client_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """LC-4: 500은 생성 실패다 — 안 감싸면 잡 러너(`images/router.py:68`)가 못 잡아 잡이
+    """500은 생성 실패다 — 안 감싸면 잡 러너(`images/router.py:68`)가 못 잡아 잡이
     running에 영원히 멈춘다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -106,8 +105,8 @@ async def test_connection_failure_raises_llm_client_error(monkeypatch: pytest.Mo
 async def test_422_with_prompt_reason_raises_block_error_with_reason_preserved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """guard-techspec.md GT-1 / guard-contract-md LC-4a: 두 가드 사유를 구분 못 하면
-    GT-3/GT-5가 사유별로 분기·집계·로깅할 수 없어 사용자가 어떤 가드에 걸렸는지
+    """두 가드 사유를 구분 못 하면
+    `_run_generation`과 라우터 로깅이 사유별로 분기·집계·로깅할 수 없어 사용자가 어떤 가드에 걸렸는지
     영원히 알 수 없다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -123,7 +122,7 @@ async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """이미지 가드 사유가 프롬프트 가드로 잘못 표시되면, 재시도해도 소용없는데
-    사용자에게 "표현을 바꾸라"는 틀린 안내가 나간다(guard-goal-prompt.md G-4)."""
+    사용자에게 "표현을 바꾸라"는 틀린 안내가 나간다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"detail": "content blocked", "reason": "image"})
@@ -137,7 +136,7 @@ async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
 async def test_422_missing_reason_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """LC-4a가 정의하지 않은 모양이다 — 이걸 차단으로 해석하면 계약 밖 422를 정책
+    """422 본문 계약이 정의하지 않은 모양이다 — 이걸 차단으로 해석하면 계약 밖 422를 정책
     차단으로 오독해 근거 없이 "정책 위반"이라고 사용자에게 말하게 된다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -153,7 +152,7 @@ async def test_422_unknown_reason_value_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """계약 밖 reason(신규 가드 종류 등)이 오면 서버가 모르는 카테고리를 차단으로
-    단정하지 않는다 — LC-4a "서버가 모르는 값이 오면 일반 실패로 접는다"."""
+    단정하지 않는다 — 계약이 "서버가 모르는 값이 오면 일반 실패로 접는다"고 정했다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"detail": "content blocked", "reason": "nsfw"})
@@ -168,7 +167,7 @@ async def test_422_non_json_body_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """프록시가 끼어들어 만든 422(HTML 오류 페이지 등)를 정책 차단으로 오독하면
-    안 된다 — GT-1이 명시적으로 요구하는 안전장치다."""
+    안 된다 — 422를 전용 예외로 올릴 때 명시적으로 요구한 안전장치다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, content=b"<html>not json</html>")
@@ -182,7 +181,7 @@ async def test_422_non_json_body_collapses_to_plain_llm_client_error(
 async def test_422_detail_string_is_never_interpreted_only_reason_is(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """LC-4a: 분기는 오직 `reason`이다. `detail` 문구를 매칭에 쓰면 로컬이 문구를
+    """분기는 오직 `reason`이다. `detail` 문구를 매칭에 쓰면 로컬이 문구를
     다듬을 때마다(오타 수정 등) 이 클라이언트가 깨진다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -197,9 +196,9 @@ async def test_422_detail_string_is_never_interpreted_only_reason_is(
 async def test_422_empty_body_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-9: 화이트리스트 밖 422는 전부 일반 실패다. 빈
+    """화이트리스트 밖 422는 전부 일반 실패다. 빈
     본문(`.json()`이 `JSONDecodeError`)도 예외가 아니다 — 프록시가 만든 빈 422를 콘텐츠
-    차단으로 오독하면 안 된다. I-2 조사에서 "커버 0건"으로 확인된 경로다."""
+    차단으로 오독하면 안 된다. 에러 경로 조사에서 "커버 0건"으로 확인된 경로다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422)
@@ -213,9 +212,9 @@ async def test_422_empty_body_collapses_to_plain_llm_client_error(
 async def test_422_list_detail_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-9: FastAPI 기본 검증 핸들러가 내는
+    """FastAPI 기본 검증 핸들러가 내는
     `{"detail": [{"loc": ..., "msg": ...}]}` 모양(`detail`이 리스트)도 `reason` 키가
-    없으므로 화이트리스트 밖이다 — I-2가 "커버 0건, 주요 오분류 후보"로 지목한 경로."""
+    없으므로 화이트리스트 밖이다 — 에러 경로 조사가 "커버 0건, 주요 오분류 후보"로 지목한 경로."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -232,7 +231,7 @@ async def test_422_list_detail_collapses_to_plain_llm_client_error(
 async def test_422_list_detail_with_long_input_field_is_capped_in_error_message(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-11 §3-12: pydantic v2는 `include_input=True`가
+    """pydantic v2는 `include_input=True`가
     기본값이라, FastAPI 기본 검증 핸들러의 `detail` 리스트 각 항목에 검증 실패한
     제출값 원문(`input` 키)이 그대로 담길 수 있다 — 집 PC가 언젠가 `prompt`에 제약을
     걸면 그 원문이 캡 없이 로그로 샌다. 이전에는 `exc.response.text[:300]` 캡이 있었는데
@@ -261,18 +260,9 @@ async def test_422_list_detail_with_long_input_field_is_capped_in_error_message(
 async def test_422_with_syntax_reason_raises_input_error_syntax(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-9: 집 PC에 `reason: "syntax"` 추가를 요구했으나
-    (§4-1) **아직 회신 전이다.** 회신 전까지 keyless `{"detail": "invalid prompt syntax"}`는
-    여전히 일반 실패로 남는다 — `test_422_missing_reason_collapses_to_plain_llm_client_error`가
-    이미 그 경로(reason 키 없음 → 일반 실패)를 고정하므로 여기서 다시 쓰지 않는다.
-
-    이 테스트는 회신 후 화이트리스트가 3값(`prompt`/`image`/`syntax`)으로 확장됐을 때의
-    계약을 **미리** 고정한다 — 구현이 그 전제로 짜이기 때문이다.
-
-    구현자 요구사항: `api.llm.local_image.LocalImageInputError`를 `LocalImageBlockedError`와
-    같은 모양으로 신설한다 — `__init__(self, *, input_error: str) -> None`,
-    속성 `.input_error`(IS-8 `input_error` 축, 값 `too_long`/`syntax`)."""
-    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+    """집 PC가 `reason: "syntax"`를 추가했다. 이 테스트는 화이트리스트 3값(`prompt`/`image`/`syntax`)
+    계약을 고정한다."""
+    from api.llm.local_image import LocalImageInputError
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"detail": "invalid prompt syntax", "reason": "syntax"})
@@ -287,7 +277,7 @@ async def test_422_with_syntax_reason_raises_input_error_syntax(
 async def test_non_422_status_codes_never_raise_block_error(
     monkeypatch: pytest.MonkeyPatch, status_code: int
 ) -> None:
-    """GT-1이 422 처리를 추가한다고 다른 비200까지 차단으로 넓히면, 진짜 장애(500)·
+    """422 처리를 추가한다고 다른 비200까지 차단으로 넓히면, 진짜 장애(500)·
     계약 위반(400)·과부하(429)가 정책 차단으로 오인되어 잘못된 안내가 나간다."""
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -299,13 +289,13 @@ async def test_non_422_status_codes_never_raise_block_error(
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
-# ---- 400 (IS-8: input_error 축, too_long) ------------------------------------
+# ---- 400 (input_error 축, too_long) ------------------------------------------
 
 
 async def test_400_invalid_request_raises_input_error_too_long(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8: 1000자 초과 400(`{"detail":"invalid request"}`)과
+    """1000자 초과 400(`{"detail":"invalid request"}`)과
     320토큰 초과 400(`{"detail":"prompt too long"}`)을 사용자에게는 `too_long` 하나로
     합친다 — 요구하는 행동이 같기 때문이다(1000자인지 320토큰인지는 서버 로그에서만 구분).
 
@@ -325,7 +315,7 @@ async def test_400_invalid_request_raises_input_error_too_long(
 async def test_400_prompt_too_long_raises_input_error_too_long(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8: 위 테스트와 같은 축 — 320토큰 초과 400도
+    """위 테스트와 같은 축 — 320토큰 초과 400도
     `too_long`으로 합쳐진다."""
     from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
 
@@ -341,10 +331,10 @@ async def test_400_prompt_too_long_raises_input_error_too_long(
 async def test_400_unsupported_style_does_not_raise_input_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8: `{"detail":"unsupported style"}`은 계약 위반
+    """`{"detail":"unsupported style"}`은 계약 위반
     (우리 쪽 버그)이지 사용자가 고칠 수 있는 입력이 아니다 — `too_long`으로 뭉개면 안
     된다. 세 400 모양을 같은 버킷으로 접으면 이 구분이 사라지는 것이 이 테스트가 잡으려는
-    신호다(IS-8: "unsupported style은 too_long이 아니다")."""
+    신호다("unsupported style은 too_long이 아니다")."""
     from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
 
     def handler(_request: httpx.Request) -> httpx.Response:
@@ -360,12 +350,12 @@ async def test_400_unsupported_style_does_not_raise_input_error(
 async def test_request_body_carries_prompt_unmodified_and_access_headers(
     monkeypatch: pytest.MonkeyPatch, style: ImageStylePreset
 ) -> None:
-    """LG-3/LC-2: 서버는 프롬프트를 가공하지 않고 model/style/aspect_ratio 불투명 id만
+    """서버는 프롬프트를 가공하지 않고 model/style/aspect_ratio 불투명 id만
     싣는다. 여기서 suffix를 붙이거나 필드를 더 보내면 집 PC(별도 저장소)의 계약을 어긴다.
 
-    image-style-7-goal-prompt.md IS-2/2차 인터뷰 결정 4: 두 스타일로 파라미터화해
-    "인자를 바꾸면 바디도 바뀐다"를 실제로 증명한다 — style.value를 그대로 싣는 IS-2
-    변경 전에는 이 파일 어떤 테스트도 이걸 증명하지 못했다(전부 BASE 하나만 썼다)."""
+    두 스타일로 파라미터화해
+    "인자를 바꾸면 바디도 바뀐다"를 실제로 증명한다 — style.value를 그대로 싣도록 바뀌기
+    전에는 이 파일 어떤 테스트도 이걸 증명하지 못했다(전부 BASE 하나만 썼다)."""
     captured: dict[str, object] = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -390,11 +380,11 @@ async def test_request_body_carries_prompt_unmodified_and_access_headers(
 
 
 async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.MonkeyPatch) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 공개 model id(`v1`)를 그대로 보내면 홈PC의
-    실제 체크포인트 id(`opaque-wire-id`)와 맞지 않아 계약(LC-4) 위반으로 모든 요청이
+    """공개 model id(`v1`)를 그대로 보내면 홈PC의
+    실제 체크포인트 id(`opaque-wire-id`)와 맞지 않아 계약 위반으로 모든 요청이
     400이 된다 — 설정에 둔 와이어 id가 실제 요청 바디에 실리는지 고정한다.
 
-    image-style-7-goal-prompt.md IS-2: style은 더 이상 별도 와이어 설정이 없다 —
+    style은 더 이상 별도 와이어 설정이 없다 —
     `style.value`가 그대로 실리는지는 위
     `test_request_body_carries_prompt_unmodified_and_access_headers`가 담당한다."""
     captured: dict[str, object] = {}
@@ -416,11 +406,11 @@ async def test_request_body_carries_wire_ids_not_public_ids(monkeypatch: pytest.
     }
 
 
-# ---- 생성 직렬화 (모듈 수준 asyncio.Semaphore(1), LG-6/LT-1) ------------------
+# ---- 생성 직렬화 (모듈 수준 asyncio.Semaphore(1)) ------------------------------
 
 
 async def test_concurrent_generate_calls_never_overlap(monkeypatch: pytest.MonkeyPatch) -> None:
-    """두 생성 호출이 겹치면 8GB VRAM에서 GPU OOM인데 증상이 조용하다(LG-6). 핸들러
+    """두 생성 호출이 겹치면 8GB VRAM에서 GPU OOM인데 증상이 조용하다. 핸들러
     진입/이탈을 기록해 두 번째 호출이 첫 번째가 끝난 뒤에야 진입하는지 고정한다."""
     events: list[str] = []
 
@@ -442,8 +432,8 @@ async def test_concurrent_generate_calls_never_overlap(monkeypatch: pytest.Monke
     assert events == ["enter", "exit", "enter", "exit"]
 
 
-# ---- admission (모듈 수준 정수, LT-3 — 의미가 "generate_image 호출 중"에서 "admit된
-# 잡"으로 바뀌었다. P2-R: 상한 검사와 증가가 서로 다른 시점에 있으면(검사는 라우터에서,
+# ---- admission (모듈 수준 정수 — 의미가 "generate_image 호출 중"에서 "admit된
+# 잡"으로 바뀌었다. 상한 검사와 증가가 서로 다른 시점에 있으면(검사는 라우터에서,
 # 증가는 이 카운터의 옛 위치인 `generate_image` 진입 시점에서) 그 사이의 진짜 await
 # (`create_job`)가 동시 요청을 전부 증가 이전 값으로 통과시킨다 — 그래서 `try_admit`이
 # 검사+증가를 하나의 동기 블록으로 묶는다. `generate_image`는 더 이상 이 카운터를
@@ -457,7 +447,7 @@ async def test_try_admit_admits_up_to_the_limit_then_rejects_and_release_restore
     """전역 상한(2)만큼만 admit되고 그 다음은 거절돼야 한다 — 안 그러면 사용자들이 GPU 직렬
     처리량을 독점한다. `release_admission` 한 번으로 슬롯 하나가 돌아오는지까지 고정한다.
 
-    limit-goal-prompt.md RL-5: 유저별 큐가 1칸이라 **서로 다른 유저**로 채워야 전역 상한을
+    유저별 큐가 1칸이라 **서로 다른 유저**로 채워야 전역 상한을
     본다. 같은 유저로 두 번 부르면 유저별 1칸에서 먼저 걸려 전역 상한을 아예 못 본다."""
     monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
     monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
@@ -479,7 +469,7 @@ async def test_release_admission_does_not_go_below_zero(monkeypatch: pytest.Monk
     """대응하는 admit 없이 여분으로 해제되면 카운터가 음수로 내려가, 그 뒤 admit 두 번이
     상한(1)을 넘어 통과해버린다 — 0 바닥을 고정하지 않으면 상한이 사실상 무제한이 된다.
 
-    두 번째 admit은 **다른 유저**여야 한다 — 같은 유저면 유저별 1칸(RL-5)에서 거절돼
+    두 번째 admit은 **다른 유저**여야 한다 — 같은 유저면 유저별 1칸에서 거절돼
     전역 카운터가 음수든 0이든 같은 결과가 나와(항진명제) 0 바닥을 전혀 논증하지 못한다."""
     monkeypatch.setattr("api.llm.local_image._queue_depth", 0)
     monkeypatch.setattr("api.llm.local_image._user_queue_depth", {})
@@ -497,7 +487,7 @@ async def test_release_admission_does_not_go_below_zero(monkeypatch: pytest.Monk
 async def test_release_admission_drops_the_user_key_at_zero(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """limit-goal-prompt.md RL-5: 유저별 깊이 dict는 `_queue_depth`와 같은 프로세스 전역이라
+    """유저별 깊이 dict는 `_queue_depth`와 같은 프로세스 전역이라
     0이 된 키를 지우지 않으면 **서비스 수명 동안 유저 수만큼 자란다**(무한 증가하는 누수).
     카운터만 보는 테스트로는 안 잡힌다 — 0인 키가 남아 있어도 admit/reject 판정은 똑같기
     때문이다. dict 자체를 들여다본다."""
@@ -514,7 +504,7 @@ async def test_release_admission_drops_the_user_key_at_zero(
     assert local_image._user_queue_depth == {}
 
 
-# ---- capabilities TTL 캐시 (LT-2/LG-18) --------------------------------------
+# ---- capabilities TTL 캐시 ------------------------------------------------------
 
 
 def _capabilities_body(
@@ -528,7 +518,7 @@ def _capabilities_body(
 async def test_cold_cache_probes_the_local_server(
     monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
 ) -> None:
-    """LG-18: 배포 직후 콜드 캐시에서도 (`generate_images`뿐 아니라 `/images/models`도) 최초
+    """배포 직후 콜드 캐시에서도 (`generate_images`뿐 아니라 `/images/models`도) 최초
     호출은 반드시 프로브해야 한다 — 안 그러면 첫 요청이 사전 차단을 아예 못 받는다."""
     calls = {"n": 0}
 
@@ -634,7 +624,7 @@ async def test_malformed_json_probe_collapses_to_unavailable(
 async def test_slow_failure_is_cached_for_the_ttl(
     monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
 ) -> None:
-    """backlog-l-goal-prompt.md BL-2 ①: 조회가 TTL보다 오래 걸린 뒤 실패해도 그 결과는
+    """조회가 TTL보다 오래 걸린 뒤 실패해도 그 결과는
     TTL 동안 캐시돼야 한다. 기록 시각을 조회 **전**에 잡으면 기록 즉시 만료돼, 집 PC가
     느리게 죽어 있는 동안 매 요청이 DB 커넥션을 쥔 채 조회를 다시 기다린다."""
     calls = {"n": 0}
@@ -657,7 +647,7 @@ async def test_slow_failure_is_cached_for_the_ttl(
 async def test_concurrent_cold_calls_share_one_probe(
     monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
 ) -> None:
-    """backlog-l-goal-prompt.md BL-2 ②: 콜드/만료 시점에 동시에 들어온 호출이 각자 조회하면
+    """콜드/만료 시점에 동시에 들어온 호출이 각자 조회하면
     조회 N개가 각자 요청 세션(DB 커넥션)을 쥔 채 기다린다 — 조회는 하나만 나가야 한다."""
     calls = {"n": 0}
     release = asyncio.Event()
@@ -689,7 +679,7 @@ async def test_concurrent_cold_calls_share_one_probe(
 async def test_probe_uses_its_own_short_timeout_not_the_generation_timeout(
     monkeypatch: pytest.MonkeyPatch, reset_capabilities: None
 ) -> None:
-    """backlog-l-goal-prompt.md BL-3: 조회를 기다리는 동안 요청 세션이 DB 커넥션을 쥐므로
+    """조회를 기다리는 동안 요청 세션이 DB 커넥션을 쥐므로
     조회 타임아웃은 생성용(`local_image_timeout_seconds`)과 분리된 5초여야 한다. 생성 경로는
     그대로 설정값을 쓴다."""
     real_client = httpx.AsyncClient

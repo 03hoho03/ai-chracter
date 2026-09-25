@@ -1,12 +1,10 @@
-# clover-page-goal-prompt.md CE-7·CE-9
-#
 # 출석·미션(그리고 백필) 클로버는 지급일(KST) 자정 + 8일에 만료된다. 이 크론이 만료 로트의
 # `remaining`을 0으로 줄이고, `users.clover_balance`를 같은 만큼 차감하고, `clover_ledger`에
 # `expire_burn` 행을 남긴다 — 셋이 한 트랜잭션이다.
 #
-# CE-8: 차감·잔액 판정 경로(`core/clover.py`)는 만료 필터를 걸지 않는다 — 만료의 진실은 이
+# 차감·잔액 판정 경로(`core/clover.py`)는 만료 필터를 걸지 않는다 — 만료의 진실은 이
 # 크론뿐이다. 그래서 이 크론이 며칠 죽으면 만료분이 계속 쓰일 수 있다(유저에게 유리한 방향의
-# 오차, CE-8 근거).
+# 오차라 감수한다).
 #
 # 15:05 UTC = KST 00:05(다음날) — 만료 시각(KST 자정) 직후. `ddona-bugsink-vacuum`(05:00 UTC)·
 # `ddona-image-request-purge`(06:00 UTC)와 겹치지 않는다.

@@ -75,7 +75,7 @@ async def test_signup_rejects_missing_transfer_agreement(db_client: httpx.AsyncC
 
 
 async def test_signup_rejects_transfer_agreement_field_omitted(db_client: httpx.AsyncClient) -> None:
-    """legal-revision-goal-prompt.md LR-1: transferAgreed는 필수 필드라 아예 빠지면
+    """transferAgreed는 필수 필드라 아예 빠지면
     validator가 아니라 pydantic의 필수값 검사에서 422가 나야 한다."""
     payload = _signup_payload()
     del payload["transferAgreed"]
@@ -84,7 +84,7 @@ async def test_signup_rejects_transfer_agreement_field_omitted(db_client: httpx.
 
 
 async def test_signup_rejects_duplicate_verified_email(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-5: 인증 완료 이메일의 재가입은 409로 막힌다(현행 유지)."""
+    """인증 완료 이메일의 재가입은 409로 막힌다(현행 유지)."""
     payload = await _signup_and_verify(db_client)
 
     second = await db_client.post("/auth/signup", json=_signup_payload(email=payload["email"]))
@@ -94,7 +94,7 @@ async def test_signup_rejects_duplicate_verified_email(db_client: httpx.AsyncCli
 async def test_signup_overwrites_unverified_account_and_issues_new_code(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """email-goal-prompt.md E-5: 미인증 재가입은 방치된 가입으로 간주해 기존 row를
+    """미인증 재가입은 방치된 가입으로 간주해 기존 row를
     덮어쓴다 — id/created_at은 보존, 닉네임·생일·동의 시각은 갱신, 새 인증코드 발급."""
     payload = _signup_payload()
     first = await db_client.post("/auth/signup", json=payload)
@@ -106,7 +106,7 @@ async def test_signup_overwrites_unverified_account_and_issues_new_code(
     original_created_at = original.created_at
     original_terms_agreed_at = original.terms_agreed_at
 
-    # E-5 조사 I-2: 덮어쓰기 분기가 손대면 안 되는 필드도 채워둔다. 지금 구현은 이 둘을
+    # 덮어쓰기 분기가 손대면 안 되는 필드도 채워둔다. 지금 구현은 이 둘을
     # 아예 안 건드려서 보존되지만, 값을 비워두면 "조용히 None이 되는" 회귀를 이 테스트가
     # 못 잡는다.
     original.bio = "안녕하세요"
@@ -138,7 +138,7 @@ async def test_signup_overwrites_unverified_account_and_issues_new_code(
 async def test_signup_rejects_unverified_account_with_google_sub(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """email-goal-prompt.md E-5 성공기준 7-a: google_sub가 연결된 계정은 email_verified_at이
+    """google_sub가 연결된 계정은 email_verified_at이
     없어도(구글 콜백은 그 값을 보지 않고 세션을 발급하므로 실사용 중일 수 있다) 409."""
     email = f"race-google-{uuid.uuid4()}@example.com"
     db_session.add(_make_user(email=email, google_sub=f"sub-{uuid.uuid4()}"))
@@ -151,7 +151,7 @@ async def test_signup_rejects_unverified_account_with_google_sub(
 async def test_signup_rejects_unverified_suspended_account(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """email-goal-prompt.md E-5: 정지 계정은 미인증이어도 재가입으로 초기화되지 않는다."""
+    """정지 계정은 미인증이어도 재가입으로 초기화되지 않는다."""
     email = f"race-suspended-{uuid.uuid4()}@example.com"
     db_session.add(_make_user(email=email, suspended_at=datetime.now(UTC)))
     await db_session.flush()
@@ -198,7 +198,7 @@ async def _wait_until_lock_wait(observer: AsyncConnection, *, seconds: float) ->
 async def test_signup_concurrent_duplicate_returns_409_via_integrity_error(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """email-goal-prompt.md E-11: signup은 select→insert 사이에 경합이 있고, 진 요청은
+    """signup은 select→insert 사이에 경합이 있고, 진 요청은
     users.email unique 제약의 IntegrityError를 맞는다 — 이를 409로 정규화하는지 검증한다.
 
     진짜 경합을 재현한다(mock 없음): db_client와 별개인 실제 DB 커넥션으로 같은
@@ -237,7 +237,7 @@ async def test_signup_concurrent_duplicate_returns_409_via_integrity_error(
 async def test_signup_succeeds_when_email_send_fails(
     db_client: httpx.AsyncClient, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """email-goal-prompt.md 성공기준 3: 발송 실패를 주입해도 signup은 201을 유지하고
+    """발송 실패를 주입해도 signup은 201을 유지하고
     실패는 로그에 남는다(BackgroundTasks가 응답 이후 처리하므로)."""
 
     async def _failing_sender(to: str, subject: str, body: str) -> None:
@@ -267,7 +267,7 @@ async def test_verify_email_returns_200_for_adult(db_client: httpx.AsyncClient) 
 
 
 async def test_signup_rejects_under_minimum_age(db_client: httpx.AsyncClient) -> None:
-    """legal-revision-goal-prompt.md LR-9: 만 14세 미만은 서버가 가입을 거부한다."""
+    """만 14세 미만은 서버가 가입을 거부한다."""
     minor_birth_date = date.today().replace(year=date.today().year - 13)
     resp = await db_client.post(
         "/auth/signup", json=_signup_payload(birthDate=minor_birth_date.isoformat())
@@ -288,7 +288,7 @@ async def test_verify_email_rejects_wrong_code(db_client: httpx.AsyncClient) -> 
 async def test_verify_email_unknown_user_returns_400_same_as_wrong_code(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """email-goal-prompt.md E-12 성공기준 7-b: 미등록 이메일도 계정 존재를 새지 않도록
+    """미등록 이메일도 계정 존재를 새지 않도록
     오답 코드와 완전히 같은 400을 낸다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)
@@ -308,7 +308,7 @@ async def test_verify_email_unknown_user_returns_400_same_as_wrong_code(
 async def test_verify_email_three_failure_cases_increment_attempts_identically(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """적대적 리뷰: '유저 없음'/'코드 없음'/'코드 오답'이 같은 400 응답을 내는 것만으론
+    """'유저 없음'/'코드 없음'/'코드 오답'이 같은 400 응답을 내는 것만으론
     부족하다 — Redis 왕복 횟수가 다르면 응답 지연으로 계정 존재 여부가 샌다. 세 경우 모두
     오답 카운터가 1로 오르는지 직접 읽어 '같은 연산을 한다'는 것까지 확인한다."""
     unknown_email = f"nobody-{uuid.uuid4()}@example.com"
@@ -329,7 +329,7 @@ async def test_verify_email_three_failure_cases_increment_attempts_identically(
 async def test_verify_email_invalidates_code_after_max_wrong_attempts(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """email-goal-prompt.md E-7 성공기준 7: 오답 5회 → 코드 무효화 → 올바른 코드도 실패,
+    """오답 5회 → 코드 무효화 → 올바른 코드도 실패,
     재전송 후에는 통과한다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)
@@ -367,7 +367,7 @@ async def test_verify_email_succeeds_after_limit_minus_one_wrong_attempts(
     db_client: httpx.AsyncClient,
 ) -> None:
     """상한 테스트(위)가 LIMIT회에서 무효화되는 것만 보면, `attempts >= LIMIT - 1`로 하나 밀린
-    오프바이원 회귀를 못 잡는다. LIMIT-1(=4)번 오답 뒤에는 코드가 아직 살아있어 올바른 코드가
+    오프바이원 회귀를 못 잡는다. LIMIT - 1(=4)번 오답 뒤에는 코드가 아직 살아있어 올바른 코드가
     통과해야 한다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)
@@ -388,7 +388,7 @@ async def test_verify_email_succeeds_after_limit_minus_one_wrong_attempts(
 
 
 async def test_verify_email_success_clears_attempts_counter(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-7: 성공하면 오답 카운터가 지워진다."""
+    """성공하면 오답 카운터가 지워진다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)
     stored = await get_verification_code(str(payload["email"]))
@@ -437,7 +437,7 @@ async def test_resend_after_cooldown_issues_new_code(db_client: httpx.AsyncClien
 
 
 async def test_resend_unknown_user_returns_204(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-12 성공기준 7-b: 미등록 이메일도 계정 존재를 새지 않도록
+    """미등록 이메일도 계정 존재를 새지 않도록
     204를 낸다(발송은 하지 않는다)."""
     resp = await db_client.post(
         "/auth/resend-verification-code", json={"email": f"nobody-{uuid.uuid4()}@example.com"}
@@ -448,7 +448,7 @@ async def test_resend_unknown_user_returns_204(db_client: httpx.AsyncClient) -> 
 async def test_resend_responses_match_for_registered_and_unregistered_email(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """email-goal-prompt.md E-12a: 60초 쿨다운이 계정 존재 여부를 새지 않으려면 코드가
+    """60초 쿨다운이 계정 존재 여부를 새지 않으려면 코드가
     등록 여부와 무관하게 항상 저장돼야 한다 — 연속 2회 호출의 응답이 등록/미등록에서
     같은지 직접 비교한다."""
     registered_email = f"registered-{uuid.uuid4()}@example.com"
@@ -473,12 +473,12 @@ async def test_resend_responses_match_for_registered_and_unregistered_email(
     assert registered_second.status_code == unregistered_second.status_code == 429
     assert registered_second.json() == unregistered_second.json()
     # 2회 호출로는 RESEND_VERIFICATION_EMAIL_LIMIT(5)에 닿을 수 없다 — 이 429가 시간당 상한이
-    # 아니라 60초 쿨다운에서 온 것임을 명시해 둔다(S3에서 겪은 "다른 이유로 429" 오판 방지).
+    # 아니라 60초 쿨다운에서 온 것임을 명시해 둔다("다른 이유로 429" 오판 방지).
     assert registered_second.json()["detail"]["retryAfterSeconds"] == 60
 
 
 async def test_signup_rate_limited_by_ip_returns_429(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-6: IP당 시간당 10회. httpx.ASGITransport의 client 기본값이
+    """IP당 시간당 10회. httpx.ASGITransport의 client 기본값이
     모든 요청에서 동일해(`('127.0.0.1', 123)`) 서로 다른 이메일로도 IP 카운터는 공유된다."""
     for _ in range(rate_limit.SIGNUP_IP_LIMIT):
         resp = await db_client.post("/auth/signup", json=_signup_payload())
@@ -490,8 +490,8 @@ async def test_signup_rate_limited_by_ip_returns_429(db_client: httpx.AsyncClien
 
 
 async def test_signup_rate_limited_by_email_returns_429(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-6: 이메일당 시간당 5회. 같은 미인증 이메일로 반복 signup은
-    E-5의 덮어쓰기 경로를 타 매번 201이므로, 상한을 이메일 카운터만으로 트리거할 수 있다."""
+    """이메일당 시간당 5회. 같은 미인증 이메일로 반복 signup은
+    미인증 재가입의 덮어쓰기 경로를 타 매번 201이므로, 상한을 이메일 카운터만으로 트리거할 수 있다."""
     payload = _signup_payload()
     for _ in range(rate_limit.SIGNUP_EMAIL_LIMIT):
         resp = await db_client.post("/auth/signup", json=payload)
@@ -503,7 +503,7 @@ async def test_signup_rate_limited_by_email_returns_429(db_client: httpx.AsyncCl
 
 
 async def test_signup_rate_limited_returns_auth_limit_detail(db_client: httpx.AsyncClient) -> None:
-    """error-delivery-goal-prompt.md ED-11: signup 429는 시간당 창 상한 하나뿐이므로
+    """signup 429는 시간당 창 상한 하나뿐이므로
     code:"AUTH_LIMIT", window:"auth"를 낸다."""
     for _ in range(rate_limit.SIGNUP_IP_LIMIT):
         resp = await db_client.post("/auth/signup", json=_signup_payload())
@@ -521,7 +521,7 @@ async def test_signup_rate_limited_returns_auth_limit_detail(db_client: httpx.As
 
 
 async def test_resend_rate_limited_by_email_returns_429(db_client: httpx.AsyncClient) -> None:
-    """email-goal-prompt.md E-6: resend의 이메일당 시간당 5회는 기존 60초 쿨다운과 별개 규칙이다.
+    """resend의 이메일당 시간당 5회는 기존 60초 쿨다운과 별개 규칙이다.
     매 반복 전에 sent_at을 과거로 되돌려 쿨다운을 우회하고, 시간당 상한만으로 6번째를 막는다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)
@@ -547,7 +547,7 @@ async def test_resend_rate_limited_by_email_returns_429(db_client: httpx.AsyncCl
 async def test_resend_rate_limit_and_cooldown_have_different_codes(
     db_client: httpx.AsyncClient,
 ) -> None:
-    """error-delivery-goal-prompt.md ED-11: 60초 쿨다운과 시간당 상한은 둘 다 429지만
+    """60초 쿨다운과 시간당 상한은 둘 다 429지만
     code가 갈려야 한다(AUTH_COOLDOWN vs AUTH_LIMIT). retryAfterSeconds 크기로 먼저 어느
     규칙이 막았는지 확인해, 셋업 실수로 두 429가 같은 경로(쿨다운)에서 나오는 것을 배제한다
     — sent_at 때문에 어느 규칙이 막았는지 구분 못 하는 함정은 :527 근처 주석 참고."""
@@ -652,7 +652,7 @@ async def test_login_rejects_unverified_email(db_client: httpx.AsyncClient) -> N
 async def test_login_rejects_existing_minor_account_regardless_of_guardian_consent(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-30: LR-9가 신규 가입을 막아 회원가입 엔드포인트로는
+    """만 14세 미만 가입 거부로 회원가입 엔드포인트로는
     더 이상 만들 수 없는 기존 미성년 계정을, 시행일 이전 가입분을 흉내 내 DB에 직접 만들어
     재현한다. 법정대리인 동의 기록(GuardianConsent)이 있어도 연령만으로 막힌다."""
     user = _make_user(
@@ -683,7 +683,7 @@ async def test_me_without_session_returns_401(db_client: httpx.AsyncClient) -> N
 
 
 async def test_me_with_expired_session_cookie_returns_401(db_client: httpx.AsyncClient) -> None:
-    """secure-issue-goal-prompt.md SEC-3: Redis에 없는 session_id가 쿠키로 들어오는 경우.
+    """Redis에 없는 session_id가 쿠키로 들어오는 경우.
     쿠키 값은 서명도 암호화도 없는 생짜 session_id라(`session/cookies.py`) 클라이언트가 임의
     문자열을 그대로 보낼 수 있고, 로그아웃(`auth/router.py`)이 Redis 키를 지운 뒤에도 그
     쿠키를 들고 있는 클라이언트가 있으면 같은 모양이 된다. `get_session`의 `raw is None`

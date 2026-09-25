@@ -2,12 +2,12 @@
 #
 #   docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env up -d
 #
-# `docker-compose.prod.yml`과 합치지 않는 이유(monitoring-techspec.md MT-2 ①): 그 파일의 배포
+# `docker-compose.prod.yml`과 합치지 않는 이유: 그 파일의 배포
 # 워크플로가 `up -d --wait api caddy`로 서비스명을 명시한다. 여기 합치면 앱 배포마다 이 서비스도
 # 같이 재시작해, 배포가 뭔가 깨뜨리는 바로 그 창에서 에러 추적이 눈을 감는다. 기동·재기동은
 # 앱 배포와 별도로 수동으로 한다(절차는 DEPLOY.md).
 #
-# SQLite인 이유(MT-2 ②): 공용 postgres에 스키마만 나눠 붙이면 `scripts/ops/backup_db.py`가
+# SQLite인 이유: 공용 postgres에 스키마만 나눠 붙이면 `scripts/ops/backup_db.py`가
 # `DATABASE_URL` 하나만 덤프하므로 PII 섞인 에러 이벤트가 그대로 R2로(국외) 나간다. 별도
 # database를 만드는 절차도 저장소 어디에도 없다. SQLite는 백업 파이프라인 밖이라 이 둘을 없앤다
 # — 대가로 에러 이벤트는 백업되지 않는다(수용: 진단용 휘발성 데이터, 유실돼도 과거 이벤트
@@ -19,8 +19,8 @@
 #                             무시된다(bsmain/management/commands/prestart.py 확인) — 부트스트랩
 #                             후에도 값을 지우지 않고 둬도 안전하다.
 #   BUGSINK_BASE_URL          `https://ddona.site/_ingest` — DSN·이메일 링크 조립에 쓰인다.
-#                             api.ddona.site가 아니라 ddona.site인 이유는 MT-3(브라우저 ingest가
-#                             이 도메인의 Worker를 거친다). `/_ingest` 프리픽스가 붙는 이유는
+#                             api.ddona.site가 아니라 ddona.site인 이유는 브라우저 ingest가
+#                             이 도메인의 Worker를 거치기 때문이다. `/_ingest` 프리픽스가 붙는 이유는
 #                             DSN이 그 경로로 조립되게 하기 위해서다(Bugsink는 이 프리픽스를
 #                             `FORCE_SCRIPT_NAME`으로 링크 생성에만 쓴다 — 실제 라우팅은 Caddy가
 #                             `/_ingest`를 벗기고 프록시해서 맞춘다. Caddyfile·DEPLOY.md 참조).
@@ -53,7 +53,7 @@ services:
       # `BASE_URL`에서 자동유도되는 허용 호스트(`ddona.site,localhost,127.0.0.1`)에는 도커 내부
       # 서비스명 `bugsink`가 빠진다 — API 컨테이너가 `http://<key>@bugsink:8000/...`로 직접 쏘면
       # Host 헤더가 `bugsink`가 되고, 명시적으로 허용하지 않으면 Django가 HTTP 400을 낸다(리뷰
-      # 실측). sentry-sdk가 전송 실패를 조용히 삼켜(MT-4~MT-6) 이 400은 백엔드 에러 이벤트를 전부
+      # 실측). sentry-sdk가 전송 실패를 조용히 삼켜 이 400은 백엔드 에러 이벤트를 전부
       # 유실시킨다 — 위 세 호스트는 이 값을 명시하면 자동유도가 꺼지므로(docker.py.template
       # 확인) 같이 나열해야 한다.
       # `api.ddona.site`는 **안전망으로만 남긴다.** 2026-09-15 프로덕션 기동 직후 Caddy가 Host를
@@ -65,17 +65,17 @@ services:
       # 맞추는 것이 정답이었다**(Caddyfile 참조). 그래서 정상 경로의 Host는 이제 `ddona.site`이고
       # 이 항목은 그 재작성이 빠졌을 때 400 대신 CSRF 에러로 드러나게 하는 안전망이다.
       ALLOWED_HOSTS: "ddona.site,api.ddona.site,bugsink,localhost,127.0.0.1"
-      # 가입 차단(MT-2 ④). 기본값 `CB_MEMBERS`도 공개 회원가입(`/signup`)은 이미 404로 막지만
+      # 가입 차단. 기본값 `CB_MEMBERS`도 공개 회원가입(`/signup`)은 이미 404로 막지만
       # (users/views.py:signup, `USER_REGISTRATION != CB_ANYBODY`면 404 — 공식 소스 확인),
       # 로그인한 팀 관리자가 새 사용자를 초대하는 경로는 CB_MEMBERS에서 계속 열려 있다.
       # `CB_NOBODY`로 그 경로까지 잠가 단일 운영자 인스턴스로 명시적으로 고정한다.
       USER_REGISTRATION: "CB_NOBODY"
-      # techspec MT-2 범위 밖의 추가 조치(공식 소스 확인 중 발견) — 기본값 true면 설치 통계
-      # (BASE_URL·사용자 수 등, 이벤트 본문은 아님)를 매시간 bugsink.com으로 보낸다. legal-revision
-      # 런이 방금 "Sentry 등 추적 도구 미사용" 문구를 고치는 참이라, 문서화 안 된 제3자 송신을
+      # 처음 설계에 없던 추가 조치(공식 소스 확인 중 발견) — 기본값 true면 설치 통계
+      # (BASE_URL·사용자 수 등, 이벤트 본문은 아님)를 매시간 bugsink.com으로 보낸다. 도입 당시 처리방침의
+      # "Sentry 등 추적 도구 미사용" 문구를 고치던 참이라, 문서화 안 된 제3자 송신을
       # 하나라도 더 늘리지 않는다.
       PHONEHOME: "false"
-      # 보유기간(MT-16 legal draft)이 "N일 보관 후 파기"에 의존한다 — 건수 기준이 아니라 날짜
+      # 처리방침의 보유기간 문안이 "N일 보관 후 파기"에 의존한다 — 건수 기준이 아니라 날짜
       # 기준이어야 하는 이유: 건수 상한(`retention_max_event_count`)은 프로젝트당 DB 필드라
       # Bugsink 관리 화면("프로젝트 편집")에서 운영자가 언제든 바꿀 수 있고(공식 소스 확인:
       # projects/models.py:127, projects/forms.py:161 — 폼에 노출됨), 상한을 거는
@@ -95,7 +95,7 @@ services:
       # 파기는 `docker exec ddona-monitoring-bugsink-1 bugsink-manage vacuum --old-events`를
       # 주기적으로 호출해야 일어난다 — `ops/vacuum_bugsink.py` + `ops/cron.d/ddona-bugsink-vacuum`
       # (매일 05:00 UTC, 기존 `ops/cron.d/ddona-resource-check`와 같은 host cron 패턴)이 그 역할을
-      # 맡는다. VM 설치 절차·검증은 DEPLOY.md §3-6, 배경은 tasks/monitoring-legal-draft.md §7-6.
+      # 맡는다. VM 설치 절차·검증은 DEPLOY.md "Bugsink 이벤트 보유기간 파기" 절.
       # 30일 근거: 이 서비스는 1인 운영이라 매일 들여다보지 못할 수 있다(진단에 필요한 최소가 곧
       # "다음에 볼 때까지 남아 있을 최소 기간"). 이미 같은 전제로 채택된 Caddy 접근 로그 보관
       # (Caddyfile `roll_keep_for 720h` = 30일)과 진단 창을 맞춰, 같은 성격의 값이 문서마다 다른
@@ -103,7 +103,7 @@ services:
       MAX_EVENT_AGE_DAYS: "30"
     volumes:
       - bugsink-data:/data
-    # mem_limit 필수(MT-2 ③) — 현재 docker-compose.prod.yml에 리소스 제한이 한 줄도 없어, 제한
+    # mem_limit 필수 — 현재 docker-compose.prod.yml에 리소스 제한이 한 줄도 없어, 제한
     # 없는 서비스를 얹으면 OOM 킬러가 RSS 큰 postgres/api를 고른다. 로컬 실측: 트래픽 없이도 RSS
     # 290~300MiB(이 이미지의 gunicorn 워커 수는 `min(cpu_count, 4)`, e2-medium 2vCPU면 2워커 —
     # gunicorn.docker.conf.py 확인). VM 여유(available 3.0GB)가 감당하므로 1g로 여유를 둔다.

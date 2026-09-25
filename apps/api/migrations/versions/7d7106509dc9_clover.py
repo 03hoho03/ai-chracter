@@ -4,18 +4,18 @@ Revision ID: 7d7106509dc9
 Revises: 5441c593b7be
 Create Date: 2026-09-19 01:01:48.566941
 
-clover-techspec.md CT-2. 클로버(재화)의 저장은 불변 원장 `clover_ledger` 한 테이블과
+클로버(재화)의 저장은 불변 원장 `clover_ledger` 한 테이블과
 `users`의 컬럼 세 개다. 잔액을 원장의 `SUM()`으로 파생시키지 않고 `users.clover_balance`에
 두는 이유는 성능이 아니라 **불변식의 소재지**다 — 판정은 이 컬럼의 조건부 UPDATE
 (`WHERE clover_balance >= :amount` + `RETURNING`)로 하고 원장은 같은 트랜잭션에 얹는
 기록이다. 순서를 뒤집어 원장 SUM으로 판정하면 동시 요청 둘이 서로의 미커밋 INSERT를
 못 봐서 이중 지불이 난다.
 
-`kind`는 `assets.style`·`image_generation_requests.status`(IM-4)와 같은 이유로 native
+`kind`는 `assets.style`·`image_generation_requests.status`와 같은 이유로 native
 enum이 아니라 `Text`다 — 값이 늘 때 마이그레이션 없이 넓히기 위해서다.
 
-`idempotency_key`는 nullable + unique다. 지금 채우는 것은 어드민 지급/회수뿐이고
-(clover-goal-prompt.md CL-8) 나머지는 NULL인데, Postgres는 NULL을 중복으로 치지 않으므로
+`idempotency_key`는 nullable + unique다. 이 리비전 시점에 채우는 것은 어드민 지급/회수뿐이었고
+나머지는 NULL인데, Postgres는 NULL을 중복으로 치지 않으므로
 평범한 unique 인덱스가 "값이 있는 것만 유일"이 된다.
 
 `clover_balance`는 NOT NULL + `server_default 0`이라 기존 행이 전부 0으로 채워진다 —
@@ -32,7 +32,7 @@ enum이 아니라 `Text`다 — 값이 늘 때 마이그레이션 없이 넓히�
   `4e6d562bf8da`의 `fk_assets_request_id`(별도 `create_foreign_key`라 downgrade가 이름을
   부른다)와 달리 downgrade 때문이 아니라 **이름 규약 일관성과 제약 조회 가독성**을 위해서다.
 
-이 리비전은 스키마만이다. 원장을 쓰는 서비스·게이트·라우터는 후속 단계에서 붙는다.
+이 리비전은 스키마만이다. 원장을 쓰는 서비스·게이트·라우터는 별도 변경에서 붙는다.
 
 """
 from typing import Union

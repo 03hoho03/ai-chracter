@@ -11,5 +11,5 @@ def calculate_age(birth_date: date, today: date) -> int:
 
 
 def is_under_minimum_age(birth_date: date, today: date) -> bool:
-    """legal-revision-goal-prompt.md LR-9: 만 14세 미만은 가입을 거부한다."""
+    """만 14세 미만은 가입을 거부한다."""
     return calculate_age(birth_date, today) < MINIMUM_AGE_THRESHOLD

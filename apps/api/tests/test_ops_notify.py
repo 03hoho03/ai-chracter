@@ -1,4 +1,4 @@
-"""`ops.notify` — Discord 웹훅 + healthchecks.io ping 공통 유틸(monitoring-techspec.md MT-10).
+"""`ops.notify` — Discord 웹훅 + healthchecks.io ping 공통 유틸.
 
 **알림이 안 갔다고 호출부(백업·리소스 감시)가 죽으면 안 된다** — 그래서 이 모듈의 두 함수는
 절대 예외를 던지지 않는다. 이 계약이 깨지면 알림 인프라의 사소한 오류(웹훅 URL 오타, 네트워크

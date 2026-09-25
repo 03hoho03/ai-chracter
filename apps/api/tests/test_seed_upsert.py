@@ -1,4 +1,4 @@
-"""`scripts/seed_content/upsert.py` 의 스토리 시드 업서트 (US-004)."""
+"""`scripts/seed_content/upsert.py` 의 스토리 시드 업서트."""
 
 import json
 import uuid
@@ -329,7 +329,7 @@ async def test_upsert_story_writes_every_child_table(
         )
     ).all()
     assert [ending.name for ending in endings] == ["해피엔딩", "배드엔딩"]
-    # top-level 규칙과 그룹은 하나의 order 시퀀스를 공유한다 (§1.5).
+    # top-level 규칙과 그룹은 하나의 order 시퀀스를 공유한다.
     top_rule = (
         await db_session.scalars(select(EndingRule).where(EndingRule.ending_id == endings[0].id))
     ).one()
@@ -347,7 +347,7 @@ async def test_upsert_story_writes_every_child_table(
             select(StatDef).where(StatDef.starting_setup_id == setups[0].id).order_by(StatDef.order)
         )
     ).all()
-    # 규칙은 스탯의 물리 id 가 아니라 entity_id 를 참조한다 (§1 원칙 4).
+    # 규칙은 스탯의 물리 id 가 아니라 entity_id 를 참조한다.
     assert top_rule.stat_def_entity_id == stat_defs[0].entity_id
     assert nested_rule.stat_def_entity_id == stat_defs[1].entity_id
 

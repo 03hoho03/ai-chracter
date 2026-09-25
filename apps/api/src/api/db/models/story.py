@@ -31,10 +31,10 @@ class EndingRuleOperator(str, enum.Enum):
 
 
 class StoryVersionDetail(Base):
-    """techspec-db-schema.md §5. 1:1 extension of content_versions for type='story'.
+    """1:1 extension of content_versions for type='story'.
 
     `thumbnail_asset_id` is nullable for the same reason as
-    `CharacterVersionDetail.thumbnail_asset_id` (US-082/US-084): a brand-new draft
+    `CharacterVersionDetail.thumbnail_asset_id`: a brand-new draft
     (`POST /contents`) has no image yet — publish validation is what requires it.
     """
 
@@ -54,20 +54,20 @@ class StoryVersionDetail(Base):
     setting_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     development_example: Mapped[str | None] = mapped_column(Text, nullable=True)
     custom_prompt: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # chat-goal-prompt.md §8-3/D-10: `development_example`(자유 텍스트)의 후속 — 입출력 쌍
+    # `development_example`(자유 텍스트)의 후속 — 입출력 쌍
     # 목록으로 받는다. 마이그레이션 리비전 ①이 기존 33건을 파싱해 채우고, `development_example`
-    # 컬럼 자체는 리비전 ②(이 런 범위 밖)까지 그대로 살아 있다.
+    # 컬럼 자체는 그것을 지우는 리비전 ②가 나오기 전까지 그대로 살아 있다.
     development_examples: Mapped[list[dict[str, Any]]] = mapped_column(
         JSONB, server_default=text("'[]'::jsonb"), nullable=False
     )
-    # chat-goal-prompt.md §8-1/§8-2, D-9: 크랙의 `user's role and goal:`/`Rule:`에 대응.
+    # 크랙의 `user's role and goal:`/`Rule:`에 대응.
     # 필수로 만들지 않는다 — 기존 33건이 비어 있는 채로 발행돼 있다.
     user_goal: Mapped[str | None] = mapped_column(Text, nullable=True)
     rules: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class StartingSetup(Base):
-    """techspec-db-schema.md §5. entity_id pattern (§1 원칙 4), order-sensitive list (§1 원칙 2)."""
+    """entity_id pattern, order-sensitive list."""
 
     __tablename__ = "starting_setups"
 
@@ -85,7 +85,7 @@ class StartingSetup(Base):
 
 
 class StatDef(Base):
-    """techspec-db-schema.md §5. Stats are independent per starting_setup, not shared."""
+    """Stats are independent per starting_setup, not shared."""
 
     __tablename__ = "stat_defs"
 
@@ -111,7 +111,7 @@ class StatDef(Base):
 
 
 class KeywordNote(Base):
-    """techspec-db-schema.md §5. entity_id pattern; starting_setup_id null = applies to
+    """entity_id pattern; starting_setup_id null = applies to
     the whole story rather than a single starting setup."""
 
     __tablename__ = "keyword_notes"
@@ -129,7 +129,7 @@ class KeywordNote(Base):
 
 
 class Shortcut(Base):
-    """techspec-db-schema.md §5. entity_id pattern; scoped to the whole work (content_version_id)."""
+    """entity_id pattern; scoped to the whole work (content_version_id)."""
 
     __tablename__ = "shortcuts"
 
@@ -144,7 +144,7 @@ class Shortcut(Base):
 
 
 class Ending(Base):
-    """techspec-db-schema.md §5. entity_id pattern, order-sensitive list (§1 원칙 2)."""
+    """entity_id pattern, order-sensitive list."""
 
     __tablename__ = "endings"
 
@@ -162,7 +162,7 @@ class Ending(Base):
 
 
 class EndingRuleGroup(Base):
-    """techspec-db-schema.md §5. Only one level of nesting is allowed: this table has no
+    """Only one level of nesting is allowed: this table has no
     self-referential FK, so a group can never contain another group.
 
     이 결정을 검증하던 `test_migrations.py`의 `test_ending_rule_groups_has_no_self_referential_fk`는
@@ -181,10 +181,10 @@ class EndingRuleGroup(Base):
 
 
 class EndingRule(Base):
-    """techspec-db-schema.md §5. A rule belongs to an ending directly (top-level) or to a
+    """A rule belongs to an ending directly (top-level) or to a
     rule group, never both/neither — enforced by `ck_ending_rules_exactly_one_parent`
     (a CHECK constraint) rather than app-level validation alone. `stat_def_entity_id`
-    references a stat_def's entity_id (§1 원칙 4), not its physical id, so the reference
+    references a stat_def's entity_id, not its physical id, so the reference
     survives republish-cloning across versions.
 
     이 결정을 검증하던 `test_migrations.py`의

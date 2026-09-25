@@ -22,7 +22,7 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Upgrade schema."""
     # autogenerate does not detect new enum member additions to an existing
-    # Postgres type, so this is written by hand (tasks/archive/prd-image-generation.md US-001).
+    # Postgres type, so this is written by hand.
     op.execute("ALTER TYPE asset_kind ADD VALUE 'GENERATED'")
 
 
