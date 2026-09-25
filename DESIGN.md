@@ -212,12 +212,12 @@ components:
 
 **Display / Title / Body / Label Font:** Pretendard Variable (with `-apple-system, BlinkMacSystemFont, system-ui, Roboto, 'Malgun Gothic', sans-serif`)
 
-`--font-heading`은 `--font-sans`의 별칭이다(`globals.css`) — 제목용 별도 서체는 존재하지 않으며, 앱 코드에서 `font-heading`은 `ChatMoreSidebar.tsx` 한 곳에만 쓰인다(별칭이라 렌더는 `font-sans`와 같다).
+`--font-heading`은 `--font-sans`의 별칭이다(`globals.css`) — 제목용 별도 서체는 존재하지 않으며, `font-heading`은 `apps/` 코드에서는 `ChatMoreSidebar.tsx` 한 곳, `packages/ui`에서는 Dialog·Sheet·AlertDialog 제목 3곳에 쓰인다(별칭이라 렌더는 `font-sans`와 같다).
 
 **Character:** 한글 가독성이 검증된 단일 휴머니스트 산세리프를 굵기(weight)만 바꿔 전 화면에 쓴다. 실제로 코드에 존재하는 굵기는 셋이다 — medium(500) / semibold(600) / bold(700). 여기에 상속 굵기를 본문 400으로 되돌리는 리셋용 `font-normal`이 4곳(web 2·admin 2) 있다(아래 단일 서체 규칙이 허용하는 유일한 예외). 크기 스케일도 `text-2xl`(1.5rem)에서 멈춘다: 이 제품에는 히어로가 없고, 가장 큰 글자도 페이지 제목이다.
 
 ### Hierarchy
-- **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1) 전용. 화면 내 최상위. **h1이 아닌 곳에 쓰지 않는다 — 예외가 0이다**: 앱의 `text-2xl` 13곳(`ui-demo` 견본 제외) 중 12곳이 h1이고 나머지 하나는 아바타 이니셜 글리프다. (이 줄은 한때 "마이페이지 섹션 제목"을 포함했다. 그건 규칙이 아니라 한 파일의 예외였고 — 그 화면의 h1과 h2는 계산된 속성 580개가 **전부 일치**해 헤딩으로 훑으면 넷이 동일하게 읽혔다 — US-013이 그 h2 셋을 Title로 내리면서 사라졌다.)
+- **Display** (700, 1.5rem/2rem, -0.025em): 페이지 제목(h1) 전용. 화면 내 최상위. **h1이 아닌 곳에 쓰지 않는다 — 예외가 0이다**: web의 `text-2xl` 13곳(`ui-demo` 견본 제외) 중 12곳이 h1이고(admin은 전부 h1) 나머지 하나는 아바타 이니셜 글리프다. (이 줄은 한때 "마이페이지 섹션 제목"을 포함했다. 그건 규칙이 아니라 한 파일의 예외였고 — 그 화면의 h1과 h2는 계산된 속성 580개가 **전부 일치**해 헤딩으로 훑으면 넷이 동일하게 읽혔다 — US-013이 그 h2 셋을 Title로 내리면서 사라졌다.)
 - **Title** (600, 1.25rem/1.75rem, -0.025em): 인증 화면 제목, 모달 헤더, 카드 제목, **설정 섹션 제목(h2)**. 페이지 제목 아래 한 단계가 필요한 자리는 전부 여기다.
 - **18px 소제목** (`text-lg`, 1.125rem/1.75rem, 굵기는 자리에 따라 `font-semibold`(카드·목록·빈 상태 제목) 또는 `font-medium`(Dialog/Sheet/AlertDialog 제목)): Title(20px)보다 한 단계 낮은 강조가 필요한 소제목. **D-9 이전엔 이 문서에 없던 6번째 크기였다** — 당시 `text-base`(Tailwind 기본값, 16px)로 17곳이 손조립돼 있었는데, D-8이 Body(`--text-sm`)를 16px로 올리면서 `text-base`와 값이 같아져 위계가 붕괴할 뻔했다. D-9가 그 17곳을 `text-lg`(18px)로 옮기며 이 자리를 사다리의 정식 티어로 승격했다(`design-system-goal-prompt.md` D-9).
 - **Body** (400, 1rem/1.4286rem): 본문, 대화 메시지, 설명. 앱에서 여전히 가장 많이 쓰이는 크기다(재측정 `text-sm` 약 205회 — `grep -rnE '\btext-sm\b' apps/web/src --include='*.tsx'`, 주석 제외 — Label(`text-xs`) 약 168회를 앞선다)이며 **사실상의 기본값**이다. 산문은 65-75**자**(문자 수 기준 — `ch` 단위가 아니다, 한글은 글리프가 전각이라 두 단위가 갈린다)에서 줄바꿈이 규범이다. 채팅 실측은 1512px에서 61~70자로 이 규범 안에 들고, 390px는 폰 폭이 물리적으로 좁아 규범 달성이 아니라 낭비 제거가 목표다(`design-system-goal-prompt.md` §3-3-3).

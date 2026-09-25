@@ -373,10 +373,10 @@ sudo /opt/ddona/backup.sh     # 수동 1회 — healthchecks.io 대시보드에 
 전환 전 `/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**였고, 배포(`deploy-api.yml`)는
 `/opt/ddona/app`만 `git reset --hard`하므로 이 디렉터리는 배포 때마다 갱신되지 않고 그대로
 남았다 — 실측(2026-09-15) `backup_db.py`가 크론 사본 8,139B(9/2 판) vs 저장소 12,230B(9/15)로
-md5가 다르다. 이 드리프트 때문에 `delete_expired_withdrawn_emails`(LR-32, 처리방침 제4조 2항·
+md5가 달랐다. 이 드리프트 때문에 `delete_expired_withdrawn_emails`(LR-32, 처리방침 제4조 2항·
 약관 제14조 4항의 파기 의무)가 9/15에 저장소에 들어간 뒤로 **프로덕션 크론에서 한 번도 실행되지
 않았다**(크론 사본 0건 vs 저장소 2건, `/var/log/ddona-backup.log`에 파기 기록 0건). 다만
-`withdrawn_emails` 행이 아직 0건이라 실제 위반은 아니고 휴면 결함이다.
+`withdrawn_emails` 행이 아직 0건이라 실제 위반은 아니고 휴면 결함이었다.
 
 **해법은 복사가 아니라 심볼릭 링크다** — 이유는 위 logrotate 절차와 같다: `/opt/ddona/app`은
 배포마다 `git reset --hard origin/main`으로 갱신되므로, 링크해두면 `ops/*`를 고칠 때 재설치 없이
@@ -448,9 +448,9 @@ sudo docker compose -f docker-compose.monitoring.yml --env-file /opt/ddona/.env 
 sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 실측으로 다시 조정할 때
 ```
 
-**`/opt/ddona/.env`에 추가해야 하는 값**(이 중 `INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`
-3개는 §2-1의 39개 키 카운트에 포함되지만, 값·근거의 유일한 소스는 이 절이다 — §2-1 표에는 행을
-따로 만들지 않는다):
+**`/opt/ddona/.env`에 추가해야 하는 값**(이 표의 6개 키 — `BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·
+`SENTRY_DSN`·`SENTRY_ENVIRONMENT` — 는 전부 §2-1의 39개 키 카운트에 포함되지만, 값·근거의 유일한
+소스는 이 절이다 — §2-1 표에는 행을 따로 만들지 않는다):
 
 | 변수 | 값 | 비고 |
 |---|---|---|
