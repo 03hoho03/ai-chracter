@@ -367,7 +367,7 @@ async def test_verify_email_succeeds_after_limit_minus_one_wrong_attempts(
     db_client: httpx.AsyncClient,
 ) -> None:
     """상한 테스트(위)가 LIMIT회에서 무효화되는 것만 보면, `attempts >= LIMIT - 1`로 하나 밀린
-    오프바이원 회귀를 못 잡는다. LIMIT-1(=4)번 오답 뒤에는 코드가 아직 살아있어 올바른 코드가
+    오프바이원 회귀를 못 잡는다. LIMIT - 1(=4)번 오답 뒤에는 코드가 아직 살아있어 올바른 코드가
     통과해야 한다."""
     payload = _signup_payload()
     await db_client.post("/auth/signup", json=payload)

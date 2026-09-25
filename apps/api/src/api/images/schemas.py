@@ -33,9 +33,8 @@ ImageGenerationRequestStatus = Literal["pending", "succeeded", "blocked", "faile
 
 
 class GenerateImageRequest(CamelModel):
-    # 집 PC 계약 v3가
-    # 통보한 1000자 하드 상한을 미러한다 — 값은 구현 단계 실측으로 재확인 대상이고 바뀌면 계약
-    # 개정으로 통지된다. FE 미러: apps/web/src/features/generate-images/model/schema.ts.
+    # 집 PC 계약 v3가 통보한 1000자 하드 상한을 미러한다 — 값이 바뀌면 계약 개정으로
+    # 통지된다. FE 미러: apps/web/src/features/generate-images/model/schema.ts.
     prompt: str = Field(min_length=1, max_length=1000)
     model: ImageModelId
     style: ImageStylePreset

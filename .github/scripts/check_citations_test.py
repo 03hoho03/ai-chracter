@@ -60,6 +60,20 @@ CASES = [
     ("F23 py 문자열 속 문서", "t_py.py", "", '@mark.parametrize("c", ["chat-rollout.md"])\ndef test_a(c): ...\n', 1),
     ("F24 주석 속 tasks 문서는 한 번만", "u.ts", "", "// tasks/foo.md 대로\nexport const u = 1;\n", 1),
     ("F25 규칙 코드 파일에서도 R-9·다른 번호는 잡는다", "apps/api/src/api/admin/prompts.py", "", "# R-9 와 CL-1\n", 2),
+    (
+        "F26 응답 스키마 파일이어도 목록 밖 클래스·클래스 안 주석은 잡는다",
+        "apps/api/src/api/chat/prompt_builder.py",
+        "",
+        'class StatJudgmentResult:\n    """D-1."""\n    # D-2\n    x: int\n\n\nclass Other:\n    """D-3."""\n',
+        2,
+    ),
+    (
+        "F27 고정 줄도 내용이 바뀌면 잡는다",
+        "apps/api/migrations/versions/b72c33c70240_prompt_sections_user_persona_slot.py",
+        "",
+        '_NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-14)"\n',
+        1,
+    ),
     # ── 통과해야 하는 것 ──
     ("P1 py 문자열 식별자", "p1.py", "", 'RULE = "R-1"\nraise E(code="RL-3")\n', 0),
     ("P2 ts 문자열 식별자", "p2.ts", "", 'const rule = "R-8";\n', 0),
@@ -81,6 +95,34 @@ CASES = [
     ("P18 규칙 코드 테스트", "apps/api/tests/test_admin_prompts_api.py", "", "# R-3 위반이면 422\n", 0),
     ("P19 규칙 코드 마이그레이션", "apps/api/migrations/versions/b72c33c70240_x.py", "", "# R-2 를 적용한다\n", 0),
     ("P20 코드 문자열의 tasks 경로·추적 문서", "p20.py", "", 'Q = "tasks/queue"\nopen("README.md")\n', 0),
+    (
+        "P21 응답 스키마 클래스 docstring(여러 줄)",
+        "apps/api/src/api/chat/prompt_builder.py",
+        "",
+        'class EndingJudgmentResult:\n    """techspec-backend-chat.md §3.1\n    판정(D-1).\n    """\n\n    x: int\n',
+        0,
+    ),
+    (
+        "P22 응답 스키마 클래스 docstring(다른 파일)",
+        "apps/api/src/api/content/publish.py",
+        "",
+        'class PublishFilterResult:\n    """techspec-backend-content.md §1.3 판단용."""\n',
+        0,
+    ),
+    (
+        "P23 적용된 마이그레이션의 고정 문자열",
+        "apps/api/migrations/versions/b72c33c70240_prompt_sections_user_persona_slot.py",
+        "",
+        '_NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"\n',
+        0,
+    ),
+    (
+        "P24 그 문자열을 단언하는 테스트 줄",
+        "apps/api/tests/test_persona_prompt_slot_migration.py",
+        "",
+        'def t(active):\n    assert active.note == "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"\n',
+        0,
+    ),
 ]
 
 # `--all` 은 기존 줄도 본다: base 의 j.tsx `D-1` 1건 + p10.py `CL-3`·`CL-4` 2건.

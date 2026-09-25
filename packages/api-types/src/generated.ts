@@ -513,7 +513,7 @@ export interface paths {
         get?: never;
         /**
          * Upsert Legal Draft
-         * @description 초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만
+         * @description 초안 저장은 게시본을 건드리지 않는다 — status='draft'인 행만
          *     upsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.
          *
          *     `_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면
@@ -1413,7 +1413,7 @@ export interface paths {
         };
         /**
          * List My Inquiries
-         * @description 페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다.
+         * @description 페이징하지 않는다 — 공지 목록처럼 항목이 제목·상태·날짜뿐이라 작고, 내 문의는 공지보다도 적다.
          */
         get: operations["list_my_inquiries_me_inquiries_get"];
         put?: never;

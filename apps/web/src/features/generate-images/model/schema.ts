@@ -49,9 +49,8 @@ export function isImageAspectRatio(value: string): value is (typeof IMAGE_ASPECT
  * 아래 `model`/`style`의 `z.string()`과 DTO의 좁은 리터럴이 어긋난 것을 컴파일이 못 잡았다. */
 /** model/style은 값을 모르는 `z.string().min(1)`로만 검증한다 — 실제 id·가용성 검증은
  * `GET /images/models` 응답과 BE의 재검증(종횡비 포함)이 한다. */
-// 집 PC 계약 v3가
-// 통보한 1000자 하드 상한을 미러한다 — 값은 구현 단계 실측으로 재확인 대상이고 바뀌면 계약
-// 개정으로 통지된다. BE 미러: apps/api/src/api/images/schemas.py.
+// 집 PC 계약 v3가 통보한 1000자 하드 상한을 미러한다 — 값이 바뀌면 계약 개정으로
+// 통지된다. BE 미러: apps/api/src/api/images/schemas.py.
 export const generateImagesSchema = z.object({
   prompt: z
     .string()

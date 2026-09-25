@@ -85,7 +85,7 @@ async def upsert_legal_draft(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminLegalDocumentResponse:
-    """초안 저장은 게시본을 건드리지 않는다(T-12의 핵심) — status='draft'인 행만
+    """초안 저장은 게시본을 건드리지 않는다 — status='draft'인 행만
     upsert하고, published 행은 이 함수가 아예 조회조차 하지 않는다.
 
     `_get_draft`가 None을 본 뒤 이 INSERT 사이에 다른 요청이 먼저 초안을 커밋하면

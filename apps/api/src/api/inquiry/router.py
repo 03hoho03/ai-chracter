@@ -68,7 +68,7 @@ async def list_my_inquiries(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> MyInquiryListResponse:
-    """페이징하지 않는다(D-13과 같은 이유) — 내 문의는 공지보다도 적다."""
+    """페이징하지 않는다 — 공지 목록처럼 항목이 제목·상태·날짜뿐이라 작고, 내 문의는 공지보다도 적다."""
     inquiries = (
         await db.scalars(
             select(Inquiry).where(Inquiry.user_id == user_id).order_by(Inquiry.created_at.desc())
