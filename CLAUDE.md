@@ -15,5 +15,5 @@
 - **색은 강조 지점(`primary`/`ring`)과 사용자 콘텐츠(썸네일, 스탯 스와치), `destructive`에만 있고 배경·카드·보더 사다리는 무채색을 유지한다.** `destructive`는 언제나 틴트이며(알파는 `DESIGN.md` §2 Colors) 솔리드 레드 채움은 이 시스템에 없다 — 솔리드 채움이 `primary` 하나뿐이라 둘은 형태로도 갈린다.
 - **정지 상태에 그림자 없음** — 깊이는 명도 사다리로 만든다(다크 0.160→0.210→0.260→0.300, 라이트는 반전).
 - **장식·전환 애니메이션에는 `motion-safe:`를 붙인다.** 어두운 방에서 갑작스러운 움직임은 놀람이다. **예외는 진행 표시다** — 멈추면 "멈춘 UI"로 읽히므로 가드하지 않는다(무엇이 진행 표시인지는 `DESIGN.md` §5 Motion).
-- **타이포는 Pretendard Variable 하나**, 굵기는 medium/semibold/bold 셋뿐, 크기 천장은 `text-2xl`(clamp·vw 유동 타이포 금지). 본문 기본은 `text-sm`.
+- **타이포는 Pretendard Variable 하나**, 굵기는 medium/semibold/bold 셋뿐(`font-normal`은 상속 굵기를 본문 400으로 되돌리는 리셋에만), 크기 천장은 `text-2xl`(clamp·vw 유동 타이포 금지). 본문 기본은 `text-sm`.
 - **크롬은 sticky 헤더 하나(`h-14`)뿐이다.** 하단 탭바·전역 사이드 레일·푸터를 추가하지 않는다(`<main>` 내부 다열은 대상 아님 — 판별 기준 DESIGN.md §5 Navigation).
