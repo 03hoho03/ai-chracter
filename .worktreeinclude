@@ -14,5 +14,7 @@ tasks/*.md
 tasks/archive/**
 
 # 필요할 때만 주석 해제
-# apps/api/scripts/seed_content/images/**   # 워크트리에서 시드를 재실행할 때 (38M)
-# tasks/baseline/**                         # 시각 회귀 비교할 때 (20M) — cite-ok 인용이 아니라 경로 패턴
+# 워크트리에서 시드를 재실행할 때 (38M)
+# apps/api/scripts/seed_content/images/**
+# 시각 회귀 비교할 때 (20M)
+# tasks/baseline/**

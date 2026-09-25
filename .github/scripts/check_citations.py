@@ -74,8 +74,11 @@ SCHEMA_DOCSTRING_CLASSES: dict[str, set[str]] = {
     "apps/api/src/api/content/publish.py": {"PublishFilterResult"},
 }
 # 이미 적용된 마이그레이션이 DB 에 기록한 문자열과 그 값을 그대로 단언하는 테스트 줄. 값을 바꾸면
-# 적용된 DB 와 어긋난다. 줄 내용이 정확히 같을 때만 예외다 — 내용이 바뀌면 다시 잡힌다.
+# 적용된 DB 와 어긋난다. 그리고 주석을 풀면 그대로 설정이 되는 경로 패턴 줄 — gitignore 문법은 줄 맨 앞의
+# `#` 만 주석으로 보므로 같은 줄에 `cite-ok` 를 달면 주석을 풀 때 패턴에 섞인다.
+# 줄 내용이 정확히 같을 때만 예외다 — 내용이 바뀌면 다시 잡힌다.
 FROZEN_LINES: dict[str, set[str]] = {
+    ".worktreeinclude": {"# tasks/baseline/**"},
     "apps/api/migrations/versions/b72c33c70240_prompt_sections_user_persona_slot.py": {
         '_NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"',
     },
@@ -417,7 +420,8 @@ def main() -> int:
                 continue
             for hit in line_findings(line, comments.get(ln, []), kind, path, tracked_md):
                 problems += 1
-                print(f"::error file={path},line={ln}::{hit} — 이유를 주석에 직접 쓰고, 결정 추적은 커밋·PR 본문에 남긴다")
+                where = "문장으로" if kind == "doc" else "주석에 직접"
+                print(f"::error file={path},line={ln}::{hit} — 이유를 {where} 쓰고, 결정 추적은 커밋·PR 본문에 남긴다")
                 print(f"{path}:{ln}: {hit}", file=sys.stderr)
     if problems:
         print(f"\n{problems}건. 예외가 맞으면 그 줄에 `{SUPPRESS}` 를 적는다.", file=sys.stderr)

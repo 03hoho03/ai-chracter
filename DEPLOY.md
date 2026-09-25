@@ -121,7 +121,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 **39개 키다**(2026-09-25 VM 실측, 키 이름만 셈): 아래 표 25개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 4개 제외) + compose용
-5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink" 절의 6개
+5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 
@@ -173,14 +173,14 @@ web 프로젝트 → Settings → Environment variables(현 UI는 **Variables an
 > ⚠️ **"FE 빌드타임" 절과 입력란이 같다.** Cloudflare Pages에는 변수 화면이 하나뿐이고 "런타임 변수"라는
 > 별도 메뉴가 없다 — 절을 나눈 것은 **누가 읽느냐**의 구분이다. "FE 빌드타임" 절은 `vite build`가 읽어
 > 번들에 박고, 여기 것은 배포된 `dist/_worker.js`가 요청마다 읽는다. `VITE_` 접두어가 붙은
-> 것만 브라우저 번들에 들어간다(그래서 `SENTRY_AUTH_TOKEN`에는 절대 붙이지 않는다, "Bugsink" 절).
+> 것만 브라우저 번들에 들어간다(그래서 `SENTRY_AUTH_TOKEN`에는 절대 붙이지 않는다, "Bugsink(에러 트래커)" 절).
 > 2026-09-16 실제로 이 절 제목 때문에 "런타임 입력란을 못 찾겠다"는 혼선이 있었다.
 
 | 변수 | 값 | 없으면 |
 |---|---|---|
 | `PUBLIC_ORIGIN` | `https://ddona.site` | canonical·og:url·sitemap이 **요청 host를 따라간다** → 프리뷰 배포가 자기 URL로 색인되어 중복 콘텐츠가 된다. **`legacyRedirect`의 목적지이기도 해서** 비어 있으면 옛 도메인 리다이렉트가 통째로 꺼진다(자기 자신으로 가는 루프를 막는 가드) |
 | `API_BASE_URL` | `https://api.ddona.site` | Worker가 조회가 필요한 SEO 경로(상세·프로필 메타, sitemap, og 프록시)를 **통째로 건너뛴다**. 사이트는 멀쩡히 돌아서 티가 안 난다 |
-| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다("Bugsink" 절) — ⚠️ **Production에만**, 아래 예외 참고 | `/_ingest/*` 프록시(`worker/ingestProxy.ts`)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
+| `INGEST_SHARED_SECRET` | VM `/opt/ddona/.env`의 같은 이름 값과 **반드시 일치**해야 한다("Bugsink(에러 트래커)" 절) — ⚠️ **Production에만**, 아래 예외 참고 | `/_ingest/*` 프록시(`worker/ingestProxy.ts`)가 `X-Ingest-Secret` 헤더를 못 붙여 Caddy가 **모든 envelope 요청에 401**을 준다 — 브라우저 에러가 전부 Bugsink에 도착하지 못한 채 소실된다 |
 
 - **`VITE_API_BASE_URL`("FE 빌드타임" 절)과 별개다** — 저건 빌드타임에 번들에 박히고 이건 Worker가 런타임에
   읽는다. **둘 다** 필요하다.
@@ -188,7 +188,7 @@ web 프로젝트 → Settings → Environment variables(현 UI는 **Variables an
   `요청 host ≠ PUBLIC_ORIGIN host`일 때만 `X-Robots-Tag: noindex`를 붙이므로(`worker/indexing.ts`),
   Preview에서 비어 있으면 프리뷰 색인 차단이 함께 꺼진다.
 - **`INGEST_SHARED_SECRET`은 위 "Production과 Preview 양쪽 모두" 지침의 예외다 — Production에만
-  넣는다.** 근거는 "Bugsink" 절의 "환경 범위는 Production만이다" 참고.
+  넣는다.** 근거는 "Bugsink(에러 트래커)" 절의 "환경 범위는 Production만이다" 참고.
 - 런타임 변수는 **저장만으로 반영되지 않는다** — 저장 후 재배포(또는 최신 배포 Retry)해야 한다.
 
 ---
@@ -572,7 +572,7 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
 
 ### 3-6. Bugsink 이벤트 보유기간 파기 — vacuum cron
 
-"Bugsink" 절의 `MAX_EVENT_AGE_DAYS: "30"`
+"Bugsink(에러 트래커)" 절의 `MAX_EVENT_AGE_DAYS: "30"`
 (`docker-compose.monitoring.yml`)은 "30일보다 오래된 이벤트는 지운다"는 **기준값**만 고정한다 —
 실제로 지우는 건 `bugsink-manage vacuum --old-events` 관리 명령이고, 공식 이미지는 이 명령을 도는
 스케줄러를 컨테이너 안에 두지 않는다(`Dockerfile` CMD 확인 — gunicorn+snappea만 상시 실행). 값만
@@ -583,7 +583,7 @@ caddyfile tokens for 'route': malformed header matcher: expected both field and 
 vacuum --old-events`를 돌린다. 컨테이너 이름은 추측이 아니다 — `docker-compose.monitoring.yml`의
 `name: ddona-monitoring` + 서비스 `bugsink`(replica 1개)를 Compose V2 관례대로 조합한 이름이고,
 `docker compose config`로 프로젝트·서비스 이름을 확인한 뒤 로컬에서 실제로 `docker compose up`한
-컨테이너 이름을 실측했다("Bugsink" 절의 `docker stats --no-stream ddona-monitoring-bugsink-1`과 같은 이름).
+컨테이너 이름을 실측했다("Bugsink(에러 트래커)" 절의 `docker stats --no-stream ddona-monitoring-bugsink-1`과 같은 이름).
 `docker compose exec`가 아니라 `docker exec <고정 이름>`을 쓰는 이유는 이 스크립트가
 `docker-compose.monitoring.yml`의 경로나 실행 시점 cwd를 몰라도 되게 하기 위해서다.
 
@@ -624,7 +624,7 @@ tail -f /var/log/ddona-bugsink-vacuum.log
 `Error response from daemon: container ... is not running` / `No such container`)를 내고,
 `ops/vacuum_bugsink.py`는 이 실패를 삼키지 않고 `ops/notify.py`로 Discord에 알린다. 별도
 healthchecks.io dead man's switch는 만들지 않았다 — 이 작업의 범위는 "vacuum이 실제로 도는가"이지
-"bugsink 서비스 자체의 생사"가 아니고(후자는 "Bugsink" 절이 손으로 기동/재기동하는 별개 관심사), Discord
+"bugsink 서비스 자체의 생사"가 아니고(후자는 "Bugsink(에러 트래커)" 절이 손으로 기동/재기동하는 별개 관심사), Discord
 알림 하나로 "아무도 모르게 실패한다"는 이 작업의 실제 위험은 이미 닫힌다.
 
 ⚠️ 매일 05:00 UTC로 골랐다 — `ddona-backup`(18:00 UTC, "백업 · 복원" 절)과 겹치지 않으면 충분하다. vacuum
@@ -789,7 +789,7 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 사용자에게 노출되는 것은 불투명 id뿐이다 — 모델 id 1개(`v1`, 표시명 "v1")와 스타일 id 7개
 (`soft_portrait`~`deco_cute`, 표시명은 `images/models.py`의 `IMAGE_STYLE_PRESETS` 참고).
 체크포인트·LoRA·프리셋 문안·샘플러 파라미터는 전부 집 PC 소유이고, 서버는 프롬프트 원문과 이 두 id,
-`aspect_ratio` 문자열만 보낸다. 서버 쪽 계약 구현은 `llm/local_image.py`다.
+`aspect_ratio` 문자열만 보낸다.
 
 생성 잡은 기존과 동일하게 응답(202) 뒤 `asyncio.create_task`로 돌고, 이미지는 그대로 R2에 올라간다.
 서버는 모듈 수준 `asyncio.Semaphore(1)`로 GPU 호출을 직렬화하고(프로덕션이 uvicorn 단일 프로세스라 이

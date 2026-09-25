@@ -89,8 +89,10 @@ CASES = [
         "D-5 와 FSD-06 은 폐기됐다.\n값은 `DESIGN.md` §2 를 본다(MR-2a 이후).\nAC3 를 만족한다.\n",
         5,
     ),
+    ("F32 경로 패턴 예외는 그 줄 내용 그대로일 때만", ".worktreeinclude", "", "# tasks/other/**\n", 1),
     ("F31 md 코드 블록 안도 줄 전체를 본다", "P2.md", "", "```sh\n# D-5 로 정했다\necho ok\n```\n", 1),
     # ── 통과해야 하는 것 ──
+    ("P26 주석 처리된 경로 패턴(고정 줄)", ".worktreeinclude", "", "# 설명\n# tasks/baseline/**\n", 0),
     ("P1 py 문자열 식별자", "p1.py", "", 'RULE = "R-1"\nraise E(code="RL-3")\n', 0),
     ("P2 ts 문자열 식별자", "p2.ts", "", 'const rule = "R-8";\n', 0),
     ("P3 기술 용어", "p3.py", "", "# UTF-8 로 읽는다. SHA-256, RS-256 서명, ISO-8601\n", 0),
