@@ -5,7 +5,7 @@ import { UploadAssetError, type UploadAssetErrorCode } from "@/shared/api/asset/
 import { MESSAGE_BY_CODE, uploadAssetErrorMessage } from "./uploadAssetErrorMessage";
 
 // `MESSAGE_BY_CODE`가 `Record<UploadAssetErrorCode, string>`이라 모든 코드를 담고 있음을 타입이
-// 보장한다 — 여기서 다시 나열하면 `UploadAssetErrorCode`에 멤버가 늘 때 이 목록만 뒤처질 수 있다(TS-09).
+// 보장한다 — 여기서 다시 나열하면 `UploadAssetErrorCode`에 멤버가 늘 때 이 목록만 뒤처질 수 있다.
 const CODES = Object.keys(MESSAGE_BY_CODE) as UploadAssetErrorCode[];
 
 describe("uploadAssetErrorMessage", () => {

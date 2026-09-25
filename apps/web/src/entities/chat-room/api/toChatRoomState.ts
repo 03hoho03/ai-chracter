@@ -18,8 +18,8 @@ type EndingSnapshotDto = components["schemas"]["EndingSnapshot"];
 type EndingRuleItemDto = components["schemas"]["EndingRuleItem"];
 type EndingRuleGroupItemDto = components["schemas"]["EndingRuleGroupItem"];
 
-// BE는 DB 컬럼명 그대로의 raw operator(gte/lte/eq/gt/lt, techspec-backend-chat.md의 US-057 노트
-// 참고)를 쓰고, entities/chat-room의 provisional 타입(US-052)은 techspec 의사코드의 비교 연산자
+// BE는 DB 컬럼명 그대로의 raw operator(gte/lte/eq/gt/lt)를
+// 쓰고, entities/chat-room의 provisional 타입은 비교 연산자
 // 기호(>=, <= ...)를 쓴다 — 이 매핑이 그 둘의 유일한 경계다.
 const OPERATOR_MAP: Record<EndingRuleItemDto["operator"], ComparisonOp> = {
   gte: ">=",
@@ -88,9 +88,9 @@ function toChatMessage(dto: ChatMessageDto): ChatMessage {
   };
 }
 
-// US-055 — apps/api의 ChatRoomResponse(캐릭터 챗, US-051)를 ChatRoomState로 변환하는 유일한 경계.
-// US-060 — 스토리 챗 전용 필드(startingSetupId/stats/contentSnapshot)도 여기서 함께 매핑한다.
-// 캐릭터 챗은 BE가 이 필드들을 보내지 않아(null/undefined) techspec-chat-character.md §0이 정한
+// apps/api의 ChatRoomResponse(캐릭터 챗)를 ChatRoomState로 변환하는 유일한 경계.
+// 스토리 챗 전용 필드(startingSetupId/stats/contentSnapshot)도 여기서 함께 매핑한다.
+// 캐릭터 챗은 BE가 이 필드들을 보내지 않아(null/undefined)
 // 빈 값 그대로 유지된다.
 export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
   return {

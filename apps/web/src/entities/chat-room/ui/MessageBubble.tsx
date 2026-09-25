@@ -12,7 +12,7 @@ import { MessageEditForm } from "./MessageEditForm";
 
 type MessageBubbleProps = {
   message: ChatMessage;
-  // US-077 — 재생성/수정/삭제 액션. 세 콜백 모두 optional인 이유는 스트리밍 중 임시 버블
+  // 재생성/수정/삭제 액션. 세 콜백 모두 optional인 이유는 스트리밍 중 임시 버블
   // (streaming/ending-epilogue, ChatRoomView.tsx 참고)에는 실제 messageId가 없어 어떤 액션도
   // 붙일 수 없기 때문 — onDelete가 없으면 "⋯" 메뉴 자체를 렌더링하지 않는다.
   canRegenerate?: boolean;
@@ -42,7 +42,7 @@ export function MessageBubble({
     return <MessageEditForm content={message.content} onCancelEdit={onCancelEdit} onSaveEdit={onSaveEdit} />;
   }
 
-  // design-system-progress.md P-4 / design-system-goal-prompt.md D-6 — assistant는 말풍선 상자를
+  // assistant는 말풍선 상자를
   // 벗기고 전폭 산문으로, user는 bg-primary 말풍선을 유지한다(One-Accent Rule의 "지금 내가 한 말").
   // 두 갈래가 items-end/items-start·flex-row-reverse·이미지 웰 정렬까지 전부 달라 return 자체를
   // 갈랐다 — 조건부 className만 바꾸면 assistant 쪽이 여전히 shrink-to-fit으로 남는다.
@@ -89,7 +89,7 @@ export function MessageBubble({
           )}
         </div>
         {!!message.imageUrl && (
-          // US-073/US-014 — 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). 다만 그 비율을
+          // 상황별 이미지는 원본 비율 그대로 보여준다(크롭 없음). 다만 그 비율을
           // 미리 알 수 없어 이미지가 도착한 뒤에야 높이가 정해지면 읽던 대화가 아래로 밀린다(CLS) →
           // 고정 비율 자리를 먼저 깔고 그 안에서 `object-contain`으로 맞춘다.
           //
@@ -119,7 +119,7 @@ export function MessageBubble({
   return (
     <div className="flex w-full flex-col gap-1.5">
       {/* items-start(원래는 items-end) — 산문이 여러 줄이 되면 "⋯" 메뉴가 items-end에서 문단 맨
-          아래로 밀려 첫 줄과 멀어진다(design-system-goal-prompt.md §4-3 D-6 지적). 실제 긴 메시지로
+          아래로 밀려 첫 줄과 멀어진다. 실제 긴 메시지로
           렌더해 대조한 결과 items-start가 메뉴를 첫 줄 옆에 고정해 훨씬 자연스러웠다 — 채택. */}
       <div className="flex items-start gap-1">
         {/* flex-1을 안 쓴 이유 — flex-basis:auto인 채로 max-w만 얹으면 짧은 메시지는 원래
@@ -127,9 +127,9 @@ export function MessageBubble({
             flex-1(basis:0)을 쓰면 짧은 메시지도 캡까지 강제로 늘어나 "⋯" 메뉴가 텍스트 끝에서
             멀찍이 떨어진 채 뜬다(실측 확인) — 그래서 뺐다. min-w-0은 sibling 버튼과 함께 있을 때
             flex item의 기본 min-width:auto가 줄바꿈을 막는 것을 방지하는 안전장치.
-            max-w-3xl(768px, D-10) — 1512px에서 실제 렌더 실측 결과 assistant 문단이 폭 768px에서
+            max-w-3xl(768px) — 1512px에서 실제 렌더 실측 결과 assistant 문단이 폭 768px에서
             멈추고 그 안의 줄들이 61~71자(샘플에 따라 변동, LLM 출력마다 줄바꿈이 달라진다)로
-            규범(65-75자) 안에 든다(design-system-progress.md P-4-4b). 390px에서는 컬럼 폭 자체가
+            규범(65-75자) 안에 든다. 390px에서는 컬럼 폭 자체가
             768px보다 훨씬 좁아 캡이 전혀 걸리지 않는다 — `globals.css`엔 `prose` 유틸리티가 없고
             이 한 줄짜리 값이면 충분해 새 토큰을 만들지 않았다. */}
         <p className="min-w-0 max-w-3xl whitespace-pre-wrap break-words break-keep text-sm leading-relaxed text-foreground">
@@ -166,7 +166,7 @@ export function MessageBubble({
       </div>
       {!!message.imageUrl && (
         // 부모가 이제 items-* 없이 stretch라 이 웰도 그 폭을 그대로 받아 aspect-ratio가 무력화된다
-        // (design-system-goal-prompt.md §4-3 D-6 표 — "이미지 웰, 놓치기 쉬운 지점"). self-start로
+        // (이미지 웰에서 놓치기 쉬운 지점이다). self-start로
         // stretch를 걷어 아래 aspect-3/4+h-80이 실제 폭(240px)을 계산하게 하고 좌측 정렬도 되살린다.
         <div className="self-start aspect-3/4 h-80 max-w-3/4 overflow-hidden rounded-lg bg-muted">
           <img

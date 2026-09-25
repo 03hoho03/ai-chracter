@@ -13,7 +13,7 @@ import { defineConfig } from "vite";
 declare const process: { env: Record<string, string | undefined> };
 
 /**
- * 소스맵 업로드(monitoring-techspec.md MT-8)에 쓰는 Bugsink 인증 토큰. Cloudflare Pages
+ * 소스맵 업로드에 쓰는 Bugsink 인증 토큰. Cloudflare Pages
  * **빌드** 환경변수로만 넣는다 — `VITE_` 접두어를 쓰면 브라우저 번들에 그대로 실려 공개된다.
  *
  * 로컬·CI에는 이 값이 없다. **플러그인에게 "토큰 없을 때 뭘 할지"를 맡기지 않고 여기서
@@ -49,7 +49,7 @@ export default defineConfig({
           sentryVitePlugin({
             sourcemaps: {
               // 업로드 후 `.map`을 지운다 — 안 지우면 `worker/handler.ts:isStaticAssetPath`가
-              // `/assets/*`를 그대로 서빙하고 `_headers` 파일도 없어(§0-1-17) `.map`이 공개
+              // `/assets/*`를 그대로 서빙하고 `_headers` 파일도 없어 `.map`이 공개
               // 다운로드된다. org·project·url은 `SENTRY_ORG`/`SENTRY_PROJECT`/`SENTRY_URL`
               // 환경변수로 플러그인이 직접 읽는다(공식 지원, DEPLOY.md에 값을 남긴다).
               filesToDeleteAfterUpload: ["dist/**/*.map"],

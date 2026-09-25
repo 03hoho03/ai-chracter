@@ -41,7 +41,7 @@ async function flush() {
   for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 0));
 }
 
-describe("createQueryClient — 세션 소실 전역 처리 (backlog-l-goal-prompt.md BL-6)", () => {
+describe("createQueryClient — 세션 소실 전역 처리", () => {
   it("(a) 세션 데이터가 있는데 다른 쿼리가 401 Not authenticated로 실패하면 세션을 리셋한다", async () => {
     const qc = makeClient();
     qc.setQueryData(sessionKeys.current(), ME);

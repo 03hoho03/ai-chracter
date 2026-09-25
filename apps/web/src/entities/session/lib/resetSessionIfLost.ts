@@ -4,7 +4,7 @@ import { sessionKeys } from "../api/keys";
 import { isSessionLostError } from "../model/sessionLost";
 import { isSuspendedError } from "../model/suspendedAccount";
 
-/** backlog-l-goal-prompt.md BL-6 — 어떤 요청이 세션 소실 401이나 정지 403으로 실패하면 캐시된 세션을
+/** 어떤 요청이 세션 소실 401이나 정지 403으로 실패하면 캐시된 세션을
  * 비워 헤더가 비로그인으로 돌아오게 한다. `app/AppProviders.tsx`의 QueryCache·MutationCache와 fetch 기반
  * SSE 훅(전송·미리보기) catch, 모두 네 곳이 이 함수 하나를 부른다 — 판정·가드를 복사하지 않는다.
  *

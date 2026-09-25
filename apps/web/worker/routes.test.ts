@@ -51,7 +51,7 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/content/character/5eed0000-0000-4000-8000-00000000")).toBe(true);
     expect(isKnownRoute("/profile/anything")).toBe(true);
     expect(isKnownRoute("/chat/42")).toBe(true);
-    // `new`는 정적 라우트가 아니라 `$draftId`가 받는 값이다(US-007 — `NEW_DRAFT_SEGMENT`).
+    // `new`는 정적 라우트가 아니라 `$draftId`가 받는 값이다(`NEW_DRAFT_SEGMENT`).
     expect(isKnownRoute("/builder/character/new")).toBe(true);
     expect(isKnownRoute("/builder/story/draft-1")).toBe(true);
   });

@@ -14,7 +14,7 @@ type PersonaSummaryProps = {
 
 /** 관리 페이지 목록과 대화방 선택 목록이 함께 쓰는 한 줄 요약(이름 · 기본 표시 · 성별 · 설명).
  *
- * `기본` 표시는 채움이 아니라 윤곽 배지다 — 중립 상태 배지 규칙(DESIGN.md §5 Status badges). 채움
+ * `기본` 표시는 채움이 아니라 윤곽 배지다 — 중립 상태 배지 규칙(DESIGN.md §Status badges). 채움
  * (`bg-muted`)은 모달 표면(`popover`)과 값이 같아 대화방 선택 모달 안에서 사라진다. */
 export function PersonaSummary({
   persona,

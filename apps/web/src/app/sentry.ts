@@ -20,7 +20,7 @@ function stripBreadcrumbUrls(breadcrumb: Breadcrumb): Breadcrumb {
 }
 
 /**
- * API 쪽 `_strip_query_string`(core/sentry.py, MT-5)과 같은 방침 — 파라미터 이름이 아니라
+ * API 쪽 `_strip_query_string`(core/sentry.py)과 같은 방침 — 파라미터 이름이 아니라
  * 쿼리스트링 자체를 통째로 버린다. `@sentry/browser` 10.74.0은 PII 게이트 없이 쿼리스트링을
  * 그대로 붙인다(설치된 SDK 소스로 확인):
  * - `httpContextIntegration`(`integrations/httpcontext.js`)이 `getHttpRequestData`
@@ -48,11 +48,11 @@ export function stripQueryStrings(event: ErrorEvent): ErrorEvent {
 }
 
 /**
- * errors-only 최소 구성(monitoring-techspec.md MT-7). `browserTracingIntegration`·
+ * errors-only 최소 구성. `browserTracingIntegration`·
  * `replayIntegration`은 어디서도 import하지 않는다 — 둘 다 기본 통합이 아니라 import해야만
  * 번들에 들어가므로, 이 파일이 그 두 이름을 쓰지 않는 것 자체가 트리셰이킹 보증이다.
  *
- * DSN이 없으면 `init`을 아예 부르지 않는다 — dev 기본 비활성(API 쪽 MT-4와 같은 원칙).
+ * DSN이 없으면 `init`을 아예 부르지 않는다 — dev 기본 비활성(API 쪽 Sentry 초기화와 같은 원칙).
  */
 export function initSentry(): void {
   const dsn = import.meta.env.VITE_SENTRY_DSN;
@@ -63,7 +63,7 @@ export function initSentry(): void {
     environment: import.meta.env.MODE,
     // 트레이싱 통합을 안 불러왔으니 지금은 이 값이 no-op이다. 그래도 명시적으로 0을 둔다 —
     // 누군가 나중에 `browserTracingIntegration`을 추가하는 순간 조용히 트레이싱이
-    // 켜지지 않게 하는 방어선이다(API 쪽 MT-5가 같은 이유로 `traces_sample_rate=0`을 건다).
+    // 켜지지 않게 하는 방어선이다(API 쪽 Sentry 설정도 같은 이유로 `traces_sample_rate=0`을 건다).
     tracesSampleRate: 0,
     // 자가호스팅(Bugsink)이라 Sentry SaaS의 서버측 Inbound Filters를 쓸 수 없어 SDK에서
     // 직접 거른다. 브라우저 확장이 주입한 스크립트는 여기가 아니라 `allowUrls`가 막는다 —
@@ -91,7 +91,7 @@ export function initSentry(): void {
 }
 
 /**
- * `router.tsx`의 `createRouter({ defaultOnCatch })`로 넘기는 콜백(O-10) — 렌더/로더가 던진
+ * `router.tsx`의 `createRouter({ defaultOnCatch })`로 넘기는 콜백 — 렌더/로더가 던진
  * 에러가 라우트 트리를 버블링해 `__root.tsx`의 `errorComponent` 자리(`CatchBoundary`,
  * `Match.js`의 `MatchView`)에서 잡혔을 때만 호출된다. 전역 `Matches.js`의 최상위
  * CatchBoundary는 `onCatch`가 `process.env.NODE_ENV !== "production" ? ... : void 0`로

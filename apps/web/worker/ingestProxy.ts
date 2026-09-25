@@ -1,7 +1,7 @@
 import type { WorkerEnv } from "./workerRuntime";
 
 /**
- * 브라우저 에러 ingest 경로 접두사(monitoring-techspec.md MT-3). web은 Bugsink(도커 내부
+ * 브라우저 에러 ingest 경로 접두사. web은 Bugsink(도커 내부
  * 네트워크, 포트 미게시)에 직접 못 닿으므로 이 Worker가 `api.ddona.site`(Caddy)로 중계하고,
  * Caddy가 같은 `/_ingest/*` 경로를 다시 bugsink로 넘긴다(`Caddyfile` 참조).
  *
@@ -50,8 +50,8 @@ function textResponse(status: number, body: string): Response {
 
 /**
  * `/_ingest/*` → `{API_BASE_URL}/_ingest/*`. 업스트림은 별도 변수를 두지 않고 기존
- * `API_BASE_URL`을 그대로 쓴다 — MT-3의 최종 결정이 이 경로를 새 서브도메인이 아니라
- * **기존 `api.ddona.site` 블록**에 얹는 것이었으므로(§0-1-21의 도커 내부 네트워크 제약 때문),
+ * `API_BASE_URL`을 그대로 쓴다 — 이 경로를 새 서브도메인이 아니라 **기존 `api.ddona.site` 블록**에
+ * 얹었으므로(Worker가 Bugsink의 도커 내부 네트워크에 직접 못 닿기 때문),
  * 이 프록시의 업스트림은 애초에 SEO 조회가 쓰는 업스트림과 같은 오리진이다. 둘을 별도
  * 변수로 쪼개면 실제로는 항상 같은 값을 손으로 두 번 맞춰야 하는 중복 설정이 생긴다.
  *

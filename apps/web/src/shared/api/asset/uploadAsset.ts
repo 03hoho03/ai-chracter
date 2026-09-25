@@ -15,7 +15,7 @@ export type AssetPurpose = components["schemas"]["AssetPurpose"];
 
 /**
  * purpose별 리사이즈 규격 — 아바타/카드는 작은 슬롯에만 그려지고, 채팅에 크게 뜨는 상황별 이미지만 길게 남긴다.
- * `inquiry-attachment`의 2048/0.90은 이 저장소의 새 최대치다(기존 최대 1536, 최고 품질 0.82) — D-14:
+ * `inquiry-attachment`의 2048/0.90은 이 저장소의 새 최대치다(기존 최대 1536, 최고 품질 0.82) —
  * 문의 첨부(버그 신고 스크린샷)의 가치는 작은 글자를 읽는 데 있어 다른 용도보다 원본을 더 많이 남긴다.
  * 이 dict는 `Record<AssetPurpose, ...>`라 값 추가를 빠뜨리면 컴파일 에러로 잡힌다 — BE의
  * `UPLOAD_SIZE_LIMIT_BYTES`(`dict[AssetPurpose, int]`)는 mypy가 이 전수성을 검사하지 않아 사람이 지켜야 한다
@@ -55,7 +55,7 @@ export class UploadAssetError extends Error {
 }
 
 /**
- * techspec-backend-media.md §1의 업로드 3단계(presigned URL 발급 → S3 직접 PUT → 완료 확인)를
+ * 업로드 3단계(presigned URL 발급 → S3 직접 PUT → 완료 확인)를
  * 감싼 유틸. S3로의 PUT은 우리 API가 아니라 발급받은 절대 URL로 직접 나가야 하므로(쿠키/공통 헤더가
  * 불필요하고 응답도 FastAPI 에러 포맷이 아니다) `apiClient`가 아닌 `fetch`를 그대로 쓴다.
  *

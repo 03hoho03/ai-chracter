@@ -32,7 +32,7 @@ describe("toChatRoomState", () => {
     });
   });
 
-  // persona-goal-prompt.md §3-3 — 방의 대화 프로필 선택. 서버 `null`(선택 없음)과 필드 부재는 둘 다 undefined다.
+  // 방의 대화 프로필 선택. 서버 `null`(선택 없음)과 필드 부재는 둘 다 undefined다.
   it("carries personaId and folds a null personaId to undefined", () => {
     const base = {
       id: "room-1",

@@ -6,7 +6,7 @@ import { apiClient } from "@/shared/api/client";
 import { chatRoomKeys } from "./keys";
 import type { ChatRoomState } from "../model/chatRoomState";
 
-// US-077 — 삭제는 204라 서버가 갱신된 목록을 돌려주지 않는다. useResetChatRoomMutation(서버가
+// 삭제는 204라 서버가 갱신된 목록을 돌려주지 않는다. useResetChatRoomMutation(서버가
 // 통째로 교체)과 달리, 여기서는 성공한 messageId만큼 캐시에서 직접 filter로 제거한다.
 export function useDeleteMessageMutation(roomId: string) {
   const queryClient = useQueryClient();

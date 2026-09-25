@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { isCloverInsufficient, shouldShowCloverBalance } from "./cloverBalanceDisplay";
 
 describe("shouldShowCloverBalance", () => {
-  // clover-goal-prompt.md CL-25 — "필요할 때만 노출"의 본체. 둘 다 거짓인 조합이 **유일하게**
+  // "필요할 때만 노출"의 본체. 둘 다 거짓인 조합이 **유일하게**
   // 숨기는 조합이라, 이 케이스가 빠지면 "항상 보인다"로 바뀌어도 나머지가 전부 통과한다.
   it("무료분을 아직 쓰지 않았고 부족하지도 않으면 숨긴다", () => {
     expect(shouldShowCloverBalance({ spendConfirmedToday: false, hasCloverShortage: false })).toBe(false);

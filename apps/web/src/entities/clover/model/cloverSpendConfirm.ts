@@ -1,6 +1,6 @@
 import { getRateLimitDetail } from "@/shared/api/rateLimit";
 
-/** clover-goal-prompt.md CL-19 — 429가 **"오늘치 동의가 없다"**인가.
+/** 429가 **"오늘치 동의가 없다"**인가.
  *
  * 🔴 이 판정이 BE에 있는 이유: FE는 "이번 요청이 무료분을 넘는가"를 보내기 전에 알 수 없다.
  * `GET /me/clover`는 잔액·확인여부·출석가능만 주고 무료분 소진은 429가 와야 안다 — 미확인인
@@ -17,7 +17,7 @@ export function isCloverSpendConfirmRequired(error: unknown): boolean {
   return getRateLimitDetail(error)?.code === "CLOVER_CONFIRM_REQUIRED";
 }
 
-/** 확인 요청의 결과(S12 C-3).
+/** 확인 요청의 결과.
  *
  * - `retry` — 동의가 서버에 기록됐다. 호출부는 같은 요청을 한 번 더 보낸다.
  * - `declined` — 사용자가 스스로 그만뒀다. 🔴 **아무것도 실패하지 않았으므로 오류 문구를 쓰면

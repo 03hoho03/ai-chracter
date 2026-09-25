@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildJsonLd, escapeHtml, injectHead } from "./html";
 
-/** apps/web/index.html의 head 구조를 최소로 옮긴 픽스처(US-009 이후 형태). */
+/** apps/web/index.html의 head 구조를 최소로 옮긴 픽스처. */
 const INDEX_HTML = `<!doctype html>
 <html lang="ko">
   <head>

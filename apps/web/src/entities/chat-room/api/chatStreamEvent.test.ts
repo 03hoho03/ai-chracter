@@ -67,7 +67,7 @@ describe("chatStreamEventSchema", () => {
     };
     const parsed = chatStreamEventSchema.safeParse(withoutImage);
     expect(parsed.success).toBe(true);
-    // 입력의 null은 통과시키되 출력은 undefined로 정규화한다(fe-typescript TS-08) — 재조회 경로
+    // 입력의 null은 통과시키되 출력은 undefined로 정규화한다 — 재조회 경로
     // `toChatMessage`의 `?? undefined`와 같은 모양이라 SSE/GET 메시지가 갈리지 않는다.
     if (parsed.success && parsed.data.type === "done") {
       expect(parsed.data.finalMessage.imageId).toBeUndefined();

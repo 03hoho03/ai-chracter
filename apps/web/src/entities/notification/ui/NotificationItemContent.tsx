@@ -14,8 +14,8 @@ const REASON_CATEGORY_LABELS: Record<string, string> = {
   other: "기타",
 };
 
-/** techspec.md §1-2 — 이용제한/삭제 조치 통지(moderation-action, US-055)에 계정 경고(user-warned)·
- * 계정 정지(user-suspended)·공지(notice, T-11b)·문의 답변(inquiry-reply, T-17)이 더해져 `type`이
+/** 이용제한/삭제 조치 통지(moderation-action)에 계정 경고(user-warned)·
+ * 계정 정지(user-suspended)·공지(notice)·문의 답변(inquiry-reply)이 더해져 `type`이
  * 다섯이 됐다. type별로 제목 문구만 가르는 최소 구현이고, 모르는 type은 이용제한 문구로
  * 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
 const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {

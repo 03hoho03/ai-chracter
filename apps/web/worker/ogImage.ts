@@ -27,7 +27,7 @@ const CACHE_MAX_AGE_SECONDS = 86400;
  */
 const FALLBACK_MAX_AGE_SECONDS = 60;
 
-/** US-001의 브랜드 기본 이미지. 썸네일이 없는 콘텐츠의 미리보기가 여기로 떨어진다. */
+/** 브랜드 기본 이미지. 썸네일이 없는 콘텐츠의 미리보기가 여기로 떨어진다. */
 const DEFAULT_IMAGE_PATH = "/og-default.png";
 
 export type OgImageTarget = {

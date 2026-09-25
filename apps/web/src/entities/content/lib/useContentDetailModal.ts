@@ -5,7 +5,7 @@ import { contentDetailModalAtom } from "../model/atoms";
 import type { ContentType } from "../model/content";
 
 /**
- * techspec-content-detail.md §1 — 카드 클릭 시 페이지 전환 없이 모달로 여는 훅. `open()`은
+ * 카드 클릭 시 페이지 전환 없이 모달로 여는 훅. `open()`은
  * URL만 `pushState`로 갱신(실제 라우터 네비게이션 아님)하고, `close()`는 `history.back()`으로
  * 그 엔트리를 되돌린다. 브라우저 뒤로가기(popstate)로 닫힌 경우엔 모달 상태만 지우고 라우터
  * 네비게이션은 일으키지 않는다(직접 진입 시에만 `routes/content.$type.$id.tsx`가 매치된다).

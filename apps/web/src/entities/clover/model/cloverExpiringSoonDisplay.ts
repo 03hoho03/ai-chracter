@@ -1,9 +1,9 @@
-/** clover-page-goal-prompt.md CE-22 — 허브 페이지의 만료 임박 안내 문구.
+/** 허브 페이지의 만료 임박 안내 문구.
  *
  * BE(`GET /me/clover`의 `expiringSoon`)가 이미 3일 임박 게이트와 "이미 만료된 로트 제외" 필터를
  * 걸어서 보낸다 — 이 함수는 그 값을 **다시 판정하지 않고** D-day 문구로만 바꾼다.
  *
- * 용어 "소멸"은 확정값이다(tasks/clover-page-progress.md U-3). "N일 뒤 소멸" 패턴을 그대로 쓴다.
+ * 용어 "소멸"은 확정값이다. "N일 뒤 소멸" 패턴을 그대로 쓴다.
  *
  * 일 수는 24시간 단위로 내림한다(`Math.floor`) — BE의 3일 임계값 자체도 달력 날짜가 아니라
  * `timedelta(days=3)` 원시 기간 산술이라(clover/router.py `EXPIRING_SOON_THRESHOLD`), 표시도

@@ -28,7 +28,7 @@ describe("toGridColumns", () => {
     expect(toGridColumns("square")).toBe("grid-cols-2 sm:grid-cols-3 md:grid-cols-4");
   });
 
-  it("portrait은 390px부터 3열이다 — 카드 껍데기가 걷혀 작가명 공간 부족 근거가 사라졌다(D-5 갱신)", () => {
+  it("portrait은 390px부터 3열이다 — 카드 껍데기가 걷혀 작가명 공간 부족 근거가 사라졌다", () => {
     expect(toGridColumns("portrait")).toBe("grid-cols-3 sm:grid-cols-4 md:grid-cols-5");
   });
 
