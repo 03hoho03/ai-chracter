@@ -34,8 +34,9 @@ import { isTheme, themeAtom } from "@/shared/model/theme";
  */
 export function MyPagePage() {
   return (
-    // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md Components 절은 폼 화면을 `max-w-2xl`로
-    // 적어 뒀지만 그 폭을 정당화하던 건 초안 그리드였고, 그 그리드가 `/my`로 옮겨 가면서 근거가 사라졌다.
+    // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md Layout containers는 폼 화면을 `max-w-2xl`로,
+    // 설정(`/mypage`)은 따로 `max-w-md`로 적어 뒀다. 이 화면이 `max-w-2xl`이던 근거는 초안 그리드였고, 그 그리드가
+    // `/my`로 옮겨 가면서 근거가 사라졌다.
     //
     // **폭의 근거는 컨트롤이 아니라 텍스트다.** 한때 이 자리에 "가장 넓은 컨트롤보다 288px 넓다",
     // "448px이면 인풋이 콘텐츠 박스를 채워 표류가 0이 된다"고 적어 뒀는데 **둘 다 두 폭을 구별하지

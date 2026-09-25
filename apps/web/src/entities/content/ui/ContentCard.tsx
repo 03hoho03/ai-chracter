@@ -181,7 +181,7 @@ export function ContentCard({
           `rounded-xl`·`border`·`overflow-hidden`을 웰이 직접 갖는다 — 네 모서리 모두 둥글어야 해서
           더는 부모의 클립에 기대지 않는다. 테두리는 `border-border`가 아니라 `border-foreground/10`이다
           — 불투명 무채색 보더(다크 oklch 0.300)를 이미지 위에 얹으면 밝은 이미지에선 거의 안 보이고
-          어두운 이미지에서만 보여 이미지마다 테두리 유무가 갈린다. `foreground/10`은 `DESIGN.md` Elevation 절의
+          어두운 이미지에서만 보여 이미지마다 테두리 유무가 갈린다. `foreground/10`은 `DESIGN.md` §Elevation의
           기존 어휘(떠 있는 팝오버의 `ring-1 ring-foreground/10`, The Ring-Not-Shadow Rule)를 재사용한다. */}
       <div
         className={cn(

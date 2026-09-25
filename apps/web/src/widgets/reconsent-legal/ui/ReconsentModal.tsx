@@ -27,7 +27,8 @@ import { WithdrawAccountDialog } from "@/features/withdraw-account";
 
 /** 이 모달은 닫을 수 없다. "나중에"(이전 주석이 출처를 댈 수 없는
  * "확정 결정"을 근거로 두던 것)를 없애고, X 버튼(`showCloseButton={false}`)·ESC·바깥 클릭을 전부 막는다.
- * 그 결정의 원문은 저장소 전수 조사로도 추적 불가능해 새 근거로 대체한다. 출구는 동의 또는
+ * "나중에"는 "계속 이용하려면 동의하라"는 문구와 달리 실제로는 계속 이용하게 둬 동작과 어긋났고,
+ * 국외이전 동의는 법정 요건이라 미룰 수 없다. 출구는 동의 또는
  * 탈퇴 둘뿐이라 `isDismissed`/`handleOpenChange`(`onOpenChange(false)` 경로) 자체가
  * 사라진다 — 열림 여부는 세션의 재동의 플래그로만 정해진다. */
 export function ReconsentModal() {

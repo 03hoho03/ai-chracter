@@ -132,7 +132,7 @@ function getBlockedReasonCopy(reason: BlockedReason): string {
 }
 
 // `input_error`는 `blockedReason`과 달리 사용자가 프롬프트를
-// 고치면 통과할 수 있는 결정적 실패라 구체적으로 알려준다. `syntax`는 결정적이므로(계약 4-1: 문법을
+// 고치면 통과할 수 있는 결정적 실패라 구체적으로 알려준다. `syntax`는 결정적이므로(문법을
 // 고쳐야 통과한다) "다시 시도해주세요"를 붙이지 않는다 — 재시도를 암시하면 거짓 안내가 된다.
 function getInputErrorCopy(inputError: InputError): string {
   switch (inputError) {
