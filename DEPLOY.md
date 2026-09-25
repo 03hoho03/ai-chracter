@@ -119,11 +119,11 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**32개 키다**: 앱 런타임 26개(아래 표에서 생략 가능한 `GEMINI_MODEL_NAME`·`LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 5개 제외 — 이 중
-`SENTRY_DSN`·`SENTRY_ENVIRONMENT` 2개는 아래 표가 아니라 §3-5에 있다) + compose용 6개(`API_IMAGE`·
-`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`·`INGEST_SHARED_SECRET` — 마지막
-값도 §3-5 참고). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
+**39개 키다**(2026-09-25 VM 실측, 키 이름만 셈): 아래 표 25개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 4개 제외) + compose용
+5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + §3-5의 6개
+(`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
+(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 §3-4, `HEALTHCHECKS_RESOURCE_PING_URL`은 §3-7). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -135,7 +135,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `SESSION_COOKIE_SECURE` | `true` | HTTPS 필수 |
 | `SESSION_COOKIE_SAMESITE` | `lax` | FE·BE가 같은 등록가능 도메인이라 가능 |
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
-| `GEMINI_MODEL_NAME` | 기본 `gemini-2.5-flash` | 보통 생략 |
+| `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시(`chat-rollout-goal-prompt.md RO-12`). 되돌리려면 이 한 줄만 지우고 `up -d --wait api` — `.env` 백업을 통째로 복원하지 말 것(자동배포가 같은 파일의 `API_IMAGE`를 고친다) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | §1-3 |
 | `WITHDRAWN_EMAIL_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 탈퇴 재가입 차단용 HMAC 키(`legal-revision-goal-prompt.md LR-8`). **한번 정하면 바꾸지 말 것** — 바뀌면 과거에 적립한 해시와 새 조회의 해시가 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스가 된다. 에러가 나지 않아 알아채기 어렵다) |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. §5 |
@@ -152,7 +152,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `EMAIL_PROVIDER` | `resend` | 미설정 시 `console`(발송 안 함). `email-goal-prompt.md E-3` |
 | `RESEND_API_KEY` | `re_...` | Resend API 키. `E-1` |
 | `EMAIL_FROM` | `noreply@ddona.site` | `ddona.site` 도메인이 Resend에서 검증돼야 한다. `E-4` |
-| `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. **api 컨테이너가 호스트에 포트를 게시하지 않는 것은 이 위협을 막지 못한다** — 포트 미게시가 막는 것은 "uvicorn에 직접 TCP로 붙어 peer 주소를 위장하는" 쪽이고, `*`가 여는 것은 "평범한 사용자로서 Caddy를 통과하는 정상 HTTPS 요청에 `X-Forwarded-For: 1.2.3.4` 한 줄을 얹는" 쪽이라 api 컨테이너에 직접 닿을 필요가 없다(`Caddyfile`은 `reverse_proxy api:8000` 한 줄뿐이고 `trusted_proxies`도 `header_up X-Forwarded-For` 덮어쓰기도 없어 클라이언트가 보낸 체인이 보존된 채 실제 IP가 뒤에 붙는다). 실측 반증: 대역 설정 상태에서 `X-Forwarded-For: 1.2.3.4`를 얹어 보냈지만 로그에는 실제 공인 IP가 찍혔다 — `*`였다면 `1.2.3.4`가 찍혔을 것이다(`tasks/email-progress.md` S5-3a, 2026-09-12). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다). `E-6a` |
+| `FORWARDED_ALLOW_IPS` | `172.18.0.0/16` | **uvicorn이 직접 읽는 env**(pydantic 설정 아님). ⚠️ **`*`를 쓰지 말 것** — uvicorn `proxy_headers.py`는 `*`(always_trust)일 때 `X-Forwarded-For` 체인의 **맨 앞** 값을 그대로 쓰는데, Caddy는 실제 IP를 **뒤에 덧붙이므로** 클라이언트가 보낸 위조 헤더가 채택된다(IP rate limit을 헤더 한 줄로 우회 가능). 대역을 주면 체인을 **역순**으로 훑어 신뢰 대역 밖 첫 값(=Caddy가 붙인 진짜 IP)을 고른다. 값은 `ddona_default`의 실측 subnet이며, 단일 IP 대신 대역인 이유는 컨테이너 재생성 시 도커가 IP를 재배정하기 때문이다. 실측: 프로덕션 uvicorn 액세스 로그의 클라이언트 IP가 `127.0.0.1`(헬스체크)과 `172.18.0.3`(`ddona-caddy-1` 컨테이너) 둘뿐이었다 — 실사용자 전원이 한 IP로 보인다. 원인은 uvicorn이 `forwarded_allow_ips` 미지정 시 `127.0.0.1`로 떨어뜨려 도커 브리지의 Caddy가 보낸 `X-Forwarded-For`를 신뢰하지 않는 것이다. 이게 없으면 IP 기반 rate limit이 전 사용자 공유 버킷이 된다. **api 컨테이너가 호스트에 포트를 게시하지 않는 것은 이 위협을 막지 못한다** — 포트 미게시가 막는 것은 "uvicorn에 직접 TCP로 붙어 peer 주소를 위장하는" 쪽이고, `*`가 여는 것은 "평범한 사용자로서 Caddy를 통과하는 정상 HTTPS 요청에 `X-Forwarded-For: 1.2.3.4` 한 줄을 얹는" 쪽이라 api 컨테이너에 직접 닿을 필요가 없다(`Caddyfile`의 api 라우트는 `reverse_proxy api:8000` 한 줄뿐이고(`/_ingest/*`만 `handle_path`로 bugsink에 따로 간다) `trusted_proxies`도 `header_up X-Forwarded-For` 덮어쓰기도 없어 클라이언트가 보낸 체인이 보존된 채 실제 IP가 뒤에 붙는다). 실측 반증: 대역 설정 상태에서 `X-Forwarded-For: 1.2.3.4`를 얹어 보냈지만 로그에는 실제 공인 IP가 찍혔다 — `*`였다면 `1.2.3.4`가 찍혔을 것이다(`tasks/email-progress.md` S5-3a, 2026-09-12). 부수효과: `guardian_consents.ip_address`도 이때부터 진짜 IP가 된다(기존 저장값은 전부 프록시 IP다). `E-6a` |
 
 > **`CORS_ALLOW_ORIGINS` 함정**: pydantic-settings는 `list[str]` 필드를 env에서 **JSON으로 파싱**한다.
 > 반드시 `["https://a","https://b"]` 형태로 넣을 것(콤마 구분 평문 아님).
@@ -351,14 +351,14 @@ cd /opt/ddona/app && $C up -d --wait api
 R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
 (`--endpoint-url`은 `S3_ENDPOINT_URL`).
 
-**최초 1회 — `/opt/ddona/backup.sh` 심볼릭 링크 전환**(`ops/bugsink-vacuum.sh`·`ops/logrotate.d`와
+**`/opt/ddona/backup.sh` 심볼릭 링크 — 전환 완료(2026-09-25 VM 확인), 재구축 시 1회**(`ops/bugsink-vacuum.sh`·`ops/logrotate.d`와
 같은 이유: `/opt/ddona/app`은 배포마다 `git reset --hard`되므로 링크만 걸어두면 이후 갱신이 자동이다).
 
 2026-09-16까지 `/opt/ddona/backup.sh`는 **저장소에 없는 VM 로컬 파일**(9/2자)이었다. 그래서 이 런에서
 `.env`에 추가한 `HEALTHCHECKS_BACKUP_PING_URL`·`DISCORD_WEBHOOK_URL`을 `backup_db.py`에 넘기지 못했고,
 **백업은 매일 성공하는데 `MT-11` dead-man's switch와 `MT-12` R2 용량 경고만 조용히 죽어 있었다** —
 알림 키가 없으면 `ping()`/`notify()`가 예외 없이 건너뛰도록 설계돼 있어(백업을 죽이지 않으려고)
-증상이 전혀 없었고, 실측 전까지 아무도 몰랐다. `ops/backup.sh`가 저장소에 생겼으니 링크로 바꾼다.
+증상이 전혀 없었고, 실측 전까지 아무도 몰랐다. 그래서 `ops/backup.sh`를 저장소에 올리고 링크로 바꿨다.
 
 ```sh
 sudo ln -sf /opt/ddona/app/ops/backup.sh /opt/ddona/backup.sh
@@ -369,10 +369,10 @@ sudo /opt/ddona/backup.sh     # 수동 1회 — healthchecks.io 대시보드에 
 ⚠️ `/etc/cron.d/ddona-backup`은 아직 `ops/cron.d/`에 없는 VM 로컬 파일이다(같은 드리프트). 크론은
 `/opt/ddona/backup.sh`를 부르므로 위 링크만으로 동작하지만, 재구축 시에는 이 파일도 손으로 만들어야 한다.
 
-**최초 1회 — `/opt/ddona/scripts` 심볼릭 링크 설치**(monitoring-techspec.md MT-9). 지금
-`/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**이고, 배포(`deploy-api.yml`)는
+**`/opt/ddona/scripts` 심볼릭 링크 — 설치 완료(2026-09-25 VM 확인), 재구축 시 1회**(monitoring-techspec.md MT-9).
+전환 전 `/opt/ddona/scripts`는 심볼릭 링크가 아니라 **실제 디렉터리**였고, 배포(`deploy-api.yml`)는
 `/opt/ddona/app`만 `git reset --hard`하므로 이 디렉터리는 배포 때마다 갱신되지 않고 그대로
-남는다 — 실측(2026-09-15) `backup_db.py`가 크론 사본 8,139B(9/2 판) vs 저장소 12,230B(9/15)로
+남았다 — 실측(2026-09-15) `backup_db.py`가 크론 사본 8,139B(9/2 판) vs 저장소 12,230B(9/15)로
 md5가 다르다. 이 드리프트 때문에 `delete_expired_withdrawn_emails`(LR-32, 처리방침 제4조 2항·
 약관 제14조 4항의 파기 의무)가 9/15에 저장소에 들어간 뒤로 **프로덕션 크론에서 한 번도 실행되지
 않았다**(크론 사본 0건 vs 저장소 2건, `/var/log/ddona-backup.log`에 파기 기록 0건). 다만
@@ -418,10 +418,10 @@ Discord 웹훅(`ops/notify.py`)·healthchecks.io check-in·R2 용량 임계 알�
 | `HEALTHCHECKS_BACKUP_PING_URL` | healthchecks.io에서 발급한 체크의 ping URL(예: `https://hc-ping.com/<uuid>`) | `main()` 진입부(`/start`)·성공 직전(접미사 없음)·`__main__`의 실패 처리(`/fail`) 세 지점에서 접미사만 바꿔 호출한다(healthchecks.io 관례). 없으면 조용히 건너뛴다 |
 | `R2_CAPACITY_THRESHOLD_BYTES` | 기본 `10737418240`(10GiB, R2 무료 한도) | prune 직후 버킷 전체 용량(`aws s3 ls --recursive --summarize`)이 이 값 이상이면 Discord로만 알린다. 값이 숫자가 아니면 `RuntimeError`로 갈아 끼워 백업 크론의 `except (RuntimeError, KeyError)`가 잡는다(그냥 `ValueError`로 두면 그 가드 밖으로 새 나가 실패 ping도 못 보낸다) |
 
-**`backup.sh`(VM 실측, 저장소 밖 호스트 파일)를 함께 고쳐야 한다** — 지금은 백업에 필요한 키만
-뽑아 export하므로, 위 두 키(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`)를 `export` 목록에
-추가하지 않으면 `/opt/ddona/.env`에 값이 있어도 크론 프로세스에는 전달되지 않는다(`.env`를 통째로
-source하지 않는 이유는 `backup.sh` 주석 참고 — JSON 값이 쉘 문법과 부딪친다).
+**`ops/backup.sh`의 `export` 목록에 위 두 키(`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`)가
+들어 있어야 한다** — 백업에 필요한 키만 뽑아 export하므로, 목록에서 빠지면 `/opt/ddona/.env`에 값이
+있어도 크론 프로세스에는 전달되지 않는다(`.env`를 통째로 source하지 않는 이유는 `backup.sh` 주석
+참고 — JSON 값이 쉘 문법과 부딪친다).
 
 ⚠️ **`__main__`의 `except (RuntimeError, KeyError)` 밖의 예외(예: docker 미기동으로 인한
 `FileNotFoundError`)는 실패 ping이 나가지 않는다.** 의도적으로 넓히지 않았다 — 이 가드는 원래
@@ -449,7 +449,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 ```
 
 **`/opt/ddona/.env`에 추가해야 하는 값**(이 중 `INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`
-3개는 §2-1의 32개 키 카운트에 포함되지만, 값·근거의 유일한 소스는 이 절이다 — §2-1 표에는 행을
+3개는 §2-1의 39개 키 카운트에 포함되지만, 값·근거의 유일한 소스는 이 절이다 — §2-1 표에는 행을
 따로 만들지 않는다):
 
 | 변수 | 값 | 비고 |
@@ -476,7 +476,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
    `docker-compose.monitoring.yml`의 `ALLOWED_HOSTS`에 `bugsink`가 들어 있어야 한다 — 빠지면
    `bugsink:8000`으로 보낸 요청의 `Host: bugsink` 헤더가 Django `ALLOWED_HOSTS` 검증에서 막혀
    HTTP 400이 나고, sentry-sdk는 이 실패를 조용히 삼킨다(같은 파일 주석 참조).
-   2단계의 공개 DSN(`ddona.site` 경유)은 **web SDK(`MT-7`, 아직 미구현)용**이고 Cloudflare Pages
+   2단계의 공개 DSN(`ddona.site` 경유)은 **web SDK(`MT-7`, `apps/web/src/app/sentry.ts`)용**이고 Cloudflare Pages
    빌드 환경변수(`VITE_SENTRY_DSN`, 아래)에 들어간다.
 
    **실제 envelope 경로가 무엇인지 확인한 근거**(사용하는 sentry-sdk가 DSN에서 URL을 어떻게
@@ -489,8 +489,8 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
    실제 요청을 보내 5종 시나리오(시크릿 정상/누락/오답, 관리자 UI, `/_ingest` 밖 경로)로 확인했다
    (`Caddyfile` 주석 참조).
 
-**Cloudflare Pages 빌드 환경변수**(web 프로젝트, §2-2와 같은 자리 — `MT-7` 구현 시 필요, 지금은 web SDK가
-없어 당장 값을 채울 필요는 없지만 자리를 여기 남긴다):
+**Cloudflare Pages 빌드 환경변수**(web 프로젝트, §2-2와 같은 자리 — `MT-7` web SDK용. 없으면
+`initSentry()`가 `init`을 부르지 않는다):
 
 | 변수 | 값 |
 |---|---|
@@ -659,7 +659,7 @@ sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-resource-check /etc/cron.d/ddona-res
 `ops/resource-check.sh`는 `/opt/ddona/.env`를 통째로 source하지 않고 필요한 두 키
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_RESOURCE_PING_URL`)만 뽑아 export한 뒤
 `PYTHONPATH=/opt/ddona/scripts /usr/bin/python3 -m ops.check_resources`를 부른다 — `backup.sh`와
-같은 이유(JSON 값이 쉘 문법과 부딪친다)이고, 이 wrapper는 (`backup.sh`와 달리) 저장소에 있어
+같은 이유(JSON 값이 쉘 문법과 부딪친다)이고, 이 wrapper도 (`backup.sh`처럼) 저장소에 있어
 드리프트가 생기지 않는다.
 
 **검증**(사용 중인 `/etc/cron.d` 문법·심볼릭 링크 처리가 `logrotate.d`와 다를 수 있다 — techspec
@@ -797,12 +797,14 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 서버는 모듈 수준 `asyncio.Semaphore(1)`로 GPU 호출을 직렬화하고(프로덕션이 uvicorn 단일 프로세스라 이
 정도로 충분하다 — §0-2), 별도 카운터(`LOCAL_IMAGE_QUEUE_LIMIT`, 기본 4)로 대기열 깊이를 제한해 초과
 요청은 잡을 만들지 않고 즉시 429로 거절한다. **여기에 유저별 상한이 겹친다**(`core/rate_limit_gate.py`) —
-유저별 큐 1칸(같은 사람의 두 번째 동시 요청은 `QUEUE_FULL`)과 토큰 버킷(용량 10장·시간당 1장 충전, 초과는
-`USER_LIMIT`)이고, 세 거절 모두 `{"detail": {"code", "retryAfterSeconds", "window"}}` 한 모양이라 `code`로만
-갈린다. 예외 계정(`users.rate_limit_exempt`)은 **토큰 버킷만** 면제되고 큐 두 개는 그대로 받는다. 같은 모듈이
-채팅 4경로에도 429를 낸다(분당 10·일일 30, `window`가 `minute`/`day`) — 서버 로그의 `user_limit_exceeded`는
+유저별 큐 1칸(같은 사람의 두 번째 동시 요청은 `QUEUE_FULL`)과 토큰 버킷(용량 10장·시간당 1장 충전, 초과분은
+클로버로 차감하고 잔액 부족이면 `CLOVER_REQUIRED`, 그날 차감 동의 전이면 `CLOVER_CONFIRM_REQUIRED`)이고, 거절은
+모두 `{"detail": {"code", "retryAfterSeconds", "window"}}` 한 모양이라 `code`로만 갈린다. 예외 계정
+(`users.rate_limit_exempt`)은 **토큰 버킷만** 면제되고 큐 두 개는 그대로 받는다. 같은 모듈이 채팅 4경로에도
+429를 낸다(분당 10은 `USER_LIMIT`·`window` `minute`, 일일 30 초과분은 클로버 차감으로 넘어가 부족·미동의면
+`CLOVER_REQUIRED`/`CLOVER_CONFIRM_REQUIRED`·`window` `clover`) — 서버 로그의 `user_limit_exceeded`는
 이미지·채팅 공용이라 `code`/`window`로 가른다. auth 발송 상한의 429(`core/rate_limit.py`, 가입·재발송·
-비밀번호 재설정)는 `retryAfterSeconds`만 담는 다른 모양이다. 생성 전에는 `GET /capabilities`를 TTL 캐시
+비밀번호 재설정)도 같은 모양이다(`window` `auth`, `auth/router.py`의 `_auth_too_many_requests`). 생성 전에는 `GET /capabilities`를 TTL 캐시
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 
