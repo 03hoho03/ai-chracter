@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# VM 로컬 Postgres 를 덤프해 R2 에 올린다. `ops/cron.d/ddona-backup` 이 매일 18:00 UTC 에 부른다.
+# VM 로컬 Postgres 를 덤프해 R2 에 올린다. VM 의 `/etc/cron.d/ddona-backup`(저장소 밖 로컬 파일)이 매일 18:00 UTC 에 부른다.
 #
 # `.env` 를 통째로 source 하지 않는다 — `CORS_ALLOW_ORIGINS` 값이 `["https://a","https://b"]` 라
 # 쉘 문법과 부딪친다(`resource-check.sh`·`bugsink-vacuum.sh` 도 같은 이유로 같은 방식이다).

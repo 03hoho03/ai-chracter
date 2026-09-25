@@ -1,13 +1,13 @@
 # apps/api
 
-FastAPI + SQLAlchemy 2.0(async) + Alembic 백엔드. `uv`로 관리되는 독립 Python 프로젝트이며 pnpm workspace 범위 밖에 있다 (`techspec-overview-backend.md` §2).
+FastAPI + SQLAlchemy 2.0(async) + Alembic 백엔드. `uv`로 관리되는 독립 Python 프로젝트이며 pnpm workspace 범위 밖에 있다.
 
 ## 개발
 
 ```sh
 uv sync                                    # 의존성 설치
 cp .env.example .env                       # 로컬 DATABASE_URL 설정
-uv run uvicorn api.main:app --reload       # 개발 서버 (http://localhost:8000)
+uv run --env-file .env uvicorn api.main:app --reload  # 개발 서버 (http://localhost:8000) — --env-file 없으면 boto3 자격증명이 없어 500 (DEV.md)
 uv run mypy src migrations scripts tests   # 타입체크
 uv run alembic revision --autogenerate -m "..."  # 마이그레이션 생성
 uv run alembic upgrade head                # 마이그레이션 적용
@@ -16,7 +16,7 @@ uv run python scripts/export_openapi.py    # openapi.json export (FE 코드젠 �
 
 ## FE 타입 코드젠
 
-`apps/api`의 OpenAPI 스펙을 `packages/api-types`의 TypeScript 타입으로 코드젠한다 (`techspec-overview-backend.md` §3).
+`apps/api`의 OpenAPI 스펙을 `packages/api-types`의 TypeScript 타입으로 코드젠한다.
 
 ```sh
 uv run python scripts/export_openapi.py   # apps/api/openapi.json 갱신
