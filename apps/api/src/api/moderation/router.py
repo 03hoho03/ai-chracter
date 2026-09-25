@@ -147,7 +147,7 @@ async def create_appeal(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AppealResponse:
-    """techspec-backend-admin-moderation.md §1/§3. `target_kind='publish-rejection'`일 때
+    """`target_kind='publish-rejection'`일 때
     `target_id`는 별도 발행거부 이력 엔티티 없이 대상 contentId 그대로다."""
     appeal = Appeal(
         user_id=user_id,
@@ -178,7 +178,7 @@ async def _admin_report_list_items(
 ) -> list[AdminReportListItem]:
     """Bulk-fetches each report's target content name, split by type (character/story
     details live in separate tables) — same query+dict-matching shape as `list_my_drafts`
-    (content/router.py, US-025) rather than a per-row correlated query."""
+    (content/router.py) rather than a per-row correlated query."""
     contents = {
         content.id: content
         for content in (
@@ -243,8 +243,7 @@ async def list_admin_reports(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminReportListResponse:
-    """techspec-backend-admin-moderation.md §1, techspec-admin.md §1 — traditional
-    (offset) pagination, unlike the cursor pagination `GET /contents` uses, since
+    """Traditional (offset) pagination, unlike the cursor pagination `GET /contents` uses, since
     admin review work benefits from jumping to a specific page number."""
     filters = [Report.status == status_filter] if status_filter is not None else []
 
@@ -316,7 +315,7 @@ async def get_admin_report_detail(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminReportDetailResponse:
-    """techspec-backend-admin-moderation.md §1. `reports.content_id` is a plain FK to an
+    """`reports.content_id` is a plain FK to an
     existing `contents` row (rows are never hard-deleted, only moderation_status-flagged),
     so the target content is always found."""
     report = await db.get(Report, report_id)
@@ -339,11 +338,11 @@ async def get_admin_report_detail(
 
 
 async def upgrade_content_chat_rooms_to_latest_version(db: AsyncSession, content: Content) -> None:
-    """techspec-content-versioning.md §4. Sync bulk-migrates every chat room referencing
+    """Sync bulk-migrates every chat room referencing
     this content to its latest published version, flipping `version_auto_upgraded` so the
     FE can show the upgrade banner (`chat/router.py`'s `acknowledge-version-upgrade`
     consumes that flag) — all within the caller's own transaction, no background job.
-    Exported (not prefixed `_`) since `POST /admin/appeals/{id}/resolve` (US-123) reuses
+    Exported (not prefixed `_`) since `POST /admin/appeals/{id}/resolve` reuses
     this exact path for `verdict='accepted'` on a `target_kind='moderation-action'` appeal."""
     if content.current_published_version_id is None:
         return
@@ -361,7 +360,7 @@ async def act_on_report(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminReportDetailResponse:
-    """techspec-backend-admin-moderation.md §2."""
+    """Resolve a report with a moderation action."""
     report = await db.get(Report, report_id)
     if report is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
@@ -407,7 +406,7 @@ async def act_on_report(
     report.resolved_by_admin_id = admin_id
     report.resolved_at = datetime.now(UTC)
 
-    # backlog-l-goal-prompt.md BL-4: 직접 조치(`admin/contents.py`)와 같은 감사 로그. 대상은
+    # 직접 조치(`admin/contents.py`)와 같은 감사 로그. 대상은
     # 작품만 — 유저 상세는 `target_content_id`의 작품 소유로 크리에이터 이력에 이 행을 건다.
     await record_admin_action(
         db,
@@ -451,9 +450,9 @@ async def list_admin_appeals(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminAppealListResponse:
-    """techspec-backend-admin-moderation.md §1/§3. No separate detail endpoint — unlike
+    """No separate detail endpoint — unlike
     reports, an appeal's full reason text lives on the same row, so the list item already
-    carries everything the review screen needs (techspec-admin.md §2 only defines
+    carries everything the review screen needs (the admin app only has
     useAppealListQuery/useResolveAppealMutation, no detail query)."""
     filters = [Appeal.status == status_filter] if status_filter is not None else []
 
@@ -486,7 +485,7 @@ async def resolve_appeal(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminAppealListItem:
-    """techspec-backend-admin-moderation.md §3. `accepted` on a `moderation-action` appeal
+    """`accepted` on a `moderation-action` appeal
     reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
     that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
     persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
@@ -511,7 +510,7 @@ async def resolve_appeal(
         content.moderation_status = ModerationStatus.NORMAL
         await upgrade_content_chat_rooms_to_latest_version(db, content)
 
-        # backlog-l-goal-prompt.md BL-11: 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만
+        # 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만
         # 남긴다(발행 반려 수용·기각은 바뀌는 상태가 없다). `moderation_actions` 행은 추가하지 않는다.
         await record_admin_action(
             db,
@@ -536,12 +535,12 @@ async def get_usage_metrics(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> UsageMetricsResponse:
-    """techspec-backend-admin-moderation.md §1, techspec-admin.md §3. '메시지 전송'은
+    """'메시지 전송'은
     사용자가 실제로 보낸 턴만 집계한다(`role == USER`) — assistant 응답은 그 결과물이라
     이중집계하지 않는다. 일/월 평균은 기간 내 활성 사용자(메시지를 보낸 chat_rooms.user_id
     distinct count) 1인당 하루 평균을 구한 뒤, 월평균은 그 값에 30(개월 근사 일수)을 곱해
-    유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(정확한
-    재검토 기준은 techspec §4가 명시한 open item이라 이 스토리 범위 밖)."""
+    유도한다 — 별도 달력월 경계 집계 없이 하나의 일관된 정의로 두 숫자를 도출한다(이
+    정의를 다시 볼 정확한 기준은 아직 정하지 않았다)."""
     if to_date < from_date:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="to must not be before from"

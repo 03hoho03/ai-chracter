@@ -94,7 +94,7 @@ async def list_admin_contents(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminContentListResponse:
-    """techspec.md §4-2, goal-prompt.md 2단계. `q`는 작품 이름 ILIKE 부분일치인데 이름이
+    """`q`는 작품 이름 ILIKE 부분일치인데 이름이
     `contents`가 아니라 `character_version_details`/`story_version_details`에 있어
     `current_published_version_id`로 두 테이블을 outer join한다 — 발행 버전이 없는
     (초안만 있는) 작품은 두 테이블 어디에도 안 걸려 `q` 필터가 있을 땐 자연히 빠지지만
@@ -307,16 +307,16 @@ async def act_on_content(
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminContentDetailResponse:
     """신고 없이 내리는 직접 조치. `reject`는 "신고를 반려한다"는 뜻이라, 애초에 신고가
-    없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다(goal-prompt.md 2단계).
+    없는 직접 조치에는 반려할 대상이 없다 — 400으로 거절한다.
 
     사유 요구가 조치마다 다르다: `restrict`/`delete`는 아래에서 `Notification`을
     만들고 그 통지 문구가 사유를 인용하므로 제품 결정으로 신고 사유 5종 중 하나가
     필수다(없으면 422) — 예전엔 그 `reason_category` 컬럼이 NOT NULL이라는 DB 제약을
-    근거로 들었지만(goal-prompt.md §3-1, techspec §1-2), T-11a에서 그 컬럼이 nullable로
+    근거로 들었지만, 이후 그 컬럼이 nullable로
     바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가 사라졌다. 반면
     `lift-restriction`은 `Notification`을 전혀 만들지 않으므로 신고 사유 카테고리를
     강제할 근거가 없다 — 관리자가 의미 없는 값을 고르게 될 뿐이다. 대신
-    T-10(위험 조치 확인 다이얼로그 + 사유 필수)을 만족시키는 건 `admin_comment`(자유
+    "위험 조치는 확인 다이얼로그 + 사유 필수" 요건을 만족시키는 건 `admin_comment`(자유
     텍스트, `admin_action_logs.reason_text`로 그대로 남는다) 쪽이라 이걸 필수로
     바꿨다(비어 있으면 422)."""
     if body.action == ModerationActionType.REJECT:

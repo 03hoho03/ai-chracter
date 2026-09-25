@@ -54,7 +54,7 @@ async def list_admin_notices(
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNoticeListResponse:
     """어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
-    (`moderation/router.py:216`)와 같은 모양(techspec.md §4-2). 유저용 `/notices`가
+    (`moderation/router.py:216`)와 같은 모양. 유저용 `/notices`가
     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다."""
     total_count = await db.scalar(select(func.count()).select_from(Notice)) or 0
@@ -130,7 +130,7 @@ async def publish_admin_notice(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNoticeDetailResponse:
-    """게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다(techspec.md §4-3, D-16).
+    """게시 + 알림 fan-out을 같은 트랜잭션에서 동기 실행한다.
 
     - `published`가 이미 true면 아무것도 하지 않는다 — 전이일 때만 fan-out한다.
     - `published_at`은 최초 게시에만 부여한다. 숨김 → 재게시 경로에서는 이미 값이
@@ -150,7 +150,7 @@ async def publish_admin_notice(
     - fan-out 규모 실측(dev DB, 2026-09-07): `SELECT count(*) FROM users WHERE
       deleted_at IS NULL` = 3. 이 값은 로컬 dev 환경 것이라 "동기 실행이 프로덕션
       규모에서도 감당 가능하다"는 근거로 쓸 수는 없다 — 가입자 수가 크게 늘면 이
-      가정(D-16)을 다시 실측해 재검증할 것.
+      가정(동기 fan-out)을 다시 실측해 재검증할 것.
     """
     notice = await _get_or_404(db, id)
     if notice.published:

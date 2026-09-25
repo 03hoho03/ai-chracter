@@ -109,14 +109,14 @@ async def list_my_drafts(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> DraftListResponse:
-    """한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다 (US-002).
+    """한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다.
 
     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
     단위로 `current_published_version_id IS NULL`을 함께 본다.
 
-    커서 페이징(US-001)의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
+    커서 페이징의 정렬 키는 `Content.updated_at DESC, Content.id DESC`다. 초안에는
     `published_at`이 없어 `/users/{id}/contents`의 정렬 키를 쓸 수 없고, `ContentVersion`에는
     `updated_at`이 아예 없다 — 화면에 이미 노출 중인 `DraftSummary.updated_at`과 같은 컬럼을
     그대로 키로 쓴다. `Content.updated_at`은 `onupdate`가 없어 사실상 생성 시각으로 고정이라
@@ -232,7 +232,7 @@ async def list_my_favorites(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentListResponse:
-    """techspec-backend-content.md §1.1, US-039. Without `type`, mixes character/story
+    """Without `type`, mixes character/story
     types, so details are resolved per-type like `/me/drafts` rather than joined against
     a single `_detail_model`. Excludes moderation_status=deleted content (same precedent as
     `/users/{id}/contents`'s owner "all" filter) since that's the fully-hidden equivalent of
@@ -324,8 +324,7 @@ async def list_my_favorites(
 async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
     """No presigned-GET/public-read path exists for assets yet, so a renderable
     URL is signed on demand from the stored object key each time it's needed
-    (apps/web/CLAUDE.md US-034 gap, resolved for profile images in US-035 and
-    reused here for content thumbnails)."""
+    (first done for profile images, reused here for content thumbnails)."""
     if asset_id is None:
         return None
     asset = await db.get(Asset, asset_id)
@@ -337,7 +336,7 @@ async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> st
 async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
     """Signs the `_thumb.webp` variant instead of the original — list/card slots never
     need full resolution, and every READY image asset is guaranteed to have this
-    variant (generated at creation since US-004~006, backfilled for older assets by
+    variant (generated at creation, backfilled for older assets by
     `scripts/backfill_thumbnails.py`), so the key is derived without an existence check.
     Detail views (`get_content_detail`) keep `_resolve_asset_url`."""
     if asset_id is None:
@@ -359,7 +358,7 @@ async def get_user_profile(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
-    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(S5 파기)
+    # 위 조건문이 deleted_at is not None인 계정을 이미 배제했다 — nickname은 탈퇴(파기)
     # 시에만 None이 된다.
     assert user.nickname is not None
     return UserProfileResponse(
@@ -413,7 +412,7 @@ async def list_user_contents(
     viewer_user_id: uuid.UUID | None = Depends(get_current_user_id_optional),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentSummaryListResponse:
-    """커서 페이징(US-001). 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
+    """커서 페이징. 정렬 키는 기존 `published_at DESC, id DESC` 그대로다 — 커서는 그
     두 값만 담으므로 `visibility` 등 WHERE 조건은 페이지마다 호출부가 다시 넘겨야 한다."""
     is_owner = viewer_user_id is not None and viewer_user_id == id
 
@@ -481,7 +480,7 @@ async def list_user_contents(
         detail = details.get(version.id)
         if detail is None:
             continue
-        # Published content's thumbnail is guaranteed set by publish validation (US-083);
+        # Published content's thumbnail is guaranteed set by publish validation;
         # only drafts (character.py's CharacterVersionDetail docstring) can have it unset.
         assert detail.thumbnail_asset_id is not None
         assert version.published_at is not None
@@ -521,7 +520,7 @@ async def list_genres(db: AsyncSession = Depends(get_db_session)) -> list[GenreR
     return [GenreResponse(id=genre.id, name=genre.name, sort_order=genre.sort_order) for genre in genres]
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-4
+@router.post(
     "/contents", status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_legal_consent)]
 )
 async def create_content_draft(
@@ -529,7 +528,7 @@ async def create_content_draft(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentCreateResponse:
-    """techspec-backend-content.md §1.2. The new detail row is genuinely empty (see
+    """The new detail row is genuinely empty (see
     character.py/story.py docstrings) — text columns get `""`, `thumbnail_asset_id` stays
     unset until an image is uploaded. type='story' creates no child rows (starting_setups
     etc.) yet — those are added via `PATCH /contents/{id}/draft`."""
@@ -577,7 +576,7 @@ async def _get_owned_draft_version(
     db: AsyncSession, content_id: uuid.UUID, user_id: uuid.UUID, allowed_types: tuple[ContentType, ...]
 ) -> tuple[Content, ContentVersion]:
     """404/403 gate shared by the draft read/write endpoints below (same content_version
-    existence + creator-ownership check `register_situational_image`, US-071, established
+    existence + creator-ownership check `register_situational_image` established
     for content_version_id-scoped child resources)."""
     content = await db.get(Content, content_id)
     if content is None or content.type not in allowed_types:
@@ -640,7 +639,7 @@ async def _character_draft_response(
 
 async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> list[EndingRuleListDraftItem]:
     """Mirrors `chat/router.py`'s `_ending_rule_items` — `ending_rules`(top-level) and
-    `ending_rule_groups` share one `order` sequence (techspec-db-schema.md §5), reconstructed
+    `ending_rule_groups` share one `order` sequence, reconstructed
     here as the same `kind`-discriminated tree so the draft response round-trips through
     `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/router.py` directly — same
     "duplicate the small helper, don't cross-import router files" convention as
@@ -892,7 +891,7 @@ async def _delete_starting_setup_subtree(db: AsyncSession, setup: StartingSetup)
 async def _reconcile_ending_rules(
     db: AsyncSession, ending_id: uuid.UUID, items: list[EndingRuleListDraftItem]
 ) -> None:
-    """entity_id 기준 업서트, `order`는 §1.5 규칙과 동일하게 `ending_rules`(top-level)와
+    """entity_id 기준 업서트, `order`는 `ending_rules`(top-level)와
     `ending_rule_groups`가 공유하는 하나의 시퀀스(= `items`의 배열 인덱스)."""
     existing_groups = {
         g.entity_id: g
@@ -962,7 +961,7 @@ async def _reconcile_ending_rules(
 async def _update_story_draft(
     db: AsyncSession, content: Content, version: ContentVersion, payload: StoryDraftPayload
 ) -> None:
-    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4·§5. Autosave: no
+    """Autosave: no
     business validation — every child resource is upserted by entity_id (array index ->
     `order` column where applicable), removed entity_ids are deleted (children-first, since
     these FKs have no ON DELETE CASCADE), and `keywordNotes[].startingSetupId` (entity_id) is
@@ -974,7 +973,7 @@ async def _update_story_draft(
     detail.thumbnail_asset_id = payload.thumbnail_asset_id
     detail.prompt_template = payload.prompt_template
     detail.setting_text = payload.setting_text
-    # chat-techspec.md D-13: FE는 이 필드를 더 이상 보내지 않는다 — 안 보내면 구 컬럼(롤백
+    # FE는 이 필드를 더 이상 보내지 않는다 — 안 보내면 구 컬럼(롤백
     # 안전망)을 그대로 둔다. 명시적 `null`은 여전히 지운다(model_fields_set으로 구분).
     if "development_example" in payload.model_fields_set:
         detail.development_example = payload.development_example
@@ -1126,19 +1125,19 @@ async def _update_story_draft(
 
 @router.patch(
     "/contents/{id}/draft", dependencies=[Depends(require_legal_consent)]
-)  # consent-gate-goal-prompt.md CG-4
+)
 async def update_content_draft(
     id: uuid.UUID,
     payload: CharacterDraftPayload | StoryDraftPayload,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> CharacterDraftResponse | StoryDraftResponse:
-    """techspec-backend-content.md §1.2, techspec-db-schema.md §1 원칙 1·2·4. Autosave: no
+    """Autosave: no
     business validation (publish is where that happens) — the version-detail row is
     overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
     directly rather than the per-type detail table, since they're shared across versions,
-    not per-version snapshot data (techspec-db-schema.md §3)."""
+    not per-version snapshot data."""
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
@@ -1169,7 +1168,7 @@ async def _delete_draft_children(db: AsyncSession, content_type: ContentType, ve
     flush between tiers (same reason as `_delete_ending_subtree`: these FKs have no ON
     DELETE CASCADE). `keyword_notes` go before `starting_setups` because
     `keyword_notes.starting_setup_id` is a physical FK, not an entity_id reference
-    (techspec-db-schema.md §1 원칙 4) — `_delete_starting_setup_subtree` doesn't know about
+    — `_delete_starting_setup_subtree` doesn't know about
     them since they're scoped to the version, not the setup."""
     if content_type == ContentType.CHARACTER:
         images = (
@@ -1200,7 +1199,7 @@ async def _delete_draft_children(db: AsyncSession, content_type: ContentType, ve
     await db.flush()
 
 
-@router.delete(  # consent-gate-goal-prompt.md CG-4
+@router.delete(
     "/contents/{id}/draft", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_legal_consent)]
 )
 async def delete_content_draft(
@@ -1208,13 +1207,13 @@ async def delete_content_draft(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """US-003. Deletes a never-published content outright (draft version + content row).
+    """Deletes a never-published content outright (draft version + content row).
 
-    Deletable == exactly what `GET /me/drafts` returns (US-002): `current_published_version_id
+    Deletable == exactly what `GET /me/drafts` returns: `current_published_version_id
     IS NULL`. Anything with publish history is refused with 409 — publishing auto-clones a
     fresh draft version, so a published work always has a draft row too, and throwing that
     away would delete the published work with it. Discarding *edits* to a published work is
-    `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 US-086/FR-67 정책상 없다.
+    `POST /contents/{id}/draft/reset` instead. 발행작 완전 삭제는 정책상 없다.
     """
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
@@ -1272,7 +1271,7 @@ async def _restore_draft_detail(
     draft_story.rules = published_story.rules
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-4
+@router.post(
     "/contents/{id}/draft/reset",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_legal_consent)],
@@ -1282,12 +1281,12 @@ async def reset_content_draft(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """US-004. 편집 취소 — throws away in-progress edits by rewriting the draft version with
+    """편집 취소 — throws away in-progress edits by rewriting the draft version with
     the current published version's content. The published version itself is untouched.
 
     Deliberately not a delete: publishing auto-clones a draft version, and that clone is the
     row `PATCH /contents/{id}/draft` writes to — dropping it would 404 every later edit.
-    `DELETE /contents/{id}/draft` (US-003) is the opposite case and refuses this one with 409.
+    `DELETE /contents/{id}/draft` is the opposite case and refuses this one with 409.
 
     No dirty check — resetting a draft that already matches the published version succeeds
     and simply rewrites identical rows.
@@ -1304,7 +1303,7 @@ async def reset_content_draft(
     published_version = await db.get(ContentVersion, content.current_published_version_id)
     assert published_version is not None
 
-    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다(US-002).
+    # 초안을 발행본으로 되돌리므로 미발행 편집분은 사라진다.
     content.has_unpublished_changes = False
 
     await _delete_draft_children(db, content.type, draft_version.id)
@@ -1352,19 +1351,18 @@ async def _load_publish_filter_images(
 
 @router.post(
     "/contents/{id}/publish", dependencies=[Depends(require_legal_consent)]
-)  # consent-gate-goal-prompt.md CG-4
+)
 async def publish_content(
     id: uuid.UUID,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
     llm_client: LLMClient = Depends(get_llm_client),
 ) -> ContentPublishResponse:
-    """techspec-backend-content.md §1.2/§1.3, §2, techspec-db-schema.md §3 (US-083 character,
-    US-085 story)."""
+    """Publish the draft of a character or story."""
     content, version = await _get_owned_draft_version(
         db, id, user_id, (ContentType.CHARACTER, ContentType.STORY)
     )
-    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다(US-002). 두 헬퍼는 이 함수만
+    # 발행하면 이 초안이 곧 발행본이 되므로 미발행 편집분은 0이다. 두 헬퍼는 이 함수만
     # 호출하고 각자 마지막에 commit 하므로 여기 한 곳이 캐릭터·스토리 양쪽을 덮는다 — 발행 검증이나
     # 자동 필터에서 raise 되면 commit 이 없어 플래그도 그대로 남는다.
     content.has_unpublished_changes = False
@@ -1380,10 +1378,9 @@ async def _clone_character_children(
     """Copies a character version's child rows onto another version, `entity_id` and all.
 
     Runs in both directions: publish clones draft -> the fresh draft it opens for the next
-    edit, 편집 취소(`reset_content_draft`, US-004) clones the published version -> the draft.
+    edit, 편집 취소(`reset_content_draft`) clones the published version -> the draft.
     `entity_id` must survive the copy — `character_image_exposures` joins on it, so a
-    regenerated id would silently re-blur images the reader already unlocked
-    (techspec-db-schema.md §1 원칙 4)."""
+    regenerated id would silently re-blur images the reader already unlocked."""
     images = (
         await db.scalars(
             select(SituationalImage).where(SituationalImage.content_version_id == src_version_id)
@@ -1476,7 +1473,7 @@ async def _publish_character_content(
 async def _load_story_publish_filter_images(
     db: AsyncSession, detail: StoryVersionDetail
 ) -> list[tuple[bytes, str]]:
-    """스토리는 상황별 이미지 개념이 없어(techspec-db-schema.md §5) 대표 이미지 하나만 첨부한다 —
+    """스토리는 상황별 이미지 개념이 없어 대표 이미지 하나만 첨부한다 —
     캐릭터의 `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍 형태로 반환한다."""
     if detail.thumbnail_asset_id is None:
         return []
@@ -1490,7 +1487,7 @@ async def _load_story_publish_filter_images(
 async def _clone_ending_rules(db: AsyncSession, old_ending_id: uuid.UUID, new_ending_id: uuid.UUID) -> None:
     """Publish-time deep copy of one ending's rule tree onto its freshly-cloned sibling — same
     tree shape as `_reconcile_ending_rules` but duplicates rather than upserts (a republish clone
-    always starts from an empty `new_ending_id`, techspec-db-schema.md §3)."""
+    always starts from an empty `new_ending_id`)."""
     top_rules = (
         await db.scalars(select(EndingRule).where(EndingRule.ending_id == old_ending_id))
     ).all()
@@ -1540,9 +1537,9 @@ async def _clone_story_children(
     """Copies a story version's whole child tree onto another version, `entity_id` and all.
 
     Same two directions as `_clone_character_children`: publish (draft -> next draft) and
-    편집 취소(`reset_content_draft`, US-004, published -> draft). Preserving `entity_id` is
+    편집 취소(`reset_content_draft`, published -> draft). Preserving `entity_id` is
     what keeps `chat_room_stats`/`story_ending_unlocks` joined to the right stat/ending
-    across versions (techspec-db-schema.md §1 원칙 4).
+    across versions.
 
     The one column that can't be copied as-is is `keyword_notes.starting_setup_id`: it's a
     physical FK, not an entity_id reference, so it goes through an `old -> entity_id -> new`
@@ -1734,7 +1731,7 @@ async def _publish_story_content(
     return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
 
 
-@router.patch(  # consent-gate-goal-prompt.md CG-4
+@router.patch(
     "/contents/{id}/visibility",
     status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_legal_consent)],
@@ -1745,11 +1742,11 @@ async def update_content_visibility(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """techspec-backend-content.md §1.2, US-086 (FR-67) — the only content state-change
+    """The only content state-change
     endpoint; there is no delete API. Writes `Content.visibility` directly regardless of
     draft/publish state, so the existing `Content.visibility == PUBLIC` filter already used
     by home/search/other-profile discovery queries excludes it immediately, matching
-    techspec-content-versioning.md §1's `canDiscoverPublicly`."""
+    the FE's `canDiscoverPublicly`."""
     content = await db.get(Content, id)
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
@@ -1784,9 +1781,7 @@ async def list_contents(
     cursor: str | None = None,
     db: AsyncSession = Depends(get_db_session),
 ) -> ContentListResponse:
-    """techspec-backend-content.md §1.1, techspec-home-discovery.md §1~2.
-
-    `sort=popular` prioritizes chat_count over like_count/view_count by ordering on
+    """`sort=popular` prioritizes chat_count over like_count/view_count by ordering on
     all three columns lexicographically (chat_count first) instead of a single
     weighted score, so chat_count strictly dominates ties by construction — the
     actual weighted-score formula is still a PRD-level open question for later
@@ -1900,7 +1895,7 @@ async def list_contents(
 def _resolve_access_status(
     visibility: ContentVisibility, moderation_status: ModerationStatus
 ) -> ContentAccessStatus:
-    """Mirrors techspec-content-versioning.md §1's `resolveAccessStatus` — kept as the
+    """Mirrors the FE's `resolveAccessStatus` — kept as the
     single source of truth for this rule on the BE side too."""
     if moderation_status == ModerationStatus.DELETED:
         return ContentAccessStatus(kind="deleted")
@@ -1917,7 +1912,7 @@ async def _count_view(
     Opens its own session — the request-scoped `Depends(get_db_session)` is already
     closed by the time background tasks run (same pattern as api/images/router.py).
     The increment is a relative SQL UPDATE, not read-modify-write in Python, so
-    concurrent views never lose counts (FR-8).
+    concurrent views never lose counts.
     """
     if not await try_mark_viewed(content_id, viewer_key):
         return
@@ -1938,11 +1933,9 @@ async def get_content_detail(
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContentDetailResponse:
-    """techspec-backend-content.md §1, techspec-content-versioning.md §1.
-
-    Access control is query-response-based, not a 403/404 gate here: the full detail
+    """Access control is query-response-based, not a 403/404 gate here: the full detail
     (including `accessStatus`/`isOwner`) is always returned for any existing, published
-    content, and `techspec-content-detail.md` §2's `canViewDetailPage` on the FE decides
+    content, and `canViewDetailPage` on the FE decides
     whether to render it or an "unavailable" state instead.
     """
     peek = await db.get(Content, id)
@@ -2048,7 +2041,7 @@ async def list_content_versions(
     id: uuid.UUID,
     db: AsyncSession = Depends(get_db_session),
 ) -> list[ContentVersionSummary]:
-    """techspec-backend-content.md §1, US-017 — history only, no version-switch action."""
+    """History only, no version-switch action."""
     content = await db.get(Content, id)
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
@@ -2077,8 +2070,8 @@ async def like_content(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """techspec-backend-content.md §1.1, US-039. Idempotent: a repeat like is a no-op
-    rather than a second row/double increment (techspec-content-detail.md §4 does an FE
+    """Idempotent: a repeat like is a no-op
+    rather than a second row/double increment (the FE does an
     optimistic update and never reads this response body, hence 204)."""
     content = await db.get(Content, id)
     if content is None:
@@ -2155,8 +2148,8 @@ async def report_content(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """techspec-backend-content.md §1.1, US-040. Not idempotent (unlike like/favorite):
-    each call inserts a new pending report row, matching techspec-db-schema.md §8's
+    """Not idempotent (unlike like/favorite):
+    each call inserts a new pending report row, matching the
     reports table having no unique constraint on (reporter_user_id, content_id)."""
     content = await db.get(Content, id)
     if content is None:

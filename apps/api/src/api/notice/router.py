@@ -13,10 +13,10 @@ router = APIRouter(prefix="/notices", tags=["notice"])
 
 @router.get("")
 async def list_notices(db: AsyncSession = Depends(get_db_session)) -> NoticeListResponse:
-    """공개 목록 — 인증 없음(techspec.md §4-1, D-5). `legal/router.py`의
+    """공개 목록 — 인증 없음. `legal/router.py`의
     `GET /legal/{kind}`와 같은 취급.
 
-    **페이징하지 않는다**(D-13) — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
+    **페이징하지 않는다** — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
     인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서
     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/
     :1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지

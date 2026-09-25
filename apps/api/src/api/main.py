@@ -43,7 +43,7 @@ from api.session.suspension import rebuild_suspended_user_markers
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """TS-4: DB의 `suspended_at`을 진실로 삼아 Redis 정지 마커를 기동 시 재구축한다 —
+    """DB의 `suspended_at`을 진실로 삼아 Redis 정지 마커를 기동 시 재구축한다 —
     Redis 볼륨이 날아가도(재시작 등) 정지가 조용히 풀리지 않게 하는 안전장치다. 요청을
     받기 시작하기 전에 끝나야 하므로 백그라운드 태스크가 아니라 여기서 기다린다.
 
@@ -57,11 +57,11 @@ async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
 
 
 def _init_sentry() -> None:
-    """monitoring-techspec.md MT-4: `settings.sentry_dsn`이 비어 있으면 init을 부르지
+    """`settings.sentry_dsn`이 비어 있으면 init을 부르지
     않는다 — DSN 유무 자체가 활성 플래그를 겸하므로 별도 플래그를 두지 않는다. dev·워크트리는
     `.env`에 DSN을 두지 않으므로 이 기본값 하나로 자동 비활성이다.
 
-    옵션은 반드시 `build_sentry_options()`(MT-5)를 통해서만 얻는다 — sentry-sdk의
+    옵션은 반드시 `build_sentry_options()`를 통해서만 얻는다 — sentry-sdk의
     `_processed_integrations`/`_installed_integrations`는 프로세스 전역 캐시라, 옵션을 직접
     조립해 `init()`을 부르는 경로가 하나라도 생기면 이후 호출에서 `disabled_integrations`가
     조용히 무시될 수 있다(GoogleGenAI 통합 비활성이 풀린다).
@@ -78,7 +78,7 @@ def _init_sentry() -> None:
 _init_sentry()
 
 
-# local-image-gen-goal-prompt.md LG-11: 프로덕션은 스키마 전수 노출(`/docs`·`/redoc`·
+# 프로덕션은 스키마 전수 노출(`/docs`·`/redoc`·
 # `/openapi.json`)을 닫는다. `scripts/export_openapi.py`는 `app.openapi()`를 직접 불러
 # 이 설정과 무관하게 전체 스펙을 얻으므로 codegen에는 영향이 없다.
 app = FastAPI(
@@ -143,7 +143,7 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# monitoring-techspec.md MT-15: GET·HEAD 를 `api_route(methods=[...])`로 한 라우트에
+# GET·HEAD 를 `api_route(methods=[...])`로 한 라우트에
 # 묶으면 `route.methods`가 set이라, 메서드가 2개일 때 자동 생성 operationId
 # (`list(route.methods)[0]`)가 프로세스 해시 시드에 따라 흔들려 export_openapi.py의
 # 드리프트 검사가 랜덤하게 깨진다(실측: 4회 재생성 중 ready_ready_get 1회 /
@@ -158,7 +158,7 @@ async def ready(response: Response) -> dict[str, object]:
     죽은 상태에서 200 이 나가 모니터가 조용하다**(그 갭을 GCE 이전 후 실제로 확인했다).
     UptimeRobot 의 keyword 감시로도 못 잡는다 — 응답 본문이 정상이기 때문이다.
 
-    HEAD 를 함께 허용하는 이유(`monitoring-techspec.md MT-15`): UptimeRobot 이 HEAD 로
+    HEAD 를 함께 허용하는 이유: UptimeRobot 이 HEAD 로
     찌른 뒤 405 를 받으면 GET 으로 폴백해 체크당 왕복이 두 번이 된다.
 
     하나라도 실패하면 **503** 이라 HTTP 상태만 보는 모니터도 알아챈다. 어느 쪽이 죽었는지는

@@ -40,10 +40,10 @@ router = APIRouter(tags=["admin"])
 
 ADMIN_USER_PAGE_SIZE = 20
 
-# 정지 시 restricted로 내려갈 작품의 판정 조건(D-6: 그 유저의 공개 작품 전부 비공개 —
+# 정지 시 restricted로 내려갈 작품의 판정 조건(그 유저의 공개 작품 전부 비공개 —
 # PUBLIC과 LINK 둘 다 내리고 PRIVATE만 제외한다. LINK는 링크를 아는 사람이 열람할 수
 # 있어 정지된 사용자의 콘텐츠가 계속 노출되기 때문이다). 한 번도 공개한 적 없는 PRIVATE
-# 초안까지 내리면 정지 해제 후(D-7: 자동 복구 없음) 관리자가 그 초안까지 하나씩 되돌려야
+# 초안까지 내리면 정지 해제 후(자동 복구 없음) 관리자가 그 초안까지 하나씩 되돌려야
 # 하는 부담이 생긴다. `suspend_user`의 UPDATE WHERE와 `_build_user_detail_response`의
 # `restrictable_content_count` 계산이 반드시 같은 조건을 써야 하므로(어긋나면 정지 확인
 # 다이얼로그의 예고와 실제 결과가 갈린다) 이 한 곳에만 정의해 두 곳에서 공유한다.
@@ -115,9 +115,9 @@ async def list_admin_users(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminUserListResponse:
-    """techspec.md §4-3, goal-prompt.md 3단계. 탈퇴 유저(`deleted_at IS NOT NULL`)는
-    제외한다(goal-prompt §3-5). 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
-    한 조회에 붙인다(T-8) — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
+    """탈퇴 유저(`deleted_at IS NOT NULL`)는
+    제외한다. 작품 수·채팅방 수는 `GROUP BY` 서브쿼리를 `LEFT JOIN`해
+    한 조회에 붙인다 — 행마다 COUNT를 부르지 않아, 이 엔드포인트는 COUNT 쿼리 1개 +
     본 조회 1개, 총 2개로 끝난다."""
     filters: list[ColumnElement[bool]] = [User.deleted_at.is_(None)]
     if q:
@@ -256,7 +256,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
     }
     content_names_by_id = await _content_names_by_id(db, all_content_ids)
 
-    # LR-27(legal-revision-goal-prompt.md §3-2): 유일한 호출부 get_admin_user_detail이
+    # 유일한 호출부 get_admin_user_detail이
     # deleted_at is not None인 유저를 404로 이미 배제한 뒤에만 이 함수를 부른다 — 탈퇴 유저는
     # 여기 도달하지 않으므로 nickname은 항상 채워져 있다.
     assert user.nickname is not None
@@ -339,15 +339,15 @@ async def warn_user(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """알림만 보낸다 — 이용 제한 없음(D-5). `reason_category`가 필수인 이유는 통지
+    """알림만 보낸다 — 이용 제한 없음. `reason_category`가 필수인 이유는 통지
     문구가 사유를 인용하므로 제품 결정으로 필수라는 것이다 — 예전엔 아래에서 만드는
-    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만(T-2),
-    T-11a에서 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
+    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만,
+    이후 그 컬럼이 nullable로 바뀌어(공지·문의답변엔 인용할 사유가 없다) 그 근거가
     사라졌다.
 
     **이미 정지된 유저에게도 경고를 허용한다.** 경고(알림)와 정지(접근 차단)는 서로
     다른 축이라 정지 여부가 경고를 막을 이유가 없다 — 오히려 정지 중에도 별도 사유로
-    주의를 주고 싶을 수 있다. goal-prompt/techspec 어디에도 이를 금지하는 근거가 없다."""
+    주의를 주고 싶을 수 있다. 이를 금지하는 요구사항도 없다."""
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
@@ -380,12 +380,12 @@ async def suspend_user(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminUserSuspendResponse:
-    """techspec.md §2-2의 6단계를 정확한 순서로 수행한다.
+    """아래 6단계를 정확한 순서로 수행한다.
 
     ```
     1. users.suspended_at = now()
     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
-       (visibility는 불변, T-1; PRIVATE는 제외 — D-6)
+       (visibility는 불변; PRIVATE는 제외)
     3. Notification(type='user-suspended', content_id=None, action_id=None)
     4. record_admin_action(action_type='user-suspend')
     5. db.commit()                  ← 여기까지 원자적
@@ -413,7 +413,7 @@ async def suspend_user(
 
     # 2. `_RESTRICTABLE_CONTENT_CONDITION`(NORMAL이면서 PRIVATE가 아닌 것)만 내린다.
     # 이미 restricted/deleted인 작품은 건드리지 않는다 — 안 그러면 이미 삭제 처리된
-    # 작품이 restricted로 되살아나거나(T-1과 같은 종류의 사고), 재호출마다
+    # 작품이 restricted로 되살아나거나, 재호출마다
     # restricted_content_count가 실제로 안 내려간 작품까지 센다.
     # `.rowcount`(mypy strict에서 `Result[Any]`가 노출하지 않는 속성) 대신 `.returning()`
     # + `.scalars()`로 실제 변경된 행을 세어 이 코드베이스의 기존 조회 패턴을 유지한다.
@@ -468,18 +468,18 @@ async def unsuspend_user(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """계정만 되살린다 — **작품은 restricted로 남는다(D-7)**. 자동 복구하지 않으며,
-    관리자가 2단계 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
+    """계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,
+    관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
     한다.
 
     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
-    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, T-11a에서
-    그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 2단계 `lift-restriction`과 같은
+    `Notification.reason_category`가 NOT NULL이라는 DB 제약을 근거로 들었지만, 이후
+    그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은
     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
 
-    **해제 알림은 보내지 않는다.** goal-prompt가 경고·정지와 달리 해제에는 알림 발송을
-    명시하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+    **해제 알림은 보내지 않는다.** 경고·정지와 달리 해제에는 알림 발송을
+    요구하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
 
@@ -514,12 +514,12 @@ async def set_user_rate_limit_exempt(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """limit-goal-prompt.md RL-9 — `users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
+    """`users.rate_limit_exempt`를 바꾸는 **유일한** 경로다.
     Redis 미러도 세션 사본도 없어서(`core/rate_limit_gate.py`의 `is_rate_limit_exempt`)
     이 커밋 다음 요청부터 곧바로 적용된다 — 무효화할 캐시가 없다.
 
     면제 범위는 일일 상한과 이미지 토큰버킷뿐이고 분당 버스트·이미지 동시 큐 1칸은 예외
-    계정에도 그대로 적용된다(RL-10/RL-18) — 그 범위는 어드민 확인 모달이 문장으로 알린다.
+    계정에도 그대로 적용된다 — 그 범위는 어드민 확인 모달이 문장으로 알린다.
 
     **액션 타입이 켤 때와 끌 때 다르다**(`user-rate-limit-exempt-on` /
     `user-rate-limit-exempt-off`). `admin_action_logs.action_type`이 Text라 마이그레이션은
@@ -562,22 +562,22 @@ async def adjust_user_clover(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """clover-techspec.md §4-3 — 클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
+    """클로버를 지급(양수)하거나 회수(음수)하는 유일한 경로다.
     구조는 `set_user_rate_limit_exempt`의 4단계(검증 → 조회 → 변경 → 로그+커밋)를 그대로 따른다.
 
     🔴 **토글의 *"같은 값을 다시 적용해도 막지 않는다"*를 여기로 옮기면 안 된다.** 그 문장이
     성립했던 이유는 대입이 멱등이라서인데(True→True는 아무것도 안 바꾼다), **지급은 누적**이라
     두 번 도착하면 두 배가 들어온다. 그래서 `idempotency_key`가 필수이고
-    `ux_clover_ledger_idempotency_key`가 그걸 강제한다(clover-goal-prompt.md CL-8).
+    `ux_clover_ledger_idempotency_key`가 그걸 강제한다.
 
     **호출자 세션을 쓴다** — 잔액·원장·`admin_action_logs`가 한 트랜잭션이라 셋 중 일부만
     남는 상태가 없다. `core/clover.py`의 자기-트랜잭션 래퍼(`*_in_new_transaction`)는 게이트
-    전용이다(clover-techspec.md CT-4): 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
+    전용이다: 채팅 4경로의 커밋 시점이 제각각이라 생긴 예외이고,
     어드민 라우트는 커밋 경계가 하나뿐이라 그 근거가 없다.
 
     ⇒ **"자원을 커밋한 뒤 되돌릴 수 있는 첫 지점까지"의 구간이 생기지 않는다.** 지급이
     커밋되는 시점과 감사 로그가 커밋되는 시점이 같은 `db.commit()`이고, 그 앞에서 실패하면
-    둘 다 롤백된다. 이 런에서 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
+    둘 다 롤백된다. 클로버 도입 때 같은 구간이 네 번 나왔던 것은 전부 **자원 커밋과 기록 커밋이
     갈려 있던** 경로였다.
 
     `amount == 0`을 422로 막는 이유는 의미 없는 원장 행을 만들지 않기 위해서다 —
@@ -620,7 +620,7 @@ async def adjust_user_clover(
                 )
                 if balance_after is None:
                     # `revoke`의 `guard=True`가 막은 것이다 — 오지급 회수가 이미 쓴 만큼을 빚으로
-                    # 남기지 않는다(clover-goal-prompt.md CL-5는 정수이고 음수 잔액은 없다).
+                    # 남기지 않는다(잔액은 정수이고 음수 잔액은 없다).
                     raise HTTPException(
                         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
                         detail="amount exceeds the current balance",
@@ -651,7 +651,7 @@ async def list_user_clover_ledger(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminCloverLedgerListResponse:
-    """clover-techspec.md §4-5 — 원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+    """원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
 
     🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
     페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이

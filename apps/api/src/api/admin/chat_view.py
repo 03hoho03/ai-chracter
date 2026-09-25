@@ -13,7 +13,7 @@ from api.db.session import get_db_session
 
 router = APIRouter(tags=["admin"])
 
-# techspec.md §4-5: 최초 열람은 페이지네이션 없이 고정 100개.
+# 최초 열람은 페이지네이션 없이 고정 100개.
 CHAT_VIEW_MESSAGE_LIMIT = 100
 
 # 더보기(GET)의 기본/상한. 최초 열람(100개)보다 작은 단위로 이어 보는 용도라 기본값은
@@ -31,7 +31,7 @@ async def _list_messages_page(
     before_created_at: datetime | None,
     before_id: uuid.UUID | None,
 ) -> AdminChatMessagesResponse:
-    """techspec §4-5 커서 조건을 그대로 구현한다:
+    """커서 조건은 다음과 같다:
 
     ```sql
     WHERE chat_room_id = ?
@@ -79,7 +79,7 @@ async def view_chat_room(
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminChatMessagesResponse:
-    """techspec §4-5. **열람 1회 = 로그 1행**(T-6) — 로그는 이 엔드포인트에서만 쌓는다.
+    """**열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.
     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다."""
     if not body.reason_text.strip():
         raise HTTPException(
@@ -121,7 +121,7 @@ async def list_chat_room_messages(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminChatMessagesResponse:
-    """더보기 — **로그를 절대 쌓지 않는다**(T-6): "열람 1회 = 로그 1행"을 메서드로
+    """더보기 — **로그를 절대 쌓지 않는다**: "열람 1회 = 로그 1행"을 메서드로
     보장하는 장치라, 여기 `record_admin_action`을 추가하면 더보기 5번에 5행이 쌓인다."""
     room = await db.get(ChatRoom, room_id)
     if room is None:

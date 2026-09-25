@@ -241,10 +241,10 @@ class AdminUserDetailResponse(CamelModel):
     # 달리 이미 restricted/deleted인 작품은 제외한다. `api/admin/users.py`의
     # `suspend_user()`가 실제로 UPDATE하는 조건과 정확히 같아야 한다.
     restrictable_content_count: int
-    # limit-goal-prompt.md RL-19: 레이트리밋 면제 플래그는 상세에만 실린다(목록·필터 없음).
-    # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/rate-limit-exempt`다(RL-9).
+    # 레이트리밋 면제 플래그는 상세에만 실린다(목록·필터 없음).
+    # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/rate-limit-exempt`다.
     rate_limit_exempt: bool
-    # clover-techspec.md §4-5: 잔액도 상세에만 실린다(목록·필터 없음). 변동 **이력**은 이
+    # 잔액도 상세에만 실린다(목록·필터 없음). 변동 **이력**은 이
     # 응답에 넣지 않고 `GET /admin/users/{id}/clover-ledger`가 따로 준다 — 상세 응답은 이미
     # reports·action_logs·chat_rooms 셋을 싣고 있어 네 번째 목록을 더하면 한 요청이 무거워진다.
     clover_balance: int
@@ -273,14 +273,14 @@ class AdminUserSuspendResponse(CamelModel):
 class AdminUserUnsuspendRequest(CamelModel):
     """`reason_category`가 없다 — 이 액션은 `Notification`을 만들지 않는다(unsuspend는
     알림 발송 대상이 아니라는 판단, `api/admin/users.py`의 `unsuspend_user` docstring
-    참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 2단계 `lift-restriction`과 같은
+    참고). 대신 `admin_comment`가 필수다(비어 있으면 422, 콘텐츠 직접 조치 `lift-restriction`과 같은
     규칙)."""
 
     admin_comment: str | None = None
 
 
 class AdminUserRateLimitExemptRequest(CamelModel):
-    """limit-goal-prompt.md RL-9 — 켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
+    """켜기/끄기를 `exempt` 한 필드로 받는 토글이다(경로를 둘로
     쪼개지 않는다). `reason_category`가 없는 이유와 `admin_comment`가 필수인 이유는
     `AdminUserUnsuspendRequest`와 같다 — `Notification`을 만들지 않아 사유를 인용할 자리가
     없고, 대신 "왜 면제했나"가 감사 로그에 남아야 한다(비어 있으면 422)."""
@@ -290,18 +290,18 @@ class AdminUserRateLimitExemptRequest(CamelModel):
 
 
 class AdminUserCloverRequest(CamelModel):
-    """clover-techspec.md §4-2 — 지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
+    """지급과 회수를 **부호 있는 한 필드**로 받는다(경로를 둘로
     쪼개지 않는다. `AdminUserRateLimitExemptRequest`가 켜기/끄기를 한 필드로 받는 것과 같은
     관례다). `admin_comment`가 필수인 이유도 같다 — `Notification`을 만들지 않아 사유를
     인용할 자리가 없고 대신 "왜 줬나"가 감사 로그에 남아야 한다.
 
     `±100,000` 상한의 근거(`images/schemas.py`의 `count` 상한이 "왜 2인가"를 적은 관례):
-    clover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
+    현행 단가(채팅 1턴 10, 출석 1회 100) 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치다.
     운영자가 한 번에 줄 만한 어떤 보상보다도 크고, **자릿수를 잘못 눌렀을 때 걸리는 그물**이
     이 상한의 목적이다. 더 큰 금액이 필요하면 여러 번 나눠 주면 되고 그 편이 감사 로그에도
     낫다.
 
-    🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).
+    🔴 `idempotency_key`는 **클라이언트가 요청마다 새로 만든다**.
     출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
     **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
     **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이다.
@@ -376,7 +376,7 @@ class AdminLegalVersionsResponse(CamelModel):
 
 
 class ChatViewReasonCategory(str, enum.Enum):
-    """techspec.md §4-5(TS-10). 기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
+    """기존 `ReportReasonCategory`(adult/copyright/hate/spam/other)와
     다른 전용 enum이다 — 채팅 열람 사유는 신고 사유와 결이 달라 재사용하지 않는다."""
 
     REPORT_INVESTIGATION = "report-investigation"
@@ -404,7 +404,7 @@ class AdminChatMessageItem(CamelModel):
 class AdminChatMessagesResponse(CamelModel):
     """`POST .../view`(열람 시작)와 `GET .../messages`(더보기) 공용 응답 모양 — 둘 다
     같은 페이지+커서 구조다. 커서는 오파크 문자열이 아니라 `beforeCreatedAt`/`beforeId`
-    평문 페어로 내려준다(techspec §4-5) — 더 불러올 게 없으면 둘 다 null."""
+    평문 페어로 내려준다 — 더 불러올 게 없으면 둘 다 null."""
 
     items: list[AdminChatMessageItem]
     before_created_at: datetime | None
@@ -412,7 +412,7 @@ class AdminChatMessagesResponse(CamelModel):
 
 
 class AdminPromptSetSummary(CamelModel):
-    """prompt-db-goal-prompt.md D-16 — 이력 목록은 메타만. 섹션 전문은
+    """이력 목록은 메타만. 섹션 전문은
     `GET /admin/prompt-sets/{id}`로 뺀다."""
 
     id: uuid.UUID
@@ -447,7 +447,7 @@ class AdminPromptSectionItem(CamelModel):
 
 
 class AdminPromptSetDetailResponse(CamelModel):
-    """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문(D-16)."""
+    """`GET /admin/prompt-sets/{id}` — 특정 버전의 섹션 전문."""
 
     id: uuid.UUID
     version: str | None
@@ -463,7 +463,7 @@ class AdminPromptSetDetailResponse(CamelModel):
 class AdminPromptDraftResponse(CamelModel):
     """`id`가 `None`이면 아직 저장된 초안 행이 없다는 뜻이다 — `GET .../draft`가 활성
     세트의 복제본을 그 자리에서 만들어 보여줄 뿐 아무것도 저장하지 않는다(부작용 없는
-    조회, prompt-db-goal-prompt.md §9-1)."""
+    조회)."""
 
     id: uuid.UUID | None
     labels: AdminPromptLabels
@@ -481,14 +481,14 @@ class AdminPromptSectionInput(CamelModel):
 
 
 class AdminPromptDraftUpsertRequest(CamelModel):
-    """섹션 전체 교체(prompt-db-goal-prompt.md §9-1) — 부분 패치가 아니다."""
+    """섹션 전체 교체 — 부분 패치가 아니다."""
 
     labels: AdminPromptLabels
     sections: list[AdminPromptSectionInput]
 
 
 class AdminPromptPublishRequest(CamelModel):
-    """`version`을 받지 않는다(D-15) — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
+    """`version`을 받지 않는다 — 서버가 자동 증가 정수를 부여한다. `note`가 "왜
     바꿨나"를 대신 받는다."""
 
     note: str = ""

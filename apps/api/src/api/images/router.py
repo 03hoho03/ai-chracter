@@ -54,7 +54,7 @@ from api.llm.local_image import (
 )
 from api.session.dependencies import get_current_user_id
 
-# local-image-gen-contract.md LC-1: 정적 레지스트리 ↔ 로컬 capabilities 불일치는 조용한
+# 정적 레지스트리 ↔ 로컬 capabilities 불일치는 조용한
 # 기능 축소로 나타나므로 로그가 유일한 신호다. uvicorn이 root logger에 핸들러를 안 붙여
 # info는 사라지지만 WARNING 이상은 logging.lastResort로 stderr에 찍힌다
 # (`chat/router.py:100-103` 선례) — print가 아니다.
@@ -66,10 +66,9 @@ router = APIRouter(prefix="/images", tags=["images"])
 @dataclass(frozen=True)
 class _GenerationResult:
     """`_generate_and_store_one`의 결과 — `bool` 2치로는 "차단"을 표현할 자리가
-    없었다(guard-goal-prompt.md §1-5). `outcome`이 Literal이라 `_run_generation`의
-    분기 누락을 mypy `assert_never`가 잡는다(guard-techspec.md GT-2,
-    `llm/dependencies.py`의 기존 `assert_never` 패턴). image-style-7-goal-prompt.md
-    IS-8: `input_error`는 그 안전망을 그대로 활용해 추가한 네 번째 값이다."""
+    없었다. `outcome`이 Literal이라 `_run_generation`의
+    분기 누락을 mypy `assert_never`가 잡는다(`llm/dependencies.py`의 기존 `assert_never`
+    패턴). `input_error`는 그 안전망을 그대로 활용해 추가한 네 번째 값이다."""
 
     outcome: Literal["succeeded", "blocked", "input_error", "failed"]
     blocked_reason: ImageBlockedReason | None = None
@@ -109,10 +108,10 @@ async def _generate_and_store_one(
                     storage_key=storage_key,
                     kind=AssetKind.GENERATED,
                     status=AssetStatus.READY,
-                    # image-style-7-goal-prompt.md IS-6: plain Text 컬럼이라
+                    # plain Text 컬럼이라
                     # `.value`를 명시한다(apps/api/CLAUDE.md 모델 규약).
                     style=style.value,
-                    # image-monitoring-goal-prompt.md IM-4: 이 asset을 낳은 요청 행.
+                    # 이 asset을 낳은 요청 행.
                     request_id=request_id,
                 )
             )
@@ -121,21 +120,21 @@ async def _generate_and_store_one(
         await update_job(job_id, completed_increment=1, asset_id=asset_id)
         return _GenerationResult(outcome="succeeded")
     except LocalImageBlockedError as exc:
-        # guard-techspec.md GT-1: `LocalImageBlockedError`는 `LLMClientError`의
+        # `LocalImageBlockedError`는 `LLMClientError`의
         # 하위 클래스라 아래 `except LLMClientError`보다 먼저 잡아야 한다 — 순서가
         # 바뀌면 차단이 조용히 일반 실패로 접힌다.
         return _GenerationResult(outcome="blocked", blocked_reason=exc.reason)
     except LocalImageInputError as exc:
-        # image-style-7-goal-prompt.md IS-8: `LocalImageInputError`도 `LLMClientError`의
+        # `LocalImageInputError`도 `LLMClientError`의
         # 하위 클래스라 같은 이유로 아래 `except LLMClientError`보다 먼저 잡는다.
         return _GenerationResult(outcome="input_error", input_error=exc.input_error)
     except LLMClientError as exc:
-        # image-style-7-goal-prompt.md IS-11: 예외 인스턴스를 바인딩하지 않으면 상태
+        # 예외 인스턴스를 바인딩하지 않으면 상태
         # 코드·detail이 통째로 버려져 400·422·429·500·503·타임아웃이 운영 로그에서
         # 구분 불가능하다. `local_image.py`가 이미 상태 코드+`detail`만 실어 메시지를
         # 만들어 뒀으므로(프롬프트 에코 가능성 배제) 그 문자열을 그대로 남긴다.
         logger.warning("local image generation call failed: %s", exc)
-        # monitoring-techspec.md MT-6: 자가호스팅 이미지 생성 다운(집 PC)을 이벤트로도 승격한다.
+        # 자가호스팅 이미지 생성 다운(집 PC)을 이벤트로도 승격한다.
         capture_dependency_failure(exc, dependency="local_image")
         return _GenerationResult(outcome="failed")
     except Exception as exc:
@@ -152,7 +151,7 @@ async def _refund_unmade_images(
     session_factory: async_sessionmaker[AsyncSession],
     job_id: str,
 ) -> None:
-    """clover-goal-prompt.md CL-24 / clover-techspec.md §3-5-2: 202 이후의 실패는 이 저장소에서
+    """202 이후의 실패는 이 저장소에서
     환불이 0건이었다 — 무료 토큰버킷일 때는 감내할 수 있었지만 클로버는 사용자가 지불한 것이라,
     가드 차단·입력 오류·생성 실패·부분 성공이 전부 "돈만 사라지고 이미지는 0장"이 된다.
 
@@ -195,11 +194,11 @@ async def _run_generation(
     aspect_ratio: AspectRatio,
     charge: ImageCharge,
 ) -> None:
-    # local-image-gen-progress.md P2-R: 이 잡을 위한 admission은 라우터의 `try_admit()`
+    # 이 잡을 위한 admission은 라우터의 `try_admit()`
     # 호출 하나에 대응한다(이미지 개수와 무관) — 잡이 끝나면(성공/실패 모두) 반드시
     # 반납해야 한다. 안 그러면 이 잡이 상한 슬롯을 영구 점유해 게이트가 막힌다.
     #
-    # clover-techspec.md §3-5-1a: 이 둘은 `try` **밖**에서 초기화한다 — 아래 `except`가
+    # 이 둘은 `try` **밖**에서 초기화한다 — 아래 `except`가
     # 집계 도중 터진 경우에도 "그 시점까지 성공한 장수"를 읽어야 하기 때문이다. `try` 안에
     # 두면 `update_job(RUNNING)`이 터졌을 때 이름 자체가 없어 `UnboundLocalError`가 난다.
     succeeded_count = 0
@@ -215,7 +214,7 @@ async def _run_generation(
             ]
         )
 
-        # guard-techspec.md GT-3 / guard-progress.md I-1: `_generate_and_store_one`의
+        # `_generate_and_store_one`의
         # 반환이 3치가 되면서 `if any(results):`를 그대로 두면, 파이썬은 non-bool
         # 멤버를 전부 truthy로 보므로 전부 차단(succeeded 0건)이어도 이 줄이 True가
         # 되어 잡이 SUCCEEDED로 잘못 끝난다. 성공/차단을 직접 센다 — `assert_never`가
@@ -250,20 +249,20 @@ async def _run_generation(
         blocked_reason: ImageBlockedReason | None = None
         if blocked_reasons:
             blocked_reason = blocked_reasons[0]
-            # guard-goal-prompt.md G-5: 사유만 남긴다 — 사용자 id·프롬프트 원문은
+            # 사유만 남긴다 — 사용자 id·프롬프트 원문은
             # 절대 넣지 않는다.
             logger.warning("local image generation blocked: reason=%s count=%d", blocked_reason, blocked_count)
             distinct_reasons = set(blocked_reasons)
             if len(distinct_reasons) > 1:
-                # guard-techspec.md GT-3: 프롬프트 가드는 결정적이라 한 잡 안에서
-                # 사유가 섞일 수 없다(G-6) — 섞이면 로컬이 계약(LC-4b)을 어긴
+                # 프롬프트 가드는 결정적이라 한 잡 안에서
+                # 사유가 섞일 수 없다 — 섞이면 로컬이 계약을 어긴
                 # 것이므로 조용히 넘기지 않는다.
                 logger.warning(
                     "local image generation blocked reasons mismatched within one job: reasons=%s",
                     sorted(distinct_reasons),
                 )
             if failed_count > 0:
-                # guard-progress.md 적대적 리뷰: GT-3의 표는 성공/차단 수만 키로
+                # 처음 설계의 결과 판정 표는 성공/차단 수만 키로
                 # 삼아 "차단과 무관한 진짜 실패가 함께 일어났다"는 칸이 아예 없었다
                 # — 그 조합은 순수 전부-차단 잡과 구분 불가능하게 FAILED+error=None
                 # 으로 끝나 진짜 회귀의 흔적이 `print()`뿐이 된다. 사용자 화면은
@@ -288,7 +287,7 @@ async def _run_generation(
             )
             distinct_input_errors = set(input_errors)
             if len(distinct_input_errors) > 1:
-                # image-style-7-goal-prompt.md IS-8 §3-8: 문법 오류·길이 초과는
+                # 문법 오류·길이 초과는
                 # 결정적이라 한 잡 안에서 사유가 섞일 수 없다 — 섞이면 프록시 흔들림
                 # 등 계약 밖 사건이므로 위 blocked_reasons 불일치 경고와 같은 패턴으로
                 # 조용히 넘기지 않는다.
@@ -297,7 +296,7 @@ async def _run_generation(
                     sorted(distinct_input_errors),
                 )
 
-        # image-monitoring-goal-prompt.md IM-4 종료 상태 판정 규칙 표: 아래 Redis 잡 갱신과
+        # 종료 상태 판정 규칙: 아래 Redis 잡 갱신과
         # 같은 집계값으로 요청 행을 한 번 UPDATE한다. `completed_count>0`이면 부분 성공도
         # succeeded다(이미지가 한 장이라도 나왔다) — 그 다음은 blocked_count, 나머지(입력
         # 오류만 난 경우 포함)는 failed다. Redis 갱신보다 먼저 커밋해야 한다 — 뒤에 두면
@@ -327,7 +326,7 @@ async def _run_generation(
                 request_row.error = request_error
                 await session.commit()
         except Exception as exc:
-            # image-monitoring-goal-prompt.md IM-4 + test_generate_unexpected_error_marks_job_failed의
+            # test_generate_unexpected_error_marks_job_failed의
             # hang 방지 불변식: 요청 행 기록은 부가 기능이다 — 이 UPDATE가 실패해도(커넥션 끊김 등)
             # 아래 Redis update_job()은 반드시 실행돼야 잡이 RUNNING에 무기한 멈추지 않는다.
             logger.warning("image generation request row update failed: job=%s error=%s", job_id, type(exc).__name__)
@@ -341,7 +340,7 @@ async def _run_generation(
                 blocked_reason=blocked_reason,
             )
         elif blocked_count > 0:
-            # guard-goal-prompt.md G-6: 문구는 FE가 조립한다 — error는 진짜 실패에만
+            # 문구는 FE가 조립한다 — error는 진짜 실패에만
             # 쓰고 차단에는 쓰지 않는다.
             await update_job(
                 job_id,
@@ -350,7 +349,7 @@ async def _run_generation(
                 blocked_reason=blocked_reason,
             )
         elif input_error_count > 0:
-            # image-style-7-goal-prompt.md IS-8: 성공과 공존하는 경우는 위 succeeded_count
+            # 성공과 공존하는 경우는 위 succeeded_count
             # 분기가 이미 가로챈다 — 문법/길이 오류는 결정적이라 원래 그 조합이 없어야
             # 정상이고(부분 input_error 안내가 FE에 없는 이유), 섞이면 위 경고가 남는다.
             await update_job(
@@ -362,10 +361,10 @@ async def _run_generation(
         else:
             await update_job(job_id, status=ImageGenerationJobStatus.FAILED, error="이미지 생성에 모두 실패했습니다")
     except Exception:
-        # clover-techspec.md §3-5-1a: 차감(게이트) 이후 · 정산(`refund_settled`) 이전에 터지는
+        # 차감(게이트) 이후 · 정산(`refund_settled`) 이전에 터지는
         # 구간. `update_job(RUNNING)`의 Redis 순단과 집계 루프의 `assert`가 여기 들어온다 —
         # 그동안 이 구간에는 환불할 자리가 아예 없어서 사용자가 이미지를 한 장도 못 받고
-        # 클로버만 잃었다. S4가 채팅에서 같은 구간을 닫았으므로(`chat/router.py`의
+        # 클로버만 잃었다. 채팅은 같은 구간을 이미 닫았으므로(`chat/router.py`의
         # `_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가 다르게 동작한다.
         #
         # 되돌리는 양은 정상 경로와 같은 **"진행된 만큼"**이다 — `succeeded_count`가 루프에서
@@ -384,15 +383,16 @@ async def _run_generation(
 
 
 def _style_items(served_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
-    """image-style-7-goal-prompt.md IS-2/IS-5 — style 축의 공개 id와 와이어 id가
-    같아져(IS-2) 매핑 없이 원소별로 판정한다. 레지스트리 전체를 항상 내리고, 로컬이
+    """style 축의 공개 id와 와이어 id가
+    같아 매핑 없이 원소별로 판정한다. 레지스트리 전체를 항상 내리고, 로컬이
     보고한 집합에 있는 것만 available=true로 표시한다. (이전 `_known_styles`는 로컬
     보고값으로 **걸렀다** — 그러면 준비 중 스타일이 응답에서 사라져 "없는 것"과
     구분되지 않는다.)
 
     `served`를 bool이 아니라 집합으로 두는 것 자체가 방어다 — bool로 두면 `and`로
-    잇고 싶어지고, 그 순간 "하나라도 서빙되면 전부 available" 버그가 열린다(같은
-    함수가 image-refact-techspec.md IT-4로 이미 한 번 이 함정에 물렸다).
+    잇고 싶어지고, 그 순간 "하나라도 서빙되면 전부 available" 버그가 열린다(이
+    함수가 레지스트리 전체를 내리게 바뀌었을 때 모델의 `available=bool(styles)`가
+    항진명제가 되며 이미 한 번 이 함정에 물렸다).
     """
     served = set(served_style_ids)
     return [
@@ -403,7 +403,7 @@ def _style_items(served_style_ids: tuple[str, ...]) -> list[ImageStyleItem]:
 
 # 로컬이 보고하는 aspect_ratio는 (JSON을 거쳐 온) 평범한 str이라 `AspectRatio` Literal로
 # 정적으로 좁혀지지 않는다 — dict 조회로 좁히고, 서버가 모르는 값은 무시한다. (`_style_items`는
-# image-refact-techspec.md IT-3부터 이 규칙을 쓰지 않는다 — 레지스트리 전체를 항상 내리고
+# 이 규칙을 쓰지 않는다 — 레지스트리 전체를 항상 내리고
 # `available`로만 표시한다.)
 _ASPECT_RATIO_VALUES: dict[str, AspectRatio] = {ratio: ratio for ratio in get_args(AspectRatio)}
 
@@ -422,14 +422,14 @@ async def list_image_models(
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
 ) -> list[ImageModelItem]:
     """생성에 쓸 수 있는 모델 + 각 모델이 지원하는 종횡비/스타일. 정적 레지스트리(불투명
-    id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다(local-image-gen-
-    techspec.md LT-6). 로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는
-    무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다(contract LC-1).
+    id + 표시명)와 집 PC의 capabilities(가용성 + 지원 목록)를 교차한다.
+    로컬이 안 준 정적 id는 불가로 내리고, 서버가 모르는 로컬 id는
+    무시한다 — 불일치는 조용한 기능 축소로 나타나므로 WARNING으로 남긴다.
 
-    local-image-gen-goal-prompt.md LG-19: 로컬은 공개 id가 아니라 **와이어** id를
+    로컬은 공개 id가 아니라 **와이어** id를
     보고한다 — 조회 키를 와이어 id로 바꾸지 않으면 이 교차가 항상 실패한다.
 
-    LG-20: `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
+    `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
     매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING)."""
     capabilities = await get_capabilities()
     local_ids = {model.model_id for model in capabilities.models}
@@ -448,12 +448,12 @@ async def list_image_models(
             )
             continue
         styles = _style_items(capability.styles)
-        # image-refact-techspec.md IT-4: `_style_items`(IS-5)가 레지스트리 전체(항상
+        # `_style_items`가 레지스트리 전체(항상
         # 7개)를 내리면서 `bool(styles)`는 항진명제가 됐다 — styles가 비는 경우가
-        # 없어져 이 조건이 늘 True였다. LG-20의 의도("실제로 생성 가능")를 지키려면
+        # 없어져 이 조건이 늘 True였다. `available`의 뜻("실제로 생성 가능")을 지키려면
         # available 플래그로 직접 물어야 한다.
         if not any(style.available for style in styles):
-            # LG-20: capability는 있지만 매핑되는 style이 하나도 없다 — id 불일치(위)와는
+            # capability는 있지만 매핑되는 style이 하나도 없다 — id 불일치(위)와는
             # 다른 조용한 기능 축소라 구분되는 문구로 남긴다.
             logger.warning("local image capability for registered model id %s maps to no usable style", spec.id)
         items.append(
@@ -468,29 +468,29 @@ async def list_image_models(
     return items
 
 
-@router.post(  # consent-gate-goal-prompt.md CG-3/CG-4
+@router.post(
     "/generate", status_code=status.HTTP_202_ACCEPTED, dependencies=[Depends(require_legal_consent)]
 )
 async def generate_images(
     payload: GenerateImageRequest,
     owner_user_id: uuid.UUID = Depends(get_current_user_id),
-    # limit-goal-prompt.md RL-13: 토큰 차감은 라우트 본문이 아니라 이 `Depends` 자리에서
+    # 토큰 차감은 라우트 본문이 아니라 이 `Depends` 자리에서
     # 일어난다(`require_legal_consent` 뒤 — 재동의 403이 429보다 먼저다). 게이트가 라우트와
     # 같은 바디 모델을 선언해 장수(`count`)만큼 깎고, 그 영수증이 아래 환불의 근거가 된다.
     charge: ImageCharge = Depends(enforce_image_rate_limit),
     image_client_factory: Callable[[ImageModelId], ImageClient] = Depends(get_image_client),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> GenerateImageResponse:
-    # RL-16/RL-16a: 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에
+    # 토큰은 잡이 실제로 생성(202)될 때만 소모된다 — 차감 이후 202 이전에
     # 끝나는 경로는 예외 종류를 가리지 않고 **전부** 환불한다(큐 가득·가용성 503·비율/스타일
     # 400, 그리고 `create_job`/`session.commit()`의 500).
     # 한 종류만 환불하면 나머지 경로에서 생성되지도 않은 이미지가 사용자의 상한에서 사라진다.
     try:
-        # local-image-gen-goal-prompt.md LG-8: 가용성 사전 확인을 맨 앞에 둔다 — 불가면 503,
+        # 가용성 사전 확인을 맨 앞에 둔다 — 불가면 503,
         # 일시적 상태이고 클라이언트 잘못이 아니다. capabilities 전체가 불가이거나, 요청한
         # 모델이 로컬이 지금 보고하지 않는 모델이면 둘 다 같은 503으로 접는다.
         #
-        # LG-19: 로컬은 공개 id(`payload.model`)가 아니라 와이어 id를 보고한다 — 조회 키를
+        # 로컬은 공개 id(`payload.model`)가 아니라 와이어 id를 보고한다 — 조회 키를
         # 와이어 id로 바꾸지 않으면 이 확인이 항상 실패해 모든 생성이 503으로 막힌다.
         capabilities = await get_capabilities()
         capability = None if not capabilities.ready else capabilities.capability_for(settings.local_image_model_wire_id)
@@ -504,9 +504,9 @@ async def generate_images(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"model '{payload.model}' does not support aspect ratio '{payload.aspect_ratio}'",
             )
-        # image-refact-techspec.md IT-5: 레지스트리 기준으로 판정한다 — `_style_items`(IS-5)가
+        # 레지스트리 기준으로 판정한다 — `_style_items`가
         # 요청된 스타일이 레지스트리에 있는지와 지금 서빙되고 있는지(available)를 함께 본다.
-        # image-style-7-goal-prompt.md IS-2: style 축은 공개 id와 와이어 id가 같아
+        # style 축은 공개 id와 와이어 id가 같아
         # capability.styles를 매핑 없이 그대로 집합 비교한다. 사용자에게 보이는 detail은
         # 공개 값(`payload.style.value`)을 그대로 쓴다.
         style_items = _style_items(capability.styles)
@@ -516,20 +516,20 @@ async def generate_images(
                 detail=f"model '{payload.model}' does not support style '{payload.style.value}'",
             )
 
-        # local-image-gen-techspec.md LT-3 / P2-R: 검사+증가가 `try_admit()` 하나의 동기
+        # 검사+증가가 `try_admit()` 하나의 동기
         # 함수 안에 있어 그 사이에 await가 끼어들 수 없다(원자적인 것은 `+=1` 자체가 아니라
         # 이 동기 블록이다) — 상한이 걸렸는데도 거절하지 않으면 한 사용자가 GPU 직렬
-        # 처리량(LG-6)을 몇 분씩 독점한다. limit-goal-prompt.md RL-5로 검사가 전역 상한 +
-        # 유저별 1칸 둘이 됐고, 429 바디는 유저 상한 429와 `code`로만 갈린다(RL-11).
+        # 처리량을 몇 분씩 독점한다. 검사는 전역 상한 +
+        # 유저별 1칸 둘이고, 429 바디는 유저 상한 429와 `code`로만 갈린다.
         if not try_admit(owner_user_id):
             raise image_queue_full(owner_user_id)
 
         try:
             image_client = image_client_factory(payload.model)
             job = await create_job(owner_user_id, payload.count)
-            # image-monitoring-goal-prompt.md IM-4: 접수 시 INSERT — 프롬프트·모델·비율·스타일이
+            # 접수 시 INSERT — 프롬프트·모델·비율·스타일이
             # 전부 모여 있는 유일한 지점이 여기다. `create_job` 성공 뒤·`enqueue_generation` 앞에
-            # 둔다: 더 앞에 두면 429/503 사전 차단 경로(IM-6)에도 행이 생기고, asset의 FK 때문에
+            # 둔다: 더 앞에 두면 429/503 사전 차단 경로에도 행이 생기고, asset의 FK 때문에
             # 이 행은 백그라운드가 돌기 전에 이미 커밋돼 있어야 한다.
             async with session_factory() as session:
                 request_row = ImageGenerationRequest(
@@ -555,7 +555,7 @@ async def generate_images(
                 payload.aspect_ratio,
                 # `charge.count`가 곧 `payload.count`다(게이트가 네 분기 전부 그렇게 만든다).
                 # 영수증을 통째로 넘기는 이유는 202 이후 환불이 **무엇으로 냈는지**를 알아야
-                # 하기 때문이다(clover-techspec.md CT-7) — 장수만 넘기면 자원을 못 가린다.
+                # 하기 때문이다 — 장수만 넘기면 자원을 못 가린다.
                 charge,
             )
         except Exception:
@@ -571,7 +571,7 @@ async def generate_images(
         # `HTTPException`만 잡으면 `create_job`(Redis)·`session.commit()`(Postgres)의 500에서
         # 토큰이 유실돼 DB 순단 뒤 최대 10시간 429가 이어진다(리뷰 실측).
         # `session_factory`를 넘기는 이유는 클로버로 낸 요청의 환불이 별도 트랜잭션이기
-        # 때문이다(clover-techspec.md CT-4/CT-7).
+        # 때문이다.
         await refund_image_charge(owner_user_id, charge, session_factory)
         raise
     return GenerateImageResponse(job_id=job.job_id)

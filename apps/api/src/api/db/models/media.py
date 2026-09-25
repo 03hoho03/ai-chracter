@@ -16,7 +16,7 @@ class AssetKind(str, enum.Enum):
 
 
 class AssetStatus(str, enum.Enum):
-    """techspec-backend-media.md §1: row is created pending at presigned-upload
+    """Row is created pending at presigned-upload
     time, and flipped to ready once POST /assets/{id}/complete confirms the S3
     object exists."""
 
@@ -25,7 +25,7 @@ class AssetStatus(str, enum.Enum):
 
 
 class Asset(Base):
-    """techspec-db-schema.md §9. Row is created (status=pending) when a presigned
+    """Row is created (status=pending) when a presigned
     upload URL is issued, and flipped to status=ready once upload completes."""
 
     __tablename__ = "assets"
@@ -40,16 +40,16 @@ class Asset(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
-    # image-style-7-goal-prompt.md IS-6: nullable(백필할 과거 값이 없다 — 이 컬럼이
+    # nullable(백필할 과거 값이 없다 — 이 컬럼이
     # 생기기 전 생성 자산은 style을 남기지 않았다). plain Text인 이유(native enum이
     # 아닌 이유)는 `kind`/`status`와 달리 style이 "내부 상태기계"가 아니라 "외부
-    # 계약값"이기 때문이다 — 이번 런 자체가 4종→7종 완전 교체라 "다음 개편"이 이미
-    # 실증됐다. enum이면 ① 멤버 추가를 autogenerate가 감지 못 하고 ② Postgres에
+    # 계약값"이기 때문이다 — style 목록이 이미 4종→7종으로 완전 교체된 적이 있어 "다음
+    # 개편"이 실증됐다. enum이면 ① 멤버 추가를 autogenerate가 감지 못 하고 ② Postgres에
     # `DROP VALUE`가 없어 멤버 제거가 사실상 불가능해 옛 4종이 과거 행 보존 때문에
     # 타입에 영구히 남고 개편마다 쌓이며 ③ `.name`(대문자)이 DB에 저장돼 와이어값
     # (소문자)과 대소문자가 갈린다.
     style: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # image-monitoring-goal-prompt.md IM-4: 이 기능 이전에 생성된 자산은 요청 행이
+    # 요청 행을 기록하기 전에 생성된 자산은 요청 행이
     # 없어 nullable이다.
     request_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("image_generation_requests.id"), nullable=True
@@ -57,12 +57,12 @@ class Asset(Base):
 
 
 class ImageGenerationRequest(Base):
-    """image-monitoring-goal-prompt.md IM-4. `assets`가 아니라 별도 테이블인 이유
+    """`assets`가 아니라 별도 테이블인 이유
     둘: ① `requested_count`가 2면 같은 프롬프트가 두 asset 행에 중복된다, ②
     이미지가 안 나온 요청(차단·실패)은 asset 행 자체가 없어 기록할 자리가 없다.
 
     쓰기 모델은 접수 시 INSERT(status=pending), 종료 시 UPDATE 1회다 — 이 모델
-    자체는 그 쓰기 경로를 구현하지 않는다(이 런은 스키마만).
+    자체는 그 쓰기 경로를 구현하지 않는다.
     """
 
     __tablename__ = "image_generation_requests"
@@ -74,7 +74,7 @@ class ImageGenerationRequest(Base):
     aspect_ratio: Mapped[str] = mapped_column(Text, nullable=False)
     model: Mapped[str] = mapped_column(Text, nullable=False)
     requested_count: Mapped[int] = mapped_column(SmallInteger, nullable=False)
-    # native enum이 아니라 Text인 이유는 위 `Asset.style`과 같다(IS-6) — 값이 늘 때
+    # native enum이 아니라 Text인 이유는 위 `Asset.style`과 같다 — 값이 늘 때
     # 마이그레이션 없이 넓히기 위해서다. 값: pending / succeeded / blocked / failed.
     status: Mapped[str] = mapped_column(Text, nullable=False)
     completed_count: Mapped[int] = mapped_column(SmallInteger, nullable=False, server_default="0")
