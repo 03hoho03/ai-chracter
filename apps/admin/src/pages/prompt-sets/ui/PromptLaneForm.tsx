@@ -26,7 +26,7 @@ type PromptLaneFormProps = {
   draft: AdminPromptDraftResponse;
 };
 
-/** 현행 `PromptSetsEditor`의 몸통 그대로. `PromptLaneEditor`와
+/** 레인 분리 전 단일 편집기(`PromptSetsEditor`)의 몸통을 그대로 옮겼다. `PromptLaneEditor`와
  * 2단으로 갈린 이유가 아래 `values`의 불변식이다 — 한 컴포넌트로 합치지 않는다. */
 export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
   // `values`는 참조가 바뀔 때마다 RHF의 동기화 effect를 다시 태운다 — 매 렌더 새 객체를

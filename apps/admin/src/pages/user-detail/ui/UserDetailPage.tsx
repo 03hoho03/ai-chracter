@@ -265,8 +265,8 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
       </section>
 
       {/* 같은 그리드를 두 벌 유지하지 않으려 링크만 둔다.
-       * 유저 상세 응답(AdminUserDetailResponse)에 생성 이미지 건수 필드가 없어(BE는 그대로
-       * 두었다) "N건"은 못 붙이고 목적지만 알린다. */}
+       * 유저 상세 응답(AdminUserDetailResponse)에 생성 이미지 건수 필드가 없어
+       * "N건"은 못 붙이고 목적지만 알린다. */}
       <section className="flex items-center justify-between rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">생성 이미지</h2>
         <Link to="/users/$userId/image-generations" params={{ userId }} className={INLINE_LINK_CLASS}>

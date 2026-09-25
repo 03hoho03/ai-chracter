@@ -12,7 +12,7 @@ type PreviewPanelProps = {
  * 결과**를 보고 게시 여부를 판단한다. 레인마다 8/3/2개 항목(채널×템플릿/발행 대상 조합)을
  * 접이식 `<details>`로 늘어놓는다 — 항목마다 새 접근성 배선이 필요한 아코디언 프리미티브를
  * 추가하는 대신 네이티브 disclosure를 쓴다(키보드·스크린리더가 기본으로 지원한다).
- * `open={index === 0}`은 무변경이다. 레인별 응답의 첫
+ * `open={index === 0}`(첫 항목만 펼침)은 레인별로 가르지 않는다. 레인별 응답의 첫
  * 항목이 이미 다르므로(story: system·스토리·basic / character: system·캐릭터 /
  * publish_filter: publish_filter·캐릭터) 이 자리는 그대로 두고 `lane`만 흘려보낸다. */
 export function PreviewPanel({ lane, isStale }: PreviewPanelProps) {

@@ -63,7 +63,7 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
 };
 
 /** BE의 `AdminUserCloverRequest.amount` 범위가 `±100,000`이라 양수 입력의 상한도 같다
- * (100,000클로버 = 채팅 10,000턴 = 출석 1,000일치).
+ * (현재 `CHAT_TURN_COST`·`ATTENDANCE_GRANT_AMOUNT` 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치).
  * 상한의 목적은 큰 보상을 막는 게 아니라 **자릿수 오입력을 거르는 그물**이고, 더 필요하면
  * 나눠 주는 편이 감사 로그에도 낫다. */
 const CLOVER_AMOUNT_MAX = 100_000;

@@ -22,7 +22,7 @@ shadcn 기반 공용 프리미티브 + 디자인 토큰. web·admin이 함께 �
 - **다크는 `.dark` 클래스 기반이다**(`@custom-variant dark (&:is(.dark *))`). `html`에 클래스를 붙이면 전환되고, `:root`/`.dark` 양쪽에 `color-scheme`이 선언돼 네이티브 컨트롤·스크롤바도 따라온다. **admin은 `.dark`를 절대 붙이지 않아 라이트 값만 적용된다** — 이 패키지를 고칠 때 다크만 확인하고 끝내지 말 것.
 - **`data-open:`·`data-active:`·`data-horizontal:` 같은 축약 variant는 Tailwind 내장이 아니다** — `globals.css`의 `@import "shadcn/tailwind.css"`가 정의한다. 순수 tailwindcss로 컴파일하면 `&[data-active]`(불리언 매칭)로 나와 죽은 셀렉터처럼 보이지만 실제 앱에서는 동작한다 — **"안 맞는 셀렉터"로 오판해 고치지 말 것.** shadcn이 정의하지 않은 상태(`data-state=inactive` 등)는 명시 문법 `data-[state=inactive]:`를 쓴다.
 - 폰트는 Pretendard variable **dynamic-subset**을 `globals.css`에서 직접 import한다(`pretendard/dist/web/variable/pretendardvariable-dynamic-subset.css`). Fontsource 계열이 아니다.
-- **새 코드에서 `text-base`를 쓰지 않는다.** `--text-sm`(Body)이 D-8로 1rem(16px)이 되면서 Tailwind 기본값 `text-base`(1rem)와 값이 같아졌다 — 두 유틸리티가 같은 크기를 가리키면 다음 사람이 둘 중 뭘 써야 하는지 판단할 근거가 없다. `--text-sm`을 써라. **예외는 `input.tsx`/`textarea.tsx`의 `text-base` 고정** — iOS Safari의 16px 미만 입력 자동 확대를 막는 용도라 그 자리에 이미 근거 주석이 있다(D-5/D-8).
+- **새 코드에서 `text-base`를 쓰지 않는다.** `--text-sm`(Body)이 1rem(16px)으로 올라가면서 Tailwind 기본값 `text-base`(1rem)와 값이 같아졌다 — 두 유틸리티가 같은 크기를 가리키면 다음 사람이 둘 중 뭘 써야 하는지 판단할 근거가 없다. `--text-sm`을 써라. **예외는 `input.tsx`/`textarea.tsx`의 `text-base` 고정** — iOS Safari의 16px 미만 입력 자동 확대를 막는 용도라 그 자리에 이미 근거 주석이 있다.
 
 ## shadcn 컴포넌트 정리 관례
 
