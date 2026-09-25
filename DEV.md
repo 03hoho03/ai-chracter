@@ -96,7 +96,7 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
 
 ### 사용
 
-서버 기동 명령은 §2 그대로다(`--host` 플래그 불필요 — serve가 localhost로 프록시한다). 준비가 끝나면 위 URL로 접속만 하면 된다.
+서버 기동 명령은 위 "서버 기동" 절 그대로다(`--host` 플래그 불필요 — serve가 localhost로 프록시한다). 준비가 끝나면 위 URL로 접속만 하면 된다.
 
 - **Mac에서도 이 URL을 쓴다.** `http://localhost:5173`으로 열면 API만 ts.net이라 cross-site가 되어 세션 쿠키가 안 붙고,
   Google 로그인 리디렉션도 ts.net으로 간다. 로컬 전용으로 되돌리려면 위 env 3개를 localhost로 되돌린다.
@@ -154,7 +154,7 @@ v1 로 되돌린다.
 apps/api/scripts/seed_content/data/
 ├── stories/{slug}.json        # 스토리 30개 (파일명 = slug)
 ├── characters/{slug}.json     # 캐릭터
-├── diversity_matrix.json      # 30개 콘셉트 원본 (tasks/archive/prd-genre-seed-content.md §7의 전사본)
+├── diversity_matrix.json      # 30개 콘셉트 원본
 └── image_prompts.json         # 이미지 생성 프롬프트
 ```
 
@@ -168,7 +168,7 @@ apps/api/scripts/seed_content/data/
 `apps/api/scripts/seed_content/images/`는 **gitignore**다(생성물 바이너리를 리포에 넣지 않는다). 그래서 새 머신에서는 썸네일·상황 이미지가
 장르별 색으로 그려진 **절차적 목업 PNG**로 뜬다 — 채팅·발행·이미지 매칭 동작에는 영향이 없다.
 
-진짜 이미지가 필요하면 집 PC 자가 호스팅 이미지 생성 서버(`local-image-gen-contract.md`)가 떠 있어야 한다.
+진짜 이미지가 필요하면 집 PC 자가 호스팅 이미지 생성 서버(`DEPLOY.md`의 "이미지 생성" 절)가 떠 있어야 한다.
 `apps/api/.env`에 `LOCAL_IMAGE_BASE_URL`(Cloudflare Access를 앞단에 뒀다면
 `LOCAL_IMAGE_ACCESS_CLIENT_ID`/`LOCAL_IMAGE_ACCESS_CLIENT_SECRET`도)을 채우고:
 
@@ -182,7 +182,7 @@ uv run --env-file .env python scripts/generate_seed_images.py --only romance-3rd
 - CLI의 선행조건 검사는 `LOCAL_IMAGE_BASE_URL`이 비어 있는지만 본다(`--dry-run`은 이 값 없이도 동작한다).
 - 파일명 규약: 콘텐츠 썸네일 `{콘텐츠slug}.png`, 상황 이미지 `{캐릭터slug}-scene{n}.png`(1-based). 이 이름이 아니면 시드가 목업으로 폴백한다.
 - 생성 후 시드를 다시 돌려야 S3(moto)에 올라간다. moto는 인메모리라 컨테이너를 재생성할 때마다 시드가 매번 재업로드한다.
-- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** 로컬 서버는 시드값을 고정하지 않으므로(`local-image-gen-contract.md` LC-8) 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
+- **재생성한 이미지는 원본과 픽셀 단위로 같지 않다.** 로컬 서버는 시드값을 고정하지 않으므로 같은 프롬프트라도 매번 다른 그림이 나온다 — 커밋된 건 프롬프트뿐이고, 원본 픽셀은 어디에도 보존되지 않는다.
 
 ## 구성 요소
 
