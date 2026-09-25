@@ -13,8 +13,8 @@ import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 export type PickedGeneratedImage = { assetId: string; imageUrl: string };
 
-// techspec-builder-story.md §2 — 캐릭터/스토리 빌더가 공유하는 "생성한 이미지에서 선택" 피커.
-// PlayGuideModal(US-068)과 동일하게 useMutationFlow 없는 순수 조회+선택 모달이다: 그리드 셀 클릭이
+// 캐릭터/스토리 빌더가 공유하는 "생성한 이미지에서 선택" 피커.
+// PlayGuideModal과 동일하게 useMutationFlow 없는 순수 조회+선택 모달이다: 그리드 셀 클릭이
 // 곧 결과 확정이라 별도 제출 단계가 없다. "새로 생성하기"는 새 탭을 열 뿐 이 모달/호출한 폼의 상태에는
 // 전혀 영향을 주지 않는다(평범한 <a target="_blank">).
 export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedImage | undefined>(
@@ -44,7 +44,7 @@ export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedIma
   },
 );
 
-/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다(COMP-04). */
+/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다. */
 function GeneratedImageGridBody({
   query,
   onPick,
@@ -93,7 +93,7 @@ function GeneratedImageGridBody({
           onClick={() => onPick({ assetId: image.assetId, imageUrl: image.imageUrl })}
           className="aspect-square overflow-hidden rounded-md bg-secondary motion-safe:transition-opacity hover:opacity-80 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
-          {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
+          {/* 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
           <img src={image.imageUrl} alt="" decoding="async" className="size-full object-cover" />
         </button>
       ))}

@@ -14,7 +14,7 @@ export function formToUpdateRequest(values: PersonaFormValues): PersonaUpsertReq
   return { name: values.name, gender: toServerGender(values.gender), description: values.description };
 }
 
-/** 폼값 → `POST /me/personas`. `setAsDefault`는 BE에서 기본값 없는 필수 필드다(persona-goal-prompt.md UP-23). */
+/** 폼값 → `POST /me/personas`. `setAsDefault`는 BE에서 기본값 없는 필수 필드다. */
 export function formToCreateRequest(values: PersonaFormValues): PersonaCreateRequest {
   return { ...formToUpdateRequest(values), setAsDefault: values.setAsDefault };
 }

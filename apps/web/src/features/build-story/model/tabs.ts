@@ -1,13 +1,13 @@
 import type { BuilderTab } from "@/entities/content";
 
 /**
- * builder-techspec.md §4-1(T-4) — 스토리 빌더 8탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던
- * 탭 목록을 여기로 옮기고 `fields`(에러 탭 매칭용 경로 프리픽스)·`preview`(D-2, A-6)를 더했다.
+ * 스토리 빌더 8탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던
+ * 탭 목록을 여기로 옮기고 `fields`(에러 탭 매칭용 경로 프리픽스)·`preview`를 더했다.
  *
  * `fields`는 **최상위 키가 아니다** — `startingSetups`가 `startingSetup`/`stat`/`ending` 세 탭에
- * 걸쳐 있다(builder-progress.md §0-2 조사, techspec 원래 전제를 반증). `stat`/`ending`이 더 구체적인
+ * 걸쳐 있다. `stat`/`ending`이 더 구체적인
  * 프리픽스이지만 배열 순서는 표시 순서(`startingSetup`이 먼저)를 따른다 — 매칭 우선순위는
- * `errorTabs`가 프리픽스 길이로 판정하므로 이 배열의 순서에 의존하지 않는다(A-1).
+ * `errorTabs`가 프리픽스 길이로 판정하므로 이 배열의 순서에 의존하지 않는다.
  */
 export const STORY_TABS = [
   { id: "profile", label: "프로필", fields: ["profile"], preview: "card" },

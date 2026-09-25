@@ -10,7 +10,7 @@ import {
 } from "@/entities/inquiry";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
-/** `/inquiries` — 내 문의 내역. `requireSession`으로 로그인 사용자만 접근한다(D-6). */
+/** `/inquiries` — 내 문의 내역. `requireSession`으로 로그인 사용자만 접근한다. */
 export function InquiriesPage() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">

@@ -1,7 +1,7 @@
 import { API_BASE_URL } from "@/shared/api/client";
 
 /** GET /auth/google는 풀페이지 리다이렉트 대상이라 axios가 아니라
- * window.location.href로 직접 이동한다(techspec-auth-onboarding.md §3). */
+ * window.location.href로 직접 이동한다. */
 export function buildGoogleLoginUrl(redirectTo?: string): string {
   // `new URL("/auth/google", base)`는 절대경로라 base의 경로를 버린다 — base가
   // `https://host/api`처럼 경로를 가지면 `/api`가 사라진다. 문자열로 이어붙이되,

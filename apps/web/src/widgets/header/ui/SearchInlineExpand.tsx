@@ -9,10 +9,10 @@ import { useDebounce } from "react-use";
 const DEBOUNCE_MS = 300;
 
 /**
- * techspec-global-nav-profile.md §1.2 — 검색 결과 자체는 홈 화면의 일부이므로 별도 라우트 없이
+ * 검색 결과 자체는 홈 화면의 일부이므로 별도 라우트 없이
  * 인라인 익스팬드만 구현한다. 홈이 아닌 화면에서 검색을 시작해도 항상 `/`로 이동 + `?q=` 반영.
  *
- * `onExpandedChange`(MR-12) — `sm` 미만에서 펼치면 헤더의 버거·로고를 숨겨야 하는데 그 둘은 `Header`가
+ * `onExpandedChange` — `sm` 미만에서 펼치면 헤더의 버거·로고를 숨겨야 하는데 그 둘은 `Header`가
  * 그리는 형제 엘리먼트라 이 컴포넌트 내부에서 직접 숨길 수 없다. 펼침 상태 자체(자동 펼침 초기값·디바운스
  * 동기화 등)는 계속 이 컴포넌트가 들고, 값이 바뀔 때마다 `Header`에 알리기만 한다 — 완전히 controlled로
  * 뒤집으면 URL 기반 초기값 계산까지 `Header`로 옮겨야 해서 변경이 더 커진다.
@@ -32,7 +32,7 @@ export function SearchInlineExpand({
     () => {
       if (!isExpanded) return;
       const q = value.trim();
-      // US-044 — 홈의 정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
+      // 홈의 정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
       // 나머지 search param은 보존한다(이전엔 `search: { q }`로 통째로 덮어써 다른 필터가 날아갔다).
       void navigate({ to: "/", search: (prev) => ({ ...prev, q: q === "" ? undefined : q }) });
     },
@@ -44,7 +44,7 @@ export function SearchInlineExpand({
     if (isExpanded) inputRef.current?.focus();
   }, [isExpanded]);
 
-  // hojeong 리뷰 STATE-06(c) — 사용자 이벤트로 인한 펼침/접힘은 `setIsExpanded`를 직접 부르는 지점
+  // 사용자 이벤트로 인한 펼침/접힘은 `setIsExpanded`를 직접 부르는 지점
   // (검색 버튼 onClick·`collapse`)에서 `onExpandedChange`도 함께 부른다. 여기 남는 이펙트는 더 이상
   // "상태 복제"가 아니라 "URL 파생 초기값을 부모에 한 번 알리는 핸드셰이크"다 — `isExpanded`의 초기값이
   // `useState(Boolean(initialQuery))`로 URL에서 오는 그 한 경우만 사용자 이벤트가 아니라서, deps를 `[]`로
@@ -65,7 +65,7 @@ export function SearchInlineExpand({
   return (
     <div
       className={cn(
-        // MR-12 — `sm` 미만 펼침은 더 이상 "선호 폭 `w-40`"이 아니라 헤더 한 줄 전체를 차지한다(`Header`가
+        // `sm` 미만 펼침은 더 이상 "선호 폭 `w-40`"이 아니라 헤더 한 줄 전체를 차지한다(`Header`가
         // 이 상태일 때 버거·로고를 숨기고 이 그룹을 3열 모두에 걸치게 한다). `sm` 이상은 현행 `w-64`를
         // 그대로 유지한다 — `min-w-0`은 그 구간에서 아이콘 4개 + 펼친 검색이 좁아질 때의 안전장치로 남는다.
         "flex min-w-0 items-center justify-end motion-safe:transition-[width] motion-safe:duration-200 motion-safe:ease-out",
@@ -87,10 +87,10 @@ export function SearchInlineExpand({
             }}
             placeholder="캐릭터·스토리 검색"
             aria-label="캐릭터·스토리 검색"
-            // 옆 Button(size="icon")이 36px라 Input 기본값(D-4로 h-9=36px)과 이미 맞는다 — 오버라이드 제거.
+            // 옆 Button(size="icon")이 36px라 Input 기본값(h-9=36px)과 이미 맞는다 — 오버라이드 제거.
             className="min-w-0"
           />
-          {/* MR-12 — `sm` 미만 독점 상태는 닫기가 좌측이다(모바일 검색의 통상 배치: 뒤로/닫기 좌측 +
+          {/* `sm` 미만 독점 상태는 닫기가 좌측이다(모바일 검색의 통상 배치: 뒤로/닫기 좌측 +
               입력칸). `sm` 이상은 현행대로 입력칸 뒤(우측)에 둔다. DOM 순서(Input 다음 닫기)는 그대로
               두고 `max-sm:order-first`로 시각 순서만 뒤집는다 — JS 분기 없이 `sm:` 클래스로 가른다. */}
           <Button

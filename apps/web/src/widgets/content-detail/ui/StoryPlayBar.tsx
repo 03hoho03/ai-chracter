@@ -12,7 +12,7 @@ type StoryPlayBarProps = {
   onRestoreSetup: (id: string) => void;
 }
 
-/** design-system-progress.md P-5(D-7) — 하단 고정 바로 뽑힌 플레이. 시작설정 선택(`StoryDetailBody`,
+/** 하단 고정 바로 뽑힌 플레이. 시작설정 선택(`StoryDetailBody`,
  * 스크롤 영역)과 물리적으로 떨어지므로, 지금 무엇을 시작하는지 보이도록 선택된 이름을 버튼 위
  * 한 줄에 노출한다. */
 export function StoryPlayBar({ contentId, startingSetups, selectedSetupId, onRestoreSetup }: StoryPlayBarProps) {

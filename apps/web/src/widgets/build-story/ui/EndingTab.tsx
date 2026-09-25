@@ -33,7 +33,7 @@ const GROUP_OPERATOR_LABEL: Record<(typeof LOGIC_OPERATORS)[number], string> = {
   or: "또는",
 };
 
-/** techspec-builder-story.md §1.5 AC — 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
+/** 엔딩은 시작설정별 독립 목록이라 StatTab과 동일하게 먼저
  * 시작설정을 고른다(0개 등록해도 발행 가능, 열린 결말). */
 export function EndingTab() {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -83,7 +83,7 @@ export function EndingTab() {
 }
 
 /** Radix 토글·셀렉트는 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
- * `as` 대신 술어를 쓴다(TS-03) — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
+ * `as` 대신 술어를 쓴다 — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
 function isGroupOperator(value: string): value is (typeof LOGIC_OPERATORS)[number] {
   return LOGIC_OPERATORS.some((op) => op === value);
 }
@@ -201,7 +201,7 @@ type RuleGroupRowProps = {
 };
 
 /** 규칙 그룹 컨테이너(내부는 단일 규칙만, 중첩 불가) — 내부 목록은 아래 RuleListEditor를 그대로
- * 재사용한다(techspec-builder-story.md §1.5: "그룹 안의 rules 배열도 동일한 재정렬 UI를 재사용"). */
+ * 재사용한다("그룹 안의 rules 배열도 동일한 재정렬 UI를 재사용"). */
 function RuleGroupRow({
   group,
   stats,
@@ -252,7 +252,7 @@ type RuleListEditorProps = {
 };
 
 /** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 dnd-kit로 재정렬한다.
- * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다(techspec-builder-story.md §1.5). */
+ * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다. */
 function RuleListEditor({
   items,
   stats,
@@ -512,7 +512,7 @@ function EndingRow({
 }
 
 /** 선택된 시작설정 하나의 엔딩 목록. `key={시작설정 id}`로 감싸 StatSection과 동일하게 시작설정
- * 전환마다 useFieldArray를 완전히 새로 마운트한다(US-109 패턴). */
+ * 전환마다 useFieldArray를 완전히 새로 마운트한다. */
 function EndingSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const form = useFormContext<StoryBuilderFormValues>();
 

@@ -7,8 +7,8 @@ function validValues() {
 }
 
 describe("personaFormSchema", () => {
-  // persona-goal-prompt.md UP-5 — BE `persona/schemas.py`와 같은 규칙을 FE가 먼저 막는다(422 원문을
-  // 사용자에게 보이지 않기 위해서다, persona-progress.md S5 → S7 메모).
+  // BE `persona/schemas.py`와 같은 규칙을 FE가 먼저 막는다(422 원문을
+  // 사용자에게 보이지 않기 위해서다).
   it("accepts a 20-character name and a 500-character description", () => {
     const result = personaFormSchema.safeParse({
       ...validValues(),

@@ -4,8 +4,8 @@ import { PERSONA_DESCRIPTION_MAX_LENGTH, PERSONA_NAME_MAX_LENGTH } from "@/entit
 
 import { PERSONA_GENDER_OPTIONS } from "./personaGenderOption";
 
-/** persona-goal-prompt.md UP-5 — BE `persona/schemas.py`와 같은 규칙: 이름은 trim 뒤 1~20자, `:`·`\n`·`\r`
- * 금지(전각 `：`는 허용), 설명은 trim 뒤 0~500자(UP-22 선택). */
+/** BE `persona/schemas.py`와 같은 규칙: 이름은 trim 뒤 1~20자, `:`·`\n`·`\r`
+ * 금지(전각 `：`는 허용), 설명은 trim 뒤 0~500자(선택). */
 export const personaFormSchema = z.object({
   name: z
     .string()

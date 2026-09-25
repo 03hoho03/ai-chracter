@@ -25,19 +25,19 @@ import {
 import { sessionKeys, useSessionQuery } from "@/entities/session";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
 
-/** consent-gate-goal-prompt.md CG-1 — 이 모달은 닫을 수 없다. "나중에"(이전 주석이 인용하던
- * "확정 결정 D-16")를 없애고, X 버튼(`showCloseButton={false}`)·ESC·바깥 클릭을 전부 막는다.
- * D-16 원문은 저장소 전수 조사로도 추적 불가능해 새 근거로 대체한다(§2-6). 출구는 동의 또는
- * 탈퇴(CG-2) 둘뿐이라 `isDismissed`/`handleOpenChange`(`onOpenChange(false)` 경로) 자체가
+/** 이 모달은 닫을 수 없다. "나중에"(이전 주석이 출처를 댈 수 없는
+ * "확정 결정"을 근거로 두던 것)를 없애고, X 버튼(`showCloseButton={false}`)·ESC·바깥 클릭을 전부 막는다.
+ * 그 결정의 원문은 저장소 전수 조사로도 추적 불가능해 새 근거로 대체한다. 출구는 동의 또는
+ * 탈퇴 둘뿐이라 `isDismissed`/`handleOpenChange`(`onOpenChange(false)` 경로) 자체가
  * 사라진다 — 열림 여부는 세션의 재동의 플래그로만 정해진다. */
 export function ReconsentModal() {
   const sessionQuery = useSessionQuery();
   const queryClient = useQueryClient();
   const consentMutation = useLegalConsentMutation();
   const [isConsenting, setIsConsenting] = useState(false);
-  // legal-revision-goal-prompt.md LR-3 — 처리방침 재동의는 kind 하나(privacy)지만 개인정보보호법
+  // 처리방침 재동의는 kind 하나(privacy)지만 개인정보보호법
   // 제22조 제1항 제3호에 따라 수집·이용과 국외이전을 구분해 각각 체크받는다. API 호출은 그대로
-  // kind="privacy" 한 번이다(서버가 privacy·transfer 두 쌍을 함께 갱신, S4에서 구현됨) — 이
+  // kind="privacy" 한 번이다(서버가 privacy·transfer 두 쌍을 함께 갱신한다) — 이
   // 체크박스는 순수 FE 게이트다.
   const [isPrivacyCollectionChecked, setIsPrivacyCollectionChecked] = useState(false);
   const [isTransferChecked, setIsTransferChecked] = useState(false);
@@ -63,8 +63,8 @@ export function ReconsentModal() {
   // 잘못 읽어 handleConsent의 동기 throw 경로를 열어버렸다. 문서별 로딩·에러 UI는
   // ReconsentDocumentBody가 각자의 docQuery.isPending/isError로 그대로 그린다.
   const areAllDocsLoaded = pendingKinds.every((kind) => docQueryByKind[kind].data !== undefined);
-  // 🔴 legal-revision-goal-prompt.md LR-3 — privacy가 pending일 때 두 체크박스를 반영하지 않으면
-  // 국외이전 미체크 상태로 동의 버튼이 눌린다(§2-1이 지적한 위반을 UI가 재생산한다).
+  // 🔴 privacy가 pending일 때 두 체크박스를 반영하지 않으면
+  // 국외이전 미체크 상태로 동의 버튼이 눌린다(국외이전 동의를 따로 받아야 한다는 요구를 UI가 어긴다).
   const isPrivacyConsentReady =
     !pendingKinds.includes("privacy") || (isPrivacyCollectionChecked && isTransferChecked);
   const canConsent = areAllDocsLoaded && !isConsenting && isPrivacyConsentReady;
@@ -99,7 +99,7 @@ export function ReconsentModal() {
       {/* 제목과 동의 버튼은 항상 보여야 하므로(약관 전문이 합쳐 약 1만 8천 자라 다이얼로그 전체를
           스크롤하면 동의 버튼이 화면 밖으로 밀린다), DialogContent를 3행 그리드(헤더/본문/푸터)로
           바꾸고 본문 행만 `minmax(0,1fr)` + `overflow-y-auto`로 스크롤시킨다. */}
-      {/* consent-gate-goal-prompt.md CG-1 — X 버튼을 없애고(showCloseButton) ESC·바깥 클릭을
+      {/* X 버튼을 없애고(showCloseButton) ESC·바깥 클릭을
           preventDefault로 막는다. `...props`가 DialogPrimitive.Content로 spread되는 것을 그대로
           쓴다(packages/ui는 건드리지 않는다). */}
       <DialogContent
@@ -148,11 +148,11 @@ export function ReconsentModal() {
         </div>
 
         <DialogFooter>
-          {/* consent-gate-goal-prompt.md CG-2·CG-11 — 미동의 이용자의 출구는 탈퇴다. 기존
+          {/* 미동의 이용자의 출구는 탈퇴다. 기존
               WithdrawAccountDialog(트리거+AlertDialog+뮤테이션)를 그대로 재사용한다. */}
           <WithdrawAccountDialog label="동의하지 않고 탈퇴" />
-          {/* consent-gate-goal-prompt.md CG-13 — 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
-              포커스를 <body>로 떨어뜨린다(apps/web/CLAUDE.md). CG-1이 ESC를 막아 키보드 복귀 수단이
+          {/* 로딩 중 plain `disabled`는 브라우저가 즉시 blur해
+              포커스를 <body>로 떨어뜨린다(apps/web/CLAUDE.md). 이 모달이 ESC를 막아 키보드 복귀 수단이
               Tab 하나뿐이라 영향이 커진다. `aria-disabled` + 핸들러 early return으로 바꾼다
               (ContentListLoadMore 선례와 동일한 처방: pointer-events-none + opacity-65). */}
           <Button

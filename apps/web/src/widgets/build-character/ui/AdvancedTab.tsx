@@ -22,7 +22,7 @@ import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
-/** techspec-builder-character.md §2 AC — 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
+/** 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
 export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId: () => Promise<string> }) {
   const form = useFormContext<CharacterBuilderFormValues>();
@@ -89,14 +89,14 @@ type SituationalImageRowProps = {
   onRemove: () => void;
 };
 
-/** 목록 순서가 곧 우선순위(techspec-builder-character.md §2)라 dnd-kit로 재정렬한다 — 순서가
+/** 목록 순서가 곧 우선순위라 dnd-kit로 재정렬한다 — 순서가
  * 의미 없는 배열(IntroTab의 예시 대화)과 달리 add/remove만으로는 부족하다. 이미지는 업로드
- * 전용(AI 생성 진입점 없음, §3)이라 GeneratedImageField(갤러리 선택 포함)를 재사용하지 않는다.
+ * 전용(AI 생성 진입점 없음)이라 GeneratedImageField(갤러리 선택 포함)를 재사용하지 않는다.
  * 업로드 완료 시 `PATCH /contents/{id}/draft`가 아니라 `POST /assets/{id}/register-situational-
  * image`로 즉시 등록해야 서버에 반영된다(apps/api CLAUDE.md, formToServer는 이 필드를 보내지
  * 않음) — 그래서 "노출 상황" 텍스트가 비어있으면(서버가 필수로 요구) 업로드를 막는다.
  *
- * content_version_id를 값이 아니라 `ensureContentVersionId()`로 받는 이유는 US-007이다 — 초안은 첫
+ * content_version_id를 값이 아니라 `ensureContentVersionId()`로 받는 이유는 초안 지연 생성이다 — 초안은 첫
  * 저장 시점에야 만들어지므로, 이 등록이 초안 생성을 먼저 트리거해야 한다. */
 function SituationalImageRow({
   id,
@@ -186,8 +186,7 @@ function SituationalImageRow({
       <div className="flex flex-1 flex-col gap-2">
         {/* 같은 행의 삭제 Button(variant="ghost" size="icon", 36px)과 하단 "상황별 이미지 추가"
             Button(variant="secondary" size="default", 36px)이 모두 36px라 default로 맞춘다.
-            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
-            (design-system-progress.md P-2-9). */}
+            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다. */}
         <Label
           htmlFor={inputId}
           className={cn(
@@ -227,7 +226,7 @@ function SituationalImageRow({
   );
 }
 
-/** 세 갈래(로컬 미리보기·등록된 이미지·없음)가 배타적이라 early return으로 편다(COMP-04). */
+/** 세 갈래(로컬 미리보기·등록된 이미지·없음)가 배타적이라 early return으로 편다. */
 function SituationalImageThumb({
   objectPreviewUrl,
   hasRegisteredImage,

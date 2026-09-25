@@ -19,9 +19,9 @@ type ChangeStartingSetupModalProps = {
   roomId: string;
 };
 
-// US-081, techspec-chat-story.md §6 — UpdateInfoModal(US-079)과 동일하게 roomId만 받아 부모
+// UpdateInfoModal과 동일하게 roomId만 받아 부모
 // (ChatRoomView)가 이미 채워둔 chatRoomKeys.detail 캐시를 자체 구독한다. 현재 사용 중인 시작설정은
-// room.contentSnapshot.pinnedStartingSetupId(물리적 PK, US-070)로 판정 — room.startingSetupId는
+// room.contentSnapshot.pinnedStartingSetupId(물리적 PK)로 판정 — room.startingSetupId는
 // entity_id라 GET /contents/{id}가 내려주는 startingSetups[].id(물리적 PK)와 비교할 수 없다.
 export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalProps, void>(({ call, roomId }) => {
   const isOpen = !call.ended;

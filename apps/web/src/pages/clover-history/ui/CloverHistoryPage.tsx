@@ -38,10 +38,10 @@ type CloverHistoryPageProps = {
   onSearchChange: (patch: Partial<CloverHistorySearch>) => void;
 };
 
-/** clover-page-goal-prompt.md CE-24·CE-26·CE-36 — 클로버 내역 화면. 탭(사용/획득/소멸) 상태는
- * URL 검색 파라미터(`?tab=`)로 두고, 각 탭은 별도 `useCloverLedgerQuery` 인스턴스를 갖는다(CE-26 —
- * `queryKey`에 `category`가 들어가 탭 전환이 그 자체로 새 쿼리다). 컨테이너 폭은 허브·마이페이지와
- * 같은 `max-w-md`(CE-36). */
+/** 클로버 내역 화면. 탭(사용/획득/소멸) 상태는
+ * URL 검색 파라미터(`?tab=`)로 두고, 각 탭은 별도 `useCloverLedgerQuery` 인스턴스를 갖는다
+ * (`queryKey`에 `category`가 들어가 탭 전환이 그 자체로 새 쿼리다). 컨테이너 폭은 허브·마이페이지와
+ * 같은 `max-w-md`. */
 export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageProps) {
   const activeTab = resolveCloverHistoryTab(search);
 
@@ -55,7 +55,7 @@ export function CloverHistoryPage({ search, onSearchChange }: CloverHistoryPageP
     <main className="mx-auto flex max-w-md flex-col gap-6 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버 내역</h1>
-        {/* clover-page-goal-prompt.md CE-33 — 허브 페이지(clover-hub)와 같은 상시 고지, 같은
+        {/* 허브 페이지(clover-hub)와 같은 상시 고지, 같은
             단일 소스(entities/clover의 cloverExpiryNotice.ts)를 쓴다. */}
         <p className="text-sm break-keep text-muted-foreground">{CLOVER_EXPIRY_NOTICE_MESSAGE}</p>
       </div>
@@ -85,7 +85,7 @@ function CloverLedgerTabPanel({ category }: { category: CloverLedgerCategory }) 
   const listRef = useRef<HTMLUListElement>(null);
   const items = query.data?.pages.flatMap((page) => page.items) ?? [];
 
-  // `ProfileContentSection`(entities/content 소비처)과 같은 4갈래 early-return 순서(COMP-04) —
+  // `ProfileContentSection`(entities/content 소비처)과 같은 4갈래 early-return 순서 —
   // 재시도 백오프 중에도 isPending이라 failureCount===0으로 걸러야 이미 도착한 목록이 스켈레톤에
   // 안 갇힌다.
   if (query.isPending && query.failureCount === 0) {
@@ -144,7 +144,7 @@ function CloverLedgerRow({ item }: { item: CloverLedgerItem }) {
         </span>
         <span className="text-xs text-muted-foreground">{formatDate(item.createdAt)}</span>
       </div>
-      {/* clover-page-goal-prompt.md CE-27 — 평소 무채색, 부호(+/-)만으로 방향을 말한다(색으로
+      {/* 평소 무채색, 부호(+/-)만으로 방향을 말한다(색으로
           갈라 새 유채색을 만들지 않는다). */}
       <span className="text-sm font-medium tabular-nums text-foreground">
         {formatCloverLedgerAmount(item.amount)}

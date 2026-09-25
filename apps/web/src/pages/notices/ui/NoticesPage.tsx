@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { type NoticeListItem, useNoticeListQuery } from "@/entities/notice";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
-/** `/notices` — 공지사항 목록. 로그인 여부와 무관하게 접근 가능(D-5). 제목은 쿼리와 무관하게
+/** `/notices` — 공지사항 목록. 로그인 여부와 무관하게 접근 가능. 제목은 쿼리와 무관하게
  * 상시 렌더하고 본문만 로딩·에러·빈 상태로 가른다(`pages/legal-document`의 관용구). */
 export function NoticesPage() {
   return (

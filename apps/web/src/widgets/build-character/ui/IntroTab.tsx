@@ -9,7 +9,7 @@ import { useFieldArray, useFormContext } from "react-hook-form";
 
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 
-/** techspec-builder-character.md §4 — 인트로는 단일 필드, 예시 대화는 고급설정 뒤에 숨겨진 add/remove 전용
+/** 인트로는 단일 필드, 예시 대화는 고급설정 뒤에 숨겨진 add/remove 전용
  * 목록(순서가 판정에 영향 없어 dnd-kit 불필요), 플레이가이드는 선택 입력. */
 export function IntroTab() {
   const form = useFormContext<CharacterBuilderFormValues>();

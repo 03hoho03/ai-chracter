@@ -3,7 +3,6 @@ import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-/** techspec-builder-common.md §5.1 */
 export type AppealTarget =
   | { kind: "publish-rejection"; rejectionId: string }
   | { kind: "moderation-action"; actionId: string };

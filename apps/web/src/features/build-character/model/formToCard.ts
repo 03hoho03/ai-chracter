@@ -8,10 +8,10 @@ type CharacterToCardContext = {
 };
 
 /**
- * builder-techspec.md §4-3(T-2) — 폼 값 → 프리뷰 카드 props. `formToServer.ts`/`serverToForm.ts`와
+ * 폼 값 → 프리뷰 카드 props. `formToServer.ts`/`serverToForm.ts`와
  * 같은 변환 경계 자리에 둔다.
  *
- * `thumbnailUrl`은 인자로 받는다 — 폼 값엔 `{assetId}`뿐이라 URL을 만들 수 없다(§7). 발행 전이라
+ * `thumbnailUrl`은 인자로 받는다 — 폼 값엔 `{assetId}`뿐이라 URL을 만들 수 없다. 발행 전이라
  * `metrics`는 0, `tags`엔 아직 발행되지 않았음을 나타내는 `unpublished` 배지를 `/my` 초안 카드
  * (`toMyWorkTags`)와 같은 관례로 단다.
  *

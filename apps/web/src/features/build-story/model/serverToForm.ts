@@ -77,12 +77,12 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
   };
 }
 
-// chat-techspec.md §6-1(D-12): 서버 계약(`DevelopmentExampleItem`)엔 id가 없다 — 필드명만 그대로 옮긴다.
+// 서버 계약(`DevelopmentExampleItem`)엔 id가 없다 — 필드명만 그대로 옮긴다.
 function fromApiDevelopmentExample(dto: DevelopmentExampleItem): DevelopmentExampleValues {
   return { userLine: dto.userLine, assistantLine: dto.assistantLine };
 }
 
-// startingSetupId === null이면 global, 아니면 startingSetup 스코프로 역변환한다(techspec §1.3 [확정] 매핑).
+// startingSetupId === null이면 global, 아니면 startingSetup 스코프로 역변환한다.
 function fromApiKeywordNote(note: KeywordNoteDraftItem): KeywordNoteValues {
   return {
     id: note.id,
@@ -111,18 +111,18 @@ function fromApiStartingSetup(setup: StartingSetupDraftItem): StartingSetupValue
 
 /**
  * `GET /contents/{id}/draft` 응답 중 profile/storySetting/startingSetups/keywordNotes/shortcuts/
- * registration 부분 -> 폼 defaultValues(techspec-overview.md §8.1, 순수 함수).
+ * registration 부분 -> 폼 defaultValues(순수 함수).
  *
  * `settingText`/`customPrompt`는 promptTemplate 값과 무관하게 서버가 저장된 값을 그대로 돌려주므로
- * (§1 "값은 보존") 여기서 분기 없이 그대로 복원한다 — 필수 여부 분기는 `schema.ts`의
+ * 여기서 분기 없이 그대로 복원한다 — 필수 여부 분기는 `schema.ts`의
  * `storySettingSchema` superRefine에서만 적용된다. `developmentExamples`/`userGoal`/`rules`도 같은
- * 이유로 분기 없이 그대로 복원한다(chat-techspec.md §6-3, D-16 — 템플릿과 무관하게 항상 적용). 구
+ * 이유로 분기 없이 그대로 복원한다(템플릿과 무관하게 항상 적용). 구
  * 필드 `developmentExample`은 더 이상 폼에서 관리하지 않는다(`formToServer.ts` 참고).
  *
- * endings(US-095)가 startingSetups의 마지막 남은 필드였다 — 이제 전체 `StoryDraftResponse`를 그대로
- * 받으므로 US-092~094가 쓰던 `Pick<...>` 좁히기가 더 필요 없다(`formToServer.ts`와 대칭).
+ * endings가 startingSetups의 마지막 남은 필드였다 — 이제 전체 `StoryDraftResponse`를 그대로
+ * 받으므로 예전에 쓰던 `Pick<...>` 좁히기가 더 필요 없다(`formToServer.ts`와 대칭).
  *
- * 받는 타입이 `StoryDraftResponse`가 아니라 id를 뺀 `StoryDraftContent`인 이유는 US-007이다 — 아직
+ * 받는 타입이 `StoryDraftResponse`가 아니라 id를 뺀 `StoryDraftContent`인 이유는 초안 지연 생성이다 — 아직
  * 서버에 없는 초안(`createEmptyDraft`)도 같은 함수로 폼 초기값을 만든다.
  */
 export function serverToForm(data: StoryDraftContent): StoryBuilderFormValues {

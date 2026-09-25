@@ -18,7 +18,7 @@ type VisibilityTransitionMenuItemsProps = {
   contentId: string;
   creatorUserId: string;
   currentVisibility: ContentVisibility;
-  /** 이용제한 작품에서는 전환 항목이 비활성이 된다(US-008). **required로 둔 것은 의도다** — 이 스토리의
+  /** 이용제한 작품에서는 전환 항목이 비활성이 된다. **required로 둔 것은 의도다** — 이 prop이 고치려던
    * 원래 결함이 정확히 "목록 화면이 `moderationStatus`를 안 읽는 것"이었고, 새 진입점이 생길 때 컴파일러가
    * 그 질문을 다시 하게 만드는 게 유일하게 반복되지 않는 방어선이다. */
   moderationStatus: ModerationStatus;
@@ -30,7 +30,7 @@ const VISIBILITY_ICON: Record<ContentVisibility, LucideIcon> = {
   private: EyeOff,
 };
 
-/** US-005 — 공개범위 전환 항목 2개(현재 값은 뺀다). 진입점이 셋(콘텐츠 상세 "⋯" 메뉴 / 프로필 카드
+/** 공개범위 전환 항목 2개(현재 값은 뺀다). 진입점이 셋(콘텐츠 상세 "⋯" 메뉴 / 프로필 카드
  * "⋯" 메뉴 / `/my` 카드 "⋯" 메뉴)이라 항목 자체를 여기서 한 번만 그린다 — 라벨·아이콘·순서가 화면마다
  * 갈라지지 않게. 호출부는 `DropdownMenu`/`DropdownMenuContent`와 (필요하면) 구분선만 소유한다.
  *

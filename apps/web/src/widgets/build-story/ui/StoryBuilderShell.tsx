@@ -54,16 +54,16 @@ type StoryBuilderShellProps = {
   }) => ReactNode;
 };
 
-// 탭 목록은 features/build-story/model/tabs.ts(STORY_TABS)가 단일 소스다(builder-techspec.md §4-1) —
-// fields(에러 탭 매칭용 경로 프리픽스)·preview(D-2)가 이 배열에 함께 실려 있다.
+// 탭 목록은 features/build-story/model/tabs.ts(STORY_TABS)가 단일 소스다 —
+// fields(에러 탭 매칭용 경로 프리픽스)·preview가 이 배열에 함께 실려 있다.
 const TABS = STORY_TABS;
 
 // 서버(validate_story_publish)가 400으로 돌려주는 필드명을 한국어 라벨로 보여준다. 초안 상태를
-// 표현하느라 nullable인 3필드(profile.image/registration.genre/target, US-092/095)도 이제는 폼
-// 스키마의 refine이 먼저 막지만(builder-publish-goal-prompt.md BP-1), 다른 기기에서 편집된 초안처럼
-// 서버만 아는 상태가 남아 이 경로를 지우지 않는다(BP-4).
+// 표현하느라 nullable인 3필드(profile.image/registration.genre/target)도 이제는 폼
+// 스키마의 refine이 먼저 막지만, 다른 기기에서 편집된 초안처럼
+// 서버만 아는 상태가 남아 이 경로를 지우지 않는다.
 // 키 집합은 validate_story_publish가 내는 **비인덱스** 필드 9개 전부다(인덱스가 박힌
-// `startingSetups[0].prologue` 류는 fallback 문구로 접힌다, F-8/BP-4).
+// `startingSetups[0].prologue` 류는 fallback 문구로 접힌다).
 const MISSING_FIELD_LABELS = {
   name: "이름",
   oneLiner: "한줄소개",
@@ -81,10 +81,10 @@ const MISSING_FIELD_LABELS = {
  * 두 맵을 손으로 맞추는 한 그 어긋남은 화면에서만 드러난다. */
 type MissingField = keyof typeof MISSING_FIELD_LABELS;
 
-// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다(builder-goal-prompt.md §5-2) — 값은
+// 위 서버 필드명을 form.setError()가 받는 폼 경로로 옮긴다 — 값은
 // features/build-story/model/tabs.ts(STORY_TABS)의 fields 프리픽스 아래에 들어간다(profile.*는
 // profile 탭, registration.*는 registration 탭). 선언 타입이 string 인덱스인 것은 서버가 주는 임의
-// 문자열로 조회하기 때문이고(인덱스 경로 포함, F-8), 키 커버리지는 아래 `satisfies`가 잠근다.
+// 문자열로 조회하기 때문이고(인덱스 경로 포함), 키 커버리지는 아래 `satisfies`가 잠근다.
 const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValues>>> = {
   name: "profile.name",
   oneLiner: "profile.oneLiner",
@@ -99,26 +99,25 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
 } satisfies Record<MissingField, Path<StoryBuilderFormValues>>;
 
 // 클라 검증 실패 경로(handlePublishInvalid)가 들고 있는 건 서버 필드명이 아니라 폼 경로라, 위 두
-// 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다
-// (builder-publish-goal-prompt.md BP-3).
+// 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다.
 const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
 
-/** techspec-builder-story.md §0/§1 — 8탭 단일 useForm 셸. 자동저장(US-096)/발행(US-085)/
- * 미리보기(US-088)를 CharacterBuilderShell.tsx(US-105)와 동일한 방식으로 연동한다.
+/** 8탭 단일 useForm 셸. 자동저장/발행/
+ * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *
- * `draftId`는 아직 서버에 없는 초안이면 undefined다(US-007) — 첫 저장이 초안을 만들고 URL을 바꾼다. */
+ * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */
 export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilderShellProps) {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState<StoryBuilderTab>("profile");
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  // FORM-07 의도적 이탈(V-3, fe-convention-refactor-progress.md) — `form.formState.isSubmitting`은
+  // 폼 컨벤션(중복 제출 방지는 `isSubmitting`)에서 의도적으로 벗어난다 — `form.formState.isSubmitting`은
   // 검증 구간까지 포함해 true가 되는데 발행 버튼은 네이티브 `disabled`라 유효성 실패 때마다 포커스가
   // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
   const [isPublishing, setIsPublishing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string>();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
-  // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구(D-10)와 정확히 같다
-  // (builder-goal-prompt.md §5-3). 기본값을 그대로 두는 것 자체가 이 단계의 결정이다.
+  // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구와 정확히 같다.
+  // 기본값을 그대로 두는 것 자체가 의도된 결정이다.
   const form = useForm<StoryBuilderFormValues>({
     // storySetting.promptTemplate/developmentExamples 등 `.default()`가 붙은 필드는 zod의 input
     // 타입과 output 타입이 갈린다 — zodResolver()는 `Resolver<Input, any, Output>`을 돌려주는데
@@ -135,7 +134,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   const { saveDraft } = useDraftPersistence({ type: "story", draftId });
   const publishMutation = usePublishContentMutation();
 
-  // builder-techspec.md §9-1 — 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
+  // 발행 실패 시 첫 에러 필드로 이동한다(탭이 다르면 먼저 전환). tabId는
   // firstErrorLocation이 TABS 근거로 돌려주는 값이라 항상 유효하지만, 타입은 string이라 좁힘이
   // 필요하다(`as` 대신 술어 — isStoryBuilderTab, 파일 하단).
   const focusFirstError = useFocusFirstError({
@@ -168,7 +167,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   }
 
   // `handleSubmit`이 넘겨주는 values는 resolver(storyBuilderSchema)를 이미 통과한 파싱 결과라
-  // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다(builder-goal-prompt.md §5-2).
+  // (default() 적용 포함) 여기서 다시 parse()할 필요가 없다.
   async function handlePublish(values: StoryBuilderFormValues) {
     setRejectionReason(undefined);
     const payload = formToServer(values);
@@ -200,24 +199,24 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     }
   }
 
-  // zodResolver 검증 실패(폼 스키마 위반) 경로 — builder-techspec.md §9-1. 먼저 걸리는 쪽이 덜
+  // zodResolver 검증 실패(폼 스키마 위반) 경로. 먼저 걸리는 쪽이 덜
   // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
-  // 문장이 갈린다(builder-publish-goal-prompt.md BP-3) — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
+  // 문장이 갈린다 — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
   // 온다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     focusFirstError(firstErrorLocation(errors, TABS));
     toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
   }
 
-  // builder-techspec.md §4-3/§6 — 폼과 프리뷰가 동시에 살아 있어야 하므로(D-1의 lg 이상 2단) 더 이상
+  // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상
   // isPreviewOpen으로 렌더 트리 자체를 분기하지 않는다. 매 렌더 같은 트리 위치(BuilderLayout의
   // preview 슬롯)에 같은 노드를 그려 넣어 React가 리마운트하지 않게 하고, lg 미만에서 그 노드를
   // 화면에 보일지는 BuilderLayout이 CSS로만 정한다(전체화면 토글).
   //
-  // builder-techspec.md §6-1 — `kind`는 활성 탭에서 파생한다(TABS[].preview). `TABS.find`가
+  // `kind`는 활성 탭에서 파생한다(TABS[].preview). `TABS.find`가
   // undefined를 돌려줄 수 있는 건 타입상 뿐이다 — activeTab의 타입(StoryBuilderTab)이 TABS에서
   // 도출되므로 항상 매치가 있다. 그래도 타입 체커를 만족시킬 기본값이 필요해 "card"를 쓴다 — 초기
-  // 활성 탭("profile")의 preview 값과 같고, D-7(지연 시작)과 같은 이유로 도달할 리 없는 분기에서
+  // 활성 탭("profile")의 preview 값과 같고, 프리뷰 세션을 지연 시작하는 것과 같은 이유로 도달할 리 없는 분기에서
   // 프리뷰 세션을 만드는 "chat"보다 안전하다.
   const activeTabConfig = TABS.find((tab) => tab.id === activeTab);
   const previewNode = renderPreview({
@@ -226,15 +225,15 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     onClose: () => setIsPreviewOpen(false),
   });
 
-  // D-4(builder-goal-prompt.md §5-1) — 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시한다.
+  // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시한다.
   const errorTabIds = errorTabs(form.formState.errors, TABS);
 
   return (
     <FormProvider {...form}>
-      {/* builder-preview-validation(피드백 2) — 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
+      {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
           56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
           여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
-          토스트다(US-007). */}
+          토스트다. */}
       <BuilderTopBar
         title="스토리 만들기"
         autosaveNotice="변경사항은 자동으로 저장돼요."
@@ -302,7 +301,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   );
 }
 
-/** `Tabs`의 `onValueChange`가 주는 값이 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고(TS-03) 화면이 실제로
+/** `Tabs`의 `onValueChange`가 주는 값이 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓰고 화면이 실제로
  * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
 function isStoryBuilderTab(value: string): value is StoryBuilderTab {
   return TABS.some((tab) => tab.id === value);

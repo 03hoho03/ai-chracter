@@ -20,7 +20,7 @@ type AppealModalProps = {
   target: AppealTarget;
 };
 
-/** techspec-builder-common.md §5.1 — 발행 거부 화면의 "이의제기" 버튼(US-098)과 조치 통지(US-055)
+/** 발행 거부 화면의 "이의제기" 버튼과 조치 통지
  * 두 진입점이 target만 다르게 넘겨 공유하는 react-call 모달. UpdateInfoModal과 동일하게 자체
  * mutation을 직접 호출하는 완결형 컴포넌트다(호출부마다 달라질 후속 동작이 없어 ReportContentModal의
  * caller-supplied mutationFn 패턴은 불필요).

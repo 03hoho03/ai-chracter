@@ -43,7 +43,7 @@ function debounce<TArgs extends unknown[]>(fn: (...args: TArgs) => void, ms: num
  * 때문이다. 이 토스트가 뜨는 건 4xx/5xx와 `navigator.onLine === true`인 연결 실패다(실측). */
 const AUTOSAVE_ERROR_TOAST_ID = "builder-autosave-error";
 
-/** techspec-builder-common.md §1 — 캐릭터/스토리 빌더 공용 자동저장 훅.
+/** 캐릭터/스토리 빌더 공용 자동저장 훅.
  * 필드 변경(subscribe) 시 디바운스 PATCH, "임시저장" 클릭 시 saveNow로 즉시 PATCH.
  *
  * 디바운스된 저장은 사용자가 시작한 게 아니라 호출부에 붙잡을 자리가 없는 유일한 경로다 — 실패를
@@ -60,7 +60,7 @@ export function useAutosave<TForm, TPayload>(opts: {
    * 언마운트 시 대기 중이던 저장을 **실행할지**(true) **버릴지**(false). 호출 시점에 평가되므로 최신
    * 상태를 읽는다.
    *
-   * 빌더가 이 둘을 갈라야 하는 이유(US-007): 초안이 이미 서버에 있으면 실행해야 마지막 편집이
+   * 빌더가 이 둘을 갈라야 하는 이유: 초안이 이미 서버에 있으면 실행해야 마지막 편집이
    * 사라지지 않는다("변경사항은 자동으로 저장돼요"라고 화면에 적어 뒀다). 반대로 초안이 아직 없으면
    * 버려야 한다 — 실행하면 스쳐 지나간 방문이 초안을 만들 뿐 아니라, 저장 성공이 URL을 초안 주소로
    * 바꾸면서 **이미 다른 화면에 있는 사용자를 빌더로 되돌려 놓는다**(실측으로 재현했다).

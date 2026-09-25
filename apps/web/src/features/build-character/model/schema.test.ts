@@ -19,7 +19,7 @@ function validFullForm() {
   };
 }
 
-/** builder-publish-goal-prompt.md BP-1/BP-2 — 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
+/** 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
  * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다
  * (스토리 빌더의 같은 3필드와 짝, `features/build-story/model/schema.test.ts`). */
 describe("characterBuilderSchema publish-required nullable fields", () => {

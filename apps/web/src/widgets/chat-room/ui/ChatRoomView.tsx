@@ -33,7 +33,6 @@ import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
-// techspec-chat-character.md, techspec-chat-story.md, techspec-chat-common.md §1/§5 — US-055/060:
 // 대화방 상세 조회 + 메시지 전송/스트리밍 표시 + 오류·정책경고 배너를 갖춘 캐릭터/스토리 공용 대화 화면.
 // 스토리 챗은 room.contentSnapshot이 있을 때만 스탯 게이지가 추가로 붙는다(캐릭터 챗은 undefined).
 export function ChatRoomView({ roomId }: { roomId: string }) {
@@ -43,7 +42,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
-  // clover-goal-prompt.md CL-19 — 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
+  // 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
   // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
   // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
@@ -53,7 +52,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
-  // clover-techspec.md CT-16 — 무료 일일분을 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).
+  // 무료 일일분을 쓴 뒤에만 나타난다.
   // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
@@ -70,7 +69,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // US-079, techspec-content-versioning.md §4 — 배너는 방 진입 시 1회만 노출한다. versionAutoUpgraded는
+  // 배너는 방 진입 시 1회만 노출한다. versionAutoUpgraded는
   // acknowledge 뮤테이션 성공 즉시 캐시에서 false로 꺼지므로, 그 값을 직접 렌더링 조건으로 쓰면 배너가
   // 뜨자마자 사라진다 — 로컬 state로 "봤다"는 사실을 분리해서 들고 있는다. room이 비동기로 로드되므로
   // useEffectOnce 대신 usePlayContent와 동일한 ref 가드+useEffect 패턴을 쓴다.
@@ -142,7 +141,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
     } else if (status.declined) {
-      // S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
+      // 확인 모달에서 그만둔 것은 실패가 아니다. `destructive`(위험 액션)도
       // 쓰지 않는다 — 사용자가 고른 결과라 경고할 일이 없다. 중립 표면으로 사실만
       // 말하고 다시 보낼 길은 열어 둔다(낙관적 사용자 메시지가 이미 목록에 있다).
       errorNotice = (
@@ -199,7 +198,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
         </div>
       </header>
 
-      {/* US-004 — 더보기 사이드바는 채팅 헤더 아래부터 바닥까지 채우고 채팅 컬럼과 폭을 나눠 갖는다.
+      {/* 더보기 사이드바는 채팅 헤더 아래부터 바닥까지 채우고 채팅 컬럼과 폭을 나눠 갖는다.
           min-h-0/min-w-0이 없으면 flex 아이템의 기본 min-*:auto가 메시지 영역의 스크롤과 축소를 막는다.
           max-w-5xl은 셸이 아니라 이 행에 건다 — 채팅 컬럼이 중앙 정렬된 행의 첫 flex 아이템이라
           사이드바를 여닫아도(오른쪽에서만 폭을 가져가므로) 좌측 콘텐츠 시작점이 움직이지 않는다.
@@ -278,7 +277,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
             {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르지만,
                 사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
-                구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로(FR-88) 칩은 되살아나지
+                구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로 칩은 되살아나지
                 않는다 — 재시도는 오류 배너의 "다시 시도"가 담당한다. */}
             {room.contentSnapshot &&
               shouldShowSuggestedReplies(
@@ -303,8 +302,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 </div>
               )}
 
-            {/* clover-techspec.md §5-4 — 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
-                칩 줄 자체가 조건부라 "필요할 때만 노출"(clover-goal-prompt.md CL-25)과 형태가 같다.
+            {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
+                칩 줄 자체가 조건부라 "필요할 때만 노출"과 형태가 같다.
                 429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
             {showClover && (
               <div className="mb-2 flex justify-end">

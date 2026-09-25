@@ -31,7 +31,7 @@ const FIELD_LABEL: Record<GeneratedImageItem["usages"][number]["field"], string>
   situationalImage: "상황 이미지",
 };
 
-/** prd-image-library US-005/US-006 — 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는
+/** 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는
  * 작품(usages) 목록을 보여주고 각 항목에서 해당 작품 상세로 이동하며, 미사용 이미지는 여기서
  * 삭제한다(사용 중이면 비활성 + 사유 안내). */
 export function GeneratedImageDetailModal({
@@ -89,9 +89,9 @@ export function GeneratedImageDetailModal({
 
         {/* 상세에서는 원본 비율 그대로 보여준다(생성 비율이 1:1~9:16까지 다양 — 크롭 금지).
             세로 이미지는 60dvh에서 멈추고 남는 폭은 bg-secondary가 레터박스로 받는다
-            (`bg-muted`는 모달 표면 `popover`와 같은 값이라 레터박스가 사라진다 — DESIGN.md §2). */}
+            (`bg-muted`는 모달 표면 `popover`와 같은 값이라 레터박스가 사라진다 — DESIGN.md Colors 절). */}
         <div className="overflow-hidden rounded-lg bg-secondary">
-          {/* US-013 — 모달을 연 직후 바로 보이는 주인공 이미지라 lazy를 걸지 않는다(decoding만). */}
+          {/* 모달을 연 직후 바로 보이는 주인공 이미지라 lazy를 걸지 않는다(decoding만). */}
           <img src={image.imageUrl} alt="" decoding="async" className="max-h-[60dvh] w-full object-contain" />
         </div>
 

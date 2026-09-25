@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { createFormDefaults, serverToForm } from "./serverToForm";
 
 describe("createFormDefaults", () => {
-  // persona-goal-prompt.md UP-23 — "기본이 없으면 켜 둔다"는 규칙의 유일한 자리다. BE는 받은 값만 따른다.
+  // "기본이 없으면 켜 둔다"는 규칙의 유일한 자리다. BE는 받은 값만 따른다.
   it("starts with setAsDefault on when there is no default persona", () => {
     expect(createFormDefaults(null).setAsDefault).toBe(true);
   });
@@ -12,7 +12,7 @@ describe("createFormDefaults", () => {
     expect(createFormDefaults("4a1f0b3e-0000-4000-8000-000000000001").setAsDefault).toBe(false);
   });
 
-  // persona-goal-prompt.md UP-6·R-11 — 이름은 빈칸으로 시작한다(닉네임으로 미리 채우지 않는다).
+  // 이름은 빈칸으로 시작한다(닉네임으로 미리 채우지 않는다).
   it("starts with an empty name, no gender and an empty description", () => {
     expect(createFormDefaults(null)).toEqual({
       name: "",

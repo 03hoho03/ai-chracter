@@ -13,7 +13,7 @@ type PlayGuideModalProps = {
   roomId: string;
 };
 
-/** techspec-chat-story.md §6, US-067 — "더보기 > 플레이가이드"에서 여는 읽기 전용 react-call 모달.
+/** "더보기 > 플레이가이드"에서 여는 읽기 전용 react-call 모달.
  * 입력/제출이 없어 mutationFn/useMutationFlow 없이 call.end()만으로 닫는다. */
 export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call, roomId }) => {
   const isOpen = !call.ended;
@@ -33,7 +33,7 @@ export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call,
   );
 });
 
-/** 네 상태(로딩·에러·본문·빈 값)가 배타적이라 early return으로 순서를 강제한다(COMP-04). */
+/** 네 상태(로딩·에러·본문·빈 값)가 배타적이라 early return으로 순서를 강제한다. */
 function PlayGuideBody({ query }: { query: ReturnType<typeof useChatRoomPlayGuideQuery> }) {
   if (query.isPending) {
     return (

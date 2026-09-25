@@ -13,12 +13,12 @@ import { ProfileMenu } from "./ProfileMenu";
 import { SearchInlineExpand } from "./SearchInlineExpand";
 
 /**
- * techspec-global-nav-profile.md §1 — 로고 · 캐릭터/스토리 토글 · 이미지 생성 · 검색 · 알림 벨 · 프로필로 고정 구성되며
- * 모든 화면에서 동일하게 노출된다(`routes/__root.tsx`에 마운트). 크롬은 항상 얇게 유지한다(DESIGN.md §1).
+ * 로고 · 캐릭터/스토리 토글 · 이미지 생성 · 검색 · 알림 벨 · 프로필로 고정 구성되며
+ * 모든 화면에서 동일하게 노출된다(`routes/__root.tsx`에 마운트). 크롬은 항상 얇게 유지한다(DESIGN.md Overview 절).
  * 내부 바는 full-bleed다 — 전역 헤더는 뷰포트에 속하고 본문은 컬럼(`max-w-5xl`)에 속한다는 결정이며, 그 대가로
- * 로고 left와 본문 콘텐츠 left가 어긋난다(의도다, main-refact-goal-prompt.md MR-1).
+ * 로고 left와 본문 콘텐츠 left가 어긋난다(의도다).
  *
- * `sm`(640px) 미만은 [버거] · [로고 중앙] · [검색] 셋으로 축약한다(MR-9). 한 DOM에 `grid grid-cols-[1fr_auto_1fr]
+ * `sm`(640px) 미만은 [버거] · [로고 중앙] · [검색] 셋으로 축약한다. 한 DOM에 `grid grid-cols-[1fr_auto_1fr]
  * … sm:flex`를 써서 두 레이아웃을 만든다 — 마크업을 두 벌 두면 로고가 둘(접근가능한 홈 링크가 둘)이 되고
  * 검색이 두 벌이면 상태가 갈린다. `display:none` 자식은 grid 아이템을 만들지 않으므로 모바일에서
  * 버거=1열·로고=2열·우측 그룹=3열이 되고, `1fr auto 1fr`이라 버거와 검색의 폭이 달라도 로고가 정확히
@@ -28,7 +28,7 @@ import { SearchInlineExpand } from "./SearchInlineExpand";
  */
 export function Header() {
   const { data: me } = useSessionQuery();
-  // MR-12 — `sm` 미만에서 검색이 펼쳐지면 버거·로고를 숨기고 검색이 헤더 한 줄을 독점한다. 펼침 상태 자체는
+  // `sm` 미만에서 검색이 펼쳐지면 버거·로고를 숨기고 검색이 헤더 한 줄을 독점한다. 펼침 상태 자체는
   // `SearchInlineExpand`가 계속 들고(자동 펼침 초기값·디바운스 등 자체 로직과 묶여 있어서), 이 값은
   // `onExpandedChange`로 전달받아 형제 엘리먼트(버거·로고)를 숨기는 데만 쓴다.
   const [isSearchExpanded, setIsSearchExpanded] = useState(false);
@@ -61,7 +61,7 @@ export function Header() {
             이 그룹이 기본값 min-width:auto면 그 축소가 막혀 헤더가 뷰포트를 넘는다(390px에서 실측).
             `justify-self-end`는 grid(모바일)에서 그룹을 우측에 붙이고, `sm:ml-auto`는 flex(데스크톱)에서
             같은 역할을 한다(justify-self는 flex 아이템에 효과가 없어 서로 간섭하지 않는다). 검색이
-            헤더를 독점할 때(MR-12)는 이 그룹이 3열 전체를 차지해야 하므로 `max-sm:col-span-3` +
+            헤더를 독점할 때는 이 그룹이 3열 전체를 차지해야 하므로 `max-sm:col-span-3` +
             `max-sm:justify-self-stretch`를 더한다. */}
         <div
           className={cn(
@@ -72,7 +72,7 @@ export function Header() {
           {/* /studio/images의 유일한 진입점이 빌더 이미지 피커의 새 탭 링크뿐이었다. 헤더에 상시 노출하되
               로그인 분기는 두지 않는다 — 비로그인 클릭은 라우트의 requireSession이 /login?redirect=로 처리한다.
               아이콘은 ImagePlus("이미지를 새로 만든다")를 쓴다. `sm` 미만에서는 좌측 드로어(창작 그룹)로
-              들어간다(MR-9) — 마운트는 유지해 알림처럼 상태가 갈리진 않는다(이 버튼은 상태가 없다). */}
+              들어간다 — 마운트는 유지해 알림처럼 상태가 갈리진 않는다(이 버튼은 상태가 없다). */}
           <Button asChild variant="ghost" size="icon" aria-label="이미지 생성" className="hidden sm:inline-flex">
             <Link to="/studio/images">
               <ImagePlus aria-hidden />

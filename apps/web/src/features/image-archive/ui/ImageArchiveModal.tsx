@@ -14,7 +14,7 @@ type ImageArchiveModalProps = {
   characterId: string;
 };
 
-// techspec-chat-character.md §2, US-074/075 — "더보기 > 이미지 보관함"에서 여는 읽기 전용 react-call
+// "더보기 > 이미지 보관함"에서 여는 읽기 전용 react-call
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). exposed=false 항목은 서버가
 // 내려준 블러 imageUrl 위에 자물쇠 아이콘만 오버레이하고 클라이언트 사이드 블러 처리는 하지 않는다.
 export const ImageArchiveModal = createCallable<ImageArchiveModalProps, void>(({ call, characterId }) => {
@@ -35,7 +35,7 @@ export const ImageArchiveModal = createCallable<ImageArchiveModalProps, void>(({
   );
 });
 
-/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다(COMP-04). */
+/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다. */
 function ImageArchiveBody({ query }: { query: ReturnType<typeof useCharacterImageArchiveQuery> }) {
   if (query.isPending) {
     return (
@@ -64,7 +64,7 @@ function ImageArchiveBody({ query }: { query: ReturnType<typeof useCharacterImag
     <div className="grid grid-cols-3 gap-2">
       {images.map((image) => (
         <div key={image.id} className="relative aspect-square overflow-hidden rounded-md bg-secondary">
-          {/* US-013 — 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
+          {/* 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
           <img
             src={image.imageUrl}
             alt={image.exposed ? "노출된 이미지" : "아직 보지 못한 이미지"}

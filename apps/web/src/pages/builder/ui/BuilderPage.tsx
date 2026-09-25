@@ -9,9 +9,9 @@ import { StoryBuilderShell } from "@/widgets/build-story";
 import { BuilderPreview } from "@/widgets/builder-preview";
 
 /**
- * techspec-builder-common.md §2 — 초안 만들기(`draftId === undefined`)와 이어쓰기 양쪽의 화면.
+ * 초안 만들기(`draftId === undefined`)와 이어쓰기 양쪽의 화면.
  *
- * 초안은 첫 자동저장 시점에 만들어지므로(US-007) `draftId`가 없는 동안에는 서버 조회 없이
+ * 초안은 첫 자동저장 시점에 만들어지므로 `draftId`가 없는 동안에는 서버 조회 없이
  * `createEmptyDraft(type)`의 로컬 초기값으로 시작한다. 첫 저장이 URL을 초안 주소로 바꿔도 라우트가
  * 하나라 리마운트되지 않는다(`NEW_DRAFT_SEGMENT` 주석).
  *
@@ -75,7 +75,7 @@ function BuilderSkeleton() {
     <>
       <BuilderTopBar title="작품 만들기" />
       <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
-        {/* Input 기본 높이(D-4로 h-9=36px)에 맞춘다(design-system-progress.md P-3-8). */}
+        {/* Input 기본 높이(h-9=36px)에 맞춘다. */}
         <div className="h-9 w-full animate-pulse rounded-lg bg-muted" />
         <div className="h-64 w-full animate-pulse rounded-xl bg-muted" />
       </main>

@@ -10,9 +10,9 @@ import { CreatePersonaForm, EditPersonaForm, PersonaActionMenu } from "@/feature
  * (apps/web/CLAUDE.md "인라인 편집 우선 — 편집 대상 id는 호출부 단일 state"). */
 type EditingTarget = { kind: "create" } | { kind: "edit"; personaId: string } | undefined;
 
-/** persona-goal-prompt.md UP-12 — 대화 프로필 관리(목록·생성·편집·삭제·기본 지정). 헤더 프로필 메뉴에서 들어온다.
+/** 대화 프로필 관리(목록·생성·편집·삭제·기본 지정). 헤더 프로필 메뉴에서 들어온다.
  *
- * 컬럼은 설정(`/mypage`)과 같은 `max-w-md`다(§3-6 "폭은 마이페이지와 같게"). 편집은 모달이 아니라 행을
+ * 컬럼은 설정(`/mypage`)과 같은 `max-w-md`다. 편집은 모달이 아니라 행을
  * 폼으로 바꾸는 인라인 편집이다. */
 export function PersonasPage() {
   return (
@@ -71,7 +71,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
     onEditingChange({ kind: "create" });
   }
 
-  /** 인라인 폼을 닫고 그 폼을 연 트리거로 포커스를 돌려준다(persona-progress.md S8 🟡-3). 폼이 열려 있는
+  /** 인라인 폼을 닫고 그 폼을 연 트리거로 포커스를 돌려준다. 폼이 열려 있는
    * 동안 트리거(`새 프로필`·그 행의 ⋯)는 언마운트돼 있어 "바꾸기 전에 옮기기"(apps/web/CLAUDE.md §포커스)가
    * 불가능하다 — 그래서 `flushSync`로 닫힘을 동기 커밋한 뒤 되살아난 트리거로 옮긴다. 안 하면 누른 버튼과
    * 함께 폼이 사라져 포커스가 `<body>`로 떨어진다. */
@@ -176,7 +176,7 @@ function PersonaListSection({ personaList, editing, onEditingChange }: PersonaLi
   );
 }
 
-/** 진행 표시라 `animate-pulse`를 가드하지 않는다(DESIGN.md §5 Motion 예외). 행 높이는 두 줄 요약 행과 같다. */
+/** 진행 표시라 `animate-pulse`를 가드하지 않는다(DESIGN.md Motion 절의 예외). 행 높이는 두 줄 요약 행과 같다. */
 function PersonaListSkeleton() {
   return (
     <div aria-hidden className="flex flex-col gap-2">

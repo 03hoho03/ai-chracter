@@ -7,8 +7,8 @@ import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 
-/** techspec-builder-character.md §0 AC — 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
- * `thumbnailUrl`은 초안 조회 응답의 표시 전용 값(builder-techspec.md §7) — 폼 필드가 아니라 초안
+/** 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
+ * `thumbnailUrl`은 초안 조회 응답의 표시 전용 값 — 폼 필드가 아니라 초안
  * 재진입 시 이미지 필드를 채우기 위한 prop이다. */
 export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
   const form = useFormContext<CharacterBuilderFormValues>();

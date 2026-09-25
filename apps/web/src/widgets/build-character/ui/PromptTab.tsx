@@ -4,7 +4,7 @@ import { useFormContext } from "react-hook-form";
 
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 
-/** techspec-builder-character.md §3 — 대화 생성에 반영되는 자유 텍스트 캐릭터 프롬프트(필수) 단일 필드. */
+/** 대화 생성에 반영되는 자유 텍스트 캐릭터 프롬프트(필수) 단일 필드. */
 export function PromptTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 

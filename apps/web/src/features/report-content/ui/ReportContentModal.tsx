@@ -26,7 +26,7 @@ type ReportContentModalProps = {
   mutationFn: MutationFn<void, ReportReasonCategory>;
 };
 
-/** techspec-content-detail.md §5, techspec-overview.md §9 — 이 프로젝트 첫 react-call 액션형 모달.
+/** 이 프로젝트 첫 react-call 액션형 모달.
  * 실제 신고 API 호출/토스트/성공 판단은 호출부가 넘기는 mutationFn이 담당하고, 이 컴포넌트는
  * 사유 단일 선택 UI + 제출 상태 표시만 책임진다.
  *

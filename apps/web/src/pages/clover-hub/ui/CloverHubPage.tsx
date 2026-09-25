@@ -17,9 +17,9 @@ import {
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
-/** clover-page-goal-prompt.md CE-24·CE-25·CE-36 — 클로버 허브 페이지.
+/** 클로버 허브 페이지.
  *
- * 컨테이너 폭은 마이페이지(`pages/mypage/ui/MyPagePage.tsx:56`)와 같은 `max-w-md`다(CE-36) —
+ * 컨테이너 폭은 마이페이지(`pages/mypage/ui/MyPagePage.tsx:56`)와 같은 `max-w-md`다 —
  * 진입점이 마이페이지라 폭이 이어지면 이동이 자연스럽다.
  */
 export function CloverHubPage() {
@@ -27,7 +27,7 @@ export function CloverHubPage() {
     <main className="mx-auto flex max-w-md flex-col gap-10 px-4 sm:px-6 py-10">
       <div className="flex flex-col gap-1.5">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">클로버</h1>
-        {/* clover-page-goal-prompt.md CE-33 — "클로버 페이지·내역 화면에도 상시 고지를 둔다."
+        {/* "클로버 페이지·내역 화면에도 상시 고지를 둔다."
             문구는 entities/clover의 단일 소스(cloverExpiryNotice.ts)를 쓴다 — 내역 화면과
             리터럴을 각자 복사해 갖고 있다가 "7일"과 게시된 공지("7~8일")가 어긋났던 전례가
             있다. */}
@@ -47,7 +47,7 @@ function SectionHeading({ children }: { children: string }) {
 
 function BalanceSection() {
   const { data, isPending } = useCloverBalanceQuery();
-  // clover-page-goal-prompt.md CE-22 — 3일 임박 게이트는 BE가 이미 걸었다. FE는 그 값을
+  // 3일 임박 게이트는 BE가 이미 걸었다. FE는 그 값을
   // D-day 문구로만 바꾼다(재판정하지 않는다).
   const expiringMessage = data ? formatCloverExpiringSoonMessage(data.expiringSoon, new Date()) : null;
 
@@ -60,12 +60,12 @@ function BalanceSection() {
         ) : (
           <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
         )}
-        {/* clover-page-goal-prompt.md CE-27 — 평소 무채색, 만료 임박일 때만 primary 잉크(솔리드
+        {/* 평소 무채색, 만료 임박일 때만 primary 잉크(솔리드
             채움이 아니다 — 밝기 예산은 화면당 솔리드 채움 하나만 관리한다, `CloverBalance`의
             같은 처방). */}
         {expiringMessage && <p className="text-sm text-primary">{expiringMessage}</p>}
       </div>
-      {/* clover-page-goal-prompt.md S7 — 내역 화면 진입점. `pages/mypage/ui/MyPagePage.tsx`의
+      {/* 내역 화면 진입점. `pages/mypage/ui/MyPagePage.tsx`의
           "내 작품" 링크와 같은 관용구(`font-medium ... text-primary hover:underline
           focus-visible:underline`). */}
       <Link
@@ -89,7 +89,7 @@ function AttendanceSection() {
     if (claimAttendance.isPending) return;
     claimAttendance.mutate(undefined, {
       onSuccess: (res) => {
-        // clover-page-goal-prompt.md CE-19 — 자동 지급이 사라진 뒤 처음으로 성공·실패가
+        // 자동 지급이 사라진 뒤 처음으로 성공·실패가
         // 화면에 보여야 한다. `granted: false`는 오류가 아니라 "오늘 이미 받았다"는 정상
         // 응답이다(useClaimAttendanceMutation 주석과 같은 규칙).
         toast.success(res.granted ? "출석체크를 완료했어요." : "오늘은 이미 출석을 확인했어요.");
@@ -175,7 +175,7 @@ function MissionRow({
         <span className="text-sm font-medium text-foreground">{label}</span>
         <span className="text-xs text-muted-foreground">클로버 {mission.reward.toLocaleString()}개</span>
       </div>
-      {/* DESIGN.md §2 The Brightness Budget Rule — primary 솔리드 채움은 화면당 하나다. 출석체크
+      {/* DESIGN.md The Brightness Budget Rule — primary 솔리드 채움은 화면당 하나다. 출석체크
           버튼이 이미 그 자리를 쓰므로(둘 다 solid면 미션이 여러 개 달성됐을 때 솔리드 핑크가
           동시에 여러 개 뜬다), 여기는 outline이다. */}
       {state === "claimable" && (
@@ -189,8 +189,8 @@ function MissionRow({
           {isClaiming ? "받는 중..." : "받기"}
         </Button>
       )}
-      {/* DESIGN.md §5 Status badges — 중립 상태는 채움이 아니라 외곽선·텍스트다(`bg-muted`는
-          카드·모달 위에서 사라진다, CE-27). */}
+      {/* DESIGN.md Status badges — 중립 상태는 채움이 아니라 외곽선·텍스트다(`bg-muted`는
+          카드·모달 위에서 사라진다). */}
       {state === "claimed" && (
         <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-badge font-medium text-muted-foreground">
           청구완료

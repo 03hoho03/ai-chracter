@@ -74,7 +74,7 @@ describe("storySettingSchema", () => {
     expect(withWorldSetting.success && withWorldSetting.data.promptTemplate).toBe("basic");
   });
 
-  it("accepts userGoal/rules as optional free text (chat-goal-prompt.md §8-1/8-2, D-9)", () => {
+  it("accepts userGoal/rules as optional free text", () => {
     const result = storySettingSchema.safeParse({
       promptTemplate: "basic",
       worldSetting: "세계관 설명",
@@ -99,7 +99,7 @@ describe("storySettingSchema", () => {
     expect(result.success && result.data.developmentExamples).toEqual([]);
   });
 
-  it("accepts up to 3 development example pairs (chat-goal-prompt.md §8-3, D-10)", () => {
+  it("accepts up to 3 development example pairs", () => {
     const threePairs = Array.from({ length: 3 }, (_, i) => ({
       userLine: `사용자 메시지 ${i}`,
       assistantLine: `스토리 응답 ${i}`,
@@ -303,7 +303,7 @@ describe("ruleListItemSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  it("rejects a group nested inside another group (FR-59, no nesting)", () => {
+  it("rejects a group nested inside another group (no nesting)", () => {
     const result = ruleListItemSchema.safeParse({
       kind: "group",
       id: "group-1",
@@ -425,7 +425,7 @@ describe("storyBuilderSchema startingSetups", () => {
   });
 });
 
-/** builder-publish-goal-prompt.md BP-1/BP-2 — 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
+/** 초안을 담으려고 nullable로 둔 3필드는 화면에 `*`가
  * 붙어 있고 서버도 요구한다. 타입은 그대로 두고 refine이 상시 검증해 서버 400 왕복 전에 걸린다. */
 describe("storyBuilderSchema publish-required nullable fields", () => {
   it("rejects a null profile.image", () => {

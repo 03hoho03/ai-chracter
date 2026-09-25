@@ -21,9 +21,9 @@ export function MyChatRoomListView() {
   );
 }
 
-/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다(COMP-04) — `isError`와 `data`는
+/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다 — `isError`와 `data`는
  * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
- * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
+ * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다. */
 function MyChatRoomListBody({ listQuery }: { listQuery: ReturnType<typeof useMyChatRoomListQuery> }) {
   if (listQuery.isPending) return <MyChatRoomListSkeleton />;
 
@@ -93,7 +93,7 @@ function MyChatRoomListItemRow({ item }: { item: MyChatRoomListItem }) {
       params={{ roomId: item.id }}
       className="flex items-center gap-3 rounded-lg border border-border bg-background p-3 outline-none hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px motion-safe:transition-colors"
     >
-      {/* DESIGN.md §5 Cards — 썸네일 웰은 `bg-secondary`(`bg-muted`는 이 행의 `hover:bg-muted`와
+      {/* DESIGN.md Cards / Containers — 썸네일 웰은 `bg-secondary`(`bg-muted`는 이 행의 `hover:bg-muted`와
           같은 값이 되어 hover 중 사라진다). */}
       <div className="size-10 shrink-0 overflow-hidden rounded-lg bg-secondary">
         {item.thumbnailUrl ? (

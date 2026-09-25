@@ -18,7 +18,7 @@ import { forwardRef, type ComponentPropsWithoutRef } from "react";
 import type { MeResponse } from "@/entities/session";
 import { assertNever } from "@/shared/lib/assertNever";
 
-/** MR-10 — 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
+/** 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
  * 읽는다 — 두 곳이 각자 목록을 들면 한쪽에만 항목이 추가되는 게 이 저장소의 알려진 실패 모드다
  * (`toContentStatusTags` 선례: "같은 작품이 한 화면에서는 이용제한, 다른 화면에서는 공개가 됐다"). */
 export type ProfileDestinationKey =
@@ -99,7 +99,7 @@ export const ProfileDestinationLink = forwardRef<
         </Link>
       );
     case "personas":
-      // persona-goal-prompt.md UP-12 — 라벨은 페이지 h1(`대화 프로필`)과 같은 문자열이다(`설정` 선례, US-013).
+      // 라벨은 페이지 h1(`대화 프로필`)과 같은 문자열이다(`설정` 선례).
       return (
         <Link ref={ref} to="/personas" className={className} {...rest}>
           <IdCard aria-hidden />
@@ -142,7 +142,7 @@ export const ProfileDestinationLink = forwardRef<
         </Link>
       );
     default:
-      // MR-10 — default 가 없으면 키를 유니언·PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를
+      // default 가 없으면 키를 유니언·PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를
       // 빠뜨려도 typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도
       // 안 난다(2026-09-15 적대적 리뷰가 실증). assertNever 로 다음 키 추가 때 컴파일 에러로 막는다.
       return assertNever(destinationKey);

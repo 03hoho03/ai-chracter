@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// TS-09 — 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
+// 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // widgets/build-story/ui/RegistrationTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
 export const TARGET_VALUES = ["female", "male", "all"] as const;
 export type Target = (typeof TARGET_VALUES)[number];
@@ -9,7 +9,7 @@ export const VISIBILITY_VALUES = ["public", "link", "private"] as const;
 export type Visibility = (typeof VISIBILITY_VALUES)[number];
 
 /**
- * chat-goal-prompt.md §8-3(D-10), chat-techspec.md §6-1(D-12) — 전개 예시 한 쌍. build-character의
+ * 전개 예시 한 쌍. build-character의
  * `exampleDialogueSchema`와 같은 입출력 쌍 모양이지만 `id`는 두지 않는다 — 서버 계약
  * (`DevelopmentExampleItem`)에 id가 없고(다른 레코드가 참조하지 않고 순서가 곧 정체성), id를 넣으면
  * `serverToForm`이 매번 새 id를 발급해야 해서 순수 함수가 아니게 된다. 위젯에서 목록 key가 필요하면
@@ -21,14 +21,14 @@ export const developmentExampleSchema = z.object({
 });
 
 /**
- * techspec-builder-story.md §1 — `promptTemplate`이 'custom'일 때 `worldSetting`은 화면 전환처럼
+ * `promptTemplate`이 'custom'일 때 `worldSetting`은 화면 전환처럼
  * 값은 폼 상태에 보존하되 검증에서만 제외하고, customPrompt를 필수로 요구한다.
  * 'basic'/'emotional'/'simulation'일 때는 반대로 worldSetting을 필수로 요구하고 customPrompt는 제외한다.
- * `developmentExamples`/`userGoal`/`rules`는 chat-techspec.md §6-3(D-16)에 따라 템플릿과 무관하게
+ * `developmentExamples`/`userGoal`/`rules`는 템플릿과 무관하게
  * 항상 적용되는 L1 작품 층이라 이 분기 대상이 아니고, 어느 템플릿에서도 필수가 아니다
- * (chat-goal-prompt.md §8, D-19 — 기존 33건이 비어 있는 채로 발행돼 있다).
+ * (기존 33건이 비어 있는 채로 발행돼 있다).
  */
-// TS-09 — widgets/build-story/ui/SettingTab.tsx의 PROMPT_TEMPLATE_LABELS가 이 배열을 단일 소스로
+// widgets/build-story/ui/SettingTab.tsx의 PROMPT_TEMPLATE_LABELS가 이 배열을 단일 소스로
 // 삼는다(라벨·설명 문구만 위젯이 map해 붙인다).
 export const PROMPT_TEMPLATE_VALUES = ["basic", "emotional", "simulation", "custom"] as const;
 export type PromptTemplate = (typeof PROMPT_TEMPLATE_VALUES)[number];
@@ -65,7 +65,7 @@ export const storySettingSchema = z
     }
   });
 
-/** techspec-builder-story.md §1.2 — 시작설정별 독립 스탯. */
+/** 시작설정별 독립 스탯. */
 export const statDefSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "스탯 이름을 입력해주세요"),
@@ -81,14 +81,14 @@ export const statDefSchema = z.object({
 });
 
 /**
- * techspec-builder-story.md §1.5 — `entities/chat-room`의 `SingleRule`/`RuleGroup`/`RuleListItem`과
+ * `entities/chat-room`의 `SingleRule`/`RuleGroup`/`RuleListItem`과
  * 구조적으로 동일한 값을 생성한다(재사용이 아니라 독자 선언 — 두 타입을 잇는 컴파일타임 검사는 없고
  * 모양만 맞춰 둔다. `formToServer.ts`/`serverToForm.ts`는 생성 DTO(`EndingRuleDraftItem`)와만 대응한다).
- * `operator`는 실제 DB enum(`EndingRuleOperator`: gte/lte/eq/gt/lt, techspec-db-schema.md §5)에 맞춰
+ * `operator`는 실제 DB enum(`EndingRuleOperator`: gte/lte/eq/gt/lt)에 맞춰
  * `ComparisonOp`의 6개 값 중 서버가 애초에 저장할 방법이 없는 "!="만 제외한 5개로 좁힌다.
- * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다(FR-59).
+ * 그룹(`ruleGroupSchema`)의 `rules`는 `singleRuleSchema`만 허용해 그룹 중첩을 zod 레벨에서 막는다.
  */
-// TS-09 — widgets/build-story/ui/EndingTab.tsx가 이 두 배열을 단일 소스로 삼는다(손복사 금지).
+// widgets/build-story/ui/EndingTab.tsx가 이 두 배열을 단일 소스로 삼는다(손복사 금지).
 export const COMPARISON_OPERATORS = [">", ">=", "<", "<=", "=="] as const;
 export const LOGIC_OPERATORS = ["and", "or"] as const;
 
@@ -113,7 +113,7 @@ const ruleGroupSchema = z.object({
 
 export const ruleListItemSchema = z.discriminatedUnion("kind", [singleRuleSchema, ruleGroupSchema]);
 
-/** techspec-builder-story.md §1.5 — turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다(FR-58). */
+/** turnGate는 최소 10턴(선행 게이트), statRules가 비어있으면 judgePrompt만으로 판정한다. */
 export const endingSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "엔딩 이름을 입력해주세요"),
@@ -124,14 +124,14 @@ export const endingSchema = z.object({
   hint: z.string().optional(),
 });
 
-/** builder-publish-goal-prompt.md BP-7 — 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
+/** 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
  * widgets/build-story/ui/StartingSetupTab.tsx의 라벨 표기·추가 버튼 게이트가 전부 여기를 읽는다
  * (같은 숫자를 두 번 적으면 한쪽만 고치고 끝난다). */
 export const MAX_STARTING_SETUPS = 4;
 export const MAX_SUGGESTED_REPLIES = 4;
 
 /**
- * techspec-builder-story.md §1.1 — 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
+ * 시작설정 배열은 dnd-kit로 재정렬 가능하며, 목록의 첫 번째
  * 항목이 기본 선택이다.
  */
 export const startingSetupSchema = z.object({
@@ -149,7 +149,7 @@ export const startingSetupSchema = z.object({
   endings: z.array(endingSchema).default([]),
 });
 
-/** techspec-builder-story.md §1.3 — scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
+/** scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
 export const keywordNoteSchema = z.object({
   id: z.string(),
   content: z.string().min(1, "정보를 입력해주세요"),
@@ -162,7 +162,6 @@ export const keywordNoteSchema = z.object({
   ]),
 });
 
-/** techspec-builder-story.md §1.4. */
 export const shortcutSchema = z.object({
   id: z.string(),
   name: z.string().min(1, "단축어 이름을 입력해주세요"),
@@ -175,7 +174,7 @@ export const storyBuilderSchema = z.object({
     name: z.string().min(1, "스토리 이름을 입력해주세요"),
     oneLiner: z.string().min(1, "스토리를 한 줄로 소개해주세요"),
     // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
-    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2). **`.refine((v) => v !== null)`으로 줄이지
+    // 검증한다. **`.refine((v) => v !== null)`으로 줄이지
     // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
     // 좁혀(zod/v4/classic/schemas.d.cts:38) `z.infer`에서 null이 사라진다(serverToForm이 깨졌다).
     // superRefine 선언은 조건 없이 `this`다(같은 파일 39행).
@@ -198,9 +197,9 @@ export const storyBuilderSchema = z.object({
   registration: z.object({
     description: z.string().min(1, "스토리를 목록에서 소개할 설명을 입력해주세요"),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
-    // profile.image와 동일한 이유로 nullable로 둔다(US-091 캐릭터 빌더와 동일한 판단 — 초안 상태에선
+    // profile.image와 동일한 이유로 nullable로 둔다(캐릭터 빌더와 동일한 판단 — 초안 상태에선
     // 아직 선택 전일 수 있다). 발행 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시
-    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2, `.refine`을 쓰지 않는 이유도 거기 적었다).
+    // 검증한다(`.refine`을 쓰지 않는 이유는 profile.image 주석에 있다).
     genre: z
       .string()
       .nullable()

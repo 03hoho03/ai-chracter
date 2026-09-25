@@ -23,15 +23,15 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
 import { PreviewCloseHeader } from "./PreviewCloseHeader";
 
-// techspec-builder-common.md §3 — 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
+// 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
 // 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지)는 entities/chat-room, 단축어 자동완성은
 // features/shortcut-autocomplete에서 그대로 재사용하되, 데이터 레이어(entities/preview-session)는
-// 완전히 분리되어 있다 — 스탯/키워드북/단축어/엔딩 판정은 실제 채팅과 동일한 서버 로직(US-089)이
+// 완전히 분리되어 있다 — 스탯/키워드북/단축어/엔딩 판정은 실제 채팅과 동일한 서버 로직이
 // 그대로 처리하고 이 화면은 그 결과만 반영한다. getPayload는 호출 시점의 최신 폼 값
 // (formToServer(getValues()))을 돌려주는 함수로, "미리보기 초기화"도 이 함수를 다시 호출해
 // 최신 폼 값 기준 새 세션을 연다.
 //
-// D-7(builder-techspec.md §6-2) — 서버 세션은 마운트가 아니라 첫 전송 때 생긴다. 그 전까지는
+// 서버 세션은 마운트가 아니라 첫 전송 때 생긴다. 그 전까지는
 // buildPreviewStartState로 계산한 로컬 플레이스홀더만 그린다(BE의 _build_preview_start_state를
 // 그대로 재현하므로 화면은 세션이 있을 때와 같다). 입력창·단축어·추천답변 세 전송 경로가 전부
 // ensurePreviewSession()을 거쳐 세션을 보장한 뒤에야 usePreviewSendMessage의 send()를 부른다.
@@ -45,13 +45,13 @@ export function PreviewSessionView({
   const startMutation = useStartPreviewMutation();
   const [previewSessionId, setPreviewSessionId] = useState<string>();
   const stateQuery = usePreviewSessionQuery(previewSessionId);
-  // A-8(builder-progress.md) — usePreviewSessionQuery는 enabled:false라 캐시는 오직
+  // usePreviewSessionQuery는 enabled:false라 캐시는 오직
   // useStartPreviewMutation의 성공 콜백으로만 채워진다. 지연 시작 이후 첫 전송 전에는 그 캐시가
   // 비어 있으므로, 세션 id 없이 계산한 로컬 상태로 대신한다 — 안 그러면 첫 전송 전까지 영구
   // 스켈레톤이 된다.
   const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload());
 
-  // clover-goal-prompt.md CL-19 — 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로(CT-12) 같은
+  // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
   // `ChatRoomView`와 같다 — 한 턴 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
@@ -59,7 +59,7 @@ export function PreviewSessionView({
     // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
     confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
-  // persona-progress.md S8 ⚪-3 — 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
+  // 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
   // 위에 한 줄로 보인다. `isSuccess`만 넘기는 건 재조회 실패(옛 data가 남은 error)에도 숨기기 위해서다.
   const personasQuery = usePersonasQuery();
   const personaCaption = previewPersonaLabel(personasQuery.isSuccess ? personasQuery.data : undefined);
@@ -133,7 +133,7 @@ export function PreviewSessionView({
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="preview" />;
     } else if (status.declined) {
-      // S12 C-3 — 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
+      // 확인 모달에서 그만둔 것은 실패가 아니라 사용자의 선택이라
       // `destructive`도 `role="alert"`도 쓰지 않는다(경고할 일이 없다).
       errorNotice = (
         <div className="flex items-center gap-2 rounded-lg border border-border px-3.5 py-2.5">
@@ -206,7 +206,7 @@ export function PreviewSessionView({
 
         <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
           {/* 헤더(`PreviewCloseHeader`)가 아니라 여기인 이유: 헤더 행은 `h-8` 고정 한 줄이라 360px에서
-              `미리보기 초기화` 옆에 두면 "대화 프로필:…"로 말줄임돼 이름이 통째로 안 보였다(S8 후속 실측). 입력창 위는 전체 폭을
+              `미리보기 초기화` 옆에 두면 "대화 프로필:…"로 말줄임돼 이름이 통째로 안 보였다(실측). 입력창 위는 전체 폭을
               쓰고, 작가가 말을 거는 바로 그 자리에서 "누구로 대화하는지"를 읽는다. */}
           {personaCaption !== undefined && <p className="mb-2 text-xs break-words break-keep text-muted-foreground">{personaCaption}</p>}
           {/* 실제 채팅방(ChatRoomView)과 동일한 규칙 — 첫 턴 전송을 시작한 순간부터 감춘다.

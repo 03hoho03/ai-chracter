@@ -22,7 +22,7 @@ const COPY: Record<UnavailableReason, { icon: typeof Ban; title: string; descrip
   },
 };
 
-/** techspec-content-detail.md §2, §7 — canViewDetailPage가 false일 때 대신 노출하는 안내. */
+/** canViewDetailPage가 false일 때 대신 노출하는 안내. */
 export function ContentUnavailableState({ access }: { access: ContentAccessStatus }) {
   const reason = resolveUnavailableReason(access);
   const { icon: Icon, title, description } = COPY[reason];

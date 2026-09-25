@@ -45,9 +45,9 @@ type ProfileBodyProps = {
   onContentTypeChange: (type: ContentType) => void;
 };
 
-/** 로딩·전면실패·성공 세 갈래를 **early return 순서**로 강제한다(COMP-04) — `isError`와 `data`는
+/** 로딩·전면실패·성공 세 갈래를 **early return 순서**로 강제한다 — `isError`와 `data`는
  * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
- * 그래서 전면 에러는 프로필이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
+ * 그래서 전면 에러는 프로필이 없을 때만이고 있으면 아래 배너로 알린다. */
 function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange }: ProfileBodyProps) {
   if (query.isPending) return <ProfileHeaderSkeleton />;
 
@@ -98,7 +98,7 @@ function ProfileBody({ query, userId, isOwner, contentType, onContentTypeChange 
               ImageCropModal.call({
                 file,
                 // 유저 프로필 사진은 ContentType이 아니라 toThumbnailAspect 매핑 밖이고, 아바타는
-                // 전부 원형 1:1이라 리터럴로 둔다(image-crop-goal-prompt.md IC-2).
+                // 전부 원형 1:1이라 리터럴로 둔다.
                 aspect: 1,
                 shape: "round",
               })

@@ -4,9 +4,8 @@ import type { ContentVisibility } from "@/entities/content";
 const VISIBILITY_ORDER: ContentVisibility[] = ["public", "link", "private"];
 
 /** 공개범위 **전환** 카피. 진입점이 둘(콘텐츠 상세 "⋯" 메뉴 / 프로필 카드 "⋯" 메뉴)이라 두 메뉴가
- * 같은 라벨과 같은 문구를 쓰도록 feature의 model에 모은다. 상태 표시용 라벨(프로필 카드의 공개범위
- * 배지, 공개여부 필터)은 아직 각자 사본을 갖고 있다 — /my가 같은 배지·필터를 다시 쓰는 US-008/009에서
- * 함께 entities로 내리는 게 맞다.
+ * 같은 라벨과 같은 문구를 쓰도록 feature의 model에 모은다. 상태 표시용 라벨(카드의 공개범위
+ * 배지, 공개여부 필터)은 `entities/content`에 따로 있다.
  *
  * `description`은 확인 모달 본문이며 두 규칙을 따른다 — (1) 제목("…로 전환할까요?")이 이미 말한 동작을
  * 되풀이하지 않고 **결과만** 적는다(`ConfirmChatRoomActionModal` 호출부들이 쓰는 집안 문법:
@@ -35,7 +34,7 @@ export function listVisibilityTransitions(current: ContentVisibility): ContentVi
   return VISIBILITY_ORDER.filter((visibility) => visibility !== current);
 }
 
-/** 이용제한 작품에서 전환 항목을 비활성으로 두는 **이유** — 숨기지 않고 메뉴 안에 그대로 적는다(US-008).
+/** 이용제한 작품에서 전환 항목을 비활성으로 두는 **이유** — 숨기지 않고 메뉴 안에 그대로 적는다.
  * 숨기면 같은 메뉴가 작품마다 달라 보이는데 왜인지 알 길이 없어 작가가 버그로 읽는다.
  *
  * 문장이 "바꿀 수 없어요"가 아니라 "바꿔도 노출되지 않아요"인 이유: `PATCH /contents/{id}/visibility`는

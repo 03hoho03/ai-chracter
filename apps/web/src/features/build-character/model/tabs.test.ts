@@ -4,7 +4,7 @@ import { characterBuilderSchema } from "./schema";
 import { CHARACTER_TABS } from "./tabs";
 
 /** 한 탭의 `fields` 프리픽스가 최상위 키 `key`를 덮는지 — 첫 세그먼트 일치로 판정한다
- * (`errorTabs.ts`의 매칭과 같은 규칙, builder-techspec.md §4-1). */
+ * (`errorTabs.ts`의 매칭과 같은 규칙). */
 function tabsCovering(key: string): (typeof CHARACTER_TABS)[number][] {
   return CHARACTER_TABS.filter((tab) => tab.fields.some((prefix) => prefix.split(".")[0] === key));
 }

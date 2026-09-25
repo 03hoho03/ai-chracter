@@ -2,21 +2,21 @@ import { z } from "zod";
 
 import { VISIBILITY_FILTERS, type VisibilityFilter } from "@/entities/content";
 
-/** `/my`의 필터 칩 한 줄이 곧 하나의 축이다 — FR-18이 "초안은 `미등록`에서만 노출된다"로 못박아
+/** `/my`의 필터 칩 한 줄이 곧 하나의 축이다 — 초안은 `미등록`에서만 노출되므로
  * 캐릭터/스토리(발행작 유형)와 미등록(초안)이 서로 배타적이기 때문에 단일선택 하나로 묶인다.
  * `all`은 URL에 싣지 않는다 — 파라미터의 부재가 곧 전체다. */
 export const MY_WORK_TYPE_FILTERS = ["all", "character", "story", "unpublished"] as const;
 
 export type MyWorkTypeFilter = (typeof MY_WORK_TYPE_FILTERS)[number];
 
-/** 이번 범위의 정렬은 최신순 하나뿐이다(US-009). 옵션을 늘리려면 이 목록·`myWorksSearchSchema`뿐
+/** 정렬은 지금 최신순 하나뿐이다. 옵션을 늘리려면 이 목록·`myWorksSearchSchema`뿐
  * 아니라 **`mergeMyWorks`까지** 값이 닿아야 한다 — 지금은 병합이 항상 `updatedAt` 내림차순이라
  * `sort`가 화면 표시로만 살아 있다. */
 export const MY_WORKS_SORTS = ["latest"] as const;
 
 export type MyWorksSort = (typeof MY_WORKS_SORTS)[number];
 
-/** 필터·정렬은 전부 URL 서치 파라미터에 남아 새로고침·뒤로가기에서 보존된다(FR-19).
+/** 필터·정렬은 전부 URL 서치 파라미터에 남아 새로고침·뒤로가기에서 보존된다.
  * 기본값(`all` / `latest`)은 파라미터를 **비워서** 표현한다 — `?type=all&sort=latest`가 늘 붙어 있으면
  * 공유 URL이 지저분해지는 데다 "필터가 걸려 있다"는 신호 자체가 죽는다. */
 export const myWorksSearchSchema = z.object({

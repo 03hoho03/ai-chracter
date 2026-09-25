@@ -21,8 +21,8 @@ const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
-/** 초안 카드의 "… 수정" 표기. `MyPagePage`의 `draftUpdatedAtFormatter`와 같은 포맷이다 —
- * US-013이 그쪽 초안 섹션을 걷어내면 이 하나만 남는다. 호출부는 `toMyWorkMetaLabel` 하나다. */
+/** 초안 카드의 "… 수정" 표기. 마이페이지의 초안 섹션이 `/my`로 옮겨 오면서 이 포맷은
+ * 여기 하나만 남았다. 호출부는 `toMyWorkMetaLabel` 하나다. */
 function formatMyWorkUpdatedAt(updatedAt: string): string {
   return UPDATED_AT_FORMATTER.format(new Date(updatedAt));
 }
@@ -30,8 +30,8 @@ function formatMyWorkUpdatedAt(updatedAt: string): string {
 /**
  * 발행작과 초안을 한 목록으로 합쳐 최근 수정 순으로 세운다.
  *
- * 발행작의 `updatedAt`은 `Content.updated_at`이 아니라 **현재 발행 버전의 `published_at`**이다(US-001 —
- * `Content.updated_at`에는 `onupdate`가 없어 갱신되지 않는다). 서버가 목록마다 이미 그 키로 정렬해 주지만
+ * 발행작의 `updatedAt`은 `Content.updated_at`이 아니라 **현재 발행 버전의 `published_at`**이다
+ * (`Content.updated_at`에는 `onupdate`가 없어 갱신되지 않는다). 서버가 목록마다 이미 그 키로 정렬해 주지만
  * 캐릭터·스토리·초안 세 응답을 클라이언트에서 합치므로 여기서 한 번 더 세운다.
  *
  * 동률은 `id` 내림차순으로 끊는다 — 서버의 `Content.id.desc()`와 같은 규칙이라 한 목록 안에서 순서가
@@ -53,8 +53,8 @@ export function mergeMyWorks(published: ContentSummary[], drafts: DraftSummary[]
 /**
  * 병합된 목록을 필터 칩 한 축(`type`)과 공개 여부 한 축(`visibility`)으로 좁힌다.
  *
- * `미등록`은 초안만, 나머지는 **발행작만** 돌려준다 — FR-18이 "`전체`에는 초안을 포함하지 않는다"로
- * 못박았다. 초안에는 공개범위가 없으므로 `미등록`에서는 `visibility`를 보지 않는다(호출부가 칩 전환 시
+ * `미등록`은 초안만, 나머지는 **발행작만** 돌려준다 — `전체`에는 초안을 포함하지
+ * 않는다. 초안에는 공개범위가 없으므로 `미등록`에서는 `visibility`를 보지 않는다(호출부가 칩 전환 시
  * 파라미터를 함께 비우지만, 손으로 URL을 만든 경우까지 여기서 무해하게 만든다).
  */
 export function filterMyWorks(
@@ -93,10 +93,10 @@ export function toMyWorkPageSources(type: MyWorkTypeFilter): MyWorkPageSource[] 
  * 카드에 다는 배지 — 타입 하나 + 상태.
  *
  * 발행작의 상태는 `toContentStatusTags`가 정한다. 프로필 카드와 **같은 함수**를 거치게 한 것이 이
- * 함수의 존재 이유다(US-008) — 원래 여기가 `[type, visibility]`만 반환해서, 이용제한 작품이 프로필에서는
+ * 함수의 존재 이유다 — 원래 여기가 `[type, visibility]`만 반환해서, 이용제한 작품이 프로필에서는
  * `이용제한`을 달고 `/my`에서는 `공개`를 달았다. 사본이 둘이면 다시 갈라진다.
  *
- * 초안에는 공개범위가 없다 — 배지는 `미등록` 하나뿐이다(확정 결정 6).
+ * 초안에는 공개범위가 없다 — 배지는 `미등록` 하나뿐이다.
  */
 export function toMyWorkTags(item: MyWorkItem): ContentCardTag[] {
   if (item.kind !== "published") return [item.type, "unpublished"];
@@ -114,7 +114,7 @@ export function toMyWorkTags(item: MyWorkItem): ContentCardTag[] {
  * 이 항목이 원래 없고, 대신 `삭제하기`가 있다).
  *
  * `ContentSummary.hasUnpublishedChanges`는 서버가 명시적으로 들고 있는 플래그이고 초안 버전의 존재에서
- * 파생시킨 값이 **아니다**(US-002) — 발행이 다음 편집용 초안을 자동 복제하므로 발행작에는 초안 행이 항상
+ * 파생시킨 값이 **아니다** — 발행이 다음 편집용 초안을 자동 복제하므로 발행작에는 초안 행이 항상
  * 딸려 있어, 존재만으로는 아무것도 판정할 수 없다.
  */
 export function hasUnpublishedEdits(item: MyWorkItem): boolean {
@@ -127,12 +127,12 @@ export function hasUnpublishedEdits(item: MyWorkItem): boolean {
  * - 초안: `2026-08-20 수정` — 지표가 없어 이 줄이 없으면 제목과 배지 사이가 통째로 비고, 목록의 정렬 키를
  *   화면에서 확인할 방법도 사라진다.
  * - 미발행 편집분이 있는 발행작: 그 사실 + **발행하면 무엇이 달라지는지**. 배지가 아니라 별도 줄인 것은
- *   확정 결정이다(US-010) — 390px 2열에서 카드 내부폭이 139px인데 `이용제한` 배지가 이미 배지 줄을
- *   압박하고, 무엇보다 **배지로는 다음 행동을 말할 수 없다**. 이 PRD의 성공지표가 발행 완료율이라
+ *   의도된 결정이다 — 390px 2열에서 카드 내부폭이 139px인데 `이용제한` 배지가 이미 배지 줄을
+ *   압박하고, 무엇보다 **배지로는 다음 행동을 말할 수 없다**. 이 화면의 성공지표가 발행 완료율이라
  *   상태 통보("편집 중이에요")로 끝내면 지표에 닿지 않는다.
  * - 그 밖의 발행작: 없음. 늘 떠 있는 줄은 신호가 아니다.
  *
- * 발행작의 `updatedAt`을 초안처럼 `… 수정`으로 달 수는 없다 — 그건 마지막 **발행** 시각이라(확정 결정 1)
+ * 발행작의 `updatedAt`을 초안처럼 `… 수정`으로 달 수는 없다 — 그건 마지막 **발행** 시각이라
  * 같은 라벨을 붙이면 거짓말이 된다.
  */
 export function toMyWorkMetaLabel(item: MyWorkItem): string | undefined {

@@ -10,7 +10,7 @@ type ShortcutAutocompleteProps = {
   onSelect: (shortcut: Shortcut) => void;
 }
 
-// techspec-chat-story.md §4 — 입력창이 '/'로 시작할 때만 부모가 이 컴포넌트를 마운트한다.
+// 입력창이 '/'로 시작할 때만 부모가 이 컴포넌트를 마운트한다.
 // 항목 선택은 확인 단계 없이 즉시 전송으로 이어진다(호출부 책임).
 export function ShortcutAutocomplete({ shortcuts, query, onSelect }: ShortcutAutocompleteProps) {
   const matches = useMemo(() => filterShortcuts(query, shortcuts), [query, shortcuts]);

@@ -23,11 +23,11 @@ import { openChatStream } from "@/shared/api/sse/openChatStream";
 
 type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerate" };
 
-// TS-04 — isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
+// isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
 // 에러"라는 불가능 상태를 타입으로 막지 못했다. 판별 유니언으로 상태를 하나로 묶는다.
-// limit-goal-prompt.md RL-15 — 429는 안내 문구와 다음 행동이 다른 오류라(기다리면 풀린다) 배너가
+// 429는 안내 문구와 다음 행동이 다른 오류라(기다리면 풀린다) 배너가
 // 분기할 수 있게 `rateLimit`을 함께 싣는다. 429가 아닌 실패는 값이 없고 기존 배너 그대로다.
-// clover-goal-prompt.md CL-19 / S12 C-3 — `declined`는 **사용자가 확인 모달에서 그만둔 것**이라
+// `declined`는 **사용자가 확인 모달에서 그만둔 것**이라
 // 실패가 아니다. 같은 `error` 자리를 쓰는 이유는 낙관적 사용자 메시지가 이미 목록에 있어
 // 아무것도 안 보여 주면 멈춘 것처럼 읽히기 때문이고(재시도 버튼도 그대로 유용하다), 문구만
 // 배너가 갈라 쓴다 — 실패하지 않은 일에 "실패했습니다"를 쓰면 거짓이다.
@@ -36,14 +36,14 @@ type SendMessageStatus =
   | { kind: "sending" }
   | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit; declined?: boolean };
 
-/** techspec-chat-common.md §1 — 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
- * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다(FR-88).
+/** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
+ * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다.
  * characterId는 캐릭터 챗일 때만(스토리 챗은 undefined) 전달 — 상황별 이미지가 트리거된
- * 메시지가 도착하면 이미지 보관함(US-074) 쿼리를 무효화한다(techspec-chat-character.md §1.2). */
+ * 메시지가 도착하면 이미지 보관함 쿼리를 무효화한다. */
 export function useSendMessage(
   roomId: string,
   characterId?: string,
-  /** clover-goal-prompt.md CL-19 — 오류를 받아 **"재시도해도 되는가"** 를 돌려준다.
+  /** 오류를 받아 **"재시도해도 되는가"** 를 돌려준다.
    *
    * 🔴 위젯이 주입하는 이유는 FSD다 — 모달은 `features/confirm-clover-spend`에 있고 feature가
    * 다른 feature를 import하는 선례가 이 저장소에 **0건**이다(`.call()` 호출부는 전부
@@ -59,7 +59,7 @@ export function useSendMessage(
   const [policyWarning, setPolicyWarning] = useState<string>();
   const [streamingText, setStreamingText] = useState("");
 
-  /** `allowCloverConfirm`은 **무한 루프 차단기**다(clover-goal-prompt.md CL-19). 동의 뒤 재시도는
+  /** `allowCloverConfirm`은 **무한 루프 차단기**다. 동의 뒤 재시도는
    * `false`로 들어가므로, 재시도가 또 `CLOVER_CONFIRM_REQUIRED`를 받아도 모달을 다시 띄우지 않고
    * 평범한 오류로 끝난다.
    *
@@ -82,7 +82,7 @@ export function useSendMessage(
     // finally에서 status를 읽으면 위 setStatus가 아직 반영되지 않은 클로저 값을 보므로, 이번 스트림에서
     // 에러가 났는지는 로컬 변수로 따로 추적한다.
     let hasErrored = false;
-    // RU-1·RU-2·RU-11(2) — 재생성 클릭 즉시 옛 답변을 지운다(retry()도 pending.kind를 그대로
+    // 재생성 클릭 즉시 옛 답변을 지운다(retry()도 pending.kind를 그대로
     // 승계해 같은 분기를 탄다). 진행 중인 재조회를 먼저 끊지 않으면 뒤늦게 도착한 응답이 그 제거를
     // 되돌린다.
     // 🔴 cancelQueries를 재생성일 때만 부르는 이유: 기본값이 `revert: true`라 취소되는 fetch가
@@ -94,7 +94,7 @@ export function useSendMessage(
       await queryClient.cancelQueries({ queryKey: chatRoomKeys.detail(roomId) });
       dropped = dropLastMessage(queryClient, roomId);
     }
-    // RU-3 — "done을 봤다"가 아니라 "done을 캐시에 반영했다"다(onDone은 setQueryData 업데이터
+    // "done을 봤다"가 아니라 "done을 캐시에 반영했다"다(onDone은 setQueryData 업데이터
     // 안에서 불리므로 캐시가 없으면 호출되지 않는다). 실패 분기를 열거하지 않고 이 값 하나로
     // 복원 여부를 판단한다.
     let hasCommitted = false;
@@ -117,7 +117,7 @@ export function useSendMessage(
             if (message.imageId && characterId) {
               void queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
             }
-            // clover-techspec.md CT-12 — 무료 일일분을 넘긴 턴은 클로버를 깎았다(CL-1). 이 훅이
+            // 무료 일일분을 넘긴 턴은 클로버를 깎았다. 이 훅이
             // 전송·재생성·편집 셋을 모두 태우므로 세 표면의 차감이 여기 한 곳에서 반영된다.
             // `invalidateQueries`를 쓰는 이유: 잔액은 "낡았다"이지 "틀렸다"(버리는 값)가 아니다
             // (`apps/web/CLAUDE.md` §데이터/상태의 판단 기준).
@@ -127,15 +127,15 @@ export function useSendMessage(
       }
     } catch (error) {
       hasErrored = true;
-      // RL-17 — SSE는 뮤테이션이 아니라 `app/AppProviders.tsx`의 MutationCache.onError가 못 본다.
+      // SSE는 뮤테이션이 아니라 `app/AppProviders.tsx`의 MutationCache.onError가 못 본다.
       // 재동의 403을 여기서 잡지 않으면 채팅 4경로에서만 모달이 뜨지 않는다(세션을 다시 조회하면
-      // ReconsentModal이 `GET /me`의 플래그로 뜬다 — CG-12와 같은 처리다).
+      // ReconsentModal이 `GET /me`의 플래그로 뜬다 — 전역 MutationCache의 재동의 403 처리와 같은 처리다).
       if (isLegalReconsentRequiredError(error)) {
         void queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       }
-      // backlog-l-goal-prompt.md BL-6 — 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
+      // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
       resetSessionIfLost(queryClient, error);
-      // clover-goal-prompt.md CL-19 — 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
+      // 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).
       const confirmOutcome = allowCloverConfirm ? await confirmCloverSpend?.(error) : undefined;
@@ -147,12 +147,12 @@ export function useSendMessage(
         kind: "error",
         retryPayload: pending,
         rateLimit: getChatRateLimit(error),
-        // S12 C-3 — 그만두기는 실패가 아니다. 배너가 이 값으로 문구를 가른다.
+        // 그만두기는 실패가 아니다. 배너가 이 값으로 문구를 가른다.
         declined: confirmOutcome === "declined",
       });
     } finally {
       setStreamingText("");
-      // RU-4 — 동기 롤백 + invalidate 둘 다. 롤백만으로는 서버가 실제로 커밋한 경우 화면이 서버와
+      // 동기 롤백 + invalidate 둘 다. 롤백만으로는 서버가 실제로 커밋한 경우 화면이 서버와
       // 어긋난 채 남고, invalidate만으로는 왕복 동안 메시지가 빠진 화면이 유지된다.
       if (dropped && !hasCommitted) {
         restoreMessage(queryClient, roomId, dropped);
@@ -177,7 +177,7 @@ export function useSendMessage(
     void openStream({ payload: buildSendPayload({ roomId, text, shortcutId }), kind: "newTurn" });
   }
 
-  // techspec-chat-common.md §2.1 — 마지막 AI 응답만 새 텍스트로 교체(같은 턴), 새 사용자
+  // 마지막 AI 응답만 새 텍스트로 교체(같은 턴), 새 사용자
   // 메시지를 추가하지 않는다.
   function regenerate(): void {
     if (status.kind === "sending") return;

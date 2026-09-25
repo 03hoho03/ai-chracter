@@ -13,9 +13,9 @@ type UsePlayContentOptions = {
 }
 
 /**
- * techspec-content-detail.md §3 / techspec-chat-common.md §3 — 플레이 버튼의 로그인 유도 +
+ * 플레이 버튼의 로그인 유도 +
  * 복귀 후 자동 시작 로직. 캐릭터/스토리 챗 모두 실제 대화방을 생성(`useStartChatMutation`)한 뒤
- * `/chat/$roomId`로 이동한다(스토리는 US-057부터 `contentType: "story"` + `startingSetupId`를 함께 보낸다).
+ * `/chat/$roomId`로 이동한다(스토리는 `contentType: "story"` + `startingSetupId`를 함께 보낸다).
  *
  * 모달 경유(`contentDetailModalAtom`이 차 있음)와 풀페이지 진입을 구분해 히스토리를 다르게 다룬다.
  * `useContentDetailModal.open()`이 라우터를 우회해 `/content/$type/$id` 엔트리를 하나 밀어 넣어두므로,

@@ -12,12 +12,11 @@ import { STYLE_SAMPLE_IMAGES } from "../model/styleSampleImages";
 const STYLE_GRID_CLASSNAME =
   "grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-[repeat(auto-fill,minmax(11rem,1fr))]";
 
-// image-refact-techspec.md IT-12 — `listbox`/`option`/`aria-selected` 패턴(ColorPicker·IconPicker
-// 선례, §0-13). `radiogroup`이 아니다. 방향키 이동은 구현하지 않는다(두 선례 모두 없다).
+// `listbox`/`option`/`aria-selected` 패턴(ColorPicker·IconPicker
+// 선례). `radiogroup`이 아니다. 방향키 이동은 구현하지 않는다(두 선례 모두 없다).
 //
 // 선택은 `border`, 포커스는 `ring` — 둘이 다른 CSS 속성을 쓰므로 ColorPicker.tsx:60-64가 기록한
-// `--tw-ring-*` 충돌(같은 변수를 공유해 포커스 링이 선택 링을 덮어쓰는 함정)이 원천적으로 없다
-// (image-refact-goal-prompt.md IR-9 정정).
+// `--tw-ring-*` 충돌(같은 변수를 공유해 포커스 링이 선택 링을 덮어쓰는 함정)이 원천적으로 없다.
 export function GenerateImagesStyleGrid() {
   const { control } = useFormContext<GenerateImagesFormValues>();
   const { data: models } = useImageModelsQuery();
@@ -26,7 +25,7 @@ export function GenerateImagesStyleGrid() {
   // 모델 목록이 아직 로딩 중이면(models === undefined) 스타일 자리가 통째로 빈 채로 렌더됐다 —
   // 실제 타일과 같은 셸(같은 그리드 클래스 · aspect-[3/4])의 스켈레톤으로 채운다
   // (GeneratedImageLibraryPanel.tsx의 LibraryGridSkeleton 관용구를 따른다). 개수 7은 레지스트리
-  // 스타일 종수(image-style-7-goal-prompt.md IS-1)와 맞춘다.
+  // 스타일 종수와 맞춘다.
   if (models === undefined) {
     return (
       <div className={STYLE_GRID_CLASSNAME}>
@@ -63,7 +62,7 @@ export function GenerateImagesStyleGrid() {
                   isSelected ? "border-primary" : "border-transparent",
                 )}
               >
-                {/* 서버가 스타일 목록의 소스다(IR-10) — FE가 모르는 id는 이미지 없이 렌더한다.
+                {/* 서버가 스타일 목록의 소스다 — FE가 모르는 id는 이미지 없이 렌더한다.
                     타일은 이미지가 없어도 이름만으로 온전해야 한다. */}
                 {sample ? (
                   <img

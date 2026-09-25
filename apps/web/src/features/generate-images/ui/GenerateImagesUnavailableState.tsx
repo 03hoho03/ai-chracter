@@ -28,7 +28,7 @@ const COPY: Record<
   },
 };
 
-/** tasks/local-image-gen-techspec.md LT-11, tasks/local-image-gen-goal-prompt.md LG-17 — 모델 목록
+/** 모델 목록
  * 조회 실패·빈 목록·전 모델 일시 불가를 대신 보여주는 제출 이전(pre-submission) 상태. 시각 어휘는
  * `widgets/content-detail/ui/ContentUnavailableState.tsx`(아이콘 + 제목 + 설명, 전체 패널 빈 상태)를
  * 따른다 — 이미 제출 이후의 "뭔가 잘못됨" 표면이 셋 있어(제출 에러 토스트, 잡 실패 alert, 잡 조회

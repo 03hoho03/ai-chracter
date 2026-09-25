@@ -7,7 +7,7 @@ import { useFieldArray, useFormContext } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
-/** techspec-builder-story.md §1.4 AC — 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
+/** 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
  * 단축어 목록을 조회/수정/삭제 가능. */
 export function ShortcutTab() {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -61,7 +61,7 @@ type ShortcutRowProps = {
   onRemove: () => void;
 };
 
-/** techspec-builder-story.md §1.4 — 이름/설명/실행될 프롬프트(전부 필수), 작품 전역 적용이라
+/** 이름/설명/실행될 프롬프트(전부 필수), 작품 전역 적용이라
  * 스코프 선택 UI가 없다(KeywordNoteTab과 달리 순서/재정렬도 의미가 없어 StatTab과 동일하게
  * add/remove만 지원). */
 function ShortcutRow({

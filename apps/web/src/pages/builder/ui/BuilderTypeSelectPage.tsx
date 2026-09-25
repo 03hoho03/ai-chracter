@@ -34,12 +34,12 @@ const BUILDER_TYPE_OPTIONS: BuilderTypeOption[] = [
   },
 ];
 
-/** prd-creator-entry-and-my-works.md US-006 — 만들기 진입점이 닿는 첫 화면. 캐릭터/스토리 중 하나를 골라
+/** 만들기 진입점이 닿는 첫 화면. 캐릭터/스토리 중 하나를 골라
  * 각 빌더로 들어간다. 카드는 `<Link>`라 새 탭 열기·가운데 클릭이 그대로 동작한다(버튼 + navigate가 아니라). */
 export function BuilderTypeSelectPage() {
   return (
     <>
-      {/* builder-preview-validation(피드백 2) — 크랙처럼 `/builder`도 전역 Header 대신 이 상단바를 쓴다
+      {/* 크랙처럼 `/builder`도 전역 Header 대신 이 상단바를 쓴다
           (`routes/__root.tsx`). 실제 빌더(`/builder/$type/$draftId`)로 들어갈 때 크롬이 출렁이지
           않도록 타입 선택 화면부터 같은 상단바를 쓴다. */}
       <BuilderTopBar title="작품 만들기" />

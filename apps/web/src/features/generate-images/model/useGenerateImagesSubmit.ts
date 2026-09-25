@@ -14,7 +14,7 @@ export type GenerateImagesSubmitContextValue = {
   onRetry: (() => void) | undefined;
 };
 
-// image-refact-techspec.md IT-9 — `<form>` 엘리먼트는 GenerateImagesPromptField(중앙 열)가 감싸지만
+// `<form>` 엘리먼트는 GenerateImagesPromptField(중앙 열)가 감싸지만
 // 제출 콜백과 모델 로딩 상태는 GenerateImagesFormProvider가 쥔다. react-hook-form의 FormProvider
 // context는 폼 값만 나르므로, 그 바깥의 사업 로직을 함께 내리는 별도 context가 필요하다.
 export const GenerateImagesSubmitContext = createContext<GenerateImagesSubmitContextValue | null>(null);

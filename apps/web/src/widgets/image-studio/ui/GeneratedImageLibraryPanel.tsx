@@ -16,7 +16,7 @@ type GeneratedImageLibraryPanelProps = {
   isCreatedAtVisible?: boolean;
 };
 
-// image-refact-goal-prompt.md IR-3 — 좌열(p-4 → 208px 콘텐츠)에서는 grid-cols-2 고정이라야
+// 좌열(p-4 → 208px 콘텐츠)에서는 grid-cols-2 고정이라야
 // 98×98 정사각 타일이 나온다(크랙 108). sm:/md: 이스케일은 뷰포트 폭 기준이라 lg 이상(=isWide)에서
 // 이 208px 고정 열에도 그대로 걸려 4열까지 욱여넣는다 — 옛 '내 이미지' 탭(뷰포트 폭에 맞춰 늘어나는
 // 전체 페이지 그리드)에서 물려받은 값이라, 폭이 뷰포트가 아니라 레일에 고정되는 지금은 호출부가
@@ -29,19 +29,20 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
-/** prd-image-library US-004/US-005/US-006 — 보관함(좌열/바텀시트). 생성 이미지를 최신순 그리드로
+/** 보관함(좌열/바텀시트). 생성 이미지를 최신순 그리드로
  * 보여준다(정렬은 서버의 created_at desc 그대로). 사용 중인 이미지에는 사용처 배지를 달고,
  * 셀을 누르면 사용처 목록·삭제가 있는 상세 모달을 연다.
  *
- * image-refact-goal-prompt.md IR-4/IR-5 — '내 이미지'는 더 이상 탭이 아니라서 전환할 "생성 탭"이
+ * '내 이미지'는 더 이상 탭이 아니라서 전환할 "생성 탭"이
  * 없다(중앙 열이 이미 항상 그 화면이다). `onNavigateToGenerate`는 좁은 화면(바텀시트)에서만 의미가
  * 있어 optional로 바꿨다 — 시트를 닫으면 뒤에 있던 생성 화면이 그대로 드러난다. 넓은 화면(좌열)은
  * 생성 화면과 나란히 상시 보이므로 이 버튼을 렌더하지 않는다(호출부가 prop을 생략).
  *
  * 표면이 둘이다 — 넓은 화면 좌열은 `background`, 좁은 화면은 `SheetContent`(`popover`). 그래서 셀·
  * 스켈레톤은 두 표면 모두에서 보이는 `secondary`이고(`muted`는 시트 안에서 1.0000:1로 사라진다),
- * 사용처 배지는 채움 없는 윤곽이다(DESIGN.md §5 Status badges — 중립 상태는 윤곽). 이 파일에는 표면
- * 표식이 없어 `mutedOnSurfaceContract` 가드가 못 잡는 자리다(backlog-sweep M-7). */
+ * 사용처 배지는 채움 없는 윤곽이다(DESIGN.md Status badges — 중립 상태는 윤곽). 이 파일에는 표면
+ * 표식이 없어 `mutedOnSurfaceContract` 가드가 못 잡는 자리다. 할 일: 파일 단위 휴리스틱의 이런
+ * 사각지대가 재발하면 컴포넌트 트리 기반 검사를 검토한다. */
 export function GeneratedImageLibraryPanel({
   onNavigateToGenerate,
   gridColumnsClassName = DEFAULT_GRID_COLUMNS_CLASSNAME,

@@ -29,7 +29,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
   const email = form.getValues("email");
   const [secondsLeft, setSecondsLeft] = useState(RESEND_COOLDOWN_SECONDS);
   // AUTH_LIMIT(시간당 상한, ≤3600초)은 초 카운트다운에 꽂지 않는다 — 별도 줄의 분 단위 정적 문구로만
-  // 보여준다(ED-19). AUTH_COOLDOWN(60초 쿨다운)은 그대로 `secondsLeft`가 카운트다운한다.
+  // 보여준다. AUTH_COOLDOWN(60초 쿨다운)은 그대로 `secondsLeft`가 카운트다운한다.
   const [limitMessage, setLimitMessage] = useState<string | null>(null);
   const resendMutation = useResendVerificationCodeMutation();
 
@@ -110,7 +110,7 @@ export function EmailVerifyStep({ onSubmit, isSubmitting }: EmailVerifyStepProps
       </div>
 
       <div className="flex items-center justify-between text-sm">
-        {/* ED-23 — 이 폼이 400을 받은 적 있으면(서버가 `type: "server"`로 지은 에러) 재전송을 권한다. */}
+        {/* 이 폼이 400을 받은 적 있으면(서버가 `type: "server"`로 지은 에러) 재전송을 권한다. */}
         <span className="text-muted-foreground">
           {errors.emailVerificationCode?.type === "server"
             ? "코드가 계속 안 되면 새로 받아주세요."

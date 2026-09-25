@@ -20,7 +20,7 @@ import { cropToFile } from "../lib/cropToFile";
 
 export type ImageCropModalProps = { file: File; aspect: number; shape?: "rect" | "round" };
 
-// image-crop-goal-prompt.md IC-7 — 확대는 원본 크기와 무관하게 항상 1~3배다.
+// 확대는 원본 크기와 무관하게 항상 1~3배다.
 // 처음엔 "결과가 목표 해상도 밑으로 안 내려가는 배율"로 상한을 계산했는데, AI 생성 이미지가
 // 정확히 목표 해상도(1024)라 1:1 크롭에서 상한이 1.00으로 떨어져 **확대가 아예 안 됐다**.
 // 화질보다 창작자의 구도 통제를 택했다(2026-09-15 실사용 확인 후 결정).
@@ -29,7 +29,7 @@ export type ImageCropModalProps = { file: File; aspect: number; shape?: "rect" |
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 3;
 
-// image-crop-goal-prompt.md IC-8 — react-call 자체 호출형. 성공 후 동작이 호출부마다 갈리지 않고
+// react-call 자체 호출형. 성공 후 동작이 호출부마다 갈리지 않고
 // 잘라낸 File을 그대로 돌려주는 순수 입력 모달이라 mutationFn 주입형이 아니다. 취소·ESC·바깥클릭·✕는
 // 전부 onOpenChange 한 지점으로 모여 call.end(undefined)로 수렴한다(GeneratedImagePickerModal과 동일 패턴).
 export const ImageCropModal = createCallable<ImageCropModalProps, File | undefined>(
@@ -69,7 +69,7 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
             <DialogDescription>사용할 영역을 조절한 뒤 적용을 눌러주세요.</DialogDescription>
           </DialogHeader>
 
-          {/* IC-9 — 정지 상태 그림자 없음(shadow-* 금지), 마스크는 무채색. `relative` + `min-h-64`
+          {/* 정지 상태 그림자 없음(shadow-* 금지), 마스크는 무채색. `relative` + `min-h-64`
               (명시적 높이)가 필요하다: Cropper는 `position:absolute`로 부모를 채우는데, `flex-1`만으로는
               부모(auto-height flex column)가 실제로 자라지 않아 0높이로 접힌다 — `min-h-64`가 hypothetical
               main size에 반영돼야 DialogContent 자체가 그만큼 자란다. */}
@@ -88,17 +88,17 @@ export const ImageCropModal = createCallable<ImageCropModalProps, File | undefin
                 minZoom={MIN_ZOOM}
                 maxZoom={MAX_ZOOM}
                 cropShape={shape}
-                // image-crop-goal-prompt.md IC-9 — 다크에서 순백 금지. 라이브러리 기본 격자선(showGrid
+                // 다크에서 순백 금지. 라이브러리 기본 격자선(showGrid
                 // 기본값 true)도 같은 흰색이고 이 제품은 조용한 인터페이스를 지향해 끈다. 방향키 step은
-                // 아래 keyboardStep(IC-14) 참고.
+                // 아래 keyboardStep 참고.
                 showGrid={false}
-                // IC-14 — 기본 keyboardStep은 1px라 방향키로 크롭 프레임을 가로지르려면 수백 번 눌러야
+                // 기본 keyboardStep은 1px라 방향키로 크롭 프레임을 가로지르려면 수백 번 눌러야
                 // 한다. 키보드만으로도 실사용 가능한 속도가 되도록 10px 단위로 올린다.
                 keyboardStep={10}
                 onCropChange={setCrop}
                 onZoomChange={setZoom}
                 onCropComplete={(_, areaPixels) => setCroppedAreaPixels(areaPixels)}
-                // IC-9 — 라이브러리가 크롭 영역에 칠하는 기본 테두리(rgba(255,255,255,0.5))를 순백 금지
+                // 라이브러리가 크롭 영역에 칠하는 기본 테두리(rgba(255,255,255,0.5))를 순백 금지
                 // 규칙에 맞게 primary 한 겹으로 덮어쓴다. 라이브러리 CSS는 런타임에 <head>로 주입돼
                 // Tailwind 유틸리티보다 뒤에 올 수 있어 캐스케이드 순서로는 이길 수 없다 — border-color
                 // longhand에 Tailwind v4 important 접미사(`!`)를 써 값의 중요도로 이긴다. 그 외

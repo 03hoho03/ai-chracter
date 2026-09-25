@@ -12,7 +12,7 @@ export function StudioImagesPage({
     // 랜드마크로 건너뛰어도 제목을 지나치지 않는다(랜드마크는 감싸기만, 폭·높이 제약은 ImageStudioShell
     // 안쪽 행에 그대로 있다 — DESIGN.md §Layout containers, 대화방 선례).
     <main>
-      {/* image-refact-goal-prompt.md IR-17 을 확장: lg 미만에서도 감춘다(2026-09-14 사용자 피드백).
+      {/* `lg` 이상에서 없애던 제목 블록을 확장: lg 미만에서도 감춘다(2026-09-14 사용자 피드백).
           h1 은 문서 개요를 위해 sr-only 로 남긴다. */}
       <h1 className="sr-only">이미지</h1>
       <ImageStudioShell tab={tab} onTabChange={onTabChange} />

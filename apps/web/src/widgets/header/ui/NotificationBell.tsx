@@ -48,7 +48,7 @@ export function NotificationBell() {
         {notifications.length === 0 ? (
           <p className="px-1.5 py-4 text-center text-sm text-muted-foreground">아직 알림이 없어요.</p>
         ) : (
-          // 이 목록은 항목마다 동작이 갈린다(D-17): 공지·문의 답변은 목적지(`/notices/$noticeId`·
+          // 이 목록은 항목마다 동작이 갈린다: 공지·문의 답변은 목적지(`/notices/$noticeId`·
           // `/inquiries/$inquiryId`)가 있어 링크지만, 조치 통지 3종은 경고·정지가 content_id 없이
           // 갈 곳이 없고 이용제한 콘텐츠로 보내면 오류 화면이라 갈 곳이 없다 — 읽음 처리만 하고
           // 드롭다운을 열어둔다.

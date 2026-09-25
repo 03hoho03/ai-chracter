@@ -48,7 +48,7 @@ export function GoogleBasicInfoStep({ onSubmit, isSubmitting }: GoogleBasicInfoS
       {errors.root && (
         <div role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
           <p>{errors.root.message}</p>
-          {/* 이 폼을 다시 내서는 풀리지 않는 실패의 출구(Q-10). 문장 밖 단독 줄이라 인라인 링크의
+          {/* 이 폼을 다시 내서는 풀리지 않는 실패의 출구. 문장 밖 단독 줄이라 인라인 링크의
               `focus-visible:underline` 대신 링을 쓰고, 보더가 없어 링은 불투명이다(DESIGN §Focus). 색은 배너의
               `destructive-text`를 물려받고 항상 밑줄로 링크임을 보인다 — 빨간 틴트 안에 `primary`를 섞지 않는다. */}
           {errors.root.type === LOGIN_LINK_ERROR_TYPE && (

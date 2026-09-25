@@ -7,7 +7,7 @@ import { flattenFieldErrorPaths, matchTabForPath } from "./fieldErrorPaths";
 export type FirstErrorLocation = { tabId: string; fieldPath: string };
 
 /**
- * 첫 에러의 `{tabId, fieldPath}`(builder-techspec.md §9-1이 쓸 탭 전환·포커스 입력값). 순수 함수.
+ * 첫 에러의 `{tabId, fieldPath}`(발행 실패 시 첫 에러 필드로 옮겨 가는 쪽이 쓸 탭 전환·포커스 입력값). 순수 함수.
  *
  * "첫"의 기준은 **탭 선언 순서**다(화면에 보이는 순서) — 스키마 키 순서와 반대일 수 있다. 같은 탭 안에
  * 에러가 여럿이면 `flattenFieldErrorPaths`가 주는 순회 순서(문자열 키는 선언 순서, 배열은 인덱스

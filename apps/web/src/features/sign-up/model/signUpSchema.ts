@@ -3,7 +3,7 @@ import { z } from "zod";
 const requiredAgreement = (message: string) =>
   z.boolean().refine((value) => value === true, { message });
 
-// legal-revision-goal-prompt.md LR-9: 서버(auth/age.py MINIMUM_AGE_THRESHOLD)와 같은 임계값 —
+// 서버(auth/age.py MINIMUM_AGE_THRESHOLD)와 같은 임계값 —
 // 서버가 진짜 게이트이고 이건 위저드 1스텝에서 거르는 UX다.
 const MINIMUM_SIGNUP_AGE = 14;
 
@@ -31,9 +31,9 @@ export const signUpSchema = z.object({
     }),
   termsAgreed: requiredAgreement("이용약관에 동의해주세요"),
   privacyAgreed: requiredAgreement("개인정보 수집·이용에 동의해주세요"),
-  // legal-revision-goal-prompt.md LR-1·LR-3 — 국외이전 동의를 수집·이용 동의에서 분리한다.
+  // 국외이전 동의를 수집·이용 동의에서 분리한다.
   transferAgreed: requiredAgreement("개인정보 국외이전에 동의해주세요"),
-  // 2단계(이메일 인증)에서만 실제로 채워진다 — techspec-auth-onboarding.md §2.
+  // 2단계(이메일 인증)에서만 실제로 채워진다.
   emailVerificationCode: z.string().length(6, { message: "6자리 코드를 입력해주세요" }),
 });
 

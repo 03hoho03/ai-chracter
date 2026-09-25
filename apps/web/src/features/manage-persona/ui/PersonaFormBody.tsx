@@ -64,7 +64,7 @@ export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidS
 
       <div className="flex flex-col gap-1.5">
         <Label htmlFor={nameId}>이름</Label>
-        {/* persona-goal-prompt.md UP-6·R-11 — 빈칸으로 시작한다. 닉네임으로 미리 채우지 않는다. */}
+        {/* 빈칸으로 시작한다. 닉네임으로 미리 채우지 않는다. */}
         {/* 폼은 언제나 사용자가 버튼을 눌러 연다 — 그 버튼이 사라지며 포커스가 `<body>`로 떨어지지 않게 첫 칸이 받는다. */}
         <Input
           id={nameId}
@@ -90,7 +90,7 @@ export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidS
           control={form.control}
           name="gender"
           render={({ field }) => (
-            // `variant="list"` 틴트 — 아래 제출 버튼이 이 화면의 `primary` 솔리드 하나다(DESIGN.md §2 밝기 예산).
+            // `variant="list"` 틴트 — 아래 제출 버튼이 이 화면의 `primary` 솔리드 하나다(DESIGN.md 밝기 예산 규칙).
             // `hover:bg-secondary` — 프리미티브의 `hover:bg-muted`는 모달(`popover`) 위에서 표면과 같은 값이라
             // 사라진다(대화방 선택 모달에서도 이 폼을 쓴다).
             <ToggleGroup
@@ -155,7 +155,7 @@ export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidS
               />
               <div className="flex flex-col gap-0.5">
                 <Label htmlFor={setAsDefaultId}>기본 프로필로 지정</Label>
-                {/* persona-goal-prompt.md UP-7 파생 ① — 기본은 새 방에만 들어간다. R-18: 켜진 채 시작하는
+                {/* 기본은 새 방에만 들어간다. 켜진 채 시작하는
                     이유(자동 기본)를 사용자가 알 수 있게 무엇이 바뀌는지 적는다. */}
                 <p id={`${setAsDefaultId}-hint`} className="text-xs break-keep text-muted-foreground">
                   새로 여는 대화방이 이 프로필로 시작해요. 지금 있는 대화방은 그대로예요.
@@ -168,7 +168,7 @@ export function PersonaFormBody({ defaultValues, isCreate, submitLabel, onValidS
 
       {/* 취소 먼저, 실행 나중(packages/ui/CLAUDE.md — 확인 모달 버튼 순서와 같은 DOM 순서).
           `hover:bg-secondary` — 성별 토글과 같은 이유: ghost의 `hover:bg-muted`는 모달(`popover`) 위에서
-          표면과 같은 값이라 hover가 1.000:1로 사라졌다(persona-progress.md S8 🟡-2). */}
+          표면과 같은 값이라 hover가 1.000:1로 사라졌다. */}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={onCancel}>
           취소
