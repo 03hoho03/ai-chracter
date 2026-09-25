@@ -6,18 +6,18 @@ import type { BuilderTab } from "@/entities/content";
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 type BuilderTabStripProps = {
-  /** 그릴 탭 목록. 셸의 `TABS`(`CHARACTER_TABS`·`STORY_TABS`)가 단일 소스다(builder-techspec.md §4-1). */
+  /** 그릴 탭 목록. 셸의 `TABS`(`CHARACTER_TABS`·`STORY_TABS`)가 단일 소스다. */
   tabs: readonly BuilderTab[];
   /** 에러를 품은 탭 id 집합(`errorTabs`의 반환값) — 라벨에 경고 아이콘과 destructive 색을 붙인다. */
   errorTabIds: ReadonlySet<string>;
 };
 
 /**
- * 빌더 스텝 탭 스트립. 두 셸이 글자 단위로 같은 JSX를 들고 있던 것을 모았다
- * (fe-convention-refactor-goal-prompt.md R-3) — 활성 탭 값과 전환은 `TabsList`/`TabsTrigger`가
+ * 빌더 스텝 탭 스트립. 두 셸이 글자 단위로 같은 JSX를 들고 있던 것을 모았다 —
+ * 활성 탭 값과 전환은 `TabsList`/`TabsTrigger`가
  * 부모 `Tabs`의 컨텍스트에서 읽으므로 이 컴포넌트는 activeTab도, 그 값을 좁히는 술어도 모른다.
  *
- * P2 — `TabsList`는 `inline-flex w-fit`이고 `overflow-x-auto`가 없어(packages/ui/tabs.tsx는
+ * `TabsList`는 `inline-flex w-fit`이고 `overflow-x-auto`가 없어(packages/ui/tabs.tsx는
  * 고치지 않는다, 호출부 처방) 8개 탭이 넘치면 이 스트립이 아니라 페이지 전체가 가로로 밀렸다
  * (390px 실측 428px). 스트립 자체를 스크롤 컨테이너로 감싼다 — `-m-1 p-1`은 `overflow-x-auto`가
  * 포커스 링을 클립하는 걸 상쇄한다(apps/web/CLAUDE.md "overflow-x-auto는 focus 링을 네 방향 모두

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 /**
- * `card`/`popover` 표면 위에서는 `bg-muted`를 쓰지 않는다(DESIGN.md §2 Colors "표면 위 채움" 규칙).
+ * `card`/`popover` 표면 위에서는 `bg-muted`를 쓰지 않는다(DESIGN.md §Colors "표면 위 채움" 규칙).
  *
  * 세 토큰 `card`·`popover`·`muted`는 같은 값이다(다크 0.21 / 라이트 0.97). 그래서 모달·카드 위에
- * 깐 `bg-muted` 스켈레톤·웰·hover·선택 채움은 표면 대비 **1.0000:1로 사라진다**(backlog H-2).
+ * 깐 `bg-muted` 스켈레톤·웰·hover·선택 채움은 표면 대비 **1.0000:1로 사라진다**.
  * 그 자리의 채움은 `secondary`다. `muted`는 `background` 위 첫 레이어(스켈레톤·웰) 전용이다.
  *
  * 규칙(파일 단위 휴리스틱): 주석을 걷어 낸 소스에 **표면 표식**(`DialogContent` 등 popover 표면을
@@ -12,8 +12,9 @@ import { describe, expect, it } from "vitest";
  * (`hover:`·`aria-selected:` 같은 변형 접두와 `/50` 알파 포함, `bg-muted-foreground`는 제외)은 실패다.
  * 예외는 아래 `ALLOWLIST`에 이유와 **기대 토큰 목록**과 함께만 둔다 — 파일을 통째로 면제하지 않는다.
  *
- * 한계: 모달 본문을 **다른 파일의 컴포넌트**로 뺀 경우는 못 잡는다(표식과 채움이 다른 파일에 있다 —
- * backlog-sweep M-7). admin(`apps/admin`)은 형제 앱이라 스캔하지 않는다(M-2, admin에 vitest가 없다).
+ * 한계: 모달 본문을 **다른 파일의 컴포넌트**로 뺀 경우는 못 잡는다(표식과 채움이 다른 파일에 있다).
+ * 할 일: 재발하면 컴포넌트 트리 기반 검사를 검토한다.
+ * admin(`apps/admin`)은 형제 앱이라 스캔하지 않는다(admin에 vitest가 없다).
  *
  * 소스를 문자열로 읽는 이유는 `searchSchemaContract.test.ts`와 같다(node 환경에서 컴포넌트를 import하면
  * 모듈 최상위 `localStorage` 접근에서 죽는다).

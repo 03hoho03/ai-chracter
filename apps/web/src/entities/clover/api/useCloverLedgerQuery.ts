@@ -10,8 +10,8 @@ export type CloverLedgerItem = components["schemas"]["CloverLedgerItem"];
 export type CloverLedgerListResponse = components["schemas"]["CloverLedgerListResponse"];
 export type CloverLedgerCategory = CloverLedgerItem["category"];
 
-/** clover-page-goal-prompt.md CE-20·CE-26 — 내역 목록. "더 보기" 버튼형(`useProfileContentListQuery`
- * 선례 복제, 사전 점검 PB-4) — 내역은 탐색이 아니라 확인 대상이라 sentinel 무한스크롤이 아니라
+/** 내역 목록. "더 보기" 버튼형(`useProfileContentListQuery`
+ * 선례 복제) — 내역은 탐색이 아니라 확인 대상이라 sentinel 무한스크롤이 아니라
  * 명시적 버튼이다. `category`는 BE가 `kind`→범주 맵으로 이미 분류해 응답에 실어 보낸다
  * (`CloverLedgerItem.category`) — FE는 같은 맵을 다시 두지 않고 탭 값을 그대로 쿼리 파라미터로
  * 넘긴다. */

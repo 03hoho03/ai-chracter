@@ -9,7 +9,7 @@ import type { ChatRoomState } from "../model/chatRoomState";
 
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 
-// US-055 — applyStreamEvent/useSendMessage(US-052/054)가 이미 이 캐시 키를 ChatRoomState 모양으로
+// applyStreamEvent/useSendMessage가 이미 이 캐시 키를 ChatRoomState 모양으로
 // setQueryData하고 있으므로, 최초 조회도 같은 모양으로 저장해야 SSE 이벤트가 이어서 반영된다.
 export function useChatRoomQuery(roomId: string) {
   return useQuery<ChatRoomState, ApiError>({

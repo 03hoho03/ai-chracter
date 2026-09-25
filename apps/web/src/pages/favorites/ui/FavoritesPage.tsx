@@ -28,16 +28,16 @@ export type FavoritesSearch = {
 };
 
 /** `entities/content`의 `CONTENT_TYPES` 하나에서 도출한다 — 이 목록·`isContentType`·
- * `routes/favorites.tsx`의 `z.enum`이 한때 손으로 유지되는 세 벌이었다(TS-09). */
+ * `routes/favorites.tsx`의 `z.enum`이 한때 손으로 유지되는 세 벌이었다. */
 const TYPE_OPTIONS = CONTENT_TYPES.map((value) => ({ value, label: CONTENT_TYPE_LABEL[value] }));
 
-/** techspec-home-discovery.md §4 — 즐겨찾기 목록. §1 홈 무한스크롤과 동일한 구조(`ContentCard`/
+/** 즐겨찾기 목록. 홈 무한스크롤과 동일한 구조(`ContentCard`/
  * `ContentListEmptyState`/sentinel)를 재사용한다.
  *
- * card-grid-goal-prompt.md D-6 — 그리드가 항상 단일 타입이어야 D-5(타입별 열 수)가 예외 없이 성립하므로,
+ * 그리드가 항상 단일 타입이어야 타입별 열 수가 예외 없이 성립하므로,
  * 캐릭터/스토리 2택 `Select`를 둔다('전체' 없음). 헤더의 전역 `ContentTypeToggle`과 같은 프리미티브
  * (`ToggleGroup`)를 쓰면 같은 모양의 컨트롤 둘이 다르게 동작하게 돼(하나는 홈으로 이동) `Select`를
- * 쓴다(card-grid-techspec.md T-1). 기본값은 `contentTypeToggleAtom`의 현재값 — atom은 읽기만 하고
+ * 쓴다. 기본값은 `contentTypeToggleAtom`의 현재값 — atom은 읽기만 하고
  * 쓰지 않는다. 이후 진실은 `?type=` URL이다. */
 export function FavoritesPage({
   search,
@@ -106,7 +106,7 @@ type FavoritesBodyProps = {
 };
 
 /** 로딩·전면실패·빈·성공 네 갈래를 **early return 순서**로 강제한다 — 본문에 `&&`로 나열하면 순서가
- * 코드 배치에만 의존해 두 분기가 조용히 겹친다(COMP-04). 툴바(`Select`)는 어떤 상태에서도 남아야 해서
+ * 코드 배치에만 의존해 두 분기가 조용히 겹친다. 툴바(`Select`)는 어떤 상태에서도 남아야 해서
  * 목록 본문만 떼어냈다.
  *
  * ⚠️ **부분 실패 배너는 성공 분기 안에 있다.** `apps/web/CLAUDE.md`가 "부분 실패 배너는 0건 분기에서도

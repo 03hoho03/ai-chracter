@@ -74,7 +74,7 @@ const TYPE_FILTER_OPTIONS: { value: MyWorkTypeFilter; label: string }[] = MY_WOR
  * 문구가 갈릴 수 있다. */
 const VISIBILITY_AXIS_LABEL = "공개 여부";
 
-/** 이번 범위의 정렬은 최신순 하나뿐이고(US-009), 그건 `mergeMyWorks`가 이미 하는 일이다 — 컨트롤은
+/** 정렬은 지금 최신순 하나뿐이고, 그건 `mergeMyWorks`가 이미 하는 일이다 — 컨트롤은
  * 그 사실을 말할 뿐 아무것도 바꾸지 않는다. 두 번째 옵션을 넣을 땐 값이 `mergeMyWorks`까지 닿아야 한다. */
 const SORT_LABEL: Record<MyWorksSort, string> = { latest: "최신순" };
 
@@ -83,14 +83,14 @@ const SORT_OPTIONS: { value: MyWorksSort; label: string }[] = MY_WORKS_SORTS.map
   label: SORT_LABEL[value],
 }));
 
-/** prd-creator-entry-and-my-works.md US-008 — 발행 여부와 상관없이 내가 만든 것을 한 화면에서 본다.
+/** 발행 여부와 상관없이 내가 만든 것을 한 화면에서 본다.
  * 서버에는 둘을 합쳐 주는 엔드포인트가 없어 캐릭터·스토리 발행작(`GET /users/{me}/contents`)과
- * 초안(`GET /me/drafts`)을 각각 받아 클라이언트에서 병합한다(확정 결정 9). */
+ * 초안(`GET /me/drafts`)을 각각 받아 클라이언트에서 병합한다. */
 export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps) {
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-4 sm:px-6 py-10">
       {/* 제목과 버튼은 접지 않고 한 줄에 둔다 — 390px 실측으로 `내 작품` 65.38px + `작품 만들기`
-          107.05px(D-4 전 85.92px) = 172.43px이라 본문 358px의 48%다(최악인 320px에서도 간격
+          107.05px(컨트롤 크기 개편 전 85.92px) = 172.43px이라 본문 358px의 48%다(최악인 320px에서도 간격
           115.58px이 남는다). 버튼은 `Button`의 base가 이미 `shrink-0`이라 제목이 먼저 줄어들고,
           제목은 2어절이라 접힐 자리도 없다. */}
       <div className="flex items-center justify-between gap-3">
@@ -103,25 +103,25 @@ export function MyWorksPage({ userId, search, onSearchChange }: MyWorksPageProps
   );
 }
 
-/** US-011 — 만들기 진입점. 페이지 제목 옆과 "작품 0건" 빈 상태 두 곳이 쓰므로 목적지를 한 곳에만
- * 적는다. `primary` 솔리드는 DESIGN.md §2가 못박은 이 시스템의 **유일한 유채색 솔리드 채움**이라
+/** 만들기 진입점. 페이지 제목 옆과 "작품 0건" 빈 상태 두 곳이 쓰므로 목적지를 한 곳에만
+ * 적는다. `primary` 솔리드는 DESIGN.md Colors 절이 못박은 이 시스템의 **유일한 유채색 솔리드 채움**이라
  * 이 자리(화면의 유일한 앞길)에 정확히 해당한다.
  *
  * **두 자리를 크기가 아니라 라벨로 가른다.** 처음엔 빈 상태 쪽을 `size="lg"`로 올렸는데 (1) `lg`는
  * `default`와 패딩이 같아 두 버튼 폭이 107.05px로 **완전히 동일**하고 높이만 36→40(+4px)이라 위계가
- * 아니라 정렬 오차로 읽히고 (2) D-4 전엔 앱의 다른 `size="lg"`가 대부분 `h-10`/`h-12`로 높이를
+ * 아니라 정렬 오차로 읽히고 (2) 컨트롤 크기 개편 전엔 앱의 다른 `size="lg"`가 대부분 `h-10`/`h-12`로 높이를
  * 덮어써 36px은 존재하지 않는 티어였으며 (3) 라벨·역할·목적지가 모두 같아 빈 상태 탭 스톱 8개 중
  * 2개가 스크린리더에 `링크, 작품 만들기`로 연달아 읽혔다(실측). 라벨을 가르면 셋이 한 번에 풀렸다.
  *
- * **(2)는 D-4로 사실관계가 바뀌었다.** `default` 자체가 36px가 되며 "32→36" 비교의 기준점이
+ * **(2)는 컨트롤 크기 개편으로 사실관계가 바뀌었다.** `default` 자체가 36px가 되며 "32→36" 비교의 기준점이
  * 이동했고, 다른 `size="lg"` 10곳의 `h-10` 오버라이드를 이번 개편에서 걷어내 그 10곳은 이제
  * 네이티브 40px다 — "전부 덮어쓴다 / 36px 티어는 없다"는 더 이상 참이 아니다(남은 오버라이드는
- * `h-12` 플레이 2곳뿐, design-system-progress.md P-2). **그래도 결정은 안 바뀐다** — (1) 폭 동일과
- * (3) 라벨 중복은 D-4와 무관하게 그대로 참이라 크기 대신 라벨을 가르는 처방은 둘만으로도 유효하다.
+ * `h-12` 플레이 2곳뿐). **그래도 결정은 안 바뀐다** — (1) 폭 동일과
+ * (3) 라벨 중복은 그 개편과 무관하게 그대로 참이라 크기 대신 라벨을 가르는 처방은 둘만으로도 유효하다.
  *
  * 빈 상태 라벨이 `첫`이 아니라 **`새`**인 이유: `첫`은 서수를 주장하는데 이 화면에 도달하는 경로 둘이
  * 그걸 거짓으로 만든다 — (a) 발행작 두 쿼리가 실패하고 초안만 `[]`로 성공하면 작품 32건을 가진
- * 사용자가 이 패널을 본다 (b) US-007 지연 생성으로 만든 초안을 전부 지우고 돌아온 사용자도 본다.
+ * 사용자가 이 패널을 본다 (b) 지연 생성으로 만든 초안을 전부 지우고 돌아온 사용자도 본다.
  * `새`는 순수 수식어라 모든 분기에서 참이고, 폭도 101.44px로 `첫`과 픽셀 단위로 같다(실측). */
 function CreateWorkButton({ label = "작품 만들기" }: { label?: string }) {
   return (
@@ -202,7 +202,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
       <div className="flex flex-col gap-6">
         {errorBanner}
         {/* 이 화면에서 유일하게 할 수 있는 일이 만들기다 — 상태 통보("없어요")로 끝내면 막다른 길이
-            되므로 남은 한 줄은 무엇이 만들어지고 어디에 쌓이는지를 말한다(US-011).
+            되므로 남은 한 줄은 무엇이 만들어지고 어디에 쌓이는지를 말한다.
             제목은 **부분 실패가 없을 때만** 단다: 발행작 두 쿼리가 실패하고 초안만 `[]`로 성공하면
             여기 도달하는데(위 배너 주석의 그 상황), 그때 "아직 만든 작품이 없어요"는 거짓일 수 있다.
             한 줄 안내로 남기는 건 몰라도 배너가 반박하는 문장을 굵은 제목으로 승격시키지는 않는다. */}
@@ -222,7 +222,7 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
   // 핵심이다 — 캐릭터·스토리는 각각 페이징된 뒤 `mergeMyWorks`가 클라이언트에서 합치므로 한쪽만
   // 당기면 다른 쪽이 24건에서 멈춘 채 목록이 늘어난다.
   //
-  // 공개여부 축은 서버가 아니라 `filterMyWorks`가 여기서 거른다(US-001이 이 화면에 `visibility`를
+  // 공개여부 축은 서버가 아니라 `filterMyWorks`가 여기서 거른다(이 화면은 서버에 `visibility`를
   // 넘기지 않는다) — 그래서 **불러온 24건 중 그 축에 맞는 게 0건인 상태가 존재하고**, 그때도 다음
   // 페이지에는 있을 수 있다. 빈 결과 패널 아래에도 버튼을 그대로 두는 이유다.
   const pageQueries = toMyWorkPageSources(typeFilter).map(
@@ -267,8 +267,8 @@ function MyWorksBody({ userId, search, onSearchChange }: MyWorksBodyProps) {
         />
       ) : (
         // `tabIndex={-1}`은 Tab 순서에 넣지 않으면서 프로그램 포커스만 받게 한다 — "더 보기"가
-        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다(A-2). `mixed`인 이유(card-grid-goal-prompt.md
-        // D-6): '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2/3/4열)에
+        // 마지막 페이지에서 사라질 때 포커스를 여기로 넘긴다. `mixed`인 이유:
+        // '전체' 필터에서 캐릭터·스토리가 실제로 섞이므로 그리드는 항상 캐릭터 규격(2/3/4열)에
         // `items-start`를 쓰고, 카드는 각자 `toThumbnailAspect(item.type)`로 자기 비율을 지킨다.
         <ContentCardGrid thumbnailAspect="mixed" ref={gridRef} tabIndex={-1} className="outline-none">
           {visibleItems.map((item, index) => (
@@ -306,8 +306,8 @@ type MyWorksEmptyResultProps = {
  * 목록에 볼 것이 있는데 지금 조건으로는 0건일 때. **두 경우가 서로 다른 문장과 다른 다음 행동을 가져야
  * 한다** — 문구만 다르고 할 수 있는 게 같으면 그 구분은 화면에서 아무 일도 하지 않는다.
  *
- * 필터가 하나도 안 걸렸는데 0건이면 가진 게 **초안뿐**이라는 뜻이다(`전체`는 FR-18에 따라 발행작만
- * 센다). US-007의 지연 생성 이후 이건 엣지가 아니라 **모든 신규 창작자의 첫 화면**이다. 그때 "조건에
+ * 필터가 하나도 안 걸렸는데 0건이면 가진 게 **초안뿐**이라는 뜻이다(`전체`는 발행작만
+ * 센다). 초안 지연 생성 이후 이건 엣지가 아니라 **모든 신규 창작자의 첫 화면**이다. 그때 "조건에
  * 맞는 작품이 없어요" + `필터 모두 해제`를 띄우면 (1) 걸린 조건이 없으니 거짓말이고 (2) 유일한 탈출구가
  * 이미 해제 상태라 아무 일도 하지 않으며 (3) 초안이 `미등록`에 멀쩡히 있다는 사실을 말하지 않는다
  * (실측: 발행작 응답을 비우면 `전체 0건` + 죽은 버튼). `미등록 보기`는 이 분기에 도달한 이상 항상
@@ -325,9 +325,9 @@ function MyWorksEmptyResult({
       <ContentListEmptyState
         message="아직 발행한 작품이 없어요."
         action={
-          // `size="sm"`(32px)이 아닌 이유: 이 버튼은 US-007 지연 생성 이후 **모든 신규 창작자의
+          // `size="sm"`(32px)이 아닌 이유: 이 버튼은 초안 지연 생성 이후 **모든 신규 창작자의
           // 첫 화면**에서 유일한 앞길인데, 190px 패널 한가운데 32px 보조 액션으로 놓이면 위계가
-          // 실제 역할과 어긋난다. `primary` 솔리드는 US-011의 `작품 만들기`가 가져갈 자리라
+          // 실제 역할과 어긋난다. `primary` 솔리드는 `작품 만들기`(`CreateWorkButton`)가 가져갈 자리라
           // 채움이 아니라 크기로만 올린다.
           <Button type="button" variant="outline" onClick={onShowUnpublished}>
             미등록 보기
@@ -340,7 +340,7 @@ function MyWorksEmptyResult({
   // 패널 밖 건수 줄에만 조건이 적혀 있으면, 공유 URL로 이 화면에 바로 도착한 사람에게 패널이
   // "조건"이라는 대명사만 말하게 된다. 같은 문장을 패널 안에서 한 번 더 완결시킨다.
   //
-  // 남은 페이지가 있으면 그 문장의 범위를 **불러온 만큼**으로 좁힌다(US-009). 공개여부는 서버가 아니라
+  // 남은 페이지가 있으면 그 문장의 범위를 **불러온 만큼**으로 좁힌다. 공개여부는 서버가 아니라
   // 화면이 거르므로 첫 24건이 전부 공개작이면 `비공개`가 0건인데, 다음 페이지에는 있을 수 있다 —
   // 그때 "비공개에 해당하는 작품이 없어요"는 거짓이고 바로 아래 "더 보기" 버튼과도 어긋난다.
   return (
@@ -369,7 +369,7 @@ type MyWorksToolbarProps = {
   onSearchChange: (patch: Partial<MyWorksSearch>) => void;
 };
 
-/** US-009 — 필터 칩 한 줄(작품 종류 + 공개 여부)과 그 아래 결과 수 · 정렬.
+/** 필터 칩 한 줄(작품 종류 + 공개 여부)과 그 아래 결과 수 · 정렬.
  *
  * 종류 칩은 `Button`을 손으로 조립하지 않고 `ToggleGroup variant="outline" size="sm"`을 쓴다 —
  * DESIGN.md §Toggles가 단일선택 칩을 `toggleVariants` 한 곳에서만 정의하도록 못박았고(선택 상태는
@@ -390,7 +390,7 @@ function MyWorksToolbar({
     // 툴바 안쪽은 `gap-2`, 툴바와 목록 사이는 `gap-6`(`MyWorksBody`) — 두 값이 4px밖에 안 벌어져 있으면
     // 건수 줄이 툴바의 꼬리인지 목록의 머리글인지 읽히지 않는다(실측: 12px vs 16px이었다).
     <div className="flex flex-col gap-2">
-      {/* D-4로 `SelectTrigger`가 93.91→113.33px로 커지면서 두 축(작품 종류 + 공개 여부)이 한 줄에
+      {/* 컨트롤 크기 개편으로 `SelectTrigger`가 93.91→113.33px로 커지면서 두 축(작품 종류 + 공개 여부)이 한 줄에
           다 안 들어가는 폭이 생겼다(390px 실측: 컨테이너 366px / 필요 폭 406px, 40px 초과). 이전의
           `overflow-x-auto`는 스크롤 어포던스 없이 `공개 여부`를 화면 밖으로 밀어 안 보이게 만드므로
           (회귀) **흘리는 대신 접는다** — `flex-wrap`으로 안 들어가는 축을 다음 줄로 내린다.
@@ -454,8 +454,8 @@ function MyWorksToolbar({
                 축 이름은 `aria-label`로 함께 넘긴다(`aria-label`이 내용을 덮으므로 값도 같이 담는다). */}
             {/* 값이 걸리면 강조를 준다. 안 그러면 이 트리거는 **미선택 칩과 셸이 거의 같아서**(높이·
                 보더·배경 Δ0.0000 — 실측) 목록을 32→1건으로 줄인 축이 꺼진 칩처럼 보이고, 정작
-                아무것도 안 거른 `전체` 칩만 핑크로 켜져 활성 표현이 뒤집힌다. **반경은 D-13 이후
-                갈린다** — 트리거 `lg`(8px) 대 칩 pill이라 그만큼 혼동이 줄었지만, 나머지가 같고
+                아무것도 안 거른 `전체` 칩만 핑크로 켜져 활성 표현이 뒤집힌다. **반경은 칩이 pill이 된
+                뒤로 갈린다** — 트리거 `lg`(8px) 대 칩 pill이라 그만큼 혼동이 줄었지만, 나머지가 같고
                 같은 줄에 놓이므로 강조를 뺄 근거는 아니다(강조 없는 상태는 재측정 안 함).
 
                 **채움이 아니라 보더인 이유(2026-08-29 교체).** 원래는 `bg-secondary` 채움이었는데,
@@ -499,7 +499,7 @@ function MyWorksToolbar({
             (`캐릭터` / ` ` / `2` / `건`)로 쪼개 놓아서, `전체 32건` → `캐릭터 2건` 전환의 뮤테이션은
             `캐릭터`와 `2` 둘뿐이고 단위 `건`은 목록에 없다(MutationObserver 실측). 문장을 통째로
             다시 읽게 해야 "캐릭터 2건"이 된다. */}
-        {/* 커서 페이징이 들어간 뒤(US-001) 이 건수는 **총계가 아니라 지금까지 불러온 수**다. 총계 API를
+        {/* 커서 페이징이 들어간 뒤 이 건수는 **총계가 아니라 지금까지 불러온 수**다. 총계 API를
             만들지 않기로 했으므로 라벨 문구로 푼다 — 남은 페이지가 있는 동안만 `표시 중`을 달아 문장이
             총계를 주장하지 않게 하고, 마지막 페이지가 도착해 "더 보기"가 사라지는 순간 그냥 `32건`이
             된다(그때는 그게 실제로 총계다). 두 문구가 갈리는 지점과 버튼이 사라지는 지점이 같아서
@@ -561,12 +561,12 @@ type MyWorkCardProps = {
 
 /** 발행작은 홈·프로필과 같은 상세 모달로, 초안은 이어 쓰던 빌더로 간다. 초안이 `<Link>`가 아닌 이유는
  * 한 그리드 안에서 발행작 카드가 라우터를 우회하는 모달(`useContentDetailModal`)이라 링크가 될 수 없고,
- * 카드 안에 다른 동작을 넣을 자리(US-010의 ⋯ 메뉴)가 `role="button"` 패턴을 요구하기 때문이다. */
+ * 카드 안에 다른 동작을 넣을 자리(⋯ 메뉴)가 `role="button"` 패턴을 요구하기 때문이다. */
 function MyWorkCard({ item, userId, isPriority, isLcpCandidate }: MyWorkCardProps) {
   const navigate = useNavigate();
   const { open } = useContentDetailModal();
 
-  // 초안은 이름이 비어 있는 게 정상 상태다 — US-007의 지연 생성은 사용자가 이름을 넣기 전에도 초안을
+  // 초안은 이름이 비어 있는 게 정상 상태다 — 초안 지연 생성은 사용자가 이름을 넣기 전에도 초안을
   // 만든다. 폴백을 공용 `ContentCard`가 아니라 여기 두는 이유: 홈·즐겨찾기·프로필에는 이름 없는
   // 발행작이 올 수 없어서, 공용 쪽에 넣으면 그쪽의 진짜 결함을 조용히 가리게 된다.
   // 카드와 "⋯"가 **같은** 문자열을 쓰는 이유는 WCAG 2.5.3(보이는 이름과 접근가능 이름 일치)이다 —
@@ -576,7 +576,7 @@ function MyWorkCard({ item, userId, isPriority, isLcpCandidate }: MyWorkCardProp
   return (
     <ContentCard
       thumbnailUrl={item.thumbnailUrl ?? undefined}
-      // card-grid-goal-prompt.md D-6 — '전체' 필터에서 캐릭터·스토리가 섞이므로 그리드가 아니라
+      // '전체' 필터에서 캐릭터·스토리가 섞이므로 그리드가 아니라
       // **항목별**로 비율을 정한다(`toThumbnailAspect`).
       thumbnailAspect={toThumbnailAspect(item.type)}
       title={title}
@@ -604,11 +604,11 @@ function MyWorkCard({ item, userId, isPriority, isLcpCandidate }: MyWorkCardProp
   );
 }
 
-/** card-grid-techspec.md T-5/T-6 — 보이지 않는 실제 카드(`ContentCardSkeleton`)가 레이아웃(높이)을
+/** 보이지 않는 실제 카드(`ContentCardSkeleton`)가 레이아웃(높이)을
  * 만든다. 손으로 잰 높이 수치(제목 줄 32px·배지 행 22.5px 등)에 더는 의존하지 않는다 — 높이의 유일한
  * 소스가 카드 자신이라 카드 구조가 바뀌어도 스켈레톤이 자동으로 따라온다.
  *
- * 툴바 스페이서도 같은 기법이다(T-6, B-18) — 실제 `ToggleGroup`·`Select`를 `inert`+`invisible`로 그려
+ * 툴바 스페이서도 같은 기법이다 — 실제 `ToggleGroup`·`Select`를 `inert`+`invisible`로 그려
  * 자리를 비운다. 폭이 자동으로 일치하므로 칩 라벨이나 "공개 여부" 문구가 바뀌어도 이 스페이서가
  * 실제 툴바와 다른 폭에서 접히는 일이 없다.
  *
@@ -682,7 +682,7 @@ function MyWorksErrorState({ message, onRetry }: { message: string; onRetry: () 
 
 /** 셋 다 실패해 목록이 통째로 없을 때. 같은 "보여줄 게 없음" 상황인 빈 상태(`ContentListEmptyState`)와
  * 같은 dashed 패널 셸을 써서 한 화면에 빈 상태 어휘가 둘이 되지 않게 한다 — **셸 클래스가 손으로
- * 복사돼 있으므로 저쪽을 고치면 여기도 함께 고쳐야 이 주석이 참으로 남는다**(US-011의 `px-6
+ * 복사돼 있으므로 저쪽을 고치면 여기도 함께 고쳐야 이 주석이 참으로 남는다**(만들기 진입점을 넣을 때 `px-6
  * break-keep`이 그렇게 갈렸다). 같은 셸의 세 번째 사본이 `GeneratedImageLibraryPanel`에 있다.
  *
  * `다시 시도`에 `size="sm"`을 주지 않는 이유는 형제 빈 상태들과 같다 — 이 패널의 유일한 앞길이

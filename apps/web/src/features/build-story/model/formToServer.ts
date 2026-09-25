@@ -20,11 +20,11 @@ type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
 type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
 
-// endings(US-095)가 startingSetups의 마지막 남은 필드였다 — 이제 storyBuilderSchema가 StoryDraftPayload의
-// 모든 필드를 채우므로 US-092~094가 쓰던 `Pick<...>` 좁히기가 더 필요 없다(US-092 CLAUDE.md 메모 참고).
+// endings가 startingSetups의 마지막 남은 필드였다 — 이제 storyBuilderSchema가 StoryDraftPayload의
+// 모든 필드를 채우므로 예전에 쓰던 `Pick<...>` 좁히기가 더 필요 없다.
 export type StoryBuilderDraftPayload = StoryDraftPayload;
 
-// FE는 techspec 의사코드의 비교 연산자 기호(>=, <= ...)를 쓰고 서버는 EndingRuleOperator(gte/lte/eq/gt/lt,
+// FE는 비교 연산자 기호(>=, <= ...)를 쓰고 서버는 EndingRuleOperator(gte/lte/eq/gt/lt,
 // DB 컬럼 그대로)를 쓴다 — entities/chat-room/api/toChatRoomState.ts의 OPERATOR_MAP과 반대 방향(FE -> 서버) 매핑.
 // schema.ts가 이미 "!="을 제외해뒀으므로(서버 enum에 없음) 이 Record는 5개 키로 완전하다.
 const OPERATOR_TO_API: Record<SingleRuleValues["operator"], EndingRuleDraftItem["operator"]> = {
@@ -54,7 +54,7 @@ function toApiRuleListItem(item: RuleListItemValues): EndingRuleDraftItem | Endi
   return toApiSingleRule(item);
 }
 
-// order는 서버 스키마에 별도 숫자 필드가 없다 — statRules 배열 인덱스 자체가 order다(US-091 패턴과 동일).
+// order는 서버 스키마에 별도 숫자 필드가 없다 — statRules 배열 인덱스 자체가 order다(캐릭터 빌더와 같은 패턴).
 function toApiEnding(ending: EndingValues): EndingDraftItem {
   return {
     id: ending.id,
@@ -82,13 +82,13 @@ function toApiStatDef(stat: StatDefValues): StatDefDraftItem {
   };
 }
 
-// chat-techspec.md §6-1(D-12): 서버 계약(`DevelopmentExampleItem`)엔 id가 없다 — 폼 쌍이 이미 그
+// 서버 계약(`DevelopmentExampleItem`)엔 id가 없다 — 폼 쌍이 이미 그
 // 모양이라 필드명만 그대로 옮긴다.
 function toApiDevelopmentExample(item: DevelopmentExampleValues): DevelopmentExampleItem {
   return { userLine: item.userLine, assistantLine: item.assistantLine };
 }
 
-// scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다(techspec §1.3 [확정] 매핑).
+// scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다.
 function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
   return {
     id: note.id,
@@ -98,7 +98,7 @@ function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
   };
 }
 
-// order는 서버 스키마에 별도 숫자 필드가 없다 — 배열 인덱스 자체가 order다(US-091 캐릭터 빌더와 동일).
+// order는 서버 스키마에 별도 숫자 필드가 없다 — 배열 인덱스 자체가 order다(캐릭터 빌더와 동일).
 function toApiStartingSetup(setup: StartingSetupValues): StartingSetupDraftItem {
   return {
     id: setup.id,
@@ -114,7 +114,7 @@ function toApiStartingSetup(setup: StartingSetupValues): StartingSetupDraftItem 
 
 /**
  * 폼값 -> `PATCH /contents/{id}/draft` payload 중 profile/storySetting/startingSetups/
- * keywordNotes/shortcuts/registration 부분(techspec-overview.md §8.1, 순수 함수).
+ * keywordNotes/shortcuts/registration 부분(순수 함수).
  */
 export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftPayload {
   return {
@@ -123,7 +123,7 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     thumbnailAssetId: values.profile.image?.assetId ?? null,
     promptTemplate: values.storySetting.promptTemplate,
     settingText: values.storySetting.worldSetting ?? null,
-    // chat-techspec.md §6-2(D-13): 구 컬럼(`developmentExample`)은 리비전②가 드롭하기 전까지
+    // 구 컬럼(`developmentExample`)은 그 컬럼을 드롭하는 마이그레이션 전까지
     // 롤백 안전망으로 남아 있어야 한다. FE는 더 이상 이 필드를 폼에서 관리하지 않으므로 아예
     // 보내지 않는다 — BE가 "안 보냄"과 명시적 null을 구분해, 안 보내면 기존 값을 그대로 둔다.
     // 전개 예시의 출처는 이제 developmentExamples 하나뿐이다.

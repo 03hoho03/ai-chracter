@@ -22,14 +22,14 @@ const ITEM_CLASS =
 
 /** 행 안 보조 글자(설명·`기본` 배지)는 행 표면이 한 칸 오르면(hover `secondary`, 선택 `primary/10`·`/15` 틴트)
  * 잉크도 `foreground`로 함께 올린다. 라이트 `muted-foreground`(0.53)는 `popover` 위 4.84:1이지만 선택 행
- * 4.10 · 선택+hover 3.76 · hover 행 4.30으로 AA 미달이었고(persona-progress.md S8 🟡-1), 사다리에서 그
+ * 4.10 · 선택+hover 3.76 · hover 행 4.30으로 AA 미달이었고, 사다리에서 그
  * 표면들 위 4.5:1을 넘는 무채색 잉크는 `foreground`뿐이다(13.45 / 12.34 / 14.09, 다크 12.55 / 11.54 /
  * 12.64 — oklch 토큰 → sRGB 합성 계산). 쉬는 행은 `muted-foreground` 그대로라 이름과의 위계가 남는다. */
 const SECONDARY_TEXT_CLASS =
   "text-muted-foreground group-hover/persona-option:text-foreground group-data-[state=on]/persona-option:text-foreground";
 
 /** 대화방의 대화 프로필 목록("선택 안 함" 포함). 누르면 바로 `PUT`한다 — 확인 단계가 없는 이유는 되돌리기가
- * 같은 동작 한 번이고 과거 메시지는 바뀌지 않기 때문이다(persona-goal-prompt.md UP-7, 다음 턴부터 반영).
+ * 같은 동작 한 번이고 과거 메시지는 바뀌지 않기 때문이다(다음 턴부터 반영).
  *
  * `variant="list"` — 넓은 행이 세로로 쌓인 선택지라 틴트로 표시한다(DESIGN.md §Toggles). `hover:bg-secondary`는
  * 프리미티브의 `hover:bg-muted`가 모달 표면(`popover`)과 같은 값이라 사라지는 것을 한 칸 올린다. */

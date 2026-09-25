@@ -1,4 +1,4 @@
-/** clover-page-goal-prompt.md CE-14 — 미션 3종의 한국어 라벨. `CloverMissionItem.key`는 BE에서
+/** 미션 3종의 한국어 라벨. `CloverMissionItem.key`는 BE에서
  * `Literal`이 아니라 `string`이다(`kind`와 같은 이유 — admin `CLOVER_KIND_LABELS`
  * 선례와 같은 관례) — 그래서 여기도 `Record<string, string>`이고, 모르는 키는 호출부가
  * 원문 그대로 보여준다(`?? key` 폴백). */

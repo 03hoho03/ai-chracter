@@ -23,7 +23,7 @@ type GeneratedImageFieldProps = {
    * 정사각 미리보기로는 잘려나갈 위아래를 판단할 수 없다. 폭(`w-28`)을 고정하고 높이가 비율을
    * 따라가므로 스토리 빌더에서만 이 줄이 56px 높아진다. */
   previewAspect?: ThumbnailAspect;
-  /** image-crop-goal-prompt.md IC-15 — `features` 간 직접 import는 eslint가 막아서(`features/crop-image`를
+  /** `features` 간 직접 import는 eslint가 막아서(`features/crop-image`를
    * 여기서 부를 수 없다) 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
    * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
    * 거치지 않는다. */
@@ -31,7 +31,7 @@ type GeneratedImageFieldProps = {
 };
 
 /**
- * techspec-builder-story.md §2 — 캐릭터/스토리 빌더가 공유하는 이미지 필드. 업로드/갤러리선택/삭제
+ * 캐릭터/스토리 빌더가 공유하는 이미지 필드. 업로드/갤러리선택/삭제
  * 세 경로 모두 `{assetId}`(또는 삭제 시 null) 하나로 수렴하므로, 이 컴포넌트를 쓰는 zod 폼 필드는
  * 항상 `z.object({ assetId: z.string() }).nullable()` 모양이면 된다(situationalImageSchema/
  * profile.image와 동일 shape). `previewUrl`은 이미 서버에 저장된 값을 편집할 때 소비자가 알고 있는
@@ -146,8 +146,7 @@ export function GeneratedImageField({
 
       <div className="flex flex-col gap-2">
         {/* 바로 아래 "생성한 이미지에서 선택" Button과 같은 variant="outline" size="sm"으로 맞춘다.
-            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
-            (design-system-progress.md P-2-9). */}
+            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다. */}
         <Label
           htmlFor={inputId}
           className={cn(

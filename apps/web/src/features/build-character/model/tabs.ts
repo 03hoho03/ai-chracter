@@ -1,10 +1,10 @@
 import type { BuilderTab } from "@/entities/content";
 
 /**
- * builder-techspec.md §4-1(T-4) — 캐릭터 빌더 5탭의 단일 소스. `CharacterBuilderShell.tsx`가 그리던
- * 탭 목록을 여기로 옮기고 `fields`·`preview`(D-2, A-6)를 더했다.
+ * 캐릭터 빌더 5탭의 단일 소스. `CharacterBuilderShell.tsx`가 그리던
+ * 탭 목록을 여기로 옮기고 `fields`·`preview`를 더했다.
  *
- * `detail` 탭 id는 스키마 키 `registration`과 이름이 다르다(builder-progress.md §0-2 조사) —
+ * `detail` 탭 id는 스키마 키 `registration`과 이름이 다르다 —
  * `fields`가 실제 경로를 가리키므로 매칭에는 영향이 없다.
  */
 export const CHARACTER_TABS = [

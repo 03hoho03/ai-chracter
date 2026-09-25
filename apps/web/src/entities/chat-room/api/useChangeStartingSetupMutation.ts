@@ -9,7 +9,7 @@ import type { ChatRoomState } from "../model/chatRoomState";
 type ChatRoomResponseDto = components["schemas"]["ChatRoomResponse"];
 type ChangeStartingSetupRequestDto = components["schemas"]["ChangeStartingSetupRequest"];
 
-// US-080/081, techspec-chat-story.md §6 — 기존 방은 그대로 두고 새 방을 만들어 반환하므로,
+// 기존 방은 그대로 두고 새 방을 만들어 반환하므로,
 // useStartChatMutation과 동일하게 캐시 조작 없음(호출부가 응답의 새 room.id로 navigate한다).
 export function useChangeStartingSetupMutation(roomId: string) {
   return useMutation<ChatRoomState, ApiError, ChangeStartingSetupRequestDto>({

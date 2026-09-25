@@ -7,7 +7,7 @@ import { cloverKeys } from "./keys";
 
 export type CloverAttendanceResponse = components["schemas"]["CloverAttendanceResponse"];
 
-/** clover-goal-prompt.md CL-16 — 일일 출석 지급. **멱등은 서버가 보장한다**(BE가 유저+KST 날짜로
+/** 일일 출석 지급. **멱등은 서버가 보장한다**(BE가 유저+KST 날짜로
  * 결정적 멱등키를 만들어 원장 유니크 제약에 건다) — FE 가 "오늘 받았나"를 판단하지 않는다.
  * 그래서 중복 호출이 안전하고, `granted: false`는 오류가 아니라 "오늘 이미 받았다"는 정상 응답이다.
  *

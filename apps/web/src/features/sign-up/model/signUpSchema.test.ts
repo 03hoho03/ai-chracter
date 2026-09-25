@@ -22,7 +22,7 @@ function isoDateYearsAgo(years: number): string {
 }
 
 describe("signUpSchema", () => {
-  // legal-revision-goal-prompt.md LR-1·LR-3 — 국외이전 동의는 수집·이용 동의와 구분된 세 번째
+  // 국외이전 동의는 수집·이용 동의와 구분된 세 번째
   // 필수 필드다. 빠지거나 false면 파싱이 실패해야 한다.
   it("rejects a payload missing transferAgreed", () => {
     const payloadWithoutTransfer: Record<string, unknown> = { ...validPayload() };
@@ -45,7 +45,7 @@ describe("signUpSchema", () => {
     expect(result.success).toBe(true);
   });
 
-  // legal-revision-goal-prompt.md LR-9 — 서버가 진짜 게이트, 이건 위저드 1스텝의 UX 하한이다.
+  // 서버가 진짜 게이트, 이건 위저드 1스텝의 UX 하한이다.
   it("rejects a birth date under the minimum age", () => {
     const result = signUpSchema.safeParse({
       ...validPayload(),

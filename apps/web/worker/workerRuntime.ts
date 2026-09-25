@@ -15,7 +15,7 @@ export type WorkerEnv = {
    */
   PUBLIC_ORIGIN?: string;
   /**
-   * `/_ingest/*` 프록시(monitoring-techspec.md MT-3)가 업스트림(`API_BASE_URL`)에 붙이는
+   * `/_ingest/*` 프록시가 업스트림(`API_BASE_URL`)에 붙이는
    * 공유 시크릿. Caddy가 같은 이름의 환경변수(`INGEST_SHARED_SECRET`)로 envelope 경로만
    * 검사한다 — 브라우저 번들엔 넣을 수 없는 값이라 Worker가 대신 주입한다(`ingestProxy.ts`).
    */

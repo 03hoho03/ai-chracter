@@ -25,9 +25,9 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "QUEUE_FULL", retryAfterSeconds: 60, window: "image" });
   });
 
-  // T4(error-delivery-goal-prompt.md §5-1, ED-15) — auth 429(4224ea1) 바디 2종도 같은 스키마로
+  // auth 429(4224ea1) 바디 2종도 같은 스키마로
   // 그대로 파싱된다. 전용 파서를 따로 두지 않는 근거이므로, 값이 그대로 돌아오는지가 신호다.
-  // 🔴 clover-goal-prompt.md CL-19 — 1관문이 이 값을 모르면 `safeParse`가 실패해 `null`이
+  // 🔴 1관문이 이 값을 모르면 `safeParse`가 실패해 `null`이
   // 되고, 화면은 **429인 줄도 모른 채** 일반 오류로 떨어져 확인 모달이 영원히 안 뜬다.
   // 이 계약은 코드젠을 타지 않아(`openapi.json`의 429 선언 0개) 이 테스트가 유일한 방어다.
   it("429 + CLOVER_CONFIRM_REQUIRED 바디를 파싱한다", () => {
@@ -70,7 +70,7 @@ describe("getRateLimitDetail", () => {
     ).toEqual({ code: "AUTH_COOLDOWN", retryAfterSeconds: 47, window: "auth" });
   });
 
-  // T-21(clover-techspec.md CT-8) — 클로버 부족 429. 채팅은 신규 `window: "clover"`를 쓰고
+  // 클로버 부족 429. 채팅은 신규 `window: "clover"`를 쓰고
   // 이미지는 기존 `"image"`를 유지하되 `code`로 갈린다(BE `core/rate_limit_gate.py`의
   // `_CLOVER_CODE`/`_CLOVER_WINDOW`). 🔴 이 스키마가 1관문이라 여기서 막히면 `safeParse`가
   // 실패해 `getRateLimitDetail`이 null을 돌려주고 **429인 줄도 모른 채** 일반 오류로 떨어진다.

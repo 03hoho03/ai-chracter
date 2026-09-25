@@ -69,7 +69,7 @@ function headTagKeys(html: string): Set<string> {
  * index.html 문자열의 `</head>` 앞에 메타 문자열을 끼워 넣는다.
  *
  * 넣기 전에 **주입할 태그와 같은 키를 가진 기존 태그를 지운다** — index.html에는 홈 기준
- * title·og:*가 이미 박혀 있고(US-009), 크롤러 대부분은 중복된 og 속성에서 앞의 것을 쓰기
+ * title·og:*가 이미 박혀 있고, 크롤러 대부분은 중복된 og 속성에서 앞의 것을 쓰기
  * 때문에 그냥 덧붙이면 상세 페이지 미리보기가 홈 문구로 나간다. 키가 겹치지 않는 태그는
  * (홈이 canonical·og:url만 주입할 때의 og:title 등) 그대로 남는다.
  *

@@ -26,8 +26,8 @@ type ChangeContentVisibilityModalProps = {
   targetVisibility: ContentVisibility;
 };
 
-/** techspec-content-versioning.md §1, US-115(FR-67) — 발행된 캐릭터/스토리는 완전 삭제 없이 공개범위
- * 전환만 허용된다(US-005에서 비공개 단방향 → public/link/private 3방향으로 확장). 호출부(프로필
+/** 발행된 캐릭터/스토리는 완전 삭제 없이 공개범위
+ * 전환만 허용된다(처음의 비공개 단방향에서 public/link/private 3방향으로 확장됐다). 호출부(프로필
  * 카드/상세화면 액션 메뉴)와 무관하게 성공 후 동작(토스트+캐시 무효화+닫기)이 항상 동일해
  * UpdateInfoModal/AppealModal과 같은 "자체 mutation 직접 호출" 계열로 만들었다
  * (ConfirmChatRoomActionModal처럼 호출부가 mutationFn을 주입하는 계열이 아님). */

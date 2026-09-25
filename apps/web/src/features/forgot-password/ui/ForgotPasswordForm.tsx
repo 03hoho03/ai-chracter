@@ -36,7 +36,7 @@ export function ForgotPasswordForm() {
       await requestMutation.mutateAsync(values);
       setIsRequested(true);
     } catch (error) {
-      // ED-21: 429는 카운터가 DB 조회보다 앞이라(`auth/router.py:436-448`) 미등록 이메일도 등록
+      // 429는 카운터가 DB 조회보다 앞이라(`auth/router.py:436-448`) 미등록 이메일도 등록
       // 이메일과 완전히 같은 429를 받는다 — 노출해도 "성공·실패를 같게 보이는" 은닉이 깨지지 않는다.
       const rateLimit = getAuthRateLimit(error);
       if (rateLimit) {

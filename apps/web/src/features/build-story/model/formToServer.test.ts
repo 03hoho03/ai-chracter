@@ -135,7 +135,7 @@ describe("formToServer", () => {
     expect(payload.rules).toBeNull();
   });
 
-  it("never sends developmentExample — the old free-text field is retired FE-side, and the key must stay absent (not null) so the server keeps the old column as a rollback safety net until migration revision②(chat-techspec.md §6-2, D-13)", () => {
+  it("never sends developmentExample — the old free-text field is retired FE-side, and the key must stay absent (not null) so the server keeps the old column as a rollback safety net until the migration that drops it", () => {
     const payload = formToServer(baseFormValues());
 
     expect(payload).not.toHaveProperty("developmentExample");
@@ -150,7 +150,7 @@ describe("formToServer", () => {
     expect(payload.developmentExamples).toEqual([]);
   });
 
-  it("preserves worldSetting even when promptTemplate is custom, and always includes rules/userGoal/developmentExamples (chat-techspec.md §6-3, D-16 — template-independent)", () => {
+  it("preserves worldSetting even when promptTemplate is custom, and always includes rules/userGoal/developmentExamples (template-independent)", () => {
     const values = baseFormValues();
     values.storySetting = {
       promptTemplate: "custom",

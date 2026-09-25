@@ -14,10 +14,10 @@ const DETAIL_PANEL_CLASSNAME =
  * 같은 결로 폼은 prop이 아니라 `FormProvider` 컨텍스트에서 읽는다(두 스텝 모두 같은
  * `SignUpFormValues`를 쓴다).
  *
- * legal-revision-goal-prompt.md LR-1·LR-4 — 동의는 약관/수집·이용/국외이전 셋으로 나뉜다("개인정보
+ * 동의는 약관/수집·이용/국외이전 셋으로 나뉜다("개인정보
  * 처리방침 동의"라는 라벨은 버린다 — 처리방침은 동의 대상이 아니라 게재 대상이다). 수집·이용과
  * 국외이전 두 항목은 개인정보보호법 제15조 제2항·제28조의8 제2항이 요구하는 고지사항을 접이식
- * 요약으로 함께 보여준다. legal-revision-goal-prompt.md LR-21 — 접이식은 `packages/ui`에 없는
+ * 요약으로 함께 보여준다. 접이식은 `packages/ui`에 없는
  * Accordion을 새로 들이지 않고 네이티브 `<details>`를 쓴다. */
 export function LegalConsentFields() {
   const form = useFormContext<SignUpFormValues>();

@@ -528,7 +528,7 @@ describe("handleRequest", () => {
     expect(env.assetFetch).not.toHaveBeenCalled();
   });
 
-  describe("/_ingest 프록시 (MT-3)", () => {
+  describe("/_ingest 프록시", () => {
     function ingestRequest(path: string, init: RequestInit = {}): Request {
       return new Request(`https://ddona.example${path}`, init);
     }

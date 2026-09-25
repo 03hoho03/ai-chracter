@@ -3,7 +3,7 @@ import { isApiError } from "@/shared/api/client";
 
 /** 비밀번호 변경 실패 → 배너. 판별할 수 없는 실패는 `undefined`이고 호출부가 generic 배너로 보낸다.
  *
- * 어느 문구도 "잠시 후 다시 시도"라고 하지 않는다(backlog J-1) — 401은 세션이 사라져 다시 로그인해야
+ * 어느 문구도 "잠시 후 다시 시도"라고 하지 않는다 — 401은 세션이 사라져 다시 로그인해야
  * 하고, 400은 입력을 고쳐야 한다. */
 export function getChangePasswordErrorBanner(error: unknown): AuthFormErrorBanner | undefined {
   if (!isApiError(error)) return undefined;

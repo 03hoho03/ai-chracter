@@ -7,9 +7,9 @@ import { isApiError } from "@/shared/api/client";
  * 분기는 status로 한다 — 409의 detail `"Email already registered"`는 `/auth/signup`에서 "이미 가입된
  * 이메일"이라는 다른 뜻으로도 쓰여 문자열로 가르면 오분류된다. 예외는 403 하나(`isSuspendedError`).
  *
- * 어느 문구도 "잠시 후 다시 시도"라고 하지 않는다(backlog J-1) — 400은 가입 토큰이 이미 없고, 409는
+ * 어느 문구도 "잠시 후 다시 시도"라고 하지 않는다 — 400은 가입 토큰이 이미 없고, 409는
  * 탈퇴일로부터 1년(BE `_reregistration_blocked`)이 지나야 풀린다. 구글 가입은 로그인 화면의 "구글로
- * 로그인"에서 다시 시작되므로 세 실패 모두 그리로 보낸다(Q-10). */
+ * 로그인"에서 다시 시작되므로 세 실패 모두 그리로 보낸다. */
 export function getOnboardingErrorBanner(error: unknown): AuthFormErrorBanner | undefined {
   if (!isApiError(error)) return undefined;
   if (error.status === 400) {

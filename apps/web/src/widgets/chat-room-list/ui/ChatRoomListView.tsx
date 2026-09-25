@@ -7,7 +7,7 @@ import { useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room
 
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
-/** techspec-chat-common.md §3, US-024/US-049(원본 PRD 번호) — 같은 콘텐츠에 대한 내 대화방 목록:
+/** 같은 콘텐츠에 대한 내 대화방 목록:
  * 이름 변경/초기화/삭제(entities/chat-room)와 "새 대화 시작"을 한 화면에서 다룬다. */
 export function ChatRoomListView({
   contentId,
@@ -22,7 +22,7 @@ export function ChatRoomListView({
 
   const handleStartNewChat = async () => {
     try {
-      // BE의 ChatRoomCreateRequest.contentType이 아직 "character" literal만 허용한다(US-057 이전).
+      // "새 대화 시작" 버튼은 캐릭터 목록에만 있어 `contentType`은 항상 "character"다.
       const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
     } catch {
@@ -54,9 +54,9 @@ type ChatRoomListBodyProps = {
   contentType: "character" | "story";
 };
 
-/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다(COMP-04) — `isError`와 `data`는
+/** 로딩·전면실패·빈·성공 네 갈래를 early return으로 순서를 강제한다 — `isError`와 `data`는
  * **동시에 참일 수 있다**(성공 후 재조회 실패 시 `data`가 이전 값을 유지한 채 `isError`가 붙는다),
- * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다(fe-convention-refactor-progress.md V-1). */
+ * 그래서 전면 에러는 목록이 없을 때만이고 있으면 아래 배너로 알린다. */
 function ChatRoomListBody({ listQuery, contentId, contentType }: ChatRoomListBodyProps) {
   if (listQuery.isPending) return <ChatRoomListSkeleton />;
 

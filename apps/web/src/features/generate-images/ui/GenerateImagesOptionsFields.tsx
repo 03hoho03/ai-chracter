@@ -27,7 +27,7 @@ function getAspectRatioShapeSize(ratio: string): { width: number; height: number
   return { width: Math.round((LONG_SIDE_PX * w) / h), height: LONG_SIDE_PX };
 }
 
-// image-refact-techspec.md IT-13 — 비율·개수는 Select가 아니라 ToggleGroup(칩)이다. 모델 Select는
+// 비율·개수는 Select가 아니라 ToggleGroup(칩)이다. 모델 Select는
 // 2026-09-14 브라우저 피드백으로 제거했다 — 값이 v1 하나뿐이라 고를 게 없다. model 값 자체는
 // 여전히 GenerateImagesFormProvider가 목록 로드 후 reset()으로 채운다(그 로직은 그대로 둔다).
 export function GenerateImagesOptionsFields() {

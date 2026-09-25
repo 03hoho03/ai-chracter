@@ -10,7 +10,7 @@ import { initSentry } from "./app/sentry";
 
 import "@ai-character-chat/ui/globals.css";
 
-// 렌더보다 먼저 부른다 — 이 아래의 `#root` 부재 같은 부팅 단계 에러도 잡히게 한다(MT-7).
+// 렌더보다 먼저 부른다 — 이 아래의 `#root` 부재 같은 부팅 단계 에러도 잡히게 한다.
 initSentry();
 
 // `index.html`의 `#root`가 사라지면 `!`는 `createRoot(null)`로 넘겨 리액트 내부에서 터진다 —

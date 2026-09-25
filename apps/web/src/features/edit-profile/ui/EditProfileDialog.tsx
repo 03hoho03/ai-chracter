@@ -33,7 +33,7 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 type EditProfileDialogProps = {
   userId: string;
   profile: UserProfileResponse;
-  /** image-crop-goal-prompt.md IC-15 — GeneratedImageField와 동일한 콜백 주입(features 간 직접 import
+  /** GeneratedImageField와 동일한 콜백 주입(features 간 직접 import
    * 금지 회피). undefined를 돌려주면 취소로 간주해 업로드하지 않는다. */
   beforeUpload?: (file: File) => Promise<File | undefined>;
 };

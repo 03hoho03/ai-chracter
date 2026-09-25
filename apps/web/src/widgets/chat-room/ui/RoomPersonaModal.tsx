@@ -21,9 +21,9 @@ type RoomPersonaModalProps = {
   roomId: string;
 };
 
-/** persona-goal-prompt.md UP-12 — 채팅방 안의 대화 프로필 선택(+ 간단한 새로 만들기).
+/** 채팅방 안의 대화 프로필 선택(+ 간단한 새로 만들기).
  *
- * **모달인 이유(S0 N-2 결정)**: `ChatMoreNav`의 다른 항목(플레이가이드·업데이트 정보·시작설정 변경·엔딩
+ * **모달인 이유**: `ChatMoreNav`의 다른 항목(플레이가이드·업데이트 정보·시작설정 변경·엔딩
  * 컬렉션·이미지 보관함)이 전부 "패널을 닫고 react-call 모달을 연다"이고, 그 목록과 핸들러를 lg 이상
  * 인라인 사이드바와 lg 미만 드롭업 시트가 공유한다. 이 항목만 패널 안에서 펼치면 ① 시트 안에 폼이 들어가
  * 390px 드롭업에서 키보드가 올라올 때 스크롤 영역이 두 겹이 되고 ② 두 패널 컨테이너에 같은 분기를 넣어야
@@ -31,7 +31,7 @@ type RoomPersonaModalProps = {
  *
  * 새로 만들기는 모달 안 **뷰 전환**이다(모달 위 모달을 쌓지 않는다). 만든 즉시 그 방에 선택한다 — 생성과
  * 방 선택은 두 feature라(feature끼리 import 금지) 이 위젯이 조합한다. 생성 폼의 "기본으로 지정" 규칙은
- * 관리 페이지와 같은 `CreatePersonaForm` 하나다(UP-23). */
+ * 관리 페이지와 같은 `CreatePersonaForm` 하나다. */
 export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ call, roomId }) => {
   const [view, setView] = useState<"select" | "create">("select");
   const room = useChatRoomQuery(roomId).data;
@@ -39,7 +39,7 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
   const setRoomPersonaMutation = useSetRoomPersonaMutation(roomId);
 
   // 폼이 이 Promise를 기다린다 — 방 적용 PUT이 끝날 때까지 "저장 중"으로 남아 재제출(프로필 중복 생성)을
-  // 막는다(review-s7.md 🟡-1). 적용 실패는 여기서 삼킨다 — 폼으로 던지면 루트 에러가 되어 폼에 머문다.
+  // 막는다. 적용 실패는 여기서 삼킨다 — 폼으로 던지면 루트 에러가 되어 폼에 머문다.
   async function handleCreated(persona: Persona) {
     try {
       await setRoomPersonaMutation.mutateAsync(persona.id);

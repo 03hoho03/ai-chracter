@@ -17,7 +17,7 @@ type UpdateInfoModalProps = {
   roomId: string;
 };
 
-/** techspec-chat-story.md §6, techspec-content-versioning.md §3, US-079 — "더보기 > 업데이트 정보"에서
+/** "더보기 > 업데이트 정보"에서
  * 여는 react-call 모달. roomId만 받아 ChatRoomView가 이미 채워둔 chatRoomKeys.detail 캐시를 그대로
  * 구독해 latestVersionAvailable을 읽는다(PlayGuideModal과 동일하게 별도 프롭 스레딩 없이 자체 조회). */
 export const UpdateInfoModal = createCallable<UpdateInfoModalProps, void>(({ call, roomId }) => {

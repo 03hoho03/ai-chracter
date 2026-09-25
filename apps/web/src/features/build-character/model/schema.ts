@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// TS-09 — 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
+// 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // widgets/build-character/ui/DetailTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
 export const TARGET_VALUES = ["female", "male", "all"] as const;
 export type Target = (typeof TARGET_VALUES)[number];
@@ -14,10 +14,10 @@ export const exampleDialogueSchema = z.object({
   characterLine: z.string().min(1, "캐릭터 대사를 입력해주세요"),
 });
 
-/** techspec-builder-character.md §2 — 상황별 이미지는 배열 순서 자체가 동시매칭 우선순위다(§2 참고). */
+/** 상황별 이미지는 배열 순서 자체가 동시매칭 우선순위다. */
 export const situationalImageSchema = z.object({
   id: z.string(),
-  // 업로드/AI생성 갤러리 선택 모두 assetId 참조로 수렴한다(techspec-overview.md §8.1) — 업로드 중
+  // 업로드/AI생성 갤러리 선택 모두 assetId 참조로 수렴한다 — 업로드 중
   // 상태는 이미지 필드 컴포넌트의 로컬 상태로만 존재하고 이 스키마에는 두지 않는다.
   image: z.object({ assetId: z.string() }).nullable(),
   situationDescription: z
@@ -31,7 +31,7 @@ export const characterBuilderSchema = z.object({
     name: z.string().min(1, "캐릭터 이름을 입력해주세요"),
     oneLiner: z.string().min(1, "캐릭터를 한 줄로 소개해주세요"),
     // 타입은 초안(아직 비어 있는 상태)을 담기 위해 nullable로 두고, 발행 필수는 superRefine이 상시
-    // 검증한다(builder-publish-goal-prompt.md BP-1/BP-2). **`.refine((v) => v !== null)`으로 줄이지
+    // 검증한다. **`.refine((v) => v !== null)`으로 줄이지
     // 말 것** — TS 5.5+가 그 콜백을 타입 술어로 추론하고 zod의 refine 선언이 그 경우에만 출력 타입을
     // 좁혀(zod/v4/classic/schemas.d.cts:38) `z.infer`에서 null이 사라진다(serverToForm이 깨졌다).
     // superRefine 선언은 조건 없이 `this`다(같은 파일 39행).
@@ -58,7 +58,7 @@ export const characterBuilderSchema = z.object({
     // CharacterDraftPayload/Response의 genreId/target은 실제로 string | null / ContentTarget | null이다
     // (초안 상태에선 아직 선택 전일 수 있음) — profile.image와 동일한 이유로 nullable로 둔다. 발행
     // 필수는 profile.image와 같은 이유·같은 방식(superRefine)으로 상시 검증한다
-    // (builder-publish-goal-prompt.md BP-1/BP-2, `.refine`을 쓰지 않는 이유도 거기 적었다).
+    // (`.refine`을 쓰지 않는 이유는 profile.image 주석에 있다).
     genre: z
       .string()
       .nullable()

@@ -18,12 +18,12 @@ import { useWithdrawAccountMutation } from "../api/useWithdrawAccountMutation";
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 type WithdrawAccountDialogProps = {
-  /** consent-gate-goal-prompt.md CG-11 — ReconsentModal 안에서는 "동의하지 않고 탈퇴"가 맞는
+  /** ReconsentModal 안에서는 "동의하지 않고 탈퇴"가 맞는
    * 문구라 트리거 라벨만 바꿀 수 있게 열어둔다. 기본값은 `/mypage` 호출부를 그대로 유지한다. */
   label?: string;
 };
 
-/** techspec-global-nav-profile.md §2 — 부수효과(발행작 비공개 전환, 대화기록 삭제, 초안 보존)는 전부 BE 책임이며 FE는 단일 mutation만 호출한다. */
+/** 부수효과(발행작 비공개 전환, 대화기록 삭제, 초안 보존)는 전부 BE 책임이며 FE는 단일 mutation만 호출한다. */
 export function WithdrawAccountDialog({ label = "회원탈퇴" }: WithdrawAccountDialogProps) {
   const navigate = useNavigate();
   const withdrawMutation = useWithdrawAccountMutation();

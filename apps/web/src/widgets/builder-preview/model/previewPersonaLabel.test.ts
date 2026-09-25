@@ -18,7 +18,7 @@ function list(overrides: Partial<PersonaList>): PersonaList {
 }
 
 describe("previewPersonaLabel", () => {
-  // 로딩·에러에는 무엇이 들어가는지 모른다 — 틀린 정보를 보이느니 숨긴다(persona-progress.md S8 ⚪-3).
+  // 로딩·에러에는 무엇이 들어가는지 모른다 — 틀린 정보를 보이느니 숨긴다.
   it("hides the label while the list is unknown", () => {
     expect(previewPersonaLabel(undefined)).toBeUndefined();
   });

@@ -5,7 +5,7 @@ import { ApiErrorObject } from "@/shared/api/client";
 import { GENERIC_PERSONA_ERROR_MESSAGE, INVALID_PERSONA_INPUT_MESSAGE, personaErrorMessage } from "./personaErrorMessage";
 
 describe("personaErrorMessage", () => {
-  // persona-progress.md S5 → S7 메모 — 409는 서버가 보낸 한국어 문구를 그대로 쓴다(개수 사본을 두지 않는다).
+  // 409는 서버가 보낸 한국어 문구를 그대로 쓴다(개수 사본을 두지 않는다).
   it("shows the server's Korean message for 409", () => {
     const error = new ApiErrorObject({
       status: 409,

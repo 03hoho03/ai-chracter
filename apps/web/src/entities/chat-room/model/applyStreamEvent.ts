@@ -7,8 +7,8 @@ import type { ChatMessage, ChatStreamEvent } from "../api/chatStream";
 import type { ChatRoomState } from "./chatRoomState";
 
 type ApplyStreamEventOptions = {
-  // regenerate-ux-goal-prompt.md RU-5 — 기본은 새 턴(전송·편집). 재생성은 turnCount를 올리지
-  // 않고(RU-6: 서버도 안 올린다, chat/router.py:1121) done이 꼬리 assistant를 걷어낸다(RU-11).
+  // 기본은 새 턴(전송·편집). 재생성은 turnCount를 올리지
+  // 않고(서버도 안 올린다, chat/router.py:1121) done이 꼬리 assistant를 걷어낸다.
   kind?: "newTurn" | "regenerate";
   onDone?: (message: ChatMessage, prev: ChatRoomState) => void; // 'done' 처리 직후 호출되는 확장 훅(예: 이미지 보관함 invalidate)
 };
@@ -28,7 +28,7 @@ export function applyStreamEvent(
     case "token":
     case "policyWarning":
     case "error":
-      return; // Query 캐시 대상 아님 — 스트리밍 버퍼/로컬 에러·경고 상태로만 처리(오버뷰 §5)
+      return; // Query 캐시 대상 아님 — 스트리밍 버퍼/로컬 에러·경고 상태로만 처리
     case "statChange":
       queryClient.setQueryData<ChatRoomState>(
         chatRoomKeys.detail(roomId),
@@ -53,7 +53,7 @@ export function applyStreamEvent(
     case "done":
       queryClient.setQueryData<ChatRoomState>(chatRoomKeys.detail(roomId), (prev) => {
         if (!prev) return prev;
-        // RU-11(1)/RT-1 — 재생성에서만 꼬리 assistant를 걷어낸다. 정상 경로는 낙관적 제거로 꼬리가
+        // 재생성에서만 꼬리 assistant를 걷어낸다. 정상 경로는 낙관적 제거로 꼬리가
         // user라 무발동이고, 탭 복귀 재조회가 옛 답변을 되살린 경우에만 발동한다. 전송·편집에는
         // 걸지 않는다 — 그쪽에서 꼬리가 assistant라는 건 직전 턴의 답변이라는 뜻이다.
         const tail = prev.messages.at(-1);

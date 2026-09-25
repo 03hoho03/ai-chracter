@@ -11,9 +11,9 @@ type StoryDetailBodyProps = {
   onSelectedSetupIdChange: (id: string) => void;
 }
 
-/** techspec-content-detail.md §3, PRD US-016 — 시작설정 선택(첫 항목 기본 선택) + 프롤로그
+/** 시작설정 선택(첫 항목 기본 선택) + 프롤로그
  * 미리보기(요약/펼치기). 스토리 전용(캐릭터는 `CharacterChatHistoryLink` 참고).
- * design-system-progress.md P-5(D-7) — 플레이 버튼은 하단 고정 바(`StoryPlayBar.tsx`)로
+ * 플레이 버튼은 하단 고정 바(`StoryPlayBar.tsx`)로
  * 분리했다. 선택 state는 그 바와 공유해야 해서 `ContentDetailView`가 소유하고 여기는 controlled로
  * 받는다. */
 export function StoryDetailBody({ startingSetups, selectedSetupId, onSelectedSetupIdChange }: StoryDetailBodyProps) {

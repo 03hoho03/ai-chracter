@@ -21,7 +21,7 @@ type DeletePersonaModalProps = {
 };
 
 /** 자체 호출형 react-call — 삭제 뒤 동작(목록·방 캐시 갱신 + 토스트)이 호출부와 무관하게 같다.
- * persona-goal-prompt.md UP-14 — 참조하던 방은 "선택 안 함"이 되고, 기본이었으면 기본도 없어진다. */
+ * 참조하던 방은 "선택 안 함"이 되고, 기본이었으면 기본도 없어진다. */
 export const DeletePersonaModal = createCallable<DeletePersonaModalProps, void>(({ call, persona, isDefault }) => {
   const deleteMutation = useDeletePersonaMutation();
 

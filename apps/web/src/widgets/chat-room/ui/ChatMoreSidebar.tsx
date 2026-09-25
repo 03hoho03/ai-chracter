@@ -10,7 +10,7 @@ import { ChatMoreNav } from "./ChatMoreNav";
 
 type ChatMoreSidebarProps = ChatMoreNavProps;
 
-// US-004 — lg 이상의 더보기 패널. 오버레이 시트가 아니라 채팅과 폭을 나눠 갖는 인라인 <aside>다:
+// lg 이상의 더보기 패널. 오버레이 시트가 아니라 채팅과 폭을 나눠 갖는 인라인 <aside>다:
 // 열어둔 채로 메시지를 읽고 입력·전송할 수 있어야 하므로 포털+모달 전제인 shadcn Sheet를 쓸 수 없다.
 // 깊이는 그림자가 아니라 명도로 만든다(DESIGN.md Flat-at-Rest) — bg-card가 background 위 반 칸이고
 // 경계는 border-l 한 줄이다. 닫기는 헤더 ⋮ 재클릭 / 이 안의 닫기 버튼 / ESC 셋 다 동작한다.

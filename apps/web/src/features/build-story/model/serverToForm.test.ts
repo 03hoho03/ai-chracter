@@ -314,7 +314,7 @@ describe("serverToForm", () => {
     expect(payload.thumbnailAssetId).toBe(response.thumbnailAssetId);
     expect(payload.promptTemplate).toBe(response.promptTemplate);
     expect(payload.settingText).toBe(response.settingText);
-    // chat-techspec.md §6-2(D-13): 구 필드는 폼이 더 이상 관리하지 않으므로 아예 안 보낸다(안 보내야
+    // 구 필드는 폼이 더 이상 관리하지 않으므로 아예 안 보낸다(안 보내야
     // 서버가 롤백 안전망인 구 컬럼 값을 그대로 둔다) — formToServer.test.ts의 전용 테스트가 이 계약을
     // 못박는다.
     expect(payload).not.toHaveProperty("developmentExample");

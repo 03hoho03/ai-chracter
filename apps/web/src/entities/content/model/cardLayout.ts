@@ -1,18 +1,18 @@
 import type { ContentType } from "./content";
 
 /** `ContentCard`의 `thumbnailAspect` prop이 받는 표현형 — 도메인(`ContentType`)과는 `toThumbnailAspect`
- * 하나로만 연결된다(card-grid-techspec.md T-3). */
+ * 하나로만 연결된다. */
 export type ThumbnailAspect = "square" | "portrait";
 
 /** `ContentCardGrid`의 `thumbnailAspect` prop — 단일 타입 그리드(`ThumbnailAspect`)에 캐릭터·스토리가
- * 섞인 그리드(`/my` 전체 필터)를 더한 것(card-grid-techspec.md T-4). */
+ * 섞인 그리드(`/my` 전체 필터)를 더한 것. */
 export type GridAspect = ThumbnailAspect | "mixed";
 
-/** card-grid-goal-prompt.md D-2 — 썸네일 표시 비율의 도메인→표현 매핑. 스토리는 세로 2:3, 캐릭터는
+/** 썸네일 표시 비율의 도메인→표현 매핑. 스토리는 세로 2:3, 캐릭터는
  * 정사각 — 두 값이 가까우면(예: 세로끼리) 그리드에서 타입이 한눈에 안 갈린다는 게 캐릭터를 1:1로 둔
  * 이유다. 카드는 이 매핑을 모른다 — 호출부가 이 함수를 거쳐 `thumbnailAspect`를 채운다.
  *
- * 삼항이 아니라 `Record`인 것은 exhaustiveness 때문이다(TS-05) — 삼항이면 `ContentType`에 멤버가
+ * 삼항이 아니라 `Record`인 것은 exhaustiveness 때문이다 — 삼항이면 `ContentType`에 멤버가
  * 늘어도 조용히 `square`로 접히는데, 이 함수가 도메인→표현 매핑의 유일한 소스라 그 침묵이 그대로
  * 전 화면에 퍼진다. `Record`면 멤버가 늘 때 여기서 컴파일이 깨진다. */
 const THUMBNAIL_ASPECT: Record<ContentType, ThumbnailAspect> = {
@@ -25,8 +25,8 @@ export function toThumbnailAspect(type: ContentType): ThumbnailAspect {
 }
 
 /** `ThumbnailAspect`의 숫자 비율 — 크롭 유틸(`features/crop-image`)이 쓴다. 삼항이 아니라 `Record`인
- * 이유는 위 `THUMBNAIL_ASPECT`와 같다(TS-05 exhaustiveness) — `1`/`2/3`을 크롭 코드에 새로 적으면
- * 슬롯과 크롭이 조용히 갈린다(image-crop-goal-prompt.md IC-2). */
+ * 이유는 위 `THUMBNAIL_ASPECT`와 같다(exhaustiveness) — `1`/`2/3`을 크롭 코드에 새로 적으면
+ * 슬롯과 크롭이 조용히 갈린다. */
 const THUMBNAIL_ASPECT_RATIO: Record<ThumbnailAspect, number> = {
   square: 1,
   portrait: 2 / 3,

@@ -22,7 +22,7 @@ type LoginFormProps = {
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
-// legal-revision-goal-prompt.md LR-30: 만 14세 미만은 해결책이 없는 상태다 — "인증하면
+// 만 14세 미만은 해결책이 없는 상태다 — "인증하면
 // 된다"처럼 읽히는 문구를 주지 않는다.
 const MINIMUM_AGE_ERROR_MESSAGE = "만 14세 미만은 이용할 수 없는 서비스예요.";
 
@@ -51,7 +51,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
   // 구글 리다이렉트 실패는 이 폼의 제출 결과가 아니라 진입 시점에 URL이 물고 온 상태라
   // `errors.root`(제출 실패)와 같은 자리에 그릴 뿐 출처를 섞지 않는다. 첫 제출에 지워진다.
-  // 메시지 자체는 `errorCode`에서 계산 가능하므로 state에 담지 않는다(STATE-08) — 진짜 상태는
+  // 메시지 자체는 `errorCode`에서 계산 가능하므로 state에 담지 않는다 — 진짜 상태는
   // "이미 지웠나" 한 비트뿐이다.
   const [isGoogleErrorDismissed, setIsGoogleErrorDismissed] = useState(false);
 
@@ -188,7 +188,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         </Link>
       </p>
 
-      {/* 비로그인 방문자는 `ProfileMenu`를 못 보므로 두 문서에 닿는 자리가 여기뿐이다(LR-12). */}
+      {/* 비로그인 방문자는 `ProfileMenu`를 못 보므로 두 문서에 닿는 자리가 여기뿐이다. */}
       <p className="text-center text-sm text-muted-foreground">
         <Link to="/terms" className="font-medium text-primary hover:underline">
           이용약관

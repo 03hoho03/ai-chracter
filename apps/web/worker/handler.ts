@@ -74,7 +74,7 @@ async function routeRequest(
   const verification = handleSiteVerification(url.pathname);
   if (verification !== undefined) return verification;
 
-  // 브라우저 에러 ingest도 Worker가 만들어 내는 경로다(monitoring-techspec.md MT-3) —
+  // 브라우저 에러 ingest도 Worker가 만들어 내는 경로다 —
   // 확장자가 없어 `isStaticAssetPath`는 통과하지만 `isKnownRoute` 밖이라 그대로 두면 404다.
   if (isIngestPath(url.pathname)) {
     return handleIngestProxy(request, env);

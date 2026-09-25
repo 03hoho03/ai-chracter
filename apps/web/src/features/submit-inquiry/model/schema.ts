@@ -2,7 +2,7 @@ import { z } from "zod";
 
 import { INQUIRY_CATEGORIES } from "@/entities/inquiry";
 
-/** techspec.md §5-4 — 서버 요청 타입(`InquiryCreateRequest`)으로의 변환은 모양이 같더라도
+/** 서버 요청 타입(`InquiryCreateRequest`)으로의 변환은 모양이 같더라도
  * `./formToServer.ts`가 전담한다(`apps/web/CLAUDE.md` 폼 규약).
  *
  * ⚠️ `title`/`body`의 `max()`는 서버 `apps/api/src/api/inquiry/schemas.py`의

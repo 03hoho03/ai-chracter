@@ -11,12 +11,12 @@ import { useLogoutMutation } from "@/features/logout";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
 import { isTheme, themeAtom } from "@/shared/model/theme";
 
-/** prd-creator-entry-and-my-works.md US-013 — 설정 전용 페이지(테마 · 비밀번호 변경 · 계정).
+/** 설정 전용 페이지(테마 · 비밀번호 변경 · 계정).
  *
- * `작성 중인 초안` 섹션은 `/my`로 옮겼다(FR-26). 초안이 두 화면에 중복으로 살면 US-003의 삭제·US-004의
+ * `작성 중인 초안` 섹션은 `/my`로 옮겼다. 초안이 두 화면에 중복으로 살면 초안 삭제·
  * 편집 취소가 한쪽에만 있어 두 목록이 서로 다른 진실을 말하게 된다.
  *
- * **여기는 어제까지 초안이 있던 주소라 `/my` 링크를 본문에 둔다**(AC5는 이 판단을 구현에 위임했다).
+ * **여기는 어제까지 초안이 있던 주소라 `/my` 링크를 본문에 둔다**.
  * 한때 이 자리에 "링크가 아니라 문장을 두는 이유는 크롬을 늘리지 않기 위해서"라고 적어 뒀는데 **그건 범주
  * 오류였다** — 루트 CLAUDE.md가 금지한 건 하단 탭바·사이드 레일·푸터이지 `<main>` 안 본문 링크가 아니다.
  * 실제 비용은 탭 스톱 하나(6→7)뿐인데, 그걸 아끼는 대가로 초안을 찾아 온 창작자에게 읽기→기억→아이콘 메뉴
@@ -34,8 +34,9 @@ import { isTheme, themeAtom } from "@/shared/model/theme";
  */
 export function MyPagePage() {
   return (
-    // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md §5는 폼 화면을 `max-w-2xl`로
-    // 적어 뒀지만 그 폭을 정당화하던 건 초안 그리드였고, US-013이 그걸 `/my`로 옮기면서 근거가 사라졌다.
+    // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md Layout containers는 폼 화면을 `max-w-2xl`로,
+    // 설정(`/mypage`)은 따로 `max-w-md`로 적어 뒀다. 이 화면이 `max-w-2xl`이던 근거는 초안 그리드였고, 그 그리드가
+    // `/my`로 옮겨 가면서 근거가 사라졌다.
     //
     // **폭의 근거는 컨트롤이 아니라 텍스트다.** 한때 이 자리에 "가장 넓은 컨트롤보다 288px 넓다",
     // "448px이면 인풋이 콘텐츠 박스를 채워 표류가 0이 된다"고 적어 뒀는데 **둘 다 두 폭을 구별하지
@@ -58,7 +59,7 @@ export function MyPagePage() {
           **바깥 간격은 여기서 위계를 지지 않는다**: 헤더 블록→첫 섹션도 섹션↔섹션도 실측 40.0px으로 같다.
           한때 이 주석은 묶기가 그 비대칭을 만들었다고 적었는데 **거짓이었다** — 묶기가 바꾼 건 설명의
           소속이지 헤더와 본문의 분리가 아니다. 그래도 균일 gap을 두는 이유는 컨테이너 하나에 `gap-*` 하나가
-          이 앱의 페이지 관용구이고(DESIGN.md §5, 형제 페이지 `StudioImagesPage`도 같은 h1+설명 블록을 균일
+          이 앱의 페이지 관용구이고(DESIGN.md Layout containers, 형제 페이지 `StudioImagesPage`도 같은 h1+설명 블록을 균일
           gap에 둔다), 제목은 위치가 아니라 타이포로 갈리기 때문이다(h1 24/700 vs h2 20/600 — 계산된 속성
           580개 중 9개가 다르고 그중 크기·굵기·자간 3개가 authored. 고치기 전에는 이 diff가 0이었다).
           이 문단은 접히므로 `break-keep`이 필요하다 — 320px에서 2줄이 된다(한때 여기 "이 `<main>`에서
@@ -102,7 +103,7 @@ export function MyPagePage() {
   );
 }
 
-/** 섹션 제목은 Display(24/700)가 아니라 Title(20/600)이다 — **정책과 census는 `DESIGN.md` §3 Hierarchy에
+/** 섹션 제목은 Display(24/700)가 아니라 Title(20/600)이다 — **정책과 census는 `DESIGN.md` Typography의 Hierarchy에
  * 있고 여기 복사하지 않는다**(두 곳에 적으면 다음 개정 때 갈린다).
  *
  * 코드에 남길 사실 하나: 고치기 전 h1과 세 h2는 **계산된 속성 580개가 전부 일치**했다(실측 diff 0건).
@@ -111,16 +112,16 @@ function SectionHeading({ children }: { children: string }) {
   return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
 }
 
-/** clover-techspec.md CT-16 (clover-goal-prompt.md CL-25) — 여기만 **상시** 노출이다. 채팅·이미지
+/** 여기만 **상시** 노출이다. 채팅·이미지
  * 쪽은 무료 한도를 쓴 뒤에만 나타나지만, 설정 화면은 "지금 내 상태를 확인하러 오는 곳"이라
  * 조건을 걸면 사용자가 잔액을 볼 방법이 없어진다.
  *
- * 🔴 **CL-26의 축소 1순위가 이 섹션이다** — 런이 무거워지면 여기부터 덜어내고 채팅·이미지의
+ * 🔴 **노출을 줄여야 하면 이 섹션이 1순위다** — 여기부터 덜어내고 채팅·이미지의
  * "필요할 때만 노출"만 남긴다(사용자 결정).
  *
- * 컬럼이 `max-w-md`(448px)라 표를 넣지 않는다(DESIGN.md §5 Layout containers) — 잔액 한 줄과
- * 짧은 설명뿐이다. 🔴 유저용 원장·허브 화면은 더 이상 범위 밖이 아니다(clover-page-goal-prompt.md
- * CE-20·CE-24) — 아래 링크가 `/clover`로 이어진다. */
+ * 컬럼이 `max-w-md`(448px)라 표를 넣지 않는다(DESIGN.md Layout containers) — 잔액 한 줄과
+ * 짧은 설명뿐이다. 🔴 유저용 원장·허브 화면이
+ * 있다 — 아래 링크가 `/clover`로 이어진다. */
 function CloverSection() {
   const { data, isPending } = useCloverBalanceQuery();
 
@@ -128,14 +129,14 @@ function CloverSection() {
     <section className="flex flex-col gap-4">
       <SectionHeading>클로버</SectionHeading>
       <div className="flex flex-col gap-1.5">
-        {/* 로딩 중에는 자리만 비워 둔다 — 스켈레톤을 쓰기엔 한 줄이라 과하고(§5 Components),
+        {/* 로딩 중에는 자리만 비워 둔다 — 스켈레톤을 쓰기엔 한 줄이라 과하고(DESIGN.md Components 절),
             0을 먼저 그리면 "잔액이 0"이라는 틀린 사실을 잠깐 말한다. */}
         {isPending ? (
           <span className="text-sm text-muted-foreground">불러오는 중…</span>
         ) : (
           <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
         )}
-        {/* clover-page-goal-prompt.md CE-19가 자동 출석 지급을 걷어냈다 — "매일 출석하면
+        {/* 자동 출석 지급은 없어졌다 — "매일 출석하면
             자동으로 받아요"는 더 이상 사실이 아니다. 클릭형으로 바뀌었으므로 그 사실만 말한다. */}
         <p className="text-sm break-keep text-muted-foreground">
           무료 한도를 다 쓴 뒤 대화와 이미지 생성에 쓰여요. 출석체크와 미션으로도 받을 수 있어요.
@@ -203,15 +204,15 @@ function AccountSection() {
   return (
     // 되돌릴 수 있는 액션과 없는 액션을 **질량**으로 가른다. 커밋된 이전 상태는 두 버튼을
     // `flex flex-wrap gap-2`로 **나란히** 둔 것이었는데(가로 8px), 한글 4자·같은 패딩이라
-    // **89.31×36px로 폭까지 완전히 같아**(실측, D-4로 70.41×32→89.31×36) 되돌릴 수 있는 것과 없는
+    // **89.31×36px로 폭까지 완전히 같아**(실측, 컨트롤 크기 개편으로 70.41×32→89.31×36) 되돌릴 수 있는 것과 없는
     // 것이 "둘 중 하나 고르기"로 읽혔다. `flex-wrap`은 덤으로 죽은 코드였다 — 390px에서도 89.31×2+8이
     // 272px 안에 들어가 한 번도 발화하지 않는다.
     //
     // **간격은 이 문제를 풀 수 있는 축이 아니다.** 비율 논증에는 같은 시야 안의 참조 간격이 필요한데
     // 버튼이 둘뿐이라 그룹 내부 간격이 아예 없다. 형태도 못 쓴다 — `destructive` 틴트는 채움 대비가
     // 다크 1.0936 / 라이트 1.1676이라 알약 모양을 못 만들고 글자 색만 바꾼다(솔리드 레드는 DESIGN.md가
-    // 금지한다). **여기 적혀 있던 "그 색조차 hover에서 4.2817 / 3.8943으로 AA 아래"는 US-003에서
-    // 무효가 됐다** — `--destructive-text`가 갈라지면서 hover가 5.1877 / 5.0692다. 형태를 못 쓰는 근거는
+    // 금지한다). **여기 적혀 있던 "그 색조차 hover에서 4.2817 / 3.8943으로 AA 아래"는 더 이상
+    // 참이 아니다** — `--destructive-text`가 갈라지면서 hover가 5.1877 / 5.0692다. 형태를 못 쓰는 근거는
     // 채움 대비 쪽이고(그건 그대로다) 텍스트 대비 쪽이 아니었다.
     //
     // 남는 축이 질량이라 **탈퇴 버튼에 대가를 먼저 말하는 문장을 붙였다.** 맨몸 36px 버튼과 87.70px짜리
@@ -219,7 +220,7 @@ function AccountSection() {
     // "사다리가 섰다"로 적으면 다음 개정에서 오독된다: 섹션 최상위 사다리는 **여전히** h2↔로그아웃 16px :
     // 로그아웃↔탈퇴블록 16px = **1.0000배**이고, 2.6667배 티어(16:6)는 탈퇴 블록 *내부*에만 생겼다.
     // 두 액션을 실제로 가른 건 질량과 **거리**다 — 버튼 사이 실거리가 16 → **67.70px**로 벌어져 비가역
-    // 액션의 오조작 여유도 함께 늘었다(전부 1280px 실측, D-4로 버튼이 32→36px 되며 62→67.70px).
+    // 액션의 오조작 여유도 함께 늘었다(전부 1280px 실측, 컨트롤 크기 개편으로 버튼이 32→36px 되며 62→67.70px).
     //
     // **문장은 짧게 두고 완전한 설명은 모달이 진다.** 이 문장의 일은 "비싸고 되돌릴 수 없다"를 누르기
     // 전에 알리는 것뿐이다. 초안 보존·접근 불가까지 담으면 확인 모달이 이 문장의 재진술이 되고, 반대로

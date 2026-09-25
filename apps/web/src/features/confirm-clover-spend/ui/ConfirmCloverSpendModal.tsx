@@ -14,18 +14,18 @@ import { CloverBalance } from "@/entities/clover";
 import { formatCloverSpendConfirmDescription } from "../model/confirmCloverSpendCopy";
 import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";
 
-/** clover-techspec.md CT-13 (clover-goal-prompt.md CL-19) — 무료 한도를 다 쓴 첫 시점에 하루 한 번
+/** 무료 한도를 다 쓴 첫 시점에 하루 한 번
  * 묻는다. 확정 뒤 동작이 전송·재생성·편집·미리보기·이미지마다 달라 `Promise<boolean>`만 돌려주고
  * 호출부가 이어받는다(`apps/web/CLAUDE.md`의 기준: *"후속 동작이 호출부마다 다르면 주입형, 같으면
  * 자체 호출형"* — 여기는 다르다). 선례는 `ConfirmStartingSetupChangeModal`.
  *
  * ⚠️ impeccable product 레지스터는 *"Modal as first thought. Modals are usually laziness"* 라고
- * 적는다. 여기서 모달을 쓰는 것은 게으름이 아니라 **CL-19가 정한 동의 절차**다 — 돈이 오가는
+ * 적는다. 여기서 모달을 쓰는 것은 게으름이 아니라 **클로버를 쓰기 전에 받기로 한 동의 절차**다 — 돈이 오가는
  * 첫 차감을 사용자가 모르는 사이에 하지 않겠다는 결정이고, 인라인 배너로는 "동의했다"를 서버에
  * 기록할 지점이 생기지 않는다. 대신 **하루 한 번**으로 묶어 매 턴 흐름을 끊지 않는다.
  *
  * 🔴 `bg-muted`를 쓰지 않는다 — 모달 표면이 `popover`라 값이 같아 1.0000:1로 사라진다
- * (DESIGN.md §5 Status badges). 잔량은 `CloverBalance`의 무채색 잉크 그대로 둔다. */
+ * (DESIGN.md Status badges 절). 잔량은 `CloverBalance`의 무채색 잉크 그대로 둔다. */
 export const ConfirmCloverSpendModal = createCallable<
   { balance: number; cost: number; surface: CloverSpendSurface },
   boolean

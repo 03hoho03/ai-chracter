@@ -1,9 +1,8 @@
 import { isApiError } from "@/shared/api/client";
 
-/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다
- * (techspec-backend-content.md §1.2/§1.3) — 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
- * 있는 발행 거부 상태로 보여준다. 두 셸이 글자 단위로 같은 판별을 들고 있던 것을 모았다
- * (fe-convention-refactor-goal-prompt.md R-3). */
+/** 400 응답 detail 중 `{missingFields}`(필수 항목 누락)와 `{reason}`(자동 필터 거부)를 구분한다 —
+ * 전자는 토스트로 안내하고, 후자만 이의제기 진입점이
+ * 있는 발행 거부 상태로 보여준다. 두 셸이 글자 단위로 같은 판별을 들고 있던 것을 모았다. */
 export function getFilterRejectionReason(error: unknown): string | undefined {
   const apiError = isApiError(error) ? error : undefined;
   if (apiError?.status !== 400 || !apiError.detail || typeof apiError.detail !== "object") return undefined;

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { formatImageRateLimitMessage, getImageRateLimit } from "./imageRateLimitMessage";
 
-// clover-techspec.md §5-7 — 🔴 이 투영은 **세 자리**를 손으로 열어야 한다(유니언 `:8` · 허용 목록
+// 🔴 이 투영은 **세 자리**를 손으로 열어야 한다(유니언 `:8` · 허용 목록
 // `:21` · 포매터 `switch`). `:8`을 안 넓히면 나머지 둘도 **컴파일 에러가 안 난다** — 타입이 좁은 채로
 // 남아 입력이 조용히 `undefined`로 떨어질 뿐이다. 그래서 투영 자체를 런타임으로 고정한다.
 describe("getImageRateLimit", () => {
@@ -58,7 +58,7 @@ describe("formatImageRateLimitMessage", () => {
     expect(queueFull).not.toContain("분");
   });
 
-  // 🔴 clover-techspec.md CT-8-2 — 이미지 무료분은 **자정이 아니라 시간당 충전**이다(BE
+  // 🔴 이미지 무료분은 **자정이 아니라 시간당 충전**이다(BE
   // `IMAGE_TOKEN_REFILL_SECONDS = 3600`). 채팅 문구("자정에 무료 한도가 돌아와요")를 그대로 옮기면
   // **최대 24시간짜리 거짓말**이 된다. 이미지의 `retryAfterSeconds`는 `take_tokens`가 준 참값이라
   // 그걸 쓰거나 시점을 약속하지 않는 문구를 쓴다.
@@ -80,7 +80,7 @@ describe("formatImageRateLimitMessage", () => {
   });
 });
 
-/** 🔴 clover-goal-prompt.md CL-19 — 이미지도 같다. 확인 코드는 토스트가 아니라 모달로 끝나므로
+/** 🔴 이미지도 같다. 확인 코드는 토스트가 아니라 모달로 끝나므로
  * 투영이 `undefined`를 줘야 하고, 그래야 호출부의 모달 분기가 유일한 처리 경로가 된다. */
 describe("getImageRateLimit — 확인 코드", () => {
   it("CLOVER_CONFIRM_REQUIRED는 토스트로 새지 않는다", () => {

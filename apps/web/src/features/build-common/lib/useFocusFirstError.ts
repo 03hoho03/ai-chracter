@@ -4,7 +4,7 @@ import type { FieldValues, Path, UseFormReturn } from "react-hook-form";
 import type { FirstErrorLocation } from "../model/firstErrorLocation";
 
 /** `IconPicker`/`ColorPicker`/`GeneratedImageField`처럼 `setFocus`로 포커스를 줄 DOM이 없는 필드는
- * 이 속성으로 스크롤 대상을 찾는다(builder-techspec.md §9-1, builder-goal-prompt.md §5-4). 값은
+ * 이 속성으로 스크롤 대상을 찾는다. 값은
  * `firstErrorLocation`이 돌려주는 `fieldPath`와 정확히 같은 문자열이다 — `field.id`(배열 항목의 RHF
  * 내부 uuid) 없이도 매칭되도록, DOM `id` 규칙을 역산하지 않고 이 속성을 직접 심는다.
  *
@@ -14,7 +14,7 @@ import type { FirstErrorLocation } from "../model/firstErrorLocation";
 const FIELD_PATH_ATTRIBUTE = "data-field-path";
 
 /**
- * builder-techspec.md §9-1 — 발행 실패 시 첫 에러 필드로 이동한다. Radix `TabsContent`는 비활성
+ * 발행 실패 시 첫 에러 필드로 이동한다. Radix `TabsContent`는 비활성
  * 탭을 언마운트하므로(`forceMount` 미사용) 다른 탭 필드로 포커스를 줄 DOM이 없다. 그래서 이동은
  * 2단계다: 대상 탭이 활성 탭과 다르면 먼저 전환하고, 그 탭이 마운트를 커밋한 뒤(`useEffect`) 다음
  * 프레임(`requestAnimationFrame`)에 실제 포커스를 준다. 이미 활성 탭이면 전환 없이 바로 다음
@@ -34,7 +34,7 @@ export function useFocusFirstError<T extends FieldValues>({
 }): (location: FirstErrorLocation | undefined) => void {
   const pendingFieldPathRef = useRef<string>(undefined);
   // handlePublish는 async라 발행 await 도중 사용자가 탭을 수동 전환하면 클릭 시점 activeTab을 든
-  // 클로저가 stale해진다 — 호출 시점의 최신값을 읽도록 ref로 미러링한다(builder-goal-prompt.md §5-4).
+  // 클로저가 stale해진다 — 호출 시점의 최신값을 읽도록 ref로 미러링한다.
   const activeTabRef = useRef(activeTab);
 
   useEffect(() => {
@@ -72,7 +72,7 @@ function focusAndScroll<T extends FieldValues>(form: UseFormReturn<T>, fieldPath
   // register()/Controller 필드 대부분은 위 setFocus만으로 포커스 + (브라우저 기본 동작인) 스크롤까지
   // 끝난다. IconPicker/ColorPicker/GeneratedImageField처럼 포커스 가능한 DOM을 setFocus에 노출하지
   // 않는 필드는 조용히 아무 일도 하지 않으므로, 그런 필드가 심어 둔 FIELD_PATH_ATTRIBUTE로 최소한
-  // 스크롤은 되게 한다(builder-goal-prompt.md §5-4 — "최소한 스크롤은 되게").
+  // 스크롤은 되게 한다.
   const fallbackTarget = document.querySelector(`[${FIELD_PATH_ATTRIBUTE}="${fieldPath}"]`);
   fallbackTarget?.scrollIntoView({
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",

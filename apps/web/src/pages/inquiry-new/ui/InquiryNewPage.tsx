@@ -2,9 +2,9 @@ import { Link } from "@tanstack/react-router";
 
 import { SubmitInquiryForm } from "@/features/submit-inquiry";
 
-/** `/inquiries/new` — 문의 작성 폼. `requireSession`으로 로그인 사용자만 접근한다(D-6).
+/** `/inquiries/new` — 문의 작성 폼. `requireSession`으로 로그인 사용자만 접근한다.
  * 프로필 메뉴 `문의하기` 항목의 도착지이자, 그 항목의 라벨과 이 h1이 같은 문자열이어야 하는
- * 불변식의 대상이다(D-12, `ProfileMenu.tsx` 참고). */
+ * 불변식의 대상이다(`ProfileMenu.tsx` 참고). */
 export function InquiryNewPage() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">

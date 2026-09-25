@@ -1,4 +1,4 @@
-/** clover-page-goal-prompt.md CE-23 — `kind` → 한국어 라벨 맵. 어드민에도 같은 맵이 이미 있지만
+/** `kind` → 한국어 라벨 맵. 어드민에도 같은 맵이 이미 있지만
  * (`apps/admin/src/entities/admin-user/model/labels.ts` `CLOVER_KIND_LABELS`) 별도 번들이라
  * 공유하지 않는 것이 결정이다 — web은 자기 사본을 갖는다.
  *

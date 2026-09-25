@@ -11,7 +11,7 @@ import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
-/** techspec-builder-story.md §1.2 AC — 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
+/** 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
  * 독립이라 이 탭은 먼저 시작설정을 고른 뒤 그 시작설정의 스탯만 편집한다. */
 export function StatTab() {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -68,7 +68,7 @@ type StatRowProps = {
 };
 
 /** 스탯 하나(이름/아이콘/색상/최소·최대·초기값/단위/설명). 순서 우선순위가 없어 dnd-kit 없이
- * add/remove만 지원한다(IntroTab의 예시 대화와 동일한 판단, US-101). */
+ * add/remove만 지원한다(IntroTab의 예시 대화와 동일한 판단). */
 function StatRow({
   id,
   startingSetupIndex,

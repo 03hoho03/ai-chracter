@@ -9,8 +9,8 @@ type ColorPickerProps = {
   triggerLabel: string;
 }
 
-/** techspec-builder-story.md §1.2 — 자유 컬러피커가 아니라 사전 정의 팔레트(packages/ui의
- * COLOR_PALETTE) 중에서만 고르는 피커. Popover/Command 프리미티브가 없어 US-066과 동일하게
+/** 자유 컬러피커가 아니라 사전 정의 팔레트(packages/ui의
+ * COLOR_PALETTE) 중에서만 고르는 피커. Popover/Command 프리미티브가 없어
  * relative 트리거 + 조건부 absolute 패널로 구현한다.
  *
  * 선택 표시는 스와치 위 글리프가 아니라 링이 진다 — 지우기 전 잉크였던 흰색은 팔레트 10색 중
@@ -59,7 +59,7 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
               }}
               // ring-2 + ring-offset-2는 스와치 밖으로 4px 나가고 그리드 간격은 gap-1.5(6px)다.
               // 선택은 언제나 하나뿐이라 이웃 스와치에는 링이 없고, 4px는 그 6px 안에서만 자란다.
-              // 이 버튼에는 하우스 포커스 레시피(`focus-visible:ring-3 ring-ring/50`, DESIGN.md §6)를 얹지 않는다 —
+              // 이 버튼에는 하우스 포커스 레시피(`focus-visible:ring-3 ring-ring/50`, DESIGN.md §Do's and Don'ts)를 얹지 않는다 —
               // 같은 `--tw-ring-*` 변수를 쓰므로 특이도에서 이겨 선택 링을 덮어쓴다. 포커스는 UA 아웃라인이 진다
               // (preflight가 지우지 않는다). 선택을 inset-ring으로 내리는 대안은 잉크가 스와치 위로 돌아와 위 3:1 문제를 되살린다.
               className={cn(

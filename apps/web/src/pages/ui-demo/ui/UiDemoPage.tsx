@@ -32,7 +32,7 @@ export function UiDemoPage() {
           Button · Dialog · Input · Select · Toast 프리미티브 확인용 화면입니다.
         </p>
         <p className="mt-1 text-sm text-muted-foreground">
-          아래 size 매트릭스는 치수 회귀 확인용입니다(design-system-goal-prompt.md D-4/D-8).
+          아래 size 매트릭스는 치수 회귀 확인용입니다.
         </p>
       </header>
 

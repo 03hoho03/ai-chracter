@@ -39,10 +39,10 @@ export type ChatMoreNavProps = {
   characterId?: string;
 };
 
-// techspec-chat-story.md §6, techspec-chat-character.md — 항목 목록 자체는 react-call을 쓰지 않는다
+// 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
 // 전용 react-call 모달을 연다 — 데스크톱 인라인 사이드바(ChatMoreSidebar)와 모바일 Sheet
-// (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 US-004 이후에도 정의는 여기 한 곳뿐이다.
+// (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 두 곳에서 그려져도 정의는 여기 한 곳뿐이다.
 export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId }: ChatMoreNavProps) {
   const setOpen = useSetAtom(chatMorePanelOpenAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
@@ -56,7 +56,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
     if (item.key === "ending-collection" && startingSetupId) {
       void EndingCollectionModal.call({ startingSetupId });
     }
-    // persona-goal-prompt.md UP-12 — 선택 UI를 모달로 둔 근거는 RoomPersonaModal 주석(S0 N-2).
+    // 선택 UI를 모달로 둔 근거는 RoomPersonaModal 주석.
     if (item.key === "persona") void RoomPersonaModal.call({ roomId });
     if (item.key === "image-archive" && characterId) {
       void ImageArchiveModal.call({ characterId });

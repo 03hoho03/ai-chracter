@@ -5,7 +5,7 @@ export const SITE_NAME = "또나";
 
 /**
  * <head>에 넣을 메타. 전부 선택이다 — 상세 페이지는 전 항목을 채우지만
- * 홈은 index.html에 이미 박혀 있는 것 말고 canonical·og:url만 주입한다(US-009).
+ * 홈은 index.html에 이미 박혀 있는 것 말고 canonical·og:url만 주입한다.
  */
 export type PageMeta = {
   title?: string;

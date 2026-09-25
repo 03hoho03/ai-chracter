@@ -10,11 +10,11 @@ import type { CloverSpendConfirmOutcome } from "@/entities/clover";
 import { ConfirmCloverSpendModal } from "../ui/ConfirmCloverSpendModal";
 import type { CloverSpendSurface } from "./confirmCloverSpendCopy";
 
-/** 오류 하나를 받아 **무엇을 할지**를 돌려준다(clover-goal-prompt.md CL-19).
+/** 오류 하나를 받아 **무엇을 할지**를 돌려준다.
  *
  * 반환값의 세 갈래는 `entities/clover`의 `CloverSpendConfirmOutcome`에 있다 — 🔴 불리언이었을 때
  * **"그만두기"가 실패와 구분되지 않아** 세 호출부가 전부 *"응답 생성에 실패했습니다"* 를
- * 띄웠다(S12 C-3). 실패한 것이 없는데도.
+ * 띄웠다. 실패한 것이 없는데도.
  *
  * 🔴 **이 훅이 `features`에 있고 호출부에 주입되는 이유**는 FSD다. 트리거는 `features/send-message`
  * 와 `widgets/image-studio` 양쪽에 필요한데, feature가 다른 feature를 import하는 선례가 이

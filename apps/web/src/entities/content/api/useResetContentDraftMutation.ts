@@ -3,7 +3,7 @@ import { useMutation } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
-/** US-004 편집 취소 — 발행 후 편집한 변경분을 버리고 초안 버전을 현재 발행 버전의 내용으로 덮어쓴다.
+/** 편집 취소 — 발행 후 편집한 변경분을 버리고 초안 버전을 현재 발행 버전의 내용으로 덮어쓴다.
  * 발행 버전 자체는 건드리지 않는다.
  *
  * 삭제가 아니라 덮어쓰기인 이유: `PATCH /contents/{id}/draft`가 쓰는 대상이 바로 그 초안 행이라 지우면

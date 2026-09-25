@@ -16,9 +16,9 @@ import {
 
 import type { IconPickerOption } from "@/shared/ui/color-icon-picker";
 
-/** lucide-react 아이콘 서브셋(techspec-builder-story.md §1.2) — 스탯에서 흔히 쓰는 개념 위주로 고정한다.
- * 라벨("체력"·"마력")이 스탯 도메인 어휘라 범용 피커 옆이 아니라 이 슬라이스에 둔다
- * (fe-convention-refactor-goal-prompt.md R-8) — `IconPicker`는 목록을 props로 주입받는다. */
+/** lucide-react 아이콘 서브셋 — 스탯에서 흔히 쓰는 개념 위주로 고정한다.
+ * 라벨("체력"·"마력")이 스탯 도메인 어휘라 범용 피커 옆이 아니라 이 슬라이스에 둔다 —
+ * `IconPicker`는 목록을 props로 주입받는다. */
 export const STAT_ICON_OPTIONS: IconPickerOption[] = [
   { name: "Heart", label: "체력", Icon: Heart },
   { name: "Zap", label: "에너지", Icon: Zap },

@@ -13,8 +13,7 @@ export function useUpdatePersonaMutation() {
     mutationFn: async ({ personaId, payload }) =>
       (await apiClient.put<Persona>(`/me/personas/${personaId}`, payload)).data,
     onSuccess: () =>
-      // Promise를 반환해 `mutateAsync`가 목록 refetch까지 기다리게 한다 — 폼이 닫힌 뒤 옛 값이 보이지 않게
-      // (review-s7.md ⚪-1).
+      // Promise를 반환해 `mutateAsync`가 목록 refetch까지 기다리게 한다 — 폼이 닫힌 뒤 옛 값이 보이지 않게.
       queryClient.invalidateQueries({ queryKey: personaKeys.all }),
   });
 }

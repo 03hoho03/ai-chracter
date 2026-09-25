@@ -5,11 +5,11 @@ import type { MeResponse } from "../api/sessionQueryOptions";
 import { sessionQueryOptions } from "../api/sessionQueryOptions";
 import { isSuspendedError } from "../model/suspendedAccount";
 
-/** techspec-auth-onboarding.md §1 — 인증이 필요한 라우트의 `beforeLoad`에서 호출한다.
+/** 인증이 필요한 라우트의 `beforeLoad`에서 호출한다.
  * 세션이 없으면(GET /me가 401) 로그인 화면으로 리다이렉트하고 원래 목적지를 보존한다.
  *
  * 돌려주는 값은 그대로 라우트 컨텍스트에 병합되므로, 로그인한 사용자 자신의 id가 필요한 라우트는
- * `Route.useRouteContext().session`으로 **좁힘 없이** 읽을 수 있다(US-008 `/my`). */
+ * `Route.useRouteContext().session`으로 **좁힘 없이** 읽을 수 있다(예: `/my`). */
 export async function requireSession(
   queryClient: QueryClient,
   href: string,
@@ -17,7 +17,7 @@ export async function requireSession(
   try {
     return { session: await queryClient.ensureQueryData(sessionQueryOptions) };
   } catch (error) {
-    // GET /me가 403 "Account suspended"면 정지 사유를 로그인 화면에 전달한다(tasks/techspec.md §1-1).
+    // GET /me가 403 "Account suspended"면 정지 사유를 로그인 화면에 전달한다.
     const isSuspended = isSuspendedError(error);
     throw redirect({
       to: "/login",

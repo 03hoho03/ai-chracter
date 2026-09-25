@@ -97,7 +97,7 @@ const DRAFTS = [
 const ITEMS = mergeMyWorks(PUBLISHED, DRAFTS);
 
 describe("filterMyWorks", () => {
-  it("전체에는 초안이 섞이지 않는다 — FR-18", () => {
+  it("전체에는 초안이 섞이지 않는다", () => {
     const filtered = filterMyWorks(ITEMS, { type: "all", visibility: "all" });
 
     expect(filtered.map((item) => item.id)).toEqual(["c-public", "c-private", "s-link"]);
@@ -230,7 +230,7 @@ describe("toMyWorkMetaLabel", () => {
     const clean = makePublished({ id: "c-2", updatedAt: "2026-08-20T00:00:00Z", hasUnpublishedChanges: false });
 
     // 문구를 여기 그대로 박아 두는 이유: 이 줄의 값은 "편집분이 있다"는 통보가 아니라 **다음 행동을
-    // 가리키는 것**이라(이 PRD의 성공지표가 발행 완료율이다) 상태 통보로 되돌아가면 조용히 목적을 잃는다.
+    // 가리키는 것**이라(이 화면의 성공지표가 발행 완료율이다) 상태 통보로 되돌아가면 조용히 목적을 잃는다.
     expect(toMyWorkMetaLabel({ kind: "published", ...dirty })).toBe("편집한 내용은 발행해야 반영돼요");
     expect(toMyWorkMetaLabel({ kind: "published", ...clean })).toBeUndefined();
   });

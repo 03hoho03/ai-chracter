@@ -6,7 +6,7 @@ type StatGaugePanelProps = {
   values: Record<string, number>;
 }
 
-// US-060 — contentSnapshot.stats(정의)와 ChatRoomState.stats(현재값)를 statId로 조인해 게이지로
+// contentSnapshot.stats(정의)와 ChatRoomState.stats(현재값)를 statId로 조인해 게이지로
 // 상시 노출한다. 스토리 챗 전용(캐릭터 챗은 room.contentSnapshot이 없어 ChatRoomView가 렌더링하지 않음).
 export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
   if (stats.length === 0) return null;
@@ -28,7 +28,7 @@ export function StatGaugePanel({ stats, values }: StatGaugePanelProps) {
         // stat.icon은 "Droplet" 같은 이름 문자열이다 — 컴포넌트로 되돌리지 않으면 글자로 렌더된다.
         const Icon = getIconByName(stat.icon);
 
-        // w-36(144px): --text-xs가 12→14px로 오른 뒤(design-system-goal-prompt.md D-8)
+        // w-36(144px): --text-xs가 12→14px로 오른 뒤
         // w-32(128px)에서는 7자 스탯도 잘리는 회귀가 났다("손전등 배터리" 7자, scrollWidth 76 >
         // clientWidth 66). 같은 고정폭 안에서도 가용폭(clientWidth)은 스탯마다 다르다 — 아이콘·
         // 값(숫자+단위)이 먹는 폭이 스탯마다 달라 66~92px로 갈린다. 그래서 "N자까지 안전"은 규칙으로

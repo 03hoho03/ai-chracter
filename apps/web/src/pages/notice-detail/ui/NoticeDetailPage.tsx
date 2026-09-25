@@ -5,7 +5,7 @@ import { FileQuestion } from "lucide-react";
 import { useNoticeDetailQuery } from "@/entities/notice";
 import { formatDate } from "@/shared/lib/time/formatDate";
 
-/** `/notices/$noticeId` — 공지 상세. 로그인 여부와 무관하게 접근 가능(D-5). h1이 공지 제목 자체라
+/** `/notices/$noticeId` — 공지 상세. 로그인 여부와 무관하게 접근 가능. h1이 공지 제목 자체라
  * 데이터 도착 전에는 보여줄 게 없으므로 `pages/legal-document`와 달리 제목까지 함께 상태별로 가른다. */
 export function NoticeDetailPage({ noticeId }: { noticeId: string }) {
   return (

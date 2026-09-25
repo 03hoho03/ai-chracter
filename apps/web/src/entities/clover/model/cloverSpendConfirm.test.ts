@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { isCloverSpendConfirmRequired } from "./cloverSpendConfirm";
 
-/** clover-goal-prompt.md CL-19 — 이 판정이 틀리면 둘 중 하나가 난다: 동의를 물어야 할 때
+/** 이 판정이 틀리면 둘 중 하나가 난다: 동의를 물어야 할 때
  * 안 묻거나(무단 차감), 물을 필요 없을 때 묻거나(매 요청 모달). 두 방향을 다 고정한다. */
 describe("isCloverSpendConfirmRequired", () => {
   it("CLOVER_CONFIRM_REQUIRED면 참이다 (채팅)", () => {

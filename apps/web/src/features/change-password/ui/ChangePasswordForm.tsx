@@ -42,7 +42,7 @@ export function ChangePasswordForm() {
       toast.success("비밀번호가 변경되었어요.");
       reset(changePasswordDefaultValues);
     } catch (error) {
-      // 401(세션 소멸)은 자동으로 로그인 화면에 보내지 않는다 — 입력 중이던 값을 잃지 않게 링크만 준다(BS-9).
+      // 401(세션 소멸)은 자동으로 로그인 화면에 보내지 않는다 — 입력 중이던 값을 잃지 않게 링크만 준다.
       const banner = getChangePasswordErrorBanner(error);
       setError("root", {
         type: banner?.shouldShowLoginLink ? LOGIN_LINK_ERROR_TYPE : "server",

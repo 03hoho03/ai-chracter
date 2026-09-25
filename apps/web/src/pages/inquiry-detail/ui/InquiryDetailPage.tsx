@@ -12,7 +12,7 @@ import {
 import { formatDate } from "@/shared/lib/time/formatDate";
 
 /** `/inquiries/$inquiryId` — 내가 쓴 문의 + 답변. `requireSession`으로 로그인 사용자만 접근하고,
- * 남의 문의는 서버가 404를 준다(403이 아니라 — 존재 여부를 흘리지 않는다, techspec.md §4-4). */
+ * 남의 문의는 서버가 404를 준다(403이 아니라 — 존재 여부를 흘리지 않는다). */
 export function InquiryDetailPage({ inquiryId }: { inquiryId: string }) {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">

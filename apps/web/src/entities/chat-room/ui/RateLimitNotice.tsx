@@ -6,14 +6,14 @@ import { formatChatRateLimitAnnouncement, formatChatRateLimitMessage, type ChatR
 
 type RateLimitNoticeProps = {
   rateLimit: ChatRateLimit;
-  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말한다(RL-23). */
+  /** 문구만 갈린다 — 미리보기는 "채팅과 같은 한도"라는 사실을 먼저 말한다. */
   surface: "chat" | "preview";
-  /** 미리보기 배너에는 재시도가 없다(RL-23) — 넘기지 않으면 버튼이 그려지지 않는다. */
+  /** 미리보기 배너에는 재시도가 없다 — 넘기지 않으면 버튼이 그려지지 않는다. */
   onRetry?: () => void;
 };
 
 /**
- * limit-goal-prompt.md RL-15/RL-23 — 유저별 상한(429 USER_LIMIT)에 걸렸을 때의 배너. 껍데기는
+ * 유저별 상한(429 USER_LIMIT)에 걸렸을 때의 배너. 껍데기는
  * 실제 채팅·미리보기의 기존 오류 배너를 그대로 쓰고(정지 상태 그림자 없음 · destructive 틴트)
  * 안의 문구와 버튼만 창(minute/day)에 따라 갈린다.
  *
@@ -50,7 +50,7 @@ export function RateLimitNotice({ rateLimit, surface, onRetry }: RateLimitNotice
       <span aria-hidden className="min-w-0 break-keep text-xs text-destructive-text">
         {formatChatRateLimitMessage(rateLimit, surface, secondsLeft)}
       </span>
-      {/* ED-7 — role="alert" sr-only 쌍둥이. 보이는 문구는 매초 바뀌어 aria-hidden으로 숨기고,
+      {/* role="alert" sr-only 쌍둥이. 보이는 문구는 매초 바뀌어 aria-hidden으로 숨기고,
           이 문구는 formatChatRateLimitAnnouncement가 담당한다 — secondsLeft를 받지 않아 마운트
           1회 말고는 값이 바뀔 길이 없다(뮤테이션이 원리적으로 불가능해 alert가 초마다 재발화하지
           않는다). */}

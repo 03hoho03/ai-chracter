@@ -61,9 +61,9 @@ describe("dropLastMessage", () => {
     expect(queryClient.getQueryData(chatRoomKeys.detail(ROOM_ID))).toBe(emptyState);
   });
 
-  // regenerate-ux-techspec.md RT-3 — 마지막이 user면 지우지 않는다. retry()가 같은 payload로
+  // 마지막이 user면 지우지 않는다. retry()가 같은 payload로
   // 다시 들어올 때 캐시가 그 사이 재조회로 바뀌어 있을 수 있다.
-  it("is a no-op returning undefined when the last message is a user message (RT-3)", () => {
+  it("is a no-op returning undefined when the last message is a user message", () => {
     const messages: ChatMessage[] = [
       { id: "m1", role: "assistant", content: "반가워", createdAt: "2026-07-08T00:00:00Z" },
       { id: "m2", role: "user", content: "안녕", createdAt: "2026-07-08T00:01:00Z" },
@@ -97,9 +97,9 @@ describe("dropLastMessage", () => {
     ]);
   });
 
-  // regenerate-ux-techspec.md RT-2 — 같은 id가 이미 있으면 아무것도 하지 않는다. 재조회가 먼저
+  // 같은 id가 이미 있으면 아무것도 하지 않는다. 재조회가 먼저
   // 되살린 뒤 finally가 한 번 더 붙이면 같은 메시지가 두 벌 남는다.
-  it("is a no-op when a message with the same id already exists (RT-2)", () => {
+  it("is a no-op when a message with the same id already exists", () => {
     const userMessage: ChatMessage = { id: "m1", role: "user", content: "안녕", createdAt: "2026-07-08T00:00:00Z" };
     const assistantMessage: ChatMessage = {
       id: "m2",

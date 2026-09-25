@@ -5,7 +5,7 @@ import type { CharacterBuilderFormValues } from "./schema";
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 
 /**
- * 폼값 -> `PATCH /contents/{id}/draft` payload (techspec-overview.md §8.1, 순수 함수).
+ * 폼값 -> `PATCH /contents/{id}/draft` payload (순수 함수).
  * 자동저장/발행/미리보기 전부 이 결과를 그대로 재사용한다 — 검증(zod parse)은 호출부 책임이다.
  *
  * situationalImages의 우선순위(order)는 서버 스키마에 별도 숫자 필드가 없다 — `PATCH .../draft`는

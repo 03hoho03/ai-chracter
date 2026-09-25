@@ -17,7 +17,7 @@ type EndingCollectionModalProps = {
   startingSetupId: string;
 };
 
-// techspec-chat-story.md §6, US-069/070 — "더보기 > 엔딩 컬렉션"에서 여는 읽기 전용 react-call
+// "더보기 > 엔딩 컬렉션"에서 여는 읽기 전용 react-call
 // 모달(PlayGuideModal과 동일하게 mutationFn/useMutationFlow 불필요). 목록↔에필로그 상세는 로컬
 // state(selectedEnding)로 같은 Dialog 안에서 전환한다 — 새 Dialog를 중첩하지 않는다.
 export const EndingCollectionModal = createCallable<EndingCollectionModalProps, void>(({ call, startingSetupId }) => {
@@ -72,7 +72,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
   );
 });
 
-/** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다(COMP-04).
+/** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다.
  * 바깥의 `selectedEnding ? 상세 : 목록`은 2갈래라 삼항으로 남긴다 — 중첩이 문제였지 삼항 자체가
  * 아니다. */
 function EndingListBody({

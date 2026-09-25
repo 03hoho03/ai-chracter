@@ -24,7 +24,7 @@ import {
   type Visibility,
 } from "@/features/build-character";
 
-// TS-09 — 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
+// 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
 // 라벨만 매핑한다.
 const TARGET_LABELS: Record<Target, string> = {
   female: "여성향",
@@ -38,8 +38,8 @@ const VISIBILITY_LABELS: Record<Visibility, string> = {
   private: "비공개",
 };
 
-/** techspec-builder-character.md §5 — 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 장르 목록은
- * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다(techspec-builder-story.md §3). */
+/** 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 장르 목록은
+ * 하드코딩 enum이 아니라 GET /genres 서버 조회 결과로 select 옵션을 구성한다. */
 export function DetailTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
 

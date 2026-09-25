@@ -21,15 +21,15 @@ type ResetContentDraftModalProps = {
   creatorUserId: string;
 };
 
-/** US-004/US-010 편집 취소 — 발행 후 편집한 변경분을 버리고 초안을 현재 발행본 내용으로 되돌린다.
+/** 편집 취소 — 발행 후 편집한 변경분을 버리고 초안을 현재 발행본 내용으로 되돌린다.
  * 발행본 자체는 그대로 남으므로 **삭제가 아니다**. 짝이 되는 `DeleteContentDraftModal`과 카피가
- * 서로 구분돼야 한다(US-010 AC): 이쪽은 "발행본은 그대로"를 먼저 말한다.
+ * 서로 구분돼야 한다: 이쪽은 "발행본은 그대로"를 먼저 말한다.
  *
  * 손대는 캐시가 둘인데 **처방이 서로 다르다**.
  *
  * 목록(`contentKeys.listByUser`)은 `invalidateQueries`다. `ContentSummary`의 이름·썸네일·`updatedAt`은
- * 전부 발행 버전 기준이라 그대로지만 `hasUnpublishedChanges`가 서버에서 `false`로 떨어지고(US-002),
- * `/my` 카드의 마이크로카피 줄과 이 항목의 존재 자체가 그 플래그에 걸려 있다(US-010) — 무효화하지 않으면
+ * 전부 발행 버전 기준이라 그대로지만 `hasUnpublishedChanges`가 서버에서 `false`로 떨어지고,
+ * `/my` 카드의 마이크로카피 줄과 이 항목의 존재 자체가 그 플래그에 걸려 있다 — 무효화하지 않으면
  * 방금 버린 편집분을 카드가 계속 있다고 말한다. **여기서 `removeQueries`를 쓰면 안 된다**: 이 목록은
  * 모달을 띄운 `/my`가 지금 관찰 중인 `useInfiniteQuery`라, 지우면 `isPending`이 다시 true가 되어
  * `MyWorksBody`가 전면 스켈레톤으로 빠지고 "더 보기"로 불러온 페이지가 통째로 날아간다. 목록 캐시는
@@ -57,8 +57,8 @@ export const ResetContentDraftModal = createCallable<ResetContentDraftModalProps
         // 버렸어요"는 버린 게 없는데 버렸다고 말한다. 끝 상태를 말하면 두 경우 모두 참이고, 사용자가
         // 무엇을 얻었는지도 함께 말한다.
         //
-        // (US-010 이전의 근거는 "`ContentSummary`에 그 필드가 없어 메뉴가 가릴 방법이 없다"였는데,
-        // US-002가 필드를 넣고 US-010이 항목을 가리면서 그 근거는 무너졌다. 결론은 살아남지만 근거는
+        // (예전 근거는 "`ContentSummary`에 그 필드가 없어 메뉴가 가릴 방법이 없다"였는데,
+        // `ContentSummary`에 `hasUnpublishedChanges`가 들어오고 메뉴가 그 값으로 항목을 가리면서 그 근거는 무너졌다. 결론은 살아남지만 근거는
         // 위의 것으로 갈아 끼운다 — 안 그러면 다음 사람이 없는 사실을 재인용한다.)
         // 동사(`남다`)와 수식어(`발행된`)를 **둘 다 본문에서 가져온다.** 처음엔 "발행본 내용으로
         // 되돌렸어요"였는데 두 단어가 다 틀렸다.

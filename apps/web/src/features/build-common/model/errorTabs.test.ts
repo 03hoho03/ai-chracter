@@ -6,8 +6,8 @@ import type { BuilderTab } from "@/entities/content";
 import { errorTabs } from "./errorTabs";
 
 /** 픽스처가 참조하는 폼 경로만 담은 지역 타입. 실제 폼 타입(`features/build-story`의
- * `StoryBuilderFormValues`)을 쓰면 features끼리 import하는 셈이라(FSD-04,
- * fe-convention-refactor-goal-prompt.md R-1) 여기서 모양만 다시 적는다 — 검증 대상은 경로 매칭이지
+ * `StoryBuilderFormValues`)을 쓰면 features끼리 import하는 셈이라
+ * 여기서 모양만 다시 적는다 — 검증 대상은 경로 매칭이지
  * 폼 스키마가 아니다. */
 type StoryFormValuesFixture = {
   profile: { name: string };
@@ -78,7 +78,7 @@ describe("errorTabs", () => {
   // FieldError`를 둔다 — 아이템이 이미 마운트돼 있어 인덱스별 에러(`shortcuts.0.name`)도 함께
   // 존재하는 상태에서 배열 자체의 min(1) 등이 깨지면 그 에러는 `shortcuts.root`에 담긴다(인덱스
   // 자리를 차지할 수 없어서). `matchesPrefix`가 프리픽스 길이만 비교하므로 이미 옳게 동작하지만
-  // (A-1), 회귀를 막기 위해 고정해 둔다.
+  // 회귀를 막기 위해 고정해 둔다.
   it("배열 자체 에러(root)는 인덱스 에러와 같은 탭에 귀속된다", () => {
     const shortcutsErrors = Object.assign([{ name: fieldError() }], {
       root: fieldError("최소 1개 이상 입력해주세요."),

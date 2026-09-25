@@ -18,8 +18,8 @@ type IconPickerProps = {
   triggerLabel: string;
 }
 
-/** techspec-builder-story.md §1.2 — lucide-react 아이콘 서브셋 중에서만 고르는 피커. 서브셋은
- * 도메인 어휘라 `options`로 주입받는다(fe-convention-refactor-goal-prompt.md R-8).
+/** lucide-react 아이콘 서브셋 중에서만 고르는 피커. 서브셋은
+ * 도메인 어휘라 `options`로 주입받는다.
  * ColorPicker와 동일한 relative 트리거 + absolute 패널 구조. */
 export function IconPicker({ value, onChange, options, triggerLabel }: IconPickerProps) {
   const [isOpen, setIsOpen] = useState(false);

@@ -6,7 +6,7 @@ export type ModerationStatus = components["schemas"]["ModerationStatus"];
 
 /** `ContentType` 목록의 단일 소스. 옵션 배열·타입 술어·zod enum이 전부 여기서 도출된다.
  *
- * TS-09의 정석(목록을 두고 `type X = (typeof LIST)[number]`로 타입을 도출)은 여기서 쓸 수 없다 —
+ * 정석 패턴(목록을 두고 `type X = (typeof LIST)[number]`로 타입을 도출)은 여기서 쓸 수 없다 —
  * `ContentType`은 `generated.ts`가 소유하므로 목록 옆으로 옮길 수 없다. 그래서 방향을 뒤집어
  * **목록이 타입 전체를 덮는지**를 아래 한 줄이 컴파일 타임에 강제한다. `as const satisfies
  * readonly ContentType[]`로는 안 된다 — 그건 원소가 멤버인지만 보고 커버리지는 보지 않는다. */
@@ -25,7 +25,7 @@ type _CoversAllContentTypes = AssertNoUncovered<Exclude<ContentType, (typeof CON
 
 /** 화면에 쓰는 한국어 이름. `Record<ContentType, string>`이라 멤버가 늘면 여기서도 컴파일이 깨진다.
  * (`ProfileContentSection`·`ContentDetailView`에 같은 모양의 지역 `TYPE_LABEL`이 각각 남아 있다 —
- * 이번 런이 건드린 코드가 아니라 옮기지 않았다.) */
+ * 아직 이 상수로 옮기지 않았다.) */
 export const CONTENT_TYPE_LABEL: Record<ContentType, string> = {
   character: "캐릭터",
   story: "스토리",
@@ -35,7 +35,7 @@ export function isContentType(value: string): value is ContentType {
   return CONTENT_TYPES.some((contentType) => contentType === value);
 }
 
-/** `GET /contents`(techspec-home-discovery.md §1)의 sort 쿼리 파라미터 — 별도 named schema가 아니라
+/** `GET /contents`의 sort 쿼리 파라미터 — 별도 named schema가 아니라
  * OpenAPI 오퍼레이션의 인라인 유니언이라 여기서 직접 선언한다. */
 export const CONTENT_LIST_SORTS = ["latest", "popular", "genre"] as const;
 export type ContentListSort = (typeof CONTENT_LIST_SORTS)[number];
@@ -49,7 +49,7 @@ export type ContentAccessStatus =
   | { kind: "restricted" }
   | { kind: "deleted" };
 
-/** techspec-content-versioning.md §1 — 공개범위(제작자 설정)와 모더레이션 상태(관리자 설정)를
+/** 공개범위(제작자 설정)와 모더레이션 상태(관리자 설정)를
  * 오버레이하는 단일 진실 공급원. 상태 태그를 그리는 화면은 항상 이 함수를 거친다. */
 export function resolveAccessStatus(
   visibility: ContentVisibility,
@@ -60,17 +60,17 @@ export function resolveAccessStatus(
   return { kind: "accessible", visibility };
 }
 
-/** 홈/검색/타인 프로필 노출 가드(techspec-content-versioning.md §1, FR-9/FR-69) — accessible이면서 public인 콘텐츠만. */
+/** 홈/검색/타인 프로필 노출 가드 — accessible이면서 public인 콘텐츠만. */
 export function canDiscoverPublicly(access: ContentAccessStatus): boolean {
   return access.kind === "accessible" && access.visibility === "public";
 }
 
-/** 기존 대화방 재접속 가드(FR-86) — visibility와 무관하게 restricted/deleted일 때만 차단. */
+/** 기존 대화방 재접속 가드 — visibility와 무관하게 restricted/deleted일 때만 차단. */
 export function canAccessExistingRoom(moderationStatus: ModerationStatus): boolean {
   return moderationStatus !== "restricted" && moderationStatus !== "deleted";
 }
 
-/** 상세화면/신규 진입 가드(US-019) — canAccessExistingRoom과 규칙이 달라 별도 함수로 둔다.
+/** 상세화면/신규 진입 가드 — canAccessExistingRoom과 규칙이 달라 별도 함수로 둔다.
  * 타입 술어로 만들지 말 것 — `accessible + private + 비소유자`도 false라, 거짓 분기를
  * `restricted | deleted`로 좁히는 술어는 불건전하다(`ContentUnavailableState`가 그 반례를 다룬다). */
 export function canViewDetailPage(access: ContentAccessStatus, isOwner: boolean): boolean {
@@ -93,7 +93,7 @@ export function toContentAccessStatus(raw: {
 }
 
 /** 카드 상태 배지 — 공개범위와 이용제한을 **함께** 낸다(이용제한이어도 공개범위 배지는 남는다).
- * `/my`와 프로필이 같은 작품에 같은 배지 조합을 보여야 해서 두 화면이 이 함수 하나를 거친다(US-008) —
+ * `/my`와 프로필이 같은 작품에 같은 배지 조합을 보여야 해서 두 화면이 이 함수 하나를 거친다 —
  * 원래 결함이 정확히 "같은 데이터를 그리는 두 화면이 서로 다른 말을 한다"였고, 프로필만 이 판정을
  * 갖고 있었다. 반환 타입은 `ContentCardTag`의 부분집합이라 호출부가 `[type, ...이것]`으로 펼친다.
  *

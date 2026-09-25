@@ -3,7 +3,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { requireSession } from "@/entities/session";
 import { CloverHistoryPage, cloverHistorySearchSchema, type CloverHistorySearch } from "@/pages/clover-history";
 
-// clover-page-goal-prompt.md CE-24 — 플랫 명명, `inquiries.index.tsx`/`clover.index.tsx`(S6) 선례.
+// 플랫 명명, `inquiries.index.tsx`/`clover.index.tsx` 선례.
 // 탭 상태는 URL 검색 파라미터(`?tab=`)로 둔다.
 export const Route = createFileRoute("/clover/history")({
   validateSearch: cloverHistorySearchSchema,

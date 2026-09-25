@@ -15,12 +15,12 @@ import { getPromptSyntaxHint, PROMPT_WEIGHT_SYNTAX_HINT } from "../model/promptS
 import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
-// image-refact-goal-prompt.md IR-15 — danbooru 태그 예시(품질 부스터 금지, LG-3이 서버에서 치운
+// danbooru 태그 예시(품질 부스터 금지, 서버에서 치운
 // Animagine 시그니처 문구라 FE 번들에도 넣지 않는다).
 const PROMPT_PLACEHOLDER =
   "1girl, solo, long hair, school uniform, cherry blossoms, looking at viewer, upper body";
 
-// image-refact-techspec.md IT-9 — `<form>` 엘리먼트는 이 조각(중앙 열)이 감싼다. FormProvider는
+// `<form>` 엘리먼트는 이 조각(중앙 열)이 감싼다. FormProvider는
 // React context라 DOM 위치와 무관하므로, 다른 열/시트의 필드도 이 제출에 포함된다.
 export function GenerateImagesPromptField() {
   const {
@@ -31,7 +31,7 @@ export function GenerateImagesPromptField() {
   } = useFormContext<GenerateImagesFormValues>();
   const { onSubmit, isModelsPending } = useGenerateImagesSubmit();
   const isSubmitBlocked = isSubmitting || isModelsPending;
-  // clover-techspec.md CT-16 — 무료 토큰을 다 쓴 뒤에만 나타난다(clover-goal-prompt.md CL-25).
+  // 무료 토큰을 다 쓴 뒤에만 나타난다.
   // 단가는 1장 기준 `IMAGE_UNIT_COST`(30)다 — 한 요청 최대 2장이지만 "한 장도 못 만드는가"가
   // 부족의 기준이라 장수를 곱하지 않는다.
   const { data: clover } = useCloverBalanceQuery();
@@ -43,7 +43,7 @@ export function GenerateImagesPromptField() {
       spendConfirmedToday: clover.spendConfirmedToday,
       hasCloverShortage: isCloverShort,
     });
-  // image-style-7-goal-prompt.md IS-10 — useWatch로 렌더 시점에 계산한다(useEffect 금지, 파생 상태).
+  // useWatch로 렌더 시점에 계산한다(useEffect 금지, 파생 상태).
   const promptValue = useWatch({ control, name: "prompt" });
   const syntaxHint = getPromptSyntaxHint(promptValue ?? "");
   const isSyntaxWarning = syntaxHint !== PROMPT_WEIGHT_SYNTAX_HINT;
@@ -68,7 +68,7 @@ export function GenerateImagesPromptField() {
     >
       <div className="flex flex-col gap-1.5">
         <Label htmlFor="generate-images-prompt">프롬프트</Label>
-        {/* 브라우저 실검증(S6) — 프롬프트와 제출 버튼을 한 보더 박스에 묶는다(크랙 실측: 박스 안
+        {/* 브라우저 실검증 — 프롬프트와 제출 버튼을 한 보더 박스에 묶는다(크랙 실측: 박스 안
             우하단 버튼). 포커스 링은 안쪽 Textarea가 아니라 이 박스가 받아야 하므로
             `has-[textarea:focus-visible]:`로 하우스 레시피(DESIGN.md §Buttons Focus)를 얹는다 —
             안쪽 Textarea의 자기 보더·링은 아래에서 지운다(이중 보더 방지). */}
@@ -82,7 +82,7 @@ export function GenerateImagesPromptField() {
             className="border-0 bg-transparent p-0 focus-visible:ring-0"
             {...register("prompt")}
           />
-          {/* clover-techspec.md §5-4 — 생성 버튼 줄의 **왼쪽**에 잔량을 둔다. 박스 아래에는 이미
+          {/* 생성 버튼 줄의 **왼쪽**에 잔량을 둔다. 박스 아래에는 이미
               힌트·에러 `<p>`가 있어 거기 넣으면 세 번째 줄이 되고, 버튼과 같은 줄이면 "이걸 누르면
               얼마가 빠지나"가 한눈에 붙는다. 잔량이 없을 땐 `justify-between`이 빈 자리를 만들지
               않도록 버튼만 남는다(아래 조건부 렌더). */}
@@ -106,7 +106,7 @@ export function GenerateImagesPromptField() {
             </Button>
           </div>
         </div>
-        {/* image-style-7-goal-prompt.md IS-10 — 가중치 문법 안내/괄호 경고를 한 줄로 합친다. 하드
+        {/* 가중치 문법 안내/괄호 경고를 한 줄로 합친다. 하드
             에러(errors.prompt)와 다른 어휘라 aria-invalid/role="alert"/text-destructive-text에는
             연결하지 않는다 — 제출을 막지 않는 경고다(GenerateImagesOptionsFields.tsx:106-108 선례).
             aria-live="polite" + 항상 마운트(GenerateImagesResultGrid.tsx:143-148 선례) — 문구가

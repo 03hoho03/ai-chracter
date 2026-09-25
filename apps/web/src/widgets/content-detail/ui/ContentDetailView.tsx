@@ -43,7 +43,7 @@ import { VersionHistoryModal } from "./VersionHistoryModal";
 
 type ContentDetailViewProps = {
   id: string;
-  /** image-crop-goal-prompt.md IC-11 — content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
+  /** content 도착 전(스켈레톤)에는 실제 타입을 모르므로 호출부가
    * 힌트로 넘긴다. 값이 틀려도 스켈레톤 비율만 잠깐 틀리고 도착 시 실제 타입으로 뛴다 — 조회·표시
    * 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다). */
   type: ContentType;
@@ -66,32 +66,32 @@ const TYPE_ICON: Record<ContentType, LucideIcon> = {
   story: BookOpen,
 };
 
-// image-crop-goal-prompt.md IC-11 — 캐릭터(1열)는 모바일에서 `w-full` 그대로, 데스크톱은 높이 예산
+// 캐릭터(1열)는 모바일에서 `w-full` 그대로, 데스크톱은 높이 예산
 // 60dvh가 단일 소스(1:1이라 폭 상한도 같은 값). `max-height`가 아니라 `max-width`로 거는 이유:
 // `aspect-ratio` + `w-full` 상태에서 `max-height`는 폭을 줄이지 않아 비율이 깨지고 `object-cover`가
 // 다시 자른다.
 const CHARACTER_HERO_WIDTH_CLASS = "sm:max-w-[60dvh]";
 
-// image-crop-goal-prompt.md IC-11 — 스토리(2열)는 우측 열과 나란히 두므로 높이가 아니라 고정 폭이
+// 스토리(2열)는 우측 열과 나란히 두므로 높이가 아니라 고정 폭이
 // 예산이다: `sm:w-64`(256px) × `aspect-story`(2:3) = 256×384. 예전 높이 캡(`sm:max-w-[40dvh]`)은 폭이
 // 이미 고정인 2열 레이아웃에서는 의미가 없어져 뺐다.
 const STORY_HERO_WIDTH_CLASS = "sm:w-64 sm:shrink-0";
 
-// techspec-overview.md §11 — 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
+// 좋아요/즐겨찾기 토글은 연타 방지를 위해 네트워크 호출만 디바운스하고,
 // 화면 표시는 isLikeDesired/isFavoriteDesired로 매 클릭마다 즉시 반영한다.
 const TOGGLE_SYNC_DEBOUNCE_MS = 400;
 
 /** hero 웰·스켈레톤의 채움. 모달은 `DialogContent`(`popover`) 위라 `muted`가 표면과 같은 값이 되어
  * 1.0000:1로 사라지므로 `secondary`를 쓰고, 페이지는 `background` 위라 `muted`가 맞다
- * (DESIGN.md §2 "표면 위 채움"). */
+ * (DESIGN.md Colors 절의 "표면 위 채움 규칙"). */
 const SURFACE_FILL_CLASS = {
   modal: "bg-secondary",
   page: "bg-muted",
 } as const satisfies Record<ContentDetailViewProps["variant"], string>;
 
-/** techspec-content-detail.md §1~2 — 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
+/** 모달/풀페이지 공용 상세 콘텐츠. 카드가 있는 모든 리스트
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
- * `variant`는 design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 하단에 고정하는 방식이
+ * `variant`가 필요한 이유: 플레이 CTA를 하단에 고정하는 방식이
  * 모달(카드 안 flex)과 풀페이지(lg 미만 fixed)에서 구조 자체가 달라 호출부가 명시한다. */
 export function ContentDetailView({ id, type, variant }: ContentDetailViewProps) {
   const detailQuery = useContentDetailQuery(id);
@@ -104,7 +104,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
   const [isFavoriteDesired, setIsFavoriteDesired] = useState<boolean | undefined>(undefined);
   const [isVersionHistoryOpen, setIsVersionHistoryOpen] = useState(false);
   // 스토리 전용 — 시작설정 선택. `StoryDetailBody`(스크롤 영역의 선택기)와 `StoryPlayBar`(하단
-  // 고정 바)가 형제로 갈라지면서(P-5) 상태를 여기서 들고 있어야 서로 공유할 수 있다. 캐릭터는 쓰지
+  // 고정 바)가 형제로 갈라지면서 상태를 여기서 들고 있어야 서로 공유할 수 있다. 캐릭터는 쓰지
   // 않지만 다른 optimistic override들과 같은 이유로 무조건 호출한다(hooks 규칙).
   const [selectedSetupIdOverride, setSelectedSetupIdOverride] = useState<string | undefined>(undefined);
   const content = detailQuery.data;
@@ -179,7 +179,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
         onSettled: () => {
           setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
-          // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다(card-grid-techspec.md T-1) — 접두사로
+          // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다 — 접두사로
           // 두 타입 모두 무효화한다. 한쪽만 지우면 반대 타입 즐겨찾기 목록이 stale로 남는다.
           void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
         },
@@ -233,14 +233,14 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
       assertNever(content.type);
   }
 
-  // image-crop-goal-prompt.md IC-11 — hero 비율은 카드 그리드와 같은 도메인→표현 매핑
+  // hero 비율은 카드 그리드와 같은 도메인→표현 매핑
   // (`toThumbnailAspect`)을 재사용한다: 캐릭터 1:1, 스토리 2:3.
   const heroAspect = toThumbnailAspect(content.type);
   const TypeIcon = TYPE_ICON[content.type];
 
   const body = (
     <article className="flex flex-col gap-5 p-1">
-      {/* image-crop-goal-prompt.md IC-11 — 스토리는 ≥sm에서 hero+메타를 가로 2열로 두고(사용자 피드백
+      {/* 스토리는 ≥sm에서 hero+메타를 가로 2열로 두고(사용자 피드백
           "메타데이터가 이미지 오른쪽"), 캐릭터는 지금처럼 1열을 유지한다. */}
       <div
         className={cn("flex flex-col gap-5", content.type === "story" && "sm:flex-row sm:items-start sm:gap-6")}
@@ -252,7 +252,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
             cn("overflow-hidden rounded-lg", SURFACE_FILL_CLASS[variant]),
           )}
         >
-          {/* US-013 — 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
+          {/* 상세(페이지·모달 공용)의 첫 화면 주인공 이미지라 모달 그리드와 같은 이유로 lazy 제외. */}
           {content.thumbnailUrl ? (
             <img src={content.thumbnailUrl} alt="" decoding="async" className="size-full object-cover" />
           ) : (
@@ -304,7 +304,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
                     type="button"
                     onClick={() => {
                       setModalState(undefined);
-                      // techspec-home-discovery.md §2 — 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
+                      // 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
                       void navigate({ to: "/", search: { hashtag: tag } });
                     }}
                     className="text-xs text-muted-foreground hover:underline"
@@ -355,7 +355,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
         </div>
       </div>
 
-      {/* image-crop-goal-prompt.md IC-11 — 우측 열 폭이 ~350px인데 본문이 `text-sm`이라 한 줄에 21자밖에
+      {/* 우측 열 폭이 ~350px인데 본문이 `text-sm`이라 한 줄에 21자밖에
           안 들어간다. 긴 산문은 2열에 넣지 않고 전폭으로 둔다. */}
       <p className="whitespace-pre-wrap text-sm text-muted-foreground">{content.detailDescription}</p>
 
@@ -374,7 +374,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
           hover 표면이 `bg-muted`가 아닌 이유: `--muted`와 `--popover`가 다크 0.210 / 라이트 0.970으로
           **값이 같아** 모달 안에서 hover가 통째로 사라진다(같은 함정을 Slider 트랙에서 겪었다).
           `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. hover에서 글자도 `foreground`로 올린다 —
-          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md §2 "표면 위 채움 규칙"). */}
+          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md Colors 절의 "표면 위 채움 규칙"). */}
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">업데이트</h2>
         <button
@@ -398,7 +398,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
     </article>
   );
 
-  // design-system-progress.md P-5(D-7/D-11) — 플레이 CTA를 스크롤 영역 밖으로 뽑아 하단에 고정한다.
+  // 플레이 CTA를 스크롤 영역 밖으로 뽑아 하단에 고정한다.
   if (variant === "modal") {
     // 모달은 폭과 무관하게 전 폭에서 고정한다(분기 없음) — `DialogContent`가 이 컴포넌트의 호출부에서
     // 이미 `flex flex-col`이라, 여기서는 그 두 flex 아이템만 내놓는다. 카드 안 flex 배치라 겹칠
@@ -416,7 +416,7 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
   return (
     <>
       {body}
-      {/* 풀페이지는 자연 문서 스크롤이라 모달과 같은 flex 트릭을 못 쓴다(P-0-3-⑤) — `lg` 미만에서만
+      {/* 풀페이지는 자연 문서 스크롤이라 모달과 같은 flex 트릭을 못 쓴다 — `lg` 미만에서만
           뷰포트 기준 `fixed` 바로, `lg` 이상은 지금처럼 본문 안 인라인으로 되돌아간다(넓은 화면의
           전폭 고정 바는 DESIGN.md가 경계하는 "상시 크롬"에 가깝다는 판단, 확정 결정).
           z-40: 헤더(`z-30`, sticky)와는 화면 위/아래로 겹칠 일이 없어 순서가 기능에 영향을 주지
@@ -428,8 +428,8 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
   );
 }
 
-// image-crop-goal-prompt.md IC-11 — 실제 hero와 스켈레톤이 이 함수 하나를 같이 써야 도착 시 폭이 안
-// 밀린다(스켈레톤이 실제와 다른 모양이면 도착 순간 화면이 밀린 전례, card-grid-goal-prompt.md F-1).
+// 실제 hero와 스켈레톤이 이 함수 하나를 같이 써야 도착 시 폭이 안
+// 밀린다(스켈레톤이 실제와 다른 모양이면 도착 순간 화면이 밀린 전례).
 function toHeroClassName(type: ContentType, aspect: ThumbnailAspect, visualClass: string): string {
   switch (type) {
     case "character":
@@ -441,16 +441,16 @@ function toHeroClassName(type: ContentType, aspect: ThumbnailAspect, visualClass
   }
 }
 
-// image-crop-goal-prompt.md IC-11 — content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴
+// content 도착 전이라 `content.type`을 못 읽으므로 호출부가 넘긴
 // `type`(모달: 상태에 이미 있음, 페이지: URL 세그먼트)으로 같은 비율을 흉내 낸다. 어긋나면 도착 시
-// 화면이 밀린다(card-grid-goal-prompt.md F-1 전례).
+// 화면이 밀린다.
 function ContentDetailSkeleton({ type, variant }: Pick<ContentDetailViewProps, "type" | "variant">) {
   const heroAspect = toThumbnailAspect(type);
   const fill = SURFACE_FILL_CLASS[variant];
   return (
     <div className="flex flex-col gap-4 p-1">
-      {/* image-crop-goal-prompt.md IC-11 — 실제 본문과 같은 2열 분기(스토리만 ≥sm에서 flex-row)를
-          흉내 내지 않으면 도착 시 화면이 밀린다(card-grid-goal-prompt.md F-1 전례). */}
+      {/* 실제 본문과 같은 2열 분기(스토리만 ≥sm에서 flex-row)를
+          흉내 내지 않으면 도착 시 화면이 밀린다. */}
       <div className={cn("flex flex-col gap-4", type === "story" && "sm:flex-row sm:items-start sm:gap-6")}>
         <div className={toHeroClassName(type, heroAspect, cn("animate-pulse rounded-lg", fill))} />
         <div className="flex min-w-0 flex-1 flex-col gap-4">
@@ -464,7 +464,7 @@ function ContentDetailSkeleton({ type, variant }: Pick<ContentDetailViewProps, "
 }
 
 /** 낙관적 토글이 서버 값과 갈릴 때만 카운트를 ±1 한다 — 서버 카운트를 다시 받기 전까지 화면만
- * 앞서간다. 중첩 삼항으로 쓰면 "같으면 0"과 "다르면 방향"이라는 두 질문이 한 줄에 겹친다(COMP-04). */
+ * 앞서간다. 중첩 삼항으로 쓰면 "같으면 0"과 "다르면 방향"이라는 두 질문이 한 줄에 겹친다. */
 function optimisticDelta(optimistic: boolean, server: boolean): number {
   if (optimistic === server) return 0;
   return optimistic ? 1 : -1;

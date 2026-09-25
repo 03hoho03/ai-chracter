@@ -43,8 +43,8 @@ describe("openChatStream", () => {
     ]);
   });
 
-  // RL-17 — 이 바디가 여기서 `detail`째로 살아 나와야 `isLegalReconsentRequiredError`가 판정할 수
-  // 있다. shared는 entities를 import할 수 없으므로(FSD-02, eslint no-restricted-paths) 그 함수가
+  // 이 바디가 여기서 `detail`째로 살아 나와야 `isLegalReconsentRequiredError`가 판정할 수
+  // 있다. shared는 entities를 import할 수 없으므로(eslint no-restricted-paths) 그 함수가
   // 읽는 세 가지(status 403 · detail이 object · code)를 여기서 직접 고정한다.
   it("403 재동의 바디를 detail째로 던진다", async () => {
     stubFetchWith(

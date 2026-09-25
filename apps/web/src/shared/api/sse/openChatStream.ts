@@ -4,9 +4,9 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 import { API_BASE_URL, ApiErrorObject, errorEnvelopeSchema } from "../client";
 
-/** techspec-overview.md §7 — 메시지 전송/재생성/수정은 모두 본문이 있는 POST/PATCH라 네이티브
+/** 메시지 전송/재생성/수정은 모두 본문이 있는 POST/PATCH라 네이티브
  * EventSource(GET 전용)를 쓸 수 없어 fetch + ReadableStream으로 SSE(`data: <json>\n\n`)를
- * 직접 파싱한다. kind로 각 엔드포인트(전송/재생성/수정, US-077 / 미리보기 전송, US-099)의
+ * 직접 파싱한다. kind로 각 엔드포인트(전송/재생성/수정 / 미리보기 전송)의
  * 메서드·URL·바디를 분기한다. */
 export type ChatStreamRequestPayload =
   | { kind: "send"; roomId: string; content: string; shortcutId?: string | null }
@@ -49,7 +49,7 @@ function buildRequestInit(payload: ChatStreamRequestPayload): { url: string; ini
 }
 
 /**
- * limit-goal-prompt.md RL-11 — 실패 응답의 **바디를 읽어** `ApiErrorObject`로 던진다. 이 경로는
+ * 실패 응답의 **바디를 읽어** `ApiErrorObject`로 던진다. 이 경로는
  * fetch라 `apiClient`의 응답 인터셉터를 타지 않아서, 여기서 읽지 않으면 429의 `retryAfterSeconds`도
  * 403 재동의의 `code`도 소비처에 영원히 닿지 않는다(둘 다 detail 안에만 있고 헤더에는 없다 —
  * BE가 `Retry-After`를 일부러 주지 않는다: CORS 응답에서 브라우저가 못 읽는다).
@@ -76,7 +76,7 @@ async function toApiError(response: Response): Promise<ApiErrorObject> {
 /**
  * SSE 스트림을 이벤트 단위로 흘려보낸다.
  *
- * `eventSchema`를 받는 이유(TS-03): `JSON.parse`는 `any`를 돌려주고, 이전엔 그걸 `as TEvent`로
+ * `eventSchema`를 받는 이유: `JSON.parse`는 `any`를 돌려주고, 이전엔 그걸 `as TEvent`로
  * 단언했다 — 서버가 모양을 바꾸거나 알 수 없는 이벤트를 보내면 그 거짓말이 그대로 소비처까지
  * 흘러가 `event.type` 스위치의 default에서야(운 좋으면) 걸렸다. 이제 파싱에 실패한 이벤트는
  * **그 줄만 건너뛰고** 스트림은 계속된다 — 토큰 하나가 이상하다고 대화 전체를 죽이지 않는다.

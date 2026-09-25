@@ -20,8 +20,8 @@ const VERSION_DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
   day: "2-digit",
 });
 
-/** techspec-content-detail.md §6, US-017 — 조회 전용 버전 이력. 전환 액션은 없다(그건
- * techspec-chat-story.md §6의 UpdateInfoModal이 대화방 화면에서 별도로 담당). */
+/** 조회 전용 버전 이력. 전환 액션은 없다(그건
+ * UpdateInfoModal이 대화방 화면에서 별도로 담당). */
 export function VersionHistoryModal({
   contentId,
   open,
@@ -43,7 +43,7 @@ export function VersionHistoryModal({
   );
 }
 
-/** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다(COMP-04).
+/** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다.
  * 삼항으로 이어 붙이면 상태가 하나 늘 때마다 중첩이 깊어지고, 어느 분기가 언제 도는지가
  * 들여쓰기에 묻힌다. */
 function VersionHistoryBody({

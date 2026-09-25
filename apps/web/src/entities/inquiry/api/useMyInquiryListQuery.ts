@@ -8,7 +8,7 @@ import { inquiryKeys } from "./keys";
 export type MyInquiryListItem = components["schemas"]["MyInquiryListItem"];
 export type MyInquiryListResponse = components["schemas"]["MyInquiryListResponse"];
 
-/** `GET /me/inquiries` — 내 문의 목록. 항목이 적어 페이징하지 않는다(techspec.md §5-3, D-13과 같은
+/** `GET /me/inquiries` — 내 문의 목록. 항목이 적어 페이징하지 않는다(공지 목록과 같은
  * 이유). 4xx는 재시도해도 절대 성공하지 않으므로 즉시 에러 상태로 넘긴다(entities/legal의 동일 패턴). */
 export function useMyInquiryListQuery() {
   return useQuery<MyInquiryListResponse, ApiError>({

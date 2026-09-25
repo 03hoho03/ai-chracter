@@ -6,8 +6,8 @@ import type { BuilderTab } from "@/entities/content";
 import { firstErrorLocation } from "./firstErrorLocation";
 
 /** 픽스처가 참조하는 폼 경로만 담은 지역 타입. 실제 폼 타입(`features/build-story`의
- * `StoryBuilderFormValues`)을 쓰면 features끼리 import하는 셈이라(FSD-04,
- * fe-convention-refactor-goal-prompt.md R-1) 여기서 모양만 다시 적는다 — 검증 대상은 경로 매칭이지
+ * `StoryBuilderFormValues`)을 쓰면 features끼리 import하는 셈이라
+ * 여기서 모양만 다시 적는다 — 검증 대상은 경로 매칭이지
  * 폼 스키마가 아니다. */
 type StoryFormValuesFixture = {
   profile: { name: string; oneLiner: string };

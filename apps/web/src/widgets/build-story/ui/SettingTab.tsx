@@ -9,9 +9,9 @@ import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-
 
 import { PROMPT_TEMPLATE_VALUES, type PromptTemplate, type StoryBuilderFormValues } from "@/features/build-story";
 
-// chat-techspec.md §6-5 — 4단계에서 템플릿마다 실제로 다른 지시문(chat-goal-prompt.md §6)을 갖게
-// 되므로, 여기 설명이 빈말이 아니다. 안내문이라 지시문을 그대로 옮기지 않고 창작자가 읽을 말로 풀었다.
-// TS-09 — 값 목록(PROMPT_TEMPLATE_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해 라벨·설명만
+// 템플릿마다 실제로 다른 지시문(생성 프롬프트 variant)을
+// 가지므로, 여기 설명이 빈말이 아니다. 안내문이라 지시문을 그대로 옮기지 않고 창작자가 읽을 말로 풀었다.
+// 값 목록(PROMPT_TEMPLATE_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해 라벨·설명만
 // 매핑한다.
 const PROMPT_TEMPLATE_LABELS: Record<PromptTemplate, { label: string; description: string }> = {
   basic: {
@@ -34,13 +34,13 @@ const PROMPT_TEMPLATE_LABELS: Record<PromptTemplate, { label: string; descriptio
 
 const MAX_DEVELOPMENT_EXAMPLES = 3;
 
-/** techspec-builder-story.md §1 — 프롬프트 템플릿(필수, 기본값 "기본") 선택에 따라 세계관 또는
+/** 프롬프트 템플릿(필수, 기본값 "기본") 선택에 따라 세계관 또는
  * 커스텀 프롬프트 입력 폼을 전환한다. 숨겨진 필드는 RHF 기본 동작(shouldUnregister: false)대로
  * 언마운트돼도 값이 폼 상태에 그대로 보존된다.
  *
- * 규칙·사용자의 역할과 목표·전개 예시(고급설정)는 chat-techspec.md §6-3(D-16)에 따라 프롬프트
- * L1 작품 층에서 템플릿과 무관하게 항상 적용되므로 이 템플릿 전환 대상이 아니다(chat-goal-prompt.md
- * §8, D-19 — 셋 다 발행 필수도 아니다). */
+ * 규칙·사용자의 역할과 목표·전개 예시(고급설정)는 프롬프트
+ * L1 작품 층에서 템플릿과 무관하게 항상 적용되므로 이 템플릿 전환 대상이 아니다
+ * (셋 다 발행 필수도 아니다). */
 export function SettingTab() {
   const form = useFormContext<StoryBuilderFormValues>();
 

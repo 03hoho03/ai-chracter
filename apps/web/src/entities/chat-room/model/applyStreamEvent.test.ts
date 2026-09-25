@@ -77,7 +77,7 @@ describe("applyStreamEvent", () => {
     });
   });
 
-  it("endingReached normalizes a null epilogue to undefined (TS-08)", () => {
+  it("endingReached normalizes a null epilogue to undefined", () => {
     applyStreamEvent(queryClient, ROOM_ID, { type: "endingReached", endingId: "ending-1", epilogue: null });
 
     expect(
@@ -85,7 +85,7 @@ describe("applyStreamEvent", () => {
     ).toBeUndefined();
   });
 
-  // 대조군 — kind 미지정(= newTurn)은 꼬리가 assistant여도 걷어내지 않는다(RT-1 회귀 방어).
+  // 대조군 — kind 미지정(= newTurn)은 꼬리가 assistant여도 걷어내지 않는다(역할 가드를 재생성에만 거는지의 회귀 방어).
   it("done appends the final message and increments turnCount by default (kind: newTurn)", () => {
     const finalMessage: ChatMessage = { id: "m2", role: "assistant", content: "다음 대사", createdAt: "2026-07-08T00:01:00Z" };
 
@@ -96,7 +96,7 @@ describe("applyStreamEvent", () => {
     expect(next?.turnCount).toBe(4);
   });
 
-  // regenerate-ux-techspec.md RT-1 — turnCount는 3(서버도 안 올린다, chat/router.py:1121, 테스트
+  // turnCount는 3(서버도 안 올린다, chat/router.py:1121, 테스트
   // test_..._without_new_turn).
   it("done on regenerate drops the trailing assistant and does NOT increment turnCount", () => {
     const finalMessage: ChatMessage = { id: "m1-regen", role: "assistant", content: "다시 생성됨", createdAt: "2026-07-08T00:02:00Z" };
@@ -108,7 +108,7 @@ describe("applyStreamEvent", () => {
     expect(next?.turnCount).toBe(3);
   });
 
-  // regenerate-ux-goal-prompt.md RU-11(1) / regenerate-ux-techspec.md RT-1 — 역할 가드는
+  // 역할 가드는
   // kind === "regenerate"일 때만 걸고, 마지막이 assistant일 때만 걷어낸다.
   it("done on regenerate drops a trailing assistant revived by a mid-stream refetch, but not a trailing user message", () => {
     const u1: ChatMessage = { id: "u1", role: "user", content: "다시 해줘", createdAt: "2026-07-08T00:00:00Z" };

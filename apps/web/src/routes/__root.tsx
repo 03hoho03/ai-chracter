@@ -25,7 +25,7 @@ export type RouterContext = {
 
 export const Route = createRootRouteWithContext<RouterContext>()({
   component: RootComponent,
-  // O-10: 라우터의 `defaultOnCatch`(router.tsx)만 설정하면 절대 호출되지 않는다 —
+  // 라우터의 `defaultOnCatch`(router.tsx)만 설정하면 절대 호출되지 않는다 —
   // `Match.js`의 `MatchView`가 `route.options.errorComponent ?? router.options.defaultErrorComponent`가
   // 없으면 `CatchBoundary` 대신 `SafeFragment`를 쓰는데, `SafeFragment`는 `children` 외
   // props를 전부 버려서 `onCatch`가 붙을 자리 자체가 없다(설치된 소스로 확인). 그래서 여기
@@ -38,7 +38,7 @@ export const Route = createRootRouteWithContext<RouterContext>()({
 });
 
 function RootComponent() {
-  // builder-preview-validation(피드백 2) — 빌더 라우트(`/builder`, `/builder/$type/$draftId`)는 전역
+  // 빌더 라우트(`/builder`, `/builder/$type/$draftId`)는 전역
   // Header 대신 전용 상단바(`features/build-common`의 `BuilderTopBar`)를 쓴다. 두 상단바가 같은 56px
   // (`h-14`) 자리를 차지하므로 헤더를 빼도 `calc(100dvh-3.5rem)` 높이 계산은 그대로다(DESIGN.md
   // §Navigation). 판정은 경로 매칭 대신 pathname 접두사로 한다 — `useRouterState`가 이미 헤더

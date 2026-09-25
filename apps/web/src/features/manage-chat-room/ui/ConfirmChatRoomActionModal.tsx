@@ -17,7 +17,7 @@ type ConfirmChatRoomActionModalProps = {
   mutationFn: MutationFn<void>;
 };
 
-/** techspec-overview.md §9, US-048 CLAUDE.md 메모가 예고한 "대화방 초기화·삭제 확인" react-call
+/** "대화방 초기화·삭제 확인" react-call
  * 사례 — 둘 다 입력 없이 확인/취소만 있는 동일 구조라 하나의 컴포넌트로 공유한다. ReportContentModal과
  * 동일하게 실제 API 호출/토스트는 호출부의 mutationFn이 담당하고, 이 컴포넌트는 확인 UI + 제출 상태
  * 표시만 책임진다. */

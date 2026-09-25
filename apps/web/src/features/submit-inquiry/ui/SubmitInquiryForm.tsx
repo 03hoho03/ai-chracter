@@ -236,8 +236,7 @@ function InquiryAttachmentField({
       )}
 
       {/* 직접 비교 대상이 없어 같은 폼의 SelectTrigger(default=36px)에 맞춘다.
-          숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다
-          (design-system-progress.md P-2-9). */}
+          숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다. */}
       <Label
         htmlFor="submit-inquiry-attachment"
         className={cn(

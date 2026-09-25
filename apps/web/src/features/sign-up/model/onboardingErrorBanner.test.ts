@@ -41,14 +41,14 @@ describe("getOnboardingErrorBanner", () => {
   });
 
   // 온보딩 라우트는 지금 재동의 게이트를 거치지 않지만, 403을 status만으로 정지로 읽는 회귀는
-  // 비밀번호 변경 폼과 같은 오분류다(review-S7 ⚪-1).
+  // 비밀번호 변경 폼과 같은 오분류다.
   it("정지가 아닌 403(재동의 게이트)을 정지로 오분류하지 않는다", () => {
     const error = apiError(403, { code: "LEGAL_RECONSENT_REQUIRED" });
 
     expect(getOnboardingErrorBanner(error)).toBeUndefined();
   });
 
-  it.each([400, 409, 403])("%d 문구는 '잠시 후'라고 말하지 않는다 — 기다려도 풀리지 않는 실패다(J-1)", (status) => {
+  it.each([400, 409, 403])("%d 문구는 '잠시 후'라고 말하지 않는다 — 기다려도 풀리지 않는 실패다", (status) => {
     const banner = getOnboardingErrorBanner(apiError(status, "Account suspended"));
 
     expect(banner).toBeDefined();
