@@ -24,7 +24,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 | 오래 걸리는 백그라운드 잡 | `images/jobs.py`의 `enqueue_generation` + 같은 세션 팩토리 |
 | Redis read-modify-write | pipeline + `WATCH`/`MULTI`/`EXEC` (단순 GET-then-SET 금지) |
 | 자산 → 렌더링 URL | `generate_presigned_get_url` + `run_in_threadpool` |
-| 실패를 서버 로그에 남기기 | `logger.warning()` 이상. uvicorn이 root logger에 핸들러를 안 붙여 `info`/`debug`는 사라지지만 `logging.lastResort`가 WARNING 이상을 stderr로 내보낸다(`chat/router.py:100-102` 선례) — `print`가 아니다 |
+| 실패를 서버 로그에 남기기 | `logger.warning()` 이상. uvicorn이 root logger에 핸들러를 안 붙여 `info`/`debug`는 사라지지만 `logging.lastResort`가 WARNING 이상을 stderr로 내보낸다(`chat/router.py`의 `_stream_new_turn` 등 `logger.warning` 선례) — `print`가 아니다 |
 | 테스트 클라이언트 | `db_client` / `api_client` 픽스처 (`TestClient` 금지) |
 | S3 흉내 | `moto.server.ThreadedMotoServer` (`mock_aws` 금지) |
 
@@ -77,7 +77,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 - SDK는 **`google-genai`**(`from google import genai`)이지 deprecated된 `google-generativeai`가 아니다.
 - 서비스 로직은 구체 클래스가 아니라 `dependencies.py`의 `get_llm_client()`를 통해서만 클라이언트를 받는다. 네트워크/타임아웃 실패는 `google.genai.errors.APIError`가 아니라 **`httpx.HTTPError`로 온다** — 두 예외 계열을 함께 잡아야 하고, **`generate`/`generate_structured`가 같은 `except` 튜플을 쓰는 대칭을 유지할 것**(한쪽만 좁으면 위 §SSE의 폭발 반경이 그대로 열린다).
-- **API를 거치는 LLM 동작의 모델은 실행 중인 서버 프로세스의 env로 정해진다** — CLI처럼 `GEMINI_MODEL_NAME=… uv run …`으로 우회할 수 없어 쿼터가 마르면 서버를 재기동해야 한다. `LLMClientError`에 별도 핸들러가 없어 **429가 HTTP 500으로 나가므로**, 발행·채팅이 500이면 코드보다 로그의 `RESOURCE_EXHAUSTED`를 먼저 볼 것.
+- **API를 거치는 LLM 동작의 모델은 실행 중인 서버 프로세스의 env로 정해진다** — CLI처럼 `GEMINI_MODEL_NAME=… uv run …`으로 우회할 수 없어 쿼터가 마르면 서버를 재기동해야 한다. `LLMClientError`에 전역 핸들러가 없어 **발행 심사(`content/router.py`)에서는 429가 HTTP 500으로 나가므로**(채팅은 SSE 안에서 잡아 `ChatErrorEvent`로 내고 클로버를 환불한다), 발행이 500이면 코드보다 로그의 `RESOURCE_EXHAUSTED`를 먼저 볼 것.
 - **Gemini 무료 티어는 모델당 하루 20요청**이고 태평양 자정에 리셋된다(429의 `retryDelay: 30s`는 분당 제한용 상용구라 일일 쿼터엔 무의미). **쿼터는 모델 단위**라 같은 모델에 프로세스를 늘려도 예산이 안 늘고, `GEMINI_MODEL_NAME`을 잔량 있는 모델로 바꾸면 그대로 늘어난다. 스토리 챗 1턴 = 생성 + 스탯판단 **2요청**(+게이트를 넘긴 엔딩 수만큼) — 수동 검증 전에 예산부터 계산할 것.
 
 ## 백그라운드 · Redis
@@ -175,7 +175,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 테스트 DB(`ai_character_chat_test`)가 **공유 싱글턴**이고 스위트가 teardown에서 `alembic downgrade base`로 테이블을 전부 지운다. 두 프로세스가 겹치면 한쪽이 상대의 스키마를 지워 대량 실패가 난다 — **회귀로 오독하기 쉽다.**
 
-- **`pgrep -f pytest`만으로는 부족하다.** 잡힌 프로세스의 실행 경로를 `ps -o command= -p <pid>`로 봐야 한다. `.claude/worktrees/` 아래에서 도는 pytest는 그 워크트리 자신의 `.env`에 있는 `TEST_DATABASE_URL`/`TEST_REDIS_URL`을 쓰므로 **다른 자원이라 기다릴 필요가 없다.** 같은 `apps/api/.venv`에서 도는 것만 진짜 충돌이다.
+- **`pgrep -f pytest`만으로는 부족하다.** 잡힌 프로세스의 실행 경로를 `ps -o command= -p <pid>`로 봐야 한다. `.claude/worktrees/` 아래에서 도는 pytest라도 **다른 자원이라고 단정하지 말 것** — `conftest.py`는 `os.environ`의 `TEST_DATABASE_URL`/`TEST_REDIS_URL`만 읽으므로, 워크트리 `.env`에 값이 있어도 `--env-file .env`나 `export` 없이 돌리면 기본 공유 DB(`ai_character_chat_test`)/Redis 1번을 쓴다(DEV.md). 그 프로세스의 환경에 다른 값이 들어간 것만 기다릴 필요가 없다.
 - 저장소를 여러 세션이 공유하니 **자기 실행도 `TEST_DATABASE_URL`/`TEST_REDIS_URL`로 격리**해서 다른 세션의 실행과 부딪히지 않게 할 것.
 
 ## 테스트 인프라
