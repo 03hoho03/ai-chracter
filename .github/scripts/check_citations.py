@@ -8,7 +8,8 @@
 잡는 것 (추가된 줄만, `--all` 이면 추적 파일 전체):
   (a) 추적되지 않는 `*.md` 이름 — 모든 파일의 줄 전체(테스트 이름·describe 문자열도 포함)
       `tasks/<무언가>` 경로 — 코드는 주석 안만, 문서는 줄 전체. 디렉터리 이름만 말하는 `tasks/` 는 인용이 아니다.
-  (b) 결정 번호 패턴과 `§숫자` — 코드 파일의 주석·docstring 안만. 문자열 리터럴·식별자는 보지 않는다.
+  (b) 결정 번호 패턴·수용 기준 번호(`AC3`·`AC 3`)와 `§숫자` — 코드 파일의 주석·docstring 안만.
+      문자열 리터럴·식별자는 보지 않는다.
 억제: 같은 줄에 `cite-ok` 를 적는다(그 줄이 왜 예외인지 옆에 한 마디 남길 것).
       줄에 주석을 달 수 없는 예외는 `SCHEMA_DOCSTRING_CLASSES`·`FROZEN_LINES` 에 등록한다.
 
@@ -41,6 +42,9 @@ SKIP_PATH = re.compile(
 # 앞뒤 경계는 ASCII 로만 건다 — `\b` 는 한글도 단어 문자로 봐서 `CL-12의` 를 놓친다.
 DECISION_ID = re.compile(r"(?<![A-Za-z0-9_.\-/])([A-Z][A-Z0-9]{0,4})-(\d+)[a-z]?(?![A-Za-z0-9_])")
 SECTION_NO = re.compile(r"§\s?\d")
+# 수용 기준 번호: `AC3`·`AC 3`. 하이픈형 `AC-3` 은 위 결정 번호 패턴이 이미 잡으므로 여기서는 뺀다.
+# 경계는 결정 번호와 같다 — `AC3의` 는 잡고, `AC_POWER`·`ACME` 는 `AC` 뒤에 숫자가 오지 않아 안 잡힌다.
+ACCEPTANCE_ID = re.compile(r"(?<![A-Za-z0-9_.\-/])AC ?\d+[a-z]?(?![A-Za-z0-9_])")
 # 결정 번호처럼 생긴 기술 용어. 여기 없으면 그 줄에 `cite-ok`.
 # 개인 FE 컨벤션 플러그인의 규칙 코드(FSD·TS·IMP·COMP·FORM·NAME·STATE·STYLE)는 일부러 넣지 않는다 —
 # 그 규칙 문서도 저장소 밖에 있어서 결정 번호와 똑같이 끊긴 인용이다.
@@ -314,6 +318,9 @@ def id_hits(text: str, allow_rule_code: bool) -> list[str]:
             continue
         if not inside(m.start(), urls):
             hits.append(f"결정 번호 `{m.group(0)}`")
+    for m in ACCEPTANCE_ID.finditer(text):
+        if not inside(m.start(), urls):
+            hits.append(f"수용 기준 번호 `{m.group(0)}`")
     if SECTION_NO.search(text):
         hits.append("절 번호 `§n`(추적 문서는 절 제목으로)")
     return hits

@@ -119,7 +119,7 @@ def _assert_no_local_variables(event: Event, *leaked_values: str) -> None:
 # ---- 옵션 값 자체 — 회귀 방지 ----------------------------------------------------------
 
 
-def test_build_sentry_options_matches_techspec_values() -> None:
+def test_build_sentry_options_matches_expected_values() -> None:
     options = build_sentry_options()
     assert options["max_request_body_size"] == "never"
     assert options["include_local_variables"] is False

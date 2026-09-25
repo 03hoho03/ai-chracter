@@ -16,7 +16,7 @@ class ChatMessageRole(str, enum.Enum):
 
 class ChatRoom(Base):
     """Pinned to the content_version it was created against
-    ("이미 생성된 대화방은 생성 시점 버전에 고정")."""
+    (기획 요구: "이미 생성된 대화방은 생성 시점 버전에 고정")."""
 
     __tablename__ = "chat_rooms"
 

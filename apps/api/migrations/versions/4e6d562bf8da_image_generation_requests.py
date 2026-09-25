@@ -15,7 +15,7 @@ Create Date: 2026-09-16 19:05:21.733216
 
 `assets.request_id`는 nullable이다 — 이 기능 이전에 생성된 자산은 요청 행이 없다.
 
-이 리비전은 스키마만이다. 요청 행을 쓰는 라우터·비즈니스 로직은 후속 단계에서 붙는다.
+이 리비전은 스키마만이다. 요청 행을 쓰는 라우터·비즈니스 로직은 별도 변경에서 붙는다.
 
 - **`op.create_foreign_key`에 autogenerate가 이름을 `None`으로 냈다** — 그대로 두면
   downgrade의 `op.drop_constraint(None, ...)`가 실제 제약 이름을 모른 채 호출돼

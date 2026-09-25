@@ -478,8 +478,8 @@ async def unsuspend_user(
     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은
     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
 
-    **해제 알림은 보내지 않는다.** 경고·정지와 달리 해제에는 알림 발송을
-    요구하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+    **해제 알림은 보내지 않는다.** 요구사항이 경고·정지와 달리 해제에는 알림 발송을
+    요구하지 않고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
 
@@ -651,7 +651,7 @@ async def list_user_clover_ledger(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminCloverLedgerListResponse:
-    """원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+    """어드민용 원장 조회다 — 임의 유저를 본다(유저 본인용은 `GET /me/clover/ledger`).
 
     🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
     페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이

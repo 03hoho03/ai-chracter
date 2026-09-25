@@ -207,7 +207,7 @@ async def claim_clover_attendance(
                 amount=ATTENDANCE_GRANT_AMOUNT,
                 kind="attendance_grant",
                 idempotency_key=f"attendance:{user_id}:{today}",
-                # 출석 지급도 만료가 붙는다(다른 지급과 같은
+                # 출석 지급도 만료가 붙는다(미션 지급과 같은
                 # 규칙: 지급일 KST 자정 + 8일).
                 expires_at=earned_lot_expiry(now),
             )
@@ -302,7 +302,7 @@ async def claim_clover_mission(
                 amount=MISSION_REWARDS[key],
                 kind="mission_grant",
                 idempotency_key=mission_idempotency_key(user_id=user_id, key=key),
-                # 미션 지급도 만료가 붙는다(다른 지급과 같은
+                # 미션 지급도 만료가 붙는다(출석 지급과 같은
                 # 규칙: 지급일 KST 자정 + 8일).
                 expires_at=earned_lot_expiry(now),
             )

@@ -121,7 +121,7 @@ _LANES: tuple[str, ...] = ("story", "character")
 
 _NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"
 
-# 확정 문안. `{user_persona}`가 빠지면 이 섹션은 절대
+# 대화 프로필 슬롯(user_persona)의 확정 문안. `{user_persona}`가 빠지면 이 섹션은 절대
 # 드롭되지 않는다(위 운영 메모).
 PERSONA_BODY = (
     "[사용자 정보]\n"

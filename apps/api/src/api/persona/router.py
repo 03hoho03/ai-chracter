@@ -136,7 +136,8 @@ async def delete_persona(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    """지우면 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
+    """프로필을 지운다. 이 프로필을 참조하던 방은 "선택 없음"이 되고, 기본 프로필이었으면
+    기본도 비운다.
     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다."""
     default_persona_id = await lock_user_default_persona(db, user_id)
     persona = await get_owned_persona(db, persona_id, user_id)

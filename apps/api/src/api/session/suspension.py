@@ -39,8 +39,8 @@ async def rebuild_suspended_user_markers(session_factory: async_sessionmaker[Asy
     **마커를 지우지는 않는다(추가만).** DB에서는 해제됐는데 마커가 남는 경우는 정지·해제
     트랜잭션의 DB 커밋과 Redis SET/DEL 사이 크래시뿐이고, 그때는 관리자가 해제를 한 번 더
     누르면 낫는다. 전체 동기화(마커 삭제 포함)를 하려면 Redis SCAN으로 기존 마커 전체를
-    훑어야 하는데, 그건 "SCAN 전수 순회는 O(n)이라 습관으로 삼을 게
-    못 된다"며 배제한 것과 같은 종류의 경로라 여기서도 하지 않는다. 정지 유저 수가 적어
+    훑어야 하는데, 그건 SCAN 전수 순회를 O(n)이라 습관으로 삼지 않기로 한 것과 같은
+    종류의 경로라 여기서도 하지 않는다. 정지 유저 수가 적어
     이 비용은 사실상 0이다.
     """
     async with session_factory() as session:

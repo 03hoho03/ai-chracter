@@ -53,8 +53,8 @@ async def list_admin_notices(
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminNoticeListResponse:
-    """어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
-    (`moderation/router.py:216`)와 같은 모양. 유저용 `/notices`가
+    """어드민 목록은 미게시 포함, offset 페이징 — `moderation/router.py`의
+    `list_admin_reports`와 같은 모양. 유저용 `/notices`가
     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다."""
     total_count = await db.scalar(select(func.count()).select_from(Notice)) or 0

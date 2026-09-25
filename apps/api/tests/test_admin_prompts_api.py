@@ -991,7 +991,7 @@ async def test_publish_rejects_priority_tail_not_last_r7(db_session: AsyncSessio
 async def test_publish_rejects_order_collision_across_scopes_r8_not_r6(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """가장 중요한 테스트다. R-6의 그룹
+    """R-8 절에서 가장 중요한 테스트다. R-6의 그룹
     키에 `scope`가 들어 있어 `(system, both, '', order)`와 `(system, story, '', order)`를
     다른 그룹으로 본다 — 그래서 두 행의 order를 같게 만들어도 R-6은 통과한다. 하지만 story
     scope로 렌더링할 때는 둘 다 선택돼 order가 실제로 충돌한다 — R-8만 그걸 잡아야 한다.

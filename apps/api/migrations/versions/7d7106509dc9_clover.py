@@ -32,7 +32,7 @@ enum이 아니라 `Text`다 — 값이 늘 때 마이그레이션 없이 넓히�
   `4e6d562bf8da`의 `fk_assets_request_id`(별도 `create_foreign_key`라 downgrade가 이름을
   부른다)와 달리 downgrade 때문이 아니라 **이름 규약 일관성과 제약 조회 가독성**을 위해서다.
 
-이 리비전은 스키마만이다. 원장을 쓰는 서비스·게이트·라우터는 후속 단계에서 붙는다.
+이 리비전은 스키마만이다. 원장을 쓰는 서비스·게이트·라우터는 별도 변경에서 붙는다.
 
 """
 from typing import Union

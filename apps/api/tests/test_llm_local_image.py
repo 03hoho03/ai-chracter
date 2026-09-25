@@ -260,18 +260,9 @@ async def test_422_list_detail_with_long_input_field_is_capped_in_error_message(
 async def test_422_with_syntax_reason_raises_input_error_syntax(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """집 PC에 `reason: "syntax"` 추가를 요구했으나
-    **아직 회신 전이다.** 회신 전까지 keyless `{"detail": "invalid prompt syntax"}`는
-    여전히 일반 실패로 남는다 — `test_422_missing_reason_collapses_to_plain_llm_client_error`가
-    이미 그 경로(reason 키 없음 → 일반 실패)를 고정하므로 여기서 다시 쓰지 않는다.
-
-    이 테스트는 회신 후 화이트리스트가 3값(`prompt`/`image`/`syntax`)으로 확장됐을 때의
-    계약을 **미리** 고정한다 — 구현이 그 전제로 짜이기 때문이다.
-
-    구현자 요구사항: `api.llm.local_image.LocalImageInputError`를 `LocalImageBlockedError`와
-    같은 모양으로 신설한다 — `__init__(self, *, input_error: str) -> None`,
-    속성 `.input_error`(`input_error` 축, 값 `too_long`/`syntax`)."""
-    from api.llm.local_image import LocalImageInputError  # 미구현 심볼 — 로컬 import
+    """집 PC가 `reason: "syntax"`를 추가했다. 이 테스트는 화이트리스트 3값(`prompt`/`image`/`syntax`)
+    계약을 고정한다."""
+    from api.llm.local_image import LocalImageInputError
 
     def handler(_request: httpx.Request) -> httpx.Response:
         return httpx.Response(422, json={"detail": "invalid prompt syntax", "reason": "syntax"})

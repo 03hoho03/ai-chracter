@@ -80,7 +80,7 @@ def test_burned_amount_reads_old_remaining_not_the_post_update_value(
     값)이면 `UPDATE ... SET remaining = 0`이 이미 적용된 뒤라 소멸량이 **항상 0**으로 찍힌다.
 
     깨지는 시나리오: `OLD.remaining`을 `remaining`으로 되돌리면 이 단언이 깨진다 — 정확히
-    이전 스케치에 있던 버그다.
+    설계 초안에 있던 버그다.
     """
     captured: dict[str, str] = {}
 
@@ -106,7 +106,7 @@ def test_final_insert_reads_balance_after_from_the_deducted_cte_not_a_users_rejo
     `RETURNING`에서 갱신 후 잔액(`balance_after`)을 직접 받아야 한다.
 
     깨지는 시나리오: 마지막 `INSERT ... SELECT`가 `deducted`가 아니라 `users`를 다시 JOIN하면
-    `balance_after`가 차감 전 값이 된다 — 이전 스케치에 있던 두 번째 버그다.
+    `balance_after`가 차감 전 값이 된다 — 설계 초안에 있던 두 번째 버그다.
     """
     captured: dict[str, str] = {}
 

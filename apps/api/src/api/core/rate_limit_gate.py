@@ -374,7 +374,7 @@ async def enforce_image_rate_limit(
     순서는 **면제 → 토큰**이다. 면제 계정은 토큰 버킷만 건너뛰고 큐(전역·유저별
     1칸)는 그대로 받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량의 분배라서 면제 대상에게
     열어 줄 이유가 없다. 큐 판정은 라우트 본문의 `try_admit`이 계속 맡는다(검사+증가가 한
-    동기 블록이어야 하는 P2-R 불변식이 그쪽에 있다).
+    동기 블록이어야 하는 불변식이 그쪽(`local_image.try_admit`)에 있다).
     """
     try:
         if await is_rate_limit_exempt(user_id, db):

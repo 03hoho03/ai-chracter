@@ -228,7 +228,7 @@ async def _active_prompt_set_dependency(
 
 async def _room_siblings(db: AsyncSession, user_id: uuid.UUID, content_id: uuid.UUID) -> list[ChatRoom]:
     """All of this user's rooms for one content, oldest first — the creation order
-    that "대화 N" auto-numbering (AC 3) is based on."""
+    that "대화 N" auto-numbering is based on."""
     return list(
         (
             await db.scalars(
@@ -1697,7 +1697,7 @@ async def pin_latest_version(
 ) -> ChatRoomResponse:
     """`messages`는 그대로 두고 방이 고정한
     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상)."""
+    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상)."""
     room = await _get_owned_room(db, room_id, user_id)
     content = await db.get(Content, room.content_id)
     assert content is not None
@@ -1905,7 +1905,7 @@ def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayloa
     chat room, computed directly from the unsaved draft payload instead of DB rows (there's
     no persisted `Content`/`StartingSetup` to query yet).
     A story with multiple starting setups previews its first one — the payload carries no
-    startingSetupId to choose another (AC only asks for the formToServer payload as-is)."""
+    startingSetupId to choose another (the requirement only asks for the formToServer payload as-is)."""
     now = datetime.now(UTC)
     if isinstance(payload, CharacterDraftPayload):
         messages = [

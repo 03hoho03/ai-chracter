@@ -368,8 +368,8 @@ export interface paths {
          *     그 컬럼이 nullable로 바뀌어 그 근거가 사라졌다. 대신 작품 직접 조치 `lift-restriction`과 같은
          *     규칙으로 `admin_comment`를 필수로 받는다 — 비어 있으면 422.
          *
-         *     **해제 알림은 보내지 않는다.** 경고·정지와 달리 해제에는 알림 발송을
-         *     요구하지 않았고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
+         *     **해제 알림은 보내지 않는다.** 요구사항이 경고·정지와 달리 해제에는 알림 발송을
+         *     요구하지 않고, 정지와 달리 해제는 사용자가 다음 로그인에서 접근 복구 자체로
          *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
          *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
          *
@@ -469,7 +469,7 @@ export interface paths {
         };
         /**
          * List User Clover Ledger
-         * @description 원장 조회는 어드민만이다(유저용 "사용 내역" 화면은 범위 밖).
+         * @description 어드민용 원장 조회다 — 임의 유저를 본다(유저 본인용은 `GET /me/clover/ledger`).
          *
          *     🔴 정렬 2차 키 `id`가 필수다. 오프셋 페이지네이션에서 동률 정렬이 불안정하면 같은 행이 두
          *     페이지에 나오거나 빠지는데, **원장은 한 트랜잭션에 여러 행이 들어갈 수 있어**(차감+환불이
@@ -587,8 +587,8 @@ export interface paths {
         };
         /**
          * List Admin Notices
-         * @description 어드민 목록은 미게시 포함, offset 페이징 — `list_admin_reports`
-         *     (`moderation/router.py:216`)와 같은 모양. 유저용 `/notices`가
+         * @description 어드민 목록은 미게시 포함, offset 페이징 — `moderation/router.py`의
+         *     `list_admin_reports`와 같은 모양. 유저용 `/notices`가
          *     커서도 페이징도 없는 것과의 비대칭은 의도된 것이다 — 어드민 검토 작업은 특정
          *     페이지로 바로 건너뛰는 게 유리하다는 그 docstring의 근거를 그대로 따른다.
          */
@@ -1353,8 +1353,8 @@ export interface paths {
          *
          *     **페이징하지 않는다** — 항목이 제목+날짜뿐이라 행당 수십 바이트라 커서
          *     인코딩·무한스크롤이 불필요하다. **전환 조건**: 게시된 공지가 200건을 넘으면 커서
-         *     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`(:1693/
-         *     :1697)를 그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지
+         *     페이징으로 바꾼다. `content/router.py`의 `_encode_cursor`/`_decode_cursor`를
+         *     그대로 쓰면 되고, 응답에 `nextCursor`를 더하는 것은 기존 소비처를 깨지
          *     않는 추가라 지금 미리 만들어 둘 이유가 없다.
          */
         get: operations["list_notices_notices_get"];
@@ -1972,7 +1972,7 @@ export interface paths {
          * @description `accepted` on a `moderation-action` appeal
          *     reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
          *     that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
-         *     persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
+         *     persisted content-side state to revert, so `accepted` there is a no-op beyond the
          *     appeal's own status/verdict.
          */
         post: operations["resolve_appeal_admin_appeals__appeal_id__resolve_post"];
@@ -2181,7 +2181,7 @@ export interface paths {
          * Pin Latest Version
          * @description `messages`는 그대로 두고 방이 고정한
          *     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(AC 3, 항상 최신 1건만 대상).
+         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
          */
         post: operations["pin_latest_version_chat_rooms__room_id__pin_latest_version_post"];
         delete?: never;
@@ -2470,7 +2470,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Persona
-         * @description 지우면 참조하던 방은 "선택 없음", 기본이었으면 기본도 없음.
+         * @description 프로필을 지운다. 이 프로필을 참조하던 방은 "선택 없음"이 되고, 기본 프로필이었으면
+         *     기본도 비운다.
          *     FK에 `ondelete`가 없으므로 참조를 먼저 끊고 flush한 뒤 지운다.
          */
         delete: operations["delete_persona_me_personas__persona_id__delete"];

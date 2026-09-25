@@ -389,7 +389,7 @@ def _development_examples_prompt_set_and_sections() -> tuple[PromptSet, list[Pro
 
 
 def test_migrated_development_example_pairs_reconstruct_to_the_original_free_text() -> None:
-    """가장 중요한 제약: 마이그레이션(리비전 ①)이 옛 자유 텍스트
+    """개발 예시 분리 마이그레이션의 핵심 제약: 옛 자유 텍스트
     `development_example`을 쪼갠 쌍을, `build_story_generation_prompt`가 다시 조립했을 때
     원래 문자열이 나와야 한다 — 그래야 기존 시드 30개의 프롬프트가 안 바뀐다. 실측(발행 30개
     중 21개)으로 확인된 흔한 형식(단일 개행, `서술자:` 라벨)으로 이 성질이 성립함을 마이그레이션

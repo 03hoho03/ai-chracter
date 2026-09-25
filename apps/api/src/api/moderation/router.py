@@ -488,7 +488,7 @@ async def resolve_appeal(
     """`accepted` on a `moderation-action` appeal
     reuses the exact lift-restriction path (`upgrade_content_chat_rooms_to_latest_version`)
     that `act_on_report` exports for this purpose. `publish-rejection` appeals have no
-    persisted content-side state to revert (AC4), so `accepted` there is a no-op beyond the
+    persisted content-side state to revert, so `accepted` there is a no-op beyond the
     appeal's own status/verdict."""
     appeal = await db.get(Appeal, appeal_id)
     if appeal is None:

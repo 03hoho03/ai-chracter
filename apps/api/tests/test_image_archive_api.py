@@ -313,7 +313,7 @@ async def test_image_archive_skips_slot_with_no_uploaded_image(
 async def test_image_archive_exposure_accumulates_across_chat_rooms_not_scoped_to_one_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """AC3: 노출 기록은 방 단위가 아니라 사용자+캐릭터 단위로 누적된다 — 어떤 대화방에서
+    """노출 기록은 방 단위가 아니라 사용자+캐릭터 단위로 누적된다 — 어떤 대화방에서
     기록됐는지와 무관하게 (user_id, content_id, image_entity_id) 존재만으로 판정해야 하므로,
     특정 chat_room을 전혀 참조하지 않고도 exposed=True가 나와야 한다."""
     user = _make_user()

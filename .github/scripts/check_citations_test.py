@@ -74,6 +74,14 @@ CASES = [
         '_NOTE = "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-14)"\n',
         1,
     ),
+    (
+        "F28 수용 기준 번호(붙임·띄움·하이픈) + 조사",
+        "v.py",
+        "",
+        'def f():\n    """AC3의 조건과 AC 3, AC4a."""\n# AC-3 대로\n',
+        4,
+    ),
+    ("F29 ts 주석의 수용 기준 번호", "w.ts", "", "// (AC 3, 항상 최신)\nexport const w = 1;\n", 1),
     # ── 통과해야 하는 것 ──
     ("P1 py 문자열 식별자", "p1.py", "", 'RULE = "R-1"\nraise E(code="RL-3")\n', 0),
     ("P2 ts 문자열 식별자", "p2.ts", "", 'const rule = "R-8";\n', 0),
@@ -121,6 +129,13 @@ CASES = [
         "apps/api/tests/test_persona_prompt_slot_migration.py",
         "",
         'def t(active):\n    assert active.note == "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"\n',
+        0,
+    ),
+    (
+        "P25 수용 기준 번호처럼 생긴 식별자·문자열",
+        "p25.py",
+        "",
+        '# AC_POWER 와 ACME, AC 전원, ACK3\nK = "AC3"\nmsg = f"AC 4 {x}"\n',
         0,
     ),
 ]

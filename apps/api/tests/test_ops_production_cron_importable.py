@@ -170,7 +170,7 @@ def test_restore_db_top_level_imports_are_satisfied_by_production_cron_environme
     assert not disallowed, (
         f"ops/restore_db.py 최상단 import {disallowed}는 복원 절차가 쓰는 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 복원 "
-        "시도가 import 시점에 죽는다(MT-9)."
+        "시도가 import 시점에 죽는다."
     )
 
 
@@ -182,7 +182,7 @@ def test_check_resources_top_level_imports_are_satisfied_by_production_cron_envi
     assert not disallowed, (
         f"ops/check_resources.py 최상단 import {disallowed}는 리소스 감시 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 5분마다 "
-        "도는 크론이 import 시점에 죽는다(MT-13)."
+        "도는 크론이 import 시점에 죽는다."
     )
 
 
@@ -194,7 +194,7 @@ def test_vacuum_bugsink_top_level_imports_are_satisfied_by_production_cron_envir
     assert not disallowed, (
         f"ops/vacuum_bugsink.py 최상단 import {disallowed}는 Bugsink vacuum 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
-        "크론이 import 시점에 죽어 '30일 보관 후 파기' 약속이 조용히 깨진다(MT-16)."
+        "크론이 import 시점에 죽어 '30일 보관 후 파기' 약속이 조용히 깨진다."
     )
 
 
@@ -206,7 +206,7 @@ def test_purge_image_requests_top_level_imports_are_satisfied_by_production_cron
     assert not disallowed, (
         f"ops/purge_image_requests.py 최상단 import {disallowed}는 이미지 요청 파기 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
-        "크론이 import 시점에 죽어 IM-7a의 90일 파기 약속이 조용히 깨진다."
+        "크론이 import 시점에 죽어 이미지 생성 요청의 90일 파기 약속이 조용히 깨진다."
     )
 
 
