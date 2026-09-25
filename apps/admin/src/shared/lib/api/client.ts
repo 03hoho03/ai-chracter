@@ -7,7 +7,7 @@ const baseURL = apiBaseUrl;
 
 /**
  * 인증은 httpOnly 세션 쿠키로 처리되어 브라우저가 요청마다 자동으로 쿠키를
- * 첨부하므로(techspec-overview.md §6.1), 별도의 요청 인터셉터에서 토큰을
+ * 첨부하므로, 별도의 요청 인터셉터에서 토큰을
  * 붙일 필요는 없다 — `withCredentials: true`만으로 인증 로직이 이 인스턴스에 격리된다.
  */
 export const apiClient = axios.create({
@@ -21,7 +21,7 @@ export const apiClient = axios.create({
 /** FastAPI 에러 봉투. `detail`은 셋 중 하나다 — HTTPException의 string, 422 검증 실패의
  * `[{loc, msg, type}]`, 일부 엔드포인트가 쓰는 구조화 dict(예: 429의 retryAfterSeconds).
  *
- * 단언 대신 스키마로 파싱하는 이유(TS-03): 이건 **서버가 주는 외부 데이터**라 모양을 우리가
+ * 단언 대신 스키마로 파싱하는 이유: 이건 **서버가 주는 외부 데이터**라 모양을 우리가
  * 보장할 수 없다. 프록시가 끼워 넣은 HTML 에러 페이지나 형태가 바뀐 응답이 오면 단언은 그걸
  * 통과시켜 `detail.loc?.at(-1)`에서 터지지만, 파싱은 `undefined`로 떨어져 아래 폴백이 받는다. */
 const validationErrorItemSchema = z.object({
@@ -99,7 +99,7 @@ apiClient.interceptors.response.use(
 );
 
 /** 이 인스턴스의 실패는 위 인터셉터가 전부 ApiError로 정규화해 reject하므로, catch한
- * `unknown`은 단언 대신 이 가드로 좁힌다(fe-typescript TS-03). apps/web의 동형 구현이다. */
+ * `unknown`은 단언 대신 이 가드로 좁힌다. apps/web의 동형 구현이다. */
 export function isApiError(error: unknown): error is ApiError {
   return typeof error === "object" && error !== null && "status" in error && "message" in error;
 }

@@ -10,13 +10,13 @@ import { replyInquirySchema, type ReplyInquiryFormValues } from "../model/schema
 
 type InquiryReplyPanelProps = {
   inquiryId: string;
-  /** 이미 답변한 문의면 기존 답변으로 채워진 채 열린다(오타 수정 경로, techspec.md §6-3). */
+  /** 이미 답변한 문의면 기존 답변으로 채워진 채 열린다(오타 수정 경로). */
   initialReplyBody: string | null;
 };
 
 const ERROR_MESSAGE = "답변 등록에 실패했어요. 잠시 후 다시 시도해주세요.";
 
-/** `ReportActionPanel` 관용구. 답변은 일반 텍스트라(D-19) 미리보기가 없다 — `Markdown`을 쓰지 않는다.
+/** `ReportActionPanel` 관용구. 답변은 일반 텍스트라 미리보기가 없다 — `Markdown`을 쓰지 않는다.
  *
  * 빈 답변은 컴포넌트 안 수동 검사가 아니라 zod가 막고 사유를 화면에 남긴다(`apps/web/CLAUDE.md` 폼 규약).
  * 등록 중 비활성은 `disabled`가 아니라 `aria-disabled`다 — `disabled`면 누르는 즉시 브라우저가 blur해

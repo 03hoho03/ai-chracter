@@ -8,7 +8,7 @@ import { adminUserKeys } from "./keys";
 export type AdminCloverLedgerListResponse = components["schemas"]["AdminCloverLedgerListResponse"];
 export type AdminCloverLedgerItem = components["schemas"]["AdminCloverLedgerItem"];
 
-/** GET /admin/users/{id}/clover-ledger — clover-techspec.md §4-5. offset 페이지네이션(20건)이고
+/** GET /admin/users/{id}/clover-ledger — offset 페이지네이션(20건)이고
  * BE가 `(created_at desc, id)`로 동률까지 안정 정렬한다.
  *
  * 🔴 호출부는 **첫 페이지만** 쓴다(사용자 결정 — 전용 목록 페이지는 만들지 않는다). 라우트가

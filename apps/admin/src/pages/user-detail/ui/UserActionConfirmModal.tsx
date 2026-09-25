@@ -48,7 +48,7 @@ const ACTION_TITLE: Record<UserActionType, string> = {
   "clover-revoke": "클로버 회수",
 };
 
-/** BE는 지급·회수를 **부호 있는 `amount` 한 필드**로 받지만(clover-techspec.md §4-2) 화면은
+/** BE는 지급·회수를 **부호 있는 `amount` 한 필드**로 받지만 화면은
  * 둘을 별개 조치로 나눈다 — `rate-limit-exempt-on`/`-off`와 같은 모양이다.
  * 🔴 운영자가 `-`를 손으로 치게 하면 **빠뜨렸을 때 회수가 지급이 되어 돈이 반대로 움직인다.**
  * 여기서 입력은 항상 양수이고 부호는 제출 시점에 이 표가 붙인다. */
@@ -63,7 +63,7 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
 };
 
 /** BE의 `AdminUserCloverRequest.amount` 범위가 `±100,000`이라 양수 입력의 상한도 같다
- * (clover-goal-prompt.md CL-10~CL-12 기준 100,000클로버 = 채팅 10,000턴 = 출석 1,000일치).
+ * (100,000클로버 = 채팅 10,000턴 = 출석 1,000일치).
  * 상한의 목적은 큰 보상을 막는 게 아니라 **자릿수 오입력을 거르는 그물**이고, 더 필요하면
  * 나눠 주는 편이 감사 로그에도 낫다. */
 const CLOVER_AMOUNT_MAX = 100_000;
@@ -115,7 +115,7 @@ type UserActionConfirmModalProps = {
 /** ContentActionConfirmModal과 같은 결 — `warn`/`suspend`는 사유 카테고리가 필수다. `unsuspend`는
  * `Notification`을 만들지 않아 사유 카테고리를 고를 근거가 없다 — 대신 관리자 코멘트가 필수다
  * (비어 있으면 API가 422). 콘텐츠명 정확 입력 같은 강한 확인은 넣지 않는다 — 정지·해제는 멱등이고
- * 가역이다(2단계가 그 확인을 되돌릴 수 없는 삭제에만 썼다). `suspend`는 실제로 이용제한으로 전환될
+ * 가역이다(콘텐츠 조치도 그 확인을 되돌릴 수 없는 삭제에만 쓴다). `suspend`는 실제로 이용제한으로 전환될
  * 작품 개수(상세 응답의 `restrictableContentCount` — 이미 restricted/deleted인 작품은 제외한 값)를
  * 미리 보여주고, 성공 시 응답의 `restrictedContentCount`로 실제 내려간 개수를 toast에 담는다.
  * 두 값은 항상 일치해야 정지 확인의 예고가 사실과 맞는다. */
@@ -168,7 +168,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           const amount = action === "clover-grant" ? cloverAmount : -cloverAmount;
           await adjustCloverMutation.mutateAsync({
             amount,
-            // 🔴 요청마다 새로 만든다(clover-goal-prompt.md CL-8). 같은 어드민이 같은 유저에게
+            // 🔴 요청마다 새로 만든다. 같은 어드민이 같은 유저에게
             // 같은 금액을 의도적으로 두 번 줄 수 있어야 하므로 `(user, 금액)`으로 파생하면 안 된다.
             // 이 모달은 확정 1회당 한 번 제출되므로 여기가 "한 번 누름"의 경계다.
             idempotencyKey: crypto.randomUUID(),

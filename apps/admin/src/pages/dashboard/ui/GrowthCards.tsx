@@ -55,7 +55,7 @@ const CARDS = [
   },
 ] as const satisfies readonly GrowthCard[];
 
-/** 비율 4장. 이 영역만 실패해도 대시보드의 다른 영역은 각자 독립적으로 렌더된다(T-4). */
+/** 비율 4장. 이 영역만 실패해도 대시보드의 다른 영역은 각자 독립적으로 렌더된다. */
 export function GrowthCards() {
   return (
     <section>

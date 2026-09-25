@@ -7,12 +7,12 @@ import { adminUserKeys } from "./keys";
 
 export type AdminUserCloverRequest = components["schemas"]["AdminUserCloverRequest"];
 
-/** POST /admin/users/{id}/clover — 응답 204(본문 없음). clover-techspec.md §4-2:
+/** POST /admin/users/{id}/clover — 응답 204(본문 없음).
  * 지급과 회수를 **부호 있는 `amount` 한 필드**로 받는다(`AdminUserRateLimitExemptRequest`가
  * 켜기/끄기를 `exempt` 한 필드로 받는 것과 같은 관례). 호출부는 지급·회수를 별개 조치로
  * 나눠 보여주고 여기서 부호만 붙인다 — 운영자가 `-`를 손으로 치지 않게 하려는 것이다.
  *
- * 🔴 `idempotencyKey`는 **호출부가 요청마다 새로 만든다**(clover-goal-prompt.md CL-8).
+ * 🔴 `idempotencyKey`는 **호출부가 요청마다 새로 만든다**.
  * 출석처럼 서버가 `(user, 날짜)`로 파생할 수 없다 — 같은 어드민이 같은 유저에게 같은 금액을
  * **의도적으로 두 번** 줄 수 있어야 하기 때문이다. 막으려는 것은 "두 번 주는 것"이 아니라
  * **한 번 누른 것이 두 번 도착하는 것**(더블클릭·네트워크 재시도)이고, 그때 BE가 409를 낸다.

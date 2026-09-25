@@ -1,6 +1,6 @@
 import type { components } from "@ai-character-chat/api-types";
 
-// image-monitoring-goal-prompt.md IM-12 — 상태는 서버가 이름 붙인 컴포넌트 스키마가 없어(쿼리
+// 상태는 서버가 이름 붙인 컴포넌트 스키마가 없어(쿼리
 // 파라미터에만 리터럴로 박혀 있다) 이 파일이 상태 값의 단일 소스다. 스타일은 `ImageStylePreset`
 // 스키마가 있어 그대로 가져온다.
 export type ImageGenerationStatus = "pending" | "succeeded" | "blocked" | "failed";

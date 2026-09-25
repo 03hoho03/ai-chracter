@@ -46,7 +46,7 @@ export function CountCards() {
         <span className="text-sm text-muted-foreground">오늘 메시지</span>
         <span className={NUMBER_CLASS}>{formatCount(countsQuery.data.todayMessages)}</span>
       </div>
-      {/* 처리 대기 신고 카드는 신고 목록으로 가는 진입점이다(goal-prompt 4장 1단계). */}
+      {/* 처리 대기 신고 카드는 신고 목록으로 가는 진입점이다. */}
       <Link
         to="/reports"
         className={cn(

@@ -30,7 +30,7 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 
 - **`dark:` variant 클래스는 제거한다** — 토큰 기반이라 대부분 `.dark` 블록만으로 동작한다. 다크에서 토큰만으로 대비가 안 나오는 경우에만 선별 복원한다.
 - 사용자 노출 텍스트("Close" 등)는 한국어로 교체한다.
-- **상류 기본값이 이 시스템과 충돌하는 자리가 있다** — 예: `toggle`의 선택 상태 `bg-muted`, 메뉴 비활성 항목 `opacity-50`, `DialogFooter`/`AlertDialogFooter`의 `bg-muted/50`과 `AlertDialogMedia`의 `bg-muted`(`popover` 위라 사라진다 — 지금은 `secondary`, `DESIGN.md` §2 "표면 위 채움"). `shadcn add`로 재생성하면 되돌아오므로 재생성 후에는 `DESIGN.md` §5의 해당 컴포넌트 항목과 대조할 것.
+- **상류 기본값이 이 시스템과 충돌하는 자리가 있다** — 예: `toggle`의 선택 상태 `bg-muted`, 메뉴 비활성 항목 `opacity-50`, `DialogFooter`/`AlertDialogFooter`의 `bg-muted/50`과 `AlertDialogMedia`의 `bg-muted`(`popover` 위라 사라진다 — 지금은 `secondary`, `DESIGN.md` Colors 절 "표면 위 채움"). `shadcn add`로 재생성하면 되돌아오므로 재생성 후에는 `DESIGN.md` Components 절의 해당 컴포넌트 항목과 대조할 것.
 - Toast는 deprecated된 `toast`가 아니라 **`sonner`**다. `<Toaster />`는 앱 루트에 한 번만 마운트하고 호출은 각 기능 코드에서 `import { toast } from "sonner"` — 패키지가 재노출하지 않으므로 **쓰는 앱의 `package.json`에 `sonner`를 직접 넣어야 한다**(pnpm 워크스페이스는 간접 의존성을 안 끌어온다). `Toaster`의 `theme` prop 기본값은 `"light"`라 web은 `AppToaster`가 현재 테마를 넘기고, admin은 라이트 고정이라 넘기지 않는다.
 
 ## 호출부에서 처방하는 것 (프리미티브를 고치면 안 되는 자리)
@@ -38,19 +38,19 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 - **`DropdownMenuContent`의 폭은 트리거 폭에 고정돼 있다**(`w-(--radix-dropdown-menu-trigger-width)` + `min-w-32`, `w-`는 이 저장소가 더한 것). 그래서 **아이콘 버튼(36px)이 트리거면 메뉴가 128px에 갇혀** 라벨이 두 줄로 깨진다 — 그 호출부에 `className="w-auto"`를 얹는다. 프리미티브를 고치면 헤더 프로필·알림 등 기존 메뉴 폭이 함께 바뀐다.
 - **`DialogContent`에는 최대 높이도 내부 스크롤도 없다.** 내용이 길어질 수 있는 다이얼로그는 호출부에서 `max-h-[calc(100dvh-2rem)] overflow-y-auto`를 얹을 것 — Radix가 body 스크롤을 잠그므로 빼먹으면 **화면 밖으로 밀린 푸터에 닿을 방법이 없다**.
 - **`DialogDescription`에 `break-keep`이 없다.** 한국어 본문이 어절 중간에서 끊기는데 **넓은 폭에서만 나타나는 게 함정이다**(좁은 화면은 우연히 문장 경계로 접힌다). 지금은 한국어 본문 7곳 전부 호출부에서 `className="break-keep"`을 준다.
-- **`Button`의 `size="lg"`를 단독으로 쓸 때는 `default`와 폭이 같아진다는 점을 알고 써라.** `lg`(`h-10`, 40px)는 `default`(`h-9`, 36px)와 패딩·타이포가 같아, 같은 라벨의 두 버튼에 걸면 폭이 완전히 같아지고(실측 107.05px = 107.05px) 차이는 높이 +4px뿐이다 — 위계가 아니라 정렬 오차로 읽힌다. **어휘 자체는 이제 실재한다**: `xs`/`icon-xs` 24px · `sm`/`icon-sm` 32px · `default`/`icon` 36px · `lg`/`icon-lg` 40px, 호출부 오버라이드로만 존재하는 48px(`h-12`, 플레이 버튼 2곳) 예외 — `default`가 36px가 되기 전엔 `size="lg"` 12곳 중 10곳이 `h-10`으로 다시 덮어써 36px 티어가 실사용 0건이었지만, 그 오버라이드가 걷히며 사라졌다(`design-system-progress.md` P-2). 같은 화면에 목적지·라벨이 같은 두 진입점을 크기로 가르려 하지 말 것 — 폭이 같아 위계로 안 읽히고, 스크린리더에도 같은 이름이 연달아 읽힌다. 크기 대신 라벨·배치로 가른다.
+- **`Button`의 `size="lg"`를 단독으로 쓸 때는 `default`와 폭이 같아진다는 점을 알고 써라.** `lg`(`h-10`, 40px)는 `default`(`h-9`, 36px)와 패딩·타이포가 같아, 같은 라벨의 두 버튼에 걸면 폭이 완전히 같아지고(실측 107.05px = 107.05px) 차이는 높이 +4px뿐이다 — 위계가 아니라 정렬 오차로 읽힌다. **어휘 자체는 이제 실재한다**: `xs`/`icon-xs` 24px · `sm`/`icon-sm` 32px · `default`/`icon` 36px · `lg`/`icon-lg` 40px, 호출부 오버라이드로만 존재하는 48px(`h-12`, 플레이 버튼 2곳) 예외 — `default`가 36px가 되기 전엔 `size="lg"` 12곳 중 10곳이 `h-10`으로 다시 덮어써 36px 티어가 실사용 0건이었지만, 그 오버라이드가 걷히며 사라졌다. 같은 화면에 목적지·라벨이 같은 두 진입점을 크기로 가르려 하지 말 것 — 폭이 같아 위계로 안 읽히고, 스크린리더에도 같은 이름이 연달아 읽힌다. 크기 대신 라벨·배치로 가른다.
 
 ## 프리미티브에서만 고칠 수 있는 것
 
 호출부 처방이 **원리적으로 불가능한** 자리다. 같은 모양의 컴포넌트를 새로 만들 때 함께 넣어야 한다.
 
-- **모션 게이팅** — `motion-reduce:animate-none`을 호출부에서 얹어도 `data-open:` 변형의 속성 선택자가 특이도에서 이긴다. 새 프리미티브에는 `animate-*`/`transition-*`뿐 아니라 **`duration-*`까지** `motion-safe:`로 감싼다(정책과 예외는 `DESIGN.md` §5 Motion).
-- **`outline-hidden`을 쓴 옵션 리스트의 포커스 링** — 그 유틸리티가 UA 아웃라인을 지우므로 링을 함께 넣지 않으면 남는 신호가 배경 변화뿐이다. 적용 대상과 수치는 `DESIGN.md` §5 Menus. `inset-ring-*`는 v4 유틸리티이고, item base에 `ring-*` 키가 없어 `cn()`으로 충돌 없이 얹힌다.
+- **모션 게이팅** — `motion-reduce:animate-none`을 호출부에서 얹어도 `data-open:` 변형의 속성 선택자가 특이도에서 이긴다. 새 프리미티브에는 `animate-*`/`transition-*`뿐 아니라 **`duration-*`까지** `motion-safe:`로 감싼다(정책과 예외는 `DESIGN.md` Motion 절).
+- **`outline-hidden`을 쓴 옵션 리스트의 포커스 링** — 그 유틸리티가 UA 아웃라인을 지우므로 링을 함께 넣지 않으면 남는 신호가 배경 변화뿐이다. 적용 대상과 수치는 `DESIGN.md` Menus 절. `inset-ring-*`는 v4 유틸리티이고, item base에 `ring-*` 키가 없어 `cn()`으로 충돌 없이 얹힌다.
 - **사유를 읽혀야 하는 비활성 항목은 `disabled`가 아니라 `aria-disabled`로 만든다.** Radix의 `disabled`는 `RovingFocusGroup.Item`의 `focusable: !disabled`로 항목을 **포커스 순회와 타입어헤드에서 통째로 뺀다** — "왜 못 누르는지"가 키보드·스크린리더에 영원히 닿지 않는다. `aria-disabled` + `onSelect`의 `preventDefault`면 순회에 남고 눌러도 안 열리며 메뉴가 안 닫혀 사유가 그 자리에 남는다. 그래서 item 클래스에 `aria-disabled:opacity-65`가 `data-disabled:opacity-65`와 **같은 값으로 함께** 걸려 있다.
 - **확인 모달의 버튼 순서는 언제나 `취소` 먼저, 실행 나중이다 — DOM·시각·탭 셋이 같다.** `DialogFooter`/`AlertDialogFooter`가 `sm` 미만에서 상류의 `flex-col-reverse`가 아니라 **`flex-col`**이고, `DialogContent`의 닫기(X)가 `{children}` **앞**에 렌더된다. **"확인 버튼이 위"는 취향이 아니라 DOM 순서가 배제하는 배치다** — DOM 순서는 반응형이 될 수 없는데 `sm` 이상의 `취소 왼쪽 · 실행 오른쪽`을 유지하려면 DOM이 `[취소, 실행]`이어야 하고, 그러면 좁은 화면 세로 배치는 `취소` 위로 정해진다. 되돌리려면 `sm` 이상까지 함께 뒤집어야 한다. 호출부의 `autoFocus`는 그대로 이긴다(Radix FocusScope가 이미 컨테이너 안에 포커스가 있으면 자기 로직을 건너뛴다).
 - **`AlertDialogContent`의 폭은 `w-[calc(100%-2rem)]`이지 `max-w-*`가 아니다.** `max-w-xs`를 물고 있는 쪽이 `data-[size=…]:` 변형이라 특이도 (0,2,0)으로 평평한 `max-w-[…]`(0,1,0)을 언제나 이겨, 320px 뷰포트에서 **좌우 여백이 0**이 됐다. `DialogContent`가 `max-w-`로 같은 여백을 얻는 건 거기엔 경쟁하는 `data-*` 변형이 없어서다.
-- **cva variant로 베이스 선언을 덮을 때는 modifier chain을 정확히 맞춰야 한다.** `cn()`은 `twMerge(clsx(...))`이고 cva는 `base + variant + size + className` 순으로 이어붙인다. **같은 chain으로 재선언하면** twMerge가 충돌 클래스를 문자열에서 **제거**하므로 특이도 다툼이 없다. **chain이 다르면** 둘 다 남고, `data-[state=on]:bg-primary`(특이도 0,2,0)가 `bg-transparent`(0,1,0)를 **이긴다** — 활성 채움이 안 지워진다. `data-[state=on]:hover:*`처럼 3중 chain은 `data-[state=on]:*`·`hover:*`와 **또 다른 chain**이라 따로 재선언해야 한다. (2026-09-14 실측 재현, `main-refact-goal-prompt.md` MR-2) **위 `AlertDialogContent` 특이도 함정도 같은 뿌리다** — chain이 서로 다를 때만(`data-[size=…]:` 대 평평한 `max-w-[…]`) twMerge가 손을 못 대고 특이도 승부로 넘어간다.
-- **그리고 `size`가 정한 것을 `variant` 문자열로는 못 덮는다.** cva는 `base + variant + size + compoundVariants` 순으로 이어붙이고 twMerge는 **뒤에 오는 것을 남기므로**, `variant.tab`에 `px-2`를 넣어도 `size.default`의 `px-4`가 이긴다(modifier chain이 같아도 그렇다 — 이건 특이도가 아니라 **순서** 문제다). 처방은 `compoundVariants: [{variant:"tab", size:"default", class:"px-2"}]`다. (2026-09-15 실제 패키지로 확인, `main-refact-goal-prompt.md` MR-2a)
+- **cva variant로 베이스 선언을 덮을 때는 modifier chain을 정확히 맞춰야 한다.** `cn()`은 `twMerge(clsx(...))`이고 cva는 `base + variant + size + className` 순으로 이어붙인다. **같은 chain으로 재선언하면** twMerge가 충돌 클래스를 문자열에서 **제거**하므로 특이도 다툼이 없다. **chain이 다르면** 둘 다 남고, `data-[state=on]:bg-primary`(특이도 0,2,0)가 `bg-transparent`(0,1,0)를 **이긴다** — 활성 채움이 안 지워진다. `data-[state=on]:hover:*`처럼 3중 chain은 `data-[state=on]:*`·`hover:*`와 **또 다른 chain**이라 따로 재선언해야 한다. (2026-09-14 실측 재현) **위 `AlertDialogContent` 특이도 함정도 같은 뿌리다** — chain이 서로 다를 때만(`data-[size=…]:` 대 평평한 `max-w-[…]`) twMerge가 손을 못 대고 특이도 승부로 넘어간다.
+- **그리고 `size`가 정한 것을 `variant` 문자열로는 못 덮는다.** cva는 `base + variant + size + compoundVariants` 순으로 이어붙이고 twMerge는 **뒤에 오는 것을 남기므로**, `variant.tab`에 `px-2`를 넣어도 `size.default`의 `px-4`가 이긴다(modifier chain이 같아도 그렇다 — 이건 특이도가 아니라 **순서** 문제다). 처방은 `compoundVariants: [{variant:"tab", size:"default", class:"px-2"}]`다. (2026-09-15 실제 패키지로 확인)
 - **긴 메뉴가 잘릴 때의 하단 페이드**(`data-clipped-below`) — macOS·iOS 오버레이 스크롤바에는 상시 표시가 없어 **잘렸다는 신호가 하나도 없다**(메뉴가 구분선에서 끊기면 완결된 메뉴처럼 보인다). 콜백 ref가 `scrollHeight - scrollTop - clientHeight > 1`을 재서 속성을 세우고, 그때만 `::after` 스티키 그라디언트(`h-8`, `from-popover`)가 얹힌다. **높이 32px은 대비가 정한 값이라 임의로 못 늘린다**(40px이면 글리프가 라이트에서 AA 미달 — 다크만 재면 못 잡는다). 안 넘치는 메뉴는 `::after`가 아예 생성되지 않는다. **새 메뉴는 항목 수를 세지 말고 가로 폰 높이(available-height 342px)에 재 볼 것.** `SelectContent`는 Radix의 스크롤 버튼이 신호를 져서 해당 없고, 손으로 만든 `ShortcutAutocomplete`는 아직 신호가 없다(미측정).
 
 ## 토큰을 건드릴 때
@@ -61,7 +61,7 @@ CLI가 뱉은 소스를 그대로 두지 않는다. 새로 추가할 때도 같�
 - 브라우저에서 재는 법: 1×1 canvas에 배경을 칠하고 그 위에 `color-mix(in oklab, <token> 80%, transparent)`를 덧칠해 `getImageData`로 읽는다. **`getComputedStyle`로 `oklch()` 문자열을 rgb로 파싱하면 조용히 1.00이 나온다** — 반드시 canvas로 변환할 것.
 - **포커스 대비는 전이가 정착한 뒤 재야 한다** — `transition-all` 0.15s가 box-shadow까지 애니메이션해서 Tab 직후 읽으면 전이 중간값이 잡힌다.
 - **chroma는 취향이 아니라 sRGB 게멋 상한에 걸린다.** 상한을 넘긴 값을 적으면 브라우저가 조용히 클리핑해 의도한 색이 안 나온다 — oklch→linear sRGB로 변환해 세 채널이 0~1 안인지 먼저 확인한다.
-- **유채색 토큰은 `*-foreground`와 쌍으로 움직인다**(다크에서 밝힌 채움 위 흰 텍스트가 AA 미달이라 뒤집어 둔 것). 한쪽만 조정하지 말 것 — 자세한 근거는 `DESIGN.md` §2 Semantic.
+- **유채색 토큰은 `*-foreground`와 쌍으로 움직인다**(다크에서 밝힌 채움 위 흰 텍스트가 AA 미달이라 뒤집어 둔 것). 한쪽만 조정하지 말 것 — 자세한 근거는 `DESIGN.md` Colors 절의 Semantic.
 
 ## 알려진 갭
 

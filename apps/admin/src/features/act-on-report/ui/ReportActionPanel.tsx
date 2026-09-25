@@ -32,7 +32,7 @@ const SUCCESS_MESSAGE: Record<ProcessAction, string> = {
 
 const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주세요.";
 
-/** techspec-admin.md §1 — US-121이 만든 POST /admin/reports/{id}/action의 첫 FE 소비처.
+/** POST /admin/reports/{id}/action의 첫 FE 소비처.
  *
  * 처리 방식·코멘트는 useState 버퍼가 아니라 RHF+zod가 든다(`apps/web/CLAUDE.md` 폼 규약). 미선택
  * 제출은 zod가 막고 사유를 화면에 남긴다. 코멘트 입력창은 `restrict`/`delete`에서만 나타나므로
@@ -89,7 +89,7 @@ export function ReportActionPanel({ reportId, isReportPending, contentName, isCo
     }
   }
 
-  // backlog-l-goal-prompt.md BL-7 — 대화방 일괄 전환이 되돌릴 수 없어 확인 모달을 거친다.
+  // 대화방 일괄 전환이 되돌릴 수 없어 확인 모달을 거친다.
   const handleLiftRestriction = () => {
     void LiftRestrictionConfirmModal.call({
       contentName,

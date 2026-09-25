@@ -10,7 +10,7 @@ import { promptSetKeys } from "./keys";
 /** PUT .../draft는 섹션 전체 교체다(부분 패치가 아니다) — 응답이 이미 최신 전체 초안이라
  * invalidate 대신 setQueryData로 캐시를 바로 채운다(legal의 `useSaveDraftMutation`과 같은 모양).
  * 미리보기는 저장된 초안을 렌더하므로(요청 바디가 없다) 저장 직후엔 낡은 값이라 함께 무효화한다.
- * prompt-scope-techspec.md §6-3 — 무효화는 이 레인 안에서만 일어난다(레인 간 교차 없음). */
+ * 무효화는 이 레인 안에서만 일어난다(레인 간 교차 없음). */
 export function useSaveDraftMutation(lane: PromptLane) {
   const queryClient = useQueryClient();
 

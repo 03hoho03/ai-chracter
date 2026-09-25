@@ -62,7 +62,7 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
     );
   }
 
-  // techspec §4-5: 서버는 `(created_at, id) DESC`로 준다(최신→과거). "더 보기"로 이어 받는 다음
+  // 서버는 `(created_at, id) DESC`로 준다(최신→과거). "더 보기"로 이어 받는 다음
   // 페이지는 항상 그 이전 페이지의 커서보다 더 과거이므로, 도착 순서대로 이어 붙이기만 해도
   // `[...viewResult.items, ...olderItems]`는 그 자체로 전체가 최신→과거 정렬이다(페이지 경계에서
   // 별도 정렬/병합이 필요 없다). 화면은 "위가 과거, 아래가 최신"으로 보여준다(대화를 실제로 나눈

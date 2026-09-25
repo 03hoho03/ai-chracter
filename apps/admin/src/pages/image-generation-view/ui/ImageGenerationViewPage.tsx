@@ -70,7 +70,7 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   // InquiryDetailPage.tsx`의 onError 주석과 같은 문제)이지만, 첫 페이지는 감사 로그를 남기는
   // POST 뮤테이션 결과라 그 응답 자체를 다시 fetch할 쿼리가 없다. 대신 같은 이미지를 다시
   // 내려주는 GET 더보기 엔드포인트(`.../image-generations?page=N`)로 그 이미지가 속한 페이지만
-  // 다시 불러와 교체한다 — 이 GET은 로그를 쌓지 않으므로(IM-2) 반복 호출해도 감사 기록이
+  // 다시 불러와 교체한다 — 이 GET은 로그를 쌓지 않으므로 반복 호출해도 감사 기록이
   // 늘지 않는다.
   const handleRetryPage = async (pageNumber: number) => {
     try {

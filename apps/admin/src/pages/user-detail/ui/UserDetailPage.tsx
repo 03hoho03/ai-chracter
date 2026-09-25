@@ -73,7 +73,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
             <span>{SIGNUP_METHOD_LABELS[userDetailQuery.data.signupMethod]}</span>
             <span aria-hidden>·</span>
             <span>{userDetailQuery.data.suspendedAt ? "정지" : "정상"}</span>
-            {/* limit-goal-prompt.md RL-19 — 면제는 상세에만 있는 플래그라 여기서만 읽을 수 있다.
+            {/* 면제는 상세에만 있는 플래그라 여기서만 읽을 수 있다.
              * 정지 여부와 달리 "아님"일 때는 아무것도 붙이지 않는다(기본값이라 상태 줄이 길어지기만 한다). */}
             {userDetailQuery.data.rateLimitExempt && (
               <>
@@ -109,7 +109,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
 
         {/* 클로버 잔액을 여기 넣는 이유: 작품·채팅방·메시지와 같은 "이 유저의 현재 수치"이고,
          * 조치 패널의 지급·회수가 바로 이 숫자를 움직인다. 별도 섹션으로 떼면 조치와 그 대상이
-         * 화면에서 멀어진다(clover-techspec.md §6). */}
+         * 화면에서 멀어진다. */}
         <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
           <div>
             <dt className="text-muted-foreground">작품수</dt>
@@ -264,9 +264,9 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
         )}
       </section>
 
-      {/* image-monitoring-goal-prompt.md IM-1 — 같은 그리드를 두 벌 유지하지 않으려 링크만 둔다.
-       * 유저 상세 응답(AdminUserDetailResponse)에 생성 이미지 건수 필드가 없어(BE는 이 런에서
-       * 건드리지 않는다) "N건"은 못 붙이고 목적지만 알린다. */}
+      {/* 같은 그리드를 두 벌 유지하지 않으려 링크만 둔다.
+       * 유저 상세 응답(AdminUserDetailResponse)에 생성 이미지 건수 필드가 없어(BE는 그대로
+       * 두었다) "N건"은 못 붙이고 목적지만 알린다. */}
       <section className="flex items-center justify-between rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">생성 이미지</h2>
         <Link to="/users/$userId/image-generations" params={{ userId }} className={INLINE_LINK_CLASS}>
@@ -288,7 +288,7 @@ type CloverLedgerSectionProps = {
   userId: string;
 };
 
-/** 원장은 상세 응답이 아니라 별도 라우트다(clover-techspec.md §4-5) — 상세가 이미 목록 셋을
+/** 원장은 상세 응답이 아니라 별도 라우트다 — 상세가 이미 목록 셋을
  * 싣고 있어 네 번째를 얹으면 한 요청이 무거워진다. 그래서 로딩·에러도 이 섹션이 따로 진다.
  *
  * 🔴 **첫 페이지 20건만** 쓴다(사용자 결정 — 전용 목록 페이지는 만들지 않는다). 그보다 오래된
@@ -316,7 +316,7 @@ type CloverLedgerBodyProps = {
   ledgerQuery: ReturnType<typeof useCloverLedgerQuery>;
 };
 
-/** 섹션 제목은 로딩·에러에도 남아야 해서 원장에 의존하는 본문만 갈라내 early return으로 가른다(COMP-04). */
+/** 섹션 제목은 로딩·에러에도 남아야 해서 원장에 의존하는 본문만 갈라내 early return으로 가른다. */
 function CloverLedgerBody({ ledgerQuery }: CloverLedgerBodyProps) {
   if (ledgerQuery.isPending) {
     return <div className="h-24 animate-pulse rounded-lg bg-secondary" />;

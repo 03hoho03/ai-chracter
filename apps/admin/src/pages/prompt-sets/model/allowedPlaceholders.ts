@@ -1,5 +1,5 @@
 /** `apps/api/src/api/chat/prompt_builder.py`의 `ALLOWED_PLACEHOLDERS`를 그대로 옮긴 표시용
- * 힌트다. 실제 검증(R-4, prompt-db-goal-prompt.md §9-2)은 게시 시점에 서버가 하므로 이 목록은
+ * 힌트다. 실제 검증은 게시 시점에 서버가 하므로 이 목록은
  * 어드민이 body를 쓰는 동안 뭘 쓸 수 있는지 미리 보여주는 것뿐이다 — 서버 목록이 바뀌면 이
  * 파일도 함께 옮긴다. 튜플 키(`channel`, `slot`) 대신 `"channel:slot"` 문자열로 키를 만든다. */
 const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {

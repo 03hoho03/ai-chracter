@@ -4,7 +4,7 @@ import { z } from "zod";
 import { requireSession } from "../entities/session";
 import { NoticesListPage } from "../pages/notices";
 
-// 잘못된 값은 화면을 죽이는 대신 기본값으로 삼킨다(`.optional().catch(undefined)`, D-21 —
+// 잘못된 값은 화면을 죽이는 대신 기본값으로 삼킨다(`.optional().catch(undefined)` —
 // 새 admin 라우트는 이 신형을 따른다. `contents.index.tsx`·`users.index.tsx` 동형).
 const noticesSearchSchema = z.object({
   page: z.coerce.number().int().min(1).optional().catch(undefined),

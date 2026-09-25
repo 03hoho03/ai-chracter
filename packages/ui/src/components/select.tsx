@@ -41,7 +41,7 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
-      /** `button.tsx`/`toggle.tsx`의 `default`/`sm`과 맞춘다(design-system-goal-prompt.md D-4).
+      /** `button.tsx`/`toggle.tsx`의 `default`/`sm`과 맞춘다.
        * `pr-2 pl-2.5`는 원래 `Button`의 `default`+trailing-icon 조합(베이스 `px-2.5`, 아이콘
        * 보정 `pr-2`)을 그대로 옮긴 값이었다 — 셰브런이 항상 붙는 트리거라 그 조합을 계속 따라간다.
        * 새 베이스도 같은 관계로: 베이스 쪽(`pl`)은 `Button` `default`의 새 `px-4`(16px), 아이콘
@@ -49,8 +49,7 @@ function SelectTrigger({
        * 없고 `h-*` + `items-center`만으로 세로 중앙정렬을 하므로, 세 프리미티브가 같은 높이 티어에서
        * 시각적으로 같아지려면 이 프리미티브만 패딩으로 높이를 만들면 안 된다.
        * `data-[size=sm]:rounded-[min(var(--radius-md),10px)]` 캡도 같은 이유로 걷었다 — `sm`이
-       * 32px 티어로 올라가면 `default`와 같은 32px 안에서 모서리가 갈리게 된다
-       * (design-system-progress.md P-0-2-③). */
+       * 32px 티어로 올라가면 `default`와 같은 32px 안에서 모서리가 갈리게 된다. */
       className={cn(
         "flex w-fit items-center justify-between gap-1.5 rounded-lg border border-input bg-transparent pr-3.5 pl-4 text-sm whitespace-nowrap motion-safe:transition-colors outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-placeholder:text-muted-foreground data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-1.5 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className

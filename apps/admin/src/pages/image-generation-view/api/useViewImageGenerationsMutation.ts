@@ -9,7 +9,7 @@ export type AdminImageGenerationDetailListResponse = components["schemas"]["Admi
 export type AdminImageGenerationDetailItem = components["schemas"]["AdminImageGenerationDetailItem"];
 export type AdminImageGenerationImageItem = components["schemas"]["AdminImageGenerationImageItem"];
 
-/** image-monitoring-goal-prompt.md IM-2, `useViewChatMutation` 동형 — 이 훅의 호출 1회 = 서버
+/** `useViewChatMutation` 동형 — 이 훅의 호출 1회 = 서버
  * 감사 로그 1행. 결과를 쿼리 캐시에 남기지 않는다(그 순간의 열람 결과일 뿐 재사용할 서버 상태가
  * 아니다). 페이지 누적(더보기와의 합산)은 호출부(`ImageGenerationViewPage`)의 로컬 state가 맡는다.
  *

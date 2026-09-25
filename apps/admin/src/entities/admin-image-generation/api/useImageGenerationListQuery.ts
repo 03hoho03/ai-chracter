@@ -7,7 +7,7 @@ import { adminImageGenerationKeys, type AdminImageGenerationListParams } from ".
 
 export type AdminImageGenerationListResponse = components["schemas"]["AdminImageGenerationListResponse"];
 
-/** image-monitoring-goal-prompt.md IM-11, IM-12 — offset 페이지네이션(20건), 프롬프트·이미지는
+/** offset 페이지네이션(20건), 프롬프트·이미지는
  * 응답에 없다(사유 게이트 뒤 유저 단위 열람 화면 몫). */
 export function useImageGenerationListQuery(params: AdminImageGenerationListParams) {
   return useQuery<AdminImageGenerationListResponse, ApiError>({

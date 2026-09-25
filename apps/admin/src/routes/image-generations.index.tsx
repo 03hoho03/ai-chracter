@@ -19,9 +19,9 @@ const imageGenerationsSearchSchema = z.object({
   to: isoDateSchema.optional().catch(undefined),
 });
 
-// image-monitoring-goal-prompt.md IM-1, apps/admin/CLAUDE.md — 목록과 상세를 형제로 두려면
+// apps/admin/CLAUDE.md — 목록과 상세를 형제로 두려면
 // `.index.tsx`여야 한다. 옆에 `image-generations.tsx`를 두면 상세가 자식으로 중첩돼 URL만
-// 바뀌고 화면이 그대로인 조용한 실패가 난다. 열람 화면(유저 단위)은 다음 단계다.
+// 바뀌고 화면이 그대로인 조용한 실패가 난다. 열람 화면(유저 단위)은 `users.$userId.image-generations.tsx`다.
 export const Route = createFileRoute("/image-generations/")({
   validateSearch: imageGenerationsSearchSchema,
   beforeLoad: ({ context, location }) => requireSession(context.queryClient, location.href),

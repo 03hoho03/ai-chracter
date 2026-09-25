@@ -127,7 +127,7 @@ function ReportsTable({ page, status, onPageChange }: ReportsTableProps) {
   );
 }
 
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(TS-03).
+/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다.
  * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다. AppealsListPage 동형. */
 function isReportStatus(value: string): value is ReportStatusFilter {
   return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);

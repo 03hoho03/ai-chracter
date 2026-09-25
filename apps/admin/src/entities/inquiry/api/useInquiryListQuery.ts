@@ -8,7 +8,7 @@ import { inquiryKeys, type InquiryStatusFilter } from "./keys";
 
 export type AdminInquiryListResponse = components["schemas"]["AdminInquiryListResponse"];
 
-/** offset 페이징 — `useReportListQuery` 동형(techspec.md §6-1). status/category 미지정 시 전체 조회. */
+/** offset 페이징 — `useReportListQuery` 동형. status/category 미지정 시 전체 조회. */
 export function useInquiryListQuery(params: { page: number; status?: InquiryStatusFilter; category?: InquiryCategory }) {
   return useQuery<AdminInquiryListResponse, ApiError>({
     queryKey: inquiryKeys.list(params),

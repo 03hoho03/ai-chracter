@@ -21,13 +21,13 @@ export const ACTION_TYPE_LABELS = {
   "user-unsuspend": "정지 해제",
   "user-rate-limit-exempt-on": "레이트리밋 면제",
   "user-rate-limit-exempt-off": "레이트리밋 면제 해제",
-  // clover-goal-prompt.md CL-16 — `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
+  // `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
   "user-clover-grant": "클로버 지급",
   "user-clover-revoke": "클로버 회수",
   "content-restrict": "이용제한 부과",
   "content-delete": "삭제",
   "content-lift": "이용제한 해제",
-  // backlog-l-goal-prompt.md BL-4·BL-11 — 문구는 신고 목록의 "반려"·이의제기 처리 버튼의 "인용"과 같은 말이다.
+  // 문구는 신고 목록의 "반려"·이의제기 처리 버튼의 "인용"과 같은 말이다.
   "report-reject": "신고 반려",
   "appeal-accept": "이의제기 인용",
   "chat-view": "채팅 열람",
@@ -39,13 +39,13 @@ export const ACTION_TYPE_LABELS = {
   "prompt-set-publish": "프롬프트 세트 게시",
 } satisfies Record<AdminActionType, string>;
 
-/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 10종이다(clover-page-goal-prompt.md CE-10이
- * `mission_grant`·`expire_burn` 2종을 더했다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
+/** 원장 행의 `kind` — `core/clover.py`의 `CloverKind` 10종이다(`mission_grant`·`expire_burn`
+ * 2종은 나중에 더해졌다). `AdminCloverLedgerItem.kind`가 `Literal`이 아니라
  * `string`인 것은 의도다(모델이 `Text`라 값을 늘릴 때 마이그레이션도 FE 코드젠도 깨지지 않게 한
  * 것). 그래서 여기는 `Record<string, string>`이고, 모르는 값은 호출부가 원문 그대로 보여준다 —
  * 키를 빠뜨려도 컴파일이 못 잡는다(유니언으로 좁혀 강제하는 ACTION_TYPE_LABELS와 다르다).
- * `apps/web`의 동명 맵(`entities/clover/model/cloverKindLabel.ts`)과 별도 번들이라 공유하지 않는 것이 결정이고
- * (CE-23), 문구는 그쪽과 맞춰 뒀다. */
+ * `apps/web`의 동명 맵(`entities/clover/model/cloverKindLabel.ts`)과 별도 번들이라 공유하지 않는 것이 결정이고,
+ * 문구는 그쪽과 맞춰 뒀다. */
 export const CLOVER_KIND_LABELS: Record<string, string> = {
   admin_grant: "운영자 지급",
   admin_revoke: "운영자 회수",

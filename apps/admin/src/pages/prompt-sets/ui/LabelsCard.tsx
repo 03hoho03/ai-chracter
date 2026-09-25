@@ -35,11 +35,11 @@ const LABEL_FIELDS: { key: LabelFieldKey; id: string; title: string; hint: strin
   },
 ];
 
-/** prompt-scope-techspec.md §6-4(TS-E) — 이 레인에서 실제로 읽히지 않는 라벨 표시용 힌트.
+/** 이 레인에서 실제로 읽히지 않는 라벨 표시용 힌트.
  * `admin/prompts.py`의 `_LABEL_FIELDS_BY_LANE`의 여집합이라 엄밀히는 같은 사실의 두 번째
  * 사본이지만, 이쪽은 힌트 문구를 고르는 표시 데이터일 뿐 검증에 쓰이지 않는다 — 어긋나도
  * 잘못된 힌트가 뜰 뿐 저장·게시는 서버 표를 따른다. 입력을 막거나 zod를 레인별로 가르지
- * 않는다(실제 게이트는 서버 R-5). */
+ * 않는다(실제 게이트는 서버의 게시 검증). */
 const UNUSED_LABELS_BY_LANE: Record<PromptLane, readonly LabelFieldKey[]> = {
   story: ["characterAssistantLabel"],
   character: ["storyAssistantLabel", "storyExampleLabel"],
@@ -50,8 +50,8 @@ type LabelsCardProps = {
   lane: PromptLane;
 };
 
-/** 화자 라벨 4개 — 전부 stop_sequence 파생(§4-5)이나 전개 예시 조립에 쓰이므로 개행·':'을
- * 포함할 수 없다(R-5, zod가 `model/schema.ts`에서 먼저 막는다). */
+/** 화자 라벨 4개 — 전부 stop_sequence 파생이나 전개 예시 조립에 쓰이므로 개행·':'을
+ * 포함할 수 없다(서버가 게시 시점에 검증하고, zod가 `model/schema.ts`에서 먼저 막는다). */
 export function LabelsCard({ lane }: LabelsCardProps) {
   const {
     register,

@@ -49,7 +49,7 @@ type ViewReasonDialogProps = {
   onConfirmed: (data: AdminImageGenerationDetailListResponse) => void;
 };
 
-/** 이 화면의 진입 게이트 다이얼로그 — image-monitoring-goal-prompt.md IM-2, `chat-messages/ui/
+/** 이 화면의 진입 게이트 다이얼로그 — `chat-messages/ui/
  * ViewReasonDialog.tsx` 동형. `__root.tsx`에 콜러블로 마운트하지 않고 페이지 안에 직접 둔다.
  * 사유를 라우터 state나 전역 콜러블로 넘기면 새로고침 시 사라져 빈 화면이 되지만, 이 컴포넌트는
  * `ImageGenerationViewPage`가 결과를 아직 못 받은 동안 항상 그 자리에서 다시 렌더되므로

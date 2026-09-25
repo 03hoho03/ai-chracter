@@ -13,7 +13,7 @@ type ModerationActionPayload = {
   adminComment?: string;
 };
 
-/** techspec-admin.md §1 — 조치 확정 후 신고 목록/상세 쿼리를 모두 무효화한다(US-122 AC5). */
+/** 조치 확정 후 신고 목록/상세 쿼리를 모두 무효화한다. */
 export function useModerationActionMutation(reportId: string) {
   const queryClient = useQueryClient();
 

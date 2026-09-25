@@ -7,7 +7,7 @@ import { usageMetricsKeys } from "./keys";
 
 export type UsageMetricsResponse = components["schemas"]["UsageMetricsResponse"];
 
-/** techspec-admin.md §3 — from/to(YYYY-MM-DD) 기간의 사용량 지표(일/월 평균, 추이)를 조회한다. */
+/** from/to(YYYY-MM-DD) 기간의 사용량 지표(일/월 평균, 추이)를 조회한다. */
 export function useUsageMetricsQuery(params: { from: string; to: string }) {
   return useQuery<UsageMetricsResponse, ApiError>({
     queryKey: usageMetricsKeys.range(params),

@@ -7,7 +7,7 @@ import { adminContentKeys, type AdminContentListParams } from "./keys";
 
 export type AdminContentListResponse = components["schemas"]["AdminContentListResponse"];
 
-/** techspec.md §4-2 — offset 페이지네이션(20건), 필터 3종·이름 검색·정렬 3종. */
+/** offset 페이지네이션(20건), 필터 3종·이름 검색·정렬 3종. */
 export function useContentListQuery(params: AdminContentListParams) {
   return useQuery<AdminContentListResponse, ApiError>({
     queryKey: adminContentKeys.list(params),

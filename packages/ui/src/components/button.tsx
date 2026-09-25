@@ -14,7 +14,7 @@ const buttonVariants = cva(
          * `--ring == --primary`라 보더를 채움과 **같은 색**(1.0000:1)으로 칠해 rest의 1px 윤곽을
          * 지우고, 남는 50% 링은 페이지 배경 대비 2.5757(다크)/2.5511(라이트)로 WCAG 1.4.11의 3:1에
          * 미달한다(두 스토리에서 독립 측정해 일치). 불투명 링은 7.1768/6.7011. `toggle.tsx`가 선택
-         * 상태에 대해 US-009에서 같은 처방을 이미 했고, 이건 그 나머지 절반이다 — 두 프리미티브가
+         * 상태에 대해 같은 처방을 이미 했고, 이건 그 나머지 절반이다 — 두 프리미티브가
          * 같은 채움을 쓰는데 포커스 표시만 갈리면 관습이 나뉜다. 다른 variant는 채움이 무채색이거나
          * `/10` 틴트라 측정된 결함이 없으므로 base를 건드리지 않고 여기까지만 좁힌다. */
         default: "bg-primary text-primary-foreground hover:bg-primary/80 focus-visible:ring-ring",
@@ -24,7 +24,7 @@ const buttonVariants = cva(
           "bg-secondary text-secondary-foreground hover:bg-[color-mix(in_oklch,var(--secondary),var(--foreground)_5%)] aria-expanded:bg-secondary aria-expanded:text-secondary-foreground",
         ghost:
           "hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground",
-        /** `destructive`는 하우스 레시피의 **알파만** 되돌린다(US-004) — base의 `border-ring`·`ring-ring/50`을
+        /** `destructive`는 하우스 레시피의 **알파만** 되돌린다 — base의 `border-ring`·`ring-ring/50`을
          * destructive hue로 갈아끼우되 보더는 불투명, 링은 50%다. 고치기 전에는 보더 40% · 링 20%라
          * 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 페이지 배경 1.2371 다크 / 1.3694 라이트, 링 대
          * 자기 채움 1.1312 / 1.1728). 불투명 보더는 자기 채움(`bg-destructive/10`) 대비 **4.8431 / 4.5795**,
@@ -37,10 +37,10 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive-text hover:bg-destructive/20 focus-visible:border-destructive focus-visible:ring-destructive/50",
         link: "text-primary underline-offset-4 hover:underline",
       },
-      /** 24/28/32/40/48px 어휘의 좌우 패딩이 134곳 전부 10px 단일값이던 것을 벌린다
-       * (design-system-goal-prompt.md D-4) — `default` 32→36px(`px-4`), `sm` 28→32px(`px-3`).
-       * `text-[0.8rem]`(12.8px, 토큰 미사용) 하드코딩도 `sm`에서 제거해 `text-xs`(P-1 이후 14px)를
-       * 쓴다 — 전에는 `xs`(12px) < `sm`(12.8px) < `default`(14px)였는데 P-1로 `xs`가 14px가 되며
+      /** 24/28/32/40/48px 어휘의 좌우 패딩이 134곳 전부 10px 단일값이던 것을 벌린다 —
+       * `default` 32→36px(`px-4`), `sm` 28→32px(`px-3`).
+       * `text-[0.8rem]`(12.8px, 토큰 미사용) 하드코딩도 `sm`에서 제거해 `text-xs`(지금 14px)를
+       * 쓴다 — 전에는 `xs`(12px) < `sm`(12.8px) < `default`(14px)였는데 `xs`가 14px로 바뀌며
        * `sm`만 더 작은 상자에 더 큰 글자가 들어가는 역전이 생겼었다.
        *
        * `has-data-[icon=inline-end]:pr-*` / `has-data-[icon=inline-start]:pl-*`는 각 사이즈가
@@ -51,8 +51,8 @@ const buttonVariants = cva(
        * 티어로 올라가면 `default`/`icon`과 같은 32px 안에 들어가는데, 캡을 남기면 그 안에서
        * `default`(8px, 캡 없음)와 `sm`(6.4px, `min(6.4,12)`)의 모서리가 갈린다. `apps/web/CLAUDE.md`와
        * `MyWorksPage.tsx`가 "SelectTrigger sm과 ToggleGroupItem sm은 픽셀상 같다"고 명문화해 둔
-       * 전제가 여기서 성립하려면 같은 높이 티어는 같은 반경이어야 한다(design-system-progress.md
-       * P-0-2-③). `xs`/`icon-xs`(24px 티어)의 캡은 그대로 둔다 — 32px 티어와 무관한 다른 높이라
+       * 전제가 여기서 성립하려면 같은 높이 티어는 같은 반경이어야 한다.
+       * `xs`/`icon-xs`(24px 티어)의 캡은 그대로 둔다 — 32px 티어와 무관한 다른 높이라
        * 이 정합성 요구가 적용되지 않는다. */
       size: {
         default:
