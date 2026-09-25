@@ -13,11 +13,11 @@ import { createTypeScriptImportResolver } from "eslint-import-resolver-typescrip
  * 스크립트가 없어 `turbo run lint`가 `0 successful, 0 total` + `exit 0`으로 **조용히 통과**했다 —
  * 이 저장소가 원래 앓던 그 병이다. 지금은 `Could not find task 'lint'`로 **큰 소리로 실패**한다.
  * 패키지별 스크립트로 돌리는 것도 안 된다: `no-relative-import-paths`의 `rootDir`가 cwd 기준이라
- * 패키지 안에서 돌면 IMP-01 157건이 통째로 빠진다(합계 210 vs 루트 368으로 실측). 진입점은
+ * 패키지 안에서 돌면 상대경로 import 위반 157건이 통째로 빠진다(합계 210 vs 루트 368으로 실측). 진입점은
  * 루트 `pnpm run lint` 하나다.
  *
- * 규칙은 `hojeong-plugin-fe` 컨벤션 스킬의 rule-id에 대응시킨다 — 사람이 리뷰로 잡던 것을 기계로 옮기는
- * 것이 목적이라, **자동 검사가 가능한 것만** 넣는다. 렌더 단위 분리(COMP-07)처럼 판단이 필요한 규칙은
+ * 규칙은 `hojeong-plugin-fe` 컨벤션 스킬의 규칙에 대응시킨다 — 사람이 리뷰로 잡던 것을 기계로 옮기는
+ * 것이 목적이라, **자동 검사가 가능한 것만** 넣는다. 렌더 단위 분리처럼 판단이 필요한 규칙은
  * 서브에이전트 리뷰(`hojeong-architect`)의 몫으로 남긴다.
  */
 export default tseslint.config(
@@ -72,25 +72,25 @@ export default tseslint.config(
       ],
     },
     rules: {
-      // TS-01 · any 금지
+      // any 금지
       "@typescript-eslint/no-explicit-any": "error",
-      // TS-02 · non-null assertion 금지
+      // non-null assertion 금지
       "@typescript-eslint/no-non-null-assertion": "error",
-      // TS-03 · as 단언 최소화. `as const`와 `as unknown`은 규칙이 명시적으로 허용한다.
+      // as 단언 최소화. `as const`와 `as unknown`은 규칙이 명시적으로 허용한다.
       "@typescript-eslint/consistent-type-assertions": [
         "error",
         { assertionStyle: "never" },
       ],
-      // TS-06 · type 우선, interface는 확장·선언병합이 필요할 때만 (--fix 가능)
+      // type 우선, interface는 확장·선언병합이 필요할 때만 (--fix 가능)
       "@typescript-eslint/consistent-type-definitions": ["error", "type"],
-      // IMP-03 · import type 분리 (--fix 가능)
+      // import type 분리 (--fix 가능)
       "@typescript-eslint/consistent-type-imports": [
         "error",
         { prefer: "type-imports", fixStyle: "inline-type-imports" },
       ],
-      // IMP-04 · 순환 import 금지
+      // 순환 import 금지
       "import-x/no-cycle": ["error", { maxDepth: Infinity }],
-      // COMP-04 · JSX 중첩 삼항 금지 (early return 또는 컴포넌트 분리로)
+      // JSX 중첩 삼항 금지 (early return 또는 컴포넌트 분리로)
       "no-nested-ternary": "error",
       // `_` 접두는 "시그니처상 필요하지만 본문에서 안 쓴다"는 뜻으로 이미 저장소가 쓰는 관례다
       // (목의 파라미터가 그 예 — 지우면 호출부가 인자를 못 넘긴다).
@@ -98,7 +98,7 @@ export default tseslint.config(
     },
   },
 
-  // IMP-01 · path alias. `@/`가 정의된 앱에만 건다 — `packages/ui`는 컴포넌트가 한 폴더에 평평하게
+  // path alias. `@/`가 정의된 앱에만 건다 — `packages/ui`는 컴포넌트가 한 폴더에 평평하게
   // 있어 2단계 이상 상위 경로가 애초에 0건이고 alias를 도입할 이유가 없다.
   //
   // `rootDir`는 플러그인이 `path.join(context.getCwd(), rootDir)`로 쓰므로 **저장소 루트 기준**이다
@@ -141,7 +141,7 @@ export default tseslint.config(
   },
 
   {
-    // FSD-02 · 레이어 의존은 상위→하위 단방향. 서열은 app → pages → widgets → features → entities → shared.
+    // 레이어 의존은 상위→하위 단방향. 서열은 app → pages → widgets → features → entities → shared.
     // `routes/`는 TanStack Router가 강제하는 위치라 FSD 레이어가 아니며 pages와 같은 높이로 다룬다.
     //
     // **한계: 이 규칙은 정적 `import` 문만 본다.** `searchSchemaContract.test.ts`가 shared에서
@@ -187,7 +187,7 @@ export default tseslint.config(
     // `TooltipNameType`이 `number | string | ((obj: any) => any)`이고 `payload`가 `any`다.
     //
     // 손으로 좁히면 `shadcn add chart`가 되돌리고, 상류와 diff가 생겨 다음 업데이트가 충돌한다.
-    // NAME-01(kebab 파일명)을 프로젝트 단위 결정으로 남긴 것과 같은 자리다 — 규칙과 도구가
+    // kebab 파일명 규칙을 프로젝트 단위 결정으로 남긴 것과 같은 자리다 — 규칙과 도구가
     // 싸우면 도구를 이긴 쪽이 아니라 **경계를 긋는 쪽**이 맞다.
     //
     // 파일 하나에 다섯 규칙만 좁힌다. 이 파일의 다른 규칙(중첩 삼항·상대경로 등)은 계속 검사받는다.
@@ -221,7 +221,7 @@ export default tseslint.config(
   },
 
   {
-    // TS-06의 예외는 "확장·선언 병합이 필요할 때"인데 `consistent-type-definitions`는 그걸 못 본다 —
+    // type 우선 규칙의 예외는 "확장·선언 병합이 필요할 때"인데 `consistent-type-definitions`는 그걸 못 본다 —
     // `declare module` 안의 `interface`를 `type`으로 바꾸면 **선언 병합이 깨진다**. TanStack Router의
     // `Register`가 그 자리라, 자동 수정이 두 앱의 `app/router.tsx`를 동시에 망가뜨렸다(TS2300
     // Duplicate identifier + 라우터 타입이 통째로 any로 무너져 `prev` 파라미터가 implicit any가 됐다).

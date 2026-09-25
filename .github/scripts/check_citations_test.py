@@ -22,7 +22,7 @@ CASES = [
     ("F3 ts // tasks 경로", "c.ts", "", "// see tasks/foo/bar\nconst a = 1;\n", 1),
     ("F4 ts 블록 주석 결정 번호", "d.ts", "", "/* D-5: 폭을 고정한다 */\nexport const w = 1;\n", 1),
     ("F5 yml 주석 비추적 문서", "e.yml", "", "on: push # backlog.md 참고\n", 1),
-    ("F6 md 가 비추적 md 인용", "N.md", "", "값은 `chat-rollout-goal-prompt.md RO-12` 로 정했다.\n", 1),
+    ("F6 md 가 비추적 md 인용 + 결정 번호", "N.md", "", "값은 `chat-rollout-goal-prompt.md RO-12` 로 정했다.\n", 2),
     ("F7 tsx 절 번호 + 조사", "f.tsx", "", "// §5의 규칙\nexport const A = () => null;\n", 1),
     ("F8 접미 소문자·기호·숫자 접두사", "g.py", "", "# E-12a / F-7① / S11-2a\n", 3),
     ("F9 JSX 주석", "h.tsx", "", "export const A = () => (\n  <div>{/* MR-8 */}</div>\n);\n", 1),
@@ -48,7 +48,7 @@ CASES = [
     ("F17 추적 README 도 tasks 아래면 잡는다", "Q2.md", "", "tasks/fixtures/README.md 참고\n", 1),
     ("F18 cron 설정 주석", "ops/cron.d/job", "", "# D-5 로 새벽에 돈다\n0 3 * * * root /bin/true\n", 1),
     ("F19 logrotate 설정 주석", "ops/logrotate.d/app", "", "# backlog.md 참고\n/var/log/x { daily }\n", 1),
-    ("F20 확장자 없는 README 는 문서", "mig/README", "", "backlog.md 와 D-5 를 따른다.\n", 1),
+    ("F20 확장자 없는 README 는 문서", "mig/README", "", "backlog.md 와 D-5 를 따른다.\n", 2),
     (
         "F21 `++ ` 로 시작하는 추가 줄이 파일을 끊지 않는다",
         "S.md",
@@ -82,13 +82,32 @@ CASES = [
         4,
     ),
     ("F29 ts 주석의 수용 기준 번호", "w.ts", "", "// (AC 3, 항상 최신)\nexport const w = 1;\n", 1),
+    (
+        "F30 md 안의 결정 번호·플러그인 코드·절 번호·수용 기준 번호",
+        "P.md",
+        "",
+        "D-5 와 FSD-06 은 폐기됐다.\n값은 `DESIGN.md` §2 를 본다(MR-2a 이후).\nAC3 를 만족한다.\n",
+        5,
+    ),
+    ("F32 경로 패턴 예외는 그 줄 내용 그대로일 때만", ".worktreeinclude", "", "# tasks/other/**\n", 1),
+    ("F31 md 코드 블록 안도 줄 전체를 본다", "P2.md", "", "```sh\n# D-5 로 정했다\necho ok\n```\n", 1),
     # ── 통과해야 하는 것 ──
+    ("P26 주석 처리된 경로 패턴(고정 줄)", ".worktreeinclude", "", "# 설명\n# tasks/baseline/**\n", 0),
     ("P1 py 문자열 식별자", "p1.py", "", 'RULE = "R-1"\nraise E(code="RL-3")\n', 0),
     ("P2 ts 문자열 식별자", "p2.ts", "", 'const rule = "R-8";\n', 0),
     ("P3 기술 용어", "p3.py", "", "# UTF-8 로 읽는다. SHA-256, RS-256 서명, ISO-8601\n", 0),
     ("P4 추적 문서 + 절 제목", "p4.ts", "", "// DESIGN.md 'Colors' 절, apps/api/CLAUDE.md\n", 0),
     ("P5 cite-ok", "p5.py", "", "# R-1 cite-ok: 로그에 나가는 규칙 이름\n", 0),
-    ("P6 md 안의 결정 번호는 안 본다", "P.md", "", "D-5 와 FSD-06 은 폐기됐다.\n", 0),
+    (
+        "P6 md 의 기술 용어·절 제목·URL·cite-ok",
+        "P6.md",
+        "",
+        "UTF-8, SHA-256, RS-256, P-256, WCAG 1.4.11, ISO-8601.\n"
+        "`DESIGN.md` 의 \"Colors\" 절, h-14·px-4.\n"
+        "https://example.com/issues/D-5\n"
+        "커밋 `feat: US-014` 는 D-7 로 남았다 cite-ok 인용 예시\n",
+        0,
+    ),
     ("P7 URL 안의 md", "p7.ts", "", "// https://github.com/x/y/blob/main/CHANGES.md\n", 0),
     ("P8 문자열 안의 //", "p8.ts", "", "const s = `// D-1`;\nconst t = 'http://a/D-2';\n", 0),
     ("P9 정규식 리터럴 안의 //", "p9.ts", "", "const re = /\\/\\/ D-1/;\n", 0),
