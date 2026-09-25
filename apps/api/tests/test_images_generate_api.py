@@ -82,7 +82,7 @@ _READY_CAPABILITIES = LocalCapabilities(
 
 
 def _stub_capabilities_ready(monkeypatch: pytest.MonkeyPatch) -> None:
-    """local-image-gen-techspec.md LT-6: `generate_images`가 가용성 사전 확인을 맨 앞에
+    """`generate_images`가 가용성 사전 확인을 맨 앞에
     두므로, 이 확인을 통과시키지 않으면 아래 파이프라인 테스트들이 202 대신 전부 503을
     받는다. `api.images.router.get_capabilities`(라우터가 직접 import한 이름)를
     monkeypatch로 갈아끼운다 — 외부 HTTP를 타지 않는다."""
@@ -137,7 +137,7 @@ async def test_generate_rejects_aspect_ratio_not_supported_by_local_capabilities
 
     # 16:9는 유효한 Literal이지만 이번 capabilities 응답은 1:1만 지원한다고 보고한다 →
     # 400(생성 착수 전 방어). 이제 이 축의 단일 소스는 정적 모델 레지스트리가 아니라 로컬
-    # capabilities다(local-image-gen-techspec.md LT-4/LT-6) — 모델이 하나뿐이라 "모델이
+    # capabilities다 — 모델이 하나뿐이라 "모델이
     # 지원하지 않는 비율" 시나리오는 로컬이 지금 보고하지 않는 비율로 표현한다.
     resp = await db_client.post("/images/generate", json=_generate_payload(aspectRatio="16:9"))
     assert resp.status_code == 400
@@ -146,10 +146,10 @@ async def test_generate_rejects_aspect_ratio_not_supported_by_local_capabilities
 async def test_generate_rejects_registry_style_that_is_not_yet_available(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-1/IS-5: `_stub_capabilities_ready`가 서빙하는
+    """`_stub_capabilities_ready`가 서빙하는
     건 `soft_portrait` 하나뿐이다(`_READY_CAPABILITIES`) — `style: "pixel_art"`는
-    레지스트리(IS-1)엔 있지만 지금 서빙되지 않아 `available: false`인 경우(IS-5)다.
-    detail 형식은 바로 위 종횡비 400(`router.py:305-309`)과 대칭이어야 한다(IT-5)."""
+    레지스트리엔 있지만 지금 서빙되지 않아 `available: false`인 경우다.
+    detail 형식은 바로 위 종횡비 400(`router.py:305-309`)과 대칭이어야 한다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -166,7 +166,7 @@ async def test_generate_rejects_registry_style_that_is_not_yet_available(
 async def test_generate_accepts_prompt_at_max_length(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-7: 1000자는 하드 상한의 경계값이라 거절되면 안 된다."""
+    """1000자는 하드 상한의 경계값이라 거절되면 안 된다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -187,7 +187,7 @@ async def test_generate_accepts_prompt_at_max_length(
 async def test_generate_rejects_prompt_exceeding_max_length(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """image-style-7-goal-prompt.md IS-7: 1001자는 pydantic `max_length` 경계에서 422로
+    """1001자는 pydantic `max_length` 경계에서 422로
     거절돼야 한다 — capabilities 스텁 없이도(가용성 확인보다 앞선 스키마 검증이라) 거절된다."""
     user = _make_user()
     db_session.add(user)
@@ -201,7 +201,7 @@ async def test_generate_rejects_prompt_exceeding_max_length(
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-8의 사전 차단이 이 라우터의 기본 동작이 됐다 —
+    """집 PC 가용성 사전 차단이 이 라우터의 기본 동작이 됐다 —
     capabilities를 스텁하지 않은 요청은 (실제 httpx 호출도 없이) 503으로 막혀야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -231,7 +231,7 @@ async def test_list_image_models_returns_capabilities(
     models = {m["id"]: m for m in resp.json()}
     assert models["v1"]["available"] is True
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
-    # image-refact-techspec.md IT-1/IT-2/IT-3: 레지스트리 7종은 항상 전부 내려가고
+    # 레지스트리 7종은 항상 전부 내려가고
     # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `soft_portrait`
     # (표시명 "부드러운") 하나뿐이라 나머지 6종은 `available: false`다.
     assert models["v1"]["styles"] == [
@@ -266,7 +266,7 @@ async def test_generate_creates_assets_and_completes_job(
     assert job.status == ImageGenerationJobStatus.SUCCEEDED
     assert job.completed_count == 2
     assert len(job.asset_ids) == 2
-    # guard-techspec.md GT-3 표 1행: 차단이 없으면 blocked 필드는 기본값(0/None)이다.
+    # 차단이 없으면 blocked 필드는 기본값(0/None)이다.
     assert job.blocked_count == 0
     assert job.blocked_reason is None
 
@@ -281,8 +281,8 @@ async def test_generate_creates_assets_and_completes_job(
         assert asset.owner_user_id == user.id
         assert asset.kind == AssetKind.GENERATED
         assert asset.status == AssetStatus.READY
-        # image-style-7-goal-prompt.md IS-6: 어떤 style로 생성됐는지가 Asset 행에
-        # 남아야 한다 — 안 남으면 스타일별 효능 측정이 영원히 불가능해진다(§0-4).
+        # 어떤 style로 생성됐는지가 Asset 행에
+        # 남아야 한다 — 안 남으면 스타일별 효능 측정이 영원히 불가능해진다.
         assert asset.style == "soft_portrait"
         s3_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
         assert s3_object["Body"].read() == _png_bytes()
@@ -327,7 +327,7 @@ async def test_generate_partial_failure_still_succeeds(
 async def test_generate_total_failure_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """monitoring-techspec.md MT-6: 이 흡수(잡을 FAILED로 기록)는 그대로 두되, `local_image`
+    """이 흡수(잡을 FAILED로 기록)는 그대로 두되, `local_image`
     태그로 Bugsink 이벤트에도 승격돼야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -357,7 +357,7 @@ async def test_generate_total_failure_marks_job_failed(
     assert job.status == ImageGenerationJobStatus.FAILED
     assert job.completed_count == 0
     assert job.asset_ids == []
-    # guard-techspec.md GT-3 표 4행: 차단이 아닌 순수 실패는 오늘의 문구 그대로여야
+    # 차단이 아닌 순수 실패는 오늘의 문구 그대로여야
     # 하고, blocked 필드는 기본값(0/None)으로 남아야 한다.
     assert job.error == "이미지 생성에 모두 실패했습니다"
     assert job.blocked_count == 0
@@ -369,9 +369,9 @@ async def test_generate_total_failure_marks_job_failed(
 async def test_generate_partial_block_succeeds_with_blocked_count_and_reason(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """guard-techspec.md GT-3 표 2행: 2장 중 1장이 이미지 가드에 차단되면 잡은
+    """2장 중 1장이 이미지 가드에 차단되면 잡은
     SUCCEEDED로 끝나되 blockedCount/blockedReason에 그 사실이 남아야 한다 — 안
-    남으면 사용자는 왜 1장만 받았는지 알 방법이 없다(guard-goal-prompt.md G-3)."""
+    남으면 사용자는 왜 1장만 받았는지 알 방법이 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -405,10 +405,10 @@ async def test_generate_partial_block_succeeds_with_blocked_count_and_reason(
 async def test_generate_all_blocked_marks_job_failed_with_null_error(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """guard-techspec.md GT-3 표 3행 + I-1의 `any(results)` 지뢰: `_generate_and_store_one`의
+    """`any(results)` 지뢰: `_generate_and_store_one`의
     반환이 3치로 넓어지면 파이썬에서는 non-bool 멤버가 전부 truthy이므로,
     `router.py:111`의 `if any(results):`를 그대로 두면 전부 차단인데도 잡이
-    SUCCEEDED로 끝난다. 두 장 모두 차단시켜 FAILED로 끝나는지, 그리고 G-6에 따라
+    SUCCEEDED로 끝난다. 두 장 모두 차단시켜 FAILED로 끝나는지, 그리고 문구는 FE가 조립하므로
     서버가 한국어 문구를 넣지 않아 error가 null인지 고정한다."""
     user = _make_user()
     db_session.add(user)
@@ -441,8 +441,8 @@ async def test_generate_mixed_blocked_reasons_logs_warning(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """guard-goal-prompt.md G-6/guard-techspec.md GT-3: 프롬프트 가드는 결정적이라
-    한 잡 안에서 사유가 섞일 수 없다 — 섞이면 로컬이 계약(LC-4b)을 어긴 것이므로,
+    """프롬프트 가드는 결정적이라
+    한 잡 안에서 사유가 섞일 수 없다 — 섞이면 로컬이 계약을 어긴 것이므로,
     조용히 넘기지 않고 WARNING이 남아야 원인을 추적할 수 있다."""
     user = _make_user()
     db_session.add(user)
@@ -471,8 +471,8 @@ async def test_generate_mixed_blocked_reasons_logs_warning(
         for record in caplog.records
         if record.name == "api.images.router" and record.levelno >= logging.WARNING
     ]
-    # 사유가 섞이지 않은 차단은 경고 하나(guard-goal-prompt.md G-5의 "차단 시" 로그)
-    # 뿐이다 — 여기서 최소 2건을 요구해야, 섞였을 때만 추가로 남아야 하는 GT-3의
+    # 사유가 섞이지 않은 차단은 경고 하나("차단 시" 로그)
+    # 뿐이다 — 여기서 최소 2건을 요구해야, 섞였을 때만 추가로 남아야 하는
     # 계약-위반 경고가 실제로 구현됐는지(누락 시 이 단언만 깨진다) 확인할 수 있다.
     assert len(router_warnings) >= 2
 
@@ -483,7 +483,7 @@ async def test_generate_blocked_alongside_genuine_failure_logs_a_distinct_warnin
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """guard-progress.md 적대적 리뷰 발견 사항(GT-3에 셀이 없던 조합): `count=2`에서
+    """리뷰에서 발견된, 처음 판정 표에 칸이 없던 조합: `count=2`에서
     하나는 차단, 다른 하나는 정책과 무관한 진짜 회귀(`LLMClientError`가 아닌 예기치
     못한 예외)로 실패하면, 집계는 `succeeded=0, blocked=1`만 보고 순수 전부-차단
     잡과 구분 불가능하게 FAILED+error=None으로 끝난다. 진짜 회귀의 유일한 흔적이
@@ -533,7 +533,7 @@ async def test_generate_blocked_log_omits_user_id_and_prompt_text(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """guard-goal-prompt.md G-5: 차단 로그에 사용자 id나 프롬프트 원문이 남으면
+    """차단 로그에 사용자 id나 프롬프트 원문이 남으면
     서버 로그 자체가 "누가 무엇을 시도했는가"의 기록이 된다 — 사유만 남아야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -559,7 +559,7 @@ async def test_generate_blocked_log_omits_user_id_and_prompt_text(
     assert job.status == ImageGenerationJobStatus.FAILED
     assert job.blocked_reason == "prompt"
     router_warnings = [record for record in caplog.records if record.name == "api.images.router"]
-    assert router_warnings  # GT-5가 실제로 경고를 남기는지도 같이 고정한다
+    assert router_warnings  # 차단 로깅이 실제로 경고를 남기는지도 같이 고정한다
     for record in router_warnings:
         message = record.getMessage()
         assert secret_prompt not in message
@@ -569,7 +569,7 @@ async def test_generate_blocked_log_omits_user_id_and_prompt_text(
 async def test_generate_input_error_too_long_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8 §3-11: `local_image.py`가 `LocalImageInputError`를
+    """`local_image.py`가 `LocalImageInputError`를
     던지는 것은 `test_llm_local_image.py`가 이미 고정했지만, `router.py`가 그것을 받아 잡
     상태·응답으로 바꾸는 경로(`:113`의 `except LocalImageInputError`, `:249`의 FAILED 기록)는
     커버리지 0건이었다 — `blocked_reason` 파이프라인 테스트와 같은 관용구를 쓴다."""
@@ -601,7 +601,7 @@ async def test_generate_input_error_too_long_marks_job_failed(
 async def test_generate_input_error_syntax_marks_job_failed(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8 §3-11: 위 테스트와 같은 경로 — 값만
+    """위 테스트와 같은 경로 — 값만
     `syntax`로 다르다(422 `reason=="syntax"` 진입점)."""
     user = _make_user()
     db_session.add(user)
@@ -634,7 +634,7 @@ async def test_generate_mixed_input_errors_logs_warning(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8 §3-8: `too_long`/`syntax`는 프롬프트만의
+    """`too_long`/`syntax`는 프롬프트만의
     함수라 결정적이다 — 한 잡 안에서 섞이면 계약 밖 사건(프록시 흔들림 등)이므로
     `router.py:212-224`의 혼재 감지 WARNING이 남아야 한다. 이 신설 코드는 이 테스트
     전까지 한 번도 실행된 적이 없었다."""
@@ -674,7 +674,7 @@ async def test_generate_mixed_input_errors_logs_warning(
 async def test_generate_input_error_does_not_set_blocked_fields(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8: `input_error`와 `blocked_reason`은 별개 축이다
+    """`input_error`와 `blocked_reason`은 별개 축이다
     (`blocked_reason`의 "일부러 정보를 안 준다"는 의미를 보존하기 위해 분리했다) —
     `jobs.py:update_job`이 `blocked_count`/`blocked_reason`과 거의 같은 모양으로
     `input_error_count`/`input_error`를 다뤄 필드를 바꿔 쓰는 실수를 하기 쉽다. 반대
@@ -728,7 +728,7 @@ async def test_generate_undecodable_image_counts_as_failure(
 async def test_generate_creates_request_row_succeeded_with_asset_request_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-4: 이게 깨지는 시나리오 — 종료 시점 UPDATE가
+    """이게 깨지는 시나리오 — 종료 시점 UPDATE가
     빠지거나 `request_id`가 `_generate_and_store_one`까지 전파되지 않으면 요청 행이
     `pending`에 멈추거나 생성된 asset의 `request_id`가 `None`으로 남는다."""
     user = _make_user()
@@ -762,7 +762,7 @@ async def test_generate_creates_request_row_succeeded_with_asset_request_id(
 async def test_generate_all_blocked_creates_request_row_blocked(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-4/IM-6: 이게 깨지는 시나리오 — 전부 차단인데
+    """이게 깨지는 시나리오 — 전부 차단인데
     종료 판정이 `completed_count`를 먼저 보지 않으면(또는 UPDATE가 없으면) 요청 행이
     `pending`으로 남거나 `status`가 `blocked`로 채워지지 않는다."""
     user = _make_user()
@@ -794,7 +794,7 @@ async def test_generate_all_blocked_creates_request_row_blocked(
 async def test_generate_partial_block_creates_request_row_succeeded_with_blocked_count(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-4 종료 상태 판정 규칙 표: 이게 깨지는 시나리오 —
+    """종료 상태 판정 규칙: 이게 깨지는 시나리오 —
     "차단이 하나라도 있으면 blocked"로 잘못 구현하면 부분 성공(1장 성공+1장 차단)도
     `blocked`로 잘못 기록된다. 부분 성공은 `succeeded`이면서 `blocked_count=1`이어야 한다."""
     user = _make_user()
@@ -831,7 +831,7 @@ async def test_generate_partial_block_creates_request_row_succeeded_with_blocked
 async def test_generate_returns_429_creates_no_request_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-6: 이게 깨지는 시나리오 — 요청 행 INSERT가
+    """이게 깨지는 시나리오 — 요청 행 INSERT가
     `try_admit()` 판정보다 앞에 있으면 admission이 거부된(429) 요청도
     `image_generation_requests` 행을 남긴다."""
     user = _make_user()
@@ -913,9 +913,9 @@ async def test_generate_request_row_update_failure_still_marks_job_terminal(
     assert job.completed_count == 1
 
 
-# ---- T-13: 202 이후(`_run_generation`)의 클로버 환불 (clover-goal-prompt.md CL-24) ----
+# ---- 202 이후(`_run_generation`)의 클로버 환불 ----
 #
-# 202를 받은 뒤의 실패는 이 저장소에서 **환불이 0건**이었다(clover-techspec.md §3-5-2).
+# 202를 받은 뒤의 실패는 이 저장소에서 **환불이 0건**이었다.
 # 무료 토큰버킷일 때는 감내할 수 있었지만 클로버는 사용자가 지불한 것이라, 가드 차단·
 # 입력 오류·생성 실패·부분 성공이 전부 "돈만 사라지고 이미지는 0장"이 된다.
 
@@ -947,13 +947,13 @@ async def _clover_paid_user(
 
     🔴 토큰 용량을 안 막으면 게이트가 토큰으로 결제해 `source="token"`이 되고, 그러면
     "클로버가 환불됐다"를 묻는 이 파일의 단언들이 **검사 대상을 아예 안 타는 항진명제**가
-    된다(clover-techspec.md §3-4-1)."""
+    된다."""
     monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
-    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
     # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
     # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    # clover-page-goal-prompt.md CE-35 — 이 유저는 실제로 image_spend를 태우므로 매칭 로트가
+    # 이 유저는 실제로 image_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
         db_session,
@@ -968,7 +968,7 @@ async def _clover_paid_user(
 async def test_partial_success_refunds_only_the_images_that_were_not_made(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """clover-techspec.md §3-5-2: 부분 성공은 **`count - succeeded_count` 장분만** 환불한다.
+    """부분 성공은 **`count - succeeded_count` 장분만** 환불한다.
     2장을 요청해 1장이 나왔으면 사용자는 그 1장을 실제로 받았으므로 전량 환불은 공짜로
     주는 것이고, 전량 소모는 못 받은 1장까지 받는 것이다."""
     _stub_capabilities_ready(monkeypatch)
@@ -1016,7 +1016,7 @@ async def test_zero_images_refunds_the_whole_charge(
     failure: str,
     raiser: Callable[[], Exception],
 ) -> None:
-    """clover-goal-prompt.md CL-21: 가드 차단·입력 오류·생성 실패 셋 다 환불 대상이다.
+    """가드 차단·입력 오류·생성 실패 셋 다 환불 대상이다.
     이미지가 0장 나왔는데 사용자는 프롬프트를 고쳐 다시 내야 하고, 환불이 없으면 고칠
     때마다 사라진다. 가드는 우리 모델의 판정이라 오판도 있다."""
     _stub_capabilities_ready(monkeypatch)
@@ -1070,7 +1070,7 @@ async def test_full_success_does_not_refund_anything(
 async def test_token_paid_failure_does_not_touch_clover(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """🔴 clover-techspec.md CT-7: 무엇으로 냈는지에 따라 **돌려놓는 자원이 다르다.**
+    """🔴 무엇으로 냈는지에 따라 **돌려놓는 자원이 다르다.**
     토큰으로 낸 요청을 클로버로 환불하면 안 깎은 잔액이 조용히 늘어난다 — 토큰 용량을
     막지 않아 `source="token"`인 상태에서 원장이 비어 있어야 한다."""
     _stub_capabilities_ready(monkeypatch)
@@ -1097,7 +1097,7 @@ async def test_token_paid_failure_does_not_touch_clover(
     assert user.clover_balance == 100
 
 
-# clover-techspec.md §3-5-1a — 차감 뒤 **되돌릴 수 있는 첫 지점 앞**의 구간. S4가 채팅에서
+# 차감 뒤 **되돌릴 수 있는 첫 지점 앞**의 구간. 채팅은 이미
 # 같은 구간을 닫았으므로(`_refund_clover_on_failure`) 이미지만 열어 두면 같은 사고에 두 경로가
 # 다르게 동작한다. `_run_generation`의 `try`에는 `except`가 없고 `finally: release_admission`만
 # 있어서, 집계에 닿기 전에 터지면 환불할 자리가 아예 없었다.

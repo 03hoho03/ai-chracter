@@ -249,9 +249,9 @@ async def test_list_contents_response_includes_card_fields(
 async def test_list_contents_shows_placeholder_nickname_for_withdrawn_creator(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-27: S5(LR-20)가 탈퇴 시 nickname을 파기하면서
+    """탈퇴 시 nickname을 파기하게 되면서
     드러난 회귀 — creator_nickname은 non-optional str이라 파기된 None을 그대로 넣으면
-    Pydantic 검증에서 500이 난다(admin/contents.py의 LR-27 선례와 같은 처방)."""
+    Pydantic 검증에서 500이 난다(admin/contents.py의 선례와 같은 처방)."""
     user = _make_user(nickname=None, deleted_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.flush()
@@ -271,7 +271,7 @@ async def test_list_contents_shows_placeholder_nickname_for_withdrawn_creator(
 async def test_list_signs_thumbnail_variant_while_detail_signs_original(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-008: list responses sign the `_thumb.webp` variant key; the detail view
+    """List responses sign the `_thumb.webp` variant key; the detail view
     keeps signing the original object (original extension)."""
     user = _make_user()
     db_session.add(user)

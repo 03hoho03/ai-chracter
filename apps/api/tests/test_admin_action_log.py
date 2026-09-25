@@ -20,7 +20,7 @@ def _make_admin(**overrides: object) -> AdminUser:
 
 
 async def test_record_admin_action_does_not_commit(db_session: AsyncSession) -> None:
-    """TS-7 — `db.add()`만 하고 커밋하지 않는다. 호출자가 롤백하면 행이 사라져야
+    """`db.add()`만 하고 커밋하지 않는다. 호출자가 롤백하면 행이 사라져야
     호출자의 트랜잭션에 로그가 얹혀 있다는 계약이 실제로 지켜지는 것이다."""
     admin = _make_admin()
     db_session.add(admin)

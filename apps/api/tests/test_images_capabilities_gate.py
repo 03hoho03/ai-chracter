@@ -1,5 +1,5 @@
-"""`GET /images/models`의 정적 레지스트리 ↔ 로컬 capabilities 교차(LT-6)와
-`POST /images/generate`의 가용성/대기열 사전 차단(LG-8/LT-3/LT-6).
+"""`GET /images/models`의 정적 레지스트리 ↔ 로컬 capabilities 교차와
+`POST /images/generate`의 가용성/대기열 사전 차단.
 
 capabilities 소스는 `mock.patch`가 아니라 `api.images.router.get_capabilities`(라우터가
 직접 import한 이름)를 `monkeypatch.setattr`로 갈아끼운다 — 외부 HTTP를 실제로 타지 않고
@@ -7,11 +7,11 @@ router가 그 결과를 어떻게 쓰는지만 본다. 503/429로 끝나는 사�
 이전에 막히므로 `app.dependency_overrides[get_image_client]`가 필요 없다 — admission이
 잡 완료 시 반납되는지 보는 테스트만 예외로 그 오버라이드를 쓴다(아래 참고).
 
-admission(P2-R 결함 수정, LT-3)도 같은 이름-패치 규칙을 따른다: 라우터는
+admission(검사·증가 경합 결함 수정)도 같은 이름-패치 규칙을 따른다: 라우터는
 `try_admit`/`release_admission`을 `api.llm.local_image`에서 이름으로 import해야
 `monkeypatch.setattr("api.images.router.try_admit", ...)`가 먹는다.
 
-limit-goal-prompt.md RL-5/RL-11/RL-13/RL-16(S6)의 유저별 상한 — 토큰 버킷(장수만큼 차감) ·
+유저별 상한 — 토큰 버킷(장수만큼 차감) ·
 유저별 큐 1칸 · 429 바디 통일(`USER_LIMIT`/`QUEUE_FULL`) · 202 전 실패의 환불 — 도 같은
 엔드포인트의 **사전 차단**이라 이 파일에 둔다(`test_user_rate_limit_gate.py`는 채팅 4경로 전용).
 정책 상수는 `api.core.rate_limit_gate`의 모듈 전역이라 `monkeypatch.setattr`로 낮춘다.
@@ -49,7 +49,7 @@ from factories import _login_as, _make_user, _make_user_with_clover_lot
 async def _authed_user(
     db_client: httpx.AsyncClient, db_session: AsyncSession, **overrides: object
 ) -> User:
-    """clover-page-goal-prompt.md CE-35 — `clover_balance`가 있으면 매칭 로트도 함께 만든다.
+    """`clover_balance`가 있으면 매칭 로트도 함께 만든다.
     이미지 게이트가 실제로 image_spend를 태우는 테스트가 로트 0행 상태에서
     `CloverLotShortfallError`를 맞지 않도록."""
     balance = overrides.pop("clover_balance", 0)
@@ -122,7 +122,7 @@ def _stub_job_pipeline(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 async def _extra_logged_in_client(
     stack: AsyncExitStack, db_session: AsyncSession, **overrides: object
 ) -> httpx.AsyncClient:
-    """`db_client`의 유저와 **다른 유저**로 동시에 요청할 클라이언트. 유저별 큐 1칸(RL-5)은
+    """`db_client`의 유저와 **다른 유저**로 동시에 요청할 클라이언트. 유저별 큐 1칸은
     유저가 여럿이어야 전역 상한과 구분되는데, 세션 쿠키는 클라이언트 단위라(요청 단위
     `cookies=`는 httpx 0.28에서 deprecated) 유저마다 클라이언트를 따로 연다.
 
@@ -160,7 +160,7 @@ async def _set_bucket_tokens(user_id: uuid.UUID, tokens: float) -> None:
     )
 
 
-# ---- GET /images/models 교차 (LT-6) ------------------------------------------
+# ---- GET /images/models 교차 ------------------------------------------
 
 
 async def test_registry_model_missing_from_local_capabilities_is_marked_unavailable(
@@ -169,9 +169,9 @@ async def test_registry_model_missing_from_local_capabilities_is_marked_unavaila
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """LC-1: 로컬이 정적 레지스트리의 `v1`을 응답에서 빼면(꺼짐·재개편 등) 그 모델은
+    """로컬이 정적 레지스트리의 `v1`을 응답에서 빼면(꺼짐·재개편 등) 그 모델은
     `available: false`로 내려가야 한다 — 안 그러면 FE가 죽은 모델을 선택 가능하게 그린다.
-    불일치는 조용한 기능 축소로 나타나므로 WARNING 로그가 유일한 신호다(contract LC-1)."""
+    불일치는 조용한 기능 축소로 나타나므로 WARNING 로그가 유일한 신호다."""
     await _authed_user(db_client, db_session)
 
     async def fake_get_capabilities() -> LocalCapabilities:
@@ -217,11 +217,11 @@ async def test_local_model_unknown_to_static_registry_is_ignored(
 async def test_models_endpoint_maps_wire_model_id_back_to_the_public_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id(`opaque-wire-id`)만
+    """홈PC는 와이어 id(`opaque-wire-id`)만
     보고한다. 교차 참조가 공개 id로 그대로 조회하면(매핑 전 동작) 매치가 안 나 존재하는
     모델이 `available: false`로 내려간다 — 공개→와이어로 조회해야 FE가 `v1`을 쓸 수 있다.
 
-    image-style-7-goal-prompt.md IS-2: style 축은 이 레포에 별도 와이어 매핑이 없다 —
+    style 축은 이 레포에 별도 와이어 매핑이 없다 —
     공개 id와 와이어 id가 같다. 그 가용성은
     `test_partial_serving_produces_exact_availability_vector_for_all_seven_styles`가
     이미 담당하므로, 여기서는 model 축 와이어 매핑(살아있는 기능)만 검증한다."""
@@ -251,11 +251,11 @@ async def test_registry_entry_unavailable_when_capability_has_no_style_that_maps
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-17: `available`이 `_style_items()`의 결과와
+    """`available`이 `_style_items()`의 결과와
     무관하게 `capability_for()`의 존재만으로 정해지면, 홈PC가 와이어 style을 하나도
     서빙하지 않을 때도 `available: true, styles: []`가 나가 FE의 제출 버튼이 눌려도
     아무 일도 일어나지 않고 사용자는 이유를 알 방법이 없다(불일치는 조용한 기능 축소이므로
-    WARNING이 유일한 신호다, contract LC-1/techspec LT-2)."""
+    WARNING이 유일한 신호다)."""
     await _authed_user(db_client, db_session)
 
     async def fake_get_capabilities() -> LocalCapabilities:
@@ -280,7 +280,7 @@ async def test_registry_entry_unavailable_when_capability_has_no_style_that_maps
 async def test_registry_entry_unavailable_when_local_does_not_report_the_wire_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 매핑이 걸리면 조회 키가 공개 id가 아니라
+    """매핑이 걸리면 조회 키가 공개 id가 아니라
     와이어 id다. 홈PC가 옛 공개 id(`v1`)를 그대로 보고해도(와이어 id를 안 보고하면) 더
     이상 매치가 아니어야 한다 — 매핑을 건너뛰고 공개 id로 계속 조회하면 이 불일치를
     놓치고 `available: true`를 잘못 내린다(그 뒤 실제 생성 요청은 홈PC의 400으로 끝난다)."""
@@ -307,10 +307,10 @@ async def test_models_endpoint_does_not_warn_when_wire_id_matches_and_model_is_a
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19 / techspec LT-2: `missing` 계산이 여전히
+    """`missing` 계산이 여전히
     공개 id로 로컬 id 집합과 비교하면, 와이어 id가 공개 id와 다른 프로덕션에서는 모델이
     실제로 가용한데도 이 WARNING이 매 요청 상시로 운다 — 그러면 이 로그가 잡아야 할
-    진짜 불일치가 소음에 묻힌다(LT-2가 "조용한 기능 축소의 유일한 신호"라 부르는 그
+    진짜 불일치가 소음에 묻힌다(조용한 기능 축소의 유일한 신호인 그
     로그다). 같은 요청 중 다른 로거가 WARNING을 내도 무관하므로 `api.images.router`
     로거 한정으로 부재를 확인한다."""
     await _authed_user(db_client, db_session)
@@ -338,7 +338,7 @@ async def test_models_endpoint_does_not_warn_when_wire_id_matches_and_model_is_a
 async def test_partial_serving_produces_exact_availability_vector_for_all_seven_styles(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """image-style-7-goal-prompt.md IS-5: 가용성 판정은 style 집합 원소별이어야 한다.
+    """가용성 판정은 style 집합 원소별이어야 한다.
     7종 중 **정확히 2종**(`chapel_glass`=2번째, `watercolor`=5번째)만 서빙하는 픽스처로
     응답 7개의 `available`을 순서까지 포함해 통째로 단언한다.
 
@@ -348,8 +348,8 @@ async def test_partial_serving_produces_exact_availability_vector_for_all_seven_
     서빙에서 우연히 맞는다), ② 특정 슬롯을 하드코딩하는 버그(전무 서빙에서 그 슬롯도
     False가 되어 우연히 맞는다). 정확히 2종을, 그것도 "자연스러운 기본값"이 아닌
     위치(2·5번째)로 골라야 두 버그 유형 모두에서 벡터가 어긋난다. `_style_items`는
-    같은 종류의 항진명제로 이미 한 번 물렸다(image-refact-techspec.md IT-4:
-    `available=bool(styles)`가 IT-3 이후 항상 참이 된 사건 — `router.py`의
+    같은 종류의 항진명제로 이미 한 번 물렸다(`_style_items`가 레지스트리 전체를 늘 내리게 되면서
+    `available=bool(styles)`가 항상 참이 된 사건 — `router.py`의
     `_style_items` 호출부 주석 참고).
     """
     await _authed_user(db_client, db_session)
@@ -379,13 +379,13 @@ async def test_partial_serving_produces_exact_availability_vector_for_all_seven_
     ]
 
 
-# ---- POST /images/generate 사전 차단 (LG-8/LT-3) -----------------------------
+# ---- POST /images/generate 사전 차단 -----------------------------
 
 
 async def test_generate_returns_503_and_creates_no_job_when_local_unavailable(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LG-8: 집 PC가 꺼져 있으면 생성 시도 전에 막아야 한다 — 사전 차단이 없으면 "눌렀는데
+    """집 PC가 꺼져 있으면 생성 시도 전에 막아야 한다 — 사전 차단이 없으면 "눌렀는데
     실패"가 기본 경험이 된다. 잡이 실제로 생성되지 않는 것까지 확인한다(생성 후 실패라면
     잡이 Redis에 남아 FE가 폴링하다 실패로 끝나는 것과는 다른 경로다)."""
     await _authed_user(db_client, db_session)
@@ -411,7 +411,7 @@ async def test_generate_returns_503_and_creates_no_job_when_local_unavailable(
 async def test_generate_returns_202_when_capability_lookup_uses_the_wire_model_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """local-image-gen-goal-prompt.md LG-19: 홈PC는 와이어 id만 보고한다 — 이 가용성
+    """홈PC는 와이어 id만 보고한다 — 이 가용성
     게이트가 공개 id(`payload.model`)로 조회하면, 공개 id와 와이어 id가 실제로 다른
     프로덕션에서는 이 확인이 항상 실패해 모든 생성 요청이 503으로 막힌다(이 단계가
     존재하는 이유 그 자체). 실제 생성 결과는 이 테스트의 관심사가 아니다 — 빈
@@ -439,9 +439,9 @@ async def test_generate_returns_202_when_capability_lookup_uses_the_wire_model_i
 async def test_generate_returns_429_and_creates_no_job_when_admission_is_rejected(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """LT-3: `try_admit()`이 상한에서 거절하면 잡을 만들지 않고 429여야 한다 — 안 그러면
-    한 사용자가 GPU 직렬 처리량을 몇 분씩 독점한다(LG-7 근거표). 로컬은 가용·요청도
-    유효해서 이 단계까지 통과해야 한다. (P2-R로 카운터의 주체가 `current_queue_depth`
+    """`try_admit()`이 상한에서 거절하면 잡을 만들지 않고 429여야 한다 — 안 그러면
+    한 사용자가 GPU 직렬 처리량을 몇 분씩 독점한다. 로컬은 가용·요청도
+    유효해서 이 단계까지 통과해야 한다. (검사·증가 경합 결함을 고치면서 카운터의 주체가 `current_queue_depth`
     고정값 패치에서 `try_admit` 고정 반환값으로 바뀌었다 — 실제 동시성 회귀는
     `test_concurrent_requests_admit_no_more_than_the_queue_limit`가 별도로 잡는다.)"""
     await _authed_user(db_client, db_session)
@@ -468,15 +468,15 @@ async def test_generate_returns_429_and_creates_no_job_when_admission_is_rejecte
 async def test_four_distinct_users_fill_the_global_queue_and_a_fifth_is_rejected(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P2-R 결함(검사와 증가가 서로 다른 await 경계에 걸쳐 있어 동시 도착 요청이 전부 증가
+    """검사·증가 경합 결함(검사와 증가가 서로 다른 await 경계에 걸쳐 있어 동시 도착 요청이 전부 증가
     이전 값을 읽고 통과했다 — 실측 admitted=10 rejected=0 limit=4)의 회귀 가드였던
     `test_concurrent_requests_admit_no_more_than_the_queue_limit`의 후신이다. 유저별 큐가
-    1칸이 되면서(RL-5) 같은 유저 10건으로는 전역 상한(4)을 더 이상 관측할 수 없다 — 두 번째
+    1칸이 되면서 같은 유저 10건으로는 전역 상한(4)을 더 이상 관측할 수 없다 — 두 번째
     요청부터 유저별 칸에서 먼저 걸리기 때문이다. 서로 다른 유저 5명이 **동시에** 도착해야
     전역 상한이 판정에 관여한다.
 
     이 배치가 잡는 회귀가 하나 더 있다: `_queue_depth`(전역 정수)를 유저별 dict로 **교체**해
-    버리면 유저마다 1칸씩 무제한으로 열려 GPU 직렬 처리량(LG-6) 방어가 통째로 사라진다 —
+    버리면 유저마다 1칸씩 무제한으로 열려 GPU 직렬 처리량 방어가 통째로 사라진다 —
     그때 5번째 유저가 429가 아니라 202를 받는다."""
     await _authed_user(db_client, db_session)
     _reset_admission(monkeypatch, queue_limit=4)
@@ -501,7 +501,7 @@ async def test_four_distinct_users_fill_the_global_queue_and_a_fifth_is_rejected
 async def test_same_user_second_concurrent_request_is_queue_full_while_another_user_passes(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-5: 유저별 큐는 1칸이다 — 한 사용자가 잡 두 개를 동시에 큐에 세울 수 없다.
+    """유저별 큐는 1칸이다 — 한 사용자가 잡 두 개를 동시에 큐에 세울 수 없다.
 
     짝이 되는 **다른 유저의 202**가 없으면 이 테스트는 "전역 상한이 1"과 구분되지 않는다
     (전역만 1로 낮춘 구현에서도 똑같이 초록이다). 전역 상한은 4로 열어 두고 같은 순간에 다른
@@ -588,7 +588,7 @@ async def test_admission_is_released_when_create_job_raises_so_the_gate_does_not
 async def test_non_http_failure_before_202_refunds_the_charged_tokens(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-16: 환불 조건은 "202 전에 끝났다"이지 "`HTTPException`으로 끝났다"가 아니다.
+    """환불 조건은 "202 전에 끝났다"이지 "`HTTPException`으로 끝났다"가 아니다.
     차감 이후 202 전에는 `HTTPException`이 아닌 예외를 내는 지점이 둘 있다 —
     `create_job`(Redis)과 `session.commit()`(Postgres). 바로 위 테스트가 그 경로에서
     큐 칸 반납만 보므로, 토큰까지 보는 테스트가 없으면 환불이 `HTTPException`에만 걸린
@@ -684,17 +684,17 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
     assert second.status_code == 202
 
 
-# ---- 유저별 토큰 버킷 · 429 바디 통일 · 환불 (RL-5/RL-11/RL-13/RL-16, S6) ----
+# ---- 유저별 토큰 버킷 · 429 바디 통일 · 환불 ----
 
 
 async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empty(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-5/RL-11: 토큰이 없으면 큐에 자리가 있어도 429이고, 잡은 만들어지지
+    """토큰이 없으면 큐에 자리가 있어도 429이고, 잡은 만들어지지
     않는다. 용량을 0으로 낮춰 만든다 — 실제로 10장을 생성해 소진시키면 그 비용이 이 스위트에
     그대로 붙는다(`test_user_rate_limit_gate.py`의 같은 결정).
 
-    🔴 **클로버 도입으로 `code`가 바뀌었다**(clover-techspec.md CT-8 이미지 행). 토큰이 없으면
+    🔴 **클로버 도입으로 `code`가 바뀌었다**. 토큰이 없으면
     클로버가 대신 내므로, **낼 클로버도 없을 때** 나가는 것이 이 429다. `_authed_user`의 기본
     잔액이 0이라 이 셋업이 곧 "낼 것이 없는 사용자"다.
     ⇒ **이미지에서 `USER_LIMIT`은 이제 도달할 수 없다** — 토큰 부족은 전부 클로버 분기로 넘어간다.
@@ -716,7 +716,7 @@ async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empt
     # 다음 토큰이 찰 때까지의 초. 0이면 FE가 "지금 다시" 하라는 뜻으로 읽어 무한 재시도가 된다.
     assert detail["retryAfterSeconds"] >= 1
     assert created_job_ids == []
-    # 큐 칸은 건드리지 않았다 — 게이트가 `Depends`라 라우트 본문(try_admit) 전에 끊는다(RL-13).
+    # 큐 칸은 건드리지 않았다 — 게이트가 `Depends`라 라우트 본문(try_admit) 전에 끊는다.
     assert local_image._user_queue_depth == {}
     assert await _bucket_tokens(user.id) is None
 
@@ -724,7 +724,7 @@ async def test_images_generate_returns_user_limit_body_when_token_bucket_is_empt
 async def test_global_queue_429_now_uses_the_structured_detail_body(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-11: 전역 큐 거절의 detail은 평문 문자열("Too many generation requests are queued")
+    """전역 큐 거절의 detail은 평문 문자열("Too many generation requests are queued")
     이었다 — 유저 상한 429와 본문 모양이 달라 FE가 둘을 가를 수 없고 재시도 시점도 모른다.
     두 429를 `code`로 가르고 `retryAfterSeconds`를 함께 싣는다."""
     await _authed_user(db_client, db_session)
@@ -743,7 +743,7 @@ async def test_global_queue_429_now_uses_the_structured_detail_body(
 async def test_queue_full_refunds_the_charged_tokens(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-16: 토큰은 잡이 실제로 생성(202)될 때만 소모된다. 차감은 `Depends`에서 일어나고
+    """토큰은 잡이 실제로 생성(202)될 때만 소모된다. 차감은 `Depends`에서 일어나고
     큐 거절은 그 뒤 라우트 본문이라, 환불이 없으면 **생성되지도 않은 이미지 2장**이 사용자의
     하루치에서 사라진다(그 상태로 큐가 붐비면 상한이 실제 생성량보다 훨씬 빨리 마른다).
 
@@ -767,7 +767,7 @@ async def test_queue_full_refunds_the_charged_tokens(
 async def test_unavailable_503_refunds_the_charged_tokens(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-16a: 환불은 `QUEUE_FULL` 전용이 아니다 — 차감 이후 202 전에 끝나는 경로는 전부
+    """환불은 `QUEUE_FULL` 전용이 아니다 — 차감 이후 202 전에 끝나는 경로는 전부
     같다. 집 PC가 꺼져 있으면(503) 사용자는 이미지를 한 장도 못 받는데, 환불이 큐 거절에만
     걸려 있으면 홈서버가 다운된 동안 재시도할 때마다 하루치가 조용히 깎인다."""
     _reset_admission(monkeypatch, queue_limit=4)
@@ -790,8 +790,8 @@ async def test_unavailable_503_refunds_the_charged_tokens(
 async def test_exempt_user_skips_token_bucket_but_still_has_one_queue_slot(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-10/RL-18: 예외 계정이 면제받는 것은 **토큰 버킷뿐**이다. 유저별 큐 1칸은 그대로
-    받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량(LG-6) 보호라서 예외 계정에 열어 줄 이유가
+    """예외 계정이 면제받는 것은 **토큰 버킷뿐**이다. 유저별 큐 1칸은 그대로
+    받는다 — 큐는 쿼터가 아니라 GPU 직렬 처리량 보호라서 예외 계정에 열어 줄 이유가
     없다. 짝은 바로 위
     `test_images_generate_returns_user_limit_body_when_token_bucket_is_empty`다(같은
     `IMAGE_TOKEN_CAPACITY=0`에서 비면제 계정은 `USER_LIMIT` 429를 받는다) — 그 짝이 없으면
@@ -817,8 +817,8 @@ async def test_exempt_user_skips_token_bucket_but_still_has_one_queue_slot(
 async def test_token_charge_equals_requested_image_count(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """RL-5: 토큰 1개 = 이미지 1장이다. 요청당 1씩 깎으면 `count=2`로 보내는 사용자가 상한을
-    두 배로 쓴다 — 비용은 장수에 붙는다(LG-6: 집 PC가 장당 한 번씩 돈다).
+    """토큰 1개 = 이미지 1장이다. 요청당 1씩 깎으면 `count=2`로 보내는 사용자가 상한을
+    두 배로 쓴다 — 비용은 장수에 붙는다(집 PC가 장당 한 번씩 돈다).
 
     뒷부분은 부분 차감 금지다: 남은 토큰(1)이 요청 장수(2)보다 적으면 1장만 만들지 않고
     통째로 429다 — 부분 생성은 사용자에게 "2장 요청했는데 1장"으로 보이고 환불 회계도
@@ -844,28 +844,28 @@ async def test_token_charge_equals_requested_image_count(
     rejected = await db_client.post("/images/generate", json=_generate_payload(count=2))
 
     assert rejected.status_code == 429
-    # 토큰 부족 + 잔액 0 → CT-8 이미지 행. `QUEUE_FULL`이 아니라는 것이 이 단언의 내용이다.
+    # 토큰 부족 + 잔액 0 → 클로버 429(`CLOVER_REQUIRED`, `window="image"`). `QUEUE_FULL`이 아니라는 것이 이 단언의 내용이다.
     assert rejected.json()["detail"]["code"] == "CLOVER_REQUIRED"
     assert len(created_job_ids) == 1
     # 부족하면 **부분 차감 없이** 거절이다 — 남은 1이 그대로 있어야 한다.
     assert await _bucket_tokens(user.id) == pytest.approx(1.0, abs=0.01)
 
 
-# ---- 이미지 클로버 분기 (clover-techspec.md CT-7·CT-8 이미지 행, §3-4-1) ----
+# ---- 이미지 클로버 분기 ----
 
 
 async def test_token_exhaustion_spends_clover_and_creates_the_job(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """clover-goal-prompt.md CL-1: 이미지도 무료 토큰버킷을 다 쓴 뒤에는 클로버가 대신 낸다.
+    """이미지도 무료 토큰버킷을 다 쓴 뒤에는 클로버가 대신 낸다.
     차감량은 **장수 × 단가**다(`count`가 2면 두 배) — 비용이 요청 수가 아니라 장수에 붙는
-    것과 같은 이유다(RL-5)."""
+    것과 같은 이유다."""
     _reset_admission(monkeypatch, queue_limit=4)
     _stub_ready_capabilities(monkeypatch)
     created_job_ids = _stub_job_pipeline(monkeypatch)
     monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
 
-    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감량을 보는 테스트라 그 선행 조건을 셋업에 명시한다.
     user = await _authed_user(
         db_client,
@@ -895,7 +895,7 @@ async def test_token_exhaustion_spends_clover_and_creates_the_job(
 async def test_image_clover_rejection_uses_the_refill_retry_after_not_midnight(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """🔴 clover-techspec.md CT-8: 이미지 무료분은 **시간당 충전**이지 자정 리셋이 아니다.
+    """🔴 이미지 무료분은 **시간당 충전**이지 자정 리셋이 아니다.
     `retryAfterSeconds`에 자정까지 초를 실으면 **최대 24시간짜리 거짓값**이 나간다 —
     `take_tokens`가 돌려준 값(다음 토큰까지 남은 초)을 그대로 써야 참이다.
 
@@ -922,7 +922,7 @@ async def test_image_clover_rejection_uses_the_refill_retry_after_not_midnight(
 async def test_image_exempt_user_does_not_spend_clover(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """clover-goal-prompt.md CL-2: 면제 판정이 토큰·클로버보다 앞이라 예외 계정은 잔액이
+    """면제 판정이 토큰·클로버보다 앞이라 예외 계정은 잔액이
     깎이지 않는다(`ImageCharge.source == "skipped"`)."""
     _reset_admission(monkeypatch, queue_limit=4)
     _stub_ready_capabilities(monkeypatch)

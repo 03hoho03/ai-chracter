@@ -1,13 +1,12 @@
-"""clover-page-goal-prompt.md CE-13~CE-18 — `/me/clover/missions` 조회·청구.
+"""`/me/clover/missions` 조회·청구.
 
-이 파일이 검증하는 성질(§4-1 T-6·T-7·T-13):
+이 파일이 검증하는 성질:
 
-1. T-6: 같은 키로 두 번 청구해도 한 번만 지급된다(멱등키 `mission:{user_id}:{key}`).
-2. T-7: 3종 각각 미달성→달성 전이가 EXISTS 판정으로 정확히 일어난다 — `first_image`는
-   `status='succeeded'` 필터, `first_message`는 `role='user'` 필터가 빠지면 오판한다
-   (사전 점검 PA-6).
-3. T-13: 청구 전에 달성 신호가 사라졌다가(메시지 삭제) 다시 생기면(재대화) 다시 청구할 수
-   있다 — 달성 상태를 저장하지 않기 때문이다(CE-13).
+1. 같은 키로 두 번 청구해도 한 번만 지급된다(멱등키 `mission:{user_id}:{key}`).
+2. 3종 각각 미달성→달성 전이가 EXISTS 판정으로 정확히 일어난다 — `first_image`는
+   `status='succeeded'` 필터, `first_message`는 `role='user'` 필터가 빠지면 오판한다.
+3. 청구 전에 달성 신호가 사라졌다가(메시지 삭제) 다시 생기면(재대화) 다시 청구할 수
+   있다 — 달성 상태를 저장하지 않기 때문이다.
 
 셋업은 API를 거치지 않고 직접 ORM으로 행을 만든다 — 이 파일이 검증하는 것은 `clover/
 missions.py`의 판정 쿼리이지 채팅·발행·이미지 생성 플로우 자체가 아니라서다.
@@ -86,7 +85,7 @@ async def _get_mission(db_client: httpx.AsyncClient, key: str) -> dict[str, obje
     return result
 
 
-# ── T-7. 판정 3종 — 미달성→달성 전이 ──────────────────────────────────────────
+# ── 판정 3종 — 미달성→달성 전이 ──────────────────────────────────────────
 async def test_first_publish_achieved_flips_only_after_publishing(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -106,7 +105,7 @@ async def test_first_publish_achieved_flips_only_after_publishing(
 async def test_first_message_achieved_requires_a_user_role_message_not_just_a_room(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """사전 점검 PA-6 — 이 테스트가 빨개지는 조건: 판정이 `chat_rooms` 존재만 보고
+    """이 테스트가 빨개지는 조건: 판정이 `chat_rooms` 존재만 보고
     `role='user'` 필터를 빠뜨리면, 메시지가 0개(또는 assistant뿐)인 방만으로 달성 처리된다."""
     user = await _logged_in(db_client, db_session)
     genre = await _get_genre(db_session)
@@ -131,7 +130,7 @@ async def test_first_message_achieved_requires_a_user_role_message_not_just_a_ro
 async def test_first_image_achieved_requires_succeeded_status_not_just_a_request_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """사전 점검 PA-6 — 이 테스트가 빨개지는 조건: 판정이 `status='succeeded'` 필터를
+    """이 테스트가 빨개지는 조건: 판정이 `status='succeeded'` 필터를
     빠뜨리면 실패·차단 요청 행만으로도 달성 처리된다."""
     user = await _logged_in(db_client, db_session)
 
@@ -147,7 +146,7 @@ async def test_first_image_achieved_requires_succeeded_status_not_just_a_request
     assert after["achieved"] is True
 
 
-# ── T-6. 청구 멱등 ────────────────────────────────────────────────────────────
+# ── 청구 멱등 ────────────────────────────────────────────────────────────
 async def test_claiming_the_same_mission_twice_grants_only_once(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -186,7 +185,7 @@ async def test_claiming_an_unachieved_mission_is_rejected(
     assert resp.status_code == 422
 
 
-# ── T-13. 청구 전 신호 소실 → 재획득 → 재청구 가능 ─────────────────────────────
+# ── 청구 전 신호 소실 → 재획득 → 재청구 가능 ─────────────────────────────
 async def test_mission_is_claimable_again_after_the_achievement_signal_reappears(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

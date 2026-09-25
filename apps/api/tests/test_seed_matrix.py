@@ -1,6 +1,6 @@
 """다양성 매트릭스(`seed_content/data/diversity_matrix.json`) 검증.
 
-두 종류가 섞여 있다: 커밋된 실물 데이터가 §7 을 그대로 전사했는지 보는 테스트와,
+두 종류가 섞여 있다: 커밋된 실물 데이터가 30개 스토리 콘셉트 명세를 그대로 전사했는지 보는 테스트와,
 `validate_matrix()` 가 규칙 위반을 실제로 잡아내는지 보는 테스트.
 """
 
@@ -22,7 +22,7 @@ from seed_content.matrix import (
     validate_matrix,
 )
 
-# tasks/archive/prd-genre-seed-content.md §7 의 30개 슬러그를 장르·슬롯 순서 그대로 옮긴 것.
+# 30개 스토리 콘셉트 명세의 슬러그를 장르·슬롯 순서 그대로 옮긴 것.
 # 전사 과정에서 슬러그가 빠지거나 오타가 나면 여기서 걸린다.
 EXPECTED_SLUGS = [
     "romance-3rdloop",
@@ -106,7 +106,7 @@ def test_every_slot_carries_the_generator_inputs(slots: list[MatrixSlot]) -> Non
 
 
 def test_axis_distribution_matches_the_spec_table(slots: list[MatrixSlot]) -> None:
-    """§7 말미 검증 표: 5개 축과 target 모두 값별로 정확히 10개."""
+    """콘셉트 명세의 검증 표: 5개 축과 target 모두 값별로 정확히 10개."""
     # 값이 서로 다른 Literal 타입(Tone/Relation/…/Target)이라 dict 리터럴만으로는 mypy가
     # 공통 타입을 "object"로 좁혀 .count()/set()을 잃는다 — Sequence[str]은 공변이라 명시하면 된다.
     axes: dict[str, Sequence[str]] = {

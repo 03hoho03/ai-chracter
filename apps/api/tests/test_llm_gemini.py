@@ -70,12 +70,12 @@ async def test_generate_wraps_api_error(monkeypatch: pytest.MonkeyPatch) -> None
     with pytest.raises(LLMClientError) as exc_info:
         async for _ in client.generate("hi", usage=_USAGE):
             pass
-    # monitoring-techspec.md MT-6: 429가 아닌 APIError(여기선 503)는 쿼터 소진과 섞이면 안 된다.
+    # 429가 아닌 APIError(여기선 503)는 쿼터 소진과 섞이면 안 된다.
     assert not isinstance(exc_info.value, LLMRateLimitError)
 
 
 async def test_generate_wraps_429_api_error_as_rate_limit_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """monitoring-techspec.md MT-6: 429(쿼터 소진)는 다른 APIError와 구분되는 타입으로 올라가야
+    """429(쿼터 소진)는 다른 APIError와 구분되는 타입으로 올라가야
     승격된 이벤트가 행동 가능하다 — 사용자에게 보이는 동작(LLMClientError로 흡수)은 그대로다."""
 
     async def generate_content_stream(**_: Any) -> AsyncIterator[SimpleNamespace]:
@@ -97,7 +97,7 @@ async def test_generate_wraps_network_error(monkeypatch: pytest.MonkeyPatch) -> 
     with pytest.raises(LLMClientError) as exc_info:
         async for _ in client.generate("hi", usage=_USAGE):
             pass
-    # monitoring-techspec.md MT-6 함정: httpx.HTTPError에는 `.code`가 없다 — isinstance 가드
+    # 함정: httpx.HTTPError에는 `.code`가 없다 — isinstance 가드
     # 없이 접근하면 AttributeError가 원래 예외를 가린다. 이 pytest.raises(LLMClientError)가
     # 이미 그 함정을 잡는다(AttributeError면 여기서 안 잡혀 테스트가 실패한다).
     assert not isinstance(exc_info.value, LLMRateLimitError)
@@ -182,7 +182,7 @@ async def test_generate_structured_wraps_api_error(monkeypatch: pytest.MonkeyPat
 async def test_generate_structured_wraps_429_api_error_as_rate_limit_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """monitoring-techspec.md MT-6: `generate()`와 대칭을 유지해야 하는 판단 호출 쪽(스탯/엔딩
+    """`generate()`와 대칭을 유지해야 하는 판단 호출 쪽(스탯/엔딩
     판정 등)도 429를 구분해야 한다."""
 
     async def generate_content(**_: Any) -> SimpleNamespace:
@@ -195,7 +195,7 @@ async def test_generate_structured_wraps_429_api_error_as_rate_limit_error(
 
 
 async def test_generate_structured_wraps_network_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """monitoring-techspec.md MT-6 함정: `generate_structured()`의 except 절도 `generate()`와
+    """함정: `generate_structured()`의 except 절도 `generate()`와
     같은 `(APIError, httpx.HTTPError)` 튜플을 쓴다 — httpx 쪽은 `.code`가 없어 가드 없이
     접근하면 AttributeError가 원래 예외를 가린다."""
 
@@ -259,7 +259,7 @@ async def test_generate_sends_a_runaway_backstop_and_forwards_the_stop_sequence(
 ) -> None:
     """대화 생성에는 오랫동안 `GenerateContentConfig` 가 전혀 붙지 않아 출력 상한이 없었다 —
     폭주 응답에 천장이 없는 구조였다. `stop_sequences`는 이제 호출부가 화자 라벨에서
-    파생시켜 넘긴다(prompt-db-goal-prompt.md §4-5) — 이 계층은 그 값을 그대로
+    파생시켜 넘긴다 — 이 계층은 그 값을 그대로
     `GenerateContentConfig`에 전달하는지만 본다(넘기지 않으면 `None`)."""
     captured: dict[str, Any] = {}
 
@@ -308,7 +308,7 @@ async def test_generate_forwards_the_system_instruction_to_the_config(
 
 async def test_generate_omits_seed_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     """`gemini_seed` 기본값 None 이면 config.seed 가 아예 안 실려야 한다(호출 페이로드가
-    지금과 동일해야 하는 것이 이 필드의 성공 기준, chat-techspec.md §3-1)."""
+    지금과 동일해야 하는 것이 이 필드의 성공 기준)."""
     captured: dict[str, Any] = {}
 
     async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
@@ -361,7 +361,7 @@ async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
     tokens = [token async for token in client.generate("hi", usage=_USAGE)]
 
     assert tokens == ["말을 하다"]
-    # 같은 logger로 `gemini_usage` 줄(BS-18)도 1줄 들어온다 — 그 줄을 따로 세고, 잘림 경고가
+    # 같은 logger로 `gemini_usage` 줄도 1줄 들어온다 — 그 줄을 따로 세고, 잘림 경고가
     # 정확히 한 번이라는 원래 단언은 그대로 유지한다.
     usage_lines = [w for w in warnings if w.startswith("gemini_usage ")]
     assert len(usage_lines) == 1
@@ -370,7 +370,7 @@ async def test_generate_logs_when_the_response_is_cut_off_at_the_token_cap(
     ]
 
 
-# --- backlog-sweep BS-18 · C-9: `gemini_usage` 토큰 사용량 로그 ---------------------------------
+# --- `gemini_usage` 토큰 사용량 로그 -------------------------------------------------------------
 
 _PROMPT_SENTINEL = "PROMPT-SENTINEL-7f3a"
 _USER_ID = uuid.UUID("11111111-1111-1111-1111-111111111111")
@@ -486,7 +486,7 @@ async def test_generate_logs_usage_missing_when_no_chunk_has_metadata(
 async def test_generate_does_not_log_usage_when_the_stream_ends_in_an_error(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    """정책 차단·SDK 예외로 끝난 스트림은 찍지 않는다(과소 집계, goal-prompt §6 M-8)."""
+    """정책 차단·SDK 예외로 끝난 스트림은 찍지 않는다(과소 집계)."""
     caplog.set_level(logging.WARNING, logger="api.llm.gemini")
     blocked = _make_client(
         monkeypatch,

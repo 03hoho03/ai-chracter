@@ -1,6 +1,6 @@
-"""`scripts/generate_seed_images.py` 의 프롬프트 파일 파싱과 실패 처리 (US-006).
+"""`scripts/generate_seed_images.py` 의 프롬프트 파일 파싱과 실패 처리.
 
-Cloudflare 호출 자체는 테스트하지 않는다 — 손으로 쓰는 `image_prompts.json`(US-007)이 조용히
+Cloudflare 호출 자체는 테스트하지 않는다 — 손으로 쓰는 `image_prompts.json`이 조용히
 어긋나지 않도록 기본값·검증 실패 경로를, 그리고 한 장이 실패해도 배치가 이어지는지를 고정한다.
 """
 
@@ -76,7 +76,7 @@ def test_missing_file_names_the_file(tmp_path: Path) -> None:
 
 
 def test_committed_prompt_file_parses() -> None:
-    """리포에 커밋된 실제 파일 — US-007 이 채운 뒤에도 이 테스트가 스키마를 지킨다."""
+    """리포에 커밋된 실제 파일 — 프롬프트를 채운 뒤에도 이 테스트가 스키마를 지킨다."""
     load_prompt_specs()
 
 
@@ -168,7 +168,7 @@ async def test_transient_failure_is_retried(
 
 class _DeterministicFailureImageClient(ImageClient):
     """매 호출마다 결정적 실패(길이·문법·차단)를 올리는 클라이언트 — 재시도해도 성공하지
-    않는다(image-style-7-goal-prompt.md IS-15)."""
+    않는다."""
 
     calls = 0
     exc: LLMClientError = LocalImageInputError(input_error="too_long")

@@ -1,4 +1,4 @@
-"""`backup_db.py` 의 healthchecks.io check-in(monitoring-techspec.md MT-11).
+"""`backup_db.py` 의 healthchecks.io check-in.
 
 세 지점 — `main()` 진입부(start) / 성공 직전(성공) / `__main__` 의 실패 처리(실패) — 를
 검증한다. 놓치기 쉬운 두 가지를 특히 고정한다:

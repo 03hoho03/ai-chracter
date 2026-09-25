@@ -346,9 +346,9 @@ async def test_send_message_story_room_builds_generation_prompt_from_story_setti
 async def test_send_message_story_room_injects_room_persona_into_generation_prompt_only(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """persona-goal-prompt.md UP-9 · §4 S4 ④ — 방이 고른 대화 프로필은 생성 프롬프트에만
-    들어가고 같은 턴의 스탯 판정 프롬프트에는 없다. 방의 `persona_id`는 방 생성 API가 아직
-    채우지 않아(S5) 여기서 직접 넣는다."""
+    """방이 고른 대화 프로필은 생성 프롬프트에만
+    들어가고 같은 턴의 스탯 판정 프롬프트에는 없다. 방의 `persona_id`는 방 생성 API를
+    거치지 않고 여기서 직접 넣는다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -383,7 +383,7 @@ async def test_send_message_story_room_injects_room_persona_into_generation_prom
 async def test_send_message_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """chat-techspec.md §4-2 — `_stream_new_turn`(`_build_prompt` 경유) 호출부는
+    """`_stream_new_turn`(`_build_prompt` 경유) 호출부는
     `story_detail.prompt_template`을 골라 시스템 지시문(L0.5)에 잇는다."""
     user = _make_user()
     db_session.add(user)
@@ -655,7 +655,7 @@ async def test_send_message_character_room_does_not_call_generate_structured(
 async def test_send_message_story_room_ignores_situational_images(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-072 AC4: 스토리 챗은 상황별 이미지 매칭 판단 단계 자체가 호출되지 않는다 — 같은
+    """스토리 챗은 상황별 이미지 매칭 판단 단계 자체가 호출되지 않는다 — 같은
     content_version_id에 SituationalImage(캐릭터 전용 개념)가 등록돼 있어도 무관하다."""
     user = _make_user()
     db_session.add(user)

@@ -219,7 +219,7 @@ async def test_consent_requires_user_session(db_client: httpx.AsyncClient) -> No
 async def test_consent_terms_updates_version_and_agreed_at(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-5: 재동의는 버전뿐 아니라 동의 시각도 갱신한다."""
+    """재동의는 버전뿐 아니라 동의 시각도 갱신한다."""
     payload = await _signup_and_login(db_client)
     user = await db_session.scalar(select(User).where(User.email == payload["email"]))
     assert user is not None
@@ -243,7 +243,7 @@ async def test_consent_terms_updates_version_and_agreed_at(
 async def test_consent_privacy_updates_privacy_and_transfer_pair(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-3·LR-5: 처리방침 재동의는 privacy·transfer 두 쌍을
+    """처리방침 재동의는 privacy·transfer 두 쌍을
     함께 갱신하고, transfer_version은 처리방침 게시본의 버전을 그대로 쓴다. 같은 시점에
     더 높은 버전의 약관(terms)을 함께 게시해, transfer_version이 엉뚱하게 terms 값을
     집어오지 않는지도 같이 확인한다."""
@@ -291,7 +291,7 @@ async def test_signup_records_current_published_versions(
     assert user is not None
     assert user.terms_version == "2024-01-01"
     assert user.privacy_version == "2024-02-01"
-    # legal-revision-goal-prompt.md LR-3: 국외이전 동의는 처리방침 버전에 묶인다 —
+    # 국외이전 동의는 처리방침 버전에 묶인다 —
     # terms가 아니라 privacy의 게시본 버전과 같아야 한다.
     assert user.transfer_agreed_at is not None
     assert user.transfer_version == "2024-02-01"

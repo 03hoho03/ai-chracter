@@ -43,7 +43,7 @@ async def _assert_requires_admin_session(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -141,7 +141,7 @@ async def test_get_document_published_picks_latest_by_published_at(
     assert resp.json()["published"]["version"] == "2024-06-01"
 
 
-# ---- 초안 저장(upsert) — T-12 회귀 --------------------------------------------
+# ---- 초안 저장(upsert) 회귀 --------------------------------------------
 
 
 async def test_draft_upsert_creates_new_draft_when_none_exists(
@@ -190,7 +190,7 @@ async def test_draft_upsert_updates_existing_draft_in_place(
 async def test_draft_upsert_does_not_change_published_document(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-12의 핵심 회귀: 초안 저장은 게시본을 절대 바꾸지 않는다."""
+    """핵심 회귀: 초안 저장은 게시본을 절대 바꾸지 않는다."""
     published = await _make_published(
         db_session, kind="terms", version="2024-01-01", body_markdown="원래 게시본"
     )

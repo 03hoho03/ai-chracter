@@ -159,9 +159,9 @@ async def test_get_content_detail_returns_meta_metrics_and_version_fields(
 async def test_get_content_detail_shows_placeholder_nickname_for_withdrawn_creator(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-27: S5(LR-20)가 탈퇴 시 nickname을 파기하면서
+    """탈퇴 시 nickname을 파기하게 되면서
     드러난 회귀 — creator_nickname은 non-optional str이라 파기된 None을 그대로 넣으면
-    Pydantic 검증에서 500이 난다(admin/contents.py의 LR-27 선례와 같은 처방)."""
+    Pydantic 검증에서 500이 난다(admin/contents.py의 선례와 같은 처방)."""
     creator = _make_user(nickname=None, deleted_at=datetime.now(UTC))
     db_session.add(creator)
     await db_session.flush()

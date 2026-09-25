@@ -74,10 +74,10 @@ async def test_update_job_increments_progress_and_appends_asset_id() -> None:
 
 
 async def test_update_job_concurrent_calls_do_not_lose_updates() -> None:
-    """`_generate_and_store_one`(LG-6 이후에도 세마포어 밖에 있다)는 `asyncio.gather`로
+    """`_generate_and_store_one`(세마포어가 생성 호출만 감싸게 된 뒤에도 세마포어 밖에 있다)는 `asyncio.gather`로
     같은 잡을 동시에 갱신한다 — WATCH/MULTI/EXEC 낙관적 락을 GET-then-SET으로 바꾸면 이
     동시성에서 갱신이 유실된다(docstring이 이미 실측을 적어뒀다). 오늘 코드가 그 락을 실제로
-    쓰는지 고정한다(local-image-gen-goal-prompt.md LG-6 — 업로드/썸네일/Asset 생성은
+    쓰는지 고정한다(업로드/썸네일/Asset 생성은
     세마포어 밖이라 이 동시 갱신 경로는 로컬 전환 후에도 그대로 유효하다)."""
     owner_user_id = uuid.uuid4()
     job = await create_job(owner_user_id, requested_count=5)
@@ -111,10 +111,10 @@ async def test_update_job_on_nonexistent_job_is_a_noop() -> None:
 
 
 def test_image_generation_job_without_blocked_fields_still_validates() -> None:
-    """guard-techspec.md GT-4 / guard-progress.md I-1: 잡 TTL이 1시간이라 배포 직후
+    """잡 TTL이 1시간이라 배포 직후
     최대 1시간 동안 `blocked_count`/`blocked_reason` 필드가 없는 옛 Redis 레코드가
     남아 있다. 기본값이 없으면 `model_validate_json`이 `ValidationError`로 터져 그
-    잡의 폴링 엔드포인트(`GET /images/jobs/{id}`)가 500이 된다(I-1 실측 재현) — 이
+    잡의 폴링 엔드포인트(`GET /images/jobs/{id}`)가 500이 된다(실측 재현) — 이
     테스트가 그 기본값을 고정한다."""
     old_record = json.dumps(
         {

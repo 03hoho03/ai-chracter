@@ -1,4 +1,4 @@
-"""`scripts/generate_seed_stories.py` 의 조립·검증·재시도(US-013)와 유사도 게이트(US-014).
+"""`scripts/generate_seed_stories.py` 의 조립·검증·재시도와 유사도 게이트.
 
 Gemini 호출 자체는 테스트하지 않는다 — 생성기가 (a) 매트릭스의 확정 콘셉트를 그대로 박아
 넣는지, (b) 시드가 실제로 거는 관문을 파일로 쓰기 **전에** 통과시키는지, (c) 걸렸을 때 그
@@ -292,7 +292,7 @@ def test_prompt_carries_concept_rating_and_previous(slot: MatrixSlot) -> None:
     assert slot.title in prompt
     assert slot.one_liner in prompt
     assert slot.forbidden[0] in prompt
-    assert "선정성" in prompt  # §6 수위 규칙
+    assert "선정성" in prompt  # 수위 규칙
     assert "겹치면 안 된다" in prompt
     assert "romance-3rdloop" in prompt
 
@@ -331,7 +331,7 @@ async def test_transient_call_failure_is_retried(slot: MatrixSlot) -> None:
     assert len(client.prompts) == 2
 
 
-# --- 유사도 게이트 (US-014) -------------------------------------------------
+# --- 유사도 게이트 ----------------------------------------------------------
 
 
 @pytest.fixture

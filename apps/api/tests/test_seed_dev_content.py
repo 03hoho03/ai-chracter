@@ -1,4 +1,4 @@
-"""`scripts/seed_dev.py` 가 `seed_content/data/` 전체를 발행 상태로 밀어 넣는 배선 (US-010).
+"""`scripts/seed_dev.py` 가 `seed_content/data/` 전체를 발행 상태로 밀어 넣는 배선.
 
 개별 업서트 동작은 `test_seed_upsert.py` / `test_seed_character_upsert.py` 가 인위적인
 payload 로 이미 검사한다. 여기서는 **커밋된 데이터 파일 전부**가 실제 시드 경로(썸네일 자산

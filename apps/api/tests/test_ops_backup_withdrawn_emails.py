@@ -1,9 +1,9 @@
-"""legal-revision-goal-prompt.md LR-32: 처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년
-보관 후 파기"를 실제로 수행하는 코드가 저장소에 없었다(LR-23이 "조회 시 무시"만으로 충분하다고
-판단한 근거가 틀렸다 — VM 크론이 매일 `backup_db.py`를 돈다). 이 파일은 그 삭제 로직과, 백업이
+"""처리방침 제4조 2항·약관 제14조 4항이 약속한 "1년
+보관 후 파기"를 실제로 수행하는 코드가 저장소에 없었다("조회 시 무시"만으로 충분하다고 본 앞선
+판단의 근거가 틀렸다 — VM 크론이 매일 `backup_db.py`를 돈다). 이 파일은 그 삭제 로직과, 백업이
 실패하면 삭제도 일어나지 않는다는 순서 보장을 검증한다.
 
-S5-e: `delete_expired_withdrawn_emails`는 더 이상 SQLAlchemy 세션을 받지 않는다 — 프로덕션
+`delete_expired_withdrawn_emails`는 더 이상 SQLAlchemy 세션을 받지 않는다 — 프로덕션
 크론이 `api` 패키지도 SQLAlchemy도 없는 시스템 python3에서 돌기 때문이다(`ops/backup_db.py`
 상단 경고 참고). 이제 `run_sh`(컨테이너 안 `psql`)라는 불투명한 경계를 통해서만 실제 삭제가
 일어나므로, 여기서는 그 경계를 모킹해 (1) cutoff 계산·SQL 구성 (2) `RETURNING` 출력 줄 수

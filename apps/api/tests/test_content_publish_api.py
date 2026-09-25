@@ -543,7 +543,7 @@ async def test_publish_confirms_transaction_and_clones_draft(
 async def test_publish_removes_content_from_my_drafts(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """US-002. `/me/drafts`가 거르는 상태를 실제 발행 경로로 만들어 확인한다 — 발행이 남기는
+    """`/me/drafts`가 거르는 상태를 실제 발행 경로로 만들어 확인한다 — 발행이 남기는
     자동 복제 초안이 목록에 다시 새어 나오지 않아야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -854,7 +854,7 @@ async def test_publish_story_confirms_transaction_and_clones_draft(
 async def test_reset_draft_after_real_publish_restores_character_edits(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """US-004 end to end on the state a real publish leaves behind — the auto-cloned draft is
+    """End to end on the state a real publish leaves behind — the auto-cloned draft is
     edited through the real autosave endpoint, then 편집 취소 puts the published content back."""
     user = _make_user()
     db_session.add(user)
@@ -962,7 +962,7 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
     assert pre_reset_note is not None
 
     # the editor renames the setup and throws away its stats, endings and the shortcut.
-    # The keyword note is kept pointing at the setup: `_update_story_draft` (US-084) deletes
+    # The keyword note is kept pointing at the setup: `_update_story_draft` deletes
     # removed setups before it reconciles keyword_notes, so a payload that drops a setup a
     # note still references dies on the physical FK — a pre-existing autosave bug, out of
     # this story's scope.
@@ -1076,7 +1076,7 @@ async def _summary_has_unpublished_changes(
     client: httpx.AsyncClient, *, creator_user_id: uuid.UUID
 ) -> bool:
     """`ContentSummary.hasUnpublishedChanges`를 `/users/{id}/contents`에서 읽어 온다 — 플래그를
-    세팅하는 코드와 그것을 노출하는 스키마를 한 번에 본다(US-002)."""
+    세팅하는 코드와 그것을 노출하는 스키마를 한 번에 본다."""
     resp = await client.get(f"/users/{creator_user_id}/contents", params={"type": "character"})
     assert resp.status_code == 200
     [item] = resp.json()["items"]
@@ -1087,7 +1087,7 @@ async def _summary_has_unpublished_changes(
 async def test_has_unpublished_changes_follows_draft_lifecycle(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """US-002. 발행 직후 false → 자동저장 후 true → 편집 취소 후 false → 자동저장 후 재발행하면
+    """발행 직후 false → 자동저장 후 true → 편집 취소 후 false → 자동저장 후 재발행하면
     다시 false. `ContentVersion`에는 `updated_at`이 없고 발행이 다음 편집용 초안을 자동 복제하므로
     이 네 상태는 명시적 플래그로만 구분된다."""
     user = _make_user()
@@ -1152,7 +1152,7 @@ async def test_has_unpublished_changes_follows_draft_lifecycle(
 async def test_publish_story_clears_has_unpublished_changes(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """US-002. 스토리 발행도 플래그를 내린다 — 캐릭터와 같은 한 곳(`publish_content`)이 두 경로를
+    """스토리 발행도 플래그를 내린다 — 캐릭터와 같은 한 곳(`publish_content`)이 두 경로를
     덮는지 확인한다. 여기서 플래그를 자동저장이 아니라 직접 세우는 이유는 스토리 자동저장
     페이로드가 시작설정 트리를 통째로 다시 보내야 해서(빈 배열이면 발행 검증에서 막힌다)다."""
     user = _make_user()

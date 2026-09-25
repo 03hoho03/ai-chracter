@@ -1,17 +1,17 @@
-"""prompt-db-goal-prompt.md §9 (4단계) — 어드민 프롬프트 API.
+"""어드민 프롬프트 API.
 
 `admin/legal.py`의 SAVEPOINT/upsert 패턴을 그대로 따르므로 시나리오도 그쪽과 겹친다
 (초안 upsert의 경쟁 처리, 게시의 SAVEPOINT+409).
 
-prompt-scope-techspec.md(C4/C5) — 라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
-바뀌었고, R-1~R-8(§9-2·PS-13) 규칙도 레인별 표(`_EXPECTED_ROWS_BY_LANE` 등)로 쪼개졌다.
+라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
+바뀌었고, R-1~R-8 규칙도 레인별 표(`_EXPECTED_ROWS_BY_LANE` 등)로 쪼개졌다.
 "게시가 실제로 성공하는지"를 보는 테스트는 이제 **실제 검증을 그대로 태운다** —
 레인 스코프 초안(27/14/16행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
 R-1~R-7 규칙 자체를 직접 고정하는 테스트들은 story 레인의 실제 활성 세트(27행)를
 baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 정확히 일치하지 않는다 —
 새 레인별 표는 각각 story/character/publish_filter가 실제로 쓰는 부분집합이다).
 
-persona-goal-prompt.md UP-13 — 마이그레이션 `b72c33c70240`(M2)이 story·character 레인에
+마이그레이션 `b72c33c70240`(M2)이 story·character 레인에
 `generation/user_persona` 행을 더한 **새 published 세트**를 만든다. 그래서 테스트 DB의
 published는 레인별로 story v1·v2, character v1·v3, publish_filter v1이고, 활성은 story v2·
 character v3·publish_filter v1이다. 다음 게시 버전은 "4"부터다(전 레인 대상 자동 증가).
@@ -62,7 +62,7 @@ async def _assert_requires_admin_session(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -115,7 +115,7 @@ def _select_active_id(lane: str) -> sa.Select[tuple[uuid.UUID]]:
 
 
 def _select_legacy_id() -> sa.Select[tuple[uuid.UUID]]:
-    """레인 분리 이전의 48행 통짜 세트(PS-6 — 새 코드는 읽지 않지만 목록·복원 거부 테스트가
+    """레인 분리 이전의 48행 통짜 세트(새 코드는 읽지 않지만 목록·복원 거부 테스트가
     이 행의 존재 자체를 고정한다)."""
     return sa.select(PromptSet.id).where(PromptSet.lane == "legacy", PromptSet.status == "published")
 
@@ -139,7 +139,7 @@ async def _legacy_prompt_set_and_sections(
 async def _story_prompt_set_and_sections(
     db_session: AsyncSession,
 ) -> tuple[PromptSet, list[PromptSection]]:
-    """C5(PS-13) — `_validate_prompt_draft_for_publish`가 레인별 표를 보게 된 뒤로는
+    """`_validate_prompt_draft_for_publish`가 레인별 표를 보게 된 뒤로는
     story 레인의 실제 활성 세트(27행)가 그 표와 정확히 일치하는 유일한 baseline이다
     (legacy 48행은 story/character/publish_filter 어느 표와도 더 이상 정확히 일치하지
     않는다). R-1~R-7 규칙 자체를 직접 고정하는 테스트들이 여기서 baseline을 가져온다."""
@@ -322,7 +322,7 @@ _DUPLICATE_SECTIONS = [
 async def test_draft_upsert_rejects_duplicate_section_keys_when_no_draft_exists(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """적대적 리뷰 결함 ② 재현 — 초안이 없는 상태에서 요청 본문 자체에 같은
+    """초안이 없는 상태에서 요청 본문 자체에 같은
     `(channel, scope, slot, variant)`가 두 번 들어오면 500이 아니라 422를 받아야 한다.
     이 사전 검사가 없을 때는 SAVEPOINT 롤백이 방금 만든 draft 행까지 되감아
     `assert draft is not None`이 깨지며 500이 났다(고치기 전 실패로 직접 확인함)."""
@@ -366,13 +366,13 @@ async def test_draft_upsert_rejects_duplicate_section_keys_when_draft_already_ex
     assert len(remaining) == _expected_section_count("story")
 
 
-# ---- 레인 격리 (F-7①, C4-T12) ---------------------------------------------------
+# ---- 레인 격리 -------------------------------------------------------------------
 
 
 async def test_replace_draft_content_integrity_error_recovery_only_touches_own_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """C4-2/F-7① — `_replace_draft_content`의 `except IntegrityError` 복구 경로가 **자기
+    """`_replace_draft_content`의 `except IntegrityError` 복구 경로가 **자기
     레인 초안만** 건드리는지. character 레인 초안이 이미 있는 상태에서 story 레인 PUT이
     경쟁(IntegrityError) 경로를 타도 character 초안의 섹션(14행)은 그대로여야 한다 —
     `except` 블록의 `_get_draft`가 레인 필터를 빠뜨리면(또는 `assert draft.lane == lane`이
@@ -484,7 +484,7 @@ async def test_get_by_id_missing_returns_404(
 async def test_get_by_id_legacy_lane_returns_404(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """PS-6 — `lane='legacy'`는 새 코드가 읽지 않는 격리 버킷이다. 응답의 `lane` 필드가
+    """`lane='legacy'`는 새 코드가 읽지 않는 격리 버킷이다. 응답의 `lane` 필드가
     `PromptLane`(legacy 제외)이라 legacy 행은 애초에 표현할 수 없어 404로 취급한다."""
     await _login_new_admin(db_client, db_session)
     legacy_id = await db_session.scalar(_select_legacy_id())
@@ -493,7 +493,7 @@ async def test_get_by_id_legacy_lane_returns_404(
     assert resp.status_code == 404
 
 
-# ---- 미리보기 (T-44/D-10) -------------------------------------------------------
+# ---- 미리보기 -------------------------------------------------------------------
 
 
 async def test_preview_reuses_the_real_renderer(
@@ -502,7 +502,7 @@ async def test_preview_reuses_the_real_renderer(
     """별도 조립 코드를 만들지 않았다는 증거 — 미리보기가 낸 `system·스토리·basic` 텍스트가
     `system_instruction_for()`를 직접 호출한 결과와 바이트 단위로 같아야 한다.
 
-    C5(PS-13) — `_build_preview_items`가 레인별로 갈라진 뒤로는 story 레인 미리보기에
+    `_build_preview_items`가 레인별로 갈라진 뒤로는 story 레인 미리보기에
     `image_judgment`/`publish_filter` 항목이 없다(그건 각각 character/publish_filter
     레인 전용이다)."""
     await _login_new_admin(db_client, db_session)
@@ -554,11 +554,11 @@ async def test_preview_uses_the_draft_when_one_exists(
 async def test_preview_item_count_per_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, expected_count: int
 ) -> None:
-    """C6 리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
-    story 레인 미리보기 테스트에만 가려져 미커버였다. F-7②(R-7의 `StopIteration` → 500)가
+    """리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
+    story 레인 미리보기 테스트에만 가려져 미커버였다. R-7의 `StopIteration` → 500이
     `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
-    있어 3레인 전부 200 + 항목 수(story 8 / character 3 / publish_filter 2, goal-prompt
-    §11 "13항목의 구성"에서 레인별로 도출)를 직접 고정한다."""
+    있어 3레인 전부 200 + 항목 수(story 8 / character 3 / publish_filter 2)를
+    직접 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
@@ -570,9 +570,9 @@ async def test_preview_item_count_per_lane(
 async def test_preview_renders_the_persona_section_only_in_generation_items(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
 ) -> None:
-    """persona-goal-prompt.md §3-4-1 — generation 미리보기는 샘플 프로필을 채운다. 비워 두면
-    conditional 드롭(F1)으로 섹션이 사라져 운영자가 `user_persona` 문안이 어떻게 렌더되는지
-    볼 수 없다. 판정 채널 항목에는 들어가지 않는다(UP-9). 머리글은 §3-4-3 확정 문안의 첫 줄."""
+    """generation 미리보기는 샘플 프로필을 채운다. 비워 두면
+    conditional 드롭으로 섹션이 사라져 운영자가 `user_persona` 문안이 어떻게 렌더되는지
+    볼 수 없다. 판정 채널 항목에는 들어가지 않는다. 머리글은 확정 문안의 첫 줄."""
     await _login_new_admin(db_client, db_session)
 
     resp = await db_client.post(f"/admin/prompt-sets/{lane}/draft/preview")
@@ -643,7 +643,7 @@ async def test_publish_assigns_sequential_integer_versions(
 async def test_next_version_is_global_monotonic_not_per_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C4-T13 — PS-2: `_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
+    """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
     M2가 story v2·character v3을 만든 테스트 DB에서, story가 v4·v5를 게시한 뒤 character
     게시가 v6을 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v4일 것이다) — 이
     테스트는 그 레인 필터의 **부재**를 고정한다."""
@@ -665,7 +665,7 @@ async def test_next_version_is_global_monotonic_not_per_lane(
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C4-T14 — 레인 독립성: story 게시 뒤 character 활성본의 id·섹션이 그대로다."""
+    """레인 독립성: story 게시 뒤 character 활성본의 id·섹션이 그대로다."""
     await _login_new_admin(db_client, db_session)
 
     character_active_id_before = await db_session.scalar(_select_active_id("character"))
@@ -721,7 +721,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
     """DB 커밋(진짜 소스)이 이미 성공했으면 캐시 무효화 실패로 게시 자체를 500으로
     만들지 않는다 — `admin/prompts.py`의 결정과 근거 주석 참고.
 
-    monitoring-techspec.md MT-6: 이 흡수는 그대로 두되, `redis` 태그로 Bugsink
+    이 흡수는 그대로 두되, `redis` 태그로 Bugsink
     이벤트에도 승격돼야 한다."""
 
     async def _raise_redis_error(*args: object, **kwargs: object) -> None:
@@ -811,7 +811,7 @@ async def test_restore_clones_old_version_into_draft(
 async def test_restoring_persona_slot_set_then_publishing_passes_r1(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
 ) -> None:
-    """persona-goal-prompt.md §4 S3 ② — M2가 만든 세트(`user_persona` 행 포함)를 초안으로
+    """M2가 만든 세트(`user_persona` 행 포함)를 초안으로
     복원해 게시하면 R-1을 통과한다. 코드 표(`_EXPECTED_ROWS_BY_LANE`)와 DB가 같이 갔다는
     왕복 확인이다(R-2 — 한쪽만 있으면 "누락"이나 "잉여"로 게시가 전부 막힌다)."""
     await _login_new_admin(db_client, db_session)
@@ -836,7 +836,7 @@ async def test_restore_missing_id_returns_404(
 async def test_restore_rejects_legacy_lane_with_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C4-T15 — PS-6: `lane='legacy'`(레인 분리 이전) 세트는 복원 대상이 아니다."""
+    """`lane='legacy'`(레인 분리 이전) 세트는 복원 대상이 아니다."""
     await _login_new_admin(db_client, db_session)
     legacy_id = await db_session.scalar(_select_legacy_id())
     assert legacy_id is not None
@@ -849,13 +849,13 @@ async def test_restore_rejects_legacy_lane_with_422(
     assert len(drafts) == 0  # 거부된 시도가 초안 행을 만들지 않는다
 
 
-# ---- 목록에서 legacy 제외 (TS-C, C4-T16) ------------------------------------------
+# ---- 목록에서 legacy 제외 -----------------------------------------------------------
 
 
 async def test_list_excludes_legacy_and_marks_exactly_three_active(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C4-T16 — TS-C: `GET /admin/prompt-sets` 응답에 legacy 행이 없고 `isActive`가
+    """`GET /admin/prompt-sets` 응답에 legacy 행이 없고 `isActive`가
     정확히 3개(레인마다 하나씩)다."""
     await _login_new_admin(db_client, db_session)
 
@@ -902,7 +902,7 @@ async def test_publish_rejects_missing_template_variant_r2(db_session: AsyncSess
 
 
 async def test_publish_rejects_missing_base_content_custom_variant_r2(db_session: AsyncSession) -> None:
-    """적대적 리뷰 결함 ① 재현 — `base_content`의 `custom` variant가 빠지면 CUSTOM
+    """`base_content`의 `custom` variant가 빠지면 CUSTOM
     템플릿 스토리도 `variant=""` 행(`{setting_text}`)으로 폴백하는데, CUSTOM 스토리는
     `setting_text`가 정상적으로 비어 있어 `conditional=True`인 이 섹션이 통째로
     드롭된다 — "다른 문안으로 대체"가 아니라 작품 설정(세계관/커스텀 프롬프트) 전체
@@ -985,13 +985,13 @@ async def test_publish_rejects_priority_tail_not_last_r7(db_session: AsyncSessio
     assert cast(dict[str, object], exc_info.value.detail)["rule"] == "R-7"
 
 
-# ---- R-8 (신설, PS-13) + 레인별 R-2/R-5/R-7 회귀 가드 -----------------------------
+# ---- R-8 + 레인별 R-2/R-5/R-7 회귀 가드 ------------------------------------------
 
 
 async def test_publish_rejects_order_collision_across_scopes_r8_not_r6(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C5-T8(techspec §5-5, goal-prompt PS-13) — 가장 중요한 신설 테스트다. R-6의 그룹
+    """가장 중요한 테스트다. R-6의 그룹
     키에 `scope`가 들어 있어 `(system, both, '', order)`와 `(system, story, '', order)`를
     다른 그룹으로 본다 — 그래서 두 행의 order를 같게 만들어도 R-6은 통과한다. 하지만 story
     scope로 렌더링할 때는 둘 다 선택돼 order가 실제로 충돌한다 — R-8만 그걸 잡아야 한다.
@@ -1022,7 +1022,7 @@ async def test_publish_rejects_order_collision_across_scopes_r8_not_r6(
 async def test_publish_succeeds_for_lanes_without_required_variant_slots_r2(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
 ) -> None:
-    """C5-T9(PS-13) — R-2(variant 전종 필수)는 story 레인 전용이 됐다
+    """R-2(variant 전종 필수)는 story 레인 전용이 됐다
     (`_REQUIRED_VARIANT_SLOTS_BY_LANE`가 character·publish_filter에는 빈 dict다). 레인
     필터를 안 쪼개면 이 두 레인은 그 슬롯이 아예 없어 영원히 R-2로 거부된다 — 주석이
     아니라 테스트로 "공허 통과"를 고정한다."""
@@ -1036,7 +1036,7 @@ async def test_publish_succeeds_for_lanes_without_required_variant_slots_r2(
 async def test_publish_filter_lane_publish_succeeds_not_500_r7(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C5-T10(F-7②, PS-13, C5-12 API 레벨 최종 확인) — `publish_filter` 레인엔 `system`
+    """`publish_filter` 레인엔 `system`
     채널이 아예 없다. 기본값 없는 `next()`는 여기서 `StopIteration` → 500이었다. 기본값
     있는 `next()` + `other_orders` 가드가 있으면 500이 아니라 정상 게시가 통과한다."""
     await _login_new_admin(db_client, db_session)
@@ -1049,7 +1049,7 @@ async def test_publish_filter_lane_publish_succeeds_not_500_r7(
 async def test_publish_filter_lane_allows_blank_story_assistant_label_r5(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C5-T11(techspec §5-3) — `publish_filter` 레인은 `storyAssistantLabel`을 안 쓴다
+    """`publish_filter` 레인은 `storyAssistantLabel`을 안 쓴다
     (`_LABEL_FIELDS_BY_LANE["publish_filter"]`에 없다). 공백이어도 통과해야 한다."""
     await _login_new_admin(db_client, db_session)
     draft = await _make_valid_draft(db_client, "publish_filter")
@@ -1067,7 +1067,7 @@ async def test_publish_filter_lane_allows_blank_story_assistant_label_r5(
 async def test_story_lane_rejects_blank_story_assistant_label_r5(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """C5-T11 짝 — story 레인은 `storyAssistantLabel`을 실제로 쓰므로
+    """위 테스트의 짝 — story 레인은 `storyAssistantLabel`을 실제로 쓰므로
     (`_LABEL_FIELDS_BY_LANE["story"]`) 같은 입력이 422여야 한다."""
     await _login_new_admin(db_client, db_session)
     draft = await _make_valid_draft(db_client, "story")
@@ -1087,7 +1087,7 @@ async def test_story_lane_rejects_blank_story_assistant_label_r5(
 
 
 async def test_seed_sections_use_only_allowed_placeholders(db_session: AsyncSession) -> None:
-    """§9-2 R-4의 허용 목록(`ALLOWED_PLACEHOLDERS`)이 지금 시드된 48행(legacy) 전부를
+    """R-4의 허용 목록(`ALLOWED_PLACEHOLDERS`)이 지금 시드된 48행(legacy) 전부를
     통과하는지 고정한다 — 렌더러 호출부의 `values` 딕셔너리에서 뽑아낸 목록이므로, 실제로
     쓰이는 문안을 스스로 거부하면 안 된다."""
     _, sections = await _legacy_prompt_set_and_sections(db_session)

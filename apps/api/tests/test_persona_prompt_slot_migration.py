@@ -1,5 +1,5 @@
-"""persona-goal-prompt.md §3-2 M2 · §4 S3 ③~⑥ — 대화 프로필 슬롯(`generation/user_persona`)을
-넣는 데이터 마이그레이션 `b72c33c70240`의 검증.
+"""대화 프로필 슬롯(`generation/user_persona`)을
+넣는 데이터 마이그레이션 `b72c33c70240`(이하 M2)의 검증.
 
 마이그레이션 자체는 다시 돌리지 않는다(`tests/test_clover_lots.py`의 `_load_migration`과 같은
 방식). 세션 스코프 스키마(`_migrated_schema`)가 이미 `upgrade head`를 했으므로:
@@ -43,7 +43,7 @@ _SEED_SET_IDS: dict[str, uuid.UUID] = _load("a69cbd40dec8").NEW_SET_IDS
 
 _PERSONA_KEY = ("generation", "both", "user_persona", "")
 
-# persona-goal-prompt.md §3-4-3 확정 문안(UP-17)을 문서에서 글자 그대로 옮겼다. 마이그레이션의
+# 확정 문안을 글자 그대로 옮겼다. 마이그레이션의
 # 상수와 비교하는 대신 여기 따로 적는 이유: 상수끼리 비교하면 상수가 틀려도 통과한다.
 _CONFIRMED_BODY = (
     "[사용자 정보]\n"
@@ -52,7 +52,7 @@ _CONFIRMED_BODY = (
     "{user_persona}"
 )
 
-# 시드 배치(persona-goal-prompt.md F9) — `(channel, scope, slot, variant, order)`.
+# 시드 배치 — `(channel, scope, slot, variant, order)`.
 _STORY_SEED_GENERATION: list[tuple[str, str, str, str, int]] = [
     ("generation", "story", "base_content", "", 1),
     ("generation", "story", "base_content", "custom", 1),
@@ -98,7 +98,7 @@ def test_assert_layout_returns_history_order_for_seed_layout(
 
 
 def test_assert_layout_follows_history_when_operator_moved_it() -> None:
-    """H는 고정 숫자가 아니라 `history`의 현재 order다(UP-18 보충, F10)."""
+    """H는 고정 숫자가 아니라 `history`의 현재 order다."""
     rows = _with_orders(_STORY_SEED_GENERATION, {"history": 7, "keyword_notes": 6})
 
     assert _M2._assert_generation_layout(rows, "story") == 7
@@ -127,8 +127,8 @@ def test_assert_layout_raises_when_user_persona_already_exists() -> None:
 
 
 def test_assert_layout_raises_when_story_prologue_is_after_history() -> None:
-    """UP-18 (a)의 "prologue 뒤, history 앞"을 동시에 만족할 수 없다 — 조용히 한쪽을 고르지
-    않고 멈춘다(persona-goal-prompt.md §3-2 M2 2번)."""
+    """슬롯 위치 규칙 "prologue 뒤, history 앞"을 동시에 만족할 수 없다 — 조용히 한쪽을 고르지
+    않고 멈춘다."""
     rows = _with_orders(_STORY_SEED_GENERATION, {"prologue": 6, "history": 5})
 
     with pytest.raises(RuntimeError, match="prologue"):
@@ -207,7 +207,7 @@ def test_build_published_rows_inserts_persona_right_before_history(
 
 
 def test_build_published_rows_ids_are_deterministic_per_lane() -> None:
-    """리터럴을 나열할 수 없는 섹션 PK는 uuid5로 결정적으로 만든다(§3-2 M2 5번) — 같은
+    """리터럴을 나열할 수 없는 섹션 PK는 uuid5로 결정적으로 만든다 — 같은
     입력이면 같은 id, 레인이 다르면 다른 id."""
     source = _source_rows(_CHARACTER_SEED_GENERATION)
     set_id = uuid.uuid4()
@@ -238,7 +238,7 @@ def _keyed(sections: list[PromptSection]) -> dict[tuple[str, str, str, str], Pro
 async def test_active_set_is_the_m2_set_with_one_persona_row_before_history(
     db_session: AsyncSession, lane: PromptLane
 ) -> None:
-    """🟡-3 회귀 방지(R-21) — `published_at`이 원본보다 과거가 되면 M2 세트가 활성이 되지
+    """회귀 방지 — `published_at`이 원본보다 과거가 되면 M2 세트가 활성이 되지
     못하고, 골든은 옛 세트로도 통과하므로 신호가 없다. 그래서 id를 직접 단언한다."""
     active, sections = await load_active_prompt_set(db_session, lane=lane)
     assert active.id == _M2.NEW_SET_IDS[lane]
@@ -269,7 +269,7 @@ async def test_active_set_is_the_m2_set_with_one_persona_row_before_history(
 
 
 async def test_m2_versions_follow_global_sequence_story_first(db_session: AsyncSession) -> None:
-    """§3-2 M2 3번 — `max(version::int)+1` 전 레인 대상, story 먼저. 테스트 DB의 기존
+    """`max(version::int)+1` 전 레인 대상, story 먼저. 테스트 DB의 기존
     published는 전부 "1"이라 story "2", character "3"이다."""
     versions = {
         lane: (await db_session.get(PromptSet, _M2.NEW_SET_IDS[lane])) for lane in ("story", "character")
@@ -277,7 +277,7 @@ async def test_m2_versions_follow_global_sequence_story_first(db_session: AsyncS
     assert {lane: s.version if s else None for lane, s in versions.items()} == {"story": "2", "character": "3"}
 
 
-# ---- ⑤·⑥ `_patch_draft` (UP-19 (a)) --------------------------------------------------------
+# ---- ⑤·⑥ `_patch_draft` --------------------------------------------------------
 
 
 async def _clone_seed_set_as_draft(
@@ -358,7 +358,7 @@ async def test_patch_draft_adds_persona_row_in_place_and_draft_then_publishes(
     assert after_slots[after_slots.index("user_persona") + 1] == "history"
     assert [s for s in after_slots if s != "user_persona"] == before_slots
 
-    # 게시 게이트(R-1~R-8)를 그대로 태운다 — R-1(슬롯 집합)·R-4(허용 플레이스홀더)는 코드 표
+    # 게시 게이트 전체를 그대로 태운다 — 슬롯 집합·허용 플레이스홀더 검사는 코드 표
     # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 M2와 같이 갔는지도 함께 본다.
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
@@ -382,7 +382,7 @@ async def test_patch_draft_without_draft_returns_false_and_changes_nothing(
 
 
 async def test_patch_draft_raises_on_draft_layout_it_cannot_satisfy(db_session: AsyncSession) -> None:
-    """초안에도 `_assert_generation_layout`을 **초안 자신의 배치로** 적용한다(§3-2 M2 6번)."""
+    """초안에도 `_assert_generation_layout`을 **초안 자신의 배치로** 적용한다."""
     await _clone_seed_set_as_draft(db_session, "story", generation_orders={"prologue": 6, "history": 5})
 
     connection = await db_session.connection()

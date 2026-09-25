@@ -1,5 +1,4 @@
-"""`ops/check_resources.py` — VM `free`/`df` 임계 감시 + healthchecks.io dead man's switch
-(monitoring-techspec.md MT-13).
+"""`ops/check_resources.py` — VM `free`/`df` 임계 감시 + healthchecks.io dead man's switch.
 
 파싱·판정은 `free`/`df` **출력 문자열**을 받는 순수 함수라 실제 VM 없이 검증한다. `main()`은
 그 순수 함수와 subprocess 호출부·알림·ping 배선만 잇는다는 걸 스텁으로 확인한다.
@@ -47,7 +46,7 @@ Filesystem     1K-blocks    Used Available Use% Mounted on
 
 
 def test_parse_memory_used_percent_reads_available_column() -> None:
-    """`used` 컬럼이 아니라 `available`을 쓴다(MT-13) — buff/cache 를 실사용으로 착각하면
+    """`used` 컬럼이 아니라 `available`을 쓴다 — buff/cache 를 실사용으로 착각하면
     거의 항상 90% 넘게 나와 알림이 상시로 운다. 3919 total, 2909 available → 약 25.8% 사용."""
     used_percent = check_resources.parse_memory_used_percent(_FREE_HEALTHY)
     assert used_percent == pytest.approx((3919 - 2909) / 3919 * 100, abs=0.01)

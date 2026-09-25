@@ -23,7 +23,7 @@ async def test_returns_200_ready_when_all_resources_are_alive(api_client: AsyncC
 
 
 async def test_head_ready_is_allowed(api_client: AsyncClient) -> None:
-    """MT-15: UptimeRobot 이 HEAD 로 찌르고 405 를 받으면 GET 으로 폴백한다 —
+    """UptimeRobot 이 HEAD 로 찌르고 405 를 받으면 GET 으로 폴백한다 —
     체크당 왕복이 2 번이 되던 것을, HEAD 를 허용해 1 번으로 줄인다."""
     response = await api_client.head("/ready")
 

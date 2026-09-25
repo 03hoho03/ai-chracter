@@ -347,7 +347,7 @@ async def test_get_content_draft_returns_newly_created_empty_draft(
 async def test_get_content_draft_returns_thumbnail_url_for_character(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """builder-techspec.md §7: draft GET resolves a renderable URL for thumbnailAssetId
+    """Draft GET resolves a renderable URL for thumbnailAssetId
     via the same `_resolve_thumbnail_url` path DraftSummary already uses."""
     user = _make_user()
     db_session.add(user)
@@ -375,7 +375,7 @@ async def test_get_content_draft_returns_thumbnail_url_for_character(
 async def test_get_content_draft_returns_thumbnail_url_for_story(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """builder-techspec.md §7 — same as the character case, story side."""
+    """Same as the character case, story side."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -440,8 +440,8 @@ async def test_patch_content_draft_updates_registration_fields(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """registration-tab fields live on Content/ContentVersion, not character_version_details
-    (shared across versions, not per-version snapshot data) — US-083 depends on these being
-    settable so a draft can ever pass publish validation."""
+    (shared across versions, not per-version snapshot data) — publish validation depends on these
+    being settable so a draft can ever pass it."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -545,7 +545,7 @@ async def test_patch_content_draft_preserves_image_asset_id_set_by_register_endp
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
     """The image fields are exclusively owned by `/assets/{id}/register-situational-image`
-    (US-071) — this endpoint must not null them out when it updates trigger_condition/order
+    — this endpoint must not null them out when it updates trigger_condition/order
     for an entity_id that already has an image attached."""
     user = _make_user()
     db_session.add(user)
@@ -671,7 +671,7 @@ async def test_patch_content_draft_updates_story_fields_without_validation(
 async def test_patch_content_draft_returns_thumbnail_url_for_character(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """builder-techspec.md §7 — PATCH response resolves thumbnailUrl the same way GET does."""
+    """PATCH response resolves thumbnailUrl the same way GET does."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -693,7 +693,7 @@ async def test_patch_content_draft_returns_thumbnail_url_for_character(
 async def test_patch_content_draft_returns_thumbnail_url_for_story(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """builder-techspec.md §7 — story side of the same PATCH behavior."""
+    """Story side of the same PATCH behavior."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -715,7 +715,7 @@ async def test_patch_content_draft_returns_thumbnail_url_for_story(
 async def test_patch_content_draft_round_trips_rules_user_goal_and_development_examples(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """chat-goal-prompt.md §8-1/§8-2/§8-3 (D-9/D-10): 새 필드 셋이 PATCH -> GET 왕복에서
+    """새 필드 셋이 PATCH -> GET 왕복에서
     손실 없이 돈다."""
     user = _make_user()
     db_session.add(user)
@@ -753,7 +753,7 @@ async def test_patch_content_draft_round_trips_rules_user_goal_and_development_e
 async def test_patch_content_draft_preserves_development_example_when_key_omitted(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """chat-techspec.md D-13: 구 컬럼 `developmentExample`은 마이그레이션 리비전②(구 컬럼 드롭)
+    """구 컬럼 `developmentExample`은 마이그레이션 리비전②(구 컬럼 드롭)
     전까지 롤백 안전망으로 살아 있어야 한다. FE는 이 필드를 더 이상 폼에서 관리하지 않아 PATCH에
     아예 안 보내므로, "안 보냄"을 서버가 명시적 `null`과 구분하지 못하면 창작자가 다른 필드만
     고쳐도 원본 값이 조용히 지워진다."""
@@ -968,7 +968,7 @@ async def test_patch_content_draft_upserts_starting_setup_tree(
     assert note_row.starting_setup_id == setup_row.id
     assert note_row.starting_setup_id != uuid.UUID(setup_id)
 
-    # GET returns the same tree (AC1: startingSetups(entity_id, order) + descendants).
+    # GET returns the same tree (startingSetups(entity_id, order) + descendants).
     get_resp = await db_client.get(f"/contents/{content.id}/draft")
     assert get_resp.status_code == 200
     assert get_resp.json() == body
@@ -1304,7 +1304,7 @@ async def test_delete_content_draft_removes_story_draft_with_its_whole_setup_tre
         ),
     )
     assert patch_resp.status_code == 200
-    # StoryDraftResponse has no contentVersionId (only CharacterDraftResponse does, US-071).
+    # StoryDraftResponse has no contentVersionId (only CharacterDraftResponse does).
     version_id = (
         await db_session.execute(
             sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id)

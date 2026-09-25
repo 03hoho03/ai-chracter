@@ -169,7 +169,7 @@ async def _assert_requires_admin_session(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -351,7 +351,7 @@ async def test_list_users_pagination_second_page_has_no_duplicate_rows(
 async def test_list_users_query_count_stays_bounded(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """goal-prompt.md 3단계 검증 기준: 20행 조회에 쿼리 1~3개(T-8, N+1 금지) — 코드
+    """20행 조회에 쿼리 1~3개(N+1 금지) — 코드
     읽기가 아니라 SQLAlchemy `before_cursor_execute` 이벤트로 실측한다."""
     for i in range(20):
         user = _make_user(created_at=datetime.now(UTC) - timedelta(minutes=i))
@@ -471,7 +471,7 @@ async def test_user_detail_restrictable_content_count_excludes_already_restricte
 async def test_user_detail_restrictable_content_count_excludes_private_visibility(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """D-6: 정지 대상은 공개 작품(PUBLIC/LINK)뿐이라, `visibility=PRIVATE`인 NORMAL
+    """정지 대상은 공개 작품(PUBLIC/LINK)뿐이라, `visibility=PRIVATE`인 NORMAL
     작품은 정지해도 내려가지 않는다 — `restrictableContentCount`도 그 작품을 빼고 세야
     한다."""
     user = _make_user()
@@ -588,7 +588,7 @@ async def test_user_detail_includes_action_logs_targeting_user_or_their_content(
 async def test_user_detail_includes_action_log_from_report_action_on_their_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """backlog-l-goal-prompt.md BL-4. 신고 경로 조치 로그는 `target_user_id` 없이
+    """신고 경로 조치 로그는 `target_user_id` 없이
     `target_content_id`만 채운다 — 그래도 작품 소유 조건으로 크리에이터 상세에 걸려야 한다."""
     creator = _make_user()
     reporter = _make_user()
@@ -793,7 +793,7 @@ async def test_suspend_sets_suspended_at_restricts_content_notifies_logs_and_mar
 
     await db_session.refresh(normal_content)
     assert normal_content.moderation_status == ModerationStatus.RESTRICTED
-    assert normal_content.visibility == ContentVisibility.LINK  # T-1: visibility 불변
+    assert normal_content.visibility == ContentVisibility.LINK  # visibility 불변
 
     await db_session.refresh(deleted_content)
     assert deleted_content.moderation_status == ModerationStatus.DELETED  # 되살아나지 않음
@@ -819,7 +819,7 @@ async def test_suspend_sets_suspended_at_restricts_content_notifies_logs_and_mar
 async def test_suspend_excludes_private_content_from_restriction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """D-6: 정지는 그 유저의 공개 작품(PUBLIC/LINK) 전부를 비공개 처리하되, 한 번도
+    """정지는 그 유저의 공개 작품(PUBLIC/LINK) 전부를 비공개 처리하되, 한 번도
     공개한 적 없는 PRIVATE 초안은 건드리지 않는다 — `content/router.py`의
     `create_content_draft`가 새 초안을 PRIVATE+NORMAL로 만들기 때문에, 이 조건이
     없으면 미공개 초안까지 restricted가 된다."""
@@ -886,7 +886,7 @@ async def test_suspend_unknown_user_returns_404(
 async def test_suspend_is_idempotent_on_repeat_call(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """재시도 시나리오(techspec §2-2 6단계 — Redis 실패 후 재호출) 대비: 두 번째
+    """재시도 시나리오(Redis 실패 후 재호출) 대비: 두 번째
     suspend 호출은 400이 아니라 그대로 통과하고, 이미 내려간 작품은 다시 세지 않는다."""
     user = _make_user()
     db_session.add(user)
@@ -956,7 +956,7 @@ async def test_suspend_restricted_content_count_matches_detail_preview(
 async def test_suspend_blocks_existing_session_immediately(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """techspec §9 회귀 2번: 실제 suspend 엔드포인트를 태워 기존 세션이 즉시(재로그인
+    """실제 suspend 엔드포인트를 태워 기존 세션이 즉시(재로그인
     없이) 차단되는지 확인한다 — `tests/test_suspension.py`는 마커를 직접 세팅해서
     검증했지만, 여기서는 API 경로 전체가 맞물리는지를 본다."""
     user = _make_user()
@@ -1013,7 +1013,7 @@ async def test_unsuspend_clears_suspended_at_removes_marker_and_keeps_content_re
     assert await is_user_suspended(user.id) is False
 
     await db_session.refresh(content)
-    assert content.moderation_status == ModerationStatus.RESTRICTED  # D-7: 작품은 안 돌아온다
+    assert content.moderation_status == ModerationStatus.RESTRICTED  # 작품은 안 돌아온다
 
     logs = (
         await db_session.scalars(
@@ -1069,7 +1069,7 @@ async def test_unsuspend_blank_admin_comment_returns_422(
 async def test_user_detail_exposes_rate_limit_exempt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """limit-goal-prompt.md RL-19: 플래그는 유저 상세에만 실린다(목록·필터 없음). 면제/비면제
+    """플래그는 유저 상세에만 실린다(목록·필터 없음). 면제/비면제
     유저를 둘 다 조회한다 — 한쪽만 보면 상수를 내려도 통과하는 항진 테스트가 된다."""
     exempt_user = _make_user(rate_limit_exempt=True)
     plain_user = _make_user(rate_limit_exempt=False)
@@ -1092,7 +1092,7 @@ async def test_user_detail_exposes_rate_limit_exempt(
 async def test_set_rate_limit_exempt_on_writes_column_and_exactly_one_action_log(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """limit-goal-prompt.md RL-9: `users.rate_limit_exempt`를 바꾸는 유일한 경로가 이 토글이고,
+    """`users.rate_limit_exempt`를 바꾸는 유일한 경로가 이 토글이고,
     켠 사실은 `admin_action_logs`에 `user-rate-limit-exempt-on`으로 남는다. 로그가 정확히 1행인
     것까지 본다 — 켜기/끄기가 각각 한 행이어야 이력에서 시점을 셀 수 있다."""
     user = _make_user(rate_limit_exempt=False)
@@ -1125,7 +1125,7 @@ async def test_set_rate_limit_exempt_on_writes_column_and_exactly_one_action_log
 async def test_set_rate_limit_exempt_off_writes_the_off_action_type(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """RL-9: 켤 때와 끌 때 액션 타입이 달라야 이력에서 구분된다 — 위 테스트의 짝이고 셋업이
+    """켤 때와 끌 때 액션 타입이 달라야 이력에서 구분된다 — 위 테스트의 짝이고 셋업이
     글자까지 같다(시드·`exempt`·그 결과 단언의 면제 불리언만 반대이고 `adminComment`까지 같은
     문자열이다). 그 불리언을 빼면 남는 차이는 `action_type` 리터럴 하나뿐이고, `reason_text`는
     양쪽이 같은 값을 본다 — 끌 때도 사유가 로그에 남는지는 여기서만 검증된다."""
@@ -1159,7 +1159,7 @@ async def test_set_rate_limit_exempt_off_writes_the_off_action_type(
 async def test_set_rate_limit_exempt_blank_admin_comment_returns_422(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """RL-22: `unsuspend`와 같은 규칙 — 사유 카테고리가 없는 대신 코멘트가 필수다. 라우터가
+    """`unsuspend`와 같은 규칙 — 사유 카테고리가 없는 대신 코멘트가 필수다. 라우터가
     손으로 하는 검증이라 pydantic이 아니라 이 테스트가 유일한 검증이다."""
     user = _make_user()
     db_session.add(user)

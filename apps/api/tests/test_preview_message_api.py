@@ -217,12 +217,12 @@ async def test_send_preview_message_character_streams_and_appends(db_client: htt
     assert state is not None
     assert [m.content for m in state.messages] == ["안녕하세요, 아리아예요", "안녕!", "안녕"]
     assert state.turn_count == 1
-    # 캐릭터 챗은 template 없이 동작한다(D-17) — L0.5가 붙지 않는다.
+    # 캐릭터 챗은 template 없이 동작한다 — L0.5가 붙지 않는다.
     assert fake.received_system_instruction == _read_golden_prompt("system_instruction_character.txt")
 
 
 async def test_send_preview_message_story_selects_template_instruction(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    """chat-techspec.md §4-2 — `_stream_preview_turn` 호출부는 `payload.prompt_template`을
+    """`_stream_preview_turn` 호출부는 `payload.prompt_template`을
     골라 시스템 지시문(L0.5)에 잇는다."""
     user = _make_user()
     db_session.add(user)
@@ -373,10 +373,10 @@ async def test_send_preview_message_judgment_llm_failure_still_completes_the_tur
 async def test_send_preview_message_redis_save_failure_still_completes_the_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-4/CP-4 판정① — `update_preview_session`(Redis SET)이
+    """`update_preview_session`(Redis SET)이
     실패해도 이미 토큰까지 스트리밍된 뒤라 `done` 이벤트까지 정상적으로 나가고 스트림이
     정상 종료된다(§SSE: `require_legal_consent`가 `get_db_session`을 잡고 있어 미리보기도
-    요청 스코프 DB 세션을 쥔 채 스트리밍한다, F-6). 설계 판단(progress.md CP-4 기록): 이
+    요청 스코프 DB 세션을 쥔 채 스트리밍한다). 설계 판단: 이
     실패는 조용히 흡수한다 — `update_preview_session`은 이미 `ChatDoneEvent`가 yield된
     *뒤에* 불리므로, 이 시점에 추가 이벤트를 보내도 클라이언트가 더 이상 듣고 있다는
     보장이 없다. 대신 이번 턴은 Redis에 반영되지 않는다(다음 조회에서 사라진다) — 그
@@ -426,7 +426,7 @@ async def test_send_preview_message_redis_save_failure_still_completes_the_turn(
 async def test_send_preview_message_serialization_failure_at_save_still_completes_the_turn(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-progress.md SP-129/SP-130(적대적 리뷰 결함②) — `update_preview_session`
+    """적대적 리뷰 발견 — `update_preview_session`
     (`chat/preview_session.py`)은 `state.model_dump_json(by_alias=True)`을 먼저 계산한
     **뒤에** `redis_client.set(...)`을 부른다. 직렬화 실패는 `RedisError`가 아니라 호출부
     (`send_preview_message`)의 `except RedisError`를 그대로 통과해 SSE 제너레이터를 뚫는다
@@ -639,7 +639,7 @@ async def test_preview_messages_do_not_touch_chat_rooms(
     assert count == 0
 
 
-# ---- 대화 프로필 (persona-goal-prompt.md UP-10 · §3-5 · §4 S4 ⑤) ---------------------
+# ---- 대화 프로필 ---------------------
 
 
 async def test_send_preview_message_injects_the_authors_default_persona(
@@ -703,8 +703,8 @@ async def test_send_preview_message_story_injects_the_authors_default_persona(
 async def test_send_preview_message_without_default_persona_has_no_persona_section(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-6·UP-10: 기본이 없으면 빈 상태다 — 프로필을 갖고 있어도 기본이 아니면 들어가지
-    않는다. 섹션 머리글(§3-4-3 확정 문안의 첫 줄)이 없는 것으로 섹션째 드롭됐음을 본다."""
+    """기본이 없으면 빈 상태다 — 프로필을 갖고 있어도 기본이 아니면 들어가지
+    않는다. 섹션 머리글(확정 문안의 첫 줄)이 없는 것으로 섹션째 드롭됐음을 본다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -727,7 +727,7 @@ async def test_send_preview_message_without_default_persona_has_no_persona_secti
 
 
 def test_send_preview_message_resolves_persona_before_the_clover_charge() -> None:
-    """persona-goal-prompt.md §3-5 (clover-goal-prompt.md CL-1) — `Depends`는 시그니처
+    """`Depends`는 시그니처
     순서대로 resolve되고 앞의 것이 raise하면 뒤는 불리지 않는다. 프로필 조회가 차감
     게이트보다 뒤에 있으면 조회 실패(DB 장애) 때 차감만 남는다."""
     dependencies = [

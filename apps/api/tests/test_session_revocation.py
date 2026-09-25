@@ -1,11 +1,11 @@
-"""backlog-sweep-goal-prompt.md BS-6 — 어느 경로가 그 유저의 세션을 폐기하는가.
+"""어느 경로가 그 유저의 세션을 폐기하는가.
 
 | 경로 | 폐기 범위 |
 |---|---|
 | 탈퇴 | 전부 |
 | 비밀번호 변경 | 현재 세션만 남긴다 |
 | 비밀번호 재설정 | 전부 |
-| 관리자 정지 | 폐기하지 않는다(마커가 403으로 막는다 — Q-2) |
+| 관리자 정지 | 폐기하지 않는다(마커가 403으로 막는다) |
 """
 
 import uuid
@@ -92,7 +92,7 @@ async def test_password_reset_revokes_every_session_of_the_user(
 async def test_password_reset_rejects_token_of_withdrawn_account(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """backlog-sweep-goal-prompt.md M-5 — 탈퇴 전에 발급된 토큰이 탈퇴 때 파기한 `password_hash`를
+    """탈퇴 전에 발급된 토큰이 탈퇴 때 파기한 `password_hash`를
     되살리지 못한다(없는 유저와 같은 400)."""
     user = _make_user(deleted_at=datetime.now(UTC), password_hash=None)
     db_session.add(user)
@@ -132,8 +132,7 @@ async def test_suspend_keeps_existing_sessions(
 async def test_withdraw_deletes_current_session_missing_from_index(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """역인덱스 배포 전에 만든 세션은 인덱스에 없다 — 탈퇴는 쿠키의 현재 세션도 직접 지운다
-    (tasks/review-S2.md ⚪-2)."""
+    """역인덱스 배포 전에 만든 세션은 인덱스에 없다 — 탈퇴는 쿠키의 현재 세션도 직접 지운다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()

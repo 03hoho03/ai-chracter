@@ -1,10 +1,10 @@
-"""monitoring-techspec.md MT-4 — `api.main._init_sentry()`가 `settings.sentry_dsn` 유무로
-`sentry_sdk.init()` 호출을 게이트하는지, 호출될 때 옵션이 `build_sentry_options()`(MT-5)의
+"""`api.main._init_sentry()`가 `settings.sentry_dsn` 유무로
+`sentry_sdk.init()` 호출을 게이트하는지, 호출될 때 옵션이 `build_sentry_options()`의
 결과를 그대로 포함하는지 검증한다.
 
 전역 `sentry_sdk.init()`을 실제로 부르면 테스트 프로세스의 SDK 상태가 오염된다
 (`_processed_integrations`/`_installed_integrations`가 프로세스 전역 캐시라는 것이 바로
-`build_sentry_options()`를 거치지 않은 초기화 경로를 만들면 안 되는 이유다, MT-5 참고) — 그래서
+`build_sentry_options()`를 거치지 않은 초기화 경로를 만들면 안 되는 이유다) — 그래서
 `sentry_sdk.init` 자체를 스텁으로 갈아끼우고 호출 여부·인자만 관찰한다.
 """
 

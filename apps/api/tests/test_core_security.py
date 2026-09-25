@@ -3,7 +3,7 @@ from api.core.security import hash_withdrawn_email
 
 
 def test_hash_withdrawn_email_is_deterministic(monkeypatch: object) -> None:
-    """legal-revision-goal-prompt.md LR-8: 재가입 차단은 조회라 같은 입력은 항상 같은
+    """재가입 차단은 조회라 같은 입력은 항상 같은
     해시를 내야 한다(salt가 있는 bcrypt로는 불가능한 성질)."""
     assert hash_withdrawn_email("user@example.com") == hash_withdrawn_email("user@example.com")
 

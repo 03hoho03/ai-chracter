@@ -1,16 +1,16 @@
-"""clover-techspec.md CT-18 · S11 — 독립 커넥션이 있어야만 검증되는 것들.
+"""독립 커넥션이 있어야만 검증되는 것들.
 
 이 파일의 테스트는 **롤백되지 않는 진짜 커넥션**을 쓴다. 나머지 클로버 테스트가 쓰는
 `db_session`/`db_client`는 한 커넥션 위의 한 트랜잭션이라(`conftest.py`의 `db_session`
 docstring: *"sessions sharing a connection share its transaction"*) 두 가지를 재현하지 못한다:
 
-- **롤백 독립성**(clover-goal-prompt.md CL-9) — 별도 세션의 쓰기가 호출자 트랜잭션에 합류해
+- **롤백 독립성** — 별도 세션의 쓰기가 호출자 트랜잭션에 합류해
   같이 롤백되므로 "요청이 롤백돼도 차감이 남는다"가 성립하는지 볼 수 없다.
 - **경쟁** — 단일 커넥션에서는 두 코루틴이 같은 행을 두고 락을 다툴 수 없다. `asyncio.gather`로
   묶어도 실제로는 한 트랜잭션 안의 순차 실행이라, 통과하더라도 **동시성을 논증하지 못한다.**
 
 🔴 그래서 이 파일의 경쟁 테스트는 **락이 실제로 걸리는 것을 먼저 단언**한다(`_assert_blocked`).
-그게 없으면 "순차로 돌아도 통과하는" 항진명제가 된다 — 이 런에서 이미 세 번 겪은 형태다
+그게 없으면 "순차로 돌아도 통과하는" 항진명제가 된다 — 이미 세 번 겪은 형태다
 (더미 리소스 · 셋업 플래그 주입 · 손으로 쓴 유니언).
 """
 
@@ -49,7 +49,7 @@ _MARKER_DOMAIN = "s11-independent.test"
 async def independent_session_factory(
     db_engine: AsyncEngine,
 ) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
-    """clover-techspec.md CT-18 — 롤백되지 않는 독립 커넥션을 주는 세션 팩토리.
+    """롤백되지 않는 독립 커넥션을 주는 세션 팩토리.
 
     `conftest.py`의 `db_client`가 거는 `get_session_factory` 오버라이드를 **쓰지 않는다.**
     그건 `db_session`의 커넥션에 바인딩돼 같이 롤백되므로(`conftest.py:248-251`) 검증하려는
@@ -59,11 +59,11 @@ async def independent_session_factory(
 
     위험을 정직하게 적는다:
 
-    1. **teardown이 `_MARKER_DOMAIN` 유저만 지운다.** techspec의 앞선 판본은
+    1. **teardown이 `_MARKER_DOMAIN` 유저만 지운다.** 앞선 설계는
        `delete(CloverLedger)` 전역 + `update(User).values(clover_balance=0, ...)` 전역이었는데,
        그 전역 `UPDATE`는 **같은 테스트가 열어 둔 `db_session` 트랜잭션이 잡은 행 락에 막혀
        teardown이 멈출 수 있다**(픽스처는 역순으로 정리되므로 `db_session`이 아직 살아 있다).
-       이 런에서 `alembic downgrade base`가 열린 트랜잭션에 막혀 스위트 전체가 행(hang)난
+       `alembic downgrade base`가 열린 트랜잭션에 막혀 스위트 전체가 행(hang)난
        사고를 이미 한 번 겪었다 — 같은 형태를 만들지 않으려고 범위를 좁혔다.
        ⇒ **대가**: 이 픽스처를 쓰는 테스트는 유저를 반드시 `_seed_user`로 만들어야 한다.
        `db_session`으로 만든 유저는 (가) 독립 커넥션에서 보이지도 않고 (나) teardown이
@@ -72,7 +72,7 @@ async def independent_session_factory(
        `clover_attendance_granted_on` · `clover_spend_confirmed_on` 중 하나라도 빠뜨리면
        커밋된 채 새는데, 행을 지우면 그 실수가 불가능하다. `clover_ledger`·`clover_lots`가
        `users.id`를 FK로 잡으므로 **원장·로트를 먼저** 지운다(ON DELETE CASCADE가 없다,
-       clover-page-goal-prompt.md CE-3 이후 `clover_lots`도 이 순서에 들어왔다).
+       `clover_lots` 테이블이 생긴 뒤로 로트도 이 순서에 들어왔다).
     3. **teardown이 실패하면 다음 테스트가 오염된 상태를 본다.** finalizer는 테스트 실패
        시에도 돌지만 teardown 자체가 예외를 내면 막을 방법이 없다.
     4. 🔴 **`pytest-xdist`를 도입하면 이 픽스처가 먼저 깨진다** — 워커 둘이 같은 테스트 DB를
@@ -96,9 +96,9 @@ async def _seed_user(
 ) -> uuid.UUID:
     """독립 커넥션으로 유저와 매칭되는 로트 1행을 **커밋해서** 만든다.
 
-    `db_session`으로 만들면 그 트랜잭션 안에 갇혀 이 파일의 다른 커넥션에서 보이지 않는다
-    (clover-techspec.md CT-18 위험 2). 로트를 함께 만드는 이유는
-    clover-page-goal-prompt.md CE-35 — `spend`/`revoke`가 로트 인지로 바뀌어 로트 0행인
+    `db_session`으로 만들면 그 트랜잭션 안에 갇혀 이 파일의 다른 커넥션에서 보이지 않는다.
+    로트를 함께 만드는 이유:
+    `spend`/`revoke`가 로트 인지로 바뀌어 로트 0행인
     유저를 차감하면 `CloverLotShortfallError`가 난다. `_make_user_with_clover_lot`이
     `db_session`(공유 트랜잭션) 전제라 여기서는 이 파일의 독립 커넥션 세션에 직접 물려
     쓴다(factories.py의 헬퍼 자체 docstring — 커넥션 격리 요구사항이 다른 변종은 각 파일에
@@ -148,11 +148,11 @@ async def _assert_blocked(task: "asyncio.Task[object]", *, block_seconds: float 
         await asyncio.wait_for(asyncio.shield(task), block_seconds)
 
 
-# ── S11-2a · `spend_in_new_transaction` 직접 테스트 ──────────────────────────
+# ── `spend_in_new_transaction` 직접 테스트 ──────────────────────────
 async def test_spend_in_new_transaction_commits_without_the_caller(
     independent_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """차감이 **자기 트랜잭션에서 즉시 커밋**된다(clover-techspec.md CT-4).
+    """차감이 **자기 트랜잭션에서 즉시 커밋**된다.
 
     빨개지는 조건: `spend_in_new_transaction`이 `session.commit()`을 빼면 `_read`가 여는
     **새 커넥션**에서 잔액 100·원장 0행으로 보인다.
@@ -189,11 +189,11 @@ async def test_spend_in_new_transaction_writes_nothing_when_short(
     assert rows == []
 
 
-# ── S11-3 · T-9 롤백 독립성 (clover-goal-prompt.md CL-9) ─────────────────────
+# ── 롤백 독립성 ─────────────────────────────────────────────────────────────
 async def test_charge_survives_the_callers_rollback(
     independent_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
-    """🔴 **CL-9의 존재 이유다** — 호출자 트랜잭션이 롤백돼도 차감이 남는다.
+    """🔴 **별도 트랜잭션 차감의 존재 이유다** — 호출자 트랜잭션이 롤백돼도 차감이 남는다.
 
     채팅 4경로의 커밋 시점이 제각각이라 요청 세션에 얹으면 미리보기는 영원히 공짜가 된다.
     별도 트랜잭션이라야 그 차이가 사라진다.
@@ -234,7 +234,7 @@ async def test_charge_survives_the_callers_rollback(
     assert nickname == "테스터"
 
 
-# ── S11-2b · 진짜 동시 차감 ─────────────────────────────────────────────────
+# ── 진짜 동시 차감 ─────────────────────────────────────────────────
 async def test_concurrent_spend_cannot_overdraw(
     independent_session_factory: async_sessionmaker[AsyncSession],
     db_engine: AsyncEngine,
@@ -249,8 +249,8 @@ async def test_concurrent_spend_cannot_overdraw(
       (CHECK 제약에 먼저 걸리면 `IntegrityError`로 깨진다 — 어느 쪽이든 빨갛다).
     - 두 세션이 같은 커넥션을 쓰면 `_assert_blocked`가 **타임아웃하지 않아** 빨개진다.
 
-    clover-page-goal-prompt.md T-3(로트 포함으로 확장) — `_seed_user`가 이제 매칭 로트를
-    함께 만들고, `statements`가 A의 실행 안에서 CE-6의 락 순서(users **먼저**, clover_lots
+    `_seed_user`가 매칭 로트를
+    함께 만들고, `statements`가 A의 실행 안에서 락 순서(users **먼저**, clover_lots
     나중)를 고정한다. 순서가 뒤집히면(로트를 먼저 잠그면) 이 어서션이 깨진다 — 실제
     데드락은 이 한 유저짜리 시나리오에서는 재현되지 않는다(같은 행에 대한 users UPDATE
     자체가 이미 A/B를 완전히 직렬화하기 때문), 그래서 순서를 직접 기록해 고정한다.
@@ -276,7 +276,7 @@ async def test_concurrent_spend_cannot_overdraw(
     second = independent_session_factory()
     try:
         # A: 조건부 UPDATE가 통과하고 행 락을 잡는다. 아직 커밋하지 않는다. 이 한 호출
-        # 안에서 users → clover_lots 순서로 SQL이 나가는지를 기록한다(CE-6).
+        # 안에서 users → clover_lots 순서로 SQL이 나가는지를 기록한다.
         event.listen(db_engine.sync_engine, "before_cursor_execute", _record)
         try:
             first_result = await spend(
@@ -307,20 +307,20 @@ async def test_concurrent_spend_cannot_overdraw(
     assert balance == 0
     assert [(row.kind, row.amount) for row in rows] == [("chat_spend", -10)]
 
-    # Σ 불변식(CE-4) — 매칭 로트가 실제로 깎였다. 총액만 움직인 게 아니다.
+    # Σ 불변식 — 매칭 로트가 실제로 깎였다. 총액만 움직인 게 아니다.
     async with independent_session_factory() as session:
         lot = await session.scalar(select(CloverLot).where(CloverLot.user_id == user_id))
     assert lot is not None
     assert lot.remaining == 0
 
 
-# ── CE-35: 로트가 부족하면 예외를 던지고 총액 CAS까지 롤백한다 ─────────────────
+# ── 로트가 부족하면 예외를 던지고 총액 CAS까지 롤백한다 ─────────────────
 async def test_spend_rolls_back_everything_when_lots_are_insufficient(
     independent_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
     """🔴 총액 CAS는 통과했는데 로트 합계가 모자란 비정상 상태(Σ 불변식이 이미 깨진 것,
     예컨대 백필 누락). 깨지는 시나리오: 조용한 fallback으로 총액만 깎으면 이 구멍이
-    프로덕션에도 남는다(CE-35).
+    프로덕션에도 남는다.
 
     `_seed_user`가 만든 로트를 절반으로 줄여 불변식을 의도적으로 깬 뒤, `spend()`가
     예외를 던지고 **총액 CAS까지 되돌아가는지**를 완전히 별도인 커넥션에서 읽어 확인한다
@@ -343,7 +343,7 @@ async def test_spend_rolls_back_everything_when_lots_are_insufficient(
     assert rows == []
 
 
-# ── S11-2c · 진짜 동시 출석 (S6 리뷰 H-1의 잔여) ────────────────────────────
+# ── 진짜 동시 출석 ──────────────────────────────────────────────────────────
 async def test_concurrent_attendance_grants_only_once(
     independent_session_factory: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -352,7 +352,7 @@ async def test_concurrent_attendance_grants_only_once(
     `clover/router.py`의 `is_same_kst_day` 검사는 **순차 재호출**만 막는다 — 둘째는 첫째가
     커밋하기 전에 표지를 읽어 못 보고 통과하고, `grant`는 `guard=False`라 조건 없는
     `WHERE users.id = :u`만 내므로 락이 풀린 뒤 재평가에서도 그대로 통과한다.
-    ⇒ 격리를 맡는 것은 `ux_clover_ledger_idempotency_key`다(clover-goal-prompt.md CL-8).
+    ⇒ 격리를 맡는 것은 `ux_clover_ledger_idempotency_key`다.
 
     빨개지는 조건: `idempotency_key`를 `None`으로 넘기면 유니크 인덱스가 걸리지 않아 둘 다
     성공하고 **잔액 200 · 원장 2행**이 된다. 세션이 같은 커넥션이면 `_assert_blocked`가
@@ -401,7 +401,7 @@ async def test_concurrent_attendance_grants_only_once(
     assert [(row.kind, row.amount) for row in rows] == [("attendance_grant", 100)]
 
 
-# ── S11-2d · `burn_all`은 호출자가 읽어 둔 잔액에 기대지 않는다 ────────────────
+# ── `burn_all`은 호출자가 읽어 둔 잔액에 기대지 않는다 ────────────────
 async def test_burn_all_burns_the_balance_the_row_actually_holds(
     independent_session_factory: async_sessionmaker[AsyncSession],
     db_engine: AsyncEngine,
@@ -417,7 +417,7 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
     소멸된 90**이다(호출자가 본 100이 아니다).
 
     🔴 이 테스트는 `burn_all`을 직접 부른다. 내부를 재현하면 구현이 바뀔 때 테스트만 초록으로
-    남는다 — S11 첫 판본이 `_apply` 두 문장을 손으로 재현했다가 정확히 그 함정에 걸렸다.
+    남는다 — 이 테스트의 첫 판본이 `_apply` 두 문장을 손으로 재현했다가 정확히 그 함정에 걸렸다.
 
     🔴 **그리고 결과만 봐서는 신호가 없다.** 읽기와 쓰기가 갈려 있어도 READ COMMITTED에서는
     각 문장이 새 스냅샷을 보므로, 두 문장 **사이에** 커밋이 끼지 않는 한 결과가 같다. 그래서
@@ -473,7 +473,7 @@ async def test_burn_all_burns_the_balance_the_row_actually_holds(
         ("withdrawal_burn", -90),
     ]
 
-    # clover-page-goal-prompt.md T-9(CE-29) — 로트도 함께 0이 됐다. 유령 로트 금지.
+    # 로트도 함께 0이 됐다. 유령 로트 금지.
     async with independent_session_factory() as session:
         lot = await session.scalar(select(CloverLot).where(CloverLot.user_id == user_id))
     assert lot is not None

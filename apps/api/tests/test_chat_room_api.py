@@ -489,7 +489,7 @@ async def test_acknowledge_version_upgrade_resets_flag(
 async def test_acknowledge_version_upgrade_get_does_not_reset_flag(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """techspec-content-versioning.md §4 — GET은 순수 조회라 스스로 플래그를 끄면 안 된다."""
+    """GET은 순수 조회라 스스로 플래그를 끄면 안 된다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -888,7 +888,7 @@ async def test_change_starting_setup_creates_new_room_and_keeps_old_one(
     assert len(old_messages) == 2
 
 
-# ---- 대화 프로필 — 새 방의 `persona_id` (persona-goal-prompt.md UP-7·UP-24, §3-3 `_create_room`) ----
+# ---- 대화 프로필 — 새 방의 `persona_id` (`_create_room`) ----
 
 
 async def _persona_room_fixture(
@@ -940,7 +940,7 @@ async def _story_room_with_persona(
 async def test_create_chat_room_starts_with_the_default_persona(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-7: 새 방은 기본 프로필로 시작한다."""
+    """새 방은 기본 프로필로 시작한다."""
     _, story, _, default, _ = await _persona_room_fixture(db_client, db_session)
     setup_id = await db_session.scalar(
         sa.select(StartingSetup.id).where(
@@ -977,7 +977,7 @@ async def test_create_chat_room_without_default_persona_has_no_persona(
 async def test_change_starting_setup_inherits_the_original_rooms_non_default_persona(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-24: 기본이 아니라 원래 방의 선택을 잇는다 — 기본과 **다른** 프로필이라야 "기본을
+    """기본이 아니라 원래 방의 선택을 잇는다 — 기본과 **다른** 프로필이라야 "기본을
     넣었다"와 구별된다."""
     _, story, second_setup, _, other = await _persona_room_fixture(db_client, db_session)
     room_id = await _story_room_with_persona(db_client, db_session, story, other.id)
@@ -994,7 +994,7 @@ async def test_change_starting_setup_inherits_the_original_rooms_non_default_per
 async def test_change_starting_setup_inherits_no_persona_even_when_a_default_exists(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-24: 원래 방이 "선택 없음"이면 기본이 있어도 새 방도 "선택 없음"이다."""
+    """원래 방이 "선택 없음"이면 기본이 있어도 새 방도 "선택 없음"이다."""
     _, story, second_setup, _, _ = await _persona_room_fixture(db_client, db_session)
     room_id = await _story_room_with_persona(db_client, db_session, story, None)
 
@@ -1010,7 +1010,7 @@ async def test_change_starting_setup_inherits_no_persona_even_when_a_default_exi
 async def test_change_starting_setup_after_the_original_persona_was_deleted_has_no_persona(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """UP-14 × UP-24 (§4 S5, R-20): 원래 방의 프로필을 지우면 그 방은 NULL이 되고, 거기서
+    """원래 방의 프로필을 지우면 그 방은 NULL이 되고, 거기서
     시작설정을 바꾼 새 방도 NULL이다(지워진 id를 싣다 FK 위반 500이 나지 않는다)."""
     _, story, second_setup, _, other = await _persona_room_fixture(db_client, db_session)
     room_id = await _story_room_with_persona(db_client, db_session, story, other.id)
@@ -1172,7 +1172,7 @@ async def test_my_chat_rooms_includes_empty_room_with_blank_preview(
     message_id = create_resp.json()["messages"][0]["id"]
 
     # 오프닝 메시지를 지워 메시지 0개인 방을 만든다 — delete_message는 오프닝 메시지도
-    # 가드 없이 지운다(US-005가 고치는 500과 같은 도달 경로, goal-prompt.md 참조).
+    # 가드 없이 지운다.
     del_resp = await db_client.delete(f"/chat-rooms/{room_id}/messages/{message_id}")
     assert del_resp.status_code == 204
 

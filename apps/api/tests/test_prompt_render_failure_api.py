@@ -1,4 +1,4 @@
-"""prompt-db-goal-prompt.md §7 (2단계) — 적대적 리뷰가 잡은 구조적 결함의 회귀 테스트.
+"""적대적 리뷰가 잡은 구조적 결함의 회귀 테스트.
 
 `render_prompt_channel`이 DB 값(`PromptSection.body`)을 `.format()`한다 — 플레이스홀더가
 `values`에 없으면 `KeyError`, 중괄호 짝이 안 맞으면 `ValueError`다. 이 두 예외를
@@ -7,7 +7,7 @@
 뚫고 나가 apps/api/CLAUDE.md §SSE가 실측으로 기록한 폭발 반경(태스크 취소 → 커넥션
 강제종료 → 무관한 다른 요청 500)을 연다. 이 파일은 그 실패가 각 경로에서 깔끔한
 `ChatErrorEvent`로 흡수되는지, 그리고 활성 세트가 아예 없을 때는 스트림이 시작되기도
-전에 명시적으로 실패하는지(D-5)를 확인한다.
+전에 명시적으로 실패하는지를 확인한다.
 
 시드 48행을 건드리지 않는다 — 매 테스트가 `db_session`의 롤백 트랜잭션 안에서
 `prompt_sections`/`prompt_sets` 행을 일시적으로 고쳤다가 테스트 종료 시 자동으로
@@ -167,11 +167,11 @@ async def _corrupt_section_body(db_session: AsyncSession, *, channel: str, slot:
         .values(body=_BROKEN_BODY)
     )
     await db_session.flush()
-    # 3단계(prompt-db-goal-prompt.md §8-1)가 활성 세트 앞에 캐시를 얹었다 — 이 테스트들 중
+    # 활성 세트 앞에는 캐시가 있다 — 이 테스트들 중
     # 일부(regenerate/edit)는 그 전에 이미 정상 메시지를 한 번 보내 캐시를 데워 둔다. 이
     # 무효화가 없으면 다음 요청이 캐시 히트로 이 손상을 못 보고 지나가 테스트 의도(렌더
     # 실패 재현)가 캐시 여부에 우연히 좌우된다. `lane`은 호출부가 만든 방/미리보기의
-    # 레인과 같아야 한다(prompt-scope-techspec.md §3-4 — 캐시 키가 레인별로 갈린다).
+    # 레인과 같아야 한다(캐시 키가 레인별로 갈린다).
     await invalidate_active_prompt_set(lane)
 
 
@@ -204,7 +204,7 @@ class _FakeLLMClient(LLMClient):
 async def test_send_message_with_broken_section_body_ends_the_stream_with_an_error_event(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """monitoring-techspec.md MT-6: 이 흡수는 그대로 두되, `PromptRenderError`가 `prompt_render`
+    """이 흡수는 그대로 두되, `PromptRenderError`가 `prompt_render`
     태그로 Bugsink 이벤트에도 승격돼야 한다 — 이 태그는 지금 어디서도 검증되지 않는다."""
     captured: list[tuple[BaseException, str]] = []
     monkeypatch.setattr(
@@ -408,7 +408,7 @@ async def test_story_chat_judgment_render_failure_is_absorbed_and_the_turn_still
 async def test_send_message_without_an_active_prompt_set_fails_before_streaming_starts(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """D-5: 활성 세트가 없으면 명시적으로 실패한다. `_active_prompt_set_dependency`가
+    """활성 세트가 없으면 명시적으로 실패한다. `_active_prompt_set_dependency`가
     `Depends`이므로 이 실패는 SSE 제너레이터 본문이 시작되기 *전*이어야 한다 — 사용자
     메시지가 커밋되지 않고, 커넥션도 오염되지 않는 것으로 확인한다."""
     user = _make_user()
@@ -427,7 +427,7 @@ async def test_send_message_without_an_active_prompt_set_fails_before_streaming_
 
     _override_llm_client(_NeverCalledLLMClient())
     try:
-        # prompt-scope-techspec.md §3-3(C3-4) — 메시지에 어느 레인이 비었는지가 담긴다(캐릭터
+        # 메시지에 어느 레인이 비었는지가 담긴다(캐릭터
         # 방이라 character 레인).
         with pytest.raises(PromptSetNotFoundError, match="lane=character"):
             await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})

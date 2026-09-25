@@ -1,8 +1,8 @@
-"""clover-techspec.md §3-5-1, S4: 채팅 실패 9지점 중 **6곳만** 클로버를 되돌린다.
+"""채팅 실패 9지점 중 **6곳만** 클로버를 되돌린다.
 
-되돌리는 6곳은 프롬프트 렌더 실패와 LLM 호출 실패다 — 둘 다 결과물이 0인데 원인이 우리 쪽이다
-(clover-goal-prompt.md CL-21). 되돌리지 않는 3곳은 LLM 정책 위반이고, 사용자 입력이 원인이면서
-LLM 을 실제로 태웠다(CL-22). **이 비대칭이 의도라는 것을 테스트가 말해야 한다** — 안 그러면
+되돌리는 6곳은 프롬프트 렌더 실패와 LLM 호출 실패다 — 둘 다 결과물이 0인데 원인이 우리 쪽이다.
+되돌리지 않는 3곳은 LLM 정책 위반이고, 사용자 입력이 원인이면서
+LLM 을 실제로 태웠다. **이 비대칭이 의도라는 것을 테스트가 말해야 한다** — 안 그러면
 다음 사람이 "3곳을 빠뜨렸다"고 읽고 마저 채운다.
 
 셋업 관례는 `test_clover_gate.py`를 따른다 — 상한을 진짜로 소진시키지 않고
@@ -10,8 +10,8 @@ LLM 을 실제로 태웠다(CL-22). **이 비대칭이 의도라는 것을 테�
 ⚠️ 재생성은 **방을 먼저 만들어야** 하므로 상한 패치를 셋업 뒤로 미룬다 — 셋업 전송까지
 클로버로 내면 원장 단언이 셋업 잡음까지 세게 된다.
 
-⚠️ 잔액은 `db_session.refresh(user)`로 다시 읽는다. 차감·환불이 **별도 세션·별도 트랜잭션**
-(clover-techspec.md CT-4)에서 일어나 테스트 세션의 인스턴스는 낡아 있다.
+⚠️ 잔액은 `db_session.refresh(user)`로 다시 읽는다. 차감·환불이 **별도 세션·별도 트랜잭션**에서
+일어나 테스트 세션의 인스턴스는 낡아 있다.
 """
 
 import uuid
@@ -126,11 +126,11 @@ async def _run_failing_turn(
     상한 패치는 **셋업이 끝난 뒤** 건다 — 방 생성과 첫 전송은 무료분으로 통과해야 원장에
     셋업 잡음이 안 남는다.
     """
-    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
     # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
     # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    # clover-page-goal-prompt.md CE-35 — 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
+    # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
         db_session,
@@ -208,7 +208,7 @@ async def _run_failing_turn(
     return user, resp
 
 
-# clover-techspec.md §3-5-1 표의 ✅ 6행. 제너레이터 3개 × 실패 2종이고, 전송·편집이 같은
+# 환불되는 6지점. 제너레이터 3개 × 실패 2종이고, 전송·편집이 같은
 # `_stream_new_turn`을 공유하므로 전송으로 대표한다(편집은 같은 6지점을 다시 태운다).
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
 @pytest.mark.parametrize("failure", ["render", "llm"])
@@ -219,7 +219,7 @@ async def test_our_side_failure_refunds_clover(
     surface: str,
     failure: str,
 ) -> None:
-    """T-10 — 6지점 전부에서 차감이 되돌아가고 원장에 `chat_refund` 한 행이 남는다."""
+    """6지점 전부에서 차감이 되돌아가고 원장에 `chat_refund` 한 행이 남는다."""
     user, resp = await _run_failing_turn(
         db_client, db_session, monkeypatch, surface=surface, failure=failure
     )
@@ -240,9 +240,9 @@ async def test_policy_violation_does_not_refund_clover(
     monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
-    """T-11 — 정책 위반 3지점은 **소모로 둔다**(clover-goal-prompt.md CL-22).
+    """정책 위반 3지점은 **소모로 둔다**.
 
-    사용자 입력이 원인이고 LLM 을 실제로 태웠다. 이미지 가드 차단(CL-21)이 환불되는 것과
+    사용자 입력이 원인이고 LLM 을 실제로 태웠다. 이미지 가드 차단이 환불되는 것과
     결론이 갈리는 자리라, 이 테스트가 그 비대칭을 고정한다.
     """
     user, resp = await _run_failing_turn(
@@ -261,12 +261,12 @@ async def test_refund_failure_does_not_escape_the_generator(
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """T-12 — 환불이 실패해도 예외가 제너레이터 밖으로 새지 않는다.
+    """환불이 실패해도 예외가 제너레이터 밖으로 새지 않는다.
 
     🔴 새면 이미 시작된 SSE 스트림을 뚫고 나가 태스크가 취소되고, 망가진 asyncpg 커넥션이
     풀로 반환돼 **무관한 요청이 500**이 된다(`core/rate_limit_gate.py` 모듈 docstring).
     그래서 사용자가 보는 것은 평소와 같은 error 이벤트여야 하고, 남는 흔적은 Bugsink 뿐이다
-    (clover-techspec.md CT-14·CT-15 — 자동 재시도를 만들지 않으므로 그게 유일한 발견 수단).
+    (자동 재시도를 만들지 않으므로 그게 유일한 발견 수단).
     """
     captured: list[str] = []
     monkeypatch.setattr(
@@ -287,18 +287,18 @@ async def test_refund_failure_does_not_escape_the_generator(
     # 스트림은 평소대로 끝난다 — 500 이 아니다.
     assert resp.status_code == 200
     assert [event["type"] for event in _parse_sse_events(resp.text)] == ["error"]
-    # 환불이 실패했으므로 차감은 남는다. 보정은 어드민 지급이다(CT-15).
+    # 환불이 실패했으므로 차감은 남는다. 보정은 어드민 지급이다.
     assert user.clover_balance == _START_BALANCE - _CHAT_COST
     assert await _ledger_pairs(db_session, user.id) == [("chat_spend", -_CHAT_COST)]
     assert captured == ["clover"]
 
 
-# ── M-1: 차감 이후 · 첫 환불 지점 이전의 라우트 본문 실패 ────────────────────────────
+# ── 본문 창: 차감 이후 · 첫 환불 지점 이전의 라우트 본문 실패 ────────────────────────────
 #
-# 게이트는 `Depends` 단계에서 클로버를 **별도 트랜잭션으로 커밋**한다(clover-techspec.md CT-4).
+# 게이트는 `Depends` 단계에서 클로버를 **별도 트랜잭션으로 커밋**한다.
 # 제너레이터가 첫 환불 지점에 닿기 전까지 라우트 본문에는 환불 없이 예외로 끝날 수 있는 창이
-# 있었다 — `clover-goal-prompt.md CL-21`("우리 쪽 실패만 환불")을 일관되게 적용하려면 이 창도
-# 되돌려야 한다(적대적 리뷰 S4 M-1).
+# 있었다 — "우리 쪽 실패만 환불"을 일관되게 적용하려면 이 창도
+# 되돌려야 한다.
 #
 # ⚠️ 이 창은 첫 `yield` **이전**이라 스트림이 아직 안 열렸다. 그래서 제너레이터 안의 6지점과
 # 달리 예외를 삼키지 않고 **다시 올린다** — 여기서는 500 이 정상 경로다.
@@ -306,7 +306,7 @@ async def test_refund_failure_does_not_escape_the_generator(
 # 주입 지점이 라우트마다 다른 이유: 게이트(`charge`)는 이제 조회·검증 의존성 **전부보다 뒤**에
 # 선언돼 있고 `Depends` 는 시그니처 순서대로 resolve 된다(`apps/api/CLAUDE.md` §API 라우터).
 # 그래서 의존성이 쓰는 모듈 전역을 패치하면 **차감 전에** 터져 아래 `test_dependency_failure_
-# does_not_spend_clover` 쪽(원장 0행)이 되어 버리고, M-1 의 창은 만들어지지 않는다. 그래서
+# does_not_spend_clover` 쪽(원장 0행)이 되어 버리고, 본문 창은 만들어지지 않는다. 그래서
 # 라우트별로 **본문에만 있는** 것을 골랐다.
 
 
@@ -338,11 +338,11 @@ async def _run_body_failure(
     정상**이고, `ASGITransport`는 기본값(`raise_app_exceptions=True`)이라 그 예외가 테스트까지
     전파된다. 즉 **고친 뒤에도 예외는 그대로 올라온다** — 달라지는 건 돈뿐이다.
     """
-    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
     # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
     # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    # clover-page-goal-prompt.md CE-35 — 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
+    # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
         db_session,
@@ -416,7 +416,7 @@ async def test_route_body_failure_refunds_clover(
     monkeypatch: pytest.MonkeyPatch,
     surface: str,
 ) -> None:
-    """차감은 커밋됐는데 본문이 첫 `yield` 전에 터지면 되돌린다(적대적 리뷰 S4 M-1).
+    """차감은 커밋됐는데 본문이 첫 `yield` 전에 터지면 되돌린다.
 
     미리보기는 대상이 아니다 — 본문에 DB 접근이 0건이라 이 창 자체가 없다.
     """
@@ -433,17 +433,17 @@ async def test_route_body_failure_refunds_clover(
 
 # ── 의존성 창: 조회·검증이 실패하면 **애초에 차감하지 않는다** ────────────────────────
 #
-# M-1(위)이 "차감한 뒤 본문이 터지면 되돌린다"라면, 이쪽은 **차감 자체가 일어나면 안 되는**
+# 본문 창(위)이 "차감한 뒤 본문이 터지면 되돌린다"라면, 이쪽은 **차감 자체가 일어나면 안 되는**
 # 자리다. 게이트가 `room`·`state` 같은 조회 의존성보다 **뒤에** 선언돼 있어야 성립한다 —
 # `Depends`는 시그니처 순서대로 순차 resolve되고 앞의 것이 raise하면 뒤는 호출조차 안 되기
 # 때문이다(`apps/api/CLAUDE.md` §API 라우터).
 #
-# 🔴 M-1 과 단언이 다르다. M-1 은 원장에 `chat_spend` + `chat_refund` 두 행이 남고, 이쪽은
+# 🔴 본문 창과 단언이 다르다. 본문 창은 원장에 `chat_spend` + `chat_refund` 두 행이 남고, 이쪽은
 # **0행**이다. 환불로 되돌린 것과 애초에 안 깎은 것은 사용자에게는 같아 보여도 원장에서는
-# 갈린다 — 유상화 뒤 "왜 줄었나"를 설명할 때 이 구분이 근거가 된다(clover-goal-prompt.md CL-6).
+# 갈린다 — 유상화 뒤 "왜 줄었나"를 설명할 때 이 구분이 근거가 된다.
 #
 # 404 를 고른 이유: 정상 운영 중에도 난다(지워진 방, 남의 방, 만료된 미리보기 세션).
-# M-1 의 창(차감 성공 직후 DB 실패)보다 훨씬 도달하기 쉽다.
+# 본문 창(차감 성공 직후 DB 실패)보다 훨씬 도달하기 쉽다.
 
 
 @pytest.mark.parametrize("surface", ["send", "edit", "regenerate", "preview"])
@@ -456,13 +456,13 @@ async def test_dependency_failure_does_not_spend_clover(
     """존재하지 않는 방·세션이면 404 로 끝나고 클로버는 손대지 않는다.
 
     상한을 0 으로 낮춰 **클로버를 낼 수밖에 없는 상태**로 만든 뒤 요청한다 — 안 그러면
-    무료분으로 통과해 단언이 항진명제가 된다(S3 적대적 리뷰 L-1 과 같은 함정).
+    무료분으로 통과해 단언이 항진명제가 된다.
     """
-    # clover-goal-prompt.md CL-19 — 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
+    # 차감에는 **오늘치 동의**가 선행한다(게이트가 미확인이면
     # `CLOVER_CONFIRM_REQUIRED`로 끊는다). 차감이 일어나는 것을 보는 테스트라 그 선행 조건을
     # 셋업에 명시한다. `_make_user` 기본값은 `None`(한 번도 확인 안 함)으로 그대로 둔다 —
     # 기본을 "오늘 확인됨"으로 바꾸면 확인 게이트 자체를 검증하는 테스트가 무력해진다.
-    # clover-page-goal-prompt.md CE-35 — 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
+    # 이 유저들은 실제로 chat_spend를 태우므로 매칭 로트가
     # 없으면 `CloverLotShortfallError`가 난다.
     user = await _make_user_with_clover_lot(
         db_session,

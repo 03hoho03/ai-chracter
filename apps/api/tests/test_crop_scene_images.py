@@ -1,4 +1,4 @@
-"""`scripts/crop_scene_images.py` 의 크롭·멱등·대상 선별 — seed-migration-goal-prompt.md SM-17."""
+"""`scripts/crop_scene_images.py` 의 크롭·멱등·대상 선별."""
 
 from pathlib import Path
 
@@ -47,7 +47,7 @@ def test_crops_896x1152_to_864x1152_around_the_center(
 def test_rerunning_an_already_3_4_file_does_not_change_its_bytes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """멱등 — SM-14 재시도 루프와 섞이므로 이미 3:4 인 파일을 재실행해도 안전해야 한다."""
+    """멱등 — 시드 이미지 재생성 재시도 루프와 섞이므로 이미 3:4 인 파일을 재실행해도 안전해야 한다."""
     monkeypatch.setattr(generate_seed_images, "IMAGES_DIR", tmp_path)
     spec = _make_spec("romance-3rdloop-dj-scene1")
     _save(spec.path, 864, 1152)

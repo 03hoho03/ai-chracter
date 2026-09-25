@@ -191,7 +191,7 @@ async def test_regular_user_session_cannot_list_contents(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 실제로 섰음을 먼저 고정한다 —
+    # 세션이 실제로 섰음을 먼저 고정한다 —
     # 안 그러면 세션이 아예 안 서도 초록이라 위 무세션 401 테스트와 같은 명제가 된다.
     assert (await db_client.get("/me")).status_code == 200
 
@@ -247,7 +247,7 @@ async def test_regular_user_session_cannot_act_on_content(
 async def test_content_without_any_report_appears_in_list(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """goal-prompt.md 2단계 핵심 검증 기준: 신고가 한 번도 없었던 작품도 목록에 뜬다."""
+    """신고가 한 번도 없었던 작품도 목록에 뜬다."""
     creator = _make_user()
     db_session.add(creator)
     await db_session.flush()
@@ -757,7 +757,7 @@ async def test_content_action_lift_restriction_missing_admin_comment_returns_422
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`lift-restriction`은 `Notification`을 만들지 않아 `reasonCategory`를 요구하지 않지만,
-    대신 `admin_comment`가 필수다(goal-prompt.md §3-1, T-2/T-10)."""
+    대신 `admin_comment`가 필수다."""
     creator = _make_user()
     db_session.add(creator)
     await db_session.flush()
@@ -846,8 +846,8 @@ async def test_content_action_lift_restriction_migrates_chat_rooms_to_latest_ver
 async def test_direct_action_appeal_round_trip_restores_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """goal-prompt.md 2단계 검증 기준: 직접 조치(신고 경유가 아님)에 대해서도 이의제기를
-    넣으면 어드민 `/appeals`에 뜨고, 승인하면 콘텐츠가 복구된다 — §1-3이 명시한 대로
+    """직접 조치(신고 경유가 아님)에 대해서도 이의제기를
+    넣으면 어드민 `/appeals`에 뜨고, 승인하면 콘텐츠가 복구된다 —
     `AppealTargetKind.MODERATION_ACTION` 경로를 신고 경유 조치와 구분 없이 재사용해야 한다."""
     creator = _make_user()
     db_session.add(creator)

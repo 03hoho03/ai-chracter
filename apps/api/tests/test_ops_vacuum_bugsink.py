@@ -1,5 +1,5 @@
 """`ops/vacuum_bugsink.py` — Bugsink 오류 이벤트를 `MAX_EVENT_AGE_DAYS`보다 오래된 것부터
-지운다(monitoring-legal-draft.md §7-6, MT-16).
+지운다.
 
 `docker exec` 호출은 `subprocess.run` 스텁으로 대체한다 — 실제 컨테이너 없이 성공/실패(컨테이너
 미기동 포함) 두 경로와, 실패 시 Discord 알림 배선만 검증한다.

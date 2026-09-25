@@ -367,7 +367,7 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
     assert len(done_events) == 1
     assert done_events[0]["finalMessage"]["content"] == "새로운응답"
 
-    # 이미지 매칭은 재실행되지만(situational-image-goal-prompt.md SI-4) 이 방엔 등록된 이미지가
+    # 이미지 매칭은 재실행되지만 이 방엔 등록된 이미지가
     # 없어 `_match_situational_image`가 판정 호출 없이 반환한다 — 그래서 `generate_structured`는
     # 불리지 않아야 한다.
     assert not fake.generate_structured_called
@@ -390,7 +390,7 @@ async def test_regenerate_replaces_last_assistant_message_without_new_turn(
 async def test_regenerate_story_room_selects_template_instruction(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """chat-techspec.md §4-2 — `regenerate_message`(`_build_prompt` 경유) 호출부도 `_stream_new_turn`과
+    """`regenerate_message`(`_build_prompt` 경유) 호출부도 `_stream_new_turn`과
     같은 `story_detail.prompt_template`을 골라야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -501,7 +501,7 @@ async def test_regenerate_policy_violation_keeps_original_message(
 async def test_regenerate_policy_violation_refetch_restores_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """regenerate-ux-techspec.md §5 T-7 — "옛 메시지가 남는가"는
+    """"옛 메시지가 남는가"는
     `test_regenerate_policy_violation_keeps_original_message`(:428)가 이미 DB 행으로
     검증해 중복이라 신호가 없다. 여기서는 좁혀서 "재조회가 이미지까지 온전히 돌려주는가"만
     본다 — `_to_response`의 presign 루프(:525-534)가 깨지거나 재생성 실패가 image_id를
@@ -552,7 +552,7 @@ async def test_regenerate_policy_violation_refetch_restores_image(
 async def test_regenerate_llm_error_keeps_original_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """monitoring-techspec.md MT-6: 이 흡수(원래 응답 유지)는 그대로 두되, `regenerate_message`도
+    """이 흡수(원래 응답 유지)는 그대로 두되, `regenerate_message`도
     `_stream_new_turn`과 같은 `gemini` 태그로 Bugsink 이벤트에 승격돼야 한다 — 형제 경로지만
     사용자 흐름이 달라 아직 검증되지 않았다."""
     captured: list[tuple[BaseException, str]] = []
@@ -593,7 +593,7 @@ async def test_regenerate_llm_error_keeps_original_message(
 async def test_regenerate_reruns_image_matching_and_stores_new_image_id(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """situational-image-goal-prompt.md SI-4 — `regenerate_message` docstring의 "이미지 매칭도
+    """`regenerate_message` docstring의 "이미지 매칭도
     재실행하지 않는다" 문장이 깨진다: 재생성은 새 응답 텍스트에 맞춰 이미지 매칭을 다시 돌아
     다른 이미지가 매칭될 수 있다."""
     user = _make_user()
@@ -663,7 +663,7 @@ async def test_regenerate_reruns_image_matching_and_stores_new_image_id(
 async def test_regenerate_image_matching_failure_replaces_message_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """situational-image-goal-prompt.md SI-4 — 이미지 매칭 실패는 판정 실패와 같은 흡수 경로를
+    """이미지 매칭 실패는 판정 실패와 같은 흡수 경로를
     탄다: 스트림은 정상 종료되고 새 응답 텍스트는 그대로 교체되지만 image_id는 None으로
     남는다(원래 매칭된 이미지를 이월하지 않는다)."""
     captured: list[tuple[BaseException, str]] = []
@@ -738,8 +738,8 @@ async def test_regenerate_image_matching_failure_replaces_message_without_image(
 async def test_regenerate_presigned_url_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-3/N-3을 재생성 경로에 다시 미러링한 짝 테스트
-    (situational-image-goal-prompt.md SI-4) — 매칭 필터를 통과한 뒤의 S3 presign 실패를
+    """전송 경로의 presign 실패 흡수 테스트를 재생성 경로에 다시 미러링한 짝 테스트
+    — 매칭 필터를 통과한 뒤의 S3 presign 실패를
     흡수해 스트림은 정상 종료된다. `new_message.image_id`는 `db.commit()` 전에 대입되고
     presign 실패는 그 뒤에 일어나므로, DB에는 매칭된 entity_id가 그대로 남고 done
     이벤트의 imageId만 null이 된다 — send_message(`_stream_new_turn`)와 정확히 같은
@@ -938,7 +938,7 @@ async def test_edit_message_truncates_and_regenerates_from_edit_point(
 async def test_edit_message_reruns_image_matching_with_new_value(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """situational-image-goal-prompt.md SI-4/SI-5 — `edit_message`는 코드 변경 없이(`_stream_new_turn`
+    """`edit_message`는 코드 변경 없이(`_stream_new_turn`
     을 그대로 재사용해) 편집된 사용자 메시지에 맞춰 이미지 매칭을 다시 돈다."""
     user = _make_user()
     db_session.add(user)

@@ -1,12 +1,12 @@
-"""clover-page-goal-prompt.md CE-20~CE-21 — `GET /me/clover/ledger`.
+"""`GET /me/clover/ledger`.
 
-이 파일이 검증하는 성질(§4-1 T-8·T-14 + 범주 필터·권한):
+이 파일이 검증하는 성질(범주 필터·권한 포함):
 
-1. T-8: 커서 페이징 경계 — `limit+1` 판정과 동률 `created_at`에서 2차 키(`id`) 정렬. 빨개지는
+1. 커서 페이징 경계 — `limit+1` 판정과 동률 `created_at`에서 2차 키(`id`) 정렬. 빨개지는
    조건: 2차 키가 없으면 같은 트랜잭션에 든 여러 행(테스트 트랜잭션 안에서는 `created_at`
    server_default가 전부 같은 값이다, `apps/api/CLAUDE.md` "테스트 인프라")이 페이지 경계에서
    중복되거나 빠진다.
-2. T-14: `kind` → 범주 맵이 `CloverKind` 전 값을 덮는다(누락 0건).
+2. `kind` → 범주 맵이 `CloverKind` 전 값을 덮는다(누락 0건).
 3. 범주 필터: `category=use|earn|expire` 각각이 맞는 행만 돌려준다.
 4. 권한: 남의 원장이 보이지 않는다.
 
@@ -41,14 +41,13 @@ def _ledger_row(*, user_id: uuid.UUID, kind: str, amount: int = 10, balance_afte
     return CloverLedger(user_id=user_id, amount=amount, balance_after=balance_after, kind=kind)
 
 
-# ── T-14 ─────────────────────────────────────────────────────────────────────
+# ── kind → 범주 맵 ────────────────────────────────────────────────────────────
 def test_kind_category_map_covers_every_clover_kind() -> None:
-    """빨개지는 조건: 새 `CloverKind`를 추가하고 `CLOVER_KIND_CATEGORY`에 안 넣으면 실패한다
-    (clover-page-goal-prompt.md CE-10·CE-21)."""
+    """빨개지는 조건: 새 `CloverKind`를 추가하고 `CLOVER_KIND_CATEGORY`에 안 넣으면 실패한다."""
     assert set(CLOVER_KIND_CATEGORY.keys()) == set(get_args(CloverKind))
 
 
-# ── T-8. 커서 페이징 경계 ──────────────────────────────────────────────────────
+# ── 커서 페이징 경계 ──────────────────────────────────────────────────────
 async def test_ledger_pagination_splits_ties_by_id_without_gaps_or_duplicates(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

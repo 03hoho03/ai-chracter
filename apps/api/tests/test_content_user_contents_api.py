@@ -481,7 +481,7 @@ async def _collect_all_pages(
 async def test_list_user_contents_paginates_at_page_size_without_duplicates(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-001. 페이지 크기(24)를 넘기면 첫 페이지가 정확히 24건 + 커서를 주고, 그 커서로 나머지가
+    """페이지 크기(24)를 넘기면 첫 페이지가 정확히 24건 + 커서를 주고, 그 커서로 나머지가
     오면서 커서가 `None`이 된다. 두 페이지의 합집합이 전체와 같고 중복이 0이어야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -513,7 +513,7 @@ async def test_list_user_contents_paginates_at_page_size_without_duplicates(
 async def test_list_user_contents_cursor_keeps_visibility_filter_across_pages(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """US-001. 커서에는 정렬 키만 들어 있으므로 필터는 페이지마다 다시 적용돼야 한다. 비공개 25건
+    """커서에는 정렬 키만 들어 있으므로 필터는 페이지마다 다시 적용돼야 한다. 비공개 25건
     사이에 공개 작품을 끼워 두고, 페이지 경계를 넘은 뒤에도 공개 작품이 새지 않는지 본다."""
     user = _make_user()
     db_session.add(user)

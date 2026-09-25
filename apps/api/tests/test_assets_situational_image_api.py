@@ -133,8 +133,8 @@ async def test_register_situational_image_generates_blur_and_upserts_row(
 async def test_register_situational_image_creates_thumbnails_for_original_and_blur(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """Full upload flow: /complete creates the original's thumbnail (US-004) and
-    register-situational-image creates the blurred variant's thumbnail (US-006),
+    """Full upload flow: /complete creates the original's thumbnail and
+    register-situational-image creates the blurred variant's thumbnail,
     so both READY assets satisfy the `_thumb.webp` invariant."""
     user = _make_user()
     db_session.add(user)

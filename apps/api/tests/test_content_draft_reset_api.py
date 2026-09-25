@@ -279,7 +279,7 @@ async def test_reset_content_draft_returns_400_for_never_published_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """No published version means there is nothing to reset *to* — the exit for this case is
-    `DELETE /contents/{id}/draft` (US-003), which is exactly the set this 400 complements."""
+    `DELETE /contents/{id}/draft`, which is exactly the set this 400 complements."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()

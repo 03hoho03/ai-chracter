@@ -255,7 +255,7 @@ async def test_list_favorites_returns_favorited_contents_most_recently_favorited
 async def test_list_favorites_shows_placeholder_nickname_for_withdrawn_creator(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """legal-revision-goal-prompt.md LR-27: S5(LR-20)가 탈퇴 시 nickname을 파기하면서
+    """탈퇴 시 nickname을 파기하게 되면서
     드러난 회귀 — 탈퇴한 창작자의 콘텐츠를 즐겨찾기해 둔 유저가 `/me/favorites`를 부르면
     creator_nickname(non-optional str)에 파기된 None이 꽂혀 응답 전체가 500이 난다."""
     user = _make_user()
@@ -404,8 +404,8 @@ async def test_list_favorites_type_filter_excludes_other_type(
 async def test_list_favorites_type_filter_cursor_pagination_covers_all_items(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # The real risk of a `type` filter is that it breaks cursor continuation across pages
-    # (see card-grid-techspec.md T-1). Character favorites are interleaved by created_at
+    # The real risk of a `type` filter is that it breaks cursor continuation across pages.
+    # Character favorites are interleaved by created_at
     # between the story favorites so a filter applied inconsistently across pages would
     # either leak a character into the results or skip/duplicate a story.
     monkeypatch.setattr("api.content.router.FAVORITES_PAGE_SIZE", 2)

@@ -174,7 +174,7 @@ async def test_send_message_streams_tokens_and_saves_final_message(
 async def test_send_message_character_room_injects_room_persona_into_generation_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """persona-goal-prompt.md UP-9 · §4 S4 ④ — `_build_prompt`의 **캐릭터** 분기도 방의 대화
+    """`_build_prompt`의 **캐릭터** 분기도 방의 대화
     프로필을 생성 프롬프트에 싣는다(스토리 분기는 `test_chat_story_message_send_api.py`).
     방의 `persona_id`는 DB에 직접 넣는다 — 이 테스트의 관심은 읽기 경로다."""
     user = _make_user()
@@ -241,7 +241,7 @@ async def test_send_message_policy_violation_emits_policy_warning_and_skips_save
 async def test_send_message_llm_error_emits_error_event_and_keeps_user_message(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """monitoring-techspec.md MT-6: 이 흡수(에러 이벤트만 보여주고 사용자 메시지는 유지)는
+    """이 흡수(에러 이벤트만 보여주고 사용자 메시지는 유지)는
     그대로 두되, Gemini 실패를 Bugsink 이벤트로도 승격해야 한다 — 안 그러면 채팅 생성이
     통째로 죽어도 로그를 직접 뒤지기 전엔 아무도 모른다."""
     captured: list[tuple[BaseException, str]] = []
@@ -347,7 +347,7 @@ async def test_send_message_matched_situational_image_included_in_done_event_and
 
     assert fake.generate_structured_called
     # 우선순위(order)가 낮은(=높은 우선순위) 이미지가 먼저 나열되어야 한다(동시 매칭 시
-    # 최상위 하나만 고르도록 유도하는 프롬프트 지시, techspec-chat-character.md §1.1).
+    # 최상위 하나만 고르도록 유도하는 프롬프트 지시).
     assert fake.received_judgment_prompt is not None
     assert fake.received_judgment_prompt.index(str(high_priority.entity_id)) < fake.received_judgment_prompt.index(
         str(low_priority.entity_id)
@@ -537,9 +537,9 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
 async def test_send_message_null_image_asset_id_candidate_excluded_from_judgment_prompt(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """sse-assert-goal-prompt.md SA-3/CP-3 판정① — `_match_situational_image`의 매칭 필터
-    (N-2, `image_asset_id IS NOT NULL`)가 NULL 후보를 판단 프롬프트에 싣기 전에 걸러낸다
-    (F-5: 발행 검증이 `situational_images.image_asset_id`를 보지 않아 NULL이 발행본까지
+    """`_match_situational_image`의 매칭 필터
+    (`image_asset_id IS NOT NULL`)가 NULL 후보를 판단 프롬프트에 싣기 전에 걸러낸다
+    (발행 검증이 `situational_images.image_asset_id`를 보지 않아 NULL이 발행본까지
     간다). `image_asset_id`가 NULL인 후보만 있으면 `_match_situational_image`가 판단 호출
     자체를 생략해(`if not situational_images: return None`) 이 필터의 효과를 관측할 수
     없으므로, 정상 후보를 하나 더 둬 판단 호출이 실제로 일어나게 한다."""
@@ -589,9 +589,9 @@ async def test_send_message_null_image_asset_id_candidate_excluded_from_judgment
 async def test_send_message_presigned_url_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-3/CP-3 판정② — 본문 가드(N-3)가 필터를 통과한 뒤에
-    생기는 S3 presign 실패를 흡수한다. 이 케이스는 필터로는 안 막힌다(SA-3 표의 "겹치지
-    않는다") — `SituationalImage.image_asset_id`는 정상적으로 채워져 있고 매칭도 성공했는데
+    """본문 가드가 필터를 통과한 뒤에
+    생기는 S3 presign 실패를 흡수한다. 이 케이스는 필터로는 안 막힌다 —
+    `SituationalImage.image_asset_id`는 정상적으로 채워져 있고 매칭도 성공했는데
     `generate_presigned_get_url`만 실패하는 상황이다. `done` 이벤트가 이미지 없이 정상적으로
     나가고 스트림이 정상 종료돼야 한다."""
     captured: list[tuple[BaseException, str]] = []
@@ -641,7 +641,7 @@ async def test_send_message_presigned_url_failure_still_completes_the_turn_witho
     assert len(captured) == 1
     assert isinstance(captured[0][0], RuntimeError)
 
-    # F-16 스모크 — 실패가 이 요청 안에 갇혔다는 신호로만 쓴다(항진명제, 판정 근거 아님).
+    # 스모크 — 실패가 이 요청 안에 갇혔다는 신호로만 쓴다(항진명제, 판정 근거 아님).
     # 같은 세션으로 다른 쿼리가 여전히 정상 동작한다.
     still_alive = await db_session.scalar(sa.select(sa.func.count()).select_from(Content))
     assert still_alive == 1
@@ -650,9 +650,9 @@ async def test_send_message_presigned_url_failure_still_completes_the_turn_witho
 async def test_send_message_asset_lookup_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-3/CP-3 판정③ — 본문 가드(N-3)가 `db.get(Asset, ...)`
+    """본문 가드가 `db.get(Asset, ...)`
     실패도 같은 형태로 흡수한다. `situational_images.image_asset_id` → `assets.id`에 FK가
-    걸려 있어 실제로는 이 실패가 도달 불가능하지만(F-7 ②, 참조된 자산을 지우면 orphan이
+    걸려 있어 실제로는 이 실패가 도달 불가능하지만(참조된 자산을 지우면 orphan이
     아니라 IntegrityError가 난다), 가드가 "어떤 예외든" 흡수하는지는 별도로 확인해야 한다.
     `AsyncSession.get`을 `Asset` 조회에서만 실패하도록 monkeypatch해 재현한다."""
     captured: list[tuple[BaseException, str]] = []
@@ -710,14 +710,14 @@ async def test_send_message_asset_lookup_failure_still_completes_the_turn_withou
 async def test_send_message_situational_image_candidate_query_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-4/CP-4 판정② — `_match_situational_image`의 후보 조회
+    """`_match_situational_image`의 후보 조회
     (`db.scalars(select(SituationalImage)...)`)가 실패해도 이번 턴의 이미지 매칭만 포기하고
-    스트림은 done까지 정상 종료된다. 이 호출은 CP-3의 본문 가드(`:873~907`) 밖에 있고,
+    스트림은 done까지 정상 종료된다. 이 호출은 presign·자산 조회를 감싸는 본문 가드(`:873~907`) 밖에 있고,
     호출부(`_stream_new_turn`)의 기존 `except (LLMClientError, PromptRenderError)`는 DB
-    예외를 잡지 않는다(F-6) — 함수 자신이 흡수해야 한다.
+    예외를 잡지 않는다 — 함수 자신이 흡수해야 한다.
 
-    ⚠️ **이 테스트가 재는 것과 못 재는 것**(적대적 리뷰, sse-assert-progress.md SP-127
-    참고): `AsyncSession.scalars`를 몽키패치해 순수 파이썬에서 `SQLAlchemyError`를 던진다 —
+    ⚠️ **이 테스트가 재는 것과 못 재는 것**:
+    `AsyncSession.scalars`를 몽키패치해 순수 파이썬에서 `SQLAlchemyError`를 던진다 —
     `except SQLAlchemyError`가 그 타입을 잡는지와 흡수 후 done 이벤트 모양은 재지만, 실제
     SQL이 안 나가 Postgres 트랜잭션이 진짜로 aborted되지 않는다. 그래서 가드 흡수 **직후의
     `await db.commit()`이 aborted 트랜잭션에 부딪혀 재실패하는 결함**은 이 테스트로는
@@ -773,7 +773,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
     assert isinstance(captured[0][0], sa.exc.SQLAlchemyError)
     assert captured[0][1] == "db"
 
-    # F-16 스모크 — 실패가 이 요청 안에 갇혔다는 신호로만 쓴다(항진명제, 판정 근거 아님).
+    # 스모크 — 실패가 이 요청 안에 갇혔다는 신호로만 쓴다(항진명제, 판정 근거 아님).
     still_alive = await db_session.scalar(sa.select(sa.func.count()).select_from(Content))
     assert still_alive == 1
 
@@ -781,7 +781,7 @@ async def test_send_message_situational_image_candidate_query_failure_still_comp
 async def test_send_message_image_exposure_lookup_failure_still_completes_the_turn_without_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-goal-prompt.md SA-4/CP-4 판정② — `_match_situational_image`의 노출 이력 조회
+    """`_match_situational_image`의 노출 이력 조회
     (`db.scalar(select(CharacterImageExposure)...)`)가 실패해도 같은 형태로 흡수된다. 이
     호출은 매칭(LLM 판단)이 이미 성공한 뒤라 위 후보 조회 실패와는 다른 지점을 재는 판정이다.
 
@@ -848,8 +848,8 @@ async def test_send_message_image_exposure_lookup_failure_still_completes_the_tu
 async def test_send_message_situational_image_candidate_query_real_sql_failure_is_isolated_by_savepoint(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """sse-assert-progress.md SP-128(적대적 리뷰 결함①) — 위 판정②(합성 `SQLAlchemyError`)
-    테스트가 원리적으로 못 재는 파열을 진짜 SQL로 재현한다. `_stream_new_turn`은 이 가드를
+    """위 후보 조회 실패 테스트(합성 `SQLAlchemyError`)가 원리적으로 못 재는 파열을
+    진짜 SQL로 재현한다. `_stream_new_turn`은 이 가드를
     부르기 **전에** 이미 `db.add(assistant_message)` → `await db.flush()` →
     `room.turn_count += 1`로 dirty 상태를 쌓아 둔다. `SELECT 1/0`으로 Postgres 트랜잭션을
     실제로 aborted 상태로 만들면(리뷰어 재현 선례) — 처방 전에는 가드가 예외를 삼켜도
@@ -910,7 +910,7 @@ async def test_send_message_situational_image_candidate_query_real_sql_failure_i
     # SAVEPOINT 국소화의 직접 증거 — 가드 실패 이전에 이미 flush된 assistant_message와
     # room.turn_count 증가분이 뒤따르는 commit()에서 그대로 살아남는다(처방 전에는 바로 이
     # commit()이 aborted 트랜잭션에 부딪혀 DBAPIError를 던져 위 status_code 단언까지도
-    # 도달하지 못했다 — 빨강 실측은 progress.md 참고). `db_session.get(ChatRoom, ...)`는 쓰지
+    # 도달하지 못했다). `db_session.get(ChatRoom, ...)`는 쓰지
     # 않는다 — `db_client`가 이 테스트의 `db_session`을 앱 요청과 **같은 세션 객체**로
     # 오버라이드해(conftest.py), `expire_on_commit=False`인 그 세션의 identity map에 요청 중
     # 만들어진 `room` 객체가 이미 캐시돼 있어 `.get()`이 SQL을 내지 않고 메모리 값만
@@ -1201,7 +1201,7 @@ async def test_get_chat_room_query_count_independent_of_matched_image_count(
 async def test_send_message_does_not_dump_prompt_by_default(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """chat-techspec.md §3-5(D-21·D-22): `prompt_dump_path`의 기본값 None이 프로덕션 방어다 —
+    """`prompt_dump_path`의 기본값 None이 프로덕션 방어다 —
     설정 안 하면 지금과 동일하게 아무것도 남기지 않아야 한다."""
     monkeypatch.setattr(settings, "prompt_dump_path", None)
 
@@ -1261,7 +1261,7 @@ async def test_send_message_dumps_prompt_when_configured(
     assert record["turn"] == 1
     assert record["model"] == settings.gemini_model_name
     assert record["seed"] == 42
-    # 지시문도 함께 남는다 — 이 런이 바꾸는 것이 바로 그것이라, 프롬프트만 남고 그때 어떤
-    # 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다(chat-techspec.md §3-5).
+    # 지시문도 함께 남는다 — 프롬프트만 남고 그때 어떤
+    # 지시문이 실렸는지 모르면 회차를 나중에 설명할 수 없다.
     assert record["systemInstruction"] == _read_golden_prompt("system_instruction_character.txt")
     assert record["prompt"] == fake.received_prompt

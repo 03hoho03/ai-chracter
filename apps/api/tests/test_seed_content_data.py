@@ -1,11 +1,11 @@
-"""리포에 커밋된 시드 콘텐츠 데이터 파일 자체를 검사한다 (US-008 이후).
+"""리포에 커밋된 시드 콘텐츠 데이터 파일 자체를 검사한다.
 
 `test_seed_content.py` 가 로더의 **동작**을 인위적인 payload 로 검사한다면, 이 파일은
 `data/characters/*.json` / `data/stories/*.json` **실물**이 발행 가능한 상태인지를 본다 —
 시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은 홈 목록에 뜰 수 있다"가 보장된다.
 
-썸네일 자산만은 시드 실행 시점에 만들어져 호출부가 payload 에 주입하므로(`ensure_asset`,
-US-003/005), 검증 전에 자리표시자 UUID 를 채워 넣는다.
+썸네일 자산만은 시드 실행 시점에 만들어져 호출부가 payload 에 주입하므로(`ensure_asset`),
+검증 전에 자리표시자 UUID 를 채워 넣는다.
 """
 
 import re
@@ -60,10 +60,10 @@ def test_every_seed_story_passes_publish_validation() -> None:
 
 
 def test_every_seed_story_keeps_its_matrix_concept() -> None:
-    """생성기는 본문만 채운다 — 제목/한줄/타겟/장르/스탯 이름은 §7 슬롯 그대로여야 한다.
+    """생성기는 본문만 채운다 — 제목/한줄/타겟/장르/스탯 이름은 다양성 매트릭스 슬롯 그대로여야 한다.
 
     LLM 이 콘셉트를 바꿔버리면 다양성 매트릭스가 보장하던 좌표 분산이 조용히 무너지므로,
-    배치가 늘어날 때마다(US-015~019) 이 대조를 사람이 다시 하지 않도록 여기서 고정한다.
+    배치가 늘어날 때마다 이 대조를 사람이 다시 하지 않도록 여기서 고정한다.
     """
     slots = {slot.slug: slot for slot in load_matrix()}
 
@@ -72,20 +72,20 @@ def test_every_seed_story_keeps_its_matrix_concept() -> None:
         assert slot is not None, f"{story.slug}: 다양성 매트릭스에 없는 slug 다"
 
         payload = story.payload
-        assert payload.name == slot.title, f"{story.slug}: 제목이 §7 과 다르다"
-        assert payload.one_liner == slot.one_liner, f"{story.slug}: 한 줄 소개가 §7 과 다르다"
-        assert payload.genre_id == slot.genre_id, f"{story.slug}: 장르가 §7 과 다르다"
+        assert payload.name == slot.title, f"{story.slug}: 제목이 매트릭스와 다르다"
+        assert payload.one_liner == slot.one_liner, f"{story.slug}: 한 줄 소개가 매트릭스와 다르다"
+        assert payload.genre_id == slot.genre_id, f"{story.slug}: 장르가 매트릭스와 다르다"
         assert payload.target is not None and payload.target.value == slot.target, (
-            f"{story.slug}: target 이 §7 과 다르다"
+            f"{story.slug}: target 이 매트릭스와 다르다"
         )
         assert len(payload.starting_setups) == len(slot.starting_setups), (
-            f"{story.slug}: 시작 상황 개수가 §7 과 다르다"
+            f"{story.slug}: 시작 상황 개수가 매트릭스와 다르다"
         )
 
         expected_stats = sorted(stat_display_name(stat) for stat in slot.stats)
         for setup in payload.starting_setups:
             assert sorted(stat.name for stat in setup.stat_defs) == expected_stats, (
-                f"{story.slug} / {setup.name}: 스탯 이름이 §7 과 다르다"
+                f"{story.slug} / {setup.name}: 스탯 이름이 매트릭스와 다르다"
             )
 
 
@@ -101,7 +101,7 @@ def test_every_seed_story_setting_text_instructs_the_narrator() -> None:
 def test_no_seed_content_file_contains_escaped_newlines() -> None:
     r"""`\n` 두 글자가 그대로 저장되면 화면에도 프롬프트에도 글자로 보인다.
 
-    JSON 파싱도 발행 검증도 통과하는 종류의 결함이라(US-015 실측) 파일 원문에서 직접 본다.
+    JSON 파싱도 발행 검증도 통과하는 종류의 결함이라(실측) 파일 원문에서 직접 본다.
     진짜 줄바꿈은 `"\n"` 으로 인코딩되므로 여기 걸리는 건 백슬래시 자체가 저장된 경우뿐이다.
     """
     for path in sorted(STORIES_DIR.glob("*.json")) + sorted(CHARACTERS_DIR.glob("*.json")):
@@ -111,7 +111,7 @@ def test_no_seed_content_file_contains_escaped_newlines() -> None:
 
 
 def test_major_story_matches_the_fixed_concept() -> None:
-    """§7 R1 의 확정 콘셉트(제목/타겟/시작상황 2개/스탯 3종)에서 벗어나면 안 된다."""
+    """메이저 스토리의 확정 콘셉트(제목/타겟/시작상황 2개/스탯 3종)에서 벗어나면 안 된다."""
     payload = next(
         story.payload for story in load_stories() if story.slug == MAJOR_STORY_SLUG
     )
@@ -139,7 +139,7 @@ def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
 
     범위 밖 임계값은 영영 안 열리고, 반대로 초기값에서 이미 참인 규칙은 스탯을 장식으로
     만든다(턴게이트만 넘으면 판정 프롬프트 하나로 엔딩이 난다). 둘 다 실제로 채팅을
-    해보기 전에는 드러나지 않으므로 여기서 막는다. 생성기(US-013)도 파일로 쓰기 전에 같은
+    해보기 전에는 드러나지 않으므로 여기서 막는다. 생성기도 파일로 쓰기 전에 같은
     검사를 하지만, 그건 생성 시점 한 번뿐이라 커밋된 파일은 여기서 다시 본다.
     """
     for story in load_stories():
@@ -184,7 +184,7 @@ def test_major_character_is_written_for_the_generated_images() -> None:
 
 
 def test_seed_story_development_examples_read_as_a_turn_transcript() -> None:
-    """`developmentExample` 은 문체·구조·소품을 준-축자 복제시키는 템플릿 씨앗이라(US-021 실측)
+    """`developmentExample` 은 문체·구조·소품을 준-축자 복제시키는 템플릿 씨앗이라(실측)
     포맷 자체가 그대로 학습된다.
 
     - 화자 라벨이 문단 중간에 인라인으로 박혀 있으면(줄바꿈 없이 턴이 이어붙은 경우) 모델이

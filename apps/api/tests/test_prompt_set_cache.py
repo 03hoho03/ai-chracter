@@ -1,13 +1,13 @@
-"""prompt-db-goal-prompt.md §8-1 (3단계, T-31/T-32/T-35) — Redis 캐시 모듈과 그 앞의 두
-`Depends`(`_active_prompt_set_dependency`/`_preview_prompt_set_dependency`) 배선을 검증한다.
+"""Redis 캐시 모듈과 그 앞의 두 `Depends`
+(`_active_prompt_set_dependency`/`_preview_prompt_set_dependency`) 배선을 검증한다.
 
 `conftest.py`의 `_flush_prompt_set_cache`(autouse)가 매 테스트 전 `prompt_set:active:*`
 전부를 지워준다 — 이 키들은 랜덤 ID가 없는 고정 키라 그 픽스처 없이는 한 테스트가 캐싱한
-세트를 다음 테스트가 그대로 보게 된다(같은 문서 §8-1의 경고).
+세트를 다음 테스트가 그대로 보게 된다.
 
-prompt-scope-techspec.md §3-4(PS-15) 이후 캐시 키가 레인별로 3개(`prompt_set:active:story`
-등)다. 캐시 모듈 자체(GET/SET/TTL/DEL)의 동작 검증은 어느 레인을 쓰든 무관하므로 `_LANE`
-(character) 하나로 고정하고, 레인 간 격리 자체는 별도 테스트가 세 레인을 모두 다룬다.
+캐시 키가 레인별로 3개(`prompt_set:active:story` 등)다. 캐시 모듈 자체(GET/SET/TTL/DEL)의
+동작 검증은 어느 레인을 쓰든 무관하므로 `_LANE`(character) 하나로 고정하고, 레인 간 격리 자체는 별도 테스트가
+세 레인을 모두 다룬다.
 """
 
 import logging
@@ -90,9 +90,8 @@ async def test_set_then_get_round_trips_prompt_set_and_sections(
     cached_prompt_set, cached_sections = cached
     assert cached_prompt_set.id == prompt_set.id
     assert cached_prompt_set.version == prompt_set.version
-    # prompt-scope-techspec.md §3-4 — `_CachedPromptSet.lane`이 `_from_cached_prompt_set`에서도
-    # 채워지는지의 유일한 방어(PS-9a 세 번째 `PromptSet(...)` 생성 지점, flush()가 없어
-    # NOT NULL이 못 잡는다).
+    # `_CachedPromptSet.lane`이 `_from_cached_prompt_set`에서도 채워지는지의 유일한 방어(세 번째
+    # `PromptSet(...)` 생성 지점, flush()가 없어 NOT NULL이 못 잡는다).
     assert cached_prompt_set.lane == prompt_set.lane
     assert cached_prompt_set.user_label == prompt_set.user_label
     assert cached_prompt_set.story_assistant_label == prompt_set.story_assistant_label
@@ -129,11 +128,11 @@ async def test_invalidate_deletes_the_cached_value(
     assert await get_cached_active_prompt_set(_LANE) is None
 
 
-# ---- 레인 격리 — PS-15 --------------------------------------------------------
+# ---- 레인 격리 ----------------------------------------------------------------
 
 
 async def test_invalidating_one_lane_leaves_the_other_two_cached(db_session: AsyncSession) -> None:
-    """prompt-scope-techspec.md §3-4/§7-1 #7 — `publish_filter` 레인은 프로덕션에서 아무도
+    """`publish_filter` 레인은 프로덕션에서 아무도
     캐시를 SET하지 않는다(발행 검열이 DB 직행, `content/router.py:publish_content`가
     `load_active_prompt_set`을 DB 직행으로 부른다). 그래서 이 테스트가 **세 레인 키를
     직접 SET한 뒤** 확인해야 한다 — 안 그러면 "원래 없던 키"를 보고 통과하는 항진명제가
@@ -159,7 +158,7 @@ async def test_active_prompt_set_dependency_hits_cache_serves_stale_value_and_re
 ) -> None:
     """한 흐름으로 세 가지를 증명한다 — ① 캐시 히트 시 DB 조회 0건, ② 캐시가 살아있는 동안
     DB를 바꿔도 옛 값이 나온다(진짜 캐시라는 증거), ③ 무효화 뒤 다음 조회는 새 값이다.
-    `setup=None`(character 레인, PS-14)으로 직접 호출한다 — FastAPI DI를 거치지 않고
+    `setup=None`(character 레인)으로 직접 호출한다 — FastAPI DI를 거치지 않고
     함수를 그대로 부른다."""
     with _count_queries() as get_count:
         prompt_set, _ = await chat_router._active_prompt_set_dependency(setup=None, db=db_session)
@@ -188,7 +187,7 @@ async def test_active_prompt_set_dependency_hits_cache_serves_stale_value_and_re
 async def test_active_prompt_set_dependency_does_not_cache_a_missing_active_set(
     db_session: AsyncSession,
 ) -> None:
-    """negative caching 금지(§8-1) — 활성 세트가 없다는 사실 자체는 캐싱하지 않는다. 그래야
+    """negative caching 금지 — 활성 세트가 없다는 사실 자체는 캐싱하지 않는다. 그래야
     시드/재게시 직후 복구가 TTL만큼 늦어지지 않는다."""
     await db_session.execute(sa.update(PromptSet).where(PromptSet.status == "published").values(status="archived"))
     await db_session.flush()
@@ -235,7 +234,7 @@ async def test_active_prompt_set_dependency_falls_back_to_db_when_cache_read_fai
     assert prompt_set.status == "published"
     assert sections
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
-    # monitoring-techspec.md MT-6: 로그만 남기고 끝나면 Redis 장애가 조용한 성능 저하로
+    # 로그만 남기고 끝나면 Redis 장애가 조용한 성능 저하로
     # 묻힌다 — Bugsink 이벤트로도 승격해야 한다.
     assert captured == ["redis"]
 
@@ -287,7 +286,7 @@ async def test_preview_prompt_set_dependency_does_not_open_a_session_on_cache_hi
     assert len(result_sections) == len(sections)
 
 
-# ---- 픽스처 자기검증 — PS-15/RS-8 --------------------------------------------
+# ---- 픽스처 자기검증 ---------------------------------------------------------
 #
 # `_flush_prompt_set_cache`(conftest.py, autouse)가 매 테스트 전 `prompt_set:active:*`를
 # 실제로 지우는지 검증하는 자기검증 쌍이다. 아래 `_a`가 세 레인 키를 직접 SET하고, **바로

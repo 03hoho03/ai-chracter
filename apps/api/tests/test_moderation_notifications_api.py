@@ -86,7 +86,7 @@ async def _make_notification(
 async def _make_account_notification(
     db_session: AsyncSession, *, user_id: uuid.UUID, notification_type: str = "user-warned"
 ) -> Notification:
-    """techspec.md §1-2 완화 회귀 — 콘텐츠와 무관한 계정 단위 알림(경고/정지)은
+    """콘텐츠와 무관한 계정 단위 알림(경고/정지)은
     content_id/action_id가 둘 다 null이다."""
     notification = Notification(
         user_id=user_id,
@@ -102,7 +102,7 @@ async def _make_account_notification(
 
 
 async def _make_notice_notification(db_session: AsyncSession, *, user_id: uuid.UUID, title: str) -> Notification:
-    """공지 알림(T-11b) — 공지 하나당 알림 하나다. `ux_notifications_notice_user` 부분
+    """공지 알림 — 공지 하나당 알림 하나다. `ux_notifications_notice_user` 부분
     유니크 인덱스가 (notice_id, user_id) 조합을 유일하게 강제하므로, 알림을 여러 건
     만들려면 공지 자체를 여러 개 만들어야 한다(같은 공지에 두 번 못 받는다)."""
     notice = Notice(title=title, body_markdown="본문", published=True, published_at=datetime.now(UTC))
@@ -245,7 +245,7 @@ async def test_mark_notification_read_unknown_id_returns_404(
 async def test_list_notifications_includes_null_content_notification(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """회귀(techspec.md §1-2/§9): content_id/action_id가 null인 알림도 `GET /notifications`가
+    """회귀: content_id/action_id가 null인 알림도 `GET /notifications`가
     500 대신 200으로 내려줘야 한다 — 계정 단위 조치(경고/정지)는 콘텐츠와 무관하다."""
     user = _make_user()
     db_session.add(user)
@@ -268,7 +268,7 @@ async def test_list_notifications_includes_null_content_notification(
 async def test_mark_notification_read_works_for_null_content_notification(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """회귀(techspec.md §1-2/§9): `PATCH /notifications/{id}/read`도 content_id/action_id가
+    """회귀: `PATCH /notifications/{id}/read`도 content_id/action_id가
     null인 행에서 깨지지 않아야 한다."""
     user = _make_user()
     db_session.add(user)
@@ -288,7 +288,7 @@ async def test_mark_notification_read_works_for_null_content_notification(
 async def test_list_notifications_fills_title_for_notice_type(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """techspec.md §4-5 — notice 알림은 `noticeId`가 가리키는 `Notice.title`을 응답의
+    """notice 알림은 `noticeId`가 가리키는 `Notice.title`을 응답의
     `title`에 채우고, 조치 통지 3종처럼 `reasonCategory`/`adminComment`를 요구하지 않는다."""
     user = _make_user()
     db_session.add(user)
@@ -313,7 +313,7 @@ async def test_list_notifications_fills_title_for_notice_type(
 async def test_list_notifications_query_count_independent_of_notice_count(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """techspec.md §4-5 — notice_id가 있는 알림의 제목을 IN 조회 한 번으로 가져오므로, 공지
+    """notice_id가 있는 알림의 제목을 IN 조회 한 번으로 가져오므로, 공지
     알림이 여러 건이어도 쿼리 수가 늘지 않아야 한다(N+1 없음). `test_admin_users_api.py`의
     `_count_queries`(`before_cursor_execute` 카운터)를 재사용한다."""
     user = _make_user()

@@ -1,4 +1,4 @@
-"""backlog-sweep-goal-prompt.md BS-5 — 세션 역인덱스 ZSET `user_sessions:{user_id}`.
+"""세션 역인덱스 ZSET `user_sessions:{user_id}`.
 
 score는 세션 만료 epoch(초)다. 세션 TTL은 읽을 때 갱신되지 않으므로 인덱스 키의 수명을
 가장 최근 세션의 수명으로 맞추고, 만료된 멤버는 다음 생성 때 정리한다.

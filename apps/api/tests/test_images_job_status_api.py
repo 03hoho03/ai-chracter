@@ -63,7 +63,7 @@ async def test_get_job_in_progress_reports_partial_state(
     assert body["completedCount"] == 0
     assert body["images"] == []
     assert body["error"] is None
-    # guard-techspec.md GT-4: 차단이 없으면 blocked 필드는 기본값(0/None)으로 내려야
+    # 차단이 없으면 blocked 필드는 기본값(0/None)으로 내려야
     # 한다 — 안 그러면 FE의 exhaustive switch가 없는 차단을 있는 것으로 오판한다.
     assert body["blockedCount"] == 0
     assert body["blockedReason"] is None
@@ -111,9 +111,9 @@ async def test_get_job_succeeded_returns_presigned_image_urls(
 async def test_get_job_reports_blocked_count_and_reason(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """guard-techspec.md GT-4: `ImageJobStatusResponse`가 blockedCount/blockedReason을
+    """`ImageJobStatusResponse`가 blockedCount/blockedReason을
     camelCase로 내리지 않으면, 내부 잡 레코드가 차단을 정확히 집계해도 FE는 부분
-    차단을 절대 알 수 없다(guard-goal-prompt.md G-3)."""
+    차단을 절대 알 수 없다."""
     user = _make_user()
     db_session.add(user)
     await db_session.commit()
@@ -137,7 +137,7 @@ async def test_get_job_reports_blocked_count_and_reason(
 async def test_get_job_reports_input_error_count_and_value(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """image-style-7-goal-prompt.md IS-8: BE가 잡에 저장한 input_error_count/input_error가
+    """BE가 잡에 저장한 input_error_count/input_error가
     `inputErrorCount`/`inputError`로 camelCase 직렬화돼 FE까지 그대로 나가는지 지킨다 —
     `get_image_job`이 이 두 값을 응답에 배선하지 않으면 이 단언이 깨져야 한다."""
     user = _make_user()

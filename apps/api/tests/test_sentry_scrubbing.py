@@ -1,12 +1,12 @@
-"""monitoring-techspec.md MT-5 — SDK 스크러빙 옵션(`api.core.sentry.build_sentry_options`)이
-실제로 유출을 막는지 검증한다. §3의 경고를 지킨다: 손으로 만든 event dict에 스크러버를 먹이는
+"""SDK 스크러빙 옵션(`api.core.sentry.build_sentry_options`)이
+실제로 유출을 막는지 검증한다. 손으로 만든 event dict에 스크러버를 먹이는
 테스트는 항진명제다. 여기서는 **전역 `sentry_sdk.init()`을 부르지 않고** `sentry_sdk.Client`를
 직접 만들어, 실제 프로덕션 코드(`auth/emails.py`·`chat/router.py`·`chat/prompt_set_cache.py`)에서
 실제로 raise된 예외를 SDK의 진짜 이벤트 빌더(`event_from_exception`)·`Client.capture_event`
 파이프라인(스크러버·`before_send` 포함)에 흘려 transport가 받은 envelope을 단언한다.
 
 `chat/router.py`(`_stream_new_turn` 등)·`chat/prompt_set_cache.py`의 실제 except 블록은 이제
-`capture_dependency_failure`(`api.core.sentry`, MT-6)를 부르지만, 그건 **전역** `sentry_sdk.
+`capture_dependency_failure`(`api.core.sentry`)를 부르지만, 그건 **전역** `sentry_sdk.
 capture_exception`을 호출하는 얇은 래퍼라 이 파일이 만든 격리된 `Client`(위 `_make_client`)는
 전혀 거치지 않는다 — 전역 SDK는 `init()`이 안 불린 이 테스트 환경(DSN 빈 문자열)에서 no-op이다.
 그래서 두 곳(`auth/emails.py`·`chat/prompt_set_cache.py`)은 여전히 `logger.warning` 호출
@@ -77,7 +77,7 @@ def _capture(client: sentry_sdk.Client, exc: BaseException) -> None:
 def _capture_on_next_warning(client: sentry_sdk.Client) -> Callable[..., None]:
     """`logger.warning(...)` 자리에 꽂는 테스트 전용 트릭. `chat/router.py`·
     `chat/prompt_set_cache.py`의 except 블록은 예외를 삼키고 capture_exception을 부르지
-    않는다(승격은 MT-6) — 그 대신 warning을 부르는 그 순간까지는 `sys.exc_info()`가 여전히
+    않는다(승격은 `capture_dependency_failure`의 몫이다) — 그 대신 warning을 부르는 그 순간까지는 `sys.exc_info()`가 여전히
     살아 있으므로, 그 시점의 진짜 예외/트레이스백을 그대로 캡처한다."""
 
     def _fake_warning(*_args: object, **_kwargs: object) -> None:
@@ -108,8 +108,8 @@ def _assert_no_local_variables(event: Event, *leaked_values: str) -> None:
     assert not frames_with_vars, frames_with_vars
 
     # 위 단언(frames[].vars 부재)으로 이미 충분하다 — 아래는 그걸 vars 필드로만 좁혀 다시
-    # 확인하는 이중 점검이다. event 전체를 문자열로 비교하면 `include_source_context`(MT-5
-    # 범위 밖 — 파일에 적힌 소스 코드를 보여주는 별개 기능)가 테스트 함수 자신의 소스에 적힌
+    # 확인하는 이중 점검이다. event 전체를 문자열로 비교하면 `include_source_context`(스크러빙
+    # 옵션 범위 밖 — 파일에 적힌 소스 코드를 보여주는 별개 기능)가 테스트 함수 자신의 소스에 적힌
     # 비밀 리터럴을 우연히 주워 거짓 실패를 낸다(실측: 이 테스트를 처음 이렇게 짰다가 걸렸다).
     vars_haystack = json.dumps([f.get("vars") for f in frames], ensure_ascii=False, default=str)
     for leaked in leaked_values:
@@ -146,8 +146,7 @@ def test_request_body_size_gate_is_always_closed() -> None:
 
 
 async def test_password_reset_email_body_local_variable_is_not_captured() -> None:
-    """`auth/emails.py:_send`의 except 블록 프레임에 재설정 링크(`body`)가 산다
-    (monitoring-techspec.md §0-1-7)."""
+    """`auth/emails.py:_send`의 except 블록 프레임에 재설정 링크(`body`)가 산다."""
     reset_link = "https://ddona.site/reset-password?token=SCRUB-TEST-RESET-9f3a21"
 
     async def _failing_sender(to: str, subject: str, body: str) -> None:
@@ -168,7 +167,7 @@ async def test_password_reset_email_body_local_variable_is_not_captured() -> Non
 async def test_chat_generation_prompt_local_variables_are_not_captured() -> None:
     """`chat/router.py`의 `_stream_generated_tokens`(`_stream_new_turn`/`regenerate_message`/
     `_stream_preview_turn`이 공유)는 예외를 삼키지 않고 그대로 올린다 — 채팅 프롬프트·바닥
-    지시문이 `prompt`/`system_instruction` 지역변수로 산다(§0-1-7)."""
+    지시문이 `prompt`/`system_instruction` 지역변수로 산다."""
     secret_prompt = (
         "페르소나: 너는 온나다(SCRUB-TEST-PROMPT-7b21e). 대화 이력과 매우 은밀한 사용자 메시지."
     )
@@ -217,7 +216,7 @@ async def test_prompt_set_cache_write_failure_local_variables_are_not_captured(
     db_session: AsyncSession,
 ) -> None:
     """`chat/prompt_set_cache.py:set_cached_active_prompt_set`의 `except RedisError` 프레임에는
-    직렬화 전 프롬프트 세트 전체(`cached`)가 산다(monitoring-techspec.md MT-5, 이 런이 새로 찾은
+    직렬화 전 프롬프트 세트 전체(`cached`)가 산다(모니터링 도입 때 새로 찾은
     경로 — `:158`~`:159`)."""
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
     secret_marker = "".join(section.body for section in sections)
@@ -252,7 +251,7 @@ def test_strip_query_string_removes_url_embedded_query_string() -> None:
 
 
 def test_reset_token_query_string_is_stripped_from_captured_event() -> None:
-    """`GET /auth/password-reset/validate?token=...`(§0-1-9)를 흉내낸 ASGI scope를 SDK의
+    """`GET /auth/password-reset/validate?token=...`를 흉내낸 ASGI scope를 SDK의
     진짜 요청 추출 함수(`_get_request_data`)로 돌려 실제 필드 모양을 얻고, 그걸 실제로 캡처된
     이벤트에 실어 `before_send`가 지우는지 확인한다."""
     secret_token = "SCRUB-TEST-RESET-TOKEN-2d88c1"
@@ -269,7 +268,7 @@ def test_reset_token_query_string_is_stripped_from_captured_event() -> None:
     }
     request_data = _get_request_data(asgi_scope, _RootPathInPath.EXCLUDED)
     # 전제 확인: sentry-sdk 2.69.1의 ASGI 통합은 토큰을 `url`이 아니라 `query_string`에 담는다
-    # (techspec의 "request.url" 표현과 달리, 실제로 `_get_url()`은 물음표 뒤를 제외한다 — 소스로
+    # (설계 때 적은 "request.url" 표현과 달리, 실제로 `_get_url()`은 물음표 뒤를 제외한다 — 소스로
     # 재확인한 값).
     assert request_data.get("query_string") == f"token={secret_token}"
     assert "?" not in request_data.get("url", "")

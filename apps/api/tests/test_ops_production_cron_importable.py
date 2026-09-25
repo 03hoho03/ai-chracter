@@ -1,15 +1,13 @@
-"""S5-e 재발 방지 + `monitoring-techspec.md` MT-9·MT-13·`monitoring-legal-draft.md` §7-6(MT-16)
-+ `clover-page-goal-prompt.md` CE-9: 프로덕션 크론이 시스템 python3로 직접 부르는 ops 모듈들이
+"""재발 방지: 프로덕션 크론이 시스템 python3로 직접 부르는 ops 모듈들이
 실제로 그 환경에서 import 가능한지 고정한다.
 
 **대상은 `backup_db.py`·`restore_db.py`·`check_resources.py`·`vacuum_bugsink.py`·
 `purge_image_requests.py`·`expire_clover.py`, 그리고 이 여섯이 `ops.`로 top-level import하는
 형제 모듈 `notify.py`·`db_url.py`·`pg.py`다.** VM 시스템 python3로 실제 불리는 건 앞의 여섯이다 —
-`DEPLOY.md` §3-4가 복원 절차를 `PYTHONPATH=. python3 -m ops.restore_db`로 명시하고,
-`ops/cron.d/ddona-resource-check`(MT-13)가 리소스 감시를, `ops/cron.d/ddona-bugsink-vacuum`
-(MT-16)가 Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`
-(image-monitoring-goal-prompt.md IM-7a)가 이미지 생성 요청 파기를, `ops/cron.d/ddona-clover-expire`
-(clover-page-goal-prompt.md CE-9)가 출석·미션 클로버 만료를 같은 방식으로 돌린다.
+`DEPLOY.md` 백업 · 복원 절이 복원 절차를 `PYTHONPATH=. python3 -m ops.restore_db`로 명시하고,
+`ops/cron.d/ddona-resource-check`가 리소스 감시를, `ops/cron.d/ddona-bugsink-vacuum`가
+Bugsink 이벤트 파기를, `ops/cron.d/ddona-image-request-purge`가 이미지 생성 요청 파기를,
+`ops/cron.d/ddona-clover-expire`가 출석·미션 클로버 만료를 같은 방식으로 돌린다.
 **형제 모듈을 따로 검사하는 이유** — 진입점들의 허용 목록에 `ops`가 있어 `from ops.notify
 import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 import하는지는 아무도 안 본다.
 `requests`를 몰래 넣어도 이 파일이 생기기 전엔 위 테스트들이 전부 통과했다(실측). `snapshot_redis.py`·
@@ -29,11 +27,11 @@ import ...` 자체는 통과하지만, `notify.py` 안에서 실제로 뭘 impor
 `boto3`는 있지만 `sqlalchemy`/`asyncpg`는 `ImportError`다. 크론은 `/etc/cron.d/ddona-backup`
 (`0 18 * * * root /opt/ddona/backup.sh`)이 매일 18:00 UTC에 돌리고 `backup.sh`는
 `set -euo pipefail` + `exec`라, 모듈 최상단 import 하나가 시스템에 없으면 그 즉시 크론 전체가
-죽어 그날 백업이 통째로 사라진다 — S5-d가 `from sqlalchemy import delete` 등을 최상단에
-추가해 실제로 이 사고를 냈다(S5-e에서 되돌림). `restore_db.py`는 복원 절차에서 같은 시스템
+죽어 그날 백업이 통째로 사라진다 — `from sqlalchemy import delete` 등을 최상단에 추가한
+변경이 실제로 이 사고를 냈다(이후 되돌림). `restore_db.py`는 복원 절차에서 같은 시스템
 python3로 불리므로 같은 위험을 진다.
 
-**`ast`를 쓰는 이유** — 정규식으로 import 문을 세다가 이 저장소가 `consent-gate` 런에서 두 번
+**`ast`를 쓰는 이유** — 정규식으로 import 문을 세다가 이 저장소에서 두 번
 틀린 선례가 있다. `ast.parse`로 모듈 최상단(top-level) `Import`/`ImportFrom` 노드만 보고,
 함수/조건문 안의 지연 import는 보지 않는다 — 크론 기동 즉시 실패로 이어지는 건 최상단 import
 뿐이기 때문이다.
@@ -78,7 +76,7 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "pathlib",
         "ops",
     },
-    # MT-13: 리소스 감시도 시스템 python3로 돈다(ops/cron.d/ddona-resource-check). `notify.py`와
+    # 리소스 감시도 시스템 python3로 돈다(ops/cron.d/ddona-resource-check). `notify.py`와
     # 마찬가지로 stdlib만 쓴다 — `free`/`df`는 서브프로세스로 부르지 파이썬 라이브러리로 읽지
     # 않는다.
     "check_resources": {
@@ -88,7 +86,7 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "sys",
         "ops",
     },
-    # MT-16(monitoring-legal-draft.md §7-6): Bugsink vacuum도 시스템 python3로 돈다
+    # Bugsink vacuum도 시스템 python3로 돈다
     # (ops/cron.d/ddona-bugsink-vacuum). `docker exec`를 서브프로세스로 부르지 docker SDK를
     # 쓰지 않는다 — check_resources.py와 같은 이유로 stdlib만 쓴다.
     "vacuum_bugsink": {
@@ -97,7 +95,7 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "sys",
         "ops",
     },
-    # image-monitoring-goal-prompt.md IM-7a: 이미지 생성 요청 파기도 시스템 python3로 돈다
+    # 이미지 생성 요청 파기도 시스템 python3로 돈다
     # (ops/cron.d/ddona-image-request-purge). `backup_db.py`의 만료 삭제와 같은 이유로 stdlib +
     # `ops` 형제 모듈만 쓴다 — DB 삭제는 `run_sh`(컨테이너 안 `psql`)를 통해서만 한다.
     "purge_image_requests": {
@@ -108,7 +106,7 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "datetime",
         "ops",
     },
-    # clover-page-goal-prompt.md CE-9: 클로버 만료 배치도 시스템 python3로 돈다
+    # 클로버 만료 배치도 시스템 python3로 돈다
     # (ops/cron.d/ddona-clover-expire). `purge_image_requests.py`와 같은 이유로 stdlib +
     # `ops` 형제 모듈만 쓴다 — 만료 처리는 `run_sh`(컨테이너 안 `psql`)를 통해서만 한다.
     "expire_clover": {
@@ -160,7 +158,7 @@ def test_backup_db_top_level_imports_are_satisfied_by_production_cron_environmen
     assert not disallowed, (
         f"ops/backup_db.py 최상단 import {disallowed}는 프로덕션 백업 크론의 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 "
-        "18:00 UTC 크론이 import 시점에 죽어 백업이 통째로 멈춘다(S5-d 회귀 재발)."
+        "18:00 UTC 크론이 import 시점에 죽어 백업이 통째로 멈춘다(회귀 재발)."
     )
 
 
@@ -220,7 +218,7 @@ def test_expire_clover_top_level_imports_are_satisfied_by_production_cron_enviro
     assert not disallowed, (
         f"ops/expire_clover.py 최상단 import {disallowed}는 클로버 만료 배치 크론의 시스템 "
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 매일 도는 "
-        "크론이 import 시점에 죽어 clover-page-goal-prompt.md CE-7의 7일 유효기간 약속이 조용히 "
+        "크론이 import 시점에 죽어 클로버 7일 유효기간 약속이 조용히 "
         "깨진다."
     )
 

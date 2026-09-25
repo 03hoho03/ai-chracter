@@ -104,7 +104,7 @@ async def test_generated_images_lists_own_ready_generated_assets_newest_first(
     assert [item["assetId"] for item in body] == [str(newer_id), str(older_id)]
     for item, asset_id in zip(body, [newer_id, older_id], strict=True):
         assert item["imageUrl"].startswith("http")
-        # 갤러리 그리드는 원본이 아니라 썸네일 변형을 서명한다(US-009).
+        # 갤러리 그리드는 원본이 아니라 썸네일 변형을 서명한다.
         assert f"assets/generated/{asset_id}_thumb.webp" in item["imageUrl"]
         assert "createdAt" in item
 
@@ -460,7 +460,7 @@ async def test_delete_unused_generated_image_removes_it_from_list_and_s3(
 async def test_delete_generated_image_removes_thumbnail_from_s3(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """image-monitoring-goal-prompt.md IM-16: 수정 전 코드는 원본만 지워 `_thumb.webp`가
+    """수정 전 코드는 원본만 지워 `_thumb.webp`가
     S3에 고아로 남는다 — list_generated_images(:339)가 이 썸네일을 내보낸다."""
     user = _make_user()
     db_session.add(user)

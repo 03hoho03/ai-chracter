@@ -96,7 +96,7 @@ async def _assert_requires_admin_session(
     db_session.add(user)
     await db_session.commit()
     await _login_as(db_client, user.id)
-    # secure-issue-goal-prompt.md SEC-2: 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
+    # 세션이 아예 안 서도 admin 401은 나오므로, 먼저 "이
     # 유저로는 실제로 인증된다"를 고정해야 위 무세션 401과 구분되는 명제가 남는다(공허한 통과 방지).
     assert (await db_client.get("/me")).status_code == 200
 
@@ -275,7 +275,7 @@ async def test_view_action_log_targets_room_owner(
 async def test_view_creates_no_notification(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """D-12: 채팅 열람은 대상 유저에게 통지되지 않는다."""
+    """채팅 열람은 대상 유저에게 통지되지 않는다."""
     room = await _setup_room(db_session)
     await _add_chat_message(db_session, chat_room_id=room.id)
     await db_session.commit()
@@ -299,7 +299,7 @@ async def test_view_creates_no_notification(
 async def test_get_more_five_times_still_one_log_row(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """T-6 검증 기준의 핵심 — 더보기(GET)를 몇 번 불러도 로그는 늘지 않는다."""
+    """더보기(GET)를 몇 번 불러도 로그는 늘지 않는다."""
     room = await _setup_room(db_session)
     start = datetime(2026, 1, 1, tzinfo=UTC)
     await _seed_messages(db_session, chat_room_id=room.id, count=210, start=start)
