@@ -6,7 +6,8 @@
 결정의 추적은 커밋 메시지와 PR 본문이 맡는다.
 
 잡는 것 (추가된 줄만, `--all` 이면 추적 파일 전체):
-  (a) 추적되지 않는 `*.md` 이름과 `tasks/` 경로 — 모든 파일(코드는 주석 안만, 문서는 줄 전체)
+  (a) 추적되지 않는 `*.md` 이름 — 모든 파일의 줄 전체(테스트 이름·describe 문자열도 포함)
+      `tasks/<무언가>` 경로 — 코드는 주석 안만, 문서는 줄 전체. 디렉터리 이름만 말하는 `tasks/` 는 인용이 아니다.
   (b) 결정 번호 패턴과 `§숫자` — 코드 파일의 주석·docstring 안만. 문자열 리터럴·식별자는 보지 않는다.
 억제: 같은 줄에 `cite-ok` 를 적는다(그 줄이 왜 예외인지 옆에 한 마디 남길 것).
 
@@ -42,12 +43,23 @@ SECTION_NO = re.compile(r"§\s?\d")
 # 결정 번호처럼 생긴 기술 용어. 여기 없으면 그 줄에 `cite-ok`.
 # 개인 FE 컨벤션 플러그인의 규칙 코드(FSD·TS·IMP·COMP·FORM·NAME·STATE·STYLE)는 일부러 넣지 않는다 —
 # 그 규칙 문서도 저장소 밖에 있어서 결정 번호와 똑같이 끊긴 인용이다.
-TECH_PREFIX = {"UTF", "SHA", "ISO", "RFC", "AES", "CVE", "TLS", "WCAG"}
+TECH_PREFIX = {"UTF", "SHA", "ISO", "RFC", "AES", "CVE", "TLS", "WCAG", "ECMA", "IEEE", "GPT"}
 JWT_ALG = {"HS", "RS", "ES", "PS"}  # HS-256 등. 숫자가 256/384/512 일 때만 기술 용어로 본다.
+EC_CURVE = {"256", "384", "521"}  # P-256 등 타원곡선 이름.
 
-# (a) `.md` 파일 이름(경로 포함 가능)과 `tasks/` 경로.
+# 프롬프트 세트 게시 검증의 규칙 코드 `R-1`~`R-8` 은 422 응답의 `detail.rule` 로 실제로 나가는
+# API 에러 코드다. 그 규칙을 정의하는 파일, 그 응답을 검사하는 테스트, 그 규칙을 처음 적용한
+# 마이그레이션에서만 식별자로 보고, 다른 곳에서는 여전히 결정 번호로 잡는다.
+RULE_CODE = re.compile(r"R-[1-8]")
+RULE_CODE_PATHS = re.compile(
+    r"^apps/api/src/api/admin/prompts\.py$"
+    r"|^apps/api/tests/test_admin_prompts_api\.py$"
+    r"|^apps/api/migrations/versions/b72c33c70240_[^/]*\.py$"
+)
+
+# (a) `.md` 파일 이름(경로 포함 가능)과 `tasks/` 아래 무언가를 가리키는 경로.
 MD_REF = re.compile(r"(?<![A-Za-z0-9_.\-/])((?:[A-Za-z0-9_.\-]+/)*([A-Za-z0-9_.\-]+\.md))(?![A-Za-z0-9_])")
-TASKS_REF = re.compile(r"(?<![A-Za-z0-9_.\-/])tasks/")
+TASKS_REF = re.compile(r"(?<![A-Za-z0-9_.\-/])tasks/(?=[A-Za-z0-9_.*\-])")
 URL = re.compile(r"https?://\S+")
 
 PY = {".py"}
@@ -55,6 +67,7 @@ C_LIKE = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs"}
 CSS = {".css"}
 HASH = {".yml", ".yaml", ".sh", ".toml", ".ini", ".cfg", ".mako", ".example"}
 HASH_NAMES = {"Caddyfile", "Dockerfile", ".gitignore", ".worktreeinclude", "_redirects"}
+HASH_DIRS = re.compile(r"^ops/(cron|logrotate)\.d/")
 SQL = {".sql"}
 HTML = {".html", ".svg"}
 DOC = {".md", ".txt"}
@@ -71,6 +84,10 @@ def ext_of(path: str) -> str:
 
 def kind_of(path: str) -> str | None:
     name, ext = path.rsplit("/", 1)[-1], ext_of(path)
+    if HASH_DIRS.search(path):  # 확장자 없는 cron·logrotate 설정
+        return "hash"
+    if name == "README":
+        return "doc"
     if ext in PY:
         return "py"
     if ext in C_LIKE:
@@ -93,7 +110,7 @@ def kind_of(path: str) -> str | None:
 
 def py_comments(src: str) -> dict[int, list[str]]:
     out: dict[int, list[str]] = {}
-    lines = src.splitlines()
+    lines = src.split("\n")
     try:
         for tok in tokenize.generate_tokens(io.StringIO(src).readline):
             if tok.type == tokenize.COMMENT:
@@ -206,7 +223,7 @@ def c_comments(src: str, css: bool = False) -> dict[int, list[str]]:
 
 def prefix_comments(src: str, marker: str) -> dict[int, list[str]]:
     out: dict[int, list[str]] = {}
-    for ln, text in enumerate(src.splitlines(), 1):
+    for ln, text in enumerate(src.split("\n"), 1):
         m = re.search(r"(^|\s)" + re.escape(marker), text)
         if m:
             out[ln] = [text[m.start() :]]
@@ -235,51 +252,86 @@ def comment_map(kind: str, src: str) -> dict[int, list[str]]:
         return prefix_comments(src, "--")
     if kind == "html":
         return html_comments(src)
-    return {i: [t] for i, t in enumerate(src.splitlines(), 1)}  # doc: 줄 전체
+    return {i: [t] for i, t in enumerate(src.split("\n"), 1)}  # doc: 줄 전체
 
 
 # ── 판정 ──────────────────────────────────────────────────────────────────
 
 
-def findings(text: str, check_ids: bool, tracked_md: set[str]) -> list[str]:
-    if SUPPRESS in text:
-        return []
-    urls = [m.span() for m in URL.finditer(text)]
+def url_spans(text: str) -> list[tuple[int, int]]:
+    return [m.span() for m in URL.finditer(text)]
 
-    def in_url(pos: int) -> bool:
-        return any(a <= pos < b for a, b in urls)
 
+def inside(pos: int, spans: list[tuple[int, int]]) -> bool:
+    return any(a <= pos < b for a, b in spans)
+
+
+def md_refs(text: str, tracked_md: set[str]) -> list[re.Match[str]]:
+    """저장소에 없는 `.md` 를 가리키는 매치."""
+    urls = url_spans(text)
+    return [m for m in MD_REF.finditer(text) if not inside(m.start(), urls) and m.group(2) not in tracked_md]
+
+
+def tasks_hits(text: str, tracked_md: set[str]) -> list[str]:
+    """`tasks/` 경로. 이미 비추적 문서로 잡힌 매치와 겹치면 한 번만 센다."""
+    taken = url_spans(text) + [m.span() for m in md_refs(text, tracked_md)]
+    return ["`tasks/` 경로(gitignore 대상)" for m in TASKS_REF.finditer(text) if not inside(m.start(), taken)]
+
+
+def id_hits(text: str, allow_rule_code: bool) -> list[str]:
+    urls = url_spans(text)
     hits: list[str] = []
-    for m in MD_REF.finditer(text):
-        if not in_url(m.start()) and m.group(2) not in tracked_md:
-            hits.append(f"저장소에 없는 문서 `{m.group(1)}`")
-    for m in TASKS_REF.finditer(text):
-        if not in_url(m.start()):
-            hits.append("`tasks/` 경로(gitignore 대상)")
-    if check_ids:
-        for m in DECISION_ID.finditer(text):
-            prefix, num = m.group(1), m.group(2)
-            if prefix in TECH_PREFIX or (prefix in JWT_ALG and num in {"256", "384", "512"}):
-                continue
-            if not in_url(m.start()):
-                hits.append(f"결정 번호 `{m.group(0)}`")
-        if SECTION_NO.search(text):
-            hits.append("절 번호 `§n`(추적 문서는 절 제목으로)")
+    for m in DECISION_ID.finditer(text):
+        prefix, num = m.group(1), m.group(2)
+        if prefix in TECH_PREFIX or (prefix in JWT_ALG and num in {"256", "384", "512"}):
+            continue
+        if prefix == "P" and num in EC_CURVE:
+            continue
+        if allow_rule_code and RULE_CODE.fullmatch(m.group(0)):
+            continue
+        if not inside(m.start(), urls):
+            hits.append(f"결정 번호 `{m.group(0)}`")
+    if SECTION_NO.search(text):
+        hits.append("절 번호 `§n`(추적 문서는 절 제목으로)")
+    return hits
+
+
+def line_findings(line: str, comments: list[str], kind: str, path: str, tracked_md: set[str]) -> list[str]:
+    """비추적 문서는 줄 전체에서(문자열 속 테스트 이름도 인용이다), 나머지는 코드면 주석 안에서만 본다."""
+    if SUPPRESS in line:
+        return []
+    hits = [f"저장소에 없는 문서 `{m.group(1)}`" for m in md_refs(line, tracked_md)]
+    if kind == "doc":
+        return hits + tasks_hits(line, tracked_md)
+    allow_rule_code = bool(RULE_CODE_PATHS.search(path))
+    for text in comments:
+        hits += tasks_hits(text, tracked_md) + id_hits(text, allow_rule_code)
     return hits
 
 
 def added_lines(base: str, head: str) -> dict[str, set[int]]:
-    diff = git("diff", "--no-color", "--no-ext-diff", "-U0", "-M", "--diff-filter=AMR", f"{base}...{head}")
+    diff = git(
+        "-c", "core.quotepath=off",
+        "diff", "--no-color", "--no-ext-diff", "-U0", "-M", "--diff-filter=AMR", f"{base}...{head}",
+    )  # fmt: skip
     out: dict[str, set[int]] = {}
     path = None
-    for raw in diff.splitlines():
-        if raw.startswith("+++ "):
-            path = raw[6:] if raw.startswith("+++ b/") else None
+    prev = ""
+    in_header = False
+    for raw in diff.split("\n"):
+        # `+++ ` 는 파일 머리 안에서 `--- ` 바로 다음일 때만 파일 이름이다.
+        # 추가된 줄이 `++ ` 로 시작하면 diff 에서는 `+++ ` 로 보인다.
+        if raw.startswith("diff --git "):
+            in_header, path = True, None
+        elif in_header and raw.startswith("+++ ") and prev.startswith("--- "):
+            path = raw[6:].rstrip("\t") if raw.startswith("+++ b/") else None
         elif raw.startswith("@@") and path:
+            in_header = False
             m = re.search(r"\+(\d+)(?:,(\d+))?", raw)
             assert m
             start, count = int(m.group(1)), int(m.group(2) or "1")
             out.setdefault(path, set()).update(range(start, start + count))
+        prev = raw
     return out
 
 
@@ -291,7 +343,7 @@ def main() -> int:
     ap.add_argument("--head", default="HEAD")
     args = ap.parse_args()
 
-    tracked = git("ls-tree", "-r", "--name-only", args.head).splitlines()
+    tracked = git("-c", "core.quotepath=off", "ls-tree", "-r", "--name-only", args.head).splitlines()
     tracked_md = {p.rsplit("/", 1)[-1] for p in tracked if p.endswith(".md")}
     if args.all:
         targets: dict[str, set[int] | None] = {p: None for p in tracked}
@@ -307,14 +359,14 @@ def main() -> int:
             src = git("show", f"{args.head}:{path}")
         except (subprocess.CalledProcessError, UnicodeDecodeError):
             continue
-        for ln, texts in sorted(comment_map(kind, src).items()):
+        comments = comment_map(kind, src) if kind != "doc" else {}
+        for ln, line in enumerate(src.split("\n"), 1):
             if lines is not None and ln not in lines:
                 continue
-            for text in texts:
-                for hit in findings(text, check_ids=kind != "doc", tracked_md=tracked_md):
-                    problems += 1
-                    print(f"::error file={path},line={ln}::{hit} — 이유를 주석에 직접 쓰고, 결정 추적은 커밋·PR 본문에 남긴다")
-                    print(f"{path}:{ln}: {hit}", file=sys.stderr)
+            for hit in line_findings(line, comments.get(ln, []), kind, path, tracked_md):
+                problems += 1
+                print(f"::error file={path},line={ln}::{hit} — 이유를 주석에 직접 쓰고, 결정 추적은 커밋·PR 본문에 남긴다")
+                print(f"{path}:{ln}: {hit}", file=sys.stderr)
     if problems:
         print(f"\n{problems}건. 예외가 맞으면 그 줄에 `{SUPPRESS}` 를 적는다.", file=sys.stderr)
     return 1 if problems else 0

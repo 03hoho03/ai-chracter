@@ -44,6 +44,22 @@ CASES = [
         5,
     ),
     ("F15 주석 속 R-1", "n.py", "", 'RULE = "R-1"  # R-1 게시 규칙\n', 1),
+    ("F16 md 의 tasks 문서는 한 번만", "Q.md", "", "`tasks/foo.md` 를 보라.\n", 1),
+    ("F17 추적 README 도 tasks 아래면 잡는다", "Q2.md", "", "tasks/fixtures/README.md 참고\n", 1),
+    ("F18 cron 설정 주석", "ops/cron.d/job", "", "# D-5 로 새벽에 돈다\n0 3 * * * root /bin/true\n", 1),
+    ("F19 logrotate 설정 주석", "ops/logrotate.d/app", "", "# backlog.md 참고\n/var/log/x { daily }\n", 1),
+    ("F20 확장자 없는 README 는 문서", "mig/README", "", "backlog.md 와 D-5 를 따른다.\n", 1),
+    (
+        "F21 `++ ` 로 시작하는 추가 줄이 파일을 끊지 않는다",
+        "S.md",
+        "x\n-- a\ny\nz\nw\n",
+        "x\n++ b/c\ny\nz\nw\ntasks/foo.md\n",
+        1,
+    ),
+    ("F22 코드의 테스트 이름 속 문서", "t.test.ts", "", 'it("limit-goal-prompt.md 대로 막는다", () => {});\n', 1),
+    ("F23 py 문자열 속 문서", "t_py.py", "", '@mark.parametrize("c", ["chat-rollout.md"])\ndef test_a(c): ...\n', 1),
+    ("F24 주석 속 tasks 문서는 한 번만", "u.ts", "", "// tasks/foo.md 대로\nexport const u = 1;\n", 1),
+    ("F25 규칙 코드 파일에서도 R-9·다른 번호는 잡는다", "apps/api/src/api/admin/prompts.py", "", "# R-9 와 CL-1\n", 2),
     # ── 통과해야 하는 것 ──
     ("P1 py 문자열 식별자", "p1.py", "", 'RULE = "R-1"\nraise E(code="RL-3")\n', 0),
     ("P2 ts 문자열 식별자", "p2.ts", "", 'const rule = "R-8";\n', 0),
@@ -59,6 +75,12 @@ CASES = [
     ("P12 경로 중간 tasks/", "p12.py", "", "# api/tasks/queue.py 가 소비한다\n", 0),
     ("P13 .md 가 아닌 확장자", "p13.ts", "", "// foo.mdx 와 bar.md5\n", 0),
     ("P14 생성물은 건너뛴다", "generated.ts", "", "// D-5 CL-12\n", 0),
+    ("P15 md 가 tasks 디렉터리를 일반적으로 말함", "Q3.md", "", "`tasks/` 문서를 인용하지 않는다. tasks/ 는 gitignore 대상이다.\n", 0),
+    ("P16 기술 용어 추가분", "p16.py", "", "# ECMA-262, IEEE-754, GPT-4, P-256, P-384, P-521\n", 0),
+    ("P17 규칙 코드 정의 파일", "apps/api/src/api/admin/prompts.py", "", "# R-1 과 R-8 을 검사한다\n", 0),
+    ("P18 규칙 코드 테스트", "apps/api/tests/test_admin_prompts_api.py", "", "# R-3 위반이면 422\n", 0),
+    ("P19 규칙 코드 마이그레이션", "apps/api/migrations/versions/b72c33c70240_x.py", "", "# R-2 를 적용한다\n", 0),
+    ("P20 코드 문자열의 tasks 경로·추적 문서", "p20.py", "", 'Q = "tasks/queue"\nopen("README.md")\n', 0),
 ]
 
 # `--all` 은 기존 줄도 본다: base 의 j.tsx `D-1` 1건 + p10.py `CL-3`·`CL-4` 2건.
@@ -72,6 +94,7 @@ def git(cwd: str, *args: str) -> str:
 
 
 def write(root: str, name: str, content: str) -> None:
+    os.makedirs(os.path.dirname(os.path.join(root, name)), exist_ok=True)
     with open(os.path.join(root, name), "w", encoding="utf-8") as f:
         f.write(content)
 
