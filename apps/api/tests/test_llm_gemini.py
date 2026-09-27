@@ -378,9 +378,13 @@ _ROOM_ID = uuid.UUID("22222222-2222-2222-2222-222222222222")
 _CTX = LLMCallContext(call_site="chat_stat_judgment", user_id=_USER_ID, room_id=_ROOM_ID)
 
 
-def _usage(prompt: int, candidates: int, thoughts: int | None, total: int) -> SimpleNamespace:
+def _usage(
+    prompt: int, candidates: int, thoughts: int | None, total: int, *, cached: int | None = None
+) -> SimpleNamespace:
+    # 암시 캐시가 적중하지 않으면 SDK는 cached_content_token_count 를 None 으로 준다(기본값).
     return SimpleNamespace(
         prompt_token_count=prompt,
+        cached_content_token_count=cached,
         candidates_token_count=candidates,
         thoughts_token_count=thoughts,
         total_token_count=total,
@@ -415,7 +419,7 @@ async def test_generate_logs_gemini_usage_once_from_last_chunk_metadata(
         generate_content_stream=_stream_of(
             SimpleNamespace(text="RESPONSE-SENTINEL-a"),
             SimpleNamespace(text="b", usage_metadata=None),
-            SimpleNamespace(text="c", usage_metadata=_usage(11, 22, 3, 36)),
+            SimpleNamespace(text="c", usage_metadata=_usage(11, 22, 3, 36, cached=8)),
         ),
     )
 
@@ -429,6 +433,7 @@ async def test_generate_logs_gemini_usage_once_from_last_chunk_metadata(
         "call_site": "chat_stat_judgment",
         "model": client._model_name,
         "prompt_tokens": "11",
+        "cached_content_tokens": "8",
         "candidates_tokens": "22",
         "thoughts_tokens": "3",
         "total_tokens": "36",
@@ -460,6 +465,8 @@ async def test_generate_logs_the_last_non_none_usage_metadata(
     fields = _fields(records[0])
     assert (fields["prompt_tokens"], fields["candidates_tokens"], fields["total_tokens"]) == ("5", "7", "12")
     assert fields["thoughts_tokens"] == "None"
+    # 캐시 미적중(None)도 필드는 찍힌다 — 없는 필드와 미적중을 로그에서 구분할 수 있어야 한다.
+    assert fields["cached_content_tokens"] == "None"
     assert "usage=missing" not in records[0].getMessage()
 
 
@@ -478,9 +485,10 @@ async def test_generate_logs_usage_missing_when_no_chunk_has_metadata(
     assert fields["usage"] == "missing"
     assert fields["call_site"] == "preview_generate"
     assert fields["room_id"] == "None"
-    assert [fields[k] for k in ("prompt_tokens", "candidates_tokens", "thoughts_tokens", "total_tokens")] == [
-        "None"
-    ] * 4
+    assert [
+        fields[k]
+        for k in ("prompt_tokens", "cached_content_tokens", "candidates_tokens", "thoughts_tokens", "total_tokens")
+    ] == ["None"] * 5
 
 
 async def test_generate_does_not_log_usage_when_the_stream_ends_in_an_error(
@@ -556,7 +564,7 @@ async def test_generate_structured_logs_gemini_usage(
     expected = _JudgmentResult(triggered=False, ending_id=None)
 
     async def generate_content(**_: Any) -> SimpleNamespace:
-        return SimpleNamespace(parsed=expected, usage_metadata=_usage(40, 5, 17, 62))
+        return SimpleNamespace(parsed=expected, usage_metadata=_usage(40, 5, 17, 62, cached=32))
 
     client = _make_client(monkeypatch, generate_content=generate_content)
     publish = LLMCallContext(call_site="publish_filter_story", user_id=_USER_ID, room_id=None)
@@ -570,6 +578,7 @@ async def test_generate_structured_logs_gemini_usage(
         "call_site": "publish_filter_story",
         "model": client._model_name,
         "prompt_tokens": "40",
+        "cached_content_tokens": "32",
         "candidates_tokens": "5",
         "thoughts_tokens": "17",
         "total_tokens": "62",
