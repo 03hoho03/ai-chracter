@@ -49,6 +49,8 @@ async def test_story_persona_section_sits_right_after_prologue_and_right_before_
         history=_history(),
         user_message="이번 메시지",
         user_persona=_PERSONA,
+        memory_note="",
+        memory_summary="",
     )
 
     values = {
@@ -76,6 +78,8 @@ async def test_character_persona_section_sits_right_after_examples_and_right_bef
         history=_history(),
         user_message="이번 메시지",
         user_persona=_PERSONA,
+        memory_note="",
+        memory_summary="",
     )
 
     values = {

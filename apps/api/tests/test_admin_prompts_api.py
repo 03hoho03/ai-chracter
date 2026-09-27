@@ -6,15 +6,16 @@
 라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
 바뀌었고, R-1~R-8 규칙도 레인별 표(`_EXPECTED_ROWS_BY_LANE` 등)로 쪼개졌다.
 "게시가 실제로 성공하는지"를 보는 테스트는 이제 **실제 검증을 그대로 태운다** —
-레인 스코프 초안(27/14/16행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
-R-1~R-7 규칙 자체를 직접 고정하는 테스트들은 story 레인의 실제 활성 세트(27행)를
+레인 스코프 초안(33/19/16행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
+R-1~R-7 규칙 자체를 직접 고정하는 테스트들은 story 레인의 실제 활성 세트(33행)를
 baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 정확히 일치하지 않는다 —
 새 레인별 표는 각각 story/character/publish_filter가 실제로 쓰는 부분집합이다).
 
 마이그레이션 `b72c33c70240`(M2)이 story·character 레인에
-`generation/user_persona` 행을 더한 **새 published 세트**를 만든다. 그래서 테스트 DB의
-published는 레인별로 story v1·v2, character v1·v3, publish_filter v1이고, 활성은 story v2·
-character v3·publish_filter v1이다. 다음 게시 버전은 "4"부터다(전 레인 대상 자동 증가).
+`generation/user_persona` 행을 더한 **새 published 세트**를 만들고, 마이그레이션 `c328445d4c2d`가
+같은 방식으로 채팅방 기억 행을 더한 세트를 또 만든다. 그래서 테스트 DB의 published는 레인별로
+story v1·v2·v4, character v1·v3·v5, publish_filter v1이고, 활성은 story v4·character v5·
+publish_filter v1이다. 다음 게시 버전은 "6"부터다(전 레인 대상 자동 증가).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
 """
@@ -140,7 +141,7 @@ async def _story_prompt_set_and_sections(
     db_session: AsyncSession,
 ) -> tuple[PromptSet, list[PromptSection]]:
     """`_validate_prompt_draft_for_publish`가 레인별 표를 보게 된 뒤로는
-    story 레인의 실제 활성 세트(27행)가 그 표와 정확히 일치하는 유일한 baseline이다
+    story 레인의 실제 활성 세트(33행)가 그 표와 정확히 일치하는 유일한 baseline이다
     (legacy 48행은 story/character/publish_filter 어느 표와도 더 이상 정확히 일치하지
     않는다). R-1~R-7 규칙 자체를 직접 고정하는 테스트들이 여기서 baseline을 가져온다."""
     story_id = await db_session.scalar(_select_active_id("story"))
@@ -440,23 +441,26 @@ async def test_list_returns_metadata_only_and_marks_active(
 
     published = [item for item in items if item["status"] == "published"]
     draft = [item for item in items if item["status"] == "draft"]
-    # story v1·v2, character v1·v3, publish_filter v1 (모듈 docstring — M2가 v2·v3을 만든다).
-    assert len(published) == 5
+    # story v1·v2·v4, character v1·v3·v5, publish_filter v1 (모듈 docstring — 슬롯을 더한 두
+    # 마이그레이션이 v2·v3과 v4·v5를 만든다).
+    assert len(published) == 7
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     assert sorted(item["lane"] for item in active) == ["character", "publish_filter", "story"]
     assert {(item["lane"], item["version"]) for item in active} == {
-        ("story", "2"),
-        ("character", "3"),
+        ("story", "4"),
+        ("character", "5"),
         ("publish_filter", "1"),
     }
-    # M2 이전 세트(story·character v1) 두 개는 비활성이다.
+    # 마지막 슬롯 마이그레이션 이전 세트 넷은 비활성이다.
     assert {(item["lane"], item["version"]) for item in published if not item["isActive"]} == {
         ("story", "1"),
+        ("story", "2"),
         ("character", "1"),
+        ("character", "3"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {"1", "2", "3"}
+    assert {item["version"] for item in published} == {"1", "2", "3", "4", "5"}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -469,7 +473,7 @@ async def test_get_by_id_returns_full_sections(
     assert resp.status_code == 200
     body = resp.json()
     assert len(body["sections"]) == _expected_section_count("story")
-    assert body["version"] == "2"  # story 활성은 M2 세트다
+    assert body["version"] == "4"  # story 활성은 채팅방 기억 행을 더한 마이그레이션의 세트다
     assert body["lane"] == "story"
 
 
@@ -521,7 +525,7 @@ async def test_preview_reuses_the_real_renderer(
     assert story_system_basic["text"] == expected
 
     channels = {item["channel"] for item in items}
-    assert channels == {"system", "generation", "stat_judgment", "ending_judgment"}
+    assert channels == {"system", "generation", "stat_judgment", "ending_judgment", "memory_summary"}
 
 
 async def test_preview_uses_the_draft_when_one_exists(
@@ -546,8 +550,8 @@ async def test_preview_uses_the_draft_when_one_exists(
 @pytest.mark.parametrize(
     ("lane", "expected_count"),
     [
-        pytest.param("story", 8, id="story"),
-        pytest.param("character", 3, id="character"),
+        pytest.param("story", 9, id="story"),
+        pytest.param("character", 4, id="character"),
         pytest.param("publish_filter", 2, id="publish_filter"),
     ],
 )
@@ -557,7 +561,7 @@ async def test_preview_item_count_per_lane(
     """리뷰가 찾은 공백 — `_character_preview_items`/`_publish_filter_preview_items`가
     story 레인 미리보기 테스트에만 가려져 미커버였다. R-7의 `StopIteration` → 500이
     `publish_filter` 레인에서만 터지던 결함이었던 선례를 생각하면 같은 부류가 숨어 있을 수
-    있어 3레인 전부 200 + 항목 수(story 8 / character 3 / publish_filter 2)를
+    있어 3레인 전부 200 + 항목 수(story 9 / character 4 / publish_filter 2)를
     직접 고정한다."""
     await _login_new_admin(db_client, db_session)
 
@@ -605,7 +609,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "4"
+    assert body["version"] == "6"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -632,34 +636,34 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v4"})
-    assert first.json()["version"] == "4"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v6"})
+    assert first.json()["version"] == "6"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v5"})
-    assert second.json()["version"] == "5"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v7"})
+    assert second.json()["version"] == "7"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
-    M2가 story v2·character v3을 만든 테스트 DB에서, story가 v4·v5를 게시한 뒤 character
-    게시가 v6을 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v4일 것이다) — 이
+    슬롯 마이그레이션들이 story v2·v4·character v3·v5를 만든 테스트 DB에서, story가 v6·v7을 게시한
+    뒤 character 게시가 v8을 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v6일 것이다) — 이
     테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v4"})
-    assert first.json()["version"] == "4"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v6"})
+    assert first.json()["version"] == "6"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v5"})
-    assert second.json()["version"] == "5"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v7"})
+    assert second.json()["version"] == "7"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v6"})
-    assert third.json()["version"] == "6"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v8"})
+    assert third.json()["version"] == "8"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -743,7 +747,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "4"
+    assert resp.json()["version"] == "6"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
@@ -770,8 +774,9 @@ async def test_publish_version_conflict_returns_409(
             sa.select(PromptSet).where(PromptSet.status == "published", PromptSet.lane == "story")
         )
     ).all()
-    # story published는 v1(a69cbd40dec8)·v2(M2) 둘이다 — 실패한 시도가 셋째를 남기지 않는다.
-    assert len(published) == 2
+    # story published는 v1(a69cbd40dec8)·v2(b72c33c70240)·v4(c328445d4c2d) 셋이다 — 실패한 시도가
+    # 넷째를 남기지 않는다.
+    assert len(published) == 3
 
 
 # ---- 롤백 (restore) -------------------------------------------------------------
@@ -811,7 +816,7 @@ async def test_restore_clones_old_version_into_draft(
 async def test_restoring_persona_slot_set_then_publishing_passes_r1(
     db_client: httpx.AsyncClient, db_session: AsyncSession, lane: PromptLane
 ) -> None:
-    """M2가 만든 세트(`user_persona` 행 포함)를 초안으로
+    """활성 세트(슬롯 마이그레이션들이 만든 세트 — `user_persona`·기억 행 포함)를 초안으로
     복원해 게시하면 R-1을 통과한다. 코드 표(`_EXPECTED_ROWS_BY_LANE`)와 DB가 같이 갔다는
     왕복 확인이다(R-2 — 한쪽만 있으면 "누락"이나 "잉여"로 게시가 전부 막힌다)."""
     await _login_new_admin(db_client, db_session)
@@ -820,6 +825,7 @@ async def test_restoring_persona_slot_set_then_publishing_passes_r1(
     restore_resp = await db_client.post(f"/admin/prompt-sets/{active_id}/restore")
     assert restore_resp.status_code == 200
     assert any(s["slot"] == "user_persona" for s in restore_resp.json()["sections"])
+    assert any(s["channel"] == "memory_summary" for s in restore_resp.json()["sections"])
 
     publish_resp = await db_client.post(f"/admin/prompt-sets/{lane}/publish", json={"note": "복원 게시"})
     assert publish_resp.status_code == 200, publish_resp.json()
@@ -874,7 +880,7 @@ async def test_list_excludes_legacy_and_marks_exactly_three_active(
 
 # ---- 게시 검증 R-1~R-8 — `_validate_prompt_draft_for_publish` 직접 호출 -------------
 #
-# R-1~R-7 규칙 자체(무엇이 위반인지)를 직접 고정한다. story 레인의 실제 활성 세트(27행)가
+# R-1~R-7 규칙 자체(무엇이 위반인지)를 직접 고정한다. story 레인의 실제 활성 세트(33행)가
 # `_EXPECTED_ROWS_BY_LANE["story"]`와 정확히 일치하는 baseline이라, 슬롯 하나를 빼거나
 # body/label/order 하나를 망가뜨리면 그 규칙만 걸린다. R-8은 별도 절(아래)에서 HTTP
 # 라우트를 거쳐 고정한다 — R-6과 실제로 다른 답을 내는 입력이 핵심이라 레인 표 안의

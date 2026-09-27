@@ -826,6 +826,8 @@ async def _build_prompt(
             history=history,
             user_message=user_content,
             user_persona=user_persona,
+            memory_note="",
+            memory_summary="",
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
@@ -847,6 +849,8 @@ async def _build_prompt(
         history=history,
         user_message=user_content,
         user_persona=user_persona,
+        memory_note="",
+        memory_summary="",
     )
     return (
         prompt,
@@ -1047,6 +1051,7 @@ async def _stream_new_turn(
                     history=history,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    memory_summary="",
                 )
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt,
@@ -2088,6 +2093,8 @@ def _build_preview_prompt(
             history=history,
             user_message=user_content,
             user_persona=user_persona,
+            memory_note="",
+            memory_summary="",
         )
 
     setup = payload.starting_setups[0] if payload.starting_setups else None
@@ -2108,6 +2115,8 @@ def _build_preview_prompt(
         history=history,
         user_message=user_content,
         user_persona=user_persona,
+        memory_note="",
+        memory_summary="",
         keyword_note_texts=[note.info_text for note in matched_notes],
         shortcut_prompt=shortcut.prompt if shortcut is not None else None,
     )
@@ -2242,6 +2251,7 @@ async def _stream_preview_turn(
                     history=history,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    memory_summary="",
                 )
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt,

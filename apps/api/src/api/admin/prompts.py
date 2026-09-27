@@ -29,6 +29,7 @@ from api.chat.prompt_builder import (
     PromptLane,
     as_prompt_lane,
     build_generation_prompt,
+    build_memory_summary_prompt,
     build_stat_judgment_prompt,
     build_story_generation_prompt,
     format_user_persona,
@@ -53,7 +54,9 @@ logger = logging.getLogger(__name__)
 
 # 코드가 레인별로 아는 (channel, scope, slot, variant)
 # 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행에 b72c33c70240이 story·
-# character generation에 `user_persona`를 한 행씩 더한 27/14/16행과 정확히 같다.
+# character generation에 `user_persona`를 한 행씩 더한 27/14/16행, 여기에 c328445d4c2d가 채팅방
+# 기억 행(generation 2 · story ending_judgment 1 · 새 channel `memory_summary` 3)을 더한 33/19/16행과
+# 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -91,6 +94,9 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 # 마이그레이션 `b72c33c70240`이 DB에 넣는 행과 같이 간다.
                 # 코드만 있으면 R-1 "누락", DB만 있으면 "잉여"로 게시가 전부 막힌다.
                 ("both", "user_persona", ""),
+                # 마이그레이션 `c328445d4c2d`가 DB에 넣는 행과 같이 간다(위 user_persona와 같은 이유).
+                ("both", "memory_note", ""),
+                ("both", "memory_summary", ""),
                 ("both", "history", ""),
                 ("story", "keyword_notes", ""),
                 ("story", "shortcut_prompt", ""),
@@ -106,9 +112,17 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
         ),
         "ending_judgment": frozenset(
             {
+                ("story", "memory_summary", ""),
                 ("story", "history_header", ""),
                 ("story", "turn_context", ""),
                 ("story", "criteria", ""),
+            }
+        ),
+        "memory_summary": frozenset(
+            {
+                ("both", "instruction", ""),
+                ("both", "previous_summary", ""),
+                ("both", "turn_context", ""),
             }
         ),
     },
@@ -128,6 +142,8 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("character", "character_prompt", ""),
                 ("character", "example_dialogues", ""),
                 ("both", "user_persona", ""),  # 위 story와 같다
+                ("both", "memory_note", ""),
+                ("both", "memory_summary", ""),
                 ("both", "history", ""),
                 ("both", "final_frame", ""),
             }
@@ -137,6 +153,13 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("character", "image_list_intro", ""),
                 ("character", "turn_context", ""),
                 ("character", "judgment_instruction", ""),
+            }
+        ),
+        "memory_summary": frozenset(  # 위 story와 같다
+            {
+                ("both", "instruction", ""),
+                ("both", "previous_summary", ""),
+                ("both", "turn_context", ""),
             }
         ),
     },
@@ -819,6 +842,9 @@ _SAMPLE_DEVELOPMENT_EXAMPLES = [{"userLine": "[샘플] 이 방향으로 가보�
 _SAMPLE_USER_PERSONA = format_user_persona(
     name="[샘플] 하늘", gender="female", description="[샘플] 밤하늘을 좋아하는 대학생"
 )
+# 기억 슬롯도 비우면 conditional 드롭으로 안 보인다(위 프로필과 같은 이유).
+_SAMPLE_MEMORY_NOTE = "[샘플] 주인공의 여동생 이름은 서연이다."
+_SAMPLE_MEMORY_SUMMARY = "[샘플] 두 사람은 비 오는 밤 편의점에서 처음 만났고, 다음 주에 다시 보기로 약속했다."
 _SAMPLE_STAT_DEFS = [
     StatDef(
         entity_id=uuid.uuid4(),
@@ -854,6 +880,24 @@ _SAMPLE_STARTING_SETUPS = [
 ]
 
 
+def _memory_summary_preview_item(
+    prompt_set: PromptSet, sections: list[PromptSection], *, is_story_chat: bool
+) -> AdminPromptPreviewItem:
+    """요약 호출 프롬프트. 직전 요약이 있는 경우(두 번째 접기부터)를 보여 준다 — 비우면 그 섹션이
+    드롭돼 운영자가 문안을 못 본다."""
+    return AdminPromptPreviewItem(
+        channel="memory_summary",
+        label="memory_summary",
+        text=build_memory_summary_prompt(
+            prompt_set=prompt_set,
+            sections=sections,
+            is_story_chat=is_story_chat,
+            previous_summary=_SAMPLE_MEMORY_SUMMARY,
+            turns=_SAMPLE_HISTORY,
+        ),
+    )
+
+
 def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
 
@@ -887,6 +931,8 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
                     history=_SAMPLE_HISTORY,
                     user_message="[샘플] 사용자 메시지",
                     user_persona=_SAMPLE_USER_PERSONA,
+                    memory_note=_SAMPLE_MEMORY_NOTE,
+                    memory_summary=_SAMPLE_MEMORY_SUMMARY,
                     keyword_note_texts=["[샘플] 키워드북 항목"],
                     shortcut_prompt=None,
                 ),
@@ -918,9 +964,11 @@ def _story_preview_items(prompt_set: PromptSet, sections: list[PromptSection]) -
                 history=_SAMPLE_HISTORY,
                 user_message="[샘플] 사용자 메시지",
                 assistant_message="[샘플] 진행자 응답",
+                memory_summary=_SAMPLE_MEMORY_SUMMARY,
             ),
         )
     )
+    items.append(_memory_summary_preview_item(prompt_set, sections, is_story_chat=True))
 
     return items
 
@@ -947,6 +995,8 @@ def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection
                 history=_SAMPLE_HISTORY,
                 user_message="[샘플] 사용자 메시지",
                 user_persona=_SAMPLE_USER_PERSONA,
+                memory_note=_SAMPLE_MEMORY_NOTE,
+                memory_summary=_SAMPLE_MEMORY_SUMMARY,
             ),
         )
     )
@@ -964,6 +1014,7 @@ def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection
             ),
         )
     )
+    items.append(_memory_summary_preview_item(prompt_set, sections, is_story_chat=False))
 
     return items
 

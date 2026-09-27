@@ -193,8 +193,9 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         "story",
         lambda ps, sections: system_instruction_for(sections, is_story_chat=True, template=None),
     ),
-    # 생성 7건은 `user_persona=""`(프로필 없음·선택 없음)다 — 이
-    # 인자가 없던 시절의 골든과 바이트까지 같아야 한다(골든은 다시 뜨지 않는다).
+    # 생성 7건은 `user_persona=""`(프로필 없음·선택 없음)이고 기억(`memory_note`·`memory_summary`)도
+    # 빈 값이다(엔딩 2건의 `memory_summary`도) — 이 인자들이 없던 시절의 골든과 바이트까지 같아야
+    # 한다(골든은 다시 뜨지 않는다).
     # -- 생성 프롬프트: 캐릭터 1 × filled/empty + 경계(character_prompt="") --
     (
         "generation_character_filled.txt",
@@ -207,6 +208,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=_character_history(),
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
         ),
     ),
     (
@@ -220,6 +223,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=[],
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
         ),
     ),
     (
@@ -233,6 +238,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=_character_history(),
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
         ),
     ),
     # -- 생성 프롬프트: 스토리 CUSTOM/비-CUSTOM(BASIC 대표) × filled/empty --
@@ -252,6 +259,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=_story_history(),
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
             keyword_note_texts=[KEYWORD_NOTE_TEXT],
             shortcut_prompt=SHORTCUT_PROMPT,
         ),
@@ -272,6 +281,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=[],
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
         ),
@@ -292,6 +303,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=_story_history(),
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
             keyword_note_texts=[KEYWORD_NOTE_TEXT],
             shortcut_prompt=SHORTCUT_PROMPT,
         ),
@@ -312,6 +325,8 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=[],
             user_message=USER_MESSAGE,
             user_persona="",
+            memory_note="",
+            memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
         ),
@@ -351,6 +366,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=_story_history(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            memory_summary="",
         ),
     ),
     (
@@ -363,6 +379,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             history=[],
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            memory_summary="",
         ),
     ),
     (
