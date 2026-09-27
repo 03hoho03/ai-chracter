@@ -7,11 +7,13 @@ import sqlalchemy as sa
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.action_log import record_admin_action
 from api.auth.verification import get_verification_code
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
 from api.core.security import hash_withdrawn_email, verify_password
 from api.db.models import (
+    AdminActionLog,
     Asset,
     AssetKind,
     AssetStatus,
@@ -35,7 +37,7 @@ from api.db.models import (
     UserPersona,
     WithdrawnEmail,
 )
-from factories import _get_genre, _make_published_character
+from factories import _create_admin, _get_genre, _make_published_character
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -298,6 +300,46 @@ async def test_withdraw_deletes_personas_referenced_by_default_and_rooms(
     )
     assert remaining == 0
     assert await db_session.scalar(select(User.default_persona_id).where(User.id == user_id)) is None
+
+
+async def test_withdraw_with_admin_viewed_room_keeps_the_view_log_without_the_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """관리자가 열람한 방이 있어도 탈퇴는 끝까지 가야 한다. 열람 로그는 감사 기록이라 남고(유저
+    상세의 조치 이력은 `target_user_id`로 계속 걸린다), 지워진 방을 가리키던 칸만 비운다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    user_id = user.id
+    admin_id = uuid.UUID(str((await _create_admin(db_session))["id"]))
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user_id, genre_id=genre.id)
+    room = ChatRoom(user_id=user_id, content_id=content.id, content_version_id=content.current_published_version_id)
+    db_session.add(room)
+    await db_session.flush()
+    room_id = room.id
+    await record_admin_action(
+        db_session,
+        admin_id=admin_id,
+        action_type="chat-view",
+        target_user_id=user_id,
+        target_chat_room_id=room_id,
+        reason_text="신고 확인",
+    )
+    await db_session.commit()
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room_id)) == 0
+    logs = (
+        await db_session.execute(
+            select(AdminActionLog.target_chat_room_id, AdminActionLog.target_user_id).where(
+                AdminActionLog.admin_id == admin_id
+            )
+        )
+    ).all()
+    assert [tuple(row) for row in logs] == [(None, user_id)]
 
 
 async def test_withdraw_deletes_profile_image_from_object_storage(

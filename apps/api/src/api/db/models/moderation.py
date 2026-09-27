@@ -200,8 +200,10 @@ class AdminActionLog(Base):
     target_content_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("contents.id"), nullable=True
     )
+    # 소유자는 관리자가 열람한 방도 지울 수 있다(방 삭제·탈퇴). 로그는 감사 기록이라 남기고
+    # 사라진 방을 가리키던 칸만 비운다 — 누가 언제 누구의 채팅을 봤는지는 `target_user_id`로 남는다.
     target_chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("chat_rooms.id"), nullable=True
+        Uuid, ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
     )
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)

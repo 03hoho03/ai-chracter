@@ -6,7 +6,9 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.action_log import record_admin_action
 from api.db.models import (
+    AdminActionLog,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -31,7 +33,7 @@ from api.db.models import (
     User,
     UserPersona,
 )
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _create_admin, _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_published_character(
@@ -483,6 +485,45 @@ async def test_delete_chat_room_removes_only_that_rooms_children(
     assert resp.status_code == 204
     assert await _chat_room_row_counts(db_session, target) == (0, 0, 0)
     assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1)
+
+
+async def test_delete_chat_room_viewed_by_admin_keeps_the_view_log_without_the_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """관리자가 한 번 열람한 방도 소유자가 지울 수 있어야 한다. 열람 로그는 감사 기록이라 남기고,
+    사라진 방을 가리키던 칸만 비운다 — 로그가 방 삭제를 막으면 사용자는 500을 받는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    admin_id = uuid.UUID(str((await _create_admin(db_session))["id"]))
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    await record_admin_action(
+        db_session,
+        admin_id=admin_id,
+        action_type="chat-view",
+        target_user_id=user.id,
+        target_chat_room_id=room_id,
+        reason_text="신고 확인",
+    )
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/chat-rooms/{room_id}")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room_id)) == 0
+    logs = (
+        await db_session.execute(
+            sa.select(AdminActionLog.target_chat_room_id, AdminActionLog.target_user_id).where(
+                AdminActionLog.admin_id == admin_id
+            )
+        )
+    ).all()
+    assert [tuple(row) for row in logs] == [(None, user.id)]
 
 
 async def test_pin_latest_version_updates_pinned_version_and_preserves_messages(
