@@ -32,18 +32,21 @@ def _log_usage(usage: LLMCallContext, model: str, usage_metadata: object | None)
     """호출 한 건의 토큰 사용량을 고정 토큰 `gemini_usage`로
     한 줄 남긴다(`info`는 프로덕션에서 사라지므로 `warning`). 🔴 프롬프트·응답 텍스트는 인자로
     받지도 않는다 — 개수와 id만 찍는다. 메타데이터가 없으면 토큰을 None으로 두고 `usage=missing`을
-    붙인다(없다는 사실이 로그에 보여야 한다).
+    붙인다(없다는 사실이 로그에 보여야 한다). `cached_content_tokens`는 `prompt_tokens` 중 암시
+    캐시가 적중한 몫이다 — 턴 원가를 입력 토큰만으로 추정하면 캐시 할인이 빠지므로 함께 찍는다.
+    적중이 없으면 SDK가 None을 준다.
 
     **절대 raise하지 않는다** — `generate()`는 SSE 제너레이터 안에서 소비되고, 본문을 뚫는 예외는
     요청 스코프 DB 세션을 강제 종료시켜 풀을 오염시킨다(apps/api/CLAUDE.md §SSE). 필드 추출과
     logger 호출을 통째로 감싸 실패하면 그 한 줄만 버린다."""
     try:
         logger.warning(
-            "gemini_usage call_site=%s model=%s prompt_tokens=%s candidates_tokens=%s thoughts_tokens=%s "
-            "total_tokens=%s user_id=%s room_id=%s%s",
+            "gemini_usage call_site=%s model=%s prompt_tokens=%s cached_content_tokens=%s candidates_tokens=%s "
+            "thoughts_tokens=%s total_tokens=%s user_id=%s room_id=%s%s",
             usage.call_site,
             model,
             getattr(usage_metadata, "prompt_token_count", None),
+            getattr(usage_metadata, "cached_content_token_count", None),
             getattr(usage_metadata, "candidates_token_count", None),
             getattr(usage_metadata, "thoughts_token_count", None),
             getattr(usage_metadata, "total_token_count", None),

@@ -504,20 +504,23 @@ async def resolve_appeal(
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Moderation action not found"
             )
-        content = await db.get(Content, action.content_id)
-        assert content is not None
+        # 소유자가 조치된 초안을 지웠으면 `content_id`가 비어 있다 — 되돌릴 작품 상태가 없으니
+        # 발행 반려 수용처럼 이의제기만 처리한다.
+        if action.content_id is not None:
+            content = await db.get(Content, action.content_id)
+            assert content is not None
 
-        content.moderation_status = ModerationStatus.NORMAL
-        await upgrade_content_chat_rooms_to_latest_version(db, content)
+            content.moderation_status = ModerationStatus.NORMAL
+            await upgrade_content_chat_rooms_to_latest_version(db, content)
 
-        # 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만
-        # 남긴다(발행 반려 수용·기각은 바뀌는 상태가 없다). `moderation_actions` 행은 추가하지 않는다.
-        await record_admin_action(
-            db,
-            admin_id=admin_id,
-            action_type="appeal-accept",
-            target_content_id=action.content_id,
-        )
+            # 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만
+            # 남긴다(발행 반려 수용·기각은 바뀌는 상태가 없다). `moderation_actions` 행은 추가하지 않는다.
+            await record_admin_action(
+                db,
+                admin_id=admin_id,
+                action_type="appeal-accept",
+                target_content_id=action.content_id,
+            )
 
     appeal.status = AppealStatus.RESOLVED
     appeal.verdict = body.verdict

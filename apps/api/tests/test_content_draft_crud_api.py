@@ -20,6 +20,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.moderation import AdminActionLog, ModerationAction, Notification
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -31,7 +32,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_asset, _make_user
 
 
 async def _make_empty_character_draft(
@@ -1375,3 +1376,78 @@ async def test_delete_content_draft_returns_409_for_content_with_publish_history
     assert (
         await db_session.scalar(sa.select(ContentVersion).where(ContentVersion.id == published.id))
     ) is not None
+
+
+async def _restrict_draft_as_admin_then_login_as_owner(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> tuple[uuid.UUID, Content]:
+    """관리자 작품 목록은 초안만 있는 작품도 나열하고 조치는 발행 여부를 보지 않는다 — 그래서
+    초안에도 조치 행·감사 로그·알림이 생긴다. 소유자 id와 초안을 돌려준다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+
+    await _login_as_admin(db_client, admin_payload)
+    action_resp = await db_client.post(
+        f"/admin/contents/{content.id}/action",
+        json={"action": "restrict", "reasonCategory": "hate", "adminComment": "초안 조치"},
+    )
+    assert action_resp.status_code == 200
+    await _login_as(db_client, user.id)
+    return user.id, content
+
+
+async def test_delete_content_draft_keeps_admin_action_records_with_the_content_link_cleared(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """관리자가 조치한 초안도 소유자가 지울 수 있어야 한다. 조치 행·감사 로그·소유자 알림은
+    기록이라 남기고 사라진 작품을 가리키던 칸만 비운다."""
+    user_id, content = await _restrict_draft_as_admin_then_login_as_owner(db_client, db_session)
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+    assert resp.status_code == 204
+
+    assert (await db_session.scalar(sa.select(Content.id).where(Content.id == content.id))) is None
+    action_rows = (await db_session.execute(sa.select(ModerationAction.id, ModerationAction.content_id))).all()
+    assert len(action_rows) == 1
+    assert action_rows[0].content_id is None
+    log_rows = (
+        await db_session.execute(sa.select(AdminActionLog.action_type, AdminActionLog.target_content_id))
+    ).all()
+    assert [tuple(row) for row in log_rows] == [("content-restrict", None)]
+    notification_rows = (
+        await db_session.execute(
+            sa.select(Notification.content_id, Notification.action_id).where(Notification.user_id == user_id)
+        )
+    ).all()
+    assert [tuple(row) for row in notification_rows] == [(None, action_rows[0].id)]
+
+
+async def test_accepting_an_appeal_on_an_action_whose_draft_was_deleted_resolves_it(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """작품이 사라진 조치에 이의제기가 수용되면 되돌릴 작품 상태가 없다 — 500이 아니라
+    이의제기만 처리된다."""
+    _, content = await _restrict_draft_as_admin_then_login_as_owner(db_client, db_session)
+    action_id = await db_session.scalar(sa.select(ModerationAction.id))
+    assert action_id is not None
+    appeal_resp = await db_client.post(
+        "/appeals",
+        json={"targetKind": "moderation-action", "targetId": str(action_id), "reasonText": "이의 있음"},
+    )
+    assert appeal_resp.status_code == 201
+    assert (await db_client.delete(f"/contents/{content.id}/draft")).status_code == 204
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    resp = await db_client.post(
+        f"/admin/appeals/{appeal_resp.json()['appealId']}/resolve", json={"verdict": "accepted"}
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "resolved"
+    assert resp.json()["verdict"] == "accepted"

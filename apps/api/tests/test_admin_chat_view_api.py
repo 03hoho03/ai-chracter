@@ -1,9 +1,18 @@
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timedelta, timezone, UTC
+from typing import Any
 
 import httpx
+import pytest
+import pytest_asyncio
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.exc import DBAPIError
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
+
+from api.admin import chat_view
+from api.admin.schemas import AdminChatMessagesResponse
+from api.chat.room_deletion import delete_chat_rooms
 
 from api.db.models import (
     AdminActionLog,
@@ -16,6 +25,7 @@ from api.db.models import (
     ContentVisibility,
     ModerationStatus,
     Notification,
+    User,
 )
 from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
@@ -455,3 +465,90 @@ async def test_cursor_boundary_with_duplicate_created_at_not_lost_or_duplicated(
     # 유실도 중복도 없이 나머지 두 개(m1 + t1 짝 중 나머지 하나)가 정확히 이어진다.
     assert page2_ids == all_ids - page1_ids
     assert len(page2_ids) == 2
+
+
+# ---- 열람과 방 삭제의 경합 ----------------------------------------------------
+
+# teardown이 지울 대상을 고르는 표지. 아래 픽스처로 만든 유저(와 그 작품·방)만 지운다.
+_RACE_MARKER_DOMAIN = "chat-view-race.test"
+
+
+@pytest_asyncio.fixture
+async def independent_session_factory(
+    db_engine: AsyncEngine,
+) -> AsyncGenerator[async_sessionmaker[AsyncSession], None]:
+    """롤백되지 않는 독립 커넥션. 경합은 `db_session` 한 커넥션 위에서는 재현되지 않는다 —
+    같은 트랜잭션끼리는 락을 다투지 않는다. 여기서 쓴 행은 커밋되므로 teardown이 표지로
+    골라 직접 지운다. 테스트 인자에서 `db_client`보다 앞에 두어 `db_session` 롤백(락 해제)
+    뒤에 정리되게 한다."""
+    factory = async_sessionmaker(db_engine, expire_on_commit=False)
+    yield factory
+    async with factory() as cleanup:
+        user_ids = (
+            await cleanup.scalars(sa.select(User.id).where(User.email.like(f"%@{_RACE_MARKER_DOMAIN}")))
+        ).all()
+        if user_ids:
+            room_ids = (
+                await cleanup.scalars(sa.select(ChatRoom.id).where(ChatRoom.user_id.in_(user_ids)))
+            ).all()
+            await delete_chat_rooms(cleanup, room_ids)
+            content_ids = (
+                await cleanup.scalars(sa.select(Content.id).where(Content.creator_user_id.in_(user_ids)))
+            ).all()
+            await cleanup.execute(sa.delete(ContentVersion).where(ContentVersion.content_id.in_(content_ids)))
+            await cleanup.execute(sa.delete(Content).where(Content.id.in_(content_ids)))
+            await cleanup.execute(sa.delete(User).where(User.id.in_(user_ids)))
+        await cleanup.commit()
+
+
+async def test_view_returns_404_when_the_owner_deletes_the_room_before_the_log(
+    independent_session_factory: async_sessionmaker[AsyncSession],
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """존재 확인과 로그 커밋 사이에 소유자가 방을 지우면 로그 INSERT가 방 FK 위반이 된다 —
+    500이 아니라 확인 단계와 같은 404여야 한다. 순서를 강제하려고 존재 확인 뒤에 불리는 메시지
+    조회 헬퍼를 가로채 그 순간 독립 커넥션에서 방 삭제를 커밋한다. 삭제는 열람을 기다리지 않고
+    끝나야 한다 — 열람이 방 행을 락으로 붙잡으면 같은 순서의 탈퇴가 교착으로 깨진다(유저 행을
+    먼저 잠그고 방을 지운다). 락을 붙잡는 구현이면 여기서 `lock_timeout`에 걸려 "blocked"가 된다."""
+    async with independent_session_factory() as seed:
+        owner = _make_user(email=f"owner-{uuid.uuid4()}@{_RACE_MARKER_DOMAIN}")
+        seed.add(owner)
+        await seed.flush()
+        content = await _make_content(seed, creator_user_id=owner.id)
+        room = await _make_chat_room(seed, user_id=owner.id, content=content)
+        await seed.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    delete_outcomes: list[str] = []
+    list_messages_page = chat_view._list_messages_page
+
+    async def _delete_room_mid_request(*args: Any, **kwargs: Any) -> AdminChatMessagesResponse:
+        async with independent_session_factory() as owner_session:
+            await owner_session.execute(sa.text("SET LOCAL lock_timeout = '1s'"))
+            try:
+                await delete_chat_rooms(owner_session, [room.id])
+                await owner_session.commit()
+                delete_outcomes.append("deleted")
+            except DBAPIError:
+                await owner_session.rollback()
+                delete_outcomes.append("blocked")
+        return await list_messages_page(*args, **kwargs)
+
+    monkeypatch.setattr(chat_view, "_list_messages_page", _delete_room_mid_request)
+
+    resp = await db_client.post(
+        f"/admin/chat-rooms/{room.id}/view",
+        json={"reasonCategory": "report-investigation", "reasonText": "신고 확인차 열람"},
+    )
+
+    assert delete_outcomes == ["deleted"]
+    assert resp.status_code == 404
+    assert resp.json() == {"detail": "Chat room not found"}
+    assert (
+        await db_session.scalars(sa.select(AdminActionLog.id).where(AdminActionLog.target_user_id == owner.id))
+    ).all() == []

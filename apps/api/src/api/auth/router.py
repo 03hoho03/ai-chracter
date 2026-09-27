@@ -47,6 +47,7 @@ from api.auth.verification import (
     seconds_until_resend_allowed,
     store_verification_code,
 )
+from api.chat.room_deletion import delete_chat_rooms
 from api.core import clover, rate_limit
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
@@ -54,7 +55,7 @@ from api.core.email import EmailSender, get_email_sender
 from api.core.s3 import build_thumbnail_key, delete_object
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.db.models.auth import User, WithdrawnEmail
-from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomStat
+from api.db.models.chat import ChatRoom
 from api.db.models.content import Content, ContentVisibility
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
@@ -611,10 +612,7 @@ async def withdraw(
     )
 
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
-    if room_ids:
-        await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id.in_(room_ids)))
-        await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id.in_(room_ids)))
-        await db.execute(delete(ChatRoom).where(ChatRoom.id.in_(room_ids)))
+    await delete_chat_rooms(db, room_ids)
 
     # 위 `profile_image_asset_id = None` 대입이 DB에 반영된
     # 뒤라야 아래 `DELETE FROM assets`가 FK 위반을 내지 않는다. autoflush에 기대지 않는다.

@@ -6,7 +6,9 @@ import httpx
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.admin.action_log import record_admin_action
 from api.db.models import (
+    AdminActionLog,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -31,7 +33,7 @@ from api.db.models import (
     User,
     UserPersona,
 )
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _create_admin, _get_genre, _login_as, _make_asset, _make_user
 
 
 async def _make_published_character(
@@ -428,6 +430,100 @@ async def test_delete_chat_room_removes_room_and_messages(
         await db_session.execute(sa.select(ChatMessage).where(ChatMessage.chat_room_id == room_id))
     ).scalars().all()
     assert remaining == []
+
+
+async def _seed_chat_room_with_children(
+    db_session: AsyncSession, *, user_id: uuid.UUID, content_version: ContentVersion
+) -> uuid.UUID:
+    """메시지 1개·스탯 1개를 가진 방을 심는다. 방 삭제가 자식을 빠짐없이, 그리고 **그 방 것만**
+    지우는지 보려면 지워질 방과 남아야 할 방 양쪽에 자식이 있어야 한다."""
+    room = ChatRoom(user_id=user_id, content_id=content_version.content_id, content_version_id=content_version.id)
+    db_session.add(room)
+    await db_session.flush()
+    db_session.add(ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="안녕"))
+    db_session.add(ChatRoomStat(chat_room_id=room.id, stat_entity_id=uuid.uuid4(), current_value=Decimal(1)))
+    await db_session.flush()
+    return room.id
+
+
+async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[int, int, int]:
+    """(방, 메시지, 스탯) 행 수. 컬럼 단위 count라 요청과 같은 세션의 identity map에 남은 객체에
+    속지 않는다."""
+    counts = []
+    for model, column in (
+        (ChatRoom, ChatRoom.id),
+        (ChatMessage, ChatMessage.chat_room_id),
+        (ChatRoomStat, ChatRoomStat.chat_room_id),
+    ):
+        counts.append(await db_session.scalar(sa.select(sa.func.count()).select_from(model).where(column == room_id)))
+    return (counts[0] or 0, counts[1] or 0, counts[2] or 0)
+
+
+async def test_delete_chat_room_removes_only_that_rooms_children(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방 삭제는 그 방의 메시지·스탯·방 행을 모두 지우고, 같은 사용자의 다른 방은 건드리지 않는다.
+    탈퇴도 같은 삭제 함수를 쓰므로 그 함수의 방 필터가 넓어지면 두 경로가 함께 여기서 드러난다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version = await db_session.scalar(
+        sa.select(ContentVersion).where(
+            ContentVersion.content_id == content.id, ContentVersion.published_at.is_not(None)
+        )
+    )
+    assert version is not None
+    target = await _seed_chat_room_with_children(db_session, user_id=user.id, content_version=version)
+    sibling = await _seed_chat_room_with_children(db_session, user_id=user.id, content_version=version)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.delete(f"/chat-rooms/{target}")
+
+    assert resp.status_code == 204
+    assert await _chat_room_row_counts(db_session, target) == (0, 0, 0)
+    assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1)
+
+
+async def test_delete_chat_room_viewed_by_admin_keeps_the_view_log_without_the_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """관리자가 한 번 열람한 방도 소유자가 지울 수 있어야 한다. 열람 로그는 감사 기록이라 남기고,
+    사라진 방을 가리키던 칸만 비운다 — 로그가 방 삭제를 막으면 사용자는 500을 받는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    admin_id = uuid.UUID(str((await _create_admin(db_session))["id"]))
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    await record_admin_action(
+        db_session,
+        admin_id=admin_id,
+        action_type="chat-view",
+        target_user_id=user.id,
+        target_chat_room_id=room_id,
+        reason_text="신고 확인",
+    )
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/chat-rooms/{room_id}")
+
+    assert resp.status_code == 204
+    assert await db_session.scalar(sa.select(sa.func.count()).select_from(ChatRoom).where(ChatRoom.id == room_id)) == 0
+    logs = (
+        await db_session.execute(
+            sa.select(AdminActionLog.target_chat_room_id, AdminActionLog.target_user_id).where(
+                AdminActionLog.admin_id == admin_id
+            )
+        )
+    ).all()
+    assert [tuple(row) for row in logs] == [(None, user.id)]
 
 
 async def test_pin_latest_version_updates_pinned_version_and_preserves_messages(

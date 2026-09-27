@@ -34,6 +34,7 @@ from api.chat.prompt_builder import (
     user_persona_rendered,
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
+from api.chat.room_deletion import delete_chat_rooms
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
     ChatDoneEvent,
@@ -1791,9 +1792,8 @@ async def delete_chat_room(
     children must be deleted before the room itself."""
     room = await _get_owned_room(db, room_id, user_id)
 
-    await db.execute(delete(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
-    await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
-    await db.delete(room)
+    # 자식 목록은 탈퇴와 같은 한 곳에 있다 — 자식 테이블이 늘 때 두 경로가 함께 따라가게.
+    await delete_chat_rooms(db, [room.id])
     await db.commit()
 
 

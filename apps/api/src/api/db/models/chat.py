@@ -60,8 +60,10 @@ class ChatMessage(Base):
         Enum(ChatMessageRole, name="chat_message_role"), nullable=False
     )
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    # 메시지 순서는 이 값 하나로 정한다. `now()`는 트랜잭션 시작 시각이라 한 트랜잭션에 넣은
+    # 메시지들이 같은 값을 갖고 순서가 힙의 물리 위치에 맡겨진다 — 문장 실행 시각을 쓴다.
     created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
+        DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False
     )
     # 상황이미지 매칭 결과의 entity_id. FK 없음 — entity_id는 버전 간
     # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례. 캐릭터 챗 assistant 메시지에만

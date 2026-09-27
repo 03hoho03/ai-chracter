@@ -3,6 +3,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select, tuple_
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
@@ -107,7 +108,18 @@ async def view_chat_room(
         reason_category=body.reason_category.value,
         reason_text=body.reason_text,
     )
-    await db.commit()
+    # 위에서 확인한 방을 소유자가 그 사이에 지우면(방 삭제·탈퇴) 이 커밋이 방 FK 위반이 된다.
+    # 방이 없는 것이니 확인 단계와 같은 404로 답한다. 이 로그가 가리키는 나머지 대상(관리자,
+    # 소프트 삭제만 하는 유저)은 행이 사라지지 않아 여기서 위반될 수 있는 FK는 방 하나다.
+    # 방 행을 락으로 붙잡는 대신 이렇게 하는 이유: 탈퇴는 유저 행을 먼저 잠그고 방을 지우는데,
+    # 열람이 방을 먼저 잠그면 로그 INSERT의 유저 FK 검사와 맞물려 교착이 되고 탈퇴 쪽이 깨진다.
+    try:
+        await db.commit()
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found"
+        ) from None
 
     return response
 

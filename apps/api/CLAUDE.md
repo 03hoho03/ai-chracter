@@ -184,7 +184,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
   - 같은 이유로 **`TestClient`를 쓰지 않는다** — 호출마다 별도 백그라운드 루프를 띄워 세션 스코프 루프와 섞이면 "Future attached to a different loop"가 실행 순서에 따라 산발적으로 난다. `httpx.AsyncClient(transport=ASGITransport(app=app))`(`api_client`/`db_client`)를 쓸 것.
 - **테스트는 dev와 분리된 DB(`ai_character_chat_test`)/Redis(1번)를 쓴다.** `conftest.py`가 `api.core.config` **import 전에** `DATABASE_URL`/`REDIS_URL`을 **직접 대입**한다(`setdefault`는 `--env-file .env`로 돌리면 조용히 무시돼 **dev DB를 밀어버린다**). 이름이 `_test`로 안 끝나면 `RuntimeError`로 거부하고, DB 껍데기는 절대 drop하지 않는다.
 - `db_session`은 커넥션 단위 트랜잭션 + 롤백이고, `db_client`가 `get_db_session`·`get_session_factory`를 그 커넥션에 바인딩해 오버라이드한다(`conditional_savepoint` 덕에 애플리케이션 `commit()`이 바깥 트랜잭션을 끝내지 않는다).
-  - **그래서 `now()`는 한 테스트 안에서 완전히 동일한 값이다**(트랜잭션 시작 시각 고정). 라이브 호출 여러 번으로 `created_at` 순서를 검증하려 하지 말고 `created_at`을 명시적으로 다르게 넣을 것.
+  - **그래서 `now()`는 한 테스트 안에서 완전히 동일한 값이다**(트랜잭션 시작 시각 고정). 라이브 호출 여러 번으로 `created_at` 순서를 검증하려 하지 말고 `created_at`을 명시적으로 다르게 넣을 것. 예외는 `chat_messages.created_at`이다 — 기본값이 `clock_timestamp()`(문장 실행 시각)라 한 트랜잭션 안에서도 삽입 순서대로 값이 달라진다.
 - **S3는 `mock_aws()`가 아니라 `ThreadedMotoServer`로 흉내낸다** — `api.main`을 이미 import한 프로세스에서는 `mock_aws`의 패치가 `run_in_threadpool` 워커 스레드에 적용되지 않아 HeadObject가 **실제 AWS로 나간다**(실측). 새로 만드는 `boto3.client(...)`에도 항상 `endpoint_url=settings.s3_endpoint_url`을 명시할 것.
 - DB I/O가 없는 순수 함수(스탯 클램핑, 규칙 평가, 키워드 매칭)는 **ORM 모델을 세션 없이 생성자로만 채워** 테스트한다(`nullable=False`는 DB 제약일 뿐이라 나머지 필드는 생략 가능).
 - **`LLMClient`를 상속하는 모든 페이크는 실제 시그니처를 그대로 따라야 한다**(예: `generate_structured`의 `images` 파라미터) — 빠지면 `[override]` mypy 에러가 여러 테스트 파일에서 동시에 난다. LLM을 실제로 안 쓰는 실패 케이스 테스트도 `get_llm_client` 오버라이드가 필요하다(라우트 본문 전에 resolve되고, 키가 없으면 즉시 `ValueError`).

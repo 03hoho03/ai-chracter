@@ -68,7 +68,11 @@ class ModerationAction(Base):
     __tablename__ = "moderation_actions"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
-    content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), nullable=False)
+    # 조치는 초안에도 걸릴 수 있고 초안은 소유자가 지울 수 있다. 조치 기록은 남기고 사라진 작품을
+    # 가리키던 칸만 비운다 — 그래서 NULL이 곧 "작품이 삭제됨"이다.
+    content_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("contents.id", ondelete="SET NULL"), nullable=True
+    )
     admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
     action: Mapped[ModerationActionType] = mapped_column(
         Enum(ModerationActionType, name="moderation_action_type"), nullable=False
@@ -97,7 +101,10 @@ class Notification(Base):
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
     type: Mapped[str] = mapped_column(Text, server_default="moderation-action", nullable=False)
-    content_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("contents.id"), nullable=True)
+    # 조치 통지가 가리키던 초안을 소유자가 지우면 통지는 남기고 작품 칸만 비운다.
+    content_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("contents.id", ondelete="SET NULL"), nullable=True
+    )
     action_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("moderation_actions.id"), nullable=True
     )
@@ -197,11 +204,14 @@ class AdminActionLog(Base):
     admin_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("admin_users.id"), nullable=False)
     action_type: Mapped[AdminActionType] = mapped_column(Text, nullable=False)
     target_user_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("users.id"), nullable=True)
+    # 초안 삭제도 같은 이유 — 조치 로그는 남기고 사라진 작품 칸만 비운다.
     target_content_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("contents.id"), nullable=True
+        Uuid, ForeignKey("contents.id", ondelete="SET NULL"), nullable=True
     )
+    # 소유자는 관리자가 열람한 방도 지울 수 있다(방 삭제·탈퇴). 로그는 감사 기록이라 남기고
+    # 사라진 방을 가리키던 칸만 비운다 — 누가 언제 누구의 채팅을 봤는지는 `target_user_id`로 남는다.
     target_chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
-        Uuid, ForeignKey("chat_rooms.id"), nullable=True
+        Uuid, ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
     )
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
