@@ -4,7 +4,7 @@ from datetime import datetime, timezone, UTC
 import pytest
 import sqlalchemy as sa
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession
 
 from api.db.models import (
     CharacterImageExposure,
@@ -89,6 +89,47 @@ async def test_chat_message_attaches_to_chat_room(db_session: AsyncSession) -> N
     await db_session.flush()
 
     assert message.role == ChatMessageRole.USER
+
+
+async def test_chat_messages_inserted_in_one_transaction_sort_by_created_at_in_insert_order(
+    db_session: AsyncSession, db_engine: AsyncEngine
+) -> None:
+    """메시지 순서는 `ORDER BY created_at` 하나로만 정해진다(타이브레이커 없음). 기본값이
+    트랜잭션 시작 시각이면 한 트랜잭션에 넣은 메시지가 전부 같은 값을 가져, 동률은 힙의
+    물리 순서대로 나온다 — 그 사이에 다른 커넥션의 VACUUM이 앞서 죽은 행의 슬롯을 풀면
+    뒤에 넣은 행이 앞 슬롯에 들어가 순서가 뒤집힌다(테스트 하나가 외부 트랜잭션 하나로
+    감싸이는 이 하네스에서 autovacuum이 끼면 실제로 생긴다). 문장 실행 시각이 기본값이면
+    물리 순서와 무관하게 삽입 순서가 나와야 한다."""
+    room = await _make_chat_room(db_session)
+
+    # 롤백된 행이 슬롯을 차지한 채로 남게 한다(앞 테스트가 넣었다 롤백한 행의 재현).
+    async with db_session.begin_nested() as savepoint:
+        db_session.add_all(
+            [ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="버려짐") for _ in range(5)]
+        )
+        await db_session.flush()
+        await savepoint.rollback()
+
+    contents = ["오프닝", "유저", "원래응답"]
+    for index, content in enumerate(contents):
+        role = ChatMessageRole.USER if content == "유저" else ChatMessageRole.ASSISTANT
+        db_session.add(ChatMessage(chat_room_id=room.id, role=role, content=content))
+        await db_session.flush()
+        if index == 0:
+            async with db_engine.connect() as other:
+                autocommit = await other.execution_options(isolation_level="AUTOCOMMIT")
+                await autocommit.execute(sa.text("VACUUM (INDEX_CLEANUP ON) chat_messages"))
+
+    rows = (
+        await db_session.execute(
+            sa.select(ChatMessage.content, ChatMessage.created_at)
+            .where(ChatMessage.chat_room_id == room.id)
+            .order_by(ChatMessage.created_at.asc())
+        )
+    ).all()
+
+    assert [row.content for row in rows] == contents
+    assert len({row.created_at for row in rows}) == len(contents)
 
 
 async def test_chat_room_stat_composite_pk_allows_multiple_stats_per_room(
