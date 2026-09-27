@@ -13,6 +13,7 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     Content,
     ContentTarget,
@@ -982,6 +983,63 @@ async def test_change_starting_setup_creates_new_room_and_keeps_old_one(
         await db_session.execute(sa.select(ChatMessage).where(ChatMessage.chat_room_id == old_room_id))
     ).scalars().all()
     assert len(old_messages) == 2
+
+
+async def test_change_starting_setup_starts_the_new_room_with_no_memory_and_keeps_the_old_rooms(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """기억은 그 방의 이야기라 새 시작설정과 충돌한다 — 대화 프로필과 달리 새 방에 잇지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    first_setup = await _add_starting_setup(db_session, story, opening_message="첫 시작", order=1)
+    second_setup = await _add_starting_setup(db_session, story, opening_message="다른 시작", order=2)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    old_room_id = uuid.UUID(
+        (
+            await _create_room_via_api(db_client, story.id, content_type="story", starting_setup_id=first_setup.id)
+        ).json()["id"]
+    )
+    opening_key = (
+        await db_session.execute(
+            sa.select(ChatMessage.created_at, ChatMessage.id).where(ChatMessage.chat_room_id == old_room_id)
+        )
+    ).one()
+    await db_session.execute(
+        sa.update(ChatRoom).where(ChatRoom.id == old_room_id).values(memory_note="주인공은 고양이를 무서워한다")
+    )
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=old_room_id,
+            cursor_created_at=opening_key.created_at,
+            cursor_message_id=opening_key.id,
+            summary_text="지금까지의 요약",
+            source="auto",
+        )
+    )
+    await db_session.commit()
+
+    resp = await db_client.post(
+        f"/chat-rooms/{old_room_id}/change-starting-setup", json={"startingSetupId": str(second_setup.id)}
+    )
+
+    assert resp.status_code == 201
+    new_room_id = uuid.UUID(resp.json()["id"])
+    notes = dict(
+        (
+            await db_session.execute(
+                sa.select(ChatRoom.id, ChatRoom.memory_note).where(ChatRoom.id.in_([old_room_id, new_room_id]))
+            )
+        ).tuples().all()
+    )
+    assert notes == {old_room_id: "주인공은 고양이를 무서워한다", new_room_id: ""}
+    snapshot_rooms = (
+        await db_session.execute(sa.select(ChatRoomMemorySnapshot.chat_room_id))
+    ).scalars().all()
+    assert snapshot_rooms == [old_room_id]
 
 
 # ---- 대화 프로필 — 새 방의 `persona_id` (`_create_room`) ----
