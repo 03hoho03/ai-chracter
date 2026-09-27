@@ -45,6 +45,19 @@ class ChatRoom(Base):
     persona_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("user_personas.id", name="fk_chat_rooms_persona_id"), nullable=True
     )
+    # 사용자가 직접 쓰는 기억 노트. 요약을 만드는 코드는 이 컬럼을 쓰지 않는다 — LLM이 고쳐 쓰지
+    # 못하는 칸이라는 약속이 이 분리로만 지켜진다. 방과 함께 사라지고 새 방에 승계하지 않는다.
+    memory_note: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    # 요약 쪽 상태(스냅샷)가 바뀔 때마다 1씩 오르는 방 단위 카운터. 백그라운드 요약 커밋과 사용자
+    # 요약 편집은 읽을 때의 값이 그대로일 때만 쓰고, 되감기·초기화·삭제는 무조건 올려 그 사이
+    # 진행 중이던 요약을 무효로 만든다. 노트 저장은 올리지 않는다(노트 저장이 요약 편집을 충돌로
+    # 만들지 않게).
+    memory_version: Mapped[int] = mapped_column(Integer, server_default="0", nullable=False)
+    # 메시지 편집·삭제로 요약 스냅샷이 실제로 한 행 이상 지워진 마지막 시각. 기억 패널이 "요약이
+    # 되돌아갔다"는 알림을 한 번 띄우는 기준이다. 초기화는 되감기 안내 대상이 아니라 NULL로 둔다.
+    memory_rolled_back_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     # 프로필 삭제의 `UPDATE chat_rooms SET persona_id=NULL WHERE persona_id=…`가 전체
     # 스캔이 되지 않게 한다.
@@ -69,6 +82,50 @@ class ChatMessage(Base):
     # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례. 캐릭터 챗 assistant 메시지에만
     # 채워지고 스토리 챗은 항상 NULL.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
+
+
+class ChatRoomMemorySnapshot(Base):
+    """방의 롤링 요약 한 판. 윈도우 밖으로 접힌 대화를 요약한 텍스트와, 그 요약이 덮는 마지막
+    메시지의 키(커서)를 함께 둔다. 방마다 여러 행이 쌓이고 커서가 가장 큰 행이 현재 요약이다.
+
+    커서는 메시지 정렬과 같은 `(created_at, id)` 튜플이다 — `created_at`이 같은 메시지가 있어도
+    경계가 한 메시지로 정해진다. `cursor_message_id`에 FK를 걸지 않는다: 커서 이하 메시지를
+    지우는 경로(편집·삭제·재생성·초기화·방 삭제·탈퇴)는 같은 트랜잭션에서 이 행부터 지워야 하고,
+    그러면 가리킬 메시지가 사라진 행은 남지 않는다.
+
+    `previous_text`는 사용자가 이 행의 요약을 고쳤을 때 고치기 직전 값이다(되돌리기 한 단계).
+    `source`는 `"auto"`(요약 호출이 만든 행)·`"user"`(사용자가 고친 행)뿐이고 Postgres ENUM이
+    아니라 Text다 — 허용값은 이 행을 쓰는 코드와 응답 스키마가 강제한다.
+
+    `relationship()`·`ondelete`는 선언하지 않는다(저장소 규약) — 위 경로들이 이 행을 직접
+    지운다.
+    """
+
+    __tablename__ = "chat_room_memory_snapshots"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    chat_room_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("chat_rooms.id"), nullable=False)
+    cursor_created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cursor_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    summary_text: Mapped[str] = mapped_column(Text, nullable=False)
+    previous_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 현재 요약(커서 최대 행)과 되감기의 "커서 ≥ 지운 메시지 키" 삭제가 전부 이 순서로 찾는다.
+    __table_args__ = (
+        Index(
+            "ix_chat_room_memory_snapshots_room_cursor",
+            "chat_room_id",
+            "cursor_created_at",
+            "cursor_message_id",
+        ),
+    )
 
 
 class ChatRoomStat(Base):
