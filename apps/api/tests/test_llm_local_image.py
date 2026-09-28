@@ -133,6 +133,22 @@ async def test_422_with_image_reason_raises_block_error_with_reason_preserved(
     assert exc_info.value.reason == "image"
 
 
+async def test_422_with_reference_reason_raises_block_error_with_reason_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """참조 이미지 사전 검사가 막은 요청이 일반 실패로 떨어지면, 사용자는 "다른 이미지를
+    고르라"는 안내 대신 "모두 실패"를 보고 같은 참조로 다시 시도하며, 정책 차단마다 장애
+    이벤트가 쌓인다."""
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "reference image blocked", "reason": "reference"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LocalImageBlockedError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert exc_info.value.reason == "reference"
+
+
 async def test_422_missing_reason_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -260,8 +276,8 @@ async def test_422_list_detail_with_long_input_field_is_capped_in_error_message(
 async def test_422_with_syntax_reason_raises_input_error_syntax(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """집 PC가 `reason: "syntax"`를 추가했다. 이 테스트는 화이트리스트 3값(`prompt`/`image`/`syntax`)
-    계약을 고정한다."""
+    """집 PC가 `reason: "syntax"`를 추가했다. 이 테스트는 화이트리스트 4값(`prompt`/`image`/`reference`/`syntax`)
+    중 입력 오류로 가는 `syntax`를 고정한다."""
     from api.llm.local_image import LocalImageInputError
 
     def handler(_request: httpx.Request) -> httpx.Response:

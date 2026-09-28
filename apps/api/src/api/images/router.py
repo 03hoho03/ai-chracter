@@ -254,9 +254,10 @@ async def _run_generation(
             logger.warning("local image generation blocked: reason=%s count=%d", blocked_reason, blocked_count)
             distinct_reasons = set(blocked_reasons)
             if len(distinct_reasons) > 1:
-                # 프롬프트 가드는 결정적이라 한 잡 안에서
-                # 사유가 섞일 수 없다 — 섞이면 로컬이 계약을 어긴
-                # 것이므로 조용히 넘기지 않는다.
+                # 프롬프트 가드는 결정적이라 `prompt`는 한 잡 안에서
+                # 다른 사유와 섞일 수 없다 — 섞이면 로컬이 계약을 어긴
+                # 것이므로 조용히 넘기지 않는다. 참조 이미지는 같은 참조를 장마다 따로
+                # 검사하므로 `reference`와 `image`가 섞이는 경우도 이 경고가 남긴다.
                 logger.warning(
                     "local image generation blocked reasons mismatched within one job: reasons=%s",
                     sorted(distinct_reasons),

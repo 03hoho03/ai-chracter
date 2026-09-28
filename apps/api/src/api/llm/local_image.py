@@ -4,7 +4,7 @@ capabilities 조회를 한 함수로 합친 이유는 콜드 캐시에서도 `ge
 동작해야 해서다 — `/images/models`와 `generate_images` 두 호출부가 이 함수 하나를 공유한다.
 
 Pillow는 import하지 않는다 — 서버가 픽셀을 열어 볼 일이 없기 때문이다. 콘텐츠 가드는 집
-PC가 생성 전(프롬프트)·생성 후(이미지) 2단계로 돌리고(DEPLOY.md "이미지 생성" 절), 서버는 그 결과인
+PC가 생성 전(프롬프트·참조 이미지)·생성 후(이미지) 2단계로 돌리고(DEPLOY.md "이미지 생성" 절), 서버는 그 결과인
 `422`를 받아 `LocalImageBlockedError`로 정규화하기만 한다 — 판정을
 서버에서 다시 하지 않으니 이미지 바이트를 디코드할 이유가 없다. Pillow는 import에만 3.7MB를
 읽고 이 모듈은 모든 기동 경로(`llm/dependencies.py`)에 걸려 있으므로 그 비용을 되살리지
@@ -25,7 +25,7 @@ from api.llm.image import ImageClient
 
 
 class LocalImageBlockedError(LLMClientError):
-    """집 PC의 콘텐츠 정책 가드(프롬프트 사전 차단 · 이미지 사후 검증)가 422로 차단한
+    """집 PC의 콘텐츠 정책 가드(프롬프트·참조 이미지 사전 차단 · 이미지 사후 검증)가 422로 차단한
     경우에만 올린다. `LLMClientError`를 상속하는 이유는
     기존 `except LLMClientError` 경로가 이 예외를 놓쳐도 일반 실패로 안전하게 떨어지게
     하기 위해서다(fail-safe)."""
@@ -292,13 +292,13 @@ class LocalImageClient(ImageClient):
                 error_body = None
             detail = error_body.get("detail") if isinstance(error_body, dict) else None
             if exc.response.status_code == 422:
-                # 본문은 `{"detail": "...", "reason": "prompt"|"image"|"syntax"}`
+                # 본문은 `{"detail": "...", "reason": "prompt"|"image"|"reference"|"syntax"}`
                 # 평평한 구조다. `detail`은 해석하지 않는다 — 분기는 오직 `reason`이다.
-                # 본문이 JSON이 아니거나 `reason`이 계약 밖 값이면 일반 실패로 접는다 —
+                # 본문이 JSON이 아니거나 `reason`이 없거나 계약 밖 값이면 일반 실패로 접는다 —
                 # 프록시가 끼어든 422를 정책 차단으로
                 # 오독하면 안 된다.
                 reason = error_body.get("reason") if isinstance(error_body, dict) else None
-                if reason == "prompt" or reason == "image":
+                if reason == "prompt" or reason == "image" or reason == "reference":
                     raise LocalImageBlockedError(reason=reason) from exc
                 if reason == "syntax":
                     raise LocalImageInputError(input_error="syntax") from exc

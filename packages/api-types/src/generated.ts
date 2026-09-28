@@ -5054,7 +5054,7 @@ export interface components {
             /** Blockedcount */
             blockedCount: number;
             /** Blockedreason */
-            blockedReason: ("prompt" | "image") | null;
+            blockedReason: ("prompt" | "image" | "reference") | null;
             /** Inputerrorcount */
             inputErrorCount: number;
             /** Inputerror */
