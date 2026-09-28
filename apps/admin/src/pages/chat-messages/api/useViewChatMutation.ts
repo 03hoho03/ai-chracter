@@ -6,6 +6,9 @@ import { apiClient } from "@/shared/lib/api/client";
 
 export type AdminChatRoomViewRequest = components["schemas"]["AdminChatRoomViewRequest"];
 export type AdminChatMessagesResponse = components["schemas"]["AdminChatMessagesResponse"];
+// 열람 응답만 방 기억(노트·요약)을 싣는다 — 더보기 응답(`AdminChatMessagesResponse`)은 감사 로그 없이
+// 불리므로 기억을 싣지 않는다.
+export type AdminChatRoomViewResponse = components["schemas"]["AdminChatRoomViewResponse"];
 export type AdminChatMessageItem = components["schemas"]["AdminChatMessageItem"];
 
 /** 이 훅의 호출 1회 = 서버 감사 로그 1행(`apps/api/CLAUDE.md`). `useMutation`
@@ -22,9 +25,9 @@ export type AdminChatMessageItem = components["schemas"]["AdminChatMessageItem"]
 export function useViewChatMutation(roomId: string) {
   const queryClient = useQueryClient();
 
-  return useMutation<AdminChatMessagesResponse, ApiError, AdminChatRoomViewRequest>({
+  return useMutation<AdminChatRoomViewResponse, ApiError, AdminChatRoomViewRequest>({
     mutationFn: async (payload) =>
-      (await apiClient.post<AdminChatMessagesResponse>(`/admin/chat-rooms/${roomId}/view`, payload)).data,
+      (await apiClient.post<AdminChatRoomViewResponse>(`/admin/chat-rooms/${roomId}/view`, payload)).data,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminUserKeys.all }),
   });
 }
