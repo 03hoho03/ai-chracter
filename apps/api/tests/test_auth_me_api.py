@@ -691,3 +691,44 @@ async def test_withdraw_keeps_blocked_request_row_without_images(
     assert resp.status_code == 204
 
     assert await db_session.get(ImageGenerationRequest, request_id) is not None
+
+
+async def test_withdraw_deletes_generated_asset_that_a_kept_request_row_used_as_reference(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """차단된 요청 행은 탈퇴로 지우지 않지만(90일 파기 몫), 그 행이 참조로 가리키던 생성 이미지는
+    지운다. 참조 FK 가 비우지 않으면 asset DELETE 가 FK 위반이 돼 탈퇴 전체가 500 이다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+
+    asset = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    request = ImageGenerationRequest(
+        owner_user_id=user.id,
+        prompt="참조가 막힌 요청",
+        style="soft_portrait",
+        aspect_ratio="1:1",
+        model="v1",
+        requested_count=1,
+        status="blocked",
+        blocked_count=1,
+        blocked_reason="reference",
+        reference_asset_id=asset.id,
+    )
+    db_session.add(request)
+    await db_session.commit()
+    asset_id = asset.id
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert await db_session.get(Asset, asset_id) is None
+    await db_session.refresh(request)
+    assert request.reference_asset_id is None

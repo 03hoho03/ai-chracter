@@ -15,7 +15,7 @@ from api.db.models.content import (
     ContentVisibility,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from factories import _login_as, _make_user
 
@@ -592,3 +592,37 @@ async def test_delete_generated_image_referenced_only_by_draft_is_409(
             "field": "thumbnail",
         }
     ]
+
+
+async def test_delete_generated_image_used_as_reference_clears_the_reference_on_request_rows(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """참조로 쓰였다는 사실은 삭제를 막지 않는다 — 요청 행은 남고 참조 칸만 비워진다. 사용 중
+    판정에 참조를 넣으면 한 번 참조로 쓴 이미지는 영영 못 지운다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    request = ImageGenerationRequest(
+        owner_user_id=user.id,
+        prompt="a cat",
+        style="soft_portrait",
+        aspect_ratio="1:1",
+        model="v1",
+        requested_count=1,
+        status="blocked",
+        blocked_count=1,
+        blocked_reason="reference",
+        reference_asset_id=asset.id,
+    )
+    db_session.add(request)
+    await db_session.commit()
+    asset_id = asset.id
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset_id}")
+
+    assert resp.status_code == 204
+    assert await db_session.get(Asset, asset_id) is None
+    await db_session.refresh(request)
+    assert request.reference_asset_id is None
