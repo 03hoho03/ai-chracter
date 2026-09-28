@@ -21,7 +21,7 @@ const throwingStorage = {
 
 describe("isRollbackUnseen", () => {
   it("shows a rollback that was never seen", () => {
-    expect(isRollbackUnseen("2026-09-28T10:00:00Z", null)).toBe(true);
+    expect(isRollbackUnseen("2026-09-28T10:00:00Z", undefined)).toBe(true);
   });
 
   it("does not show the same rollback twice", () => {
@@ -33,7 +33,7 @@ describe("isRollbackUnseen", () => {
   });
 
   it("has nothing to show when the room was never rolled back", () => {
-    expect(isRollbackUnseen(null, null)).toBe(false);
+    expect(isRollbackUnseen(undefined, undefined)).toBe(false);
   });
 });
 
@@ -42,12 +42,12 @@ describe("seen rollback storage", () => {
     const storage = memoryStorage();
     writeSeenRollback(storage, "room-a", "2026-09-28T10:00:00Z");
     expect(readSeenRollback(storage, "room-a")).toBe("2026-09-28T10:00:00Z");
-    expect(readSeenRollback(storage, "room-b")).toBeNull();
+    expect(readSeenRollback(storage, "room-b")).toBeUndefined();
   });
 
   // 사생활 모드·차단된 사이트 데이터에서는 저장소 접근이 던진다 — 패널이 죽지 않고 "본 적 없음"이 된다.
   it("treats a throwing storage as never seen", () => {
-    expect(readSeenRollback(throwingStorage, "room-a")).toBeNull();
+    expect(readSeenRollback(throwingStorage, "room-a")).toBeUndefined();
   });
 
   it("ignores a throwing storage when writing", () => {
@@ -55,6 +55,6 @@ describe("seen rollback storage", () => {
   });
 
   it("treats a missing storage as never seen", () => {
-    expect(readSeenRollback(undefined, "room-a")).toBeNull();
+    expect(readSeenRollback(undefined, "room-a")).toBeUndefined();
   });
 });

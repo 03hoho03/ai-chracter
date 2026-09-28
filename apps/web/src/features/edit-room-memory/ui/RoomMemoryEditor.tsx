@@ -90,14 +90,14 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   // 요약 편집은 [고치기]를 누른 시점의 버전으로 저장한다 — 그사이 요약이 새로 접혔으면 서버가 409로 막는다.
   const [editBaseVersion, setEditBaseVersion] = useState(memory.version);
-  const [writeError, setWriteError] = useState<WriteErrorState | null>(null);
+  const [writeError, setWriteError] = useState<WriteErrorState | undefined>(undefined);
   const [announcement, setAnnouncement] = useState("");
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
   const focusEditButtonRef = useRef(false);
 
   // 되감기 알림: 롤백 한 번에 한 번. 패널이 열려 있는 동안 롤백이 일어나도(메시지 삭제 등) 잡는다.
-  const [shownRollbackAt, setShownRollbackAt] = useState<string | null>(null);
+  const [shownRollbackAt, setShownRollbackAt] = useState<string | undefined>(undefined);
   useEffect(() => {
     const storage = browserStorage();
     const rolledBackAt = memory.rolledBackAt;
@@ -132,7 +132,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   function handleStartSummaryEdit() {
     form.resetField("summary", { defaultValue: memory.summary?.text ?? "" });
     setEditBaseVersion(memory.version);
-    setWriteError(null);
+    setWriteError(undefined);
     setIsEditingSummary(true);
   }
 
@@ -143,7 +143,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 
   async function handleReloadAfterConflict() {
     await onReload();
-    setWriteError(null);
+    setWriteError(undefined);
     if (isEditingSummary) stopSummaryEdit();
   }
 
@@ -151,7 +151,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     if (saveSummaryMutation.isPending) return;
     if (!(await form.trigger("summary"))) return;
     const summary = schema.shape.summary.parse(form.getValues("summary"));
-    setWriteError(null);
+    setWriteError(undefined);
     try {
       ownWriteRef.current = true;
       const next = await saveSummaryMutation.mutateAsync(
@@ -168,7 +168,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 
   async function handleRevert() {
     if (revertMutation.isPending || !memory.summary?.canRevert) return;
-    setWriteError(null);
+    setWriteError(undefined);
     try {
       ownWriteRef.current = true;
       await revertMutation.mutateAsync(memory.version);
@@ -183,7 +183,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     if (saveNoteMutation.isPending) return;
     if (!(await form.trigger("note"))) return;
     const note = schema.shape.note.parse(form.getValues("note"));
-    setWriteError(null);
+    setWriteError(undefined);
     try {
       const next = await saveNoteMutation.mutateAsync(toNoteRequest({ note, summary: form.getValues("summary") }));
       form.resetField("note", { defaultValue: next.note });
@@ -195,7 +195,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 
   async function handleClearNote() {
     await onClearNoteRequest(async () => {
-      setWriteError(null);
+      setWriteError(undefined);
       try {
         const next = await clearNoteMutation.mutateAsync();
         form.resetField("note", { defaultValue: next.note });
@@ -302,7 +302,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           )}
         </div>
 
-        {shownRollbackAt !== null && (
+        {shownRollbackAt !== undefined && (
           <p className="flex gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs break-keep text-foreground">
             <History aria-hidden className="mt-px size-3.5 shrink-0 text-muted-foreground" />
             지난 메시지를 고치거나 지워서 요약이 이전 판으로 돌아갔어요.

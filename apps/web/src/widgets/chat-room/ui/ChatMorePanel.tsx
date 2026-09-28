@@ -16,7 +16,7 @@ type ChatMorePanelProps = ChatMoreNavProps;
 export function ChatMorePanel(props: ChatMorePanelProps) {
   const [panel, setPanel] = useAtom(chatSidePanelAtom);
   const isOpen = panel === "more";
-  const setIsOpen = (open: boolean) => setPanel(open ? "more" : null);
+  const setIsOpen = (open: boolean) => setPanel(open ? "more" : undefined);
   const isSidebarLayout = useIsChatMoreSidebarLayout();
 
   if (isSidebarLayout) {

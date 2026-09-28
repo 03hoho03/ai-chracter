@@ -22,17 +22,17 @@ export function createMemoryFollowUpRefresher(
   refresh: (roomId: string) => void,
   delayMs: number = MEMORY_FOLLOW_UP_REFRESH_DELAY_MS,
 ): MemoryFollowUpRefresher {
-  let previous: MemoryFollowUpState | null = null;
-  let timer: ReturnType<typeof setTimeout> | null = null;
+  let previous: MemoryFollowUpState | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   function cancel() {
-    if (timer !== null) clearTimeout(timer);
-    timer = null;
+    if (timer !== undefined) clearTimeout(timer);
+    timer = undefined;
   }
 
   return {
     update(state) {
-      if (previous !== null && previous.roomId !== state.roomId) {
+      if (previous !== undefined && previous.roomId !== state.roomId) {
         cancel();
         previous = state;
         return;
@@ -44,7 +44,7 @@ export function createMemoryFollowUpRefresher(
       cancel();
       const { roomId } = state;
       timer = setTimeout(() => {
-        timer = null;
+        timer = undefined;
         refresh(roomId);
       }, delayMs);
     },

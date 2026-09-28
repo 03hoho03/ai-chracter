@@ -32,7 +32,7 @@ export function ChatMemorySidebar({ roomId, triggerRef }: ChatMemorySidebarProps
   if (!isVisible) return null;
 
   function handleClose() {
-    setPanel(null);
+    setPanel(undefined);
     triggerRef.current?.focus();
   }
 

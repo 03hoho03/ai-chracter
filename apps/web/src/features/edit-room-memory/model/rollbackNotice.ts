@@ -18,11 +18,11 @@ export function browserStorage(): SeenStorage | undefined {
   }
 }
 
-export function readSeenRollback(storage: SeenStorage | undefined, roomId: string): string | null {
+export function readSeenRollback(storage: SeenStorage | undefined, roomId: string): string | undefined {
   try {
-    return storage?.getItem(storageKey(roomId)) ?? null;
+    return storage?.getItem(storageKey(roomId)) ?? undefined;
   } catch {
-    return null;
+    return undefined;
   }
 }
 
@@ -34,6 +34,6 @@ export function writeSeenRollback(storage: SeenStorage | undefined, roomId: stri
   }
 }
 
-export function isRollbackUnseen(rolledBackAt: string | null, seenRolledBackAt: string | null): boolean {
-  return rolledBackAt !== null && rolledBackAt !== seenRolledBackAt;
+export function isRollbackUnseen(rolledBackAt: string | undefined, seenRolledBackAt: string | undefined): boolean {
+  return rolledBackAt !== undefined && rolledBackAt !== seenRolledBackAt;
 }

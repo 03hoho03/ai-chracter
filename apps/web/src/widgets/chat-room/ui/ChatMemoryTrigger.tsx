@@ -39,7 +39,7 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
         size="icon"
         aria-label="기억 노트"
         aria-expanded={isOpen}
-        onClick={() => setPanel(isOpen ? null : "memory")}
+        onClick={() => setPanel(isOpen ? undefined : "memory")}
       >
         <NotebookPen aria-hidden className="size-4" />
       </Button>
@@ -47,7 +47,7 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => setPanel(open ? "memory" : null)}>
+    <Dialog open={isOpen} onOpenChange={(open) => setPanel(open ? "memory" : undefined)}>
       <DialogTrigger asChild>
         <Button ref={triggerRef} variant="ghost" size="icon" aria-label="기억 노트">
           <NotebookPen aria-hidden className="size-4" />
