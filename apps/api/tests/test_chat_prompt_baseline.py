@@ -456,3 +456,49 @@ def test_prompt_window_breaks_created_at_ties_by_message_id() -> None:
     ]
     cursor = (tied[1].created_at, tied[1].id)
     assert _contents(prompt_window(tied, cursor)) == ["오프닝", "같은 시각 뒤"]
+
+
+NOTE_MARK = "[NOTE] 우산은 파란색이다"
+SUMMARY_MARK = "[SUMMARY] 둘은 골목 끝 서점에서 처음 만났다"
+
+
+async def _write_memory(db_session: AsyncSession, room: SeededRoom, *, note: str, summary: str) -> None:
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room.room_id).values(memory_note=note))
+    await db_session.execute(
+        sa.update(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.chat_room_id == room.room_id)
+        .values(summary_text=summary)
+    )
+    await db_session.commit()
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+@pytest.mark.parametrize("lane", LANES)
+async def test_generation_prompt_carries_the_room_note_then_the_current_summary_before_the_window(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, action: str
+) -> None:
+    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    await _write_memory(db_session, room, note=NOTE_MARK, summary=SUMMARY_MARK)
+
+    prompt = _generation_prompt(await run_action(db_client, room, action, 36))
+
+    assert prompt.count(NOTE_MARK) == 1
+    assert prompt.count(SUMMARY_MARK) == 1
+    assert prompt.index(NOTE_MARK) < prompt.index(SUMMARY_MARK) < prompt.index(f"[U{SUMMARY_CURSOR_TURN + 1:02d}]")
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_generation_window_switched_off_drops_the_summary_but_keeps_the_note(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, lane: str
+) -> None:
+    """윈도우를 끄면 전체 히스토리가 실리므로 요약까지 실으면 같은 대화가 두 번 들어간다. 노트는
+    대화와 겹치지 않는 사용자 메모라 그대로 싣는다."""
+    monkeypatch.setattr(settings, "memory_window_generation", False)
+    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    await _write_memory(db_session, room, note=NOTE_MARK, summary=SUMMARY_MARK)
+
+    prompt = _generation_prompt(await run_action(db_client, room, "send", 36))
+
+    assert SUMMARY_MARK not in prompt
+    assert prompt.count(NOTE_MARK) == 1
+    assert "[U01]" in prompt

@@ -8,6 +8,7 @@
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
+from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,11 +19,20 @@ from api.db.models import ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
 MessageKey = tuple[datetime, uuid.UUID]
 
 
-async def load_summary_cursor(db: AsyncSession, room_id: uuid.UUID) -> MessageKey | None:
-    """방의 현재 요약(커서가 가장 큰 스냅샷)의 커서. 스냅샷이 없으면 None."""
+class CurrentSummary(NamedTuple):
+    cursor: MessageKey
+    text: str
+
+
+async def load_current_summary(db: AsyncSession, room_id: uuid.UUID) -> CurrentSummary | None:
+    """방의 현재 요약 — 커서가 가장 큰 스냅샷의 커서와 본문. 스냅샷이 없으면 None."""
     row = (
         await db.execute(
-            select(ChatRoomMemorySnapshot.cursor_created_at, ChatRoomMemorySnapshot.cursor_message_id)
+            select(
+                ChatRoomMemorySnapshot.cursor_created_at,
+                ChatRoomMemorySnapshot.cursor_message_id,
+                ChatRoomMemorySnapshot.summary_text,
+            )
             .where(ChatRoomMemorySnapshot.chat_room_id == room_id)
             .order_by(
                 ChatRoomMemorySnapshot.cursor_created_at.desc(), ChatRoomMemorySnapshot.cursor_message_id.desc()
@@ -32,7 +42,7 @@ async def load_summary_cursor(db: AsyncSession, room_id: uuid.UUID) -> MessageKe
     ).first()
     if row is None:
         return None
-    return (row.cursor_created_at, row.cursor_message_id)
+    return CurrentSummary(cursor=(row.cursor_created_at, row.cursor_message_id), text=row.summary_text)
 
 
 def prompt_window(messages: Sequence[ChatMessage], cursor: MessageKey | None) -> list[ChatMessage]:
