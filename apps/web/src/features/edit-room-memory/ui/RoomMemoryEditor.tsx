@@ -106,8 +106,9 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
     writeSeenRollback(storage, roomId, rolledBackAt);
   }, [memory.rolledBackAt, roomId]);
 
-  // 패널이 열린 채 요약이 새로 접히면 스크린리더에 알린다. 이 패널에서 저장·되돌리기한 결과는 그 자리에서
-  // 따로 알리므로 건너뛴다.
+  // 패널이 열린 채 요약이 바뀌면 스크린리더에 알린다. 바뀐 까닭은 새 접기만이 아니라 되감기 롤백·다른 탭의
+  // 고침일 수도 있어 까닭을 말하지 않는다. 이 패널에서 저장·되돌리기한 결과는 그 자리에서 따로 알리므로
+  // 건너뛴다.
   const summaryUpdatedAt = memory.summary?.updatedAt;
   const lastSummaryUpdatedAtRef = useRef(summaryUpdatedAt);
   const ownWriteRef = useRef(false);
@@ -118,7 +119,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
       ownWriteRef.current = false;
       return;
     }
-    setAnnouncement(summaryUpdatedAt ? "요약이 새로 정리됐어요." : "요약이 비었어요.");
+    setAnnouncement(summaryUpdatedAt ? "요약이 바뀌었어요." : "요약이 비었어요.");
   }, [summaryUpdatedAt]);
 
   // [저장]·[취소]로 편집 칸이 사라지면 포커스가 `<body>`로 떨어진다 — 다시 나타난 [고치기]로 돌린다.
