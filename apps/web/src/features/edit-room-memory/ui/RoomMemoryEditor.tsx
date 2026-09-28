@@ -144,6 +144,10 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     setIsEditingSummary(false);
   }
 
+  function handleCancelSummaryEdit() {
+    stopSummaryEdit();
+  }
+
   async function handleReloadAfterConflict() {
     await onReload();
     setWriteError(undefined);
@@ -243,7 +247,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={stopSummaryEdit}>
+          <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={handleCancelSummaryEdit}>
             취소
           </Button>
           <Button
