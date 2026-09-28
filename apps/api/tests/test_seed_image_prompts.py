@@ -103,7 +103,7 @@ class _FakeImageClient(ImageClient):
         self._model_id = model_id
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         if "fail" in prompt:
             raise LLMClientError("blank single-color image")
@@ -139,7 +139,7 @@ class _FlakyImageClient(ImageClient):
         self._model_id = model_id
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         _FlakyImageClient.calls += 1
         if _FlakyImageClient.calls == 1:
@@ -177,7 +177,7 @@ class _DeterministicFailureImageClient(ImageClient):
         self._model_id = model_id
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         _DeterministicFailureImageClient.calls += 1
         raise _DeterministicFailureImageClient.exc

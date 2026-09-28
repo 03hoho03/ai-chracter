@@ -3,7 +3,8 @@
 capabilities 조회를 한 함수로 합친 이유는 콜드 캐시에서도 `generate_images`의 사전 차단이
 동작해야 해서다 — `/images/models`와 `generate_images` 두 호출부가 이 함수 하나를 공유한다.
 
-Pillow는 import하지 않는다 — 서버가 픽셀을 열어 볼 일이 없기 때문이다. 콘텐츠 가드는 집
+Pillow는 import하지 않는다 — 이 모듈은 픽셀을 열어 볼 일이 없기 때문이다(참조 이미지의 형식·크기
+검증은 잡이 `assets/image_processing.py`로 보내기 전에 한다). 콘텐츠 가드는 집
 PC가 생성 전(프롬프트·참조 이미지)·생성 후(이미지) 2단계로 돌리고(DEPLOY.md "이미지 생성" 절), 서버는 그 결과인
 `422`를 받아 `LocalImageBlockedError`로 정규화하기만 한다 — 판정을
 서버에서 다시 하지 않으니 이미지 바이트를 디코드할 이유가 없다. Pillow는 import에만 3.7MB를
@@ -11,6 +12,7 @@ PC가 생성 전(프롬프트·참조 이미지)·생성 후(이미지) 2단계�
 않는다.
 """
 
+import base64
 import time
 import uuid
 from asyncio import Lock, Semaphore
@@ -251,16 +253,16 @@ class LocalImageClient(ImageClient):
         )
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         # 세마포어를 획득한 뒤에 httpx 요청을
         # 시작한다 — 순서가 뒤집히면 대기 시간이 요청 타임아웃 타이머에 실려
         # Cloudflare edge 한도 여유를 먹는다.
         async with _generation_semaphore:
-            return await self._call_generate(prompt, style, aspect_ratio)
+            return await self._call_generate(prompt, style, aspect_ratio, reference_image)
 
     async def _call_generate(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None
     ) -> tuple[bytes, str]:
         # 서버는 프롬프트를 가공하지 않는다 — 프리셋
         # 태그·네거티브 프롬프트·샘플러 등은 전부 로컬 소유다.
@@ -277,6 +279,11 @@ class LocalImageClient(ImageClient):
             "style": style.value,
             "aspect_ratio": aspect_ratio,
         }
+        # 참조가 없으면 키 자체를 싣지 않는다 — 그래야 바디가 참조 기능 이전과 같다(빈 문자열을 실으면
+        # 서버가 잘못된 참조로 400 을 낸다). 서버는 표준 base64 한 줄을 받는다 — `encodebytes` 는
+        # 76자마다 줄을 바꾼다.
+        if reference_image is not None:
+            body["reference_image"] = base64.b64encode(reference_image).decode("ascii")
         try:
             async with httpx.AsyncClient(timeout=settings.local_image_timeout_seconds) as client:
                 response = await client.post(
@@ -308,8 +315,11 @@ class LocalImageClient(ImageClient):
                 # 해석하지 않는다" 규율과 다르다는 것을 명시해 둔다.
                 # `unsupported style`·`invalid reference image`는 우리가 만들어 보낸 값이 계약을
                 # 벗어났다는 뜻(버그)이지 사용자가 프롬프트를 고쳐 풀 입력이 아니므로 화이트리스트에
-                # 넣지 않는다 — 밖은 전부 일반 실패로 떨어진다.
-                if detail in ("invalid request", "prompt too long"):
+                # 넣지 않는다 — 밖은 전부 일반 실패로 떨어진다. 참조를 실은 요청의 `invalid request`
+                # 도 같다: 프롬프트 1000자 초과 말고 참조 인코딩 길이 초과일 수 있는데, 그 길이는
+                # 보내기 전에 검증하므로 나오면 버그다 — `too_long` 으로 올리면 "프롬프트가 너무
+                # 길어요" 라는 거짓 안내가 나간다.
+                if detail == "prompt too long" or (detail == "invalid request" and reference_image is None):
                     raise LocalImageInputError(input_error="too_long") from exc
             # 로그가 이 메시지를 그대로 남긴다(`router.py`).
             # 상태 코드 + `detail`만 싣는다 — 계약이 본문 형태를 보장하지 않아 원문을

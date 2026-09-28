@@ -11481,6 +11481,18 @@
             "minimum": 1.0,
             "title": "Count",
             "default": 1
+          },
+          "referenceAssetId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referenceassetid"
           }
         },
         "type": "object",
@@ -11783,6 +11795,10 @@
             },
             "type": "array",
             "title": "Styles"
+          },
+          "supportsReferenceImage": {
+            "type": "boolean",
+            "title": "Supportsreferenceimage"
           }
         },
         "type": "object",
@@ -11791,7 +11807,8 @@
           "name",
           "supportedAspectRatios",
           "available",
-          "styles"
+          "styles",
+          "supportsReferenceImage"
         ],
         "title": "ImageModelItem"
       },

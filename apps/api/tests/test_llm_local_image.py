@@ -1,10 +1,11 @@
 """`api.llm.local_image` — `LocalImageClient`(집 PC 호출), 생성 직렬화, capabilities TTL 캐시.
 
-전송 페이크는 아래 `_patch_httpx`가 `api.llm.local_image.httpx.AsyncClient`에
+전송 페이크는 `factories._patch_httpx`가 `api.llm.local_image.httpx.AsyncClient`에
 `MockTransport`를 주입하는 monkeypatch 방식이다.
 """
 
 import asyncio
+import base64
 import json
 import uuid
 from collections.abc import Callable, Generator
@@ -27,19 +28,7 @@ from api.llm.local_image import (
     reset_capabilities_cache,
     try_admit,
 )
-
-
-def _patch_httpx(
-    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], object]
-) -> None:
-    """local_image가 만드는 httpx.AsyncClient에 MockTransport를 주입한다."""
-    real_client = httpx.AsyncClient
-
-    def factory(**kwargs: object) -> httpx.AsyncClient:
-        kwargs.pop("transport", None)
-        return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
-
-    monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
+from factories import _patch_httpx
 
 
 def _client() -> LocalImageClient:
@@ -396,7 +385,53 @@ async def test_400_invalid_reference_image_is_a_plain_failure(
     assert not isinstance(exc_info.value, (LocalImageInputError, LocalImageBlockedError))
 
 
-@pytest.mark.parametrize("style", [ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
+@pytest.mark.parametrize("detail", ["invalid request", "invalid reference image"])
+async def test_400_on_a_request_carrying_a_reference_image_is_a_plain_failure(
+    monkeypatch: pytest.MonkeyPatch, detail: str
+) -> None:
+    """참조를 실은 요청에서 `invalid request` 는 프롬프트 길이보다 참조 인코딩 길이 초과일 수 있고,
+    그 길이는 우리가 보내기 전에 검증한다 — 나오면 우리 쪽 버그다. `too_long` 으로 올리면 참조를
+    붙인 사용자에게 "프롬프트가 너무 길어요" 라는 거짓 안내가 나간다."""
+    from api.llm.local_image import LocalImageInputError
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": detail})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image(
+            "a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1", reference_image=b"reference-bytes"
+        )
+    assert not isinstance(exc_info.value, (LocalImageInputError, LocalImageBlockedError))
+
+
+async def test_reference_image_is_sent_as_single_line_standard_base64(monkeypatch: pytest.MonkeyPatch) -> None:
+    """집 PC 는 `reference_image` 를 표준 base64 한 줄(개행·`data:` 접두사 없음)로 받는다.
+    76자마다 줄을 바꾸는 인코더로 바뀌면 서버가 400 으로 거절한다 — 참조 바이트를 76자가
+    넘게 인코딩되는 길이로 둬야 그 차이가 드러난다."""
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["body"] = json.loads(request.content)
+        return httpx.Response(200, content=b"bytes", headers={"content-type": "image/webp"})
+
+    _patch_httpx(monkeypatch, handler)
+    reference = bytes(range(200))
+    await _client().generate_image(
+        "a cat", ImageStylePreset.SOFT_PORTRAIT, "3:4", reference_image=reference
+    )
+
+    body = captured["body"]
+    assert isinstance(body, dict)
+    encoded = body.pop("reference_image")
+    assert isinstance(encoded, str)
+    assert "\n" not in encoded
+    assert not encoded.startswith("data:")
+    assert base64.b64decode(encoded, validate=True) == reference
+    assert body == {"prompt": "a cat", "model": "v1", "style": "soft_portrait", "aspect_ratio": "3:4"}
+
+
+@pytest.mark.parametrize("style",[ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
 async def test_request_body_carries_prompt_unmodified_and_access_headers(
     monkeypatch: pytest.MonkeyPatch, style: ImageStylePreset
 ) -> None:

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -126,6 +127,19 @@ async def _make_user_with_clover_lot(
 # session_id=B`로 둘 다 한 헤더에 실려 나가는데, Starlette의 `cookie_parser`는 `;`로 자른
 # 조각을 dict에 그대로 덮어쓰므로 **뒤에 넣은 쿠키가 이긴다**(실측: jar 순서가 그대로 헤더
 # 순서가 된다). 즉 예외 없이 조용히 잘못된 유저로 요청이 나간다.
+def _patch_httpx(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], object]
+) -> None:
+    """local_image가 만드는 httpx.AsyncClient에 MockTransport를 주입한다."""
+    real_client = httpx.AsyncClient
+
+    def factory(**kwargs: object) -> httpx.AsyncClient:
+        kwargs.pop("transport", None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
+
+
 async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
     session_id = await create_session(user_id)
     client.cookies.set(settings.session_cookie_name, session_id)

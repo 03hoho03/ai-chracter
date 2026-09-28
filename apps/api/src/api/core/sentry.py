@@ -79,7 +79,7 @@ def build_sentry_options() -> dict[str, Any]:
 def capture_dependency_failure(exc: BaseException | None = None, *, dependency: str) -> None:
     """흡수(사용자 응답 유지 + `logger.warning`)는 그대로 두고
     Bugsink 이벤트로도 승격한다. `dependency` 태그(`clover`/`db`/`email`/`gemini`/
-    `gemini_rate_limit`/`local_image`/`memory_fold`/`prompt_render`/`redis`/`s3`)로만 Bugsink에서 묶어 본다 —
+    `gemini_rate_limit`/`local_image`/`memory_fold`/`prompt_render`/`redis`/`reference_image`/`s3`)로만 Bugsink에서 묶어 본다 —
     **태그·컨텍스트에는 이 리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·
     이메일 주소는 호출부가 절대 넘기지 말 것(PII 금지).
 

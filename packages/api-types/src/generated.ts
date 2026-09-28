@@ -4948,6 +4948,8 @@ export interface components {
              * @default 1
              */
             count: number;
+            /** Referenceassetid */
+            referenceAssetId?: string | null;
         };
         /** GenerateImageResponse */
         GenerateImageResponse: {
@@ -5075,6 +5077,8 @@ export interface components {
             available: boolean;
             /** Styles */
             styles: components["schemas"]["ImageStyleItem"][];
+            /** Supportsreferenceimage */
+            supportsReferenceImage: boolean;
         };
         /** ImageStyleItem */
         ImageStyleItem: {

@@ -132,6 +132,11 @@ class Settings(BaseSettings):
     # 분리를 유지하는 이유: model 축은 실제로 다른 와이어 값을 가렸지만
     # style 축은 지금까지 아무것도 보호한 적이 없다.
     local_image_model_wire_id: str = "v1"
+    # 본인 생성 이미지를 참조로 집 PC 에 싣는 기능의 공개 스위치. 기본값이 닫힘이라 env 없이
+    # 배포해도 닫힌 채로 뜬다. 참조 필드를 모르는 서버는 이 필드를 조용히 무시하고 참조 없이 200 을
+    # 주므로, 서버 반영을 통지받은 뒤에만 켠다. `/images/models` 가 이 값을 FE 에 알리고
+    # `POST /images/generate` 는 요청마다 다시 본다.
+    local_image_reference_enabled: bool = False
 
     # 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.

@@ -20,10 +20,12 @@ from api.images.models import ImageStylePreset as ImageStylePreset
 
 class ImageClient(abc.ABC):
     """Provider-agnostic 이미지 생성 인터페이스. 구현체(`LocalImageClient`)는 프롬프트·
-    스타일·종횡비를 받아 (이미지 바이트, MIME 타입)을 반환한다. 잡 러너/라우터는 이 타입만 안다."""
+    스타일·종횡비(+ 선택적 참조 이미지 바이트)를 받아 (이미지 바이트, MIME 타입)을 반환한다.
+    잡 러너/라우터는 이 타입만 안다. 참조 이미지는 호출 전에 검증된 원본 바이트이고, 없으면
+    `None` 이다."""
 
     @abc.abstractmethod
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         raise NotImplementedError
