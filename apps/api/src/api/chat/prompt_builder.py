@@ -579,6 +579,12 @@ class ImageMatchJudgmentResult(BaseModel):
     matched_image_entity_id: str | None
 
 
+class MemorySummaryResult(BaseModel):
+    """대화 요약 결과. `summary`에는 요약 본문만 담는다."""
+
+    summary: str
+
+
 def build_memory_summary_prompt(
     *,
     prompt_set: PromptSet,

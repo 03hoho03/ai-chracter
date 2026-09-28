@@ -15,6 +15,7 @@ LLMCallSite = Literal[
     "chat_stat_judgment",
     "chat_ending_judgment",
     "chat_situational_image",
+    "chat_memory_summary",
     "preview_generate",
     "preview_stat_judgment",
     "preview_ending_judgment",

@@ -45,17 +45,23 @@ async def load_current_summary(db: AsyncSession, room_id: uuid.UUID) -> CurrentS
     return CurrentSummary(cursor=(row.cursor_created_at, row.cursor_message_id), text=row.summary_text)
 
 
+def opening_message(messages: Sequence[ChatMessage]) -> ChatMessage | None:
+    """`messages`(방 메시지를 키 순으로 읽은 목록의 앞부분)의 첫 메시지가 어시스턴트 메시지면 그것이
+    오프닝이다 — 방을 만들거나 초기화할 때 그 트랜잭션에 다른 메시지 없이 들어가므로 언제나 가장
+    앞에 선다. 윈도우(고정)와 요약 접기(턴·글자 셈에서 제외)가 같은 규칙을 쓴다."""
+    return messages[0] if messages and messages[0].role == ChatMessageRole.ASSISTANT else None
+
+
 def prompt_window(messages: Sequence[ChatMessage], cursor: MessageKey | None) -> list[ChatMessage]:
     """`messages`는 방 메시지를 `(created_at, id)` 순으로 읽은 목록(의 앞부분)이다. 커서가 없으면
     그대로, 있으면 오프닝 + 키가 커서보다 큰 메시지.
 
-    오프닝은 방의 첫 메시지가 어시스턴트 메시지일 때 그 메시지다 — 방을 만들거나 초기화할 때 그
-    트랜잭션에 다른 메시지 없이 들어가므로 언제나 가장 앞에 선다. 캐릭터 챗의 인트로는 이 메시지로만
-    실리고 스토리의 오프닝은 프롤로그와 다를 수 있어, 요약 커서가 지나가도 윈도우 맨 앞에 남긴다.
-    사용자가 오프닝을 지웠으면 첫 메시지가 사용자 메시지라 고정할 것이 없다."""
+    오프닝(`opening_message`)은 요약 커서가 지나가도 윈도우 맨 앞에 남긴다 — 캐릭터 챗의 인트로는 이
+    메시지로만 실리고 스토리의 오프닝은 프롤로그와 다를 수 있다. 사용자가 오프닝을 지웠으면 첫
+    메시지가 사용자 메시지라 고정할 것이 없다."""
     if cursor is None:
         return list(messages)
-    opening = messages[0] if messages and messages[0].role == ChatMessageRole.ASSISTANT else None
+    opening = opening_message(messages)
     return [
         message
         for message in messages

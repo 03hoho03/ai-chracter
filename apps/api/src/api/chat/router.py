@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from redis.exceptions import RedisError
 from sqlalchemy import delete, or_, select
@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.memory_fold import fold_memory
 from api.chat.memory_window import load_current_summary, prompt_window
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
@@ -957,6 +958,7 @@ async def _stream_new_turn(
     prompt_sections: list[PromptSection],
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
+    background_tasks: BackgroundTasks,
 ) -> AsyncIterator[ChatStreamEvent]:
     """생성 + 판단(buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
@@ -970,6 +972,14 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
     이미지 매칭은 재실행한다)는 이 헬퍼를 쓰지 않는다
     — 그 라우트의 docstring 참고.
+
+    턴을 커밋한 뒤에는 긴 방의 요약 접기(`fold_memory`)를 background로 예약한다. 접을 때인지는
+    접기 쪽이 새 세션으로 다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다).
+    예약은 첫 사후 `yield` **앞**이다 — 그 뒤에 두면 `done`을 받고 연결을 끊은 클라이언트의
+    턴에서 예약 자체가 사라진다. 예약 뒤에 요청 세션 쿼리를 더하지 않는다 — background는 요청
+    세션이 닫히기 전에 돌아서, 커밋 뒤 요청 세션이 연 트랜잭션(상황이미지 URL 조립의 조회가 이미
+    그렇다)은 요약 호출 내내 커넥션을 쥔다.
+    생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다.
     """
     try:
         prompt, system_instruction, persona_rendered, note_rendered = await _build_prompt(
@@ -1152,6 +1162,18 @@ async def _stream_new_turn(
             matched_image = None
             matched_image_url = None
 
+    if settings.memory_window_generation:
+        background_tasks.add_task(
+            fold_memory,
+            session_factory,
+            llm_client,
+            room_id=room.id,
+            user_id=room.user_id,
+            prompt_set=prompt_set,
+            sections=prompt_sections,
+            is_story_chat=setup is not None,
+        )
+
     for stat_change_event in stat_change_events:
         yield stat_change_event
 
@@ -1173,6 +1195,8 @@ async def _stream_new_turn(
 @router.post("/{room_id}/messages", response_class=EventSourceResponse)
 async def send_message(
     payload: ChatMessageCreateRequest,
+    # 턴 뒤 요약 접기 예약용(`_stream_new_turn`).
+    background_tasks: BackgroundTasks,
     # SSE 제너레이터라 시그니처에 Depends로 붙인다
     # (dependencies=처럼 본문 실행 전에 해석되지만, 이 파일의 `_owned_room_dependency`
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
@@ -1241,6 +1265,7 @@ async def send_message(
         prompt_sections,
         charge,
         session_factory,
+        background_tasks,
     ):
         yield event
 
@@ -1426,6 +1451,8 @@ async def _editable_user_message_dependency(
 @router.patch("/{room_id}/messages/{message_id}", response_class=EventSourceResponse)
 async def edit_message(
     payload: ChatMessageEditRequest,
+    # 턴 뒤 요약 접기 예약용(`_stream_new_turn`).
+    background_tasks: BackgroundTasks,
     # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
@@ -1492,6 +1519,7 @@ async def edit_message(
         prompt_sections,
         charge,
         session_factory,
+        background_tasks,
     ):
         yield event
 

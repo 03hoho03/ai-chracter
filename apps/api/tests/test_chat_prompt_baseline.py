@@ -30,7 +30,12 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.memory_window import prompt_window
-from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatJudgmentResult
+from api.chat.prompt_builder import (
+    EndingJudgmentResult,
+    ImageMatchJudgmentResult,
+    MemorySummaryResult,
+    StatJudgmentResult,
+)
 from api.db.models import (
     ChatMessage,
     ChatMessageRole,
@@ -81,8 +86,12 @@ class RecordedCall:
 
 
 class RecordingLLMClient(LLMClient):
-    """모든 호출을 순서대로 기록한다. 판정은 아무것도 바꾸지 않는 결과를 돌려준다(스탯 변경 없음,
-    엔딩 미발동, 이미지 미매칭) — 그래야 뒤따르는 호출의 입력이 판정 결과에 흔들리지 않는다."""
+    """턴의 호출을 순서대로 기록한다. 판정은 아무것도 바꾸지 않는 결과를 돌려준다(스탯 변경 없음,
+    엔딩 미발동, 이미지 미매칭) — 그래야 뒤따르는 호출의 입력이 판정 결과에 흔들리지 않는다.
+
+    긴 방(36턴)의 send·edit 뒤에는 요약 접기 호출이 한 번 더 온다. 그건 턴이 끝난 뒤 background의
+    별도 호출이라 턴 프롬프트와 무관하므로 기록하지 않고 고정 요약만 돌려준다(접기 자체는 접기
+    테스트가 본다)."""
 
     def __init__(self) -> None:
         self.calls: list[RecordedCall] = []
@@ -101,6 +110,8 @@ class RecordingLLMClient(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
+        if response_schema is MemorySummaryResult:
+            return MemorySummaryResult(summary="요약")
         self.calls.append(RecordedCall(usage.call_site, prompt, None))
         if response_schema is StatJudgmentResult:
             return StatJudgmentResult(stat_changes=[])
