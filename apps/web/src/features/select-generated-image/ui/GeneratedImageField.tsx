@@ -87,7 +87,7 @@ export function GeneratedImageField({
   }
 
   async function handlePickFromGallery() {
-    const picked = await GeneratedImagePickerModal.call();
+    const picked = await GeneratedImagePickerModal.call({});
     if (!picked) return;
     setSelectedFile(undefined);
     setPickedPreviewUrl(picked.imageUrl);
