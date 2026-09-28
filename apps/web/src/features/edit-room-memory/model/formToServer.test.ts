@@ -10,7 +10,6 @@ function memory(overrides: Partial<ChatRoomMemory> = {}): ChatRoomMemory {
     note: "주인공은 고양이를 무서워한다",
     summary: { text: "둘은 비 오는 밤 처음 만났다.", source: "auto", canRevert: false, updatedAt: "2026-09-28T00:00:00Z" },
     version: 3,
-    rolledBackAt: null,
     limits: { noteMaxLength: 1000, summaryMaxLength: 1500 },
     ...overrides,
   };
@@ -25,7 +24,7 @@ describe("serverToForm", () => {
   });
 
   it("leaves the summary field empty before the first summary exists", () => {
-    expect(serverToForm(memory({ summary: null })).summary).toBe("");
+    expect(serverToForm(memory({ summary: undefined })).summary).toBe("");
   });
 });
 

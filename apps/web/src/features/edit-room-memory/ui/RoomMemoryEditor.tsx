@@ -36,7 +36,7 @@ const SOURCE_LABEL: Record<NonNullable<ChatRoomMemory["summary"]>["source"], str
 
 /** 기억 노트 패널의 본문. lg 인라인 패널과 lg 미만 Dialog가 같은 본문을 쓴다(제목은 각 컨테이너가 든다). */
 export function RoomMemoryEditor({ roomId, onClearNoteRequest }: RoomMemoryEditorProps) {
-  const memoryQuery = useChatRoomMemoryQuery(roomId, true);
+  const memoryQuery = useChatRoomMemoryQuery(roomId);
 
   if (memoryQuery.isPending) {
     return <p className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</p>;
@@ -101,7 +101,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   useEffect(() => {
     const storage = browserStorage();
     const rolledBackAt = memory.rolledBackAt;
-    if (rolledBackAt === null || !isRollbackUnseen(rolledBackAt, readSeenRollback(storage, roomId))) return;
+    if (rolledBackAt === undefined || !isRollbackUnseen(rolledBackAt, readSeenRollback(storage, roomId))) return;
     setShownRollbackAt(rolledBackAt);
     writeSeenRollback(storage, roomId, rolledBackAt);
   }, [memory.rolledBackAt, roomId]);
@@ -213,12 +213,12 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const revertHintId = `${fieldId}-revert-hint`;
   const summary = memory.summary;
   // 편집 중에 요약이 사라질 수 있다(다른 탭에서 초기화) — 그때는 편집 칸도 [저장]도 없다.
-  const isSummaryEditOpen = isEditingSummary && summary !== null;
+  const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
   const isNoteSaving = saveNoteMutation.isPending || clearNoteMutation.isPending;
 
   let summaryBody: ReactNode;
-  if (summary === null) {
+  if (summary === undefined) {
     // 첫 접기 전에는 고칠 요약이 없다(요약은 대화가 충분히 쌓여야 처음 만들어진다).
     summaryBody = (
       <p className="rounded-lg border border-dashed border-border px-3.5 py-3 text-sm break-keep text-muted-foreground">
