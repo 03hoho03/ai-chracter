@@ -904,6 +904,7 @@ EOF
 `API_IMAGE`를 고친다):
 
 ```sh
+cd /opt/ddona/app
 sudo sh -c 'printf "\nLOCAL_IMAGE_REFERENCE_ENABLED=true\n" >> /opt/ddona/.env'
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api \
@@ -918,6 +919,7 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
 **끄기** — 같은 줄을 `false`로 바꾸고 다시 올린다:
 
 ```sh
+cd /opt/ddona/app
 sudo sed -i 's/^LOCAL_IMAGE_REFERENCE_ENABLED=.*/LOCAL_IMAGE_REFERENCE_ENABLED=false/' /opt/ddona/.env
 sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
 ```
@@ -925,12 +927,18 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d 
 새로 연 생성 화면에는 참조 행이 없다. 이미 열려 있던 화면에서 참조를 실어 보내면 `400 reference image disabled`로
 거절·환불되고, 화면이 "지금은 참조 이미지를 쓸 수 없어요"를 띄운 뒤 모델 목록을 다시 받아 행을 숨긴다.
 
-**롤백** — 참조를 한 번이라도 켰다면 Redis 잡 레코드에 차단 사유 `reference`가 남아 있을 수 있다. 이 사유를 모르는
-BE — 그 사유를 받아들이게 한 PR #65(머지 `4e52c81`)보다 앞선 태그 — 로 되돌리면 그런 잡을 폴링하는
+**롤백** — 참조를 한 번이라도 켰다면 **되돌릴 태그와 상관없이 먼저 끄고(재기동) 롤백한다.** 참조 필드를 싣게 한
+이 기능 이전의 BE는 `referenceAssetId`를 모르는 필드로 조용히 무시해, 참조 없는 이미지를 만들고 클로버를 차감한다.
+이미 열려 있던 새 FE 탭은 모델 목록을 다시 받기 전까지 그 필드를 계속 보낸다. 먼저 꺼 두면 그 사이의 그런 요청은
+`400 reference image disabled`로 거절·환불되고 화면이 참조 행을 숨기며, 모델 목록을 다시 받은 탭은 필드를 더 보내지
+않는다. 켠 적이 없으면 바로 롤백해도 된다.
+
+PR #65(머지 `4e52c81`)보다 앞선 태그로 되돌릴 때는 추가로 1시간을 기다린다. 참조를 켠 동안 Redis 잡 레코드에 차단
+사유 `reference`가 남아 있을 수 있고, 이 사유를 모르는 그 이전 BE로 되돌리면 그런 잡을 폴링하는
 `GET /images/jobs/{id}`가 잡 레코드 검증에 실패해 500을 낸다. 잡 레코드는 마지막 갱신부터 1시간
-(`image_generation_job_ttl_seconds`) 뒤 사라지므로 순서는 **끄기(재기동) → 1시간 기다림 → 태그 롤백**이다. 켠 적이
-없거나 `4e52c81` 이후 태그로 되돌릴 때는 바로 롤백해도 된다. FE도 같다 — 같은 PR보다 앞선 Pages 배포는 사유
-`reference`의 안내 문구 분기가 없어 그 잡을 만나면 예외를 던지므로, Pages 롤백도 같은 1시간 뒤에 한다.
+(`image_generation_job_ttl_seconds`) 뒤 사라지므로 순서는 **끄기(재기동) → 1시간 기다림 → 태그 롤백**이다. FE도
+같다 — 같은 PR보다 앞선 Pages 배포는 사유 `reference`의 안내 문구 분기가 없어 그 잡을 만나면 예외를 던지므로, Pages
+롤백도 같은 1시간 뒤에 한다.
 
 마이그레이션 `739e7f1039b1`(요청 행의 참조 컬럼, nullable)은 태그 롤백만이면 되돌리지 않는다 — 옛 코드는 그 컬럼을
 모른 채 동작하고, 새 행에는 NULL이 들어간다. 되돌려야 할 때(예: main에 revert 커밋을 올려 옛 코드를 다시 배포할 때 —
