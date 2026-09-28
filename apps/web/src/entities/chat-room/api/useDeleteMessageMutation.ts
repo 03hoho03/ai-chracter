@@ -19,6 +19,8 @@ export function useDeleteMessageMutation(roomId: string) {
         chatRoomKeys.detail(roomId),
         (prev) => prev && { ...prev, messages: prev.messages.filter((message) => message.id !== messageId) },
       );
+      // 요약이 덮는 메시지를 지우면 서버가 요약을 이전 판으로 되돌린다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
     },
   });
 }

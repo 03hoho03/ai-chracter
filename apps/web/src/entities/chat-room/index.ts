@@ -19,6 +19,7 @@ export type {
   StatDef,
 } from "./model/chatRoomState";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
+export { useChatRoomMemoryQuery, type ChatRoomMemory } from "./api/useChatRoomMemoryQuery";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
 export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";

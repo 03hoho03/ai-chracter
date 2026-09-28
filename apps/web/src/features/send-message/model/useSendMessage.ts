@@ -159,6 +159,10 @@ export function useSendMessage(
         void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
       }
       if (!hasErrored) setStatus({ kind: "idle" });
+      // 기억(노트·요약)은 성공한 턴 뒤 서버가 백그라운드로 접고, 편집·재생성은 스트림 전에 요약을 되감을 수
+      // 있다 — 둘 다 스트림 이벤트로 오지 않으므로 끝날 때마다 낡음 표시만 한다. `done` 없이 끝난 스트림도
+      // 되감기는 이미 커밋됐을 수 있어 성공 분기가 아니라 여기서 한다. 패널이 닫혀 있으면 리페치도 없다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
     }
   }
 

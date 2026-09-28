@@ -18,6 +18,8 @@ export function useResetChatRoomMutation(roomId: string) {
       toChatRoomState((await apiClient.post<ChatRoomResponseDto>(`/chat-rooms/${roomId}/reset`)).data),
     onSuccess: (room) => {
       queryClient.setQueryData(chatRoomKeys.detail(roomId), room);
+      // 초기화는 요약만 지우고 노트는 남긴다 — 버린 값이 아니라 낡은 값이라 remove가 아니라 invalidate다.
+      void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
     },
   });
 }
