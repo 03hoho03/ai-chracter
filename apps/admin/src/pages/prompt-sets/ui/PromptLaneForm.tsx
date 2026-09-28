@@ -95,7 +95,7 @@ export function PromptLaneForm({ lane, draft }: PromptLaneFormProps) {
               if (isPromptChannel(value)) setActiveChannel(value);
             }}
           >
-            {/* 채널 6개 + 라벨이 길어(예: "스탯 판정") 사이드바(w-56)가 폭을 뺏는 admin 좁은
+            {/* 레인의 채널 탭이 여러 개 + 라벨이 길어(예: "스탯 판정") 사이드바(w-56)가 폭을 뺏는 admin 좁은
              * 화면에서 TabsList 자체 폭을 넘긴다 — `overflow-x-auto`로 이 줄만 가로 스크롤하게
              * 해 페이지 전체가 넘치지 않게 한다. */}
             <div className="overflow-x-auto">
