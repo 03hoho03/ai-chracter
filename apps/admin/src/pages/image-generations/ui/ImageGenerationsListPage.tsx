@@ -21,18 +21,6 @@ import {
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
-// 상태 필터는 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
-// 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다(`ContentsListPage` 동형). `SelectItem`의
-// value가 `string`이라 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다.
-const STATUS_FILTER_OPTIONS: { value: "all" | ImageGenerationStatusFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  ...IMAGE_GENERATION_STATUS_OPTIONS,
-];
-
-// 스타일 필터의 이름은 목록 응답(`styleOptions`)에서 온다. 첫 응답 전에는 이름이 없으므로 id 를
-// 그대로 보인다 — 선택지를 비워 두면 주소에 담긴 선택 값이 트리거에 안 보인다.
-const STYLE_ID_FALLBACK_OPTIONS = IMAGE_STYLE_VALUES.map((id) => ({ id, name: id }));
-
 type ImageGenerationFilterPatch = {
   q?: string;
   status?: ImageGenerationStatusFilter;
@@ -51,6 +39,18 @@ type ImageGenerationsListPageProps = {
   onPageChange: (page: number) => void;
   onFilterChange: (patch: ImageGenerationFilterPatch) => void;
 };
+
+// 상태 필터는 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
+// 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다(`ContentsListPage` 동형). `SelectItem`의
+// value가 `string`이라 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다.
+const STATUS_FILTER_OPTIONS: { value: "all" | ImageGenerationStatusFilter; label: string }[] = [
+  { value: "all", label: "전체" },
+  ...IMAGE_GENERATION_STATUS_OPTIONS,
+];
+
+// 스타일 필터의 이름은 목록 응답(`styleOptions`)에서 온다. 첫 응답 전에는 이름이 없으므로 id 를
+// 그대로 보인다 — 선택지를 비워 두면 주소에 담긴 선택 값이 트리거에 안 보인다.
+const STYLE_ID_FALLBACK_OPTIONS = IMAGE_STYLE_VALUES.map((id) => ({ id, name: id }));
 
 /** 전역 목록은 메타데이터만 보여준다.
  * 필터·검색·페이지는 전부 라우트 search에 담긴다(routes/image-generations.index.tsx). */

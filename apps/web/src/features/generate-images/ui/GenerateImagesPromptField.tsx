@@ -1,6 +1,7 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext, useWatch } from "react-hook-form";
 
 import {
@@ -39,7 +40,7 @@ export function GenerateImagesPromptField() {
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
   const isCloverShort = isCloverInsufficient(cloverBalance, IMAGE_CLOVER_COST);
-  const showClover =
+  const shouldShowClover =
     clover !== undefined &&
     shouldShowCloverBalance({
       spendConfirmedToday: clover.spendConfirmedToday,
@@ -72,7 +73,7 @@ export function GenerateImagesPromptField() {
         <Label htmlFor="generate-images-prompt">프롬프트</Label>
         {/* 브라우저 실검증 — 프롬프트와 제출 버튼을 한 보더 박스에 묶는다(크랙 실측: 박스 안
             우하단 버튼). 포커스 링은 안쪽 Textarea가 아니라 이 박스가 받아야 하므로
-            `has-[textarea:focus-visible]:`로 하우스 레시피(DESIGN.md §Buttons Focus)를 얹는다 —
+            `has-[textarea:focus-visible]:`로 하우스 레시피(`DESIGN.md` 의 Buttons 절 Focus 항목)를 얹는다 —
             안쪽 Textarea의 자기 보더·링은 아래에서 지운다(이중 보더 방지). */}
         <div className="flex flex-col gap-2 rounded-lg border border-input bg-background p-2 has-[textarea:focus-visible]:border-ring has-[textarea:focus-visible]:ring-3 has-[textarea:focus-visible]:ring-ring/50">
           <Textarea
@@ -91,10 +92,10 @@ export function GenerateImagesPromptField() {
           <div className="flex items-center justify-between gap-2">
             {/* 빈 `<span>`을 항상 두어 `justify-between`이 버튼을 오른쪽에 붙여 둔다 — 조건부로
                 통째로 빼면 버튼이 홀로 남아 왼쪽으로 튄다. */}
-            <span>{showClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}</span>
+            <span>{shouldShowClover && <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />}</span>
             {/* 모델 목록이 아직 로딩 중이면 model/style이 비어 있어 제출해도 zod가 조용히 막는다(그
                 필드엔 에러 텍스트 UI가 없다) — 누를 게 없는 상태를 숨기지 않고 버튼을 함께 잠근다.
-                apps/web/CLAUDE.md §포커스 — plain `disabled`는 브라우저가 즉시 blur해 포커스를
+                `apps/web/CLAUDE.md` 의 포커스 절 — plain `disabled`는 브라우저가 즉시 blur해 포커스를
                 <body>로 떨어뜨린다. 제출 중(isSubmitting)에 실제로 그 상황이 되므로
                 ContentListLoadMore·ReconsentModal·WithdrawAccountDialog와 같은 레시피를 쓴다.
                 isModelsPending은 마운트 시점부터 true라 blur 위험은 없지만, 한 버튼에 두 어휘가
@@ -116,11 +117,7 @@ export function GenerateImagesPromptField() {
         <p
           id="generate-images-prompt-hint"
           aria-live="polite"
-          className={
-            isSyntaxWarning
-              ? "break-keep text-xs text-foreground"
-              : "break-keep text-xs text-muted-foreground"
-          }
+          className={cn("break-keep text-xs", isSyntaxWarning ? "text-foreground" : "text-muted-foreground")}
         >
           {syntaxHint}
         </p>
