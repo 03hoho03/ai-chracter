@@ -107,7 +107,7 @@ export function ReconsentModal() {
         showCloseButton={false}
         onEscapeKeyDown={(event) => event.preventDefault()}
         onPointerDownOutside={(event) => event.preventDefault()}
-        className="grid max-h-[calc(100dvh-2rem)] grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
+        className="grid max-h-dialog grid-rows-[auto_minmax(0,1fr)_auto] sm:max-w-lg"
       >
         <DialogHeader>
           <DialogTitle>

@@ -54,7 +54,7 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
         </Button>
       </DialogTrigger>
       {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 최대 높이와 내부 스크롤은 호출부 몫이다(packages/ui/CLAUDE.md). */}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>기억 노트</DialogTitle>
           <DialogDescription className="break-keep">{MEMORY_PANEL_DESCRIPTION}</DialogDescription>
