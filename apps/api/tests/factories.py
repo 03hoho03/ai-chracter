@@ -114,19 +114,6 @@ async def _make_user_with_clover_lot(
     return user
 
 
-# 인증 없이 임의 `user_id`로 쿠키를 굽던
-# `POST /dev/session-echo`(삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 호출
-# `create_session(user_id)`는 프로덕션 로그인 경로 세 곳(`auth/router.py`의 `google_callback`(구글
-# 콜백) · `onboarding_google`(구글 온보딩) · `login`(비밀번호 로그인))과 같은 형태라 세션 값과
-# 유저별 역인덱스(`user_sessions:{user_id}`)까지 똑같이 쌓인다 — 그래서 이 헬퍼로 선 세션은 실제
-# 로그인 세션과 구분되지 않는다(줄번호로 가리키면 썩는다 — 심볼로 가리킬 것).
-# ⚠️ 한 테스트에서 HTTP 로그인(`/auth/login` 등)과 이 헬퍼를 섞지 말 것 — 응답 `Set-Cookie`로
-# 들어온 쿠키에는 도메인이 붙고 여기서 넣는 쿠키에는 안 붙어, 같은 이름의 쿠키가 둘이 되고
-# 쿠키를 읽는 순간 `httpx.CookieConflict`가 난다(현재 스위트에 그 조합은 0건이다).
-# 더 나쁜 쪽은 쿠키를 읽지 않는 경우다 — 전송 시점에는 예외가 없고 `Cookie: session_id=A;
-# session_id=B`로 둘 다 한 헤더에 실려 나가는데, Starlette의 `cookie_parser`는 `;`로 자른
-# 조각을 dict에 그대로 덮어쓰므로 **뒤에 넣은 쿠키가 이긴다**(실측: jar 순서가 그대로 헤더
-# 순서가 된다). 즉 예외 없이 조용히 잘못된 유저로 요청이 나간다.
 def _patch_httpx(
     monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], object]
 ) -> None:
@@ -140,6 +127,19 @@ def _patch_httpx(
     monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
 
 
+# 인증 없이 임의 `user_id`로 쿠키를 굽던
+# `POST /dev/session-echo`(삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 호출
+# `create_session(user_id)`는 프로덕션 로그인 경로 세 곳(`auth/router.py`의 `google_callback`(구글
+# 콜백) · `onboarding_google`(구글 온보딩) · `login`(비밀번호 로그인))과 같은 형태라 세션 값과
+# 유저별 역인덱스(`user_sessions:{user_id}`)까지 똑같이 쌓인다 — 그래서 이 헬퍼로 선 세션은 실제
+# 로그인 세션과 구분되지 않는다(줄번호로 가리키면 썩는다 — 심볼로 가리킬 것).
+# ⚠️ 한 테스트에서 HTTP 로그인(`/auth/login` 등)과 이 헬퍼를 섞지 말 것 — 응답 `Set-Cookie`로
+# 들어온 쿠키에는 도메인이 붙고 여기서 넣는 쿠키에는 안 붙어, 같은 이름의 쿠키가 둘이 되고
+# 쿠키를 읽는 순간 `httpx.CookieConflict`가 난다(현재 스위트에 그 조합은 0건이다).
+# 더 나쁜 쪽은 쿠키를 읽지 않는 경우다 — 전송 시점에는 예외가 없고 `Cookie: session_id=A;
+# session_id=B`로 둘 다 한 헤더에 실려 나가는데, Starlette의 `cookie_parser`는 `;`로 자른
+# 조각을 dict에 그대로 덮어쓰므로 **뒤에 넣은 쿠키가 이긴다**(실측: jar 순서가 그대로 헤더
+# 순서가 된다). 즉 예외 없이 조용히 잘못된 유저로 요청이 나간다.
 async def _login_as(client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
     session_id = await create_session(user_id)
     client.cookies.set(settings.session_cookie_name, session_id)

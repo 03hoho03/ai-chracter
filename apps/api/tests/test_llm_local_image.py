@@ -431,7 +431,7 @@ async def test_reference_image_is_sent_as_single_line_standard_base64(monkeypatc
     assert body == {"prompt": "a cat", "model": "v1", "style": "soft_portrait", "aspect_ratio": "3:4"}
 
 
-@pytest.mark.parametrize("style",[ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
+@pytest.mark.parametrize("style", [ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
 async def test_request_body_carries_prompt_unmodified_and_access_headers(
     monkeypatch: pytest.MonkeyPatch, style: ImageStylePreset
 ) -> None:
