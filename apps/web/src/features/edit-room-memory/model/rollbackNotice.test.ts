@@ -10,7 +10,7 @@ function memoryStorage() {
   };
 }
 
-const throwingStorage = {
+const THROWING_STORAGE = {
   getItem: (): string | null => {
     throw new Error("SecurityError");
   },
@@ -47,11 +47,11 @@ describe("seen rollback storage", () => {
 
   // 사생활 모드·차단된 사이트 데이터에서는 저장소 접근이 던진다 — 패널이 죽지 않고 "본 적 없음"이 된다.
   it("treats a throwing storage as never seen", () => {
-    expect(readSeenRollback(throwingStorage, "room-a")).toBeUndefined();
+    expect(readSeenRollback(THROWING_STORAGE, "room-a")).toBeUndefined();
   });
 
   it("ignores a throwing storage when writing", () => {
-    expect(() => writeSeenRollback(throwingStorage, "room-a", "2026-09-28T10:00:00Z")).not.toThrow();
+    expect(() => writeSeenRollback(THROWING_STORAGE, "room-a", "2026-09-28T10:00:00Z")).not.toThrow();
   });
 
   it("treats a missing storage as never seen", () => {

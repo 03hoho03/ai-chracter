@@ -3,27 +3,27 @@ import { describe, expect, it } from "vitest";
 
 import { countMemoryChars, createMemoryFormSchema, memoryFormOptions } from "./schema";
 
-const limits = { noteMaxLength: 1000, summaryMaxLength: 1500 };
-const schema = createMemoryFormSchema(limits);
+const LIMITS = { noteMaxLength: 1000, summaryMaxLength: 1500 };
+const SCHEMA = createMemoryFormSchema(LIMITS);
 
 describe("createMemoryFormSchema", () => {
   // 서버 요청 스키마와 같은 규칙을 FE가 먼저 막는다 — 422 원문을 보이지 않고, 붙여넣기가 조용히 잘리지
   // 않게(입력칸에 maxLength를 두지 않는다).
   it("accepts both fields at their limits after trimming the surrounding whitespace", () => {
-    const result = schema.safeParse({ note: `  ${"가".repeat(1000)}\n`, summary: ` ${"나".repeat(1500)} ` });
+    const result = SCHEMA.safeParse({ note: `  ${"가".repeat(1000)}\n`, summary: ` ${"나".repeat(1500)} ` });
     expect(result.success).toBe(true);
     expect(result.data).toEqual({ note: "가".repeat(1000), summary: "나".repeat(1500) });
   });
 
   it("allows saving an empty note and an empty summary", () => {
-    expect(schema.safeParse({ note: "   ", summary: "" }).data).toEqual({ note: "", summary: "" });
+    expect(SCHEMA.safeParse({ note: "   ", summary: "" }).data).toEqual({ note: "", summary: "" });
   });
 
   it.each([
     ["note", { note: "가".repeat(1001), summary: "" }],
     ["summary", { note: "", summary: "나".repeat(1501) }],
   ])("rejects a %s one character over the limit on that field only", (field, values) => {
-    const result = schema.safeParse(values);
+    const result = SCHEMA.safeParse(values);
     expect(result.success).toBe(false);
     expect(result.error?.issues.map((issue) => issue.path[0])).toEqual([field]);
   });
@@ -40,11 +40,11 @@ describe("createMemoryFormSchema", () => {
     ["note", { note: "😀".repeat(1000), summary: "" }],
     ["summary", { note: "", summary: "😀".repeat(1500) }],
   ])("accepts a %s of emoji exactly at the limit the server also accepts", (_field, values) => {
-    expect(schema.safeParse(values).success).toBe(true);
+    expect(SCHEMA.safeParse(values).success).toBe(true);
   });
 
   it("rejects a note of emoji one character over the limit", () => {
-    expect(schema.safeParse({ note: "😀".repeat(1001), summary: "" }).success).toBe(false);
+    expect(SCHEMA.safeParse({ note: "😀".repeat(1001), summary: "" }).success).toBe(false);
   });
 });
 
@@ -56,7 +56,7 @@ describe("countMemoryChars", () => {
 
 describe("memoryFormOptions", () => {
   function createForm() {
-    const form = createFormControl({ ...memoryFormOptions(schema), defaultValues: { note: "", summary: "" } });
+    const form = createFormControl({ ...memoryFormOptions(SCHEMA), defaultValues: { note: "", summary: "" } });
     // `useForm`처럼 폼 상태를 구독한다 — 구독자가 없으면 제출됨(`isSubmitted`)이 폼에 반영되지 않아 제출 뒤
     // 재검증 규칙을 볼 수 없다.
     form.subscribe({ formState: { errors: true }, callback: () => {} });
