@@ -9,6 +9,7 @@ import { useGenerateImagesSubmit, type PickedReferenceImage } from "../model/use
 const LABEL_ID = "generate-images-reference-label";
 const NOTICE_ID = "generate-images-reference-notice";
 const CROP_HINT_ID = "generate-images-reference-crop-hint";
+const ERROR_ID = "generate-images-reference-error";
 
 // 프롬프트 박스 **밖**, 바로 아래의 별도 행이다. 박스 안 하단 줄은 이미 클로버 잔량과 생성 버튼이라
 // 넣을 자리가 없고, 옵션 열(우열)에 두면 lg 미만에서 바텀시트 뒤로 숨어 참조가 붙어 있다는 사실을
@@ -31,8 +32,16 @@ export function GenerateImagesReferenceField() {
     <Controller
       control={control}
       name="reference"
-      render={({ field }) => {
+      render={({ field, fieldState }) => {
         const reference = field.value;
+        const errorMessage = fieldState.error?.message;
+        const describedByIds = [
+          errorMessage !== undefined && ERROR_ID,
+          NOTICE_ID,
+          reference !== null && CROP_HINT_ID,
+        ]
+          .filter(Boolean)
+          .join(" ");
         const previewUrl =
           reference !== null && preview?.assetId === reference.assetId ? preview.imageUrl : undefined;
 
@@ -97,7 +106,8 @@ export function GenerateImagesReferenceField() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  aria-describedby={reference === null ? NOTICE_ID : `${NOTICE_ID} ${CROP_HINT_ID}`}
+                  aria-invalid={errorMessage !== undefined}
+                  aria-describedby={describedByIds}
                   onClick={() => void handlePick()}
                 >
                   <Images aria-hidden />
@@ -107,6 +117,16 @@ export function GenerateImagesReferenceField() {
                 {reference !== null && (
                   <p id={CROP_HINT_ID} className="break-keep text-xs text-muted-foreground">
                     가운데 부분 위주로 반영돼요.
+                  </p>
+                )}
+                {/* 서버가 고른 참조를 찾지 못했을 때만 생긴다(그 사이 보관함에서 지워진 경우 등). 고칠
+                    행동이 이 버튼이라 고지 문장 아래가 아니라 버튼 바로 밑에 둔다. 따로 지우지 않는다 —
+                    이 오류는 제출 뒤에만 생기고, 제출을 한 번 마친 폼은 값이 바뀔 때마다 리졸버로 그
+                    필드를 다시 검증해 통과하면 오류를 지운다(react-hook-form 기본 `reValidateMode: "onChange"`).
+                    다음 제출도 검증 결과로 오류 전체를 갈아 끼우므로 남지 않는다. */}
+                {errorMessage !== undefined && (
+                  <p id={ERROR_ID} role="alert" className="break-keep text-xs text-destructive-text">
+                    {errorMessage}
                   </p>
                 )}
               </div>

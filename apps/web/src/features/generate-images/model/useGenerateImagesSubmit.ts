@@ -8,10 +8,14 @@ export type PickedReferenceImage = { assetId: string; imageUrl: string };
 
 /** 제출을 소유한 셸이 폼 바깥에서 쓰는 두 가지. 셸은 폼 인스턴스를 갖지 않으므로(폼은 프로바이더
  * 안의 `useForm`이다) 참조를 비우는 일도 프로바이더가 콜백으로 건넨다 — 서버가 참조를 거절했을 때
- * 비우지 않으면 다음 제출이 같은 오류로 되풀이된다. */
+ * 비우지 않으면 다음 제출이 같은 오류로 되풀이된다.
+ *
+ * `errorMessage`를 주면 참조 필드 아래에 그 문구를 필드 오류로 건다. 사용자가 다시 골라야 풀리는
+ * 거절이라 사라지는 토스트보다 고칠 자리 옆에 남는 편이 맞다. 오류는 다시 고르거나 다음에 제출하면
+ * 풀린다(그 이유는 `GenerateImagesReferenceField`의 오류 문단 주석). */
 export type GenerateImagesSubmitHelpers = {
   isReferenceEnabled: boolean;
-  clearReference: () => void;
+  clearReference: (errorMessage?: string) => void;
 };
 
 export type GenerateImagesSubmitContextValue = {

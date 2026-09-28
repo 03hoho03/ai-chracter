@@ -161,11 +161,17 @@ export function ImageStudioShell({
         return;
       }
       // 참조 거절은 422 분기보다 **먼저** 본다 — 422 문구("입력값을 다시 확인해주세요")로는 무엇을
-      // 고칠지 모른다. 둘 다 참조를 비우고, 서버가 참조를 껐다면 모델 목록을 다시 받아 참조 행을 숨긴다.
+      // 고칠지 모른다. 둘 다 참조를 비운다. 없어진 참조는 다시 고르면 되므로 참조 필드 아래에 오류로
+      // 남기고, 서버가 참조를 껐다면 행 자체가 사라지므로(모델 목록을 다시 받아 숨긴다) 오류를 걸 필드가
+      // 없어 토스트로 알린다.
       const referenceError = getReferenceImageError(error);
-      if (referenceError) {
+      if (referenceError === "not_found") {
+        helpers.clearReference(formatReferenceImageErrorMessage(referenceError));
+        return;
+      }
+      if (referenceError === "disabled") {
         helpers.clearReference();
-        if (referenceError === "disabled") void queryClient.invalidateQueries({ queryKey: imageModelKeys.all });
+        void queryClient.invalidateQueries({ queryKey: imageModelKeys.all });
         toast.error(formatReferenceImageErrorMessage(referenceError));
         return;
       }

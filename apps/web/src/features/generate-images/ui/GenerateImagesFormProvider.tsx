@@ -38,7 +38,7 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
     resolver: zodResolver(generateImagesSchema),
     defaultValues: generateImagesDefaultValues,
   });
-  const { getValues, reset, setValue, control } = form;
+  const { getValues, reset, setValue, setError, control } = form;
   const selectedModelId = useWatch({ control, name: "model" });
   const isReferenceEnabled = isReferenceImageEnabled(models, selectedModelId);
 
@@ -86,7 +86,10 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
   function handleSubmit(values: GenerateImagesFormValues) {
     return onSubmit(values, {
       isReferenceEnabled: isReferenceImageEnabled(models, values.model),
-      clearReference: () => setValue("reference", null),
+      clearReference: (errorMessage) => {
+        setValue("reference", null);
+        if (errorMessage !== undefined) setError("reference", { type: "server", message: errorMessage });
+      },
     });
   }
 
