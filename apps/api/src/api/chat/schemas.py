@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field
+from pydantic import Field, StringConstraints
 
+from api.chat.memory_fold import SUMMARY_MAX_LENGTH
 from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
@@ -32,6 +33,58 @@ class ChatRoomRenameRequest(CamelModel):
 
 class ChangeStartingSetupRequest(CamelModel):
     starting_setup_id: uuid.UUID
+
+
+# 기억 노트 상한. 요약 상한(`SUMMARY_MAX_LENGTH`)과 함께 `GET .../memory`의 `limits`로 내려 보내
+# FE가 사본을 들지 않게 한다. `strip_whitespace`가 길이 검사보다 먼저라 앞뒤 공백은 세지 않는다.
+MEMORY_NOTE_MAX_LENGTH = 1_000
+
+MemoryNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=MEMORY_NOTE_MAX_LENGTH)]
+MemorySummaryText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=SUMMARY_MAX_LENGTH)]
+
+
+class ChatRoomMemoryNoteRequest(CamelModel):
+    """공백만 보내면 빈 노트로 저장된다(비우기와 같다)."""
+
+    note: MemoryNoteText
+
+
+class ChatRoomMemorySummaryRequest(CamelModel):
+    """`version`은 편집 폼을 연 시점의 `memoryVersion`이다 — 그 사이 요약이 새로 접혔거나 대화가
+    되감겼으면 서버 값과 달라 409로 거절된다(사용자 편집이 새 요약을 조용히 덮지 않게)."""
+
+    summary: MemorySummaryText
+    version: int
+
+
+class ChatRoomMemoryRevertRequest(CamelModel):
+    version: int
+
+
+class ChatRoomMemorySummary(CamelModel):
+    """방의 현재 요약. `can_revert`는 사용자가 이 요약을 고친 적이 있어 고치기 직전 본문으로 한 번
+    되돌릴 수 있는가다 — AI가 새로 접은 요약은 되돌릴 대상이 없다."""
+
+    text: str
+    source: Literal["auto", "user"]
+    can_revert: bool
+    updated_at: datetime
+
+
+class ChatRoomMemoryLimits(CamelModel):
+    note_max_length: int
+    summary_max_length: int
+
+
+class ChatRoomMemoryResponse(CamelModel):
+    """`summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난
+    메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다."""
+
+    note: str
+    summary: ChatRoomMemorySummary | None
+    version: int
+    rolled_back_at: datetime | None
+    limits: ChatRoomMemoryLimits
 
 
 class ChatMessageResponse(CamelModel):

@@ -9,16 +9,16 @@ from decimal import Decimal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from redis.exceptions import RedisError
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
-from api.chat.memory_fold import fold_memory
+from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
-from api.chat.memory_window import load_current_summary, prompt_window
+from api.chat.memory_window import load_current_summary, prompt_window, select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
@@ -51,6 +51,12 @@ from api.chat.schemas import (
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
     ChatRoomListItem,
+    ChatRoomMemoryLimits,
+    ChatRoomMemoryNoteRequest,
+    ChatRoomMemoryResponse,
+    ChatRoomMemoryRevertRequest,
+    ChatRoomMemorySummary,
+    ChatRoomMemorySummaryRequest,
     ChatRoomRenameRequest,
     ChatRoomResponse,
     ChatStatChangeEvent,
@@ -63,6 +69,7 @@ from api.chat.schemas import (
     EndingSnapshot,
     ImageArchiveItem,
     MyChatRoomListItem,
+    MEMORY_NOTE_MAX_LENGTH,
     PlayGuideResponse,
     PreviewSessionStartResponse,
     PreviewSessionState,
@@ -91,6 +98,7 @@ from api.db.models.chat import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     StoryEndingUnlock,
 )
@@ -1874,6 +1882,173 @@ async def acknowledge_version_upgrade(
     room.version_auto_upgraded = False
     await db.commit()
     return await _to_response(db, room)
+
+
+async def _memory_response(db: AsyncSession, room_id: uuid.UUID) -> ChatRoomMemoryResponse:
+    """기억 API 다섯 개가 같은 모양을 돌려준다. 방 행과 현재 스냅샷을 컬럼 단위로 다시 읽는다 —
+    같은 요청에서 방금 UPDATE 문으로 바꾼 값이 ORM 객체에는 반영돼 있지 않을 수 있다."""
+    room_row = (
+        await db.execute(
+            select(ChatRoom.memory_note, ChatRoom.memory_version, ChatRoom.memory_rolled_back_at).where(
+                ChatRoom.id == room_id
+            )
+        )
+    ).one()
+    snapshot_row = (
+        await db.execute(
+            select_current_snapshot(
+                room_id,
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.previous_text,
+                ChatRoomMemorySnapshot.source,
+                ChatRoomMemorySnapshot.updated_at,
+            )
+        )
+    ).first()
+    summary = (
+        ChatRoomMemorySummary(
+            text=snapshot_row.summary_text,
+            source=snapshot_row.source,
+            can_revert=snapshot_row.previous_text is not None,
+            updated_at=snapshot_row.updated_at,
+        )
+        if snapshot_row is not None
+        else None
+    )
+    return ChatRoomMemoryResponse(
+        note=room_row.memory_note,
+        summary=summary,
+        version=room_row.memory_version,
+        rolled_back_at=room_row.memory_rolled_back_at,
+        limits=ChatRoomMemoryLimits(note_max_length=MEMORY_NOTE_MAX_LENGTH, summary_max_length=SUMMARY_MAX_LENGTH),
+    )
+
+
+@router.get("/{room_id}/memory")
+async def get_chat_room_memory(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """방의 기억(사용자 노트와 현재 요약). 방 상세 응답에는 싣지 않는다 — 방 상세는 자주 다시 받아
+    편집 폼의 기준값을 흔든다."""
+    await _get_owned_room(db, room_id, user_id)
+    return await _memory_response(db, room_id)
+
+
+@router.put("/{room_id}/memory/note", dependencies=[Depends(require_legal_consent)])
+async def update_chat_room_memory_note(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemoryNoteRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —
+    올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다."""
+    await _get_owned_room(db, room_id, user_id)
+    await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=payload.note))
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+@router.delete("/{room_id}/memory/note")
+async def clear_chat_room_memory_note(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필
+    삭제와 같다). 저장과 같은 전체 응답을 돌려준다."""
+    await _get_owned_room(db, room_id, user_id)
+    await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=""))
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+def _memory_conflict(code: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code})
+
+
+async def _lock_current_summary_for_edit(
+    db: AsyncSession, room_id: uuid.UUID, version: int
+) -> tuple[uuid.UUID, str, str | None]:
+    """요약 편집·되돌리기의 공통 앞부분. 방 행을 먼저 잠그고(요약 접기·되감기와 같은 락) 그 뒤에
+    버전과 현재 스냅샷을 읽는다 — 락 전에 읽으면 그사이 커밋된 새 요약을 못 보고 옛 행을 고친다.
+    요청의 `version`이 방의 현재 값과 다르면(폼을 연 뒤 요약이 새로 접혔거나 되감겼다) 409, 고칠
+    스냅샷이 없으면(첫 접기 전) 409다. 거절은 아무것도 쓰기 전에 일어나고, 버전은 호출부가 실제로
+    고칠 때만 올린다."""
+    current_version = await db.scalar(
+        # 요약 접기·되감기의 UPDATE와 같은 강도(FOR NO KEY UPDATE) — 그 방에 메시지를 넣는 FK 검사는 막지 않는다.
+        select(ChatRoom.memory_version).where(ChatRoom.id == room_id).with_for_update(key_share=True)
+    )
+    if current_version != version:
+        raise _memory_conflict("MEMORY_VERSION_CONFLICT")
+    current = (
+        await db.execute(
+            select_current_snapshot(
+                room_id,
+                ChatRoomMemorySnapshot.id,
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.previous_text,
+            )
+        )
+    ).first()
+    if current is None:
+        raise _memory_conflict("MEMORY_SUMMARY_NOT_READY")
+    return current.id, current.summary_text, current.previous_text
+
+
+async def _bump_memory_version(db: AsyncSession, room_id: uuid.UUID) -> None:
+    """요약을 바꿨으니 진행 중인 요약 접기가 결과를 버리게 한다(접기는 읽을 때의 버전으로 저장한다)."""
+    await db.execute(
+        update(ChatRoom).where(ChatRoom.id == room_id).values(memory_version=ChatRoom.memory_version + 1)
+    )
+
+
+@router.put("/{room_id}/memory/summary", dependencies=[Depends(require_legal_consent)])
+async def update_chat_room_memory_summary(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemorySummaryRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """현재 요약을 사용자가 고친다. 고치기 직전 본문을 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연
+    뒤 요약이 새로 접혔거나 대화가 되감겼으면 `version`이 달라 409다. 첫 접기 전(스냅샷 없음)에는
+    고칠 요약이 없어 409다 — 404는 같은 경로의 "방 없음"과 겹친다."""
+    await _get_owned_room(db, room_id, user_id)
+    snapshot_id, current_text, _previous = await _lock_current_summary_for_edit(db, room_id, payload.version)
+    await _bump_memory_version(db, room_id)
+    await db.execute(
+        update(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.id == snapshot_id)
+        .values(summary_text=payload.summary, previous_text=current_text, source="user", updated_at=func.now())
+    )
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+@router.post("/{room_id}/memory/summary/revert", dependencies=[Depends(require_legal_consent)])
+async def revert_chat_room_memory_summary(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemoryRevertRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """사용자가 고친 요약을 고치기 직전 본문으로 한 번 되돌린다. 되돌린 뒤에는 되돌릴 것이 없다.
+    AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
+    요약에서도 원문에서도 빠진다."""
+    await _get_owned_room(db, room_id, user_id)
+    snapshot_id, _current, previous_text = await _lock_current_summary_for_edit(db, room_id, payload.version)
+    if previous_text is None:
+        raise _memory_conflict("MEMORY_NOTHING_TO_REVERT")
+    await _bump_memory_version(db, room_id)
+    await db.execute(
+        update(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.id == snapshot_id)
+        .values(summary_text=previous_text, previous_text=None, updated_at=func.now())
+    )
+    await db.commit()
+    return await _memory_response(db, room_id)
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)

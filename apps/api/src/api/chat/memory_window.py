@@ -8,10 +8,11 @@
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
-from sqlalchemy import select
+from sqlalchemy import Select, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import InstrumentedAttribute
 
 from api.db.models import ChatMessage, ChatMessageRole, ChatRoomMemorySnapshot
 
@@ -24,20 +25,27 @@ class CurrentSummary(NamedTuple):
     text: str
 
 
+def select_current_snapshot(room_id: uuid.UUID, *columns: InstrumentedAttribute[Any]) -> Select[Any]:
+    """방의 현재 요약 스냅샷(커서가 가장 큰 행)에서 `columns`를 읽는 문장. 프롬프트와 기억 API가
+    "어느 행이 현재인가"를 이 한 곳에서 정한다."""
+    return (
+        select(*columns)
+        .where(ChatRoomMemorySnapshot.chat_room_id == room_id)
+        .order_by(ChatRoomMemorySnapshot.cursor_created_at.desc(), ChatRoomMemorySnapshot.cursor_message_id.desc())
+        .limit(1)
+    )
+
+
 async def load_current_summary(db: AsyncSession, room_id: uuid.UUID) -> CurrentSummary | None:
     """방의 현재 요약 — 커서가 가장 큰 스냅샷의 커서와 본문. 스냅샷이 없으면 None."""
     row = (
         await db.execute(
-            select(
+            select_current_snapshot(
+                room_id,
                 ChatRoomMemorySnapshot.cursor_created_at,
                 ChatRoomMemorySnapshot.cursor_message_id,
                 ChatRoomMemorySnapshot.summary_text,
             )
-            .where(ChatRoomMemorySnapshot.chat_room_id == room_id)
-            .order_by(
-                ChatRoomMemorySnapshot.cursor_created_at.desc(), ChatRoomMemorySnapshot.cursor_message_id.desc()
-            )
-            .limit(1)
         )
     ).first()
     if row is None:

@@ -5394,6 +5394,254 @@
         }
       }
     },
+    "/chat-rooms/{room_id}/memory": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Chat Room Memory",
+        "description": "방의 기억(사용자 노트와 현재 요약). 방 상세 응답에는 싣지 않는다 — 방 상세는 자주 다시 받아\n편집 폼의 기준값을 흔든다.",
+        "operationId": "get_chat_room_memory_chat_rooms__room_id__memory_get",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/memory/note": {
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Update Chat Room Memory Note",
+        "description": "노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —\n올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다.",
+        "operationId": "update_chat_room_memory_note_chat_rooms__room_id__memory_note_put",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomMemoryNoteRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Clear Chat Room Memory Note",
+        "description": "노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필\n삭제와 같다). 저장과 같은 전체 응답을 돌려준다.",
+        "operationId": "clear_chat_room_memory_note_chat_rooms__room_id__memory_note_delete",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/memory/summary": {
+      "put": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Update Chat Room Memory Summary",
+        "description": "현재 요약을 사용자가 고친다. 고치기 직전 본문을 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연\n뒤 요약이 새로 접혔거나 대화가 되감겼으면 `version`이 달라 409다. 첫 접기 전(스냅샷 없음)에는\n고칠 요약이 없어 409다 — 404는 같은 경로의 \"방 없음\"과 겹친다.",
+        "operationId": "update_chat_room_memory_summary_chat_rooms__room_id__memory_summary_put",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomMemorySummaryRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat-rooms/{room_id}/memory/summary/revert": {
+      "post": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Revert Chat Room Memory Summary",
+        "description": "사용자가 고친 요약을 고치기 직전 본문으로 한 번 되돌린다. 되돌린 뒤에는 되돌릴 것이 없다.\nAI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가\n요약에서도 원문에서도 빠진다.",
+        "operationId": "revert_chat_room_memory_summary_chat_rooms__room_id__memory_summary_revert_post",
+        "parameters": [
+          {
+            "name": "room_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Room Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChatRoomMemoryRevertRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChatRoomMemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/me/chat-rooms": {
       "get": {
         "tags": [
@@ -9664,6 +9912,153 @@
           "createdAt"
         ],
         "title": "ChatRoomListItem"
+      },
+      "ChatRoomMemoryLimits": {
+        "properties": {
+          "noteMaxLength": {
+            "type": "integer",
+            "title": "Notemaxlength"
+          },
+          "summaryMaxLength": {
+            "type": "integer",
+            "title": "Summarymaxlength"
+          }
+        },
+        "type": "object",
+        "required": [
+          "noteMaxLength",
+          "summaryMaxLength"
+        ],
+        "title": "ChatRoomMemoryLimits"
+      },
+      "ChatRoomMemoryNoteRequest": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "maxLength": 1000,
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note"
+        ],
+        "title": "ChatRoomMemoryNoteRequest",
+        "description": "공백만 보내면 빈 노트로 저장된다(비우기와 같다)."
+      },
+      "ChatRoomMemoryResponse": {
+        "properties": {
+          "note": {
+            "type": "string",
+            "title": "Note"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChatRoomMemorySummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "rolledBackAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rolledbackat"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ChatRoomMemoryLimits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "note",
+          "summary",
+          "version",
+          "rolledBackAt",
+          "limits"
+        ],
+        "title": "ChatRoomMemoryResponse",
+        "description": "`summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난\n메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다."
+      },
+      "ChatRoomMemoryRevertRequest": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "version"
+        ],
+        "title": "ChatRoomMemoryRevertRequest"
+      },
+      "ChatRoomMemorySummary": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto",
+              "user"
+            ],
+            "title": "Source"
+          },
+          "canRevert": {
+            "type": "boolean",
+            "title": "Canrevert"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "source",
+          "canRevert",
+          "updatedAt"
+        ],
+        "title": "ChatRoomMemorySummary",
+        "description": "방의 현재 요약. `can_revert`는 사용자가 이 요약을 고친 적이 있어 고치기 직전 본문으로 한 번\n되돌릴 수 있는가다 — AI가 새로 접은 요약은 되돌릴 대상이 없다."
+      },
+      "ChatRoomMemorySummaryRequest": {
+        "properties": {
+          "summary": {
+            "type": "string",
+            "maxLength": 1500,
+            "title": "Summary"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "summary",
+          "version"
+        ],
+        "title": "ChatRoomMemorySummaryRequest",
+        "description": "`version`은 편집 폼을 연 시점의 `memoryVersion`이다 — 그 사이 요약이 새로 접혔거나 대화가\n되감겼으면 서버 값과 달라 409로 거절된다(사용자 편집이 새 요약을 조용히 덮지 않게)."
       },
       "ChatRoomRenameRequest": {
         "properties": {

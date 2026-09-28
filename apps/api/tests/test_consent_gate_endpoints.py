@@ -1,18 +1,18 @@
-"""`require_legal_consent`가 "막는다" 25개에
-붙어 있고 "연다" 16개에는 안 붙어 있는지 3층으로 검증한다.
-개수에는 대화 프로필 차단 4·개방 1이 들어 있다(그 전에는 21+15였다).
+"""`require_legal_consent`가 "막는다" 28개에
+붙어 있고 "연다" 17개에는 안 붙어 있는지 3층으로 검증한다.
+개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다).
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 25개/16개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 28개/17개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
     (`fastapi/openapi/utils.py`의 `get_openapi`가 스키마를 만들 때 쓰는 것과 같은 경로).
-(b) 25개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
-    데코레이터든(21개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
+(b) 28개에 최소 요청 → 403 + `LEGAL_RECONSENT_REQUIRED`. `require_legal_consent`가
+    데코레이터든(24개) 시그니처든(SSE 4개) `dependant.dependencies`의 나머지보다 먼저
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
-(c) 16개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
+(c) 17개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
     `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
@@ -27,6 +27,7 @@ import httpx
 import pytest
 from fastapi import routing as fastapi_routing
 from fastapi.routing import APIRoute
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.security import hash_password
@@ -35,7 +36,7 @@ from api.legal.dependencies import require_legal_consent
 from api.main import app
 from factories import _get_genre, _login_as, _make_asset, _make_published, _make_published_story, _make_user
 
-# ---- (a)/(b) 공통: "막는다" 25개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
+# ---- (a)/(b) 공통: "막는다" 28개. path는 실제 라우트 경로(=(a)의 조회 키이자 (b)의 URL 템플릿) ----
 
 _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms", {"contentId": str(uuid.uuid4()), "contentType": "character"}),
@@ -77,9 +78,13 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("PUT", "/me/personas/{persona_id}", {"name": "하늘", "gender": None, "description": ""}),
     ("PUT", "/me/default-persona", {"personaId": None}),
     ("PUT", "/chat-rooms/{room_id}/persona", {"personaId": None}),
+    # 방 기억 쓰기 3개(노트 비우기는 아래 "연다")
+    ("PUT", "/chat-rooms/{room_id}/memory/note", {"note": "메모"}),
+    ("PUT", "/chat-rooms/{room_id}/memory/summary", {"summary": "요약", "version": 0}),
+    ("POST", "/chat-rooms/{room_id}/memory/summary/revert", {"version": 0}),
 ]
 
-# ---- (a)/(c) 공통: "연다" 16개 ----
+# ---- (a)/(c) 공통: "연다" 17개 ----
 
 _OPEN_PATHS: list[tuple[str, str]] = [
     ("POST", "/legal/consent"),
@@ -98,6 +103,7 @@ _OPEN_PATHS: list[tuple[str, str]] = [
     ("DELETE", "/chat-rooms/{room_id}"),
     ("DELETE", "/chat-rooms/{room_id}/messages/{message_id}"),
     ("DELETE", "/me/personas/{persona_id}"),  # "자기 데이터 삭제"는 예외
+    ("DELETE", "/chat-rooms/{room_id}/memory/note"),
 ]
 
 
@@ -133,7 +139,7 @@ def test_open_endpoints_never_carry_the_consent_gate() -> None:
         assert require_legal_consent not in dependency_calls, f"{method} {path} must not require consent"
 
 
-# ---- (b) 25개 최소 요청 → 403 ----
+# ---- (b) 28개 최소 요청 → 403 ----
 
 _DUMMY_IDS = {
     "room_id": str(uuid.uuid4()),
@@ -169,7 +175,7 @@ async def test_blocked_endpoint_returns_403_without_consent(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- (c) 16개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
+# ---- (c) 17개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
 
 
 async def _unconsented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
@@ -358,3 +364,22 @@ async def test_delete_persona_still_open_without_consent(
     resp = await db_client.delete(f"/me/personas/{persona.id}")
 
     assert resp.status_code == 204
+
+
+async def test_clear_memory_note_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """노트 저장은 막혀도 비우기는 열려 있다 — 새 문안에 동의하지 않은 사용자도 자기가 적은 것을
+    지울 수 있어야 한다. 읽기도 막지 않는다."""
+    user = await _unconsented_user(db_client, db_session)
+    room = await _owned_chat_room(db_session, user)
+    room.memory_note = "지울 메모"
+    await db_session.commit()
+
+    read = await db_client.get(f"/chat-rooms/{room.id}/memory")
+    cleared = await db_client.delete(f"/chat-rooms/{room.id}/memory/note")
+
+    assert read.status_code == 200
+    assert cleared.status_code == 200
+    stored = await db_session.scalar(select(ChatRoom.memory_note).where(ChatRoom.id == room.id))
+    assert stored == ""
