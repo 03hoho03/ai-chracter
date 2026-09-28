@@ -952,7 +952,7 @@ async def test_image_exempt_user_does_not_spend_clover(
 async def test_whitespace_only_prompt_is_rejected_before_any_token_is_taken(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, prompt: str
 ) -> None:
-    """공백만 있는 프롬프트는 `min_length=1` 을 통과한다. 그대로 보내면 집 PC 는 빈 프롬프트를
+    """공백만 있는 프롬프트는 `min_length=1` 을 통과한다. 그대로 보내면 집 PC 는 공백만 있는 프롬프트를
     기본 인물 생성으로 처리해 사용자가 의도하지 않은 이미지가 나오고 하루치 토큰이 깎인다.
     바디 검증에서 끊겨야 게이트가 불리지 않는다 — 버킷 키가 아예 없어야(None) "차감 후 환불"이
     아니라 "차감 없음"이다."""

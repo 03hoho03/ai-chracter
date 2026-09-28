@@ -46,7 +46,7 @@ class GenerateImageRequest(CamelModel):
     @field_validator("prompt")
     @classmethod
     def _must_not_be_blank(cls, value: str) -> str:
-        # 공백만 있는 프롬프트는 `min_length`를 통과하지만 집 PC는 빈 프롬프트를 기본 인물 생성으로
+        # 공백만 있는 프롬프트는 `min_length`를 통과하지만 집 PC는 공백만 있는 프롬프트를 기본 인물 생성으로
         # 처리한다 — 원하지 않은 이미지에 차감이 붙는다. 바디 검증이라 레이트리밋 게이트(같은 바디
         # 모델을 선언한다)보다 먼저 422로 끊긴다.
         #
