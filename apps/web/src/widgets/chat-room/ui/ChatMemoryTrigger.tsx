@@ -13,7 +13,8 @@ import { NotebookPen } from "lucide-react";
 
 import { RoomMemoryEditor } from "@/features/edit-room-memory";
 
-import { MEMORY_PANEL_DESCRIPTION, confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
+import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
+import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
 import { chatSidePanelAtom } from "../model/atoms";
 
