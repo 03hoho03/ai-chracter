@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
@@ -29,6 +30,8 @@ import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
+import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
+import { chatSidePanelAtom } from "../model/atoms";
 import { ChatMemorySidebar } from "./ChatMemorySidebar";
 import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatMorePanel } from "./ChatMorePanel";
@@ -54,6 +57,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
+  const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
+  useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
   // 무료 일일분을 쓴 뒤에만 나타난다.
   // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
   const { data: clover } = useCloverBalanceQuery();
