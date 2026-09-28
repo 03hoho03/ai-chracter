@@ -64,7 +64,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const { data: clover } = useCloverBalanceQuery();
   const cloverBalance = clover?.balance ?? 0;
   const isCloverShort = isCloverInsufficient(cloverBalance, CHAT_TURN_CLOVER_COST);
-  const showClover =
+  const shouldShowClover =
     clover !== undefined &&
     shouldShowCloverBalance({
       spendConfirmedToday: clover.spendConfirmedToday,
@@ -315,7 +315,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
                 칩 줄 자체가 조건부라 "필요할 때만 노출"과 형태가 같다.
                 429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
-            {showClover && (
+            {shouldShowClover && (
               <div className="mb-2 flex justify-end">
                 <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
               </div>
