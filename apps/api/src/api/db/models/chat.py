@@ -93,7 +93,9 @@ class ChatRoomMemorySnapshot(Base):
     지우는 경로(편집·삭제·재생성·초기화·방 삭제·탈퇴)는 같은 트랜잭션에서 이 행부터 지워야 하고,
     그러면 가리킬 메시지가 사라진 행은 남지 않는다.
 
-    `previous_text`는 사용자가 이 행의 요약을 고쳤을 때 고치기 직전 값이다(되돌리기 한 단계).
+    `previous_text`는 사용자가 이 행의 요약을 고쳤을 때 고치기 직전 값이고(되돌리기 한 단계),
+    `previous_source`는 그 값의 출처다 — AI가 접은 요약을 고쳤다 되돌리면 다시 AI 요약으로 보인다.
+    둘은 함께 채워지고 함께 비워진다.
     `source`는 `"auto"`(요약 호출이 만든 행)·`"user"`(사용자가 고친 행)뿐이고 Postgres ENUM이
     아니라 Text다 — 허용값은 이 행을 쓰는 코드와 응답 스키마가 강제한다.
 
@@ -109,6 +111,7 @@ class ChatRoomMemorySnapshot(Base):
     cursor_message_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
     summary_text: Mapped[str] = mapped_column(Text, nullable=False)
     previous_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    previous_source: Mapped[str | None] = mapped_column(Text, nullable=True)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False

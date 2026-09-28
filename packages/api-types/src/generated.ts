@@ -2315,7 +2315,7 @@ export interface paths {
         get?: never;
         /**
          * Update Chat Room Memory Summary
-         * @description 현재 요약을 사용자가 고친다. 고치기 직전 본문을 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연
+         * @description 현재 요약을 사용자가 고친다. 고치기 직전 본문과 출처를 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연
          *     뒤 요약이 새로 접혔거나 대화가 되감겼으면 `version`이 달라 409다. 첫 접기 전(스냅샷 없음)에는
          *     고칠 요약이 없어 409다 — 404는 같은 경로의 "방 없음"과 겹친다.
          */
@@ -2338,7 +2338,8 @@ export interface paths {
         put?: never;
         /**
          * Revert Chat Room Memory Summary
-         * @description 사용자가 고친 요약을 고치기 직전 본문으로 한 번 되돌린다. 되돌린 뒤에는 되돌릴 것이 없다.
+         * @description 사용자가 고친 요약을 고치기 직전 본문과 그 출처로 한 번 되돌린다 — AI 요약을 고쳤다 되돌리면
+         *     다시 AI 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
          *     AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
          *     요약에서도 원문에서도 빠진다.
          */

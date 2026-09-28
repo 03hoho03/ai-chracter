@@ -40,6 +40,7 @@ async def _plant_user_edited_snapshot(db_session: AsyncSession, room: Room, *, t
             cursor_message_id=assistant.id,
             summary_text="사용자가 고친 요약",
             previous_text="AI가 접은 요약",
+            previous_source="auto",
             source="user",
         )
     )
@@ -203,6 +204,18 @@ async def test_summary_longer_than_the_limit_is_rejected(
     assert resp.status_code == 422
 
 
+async def test_an_empty_summary_can_be_saved(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant_snapshot(db_session, room, turn=10, text="AI가 접은 요약")
+
+    resp = await db_client.put(f"/chat-rooms/{room.room_id}/memory/summary", json={"summary": "   ", "version": 0})
+
+    assert resp.status_code == 200
+    assert resp.json()["summary"]["text"] == ""
+    assert resp.json()["summary"]["canRevert"] is True
+    assert [row.summary_text for row in await _snapshots(db_session, room)] == [""]
+
+
 # ---- 되돌리기 ----
 
 
@@ -229,6 +242,57 @@ async def test_revert_restores_the_text_once_and_then_has_nothing_left(
     assert second.json()["detail"]["code"] == "MEMORY_NOTHING_TO_REVERT"
     assert await _snapshots(db_session, room) == after_first
     assert await _memory_version(db_session, room) == 2
+
+
+async def _revert_buffer(db_session: AsyncSession, room: Room) -> list[tuple[str, str, str | None, str | None]]:
+    rows = (
+        await db_session.execute(
+            sa.select(
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.source,
+                ChatRoomMemorySnapshot.previous_text,
+                ChatRoomMemorySnapshot.previous_source,
+            ).where(ChatRoomMemorySnapshot.chat_room_id == room.room_id)
+        )
+    ).all()
+    return [tuple(row) for row in rows]
+
+
+async def test_reverting_an_edited_ai_summary_shows_it_as_the_ai_summary_again(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant_snapshot(db_session, room, turn=10, text="AI가 접은 요약")
+    edited = await db_client.put(
+        f"/chat-rooms/{room.room_id}/memory/summary", json={"summary": "고친 요약", "version": 0}
+    )
+    after_edit = await _revert_buffer(db_session, room)
+
+    reverted = await db_client.post(f"/chat-rooms/{room.room_id}/memory/summary/revert", json={"version": 1})
+
+    assert edited.status_code == 200
+    assert after_edit == [("고친 요약", "user", "AI가 접은 요약", "auto")]
+    assert reverted.status_code == 200
+    assert reverted.json()["summary"]["source"] == "auto"
+    assert await _revert_buffer(db_session, room) == [("AI가 접은 요약", "auto", None, None)]
+
+
+async def test_reverting_a_second_edit_returns_to_the_users_first_edit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _open_room(db_client, db_session, turns=10)
+    await _plant_snapshot(db_session, room, turn=10, text="AI가 접은 요약")
+    for version, text in [(0, "처음 고친 요약"), (1, "다시 고친 요약")]:
+        resp = await db_client.put(
+            f"/chat-rooms/{room.room_id}/memory/summary", json={"summary": text, "version": version}
+        )
+        assert resp.status_code == 200
+
+    reverted = await db_client.post(f"/chat-rooms/{room.room_id}/memory/summary/revert", json={"version": 2})
+
+    assert reverted.status_code == 200
+    assert reverted.json()["summary"]["source"] == "user"
+    assert await _revert_buffer(db_session, room) == [("처음 고친 요약", "user", None, None)]
 
 
 async def test_a_summary_the_ai_folded_cannot_be_reverted(
