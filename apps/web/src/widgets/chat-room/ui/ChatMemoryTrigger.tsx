@@ -59,7 +59,7 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
           <DialogTitle>기억 노트</DialogTitle>
           <DialogDescription className="break-keep">{MEMORY_PANEL_DESCRIPTION}</DialogDescription>
         </DialogHeader>
-        <RoomMemoryEditor roomId={roomId} confirmClearNote={confirmClearMemoryNote} />
+        <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
       </DialogContent>
     </Dialog>
   );

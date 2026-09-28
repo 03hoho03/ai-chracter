@@ -24,7 +24,7 @@ type RoomMemoryEditorProps = {
   roomId: string;
   /** 노트 비우기 확인. 확인 모달은 다른 feature(`manage-chat-room`)라 위젯이 주입한다 — 확인되면 `clear`를
    * 부른다(`clear`는 던지지 않는다). */
-  confirmClearNote: (clear: () => Promise<void>) => Promise<void>;
+  onClearNoteRequest: (clear: () => Promise<void>) => Promise<void>;
 };
 
 type WriteErrorState = { section: "summary" | "note"; error: MemoryWriteError };
@@ -35,7 +35,7 @@ const SOURCE_LABEL: Record<NonNullable<ChatRoomMemory["summary"]>["source"], str
 };
 
 /** 기억 노트 패널의 본문. lg 인라인 패널과 lg 미만 Dialog가 같은 본문을 쓴다(제목은 각 컨테이너가 든다). */
-export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorProps) {
+export function RoomMemoryEditor({ roomId, onClearNoteRequest }: RoomMemoryEditorProps) {
   const memoryQuery = useChatRoomMemoryQuery(roomId, true);
 
   if (memoryQuery.isPending) {
@@ -58,10 +58,10 @@ export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorP
       key={roomId}
       roomId={roomId}
       memory={memoryQuery.data}
-      reload={async () => {
+      onReload={async () => {
         await memoryQuery.refetch();
       }}
-      confirmClearNote={confirmClearNote}
+      onClearNoteRequest={onClearNoteRequest}
     />
   );
 }
@@ -69,11 +69,11 @@ export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorP
 type RoomMemoryFormProps = {
   roomId: string;
   memory: ChatRoomMemory;
-  reload: () => Promise<void>;
-  confirmClearNote: RoomMemoryEditorProps["confirmClearNote"];
+  onReload: () => Promise<void>;
+  onClearNoteRequest: RoomMemoryEditorProps["onClearNoteRequest"];
 };
 
-function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemoryFormProps) {
+function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMemoryFormProps) {
   const fieldId = useId();
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
@@ -142,7 +142,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   }
 
   async function handleReloadAfterConflict() {
-    await reload();
+    await onReload();
     setWriteError(null);
     if (isEditingSummary) stopSummaryEdit();
   }
@@ -194,7 +194,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   }
 
   async function handleClearNote() {
-    await confirmClearNote(async () => {
+    await onClearNoteRequest(async () => {
       setWriteError(null);
       try {
         const next = await clearNoteMutation.mutateAsync();
