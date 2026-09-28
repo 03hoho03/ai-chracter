@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { isReferenceImageEnabled } from "./referenceImageGate";
+import { isReferenceImageEnabled } from "./isReferenceImageEnabled";
 
 // 서버 목록의 모델 id는 지금 `"v1"` 하나뿐인 상수 타입이라, 판정에 쓰는 두 필드만 가진 모양으로 만든다.
 function makeModel(id: string, supportsReferenceImage: boolean) {

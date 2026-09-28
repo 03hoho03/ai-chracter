@@ -1,3 +1,4 @@
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Loader2 } from "lucide-react";
 
 import type { ImageJobStatusResponse } from "@/entities/image-job";
@@ -107,7 +108,7 @@ export function GenerateImagesResultGrid({
           끝나는 경우(오늘의 기본 화면)와 시각적으로 동일하도록 비어 있을 때는 sr-only로 접는다. */}
       <p
         aria-live="polite"
-        className={partialBlockNotice ? "text-sm text-muted-foreground" : "sr-only"}
+        className={cn("text-sm text-muted-foreground", !partialBlockNotice && "sr-only")}
       >
         {partialBlockNotice}
       </p>
