@@ -20,6 +20,11 @@ const ROLE_LABELS: Record<AdminChatMessageItem["role"], string> = {
   assistant: "AI",
 };
 
+const SUMMARY_SOURCE_LABELS: Record<NonNullable<AdminChatRoomViewResponse["memorySummary"]>["source"], string> = {
+  auto: "AI 요약",
+  user: "사용자가 고친 요약",
+};
+
 type ChatMessagesPageProps = {
   userId: string;
   roomId: string;
@@ -149,11 +154,6 @@ function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
     </li>
   );
 }
-
-const SUMMARY_SOURCE_LABELS: Record<NonNullable<AdminChatRoomViewResponse["memorySummary"]>["source"], string> = {
-  auto: "AI 요약",
-  user: "사용자가 고친 요약",
-};
 
 /** 방 기억 — 사용자 노트("꼭 기억할 것")와 현재 요약("지금까지의 이야기"). 노트는 매 턴 모델에 그대로
  * 실리는 사용자 입력이라 악용 조사의 대상이고, 이 열람(사유·감사 로그)이 그것을 보는 유일한 경로다. */

@@ -18,7 +18,9 @@ export function useResetChatRoomMutation(roomId: string) {
       toChatRoomState((await apiClient.post<ChatRoomResponseDto>(`/chat-rooms/${roomId}/reset`)).data),
     onSuccess: (room) => {
       queryClient.setQueryData(chatRoomKeys.detail(roomId), room);
-      // 초기화는 요약만 지우고 노트는 남긴다 — 버린 값이 아니라 낡은 값이라 remove가 아니라 invalidate다.
+      // 초기화는 요약만 지우고 노트는 남긴다. remove가 아니라 invalidate인 이유: 열려 있는 기억 패널이 통째로
+      // 불러오는 중으로 돌아가지 않게 하려는 것이다. 지운 요약이 리페치 전까지 캐시에 잠깐 남지만, 그 값으로
+      // 저장하려 해도 서버의 버전 검사가 409로 막아 되살아나지 않는다.
       void queryClient.invalidateQueries({ queryKey: chatRoomKeys.memory(roomId) });
     },
   });
