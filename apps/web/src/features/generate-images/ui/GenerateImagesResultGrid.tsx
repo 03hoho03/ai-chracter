@@ -119,6 +119,8 @@ export function GenerateImagesResultGrid({
 // 임계값은 노출하지 않는다(무엇이 얼마나 걸렸는지 알리면 이진 탐색으로 통과선을 찾을 수 있다).
 // `prompt`는 표현을 바꾸라는 안내까지(판정이 결정적이라 같은 프롬프트 재시도는 무의미하다),
 // `image`는 중립 문구만(사후 가드는 반복하면 언젠가 통과하므로 재시도를 암시하면 우회를 권하는 셈이다).
+// `reference`는 참조 이미지를 짚어 다른 이미지를 고르라고 안내한다 — 원인 축이 이미지 하나라 명시해도
+// 통과선 탐색 위험이 작고, 같은 참조로 재시도를 암시하는 말은 붙이지 않는다.
 // 전부 차단(failed)에서만 쓴다 — 부분 차단 문구는 사유를 보지 않는다(아래 getPartialBlockNotice).
 function getBlockedReasonCopy(reason: BlockedReason): string {
   switch (reason) {
@@ -126,6 +128,8 @@ function getBlockedReasonCopy(reason: BlockedReason): string {
       return "이 프롬프트로는 이미지를 만들 수 없어요. 문구를 바꿔서 다시 시도해주세요.";
     case "image":
       return "운영 정책에 따라 이 요청을 처리할 수 없어요.";
+    case "reference":
+      return "이 참조 이미지로는 만들 수 없어요. 다른 이미지를 골라 보세요.";
     default:
       return assertNever(reason);
   }
@@ -146,9 +150,10 @@ function getInputErrorCopy(inputError: InputError): string {
 }
 
 // 프롬프트 가드는 결정적이라 같은 프롬프트는 항상 전부-차단이다.
-// 그래서 부분 차단(SUCCEEDED + blockedCount>0)은 이미지 가드에서만 나올 수 있고, 여기에 `prompt`
-// 사유가 섞이면 상류(로컬 가드) 이상이다 — 그 경우에도 "문구를 바꿔주세요"는
-// 거짓 안내가 되므로, 부분 차단 문구는 사유와 무관한 중립 문장 하나로 둔다.
+// 그래서 부분 차단(SUCCEEDED + blockedCount>0)에 `prompt` 사유가 섞이면 상류(로컬 가드) 이상이다.
+// 부분 차단은 장마다 따로 검사되는 가드(결과 이미지, 참조 이미지)에서 나오고, 어느 쪽이든 성공한
+// 이미지 옆에서 "문구를 바꿔주세요"·"다른 이미지를 골라 보세요"는 거짓 안내가 될 수 있으므로,
+// 부분 차단 문구는 사유와 무관한 중립 문장 하나로 둔다.
 function getPartialBlockNotice(count: number): string {
   return `${count}장은 운영 정책에 따라 표시하지 않았어요.`;
 }

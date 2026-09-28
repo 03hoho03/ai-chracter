@@ -11703,7 +11703,8 @@
                 "type": "string",
                 "enum": [
                   "prompt",
-                  "image"
+                  "image",
+                  "reference"
                 ]
               },
               {

@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 
 from api.admin.schemas import ChatViewReasonCategory
 from api.core.schema import CamelModel
@@ -42,6 +42,20 @@ class GenerateImageRequest(CamelModel):
     # 집 PC 1장당 약 30초 × 직렬 — 4장이면 한 잡이
     # 큐를 120초 독점한다. 30초 실측 전 상한(4)을 낮춘 것이라 GPU가 바뀌면 다시 열 값이다.
     count: int = Field(default=1, ge=1, le=2)
+
+    @field_validator("prompt")
+    @classmethod
+    def _must_not_be_blank(cls, value: str) -> str:
+        # 공백만 있는 프롬프트는 `min_length`를 통과하지만 집 PC는 공백만 있는 프롬프트를 기본 인물 생성으로
+        # 처리한다 — 원하지 않은 이미지에 차감이 붙는다. 바디 검증이라 레이트리밋 게이트(같은 바디
+        # 모델을 선언한다)보다 먼저 422로 끊긴다.
+        #
+        # 판정만 하고 값은 다듬지 않는다(`strip_whitespace`를 쓰지 않는 이유). 다듬으면 요청 행과
+        # 어드민에 사용자가 실제로 보낸 것과 다른 문자열이 남고, API를 직접 부르는 호출자의 앞뒤
+        # 공백이 조용히 사라진 채 집 PC로 간다.
+        if not value.strip():
+            raise ValueError("프롬프트가 비어 있습니다.")
+        return value
 
 
 class ImageStyleItem(CamelModel):

@@ -18,11 +18,11 @@ AspectRatio = Literal["1:1", "4:3", "3:4", "16:9", "9:16", "2:3"]
 # 지금은 단일 모델("v1")뿐이다.
 ImageModelId = Literal["v1"]
 
-# 집 PC의 두 가드(생성 전 프롬프트,
+# 집 PC의 가드(생성 전 프롬프트·참조 이미지,
 # 생성 후 이미지)가 422로 실어 보내는 고정 카테고리. 여기 두는 이유는 위 순환 회피와
 # 같다 — `llm/local_image.py`(예외)·`images/jobs.py`(Redis 모델)·`images/schemas.py`
 # (응답) 셋이 같은 리터럴을 공유해야 한다.
-ImageBlockedReason = Literal["prompt", "image"]
+ImageBlockedReason = Literal["prompt", "image", "reference"]
 
 # 사용자가 프롬프트를 고쳐서 통과할 수 있는 입력
 # 오류 축 — `blocked_reason`(정책 차단, 일부러 사유를 숨긴다)과는 의미가 다르다.
