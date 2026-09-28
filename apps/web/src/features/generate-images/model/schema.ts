@@ -61,6 +61,9 @@ export const generateImagesSchema = z.object({
   style: z.string().min(1),
   aspectRatio: z.enum(IMAGE_ASPECT_RATIOS),
   count: z.number().int().min(Math.min(...IMAGE_COUNT_OPTIONS)).max(Math.max(...IMAGE_COUNT_OPTIONS)),
+  // 참조로 쓸 본인 생성 이미지. 미리보기 URL은 폼 값이 아니다 — 피커가 주는 presigned URL은 만료되는
+  // 표시 전용 값이라, 참조 행이 로컬 state로 들고 서버에는 id만 보낸다.
+  reference: z.object({ assetId: z.uuid() }).nullable(),
 });
 
 export type GenerateImagesFormValues = z.infer<typeof generateImagesSchema>;
@@ -72,4 +75,5 @@ export const generateImagesDefaultValues: DefaultValues<GenerateImagesFormValues
   prompt: "",
   aspectRatio: "1:1",
   count: 1,
+  reference: null,
 };

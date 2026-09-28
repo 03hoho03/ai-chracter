@@ -22,13 +22,25 @@ export type GenerateImageRequestBody = Omit<
  * 한때 이 경계가 없어 `GenerateImagesFormValues`가 그대로 POST 바디였다 — 필드가 4개뿐이라
  * 분리하지 않는다는 결정이었는데(`schema.ts`의 change-password·edit-profile 선례), 바디에 타입이
  * 안 붙어 있어서 **스키마와 DTO가 이미 어긋나 있는 것조차 컴파일에 안 잡혔다**. 지금은 필드가
- * 다섯이고 그중 둘이 서버 목록에서 오는 문자열이라 위 타입이 그 경계를 명시한다. */
-export function formToServer(values: GenerateImagesFormValues): GenerateImageRequestBody {
-  return {
+ * 다섯이고 그중 둘이 서버 목록에서 오는 문자열이라 위 타입이 그 경계를 명시한다.
+ *
+ * 참조 이미지는 **참조를 쓸 수 있을 때만** 싣는다. 사용자가 참조를 고른 뒤 서버가 참조를 끄면
+ * (모델 목록이 다시 받아지며 참조 행이 사라진다) 폼에는 고른 값이 남아 있는데, 그대로 보내면 서버가
+ * 400으로 거절한다. 참조가 없으면 키 자체를 빼서 참조 없는 요청 바디를 예전과 같게 둔다. 이 필드는
+ * 서버 스키마에서 선택 필드라 빼먹어도 컴파일이 못 잡으므로 `formToServer.test.ts`가 고정한다. */
+export function formToServer(
+  values: GenerateImagesFormValues,
+  { isReferenceEnabled }: { isReferenceEnabled: boolean },
+): GenerateImageRequestBody {
+  const body: GenerateImageRequestBody = {
     prompt: values.prompt,
     model: values.model,
     style: values.style,
     aspectRatio: values.aspectRatio,
     count: values.count,
   };
+  if (isReferenceEnabled && values.reference !== null) {
+    body.referenceAssetId = values.reference.assetId;
+  }
+  return body;
 }
