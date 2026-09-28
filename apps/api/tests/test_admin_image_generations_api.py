@@ -6,6 +6,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import AdminActionLog, Asset, AssetKind, AssetStatus, ImageGenerationRequest
+from api.images.models import IMAGE_STYLE_PRESETS, IMAGE_STYLE_PRESETS_BY_ID
 from factories import _create_admin, _login_as, _login_as_admin, _make_user
 
 
@@ -348,3 +349,65 @@ async def test_list_filter_by_date_range_excludes_outside(
     assert resp.status_code == 200
     body = resp.json()
     assert [item["id"] for item in body["items"]] == [str(in_range.id)]
+
+
+# ---- 스타일 표시명 -------------------------------------------------------------
+
+
+async def test_list_carries_registry_style_names_and_filter_options(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """깨지는 시나리오: 표시명을 레지스트리가 아닌 곳에서 찾으면 어드민이 생성 화면과 다른 이름을
+    보이거나 id 만 보인다. 레지스트리에서 빠진 옛 style 값은 이름이 없어야 어드민이 id 원문으로
+    폴백한다(없는 이름을 지어내지 않는다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    current = await _make_image_generation_request(
+        db_session, owner_user_id=user.id, style="chapel_glass"
+    )
+    legacy = await _make_image_generation_request(db_session, owner_user_id=user.id, style="base")
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get("/admin/image-generations")
+    assert resp.status_code == 200
+    body = resp.json()
+    style_names = {item["id"]: item["styleName"] for item in body["items"]}
+    assert style_names == {
+        str(current.id): IMAGE_STYLE_PRESETS_BY_ID["chapel_glass"].name,
+        str(legacy.id): None,
+    }
+    assert body["styleOptions"] == [
+        {"id": spec.id, "name": spec.name} for spec in IMAGE_STYLE_PRESETS
+    ]
+
+
+async def test_detail_carries_registry_style_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """깨지는 시나리오: 유저 단위 상세만 표시명을 빠뜨리면 같은 요청이 목록과 상세에서 다른 이름으로
+    보인다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    current = await _make_image_generation_request(
+        db_session, owner_user_id=user.id, style="sparkle_night"
+    )
+    legacy = await _make_image_generation_request(db_session, owner_user_id=user.id, style="base")
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/users/{user.id}/image-generations")
+    assert resp.status_code == 200
+    style_names = {item["id"]: item["styleName"] for item in resp.json()["items"]}
+    assert style_names == {
+        str(current.id): IMAGE_STYLE_PRESETS_BY_ID["sparkle_night"].name,
+        str(legacy.id): None,
+    }

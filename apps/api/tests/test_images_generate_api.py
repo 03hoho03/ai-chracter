@@ -273,12 +273,12 @@ async def test_list_image_models_returns_capabilities(
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
     # 레지스트리 7종은 항상 전부 내려가고
     # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `soft_portrait`
-    # (표시명 "부드러운") 하나뿐이라 나머지 6종은 `available: false`다.
+    # (표시명 "기본") 하나뿐이라 나머지 6종은 `available: false`다.
     assert models["v1"]["styles"] == [
-        {"id": "soft_portrait", "name": "부드러운", "available": True},
-        {"id": "chapel_glass", "name": "스테인드", "available": False},
+        {"id": "soft_portrait", "name": "기본", "available": True},
+        {"id": "chapel_glass", "name": "반실사", "available": False},
         {"id": "royal_drama", "name": "극적", "available": False},
-        {"id": "sparkle_night", "name": "반짝임", "available": False},
+        {"id": "sparkle_night", "name": "셀화", "available": False},
         {"id": "watercolor", "name": "수채", "available": False},
         {"id": "pixel_art", "name": "픽셀", "available": False},
         {"id": "deco_cute", "name": "데포르메", "available": False},

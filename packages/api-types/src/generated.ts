@@ -3253,6 +3253,8 @@ export interface components {
             prompt: string;
             /** Style */
             style: string;
+            /** Stylename */
+            styleName: string | null;
             /** Aspectratio */
             aspectRatio: string;
             /** Model */
@@ -3325,6 +3327,8 @@ export interface components {
             status: string;
             /** Style */
             style: string;
+            /** Stylename */
+            styleName: string | null;
             /** Requestedcount */
             requestedCount: number;
             /** Completedcount */
@@ -3345,6 +3349,8 @@ export interface components {
             totalPages: number;
             /** Totalcount */
             totalCount: number;
+            /** Styleoptions */
+            styleOptions: components["schemas"]["AdminImageStyleOption"][];
         };
         /**
          * AdminImageGenerationViewRequest
@@ -3355,6 +3361,12 @@ export interface components {
             reasonCategory: components["schemas"]["ChatViewReasonCategory"];
             /** Reasontext */
             reasonText: string;
+        };
+        /** AdminImageStyleOption */
+        AdminImageStyleOption: {
+            id: components["schemas"]["ImageStylePreset"];
+            /** Name */
+            name: string;
         };
         /** AdminInquiryDetailResponse */
         AdminInquiryDetailResponse: {

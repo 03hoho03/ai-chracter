@@ -14,7 +14,7 @@ from api.core.s3 import generate_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.media import Asset, ImageGenerationRequest
 from api.db.session import get_db_session
-from api.images.models import ImageStylePreset
+from api.images.models import IMAGE_STYLE_PRESETS, IMAGE_STYLE_PRESETS_BY_ID, ImageStylePreset
 from api.images.schemas import (
     AdminImageGenerationDetailItem,
     AdminImageGenerationDetailListResponse,
@@ -22,6 +22,7 @@ from api.images.schemas import (
     AdminImageGenerationListItem,
     AdminImageGenerationListResponse,
     AdminImageGenerationViewRequest,
+    AdminImageStyleOption,
     ImageGenerationRequestStatus,
 )
 
@@ -29,6 +30,13 @@ router = APIRouter(tags=["admin"])
 
 # limit을 클라이언트에 노출하지 않는다.
 ADMIN_IMAGE_GENERATION_PAGE_SIZE = 20
+
+
+def _style_name(style: str) -> str | None:
+    """요청 행의 style 은 plain Text 라 레지스트리에서 빠진 옛 값이 남아 있을 수 있다 — 그때는
+    이름을 지어내지 않고 None 을 돌려 어드민이 id 원문을 보이게 한다."""
+    spec = IMAGE_STYLE_PRESETS_BY_ID.get(style)
+    return spec.name if spec is not None else None
 
 
 async def _list_owner_requests_page(
@@ -79,6 +87,7 @@ async def _list_owner_requests_page(
                 id=request_row.id,
                 prompt=request_row.prompt,
                 style=request_row.style,
+                style_name=_style_name(request_row.style),
                 aspect_ratio=request_row.aspect_ratio,
                 model=request_row.model,
                 status=request_row.status,
@@ -166,6 +175,7 @@ async def list_admin_image_generations(
             email=user.email,
             status=request_row.status,
             style=request_row.style,
+            style_name=_style_name(request_row.style),
             requested_count=request_row.requested_count,
             completed_count=request_row.completed_count,
             created_at=request_row.created_at,
@@ -174,7 +184,14 @@ async def list_admin_image_generations(
     ]
 
     return AdminImageGenerationListResponse(
-        items=items, page=page, total_pages=total_pages, total_count=total_count
+        items=items,
+        page=page,
+        total_pages=total_pages,
+        total_count=total_count,
+        style_options=[
+            AdminImageStyleOption(id=ImageStylePreset(spec.id), name=spec.name)
+            for spec in IMAGE_STYLE_PRESETS
+        ],
     )
 
 

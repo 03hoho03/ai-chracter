@@ -126,9 +126,17 @@ class AdminImageGenerationListItem(CamelModel):
     # API 응답 스키마에서 다시 막힌다.
     status: str
     style: str
+    # 레지스트리(`IMAGE_STYLE_PRESETS`)의 표시명. 레지스트리에서 빠진 옛 style 값이면 None 이고
+    # 어드민은 `style` 원문을 보인다 — 어드민이 이름 사본을 들면 생성 화면과 이름이 갈라진다.
+    style_name: str | None
     requested_count: int
     completed_count: int
     created_at: datetime
+
+
+class AdminImageStyleOption(CamelModel):
+    id: ImageStylePreset
+    name: str
 
 
 class AdminImageGenerationListResponse(CamelModel):
@@ -136,6 +144,9 @@ class AdminImageGenerationListResponse(CamelModel):
     page: int
     total_pages: int
     total_count: int
+    # 스타일 필터 드롭다운의 선택지(레지스트리 순서). 이름을 목록 응답에 같이 실어 필터 옵션만을 위한
+    # 엔드포인트를 따로 두지 않는다.
+    style_options: list[AdminImageStyleOption]
 
 
 class AdminImageGenerationViewRequest(CamelModel):
@@ -159,6 +170,8 @@ class AdminImageGenerationDetailItem(CamelModel):
     # 위 `AdminImageGenerationListItem.style`/`.status`와 같은 이유 — 전부 plain
     # Text 컬럼이라 Literal/enum으로 좁히지 않는다.
     style: str
+    # 위 `AdminImageGenerationListItem.style_name`과 같다.
+    style_name: str | None
     aspect_ratio: str
     model: str
     status: str

@@ -7415,6 +7415,17 @@
             "type": "string",
             "title": "Style"
           },
+          "styleName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stylename"
+          },
           "aspectRatio": {
             "type": "string",
             "title": "Aspectratio"
@@ -7494,6 +7505,7 @@
           "id",
           "prompt",
           "style",
+          "styleName",
           "aspectRatio",
           "model",
           "status",
@@ -7588,6 +7600,17 @@
             "type": "string",
             "title": "Style"
           },
+          "styleName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stylename"
+          },
           "requestedCount": {
             "type": "integer",
             "title": "Requestedcount"
@@ -7610,6 +7633,7 @@
           "email",
           "status",
           "style",
+          "styleName",
           "requestedCount",
           "completedCount",
           "createdAt"
@@ -7637,6 +7661,13 @@
           "totalCount": {
             "type": "integer",
             "title": "Totalcount"
+          },
+          "styleOptions": {
+            "items": {
+              "$ref": "#/components/schemas/AdminImageStyleOption"
+            },
+            "type": "array",
+            "title": "Styleoptions"
           }
         },
         "type": "object",
@@ -7644,7 +7675,8 @@
           "items",
           "page",
           "totalPages",
-          "totalCount"
+          "totalCount",
+          "styleOptions"
         ],
         "title": "AdminImageGenerationListResponse"
       },
@@ -7665,6 +7697,23 @@
         ],
         "title": "AdminImageGenerationViewRequest",
         "description": "`admin/chat_view.py`의 `AdminChatRoomViewRequest`와 같은 모양이지만, 사유\nenum은 그 클래스를 통째로 재사용하지 않고 `ChatViewReasonCategory`만 재사용한다."
+      },
+      "AdminImageStyleOption": {
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ImageStylePreset"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "AdminImageStyleOption"
       },
       "AdminInquiryDetailResponse": {
         "properties": {
