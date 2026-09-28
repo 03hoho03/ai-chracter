@@ -22,12 +22,15 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
+from fastapi import BackgroundTasks
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from api.chat import memory_fold
+from api.chat import router as chat_router
 from api.chat.memory_fold import backoff_allows, plan_fold
-from api.chat.prompt_builder import MemorySummaryResult, StatJudgmentResult
+from api.chat.prompt_builder import MemorySummaryResult, StatChangeJudgment, StatJudgmentResult
+from api.chat.schemas import ChatStreamEvent
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -35,6 +38,7 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomStat,
     CloverLedger,
     User,
 )
@@ -289,6 +293,57 @@ async def test_next_fold_summarizes_the_previous_summary_with_the_next_ten_turns
     assert "[U21]" not in prompt
     twentieth = room.turns[20][1]
     assert [row.cursor_message_id for row in await _snapshots(db_session, room)] == [room.turns[10][1].id, twentieth.id]
+
+
+class _StatChangingLLMClient(SummaryLLMClient):
+    """스탯 판정에 변화 하나를 준다 — 턴 커밋 뒤 첫 이벤트가 `statChange`가 되게."""
+
+    def __init__(self, stat_id: str) -> None:
+        super().__init__()
+        self.stat_id = stat_id
+
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        if response_schema is StatJudgmentResult:
+            return StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=self.stat_id, new_value=80)])
+        return await super().generate_structured(prompt, response_schema, images, usage=usage)
+
+
+async def test_fold_is_scheduled_before_the_first_event_after_the_turn_commits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """클라이언트가 이벤트를 받고 끊으면 그 뒤에 예약하려던 background는 예약 자체가 사라진다(실제
+    uvicorn으로 고정한 성질 — `test_sse_background_tasks.py`). 그래서 접기 예약은 턴 커밋 뒤 첫
+    이벤트보다 앞이어야 한다. 턴 제너레이터가 이벤트를 내놓는 순간과 예약 호출을 한 로그에 적는다 —
+    응답 본문이 나가는 순간으로는 못 본다(FastAPI가 제너레이터를 별도 태스크로 몇 개 앞서 당긴다).
+    스탯이 바뀌는 스토리 턴이라 첫 사후 이벤트가 `done`이 아니라 `statChange`다."""
+    log: list[str] = []
+    original_add_task = BackgroundTasks.add_task
+
+    def _recording_add_task(self: BackgroundTasks, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        log.append(f"schedule:{func.__name__}")
+        original_add_task(self, func, *args, **kwargs)
+
+    original_turn = chat_router._stream_new_turn
+
+    async def _recording_turn(*args: Any, **kwargs: Any) -> AsyncIterator[ChatStreamEvent]:
+        # 안쪽 제너레이터는 이 줄이 도는 동안 자기 `yield`에 멈춰 있다 — 기록 순서가 곧 실행 순서다.
+        async for event in original_turn(*args, **kwargs):
+            log.append(event.type)
+            yield event
+
+    monkeypatch.setattr(BackgroundTasks, "add_task", _recording_add_task)
+    monkeypatch.setattr(chat_router, "_stream_new_turn", _recording_turn)
+
+    room = await _open_room(db_client, db_session, turns=1, lane="story")
+    stat_id = await db_session.scalar(
+        sa.select(ChatRoomStat.stat_entity_id).where(ChatRoomStat.chat_room_id == room.room_id)
+    )
+    events = await _request(db_client, room, "send", _StatChangingLLMClient(str(stat_id)))
+
+    assert events == ["token", "statChange", "done"]
+    assert log == ["token", "schedule:fold_memory", "statChange", "done"]
 
 
 async def test_generation_window_switched_off_does_not_fold(
