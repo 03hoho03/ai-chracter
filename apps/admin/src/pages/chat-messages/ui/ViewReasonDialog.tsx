@@ -66,7 +66,7 @@ export function ViewReasonDialog({ roomId, onCancel, onConfirmed }: ViewReasonDi
     defaultValues: { reasonCategory: undefined, reasonText: "" },
   });
 
-  const onSubmit = async (values: ViewReasonFormValues) => {
+  const handleValidSubmit = async (values: ViewReasonFormValues) => {
     if (!values.reasonCategory) return;
 
     try {
@@ -96,7 +96,7 @@ export function ViewReasonDialog({ roomId, onCancel, onConfirmed }: ViewReasonDi
           noValidate
           onSubmit={(event) => {
             event.preventDefault();
-            void handleSubmit(onSubmit)(event);
+            void handleSubmit(handleValidSubmit)(event);
           }}
           className="flex flex-col gap-3"
         >

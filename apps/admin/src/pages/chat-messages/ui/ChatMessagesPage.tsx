@@ -36,7 +36,7 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   // 첫 응답의 기억을 덮을 수 있다.
   const [viewResult, setViewResult] = useState<AdminChatRoomViewResponse>();
   const [olderItems, setOlderItems] = useState<AdminChatMessageItem[]>([]);
-  const [cursor, setCursor] = useState<ChatMessagesCursor | null>(null);
+  const [cursor, setCursor] = useState<ChatMessagesCursor>();
 
   const messagesPager = useChatMessagesPager(roomId);
   const goToUserDetail = () => void navigate({ to: "/users/$userId", params: { userId } });
@@ -91,7 +91,7 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
 
       <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
 
-      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
+      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary ?? undefined} />
 
       {displayItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
@@ -125,10 +125,10 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   );
 }
 
-function nextCursor(page: AdminChatMessagesResponse): ChatMessagesCursor | null {
+function nextCursor(page: AdminChatMessagesResponse): ChatMessagesCursor | undefined {
   return page.beforeCreatedAt && page.beforeId
     ? { beforeCreatedAt: page.beforeCreatedAt, beforeId: page.beforeId }
-    : null;
+    : undefined;
 }
 
 function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
@@ -162,7 +162,7 @@ function RoomMemorySection({
   summary,
 }: {
   note: string;
-  summary: AdminChatRoomViewResponse["memorySummary"];
+  summary?: NonNullable<AdminChatRoomViewResponse["memorySummary"]>;
 }) {
   // 사용자가 요약을 빈 칸으로 저장할 수 있다 — 요약이 아직 없는 것과 문장을 가른다.
   const emptySummaryText = summary ? "비어 있어요." : "아직 요약이 없어요.";
