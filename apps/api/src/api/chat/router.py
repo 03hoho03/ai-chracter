@@ -399,7 +399,7 @@ async def _match_situational_image(
     자체(entity_id뿐 아니라 image_asset_id도 필요, 인라인 렌더링 URL 조회용)를
     그대로 반환한다.
 
-    두 DB 호출(후보 조회·노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
+    두 DB 호출(후보·요약 조회, 노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
     — 호출부(`_stream_new_turn`)의 기존
     `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아 그대로 두면
     제너레이터를 뚫는다. 어느 쪽이 실패하든 이번 턴의 이미지 매칭 자체를 포기한다(`None`) —
@@ -434,6 +434,13 @@ async def _match_situational_image(
                     )
                 ).all()
             )
+            # 판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은
+            # 싣지 않는다. 후보가 없으면 판정 자체를 안 하므로 읽지 않는다.
+            current_summary = (
+                await load_current_summary(db, room.id)
+                if situational_images and settings.memory_window_image_judgment
+                else None
+            )
     except SQLAlchemyError as exc:
         logger.warning("대화방 %s 상황이미지 후보 조회 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
@@ -441,6 +448,8 @@ async def _match_situational_image(
 
     if not situational_images:
         return None
+    if current_summary is not None:
+        history = prompt_window(history, current_summary.cursor)
 
     judgment_prompt = build_image_judgment_prompt(
         prompt_set=prompt_set,
@@ -815,8 +824,8 @@ async def _build_prompt(
 
     `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 빼고 그 자리를
     현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
-    윈도우도 한 곳에서만 계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 그대로
-    받는다. 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은 대화가 두 번
+    윈도우도 한 곳에서만 계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 받고, 판정
+    윈도우 설정이 켜졌을 때만 각자 윈도우를 씌운다. 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은 대화가 두 번
     들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다."""
     memory_summary = ""
     if settings.memory_window_generation:
@@ -1081,6 +1090,15 @@ async def _stream_new_turn(
                     )
                 ).all()
             )
+            # 판정 윈도우를 켜면 요약이 덮은 원문을 빼고 그 자리에 현재 요약을 싣는다 — 엔딩은 지금까지의
+            # 대화 전체를 보는 누적 판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다.
+            ending_history = history
+            ending_summary = ""
+            if settings.memory_window_ending_judgment:
+                current_summary = await load_current_summary(db, room.id)
+                if current_summary is not None:
+                    ending_history = prompt_window(history, current_summary.cursor)
+                    ending_summary = current_summary.text
             for ending in endings:
                 if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
                     continue
@@ -1088,10 +1106,10 @@ async def _stream_new_turn(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
                     judgment_prompt=ending.judgment_prompt,
-                    history=history,
+                    history=ending_history,
                     user_message=user_content,
                     assistant_message=assistant_content,
-                    memory_summary="",
+                    memory_summary=ending_summary,
                 )
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt,

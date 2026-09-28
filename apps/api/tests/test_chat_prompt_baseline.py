@@ -7,8 +7,9 @@
 
 시나리오가 덮는 것:
 - 스냅샷이 없는 방은 턴 수(36턴)·원문 글자(24,000자 초과)와 무관하게 모든 호출이 그대로다.
-- 스냅샷이 있는 방에서도 판정 호출(스탯·엔딩·상황이미지)은 전체 히스토리 그대로다 — 생성
-  호출만 윈도우를 쓴다. 생성 윈도우 설정을 끄면 생성 호출도 그대로다.
+- 스냅샷이 있는 방에서도 판정 호출(스탯·엔딩·상황이미지)은 전체 히스토리 그대로다 — 판정 윈도우
+  설정은 기본으로 꺼져 있고 생성 호출만 윈도우를 쓴다. 생성 윈도우 설정을 끄면 생성 호출도 그대로다.
+- 판정 윈도우 설정을 켜도 스냅샷이 없는 방은 그대로다.
 
 같은 시나리오 장치로 윈도우 자체도 본다 — 요약 커서 이하 메시지는 생성 프롬프트에서 빠지고,
 오프닝은 맨 앞에 남고, 커서 뒤 메시지는 하나도 빠지지 않는다(요약이 늦거나 실패해도 대화가
@@ -355,6 +356,17 @@ async def test_generation_window_switched_off_sends_full_history_even_with_summa
     assert fingerprint(calls) == _load_baseline()[case]
 
 
+@pytest.mark.parametrize("case", [c for c in CASES if "-summarized-" not in c])
+async def test_judgment_windows_switched_on_change_nothing_in_a_room_without_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """판정 윈도우는 요약 커서가 있을 때만 무언가를 뺀다 — 스냅샷이 없는 방은 켜도 그대로다."""
+    monkeypatch.setattr(settings, "memory_window_ending_judgment", True)
+    monkeypatch.setattr(settings, "memory_window_image_judgment", True)
+    calls = await run_case(db_client, db_session, case)
+    assert fingerprint(calls) == _load_baseline()[case]
+
+
 def _generation_prompt(calls: list[RecordedCall]) -> str:
     prompts = [call.prompt for call in calls if call.call_site == "chat_generate"]
     assert len(prompts) == 1
@@ -513,3 +525,59 @@ async def test_generation_window_switched_off_drops_the_summary_but_keeps_the_no
     assert SUMMARY_MARK not in prompt
     assert prompt.count(NOTE_MARK) == 1
     assert "[U01]" in prompt
+
+
+def _judgment_prompts(calls: list[RecordedCall], call_site: str) -> list[str]:
+    prompts = [call.prompt for call in calls if call.call_site == call_site]
+    assert prompts, f"{call_site} 호출이 없다"
+    return prompts
+
+
+def _assert_window_only(prompt: str, action: str) -> None:
+    """커서 이하 원문은 없고, 커서 뒤 원문은 전부 한 번씩, 오프닝은 그 앞에 한 번."""
+    for turn in range(1, SUMMARY_CURSOR_TURN + 1):
+        assert f"[U{turn:02d}]" not in prompt
+        assert f"[A{turn:02d}]" not in prompt
+    last_user, last_assistant = _LAST_TURN_SHOWN[action]
+    for turn in range(SUMMARY_CURSOR_TURN + 1, last_user + 1):
+        assert prompt.count(f"[U{turn:02d}]") == 1
+    for turn in range(SUMMARY_CURSOR_TURN + 1, last_assistant + 1):
+        assert prompt.count(f"[A{turn:02d}]") == 1
+    assert prompt.count(OPENING_MARK) == 1
+    assert prompt.index(OPENING_MARK) < prompt.index(f"[U{SUMMARY_CURSOR_TURN + 1:02d}]")
+
+
+@pytest.mark.parametrize("action", ["send", "edit"])
+async def test_ending_judgment_window_carries_the_current_summary_and_only_messages_after_the_cursor(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """엔딩은 지금까지의 대화 전체를 보고 판단하므로, 원문이 빠진 자리를 요약이 대신한다."""
+    monkeypatch.setattr(settings, "memory_window_ending_judgment", True)
+    room = await seed_room(db_client, db_session, lane="story", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+    await _write_memory(db_session, room, note="", summary=SUMMARY_MARK)
+
+    calls = await run_action(db_client, room, action, 36)
+
+    for prompt in _judgment_prompts(calls, "chat_ending_judgment"):
+        _assert_window_only(prompt, action)
+        assert prompt.count(SUMMARY_MARK) == 1
+        assert prompt.index(SUMMARY_MARK) < prompt.index(OPENING_MARK)
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+async def test_image_judgment_window_carries_only_messages_after_the_cursor_without_the_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, action: str
+) -> None:
+    """상황이미지는 지금 장면과 맞는지를 보므로 최근 원문만 싣고 요약은 싣지 않는다. 재생성도
+    같은 판정 함수를 지난다."""
+    monkeypatch.setattr(settings, "memory_window_image_judgment", True)
+    room = await seed_room(
+        db_client, db_session, lane="character", turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN
+    )
+    await _write_memory(db_session, room, note="", summary=SUMMARY_MARK)
+
+    calls = await run_action(db_client, room, action, 36)
+
+    for prompt in _judgment_prompts(calls, "chat_situational_image"):
+        _assert_window_only(prompt, action)
+        assert SUMMARY_MARK not in prompt

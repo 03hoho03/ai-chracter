@@ -164,6 +164,11 @@ class Settings(BaseSettings):
     # 스냅샷이 있어도 전체 히스토리를 싣는다(스냅샷은 남고 무시될 뿐 지워지지 않는다) — 요약
     # 품질 사고 때 코드 배포 없이 `.env` 수정과 재기동만으로 예전 동작으로 돌아가는 스위치다.
     memory_window_generation: bool = True
+    # 판정 호출에도 윈도우를 씌울지 호출별로 켠다. 끄면(기본) 판정은 전체 히스토리를 받아 윈도우
+    # 도입 전과 같은 프롬프트를 보낸다. 엔딩은 누적 판단이라 켜면 현재 요약도 함께 싣고, 상황이미지는
+    # 장면 매칭이라 최근 원문만 싣는다. 판정 품질을 측정한 뒤 켤지 정한다.
+    memory_window_ending_judgment: bool = False
+    memory_window_image_judgment: bool = False
 
     # 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
     # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이
