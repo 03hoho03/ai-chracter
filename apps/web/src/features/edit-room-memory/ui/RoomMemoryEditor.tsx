@@ -24,7 +24,7 @@ type RoomMemoryEditorProps = {
   roomId: string;
   /** 노트 비우기 확인. 확인 모달은 다른 feature(`manage-chat-room`)라 위젯이 주입한다 — 확인되면 `clear`를
    * 부른다(`clear`는 던지지 않는다). */
-  confirmClearNote: (clear: () => Promise<void>) => Promise<void>;
+  onClearNoteRequest: (clear: () => Promise<void>) => Promise<void>;
 };
 
 type WriteErrorState = { section: "summary" | "note"; error: MemoryWriteError };
@@ -35,8 +35,8 @@ const SOURCE_LABEL: Record<NonNullable<ChatRoomMemory["summary"]>["source"], str
 };
 
 /** 기억 노트 패널의 본문. lg 인라인 패널과 lg 미만 Dialog가 같은 본문을 쓴다(제목은 각 컨테이너가 든다). */
-export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorProps) {
-  const memoryQuery = useChatRoomMemoryQuery(roomId, true);
+export function RoomMemoryEditor({ roomId, onClearNoteRequest }: RoomMemoryEditorProps) {
+  const memoryQuery = useChatRoomMemoryQuery(roomId);
 
   if (memoryQuery.isPending) {
     return <p className="py-6 text-center text-sm text-muted-foreground">불러오는 중…</p>;
@@ -58,10 +58,10 @@ export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorP
       key={roomId}
       roomId={roomId}
       memory={memoryQuery.data}
-      reload={async () => {
+      onReload={async () => {
         await memoryQuery.refetch();
       }}
-      confirmClearNote={confirmClearNote}
+      onClearNoteRequest={onClearNoteRequest}
     />
   );
 }
@@ -69,16 +69,16 @@ export function RoomMemoryEditor({ roomId, confirmClearNote }: RoomMemoryEditorP
 type RoomMemoryFormProps = {
   roomId: string;
   memory: ChatRoomMemory;
-  reload: () => Promise<void>;
-  confirmClearNote: RoomMemoryEditorProps["confirmClearNote"];
+  onReload: () => Promise<void>;
+  onClearNoteRequest: RoomMemoryEditorProps["onClearNoteRequest"];
 };
 
-function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemoryFormProps) {
+function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMemoryFormProps) {
   const fieldId = useId();
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
   const form = useForm<MemoryFormValues>({ ...memoryFormOptions(schema), defaultValues: serverToForm(memory) });
-  const { errors } = form.formState;
+  const { errors, isSubmitting } = form.formState;
   const noteLength = countMemoryChars(useWatch({ control: form.control, name: "note" }));
   const summaryLength = countMemoryChars(useWatch({ control: form.control, name: "summary" }));
 
@@ -90,18 +90,18 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   const [isEditingSummary, setIsEditingSummary] = useState(false);
   // 요약 편집은 [고치기]를 누른 시점의 버전으로 저장한다 — 그사이 요약이 새로 접혔으면 서버가 409로 막는다.
   const [editBaseVersion, setEditBaseVersion] = useState(memory.version);
-  const [writeError, setWriteError] = useState<WriteErrorState | null>(null);
+  const [writeError, setWriteError] = useState<WriteErrorState | undefined>(undefined);
   const [announcement, setAnnouncement] = useState("");
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
-  const focusEditButtonRef = useRef(false);
+  const shouldFocusEditButtonRef = useRef(false);
 
   // 되감기 알림: 롤백 한 번에 한 번. 패널이 열려 있는 동안 롤백이 일어나도(메시지 삭제 등) 잡는다.
-  const [shownRollbackAt, setShownRollbackAt] = useState<string | null>(null);
+  const [shownRollbackAt, setShownRollbackAt] = useState<string | undefined>(undefined);
   useEffect(() => {
     const storage = browserStorage();
     const rolledBackAt = memory.rolledBackAt;
-    if (rolledBackAt === null || !isRollbackUnseen(rolledBackAt, readSeenRollback(storage, roomId))) return;
+    if (rolledBackAt === undefined || !isRollbackUnseen(rolledBackAt, readSeenRollback(storage, roomId))) return;
     setShownRollbackAt(rolledBackAt);
     writeSeenRollback(storage, roomId, rolledBackAt);
   }, [memory.rolledBackAt, roomId]);
@@ -111,12 +111,12 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   // 건너뛴다.
   const summaryUpdatedAt = memory.summary?.updatedAt;
   const lastSummaryUpdatedAtRef = useRef(summaryUpdatedAt);
-  const ownWriteRef = useRef(false);
+  const isOwnWriteRef = useRef(false);
   useEffect(() => {
     if (summaryUpdatedAt === lastSummaryUpdatedAtRef.current) return;
     lastSummaryUpdatedAtRef.current = summaryUpdatedAt;
-    if (ownWriteRef.current) {
-      ownWriteRef.current = false;
+    if (isOwnWriteRef.current) {
+      isOwnWriteRef.current = false;
       return;
     }
     setAnnouncement(summaryUpdatedAt ? "요약이 바뀌었어요." : "요약이 비었어요.");
@@ -124,78 +124,87 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
 
   // [저장]·[취소]로 편집 칸이 사라지면 포커스가 `<body>`로 떨어진다 — 다시 나타난 [고치기]로 돌린다.
   useEffect(() => {
-    if (isEditingSummary || !focusEditButtonRef.current) return;
-    focusEditButtonRef.current = false;
+    if (isEditingSummary || !shouldFocusEditButtonRef.current) return;
+    shouldFocusEditButtonRef.current = false;
     editButtonRef.current?.focus();
   }, [isEditingSummary]);
 
   function handleStartSummaryEdit() {
     form.resetField("summary", { defaultValue: memory.summary?.text ?? "" });
     setEditBaseVersion(memory.version);
-    setWriteError(null);
+    setWriteError(undefined);
     setIsEditingSummary(true);
   }
 
   function stopSummaryEdit() {
-    focusEditButtonRef.current = true;
+    // 두 칸의 저장이 폼 전체를 검증하므로, 닫은 편집 칸에 상한을 넘긴 값이 남으면 보이지 않는 오류가 노트
+    // 저장을 막는다 — 기준값으로 되돌린다(오류도 함께 풀린다).
+    form.resetField("summary");
+    shouldFocusEditButtonRef.current = true;
     setIsEditingSummary(false);
   }
 
+  function handleCancelSummaryEdit() {
+    stopSummaryEdit();
+  }
+
   async function handleReloadAfterConflict() {
-    await reload();
-    setWriteError(null);
+    await onReload();
+    setWriteError(undefined);
     if (isEditingSummary) stopSummaryEdit();
   }
 
-  async function handleSaveSummary() {
-    if (saveSummaryMutation.isPending) return;
-    if (!(await form.trigger("summary"))) return;
-    const summary = schema.shape.summary.parse(form.getValues("summary"));
-    setWriteError(null);
+  // 저장이 검증에 걸리면(422) 오류를 칸에 붙인다 — 서버가 칸을 알려 주지 않으면 저장한 칸이다. 그 밖의
+  // 실패는 칸 위 알림으로 보인다.
+  function showSaveError(section: WriteErrorState["section"], error: MemoryWriteError) {
+    if (error.kind === "invalid") {
+      form.setError(error.field ?? section, { message: error.message });
+      return;
+    }
+    setWriteError({ section, error });
+  }
+
+  async function handleSaveSummary(values: MemoryFormValues) {
+    setWriteError(undefined);
     try {
-      ownWriteRef.current = true;
-      const next = await saveSummaryMutation.mutateAsync(
-        toSummaryRequest({ note: form.getValues("note"), summary }, editBaseVersion),
-      );
+      isOwnWriteRef.current = true;
+      const next = await saveSummaryMutation.mutateAsync(toSummaryRequest(values, editBaseVersion));
       form.resetField("summary", { defaultValue: next.summary?.text ?? "" });
       setAnnouncement("요약을 고쳤어요. 다음 대화부터 반영돼요.");
       stopSummaryEdit();
     } catch (error) {
-      ownWriteRef.current = false;
-      setWriteError({ section: "summary", error: toMemoryWriteError(error) });
+      isOwnWriteRef.current = false;
+      showSaveError("summary", toMemoryWriteError(error));
     }
   }
 
   async function handleRevert() {
     if (revertMutation.isPending || !memory.summary?.canRevert) return;
-    setWriteError(null);
+    setWriteError(undefined);
     try {
-      ownWriteRef.current = true;
+      isOwnWriteRef.current = true;
       await revertMutation.mutateAsync(memory.version);
       setAnnouncement("고치기 전 요약으로 되돌렸어요.");
     } catch (error) {
-      ownWriteRef.current = false;
+      isOwnWriteRef.current = false;
       setWriteError({ section: "summary", error: toMemoryWriteError(error) });
     }
   }
 
-  async function handleSaveNote() {
-    if (saveNoteMutation.isPending) return;
-    if (!(await form.trigger("note"))) return;
-    const note = schema.shape.note.parse(form.getValues("note"));
-    setWriteError(null);
+  async function handleSaveNote(values: MemoryFormValues) {
+    setWriteError(undefined);
     try {
-      const next = await saveNoteMutation.mutateAsync(toNoteRequest({ note, summary: form.getValues("summary") }));
+      const next = await saveNoteMutation.mutateAsync(toNoteRequest(values));
       form.resetField("note", { defaultValue: next.note });
       setAnnouncement("저장했어요. 다음 대화부터 반영돼요.");
     } catch (error) {
-      setWriteError({ section: "note", error: toMemoryWriteError(error) });
+      showSaveError("note", toMemoryWriteError(error));
     }
   }
 
   async function handleClearNote() {
-    await confirmClearNote(async () => {
-      setWriteError(null);
+    await onClearNoteRequest(async () => {
+      setWriteError(undefined);
       try {
         const next = await clearNoteMutation.mutateAsync();
         form.resetField("note", { defaultValue: next.note });
@@ -213,12 +222,14 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   const revertHintId = `${fieldId}-revert-hint`;
   const summary = memory.summary;
   // 편집 중에 요약이 사라질 수 있다(다른 탭에서 초기화) — 그때는 편집 칸도 [저장]도 없다.
-  const isSummaryEditOpen = isEditingSummary && summary !== null;
+  const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
   const isNoteSaving = saveNoteMutation.isPending || clearNoteMutation.isPending;
+  // [저장]의 비활성 표시와 클릭 가드가 같은 값을 본다 — 비우기가 진행 중일 때도 저장 요청을 보내지 않는다.
+  const isNoteSaveBlocked = isNoteSaving || isSubmitting;
 
   let summaryBody: ReactNode;
-  if (summary === null) {
+  if (summary === undefined) {
     // 첫 접기 전에는 고칠 요약이 없다(요약은 대화가 충분히 쌓여야 처음 만들어진다).
     summaryBody = (
       <p className="rounded-lg border border-dashed border-border px-3.5 py-3 text-sm break-keep text-muted-foreground">
@@ -248,14 +259,16 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
           </p>
         )}
         <div className="flex justify-end gap-2">
-          <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={stopSummaryEdit}>
+          <Button type="button" variant="ghost" className="hover:bg-secondary" onClick={handleCancelSummaryEdit}>
             취소
           </Button>
           <Button
             type="button"
-            aria-disabled={saveSummaryMutation.isPending}
+            aria-disabled={isSubmitting}
             className="aria-disabled:opacity-65"
-            onClick={() => void handleSaveSummary()}
+            onClick={() => {
+              if (!isSubmitting) void form.handleSubmit(handleSaveSummary)();
+            }}
           >
             {saveSummaryMutation.isPending ? "저장 중..." : "저장"}
           </Button>
@@ -302,7 +315,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
           )}
         </div>
 
-        {shownRollbackAt !== null && (
+        {shownRollbackAt !== undefined && (
           <p className="flex gap-2 rounded-lg border border-border px-3.5 py-2.5 text-xs break-keep text-foreground">
             <History aria-hidden className="mt-px size-3.5 shrink-0 text-muted-foreground" />
             지난 메시지를 고치거나 지워서 요약이 이전 판으로 돌아갔어요.
@@ -374,9 +387,11 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
           <Button
             type="button"
             variant={isSummaryEditOpen ? "outline" : "default"}
-            aria-disabled={isNoteSaving}
+            aria-disabled={isNoteSaveBlocked}
             className={cn("aria-disabled:opacity-65", isSummaryEditOpen && "hover:bg-secondary")}
-            onClick={() => void handleSaveNote()}
+            onClick={() => {
+              if (!isNoteSaveBlocked) void form.handleSubmit(handleSaveNote)();
+            }}
           >
             {saveNoteMutation.isPending ? "저장 중..." : "저장"}
           </Button>
@@ -393,7 +408,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
 }
 
 function WriteErrorNotice({ error, onReload }: { error: MemoryWriteError; onReload: () => void }) {
-  if (error.kind === "message") {
+  if (error.kind !== "stale") {
     return (
       <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
         {error.message}

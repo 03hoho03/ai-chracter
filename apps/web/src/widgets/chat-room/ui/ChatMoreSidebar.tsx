@@ -38,7 +38,7 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
   useEffect(() => {
     if (!isVisible) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setPanel(null);
+      if (event.key === "Escape") setPanel(undefined);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -58,7 +58,7 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
           size="icon-sm"
           aria-label="더보기 닫기"
           className="hover:bg-secondary"
-          onClick={() => setPanel(null)}
+          onClick={() => setPanel(undefined)}
         >
           <X aria-hidden className="size-4" />
         </Button>

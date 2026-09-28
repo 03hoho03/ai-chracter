@@ -13,7 +13,8 @@ import { NotebookPen } from "lucide-react";
 
 import { RoomMemoryEditor } from "@/features/edit-room-memory";
 
-import { MEMORY_PANEL_DESCRIPTION, confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
+import { MEMORY_PANEL_DESCRIPTION } from "../config/memoryPanel";
+import { confirmClearMemoryNote } from "../lib/confirmClearMemoryNote";
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
 import { chatSidePanelAtom } from "../model/atoms";
 
@@ -38,7 +39,7 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
         size="icon"
         aria-label="기억 노트"
         aria-expanded={isOpen}
-        onClick={() => setPanel(isOpen ? null : "memory")}
+        onClick={() => setPanel(isOpen ? undefined : "memory")}
       >
         <NotebookPen aria-hidden className="size-4" />
       </Button>
@@ -46,19 +47,19 @@ export function ChatMemoryTrigger({ roomId, triggerRef }: ChatMemoryTriggerProps
   }
 
   return (
-    <Dialog open={isOpen} onOpenChange={(open) => setPanel(open ? "memory" : null)}>
+    <Dialog open={isOpen} onOpenChange={(open) => setPanel(open ? "memory" : undefined)}>
       <DialogTrigger asChild>
         <Button ref={triggerRef} variant="ghost" size="icon" aria-label="기억 노트">
           <NotebookPen aria-hidden className="size-4" />
         </Button>
       </DialogTrigger>
       {/* 요약 1,500자 + 노트 편집 칸이라 길어진다 — 최대 높이와 내부 스크롤은 호출부 몫이다(packages/ui/CLAUDE.md). */}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>기억 노트</DialogTitle>
           <DialogDescription className="break-keep">{MEMORY_PANEL_DESCRIPTION}</DialogDescription>
         </DialogHeader>
-        <RoomMemoryEditor roomId={roomId} confirmClearNote={confirmClearMemoryNote} />
+        <RoomMemoryEditor roomId={roomId} onClearNoteRequest={confirmClearMemoryNote} />
       </DialogContent>
     </Dialog>
   );

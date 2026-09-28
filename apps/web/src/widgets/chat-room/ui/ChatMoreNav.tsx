@@ -49,7 +49,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
 
   function handleItemClick(item: MorePanelItem) {
     if (!item.isActive) return;
-    setPanel(null);
+    setPanel(undefined);
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
     if (item.key === "update-info") void UpdateInfoModal.call({ roomId });
     if (item.key === "change-starting-setup") void ChangeStartingSetupModal.call({ roomId });

@@ -34,7 +34,7 @@ export function ImageStudioLibraryRail({
   return (
     <Sheet open={isOpen} onOpenChange={onOpenChange}>
       {/* 보관함 시트는 헤더 아래까지(긴 그리드). ChatMorePanel의
-          top-[118px]은 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(우리 크롬은 h-14 하나뿐).
+          top-below-chat-header(118px)는 전역 헤더 + 채팅 헤더를 뺀 값이라 여기엔 안 맞는다(우리 크롬은 h-14 하나뿐).
           정확한 값은 브라우저 실측으로 정하기로 하고 지금은 top-14로 둔다. */}
       <SheetContent
         side="bottom"

@@ -190,6 +190,14 @@
   /* p-4 하단에 iOS safe-area 를 더한다 */
   padding-bottom: calc(1rem + env(safe-area-inset-bottom));
 }
+@utility top-below-chat-header {
+  /* 채팅방 lg 미만 더보기 드롭업의 상단 — 전역 헤더 56 + border 1 + 채팅 헤더 60 + border 1(390x844 실측) */
+  top: 118px;
+}
+@utility max-h-dialog {
+  /* 다이얼로그 최대 높이 — 위아래 1rem 씩 뷰포트 안에 남긴다(DialogContent 에는 최대 높이가 없다) */
+  max-height: calc(100dvh - 2rem);
+}
 
 @layer base {
   * {

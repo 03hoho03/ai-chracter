@@ -76,7 +76,7 @@ export function GeneratedImageDetailModal({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       {/* 원본 비율 이미지 때문에 높이가 낮은 뷰포트에서는 모달이 화면을 넘는다 — 삭제 푸터까지
           닿도록 모달 내부 스크롤을 허용한다(바깥 페이지는 Radix가 스크롤을 잠근다). */}
-      <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
         <DialogHeader>
           <DialogTitle>생성 이미지</DialogTitle>
           <DialogDescription>

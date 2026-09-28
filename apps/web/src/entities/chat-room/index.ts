@@ -19,7 +19,9 @@ export type {
   StatDef,
 } from "./model/chatRoomState";
 export { useChatRoomQuery } from "./api/useChatRoomQuery";
-export { useChatRoomMemoryQuery, type ChatRoomMemory } from "./api/useChatRoomMemoryQuery";
+export { useChatRoomMemoryQuery } from "./api/useChatRoomMemoryQuery";
+export type { ChatRoomMemory } from "./model/chatRoomMemory";
+export { toChatRoomMemory } from "./api/toChatRoomMemory";
 export { useChatRoomPlayGuideQuery } from "./api/useChatRoomPlayGuideQuery";
 export { useEndingCollectionQuery, type EndingCollectionItem } from "./api/useEndingCollectionQuery";
 export { useChatRoomListQuery, type ChatRoomListItem } from "./api/useChatRoomListQuery";
