@@ -1,0 +1,260 @@
+{
+  "character-short-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 2603,
+      "sha256": "e918a91270cba8a75aff88c109e05f5d2f37cf9fd642c4e0c7dd1da901d29d3d",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 2874,
+      "sha256": "f308f38498b50aa6e3555a8a535f17b46ab84c4e012aca282803381146c9cc84",
+      "systemSha256": null
+    }
+  ],
+  "character-short-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 2180,
+      "sha256": "ef9592f68bede53d95e0be9d72e8b04580a2a3fd8c712c923f87b17c75f51cfa",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 2451,
+      "sha256": "8ad6340a760866f8f5b2bec176a02396dcd70c3918b5d49e48ef48e843d040bb",
+      "systemSha256": null
+    }
+  ],
+  "character-short-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 1764,
+      "sha256": "8299ac8f223402cec561e98cb23eccdad3c36e1b221b315c33e93fc5556d4255",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 2035,
+      "sha256": "0c0436ceb46df40ac428eb110ee7a2e21318a0ac049f1ab84eceeea70511ca47",
+      "systemSha256": null
+    }
+  ],
+  "character-long-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 30323,
+      "sha256": "e1f7bd1f5fb1f15c1941815ae75caf107510c325d7b510eaeb11bbeb77dbd81f",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 30594,
+      "sha256": "37625c076eded715938e90c586a17bc737443ee20d2914f6308fe06071328b3e",
+      "systemSha256": null
+    }
+  ],
+  "character-long-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29900,
+      "sha256": "c6d1b47cfb0be6c71fa57f0e2c427005754a259a785d5b6b8b4e79d1679ff08f",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 30171,
+      "sha256": "52e37fa062fe9f2c2b907e53e5d83039bb9f8c151e07edaa1bee283499e1b8be",
+      "systemSha256": null
+    }
+  ],
+  "character-long-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29484,
+      "sha256": "2ef61c7ae424215764bee2ebba884dcd57bbba98f0c8393835b7f5a8af934c8b",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 29755,
+      "sha256": "2af630d462563ab63633d5d6f86380f313a1d4785d601e81d5a289714aa5c915",
+      "systemSha256": null
+    }
+  ],
+  "character-long-summarized-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 30323,
+      "sha256": "e1f7bd1f5fb1f15c1941815ae75caf107510c325d7b510eaeb11bbeb77dbd81f",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 30594,
+      "sha256": "37625c076eded715938e90c586a17bc737443ee20d2914f6308fe06071328b3e",
+      "systemSha256": null
+    }
+  ],
+  "character-long-summarized-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29900,
+      "sha256": "c6d1b47cfb0be6c71fa57f0e2c427005754a259a785d5b6b8b4e79d1679ff08f",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 30171,
+      "sha256": "52e37fa062fe9f2c2b907e53e5d83039bb9f8c151e07edaa1bee283499e1b8be",
+      "systemSha256": null
+    }
+  ],
+  "character-long-summarized-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29484,
+      "sha256": "2ef61c7ae424215764bee2ebba884dcd57bbba98f0c8393835b7f5a8af934c8b",
+      "systemSha256": "fabaa8c345cc96908078131b8c0d38a510d0bffbd52cc4bcfc8e40b7bc385dfc"
+    },
+    {
+      "callSite": "chat_situational_image",
+      "chars": 29755,
+      "sha256": "2af630d462563ab63633d5d6f86380f313a1d4785d601e81d5a289714aa5c915",
+      "systemSha256": null
+    }
+  ],
+  "story-short-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 2605,
+      "sha256": "d32bd908dd126de6e68493d9538be54868a640490bf69fcaeb554f33383555a8",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 408,
+      "sha256": "05c4b6b0659d9c8ec503ce23400071c21488d22274dd50a9e99ee6ac250db70a",
+      "systemSha256": null
+    }
+  ],
+  "story-short-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 2182,
+      "sha256": "c703035f936c2ad5dd2019d26d9848917e322a288884ccd0cba7cc37c0aa91d0",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    }
+  ],
+  "story-short-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 1766,
+      "sha256": "af07f1d96a7f36c41b531f3203dc51b2b538edd8ca313732a3e84572bb9eb4a0",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 409,
+      "sha256": "90cdb49d22168dcb6d9074546b1718d9752ed5963c4f2b7214ad51134cf9075a",
+      "systemSha256": null
+    }
+  ],
+  "story-long-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 30325,
+      "sha256": "affba67e21858e42c2bea8eae4d39356d66f1709329b0c6a7a91863736cc9241",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 408,
+      "sha256": "05c4b6b0659d9c8ec503ce23400071c21488d22274dd50a9e99ee6ac250db70a",
+      "systemSha256": null
+    },
+    {
+      "callSite": "chat_ending_judgment",
+      "chars": 30398,
+      "sha256": "64557e14fa67eec5029d8e5f37919bece8aadc65f4734d034559946f484590f0",
+      "systemSha256": null
+    }
+  ],
+  "story-long-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29902,
+      "sha256": "b6b3a4ca9fcbd0a0ea894ccd051a7ffd0c7eaabb63ba3420d8c1555e01ead6bb",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    }
+  ],
+  "story-long-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29486,
+      "sha256": "a22ef49f412f25a6c0ce0466c50cb650ff39775c40714b52abde9b75402d4c3f",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 409,
+      "sha256": "90cdb49d22168dcb6d9074546b1718d9752ed5963c4f2b7214ad51134cf9075a",
+      "systemSha256": null
+    },
+    {
+      "callSite": "chat_ending_judgment",
+      "chars": 29559,
+      "sha256": "2671c262a7f7965a0a788323caaef4489d926dde2362ef11ea0929ce39629707",
+      "systemSha256": null
+    }
+  ],
+  "story-long-summarized-send": [
+    {
+      "callSite": "chat_generate",
+      "chars": 30325,
+      "sha256": "affba67e21858e42c2bea8eae4d39356d66f1709329b0c6a7a91863736cc9241",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 408,
+      "sha256": "05c4b6b0659d9c8ec503ce23400071c21488d22274dd50a9e99ee6ac250db70a",
+      "systemSha256": null
+    },
+    {
+      "callSite": "chat_ending_judgment",
+      "chars": 30398,
+      "sha256": "64557e14fa67eec5029d8e5f37919bece8aadc65f4734d034559946f484590f0",
+      "systemSha256": null
+    }
+  ],
+  "story-long-summarized-regenerate": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29902,
+      "sha256": "b6b3a4ca9fcbd0a0ea894ccd051a7ffd0c7eaabb63ba3420d8c1555e01ead6bb",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    }
+  ],
+  "story-long-summarized-edit": [
+    {
+      "callSite": "chat_generate",
+      "chars": 29486,
+      "sha256": "a22ef49f412f25a6c0ce0466c50cb650ff39775c40714b52abde9b75402d4c3f",
+      "systemSha256": "dadb574a8387a80011ef46ed5f9d641c12f1ff1e00a29c8ea0d9c75cef2976a4"
+    },
+    {
+      "callSite": "chat_stat_judgment",
+      "chars": 409,
+      "sha256": "90cdb49d22168dcb6d9074546b1718d9752ed5963c4f2b7214ad51134cf9075a",
+      "systemSha256": null
+    },
+    {
+      "callSite": "chat_ending_judgment",
+      "chars": 29559,
+      "sha256": "2671c262a7f7965a0a788323caaef4489d926dde2362ef11ea0929ce39629707",
+      "systemSha256": null
+    }
+  ]
+}
