@@ -306,8 +306,9 @@ class LocalImageClient(ImageClient):
                 # 계약이 400에는 `reason` 키를
                 # 안 줘서 여기만 `detail` 문자열로 분기한다 — 위 422의 "detail은
                 # 해석하지 않는다" 규율과 다르다는 것을 명시해 둔다.
-                # `unsupported style`은 우리 쪽 계약 위반(버그)이지 사용자가 고칠 입력이
-                # 아니므로 화이트리스트에 넣지 않는다 — 밖은 전부 일반 실패로 떨어진다.
+                # `unsupported style`·`invalid reference image`는 우리가 만들어 보낸 값이 계약을
+                # 벗어났다는 뜻(버그)이지 사용자가 프롬프트를 고쳐 풀 입력이 아니므로 화이트리스트에
+                # 넣지 않는다 — 밖은 전부 일반 실패로 떨어진다.
                 if detail in ("invalid request", "prompt too long"):
                     raise LocalImageInputError(input_error="too_long") from exc
             # 로그가 이 메시지를 그대로 남긴다(`router.py`).

@@ -164,6 +164,23 @@ async def test_422_missing_reason_collapses_to_plain_llm_client_error(
     assert not isinstance(exc_info.value, LocalImageBlockedError)
 
 
+async def test_422_syntax_detail_without_reason_is_not_an_input_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """집 PC 계약은 문법 오류 422 에 `reason: "syntax"` 를 싣는다 — `reason` 없는 422 는 계약상
+    집 PC 가 보낸 것이 아니다. `detail` 문구가 문법 오류처럼 읽혀도 입력 오류로 올리면, 프록시가
+    만든 422 를 "프롬프트 문법을 확인하라"는 안내로 사용자 탓으로 돌리게 된다."""
+    from api.llm.local_image import LocalImageInputError
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(422, json={"detail": "invalid prompt syntax"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert not isinstance(exc_info.value, (LocalImageInputError, LocalImageBlockedError))
+
+
 async def test_422_unknown_reason_value_collapses_to_plain_llm_client_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -360,6 +377,23 @@ async def test_400_unsupported_style_does_not_raise_input_error(
     with pytest.raises(LLMClientError) as exc_info:
         await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
     assert not isinstance(exc_info.value, LocalImageInputError)
+
+
+async def test_400_invalid_reference_image_is_a_plain_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """`{"detail":"invalid reference image"}` 은 참조 이미지의 형식·크기가 계약을 벗어났다는
+    뜻이다. 사용자가 고를 수 있는 참조는 이 서비스가 만든 이미지뿐이라 이건 우리 쪽 버그다 —
+    입력 오류로 올리면 "프롬프트가 너무 길어요" 라는 거짓 안내가 나가고 장애 신호도 사라진다."""
+    from api.llm.local_image import LocalImageInputError
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"detail": "invalid reference image"})
+
+    _patch_httpx(monkeypatch, handler)
+    with pytest.raises(LLMClientError) as exc_info:
+        await _client().generate_image("a cat", ImageStylePreset.SOFT_PORTRAIT, "1:1")
+    assert not isinstance(exc_info.value, (LocalImageInputError, LocalImageBlockedError))
 
 
 @pytest.mark.parametrize("style", [ImageStylePreset.SOFT_PORTRAIT, ImageStylePreset.PIXEL_ART])
