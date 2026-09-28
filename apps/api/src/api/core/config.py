@@ -120,7 +120,11 @@ class Settings(BaseSettings):
     local_image_timeout_seconds: int = 90
     # 잠정값 — 복구 감지 속도와 프로브 빈도의 타협(콜드/만료 시에만 프로브).
     local_image_capabilities_ttl_seconds: int = 30
-    # 잠정값 — 잡당 최대 60초(count<=2) 기준 최악 대기 약 4분.
+    # 잠정값. 잡 하나는 최대 2장(count<=2)이고 `llm/local_image.py` 의 세마포어가 집 PC 호출을
+    # 한 장씩 직렬로 보낸다. 장당 최악을 DEPLOY.md "이미지 생성" 절의 약 38초(서버 재기동 직후 첫
+    # 요청 — 보통은 워밍업 뒤 약 17초 이하)로 잡으면 잡당 약 76초, 네 번째로 받아들인 잡이 끝나기까지
+    # 약 5분이다. 큰 참조 이미지의 전송 시간(미측정)과 응답 없이 타임아웃까지 매달리는 실패는 이
+    # 추정에 들어 있지 않다.
     local_image_queue_limit: int = 4
     # 공개 id(FE 노출, `v1`)와 홈PC의 실제
     # 체크포인트 id(와이어 id)가 다를 수 있다. 원 요구가 "코드상이나 endpoint나
