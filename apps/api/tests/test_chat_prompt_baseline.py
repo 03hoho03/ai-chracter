@@ -356,6 +356,19 @@ async def test_generation_window_switched_off_sends_full_history_even_with_summa
     assert fingerprint(calls) == _load_baseline()[case]
 
 
+@pytest.mark.parametrize("case", [c for c in CASES if "-summarized-" in c])
+async def test_generation_window_switched_off_also_keeps_judgment_windows_off(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    """생성 윈도우 스위치는 되돌리기 스위치라, 끄면 판정 윈도우 설정이 켜져 있어도 판정까지 전부
+    윈도우 도입 전 프롬프트로 돌아간다 — 스위치 하나로 되돌아가지 않으면 사고 때 되돌리기가 반쪽이다."""
+    monkeypatch.setattr(settings, "memory_window_generation", False)
+    monkeypatch.setattr(settings, "memory_window_ending_judgment", True)
+    monkeypatch.setattr(settings, "memory_window_image_judgment", True)
+    calls = await run_case(db_client, db_session, case)
+    assert fingerprint(calls) == _load_baseline()[case]
+
+
 @pytest.mark.parametrize("case", [c for c in CASES if "-summarized-" not in c])
 async def test_judgment_windows_switched_on_change_nothing_in_a_room_without_summary(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str

@@ -166,7 +166,8 @@ class Settings(BaseSettings):
     memory_window_generation: bool = True
     # 판정 호출에도 윈도우를 씌울지 호출별로 켠다. 끄면(기본) 판정은 전체 히스토리를 받아 윈도우
     # 도입 전과 같은 프롬프트를 보낸다. 엔딩은 누적 판단이라 켜면 현재 요약도 함께 싣고, 상황이미지는
-    # 장면 매칭이라 최근 원문만 싣는다. 판정 품질을 측정한 뒤 켤지 정한다.
+    # 장면 매칭이라 최근 원문만 싣는다. 판정 품질을 측정한 뒤 켤지 정한다. 위 생성 윈도우 스위치를
+    # 끄면 이 둘이 켜져 있어도 판정까지 전체 히스토리로 돌아간다 — 되돌리기 스위치 하나로 전부 돌아가게.
     memory_window_ending_judgment: bool = False
     memory_window_image_judgment: bool = False
 

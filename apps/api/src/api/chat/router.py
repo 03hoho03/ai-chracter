@@ -438,7 +438,7 @@ async def _match_situational_image(
             # 싣지 않는다. 후보가 없으면 판정 자체를 안 하므로 읽지 않는다.
             current_summary = (
                 await load_current_summary(db, room.id)
-                if situational_images and settings.memory_window_image_judgment
+                if situational_images and settings.memory_window_generation and settings.memory_window_image_judgment
                 else None
             )
     except SQLAlchemyError as exc:
@@ -825,8 +825,8 @@ async def _build_prompt(
     `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 빼고 그 자리를
     현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
     윈도우도 한 곳에서만 계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 받고, 판정
-    윈도우 설정이 켜졌을 때만 각자 윈도우를 씌운다. 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은 대화가 두 번
-    들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다."""
+    윈도우 설정이 켜졌을 때만 각자 윈도우를 씌운다. 생성 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은
+    대화가 두 번 들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다."""
     memory_summary = ""
     if settings.memory_window_generation:
         current_summary = await load_current_summary(db, room.id)
@@ -1094,7 +1094,7 @@ async def _stream_new_turn(
             # 대화 전체를 보는 누적 판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다.
             ending_history = history
             ending_summary = ""
-            if settings.memory_window_ending_judgment:
+            if settings.memory_window_generation and settings.memory_window_ending_judgment:
                 current_summary = await load_current_summary(db, room.id)
                 if current_summary is not None:
                     ending_history = prompt_window(history, current_summary.cursor)
