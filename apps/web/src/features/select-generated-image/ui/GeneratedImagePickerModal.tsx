@@ -20,7 +20,7 @@ export type GeneratedImagePickerOptions = {
   title?: string;
   description?: string;
   emptyHint?: string;
-  showCreateLink?: boolean;
+  shouldShowCreateLink?: boolean;
 };
 
 // 캐릭터/스토리 빌더와 이미지 생성 화면(참조 이미지)이 공유하는 "생성한 이미지에서 선택" 피커.
@@ -33,7 +33,7 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
     title = "생성한 이미지에서 선택",
     description = "이전에 생성해 둔 이미지 중 하나를 골라 등록해요.",
     emptyHint = "새로 생성하고 다시 열어보면 여기에 나타나요.",
-    showCreateLink = true,
+    shouldShowCreateLink = true,
   }) => {
     const isOpen = !call.ended;
     const galleryQuery = useGeneratedImagesQuery(isOpen);
@@ -48,7 +48,7 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
             <DialogDescription className="break-keep">{description}</DialogDescription>
           </DialogHeader>
 
-          {showCreateLink && (
+          {shouldShowCreateLink && (
             <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
               <a href="/studio/images" target="_blank" rel="noopener noreferrer">
                 새로 생성하기
@@ -64,16 +64,14 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
   },
 );
 
-/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다. */
-function GeneratedImageGridBody({
-  query,
-  emptyHint,
-  onPick,
-}: {
+type GeneratedImageGridBodyProps = {
   query: ReturnType<typeof useGeneratedImagesQuery>;
   emptyHint: string;
   onPick: (picked: { assetId: string; imageUrl: string }) => void;
-}) {
+};
+
+/** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다. */
+function GeneratedImageGridBody({ query, emptyHint, onPick }: GeneratedImageGridBodyProps) {
   if (query.isPending) {
     return (
       <div className="grid grid-cols-3 gap-2">

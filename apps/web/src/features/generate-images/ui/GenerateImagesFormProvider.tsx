@@ -4,7 +4,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 
-import { isReferenceImageEnabled } from "../model/referenceImageGate";
+import { isReferenceImageEnabled } from "../model/isReferenceImageEnabled";
 import {
   generateImagesDefaultValues,
   generateImagesSchema,

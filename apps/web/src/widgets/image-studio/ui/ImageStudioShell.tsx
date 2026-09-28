@@ -106,7 +106,7 @@ export function ImageStudioShell({
       title: "참조할 이미지 고르기",
       description: "내가 만든 이미지 중 하나를 골라 참조로 써요.",
       emptyHint: "이미지를 생성하면 여기에서 고를 수 있어요.",
-      showCreateLink: false,
+      shouldShowCreateLink: false,
     });
   }
 
