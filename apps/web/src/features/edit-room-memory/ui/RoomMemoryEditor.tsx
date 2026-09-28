@@ -94,7 +94,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const [announcement, setAnnouncement] = useState("");
   const editButtonRef = useRef<HTMLButtonElement>(null);
   const noteRef = useRef<HTMLTextAreaElement | null>(null);
-  const focusEditButtonRef = useRef(false);
+  const shouldFocusEditButtonRef = useRef(false);
 
   // 되감기 알림: 롤백 한 번에 한 번. 패널이 열려 있는 동안 롤백이 일어나도(메시지 삭제 등) 잡는다.
   const [shownRollbackAt, setShownRollbackAt] = useState<string | undefined>(undefined);
@@ -111,12 +111,12 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   // 건너뛴다.
   const summaryUpdatedAt = memory.summary?.updatedAt;
   const lastSummaryUpdatedAtRef = useRef(summaryUpdatedAt);
-  const ownWriteRef = useRef(false);
+  const isOwnWriteRef = useRef(false);
   useEffect(() => {
     if (summaryUpdatedAt === lastSummaryUpdatedAtRef.current) return;
     lastSummaryUpdatedAtRef.current = summaryUpdatedAt;
-    if (ownWriteRef.current) {
-      ownWriteRef.current = false;
+    if (isOwnWriteRef.current) {
+      isOwnWriteRef.current = false;
       return;
     }
     setAnnouncement(summaryUpdatedAt ? "요약이 바뀌었어요." : "요약이 비었어요.");
@@ -124,8 +124,8 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 
   // [저장]·[취소]로 편집 칸이 사라지면 포커스가 `<body>`로 떨어진다 — 다시 나타난 [고치기]로 돌린다.
   useEffect(() => {
-    if (isEditingSummary || !focusEditButtonRef.current) return;
-    focusEditButtonRef.current = false;
+    if (isEditingSummary || !shouldFocusEditButtonRef.current) return;
+    shouldFocusEditButtonRef.current = false;
     editButtonRef.current?.focus();
   }, [isEditingSummary]);
 
@@ -140,7 +140,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     // 두 칸의 저장이 폼 전체를 검증하므로, 닫은 편집 칸에 상한을 넘긴 값이 남으면 보이지 않는 오류가 노트
     // 저장을 막는다 — 기준값으로 되돌린다(오류도 함께 풀린다).
     form.resetField("summary");
-    focusEditButtonRef.current = true;
+    shouldFocusEditButtonRef.current = true;
     setIsEditingSummary(false);
   }
 
@@ -167,13 +167,13 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   async function handleSaveSummary(values: MemoryFormValues) {
     setWriteError(undefined);
     try {
-      ownWriteRef.current = true;
+      isOwnWriteRef.current = true;
       const next = await saveSummaryMutation.mutateAsync(toSummaryRequest(values, editBaseVersion));
       form.resetField("summary", { defaultValue: next.summary?.text ?? "" });
       setAnnouncement("요약을 고쳤어요. 다음 대화부터 반영돼요.");
       stopSummaryEdit();
     } catch (error) {
-      ownWriteRef.current = false;
+      isOwnWriteRef.current = false;
       showSaveError("summary", toMemoryWriteError(error));
     }
   }
@@ -182,11 +182,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     if (revertMutation.isPending || !memory.summary?.canRevert) return;
     setWriteError(undefined);
     try {
-      ownWriteRef.current = true;
+      isOwnWriteRef.current = true;
       await revertMutation.mutateAsync(memory.version);
       setAnnouncement("고치기 전 요약으로 되돌렸어요.");
     } catch (error) {
-      ownWriteRef.current = false;
+      isOwnWriteRef.current = false;
       setWriteError({ section: "summary", error: toMemoryWriteError(error) });
     }
   }
