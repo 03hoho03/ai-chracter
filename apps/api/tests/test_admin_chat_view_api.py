@@ -19,6 +19,7 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     Content,
     ContentType,
     ContentVersion,
@@ -346,6 +347,71 @@ async def test_get_more_five_times_still_one_log_row(
         )
     ).all()
     assert len(logs) == 1
+
+
+# ---- 방 기억 -----------------------------------------------------------------
+
+
+async def test_view_shows_the_room_memory_but_load_more_never_does(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """노트는 사용자가 적는 자유 텍스트라 악용 조사에 필요하지만, 사유를 남기는 열람에서만 보인다 —
+    로그 없는 더보기 응답에 기억이 실리면 사유 없이 노트를 읽는 길이 된다."""
+    room = await _setup_room(db_session)
+    first = await _add_chat_message(
+        db_session, chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, created_at=datetime(2026, 1, 1, tzinfo=UTC)
+    )
+    await _seed_messages(db_session, chat_room_id=room.id, count=110, start=datetime(2026, 1, 2, tzinfo=UTC))
+    room.memory_note = "주인공은 고양이를 무서워한다"
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=room.id,
+            cursor_created_at=first.created_at,
+            cursor_message_id=first.id,
+            summary_text="사용자가 고친 요약",
+            previous_text="AI가 접은 요약",
+            source="user",
+        )
+    )
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    view = await db_client.post(
+        f"/admin/chat-rooms/{room.id}/view", json={"reasonCategory": "other", "reasonText": "노트 확인"}
+    )
+    more = await db_client.get(
+        f"/admin/chat-rooms/{room.id}/messages",
+        params={"beforeCreatedAt": view.json()["beforeCreatedAt"], "beforeId": view.json()["beforeId"]},
+    )
+
+    assert view.status_code == 200
+    assert view.json()["memoryNote"] == "주인공은 고양이를 무서워한다"
+    assert view.json()["memorySummary"] == {"text": "사용자가 고친 요약", "source": "user"}
+    assert more.status_code == 200
+    assert set(more.json()) == {"items", "beforeCreatedAt", "beforeId"}
+    logs = (
+        await db_session.scalars(sa.select(AdminActionLog).where(AdminActionLog.target_chat_room_id == room.id))
+    ).all()
+    assert len(logs) == 1
+
+
+async def test_view_of_a_room_without_memory_has_an_empty_note_and_no_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    room = await _setup_room(db_session)
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    view = await db_client.post(
+        f"/admin/chat-rooms/{room.id}/view", json={"reasonCategory": "other", "reasonText": "확인"}
+    )
+
+    assert view.status_code == 200
+    assert view.json()["memoryNote"] == ""
+    assert view.json()["memorySummary"] is None
 
 
 # ---- 페이지네이션 --------------------------------------------------------------

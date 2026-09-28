@@ -815,7 +815,8 @@ export interface paths {
         /**
          * View Chat Room
          * @description **열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.
-         *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.
+         *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다. 방 기억(노트·현재 요약)도
+         *     이 응답에만 싣는다 — 같은 로그 한 줄이 기억 열람까지 덮는다.
          */
         post: operations["view_chat_room_admin_chat_rooms__room_id__view_post"];
         delete?: never;
@@ -2856,6 +2857,16 @@ export interface components {
             /** Totalcount */
             totalCount: number;
         };
+        /** AdminChatMemorySummary */
+        AdminChatMemorySummary: {
+            /** Text */
+            text: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "auto" | "user";
+        };
         /** AdminChatMessageItem */
         AdminChatMessageItem: {
             /**
@@ -2896,6 +2907,23 @@ export interface components {
             reasonCategory: components["schemas"]["ChatViewReasonCategory"];
             /** Reasontext */
             reasonText: string;
+        };
+        /**
+         * AdminChatRoomViewResponse
+         * @description 열람 시작 응답 — 더보기와 같은 페이지에 방 기억(사용자 노트·현재 요약)을 더한다. 기억은 사유를
+         *     남기는 이 열람에서만 내려 준다: 공용 모델에 두면 로그를 남기지 않는 더보기도 노트를 돌려준다.
+         *     `memory_summary`는 첫 요약 전이면 null이다.
+         */
+        AdminChatRoomViewResponse: {
+            /** Items */
+            items: components["schemas"]["AdminChatMessageItem"][];
+            /** Beforecreatedat */
+            beforeCreatedAt: string | null;
+            /** Beforeid */
+            beforeId: string | null;
+            /** Memorynote */
+            memoryNote: string;
+            memorySummary: components["schemas"]["AdminChatMemorySummary"] | null;
         };
         /** AdminCloverLedgerItem */
         AdminCloverLedgerItem: {
@@ -6934,7 +6962,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminChatMessagesResponse"];
+                    "application/json": components["schemas"]["AdminChatRoomViewResponse"];
                 };
             };
             /** @description Validation Error */

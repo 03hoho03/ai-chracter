@@ -411,6 +411,20 @@ class AdminChatMessagesResponse(CamelModel):
     before_id: uuid.UUID | None
 
 
+class AdminChatMemorySummary(CamelModel):
+    text: str
+    source: Literal["auto", "user"]
+
+
+class AdminChatRoomViewResponse(AdminChatMessagesResponse):
+    """열람 시작 응답 — 더보기와 같은 페이지에 방 기억(사용자 노트·현재 요약)을 더한다. 기억은 사유를
+    남기는 이 열람에서만 내려 준다: 공용 모델에 두면 로그를 남기지 않는 더보기도 노트를 돌려준다.
+    `memory_summary`는 첫 요약 전이면 null이다."""
+
+    memory_note: str
+    memory_summary: AdminChatMemorySummary | None
+
+
 class AdminPromptSetSummary(CamelModel):
     """이력 목록은 메타만. 섹션 전문은
     `GET /admin/prompt-sets/{id}`로 뺀다."""
