@@ -8,6 +8,7 @@ import { useGenerateImagesSubmit, type PickedReferenceImage } from "../model/use
 
 const LABEL_ID = "generate-images-reference-label";
 const NOTICE_ID = "generate-images-reference-notice";
+const CROP_HINT_ID = "generate-images-reference-crop-hint";
 
 // 프롬프트 박스 **밖**, 바로 아래의 별도 행이다. 박스 안 하단 줄은 이미 클로버 잔량과 생성 버튼이라
 // 넣을 자리가 없고, 옵션 열(우열)에 두면 lg 미만에서 바텀시트 뒤로 숨어 참조가 붙어 있다는 사실을
@@ -60,7 +61,8 @@ export function GenerateImagesReferenceField() {
                 // (`GeneratedImageField`와 같은 구조).
                 <div className="relative size-16 shrink-0">
                   {/* 정사각 `object-cover` — 서버도 가운데 정사각형 위주로 반영한다. 다만 그 한 변을
-                      계약이 정의하지 않으므로 이 네모가 정확히 반영 영역이라고 말하지 않는다. */}
+                      계약이 정의하지 않으므로 옆 보조 문구도 이 네모가 정확히 반영 영역이라고 말하지
+                      않는다. */}
                   <div className="size-full overflow-hidden rounded-lg border border-foreground/10 bg-muted motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-150">
                     {previewUrl ? (
                       <img
@@ -85,25 +87,35 @@ export function GenerateImagesReferenceField() {
                   </button>
                 </div>
               )}
-              {/* 솔리드 채움은 생성 버튼 하나뿐이라 outline이다. 라벨만 바꾸고 같은 엘리먼트를
-                  유지해 빼기 뒤 포커스가 돌아올 자리가 사라지지 않게 한다. */}
-              <Button
-                ref={pickButtonRef}
-                type="button"
-                variant="outline"
-                size="sm"
-                aria-describedby={NOTICE_ID}
-                onClick={() => void handlePick()}
-              >
-                <Images aria-hidden />
-                {reference === null ? "내 이미지에서 고르기" : "다른 이미지로 바꾸기"}
-              </Button>
+              {/* 버튼과 보조 문구를 한 열로 묶어 미리보기 오른쪽에 둔다 — 좁은 폭에서도 행이 가로로
+                  넘치지 않고 문구만 열 안에서 접힌다(`min-w-0`). */}
+              <div className="flex min-w-0 flex-col items-start gap-1.5">
+                {/* 솔리드 채움은 생성 버튼 하나뿐이라 outline이다. 라벨만 바꾸고 같은 엘리먼트를
+                    유지해 빼기 뒤 포커스가 돌아올 자리가 사라지지 않게 한다. */}
+                <Button
+                  ref={pickButtonRef}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  aria-describedby={reference === null ? NOTICE_ID : `${NOTICE_ID} ${CROP_HINT_ID}`}
+                  onClick={() => void handlePick()}
+                >
+                  <Images aria-hidden />
+                  {reference === null ? "내 이미지에서 고르기" : "다른 이미지로 바꾸기"}
+                </Button>
+                {/* 반영 영역은 고른 이미지를 봐야 뜻이 서므로 고른 뒤에만 미리보기 옆에 둔다. */}
+                {reference !== null && (
+                  <p id={CROP_HINT_ID} className="break-keep text-xs text-muted-foreground">
+                    가운데 부분 위주로 반영돼요.
+                  </p>
+                )}
+              </div>
             </div>
-            {/* 전송 **전**에 보이는 유일한 자리라 고른 뒤가 아니라 행과 함께 늘 보인다. 보존 기한은
-                정해지지 않았으므로 약속하지 않는다. */}
+            {/* 전송·보관 고지는 전송 **전**에 보이는 유일한 자리라 고른 뒤가 아니라 행과 함께 늘
+                보인다. 보존 기한은 정해지지 않았으므로 약속하지 않는다. */}
             <p id={NOTICE_ID} className="break-keep text-xs text-muted-foreground">
               참조 이미지는 이미지 생성 서버로 보내져요. 운영 정책에 맞지 않는 참조 이미지는 검토를 위해
-              보관될 수 있어요. 가운데 네모 부분 위주로 반영돼요.
+              보관될 수 있어요.
             </p>
           </div>
         );

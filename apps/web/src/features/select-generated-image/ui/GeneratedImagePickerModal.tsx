@@ -42,7 +42,7 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
       <Dialog open={isOpen} onOpenChange={(next) => !next && call.end(undefined)}>
         {/* 이미지가 많으면 그리드가 화면보다 길어진다 — `DialogContent`엔 최대 높이도 내부 스크롤도
             없어서, 빼먹으면 Radix가 body 스크롤을 잠근 채 아래 행과 닫기에 닿을 방법이 없다. */}
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+        <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="break-keep">{description}</DialogDescription>
