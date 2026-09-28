@@ -11,7 +11,7 @@ import type { ChatMessagesCursor } from "../api/keys";
 import type {
   AdminChatMessageItem,
   AdminChatMessagesResponse,
-  AdminChatRoomViewResponse,
+  AdminChatRoomView,
 } from "../api/useViewChatMutation";
 import { ViewReasonDialog } from "./ViewReasonDialog";
 
@@ -20,7 +20,7 @@ const ROLE_LABELS: Record<AdminChatMessageItem["role"], string> = {
   assistant: "AI",
 };
 
-const SUMMARY_SOURCE_LABELS: Record<NonNullable<AdminChatRoomViewResponse["memorySummary"]>["source"], string> = {
+const SUMMARY_SOURCE_LABELS: Record<NonNullable<AdminChatRoomView["memorySummary"]>["source"], string> = {
   auto: "AI 요약",
   user: "사용자가 고친 요약",
 };
@@ -34,12 +34,12 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   const navigate = useNavigate();
   // 열람 응답(기억 포함)과 더보기로 이어 받은 메시지를 따로 든다 — 더보기 응답에는 기억이 없으므로 합쳐 두면
   // 첫 응답의 기억을 덮을 수 있다.
-  const [viewResult, setViewResult] = useState<AdminChatRoomViewResponse>();
+  const [viewResult, setViewResult] = useState<AdminChatRoomView>();
   const [olderItems, setOlderItems] = useState<AdminChatMessageItem[]>([]);
   const [cursor, setCursor] = useState<ChatMessagesCursor>();
 
   const messagesPager = useChatMessagesPager(roomId);
-  const goToUserDetail = () => void navigate({ to: "/users/$userId", params: { userId } });
+  const handleCancel = () => void navigate({ to: "/users/$userId", params: { userId } });
 
   const handleLoadMore = async () => {
     if (!cursor) return;
@@ -63,7 +63,7 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
         <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
         <ViewReasonDialog
           roomId={roomId}
-          onCancel={goToUserDetail}
+          onCancel={handleCancel}
           onConfirmed={(data) => {
             setViewResult(data);
             setCursor(nextCursor(data));
@@ -91,7 +91,7 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
 
       <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
 
-      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary ?? undefined} />
+      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
 
       {displayItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
@@ -145,7 +145,7 @@ function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
        * 구분한다. */}
       <p
         className={cn(
-          "max-w-[75%] whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm text-foreground",
+          "max-w-3/4 whitespace-pre-wrap break-words rounded-lg px-3.5 py-2.5 text-sm text-foreground",
           isUser ? "bg-secondary" : "border border-border bg-card",
         )}
       >
@@ -162,7 +162,7 @@ function RoomMemorySection({
   summary,
 }: {
   note: string;
-  summary?: NonNullable<AdminChatRoomViewResponse["memorySummary"]>;
+  summary?: NonNullable<AdminChatRoomView["memorySummary"]>;
 }) {
   // 사용자가 요약을 빈 칸으로 저장할 수 있다 — 요약이 아직 없는 것과 문장을 가른다.
   const emptySummaryText = summary ? "비어 있어요." : "아직 요약이 없어요.";

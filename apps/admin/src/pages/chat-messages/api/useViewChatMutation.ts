@@ -6,9 +6,13 @@ import { apiClient } from "@/shared/lib/api/client";
 
 export type AdminChatRoomViewRequest = components["schemas"]["AdminChatRoomViewRequest"];
 export type AdminChatMessagesResponse = components["schemas"]["AdminChatMessagesResponse"];
+type AdminChatRoomViewResponse = components["schemas"]["AdminChatRoomViewResponse"];
+type AdminChatMemorySummary = components["schemas"]["AdminChatMemorySummary"];
 // 열람 응답만 방 기억(노트·요약)을 싣는다 — 더보기 응답(`AdminChatMessagesResponse`)은 감사 로그 없이
-// 불리므로 기억을 싣지 않는다.
-export type AdminChatRoomViewResponse = components["schemas"]["AdminChatRoomViewResponse"];
+// 불리므로 기억을 싣지 않는다. 요약은 첫 접기 전이면 없다(서버의 null은 받는 자리에서 undefined로 바꾼다).
+export type AdminChatRoomView = Omit<AdminChatRoomViewResponse, "memorySummary"> & {
+  memorySummary?: AdminChatMemorySummary;
+};
 export type AdminChatMessageItem = components["schemas"]["AdminChatMessageItem"];
 
 /** 이 훅의 호출 1회 = 서버 감사 로그 1행(`apps/api/CLAUDE.md`). `useMutation`
@@ -25,9 +29,15 @@ export type AdminChatMessageItem = components["schemas"]["AdminChatMessageItem"]
 export function useViewChatMutation(roomId: string) {
   const queryClient = useQueryClient();
 
-  return useMutation<AdminChatRoomViewResponse, ApiError, AdminChatRoomViewRequest>({
+  return useMutation<AdminChatRoomView, ApiError, AdminChatRoomViewRequest>({
     mutationFn: async (payload) =>
-      (await apiClient.post<AdminChatRoomViewResponse>(`/admin/chat-rooms/${roomId}/view`, payload)).data,
+      toAdminChatRoomView(
+        (await apiClient.post<AdminChatRoomViewResponse>(`/admin/chat-rooms/${roomId}/view`, payload)).data,
+      ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: adminUserKeys.all }),
   });
+}
+
+function toAdminChatRoomView(dto: AdminChatRoomViewResponse): AdminChatRoomView {
+  return { ...dto, memorySummary: dto.memorySummary ?? undefined };
 }
