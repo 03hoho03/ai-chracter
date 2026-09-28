@@ -936,3 +936,62 @@ async def test_image_exempt_user_does_not_spend_clover(
     assert resp.status_code == 202
     await db_session.refresh(user)
     assert user.clover_balance == 100
+
+
+# ---- 공백 프롬프트는 차감 전에 거절 ----
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        pytest.param("   ", id="spaces"),
+        pytest.param("\n\t", id="newline-tab"),
+        pytest.param("　", id="ideographic-space"),
+    ],
+)
+async def test_whitespace_only_prompt_is_rejected_before_any_token_is_taken(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, prompt: str
+) -> None:
+    """공백만 있는 프롬프트는 `min_length=1` 을 통과한다. 그대로 보내면 집 PC 는 빈 프롬프트를
+    기본 인물 생성으로 처리해 사용자가 의도하지 않은 이미지가 나오고 하루치 토큰이 깎인다.
+    바디 검증에서 끊겨야 게이트가 불리지 않는다 — 버킷 키가 아예 없어야(None) "차감 후 환불"이
+    아니라 "차감 없음"이다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+
+    user = await _authed_user(db_client, db_session)
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(prompt=prompt))
+
+    assert resp.status_code == 422
+    assert created_job_ids == []
+    assert local_image._user_queue_depth == {}
+    assert await _bucket_tokens(user.id) is None
+
+
+async def test_whitespace_only_prompt_does_not_spend_clover(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """토큰을 다 쓴 사용자는 클로버로 낸다 — 공백 프롬프트가 게이트까지 가면 유상 재화가 깎이고
+    원하지 않은 이미지가 나간다. 토큰 경로만 보면 클로버 차감 경로의 누락을 못 잡는다."""
+    _reset_admission(monkeypatch, queue_limit=4)
+    _stub_ready_capabilities(monkeypatch)
+    created_job_ids = _stub_job_pipeline(monkeypatch)
+    monkeypatch.setattr(rate_limit_gate, "IMAGE_TOKEN_CAPACITY", 0)
+
+    user = await _authed_user(
+        db_client,
+        db_session,
+        clover_balance=100,
+        clover_spend_confirmed_on=clover.kst_today(datetime.now(UTC)),
+    )
+
+    resp = await db_client.post("/images/generate", json=_generate_payload(prompt="   "))
+
+    assert resp.status_code == 422
+    assert created_job_ids == []
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+    rows = (await db_session.scalars(select(CloverLedger).where(CloverLedger.user_id == user.id))).all()
+    assert list(rows) == []

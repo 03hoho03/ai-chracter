@@ -198,6 +198,43 @@ async def test_generate_rejects_prompt_exceeding_max_length(
     assert resp.status_code == 422
 
 
+async def test_generate_keeps_surrounding_whitespace_of_the_submitted_prompt(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """공백 프롬프트 거절은 판정만 하고 값을 바꾸지 않는다. 검증이 다듬은 값을 돌려주면 요청
+    행(어드민이 보는 기록)에 사용자가 실제로 보낸 것과 다른 문자열이 남고, API 를 직접 부르는
+    호출자의 앞뒤 공백이 조용히 사라진 채 집 PC 로 간다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    received_prompts: list[str] = []
+
+    class _PromptRecordingImageClient(_FakeImageClient):
+        async def generate_image(
+            self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        ) -> tuple[bytes, str]:
+            received_prompts.append(prompt)
+            return await super().generate_image(prompt, style, aspect_ratio)
+
+    app.dependency_overrides[get_image_client] = lambda: (
+        lambda model_id: _PromptRecordingImageClient(model_id, generate=lambda: (_png_bytes(), "image/png"))
+    )
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(prompt=" a cat "))
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert received_prompts == [" a cat "]
+    request_row = (await db_session.execute(sa.select(ImageGenerationRequest))).scalar_one()
+    assert request_row.prompt == " a cat "
+
+
 async def test_generate_returns_503_and_creates_no_job_when_local_capabilities_unavailable(
     db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
 ) -> None:
