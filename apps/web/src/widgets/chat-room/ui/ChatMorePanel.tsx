@@ -41,7 +41,7 @@ export function ChatMorePanel(props: ChatMorePanelProps) {
           전역 헤더까지 보이게 할지는 이 실측으로 결론이 났다: 전역 헤더(0~57)가 채팅 헤더(57~118) 위에
           있으므로 채팅 헤더를 남기면 전역 헤더는 반드시 함께 남는다 — 둘을 따로 고를 수 없다. 시트를
           57px까지 올려 채팅 헤더를 덮는 반대 선택지는 그 목적과 정면으로 어긋나서 버렸다. */}
-      <SheetContent side="bottom" className="top-[118px] rounded-t-xl">
+      <SheetContent side="bottom" className="top-below-chat-header rounded-t-xl">
         <SheetHeader>
           <SheetTitle>더보기</SheetTitle>
         </SheetHeader>
