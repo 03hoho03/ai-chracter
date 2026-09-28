@@ -225,6 +225,8 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const isSummaryEditOpen = isEditingSummary && summary !== undefined;
   const noteField = form.register("note");
   const isNoteSaving = saveNoteMutation.isPending || clearNoteMutation.isPending;
+  // [저장]의 비활성 표시와 클릭 가드가 같은 값을 본다 — 비우기가 진행 중일 때도 저장 요청을 보내지 않는다.
+  const isNoteSaveBlocked = isNoteSaving || isSubmitting;
 
   let summaryBody: ReactNode;
   if (summary === undefined) {
@@ -385,10 +387,10 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           <Button
             type="button"
             variant={isSummaryEditOpen ? "outline" : "default"}
-            aria-disabled={isNoteSaving || isSubmitting}
+            aria-disabled={isNoteSaveBlocked}
             className={cn("aria-disabled:opacity-65", isSummaryEditOpen && "hover:bg-secondary")}
             onClick={() => {
-              if (!isSubmitting) void form.handleSubmit(handleSaveNote)();
+              if (!isNoteSaveBlocked) void form.handleSubmit(handleSaveNote)();
             }}
           >
             {saveNoteMutation.isPending ? "저장 중..." : "저장"}
