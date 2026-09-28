@@ -8,12 +8,21 @@ import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { useChatMessagesPager } from "../api/useChatMessagesPager";
 import type { ChatMessagesCursor } from "../api/keys";
-import type { AdminChatMessageItem, AdminChatMessagesResponse } from "../api/useViewChatMutation";
+import type {
+  AdminChatMessageItem,
+  AdminChatMessagesResponse,
+  AdminChatRoomViewResponse,
+} from "../api/useViewChatMutation";
 import { ViewReasonDialog } from "./ViewReasonDialog";
 
 const ROLE_LABELS: Record<AdminChatMessageItem["role"], string> = {
   user: "사용자",
   assistant: "AI",
+};
+
+const SUMMARY_SOURCE_LABELS: Record<NonNullable<AdminChatRoomViewResponse["memorySummary"]>["source"], string> = {
+  auto: "AI 요약",
+  user: "사용자가 고친 요약",
 };
 
 type ChatMessagesPageProps = {
@@ -23,7 +32,9 @@ type ChatMessagesPageProps = {
 
 export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
   const navigate = useNavigate();
-  const [viewResult, setViewResult] = useState<AdminChatMessagesResponse>();
+  // 열람 응답(기억 포함)과 더보기로 이어 받은 메시지를 따로 든다 — 더보기 응답에는 기억이 없으므로 합쳐 두면
+  // 첫 응답의 기억을 덮을 수 있다.
+  const [viewResult, setViewResult] = useState<AdminChatRoomViewResponse>();
   const [olderItems, setOlderItems] = useState<AdminChatMessageItem[]>([]);
   const [cursor, setCursor] = useState<ChatMessagesCursor | null>(null);
 
@@ -79,6 +90,8 @@ export function ChatMessagesPage({ userId, roomId }: ChatMessagesPageProps) {
       </Button>
 
       <h1 className="text-2xl font-bold tracking-tight text-foreground">채팅 열람</h1>
+
+      <RoomMemorySection note={viewResult.memoryNote} summary={viewResult.memorySummary} />
 
       {displayItems.length === 0 ? (
         <p className="text-sm text-muted-foreground">메시지가 없어요.</p>
@@ -139,5 +152,42 @@ function ChatMessageRow({ item }: { item: AdminChatMessageItem }) {
         {item.content}
       </p>
     </li>
+  );
+}
+
+/** 방 기억 — 사용자 노트("꼭 기억할 것")와 현재 요약("지금까지의 이야기"). 노트는 매 턴 모델에 그대로
+ * 실리는 사용자 입력이라 악용 조사의 대상이고, 이 열람(사유·감사 로그)이 그것을 보는 유일한 경로다. */
+function RoomMemorySection({
+  note,
+  summary,
+}: {
+  note: string;
+  summary: AdminChatRoomViewResponse["memorySummary"];
+}) {
+  return (
+    <section aria-labelledby="room-memory-heading" className="flex flex-col gap-3 rounded-xl border border-border p-4">
+      <h2 id="room-memory-heading" className="text-lg font-semibold text-foreground">
+        기억 노트
+      </h2>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-xs font-medium text-muted-foreground">꼭 기억할 것</h3>
+        {note ? (
+          <p className="whitespace-pre-wrap break-words break-keep text-sm text-foreground">{note}</p>
+        ) : (
+          <p className="text-sm text-muted-foreground">비어 있어요.</p>
+        )}
+      </div>
+      <div className="flex flex-col gap-1">
+        <h3 className="text-xs font-medium text-muted-foreground">
+          지금까지의 이야기{summary && ` · ${SUMMARY_SOURCE_LABELS[summary.source]}`}
+        </h3>
+        {summary?.text ? (
+          <p className="whitespace-pre-wrap break-words break-keep text-sm text-foreground">{summary.text}</p>
+        ) : (
+          // 사용자가 요약을 빈 칸으로 저장할 수 있다 — 요약이 아직 없는 것과 문장을 가른다.
+          <p className="text-sm text-muted-foreground">{summary ? "비어 있어요." : "아직 요약이 없어요."}</p>
+        )}
+      </div>
+    </section>
   );
 }

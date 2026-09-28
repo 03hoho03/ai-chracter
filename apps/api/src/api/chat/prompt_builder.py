@@ -74,6 +74,9 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "prologue"): frozenset({"prologue"}),
     # 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
     ("generation", "user_persona"): frozenset({"user_persona"}),
+    # 채팅방 기억 — 사용자 노트와 자동 요약. 둘 다 conditional이라 값이 비면 섹션째 빠진다.
+    ("generation", "memory_note"): frozenset({"memory_note"}),
+    ("generation", "memory_summary"): frozenset({"memory_summary"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
@@ -83,9 +86,14 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
         {"user_label", "user_message", "assistant_label", "assistant_message"}
     ),
     ("stat_judgment", "judgment_instruction"): frozenset(),
+    ("ending_judgment", "memory_summary"): frozenset({"memory_summary"}),
     ("ending_judgment", "history_header"): frozenset(),
     ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("ending_judgment", "criteria"): frozenset({"judgment_prompt"}),
+    # 요약 호출 전용 channel — `build_memory_summary_prompt`가 만드는 `values`.
+    ("memory_summary", "instruction"): frozenset(),
+    ("memory_summary", "previous_summary"): frozenset({"previous_summary"}),
+    ("memory_summary", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
     ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "judgment_instruction"): frozenset(),
@@ -277,12 +285,39 @@ def user_persona_rendered(
     섹션은 값이 비지 않으면 반드시 렌더되므로 이 둘이 "포함됨"과 같다. 값만 보면 캐시 TTL 창처럼
     활성 세트에 슬롯이 아직 없을 때도 참이 된다. 인자 모양은 `system_instruction_for`와
     같다 — `template`은 스토리 챗에서만 의미가 있다."""
-    if not user_persona:
+    return _generation_slot_rendered(
+        sections, is_story_chat=is_story_chat, template=template, slot="user_persona", value=user_persona
+    )
+
+
+def memory_note_rendered(
+    sections: Sequence[PromptSection],
+    *,
+    is_story_chat: bool,
+    template: StoryPromptTemplate | None = None,
+    memory_note: str,
+) -> bool:
+    """그 턴 생성 프롬프트에 방의 기억 노트 섹션이 **실제로** 들어갔는가. 판정 규칙과 인자 모양은
+    `user_persona_rendered`와 같다(정책 안내 문구 분기용)."""
+    return _generation_slot_rendered(
+        sections, is_story_chat=is_story_chat, template=template, slot="memory_note", value=memory_note
+    )
+
+
+def _generation_slot_rendered(
+    sections: Sequence[PromptSection],
+    *,
+    is_story_chat: bool,
+    template: StoryPromptTemplate | None,
+    slot: str,
+    value: str,
+) -> bool:
+    if not value:
         return False
     scope = "story" if is_story_chat else "character"
     variant = _story_generation_variant(template) if template is not None else ""
     selected = select_sections_for_render(sections, channel="generation", scope=scope, variant=variant)
-    return any(section.slot == "user_persona" for section in selected)
+    return any(section.slot == slot for section in selected)
 
 
 def build_generation_prompt(
@@ -294,6 +329,8 @@ def build_generation_prompt(
     history: list[ChatMessage],
     user_message: str,
     user_persona: str,
+    memory_note: str,
+    memory_summary: str,
 ) -> str:
     """생성 프롬프트를 조립한다 — 캐릭터 챗 전용.
 
@@ -305,6 +342,9 @@ def build_generation_prompt(
     `""`이면 conditional 섹션째 드롭되어 이 인자가 없던 시절과 바이트까지 같다.
     기본값이 없는 이유는 호출부 누락을 mypy가 잡게 하려는
     것이다.
+
+    `memory_note`(사용자가 적은 기억 노트)와 `memory_summary`(윈도우 밖으로 접힌 대화의 현재 요약)도
+    같은 규칙이다 — 비어 있으면 섹션째 빠지고, 기본값이 없다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.character_assistant_label}: {pair['characterLine']}"
@@ -319,6 +359,8 @@ def build_generation_prompt(
         "character_prompt": character_prompt,
         "example_lines": example_lines,
         "user_persona": user_persona,
+        "memory_note": memory_note,
+        "memory_summary": memory_summary,
         "history_lines": history_lines,
         "user_label": prompt_set.user_label,
         "user_message": user_message,
@@ -341,12 +383,14 @@ def build_story_generation_prompt(
     history: list[ChatMessage],
     user_message: str,
     user_persona: str,
+    memory_note: str,
+    memory_summary: str,
     keyword_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
 ) -> str:
     """생성 프롬프트를 조립한다 — 스토리 챗 전용.
 
-    `user_persona`는 `build_generation_prompt`와 같다(필수 인자).
+    `user_persona`·`memory_note`·`memory_summary`는 `build_generation_prompt`와 같다(필수 인자).
 
     "스토리 설정 템플릿+시작설정 프롤로그" 뒤에 최근 히스토리, 매칭된 키워드북 정보
     (사용자에게는 비노출, `match_keyword_notes`로 이미 걸러진 결과만 받음), (단축어
@@ -378,6 +422,8 @@ def build_story_generation_prompt(
         "example_lines": example_lines,
         "prologue": prologue,
         "user_persona": user_persona,
+        "memory_note": memory_note,
+        "memory_summary": memory_summary,
         "history_lines": history_lines,
         "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
         "shortcut_prompt": shortcut_prompt or "",
@@ -450,6 +496,7 @@ def build_ending_judgment_prompt(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
+    memory_summary: str,
 ) -> str:
     """판단 프롬프트를 조립한다 — 엔딩 판정(스토리 챗 전용).
 
@@ -465,6 +512,9 @@ def build_ending_judgment_prompt(
     `turn_lines`는 히스토리와 이번 턴을 한 블롭으로 만들어 라벨을 플레이스홀더로 뽑을 수
     없다(히스토리가 비면 개행 아티팩트가 낀다) — 그래도 그 블롭을 만드는 이 코드가
     `prompt_set.story_assistant_label`을 읽으므로 라벨은 여전히 DB에서 온다.
+
+    `memory_summary`는 대화 기록 앞에 싣는 현재 요약이다. `""`이면 섹션째 빠져 이 인자가 없던 시절과
+    바이트까지 같다(기본값이 없는 이유는 생성 빌더와 같다).
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
@@ -477,6 +527,7 @@ def build_ending_judgment_prompt(
     values = {
         "turn_lines": "\n".join(turn_lines),
         "judgment_prompt": judgment_prompt,
+        "memory_summary": memory_summary,
     }
     return render_prompt_channel(sections, channel="ending_judgment", scope="story", values=values)
 
@@ -526,3 +577,35 @@ class ImageMatchJudgmentResult(BaseModel):
     """techspec-backend-chat.md §3.1 판단용 response_schema — 상황별 이미지 매칭(캐릭터 챗 전용)."""
 
     matched_image_entity_id: str | None
+
+
+class MemorySummaryResult(BaseModel):
+    """대화 요약 결과. `summary`에는 요약 본문만 담는다."""
+
+    summary: str
+
+
+def build_memory_summary_prompt(
+    *,
+    prompt_set: PromptSet,
+    sections: Sequence[PromptSection],
+    is_story_chat: bool,
+    previous_summary: str,
+    turns: list[ChatMessage],
+) -> str:
+    """요약 호출 프롬프트를 조립한다 — 긴 방에서 윈도우 밖으로 접을 대화를 요약한다.
+
+    지시문 전체가 `memory_summary` channel(DB)에 있고, 코드는 직전 요약과 접을 대화 줄만 만든다.
+    `previous_summary`가 `""`(첫 요약)이면 그 섹션은 통째로 빠진다. 화자 라벨은 생성 프롬프트와 같은
+    것을 쓴다 — 스토리 챗은 `story_assistant_label`, 캐릭터 챗은 `character_assistant_label`.
+    노트·스탯·계정 정보는 인자로 받지 않는다: 노트는 매 턴 따로 실리고, 스탯 수치가 요약에 새면
+    진실 소스가 둘이 되며, 계정 정보는 프롬프트에 넣지 않는다."""
+    assistant_label = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
+    turn_lines = "\n".join(
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: {message.content}"
+        for message in turns
+    )
+    values = {"previous_summary": previous_summary, "turn_lines": turn_lines}
+    return render_prompt_channel(
+        sections, channel="memory_summary", scope="story" if is_story_chat else "character", values=values
+    )

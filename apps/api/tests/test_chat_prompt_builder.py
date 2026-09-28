@@ -242,6 +242,8 @@ def test_build_generation_prompt_uses_character_labels_not_story_labels() -> Non
         ],
         user_message="이번 메시지",
         user_persona="",
+        memory_note="",
+        memory_summary="",
     )
 
     assert f"{prompt_set.user_label}: 안녕" in prompt
@@ -288,6 +290,8 @@ def test_build_story_generation_prompt_uses_example_label_only_for_development_e
         ],
         user_message="이번 메시지",
         user_persona="",
+        memory_note="",
+        memory_summary="",
     )
 
     assert f"{prompt_set.story_example_label}: 환영" in prompt
@@ -337,6 +341,7 @@ def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and
         ],
         user_message="이번 메시지",
         assistant_message="이번 응답",
+        memory_summary="",
     )
 
     assert f"{prompt_set.story_assistant_label}: 이전 응답" in prompt
@@ -433,6 +438,8 @@ def test_migrated_development_example_pairs_reconstruct_to_the_original_free_tex
         history=[],
         user_message="메시지",
         user_persona="",
+        memory_note="",
+        memory_summary="",
     )
 
     reconstructed = prompt.split("[전개 예시]\n", 1)[1].split("\n\n[시작 상황]", 1)[0]

@@ -7,7 +7,7 @@ import { ImageArchiveModal } from "@/features/image-archive";
 import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
 
-import { chatMorePanelOpenAtom } from "../model/atoms";
+import { chatSidePanelAtom } from "../model/atoms";
 import { RoomPersonaModal } from "./RoomPersonaModal";
 
 type MorePanelItem = {
@@ -44,12 +44,12 @@ export type ChatMoreNavProps = {
 // 전용 react-call 모달을 연다 — 데스크톱 인라인 사이드바(ChatMoreSidebar)와 모바일 Sheet
 // (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 두 곳에서 그려져도 정의는 여기 한 곳뿐이다.
 export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId }: ChatMoreNavProps) {
-  const setOpen = useSetAtom(chatMorePanelOpenAtom);
+  const setPanel = useSetAtom(chatSidePanelAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
 
   function handleItemClick(item: MorePanelItem) {
     if (!item.isActive) return;
-    setOpen(false);
+    setPanel(null);
     if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
     if (item.key === "update-info") void UpdateInfoModal.call({ roomId });
     if (item.key === "change-starting-setup") void ChangeStartingSetupModal.call({ roomId });

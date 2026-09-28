@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@ai-
 import { MoreVertical } from "lucide-react";
 
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
-import { chatMorePanelOpenAtom } from "../model/atoms";
+import { chatSidePanelAtom } from "../model/atoms";
 import type { ChatMoreNavProps } from "./ChatMoreNav";
 import { ChatMoreNav } from "./ChatMoreNav";
 
@@ -12,9 +12,11 @@ type ChatMorePanelProps = ChatMoreNavProps;
 
 // 채팅 헤더의 ⋮ 트리거. 패널 자체는 뷰포트에 따라 두 곳에서 그려진다 —
 // lg 이상은 ChatRoomView가 배치한 인라인 <aside>(ChatMoreSidebar), lg 미만은 여기의 드롭업 Sheet.
-// 어느 쪽이든 열림 상태는 chatMorePanelOpenAtom 하나이고 항목 목록은 ChatMoreNav 하나다.
+// 어느 쪽이든 열림 상태는 chatSidePanelAtom 하나이고 항목 목록은 ChatMoreNav 하나다.
 export function ChatMorePanel(props: ChatMorePanelProps) {
-  const [isOpen, setIsOpen] = useAtom(chatMorePanelOpenAtom);
+  const [panel, setPanel] = useAtom(chatSidePanelAtom);
+  const isOpen = panel === "more";
+  const setIsOpen = (open: boolean) => setPanel(open ? "more" : null);
   const isSidebarLayout = useIsChatMoreSidebarLayout();
 
   if (isSidebarLayout) {

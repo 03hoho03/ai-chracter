@@ -7,6 +7,7 @@ from api.db.models.chat import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     StoryEndingUnlock,
 )
@@ -70,6 +71,7 @@ __all__ = [
     "ChatMessage",
     "ChatMessageRole",
     "ChatRoom",
+    "ChatRoomMemorySnapshot",
     "ChatRoomStat",
     "CloverLedger",
     "CloverLot",

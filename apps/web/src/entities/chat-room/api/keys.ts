@@ -9,6 +9,9 @@ export const chatRoomKeys = {
   // 방 상세를 한꺼번에 invalidate할 접두 키가 필요하다.
   details: () => [...chatRoomKeys.all, "detail"] as const,
   detail: (roomId: string) => [...chatRoomKeys.details(), roomId] as const,
+  // 방 기억(노트·요약)은 `details()` 접두 밖에 둔다 — 대화 프로필 삭제가 방 상세를 접두로 무효화할 때마다
+  // 기억까지 다시 받을 이유가 없다.
+  memory: (roomId: string) => [...chatRoomKeys.all, "memory", roomId] as const,
   playGuide: (roomId: string) => [...chatRoomKeys.all, "play-guide", roomId] as const,
   endingCollection: (startingSetupId: string) =>
     [...chatRoomKeys.all, "ending-collection", startingSetupId] as const,

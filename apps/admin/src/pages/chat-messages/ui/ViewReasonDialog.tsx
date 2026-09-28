@@ -23,7 +23,7 @@ import {
 } from "@/entities/admin-user";
 import { isApiError } from "@/shared/lib/api/client";
 
-import { useViewChatMutation, type AdminChatMessagesResponse } from "../api/useViewChatMutation";
+import { useViewChatMutation, type AdminChatRoomViewResponse } from "../api/useViewChatMutation";
 
 /** 카테고리 필수·사유 텍스트 trim 후 비어있으면 안 됨 — 이 규칙은 컴포넌트가 아니라 여기 한 곳에
  * 둔다(UserActionConfirmModal의 스키마와 동형). 비면 서버로 요청이 나가기 전에 필드 에러로 잡는다
@@ -47,7 +47,7 @@ type ViewReasonFormValues = z.infer<typeof viewReasonSchema>;
 type ViewReasonDialogProps = {
   roomId: string;
   onCancel: () => void;
-  onConfirmed: (data: AdminChatMessagesResponse) => void;
+  onConfirmed: (data: AdminChatRoomViewResponse) => void;
 };
 
 /** 이 화면의 진입 게이트 다이얼로그 — `__root.tsx`에 콜러블로 마운트하지 않고 페이지 안에

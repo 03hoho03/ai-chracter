@@ -1,4 +1,4 @@
-/** 코드가 아는 6채널(어드민은 이 집합을 늘리거나 줄이지
+/** 코드가 아는 7채널(어드민은 이 집합을 늘리거나 줄이지
  * 못한다). 목록·라벨·술어를 손으로 따로 적지 않고 `PROMPT_CHANNEL_LABELS`에서 도출해야 셋이
  * 어긋날 수 없다(legal의 `LEGAL_KIND_LABELS`와 같은 패턴). */
 export const PROMPT_CHANNEL_LABELS = {
@@ -7,6 +7,7 @@ export const PROMPT_CHANNEL_LABELS = {
   stat_judgment: "스탯 판정",
   ending_judgment: "엔딩 판정",
   image_judgment: "이미지 판정",
+  memory_summary: "기억 요약",
   publish_filter: "발행 검열",
 } as const;
 

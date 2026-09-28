@@ -22,7 +22,7 @@ import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.prompts import _validate_prompt_draft_for_publish
-from api.chat.prompt_builder import PromptLane, load_active_prompt_set, select_sections_for_render
+from api.chat.prompt_builder import PromptLane, select_sections_for_render
 from api.db.models.prompt import PromptSection, PromptSet
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
@@ -40,6 +40,8 @@ def _load(revision: str) -> ModuleType:
 _M2 = _load("b72c33c70240")
 # M2가 복사한 원본(M2 이전 레인 세트) — 테스트 DB에서는 `a69cbd40dec8`이 심은 세트다.
 _SEED_SET_IDS: dict[str, uuid.UUID] = _load("a69cbd40dec8").NEW_SET_IDS
+# M2 뒤에 같은 방식으로 슬롯을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 함께 거친다.
+_NEXT_SLOT_MIGRATION = _load("c328445d4c2d")
 
 _PERSONA_KEY = ("generation", "both", "user_persona", "")
 
@@ -235,16 +237,20 @@ def _keyed(sections: list[PromptSection]) -> dict[tuple[str, str, str, str], Pro
 
 
 @pytest.mark.parametrize("lane", _LANES)
-async def test_active_set_is_the_m2_set_with_one_persona_row_before_history(
+async def test_m2_set_outranks_its_source_and_has_one_persona_row_before_history(
     db_session: AsyncSession, lane: PromptLane
 ) -> None:
     """회귀 방지 — `published_at`이 원본보다 과거가 되면 M2 세트가 활성이 되지
-    못하고, 골든은 옛 세트로도 통과하므로 신호가 없다. 그래서 id를 직접 단언한다."""
-    active, sections = await load_active_prompt_set(db_session, lane=lane)
-    assert active.id == _M2.NEW_SET_IDS[lane]
+    못하고, 골든은 옛 세트로도 통과하므로 신호가 없다. 그 뒤 마이그레이션이 또 새 세트를 만들어
+    지금 활성은 M2 세트가 아니므로 "원본보다 늦게 게시됐다"를 직접 단언한다."""
+    active = await db_session.get(PromptSet, _M2.NEW_SET_IDS[lane])
+    assert active is not None
+    sections = await _sections_of(db_session, active.id)
 
     source_set = await db_session.get(PromptSet, _SEED_SET_IDS[lane])
     assert source_set is not None
+    assert active.published_at is not None and source_set.published_at is not None
+    assert active.published_at > source_set.published_at
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
     assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
     assert active.note == "대화 프로필 슬롯 추가 (persona-goal-prompt.md UP-13)"
@@ -359,10 +365,13 @@ async def test_patch_draft_adds_persona_row_in_place_and_draft_then_publishes(
     assert [s for s in after_slots if s != "user_persona"] == before_slots
 
     # 게시 게이트 전체를 그대로 태운다 — 슬롯 집합·허용 플레이스홀더 검사는 코드 표
-    # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 M2와 같이 갔는지도 함께 본다.
+    # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 M2와 같이 갔는지도 함께 본다. 코드 표는
+    # 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(채팅방 기억 행)의 초안 패치도 거친 뒤 검사한다.
+    assert await connection.run_sync(_NEXT_SLOT_MIGRATION._patch_draft, lane) is True
+    db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
-    _validate_prompt_draft_for_publish(draft, sections, lane=lane)
+    _validate_prompt_draft_for_publish(draft, await _sections_of(db_session, draft_id), lane=lane)
 
 
 @pytest.mark.parametrize("lane", _LANES)

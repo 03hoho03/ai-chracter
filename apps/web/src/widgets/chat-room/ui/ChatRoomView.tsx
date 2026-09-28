@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
@@ -29,6 +30,10 @@ import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
+import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
+import { chatSidePanelAtom } from "../model/atoms";
+import { ChatMemorySidebar } from "./ChatMemorySidebar";
+import { ChatMemoryTrigger } from "./ChatMemoryTrigger";
 import { ChatMorePanel } from "./ChatMorePanel";
 import { ChatMoreSidebar } from "./ChatMoreSidebar";
 import { RoomPersonaModal } from "./RoomPersonaModal";
@@ -52,6 +57,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
+  const isMemoryPanelOpen = useAtomValue(chatSidePanelAtom) === "memory";
+  useMemoryFollowUpRefresh({ roomId, isSending, isPanelOpen: isMemoryPanelOpen });
   // 무료 일일분을 쓴 뒤에만 나타난다.
   // 단가는 한 턴 `CHAT_TURN_COST`(10)다.
   const { data: clover } = useCloverBalanceQuery();
@@ -68,6 +75,8 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const [editingMessageId, setEditingMessageId] = useState<string>();
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // 기억 노트 인라인 패널을 닫을 때 포커스를 돌려줄 헤더 버튼.
+  const memoryTriggerRef = useRef<HTMLButtonElement>(null);
 
   // 배너는 방 진입 시 1회만 노출한다. versionAutoUpgraded는
   // acknowledge 뮤테이션 성공 즉시 캐시에서 false로 꺼지므로, 그 값을 직접 렌더링 조건으로 쓰면 배너가
@@ -189,6 +198,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             <span className="truncate text-sm font-semibold text-foreground">{content?.name ?? "대화"}</span>
             <span className="truncate text-xs text-muted-foreground">{room.name}</span>
           </div>
+          <ChatMemoryTrigger roomId={roomId} triggerRef={memoryTriggerRef} />
           <ChatMorePanel
             roomId={roomId}
             contentType={room.contentType}
@@ -349,6 +359,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
           characterId={characterId}
         />
+        <ChatMemorySidebar roomId={roomId} triggerRef={memoryTriggerRef} />
       </div>
 
       {/* 다른 Callable과 달리 `__root`가 아니라 여기 마운트한다 — 루트가 `@/widgets/chat-room`을 import하면

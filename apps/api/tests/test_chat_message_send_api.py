@@ -518,9 +518,9 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
 
     assistant_messages = (
         await db_session.execute(
-            sa.select(ChatMessage).where(
-                ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.ASSISTANT
-            )
+            sa.select(ChatMessage)
+            .where(ChatMessage.chat_room_id == room_id, ChatMessage.role == ChatMessageRole.ASSISTANT)
+            .order_by(ChatMessage.created_at, ChatMessage.id)
         )
     ).scalars().all()
     # 오프닝 메시지(intro) + 이번 턴의 응답. 판정이 실패해도 응답 자체는 커밋된다.

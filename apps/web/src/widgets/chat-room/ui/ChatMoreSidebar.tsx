@@ -4,7 +4,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { X } from "lucide-react";
 
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
-import { chatMorePanelOpenAtom } from "../model/atoms";
+import { chatSidePanelAtom } from "../model/atoms";
 import type { ChatMoreNavProps } from "./ChatMoreNav";
 import { ChatMoreNav } from "./ChatMoreNav";
 
@@ -29,20 +29,20 @@ type ChatMoreSidebarProps = ChatMoreNavProps;
 // 요구하지 않는다. 슬라이드를 되살리려면 이 <aside>만 감싸는 래퍼에 클리핑을 걸어야 한다(행
 // 전체가 아니라) — DOM 노드를 하나 더 만드는 구조 변경이라 이번에는 하지 않았다.
 export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
-  const [isOpen, setIsOpen] = useAtom(chatMorePanelOpenAtom);
+  const [panel, setPanel] = useAtom(chatSidePanelAtom);
   const isSidebarLayout = useIsChatMoreSidebarLayout();
-  const isVisible = isSidebarLayout && isOpen;
+  const isVisible = isSidebarLayout && panel === "more";
 
   // Sheet와 달리 Radix의 ESC 처리가 없으므로 직접 듣는다. 항목을 누르면 패널이 먼저 닫히고 모달이
   // 열리므로(ChatMoreNav) 모달과 ESC를 다툴 일은 없다.
   useEffect(() => {
     if (!isVisible) return;
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setIsOpen(false);
+      if (event.key === "Escape") setPanel(null);
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isVisible, setIsOpen]);
+  }, [isVisible, setPanel]);
 
   if (!isVisible) return null;
 
@@ -58,7 +58,7 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
           size="icon-sm"
           aria-label="더보기 닫기"
           className="hover:bg-secondary"
-          onClick={() => setIsOpen(false)}
+          onClick={() => setPanel(null)}
         >
           <X aria-hidden className="size-4" />
         </Button>

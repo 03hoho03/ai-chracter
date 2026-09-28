@@ -6,16 +6,19 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from redis.exceptions import RedisError
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
+from api.chat.memory_rewind import rewind_memory
+from api.chat.memory_window import load_current_summary, prompt_window, select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
@@ -30,6 +33,7 @@ from api.chat.prompt_builder import (
     build_story_generation_prompt,
     format_user_persona,
     load_active_prompt_set,
+    memory_note_rendered,
     system_instruction_for,
     user_persona_rendered,
 )
@@ -47,6 +51,12 @@ from api.chat.schemas import (
     ChatRoomContentSnapshot,
     ChatRoomCreateRequest,
     ChatRoomListItem,
+    ChatRoomMemoryLimits,
+    ChatRoomMemoryNoteRequest,
+    ChatRoomMemoryResponse,
+    ChatRoomMemoryRevertRequest,
+    ChatRoomMemorySummary,
+    ChatRoomMemorySummaryRequest,
     ChatRoomRenameRequest,
     ChatRoomResponse,
     ChatStatChangeEvent,
@@ -59,6 +69,7 @@ from api.chat.schemas import (
     EndingSnapshot,
     ImageArchiveItem,
     MyChatRoomListItem,
+    MEMORY_NOTE_MAX_LENGTH,
     PlayGuideResponse,
     PreviewSessionStartResponse,
     PreviewSessionState,
@@ -87,6 +98,7 @@ from api.db.models.chat import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     StoryEndingUnlock,
 )
@@ -395,7 +407,7 @@ async def _match_situational_image(
     자체(entity_id뿐 아니라 image_asset_id도 필요, 인라인 렌더링 URL 조회용)를
     그대로 반환한다.
 
-    두 DB 호출(후보 조회·노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
+    두 DB 호출(후보·요약 조회, 노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
     — 호출부(`_stream_new_turn`)의 기존
     `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아 그대로 두면
     제너레이터를 뚫는다. 어느 쪽이 실패하든 이번 턴의 이미지 매칭 자체를 포기한다(`None`) —
@@ -430,6 +442,13 @@ async def _match_situational_image(
                     )
                 ).all()
             )
+            # 판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은
+            # 싣지 않는다. 후보가 없으면 판정 자체를 안 하므로 읽지 않는다.
+            current_summary = (
+                await load_current_summary(db, room.id)
+                if situational_images and settings.memory_window_generation and settings.memory_window_image_judgment
+                else None
+            )
     except SQLAlchemyError as exc:
         logger.warning("대화방 %s 상황이미지 후보 조회 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
@@ -437,6 +456,8 @@ async def _match_situational_image(
 
     if not situational_images:
         return None
+    if current_summary is not None:
+        history = prompt_window(history, current_summary.cursor)
 
     judgment_prompt = build_image_judgment_prompt(
         prompt_set=prompt_set,
@@ -689,14 +710,23 @@ async def get_play_guide(
 _POLICY_WARNING_MESSAGE = "메시지 생성이 콘텐츠 정책에 의해 중단되었습니다."
 # 문구의 유일한 자리. 3곳은 `_policy_warning_message`로만 고른다.
 _PERSONA_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필 내용이 원인일 수 있어요."
+_NOTE_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 기억 노트 내용이 원인일 수 있어요."
+_PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE = f"{_POLICY_WARNING_MESSAGE} 대화 프로필이나 기억 노트 내용이 원인일 수 있어요."
 _GENERATION_ERROR_MESSAGE = "메시지 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요."
 
 
-def _policy_warning_message(persona_rendered: bool) -> str:
-    """그 턴 생성 프롬프트에 대화 프로필 섹션이 실제로
-    들어갔을 때만(`user_persona_rendered`) 프로필 안내를 붙인다. 원인이 프로필인지는 알 수
-    없어서 "~일 수 있다"로 쓴다. `yield ChatPolicyWarningEvent` 3곳이 공유한다."""
-    return _PERSONA_POLICY_WARNING_MESSAGE if persona_rendered else _POLICY_WARNING_MESSAGE
+def _policy_warning_message(persona_rendered: bool, note_rendered: bool) -> str:
+    """그 턴 생성 프롬프트에 대화 프로필·기억 노트 섹션이 실제로
+    들어갔을 때만(`user_persona_rendered`·`memory_note_rendered`) 그 안내를 붙이고, 둘 다면 한 문장으로
+    합친다. 원인이 그것인지는 알 수 없어서 "~일 수 있다"로 쓴다. 요약은 대화에서 나온 것이라 안내에
+    넣지 않는다. `yield ChatPolicyWarningEvent` 3곳이 공유한다(미리보기는 노트가 없어 거짓)."""
+    if persona_rendered and note_rendered:
+        return _PERSONA_AND_NOTE_POLICY_WARNING_MESSAGE
+    if persona_rendered:
+        return _PERSONA_POLICY_WARNING_MESSAGE
+    if note_rendered:
+        return _NOTE_POLICY_WARNING_MESSAGE
+    return _POLICY_WARNING_MESSAGE
 
 
 def _llm_dependency_tag(exc: LLMClientError | PromptRenderError) -> str:
@@ -782,7 +812,7 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
-) -> tuple[str, str, bool]:
+) -> tuple[str, str, bool, bool]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
     (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
@@ -796,8 +826,22 @@ async def _build_prompt(
     바꾸면 다음 턴부터, 재생성·편집은 그 시점의 방 선택값을 쓴다. 그 사이 프로필이
     지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다.
 
-    세 번째 값은 그 프로필 섹션이 이 프롬프트에 **실제로 들어갔는가**다(`user_persona_rendered`,
-    정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
+    세 번째·네 번째 값은 대화 프로필·기억 노트 섹션이 이 프롬프트에 **실제로 들어갔는가**다
+    (`user_persona_rendered`·`memory_note_rendered`, 정책 안내 문구 분기용). scope·variant를 아는
+    곳이 여기뿐이라 함께 돌려준다.
+
+    `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 빼고 그 자리를
+    현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
+    윈도우도 한 곳에서만 계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 받고, 판정
+    윈도우 설정이 켜졌을 때만 각자 윈도우를 씌운다. 생성 윈도우 설정이 꺼져 있으면 전체 히스토리를 싣고 요약은 싣지 않는다(같은
+    대화가 두 번 들어가지 않게). 방의 기억 노트는 대화와 겹치지 않으므로 설정과 무관하게 싣는다."""
+    memory_summary = ""
+    if settings.memory_window_generation:
+        current_summary = await load_current_summary(db, room.id)
+        if current_summary is not None:
+            history = prompt_window(history, current_summary.cursor)
+            memory_summary = current_summary.text
+    memory_note = room.memory_note
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     user_persona = _format_persona(persona)
 
@@ -826,6 +870,8 @@ async def _build_prompt(
             history=history,
             user_message=user_content,
             user_persona=user_persona,
+            memory_note=memory_note,
+            memory_summary=memory_summary,
             keyword_note_texts=[note.info_text for note in matched_notes],
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
         )
@@ -834,6 +880,9 @@ async def _build_prompt(
             system_instruction_for(prompt_sections, is_story_chat=True, template=story_detail.prompt_template),
             user_persona_rendered(
                 prompt_sections, is_story_chat=True, template=story_detail.prompt_template, user_persona=user_persona
+            ),
+            memory_note_rendered(
+                prompt_sections, is_story_chat=True, template=story_detail.prompt_template, memory_note=memory_note
             ),
         )
 
@@ -847,11 +896,14 @@ async def _build_prompt(
         history=history,
         user_message=user_content,
         user_persona=user_persona,
+        memory_note=memory_note,
+        memory_summary=memory_summary,
     )
     return (
         prompt,
         system_instruction_for(prompt_sections, is_story_chat=False),
         user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
+        memory_note_rendered(prompt_sections, is_story_chat=False, memory_note=memory_note),
     )
 
 
@@ -924,6 +976,7 @@ async def _stream_new_turn(
     prompt_sections: list[PromptSection],
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
+    background_tasks: BackgroundTasks,
 ) -> AsyncIterator[ChatStreamEvent]:
     """생성 + 판단(buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
@@ -937,9 +990,17 @@ async def _stream_new_turn(
     `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
     이미지 매칭은 재실행한다)는 이 헬퍼를 쓰지 않는다
     — 그 라우트의 docstring 참고.
+
+    턴을 커밋한 뒤에는 긴 방의 요약 접기(`fold_memory`)를 background로 예약한다. 접을 때인지는
+    접기 쪽이 새 세션으로 다시 읽어 판정한다(턴마다 예약하고 대부분은 읽기만 하고 끝난다).
+    예약은 첫 사후 `yield` **앞**이다 — 그 뒤에 두면 `done`을 받고 연결을 끊은 클라이언트의
+    턴에서 예약 자체가 사라진다. 예약 뒤에 요청 세션 쿼리를 더하지 않는다 — background는 요청
+    세션이 닫히기 전에 돌아서, 커밋 뒤 요청 세션이 연 트랜잭션(상황이미지 URL 조립의 조회가 이미
+    그렇다)은 요약 호출 내내 커넥션을 쥔다.
+    생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다.
     """
     try:
-        prompt, system_instruction, persona_rendered = await _build_prompt(
+        prompt, system_instruction, persona_rendered, note_rendered = await _build_prompt(
             db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -968,7 +1029,7 @@ async def _stream_new_turn(
     except LLMPolicyViolationError:
         # 환불하지 않는다 — 사용자 입력이 원인이고 LLM 을 실제로
         # 태웠다. 이미지 가드 차단이 환불되는 것과 결론이 갈리는 자리다.
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 메시지 생성 실패: %s", room.id, exc)
@@ -1037,6 +1098,15 @@ async def _stream_new_turn(
                     )
                 ).all()
             )
+            # 판정 윈도우를 켜면 요약이 덮은 원문을 빼고 그 자리에 현재 요약을 싣는다 — 엔딩은 지금까지의
+            # 대화 전체를 보는 누적 판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다.
+            ending_history = history
+            ending_summary = ""
+            if settings.memory_window_generation and settings.memory_window_ending_judgment:
+                current_summary = await load_current_summary(db, room.id)
+                if current_summary is not None:
+                    ending_history = prompt_window(history, current_summary.cursor)
+                    ending_summary = current_summary.text
             for ending in endings:
                 if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
                     continue
@@ -1044,9 +1114,10 @@ async def _stream_new_turn(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
                     judgment_prompt=ending.judgment_prompt,
-                    history=history,
+                    history=ending_history,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    memory_summary=ending_summary,
                 )
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt,
@@ -1118,6 +1189,18 @@ async def _stream_new_turn(
             matched_image = None
             matched_image_url = None
 
+    if settings.memory_window_generation:
+        background_tasks.add_task(
+            fold_memory,
+            session_factory,
+            llm_client,
+            room_id=room.id,
+            user_id=room.user_id,
+            prompt_set=prompt_set,
+            sections=prompt_sections,
+            is_story_chat=setup is not None,
+        )
+
     for stat_change_event in stat_change_events:
         yield stat_change_event
 
@@ -1139,6 +1222,8 @@ async def _stream_new_turn(
 @router.post("/{room_id}/messages", response_class=EventSourceResponse)
 async def send_message(
     payload: ChatMessageCreateRequest,
+    # 턴 뒤 요약 접기 예약용(`_stream_new_turn`).
+    background_tasks: BackgroundTasks,
     # SSE 제너레이터라 시그니처에 Depends로 붙인다
     # (dependencies=처럼 본문 실행 전에 해석되지만, 이 파일의 `_owned_room_dependency`
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
@@ -1182,7 +1267,7 @@ async def send_message(
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
@@ -1207,6 +1292,7 @@ async def send_message(
         prompt_sections,
         charge,
         session_factory,
+        background_tasks,
     ):
         yield event
 
@@ -1224,7 +1310,7 @@ async def _regeneratable_last_message_dependency(
             await db.scalars(
                 select(ChatMessage)
                 .where(ChatMessage.chat_room_id == room.id)
-                .order_by(ChatMessage.created_at.asc())
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
             )
         ).all()
     )
@@ -1260,25 +1346,31 @@ async def regenerate_message(
     — 노출 기록(`CharacterImageExposure`)은
     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
-    응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
+    응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
+    덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
     # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
     # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        # 바꿀 응답이 요약 커서 메시지 자신이면(커서 뒤를 전부 지운 방) 그 요약을 되감는다 — 안 그러면
+        # 옛 응답이 요약에 남고 윈도우는 오프닝만 남긴다. 되감기는 생성보다 먼저 커밋한다: 방 행 락을
+        # 생성 내내 쥐지 않고, 윈도우가 되감긴 커서로 계산된다. 생성이 실패해도 되돌리지 않는다.
+        await rewind_memory(db, room.id, (last_message.created_at, last_message.id))
+        await db.commit()
         history = list(
             (
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id, ChatMessage.id != last_message.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
         user_content = history[-1].content
     try:
-        prompt, system_instruction, persona_rendered = await _build_prompt(
+        prompt, system_instruction, persona_rendered, note_rendered = await _build_prompt(
             db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -1304,7 +1396,7 @@ async def regenerate_message(
             yield token_event
     except LLMPolicyViolationError:
         # 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered))
         return
     except LLMClientError as exc:
         logger.warning("대화방 %s 응답 재생성 실패: %s", room.id, exc)
@@ -1392,6 +1484,8 @@ async def _editable_user_message_dependency(
 @router.patch("/{room_id}/messages/{message_id}", response_class=EventSourceResponse)
 async def edit_message(
     payload: ChatMessageEditRequest,
+    # 턴 뒤 요약 접기 예약용(`_stream_new_turn`).
+    background_tasks: BackgroundTasks,
     # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
     room: ChatRoom = Depends(_owned_room_dependency),
@@ -1423,12 +1517,15 @@ async def edit_message(
     # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # 세 라우트 중 위험이 가장 큰 자리다: 조회·DELETE·커밋이 다 들어 있다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        # 요약 되감기가 먼저다 — 편집 지점이 요약된 구간이면 커서가 그 앞으로 물러나야, 아래에서 자른
+        # 히스토리가 생성 프롬프트에서 복귀한 커서 기준으로 실린다. 절단·편집과 한 트랜잭션이다.
+        await rewind_memory(db, room.id, (message.created_at, message.id))
         all_messages = list(
             (
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
@@ -1458,6 +1555,7 @@ async def edit_message(
         prompt_sections,
         charge,
         session_factory,
+        background_tasks,
     ):
         yield event
 
@@ -1474,6 +1572,8 @@ async def delete_message(
     message = await db.get(ChatMessage, message_id)
     if message is None or message.chat_room_id != room.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    # 지운 메시지를 요약이 덮고 있었으면 그 요약도 되감는다 — 지운 대화가 요약으로 계속 실리지 않게.
+    await rewind_memory(db, room.id, (message.created_at, message.id))
     await db.delete(message)
     await db.commit()
 
@@ -1671,6 +1771,8 @@ async def reset_chat_room(
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
 
+    # 요약은 지운 대화에서 나왔으므로 함께 지운다. 기억 노트는 사용자가 적은 것이라 남긴다.
+    await rewind_memory(db, room.id, None)
     await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
     room.turn_count = 0
     room.ending_reached = False
@@ -1780,6 +1882,186 @@ async def acknowledge_version_upgrade(
     room.version_auto_upgraded = False
     await db.commit()
     return await _to_response(db, room)
+
+
+async def _memory_response(db: AsyncSession, room_id: uuid.UUID) -> ChatRoomMemoryResponse:
+    """기억 API 다섯 개가 같은 모양을 돌려준다. 방 행과 현재 스냅샷을 컬럼 단위로 다시 읽는다 —
+    같은 요청에서 방금 UPDATE 문으로 바꾼 값이 ORM 객체에는 반영돼 있지 않을 수 있다."""
+    room_row = (
+        await db.execute(
+            select(ChatRoom.memory_note, ChatRoom.memory_version, ChatRoom.memory_rolled_back_at).where(
+                ChatRoom.id == room_id
+            )
+        )
+    ).one()
+    snapshot_row = (
+        await db.execute(
+            select_current_snapshot(
+                room_id,
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.previous_text,
+                ChatRoomMemorySnapshot.source,
+                ChatRoomMemorySnapshot.updated_at,
+            )
+        )
+    ).first()
+    summary = (
+        ChatRoomMemorySummary(
+            text=snapshot_row.summary_text,
+            source=snapshot_row.source,
+            can_revert=snapshot_row.previous_text is not None,
+            updated_at=snapshot_row.updated_at,
+        )
+        if snapshot_row is not None
+        else None
+    )
+    return ChatRoomMemoryResponse(
+        note=room_row.memory_note,
+        summary=summary,
+        version=room_row.memory_version,
+        rolled_back_at=room_row.memory_rolled_back_at,
+        limits=ChatRoomMemoryLimits(note_max_length=MEMORY_NOTE_MAX_LENGTH, summary_max_length=SUMMARY_MAX_LENGTH),
+    )
+
+
+@router.get("/{room_id}/memory")
+async def get_chat_room_memory(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """방의 기억(사용자 노트와 현재 요약). 방 상세 응답에는 싣지 않는다 — 방 상세는 자주 다시 받아
+    편집 폼의 기준값을 흔든다."""
+    await _get_owned_room(db, room_id, user_id)
+    return await _memory_response(db, room_id)
+
+
+@router.put("/{room_id}/memory/note", dependencies=[Depends(require_legal_consent)])
+async def update_chat_room_memory_note(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemoryNoteRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —
+    올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다."""
+    await _get_owned_room(db, room_id, user_id)
+    await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=payload.note))
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+@router.delete("/{room_id}/memory/note")
+async def clear_chat_room_memory_note(
+    room_id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필
+    삭제와 같다). 저장과 같은 전체 응답을 돌려준다."""
+    await _get_owned_room(db, room_id, user_id)
+    await db.execute(update(ChatRoom).where(ChatRoom.id == room_id).values(memory_note=""))
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+def _memory_conflict(code: str) -> HTTPException:
+    return HTTPException(status_code=status.HTTP_409_CONFLICT, detail={"code": code})
+
+
+async def _lock_current_summary_for_edit(
+    db: AsyncSession, room_id: uuid.UUID, version: int
+) -> tuple[uuid.UUID, str, str | None]:
+    """요약 편집·되돌리기의 공통 앞부분. 방 행을 먼저 잠그고(요약 접기·되감기와 같은 락) 그 뒤에
+    버전과 현재 스냅샷을 읽는다 — 락 전에 읽으면 그사이 커밋된 새 요약을 못 보고 옛 행을 고친다.
+    요청의 `version`이 방의 현재 값과 다르면(폼을 연 뒤 요약이 새로 접혔거나 되감겼다) 409, 고칠
+    스냅샷이 없으면(첫 접기 전) 409다. 거절은 아무것도 쓰기 전에 일어나고, 버전은 호출부가 실제로
+    고칠 때만 올린다."""
+    current_version = await db.scalar(
+        # 요약 접기·되감기의 UPDATE와 같은 강도(FOR NO KEY UPDATE) — 그 방에 메시지를 넣는 FK 검사는 막지 않는다.
+        select(ChatRoom.memory_version).where(ChatRoom.id == room_id).with_for_update(key_share=True)
+    )
+    if current_version != version:
+        raise _memory_conflict("MEMORY_VERSION_CONFLICT")
+    current = (
+        await db.execute(
+            select_current_snapshot(
+                room_id,
+                ChatRoomMemorySnapshot.id,
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.previous_text,
+            )
+        )
+    ).first()
+    if current is None:
+        raise _memory_conflict("MEMORY_SUMMARY_NOT_READY")
+    return current.id, current.summary_text, current.previous_text
+
+
+async def _bump_memory_version(db: AsyncSession, room_id: uuid.UUID) -> None:
+    """요약을 바꿨으니 진행 중인 요약 접기가 결과를 버리게 한다(접기는 읽을 때의 버전으로 저장한다)."""
+    await db.execute(
+        update(ChatRoom).where(ChatRoom.id == room_id).values(memory_version=ChatRoom.memory_version + 1)
+    )
+
+
+@router.put("/{room_id}/memory/summary", dependencies=[Depends(require_legal_consent)])
+async def update_chat_room_memory_summary(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemorySummaryRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """현재 요약을 사용자가 고친다. 고치기 직전 본문과 출처를 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연
+    뒤 요약이 새로 접혔거나 대화가 되감겼으면 `version`이 달라 409다. 첫 접기 전(스냅샷 없음)에는
+    고칠 요약이 없어 409다 — 404는 같은 경로의 "방 없음"과 겹친다."""
+    await _get_owned_room(db, room_id, user_id)
+    snapshot_id, current_text, _previous = await _lock_current_summary_for_edit(db, room_id, payload.version)
+    await _bump_memory_version(db, room_id)
+    await db.execute(
+        update(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.id == snapshot_id)
+        .values(
+            summary_text=payload.summary,
+            previous_text=current_text,
+            previous_source=ChatRoomMemorySnapshot.source,
+            source="user",
+            updated_at=func.now(),
+        )
+    )
+    await db.commit()
+    return await _memory_response(db, room_id)
+
+
+@router.post("/{room_id}/memory/summary/revert", dependencies=[Depends(require_legal_consent)])
+async def revert_chat_room_memory_summary(
+    room_id: uuid.UUID,
+    payload: ChatRoomMemoryRevertRequest,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoomMemoryResponse:
+    """사용자가 고친 요약을 고치기 직전 본문과 그 출처로 한 번 되돌린다 — AI 요약을 고쳤다 되돌리면
+    다시 AI 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
+    AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
+    요약에서도 원문에서도 빠진다."""
+    await _get_owned_room(db, room_id, user_id)
+    snapshot_id, _current, previous_text = await _lock_current_summary_for_edit(db, room_id, payload.version)
+    if previous_text is None:
+        raise _memory_conflict("MEMORY_NOTHING_TO_REVERT")
+    await _bump_memory_version(db, room_id)
+    await db.execute(
+        update(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.id == snapshot_id)
+        .values(
+            summary_text=previous_text,
+            source=ChatRoomMemorySnapshot.previous_source,
+            previous_text=None,
+            previous_source=None,
+            updated_at=func.now(),
+        )
+    )
+    await db.commit()
+    return await _memory_response(db, room_id)
 
 
 @router.delete("/{room_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -2088,6 +2370,8 @@ def _build_preview_prompt(
             history=history,
             user_message=user_content,
             user_persona=user_persona,
+            memory_note="",
+            memory_summary="",
         )
 
     setup = payload.starting_setups[0] if payload.starting_setups else None
@@ -2108,6 +2392,8 @@ def _build_preview_prompt(
         history=history,
         user_message=user_content,
         user_persona=user_persona,
+        memory_note="",
+        memory_summary="",
         keyword_note_texts=[note.info_text for note in matched_notes],
         shortcut_prompt=shortcut.prompt if shortcut is not None else None,
     )
@@ -2178,7 +2464,7 @@ async def _stream_preview_turn(
             yield token_event
     except LLMPolicyViolationError:
         # 환불하지 않는다.
-        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered))
+        yield ChatPolicyWarningEvent(message=_policy_warning_message(persona_rendered, note_rendered=False))
         return
     except LLMClientError as exc:
         logger.warning("미리보기 메시지 생성 실패: %s", exc)
@@ -2242,6 +2528,7 @@ async def _stream_preview_turn(
                     history=history,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    memory_summary="",
                 )
                 ending_judgment = await llm_client.generate_structured(
                     ending_judgment_prompt,

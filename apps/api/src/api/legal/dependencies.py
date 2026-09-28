@@ -50,7 +50,7 @@ async def require_legal_consent(
     """약관·처리방침 중 하나라도 재동의가
     필요하면 403 + 기계 판독 가능한 detail로 막는다. `get_current_user_id`에는
     재동의(버전) 검사를 끼워넣지 않는다 — 그 의존성은 읽기 엔드포인트와 재동의 전에도
-    허용하는 쓰기 예외 15개에도 함께 쓰이므로, 거기 넣으면 읽기까지 막힌다. 존재·탈퇴(`deleted_at`)
+    허용하는 쓰기 예외에도 함께 쓰이므로, 거기 넣으면 읽기까지 막힌다. 존재·탈퇴(`deleted_at`)
     확인은 이 제약 밖이라 그쪽이 한다."""
     user = await db.get(User, user_id)
     if user is None or user.deleted_at is not None:

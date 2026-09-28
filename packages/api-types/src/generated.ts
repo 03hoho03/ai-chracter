@@ -815,7 +815,8 @@ export interface paths {
         /**
          * View Chat Room
          * @description **열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.
-         *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다.
+         *     더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다. 방 기억(노트·현재 요약)도
+         *     이 응답에만 싣는다 — 같은 로그 한 줄이 기억 열람까지 덮는다.
          */
         post: operations["view_chat_room_admin_chat_rooms__room_id__view_post"];
         delete?: never;
@@ -2108,7 +2109,8 @@ export interface paths {
          *     — 노출 기록(`CharacterImageExposure`)은
          *     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
          *     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
-         *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다.
+         *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
+         *     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
          */
         post: operations["regenerate_message_chat_rooms__room_id__regenerate_post"];
         delete?: never;
@@ -2250,6 +2252,98 @@ export interface paths {
          *     `version_auto_upgraded`를 false로 되돌린다(이 확인 호출이 "봤는지"의 유일한 기준점).
          */
         post: operations["acknowledge_version_upgrade_chat_rooms__room_id__acknowledge_version_upgrade_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Chat Room Memory
+         * @description 방의 기억(사용자 노트와 현재 요약). 방 상세 응답에는 싣지 않는다 — 방 상세는 자주 다시 받아
+         *     편집 폼의 기준값을 흔든다.
+         */
+        get: operations["get_chat_room_memory_chat_rooms__room_id__memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/note": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Chat Room Memory Note
+         * @description 노트는 사용자 한 사람만 쓰는 칸이라 버전 검사 없이 덮어쓴다. 요약 버전도 올리지 않는다 —
+         *     올리면 노트를 저장할 때마다 열려 있던 요약 편집이 409가 된다.
+         */
+        put: operations["update_chat_room_memory_note_chat_rooms__room_id__memory_note_put"];
+        post?: never;
+        /**
+         * Clear Chat Room Memory Note
+         * @description 노트 비우기. 자기 데이터 삭제라 약관·처리방침 재동의 전에도 열려 있다(방·메시지·대화 프로필
+         *     삭제와 같다). 저장과 같은 전체 응답을 돌려준다.
+         */
+        delete: operations["clear_chat_room_memory_note_chat_rooms__room_id__memory_note_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Chat Room Memory Summary
+         * @description 현재 요약을 사용자가 고친다. 고치기 직전 본문과 출처를 한 단계 남겨 되돌릴 수 있게 한다. 편집 폼을 연
+         *     뒤 요약이 새로 접혔거나 대화가 되감겼으면 `version`이 달라 409다. 첫 접기 전(스냅샷 없음)에는
+         *     고칠 요약이 없어 409다 — 404는 같은 경로의 "방 없음"과 겹친다.
+         */
+        put: operations["update_chat_room_memory_summary_chat_rooms__room_id__memory_summary_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/chat-rooms/{room_id}/memory/summary/revert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Revert Chat Room Memory Summary
+         * @description 사용자가 고친 요약을 고치기 직전 본문과 그 출처로 한 번 되돌린다 — AI 요약을 고쳤다 되돌리면
+         *     다시 AI 요약으로 보인다. 되돌린 뒤에는 되돌릴 것이 없다.
+         *     AI가 새로 접은 요약은 직전 본문을 갖지 않아 되돌릴 수 없다 — 본문만 되돌리면 방금 접힌 대화가
+         *     요약에서도 원문에서도 빠진다.
+         */
+        post: operations["revert_chat_room_memory_summary_chat_rooms__room_id__memory_summary_revert_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2764,6 +2858,16 @@ export interface components {
             /** Totalcount */
             totalCount: number;
         };
+        /** AdminChatMemorySummary */
+        AdminChatMemorySummary: {
+            /** Text */
+            text: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "auto" | "user";
+        };
         /** AdminChatMessageItem */
         AdminChatMessageItem: {
             /**
@@ -2804,6 +2908,23 @@ export interface components {
             reasonCategory: components["schemas"]["ChatViewReasonCategory"];
             /** Reasontext */
             reasonText: string;
+        };
+        /**
+         * AdminChatRoomViewResponse
+         * @description 열람 시작 응답 — 더보기와 같은 페이지에 방 기억(사용자 노트·현재 요약)을 더한다. 기억은 사유를
+         *     남기는 이 열람에서만 내려 준다: 공용 모델에 두면 로그를 남기지 않는 더보기도 노트를 돌려준다.
+         *     `memory_summary`는 첫 요약 전이면 null이다.
+         */
+        AdminChatRoomViewResponse: {
+            /** Items */
+            items: components["schemas"]["AdminChatMessageItem"][];
+            /** Beforecreatedat */
+            beforeCreatedAt: string | null;
+            /** Beforeid */
+            beforeId: string | null;
+            /** Memorynote */
+            memoryNote: string;
+            memorySummary: components["schemas"]["AdminChatMemorySummary"] | null;
         };
         /** AdminCloverLedgerItem */
         AdminCloverLedgerItem: {
@@ -4181,6 +4302,73 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /** ChatRoomMemoryLimits */
+        ChatRoomMemoryLimits: {
+            /** Notemaxlength */
+            noteMaxLength: number;
+            /** Summarymaxlength */
+            summaryMaxLength: number;
+        };
+        /**
+         * ChatRoomMemoryNoteRequest
+         * @description 공백만 보내면 빈 노트로 저장된다(비우기와 같다).
+         */
+        ChatRoomMemoryNoteRequest: {
+            /** Note */
+            note: string;
+        };
+        /**
+         * ChatRoomMemoryResponse
+         * @description `summary`는 첫 접기 전이면 null이다(그때는 요약을 고칠 수 없다). `rolled_back_at`은 지난
+         *     메시지를 고치거나 지워 요약이 이전 판으로 돌아간 마지막 시각이고, 초기화하면 null로 돌아간다.
+         */
+        ChatRoomMemoryResponse: {
+            /** Note */
+            note: string;
+            summary: components["schemas"]["ChatRoomMemorySummary"] | null;
+            /** Version */
+            version: number;
+            /** Rolledbackat */
+            rolledBackAt: string | null;
+            limits: components["schemas"]["ChatRoomMemoryLimits"];
+        };
+        /** ChatRoomMemoryRevertRequest */
+        ChatRoomMemoryRevertRequest: {
+            /** Version */
+            version: number;
+        };
+        /**
+         * ChatRoomMemorySummary
+         * @description 방의 현재 요약. `can_revert`는 사용자가 이 요약을 고친 적이 있어 고치기 직전 본문으로 한 번
+         *     되돌릴 수 있는가다 — AI가 새로 접은 요약은 되돌릴 대상이 없다.
+         */
+        ChatRoomMemorySummary: {
+            /** Text */
+            text: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "auto" | "user";
+            /** Canrevert */
+            canRevert: boolean;
+            /**
+             * Updatedat
+             * Format: date-time
+             */
+            updatedAt: string;
+        };
+        /**
+         * ChatRoomMemorySummaryRequest
+         * @description `version`은 편집 폼을 연 시점의 `memoryVersion`이다 — 그 사이 요약이 새로 접혔거나 대화가
+         *     되감겼으면 서버 값과 달라 409로 거절된다(사용자 편집이 새 요약을 조용히 덮지 않게).
+         */
+        ChatRoomMemorySummaryRequest: {
+            /** Summary */
+            summary: string;
+            /** Version */
+            version: number;
         };
         /** ChatRoomRenameRequest */
         ChatRoomRenameRequest: {
@@ -6775,7 +6963,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AdminChatMessagesResponse"];
+                    "application/json": components["schemas"]["AdminChatRoomViewResponse"];
                 };
             };
             /** @description Validation Error */
@@ -9191,6 +9379,173 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_room_memory_chat_rooms__room_id__memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_chat_room_memory_note_chat_rooms__room_id__memory_note_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomMemoryNoteRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_chat_room_memory_note_chat_rooms__room_id__memory_note_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_chat_room_memory_summary_chat_rooms__room_id__memory_summary_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomMemorySummaryRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revert_chat_room_memory_summary_chat_rooms__room_id__memory_summary_revert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatRoomMemoryRevertRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatRoomMemoryResponse"];
                 };
             };
             /** @description Validation Error */

@@ -8,8 +8,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
-from api.admin.schemas import AdminChatMessageItem, AdminChatMessagesResponse, AdminChatRoomViewRequest
-from api.db.models.chat import ChatMessage, ChatRoom
+from api.admin.schemas import (
+    AdminChatMemorySummary,
+    AdminChatMessageItem,
+    AdminChatMessagesResponse,
+    AdminChatRoomViewRequest,
+    AdminChatRoomViewResponse,
+)
+from api.chat.memory_window import select_current_snapshot
+from api.db.models.chat import ChatMessage, ChatRoom, ChatRoomMemorySnapshot
 from api.db.session import get_db_session
 
 router = APIRouter(tags=["admin"])
@@ -79,9 +86,10 @@ async def view_chat_room(
     body: AdminChatRoomViewRequest,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
-) -> AdminChatMessagesResponse:
+) -> AdminChatRoomViewResponse:
     """**열람 1회 = 로그 1행** — 로그는 이 엔드포인트에서만 쌓는다.
-    더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다."""
+    더보기는 `GET .../messages`가 맡고 그쪽은 절대 로그를 쌓지 않는다. 방 기억(노트·현재 요약)도
+    이 응답에만 싣는다 — 같은 로그 한 줄이 기억 열람까지 덮는다."""
     if not body.reason_text.strip():
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="reason_text is required"
@@ -91,8 +99,22 @@ async def view_chat_room(
     if room is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chat room not found")
 
-    response = await _list_messages_page(
+    page = await _list_messages_page(
         db, room_id, limit=CHAT_VIEW_MESSAGE_LIMIT, before_created_at=None, before_id=None
+    )
+    summary_row = (
+        await db.execute(
+            select_current_snapshot(room_id, ChatRoomMemorySnapshot.summary_text, ChatRoomMemorySnapshot.source)
+        )
+    ).first()
+    response = AdminChatRoomViewResponse(
+        **page.model_dump(),
+        memory_note=room.memory_note,
+        memory_summary=(
+            AdminChatMemorySummary(text=summary_row.summary_text, source=summary_row.source)
+            if summary_row is not None
+            else None
+        ),
     )
 
     # target_chat_room_id는 "어느 방을 열람했는지", target_user_id(방 소유자)는

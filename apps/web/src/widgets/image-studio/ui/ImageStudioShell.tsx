@@ -44,7 +44,7 @@ export function ImageStudioShell({
   tab: ImageStudioTab;
   onTabChange: (tab: ImageStudioTab) => void;
 }) {
-  // 시트 열림 상태는 이 셸의 지역 state다. widgets/chat-room의 chatMorePanelOpenAtom은 트리거
+  // 시트 열림 상태는 이 셸의 지역 state다. widgets/chat-room의 chatSidePanelAtom은 트리거
   // (ChatMoreNav)가 콘텐츠(ChatMorePanel/ChatMoreSidebar) **안쪽**에 중첩돼 있어 atom으로 건너뛰지만,
   // 여기는 트리거(탭 스트립)와 두 Rail이 전부 이 컴포넌트의 직계 자식이라 prop 한 단이면 닿는다.
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
