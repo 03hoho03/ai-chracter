@@ -436,34 +436,46 @@ async def test_delete_chat_room_removes_room_and_messages(
 async def _seed_chat_room_with_children(
     db_session: AsyncSession, *, user_id: uuid.UUID, content_version: ContentVersion
 ) -> uuid.UUID:
-    """메시지 1개·스탯 1개를 가진 방을 심는다. 방 삭제가 자식을 빠짐없이, 그리고 **그 방 것만**
-    지우는지 보려면 지워질 방과 남아야 할 방 양쪽에 자식이 있어야 한다."""
+    """메시지 1개·스탯 1개·요약 스냅샷 1개를 가진 방을 심는다. 방 삭제가 자식을 빠짐없이, 그리고
+    **그 방 것만** 지우는지 보려면 지워질 방과 남아야 할 방 양쪽에 자식이 있어야 한다."""
     room = ChatRoom(user_id=user_id, content_id=content_version.content_id, content_version_id=content_version.id)
     db_session.add(room)
     await db_session.flush()
-    db_session.add(ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="안녕"))
+    message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="안녕")
+    db_session.add(message)
     db_session.add(ChatRoomStat(chat_room_id=room.id, stat_entity_id=uuid.uuid4(), current_value=Decimal(1)))
+    await db_session.flush()
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=room.id,
+            cursor_created_at=message.created_at,
+            cursor_message_id=message.id,
+            summary_text="요약",
+            source="auto",
+        )
+    )
     await db_session.flush()
     return room.id
 
 
-async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[int, int, int]:
-    """(방, 메시지, 스탯) 행 수. 컬럼 단위 count라 요청과 같은 세션의 identity map에 남은 객체에
-    속지 않는다."""
+async def _chat_room_row_counts(db_session: AsyncSession, room_id: uuid.UUID) -> tuple[int, int, int, int]:
+    """(방, 메시지, 스탯, 요약 스냅샷) 행 수. 컬럼 단위 count라 요청과 같은 세션의 identity map에
+    남은 객체에 속지 않는다."""
     counts = []
     for model, column in (
         (ChatRoom, ChatRoom.id),
         (ChatMessage, ChatMessage.chat_room_id),
         (ChatRoomStat, ChatRoomStat.chat_room_id),
+        (ChatRoomMemorySnapshot, ChatRoomMemorySnapshot.chat_room_id),
     ):
         counts.append(await db_session.scalar(sa.select(sa.func.count()).select_from(model).where(column == room_id)))
-    return (counts[0] or 0, counts[1] or 0, counts[2] or 0)
+    return (counts[0] or 0, counts[1] or 0, counts[2] or 0, counts[3] or 0)
 
 
 async def test_delete_chat_room_removes_only_that_rooms_children(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
-    """방 삭제는 그 방의 메시지·스탯·방 행을 모두 지우고, 같은 사용자의 다른 방은 건드리지 않는다.
+    """방 삭제는 그 방의 메시지·스탯·요약 스냅샷·방 행을 모두 지우고, 같은 사용자의 다른 방은 건드리지 않는다.
     탈퇴도 같은 삭제 함수를 쓰므로 그 함수의 방 필터가 넓어지면 두 경로가 함께 여기서 드러난다."""
     user = _make_user()
     db_session.add(user)
@@ -484,8 +496,8 @@ async def test_delete_chat_room_removes_only_that_rooms_children(
     resp = await db_client.delete(f"/chat-rooms/{target}")
 
     assert resp.status_code == 204
-    assert await _chat_room_row_counts(db_session, target) == (0, 0, 0)
-    assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1)
+    assert await _chat_room_row_counts(db_session, target) == (0, 0, 0, 0)
+    assert await _chat_room_row_counts(db_session, sibling) == (1, 1, 1, 1)
 
 
 async def test_delete_chat_room_viewed_by_admin_keeps_the_view_log_without_the_room(

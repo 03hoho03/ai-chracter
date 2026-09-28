@@ -21,6 +21,7 @@ from api.db.models import (
     ChatMessage,
     ChatMessageRole,
     ChatRoom,
+    ChatRoomMemorySnapshot,
     ChatRoomStat,
     Content,
     ContentTarget,
@@ -158,11 +159,20 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
     )
     db_session.add(own_room)
     await db_session.flush()
-    db_session.add(
-        ChatMessage(chat_room_id=own_room.id, role=ChatMessageRole.USER, content="안녕하세요")
-    )
+    own_message = ChatMessage(chat_room_id=own_room.id, role=ChatMessageRole.USER, content="안녕하세요")
+    db_session.add(own_message)
     db_session.add(
         ChatRoomStat(chat_room_id=own_room.id, stat_entity_id=uuid.uuid4(), current_value=1)
+    )
+    await db_session.flush()
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=own_room.id,
+            cursor_created_at=own_message.created_at,
+            cursor_message_id=own_message.id,
+            summary_text="요약",
+            source="auto",
+        )
     )
 
     other_user = User(
@@ -212,6 +222,12 @@ async def test_withdraw_soft_deletes_hides_content_and_deletes_own_chat_rooms(
         )
     ).scalars().all()
     assert remaining_stats == []
+    remaining_snapshots = await db_session.scalar(
+        select(sa.func.count())
+        .select_from(ChatRoomMemorySnapshot)
+        .where(ChatRoomMemorySnapshot.chat_room_id == own_room_id)
+    )
+    assert remaining_snapshots == 0
 
     # Another user's chat room against the same (now-private) content survives.
     assert await db_session.get(ChatRoom, other_room_id) is not None
