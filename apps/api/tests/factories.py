@@ -11,7 +11,8 @@ import json
 import uuid
 from collections.abc import AsyncIterator, Callable, Generator
 from contextlib import contextmanager
-from datetime import date, datetime, UTC
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta, UTC
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +29,10 @@ from api.db.models import (
     AssetKind,
     AssetStatus,
     CharacterVersionDetail,
+    ChatMessage,
+    ChatMessageRole,
+    ChatRoom,
+    ChatRoomMemorySnapshot,
     CloverLot,
     Content,
     ContentTarget,
@@ -37,6 +42,8 @@ from api.db.models import (
     Genre,
     LegalDocument,
     ModerationStatus,
+    StartingSetup,
+    StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
     User,
@@ -390,3 +397,153 @@ def _read_golden_prompt(filename: str) -> str:
     문안과 바이트 단위로 같음이 이미 증명된 골든 파일에서 기대값을 읽는다
     (tests/test_prompt_goldens.py)."""
     return (_GOLDEN_PROMPTS_DIR / filename).read_text(encoding="utf-8")
+
+
+# --- 긴 대화방(요약 접기·되감기 테스트) ---------------------------------------------
+
+
+@dataclass(frozen=True)
+class Room:
+    room_id: uuid.UUID
+    user_id: uuid.UUID
+    base: datetime
+    # 턴 번호(1부터) → (사용자 메시지, 어시스턴트 메시지)
+    turns: dict[int, tuple[ChatMessage, ChatMessage]]
+
+
+def _user_text(turn: int, length: int) -> str:
+    return f"[U{turn:02d}]".ljust(length, "가")
+
+
+def _assistant_text(turn: int, length: int) -> str:
+    return f"[A{turn:02d}]".ljust(length, "나")
+
+
+async def _open_room(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    *,
+    turns: int,
+    lane: str = "character",
+    message_length: int = 20,
+    user: User | None = None,
+) -> Room:
+    """방을 API로 만들고(오프닝은 앱이 넣는다) `turns`턴을 `created_at`을 명시해 심는다. 오프닝을
+    하루 전으로 옮기고 그 뒤 1초 간격이라, 요청이 새로 넣는 메시지가 항상 가장 뒤에 온다."""
+    if user is None:
+        user = _make_user()
+        db_session.add(user)
+        await db_session.flush()
+    genre = await _get_genre(db_session)
+    if lane == "character":
+        content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+        body: dict[str, str] = {"contentId": str(content.id), "contentType": "character"}
+    else:
+        content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+        assert content.current_published_version_id is not None
+        setup = StartingSetup(
+            entity_id=uuid.uuid4(),
+            content_version_id=content.current_published_version_id,
+            name="첫 만남",
+            prologue="낯선 마을에 도착했다.",
+            opening_message="다시 만났네요!",
+            order=1,
+        )
+        db_session.add(setup)
+        await db_session.flush()
+        db_session.add(
+            StatDef(
+                entity_id=uuid.uuid4(),
+                starting_setup_id=setup.id,
+                name="[STAT]신뢰",
+                icon="heart",
+                color="#ff0000",
+                min_value=0,
+                max_value=100,
+                initial_value=73,
+                unit=None,
+                description="신뢰 스탯",
+                order=1,
+            )
+        )
+        body = {"contentId": str(content.id), "contentType": "story", "startingSetupId": str(setup.id)}
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    created = await db_client.post("/chat-rooms", json=body)
+    assert created.status_code == 201, created.text
+    room_id = uuid.UUID(created.json()["id"])
+
+    base = datetime.now(UTC) - timedelta(days=1)
+    await db_session.execute(sa.update(ChatMessage).where(ChatMessage.chat_room_id == room_id).values(created_at=base))
+    seeded: dict[int, tuple[ChatMessage, ChatMessage]] = {}
+    for turn in range(1, turns + 1):
+        pair = (
+            ChatMessage(
+                id=uuid.uuid4(),
+                chat_room_id=room_id,
+                role=ChatMessageRole.USER,
+                content=_user_text(turn, message_length),
+                created_at=base + timedelta(seconds=2 * turn - 1),
+            ),
+            ChatMessage(
+                id=uuid.uuid4(),
+                chat_room_id=room_id,
+                role=ChatMessageRole.ASSISTANT,
+                content=_assistant_text(turn, message_length),
+                created_at=base + timedelta(seconds=2 * turn),
+            ),
+        )
+        db_session.add_all(pair)
+        seeded[turn] = pair
+    await db_session.flush()
+    await db_session.execute(sa.update(ChatRoom).where(ChatRoom.id == room_id).values(turn_count=turns))
+    await db_session.commit()
+    return Room(room_id=room_id, user_id=user.id, base=base, turns=seeded)
+
+
+async def _plant_snapshot(db_session: AsyncSession, room: Room, *, turn: int, text: str) -> None:
+    assistant = room.turns[turn][1]
+    db_session.add(
+        ChatRoomMemorySnapshot(
+            chat_room_id=room.room_id,
+            cursor_created_at=assistant.created_at,
+            cursor_message_id=assistant.id,
+            summary_text=text,
+            source="auto",
+        )
+    )
+    await db_session.commit()
+
+
+@dataclass(frozen=True)
+class SnapshotRow:
+    cursor_created_at: datetime
+    cursor_message_id: uuid.UUID
+    summary_text: str
+    previous_text: str | None
+    source: str
+
+
+async def _snapshots(db_session: AsyncSession, room: Room) -> list[SnapshotRow]:
+    rows = (
+        await db_session.execute(
+            sa.select(
+                ChatRoomMemorySnapshot.cursor_created_at,
+                ChatRoomMemorySnapshot.cursor_message_id,
+                ChatRoomMemorySnapshot.summary_text,
+                ChatRoomMemorySnapshot.previous_text,
+                ChatRoomMemorySnapshot.source,
+            )
+            .where(ChatRoomMemorySnapshot.chat_room_id == room.room_id)
+            .order_by(ChatRoomMemorySnapshot.cursor_created_at)
+        )
+    ).all()
+    return [SnapshotRow(*row) for row in rows]
+
+
+async def _memory_version(db_session: AsyncSession, room: Room) -> int | None:
+    version: int | None = await db_session.scalar(
+        sa.select(ChatRoom.memory_version).where(ChatRoom.id == room.room_id)
+    )
+    return version
