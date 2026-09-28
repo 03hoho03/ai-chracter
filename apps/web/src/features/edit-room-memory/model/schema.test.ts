@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createMemoryFormSchema } from "./schema";
+import { countMemoryChars, createMemoryFormSchema } from "./schema";
 
 const limits = { noteMaxLength: 1000, summaryMaxLength: 1500 };
 const schema = createMemoryFormSchema(limits);
@@ -31,5 +31,24 @@ describe("createMemoryFormSchema", () => {
     const narrow = createMemoryFormSchema({ noteMaxLength: 3, summaryMaxLength: 5 });
     expect(narrow.safeParse({ note: "가나다", summary: "가나다라마" }).success).toBe(true);
     expect(narrow.safeParse({ note: "가나다라", summary: "" }).success).toBe(false);
+  });
+
+  // 서버는 코드 포인트로 센다 — 이모지는 JS `.length`로 2지만 서버에서는 1자라, 서버가 받는 입력을 FE가
+  // 막으면 안 된다.
+  it.each([
+    ["note", { note: "😀".repeat(1000), summary: "" }],
+    ["summary", { note: "", summary: "😀".repeat(1500) }],
+  ])("accepts a %s of emoji exactly at the limit the server also accepts", (_field, values) => {
+    expect(schema.safeParse(values).success).toBe(true);
+  });
+
+  it("rejects a note of emoji one character over the limit", () => {
+    expect(schema.safeParse({ note: "😀".repeat(1001), summary: "" }).success).toBe(false);
+  });
+});
+
+describe("countMemoryChars", () => {
+  it("counts an emoji as one character after trimming the surrounding whitespace", () => {
+    expect(countMemoryChars(" 😀가\n")).toBe(2);
   });
 });

@@ -18,7 +18,7 @@ import {
 import { toNoteRequest, toSummaryRequest } from "../model/formToServer";
 import { toMemoryWriteError, type MemoryWriteError } from "../model/memoryWriteError";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
-import { createMemoryFormSchema, type MemoryFormValues } from "../model/schema";
+import { countMemoryChars, createMemoryFormSchema, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
 
 type RoomMemoryEditorProps = {
@@ -80,8 +80,8 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
   const form = useForm<MemoryFormValues>({ resolver: zodResolver(schema), defaultValues: serverToForm(memory) });
   const { errors } = form.formState;
-  const noteLength = useWatch({ control: form.control, name: "note" }).length;
-  const summaryLength = useWatch({ control: form.control, name: "summary" }).length;
+  const noteLength = countMemoryChars(useWatch({ control: form.control, name: "note" }));
+  const summaryLength = countMemoryChars(useWatch({ control: form.control, name: "summary" }));
 
   const saveNoteMutation = useSaveMemoryNoteMutation(roomId);
   const clearNoteMutation = useClearMemoryNoteMutation(roomId);
