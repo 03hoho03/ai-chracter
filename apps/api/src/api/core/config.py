@@ -160,6 +160,11 @@ class Settings(BaseSettings):
     # 길게 둘 수도 없다 — 5분이면 무효화가 깨져도 운영자가 재게시 확인을 오래 기다리지 않는다.
     prompt_set_cache_ttl_seconds: int = 60 * 5
 
+    # 긴 방의 생성 프롬프트에서 요약이 덮은 메시지를 빼는 히스토리 윈도우를 켠다. 끄면 요약
+    # 스냅샷이 있어도 전체 히스토리를 싣는다(스냅샷은 남고 무시될 뿐 지워지지 않는다) — 요약
+    # 품질 사고 때 코드 배포 없이 `.env` 수정과 재기동만으로 예전 동작으로 돌아가는 스위치다.
+    memory_window_generation: bool = True
+
     # 자가호스팅 Bugsink DSN. 비어 있으면 그 자체로 비활성이라
     # 별도 활성 플래그를 두지 않는다(플래그와 DSN 유무가 어긋나는 상태만 늘어나고 얻는 것이
     # 없다). `apps/api/.env`는 `.worktreeinclude`로 전 워크트리에 복사되므로 여기 실제 DSN을

@@ -9,6 +9,10 @@
 - 스냅샷이 없는 방은 턴 수(36턴)·원문 글자(24,000자 초과)와 무관하게 모든 호출이 그대로다.
 - 스냅샷이 있는 방에서도 판정 호출(스탯·엔딩·상황이미지)은 전체 히스토리 그대로다 — 생성
   호출만 윈도우를 쓴다. 생성 윈도우 설정을 끄면 생성 호출도 그대로다.
+
+같은 시나리오 장치로 윈도우 자체도 본다 — 요약 커서 이하 메시지는 생성 프롬프트에서 빠지고,
+오프닝은 맨 앞에 남고, 커서 뒤 메시지는 하나도 빠지지 않는다(요약이 늦거나 실패해도 대화가
+사라지지 않는다는 약속). 윈도우 경계 규칙은 순수 함수 테스트가 따로 본다.
 """
 
 import hashlib
@@ -25,6 +29,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.chat.memory_window import prompt_window
 from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatJudgmentResult
 from api.db.models import (
     ChatMessage,
@@ -36,6 +41,7 @@ from api.db.models import (
     StartingSetup,
     StatDef,
 )
+from api.core.config import settings
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
     _clear_llm_override,
@@ -327,3 +333,126 @@ async def test_room_with_summary_still_sends_full_history_to_judgment_calls(
     judgments = [call for call in fingerprint(calls) if call["callSite"] != "chat_generate"]
     expected = [call for call in _load_baseline()[case] if call["callSite"] != "chat_generate"]
     assert judgments == expected
+
+
+@pytest.mark.parametrize("case", [c for c in CASES if "-summarized-" in c])
+async def test_generation_window_switched_off_sends_full_history_even_with_summary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, case: str
+) -> None:
+    monkeypatch.setattr(settings, "memory_window_generation", False)
+    calls = await run_case(db_client, db_session, case)
+    assert fingerprint(calls) == _load_baseline()[case]
+
+
+def _generation_prompt(calls: list[RecordedCall]) -> str:
+    prompts = [call.prompt for call in calls if call.call_site == "chat_generate"]
+    assert len(prompts) == 1
+    return prompts[0]
+
+
+# 요청마다 이전 턴으로 실리는 범위: send는 전부, regenerate는 마지막 응답을 뺀 것, edit(마지막
+# 사용자 메시지)은 그 사용자 메시지와 뒤 응답을 뺀 것.
+_LAST_TURN_SHOWN = {"send": (36, 36), "regenerate": (36, 35), "edit": (35, 35)}
+
+
+@pytest.mark.parametrize("action", ACTIONS)
+@pytest.mark.parametrize("lane", LANES)
+async def test_summarized_room_drops_messages_up_to_the_cursor_and_keeps_every_later_one(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str, action: str
+) -> None:
+    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+
+    prompt = _generation_prompt(await run_action(db_client, room, action, 36))
+
+    for turn in range(1, SUMMARY_CURSOR_TURN + 1):
+        assert f"[U{turn:02d}]" not in prompt
+        assert f"[A{turn:02d}]" not in prompt
+    last_user, last_assistant = _LAST_TURN_SHOWN[action]
+    for turn in range(SUMMARY_CURSOR_TURN + 1, last_user + 1):
+        assert prompt.count(f"[U{turn:02d}]") == 1
+    for turn in range(SUMMARY_CURSOR_TURN + 1, last_assistant + 1):
+        assert prompt.count(f"[A{turn:02d}]") == 1
+
+
+@pytest.mark.parametrize("lane", LANES)
+async def test_summarized_room_keeps_the_opening_ahead_of_the_window(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, lane: str
+) -> None:
+    room = await seed_room(db_client, db_session, lane=lane, turns=36, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+
+    prompt = _generation_prompt(await run_action(db_client, room, "send", 36))
+
+    assert prompt.count(OPENING_MARK) == 1
+    assert prompt.index(OPENING_MARK) < prompt.index(f"[U{SUMMARY_CURSOR_TURN + 1:02d}]")
+
+
+async def test_room_whose_later_turns_were_never_summarized_keeps_all_of_them_in_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """커서 뒤로 30턴이 쌓였는데 다음 요약이 커밋되지 않은 방(요약 실패·지연)이다. 윈도우는 턴
+    수를 세지 않는다 — 요약이 덮지 않은 메시지는 전부 실려야 한다."""
+    room = await seed_room(db_client, db_session, lane="character", turns=40, summary_cursor_turn=SUMMARY_CURSOR_TURN)
+
+    prompt = _generation_prompt(await run_action(db_client, room, "send", 40))
+
+    markers = [f"[{side}{turn:02d}]" for turn in range(SUMMARY_CURSOR_TURN + 1, 41) for side in ("U", "A")]
+    positions = [prompt.find(marker) for marker in markers]
+    assert -1 not in positions
+    assert positions == sorted(positions)
+    assert prompt.find("새 메시지") > positions[-1]
+
+
+_T0 = datetime(2026, 9, 1, tzinfo=UTC)
+
+
+def _message(role: ChatMessageRole, content: str, seconds: int, message_id: int) -> ChatMessage:
+    return ChatMessage(
+        id=uuid.UUID(int=message_id),
+        role=role,
+        content=content,
+        created_at=_T0 + timedelta(seconds=seconds),
+    )
+
+
+def _contents(messages: list[ChatMessage]) -> list[str]:
+    return [message.content for message in messages]
+
+
+_OPENED_ROOM = [
+    _message(ChatMessageRole.ASSISTANT, "오프닝", 0, 1),
+    _message(ChatMessageRole.USER, "u1", 1, 2),
+    _message(ChatMessageRole.ASSISTANT, "a1", 2, 3),
+    _message(ChatMessageRole.USER, "u2", 3, 4),
+    _message(ChatMessageRole.ASSISTANT, "a2", 4, 5),
+]
+
+
+def test_prompt_window_without_cursor_returns_every_message() -> None:
+    assert _contents(prompt_window(_OPENED_ROOM, None)) == ["오프닝", "u1", "a1", "u2", "a2"]
+
+
+def test_prompt_window_excludes_the_cursor_message_itself() -> None:
+    cursor = (_OPENED_ROOM[2].created_at, _OPENED_ROOM[2].id)
+    assert _contents(prompt_window(_OPENED_ROOM, cursor)) == ["오프닝", "u2", "a2"]
+
+
+def test_prompt_window_pins_an_opening_even_when_it_is_under_the_cursor() -> None:
+    cursor = (_OPENED_ROOM[4].created_at, _OPENED_ROOM[4].id)
+    assert _contents(prompt_window(_OPENED_ROOM, cursor)) == ["오프닝"]
+
+
+def test_prompt_window_does_not_pin_a_first_message_that_is_a_user_message() -> None:
+    """오프닝을 지운 방은 첫 메시지가 사용자 메시지다 — 고정할 것이 없다."""
+    room = _OPENED_ROOM[1:]
+    cursor = (room[1].created_at, room[1].id)
+    assert _contents(prompt_window(room, cursor)) == ["u2", "a2"]
+
+
+def test_prompt_window_breaks_created_at_ties_by_message_id() -> None:
+    tied = [
+        _message(ChatMessageRole.ASSISTANT, "오프닝", 0, 1),
+        _message(ChatMessageRole.ASSISTANT, "같은 시각 앞", 5, 10),
+        _message(ChatMessageRole.USER, "같은 시각 뒤", 5, 11),
+    ]
+    cursor = (tied[1].created_at, tied[1].id)
+    assert _contents(prompt_window(tied, cursor)) == ["오프닝", "같은 시각 뒤"]

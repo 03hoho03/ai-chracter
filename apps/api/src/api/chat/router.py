@@ -16,6 +16,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.memory_window import load_summary_cursor, prompt_window
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
@@ -797,7 +798,13 @@ async def _build_prompt(
     지워졌으면 `db.get`이 None이라 "선택 없음"(`""`)과 같다.
 
     세 번째 값은 그 프로필 섹션이 이 프롬프트에 **실제로 들어갔는가**다(`user_persona_rendered`,
-    정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다."""
+    정책 안내 문구 분기용). scope·variant를 아는 곳이 여기뿐이라 함께 돌려준다.
+
+    `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 뺀다
+    (`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로 윈도우도 한 곳에서만
+    계산된다. 판정 호출(엔딩·상황이미지)은 호출부의 전체 히스토리를 그대로 받는다."""
+    if settings.memory_window_generation:
+        history = prompt_window(history, await load_summary_cursor(db, room.id))
     persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
     user_persona = _format_persona(persona)
 
@@ -1187,7 +1194,7 @@ async def send_message(
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
@@ -1229,7 +1236,7 @@ async def _regeneratable_last_message_dependency(
             await db.scalars(
                 select(ChatMessage)
                 .where(ChatMessage.chat_room_id == room.id)
-                .order_by(ChatMessage.created_at.asc())
+                .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
             )
         ).all()
     )
@@ -1277,7 +1284,7 @@ async def regenerate_message(
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id, ChatMessage.id != last_message.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
@@ -1433,7 +1440,7 @@ async def edit_message(
                 await db.scalars(
                     select(ChatMessage)
                     .where(ChatMessage.chat_room_id == room.id)
-                    .order_by(ChatMessage.created_at.asc())
+                    .order_by(ChatMessage.created_at.asc(), ChatMessage.id.asc())
                 )
             ).all()
         )
