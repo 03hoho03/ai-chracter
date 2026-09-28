@@ -164,6 +164,8 @@ function RoomMemorySection({
   note: string;
   summary: AdminChatRoomViewResponse["memorySummary"];
 }) {
+  // 사용자가 요약을 빈 칸으로 저장할 수 있다 — 요약이 아직 없는 것과 문장을 가른다.
+  const emptySummaryText = summary ? "비어 있어요." : "아직 요약이 없어요.";
   return (
     <section aria-labelledby="room-memory-heading" className="flex flex-col gap-3 rounded-xl border border-border p-4">
       <h2 id="room-memory-heading" className="text-lg font-semibold text-foreground">
@@ -184,8 +186,7 @@ function RoomMemorySection({
         {summary?.text ? (
           <p className="whitespace-pre-wrap break-words break-keep text-sm text-foreground">{summary.text}</p>
         ) : (
-          // 사용자가 요약을 빈 칸으로 저장할 수 있다 — 요약이 아직 없는 것과 문장을 가른다.
-          <p className="text-sm text-muted-foreground">{summary ? "비어 있어요." : "아직 요약이 없어요."}</p>
+          <p className="text-sm text-muted-foreground">{emptySummaryText}</p>
         )}
       </div>
     </section>
