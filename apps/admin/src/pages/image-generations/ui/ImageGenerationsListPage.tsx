@@ -8,12 +8,12 @@ import { useForm } from "react-hook-form";
 
 import {
   IMAGE_GENERATION_STATUS_OPTIONS,
-  IMAGE_STYLE_OPTIONS,
+  IMAGE_STYLE_VALUES,
   imageGenerationStatusLabel,
-  imageStyleLabel,
   isImageGenerationStatus,
   isImageStyle,
   useImageGenerationListQuery,
+  useImageStyleOptionsQuery,
   type AdminImageGenerationListParams,
   type ImageGenerationStatusFilter,
   type ImageGenerationStyleFilter,
@@ -21,7 +21,7 @@ import {
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
-// 두 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
+// 상태 필터는 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
 // 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다(`ContentsListPage` 동형). `SelectItem`의
 // value가 `string`이라 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다.
 const STATUS_FILTER_OPTIONS: { value: "all" | ImageGenerationStatusFilter; label: string }[] = [
@@ -29,10 +29,9 @@ const STATUS_FILTER_OPTIONS: { value: "all" | ImageGenerationStatusFilter; label
   ...IMAGE_GENERATION_STATUS_OPTIONS,
 ];
 
-const STYLE_FILTER_OPTIONS: { value: "all" | ImageGenerationStyleFilter; label: string }[] = [
-  { value: "all", label: "전체" },
-  ...IMAGE_STYLE_OPTIONS,
-];
+// 스타일 필터의 이름은 목록 응답(`styleOptions`)에서 온다. 첫 응답 전에는 이름이 없으므로 id 를
+// 그대로 보인다 — 선택지를 비워 두면 주소에 담긴 선택 값이 트리거에 안 보인다.
+const STYLE_ID_FALLBACK_OPTIONS = IMAGE_STYLE_VALUES.map((id) => ({ id, name: id }));
 
 type ImageGenerationFilterPatch = {
   q?: string;
@@ -65,6 +64,15 @@ export function ImageGenerationsListPage({
   onPageChange,
   onFilterChange,
 }: ImageGenerationsListPageProps) {
+  const styleOptionsQuery = useImageStyleOptionsQuery({ page, q, status, style, from, to });
+  const styleFilterOptions: { value: "all" | ImageGenerationStyleFilter; label: string }[] = [
+    { value: "all", label: "전체" },
+    ...(styleOptionsQuery.data ?? STYLE_ID_FALLBACK_OPTIONS).map((option) => ({
+      value: option.id,
+      label: option.name,
+    })),
+  ];
+
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -102,7 +110,7 @@ export function ImageGenerationsListPage({
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {STYLE_FILTER_OPTIONS.map((option) => (
+              {styleFilterOptions.map((option) => (
                 <SelectItem key={option.value} value={option.value}>
                   {option.label}
                 </SelectItem>
@@ -240,7 +248,7 @@ function ImageGenerationsTable({ params, onPageChange }: ImageGenerationsTablePr
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{imageGenerationStatusLabel(item.status)}</TableCell>
-                <TableCell className="text-muted-foreground">{imageStyleLabel(item.style)}</TableCell>
+                <TableCell className="text-muted-foreground">{item.styleName ?? item.style}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {item.completedCount}/{item.requestedCount}
                 </TableCell>

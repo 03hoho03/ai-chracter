@@ -8,20 +8,25 @@ import { toast } from "sonner";
 import { cloverKeys, IMAGE_CLOVER_COST } from "@/entities/clover";
 import { generatedImagesKeys } from "@/entities/generated-image";
 import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
+import { imageModelKeys } from "@/entities/image-model";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import {
   GenerateImagesFormProvider,
   GenerateImagesPromptField,
+  GenerateImagesReferenceField,
   GenerateImagesResultGrid,
   GenerateImagesStyleGrid,
   GenerateImagesUnavailableState,
   useGenerateImagesMutation,
   useGenerateImagesSubmit,
   type GenerateImagesFormValues,
+  type GenerateImagesSubmitHelpers,
 } from "@/features/generate-images";
+import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { isApiError } from "@/shared/api/client";
 
 import { formatImageRateLimitMessage, getImageRateLimit } from "../model/imageRateLimitMessage";
+import { formatReferenceImageErrorMessage, getReferenceImageError } from "../model/referenceImageError";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail } from "./ImageStudioOptionsRail";
@@ -87,11 +92,22 @@ export function ImageStudioShell({
     void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
   }, [jobStatus, queryClient]);
 
-  async function handleSubmit(values: GenerateImagesFormValues) {
+  async function handleSubmit(values: GenerateImagesFormValues, helpers: GenerateImagesSubmitHelpers) {
     setJobId(undefined);
     hasInvalidatedGalleryRef.current = false;
     hasInvalidatedCloverRef.current = false;
-    await generate(values);
+    await generate(values, helpers);
+  }
+
+  // 참조 피커는 다른 feature 슬라이스라 폼 슬라이스가 직접 부르지 않고 이 위젯이 주입한다(확인 게이트와
+  // 같은 이유). 여기는 이미 생성 화면이라 빌더용 "새로 생성하기" 새 탭 링크를 숨기고 문구를 참조용으로 바꾼다.
+  function pickReferenceImage() {
+    return GeneratedImagePickerModal.call({
+      title: "참조할 이미지 고르기",
+      description: "내가 만든 이미지 중 하나를 골라 참조로 써요.",
+      emptyHint: "이미지를 생성하면 여기에서 고를 수 있어요.",
+      showCreateLink: false,
+    });
   }
 
   /** `allowCloverConfirm`은 **무한 루프 차단기**다 — 동의 뒤 재시도는
@@ -105,9 +121,16 @@ export function ImageStudioShell({
    * 충전이라(`core/rate_limit.py`) 자정에 차지 않으므로, 어제 동의하고 오늘 재시도하면 서버가
    * 다시 확인을 요구한다. 채팅은 일일 키에 KST 날짜가 섞여 자정에 리셋되므로 그 경로 자체가
    * 없다 — 같은 차단기를 두지만 막는 대상이 다르다. */
-  async function generate(values: GenerateImagesFormValues, allowCloverConfirm = true) {
+  async function generate(
+    values: GenerateImagesFormValues,
+    helpers: GenerateImagesSubmitHelpers,
+    allowCloverConfirm = true,
+  ) {
     try {
-      const response = await generateMutation.mutateAsync(values);
+      const response = await generateMutation.mutateAsync({
+        values,
+        isReferenceEnabled: helpers.isReferenceEnabled,
+      });
       setJobId(response.jobId);
       // 202 시점에 이미 차감이 끝났다(게이트가 `Depends`에서 깎는다) — 잡이 끝나기를 기다리지
       // 않고 여기서 한 번 반영한다. 위 효과는 그 뒤의 **환불**을 잡는다.
@@ -122,7 +145,7 @@ export function ImageStudioShell({
         ? await confirmCloverSpend(error, values.count * IMAGE_CLOVER_COST, "image")
         : "unhandled";
       if (confirmOutcome === "retry") {
-        await generate(values, false);
+        await generate(values, helpers, false);
         return;
       }
       // 그만두기는 실패가 아니므로 오류 토스트를 띄우지 않는다. 🔴 채팅 3표면과 달리
@@ -135,6 +158,15 @@ export function ImageStudioShell({
       const rateLimit = getImageRateLimit(error);
       if (rateLimit) {
         toast.error(formatImageRateLimitMessage(rateLimit));
+        return;
+      }
+      // 참조 거절은 422 분기보다 **먼저** 본다 — 422 문구("입력값을 다시 확인해주세요")로는 무엇을
+      // 고칠지 모른다. 둘 다 참조를 비우고, 서버가 참조를 껐다면 모델 목록을 다시 받아 참조 행을 숨긴다.
+      const referenceError = getReferenceImageError(error);
+      if (referenceError) {
+        helpers.clearReference();
+        if (referenceError === "disabled") void queryClient.invalidateQueries({ queryKey: imageModelKeys.all });
+        toast.error(formatReferenceImageErrorMessage(referenceError));
         return;
       }
       const apiError = isApiError(error) ? error : undefined;
@@ -162,7 +194,7 @@ export function ImageStudioShell({
           (브라우저 실검증 회귀 수정) — 탭 스트립·시트 트리거·좌우열 껍데기는 어떤 상태에서도
           항상 남고, 판정 결과만 context로 내려 중앙 TabsContent 안(ImageStudioGenerateTabContent)
           에서만 대체 UI로 바꿔 낀다. */}
-      <GenerateImagesFormProvider onSubmit={handleSubmit}>
+      <GenerateImagesFormProvider onSubmit={handleSubmit} onPickReference={pickReferenceImage}>
         <Tabs
           value={tab}
           onValueChange={(value) => {
@@ -242,7 +274,7 @@ export function ImageStudioShell({
                 <ImageStudioGenerateTabContent
                   jobId={jobId}
                   jobData={jobQuery.data}
-                  requestedCount={generateMutation.variables?.count ?? 1}
+                  requestedCount={generateMutation.variables?.values.count ?? 1}
                   isJobQueryError={jobQuery.isError}
                 />
               </TabsContent>
@@ -286,6 +318,7 @@ function ImageStudioGenerateTabContent({
   return (
     <>
       <GenerateImagesPromptField />
+      <GenerateImagesReferenceField />
       <GenerateImagesStyleGrid />
       {/* 생성 결과는 중앙 하단에 그대로 남긴다. */}
       {jobId !== undefined && (

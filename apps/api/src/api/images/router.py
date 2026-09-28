@@ -7,10 +7,16 @@ from dataclasses import dataclass
 from typing import Literal, assert_never, get_args
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, generate_thumbnail
+from api.assets.image_processing import (
+    THUMBNAIL_CONTENT_TYPE,
+    ReferenceImageRejectedError,
+    generate_thumbnail,
+    validate_reference_image,
+)
 from api.core import clover
 from api.core.config import settings
 from api.core.rate_limit_gate import (
@@ -19,7 +25,13 @@ from api.core.rate_limit_gate import (
     image_queue_full,
     refund_image_charge,
 )
-from api.core.s3 import build_object_key, build_thumbnail_key, generate_presigned_get_url, upload_object
+from api.core.s3 import (
+    build_object_key,
+    build_thumbnail_key,
+    download_object,
+    generate_presigned_get_url,
+    upload_object,
+)
 from api.core.sentry import capture_dependency_failure
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.session import get_db_session, get_session_factory
@@ -75,6 +87,32 @@ class _GenerationResult:
     input_error: ImageInputError | None = None
 
 
+class _ReferenceImageUnusableError(Exception):
+    """참조 원본을 읽지 못했거나 계약 한도를 벗어났다. `LLMClientError`의 하위가 아니다 — 집 PC
+    장애(`local_image`)와 섞이지 않게 따로 잡아 따로 태그한다. `cause`는 실패 종류만 담는다."""
+
+    def __init__(self, cause: str) -> None:
+        self.cause = cause
+        super().__init__(f"reference image unusable: {cause}")
+
+
+async def _load_reference_image(storage_key: str) -> bytes:
+    """참조 원본을 저장소에서 읽어 계약 한도를 확인한다. 장마다 부르므로 `count=2`면 같은 원본을
+    두 번 읽는다 — 한 번만 읽으려고 모든 장을 시작하기 전(`_run_generation`의 `gather` 앞)으로
+    옮기면, 거기서 난 실패는 잡을 RUNNING에, 요청 행을 pending에 남긴다."""
+    try:
+        data = await run_in_threadpool(download_object, storage_key)
+    except Exception as exc:
+        # 원본이 202 뒤에 지워졌거나 저장소가 순단했다. 종류를 가리지 않고 참조 실패로 접는다 —
+        # 좁히면 모르는 예외가 아래 광역 `except`로 떨어져 운영 신호 없이 사라진다.
+        raise _ReferenceImageUnusableError("download_failed") from exc
+    try:
+        await run_in_threadpool(validate_reference_image, data)
+    except ReferenceImageRejectedError as exc:
+        raise _ReferenceImageUnusableError(exc.reason) from exc
+    return data
+
+
 async def _generate_and_store_one(
     image_client: ImageClient,
     session_factory: async_sessionmaker[AsyncSession],
@@ -84,9 +122,15 @@ async def _generate_and_store_one(
     prompt: str,
     style: ImageStylePreset,
     aspect_ratio: AspectRatio,
+    reference_storage_key: str | None,
 ) -> _GenerationResult:
     try:
-        data, mime_type = await image_client.generate_image(prompt, style, aspect_ratio)
+        reference_image = (
+            await _load_reference_image(reference_storage_key) if reference_storage_key is not None else None
+        )
+        data, mime_type = await image_client.generate_image(
+            prompt, style, aspect_ratio, reference_image=reference_image
+        )
         asset_id = uuid.uuid4()
         storage_key = build_object_key("generated", asset_id, mime_type)
         await run_in_threadpool(upload_object, storage_key, data, mime_type)
@@ -128,6 +172,12 @@ async def _generate_and_store_one(
         # `LocalImageInputError`도 `LLMClientError`의
         # 하위 클래스라 같은 이유로 아래 `except LLMClientError`보다 먼저 잡는다.
         return _GenerationResult(outcome="input_error", input_error=exc.input_error)
+    except _ReferenceImageUnusableError as exc:
+        # 마지막 광역 `except`로 떨어지면 `print` 한 줄뿐이라 Bugsink에 남지 않는다. 로그에는 실패
+        # 종류만 싣는다 — 저장 키·사용자 id·프롬프트는 싣지 않는다.
+        logger.warning("reference image unusable: %s", exc.cause)
+        capture_dependency_failure(exc, dependency="reference_image")
+        return _GenerationResult(outcome="failed")
     except LLMClientError as exc:
         # 예외 인스턴스를 바인딩하지 않으면 상태
         # 코드·detail이 통째로 버려져 400·422·429·500·503·타임아웃이 운영 로그에서
@@ -193,6 +243,7 @@ async def _run_generation(
     style: ImageStylePreset,
     aspect_ratio: AspectRatio,
     charge: ImageCharge,
+    reference_storage_key: str | None,
 ) -> None:
     # 이 잡을 위한 admission은 라우터의 `try_admit()`
     # 호출 하나에 대응한다(이미지 개수와 무관) — 잡이 끝나면(성공/실패 모두) 반드시
@@ -208,7 +259,15 @@ async def _run_generation(
         results = await asyncio.gather(
             *[
                 _generate_and_store_one(
-                    image_client, session_factory, job_id, owner_user_id, request_id, prompt, style, aspect_ratio
+                    image_client,
+                    session_factory,
+                    job_id,
+                    owner_user_id,
+                    request_id,
+                    prompt,
+                    style,
+                    aspect_ratio,
+                    reference_storage_key,
                 )
                 for _ in range(charge.count)
             ]
@@ -444,7 +503,12 @@ async def list_image_models(
         if capability is None:
             items.append(
                 ImageModelItem(
-                    id=spec.id, name=spec.name, supported_aspect_ratios=[], available=False, styles=[]
+                    id=spec.id,
+                    name=spec.name,
+                    supported_aspect_ratios=[],
+                    available=False,
+                    styles=[],
+                    supports_reference_image=False,
                 )
             )
             continue
@@ -457,16 +521,47 @@ async def list_image_models(
             # capability는 있지만 매핑되는 style이 하나도 없다 — id 불일치(위)와는
             # 다른 조용한 기능 축소라 구분되는 문구로 남긴다.
             logger.warning("local image capability for registered model id %s maps to no usable style", spec.id)
+        available = any(style.available for style in styles)
         items.append(
             ImageModelItem(
                 id=spec.id,
                 name=spec.name,
                 supported_aspect_ratios=_known_aspect_ratios(capability.aspect_ratios),
-                available=any(style.available for style in styles),
+                available=available,
                 styles=styles,
+                supports_reference_image=settings.local_image_reference_enabled and available,
             )
         )
     return items
+
+
+async def _resolve_reference_storage_key(
+    reference_asset_id: uuid.UUID | None,
+    owner_user_id: uuid.UUID,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> str | None:
+    """참조가 없으면 None. 있으면 기능이 켜져 있는지(요청마다 다시 본다 — 모델 목록을 받은 뒤
+    꺼졌을 수 있다)와 그 asset이 본인의 완성된 생성 이미지인지 확인하고 저장 키를 돌려준다.
+
+    꺼져 있는데 참조가 오면 무시하지 않고 400이다 — 무시하면 참조 없이 만든 이미지가 과금돼 나간다.
+    없음·남의 것·생성 이미지 아님(업로드·크롭)은 전부 같은 404다 — 남의 asset이 있는지 드러내지
+    않는다(생성 이미지 삭제와 같은 규칙). FE는 두 `detail` 문자열로 안내를 가른다."""
+    if reference_asset_id is None:
+        return None
+    if not settings.local_image_reference_enabled:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="reference image disabled")
+    async with session_factory() as session:
+        storage_key = await session.scalar(
+            select(Asset.storage_key).where(
+                Asset.id == reference_asset_id,
+                Asset.owner_user_id == owner_user_id,
+                Asset.kind == AssetKind.GENERATED,
+                Asset.status == AssetStatus.READY,
+            )
+        )
+    if storage_key is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="reference image not found")
+    return storage_key
 
 
 @router.post(
@@ -517,6 +612,14 @@ async def generate_images(
                 detail=f"model '{payload.model}' does not support style '{payload.style.value}'",
             )
 
+        # 참조 거절 둘(기능 꺼짐 400, 쓸 수 없는 참조 404)도 이 바깥 `try` 안에 있어야 한다 — 게이트가
+        # 이미 차감했으므로 밖(`Depends`·바디 검증)으로 빼면 차감만 남고 환불되지 않는다.
+        # 저장소 왕복은 여기서 하지 않는다(요청이 커넥션을 쥔 채 기다리게 된다) — 잡에는 저장 키만
+        # 넘기고 원본은 장마다 잡 안에서 읽는다.
+        reference_storage_key = await _resolve_reference_storage_key(
+            payload.reference_asset_id, owner_user_id, session_factory
+        )
+
         # 검사+증가가 `try_admit()` 하나의 동기
         # 함수 안에 있어 그 사이에 await가 끼어들 수 없다(원자적인 것은 `+=1` 자체가 아니라
         # 이 동기 블록이다) — 상한이 걸렸는데도 거절하지 않으면 한 사용자가 GPU 직렬
@@ -541,6 +644,7 @@ async def generate_images(
                     model=payload.model,
                     requested_count=payload.count,
                     status="pending",
+                    reference_asset_id=payload.reference_asset_id,
                 )
                 session.add(request_row)
                 await session.commit()
@@ -558,6 +662,9 @@ async def generate_images(
                 # 영수증을 통째로 넘기는 이유는 202 이후 환불이 **무엇으로 냈는지**를 알아야
                 # 하기 때문이다 — 장수만 넘기면 자원을 못 가린다.
                 charge,
+                # 바이트가 아니라 저장 키다 — 잡 인자는 직렬화 가능한 값으로 둔다(잡 실행을 외부
+                # 큐로 바꿀 때 그대로 넘어가게).
+                reference_storage_key,
             )
         except Exception:
             # admit과 백그라운드 인계 사이(예: `create_job`의 Redis 순단)에서 실패하면

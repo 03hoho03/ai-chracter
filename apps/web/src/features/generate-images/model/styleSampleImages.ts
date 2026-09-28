@@ -9,21 +9,24 @@
 // ── 생성 조건 ────────────────────────────────
 // 기존 `base.webp`가 프롬프트 유실로 재현 불가능했던 것을 반복하지 않으려고 전부 남긴다.
 //
-//   2026-09-15, 프로덕션 `/studio/images`에서 생성 · 비율 3:4 · 1장 · model `v1`
+//   2026-09-28, 프로덕션 `/studio/images`에서 생성 · 비율 3:4 · 1장 · model `v1` · 참조 없음
 //   원본 896×1152 webp → 중앙 크롭 864×1152(폭 좌우 16px) → 480×640 webp q88(Pillow LANCZOS)
 //   ※ 집 PC의 "3:4" 버킷은 실제로 896×1152(0.778)라 0.75가 아니다 — 크롭이 필요하다.
 //
-//   soft_portrait  1girl, solo, long black hair, gentle smile, white blouse, upper body, looking at viewer
-//   chapel_glass   1girl, solo, blonde hair, white dress, hands clasped, serene expression, upper body
-//   royal_drama    1boy, solo, silver hair, ornate coat, confident expression, upper body, looking at viewer
-//   sparkle_night  1girl, solo, cowboy shot, standing, pink twintails, off-shoulder dress, smiling, night city background, full face visible
-//   watercolor     1girl, solo, cowboy shot, standing, short brown hair, straw hat, sundress, soft smile, flower field background, full body visible
-//   pixel_art      1boy, solo, spiky orange hair, hoodie, headphones, grinning, upper body
-//   deco_cute      1girl, solo, twin braids, big eyes, ribbon, oversized sweater, cheerful, upper body
+//   soft_portrait  1girl, solo, upper body, looking at viewer, simple background, long black hair, gentle smile, white blouse
+//   chapel_glass   1girl, solo, upper body, looking at viewer, simple background, blonde hair, white dress, hands clasped, serene expression
+//   royal_drama    1boy, solo, adult male, man, male focus, upper body, looking at viewer, simple background, silver hair, ornate coat, confident expression
+//   sparkle_night  1girl, solo, upper body, looking at viewer, simple background, pink twintails, frilled blouse, long sleeves, smiling
+//   watercolor     1girl, solo, upper body, looking at viewer, simple background, short brown hair, straw hat, light blue dress, short sleeves, soft smile
+//   pixel_art      1boy, solo, upper body, looking at viewer, simple background, spiky orange hair, hoodie, headphones, grinning
+//   deco_cute      1girl, solo, upper body, looking at viewer, simple background, twin braids, big eyes, ribbon, oversized sweater, cheerful
 //
-// `sparkle_night`·`watercolor`만 `cowboy shot`·배경 지정이 붙어 있다 — 그 둘은 짧은 프롬프트에서
-// 극단적 클로즈업으로 치우쳐 나머지 5장과 프레이밍이 갈렸다(집 PC 계약 v3가 `sparkle_night`에 대해
-// 미리 경고한 성질이다). 다시 뽑을 때 이 태그를 빼면 같은 문제가 재발한다.
+// 집 PC 계약 v4부터 style은 화풍·조명·채색만 정하고 구도·배경은 프롬프트 몫이라, 7장 모두 같은
+// 구도·배경 태그(`upper body, looking at viewer, simple background`)를 두어 차이가 화풍에서만 나게 했다.
+// 태그 순서는 인물 수·성별(`1girl`/`1boy`, `solo`) → 구도 → 배경 → 인물 묘사다.
+// `royal_drama`에만 `adult male, man, male focus`를 더한 것은 그 style에서 `1boy`만 쓰면 여성으로
+// 그려질 수 있어서다. 노출을 암시하는 의상(어깨 드러난 드레스·민소매)은 생성 차단을 피하려고 긴·짧은
+// 소매 옷으로 바꿨다. 이 7장은 모두 차단 없이 첫 시도에 나왔다.
 import chapelGlassSample from "../style-samples/chapel_glass.webp";
 import decoCuteSample from "../style-samples/deco_cute.webp";
 import pixelArtSample from "../style-samples/pixel_art.webp";

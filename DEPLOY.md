@@ -51,7 +51,7 @@ Cloudflare 애니캐스트 IP(`104.x`/`172.67.x`)가 아니라 VM 고정 IP를 �
 | VM 파일 소유 | **root + sudo 배포** | OS Login은 접속 주체마다 POSIX 사용자가 달라, 사람 계정 소유로 두면 배포 SA가 git·docker·`.env` 셋 다 막힌다 |
 | 백업 위치 | **자산 버킷의 `backup/`** | 기존 R2 토큰이 그 버킷 전용이라 새 토큰 없이 쓰려면 이 방법뿐. 대신 prune이 백업 파일명 형태에 **정확히** 맞는 것만 지우게 해 자산과 격리했다 |
 | `/health` vs `/ready` | **둘 다 둔다** | `/health`는 얕아야 한다(Caddy·compose healthcheck·배포 검증이 의존). 자원 장애 감지는 `/ready`가 맡는다 |
-| 이미지 생성 → 집 PC 경로 | **Cloudflare Tunnel + Access 서비스 토큰** | VM에 데몬·컨테이너 네트워크 변경·키 로테이션이 필요 없다. 세마포어("이미지 생성" 절)가 매 HTTP 호출을 생성 1건으로 묶어 두므로 엣지 요청 제한에 다가가지 않는다. 체크포인트 스왑을 도입하면 그 전제가 깨져 Tailscale로 돌아간다 |
+| 이미지 생성 → 집 PC 경로 | **Cloudflare Tunnel + Access 서비스 토큰** | VM에 데몬·컨테이너 네트워크 변경·키 로테이션이 필요 없다. 세마포어("이미지 생성" 절)가 매 HTTP 호출을 생성 1건으로 묶어 두므로 엣지 요청 제한에 다가가지 않는다. 체크포인트 스왑을 도입하면 그 전제가 깨져 Tailscale로 돌아간다. **요청 본문 크기 상한은 아직 재지 않았다** — 참조 이미지를 켜면 요청 하나가 base64 최대 8,000,000자(약 8MB)를 싣는다. 실측 결과: _미측정_(측정 방법은 "참조 이미지 켜기 · 끄기 · 롤백" 절, 재면 이 자리에 결과를 적는다) |
 
 **기각한 것**: Caddy `flush_interval -1` — 있으나 없으나 SSE 도착 간격이 같았다(300ms 간격 5개 실측:
 0.28/0.58/0.89/1.19s vs 0.30/0.60/0.91/1.21s). Caddy 2가 `text/event-stream`을 감지해 자동 flush 한다.
@@ -120,10 +120,12 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
 **39개 키다**(2026-09-25 VM 실측, 키 이름만 셈): 아래 표 25개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
-`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 4개 제외) + compose용
+`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`LOCAL_IMAGE_REFERENCE_ENABLED`·`EXPOSE_API_DOCS` 5개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
 (`DISCORD_WEBHOOK_URL`·`HEALTHCHECKS_BACKUP_PING_URL`은 "백업 · 복원" 절, `HEALTHCHECKS_RESOURCE_PING_URL`은 "VM 리소스 감시" 절). `apps/api/.env`는 **로컬 개발용이며 배포와 무관하다.**
+이 수는 날짜가 붙은 실측값이라 VM에 키를 넣거나 빼면 낡는다 — 그때 VM에서 다시 세어 이 문장을 고친다
+(예: `sudo grep -oE '^[A-Za-z_][A-Za-z0-9_]*=' /opt/ddona/.env | sort -u | wc -l`). 키 개수는 이 문장 한 곳에만 적는다.
 
 | 변수 | 값 | 비고 |
 |---|---|---|
@@ -144,6 +146,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `LOCAL_IMAGE_TIMEOUT_SECONDS` | 기본 `90` | 안전한 기본값 — 보통 생략. 근거는 "이미지 생성" 절의 실측치 |
 | `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS` | 기본 `30` | 안전한 기본값 — 보통 생략 |
 | `LOCAL_IMAGE_QUEUE_LIMIT` | 기본 `4` | 안전한 기본값 — 보통 생략 |
+| `LOCAL_IMAGE_REFERENCE_ENABLED` | 기본 `false` | 본인이 만든 생성 이미지를 참조로 집 PC에 싣는 기능의 스위치. 기본값(닫힘)이면 생략한다 — 생성 화면에 참조 행이 안 뜨고, 참조를 실은 요청은 `400 reference image disabled`로 거절·환불된다. 켜는 조건·켜기·끄기·롤백은 "참조 이미지 켜기 · 끄기 · 롤백" 절. 켜면 위 키 개수 문장을 다시 센다 |
 | `EXPOSE_API_DOCS` | 기본 `false` | 안전한 기본값(닫힘) — **운영에서는 절대 켜지 않는다.** 켜면 `/docs`·`/openapi.json`이 열려 이미지 모델의 불투명 id 은닉("이미지 생성" 절)이 무의미해진다 |
 | `S3_ENDPOINT_URL` | `https://<accountid>.r2.cloudflarestorage.com` | R2 |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | R2 API 토큰 키쌍 | boto3가 프로세스 env로 읽는다 |
@@ -449,7 +452,7 @@ sudo docker stats --no-stream ddona-monitoring-bugsink-1   # mem_limit(1g)을 �
 ```
 
 **`/opt/ddona/.env`에 추가해야 하는 값**(이 표의 6개 키 — `BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·
-`SENTRY_DSN`·`SENTRY_ENVIRONMENT` — 는 전부 "BE 런타임" 절의 39개 키 카운트에 포함되지만, 값·근거의 유일한
+`SENTRY_DSN`·`SENTRY_ENVIRONMENT` — 는 전부 "BE 런타임" 절의 키 개수에 포함되지만, 값·근거의 유일한
 소스는 이 절이다 — "BE 런타임" 절 표에는 행을 따로 만들지 않는다):
 
 | 변수 | 값 | 비고 |
@@ -789,7 +792,10 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 사용자에게 노출되는 것은 불투명 id뿐이다 — 모델 id 1개(`v1`, 표시명 "v1")와 스타일 id 7개
 (`soft_portrait`~`deco_cute`, 표시명은 `images/models.py`의 `IMAGE_STYLE_PRESETS` 참고).
 체크포인트·LoRA·프리셋 문안·샘플러 파라미터는 전부 집 PC 소유이고, 서버는 프롬프트 원문과 이 두 id,
-`aspect_ratio` 문자열만 보낸다.
+`aspect_ratio` 문자열을 보낸다. 여기에 **참조 이미지**가 붙을 수 있다 — `LOCAL_IMAGE_REFERENCE_ENABLED`가 켜져
+있고 사용자가 참조를 골랐을 때만, 이 서비스가 만든 **그 사용자 본인의 생성 이미지** 원본을 저장소에서 읽어
+base64로 싣는다(리사이즈 없음). 싣기 전에 서버가 형식(PNG·JPEG·WebP)·각 변 64~4096px·인코딩 길이 8,000,000자
+이하를 검사하고, 참조가 없으면 필드 자체를 싣지 않는다.
 
 생성 잡은 기존과 동일하게 응답(202) 뒤 `asyncio.create_task`로 돌고, 이미지는 그대로 R2에 올라간다.
 서버는 모듈 수준 `asyncio.Semaphore(1)`로 GPU 호출을 직렬화하고(프로덕션이 uvicorn 단일 프로세스라 이
@@ -806,17 +812,146 @@ Tunnel**로 그 origin에 도달하고 `CF-Access-Client-Id`/`CF-Access-Client-S
 (`LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`, 기본 30초)로 프로브해 집 PC가 꺼져 있으면 **생성 시도 전에**
 503으로 차단한다.
 
-**측정치**(집 PC 팀의 계약 이행 확인서 기준):
+**측정치**(집 PC 계약 v4의 배포 전 실측, 2026-09-28. VRAM 행만 그 이전 계약 이행 확인서 값이다 — v4는 VRAM을
+다시 재지 않았다):
 
 | 항목 | 값 |
 |---|---|
-| 생성 시간(정상 상태) | 약 17~20초 |
-| 생성 시간(종횡비 버킷 전환 직후 첫 요청) | **27~34초** — `torch.backends.cudnn.benchmark`가 그 해상도의 커널을 처음 탐색·캐시하는 비용이다. **`LOCAL_IMAGE_TIMEOUT_SECONDS`가 45초가 아니라 90초인 이유가 이 값이다** |
-| 재부팅 후 콜드스타트 | 약 5.4초(프로세스 기동 → `/capabilities` 첫 200) |
+| 생성 시간(워밍업 뒤) | 참조 포함 약 17초 이하 |
+| 생성 시간(재기동이 아닌 종횡비 버킷 전환 뒤 첫 요청) | 약 34초 — 이전 확인서는 이 비용을 `torch.backends.cudnn.benchmark`가 그 해상도의 커널을 처음 탐색·캐시하는 비용으로 설명했다 |
+| 생성 시간 최악(서버 재기동 직후 첫 요청) | **약 38초** — 타임아웃 산정 기준(아래) |
+| 참조 이미지를 실은 요청의 추가 시간 | 약 +2.0초(참조 디코딩·정책 검사 약 0.5초 포함). 집 PC 쪽 측정은 약 1.8M자 참조를 같은 기계 안에서 보낸 값이라, 8,000,000자에 가까운 참조는 VM→집 PC 전송 시간이 따로 붙는다(미측정) |
+| 결과 이미지 검사(v4에서 한 단계 늘었다) | 약 +0.27초 — 참조 유무와 무관하게 모든 요청 |
+| 재기동 후 준비 시간(기동 → 첫 응답 가능) | 중앙값 약 12.7초(12.1~15.3초, 8회) |
 | VRAM | 상주 0 MiB(오프로드 훅, forward 시점까지 GPU에 올리지 않음) · 생성 피크 **5494 MiB** |
 
-집 PC는 콘텐츠 정책 가드도 운영한다 — 생성 전(프롬프트) · 생성 후(이미지) 2단계로 판정하고,
-위반이 의심되면 `422`를 낸다. 서버는 그것을 사용자에게 "정책 차단"으로 알린다.
+**`LOCAL_IMAGE_TIMEOUT_SECONDS`가 90초인 이유**: 최악 약 38초에 큰 참조 이미지의 전송 시간(위 표, 미측정)이 더해져도
+넘지 않을 여유를 두면서, VM이 Cloudflare Tunnel을 거치므로 edge 타임아웃(무료 플랜 100초로 알려짐, 실측 없음)
+아래에 머무는 값이다. 참조 요청과 참조 없는 요청이 같은 값 하나를 쓴다 — 계약은 참조 요청의 타임아웃을 더 짧게
+잡지 말라고 권하는데, 값이 하나라 그렇게 될 수가 없다. 40초대로 줄이면 집 PC가 응답 없이 멈췄을 때 실패를 더
+빨리 알지만, 큰 참조를 실은 최악 요청이 타임아웃 경계에 걸린다.
+
+집 PC는 콘텐츠 정책 가드도 운영한다 — 생성 전(프롬프트) · 참조 이미지(실었을 때) · 생성 후(결과 이미지)를 판정하고,
+위반이 의심되면 `422`를 낸다(`reason`이 각각 `prompt`·`reference`·`image`). 서버는 그것을 사용자에게 "정책 차단"으로
+알리고, 참조 차단이면 "다른 이미지를 골라 보라"고 안내한다. **정책에 걸린 참조 이미지는 집 PC가 사후 검토용으로
+보관하며 보존 기한은 정해져 있지 않다**(자동 삭제 없음) — 사용자에게는 생성 화면의 참조 행 아래 문장으로만
+알린다. 공백만 있는 프롬프트는 v4 집 PC가 기본 인물로 생성해 버리므로 이 서버가 차감 전에 `422`로 먼저 거절한다.
+
+### 5-1. 참조 이미지 켜기 · 끄기 · 롤백
+
+`LOCAL_IMAGE_REFERENCE_ENABLED`는 기본 꺼짐으로 배포된다. 참조 필드를 모르는 집 PC는 그 필드를 **조용히 무시하고
+참조 없는 이미지로 200을 주므로**, 아래 조건을 채우기 전에는 켜지 않는다.
+
+**켜는 조건**(전부):
+
+1. 집 PC가 참조 필드를 아는 버전이다. 무비용 판별: `POST /generate`에 `"reference_image": ""`를 실으면 생성 전에
+   바로 `400 {"detail":"invalid reference image"}`가 온다(모르는 버전이면 이미지 1장을 만들어 `200 image/webp`).
+   2026-09-28 운영 VM에서 판별 → 아는 버전.
+2. 서버팀에 켠다고 **먼저** 알렸다.
+3. 요청 본문 상한 실측(아래)에서 큰 참조가 집 PC의 JSON 응답을 받았다.
+4. 생성 화면에서 참조 행 아래 전송·보관 안내 문장이 참조를 고르기 전부터 보인다.
+
+**요청 본문 상한 실측** — 운영과 같은 VM → Cloudflare Tunnel/Access → 집 PC 경로로, api 컨테이너 안에서 돌린다
+(설정을 컨테이너 env에서 읽으므로 Access 토큰이 명령행·셸 기록에 남지 않는다). 요청마다 이미지를 1장씩 만든다
+(GPU 시간만 들고 클로버·보관함과는 무관하다).
+
+```sh
+cd /opt/ddona/app
+# 실제 생성 이미지 하나의 저장 키(보통 크기 참조로 쓴다)
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T postgres \
+  psql -U postgres -d ai_character_chat -Atc \
+  "SELECT storage_key FROM assets WHERE kind='GENERATED' AND status='READY' ORDER BY created_at DESC LIMIT 1;"
+
+# 그 키 + 약 7,850,000자(1400×1400 무작위 PNG, 약 5.9MB) 두 건을 보낸다. REF_KEY 를 빼면 큰 PNG 한 건만
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T -e REF_KEY='<위 키>' api python - <<'EOF'
+import base64, io, os
+import httpx
+from PIL import Image
+from api.core.config import settings
+from api.core.s3 import download_object
+
+def send(label, data):
+    encoded = base64.b64encode(data).decode("ascii")
+    response = httpx.post(
+        f"{settings.local_image_base_url}/generate",
+        json={"prompt": "1girl, solo, upper body", "model": settings.local_image_model_wire_id,
+              "style": "soft_portrait", "aspect_ratio": "3:4", "reference_image": encoded},
+        headers={"CF-Access-Client-Id": settings.local_image_access_client_id,
+                 "CF-Access-Client-Secret": settings.local_image_access_client_secret},
+        timeout=settings.local_image_timeout_seconds,
+    )
+    content_type = response.headers.get("content-type", "")
+    body = "" if content_type.startswith("image/") else response.text[:200]
+    print(label, f"{len(encoded):,}자", response.status_code, content_type, body)
+
+if os.environ.get("REF_KEY"):
+    send("생성 이미지", download_object(os.environ["REF_KEY"]))
+side = 1400
+noise = Image.frombytes("RGB", (side, side), os.urandom(side * side * 3))
+buffer = io.BytesIO()
+noise.save(buffer, format="PNG")
+send("큰 PNG", buffer.getvalue())
+EOF
+```
+
+판정: 줄마다 `라벨 길이 상태 content-type 본문`이 찍힌다. `200 image/webp`이나 `application/json`의 `400`·`422`면 본문이
+집 PC에 닿은 것이다(무작위 PNG가 정책 검사에 걸리는 것도 닿은 것이다). `413`이나 HTML 본문(Cloudflare 오류
+페이지)이면 경로에 더 작은 상한이 있다 — 켜지 말고, 참조 검증의 길이 상한(`assets/image_processing.py`)을 그 아래로
+낮추는 작업을 먼저 한다. 결과는 "현재 형상의 근거" 표의 집 PC 경로 행에 적는다. (이 스크립트는 로컬에서 가짜 서버로
+끝까지 돌려 본 것이고, 운영 경로에서는 아직 돌린 적이 없다.)
+
+**켜기** — `.env`에 **한 줄만 더한다.** 파일을 통째로 덮거나 백업본으로 복원하지 않는다(자동배포가 같은 파일의
+`API_IMAGE`를 고친다):
+
+```sh
+cd /opt/ddona/app
+sudo sh -c 'printf "\nLOCAL_IMAGE_REFERENCE_ENABLED=true\n" >> /opt/ddona/.env'
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -T api \
+  python -c "from api.core.config import settings; print(settings.local_image_reference_enabled)"   # True
+```
+
+켠 뒤: 생성 화면에서 참조를 붙여 1장 생성이 성공하는지 본다(요청 바디에 `referenceAssetId`). "BE 런타임" 절의 키
+개수 문장을 VM에서 다시 세어 고치고, 표의 이 키 행과 "생략 가능" 목록도 켠 상태에 맞게 고친다. 참조 이미지를 읽거나
+검증하지 못한 실패는 Bugsink `dependency=reference_image`로, 집 PC가 참조 요청을 400으로 거절한 것은
+`dependency=local_image`로 올라온다. 참조 차단(422 `reference`)은 WARNING 로그만 남고 경보는 없다.
+
+**끄기** — 같은 줄을 `false`로 바꾸고 다시 올린다:
+
+```sh
+cd /opt/ddona/app
+sudo sed -i 's/^LOCAL_IMAGE_REFERENCE_ENABLED=.*/LOCAL_IMAGE_REFERENCE_ENABLED=false/' /opt/ddona/.env
+sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env up -d --wait api
+```
+
+새로 연 생성 화면에는 참조 행이 없다. 이미 열려 있던 화면에서 참조를 실어 보내면 `400 reference image disabled`로
+거절·환불되고, 화면이 "지금은 참조 이미지를 쓸 수 없어요"를 띄운 뒤 모델 목록을 다시 받아 행을 숨긴다.
+
+**롤백** — 참조를 한 번이라도 켰다면 **되돌릴 태그와 상관없이 먼저 끄고(재기동) 롤백한다.** 참조 필드를 싣게 한
+이 기능 이전의 BE는 `referenceAssetId`를 모르는 필드로 조용히 무시해, 참조 없는 이미지를 만들고 클로버를 차감한다.
+이미 열려 있던 새 FE 탭은 모델 목록을 다시 받기 전까지 그 필드를 계속 보낸다. 먼저 꺼 두면 그 사이의 그런 요청은
+`400 reference image disabled`로 거절·환불되고 화면이 참조 행을 숨기며, 모델 목록을 다시 받은 탭은 필드를 더 보내지
+않는다. 켠 적이 없으면 바로 롤백해도 된다.
+
+PR #65(머지 `4e52c81`)보다 앞선 태그로 되돌릴 때는 추가로 1시간을 기다린다. 참조를 켠 동안 Redis 잡 레코드에 차단
+사유 `reference`가 남아 있을 수 있고, 이 사유를 모르는 그 이전 BE로 되돌리면 그런 잡을 폴링하는
+`GET /images/jobs/{id}`가 잡 레코드 검증에 실패해 500을 낸다. 잡 레코드는 마지막 갱신부터 1시간
+(`image_generation_job_ttl_seconds`) 뒤 사라지므로 순서는 **끄기(재기동) → 1시간 기다림 → 태그 롤백**이다. FE도
+같다 — 같은 PR보다 앞선 Pages 배포는 사유 `reference`의 안내 문구 분기가 없어 그 잡을 만나면 예외를 던지므로, Pages
+롤백도 같은 1시간 뒤에 한다.
+
+마이그레이션 `739e7f1039b1`(요청 행의 참조 컬럼, nullable)은 태그 롤백만이면 되돌리지 않는다 — 옛 코드는 그 컬럼을
+모른 채 동작하고, 새 행에는 NULL이 들어간다. 되돌려야 할 때(예: main에 revert 커밋을 올려 옛 코드를 다시 배포할 때 —
+그 배포의 `alembic upgrade head`는 DB가 모르는 리비전에 있어 `Can't locate revision`으로 멈춘다)는 순서가 고정이다:
+**태그 롤백으로 옛 코드부터 띄우고 → 새 이미지로 downgrade**. 옛 이미지에는 이 리비전 파일이 없어 downgrade를 못 하고,
+downgrade를 먼저 하면 아직 떠 있는 새 코드가 없어진 컬럼을 조회하다 실패한다. downgrade는 "어떤 요청이 어떤
+이미지를 참조했는지" 기록을 지운다.
+
+```sh
+sudo /opt/ddona/backup.sh   # 먼저 백업
+sudo docker run --rm --network ddona_default --env-file /opt/ddona/.env \
+  <IMAGE>:<새 코드 TAG> alembic downgrade 697222d13fe8
+```
 
 ---
 

@@ -111,15 +111,20 @@ class Settings(BaseSettings):
     # Cloudflare Access 서비스 토큰.
     local_image_access_client_id: str = ""
     local_image_access_client_secret: str = Field(default="", repr=False)
-    # DEPLOY.md "이미지 생성" 절 실측: 정상 생성은 17~20초지만 종횡비 버킷 전환 직후 첫 요청이 27~34초다
-    # (`torch.backends.cudnn.benchmark`가 그 해상도의 커널을 처음 탐색·캐시하는 비용) — 45초가
-    # 아니라 90초인 이유가 이 값이다. 상한 쪽 제약은 그대로 살아 있다: VM은 Cloudflare Tunnel로
-    # 집 PC에 도달하므로(DEPLOY.md "이미지 생성" 절) edge 타임아웃(무료 플랜 100초로 알려짐, 아직 실측 없음)
-    # 미만이어야 한다.
+    # DEPLOY.md "이미지 생성" 절 실측(집 PC 계약 v4): 워밍업 뒤 생성은 참조 포함 약 17초 이하, 최악은
+    # 서버 재기동 직후 첫 요청의 약 38초이고, 참조를 실은 요청은 안 실은 요청보다 약 2초 느리다.
+    # 8,000,000자에 가까운 큰 참조는 VM→집 PC 전송 시간이 따로 붙는데 그건 아직 재지 않았다 — 90초는
+    # 그 여유까지 둔 값이다. 참조 요청과 참조 없는 요청이 이 값 하나를 쓰므로 참조 요청만 짧아지는 일은 없다. 상한 쪽
+    # 제약은 그대로 살아 있다: VM은 Cloudflare Tunnel로 집 PC에 도달하므로(DEPLOY.md "이미지 생성" 절)
+    # edge 타임아웃(무료 플랜 100초로 알려짐, 아직 실측 없음) 미만이어야 한다.
     local_image_timeout_seconds: int = 90
     # 잠정값 — 복구 감지 속도와 프로브 빈도의 타협(콜드/만료 시에만 프로브).
     local_image_capabilities_ttl_seconds: int = 30
-    # 잠정값 — 잡당 최대 60초(count<=2) 기준 최악 대기 약 4분.
+    # 잠정값. 잡 하나는 최대 2장(count<=2)이고 `llm/local_image.py` 의 세마포어가 집 PC 호출을
+    # 한 장씩 직렬로 보낸다. 장당 최악을 DEPLOY.md "이미지 생성" 절의 약 38초(서버 재기동 직후 첫
+    # 요청 — 보통은 워밍업 뒤 약 17초 이하)로 잡으면 잡당 약 76초, 네 번째로 받아들인 잡이 끝나기까지
+    # 약 5분이다. 큰 참조 이미지의 전송 시간(미측정)과 응답 없이 타임아웃까지 매달리는 실패는 이
+    # 추정에 들어 있지 않다.
     local_image_queue_limit: int = 4
     # 공개 id(FE 노출, `v1`)와 홈PC의 실제
     # 체크포인트 id(와이어 id)가 다를 수 있다. 원 요구가 "코드상이나 endpoint나
@@ -132,6 +137,11 @@ class Settings(BaseSettings):
     # 분리를 유지하는 이유: model 축은 실제로 다른 와이어 값을 가렸지만
     # style 축은 지금까지 아무것도 보호한 적이 없다.
     local_image_model_wire_id: str = "v1"
+    # 본인 생성 이미지를 참조로 집 PC 에 싣는 기능의 공개 스위치. 기본값이 닫힘이라 env 없이
+    # 배포해도 닫힌 채로 뜬다. 참조 필드를 모르는 서버는 이 필드를 조용히 무시하고 참조 없이 200 을
+    # 주므로, 서버 반영을 통지받은 뒤에만 켠다. `/images/models` 가 이 값을 FE 에 알리고
+    # `POST /images/generate` 는 요청마다 다시 본다.
+    local_image_reference_enabled: bool = False
 
     # 빌더 미리보기 세션(Redis 전용, Postgres 미기록)의
     # 마지막 활동 기준 TTL — 확정값 24시간.

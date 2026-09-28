@@ -33,13 +33,14 @@ ImageInputError = Literal["too_long", "syntax"]
 class ImageStylePreset(str, enum.Enum):
     # 계약 v3가 지정한 7종, id·순서 그대로.
     # 별칭 없음 — 기존 4종(base/line/water/real)은 전부 폐기됐다.
-    SOFT_PORTRAIT = "soft_portrait"  # 부드러운
-    CHAPEL_GLASS = "chapel_glass"  # 스테인드
-    ROYAL_DRAMA = "royal_drama"  # 극적
-    SPARKLE_NIGHT = "sparkle_night"  # 반짝임
-    WATERCOLOR = "watercolor"  # 수채
-    PIXEL_ART = "pixel_art"  # 픽셀
-    DECO_CUTE = "deco_cute"  # 데포르메
+    # 표시명은 아래 `IMAGE_STYLE_PRESETS` 한 곳에만 둔다.
+    SOFT_PORTRAIT = "soft_portrait"
+    CHAPEL_GLASS = "chapel_glass"
+    ROYAL_DRAMA = "royal_drama"
+    SPARKLE_NIGHT = "sparkle_night"
+    WATERCOLOR = "watercolor"
+    PIXEL_ART = "pixel_art"
+    DECO_CUTE = "deco_cute"
 
 
 @dataclass(frozen=True)
@@ -59,13 +60,20 @@ class ImageStyleSpec:
 
 
 # 순서가 곧 `GET /images/models`의 응답
-# 순서다. 표시명의 유일한 소스가 여기다(집 PC capabilities는 id 문자열만 준다).
+# 순서다. 표시명의 유일한 소스가 여기다(집 PC capabilities는 id 문자열만 준다) — 어드민도
+# 이름을 사본으로 들지 않고 목록·상세 응답에 실린 이름을 쓴다.
+#
+# 이름은 id가 아니라 집 PC 계약 v4의 화풍 설명을 따른다. v4부터 style은 화풍·조명·채색만 정하고
+# 구도·배경은 프롬프트가 정하므로 `chapel_glass`에는 더 이상 교회·색유리가, `sparkle_night`에는
+# 반짝이·야경이 나오지 않는다(서버팀이 id는 호환 때문에 유지하고 표시명을 설명에 맞추라고 권했다).
+# `soft_portrait`는 화풍 연출을 거의 얹지 않는 기본 화풍이다.
 IMAGE_STYLE_PRESETS: tuple[ImageStyleSpec, ...] = (
-    ImageStyleSpec(id="soft_portrait", name="부드러운"),
-    ImageStyleSpec(id="chapel_glass", name="스테인드"),
+    ImageStyleSpec(id="soft_portrait", name="기본"),
+    ImageStyleSpec(id="chapel_glass", name="반실사"),
     ImageStyleSpec(id="royal_drama", name="극적"),
-    ImageStyleSpec(id="sparkle_night", name="반짝임"),
+    ImageStyleSpec(id="sparkle_night", name="셀화"),
     ImageStyleSpec(id="watercolor", name="수채"),
     ImageStyleSpec(id="pixel_art", name="픽셀"),
     ImageStyleSpec(id="deco_cute", name="데포르메"),
 )
+IMAGE_STYLE_PRESETS_BY_ID: dict[str, ImageStyleSpec] = {s.id: s for s in IMAGE_STYLE_PRESETS}

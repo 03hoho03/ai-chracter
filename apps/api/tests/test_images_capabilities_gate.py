@@ -625,7 +625,7 @@ class _ImmediatelyFailingImageClient(ImageClient):
     잡이 끝났을 때 admission이 반납되는지다."""
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         raise LLMClientError("stub - no real generation in this test")
 

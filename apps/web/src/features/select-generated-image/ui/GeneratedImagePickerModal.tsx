@@ -13,31 +13,51 @@ import { useGeneratedImagesQuery } from "@/entities/generated-image";
 
 export type PickedGeneratedImage = { assetId: string; imageUrl: string };
 
-// 캐릭터/스토리 빌더가 공유하는 "생성한 이미지에서 선택" 피커.
+/** 호출부마다 달라지는 문구와 "새로 생성하기" 링크. 전부 생략하면 빌더 문구·링크가 나온다 —
+ * 이 피커는 빌더용으로 먼저 생겼고, 생성 화면 안에서 열 때는 "등록"도 새 탭 생성 링크도 맞지 않는다
+ * (이미 생성 화면이다). */
+export type GeneratedImagePickerOptions = {
+  title?: string;
+  description?: string;
+  emptyHint?: string;
+  showCreateLink?: boolean;
+};
+
+// 캐릭터/스토리 빌더와 이미지 생성 화면(참조 이미지)이 공유하는 "생성한 이미지에서 선택" 피커.
 // PlayGuideModal과 동일하게 useMutationFlow 없는 순수 조회+선택 모달이다: 그리드 셀 클릭이
 // 곧 결과 확정이라 별도 제출 단계가 없다. "새로 생성하기"는 새 탭을 열 뿐 이 모달/호출한 폼의 상태에는
 // 전혀 영향을 주지 않는다(평범한 <a target="_blank">).
-export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedImage | undefined>(
-  ({ call }) => {
+export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOptions, PickedGeneratedImage | undefined>(
+  ({
+    call,
+    title = "생성한 이미지에서 선택",
+    description = "이전에 생성해 둔 이미지 중 하나를 골라 등록해요.",
+    emptyHint = "새로 생성하고 다시 열어보면 여기에 나타나요.",
+    showCreateLink = true,
+  }) => {
     const isOpen = !call.ended;
     const galleryQuery = useGeneratedImagesQuery(isOpen);
 
     return (
       <Dialog open={isOpen} onOpenChange={(next) => !next && call.end(undefined)}>
-        <DialogContent className="sm:max-w-md">
+        {/* 이미지가 많으면 그리드가 화면보다 길어진다 — `DialogContent`엔 최대 높이도 내부 스크롤도
+            없어서, 빼먹으면 Radix가 body 스크롤을 잠근 채 아래 행과 닫기에 닿을 방법이 없다. */}
+        <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>생성한 이미지에서 선택</DialogTitle>
-            <DialogDescription>이전에 생성해 둔 이미지 중 하나를 골라 등록해요.</DialogDescription>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription className="break-keep">{description}</DialogDescription>
           </DialogHeader>
 
-          <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
-            <a href="/studio/images" target="_blank" rel="noopener noreferrer">
-              새로 생성하기
-              <ExternalLink aria-hidden />
-            </a>
-          </Button>
+          {showCreateLink && (
+            <Button variant="ghost" size="sm" className="w-fit hover:bg-secondary" asChild>
+              <a href="/studio/images" target="_blank" rel="noopener noreferrer">
+                새로 생성하기
+                <ExternalLink aria-hidden />
+              </a>
+            </Button>
+          )}
 
-          <GeneratedImageGridBody query={galleryQuery} onPick={call.end} />
+          <GeneratedImageGridBody query={galleryQuery} emptyHint={emptyHint} onPick={call.end} />
         </DialogContent>
       </Dialog>
     );
@@ -47,9 +67,11 @@ export const GeneratedImagePickerModal = createCallable<void, PickedGeneratedIma
 /** 네 상태(로딩·에러·그리드·빈 목록)가 배타적이라 early return으로 순서를 강제한다. */
 function GeneratedImageGridBody({
   query,
+  emptyHint,
   onPick,
 }: {
   query: ReturnType<typeof useGeneratedImagesQuery>;
+  emptyHint: string;
   onPick: (picked: { assetId: string; imageUrl: string }) => void;
 }) {
   if (query.isPending) {
@@ -78,7 +100,7 @@ function GeneratedImageGridBody({
         <p className="text-sm text-muted-foreground">
           아직 생성한 이미지가 없어요.
           <br />
-          새로 생성하고 다시 열어보면 여기에 나타나요.
+          {emptyHint}
         </p>
       </div>
     );

@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -111,6 +112,19 @@ async def _make_user_with_clover_lot(
         )
         await db_session.flush()
     return user
+
+
+def _patch_httpx(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], object]
+) -> None:
+    """local_image가 만드는 httpx.AsyncClient에 MockTransport를 주입한다."""
+    real_client = httpx.AsyncClient
+
+    def factory(**kwargs: object) -> httpx.AsyncClient:
+        kwargs.pop("transport", None)
+        return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
 
 
 # 인증 없이 임의 `user_id`로 쿠키를 굽던

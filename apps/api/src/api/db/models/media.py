@@ -83,6 +83,20 @@ class ImageGenerationRequest(Base):
     blocked_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     input_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 참조 이미지로 쓴 본인 생성 이미지. 원본이 지워지면 비운다 — 참조로 쓰였다는 이유로 그
+    # 이미지의 삭제를 막지 않고, 차단된 요청을 나중에 살펴볼 근거만 남긴다.
+    # `use_alter`는 스키마를 alembic만 만들어 기능상 필요하지 않지만, `assets.request_id`와 서로를
+    # 가리키는 순환 참조 쪽 FK 선례(`users.profile_image_asset_id`)를 따른다.
+    reference_asset_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey(
+            "assets.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_image_generation_requests_reference_asset_id",
+        ),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -93,4 +107,7 @@ class ImageGenerationRequest(Base):
     __table_args__ = (
         Index("ix_image_generation_requests_owner_user_id_created_at", "owner_user_id", created_at.desc()),
         Index("ix_image_generation_requests_created_at", created_at.desc()),
+        # asset 을 지울 때마다 SET NULL 이 이 컬럼으로 요청 행을 찾는다. 성공한 요청 행은
+        # 90일 파기 크론이 남기므로 행이 계속 쌓인다.
+        Index("ix_image_generation_requests_reference_asset_id", "reference_asset_id"),
     )

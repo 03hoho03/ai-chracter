@@ -1,9 +1,10 @@
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useEffect, useRef, type ReactNode } from "react";
-import { FormProvider, useForm } from "react-hook-form";
+import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 
+import { isReferenceImageEnabled } from "../model/referenceImageGate";
 import {
   generateImagesDefaultValues,
   generateImagesSchema,
@@ -12,18 +13,20 @@ import {
 import {
   GenerateImagesSubmitContext,
   type GenerateImagesSubmitContextValue,
+  type GenerateImagesSubmitHelpers,
 } from "../model/useGenerateImagesSubmit";
 import type { UnavailableReason } from "./GenerateImagesUnavailableState";
 
 type GenerateImagesFormProviderProps = {
-  onSubmit: GenerateImagesSubmitContextValue["onSubmit"];
+  onSubmit: (values: GenerateImagesFormValues, helpers: GenerateImagesSubmitHelpers) => void | Promise<void>;
+  onPickReference: GenerateImagesSubmitContextValue["onPickReference"];
   children: ReactNode;
 };
 
 // 옛 GenerateImagesForm이 갖고 있던 useForm 초기화·모델
 // 목록 조회·기본값 자동 적용·불가용 상태 분기를 그대로 옮겼다. 나머지 필드 UI(프롬프트·스타일
 // 그리드·모델/비율/개수)는 이 프로바이더 아래 세 조각으로 쪼개졌다.
-export function GenerateImagesFormProvider({ onSubmit, children }: GenerateImagesFormProviderProps) {
+export function GenerateImagesFormProvider({ onSubmit, onPickReference, children }: GenerateImagesFormProviderProps) {
   const {
     data: models,
     isPending: isModelsPending,
@@ -35,7 +38,9 @@ export function GenerateImagesFormProvider({ onSubmit, children }: GenerateImage
     resolver: zodResolver(generateImagesSchema),
     defaultValues: generateImagesDefaultValues,
   });
-  const { getValues, reset } = form;
+  const { getValues, reset, setValue, control } = form;
+  const selectedModelId = useWatch({ control, name: "model" });
+  const isReferenceEnabled = isReferenceImageEnabled(models, selectedModelId);
 
   // model/style 기본값은 스키마에 없다 — 목록이 처음 로드되면 첫 가용 모델/스타일로 한 번만
   // reset()한다. 이후 배경 refetch에서는(가용성이 바뀌어도) 다시 손대지 않는다 — 사용자가 이미 고른
@@ -76,9 +81,27 @@ export function GenerateImagesFormProvider({ onSubmit, children }: GenerateImage
     onRetry = () => void refetchModels();
   }
 
+  // 참조 판정은 화면에 보이는 값이 아니라 **제출한 값**의 모델로 다시 한다 — 렌더와 제출 사이에
+  // 모델이 바뀌어도 보낸 요청과 판정이 어긋나지 않는다.
+  function handleSubmit(values: GenerateImagesFormValues) {
+    return onSubmit(values, {
+      isReferenceEnabled: isReferenceImageEnabled(models, values.model),
+      clearReference: () => setValue("reference", null),
+    });
+  }
+
   return (
     <FormProvider {...form}>
-      <GenerateImagesSubmitContext.Provider value={{ onSubmit, isModelsPending, unavailableReason, onRetry }}>
+      <GenerateImagesSubmitContext.Provider
+        value={{
+          onSubmit: handleSubmit,
+          isModelsPending,
+          unavailableReason,
+          onRetry,
+          isReferenceEnabled,
+          onPickReference,
+        }}
+      >
         {children}
       </GenerateImagesSubmitContext.Provider>
     </FormProvider>

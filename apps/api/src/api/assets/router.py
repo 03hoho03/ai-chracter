@@ -248,6 +248,9 @@ async def collect_asset_usages(
     이미지마다 개별 조회하지 않는다(N+1 금지). 초안/발행 버전을 구분하지 않고 둘 다
     '사용 중'으로 보며, 같은 (content_id, field) 참조는 하나로 합친다(제목은 최신
     버전의 detail name이 남는다). 생성 이미지 삭제의 사전 판정도 이 함수를 재사용한다.
+
+    이미지 생성 요청 행의 참조 이미지 칸은 보지 않는다 — 참조로 쓰였다는 이유로 삭제를 막으면
+    한 번 참조한 이미지는 영영 못 지운다. 지우면 그 칸은 FK(`ON DELETE SET NULL`)가 비운다.
     """
     if not asset_ids:
         return {}

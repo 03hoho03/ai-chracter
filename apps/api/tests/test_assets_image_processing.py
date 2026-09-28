@@ -1,8 +1,9 @@
 import io
 
+import pytest
 from PIL import Image
 
-from api.assets.image_processing import generate_thumbnail
+from api.assets.image_processing import ReferenceImageRejectedError, generate_thumbnail, validate_reference_image
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -72,3 +73,69 @@ def test_generate_thumbnail_preserves_transparency_from_a_non_alpha_source() -> 
     assert isinstance(opaque_pixel, tuple)
     assert transparent_pixel[3] == 0  # tRNS 로 지정한 색 영역은 완전 투명이어야 한다
     assert opaque_pixel[3] == 255  # 나머지는 불투명이어야 한다
+
+
+# ---- 참조 이미지 검증 --------------------------------------------------------
+# 집 PC 계약은 참조를 base64 8,000,000자 이하·각 변 64~4096px 로 받는다. 우리가 고를 수 있게
+# 하는 참조는 이 서비스가 만든 이미지뿐이라 정상 경로에선 위반이 나오지 않지만, 검증이 빠지면
+# 위반은 서버 400 으로만 드러나고 원인을 가를 수 없다. 경계 양쪽을 다 본다 — 한쪽만 보면
+# 비교 연산자가 `<=` 에서 `<` 로 바뀌어도 못 잡는다.
+
+
+def _encoded(width: int, height: int, image_format: str) -> bytes:
+    output = io.BytesIO()
+    Image.new("RGB", (width, height), color=(120, 40, 200)).save(output, format=image_format)
+    return output.getvalue()
+
+
+def _padded_png(total_bytes: int) -> bytes:
+    """유효한 PNG 뒤에 0 을 덧대 전체 길이를 맞춘다. 검증은 헤더만 읽으므로 뒤쪽 바이트는
+    길이 판정에만 쓰인다."""
+    png = _png_bytes(64, 64)
+    return png + b"\x00" * (total_bytes - len(png))
+
+
+def _rejection(data: bytes) -> str | None:
+    try:
+        validate_reference_image(data)
+    except ReferenceImageRejectedError as exc:
+        return exc.reason
+    return None
+
+
+def test_reference_image_encoding_to_exactly_eight_million_chars_is_accepted() -> None:
+    # 6,000,000 바이트는 base64 로 정확히 8,000,000자다.
+    assert _rejection(_padded_png(6_000_000)) is None
+
+
+def test_reference_image_encoding_past_eight_million_chars_is_too_large() -> None:
+    assert _rejection(_padded_png(6_000_001)) == "too_large"
+
+
+@pytest.mark.parametrize(
+    ("width", "height", "expected"),
+    [
+        pytest.param(64, 64, None, id="smallest-edge"),
+        pytest.param(4096, 4096, None, id="largest-edge"),
+        pytest.param(63, 64, "resolution_out_of_range", id="width-below"),
+        pytest.param(64, 63, "resolution_out_of_range", id="height-below"),
+        pytest.param(4097, 64, "resolution_out_of_range", id="width-above"),
+        pytest.param(64, 4097, "resolution_out_of_range", id="height-above"),
+    ],
+)
+def test_reference_image_edges_must_be_between_64_and_4096(width: int, height: int, expected: str | None) -> None:
+    assert _rejection(_encoded(width, height, "PNG")) == expected
+
+
+@pytest.mark.parametrize("image_format", ["PNG", "JPEG", "WEBP"])
+def test_reference_image_accepts_formats_earlier_generators_may_have_stored(image_format: str) -> None:
+    """지금 생성기는 WebP 를 주지만 그 전 생성기가 남긴 생성 이미지도 참조로 고를 수 있다."""
+    assert _rejection(_encoded(128, 128, image_format)) is None
+
+
+def test_reference_image_rejects_formats_outside_the_contract() -> None:
+    assert _rejection(_encoded(128, 128, "GIF")) == "unsupported_format"
+
+
+def test_reference_image_rejects_bytes_that_are_not_an_image() -> None:
+    assert _rejection(b"not an image at all") == "undecodable"

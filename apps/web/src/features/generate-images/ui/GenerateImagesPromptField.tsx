@@ -16,9 +16,11 @@ import type { GenerateImagesFormValues } from "../model/schema";
 import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 // danbooru 태그 예시(품질 부스터 금지, 서버에서 치운
-// Animagine 시그니처 문구라 FE 번들에도 넣지 않는다).
+// Animagine 시그니처 문구라 FE 번들에도 넣지 않는다). 교복 차림은 집 PC 가 이미지 정책 검사를
+// 강화한 뒤 차단이 늘어난 유형이라 예시로 권하지 않는다. 스타일이 구도를 정하지 않으므로 구도 태그
+// (`looking at viewer`, `upper body`)는 예시에 남겨 둔다.
 const PROMPT_PLACEHOLDER =
-  "1girl, solo, long hair, school uniform, cherry blossoms, looking at viewer, upper body";
+  "1girl, solo, long hair, white blouse, cardigan, cherry blossoms, looking at viewer, upper body";
 
 // `<form>` 엘리먼트는 이 조각(중앙 열)이 감싼다. FormProvider는
 // React context라 DOM 위치와 무관하므로, 다른 열/시트의 필드도 이 제출에 포함된다.

@@ -1,5 +1,7 @@
 import asyncio
+import base64
 import io
+import json
 import logging
 import uuid
 from collections.abc import Callable
@@ -28,11 +30,12 @@ from api.llm.image import ImageClient, ImageStylePreset
 from api.llm.local_image import (
     LocalCapabilities,
     LocalImageBlockedError,
+    LocalImageClient,
     LocalImageInputError,
     ModelCapability,
 )
 from api.main import app
-from factories import _login_as, _make_user, _make_user_with_clover_lot
+from factories import _login_as, _make_user, _make_user_with_clover_lot, _patch_httpx
 
 
 def _png_bytes(width: int = 64, height: int = 64) -> bytes:
@@ -52,7 +55,7 @@ class _FakeImageClient(ImageClient):
         self._generate = generate
 
     async def generate_image(
-        self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+        self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
     ) -> tuple[bytes, str]:
         return self._generate()
 
@@ -214,10 +217,10 @@ async def test_generate_keeps_surrounding_whitespace_of_the_submitted_prompt(
 
     class _PromptRecordingImageClient(_FakeImageClient):
         async def generate_image(
-            self, prompt: str, style: ImageStylePreset, aspect_ratio: str
+            self, prompt: str, style: ImageStylePreset, aspect_ratio: str, reference_image: bytes | None = None
         ) -> tuple[bytes, str]:
             received_prompts.append(prompt)
-            return await super().generate_image(prompt, style, aspect_ratio)
+            return await super().generate_image(prompt, style, aspect_ratio, reference_image)
 
     app.dependency_overrides[get_image_client] = lambda: (
         lambda model_id: _PromptRecordingImageClient(model_id, generate=lambda: (_png_bytes(), "image/png"))
@@ -270,12 +273,12 @@ async def test_list_image_models_returns_capabilities(
     assert set(models["v1"]["supportedAspectRatios"]) == {"1:1", "4:3", "3:4", "16:9", "9:16", "2:3"}
     # 레지스트리 7종은 항상 전부 내려가고
     # (순서도 레지스트리 순서 그대로), `_READY_CAPABILITIES`가 서빙하는 건 `soft_portrait`
-    # (표시명 "부드러운") 하나뿐이라 나머지 6종은 `available: false`다.
+    # (표시명 "기본") 하나뿐이라 나머지 6종은 `available: false`다.
     assert models["v1"]["styles"] == [
-        {"id": "soft_portrait", "name": "부드러운", "available": True},
-        {"id": "chapel_glass", "name": "스테인드", "available": False},
+        {"id": "soft_portrait", "name": "기본", "available": True},
+        {"id": "chapel_glass", "name": "반실사", "available": False},
         {"id": "royal_drama", "name": "극적", "available": False},
-        {"id": "sparkle_night", "name": "반짝임", "available": False},
+        {"id": "sparkle_night", "name": "셀화", "available": False},
         {"id": "watercolor", "name": "수채", "available": False},
         {"id": "pixel_art", "name": "픽셀", "available": False},
         {"id": "deco_cute", "name": "데포르메", "available": False},
@@ -1241,3 +1244,331 @@ async def test_failure_after_aggregation_does_not_refund_twice(
     assert refunded == clover.IMAGE_UNIT_COST  # 못 만든 1장분만, 두 번이 아니라 한 번
     await db_session.refresh(user)
     assert user.clover_balance == 100 - clover.IMAGE_UNIT_COST
+
+
+# ---- 참조 이미지 ------------------------------------------------------------
+# 사용자가 고른 본인 생성 이미지를 집 PC 에 참조로 싣는다. 새 거절(플래그 off 400, 참조 404)은
+# 게이트가 차감한 뒤에 나오므로 전부 환불돼야 하고, 202 뒤의 참조 실패는 잡을 끝내고 못 만든
+# 장수를 돌려줘야 한다 — 그래서 여기 테스트는 클로버로 낸 사용자의 잔액을 본다.
+
+
+def _enable_reference_images(monkeypatch: pytest.MonkeyPatch, enabled: bool = True) -> None:
+    monkeypatch.setattr(settings, "local_image_reference_enabled", enabled)
+
+
+async def _generated_reference(
+    db_session: AsyncSession, owner_user_id: uuid.UUID, stored_bytes: bytes | None
+) -> Asset:
+    """본인 생성 이미지 한 장. `stored_bytes` 가 None 이면 저장소에 원본을 올리지 않는다(202 뒤
+    원본이 지워진 상태와 같다)."""
+    asset_id = uuid.uuid4()
+    asset = Asset(
+        id=asset_id,
+        owner_user_id=owner_user_id,
+        storage_key=f"assets/generated/{asset_id}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.commit()
+    if stored_bytes is not None:
+        s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+        s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=stored_bytes)
+    return asset
+
+
+def _override_reference_recording_client(received_references: list[bytes | None]) -> None:
+    class _ReferenceRecordingImageClient(_FakeImageClient):
+        async def generate_image(
+            self,
+            prompt: str,
+            style: ImageStylePreset,
+            aspect_ratio: str,
+            reference_image: bytes | None = None,
+        ) -> tuple[bytes, str]:
+            received_references.append(reference_image)
+            return await super().generate_image(prompt, style, aspect_ratio, reference_image)
+
+    app.dependency_overrides[get_image_client] = lambda: (
+        lambda model_id: _ReferenceRecordingImageClient(model_id, generate=lambda: (_png_bytes(), "image/png"))
+    )
+
+
+async def _request_rows(db_session: AsyncSession, owner_user_id: uuid.UUID) -> list[ImageGenerationRequest]:
+    return list(
+        (
+            await db_session.scalars(
+                sa.select(ImageGenerationRequest).where(ImageGenerationRequest.owner_user_id == owner_user_id)
+            )
+        ).all()
+    )
+
+
+async def _assert_charge_fully_refunded(db_session: AsyncSession, user: User, count: int) -> None:
+    rows = await _clover_ledger(db_session, user.id)
+    spent, refunded = _spent_and_refunded(rows)
+    assert spent == -count * clover.IMAGE_UNIT_COST
+    assert refunded == count * clover.IMAGE_UNIT_COST
+    await db_session.refresh(user)
+    assert user.clover_balance == 100
+
+
+async def test_generate_with_own_generated_image_sends_its_stored_bytes_as_reference(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """참조를 잃으면 사용자가 고른 이미지를 반영하지 않은 결과가 과금돼 나간다. 요청 행에는
+    어떤 이미지를 참조로 썼는지가 남아야 차단된 요청을 나중에 살펴볼 수 있다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch)
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    original = _png_bytes(96, 128)
+    reference = await _generated_reference(db_session, user.id, original)
+
+    received: list[bytes | None] = []
+    _override_reference_recording_client(received)
+    try:
+        resp = await db_client.post(
+            "/images/generate", json=_generate_payload(referenceAssetId=str(reference.id))
+        )
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert received == [original]
+    (request_row,) = await _request_rows(db_session, user.id)
+    assert request_row.reference_asset_id == reference.id
+
+
+async def _other_users_generated_image(db_session: AsyncSession, owner_user_id: uuid.UUID) -> uuid.UUID:
+    other = _make_user()
+    db_session.add(other)
+    await db_session.commit()
+    return (await _generated_reference(db_session, other.id, _png_bytes())).id
+
+
+async def _own_uploaded_image(db_session: AsyncSession, owner_user_id: uuid.UUID) -> uuid.UUID:
+    asset = Asset(
+        owner_user_id=owner_user_id,
+        storage_key=f"assets/original/{uuid.uuid4()}.png",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.commit()
+    return asset.id
+
+
+async def _missing_image(db_session: AsyncSession, owner_user_id: uuid.UUID) -> uuid.UUID:
+    return uuid.uuid4()
+
+
+@pytest.mark.parametrize(
+    "make_reference_id",
+    [
+        pytest.param(_other_users_generated_image, id="other-users-generated-image"),
+        pytest.param(_own_uploaded_image, id="own-uploaded-image"),
+        pytest.param(_missing_image, id="missing-image"),
+    ],
+)
+async def test_generate_with_unusable_reference_is_404_and_refunds_the_charge(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    make_reference_id: Callable[[AsyncSession, uuid.UUID], Any],
+) -> None:
+    """참조는 본인이 만든 생성 이미지뿐이다. 남의 이미지가 집 PC 로 나가거나 업로드 이미지가
+    참조로 새면 안 되고, 셋 다 같은 404 라 남의 이미지가 있는지 드러나지 않는다. 거절은 게이트가
+    차감한 뒤라 환불 경로 안에 있어야 한다 — 밖에 있으면 차감만 남는다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    reference_id = await make_reference_id(db_session, user.id)
+
+    received: list[bytes | None] = []
+    _override_reference_recording_client(received)
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(referenceAssetId=str(reference_id)))
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 404
+    assert resp.json()["detail"] == "reference image not found"
+    assert received == []
+    assert await _request_rows(db_session, user.id) == []
+    await _assert_charge_fully_refunded(db_session, user, count=1)
+
+
+async def test_generate_with_reference_while_feature_is_off_is_400_and_refunds_the_charge(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """꺼진 기능에 참조가 오면 무시하지 않고 거절한다 — 무시하면 참조 없이 만든 이미지가
+    과금돼 나간다. 필드가 null 이면 참조 없는 요청이라 꺼져 있어도 평소대로 받는다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch, enabled=False)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    reference = await _generated_reference(db_session, user.id, _png_bytes())
+
+    received: list[bytes | None] = []
+    _override_reference_recording_client(received)
+    try:
+        rejected = await db_client.post(
+            "/images/generate", json=_generate_payload(referenceAssetId=str(reference.id))
+        )
+        assert rejected.status_code == 400
+        assert rejected.json()["detail"] == "reference image disabled"
+        assert received == []
+        await _assert_charge_fully_refunded(db_session, user, count=1)
+
+        accepted = await db_client.post("/images/generate", json=_generate_payload(referenceAssetId=None))
+    finally:
+        _clear_image_override()
+
+    assert accepted.status_code == 202
+    job = await _wait_for_job_completion(accepted.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.SUCCEEDED
+    assert received == [None]
+
+
+async def test_reference_blocked_by_the_local_guard_fails_the_job_and_refunds_every_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """실제 클라이언트로 끝까지 간다 — 참조 원본이 base64 로 실리고, 집 PC 가 참조를 422
+    `reference` 로 막으면 "다른 이미지를 골라 보라" 안내를 위한 사유가 잡에 남고 두 장 모두
+    돌려준다. 사유가 일반 실패로 접히면 사용자는 무엇을 바꿔야 하는지 모른다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    original = _png_bytes(80, 80)
+    reference = await _generated_reference(db_session, user.id, original)
+
+    sent_references: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent_references.append(base64.b64decode(json.loads(request.content)["reference_image"]))
+        return httpx.Response(422, json={"detail": "reference image blocked", "reason": "reference"})
+
+    _patch_httpx(monkeypatch, handler)
+    app.dependency_overrides[get_image_client] = lambda: (
+        lambda model_id: LocalImageClient(
+            model_id, base_url="https://local.example", access_client_id="cid", access_client_secret="csecret"
+        )
+    )
+    try:
+        resp = await db_client.post(
+            "/images/generate", json=_generate_payload(count=2, referenceAssetId=str(reference.id))
+        )
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.blocked_reason == "reference"
+    assert job.blocked_count == 2
+    assert sent_references == [original, original]
+    (request_row,) = await _request_rows(db_session, user.id)
+    assert request_row.status == "blocked"
+    assert request_row.reference_asset_id == reference.id
+    await _assert_charge_fully_refunded(db_session, user, count=2)
+
+
+async def test_reference_missing_from_storage_after_acceptance_fails_the_job_and_refunds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """202 뒤 원본이 저장소에서 사라져도 잡은 끝나야 한다. 원본 읽기를 장별 생성 밖(모든 장을
+    시작하기 전)으로 옮기면 그 실패가 잡을 RUNNING 에, 요청 행을 pending 에 남긴다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    reference = await _generated_reference(db_session, user.id, stored_bytes=None)
+
+    captured: list[str] = []
+    monkeypatch.setattr(
+        images_router, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    received: list[bytes | None] = []
+    _override_reference_recording_client(received)
+    try:
+        resp = await db_client.post(
+            "/images/generate", json=_generate_payload(referenceAssetId=str(reference.id))
+        )
+    finally:
+        _clear_image_override()
+
+    assert resp.status_code == 202
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert received == []
+    assert captured == ["reference_image"]
+    (request_row,) = await _request_rows(db_session, user.id)
+    assert request_row.status == "failed"
+    await _assert_charge_fully_refunded(db_session, user, count=1)
+
+
+async def test_reference_outside_the_contract_fails_without_calling_the_generator_and_reports_it(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """계약 밖 참조(여기선 GIF)는 집 PC 에 보내기 전에 걸러 일반 실패로 끝낸다. 이 실패가 전용
+    처리 없이 마지막 광역 `except` 로 떨어지면 Bugsink 에 아무것도 안 남는다. 로그에는 위반
+    종류만 남고 저장 키·사용자 id 는 남지 않는다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch)
+    user = await _clover_paid_user(db_client, db_session, monkeypatch, balance=100)
+    gif = io.BytesIO()
+    Image.new("RGB", (128, 128), color=(1, 2, 3)).save(gif, format="GIF")
+    reference = await _generated_reference(db_session, user.id, gif.getvalue())
+
+    captured: list[str] = []
+    monkeypatch.setattr(
+        images_router, "capture_dependency_failure", lambda exc, *, dependency: captured.append(dependency)
+    )
+    received: list[bytes | None] = []
+    _override_reference_recording_client(received)
+    try:
+        with caplog.at_level(logging.WARNING):
+            resp = await db_client.post(
+                "/images/generate", json=_generate_payload(referenceAssetId=str(reference.id))
+            )
+            job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    finally:
+        _clear_image_override()
+
+    assert job.status == ImageGenerationJobStatus.FAILED
+    assert job.error == "이미지 생성에 모두 실패했습니다"
+    assert received == []
+    assert captured == ["reference_image"]
+    router_messages = [record.getMessage() for record in caplog.records if record.name == "api.images.router"]
+    assert any("unsupported_format" in message for message in router_messages)
+    for message in router_messages:
+        assert reference.storage_key not in message
+        assert str(user.id) not in message
+    await _assert_charge_fully_refunded(db_session, user, count=1)
+
+
+@pytest.mark.parametrize("enabled", [True, False])
+async def test_list_image_models_reports_whether_reference_images_are_enabled(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, enabled: bool
+) -> None:
+    """FE 는 이 값으로만 참조 행을 보이고 숨긴다. 한 값만 보면 상수를 돌려줘도 못 잡는다."""
+    _stub_capabilities_ready(monkeypatch)
+    _enable_reference_images(monkeypatch, enabled=enabled)
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.get("/images/models")
+
+    assert resp.status_code == 200
+    (model,) = resp.json()
+    assert model["supportsReferenceImage"] is enabled
