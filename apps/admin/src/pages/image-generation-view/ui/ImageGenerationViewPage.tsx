@@ -3,7 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 
-import { imageGenerationStatusLabel, imageStyleLabel } from "@/entities/admin-image-generation";
+import { imageGenerationStatusLabel } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { useImageGenerationsPager } from "../api/useImageGenerationsPager";
@@ -164,7 +164,7 @@ function ImageGenerationRequestCard({ item, brokenAssetIds, onImageError }: Imag
         </div>
         <div>
           <dt className="text-muted-foreground">스타일</dt>
-          <dd className="text-foreground">{imageStyleLabel(item.style)}</dd>
+          <dd className="text-foreground">{item.styleName ?? item.style}</dd>
         </div>
         <div>
           <dt className="text-muted-foreground">비율</dt>
