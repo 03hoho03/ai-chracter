@@ -61,7 +61,8 @@ export function ChatRoomListItemRow({
   const handleReset = () => {
     void ConfirmChatRoomActionModal.call({
       title: "대화방을 초기화할까요?",
-      description: "지금까지 나눈 대화가 모두 사라지고 처음 상태로 다시 시작돼요. 이 작업은 되돌릴 수 없어요.",
+      description:
+        "지금까지 나눈 대화가 모두 사라지고 처음 상태로 다시 시작돼요. 기억 노트의 요약은 지워지고 '꼭 기억할 것'은 남아요. 이 작업은 되돌릴 수 없어요.",
       confirmLabel: "초기화",
       mutationFn: async (call) => {
         try {
