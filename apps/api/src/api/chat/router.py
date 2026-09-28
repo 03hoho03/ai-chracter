@@ -17,6 +17,7 @@ from starlette.concurrency import run_in_threadpool
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_fold import fold_memory
+from api.chat.memory_rewind import rewind_memory
 from api.chat.memory_window import load_current_summary, prompt_window
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
@@ -1319,13 +1320,19 @@ async def regenerate_message(
     — 노출 기록(`CharacterImageExposure`)은
     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
-    응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 DB를 건드리지 않는다."""
+    응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
+    덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
 
     # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # `history[-1]`은 의존성이 "마지막 앞에 사용자 메시지가 있어야 한다"로 막고 있어 현재는
     # 도달 불가지만, 그 가드가 느슨해지면 여기서 IndexError 가 난다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        # 바꿀 응답이 요약 커서 메시지 자신이면(커서 뒤를 전부 지운 방) 그 요약을 되감는다 — 안 그러면
+        # 옛 응답이 요약에 남고 윈도우는 오프닝만 남긴다. 되감기는 생성보다 먼저 커밋한다: 방 행 락을
+        # 생성 내내 쥐지 않고, 윈도우가 되감긴 커서로 계산된다. 생성이 실패해도 되돌리지 않는다.
+        await rewind_memory(db, room.id, (last_message.created_at, last_message.id))
+        await db.commit()
         history = list(
             (
                 await db.scalars(
@@ -1484,6 +1491,9 @@ async def edit_message(
     # 이 블록은 첫 `yield` 전이라 실패하면 차감만 남는다 — 되돌린다.
     # 세 라우트 중 위험이 가장 큰 자리다: 조회·DELETE·커밋이 다 들어 있다.
     async with _refund_clover_on_failure(charge, session_factory, room.user_id):
+        # 요약 되감기가 먼저다 — 편집 지점이 요약된 구간이면 커서가 그 앞으로 물러나야, 아래에서 자른
+        # 히스토리가 생성 프롬프트에서 복귀한 커서 기준으로 실린다. 절단·편집과 한 트랜잭션이다.
+        await rewind_memory(db, room.id, (message.created_at, message.id))
         all_messages = list(
             (
                 await db.scalars(
@@ -1536,6 +1546,8 @@ async def delete_message(
     message = await db.get(ChatMessage, message_id)
     if message is None or message.chat_room_id != room.id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Message not found")
+    # 지운 메시지를 요약이 덮고 있었으면 그 요약도 되감는다 — 지운 대화가 요약으로 계속 실리지 않게.
+    await rewind_memory(db, room.id, (message.created_at, message.id))
     await db.delete(message)
     await db.commit()
 
@@ -1733,6 +1745,8 @@ async def reset_chat_room(
 ) -> ChatRoomResponse:
     room = await _get_owned_room(db, room_id, user_id)
 
+    # 요약은 지운 대화에서 나왔으므로 함께 지운다. 기억 노트는 사용자가 적은 것이라 남긴다.
+    await rewind_memory(db, room.id, None)
     await db.execute(delete(ChatMessage).where(ChatMessage.chat_room_id == room.id))
     room.turn_count = 0
     room.ending_reached = False
