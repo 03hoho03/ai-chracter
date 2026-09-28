@@ -1,6 +1,7 @@
+import { createFormControl } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
-import { countMemoryChars, createMemoryFormSchema } from "./schema";
+import { countMemoryChars, createMemoryFormSchema, memoryFormOptions } from "./schema";
 
 const limits = { noteMaxLength: 1000, summaryMaxLength: 1500 };
 const schema = createMemoryFormSchema(limits);
@@ -50,5 +51,27 @@ describe("createMemoryFormSchema", () => {
 describe("countMemoryChars", () => {
   it("counts an emoji as one character after trimming the surrounding whitespace", () => {
     expect(countMemoryChars(" 😀가\n")).toBe(2);
+  });
+});
+
+describe("memoryFormOptions", () => {
+  // [저장]은 칸마다 `trigger`로 검증한다(폼 제출이 아니다). 상한을 넘겨 오류가 난 뒤 글자를 지워 상한 아래로
+  // 내리면, [저장]을 다시 누르지 않아도 오류와 `aria-invalid`가 곧바로 풀려야 한다.
+  it.each([
+    ["note", 1000],
+    ["summary", 1500],
+  ] as const)("clears the %s over-limit error as soon as the text is back within the limit", async (field, limit) => {
+    const form = createFormControl({ ...memoryFormOptions(schema), defaultValues: { note: "", summary: "" } });
+    const input = form.register(field);
+    const type = async (value: string) => {
+      await input.onChange({ target: { name: field, value }, type: "change" });
+    };
+
+    await type("가".repeat(limit + 1));
+    expect(await form.trigger(field)).toBe(false);
+    expect(form.getFieldState(field).error?.message).toBe(`${limit}자 이내로 적어 주세요`);
+
+    await type("가".repeat(limit));
+    expect(form.getFieldState(field).error).toBeUndefined();
   });
 });

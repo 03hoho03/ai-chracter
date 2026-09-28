@@ -1,3 +1,5 @@
+import { zodResolver } from "@hookform/resolvers/zod";
+import type { UseFormProps } from "react-hook-form";
 import { z } from "zod";
 
 import type { ChatRoomMemory } from "@/entities/chat-room";
@@ -32,3 +34,13 @@ export function createMemoryFormSchema(limits: ChatRoomMemory["limits"]) {
 }
 
 export type MemoryFormValues = z.infer<ReturnType<typeof createMemoryFormSchema>>;
+
+/** 폼의 검증 옵션. 검증 시점은 입력마다(`onChange`)다 — [저장]은 칸마다 `trigger`로 검증해 폼 제출 상태가
+ * 켜지지 않는다. 그래서 기본값(`onSubmit`, 제출 뒤에만 입력마다 재검증)이면 상한을 넘겨 난 오류가 글자를
+ * 지워 상한 아래로 내려도 [저장]을 다시 누를 때까지 남는다. 폼 전체 제출(`handleSubmit`)로 바꾸면 노트
+ * 저장이 편집 중인 요약 칸의 오류에도 막히므로 칸별 검증은 그대로 둔다. */
+export function memoryFormOptions(
+  schema: ReturnType<typeof createMemoryFormSchema>,
+): Pick<UseFormProps<MemoryFormValues>, "resolver" | "mode"> {
+  return { resolver: zodResolver(schema), mode: "onChange" };
+}

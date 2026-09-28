@@ -2,7 +2,6 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "rea
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { History, TriangleAlert } from "lucide-react";
 import { useForm, useWatch } from "react-hook-form";
 
@@ -18,7 +17,7 @@ import {
 import { toNoteRequest, toSummaryRequest } from "../model/formToServer";
 import { toMemoryWriteError, type MemoryWriteError } from "../model/memoryWriteError";
 import { browserStorage, isRollbackUnseen, readSeenRollback, writeSeenRollback } from "../model/rollbackNotice";
-import { countMemoryChars, createMemoryFormSchema, type MemoryFormValues } from "../model/schema";
+import { countMemoryChars, createMemoryFormSchema, memoryFormOptions, type MemoryFormValues } from "../model/schema";
 import { serverToForm } from "../model/serverToForm";
 
 type RoomMemoryEditorProps = {
@@ -78,7 +77,7 @@ function RoomMemoryForm({ roomId, memory, reload, confirmClearNote }: RoomMemory
   const fieldId = useId();
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
-  const form = useForm<MemoryFormValues>({ resolver: zodResolver(schema), defaultValues: serverToForm(memory) });
+  const form = useForm<MemoryFormValues>({ ...memoryFormOptions(schema), defaultValues: serverToForm(memory) });
   const { errors } = form.formState;
   const noteLength = countMemoryChars(useWatch({ control: form.control, name: "note" }));
   const summaryLength = countMemoryChars(useWatch({ control: form.control, name: "summary" }));
