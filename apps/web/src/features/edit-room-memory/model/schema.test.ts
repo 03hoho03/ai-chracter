@@ -55,23 +55,48 @@ describe("countMemoryChars", () => {
 });
 
 describe("memoryFormOptions", () => {
-  // [저장]은 칸마다 `trigger`로 검증한다(폼 제출이 아니다). 상한을 넘겨 오류가 난 뒤 글자를 지워 상한 아래로
-  // 내리면, [저장]을 다시 누르지 않아도 오류와 `aria-invalid`가 곧바로 풀려야 한다.
+  function createForm() {
+    const form = createFormControl({ ...memoryFormOptions(schema), defaultValues: { note: "", summary: "" } });
+    // `useForm`처럼 폼 상태를 구독한다 — 구독자가 없으면 제출됨(`isSubmitted`)이 폼에 반영되지 않아 제출 뒤
+    // 재검증 규칙을 볼 수 없다.
+    form.subscribe({ formState: { errors: true }, callback: () => {} });
+    const type = async (field: "note" | "summary", value: string) => {
+      await form.register(field).onChange({ target: { name: field, value }, type: "change" });
+    };
+    const save = async () => {
+      let saved = false;
+      await form.handleSubmit(() => {
+        saved = true;
+      })();
+      return saved;
+    };
+    return { form, type, save };
+  }
+
+  // [저장]은 폼 제출이다. 상한을 넘겨 저장이 막힌 뒤 글자를 지워 상한 아래로 내리면, [저장]을 다시 누르지
+  // 않아도 오류와 `aria-invalid`가 곧바로 풀려야 한다.
   it.each([
     ["note", 1000],
     ["summary", 1500],
   ] as const)("clears the %s over-limit error as soon as the text is back within the limit", async (field, limit) => {
-    const form = createFormControl({ ...memoryFormOptions(schema), defaultValues: { note: "", summary: "" } });
-    const input = form.register(field);
-    const type = async (value: string) => {
-      await input.onChange({ target: { name: field, value }, type: "change" });
-    };
+    const { form, type, save } = createForm();
 
-    await type("가".repeat(limit + 1));
-    expect(await form.trigger(field)).toBe(false);
+    await type(field, "가".repeat(limit + 1));
+    expect(await save()).toBe(false);
     expect(form.getFieldState(field).error?.message).toBe(`${limit}자 이내로 적어 주세요`);
 
-    await type("가".repeat(limit));
+    await type(field, "가".repeat(limit));
     expect(form.getFieldState(field).error).toBeUndefined();
+  });
+
+  // 저장은 폼 전체를 검증한다 — 고치는 중인 요약이 상한을 넘기면 노트 저장도 막힌다.
+  it("blocks saving the note while the summary being edited is over its limit", async () => {
+    const { form, type, save } = createForm();
+
+    await type("note", "고양이");
+    await type("summary", "나".repeat(1501));
+    expect(await save()).toBe(false);
+    expect(form.getFieldState("summary").error).toBeDefined();
+    expect(form.getFieldState("note").error).toBeUndefined();
   });
 });

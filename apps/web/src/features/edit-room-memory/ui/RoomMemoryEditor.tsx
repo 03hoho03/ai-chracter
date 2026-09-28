@@ -78,7 +78,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   const schema = useMemo(() => createMemoryFormSchema(memory.limits), [memory.limits]);
   // 기준값은 처음 한 번만 굳힌다 — 편집 중에 새 요약이 도착해도(턴 뒤 리페치) 입력을 덮지 않는다.
   const form = useForm<MemoryFormValues>({ ...memoryFormOptions(schema), defaultValues: serverToForm(memory) });
-  const { errors } = form.formState;
+  const { errors, isSubmitting } = form.formState;
   const noteLength = countMemoryChars(useWatch({ control: form.control, name: "note" }));
   const summaryLength = countMemoryChars(useWatch({ control: form.control, name: "summary" }));
 
@@ -137,6 +137,9 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
   }
 
   function stopSummaryEdit() {
+    // 두 칸의 저장이 폼 전체를 검증하므로, 닫은 편집 칸에 상한을 넘긴 값이 남으면 보이지 않는 오류가 노트
+    // 저장을 막는다 — 기준값으로 되돌린다(오류도 함께 풀린다).
+    form.resetField("summary");
     focusEditButtonRef.current = true;
     setIsEditingSummary(false);
   }
@@ -147,16 +150,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     if (isEditingSummary) stopSummaryEdit();
   }
 
-  async function handleSaveSummary() {
-    if (saveSummaryMutation.isPending) return;
-    if (!(await form.trigger("summary"))) return;
-    const summary = schema.shape.summary.parse(form.getValues("summary"));
+  async function handleSaveSummary(values: MemoryFormValues) {
     setWriteError(undefined);
     try {
       ownWriteRef.current = true;
-      const next = await saveSummaryMutation.mutateAsync(
-        toSummaryRequest({ note: form.getValues("note"), summary }, editBaseVersion),
-      );
+      const next = await saveSummaryMutation.mutateAsync(toSummaryRequest(values, editBaseVersion));
       form.resetField("summary", { defaultValue: next.summary?.text ?? "" });
       setAnnouncement("요약을 고쳤어요. 다음 대화부터 반영돼요.");
       stopSummaryEdit();
@@ -179,13 +177,10 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     }
   }
 
-  async function handleSaveNote() {
-    if (saveNoteMutation.isPending) return;
-    if (!(await form.trigger("note"))) return;
-    const note = schema.shape.note.parse(form.getValues("note"));
+  async function handleSaveNote(values: MemoryFormValues) {
     setWriteError(undefined);
     try {
-      const next = await saveNoteMutation.mutateAsync(toNoteRequest({ note, summary: form.getValues("summary") }));
+      const next = await saveNoteMutation.mutateAsync(toNoteRequest(values));
       form.resetField("note", { defaultValue: next.note });
       setAnnouncement("저장했어요. 다음 대화부터 반영돼요.");
     } catch (error) {
@@ -253,9 +248,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           </Button>
           <Button
             type="button"
-            aria-disabled={saveSummaryMutation.isPending}
+            aria-disabled={isSubmitting}
             className="aria-disabled:opacity-65"
-            onClick={() => void handleSaveSummary()}
+            onClick={() => {
+              if (!isSubmitting) void form.handleSubmit(handleSaveSummary)();
+            }}
           >
             {saveSummaryMutation.isPending ? "저장 중..." : "저장"}
           </Button>
@@ -374,9 +371,11 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
           <Button
             type="button"
             variant={isSummaryEditOpen ? "outline" : "default"}
-            aria-disabled={isNoteSaving}
+            aria-disabled={isNoteSaving || isSubmitting}
             className={cn("aria-disabled:opacity-65", isSummaryEditOpen && "hover:bg-secondary")}
-            onClick={() => void handleSaveNote()}
+            onClick={() => {
+              if (!isSubmitting) void form.handleSubmit(handleSaveNote)();
+            }}
           >
             {saveNoteMutation.isPending ? "저장 중..." : "저장"}
           </Button>

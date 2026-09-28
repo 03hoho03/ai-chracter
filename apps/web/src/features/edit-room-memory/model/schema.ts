@@ -35,12 +35,12 @@ export function createMemoryFormSchema(limits: ChatRoomMemory["limits"]) {
 
 export type MemoryFormValues = z.infer<ReturnType<typeof createMemoryFormSchema>>;
 
-/** 폼의 검증 옵션. 검증 시점은 입력마다(`onChange`)다 — [저장]은 칸마다 `trigger`로 검증해 폼 제출 상태가
- * 켜지지 않는다. 그래서 기본값(`onSubmit`, 제출 뒤에만 입력마다 재검증)이면 상한을 넘겨 난 오류가 글자를
- * 지워 상한 아래로 내려도 [저장]을 다시 누를 때까지 남는다. 폼 전체 제출(`handleSubmit`)로 바꾸면 노트
- * 저장이 편집 중인 요약 칸의 오류에도 막히므로 칸별 검증은 그대로 둔다. */
+/** 폼의 검증 옵션. 두 칸의 [저장]은 각각 `handleSubmit`으로 폼 전체를 검증한다 — 그래서 요약을 고치는 중에
+ * 요약 칸이 상한을 넘기면 노트 저장도 막히고, 노트 칸이 넘치면 요약 저장도 막힌다(오류는 넘친 칸에 보인다).
+ * 검증 시점은 기본값이다: [저장]을 누르기 전에는 입력마다 검증하지 않고, 한 번 누른 뒤부터는 입력마다 다시
+ * 검증해 글자를 지워 상한 아래로 내리면 오류가 곧바로 풀린다. */
 export function memoryFormOptions(
   schema: ReturnType<typeof createMemoryFormSchema>,
-): Pick<UseFormProps<MemoryFormValues>, "resolver" | "mode"> {
-  return { resolver: zodResolver(schema), mode: "onChange" };
+): Pick<UseFormProps<MemoryFormValues>, "resolver"> {
+  return { resolver: zodResolver(schema) };
 }
