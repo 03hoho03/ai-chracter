@@ -154,6 +154,16 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
     if (isEditingSummary) stopSummaryEdit();
   }
 
+  // 저장이 검증에 걸리면(422) 오류를 칸에 붙인다 — 서버가 칸을 알려 주지 않으면 저장한 칸이다. 그 밖의
+  // 실패는 칸 위 알림으로 보인다.
+  function showSaveError(section: WriteErrorState["section"], error: MemoryWriteError) {
+    if (error.kind === "invalid") {
+      form.setError(error.field ?? section, { message: error.message });
+      return;
+    }
+    setWriteError({ section, error });
+  }
+
   async function handleSaveSummary(values: MemoryFormValues) {
     setWriteError(undefined);
     try {
@@ -164,7 +174,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
       stopSummaryEdit();
     } catch (error) {
       ownWriteRef.current = false;
-      setWriteError({ section: "summary", error: toMemoryWriteError(error) });
+      showSaveError("summary", toMemoryWriteError(error));
     }
   }
 
@@ -188,7 +198,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
       form.resetField("note", { defaultValue: next.note });
       setAnnouncement("저장했어요. 다음 대화부터 반영돼요.");
     } catch (error) {
-      setWriteError({ section: "note", error: toMemoryWriteError(error) });
+      showSaveError("note", toMemoryWriteError(error));
     }
   }
 
@@ -396,7 +406,7 @@ function RoomMemoryForm({ roomId, memory, onReload, onClearNoteRequest }: RoomMe
 }
 
 function WriteErrorNotice({ error, onReload }: { error: MemoryWriteError; onReload: () => void }) {
-  if (error.kind === "message") {
+  if (error.kind !== "stale") {
     return (
       <p role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
         {error.message}

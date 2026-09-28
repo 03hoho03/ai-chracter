@@ -29,14 +29,29 @@ describe("toMemoryWriteError", () => {
     expect(toMemoryWriteError(conflict("SOMETHING_NEW"))).toEqual({ kind: "stale", message: MEMORY_CONFLICT_MESSAGE });
   });
 
-  it("never shows the raw 422 message", () => {
+  it("never shows the raw 422 message and names the note field", () => {
     const error = new ApiErrorObject({
       status: 422,
       detail: undefined,
       message: "String should have at most 1000 characters",
       fields: { note: "String should have at most 1000 characters" },
     });
-    expect(toMemoryWriteError(error)).toEqual({ kind: "message", message: INVALID_MEMORY_INPUT_MESSAGE });
+    expect(toMemoryWriteError(error)).toEqual({ kind: "invalid", field: "note", message: INVALID_MEMORY_INPUT_MESSAGE });
+  });
+
+  it("names the summary field when the summary failed validation", () => {
+    const error = new ApiErrorObject({
+      status: 422,
+      detail: undefined,
+      message: "String should have at most 1500 characters",
+      fields: { summary: "String should have at most 1500 characters" },
+    });
+    expect(toMemoryWriteError(error)).toEqual({ kind: "invalid", field: "summary", message: INVALID_MEMORY_INPUT_MESSAGE });
+  });
+
+  it("leaves the field unknown when the 422 is not about a form field", () => {
+    const error = new ApiErrorObject({ status: 422, detail: undefined, message: "invalid", fields: { version: "bad" } });
+    expect(toMemoryWriteError(error)).toEqual({ kind: "invalid", field: undefined, message: INVALID_MEMORY_INPUT_MESSAGE });
   });
 
   it("falls back to the generic copy for other statuses and non-API errors", () => {
