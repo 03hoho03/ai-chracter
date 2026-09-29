@@ -81,7 +81,12 @@ def test_committed_prompt_file_parses() -> None:
 
 
 def test_every_seed_content_slug_has_a_prompt() -> None:
-    """프롬프트를 빠뜨린 콘텐츠는 조용히 목업 썸네일로 폴백한다 — 실패가 눈에 안 띄어서 고정한다."""
+    """프롬프트를 빠뜨린 콘텐츠는 조용히 목업 썸네일로 폴백한다 — 실패가 눈에 안 띄어서 고정한다.
+
+    매트릭스 폴더만 본다(`load_stories()`·`load_characters()` 기본값). 튜토리얼 작품의 이미지는
+    운영 앱에서 생성해 사람이 골라 빌더로 올리므로 이 저장소의 이미지 생성 파이프라인 대상이
+    아니고, 로컬 시드에서는 목업으로 붙는 것이 의도다.
+    """
     characters = load_characters()
     expected = {story.slug for story in load_stories()}
     expected |= {character.slug for character in characters}

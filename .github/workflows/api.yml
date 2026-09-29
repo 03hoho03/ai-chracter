@@ -8,10 +8,18 @@ on:
       # 자기 자신이 필터에 있는 이유: 이 워크플로의 검사 단계를 고친 커밋은 그 검사를
       # 한 번도 안 거친 채 병합된다(`deploy-api.yml` 이 같은 이유로 자기 파일을 넣어 뒀다).
       - ".github/workflows/api.yml"
+      # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
+      - "apps/web/src/entities/chat-room/model/statIcons.ts"
+      - "packages/ui/src/lib/color-palette.ts"
+      - "apps/web/src/features/build-story/model/schema.ts"
   pull_request:
     paths:
       - "apps/api/**"
       - ".github/workflows/api.yml"
+      # 튜토리얼 시드 테스트가 빌더가 고를 수 있는 값(스탯 아이콘·색·턴 하한)을 이 FE 소스에서 직접 읽는다.
+      - "apps/web/src/entities/chat-room/model/statIcons.ts"
+      - "packages/ui/src/lib/color-palette.ts"
+      - "apps/web/src/features/build-story/model/schema.ts"
 
 jobs:
   build:

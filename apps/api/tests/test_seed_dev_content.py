@@ -23,7 +23,7 @@ from api.db.models.media import Asset
 from api.db.models.story import StoryVersionDetail
 from seed_content import images
 from seed_content.ids import SEED_AUTHOR_USER_ID
-from seed_content.loader import STORIES_DIR, load_characters, load_stories
+from seed_content.loader import STORY_DIRS, load_all_characters, load_all_stories
 from seed_content.upsert import (
     character_content_id,
     character_version_id,
@@ -87,8 +87,8 @@ async def test_seed_content_files_publishes_every_data_file(
 
     await seed_dev.seed_content_files(db_session)
 
-    stories = load_stories()
-    characters = load_characters()
+    stories = load_all_stories()
+    characters = load_all_characters()
     assert stories and characters, "시드할 데이터 파일이 없다"
     for story in stories:
         detail = await db_session.get(StoryVersionDetail, story_version_id(story.slug))
@@ -127,7 +127,7 @@ async def test_seed_content_files_writes_story_development_examples_from_the_jso
 
     await seed_dev.seed_content_files(db_session)
 
-    for path in sorted(STORIES_DIR.glob("*.json")):
+    for path in [path for directory in STORY_DIRS for path in sorted(directory.glob("*.json"))]:
         expected = json.loads(path.read_text(encoding="utf-8")).get("developmentExamples")
         assert expected, f"{path.stem}: 시드 JSON 에 전개 예시 쌍 목록이 없다"
         for version_id in (story_version_id(path.stem), story_draft_version_id(path.stem)):

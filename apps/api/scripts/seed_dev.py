@@ -46,7 +46,7 @@ from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.session import async_session_factory
 from seed_content.ids import MIA_THUMBNAIL_ASSET_ID, SEED_AUTHOR_USER_ID
 from seed_content.images import ensure_asset, read_image
-from seed_content.loader import load_characters, load_stories
+from seed_content.loader import load_all_characters, load_all_stories
 from seed_content.upsert import upsert_character, upsert_story
 
 # 고정 UUID (재실행 시 중복 방지). 실사용자 UUID 와 겹치지 않도록 5eed... 프리픽스 사용.
@@ -85,7 +85,7 @@ async def seed_content_files(session: AsyncSession) -> None:
         for genre_id, name in (await session.execute(select(Genre.id, Genre.name))).all()
     }
 
-    for story in load_stories():
+    for story in load_all_stories():
         genre_id = story.payload.genre_id
         thumbnail_asset_id = await ensure_asset(
             session,
@@ -101,7 +101,7 @@ async def seed_content_files(session: AsyncSession) -> None:
         )
         print(f"  ✓ 스토리 시드: {story.slug} — 「{story.payload.name}」")
 
-    for character in load_characters():
+    for character in load_all_characters():
         genre_id = character.payload.genre_id
         thumbnail_asset_id = await ensure_asset(
             session,

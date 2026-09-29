@@ -5,6 +5,11 @@
     data/stories/{slug}.json      -> StoryDraftPayload
     data/characters/{slug}.json   -> CharacterDraftPayload
 
+`data/stories/`·`data/characters/` 는 다양성 매트릭스 소속 시드만 담는다. 제작 가이드가 단계마다
+예시로 인용하는 튜토리얼 작품은 매트릭스 밖이라 `data/tutorial/{stories,characters}/` 에 따로
+둔다 — 기본 `load_stories()`/`load_characters()` 는 매트릭스 폴더만 보고, 발행 불변식처럼 모든
+시드에 걸리는 검사와 `seed_dev` 는 두 폴더를 다 보는 `load_all_*()`·`*_DIRS` 를 쓴다.
+
 JSON 은 API 요청 바디와 같은 camelCase 이며 기존 draft 스키마 그대로 검증한다 — 시드
 전용 스키마를 따로 두지 않는다. 그래야 빌더 API 가 받는 것과 같은 모양임이 보장되고,
 스키마가 바뀌면 시드가 조용히 어긋나는 대신 파일명을 담은 에러로 죽는다.
@@ -41,6 +46,12 @@ from .ids import seed_uuid
 DATA_DIR = Path(__file__).parent / "data"
 STORIES_DIR = DATA_DIR / "stories"
 CHARACTERS_DIR = DATA_DIR / "characters"
+TUTORIAL_STORIES_DIR = DATA_DIR / "tutorial" / "stories"
+TUTORIAL_CHARACTERS_DIR = DATA_DIR / "tutorial" / "characters"
+# 시드 폴더 목록의 단일 소스 — 로더를 거치는 검사와 원문 JSON 을 직접 읽는 검사가 같은 목록을
+# 돌아야 한쪽만 새 폴더를 보는 일이 없다.
+STORY_DIRS = (STORIES_DIR, TUTORIAL_STORIES_DIR)
+CHARACTER_DIRS = (CHARACTERS_DIR, TUTORIAL_CHARACTERS_DIR)
 
 PayloadT = TypeVar("PayloadT", bound=BaseModel)
 
@@ -88,6 +99,16 @@ def load_characters(directory: Path = CHARACTERS_DIR) -> list[SeedCharacter]:
     return [
         SeedCharacter(slug=path.stem, payload=load_character(path))
         for path in _json_files(directory)
+    ]
+
+
+def load_all_stories() -> list[SeedStory]:
+    return [story for directory in STORY_DIRS for story in load_stories(directory)]
+
+
+def load_all_characters() -> list[SeedCharacter]:
+    return [
+        character for directory in CHARACTER_DIRS for character in load_characters(directory)
     ]
 
 
