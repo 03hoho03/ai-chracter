@@ -9,7 +9,7 @@ export type StarTree<T> = Array<
   { kind: "content"; value: T } | { kind: "literal"; length: number } | { kind: "wrap"; depth: WrapDepth; children: StarTree<T> }
 >;
 export type Fence = { char: string; length: number };
-type LineStart = { prefix: string; body: string; hasListMarker: boolean };
+type LineStart = { prefix: string; body: string; hasListMarker: boolean; hasQuoteMarker: boolean };
 type CloserTable = Record<WrapDepth, Int32Array>;
 
 // 파서가 `\*` 를 글자 `*` 로 풀어 버리면 짝 없는 별표와 구별할 수 없다. 그래서 짝짓기 전에 사용자
@@ -56,14 +56,16 @@ export function splitLineStart(line: string): LineStart {
   let prefix = "";
   let body = line;
   let hasListMarker = false;
+  let hasQuoteMarker = false;
   for (let depth = 0; depth < MAX_CONTAINER_DEPTH && !DATE_LIKE_PATTERN.test(body); depth += 1) {
     const match = CONTAINER_PREFIX_PATTERN.exec(body);
     if (!match) break;
     if (match[1] !== undefined) hasListMarker = true;
+    else hasQuoteMarker = true;
     prefix += match[0];
     body = body.slice(match[0].length);
   }
-  return { prefix, body, hasListMarker };
+  return { prefix, body, hasListMarker, hasQuoteMarker };
 }
 
 export function isDateLike(body: string): boolean {
@@ -107,8 +109,9 @@ export function classifyChar(char: string): StarNeighbor {
  * 별표에 바로 붙어 CommonMark 의 flanking 규칙이 강조를 만들지 못하기 때문이다.
  * - 조건은 공백뿐이다: 여는 런은 "다음 글자가 공백이 아님", 닫는 런은 "앞 글자가 공백이 아님".
  *   뒤에 공백이 오는 런(`5* 줬다`)은 여는 표지가 될 수 없어 글자로 남는다.
- * - 같은 길이끼리 짝짓는다(1 = 지문, 2 = 굵게, 3 = 굵은 지문). 네 개 이상은 글자다.
- * - 같은 길이의 닫는 런이 없으면 가장 가까운 다른 길이의 닫는 런에서 닫는다. 더 짧으면 스트리밍 중
+ * - 같은 종류끼리 짝짓는다(1개 = 지문, 2개 = 굵게, 3개 = 굵은 지문). 네 개 이상은 파서처럼 짝수면
+ *   굵게, 홀수면 굵은 지문이다 — 파서는 `****굵게****` 를 굵게 안의 굵게로 읽는다.
+ * - 같은 종류의 닫는 런이 없으면 가장 가까운 다른 종류의 닫는 런에서 닫는다. 더 짧으면 스트리밍 중
  *   닫는 별표가 반만 도착한 모양(`**굵게*`)이고, 더 길면 남는 별표가 다음 강조를 연다
  *   (`**"왜?"***고개를 든다*` → 굵게 + 지문).
  * - 끝까지 닫히지 않은 여는 런은 문단 끝까지 감싼다 — 스트리밍 중 모양이 저장 후에도 그대로 남는다.
@@ -120,8 +123,9 @@ export function pairStarRuns<T>(tokens: StarToken<T>[]): StarTree<T> {
 }
 
 export function toWrapDepth(length: number): WrapDepth | undefined {
-  if (length === 1 || length === 2 || length === 3) return length;
-  return undefined;
+  if (length < 1) return undefined;
+  if (length === 1) return 1;
+  return length % 2 === 0 ? 2 : 3;
 }
 
 function pairRange<T>(tokens: StarToken<T>[], closers: CloserTable, start: number, end: number, nesting: number): StarTree<T> {
@@ -165,7 +169,7 @@ function pairRange<T>(tokens: StarToken<T>[], closers: CloserTable, start: numbe
   return tree;
 }
 
-/** 길이마다 "i 이후 처음 나오는 닫을 수 있는 런"의 위치를 미리 구해 둔다(없으면 -1). */
+/** 강조 종류마다 "i 이후 처음 나오는 닫을 수 있는 런"의 위치를 미리 구해 둔다(없으면 -1). */
 function buildCloserTable<T>(tokens: StarToken<T>[]): CloserTable {
   const size = tokens.length + 1;
   const table: CloserTable = { 1: new Int32Array(size).fill(-1), 2: new Int32Array(size).fill(-1), 3: new Int32Array(size).fill(-1) };

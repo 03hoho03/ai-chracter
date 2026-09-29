@@ -233,6 +233,49 @@ describe("chat markdown pipeline", () => {
     });
   });
 
+  // 장면 헤더 인용 바로 다음 줄에 빈 줄 없이 본문이 오면 마크다운은 그 줄을 인용 안으로 흡수한다
+  // (작고 흐린 글씨가 되고 지문과 대사가 구분되지 않는다). 채팅에서는 줄 머리에 `>` 가 없으면 인용이 끝난다.
+  describe("a line without '>' ends the quote", () => {
+    const HEADER = "<blockquote><p>D+1 | 00:10 | 계단</p></blockquote>";
+    it.each([
+      [
+        '> D+1 | 00:10 | 계단\n*계단을 오른다* "잠깐만…"',
+        `${HEADER}<p><em>계단을 오른다</em> ${Q}잠깐만…${Q}</p>`,
+      ],
+      ["> D+1 | 00:10 | 계단\n> 비상구 앞", "<blockquote><p>D+1 | 00:10 | 계단<br/>비상구 앞</p></blockquote>"],
+      ["> 헤더\n> - 항목\n> - 항목 둘", "<blockquote><p>헤더</p><ul><li>항목</li><li>항목 둘</li></ul></blockquote>"],
+      ["> 헤더\n\n본문", "<blockquote><p>헤더</p></blockquote><p>본문</p>"],
+      // 코드 블록 안의 `>` 줄은 인용이 아니므로 건드리지 않는다.
+      ["```\n> 인용 아님\n본문\n```", "<pre><code>&gt; 인용 아님\n본문\n</code></pre>"],
+    ])("%j", (input, expected) => {
+      expect(render(input)).toBe(expected);
+    });
+
+    // 스트리밍 중 헤더 줄 다음 첫 글자가 도착하는 순간에도 본문이 인용 안으로 들어갔다 나오지 않아야 한다.
+    it("never pulls the streaming body into the quote", () => {
+      const message = '> D+1 | 00:10 | 계단\n*계단을 오른다* "잠깐만…"';
+      const headerEnd = message.indexOf("\n");
+      for (let length = headerEnd + 1; length <= message.length; length += 1) {
+        const html = render(message.slice(0, length));
+        expect(html.startsWith(HEADER)).toBe(true);
+      }
+    });
+  });
+
+  // 파서가 짝지은 네 개 이상의 별표도 굵게로 보인다(`****굵게****` → 굵게 안의 굵게).
+  describe("runs of four or more stars", () => {
+    it.each([
+      ["****굵게****", "<p><strong><strong>굵게</strong></strong></p>"],
+      ["a ****b**** c", "<p>a <strong><strong>b</strong></strong> c</p>"],
+      // 파서가 한국어 flanking 때문에 못 짝지은 경우도 같은 굵게다.
+      ['****"굵게"****라고', `<p><strong>${Q}굵게${Q}</strong>라고</p>`],
+      // 앞뒤가 공백인 별표 줄은 장식 글자로 남는다.
+      ["안녕 **** 반가워", "<p>안녕 **** 반가워</p>"],
+    ])("%j", (input, expected) => {
+      expect(render(input)).toBe(expected);
+    });
+  });
+
   // 공백이 뒤따르는 단독 별표는 여는 표지가 될 수 없어 글자로 남는다. 파서가 문단 끝 공백을 먼저
   // 잘라 내도 결과가 같아야 한다(미리보기와도 같아야 한다).
   describe("a lone star followed by trailing whitespace stays", () => {

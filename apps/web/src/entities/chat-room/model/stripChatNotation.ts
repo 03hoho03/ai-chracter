@@ -29,6 +29,7 @@ export function stripChatNotation(content: string): string {
   };
 
   let fence: Fence | undefined;
+  let isInQuote = false;
   for (const line of content.split(/\r?\n/)) {
     if (fence) {
       if (isFenceClose(line, fence)) fence = undefined;
@@ -40,9 +41,10 @@ export function stripChatNotation(content: string): string {
       flushParagraph();
       continue;
     }
-    const { body, hasListMarker } = splitLineStart(line);
-    // 목록 항목은 새 문단이다. 인용 표지만 붙은 줄은 앞 줄과 같은 문단이다(렌더러도 이어 붙인다).
-    if (hasListMarker || body.trim() === "") flushParagraph();
+    const { body, hasListMarker, hasQuoteMarker } = splitLineStart(line);
+    // 목록 항목은 새 문단이다. 인용 줄 다음의 `>` 없는 줄도 새 문단이다(렌더러가 거기서 인용을 끝낸다).
+    if (hasListMarker || body.trim() === "" || (isInQuote && !hasQuoteMarker)) flushParagraph();
+    isInQuote = hasQuoteMarker;
     if (body.trim() !== "") paragraph.push(body);
   }
   flushParagraph();

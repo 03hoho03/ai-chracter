@@ -31,7 +31,7 @@ declare module "unified" {
 }
 
 type PhrasingParent = Paragraph | Emphasis | Strong;
-type PreparedLine = { prefix: string; body: string; isCode: boolean };
+type PreparedLine = { prefix: string; body: string; isCode: boolean; isQuote: boolean };
 
 const LONE_STAR_LINE_PATTERN = /^ {0,3}\*[ \t]*$/;
 // 한 문단의 별표·밑줄이 이보다 많으면 파서에게 강조를 맡기지 않는다. 파서는 겹친 강조를 겹 수의
@@ -122,6 +122,8 @@ export const CHAT_MARKDOWN_OPTIONS = {
  * - 줄 머리(인용·목록 표지 뒤 포함) `>` 뒤에 공백이 없으면(`>_<`) 인용이 아니라 글자로 둔다.
  * - 날짜형 번호(`2026. 9. 29.`)의 첫 마침표를 이스케이프해 목록이 되지 않게 한다.
  * - 인용·목록 표지가 깊이 한도보다 깊게 겹치면 나머지 표지를 글자로 둔다.
+ * - 인용 줄 바로 다음에 `>` 없는 줄이 오면 사이에 빈 줄을 넣어 인용을 끝낸다. 마크다운은 그 줄을 인용
+ *   안으로 흡수하는데(lazy continuation), 장면 헤더 다음의 본문이 작고 흐린 인용 글씨가 되어 버린다.
  * - 별표·밑줄이 너무 많은 문단은 파서에게서 숨기고 별표 짝짓기에만 맡긴다.
  * - 끝의 단독 `*` 줄은 빈 목록이 되므로 지운다(스트리밍 중 막 도착한 별표도, 저장된 메시지도 같다).
  */
@@ -132,12 +134,17 @@ export function prepareChatMarkdownSource(content: string): string {
     .map((line): PreparedLine => {
       if (fence) {
         if (isFenceClose(line, fence)) fence = undefined;
-        return { prefix: "", body: line, isCode: true };
+        return { prefix: "", body: line, isCode: true, isQuote: false };
       }
       fence = openFence(line);
-      if (fence) return { prefix: "", body: line, isCode: true };
-      const { prefix, body } = splitLineStart(line);
-      return { prefix, body: escapeLineStart(body), isCode: false };
+      if (fence) return { prefix: "", body: line, isCode: true, isQuote: false };
+      const { prefix, body, hasQuoteMarker } = splitLineStart(line);
+      return { prefix, body: escapeLineStart(body), isCode: false, isQuote: hasQuoteMarker };
+    })
+    .flatMap((line, index, all): PreparedLine[] => {
+      const previous = all[index - 1];
+      const endsQuote = previous?.isQuote === true && !line.isQuote && !line.isCode && line.body.trim() !== "";
+      return endsQuote ? [{ prefix: "", body: "", isCode: false, isQuote: false }, line] : [line];
     });
 
   for (let last = lines.at(-1); last && !last.isCode; last = lines.at(-1)) {
