@@ -29,8 +29,9 @@ type MessageBubbleProps = {
 
 // 사용자 메시지 표시. 대화는 소설처럼 한 컬럼에 흐르고 사용자와 캐릭터 모두 상자 없는 산문이라,
 // "지금 내가 한 말"은 채움이 아니라 왼쪽 1px 강조선과 그만큼의 들여쓰기로만 가른다. 수정 폼도 같은 틀을
-// 써서 입력란이 원래 메시지 자리에 그대로 열린다.
-const USER_MESSAGE_FRAME = "border-l border-primary pl-3";
+// 써서 입력란이 원래 메시지 자리에 그대로 열린다. 작성 가이드의 대화 예시도 이 틀을 그대로 쓴다 — 가이드가
+// 보여 주는 모양이 실제 채팅 화면과 어긋나지 않게 하려고 클래스를 베끼지 않고 공개한다.
+export const USER_MESSAGE_FRAME = "border-l border-primary pl-3";
 
 export function MessageBubble({
   message,

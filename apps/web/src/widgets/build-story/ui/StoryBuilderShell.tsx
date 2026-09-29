@@ -239,6 +239,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         autosaveNotice="변경사항은 자동으로 저장돼요."
         actions={
           <BuilderTopBarActions
+            guidePath="/guide/story"
             isPublishing={isPublishing}
             isPreviewOpen={isPreviewOpen}
             onPreview={() => setIsPreviewOpen((prev) => !prev)}

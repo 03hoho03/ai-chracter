@@ -1,8 +1,9 @@
 """리포에 커밋된 시드 콘텐츠 데이터 파일 자체를 검사한다.
 
 `test_seed_content.py` 가 로더의 **동작**을 인위적인 payload 로 검사한다면, 이 파일은
-`data/characters/*.json` / `data/stories/*.json` **실물**이 발행 가능한 상태인지를 본다 —
-시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은 홈 목록에 뜰 수 있다"가 보장된다.
+`data/characters/*.json` / `data/stories/*.json`(과 `data/tutorial/` 아래 튜토리얼 작품)
+**실물**이 발행 가능한 상태인지를 본다 — 시드를 돌리거나 DB 를 띄우지 않고도 "이 JSON 은
+홈 목록에 뜰 수 있다"가 보장된다.
 
 썸네일 자산만은 시드 실행 시점에 만들어져 호출부가 payload 에 주입하므로(`ensure_asset`),
 검증 전에 자리표시자 UUID 를 채워 넣는다.
@@ -19,7 +20,14 @@ from api.content.schemas import EndingRuleGroupDraftItem
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.content import Content, ContentVersion
 from generate_seed_stories import NARRATOR_WORDS, stat_display_name
-from seed_content.loader import CHARACTERS_DIR, STORIES_DIR, load_characters, load_stories
+from seed_content.loader import (
+    CHARACTER_DIRS,
+    STORY_DIRS,
+    load_all_characters,
+    load_all_stories,
+    load_characters,
+    load_stories,
+)
 from seed_content.matrix import load_matrix
 from seed_content.upsert import _validate_payload
 
@@ -29,7 +37,7 @@ ROMANCE_GENRE_ID = uuid.UUID("b8a1e6b0-1c1a-4b8a-9b0a-000000000001")
 
 
 def test_every_seed_character_passes_publish_validation() -> None:
-    characters = load_characters()
+    characters = load_all_characters()
     assert characters, "시드 캐릭터가 하나도 없다"
 
     for character in characters:
@@ -50,7 +58,7 @@ def test_every_seed_character_passes_publish_validation() -> None:
 
 def test_every_seed_story_passes_publish_validation() -> None:
     """`upsert_story` 가 실제로 거는 관문(발행 검증 + 어긋난 스탯 참조)을 그대로 통과해야 한다."""
-    stories = load_stories()
+    stories = load_all_stories()
     assert stories, "시드 스토리가 하나도 없다"
 
     for story in stories:
@@ -62,6 +70,9 @@ def test_every_seed_story_passes_publish_validation() -> None:
 
 def test_every_seed_story_keeps_its_matrix_concept() -> None:
     """생성기는 본문만 채운다 — 제목/한줄/타겟/장르/스탯 이름은 다양성 매트릭스 슬롯 그대로여야 한다.
+
+    매트릭스 폴더(`load_stories()` 기본값)만 본다 — 튜토리얼 작품은 제작 가이드의 예시로 손으로
+    쓴 것이라 매트릭스 슬롯이 없다.
 
     LLM 이 콘셉트를 바꿔버리면 다양성 매트릭스가 보장하던 좌표 분산이 조용히 무너지므로,
     배치가 늘어날 때마다 이 대조를 사람이 다시 하지 않도록 여기서 고정한다.
@@ -92,7 +103,7 @@ def test_every_seed_story_keeps_its_matrix_concept() -> None:
 
 def test_every_seed_story_setting_text_instructs_the_narrator() -> None:
     """`settingText` 는 런타임에 서술자의 지시문으로 들어간다 — 사용자용 소개문이면 화자가 뒤집힌다."""
-    for story in load_stories():
+    for story in load_all_stories():
         setting_text = story.payload.setting_text or ""
         assert any(word in setting_text for word in NARRATOR_WORDS), (
             f"{story.slug}: settingText 가 서술자에게 주는 지시문이 아니다"
@@ -105,7 +116,9 @@ def test_no_seed_content_file_contains_escaped_newlines() -> None:
     JSON 파싱도 발행 검증도 통과하는 종류의 결함이라(실측) 파일 원문에서 직접 본다.
     진짜 줄바꿈은 `"\n"` 으로 인코딩되므로 여기 걸리는 건 백슬래시 자체가 저장된 경우뿐이다.
     """
-    for path in sorted(STORIES_DIR.glob("*.json")) + sorted(CHARACTERS_DIR.glob("*.json")):
+    for path in [
+        path for directory in (*STORY_DIRS, *CHARACTER_DIRS) for path in sorted(directory.glob("*.json"))
+    ]:
         assert "\\\\n" not in path.read_text(encoding="utf-8"), (
             f"{path.name}: 줄바꿈이 이스케이프 시퀀스 글자 그대로 저장돼 있다"
         )
@@ -143,7 +156,7 @@ def test_seed_story_ending_thresholds_are_reachable_but_not_free() -> None:
     해보기 전에는 드러나지 않으므로 여기서 막는다. 생성기도 파일로 쓰기 전에 같은
     검사를 하지만, 그건 생성 시점 한 번뿐이라 커밋된 파일은 여기서 다시 본다.
     """
-    for story in load_stories():
+    for story in load_all_stories():
         for setup in story.payload.starting_setups:
             stats = {stat.id: stat for stat in setup.stat_defs}
             initial_values = {str(stat.id): float(stat.initial_value) for stat in setup.stat_defs}
@@ -208,7 +221,7 @@ def test_seed_story_development_examples_are_label_free_pairs() -> None:
     키 이름은 원본 JSON 에서 본다 — 로더의 스키마 검증은 모르는 키를 조용히 버리므로
     쌍에 덧붙인 키(`narratorLine` 등)는 그 값이 통째로 사라져도 통과한다.
     """
-    for path in sorted(STORIES_DIR.glob("*.json")):
+    for path in [path for directory in STORY_DIRS for path in sorted(directory.glob("*.json"))]:
         raw = json.loads(path.read_text(encoding="utf-8"))
         pairs = raw.get("developmentExamples")
         assert pairs, f"{path.stem}: developmentExamples 쌍 목록이 비었거나 없다"
@@ -239,7 +252,7 @@ def test_seed_story_setting_text_does_not_quote_stat_names() -> None:
     (healing-walkinglog 가 실제로 이랬다). 규칙은 스탯 이름을 따옴표로 인용하는 형태로
     나타나므로 그 패턴을 금지선으로 삼는다 — 개념을 산문으로 언급하는 것은 막지 않는다.
     """
-    for story in load_stories():
+    for story in load_all_stories():
         setting_text = story.payload.setting_text or ""
         for setup in story.payload.starting_setups:
             for stat in setup.stat_defs:
@@ -267,7 +280,7 @@ def test_seed_story_setting_text_does_not_hand_the_narrator_a_named_stat() -> No
     세계관 고유명사를 인용하는 것도 막지 않는다(sf-norespawn 의 '권한 조각' 은 스탯 이름과
     겹치지만 등장인물이 빼앗는 물건이다). 그래서 "인용된 이름 + 시스템 어휘" 조합만 본다.
     """
-    for story in load_stories():
+    for story in load_all_stories():
         match = _STAT_LABELLED_IN_PROSE.search(story.payload.setting_text or "")
         assert match is None, (
             f"{story.slug}: settingText 가 {match.group()!r} 처럼 스탯을 이름으로 지목한다 "
@@ -288,7 +301,7 @@ def test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds() -> None:
     스탯 이름을 산문으로 언급하는 것까지는 막지 않는다("산소가 바닥난 상태에서 ~했는가"는
     연출이다) — 규칙의 **임계값 숫자**가 판정문에 그대로 다시 나오는 경우만 잡는다.
     """
-    for story in load_stories():
+    for story in load_all_stories():
         for setup in story.payload.starting_setups:
             stat_names = {stat.id: stat.name for stat in setup.stat_defs}
             for ending in setup.endings:
@@ -323,7 +336,7 @@ def test_seed_per_turn_counters_are_system_driven_not_llm_judged() -> None:
     회차') 거꾸로 올린다(wuxia-oneform '남은 날' 26→27, 둘 다 2026-08-07 실측). 그 카운터에
     엔딩이 걸려 있으면 도달 가능성이 통째로 흔들리므로 데이터 단계에서 막는다.
     """
-    for story in load_stories():
+    for story in load_all_stories():
         for setup in story.payload.starting_setups:
             for stat in setup.stat_defs:
                 mandatory = (

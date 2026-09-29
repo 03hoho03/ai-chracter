@@ -6,12 +6,16 @@ on:
     paths:
       - "apps/web/**"
       - "packages/**"
+      # 작성 가이드의 예시 인용 대조 테스트가 이 시드 파일을 읽는다 — 시드만 고친 변경에서도 돌아야 한다.
+      - "apps/api/scripts/seed_content/data/tutorial/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   pull_request:
     paths:
       - "apps/web/**"
       - "packages/**"
+      # 작성 가이드의 예시 인용 대조 테스트가 이 시드 파일을 읽는다 — 시드만 고친 변경에서도 돌아야 한다.
+      - "apps/api/scripts/seed_content/data/tutorial/**"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
 
