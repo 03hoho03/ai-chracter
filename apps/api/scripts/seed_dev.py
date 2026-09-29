@@ -210,7 +210,7 @@ async def main() -> None:
                 name="미아",
                 one_liner="불 꺼진 방, 당신 곁을 지키는 다정한 목소리",
                 thumbnail_asset_id=ASSET_ID,
-                intro="(조용히 곁에 앉으며) 아직 안 잤구나. 오늘 하루는 어땠어? 천천히 말해줘, 다 들어줄게.",
+                intro="*조용히 곁에 앉으며* 아직 안 잤구나. 오늘 하루는 어땠어? 천천히 말해줘, 다 들어줄게.",
                 example_dialogues=[
                     {
                         "userLine": "오늘 좀 힘들었어",

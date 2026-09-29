@@ -18,6 +18,7 @@ from api.llm.client import LLMCallContext, LLMClient, LLMClientError
 from generate_seed_stories import (
     MAX_ATTEMPTS,
     MAX_SIMILARITY_ROUNDS,
+    GeneratedDevelopmentExample,
     GeneratedEnding,
     GeneratedEndingRule,
     GeneratedKeywordNote,
@@ -94,7 +95,15 @@ def _story(slot: MatrixSlot, **overrides: Any) -> GeneratedStory:
     ]
     payload: dict[str, Any] = {
         "setting_text": "당신은 이 이야기의 서술자다. 응답 앞에 화자 라벨을 붙이지 않는다.",
-        "development_example": "사용자: 문 열려요?\n서술자: (손잡이가 헛돈다) 안 열립니다.",
+        "development_examples": [
+            GeneratedDevelopmentExample(
+                user_line="문 열려요?", assistant_line="*손잡이가 헛돈다.* \"안 열립니다.\""
+            ),
+            GeneratedDevelopmentExample(
+                user_line="*서류를 뒤집는다* 이거 누구 거예요?",
+                assistant_line="*그가 서류를 낚아챈다.* \"보지 마십시오.\"",
+            ),
+        ],
         "description": "심리 전날 밤, 자료실에 갇힌 두 대리인의 하룻밤.",
         "hashtags": ["혐관", "밀실", "법정"],
         "starting_setups": setups,
@@ -277,6 +286,56 @@ def test_assemble_restores_newlines_written_as_escape_sequences(slot: MatrixSlot
     assert raw["settingText"] == "당신은 서술자다.\n\n[등장인물]\n김한샘(29세)"
 
 
+def test_assemble_writes_development_examples_as_pairs(slot: MatrixSlot) -> None:
+    """채팅과 시드 업서트는 쌍 목록만 읽는다 — 옛 문자열 필드로 쓰면 전개 예시가 통째로 빠진다."""
+    raw = assemble_story(slot, _story(slot))
+
+    assert "developmentExample" not in raw
+    assert raw["developmentExamples"] == [
+        {"userLine": "문 열려요?", "assistantLine": "*손잡이가 헛돈다.* \"안 열립니다.\""},
+        {
+            "userLine": "*서류를 뒤집는다* 이거 누구 거예요?",
+            "assistantLine": "*그가 서류를 낚아챈다.* \"보지 마십시오.\"",
+        },
+    ]
+    assert parse_story(raw, slot.slug).development_examples[1].user_line.startswith("*서류")
+
+
+def test_accepts_a_narrator_opened_first_pair(slot: MatrixSlot) -> None:
+    """서술자가 장면을 먼저 여는 예시 — 사용자 칸이 비어도 되는 건 첫 쌍뿐이다."""
+    story = _story(slot)
+    story.development_examples[0].user_line = ""
+
+    assert validate_story(slot, assemble_story(slot, story)) == []
+
+
+def _pair(user_line: str, assistant_line: str) -> GeneratedDevelopmentExample:
+    return GeneratedDevelopmentExample(user_line=user_line, assistant_line=assistant_line)
+
+
+@pytest.mark.parametrize(
+    "pairs",
+    [
+        pytest.param([], id="empty"),
+        pytest.param([_pair("안녕", "*끄덕인다*")] * 4, id="more-than-three"),
+        pytest.param([_pair("안녕", "")], id="blank-narrator"),
+        pytest.param([_pair("안녕", "*끄덕인다*"), _pair("", "*돌아선다*")], id="blank-later-user"),
+        pytest.param([_pair("사용자: 안녕", "*끄덕인다*")], id="speaker-label"),
+    ],
+)
+def test_rejects_malformed_development_examples(
+    slot: MatrixSlot, pairs: list[GeneratedDevelopmentExample]
+) -> None:
+    """모양이 틀린 전개 예시가 파일로 쓰이면 시드 데이터 검사에 걸리고, 채팅에서는 화자가
+    뒤집히거나 모델이 응답 안에 라벨을 찍는다 — 쓰기 전에 되먹여 다시 부른다."""
+    story = _story(slot)
+    story.development_examples = pairs
+
+    errors = validate_story(slot, assemble_story(slot, story))
+
+    assert any("developmentExamples" in error for error in errors)
+
+
 def test_rejects_wrong_starting_setup_count(slot: MatrixSlot) -> None:
     story = _story(slot)
     story.starting_setups = story.starting_setups[:1]
@@ -295,6 +354,7 @@ def test_prompt_carries_concept_rating_and_previous(slot: MatrixSlot) -> None:
     assert "선정성" in prompt  # 수위 규칙
     assert "겹치면 안 된다" in prompt
     assert "romance-3rdloop" in prompt
+    assert "괄호로 지문을 쓰지 않는다" in prompt  # 화면은 별표만 지문으로 읽는다
 
 
 def test_prompt_feeds_validation_errors_back(slot: MatrixSlot) -> None:
@@ -373,6 +433,7 @@ def test_similarity_prompt_asks_about_execution_not_coordinates(
         assert raw["settingText"] in prompt
         assert raw["startingSetups"][0]["endings"][0]["judgmentPrompt"] in prompt
         assert raw["keywordNotes"][0]["infoText"] in prompt
+        assert raw["developmentExamples"][1]["assistantLine"] in prompt
 
 
 def test_prompt_feeds_overlap_axes_back(slot: MatrixSlot) -> None:

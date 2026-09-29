@@ -23,6 +23,7 @@
 import argparse
 import asyncio
 import json
+import re
 import sys
 import uuid
 from collections.abc import Sequence
@@ -57,6 +58,13 @@ MAX_SIMILARITY_ROUNDS = 2
 MIN_ENDINGS_PER_SETUP = 2
 MIN_KEYWORD_NOTES = 4
 MIN_SHORTCUTS = 2
+# 빌더 폼(스토리 설정 탭)이 받아 주는 전개 예시 개수 상한 — 넘으면 시드 콘텐츠를 빌더에서 열어
+# 다시 저장할 때 폼 검증에 막힌다.
+MAX_DEVELOPMENT_EXAMPLES = 3
+
+# 화자 라벨은 프롬프트 조립이 쌍마다 붙인다. 텍스트 안에 남으면 라벨이 겹치고, 모델이 자기 응답
+# 안에 `사용자:` 를 그대로 찍게 된다.
+SPEAKER_LABEL = re.compile(r"(사용자|서술자|진행자)\s*:")
 
 # `settingText` 는 런타임에 서술자의 지시문으로 그대로 들어간다(`build_story_generation_prompt`,
 # 응답자 라벨은 '진행자'). 사용자를 주인공으로 부르는 소개문이 오면 서술자가 자기를 주인공으로
@@ -154,11 +162,18 @@ class GeneratedShortcut(BaseModel):
     prompt: str
 
 
+class GeneratedDevelopmentExample(BaseModel):
+    """전개 예시 한 쌍 — 사용자 턴과 그에 이어지는 서술자 턴. 라벨 없이 본문만 담는다."""
+
+    user_line: str
+    assistant_line: str
+
+
 class GeneratedStory(BaseModel):
     """`generate_structured()` 강제 스키마 — 제목/한줄/타겟/장르는 매트릭스가 정하므로 없다."""
 
     setting_text: str
-    development_example: str
+    development_examples: list[GeneratedDevelopmentExample]
     description: str
     hashtags: list[str]
     starting_setups: list[GeneratedStartingSetup]
@@ -254,8 +269,11 @@ def _structure_section(slot: MatrixSlot) -> str:
         "플레이하는 사람은 '당신'이 아니라 '사용자'로 지칭한다. 무대·등장인물(이름·나이대·말투)·"
         "진행 방식·금지사항을 담되 스탯 증감이나 엔딩 조건 같은 시스템 규칙은 쓰지 않는다"
         "(그건 별도 판정이 하는 일이라 서술자가 알면 오히려 방해가 된다). '응답 앞에 화자 이름이나 "
-        "라벨을 붙이지 않는다'는 지시를 반드시 넣는다. 800~1500자.\n"
-        "- developmentExample: 사용자와 서술자가 두 번 주고받는 짧은 예시 대화.\n"
+        "라벨을 붙이지 않는다'는 지시를 반드시 넣는다. 표기 방법은 따로 설명하지 않는다. 800~1500자.\n"
+        "- developmentExamples: 사용자와 서술자가 주고받는 짧은 예시 대화 2쌍. 각 쌍은 "
+        "userLine(사용자 턴)과 assistantLine(그에 이어지는 서술자 턴)이고, 텍스트에 "
+        "'사용자:'·'서술자:' 같은 화자 라벨을 쓰지 않는다. 서술자가 장면을 먼저 여는 예시라면 "
+        f"첫 쌍의 userLine 만 빈 문자열로 둔다. 최대 {MAX_DEVELOPMENT_EXAMPLES}쌍.\n"
         "- description: 상세 페이지에 뜨는 소개문 3~5문장. 제목과 한 줄 소개를 그대로 반복하지 않는다.\n"
         "- hashtags: 4~6개, '#' 없이 단어만.\n"
         f"- startingSetups: 정확히 {len(slot.starting_setups)}개. 각각 name(짧은 제목), "
@@ -279,6 +297,10 @@ def _structure_section(slot: MatrixSlot) -> str:
         f"- keywordNotes: {MIN_KEYWORD_NOTES}~6개. triggerKeywords 는 사용자가 실제로 칠 법한 "
         "한국어 단어 3~6개.\n"
         f"- shortcuts: {MIN_SHORTCUTS}개. 사용자가 한 번에 보낼 수 있는 행동 버튼이다.\n"
+        "- 표기(developmentExamples·openingMessage·suggestedReplies): 서술·행동·묘사는 별표로 "
+        "감싸고(*그녀가 고개를 든다.*), 대사는 감싸지 않고 따옴표를 그대로 쓴다"
+        "(*그녀가 고개를 든다.* \"늦었네요.\"). 괄호로 지문을 쓰지 않는다 — 화면은 별표로 감싼 "
+        "것만 지문으로 보여 준다.\n"
         "\n모든 문장은 한국어로 쓴다."
     )
 
@@ -291,7 +313,10 @@ def assemble_story(slot: MatrixSlot, generated: GeneratedStory) -> dict[str, Any
         "thumbnailAssetId": None,  # 시드 실행 시점에 `ensure_asset` 이 채운다
         "promptTemplate": PROMPT_TEMPLATE_BY_VERB[slot.axes.verb].value,
         "settingText": generated.setting_text,
-        "developmentExample": generated.development_example,
+        "developmentExamples": [
+            {"userLine": example.user_line, "assistantLine": example.assistant_line}
+            for example in generated.development_examples
+        ],
         "customPrompt": None,
         "startingSetups": [_setup_json(setup) for setup in generated.starting_setups],
         "keywordNotes": [
@@ -403,6 +428,8 @@ def _structure_errors(slot: MatrixSlot, payload: StoryDraftPayload) -> list[str]
             "플레이하는 사람은 '사용자'로 지칭할 것"
         )
 
+    errors += _development_example_errors(payload)
+
     if len(payload.starting_setups) != len(slot.starting_setups):
         errors.append(
             f"시작 상황이 {len(payload.starting_setups)}개다 — {len(slot.starting_setups)}개여야 한다"
@@ -430,6 +457,24 @@ def _structure_errors(slot: MatrixSlot, payload: StoryDraftPayload) -> list[str]
                 f"{where}: 엔딩이 {len(setup.endings)}개다 — {MIN_ENDINGS_PER_SETUP}개 이상"
             )
         errors += _ending_rule_errors(where, setup.stat_defs, setup.endings)
+    return errors
+
+
+def _development_example_errors(payload: StoryDraftPayload) -> list[str]:
+    """쌍 개수·빈 칸·화자 라벨 — 채팅이 예시를 서술자 턴으로 끝나는 대화로 조립할 수 있는지."""
+    examples = payload.development_examples
+    if not 1 <= len(examples) <= MAX_DEVELOPMENT_EXAMPLES:
+        return [f"developmentExamples 가 {len(examples)}쌍이다 — 1~{MAX_DEVELOPMENT_EXAMPLES}쌍이어야 한다"]
+    errors: list[str] = []
+    for index, example in enumerate(examples):
+        where = f"developmentExamples[{index}]"
+        if not example.assistant_line.strip():
+            errors.append(f"{where}: assistantLine 이 비었다 — 예시는 서술자 턴으로 끝나야 한다")
+        if index > 0 and not example.user_line.strip():
+            errors.append(f"{where}: 첫 쌍이 아닌데 userLine 이 비었다 — 앞 쌍의 서술과 합칠 것")
+        for text in (example.user_line, example.assistant_line):
+            if match := SPEAKER_LABEL.search(text):
+                errors.append(f"{where}: 텍스트에 화자 라벨 '{match.group()}' 이 있다 — 본문만 쓸 것")
     return errors
 
 
@@ -517,6 +562,11 @@ def _story_digest(slot: MatrixSlot, raw: dict[str, Any]) -> str:
         )
         for setup in raw.get("startingSetups") or []
     )
+    examples = "\n".join(
+        (f"  사용자: {pair.get('userLine')}\n" if pair.get("userLine") else "")
+        + f"  서술자: {pair.get('assistantLine')}"
+        for pair in raw.get("developmentExamples") or []
+    )
     keywords = "\n".join(
         f"  - [{', '.join(str(keyword) for keyword in note.get('triggerKeywords') or [])}] "
         f"{note.get('infoText')}"
@@ -527,7 +577,7 @@ def _story_digest(slot: MatrixSlot, raw: dict[str, Any]) -> str:
         f"좌표: 정서 {axes.tone} / 관계 {axes.relation} / 플레이 {axes.verb} / "
         f"세계 {axes.space} / 엔딩 압력 {axes.ending_pressure}\n"
         f"설정문: {raw.get('settingText')}\n"
-        f"전개 예시: {raw.get('developmentExample')}\n"
+        f"전개 예시:\n{examples}\n"
         f"시작 상황:\n{setups}\n"
         f"키워드북:\n{keywords}"
     )
