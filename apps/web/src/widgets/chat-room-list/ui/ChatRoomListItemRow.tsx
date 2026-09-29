@@ -15,6 +15,7 @@ import { toast } from "sonner";
 
 import {
   chatRoomKeys,
+  stripChatNotation,
   useDeleteChatRoomMutation,
   useRenameChatRoomMutation,
   useResetChatRoomMutation,
@@ -110,7 +111,7 @@ export function ChatRoomListItemRow({
           // 같아져 이 인라인 제목 편집란도 같은 터치 타깃 높이를 갖는다.
           className="border-none px-0 text-sm font-medium shadow-none focus-visible:ring-0"
         />
-        <p className="truncate text-xs text-muted-foreground">{item.lastMessagePreview}</p>
+        <p className="truncate text-xs text-muted-foreground">{stripChatNotation(item.lastMessagePreview)}</p>
       </div>
 
       <Button asChild variant="ghost" size="icon" aria-label="대화방 열기">

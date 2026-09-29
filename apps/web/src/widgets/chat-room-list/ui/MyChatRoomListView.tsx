@@ -2,7 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Link } from "@tanstack/react-router";
 import { ImageOff } from "lucide-react";
 
-import { useMyChatRoomListQuery, type MyChatRoomListItem } from "@/entities/chat-room";
+import { stripChatNotation, useMyChatRoomListQuery, type MyChatRoomListItem } from "@/entities/chat-room";
 import { ContentListEmptyState } from "@/entities/content";
 import { formatRelativeTime } from "@/shared/lib/time/formatRelativeTime";
 
@@ -125,7 +125,7 @@ function MyChatRoomListItemRow({ item }: { item: MyChatRoomListItem }) {
             밀어 다른 행들과 8px 어긋난다(실측 A/B). `truncate`의 `white-space: nowrap`에서는 홀로
             남은 공백이 축약되지 않아 16px 라인박스가 유지된다. */}
         <p className="truncate text-xs break-keep text-muted-foreground">
-          {item.lastMessagePreview || " "}
+          {stripChatNotation(item.lastMessagePreview) || " "}
         </p>
       </div>
     </Link>

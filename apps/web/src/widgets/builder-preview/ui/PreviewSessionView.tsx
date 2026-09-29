@@ -17,6 +17,7 @@ import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
+import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -165,7 +166,9 @@ export function PreviewSessionView({
         {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-          <div className="flex flex-col gap-3">
+          {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
+              같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
+          <div className="flex flex-col gap-6">
             {state.messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
             ))}
@@ -259,6 +262,7 @@ export function PreviewSessionView({
                 />
               )}
             </div>
+            <NarrationMarkerButton textareaRef={inputRef} value={text} onValueChange={setText} disabled={isSending} />
             <Button
               size="icon"
               aria-label="전송"

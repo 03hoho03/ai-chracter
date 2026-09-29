@@ -10,7 +10,7 @@ import {
 import { ArrowLeft, ChevronRight, Lock, Sparkles } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { useEndingCollectionQuery } from "@/entities/chat-room";
+import { ChatMarkdown, useEndingCollectionQuery } from "@/entities/chat-room";
 import type { EndingCollectionItem } from "@/entities/chat-room";
 
 type EndingCollectionModalProps = {
@@ -53,9 +53,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
               </DialogTitle>
               <DialogDescription className="sr-only">엔딩 에필로그</DialogDescription>
             </DialogHeader>
-            <p className="whitespace-pre-wrap text-sm text-foreground">
-              {selectedEnding.epilogue ?? "이 엔딩에는 에필로그가 없어요."}
-            </p>
+            <EndingEpilogue epilogue={selectedEnding.epilogue} />
           </div>
         ) : (
           <div key="list" className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
@@ -71,6 +69,17 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
     </Dialog>
   );
 });
+
+type EndingEpilogueProps = {
+  epilogue: EndingCollectionItem["epilogue"];
+};
+
+function EndingEpilogue({ epilogue }: EndingEpilogueProps) {
+  if (!epilogue) return <p className="text-sm text-foreground">이 엔딩에는 에필로그가 없어요.</p>;
+
+  // 채팅방에서 본 에필로그와 같은 표기로 보인다. 다이얼로그 면 위라 코드 블록 면은 secondary 다.
+  return <ChatMarkdown content={epilogue} codeBlockSurface="secondary" />;
+}
 
 /** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다.
  * 바깥의 `selectedEnding ? 상세 : 목록`은 2갈래라 삼항으로 남긴다 — 중첩이 문제였지 삼항 자체가

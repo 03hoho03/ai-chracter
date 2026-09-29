@@ -38,6 +38,13 @@
   --font-sans: "Pretendard Variable", -apple-system, BlinkMacSystemFont,
     system-ui, Roboto, "Malgun Gothic", sans-serif;
   --font-heading: var(--font-sans);
+  /* 고정폭은 채팅 코드 블록(상태창처럼 칸을 맞춘 글)에만 쓴다. 웹폰트를 더 받지 않고 기기에 있는 고정폭
+     서체를 쓴다. 브라우저는 글자마다 이 목록을 앞에서부터 훑어 그 글자가 있는 첫 서체를 고르므로, 순서가 곧
+     규칙이다: 이름 붙은 서체가 하나도 없는 기기(안드로이드·리눅스)에서도 라틴 글자가 비례폭 Pretendard 로
+     새지 않게 generic `monospace` 를 Pretendard 보다 앞에 둔다. 고정폭 서체들에는 대개 한글이 없어 한글은
+     그다음의 Pretendard 가 잡는다(없으면 기기마다 다른 한글 폴백이 섞인다).
+     Tailwind 기본 스택을 덮으므로 `font-mono` 가 이 값을 따른다. */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace, "Pretendard Variable";
   /* 본문 사다리 상향 — Tailwind v4 기본값(0.875rem/0.75rem)을 오버라이드한다.
      Body 16px(기존 14px) · Label/메타 14px(기존 12px) · Badge 12px(기존 11px, 아래 --text-badge).
 

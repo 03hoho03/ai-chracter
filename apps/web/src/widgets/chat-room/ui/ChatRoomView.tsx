@@ -27,6 +27,7 @@ import {
 } from "@/entities/clover";
 import { useContentDetailQuery } from "@/entities/content";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
+import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -226,7 +227,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
 
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
-            <div className="flex flex-col gap-3">
+            {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
+                같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
+            <div className="flex flex-col gap-6">
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
                 return (
@@ -346,6 +349,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   />
                 )}
               </div>
+              <NarrationMarkerButton textareaRef={inputRef} value={text} onValueChange={setText} disabled={isSending} />
               <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
                 <Send aria-hidden className="size-4" />
               </Button>
@@ -374,7 +378,7 @@ function ChatRoomSkeleton() {
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 sm:px-6 py-4">
       <div className="h-16 w-2/3 animate-pulse rounded-lg bg-muted" />
-      <div className="ml-auto h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
+      <div className="h-10 w-1/2 animate-pulse rounded-lg bg-muted" />
       <div className="h-12 w-3/5 animate-pulse rounded-lg bg-muted" />
     </div>
   );
