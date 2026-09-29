@@ -45,6 +45,8 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/builder")).toBe(true);
     expect(isKnownRoute("/terms")).toBe(true);
     expect(isKnownRoute("/privacy")).toBe(true);
+    expect(isKnownRoute("/guide/story")).toBe(true);
+    expect(isKnownRoute("/guide/character")).toBe(true);
   });
 
   it("파라미터 세그먼트는 아무 값이나 받는다", () => {
@@ -62,6 +64,9 @@ describe("isKnownRoute", () => {
     expect(isKnownRoute("/content/character")).toBe(false);
     expect(isKnownRoute("/content/character/1/2")).toBe(false);
     expect(isKnownRoute("/onboarding")).toBe(false);
+    // 작성 가이드는 토픽별 정적 라우트뿐이라 목록 경로도, 없는 토픽도 없다.
+    expect(isKnownRoute("/guide")).toBe(false);
+    expect(isKnownRoute("/guide/image")).toBe(false);
     expect(isKnownRoute("/builder/character")).toBe(false);
     // `/my`와 `/mypage`는 접두사가 겹칠 뿐 다른 경로다.
     expect(isKnownRoute("/my/works")).toBe(false);

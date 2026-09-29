@@ -36,7 +36,7 @@ export { useResetChatRoomMutation } from "./api/useResetChatRoomMutation";
 export { useStartChatMutation } from "./api/useStartChatMutation";
 export { ChatMarkdown } from "./ui/ChatMarkdown";
 export { EndingDivider } from "./ui/EndingDivider";
-export { MessageBubble } from "./ui/MessageBubble";
+export { MessageBubble, USER_MESSAGE_FRAME } from "./ui/MessageBubble";
 export { RateLimitNotice } from "./ui/RateLimitNotice";
 export { TypingIndicator } from "./ui/TypingIndicator";
 export { StatGaugePanel } from "./ui/StatGaugePanel";

@@ -16,6 +16,8 @@ export const KNOWN_ROUTES = [
   "/content/$type/$id",
   "/favorites",
   "/forgot-password",
+  "/guide/character",
+  "/guide/story",
   "/inquiries",
   "/inquiries/$inquiryId",
   "/inquiries/new",
