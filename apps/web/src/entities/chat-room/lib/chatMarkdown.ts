@@ -2,6 +2,8 @@ import type { Emphasis, Nodes, Paragraph, PhrasingContent, Root, Strong, Text } 
 import type { Options } from "react-markdown";
 import type { Plugin } from "unified";
 
+import { assertNever } from "@/shared/lib/assertNever";
+
 import {
   ESCAPED_STAR,
   RAW_STAR,
@@ -19,7 +21,7 @@ import {
   splitLineStart,
   startsWithContainerMarker,
   tokenizeStars,
-} from "./chatNotationSyntax";
+} from "../model/chatNotationSyntax";
 
 // 파서 확장 목록은 remark-parse 가 unified 의 Data 에 선언하는데, 이 앱은 remark-parse 를 직접 의존하지
 // 않아(react-markdown 안에 들어 있다) 그 선언이 보이지 않는다. 여기서 쓰는 만큼만 선언한다.
@@ -143,8 +145,8 @@ export function prepareChatMarkdownSource(content: string): string {
     })
     .flatMap((line, index, all): PreparedLine[] => {
       const previous = all[index - 1];
-      const endsQuote = previous?.isQuote === true && !line.isQuote && !line.isCode && line.body.trim() !== "";
-      return endsQuote ? [{ prefix: "", body: "", isCode: false, isQuote: false }, line] : [line];
+      const shouldEndQuote = previous?.isQuote === true && !line.isQuote && !line.isCode && line.body.trim() !== "";
+      return shouldEndQuote ? [{ prefix: "", body: "", isCode: false, isQuote: false }, line] : [line];
     });
 
   for (let last = lines.at(-1); last && !last.isCode; last = lines.at(-1)) {
@@ -254,9 +256,16 @@ function neighborOf(node: PhrasingContent | undefined): StarNeighbor {
 
 function toPhrasing(tree: StarTree<PhrasingContent>): PhrasingContent[] {
   return tree.flatMap((node): PhrasingContent[] => {
-    if (node.kind === "content") return node.value.type === "text" && node.value.value === "" ? [] : [node.value];
-    if (node.kind === "literal") return [textNode("*".repeat(node.length))];
-    return [wrapPhrasing(node.depth, toPhrasing(node.children))];
+    switch (node.kind) {
+      case "content":
+        return node.value.type === "text" && node.value.value === "" ? [] : [node.value];
+      case "literal":
+        return [textNode("*".repeat(node.length))];
+      case "wrap":
+        return [wrapPhrasing(node.depth, toPhrasing(node.children))];
+      default:
+        return assertNever(node);
+    }
   });
 }
 

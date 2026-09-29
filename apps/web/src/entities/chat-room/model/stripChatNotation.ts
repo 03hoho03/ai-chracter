@@ -1,3 +1,5 @@
+import { assertNever } from "@/shared/lib/assertNever";
+
 import {
   ESCAPED_STAR,
   type Fence,
@@ -73,9 +75,16 @@ function unescapeText(text: string): string {
 function flatten(tree: StarTree<string>): string {
   return tree
     .map((node) => {
-      if (node.kind === "content") return node.value;
-      if (node.kind === "literal") return "*".repeat(node.length);
-      return flatten(node.children);
+      switch (node.kind) {
+        case "content":
+          return node.value;
+        case "literal":
+          return "*".repeat(node.length);
+        case "wrap":
+          return flatten(node.children);
+        default:
+          return assertNever(node);
+      }
     })
     .join("");
 }

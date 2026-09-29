@@ -33,26 +33,26 @@ export function insertNarrationMarker({ text, selectionStart, selectionEnd }: Te
   }
   if (paragraphs.length === 1) return toggleSingle(text, from, selected);
 
-  const unwrapAll = paragraphs.every((paragraph) => isNarration(paragraph.trim()));
+  const shouldUnwrapAll = paragraphs.every((paragraph) => isNarration(paragraph.trim()));
   const replaced = parts
     .map((part, index) => {
       const body = part.trim();
       if (index % 2 === 1 || body === "") return part;
       const bodyStart = part.indexOf(body);
-      return part.slice(0, bodyStart) + toggleParagraph(body, unwrapAll) + part.slice(bodyStart + body.length);
+      return part.slice(0, bodyStart) + toggleParagraph(body, shouldUnwrapAll) + part.slice(bodyStart + body.length);
     })
     .join("");
   const leading = replaced.length - replaced.trimStart().length;
   const end = from + replaced.trimEnd().length;
   return {
     text: text.slice(0, from) + replaced + text.slice(to),
-    selectionStart: unwrapAll ? from + leading : end,
+    selectionStart: shouldUnwrapAll ? from + leading : end,
     selectionEnd: end,
   };
 }
 
-function toggleParagraph(body: string, unwrap: boolean): string {
-  if (unwrap) return body.slice(1, -1);
+function toggleParagraph(body: string, shouldUnwrap: boolean): string {
+  if (shouldUnwrap) return body.slice(1, -1);
   return isNarration(body) ? body : MARKER + body + MARKER;
 }
 

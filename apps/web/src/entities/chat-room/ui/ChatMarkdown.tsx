@@ -6,8 +6,8 @@ import { Copy } from "lucide-react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
-import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../model/chatMarkdown";
-import { copyCodeToClipboard } from "../model/copyCodeToClipboard";
+import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
+import { copyCodeToClipboard } from "../lib/copyCodeToClipboard";
 
 type CodeBlockSurface = "muted" | "secondary";
 

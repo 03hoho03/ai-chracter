@@ -373,7 +373,7 @@ components:
 
 ## 6. Chat Notation (채팅 표기)
 
-**채팅 메시지 본문을 어떻게 적고 어떻게 그리는지의 유일한 명세다.** 렌더러 테스트 셋(`apps/web/src/entities/chat-room/model/chatMarkdown.test.ts`·`ui/ChatMarkdown.test.ts`·`model/stripChatNotation.test.ts`)의 사례표가 이 절과 같아야 하고, 표기 규칙을 바꾸면 둘을 함께 고친다. 구현은 `entities/chat-room`의 `chatNotationSyntax.ts`(별표 짝짓기·줄 머리 판정 — 본문과 미리보기가 공유), `chatMarkdown.ts`(파서 설정·보정), `ui/ChatMarkdown.tsx`(스타일), `ui/MessageBubble.tsx`(메시지 틀)다.
+**채팅 메시지 본문을 어떻게 적고 어떻게 그리는지의 유일한 명세다.** 렌더러 테스트 셋(`apps/web/src/entities/chat-room/lib/chatMarkdown.test.ts`·`ui/ChatMarkdown.test.ts`·`model/stripChatNotation.test.ts`)의 사례표가 이 절과 같아야 하고, 표기 규칙을 바꾸면 둘을 함께 고친다. 구현은 `entities/chat-room`의 `model/chatNotationSyntax.ts`(별표 짝짓기·줄 머리 판정 — 본문과 미리보기가 공유), `lib/chatMarkdown.ts`(파서 설정·보정), `ui/ChatMarkdown.tsx`(스타일), `ui/MessageBubble.tsx`(메시지 틀)다.
 
 **적용처**: 채팅방(`ChatRoomView`)의 메시지·스트리밍·에필로그, 빌더 미리보기(`PreviewSessionView`), 엔딩 컬렉션 모달의 에필로그. **약관·공지가 쓰는 공용 `packages/ui` `markdown.tsx`와는 다른 렌더러다** — 그쪽은 표·제목·링크가 필요해서 채팅 부분집합으로 바꿀 수 없다. admin의 대화 조회 화면(`ChatMessagesPage`)은 운영 확인용이라 원문 글자를 그대로 보여 준다.
 

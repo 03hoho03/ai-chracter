@@ -4,7 +4,8 @@
 export type StarNeighbor = "none" | "space" | "marker" | "other";
 export type StarRun = { length: number; prev: StarNeighbor; next: StarNeighbor };
 export type StarToken<T> = { kind: "run"; run: StarRun } | { kind: "content"; value: T };
-export type WrapDepth = 1 | 2 | 3;
+const WRAP_DEPTHS = [1, 2, 3] as const;
+export type WrapDepth = (typeof WRAP_DEPTHS)[number];
 export type StarTree<T> = Array<
   { kind: "content"; value: T } | { kind: "literal"; length: number } | { kind: "wrap"; depth: WrapDepth; children: StarTree<T> }
 >;
@@ -174,7 +175,7 @@ function buildCloserTable<T>(tokens: StarToken<T>[]): CloserTable {
   const size = tokens.length + 1;
   const table: CloserTable = { 1: new Int32Array(size).fill(-1), 2: new Int32Array(size).fill(-1), 3: new Int32Array(size).fill(-1) };
   for (let index = tokens.length - 1; index >= 0; index -= 1) {
-    for (const length of [1, 2, 3] as const) table[length][index] = table[length][index + 1] ?? -1;
+    for (const length of WRAP_DEPTHS) table[length][index] = table[length][index + 1] ?? -1;
     const token = tokens[index];
     const length = token?.kind === "run" ? toWrapDepth(token.run.length) : undefined;
     if (token?.kind === "run" && length && canClose(token.run)) table[length][index] = index;
@@ -186,7 +187,7 @@ function findCloser(closers: CloserTable, from: number, end: number, length: Wra
   const within = (index: number | undefined) => (index !== undefined && index !== -1 && index < end ? index : -1);
   const exact = within(closers[length][from]);
   if (exact !== -1) return exact;
-  const others = ([1, 2, 3] as const).filter((other) => other !== length).map((other) => within(closers[other][from]));
+  const others = WRAP_DEPTHS.filter((other) => other !== length).map((other) => within(closers[other][from]));
   const found = others.filter((index) => index !== -1);
   return found.length > 0 ? Math.min(...found) : -1;
 }

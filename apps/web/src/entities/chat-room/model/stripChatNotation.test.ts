@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import { describe, expect, it } from "vitest";
 
-import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "./chatMarkdown";
+import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
 import { stripChatNotation } from "./stripChatNotation";
 
 function renderedText(content: string): string {
