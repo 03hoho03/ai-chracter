@@ -18,6 +18,14 @@ function classOf(html: string, tag: string): string {
 }
 
 describe("ChatMarkdown", () => {
+  // 메시지 목록을 그리는 화면은 입력창 글자와 스트리밍 청크마다 다시 렌더된다. 본문이 그대로인 메시지까지
+  // 매번 마크다운을 다시 파싱하지 않도록, props(전부 원시값)가 같으면 렌더를 건너뛰어야 한다.
+  it("skips re-rendering when props are shallowly equal", () => {
+    expect(Reflect.get(ChatMarkdown, "$$typeof")).toBe(Symbol.for("react.memo"));
+    // 사용자 정의 비교 없이 기본 얕은 비교를 쓴다 — props 가 원시값뿐이라 그것으로 충분하다.
+    expect(Reflect.get(ChatMarkdown, "compare")).toBeNull();
+  });
+
   it("wraps content in a Korean-aware body container", () => {
     const container = classOf(render("안녕"), "div");
     expect(container).toContain("break-keep");

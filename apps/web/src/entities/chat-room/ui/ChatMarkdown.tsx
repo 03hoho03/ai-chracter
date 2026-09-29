@@ -1,4 +1,4 @@
-import type { ComponentProps } from "react";
+import { memo, type ComponentProps } from "react";
 import type { Components, ExtraProps } from "react-markdown";
 import Markdown from "react-markdown";
 import { Copy } from "lucide-react";
@@ -47,7 +47,13 @@ const COMPONENTS_BY_SURFACE: Record<CodeBlockSurface, Components> = {
   secondary: { ...BASE_COMPONENTS, pre: (props) => <ChatCodeBlock {...props} surface="secondary" /> },
 };
 
-export function ChatMarkdown({ content, codeBlockSurface = "muted", className }: ChatMarkdownProps) {
+// 메시지 목록 화면은 입력창 글자·스트리밍 청크마다 다시 렌더되는데, 본문이 그대로인 메시지까지 매번
+// 마크다운을 다시 파싱하면 긴 대화에서 입력이 끊긴다. props 가 전부 원시값이라 기본 얕은 비교로 건너뛴다.
+export const ChatMarkdown = memo(function ChatMarkdown({
+  content,
+  codeBlockSurface = "muted",
+  className,
+}: ChatMarkdownProps) {
   // `break-words` 가 아니라 `wrap-break-word` 인 이유: tailwind-merge 가 `break-words` 와 `break-keep` 을
   // 같은 무리로 보고 앞의 것을 지운다. 둘 다 살아 있어야 어절은 지키고 긴 URL 같은 한 덩어리는 접힌다.
   return (
@@ -62,7 +68,7 @@ export function ChatMarkdown({ content, codeBlockSurface = "muted", className }:
       </Markdown>
     </div>
   );
-}
+});
 
 function ChatParagraph({ className, node: _node, ...props }: ComponentProps<"p"> & ExtraProps) {
   return <p className={cn("m-0", className)} {...props} />;
