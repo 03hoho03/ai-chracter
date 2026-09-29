@@ -913,7 +913,9 @@ sudo docker compose -f docker-compose.prod.yml --env-file /opt/ddona/.env exec -
   python -c "from api.core.config import settings; print(settings.local_image_reference_enabled)"   # True
 ```
 
-켠 뒤: 생성 화면에서 참조를 붙여 1장 생성이 성공하는지 본다(요청 바디에 `referenceAssetId`). "BE 런타임" 절의 키
+켠 뒤: 생성 화면에서 참조를 붙여 1장 생성이 성공하는지 본다(요청 바디에 `referenceAssetId`). **2026-09-29 확인
+완료** — 운영 생성 화면에서 본인 생성 이미지를 참조로 붙여 1장 생성: 요청에 `referenceAssetId`가 실렸고 `202` → 잡
+`succeeded`, 차단(422) 없음. 참조를 붙이지 않은 대조 요청에는 이 필드가 없었다. "BE 런타임" 절의 키
 개수 문장을 VM에서 다시 세어 고치고, 표의 이 키 행과 "생략 가능" 목록도 켠 상태에 맞게 고친다. 참조 이미지를 읽거나
 검증하지 못한 실패는 Bugsink `dependency=reference_image`로, 집 PC가 참조 요청을 400으로 거절한 것은
 `dependency=local_image`로 올라온다. 참조 차단(422 `reference`)은 WARNING 로그만 남고 경보는 없다.
