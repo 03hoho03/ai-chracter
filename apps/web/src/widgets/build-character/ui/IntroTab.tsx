@@ -1,5 +1,4 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
@@ -67,8 +66,9 @@ export function IntroTab() {
                 <div className="flex items-start gap-2">
                   <div className="flex flex-1 flex-col gap-2">
                     <div className="flex flex-col gap-1">
-                      <Input
+                      <Textarea
                         placeholder="사용자 대사"
+                        rows={2}
                         aria-invalid={!!userLineError}
                         aria-describedby={userLineError ? userLineErrorId : undefined}
                         {...register(`intro.exampleDialogues.${index}.userLine`)}
@@ -80,8 +80,9 @@ export function IntroTab() {
                       )}
                     </div>
                     <div className="flex flex-col gap-1">
-                      <Input
+                      <Textarea
                         placeholder="캐릭터 대사"
+                        rows={4}
                         aria-invalid={!!characterLineError}
                         aria-describedby={characterLineError ? characterLineErrorId : undefined}
                         {...register(`intro.exampleDialogues.${index}.characterLine`)}

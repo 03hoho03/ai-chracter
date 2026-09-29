@@ -1,5 +1,4 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
@@ -184,8 +183,9 @@ export function SettingTab() {
             <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
               <div className="flex items-start gap-2">
                 <div className="flex flex-1 flex-col gap-2">
-                  <Input
+                  <Textarea
                     placeholder="사용자 메시지"
+                    rows={2}
                     aria-invalid={!!exampleErrors?.userLine}
                     aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
                     {...register(`storySetting.developmentExamples.${index}.userLine`)}
@@ -195,8 +195,9 @@ export function SettingTab() {
                       {exampleErrors.userLine.message}
                     </p>
                   )}
-                  <Input
+                  <Textarea
                     placeholder="스토리 응답"
+                    rows={6}
                     aria-invalid={!!exampleErrors?.assistantLine}
                     aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
                     {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
