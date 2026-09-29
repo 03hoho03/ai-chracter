@@ -8,6 +8,7 @@
 검증 전에 자리표시자 UUID 를 채워 넣는다.
 """
 
+import json
 import re
 import uuid
 
@@ -183,40 +184,51 @@ def test_major_character_is_written_for_the_generated_images() -> None:
     assert all(condition.strip() for condition in conditions)
 
 
-def test_seed_story_development_examples_read_as_a_turn_transcript() -> None:
-    """`developmentExample` 은 문체·구조·소품을 준-축자 복제시키는 템플릿 씨앗이라(실측)
-    포맷 자체가 그대로 학습된다.
+# 줄 머리든 문장 중간이든 화자 라벨 모양(`사용자:`·`서술자:`·`진행자:`)이 텍스트 안에 남은 것.
+_SPEAKER_LABEL = re.compile(r"(사용자|서술자|진행자)\s*:")
+# 빌더 폼(스토리 설정 탭)이 받아 주는 전개 예시 개수 상한. 이보다 많으면 시드 콘텐츠를 빌더에서
+# 열어 다시 저장할 때 폼 검증에 막힌다.
+_BUILDER_MAX_DEVELOPMENT_EXAMPLES = 3
 
-    - 화자 라벨이 문단 중간에 인라인으로 박혀 있으면(줄바꿈 없이 턴이 이어붙은 경우) 모델이
-      자기 응답 안에 `사용자:` 를 그대로 찍는다 — 30 개 `settingText` 가 하나같이 "응답 앞에
-      라벨을 붙이지 마라"고 지시하는 것과 정면으로 어긋나는 신호다.
-    - 예시가 사용자 턴으로 끝나면 모델이 사용자의 대사까지 대신 써버린다(화자 뒤집힘).
-    런타임 프롬프트(`build_story_generation_prompt`)가 대화 기록을 같은 `화자: 내용` 줄
-    형식으로 넣으므로, 라벨을 줄 맨 앞에 두는 것 자체는 오히려 일관된다.
+
+def test_seed_story_development_examples_are_label_free_pairs() -> None:
+    """전개 예시는 쌍 목록이고 화자 라벨은 프롬프트 조립(`build_story_generation_prompt`)이
+    쌍마다 붙인다. 문체·구조·소품을 준-축자 복제시키는 템플릿 씨앗이라(실측) 포맷 자체가
+    그대로 학습되므로:
+
+    - 텍스트 안에 라벨이 남아 있으면 조립 결과에 라벨이 겹쳐(`서술자: 서술자: …`) 들어가고,
+      문장 중간에 박힌 라벨은 모델이 자기 응답 안에 `사용자:` 를 그대로 찍게 만든다 — 30 개
+      `settingText` 가 하나같이 "응답 앞에 라벨을 붙이지 마라"고 지시하는 것과 정면으로
+      어긋나는 신호다.
+    - 서술 칸이 빈 쌍이 있으면 예시가 사용자 턴으로 끝나거나 끊겨, 모델이 사용자의 대사까지
+      대신 써버린다(화자 뒤집힘).
+    - 사용자 칸이 비는 것은 첫 쌍에서만 허용한다 — 서술자가 장면을 먼저 여는 예시다. 중간
+      쌍이 비면 서술이 두 번 연달아 나오는 모양이 되는데, 그건 앞 쌍의 서술 하나로 합칠 것이다.
+
+    키 이름은 원본 JSON 에서 본다 — 로더의 스키마 검증은 모르는 키를 조용히 버리므로
+    쌍에 덧붙인 키(`narratorLine` 등)는 그 값이 통째로 사라져도 통과한다.
     """
-    narrator_labels = {"서술자", "진행자"}
-
-    for story in load_stories():
-        example = story.payload.development_example
-        if not example:
-            continue
-
-        turns = []
-        for line in example.split("\n"):
-            speaker, separator, _ = line.partition(":")
-            speaker = speaker.strip()
-            if separator and speaker in narrator_labels | {"사용자"}:
-                turns.append(speaker)
-                continue
-            for label in narrator_labels | {"사용자"}:
-                assert f"{label}:" not in line, (
-                    f"{story.slug}: 화자 라벨 '{label}:' 이 줄 중간에 박혀 있다 — 턴마다 줄을 나눌 것"
-                )
-
-        assert turns, f"{story.slug}: developmentExample 에 화자 라벨이 하나도 없어 턴 구분이 안 된다"
-        assert turns[-1] in narrator_labels, (
-            f"{story.slug}: developmentExample 이 사용자 턴으로 끝난다 — 모델이 사용자 대사를 대신 쓴다"
+    for path in sorted(STORIES_DIR.glob("*.json")):
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        pairs = raw.get("developmentExamples")
+        assert pairs, f"{path.stem}: developmentExamples 쌍 목록이 비었거나 없다"
+        assert len(pairs) <= _BUILDER_MAX_DEVELOPMENT_EXAMPLES, (
+            f"{path.stem}: 전개 예시가 {len(pairs)}쌍 — 빌더 폼 상한을 넘는다"
         )
+        for index, pair in enumerate(pairs):
+            assert set(pair) == {"userLine", "assistantLine"}, (
+                f"{path.stem}[{index}]: 쌍의 키가 userLine/assistantLine 이 아니다 — {sorted(pair)}"
+            )
+            for key, text in pair.items():
+                assert text == text.strip(), f"{path.stem}[{index}].{key}: 앞뒤 공백이 남아 있다"
+                match = _SPEAKER_LABEL.search(text)
+                assert match is None, (
+                    f"{path.stem}[{index}].{key}: 화자 라벨 {match.group()!r} 이 텍스트에 남아 있다"
+                )
+            assert pair["assistantLine"], f"{path.stem}[{index}]: 서술 칸이 비었다"
+            assert pair["userLine"] or index == 0, (
+                f"{path.stem}[{index}]: 첫 쌍이 아닌데 사용자 칸이 비었다"
+            )
 
 
 def test_seed_story_setting_text_does_not_quote_stat_names() -> None:

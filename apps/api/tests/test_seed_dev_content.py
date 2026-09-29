@@ -5,6 +5,7 @@ payload 로 이미 검사한다. 여기서는 **커밋된 데이터 파일 전�
 주입 -> upsert -> 발행)를 그대로 통과하는지, 그리고 재실행이 행을 늘리지 않는지를 본다.
 """
 
+import json
 import uuid
 from datetime import date, datetime, timezone, UTC
 from pathlib import Path
@@ -22,11 +23,12 @@ from api.db.models.media import Asset
 from api.db.models.story import StoryVersionDetail
 from seed_content import images
 from seed_content.ids import SEED_AUTHOR_USER_ID
-from seed_content.loader import load_characters, load_stories
+from seed_content.loader import STORIES_DIR, load_characters, load_stories
 from seed_content.upsert import (
     character_content_id,
     character_version_id,
     story_content_id,
+    story_draft_version_id,
     story_version_id,
 )
 
@@ -112,6 +114,28 @@ async def test_seed_content_files_publishes_every_data_file(
             character_detail.thumbnail_asset_id,
             character.slug,
         )
+
+
+async def test_seed_content_files_writes_story_development_examples_from_the_json(
+    db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """채팅은 스토리 버전의 쌍 목록 `development_examples` 만 읽는다. 시드가 이 칸을 빈 목록으로
+    덮으면 전개 예시가 조용히 사라진 채 채팅이 계속 돌아가므로(에러 없음), 발행본과 초안 둘 다
+    파일에 적힌 쌍 목록 그대로 들어갔는지 원본 JSON 과 직접 대조한다. 로더를 거친 payload 와
+    비교하면 키가 빠진 파일도 스키마 기본값 빈 목록끼리 같아져 통과해 버린다."""
+    await _seed_author(db_session)
+
+    await seed_dev.seed_content_files(db_session)
+
+    for path in sorted(STORIES_DIR.glob("*.json")):
+        expected = json.loads(path.read_text(encoding="utf-8")).get("developmentExamples")
+        assert expected, f"{path.stem}: 시드 JSON 에 전개 예시 쌍 목록이 없다"
+        for version_id in (story_version_id(path.stem), story_draft_version_id(path.stem)):
+            detail = await db_session.get(StoryVersionDetail, version_id)
+            assert detail is not None
+            assert detail.development_examples == expected, (
+                f"{path.stem}: DB 의 전개 예시가 시드 JSON 과 다르다"
+            )
 
 
 async def test_seed_content_files_is_idempotent(db_session: AsyncSession, s3_bucket: None) -> None:
