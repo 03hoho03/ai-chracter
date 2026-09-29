@@ -35,8 +35,9 @@ export function BuilderTopBar({ title, actions, autosaveNotice }: BuilderTopBarP
             <ArrowLeft aria-hidden className="size-4" />
           </Link>
         </Button>
-        {/* 폭이 모자라면(360px 이하에서 액션 넷 + 발행) 제목이 말줄임으로 줄어든다 — 제목은 고정문이라 잘려도
-            잃는 정보가 작고, 줄지 않으면 액션 묶음이 바 밖으로 넘친다. */}
+        {/* 폭이 모자라면 액션 넷(작성 가이드·미리보기·임시저장·발행) 대신 제목이 말줄임으로 줄어든다 — 제목은
+            고정문이라 잘려도 잃는 정보가 작고, 줄지 않으면 액션 묶음이 바 밖으로 넘친다. 실측으로 390·360·320px
+            모두 넘침이 없었고, 320px 에서는 제목 칸이 약 40px 로 줄어 말줄임된다. */}
         <h1 className="min-w-0 truncate text-xl font-semibold tracking-tight text-foreground">
           {title}
         </h1>
