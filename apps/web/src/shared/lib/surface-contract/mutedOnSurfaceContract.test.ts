@@ -43,9 +43,9 @@ const ALL_SOURCES: Record<string, string> = { ...WEB_SOURCES, ...UI_SOURCES };
 const ALLOWLIST: Record<string, { reason: string; tokens: string[] }> = {
   "../../../entities/chat-room/ui/MessageBubble.tsx": {
     reason:
-      "표식은 말풍선 ⋯ 메뉴의 DropdownMenuContent뿐이다. bg-muted 이미지 웰 둘은 그 메뉴 밖, 채팅방·미리보기 " +
+      "표식은 메시지 ⋯ 메뉴의 DropdownMenuContent뿐이다. bg-muted 이미지 웰은 그 메뉴 밖, 채팅방·미리보기 " +
       "화면(h-below-header 전체 페이지)의 background 위에 있다.",
-    tokens: ["bg-muted", "bg-muted"],
+    tokens: ["bg-muted"],
   },
   "../../../features/submit-inquiry/ui/SubmitInquiryForm.tsx": {
     reason:

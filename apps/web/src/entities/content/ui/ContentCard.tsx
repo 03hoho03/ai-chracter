@@ -228,8 +228,9 @@ export function ContentCard({
             하드컷된다(실측 임계: 390px 스토리 열 111.33px에서 9글자, 390px 본인 프로필의 스토리 탭에서
             제목 실폭 71.33px 열에서 6글자 — `portrait` 3열(카드 폭 111.33px)에 `⋯`(`actions`)가 붙어
             제목 실폭이 `111.33 − (버튼 32 + gap 8) = 71.33px`가 된다).
-            현행 `truncate`는 `…`을 붙이므로 그대로 두면 개선이 아니라 퇴행이다. 이 쌍은 `MessageBubble.tsx`가
-            채팅 메시지에 이미 쓴다.
+            현행 `truncate`는 `…`을 붙이므로 그대로 두면 개선이 아니라 퇴행이다. 채팅 메시지(`ChatMarkdown.tsx`)도
+            같은 목적의 쌍을 쓰되 `cn()`을 거치므로 `break-words` 대신 `wrap-break-word`다(tailwind-merge가
+            `break-words`와 `break-keep`을 한 무리로 보고 앞의 것을 지운다). 여기는 평범한 문자열이라 둘 다 남는다.
 
             `gap-2`의 원래 근거(말줄임 `…`과 아이콘의 점 여섯 개가 한 덩어리로 읽힌다)는 소멸했다 —
             `line-clamp`의 `…`은 둘째 줄 끝에 붙고 `⋯` 버튼은 `items-start`로 첫 줄 옆에 있어 둘이 만나지

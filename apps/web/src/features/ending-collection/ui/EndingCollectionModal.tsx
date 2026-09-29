@@ -10,7 +10,7 @@ import {
 import { ArrowLeft, ChevronRight, Lock, Sparkles } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { useEndingCollectionQuery } from "@/entities/chat-room";
+import { ChatMarkdown, useEndingCollectionQuery } from "@/entities/chat-room";
 import type { EndingCollectionItem } from "@/entities/chat-room";
 
 type EndingCollectionModalProps = {
@@ -53,9 +53,12 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
               </DialogTitle>
               <DialogDescription className="sr-only">엔딩 에필로그</DialogDescription>
             </DialogHeader>
-            <p className="whitespace-pre-wrap text-sm text-foreground">
-              {selectedEnding.epilogue ?? "이 엔딩에는 에필로그가 없어요."}
-            </p>
+            {/* 채팅방에서 본 에필로그와 같은 표기로 보인다. 다이얼로그 면 위라 코드 블록 면은 secondary 다. */}
+            {selectedEnding.epilogue ? (
+              <ChatMarkdown content={selectedEnding.epilogue} codeBlockSurface="secondary" />
+            ) : (
+              <p className="text-sm text-foreground">이 엔딩에는 에필로그가 없어요.</p>
+            )}
           </div>
         ) : (
           <div key="list" className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">

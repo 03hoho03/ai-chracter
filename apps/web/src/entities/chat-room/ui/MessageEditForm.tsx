@@ -16,7 +16,9 @@ export function MessageEditForm({ content, onCancelEdit, onSaveEdit }: MessageEd
   const trimmed = draft.trim();
 
   return (
-    <div className="flex flex-col items-end gap-1.5">
+    // 폭은 메시지 본문과 같은 캡(max-w-3xl)이라 입력란이 원래 메시지 자리를 그대로 덮는다. 버튼은 입력란 오른쪽
+    // 끝 아래에 붙인다.
+    <div className="flex w-full max-w-3xl flex-col items-end gap-1.5">
       <Textarea
         value={draft}
         onChange={(event) => setDraft(event.target.value)}
@@ -30,7 +32,7 @@ export function MessageEditForm({ content, onCancelEdit, onSaveEdit }: MessageEd
         }}
         autoFocus
         rows={2}
-        className="max-w-3/4 resize-none"
+        className="resize-none"
       />
       <div className="flex gap-2">
         <Button type="button" variant="ghost" size="sm" onClick={onCancelEdit}>
