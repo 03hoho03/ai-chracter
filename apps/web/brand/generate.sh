@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # 브랜드 자산 3개를 재생성한다 — apps/web/public/{og-default.png,favicon.svg,favicon-96.png}.
 #
-# 원본은 이 디렉터리의 og-default.html / favicon-96.html / build-favicon-svg.py이고,
+# 원본은 이 디렉터리의 og-default.html / favicon-96.html / favicon.svg이고,
 # 정식 디자인이 나오면 public의 파일 3개를 교체하기만 하면 된다(코드는 파일 내용에
 # 의존하지 않는다).
 #
-# 필요한 것: Chrome(헤드리스 스크린샷), uv(fontTools 임시 환경), python3(로컬 서버), pnpm install 완료
+# 필요한 것: Chrome(헤드리스 스크린샷), python3(로컬 서버), pnpm install 완료(OG 이미지의 Pretendard)
 # 사용법: apps/web/brand/generate.sh
 set -euo pipefail
 
@@ -19,9 +19,8 @@ PORT="${PORT:-8799}"
 [ -f "$FONT" ] || { echo "Pretendard가 없다. 먼저 pnpm install: $FONT" >&2; exit 1; }
 [ -x "$CHROME" ] || { echo "Chrome이 없다. CHROME 환경변수로 경로를 넘길 수 있다: $CHROME" >&2; exit 1; }
 
-# 1) favicon.svg — Pretendard Bold '또' 글리프를 <path>로 구워낸다
-uv run --quiet --with fonttools --with brotli \
-  python "$BRAND/build-favicon-svg.py" "$FONT" "$PUBLIC/favicon.svg"
+# 1) favicon.svg — 손으로 그린 심볼이라 그대로 복사한다
+cp "$BRAND/favicon.svg" "$PUBLIC/favicon.svg"
 echo "favicon.svg 생성"
 
 # 2) PNG 두 장 — Chrome 헤드리스 스크린샷. @font-face와 SVG <img>가 상대 경로로 붙어야 해서
