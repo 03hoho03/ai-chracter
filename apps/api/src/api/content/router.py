@@ -1278,6 +1278,28 @@ async def _update_story_draft(
     }
     incoming_setups = {item.id: item for item in payload.starting_setups}
 
+    # 노트는 시작설정을 물리 FK 로 가리킨다. 지울 시작설정을 가리키는 노트는 시작설정 삭제보다 먼저 정리해 DB 에 내보내야
+    # 한다 — 시작설정 삭제를 세션에 건 뒤에 오는 첫 조회(아래 남는 시작설정의 스탯 조회 등)의 autoflush 가 시작설정
+    # DELETE 를 노트 갱신보다 먼저 내보내 FK 위반 500 이 된다. 빌더는 시작설정을 지우며 그 노트를 "스토리 전체"로 돌려
+    # 보내지만, DB 의 노트 행은 이 저장이 끝나기 전까지 지울 시작설정을 가리킨다. 지금은 `_delete_starting_setup_subtree`
+    # 의 첫 조회가 autoflush 로 같은 일을 해 주지만, 그 함수 안의 순서에 기대지 않으려고 직접 flush 한다. 노트의 나머지
+    # 갱신(새 범위 대입)은 시작설정 upsert 뒤에 한다 — 새 시작설정의 물리 id 는 그때 생긴다.
+    removed_setup_physical_ids = {
+        setup.id for setup_entity_id, setup in existing_setups.items() if setup_entity_id not in incoming_setups
+    }
+    incoming_note_ids = {note_item.id for note_item in payload.keyword_notes}
+    existing_notes: dict[uuid.UUID, KeywordNote] = {}
+    for existing_note in (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+    ).all():
+        if existing_note.entity_id not in incoming_note_ids:
+            await db.delete(existing_note)
+            continue
+        if existing_note.starting_setup_id in removed_setup_physical_ids:
+            existing_note.starting_setup_id = None
+        existing_notes[existing_note.entity_id] = existing_note
+    await db.flush()
+
     for setup_entity_id, existing_setup in existing_setups.items():
         if setup_entity_id not in incoming_setups:
             await _delete_starting_setup_subtree(db, existing_setup)
@@ -1361,16 +1383,6 @@ async def _update_story_draft(
             await db.flush()
             await _reconcile_ending_rules(db, ending.id, ending_item.stat_rules)
 
-    existing_notes = {
-        n.entity_id: n
-        for n in (
-            await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
-        ).all()
-    }
-    incoming_note_ids = {note_item.id for note_item in payload.keyword_notes}
-    for note_entity_id, note_to_prune in existing_notes.items():
-        if note_entity_id not in incoming_note_ids:
-            await db.delete(note_to_prune)
     for note_item in payload.keyword_notes:
         note = existing_notes.get(note_item.id)
         if note is None:

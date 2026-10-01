@@ -2513,3 +2513,76 @@ async def test_delete_story_draft_with_media_book(
     assert resp.status_code == 204
     assert await _media_rows(db_session, version.id) == ([], [], [])
     assert await db_session.get(Asset, asset.id) is not None
+
+
+# --- 키워드북: 시작설정 참조 ---
+
+
+def _keyword_note_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "infoText": "정보",
+        "triggerKeywords": ["단서"],
+        "startingSetupId": None,
+    }
+    item.update(overrides)
+    return item
+
+
+async def _keyword_notes_by_order(db_session: AsyncSession, version_id: uuid.UUID) -> list[KeywordNote]:
+    return list(
+        (
+            await db_session.scalars(
+                sa.select(KeywordNote)
+                .where(KeywordNote.content_version_id == version_id)
+                .order_by(KeywordNote.order)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+
+
+@pytest.mark.parametrize("keep_other_setup", [True, False], ids=["other-setup-kept", "last-setup-removed"])
+async def test_patch_removing_setup_referenced_by_note_succeeds(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, keep_other_setup: bool
+) -> None:
+    """빌더에서 노트가 가리키는 시작설정을 지우면, 빌더는 그 노트를 스토리 전체로 돌린 값과 시작설정이 빠진 목록을
+    보낸다. 삭제 직후 자동저장 대기 시간 안에 다른 편집이 이어지면 둘이 한 저장에 실려 온다 — 아래 페이로드가 그
+    모양이고, 남은 시작설정의 플레이가이드 변경이 "이어진 다른 편집"이다. DB 의 노트는 아직 지울 시작설정을 가리키고
+    있으므로 시작설정을 먼저 지우면 물리 FK 위반이다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    kept_setup_id, removed_setup_id, note_id = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    kept_item = _starting_setup_item(id=kept_setup_id, name="남는 설정")
+    removed_item = _starting_setup_item(id=removed_setup_id, name="지울 설정")
+    setups_before = [kept_item, removed_item] if keep_other_setup else [removed_item]
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=setups_before,
+            keywordNotes=[_keyword_note_item(id=note_id, startingSetupId=removed_setup_id)],
+        ),
+    )
+    assert created.status_code == 200
+
+    setups_after = [{**kept_item, "playguide": "이어서 친 글"}] if keep_other_setup else []
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=setups_after,
+            keywordNotes=[_keyword_note_item(id=note_id, startingSetupId=None)],
+        ),
+    )
+
+    assert resp.status_code == 200
+    remaining = (
+        await db_session.scalars(
+            sa.select(StartingSetup)
+            .where(StartingSetup.content_version_id == version.id)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    assert [str(s.entity_id) for s in remaining] == ([kept_setup_id] if keep_other_setup else [])
+    [note] = await _keyword_notes_by_order(db_session, version.id)
+    assert note.starting_setup_id is None
+    if keep_other_setup:
+        assert remaining[0].playguide == "이어서 친 글"

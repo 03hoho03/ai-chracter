@@ -1035,10 +1035,6 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
     assert pre_reset_note is not None
 
     # the editor renames the setup and throws away its stats, endings and the shortcut.
-    # The keyword note is kept pointing at the setup: `_update_story_draft` deletes
-    # removed setups before it reconciles keyword_notes, so a payload that drops a setup a
-    # note still references dies on the physical FK — a pre-existing autosave bug, out of
-    # this story's scope.
     patch_resp = await db_client.patch(
         f"/contents/{content.id}/draft",
         json={
