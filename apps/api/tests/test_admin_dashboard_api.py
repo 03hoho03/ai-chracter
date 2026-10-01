@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone, UTC
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -751,3 +751,144 @@ async def test_dashboard_growth_excludes_deleted_creators_and_activated_users(
     assert body["activationRate"] <= 1.0
     assert body["publishRate"] <= 1.0
     assert body["creatorRate"] <= 1.0
+
+
+# ---- 코호트 리텐션 전용 엔드포인트 ----------------------------------------------
+
+
+async def test_cohort_retention_endpoint_requires_admin_session(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    assert (await db_client.get("/admin/dashboard/cohort-retention")).status_code == 401
+
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    assert (await db_client.get("/me")).status_code == 200
+
+    assert (await db_client.get("/admin/dashboard/cohort-retention?beta=true")).status_code == 401
+
+
+async def _add_user_message(
+    db_session: AsyncSession, *, user_id: uuid.UUID, character: Content, created_at: datetime
+) -> None:
+    room = ChatRoom(
+        user_id=user_id,
+        content_id=character.id,
+        content_version_id=character.current_published_version_id,
+    )
+    db_session.add(room)
+    await db_session.flush()
+    db_session.add(
+        ChatMessage(chat_room_id=room.id, role=ChatMessageRole.USER, content="메시지", created_at=created_at)
+    )
+    await db_session.flush()
+
+
+def _noon_of(day: date) -> datetime:
+    return datetime(day.year, day.month, day.day, 12, tzinfo=UTC)
+
+
+async def test_cohort_retention_all_mode_matches_growth_cohort_retention(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """베타를 고르지 않으면 `/growth` 의 `cohortRetention` 과 같은 값이어야 한다. 베타 지정
+    사용자를 섞어 둬서, 전체 모드가 베타 필터나 지정 주차 기준을 잘못 타면 값이 갈린다."""
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+    this_week_monday = now.date() - timedelta(days=now.weekday())
+    signup_at = _noon_of(this_week_monday - timedelta(weeks=3))
+
+    beta_user = _make_user(created_at=signup_at, beta_joined_at=signup_at + timedelta(weeks=2))
+    plain_user = _make_user(created_at=signup_at + timedelta(weeks=1))
+    db_session.add_all([beta_user, plain_user])
+    await db_session.flush()
+    character = await _make_published_character(db_session, creator_user_id=beta_user.id, genre_id=genre.id)
+    await _add_user_message(
+        db_session, user_id=beta_user.id, character=character, created_at=signup_at + timedelta(weeks=1, hours=1)
+    )
+    await _add_user_message(
+        db_session, user_id=plain_user.id, character=character, created_at=signup_at + timedelta(weeks=2, hours=1)
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    growth = (await db_client.get("/admin/dashboard/growth")).json()["cohortRetention"]
+    assert len(growth) == 2
+
+    default_resp = await db_client.get("/admin/dashboard/cohort-retention")
+    assert default_resp.status_code == 200
+    assert default_resp.json() == growth
+    assert (await db_client.get("/admin/dashboard/cohort-retention?beta=false")).json() == growth
+
+
+async def test_cohort_retention_beta_mode_counts_only_beta_users_from_their_joined_week(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """베타 모드는 지정된 사용자만 세고(탈퇴자 제외), 코호트를 가입 주차가 아니라 지정
+    주차로 묶는다. 지정 전 메시지는 유지에 들어가지 않는다."""
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+    this_week_monday = now.date() - timedelta(days=now.weekday())
+    signup_at = _noon_of(this_week_monday - timedelta(weeks=3))
+    beta_week_start = this_week_monday - timedelta(weeks=1)
+    joined_at = _noon_of(beta_week_start)
+
+    beta_user = _make_user(created_at=signup_at, beta_joined_at=joined_at)
+    plain_user = _make_user(created_at=signup_at)
+    deleted_beta_user = _make_user(created_at=signup_at, beta_joined_at=joined_at, deleted_at=now)
+    db_session.add_all([beta_user, plain_user, deleted_beta_user])
+    await db_session.flush()
+    character = await _make_published_character(db_session, creator_user_id=beta_user.id, genre_id=genre.id)
+    for user in (beta_user, plain_user):
+        await _add_user_message(
+            db_session, user_id=user.id, character=character, created_at=signup_at + timedelta(hours=1)
+        )
+        await _add_user_message(
+            db_session, user_id=user.id, character=character, created_at=joined_at + timedelta(hours=1)
+        )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get("/admin/dashboard/cohort-retention?beta=true")
+    assert resp.status_code == 200
+    cohorts = resp.json()
+    assert [(c["cohortWeekStart"], c["cohortSize"]) for c in cohorts] == [(beta_week_start.isoformat(), 1)]
+    assert [(w["weekOffset"], w["retainedUsers"]) for w in cohorts[0]["weeks"]] == [(0, 1), (1, 0)]
+
+
+async def test_cohort_retention_beta_mode_ignores_messages_before_joined_at_within_joined_week(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """같은 주 월요일에 대화하고 금요일에 베타로 지정된 사용자는, 지정 후 메시지가 없으면
+    0주차에 유지로 세지 않는다. 주차는 월요일 단위라 지정한 주 안의 지정 전 메시지도
+    0주차로 떨어지는데, 그건 베타 참가 전 활동이다."""
+    genre = await _get_genre(db_session)
+    now = datetime.now(UTC)
+    joined_week_monday = now.date() - timedelta(days=now.weekday()) - timedelta(weeks=1)
+    message_at = _noon_of(joined_week_monday)
+    joined_at = _noon_of(joined_week_monday + timedelta(days=4))
+
+    beta_user = _make_user(created_at=message_at - timedelta(hours=1), beta_joined_at=joined_at)
+    db_session.add(beta_user)
+    await db_session.flush()
+    character = await _make_published_character(db_session, creator_user_id=beta_user.id, genre_id=genre.id)
+    await _add_user_message(db_session, user_id=beta_user.id, character=character, created_at=message_at)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get("/admin/dashboard/cohort-retention?beta=true")
+    assert resp.status_code == 200
+    cohorts = resp.json()
+    assert [(c["cohortWeekStart"], c["cohortSize"]) for c in cohorts] == [(joined_week_monday.isoformat(), 1)]
+    assert [(w["weekOffset"], w["retainedUsers"]) for w in cohorts[0]["weeks"]] == [(0, 0), (1, 0)]

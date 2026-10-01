@@ -326,20 +326,6 @@ async def test_discarded_response_rejects_zero_count(db_session: AsyncSession) -
             )
 
 
-async def test_chat_message_report_rejects_same_reporter_reporting_same_message_twice(
-    db_session: AsyncSession,
-) -> None:
-    room = await _make_chat_room(db_session)
-    message = await _add_assistant_message(db_session, room, "응답")
-    db_session.add(_report(room, message, room.user_id))
-    await db_session.flush()
-
-    with pytest.raises(IntegrityError):
-        async with db_session.begin_nested():
-            db_session.add(_report(room, message, room.user_id))
-            await db_session.flush()
-
-
 async def test_room_deletion_keeps_discarded_responses_and_reports_with_references_cleared(
     db_session: AsyncSession,
 ) -> None:

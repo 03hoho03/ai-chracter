@@ -204,6 +204,8 @@ AdminActionType = Literal[
     "notice-unpublish",
     "prompt-set-publish",
     "report-reject",
+    "user-beta-off",
+    "user-beta-on",
     "user-clover-grant",
     "user-clover-revoke",
     "user-rate-limit-exempt-off",
