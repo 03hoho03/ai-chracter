@@ -27,7 +27,8 @@ def _strip_query_string(event: Event, hint: Hint) -> Event | None:
     무관하게, 이 경로로 남는 민감 파라미터가 늘어도 코드 변경 없이 계속 덮인다 — 현재 걸리는
     지점은 최소 둘이다: `GET /auth/password-reset/validate?token=...`의 재설정 토큰과
     `GET /auth/google/callback?code=...&state=...`의 OAuth 인가 코드·state(`auth/router.py`
-    `google_callback`)."""
+    `google_callback`, 카카오 콜백 `kakao_callback` 도 같다)와 연결 해제 웹훅 GET 의 카카오
+    회원번호(`kakao_unlink_webhook_get`)."""
     request = event.get("request")
     if not isinstance(request, dict):
         return event
@@ -79,7 +80,7 @@ def build_sentry_options() -> dict[str, Any]:
 def capture_dependency_failure(exc: BaseException | None = None, *, dependency: str) -> None:
     """흡수(사용자 응답 유지 + `logger.warning`)는 그대로 두고
     Bugsink 이벤트로도 승격한다. `dependency` 태그(`clover`/`db`/`email`/`gemini`/
-    `gemini_rate_limit`/`google_oauth`/`local_image`/`memory_fold`/`prompt_render`/`redis`/`reference_image`/`s3`)로만 Bugsink에서 묶어 본다 —
+    `gemini_rate_limit`/`google_oauth`/`kakao_oauth`/`local_image`/`memory_fold`/`prompt_render`/`redis`/`reference_image`/`s3`)로만 Bugsink에서 묶어 본다 —
     **태그·컨텍스트에는 이 리터럴 문자열 외에 아무것도 싣지 않는다.** 사용자 입력·프롬프트·
     이메일 주소는 호출부가 절대 넘기지 말 것(PII 금지).
 

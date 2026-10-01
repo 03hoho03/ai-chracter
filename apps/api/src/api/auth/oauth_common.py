@@ -64,6 +64,18 @@ def safe_redirect_path(value: str) -> str:
     return value
 
 
+def signup_method(user: User) -> Literal["kakao", "google", "email"]:
+    """회원이 어떤 수단으로 로그인하는가. 카카오는 같은 이메일의 다른 계정에 붙지 않고 구글도 카카오
+    계정에 붙지 않아 한 행이 두 provider 를 함께 갖지 않으므로 순서가 결과를 바꾸지 않지만, 판정
+    순서를 한 곳에 둬 화면마다 갈리지 않게 한다. 구글은 비밀번호 계정에 자동으로 붙을 수 있어
+    `google` 이어도 비밀번호가 있을 수 있다."""
+    if user.kakao_id is not None:
+        return "kakao"
+    if user.google_sub is not None:
+        return "google"
+    return "email"
+
+
 def state_cookie_name(provider: OAuthProvider) -> str:
     return f"oauth_state_{provider}"
 

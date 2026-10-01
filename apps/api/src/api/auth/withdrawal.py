@@ -4,8 +4,11 @@
 요청에 묶인 일(현재 세션 삭제·쿠키 지우기)과 세션 일괄 폐기는 커밋 뒤 호출자가 한다.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+
+from botocore.exceptions import BotoCoreError, ClientError
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +20,7 @@ from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.core import clover
 from api.core.s3 import build_thumbnail_key, delete_object
 from api.core.security import hash_withdrawn_email
+from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.content import Content, ContentVisibility
@@ -24,12 +28,25 @@ from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
 from api.db.models.persona import UserPersona
 
+logger = logging.getLogger(__name__)
+
 StorageObjectDeleter = Callable[[str], Awaitable[None]]
 
 
 async def delete_storage_object_now(storage_key: str) -> None:
     """오브젝트 스토리지(R2)에서 그 자리에서 지운다. `DELETE /me` 가 쓰는 기본 동작이다."""
     await run_in_threadpool(delete_object, storage_key)
+
+
+async def delete_storage_objects_later(storage_keys: list[str]) -> None:
+    """파기를 커밋한 뒤 백그라운드에서 모아 둔 오브젝트를 지운다. 응답이 이미 나가 재시도할 주체가
+    없으므로 하나가 실패해도 나머지는 계속 지우고, 실패는 고아 오브젝트로 남으니 기록한다."""
+    for storage_key in storage_keys:
+        try:
+            await delete_storage_object_now(storage_key)
+        except (BotoCoreError, ClientError) as exc:
+            logger.warning("storage delete after account erase failed: %s", type(exc).__name__)
+            capture_dependency_failure(exc, dependency="s3")
 
 
 async def erase_account(
@@ -75,6 +92,8 @@ async def erase_account(
     # 파기하지 않으면 구글 가입자는 google_sub 직접
     # 매치(google_callback)에 영구히 걸려, 이메일 가입자와 달리 1년이 지나도 재가입이 안 열린다.
     user.google_sub = None
+    # 카카오도 같다 — 지우지 않으면 탈퇴한 카카오 계정이 콜백에서 기존 회원으로 잡혀 영구히 막힌다.
+    user.kakao_id = None
     user.profile_image_asset_id = None
     # 아래 프로필 DELETE 전에 기본 참조를 끊는다(같은 flush에 실린다).
     user.default_persona_id = None

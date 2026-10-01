@@ -524,6 +524,22 @@ async def test_user_detail_google_signup_method(
     assert resp.json()["signupMethod"] == "google"
 
 
+async def test_user_detail_kakao_signup_method(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(kakao_id="1234567890", password_hash=None)
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/users/{user.id}")
+    assert resp.status_code == 200
+    assert resp.json()["signupMethod"] == "kakao"
+
+
 async def test_user_detail_includes_reports_received_on_own_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

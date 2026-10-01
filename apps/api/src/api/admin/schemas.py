@@ -237,7 +237,7 @@ class AdminUserDetailResponse(CamelModel):
     created_at: datetime
     suspended_at: datetime | None
     email_verified_at: datetime | None
-    signup_method: Literal["google", "email"]
+    signup_method: Literal["kakao", "google", "email"]
     content_count: int
     # 지금 정지하면 새로 이용제한(restricted)될 작품 수 — `content_count`(전체 작품 수)와
     # 달리 이미 restricted/deleted인 작품은 제외한다. `api/admin/users.py`의
