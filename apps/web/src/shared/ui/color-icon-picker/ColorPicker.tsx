@@ -1,7 +1,7 @@
 import { COLOR_PALETTE } from "@ai-character-chat/ui/lib/color-palette";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { useRef, useState } from "react";
-import { useClickAway } from "react-use";
+
+import { useGridPicker } from "./useGridPicker";
 
 type ColorPickerProps = {
   value: string;
@@ -15,21 +15,22 @@ type ColorPickerProps = {
  *
  * 선택 표시는 스와치 위 글리프가 아니라 링이 진다 — 지우기 전 잉크였던 흰색은 팔레트 10색 중
  * 5색에서(다크 `foreground`로 바꿔 달아도 6색에서) 3:1을 못 넘겨 글리프가 배경에 묻혔다. 링은 스와치가 아니라 `popover` 지면
- * 위에 앉으므로 스와치 색과 무관하게 대비가 고정된다(`foreground`↔`popover` 다크 14.4 / 라이트 15.9). */
+ * 위에 앉으므로 스와치 색과 무관하게 대비가 고정된다(`foreground`↔`popover` 다크 14.4 / 라이트 15.9).
+ * 열림·키보드 동작은 `useGridPicker`가 진다(5열 격자). */
 export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  useClickAway(containerRef, () => setIsOpen(false));
-  const selected = COLOR_PALETTE.find((swatch) => swatch.value === value);
+  const selectedIndex = COLOR_PALETTE.findIndex((swatch) => swatch.value === value);
+  const selected = COLOR_PALETTE[selectedIndex];
+  const picker = useGridPicker({ optionCount: COLOR_PALETTE.length, selectedIndex, columns: 5 });
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={picker.containerRef} className="relative">
       <button
+        ref={picker.triggerRef}
         type="button"
         aria-label={triggerLabel}
-        aria-haspopup="true"
-        aria-expanded={isOpen}
-        onClick={() => setIsOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={picker.isOpen}
+        onClick={picker.toggle}
         className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input hover:bg-secondary/50"
       >
         {selected ? (
@@ -39,15 +40,17 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
         )}
       </button>
 
-      {isOpen && (
+      {picker.isOpen && (
         <div
           role="listbox"
           aria-label={triggerLabel}
+          onKeyDown={picker.handleListKeyDown}
           className="absolute z-10 mt-2 grid w-48 grid-cols-5 gap-1.5 rounded-md bg-popover p-2 text-popover-foreground shadow-md ring-1 ring-foreground/10"
         >
-          {COLOR_PALETTE.map((swatch) => (
+          {COLOR_PALETTE.map((swatch, index) => (
             <button
               key={swatch.name}
+              {...picker.optionProps(index)}
               type="button"
               role="option"
               aria-selected={swatch.value === value}
@@ -55,7 +58,7 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
               title={swatch.label}
               onClick={() => {
                 onChange(swatch.value);
-                setIsOpen(false);
+                picker.closeAndRestoreFocus();
               }}
               // ring-2 + ring-offset-2는 스와치 밖으로 4px 나가고 그리드 간격은 gap-1.5(6px)다.
               // 선택은 언제나 하나뿐이라 이웃 스와치에는 링이 없고, 4px는 그 6px 안에서만 자란다.
