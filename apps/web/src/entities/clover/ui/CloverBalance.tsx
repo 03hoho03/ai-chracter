@@ -1,6 +1,6 @@
-import { Clover } from "lucide-react";
-
 import { cn } from "@ai-character-chat/ui/lib/utils";
+
+import { CloverIcon } from "./CloverIcon";
 
 /** 잔량 한 줄.
  *
@@ -9,8 +9,9 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
  * DESIGN.md §Components가 요구하는 "같은 표면 어휘"이기도 하고, 조회수가 이미 **무채색 숫자**의
  * 이 앱 표준이기 때문이다.
  *
- * 🔴 **초록을 쓰지 않는다.** 이름이 초록을 부르지만 DESIGN.md §Colors One-Accent Rule이 새 UI 색
- * 발명을 금지한다 — 이 시스템의 유채색은 `primary`/`ring`·`destructive`·사용자 콘텐츠 셋뿐이다.
+ * 🔴 **초록은 아이콘에만 있다.** 클로버 아이콘은 재화의 얼굴이라 초록으로 고정된 그림이지만
+ * (DESIGN.md Colors 절 One-Accent Rule의 예외), 숫자와 문구는 그 예외에 들지 않아 무채색 잉크다.
+ * 그래서 부족 상태가 아이콘 색을 바꾸지 않고 숫자 잉크만 바꾼다.
  *
  * 🔴 **부족 상태는 `text-primary` 잉크이지 솔리드 채움이 아니다.** 밝기 예산 규칙이 "화면당
  * 하나"로 관리하는 것은 솔리드 채움이고(채팅=전송 버튼, 이미지=생성 버튼), 잉크는 그 예산을
@@ -43,7 +44,7 @@ export function CloverBalance({
         className,
       )}
     >
-      <Clover aria-hidden className="size-3.5" />
+      <CloverIcon />
       <span className="sr-only">
         클로버 {balance.toLocaleString()}개{isInsufficient ? " — 부족해요" : ""}
       </span>
