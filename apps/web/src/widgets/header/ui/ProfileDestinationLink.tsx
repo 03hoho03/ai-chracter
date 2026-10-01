@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 
+import { CloverIcon } from "@/entities/clover";
 import type { MeResponse } from "@/entities/session";
 import { assertNever } from "@/shared/lib/assertNever";
 
@@ -29,6 +30,7 @@ export type ProfileDestinationKey =
   | "favorites"
   | "profile"
   | "personas"
+  | "clover"
   | "mypage"
   | "notices"
   | "inquiry-new"
@@ -38,7 +40,7 @@ export type ProfileDestinationKey =
 export const PROFILE_DESTINATION_GROUPS: readonly { label: string; keys: readonly ProfileDestinationKey[] }[] = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
-  { label: "계정", keys: ["profile", "personas", "mypage"] },
+  { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
   { label: "고객센터", keys: ["notices", "inquiry-new", "terms", "privacy"] },
 ];
 
@@ -104,6 +106,16 @@ export const ProfileDestinationLink = forwardRef<
         <Link ref={ref} to="/personas" className={className} {...rest}>
           <IdCard aria-hidden />
           대화 프로필
+        </Link>
+      );
+    case "clover":
+      // 라벨은 허브 페이지 h1(`클로버`)과 같은 문자열이다. 크기는 여기서 정한다 — 메뉴 항목·버튼의 svg
+      // 크기 규칙은 `size-` 클래스가 이미 있는 svg 를 건너뛰므로, 기본 `size-3.5` 를 그대로 두면 이웃
+      // 아이콘(16px)보다 작은 14px 로 그려진다.
+      return (
+        <Link ref={ref} to="/clover" className={className} {...rest}>
+          <CloverIcon className="size-4" />
+          클로버
         </Link>
       );
     case "mypage":
