@@ -64,6 +64,7 @@ export function createEmptyDraft(type: ContentType): ContentDraftContent {
         startingSetups: [],
         keywordNotes: [],
         shortcuts: [],
+        mediaBook: { people: [], scenes: [], cells: [] },
         description: "",
         genreId: null,
         target: null,

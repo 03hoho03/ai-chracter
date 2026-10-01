@@ -169,6 +169,122 @@ export const shortcutSchema = z.object({
   prompt: z.string().min(1, "단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"),
 });
 
+/** 서버가 422 로 막는 미디어 북 상한의 단일 소스. 스키마의 `.max()`와 메시지가 여기를 읽는다. */
+export const MAX_MEDIA_BOOK_CELLS = 50;
+export const MAX_MEDIA_BOOK_NAME_LENGTH = 20;
+const MAX_MEDIA_BOOK_SITUATION_LENGTH = 100;
+const MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH = 20;
+// 본문 태그 `{{img::인물/장면}}`의 구분자들. 이름에 들어가면 태그를 인물·장면으로 가를 수 없다.
+const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
+
+// 축·칸·자산 id 는 서버가 uuid 로 받는다. `z.uuid()`는 RFC 변형 비트까지 요구해 서버가 받는 id 도 거절할 수
+// 있어, 서버(파이썬 `uuid.UUID`)처럼 16진 8-4-4-4-12 모양만 보는 `z.guid()`를 쓴다.
+const mediaBookIdSchema = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
+
+/** 서버가 이름을 비교·저장하는 형태(앞뒤 공백 제거 + NFC). 길이와 중복을 이 값으로 잰다. */
+function normalizeMediaBookName(value: string): string {
+  return value.trim().normalize("NFC");
+}
+
+// 서버는 글자 수를 코드 포인트로 센다 — `.length`(UTF-16)로 세면 이모지가 두 글자가 돼 서버가 받는
+// 길이를 폼이 먼저 막는다.
+function countCharacters(value: string): number {
+  return [...value].length;
+}
+
+/**
+ * 미디어 북 축(인물·장면) 항목. 서버는 앞뒤 공백을 지우고 NFC 로 맞춘 뒤 길이를 재고 저장하므로, 폼도 같은
+ * 정규화 결과로 길이를 잰다 — 값 자체는 바꾸지 않는다(정규화된 이름은 저장 응답이 돌려준다).
+ */
+export const mediaBookAxisSchema = z.object({
+  id: mediaBookIdSchema,
+  name: z
+    .string()
+    .refine((value) => countCharacters(normalizeMediaBookName(value)) >= 1, "이름을 입력해주세요")
+    .refine(
+      (value) => countCharacters(normalizeMediaBookName(value)) <= MAX_MEDIA_BOOK_NAME_LENGTH,
+      `이름은 ${MAX_MEDIA_BOOK_NAME_LENGTH}자 이하로 입력해주세요`,
+    )
+    .refine((value) => !MEDIA_BOOK_NAME_FORBIDDEN.test(value), "이름에는 / { } : 를 쓸 수 없습니다"),
+});
+
+/**
+ * 미디어 북 칸 하나(인물 × 장면 자리에 이미지 1장). `personId`/`sceneId`는 축 항목의 `id`다.
+ * `imageUrl`/`imageWidth`/`imageHeight`는 화면 표시 전용이라 `formToServer`가 서버로 보내지 않는다.
+ */
+export const mediaBookCellSchema = z.object({
+  id: mediaBookIdSchema,
+  personId: mediaBookIdSchema,
+  sceneId: mediaBookIdSchema,
+  imageAssetId: mediaBookIdSchema,
+  imageUrl: z.string().optional(),
+  imageWidth: z.number().optional(),
+  imageHeight: z.number().optional(),
+  situationDescription: z
+    .string()
+    .refine(
+      (value) => countCharacters(value) <= MAX_MEDIA_BOOK_SITUATION_LENGTH,
+      `상황 설명은 ${MAX_MEDIA_BOOK_SITUATION_LENGTH}자 이하로 입력해주세요`,
+    ),
+  unlockHint: z
+    .string()
+    .refine(
+      (value) => countCharacters(value) <= MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
+      `해금 힌트는 ${MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH}자 이하로 입력해주세요`,
+    ),
+  excludeFromChat: z.boolean(),
+});
+
+/**
+ * 미디어 북 전체. 서버가 422 로 막는 페이로드 규칙(칸 상한, 같은 축 안 id·이름 중복, 칸이 가리키는 축의 존재,
+ * 같은 인물 × 장면 칸 중복, 칸 id 중복)을 모두 여기서도 검사한다 — `formToServer`가 이 스키마를 통과하지 못한
+ * 미디어 북을 자동저장에서 빼는 기준이라, 서버가 거절할 값이 이 스키마를 통과하면 그 초안 저장 전체가 막힌다.
+ */
+export const mediaBookSchema = z.object({
+  people: z.array(mediaBookAxisSchema),
+  scenes: z.array(mediaBookAxisSchema),
+  cells: z
+    .array(mediaBookCellSchema)
+    .max(MAX_MEDIA_BOOK_CELLS, `미디어 북 이미지는 최대 ${MAX_MEDIA_BOOK_CELLS}장까지만 넣을 수 있습니다`),
+})
+  .superRefine((value, ctx) => {
+    for (const axis of ["people", "scenes"] as const) {
+      const seenIds = new Set<string>();
+      const seenNames = new Set<string>();
+      value[axis].forEach((item, index) => {
+        if (seenIds.has(item.id)) {
+          ctx.addIssue({ code: "custom", path: [axis, index, "id"], message: "같은 id 의 항목이 두 번 들어 있습니다" });
+        }
+        seenIds.add(item.id);
+        const name = normalizeMediaBookName(item.name);
+        if (seenNames.has(name)) {
+          ctx.addIssue({ code: "custom", path: [axis, index, "name"], message: "같은 이름이 이미 있습니다" });
+        }
+        seenNames.add(name);
+      });
+    }
+    const personIds = new Set(value.people.map((person) => person.id));
+    const sceneIds = new Set(value.scenes.map((scene) => scene.id));
+    const seenCellIds = new Set<string>();
+    const seenPositions = new Set<string>();
+    value.cells.forEach((cell, index) => {
+      if (seenCellIds.has(cell.id)) {
+        ctx.addIssue({ code: "custom", path: ["cells", index, "id"], message: "같은 id 의 칸이 두 번 들어 있습니다" });
+      }
+      seenCellIds.add(cell.id);
+      // 축 참조에는 서버 FK 가 없어 서버가 페이로드 안에서 이 검사를 한다 — 같은 규칙을 폼에도 둔다.
+      if (!personIds.has(cell.personId) || !sceneIds.has(cell.sceneId)) {
+        ctx.addIssue({ code: "custom", path: ["cells", index], message: "칸이 가리키는 인물이나 장면이 없습니다" });
+      }
+      // uuid 모양 id 에는 `|` 가 없어 이어 붙인 키가 서로 다른 자리끼리 겹치지 않는다.
+      const position = `${cell.personId}|${cell.sceneId}`;
+      if (seenPositions.has(position)) {
+        ctx.addIssue({ code: "custom", path: ["cells", index], message: "한 칸에는 이미지를 한 장만 넣을 수 있습니다" });
+      }
+      seenPositions.add(position);
+    });
+  });
+
 export const storyBuilderSchema = z.object({
   profile: z.object({
     name: z.string().min(1, "스토리 이름을 입력해주세요"),
@@ -194,6 +310,7 @@ export const storyBuilderSchema = z.object({
     .max(MAX_STARTING_SETUPS, `시작설정은 최대 ${MAX_STARTING_SETUPS}개까지만 추가할 수 있습니다`),
   keywordNotes: z.array(keywordNoteSchema).default([]),
   shortcuts: z.array(shortcutSchema).default([]),
+  mediaBook: mediaBookSchema,
   registration: z.object({
     description: z.string().min(1, "스토리를 목록에서 소개할 설명을 입력해주세요"),
     // 실제 StoryDraftPayload/Response의 genreId/target 계약(string|null / ContentTarget|null)에 맞춰
@@ -230,4 +347,7 @@ export type EndingValues = z.infer<typeof endingSchema>;
 export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
 export type KeywordNoteValues = z.infer<typeof keywordNoteSchema>;
 export type ShortcutValues = z.infer<typeof shortcutSchema>;
+export type MediaBookAxisValues = z.infer<typeof mediaBookAxisSchema>;
+export type MediaBookCellValues = z.infer<typeof mediaBookCellSchema>;
+export type MediaBookValues = z.infer<typeof mediaBookSchema>;
 export type StoryBuilderFormValues = z.infer<typeof storyBuilderSchema>;

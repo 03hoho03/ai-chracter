@@ -102,7 +102,7 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
 // 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다.
 const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
 
-/** 8탭 단일 useForm 셸. 자동저장/발행/
+/** 탭 단일 useForm 셸. 자동저장/발행/
  * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *
  * `draftId`는 아직 서버에 없는 초안이면 undefined다 — 첫 저장이 초안을 만들고 URL을 바꾼다. */

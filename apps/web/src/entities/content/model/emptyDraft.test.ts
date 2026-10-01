@@ -40,6 +40,7 @@ describe("createEmptyDraft", () => {
       startingSetups: [],
       keywordNotes: [],
       shortcuts: [],
+      mediaBook: { people: [], scenes: [], cells: [] },
       description: "",
       genreId: null,
       target: null,

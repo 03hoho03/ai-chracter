@@ -1,14 +1,17 @@
 import type { components } from "@ai-character-chat/api-types";
 
-import type {
-  DevelopmentExampleValues,
-  EndingValues,
-  KeywordNoteValues,
-  RuleListItemValues,
-  SingleRuleValues,
-  StartingSetupValues,
-  StatDefValues,
-  StoryBuilderFormValues,
+import {
+  mediaBookSchema,
+  type DevelopmentExampleValues,
+  type EndingValues,
+  type KeywordNoteValues,
+  type MediaBookCellValues,
+  type MediaBookValues,
+  type RuleListItemValues,
+  type SingleRuleValues,
+  type StartingSetupValues,
+  type StatDefValues,
+  type StoryBuilderFormValues,
 } from "./schema";
 
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
@@ -19,6 +22,8 @@ type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
 type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
 type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
+type MediaBookPayload = components["schemas"]["MediaBookPayload"];
+type MediaBookCellInput = components["schemas"]["MediaBookCellInput"];
 
 // endings가 startingSetups의 마지막 남은 필드였다 — 이제 storyBuilderSchema가 StoryDraftPayload의
 // 모든 필드를 채우므로 예전에 쓰던 `Pick<...>` 좁히기가 더 필요 없다.
@@ -112,6 +117,29 @@ function toApiStartingSetup(setup: StartingSetupValues): StartingSetupDraftItem 
   };
 }
 
+// `imageUrl`/`imageWidth`/`imageHeight`는 서버가 응답에서만 주는 표시용 값이라 싣지 않는다 — 서버 계약에
+// 없는 필드는 서버가 조용히 버리지만, 보내지 않아야 페이로드가 계약 그대로 남는다.
+function toApiMediaBookCell(cell: MediaBookCellValues): MediaBookCellInput {
+  return {
+    id: cell.id,
+    personId: cell.personId,
+    sceneId: cell.sceneId,
+    imageAssetId: cell.imageAssetId,
+    situationDescription: cell.situationDescription,
+    unlockHint: cell.unlockHint,
+    excludeFromChat: cell.excludeFromChat,
+  };
+}
+
+// 폼이 미디어 북 전체를 들고 있으므로 보낼 때는 통째로 보낸다 — 서버는 보낸 목록에 없는 축·칸을 지운다.
+function toApiMediaBook(mediaBook: MediaBookValues): MediaBookPayload {
+  return {
+    people: mediaBook.people.map(({ id, name }) => ({ id, name })),
+    scenes: mediaBook.scenes.map(({ id, name }) => ({ id, name })),
+    cells: mediaBook.cells.map(toApiMediaBookCell),
+  };
+}
+
 /**
  * 폼값 -> `PATCH /contents/{id}/draft` payload 중 profile/storySetting/startingSetups/
  * keywordNotes/shortcuts/registration 부분(순수 함수).
@@ -134,6 +162,9 @@ export function formToServer(values: StoryBuilderFormValues): StoryBuilderDraftP
     startingSetups: values.startingSetups.map(toApiStartingSetup),
     keywordNotes: values.keywordNotes.map(toApiKeywordNote),
     shortcuts: values.shortcuts,
+    // 서버는 `mediaBook` 이 없으면 미디어 북에 손대지 않는다. 입력 중간 상태(빈 이름 등)처럼 서버가 거절할
+    // 미디어 북을 실으면 PATCH 전체가 422 가 돼 다른 탭의 수정까지 저장되지 않으므로, 그동안은 빼고 보낸다.
+    ...(mediaBookSchema.safeParse(values.mediaBook).success ? { mediaBook: toApiMediaBook(values.mediaBook) } : {}),
     description: values.registration.description,
     genreId: values.registration.genre,
     target: values.registration.target,

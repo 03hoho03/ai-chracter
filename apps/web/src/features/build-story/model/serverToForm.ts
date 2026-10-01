@@ -6,6 +6,8 @@ import type {
   DevelopmentExampleValues,
   EndingValues,
   KeywordNoteValues,
+  MediaBookCellValues,
+  MediaBookValues,
   RuleListItemValues,
   SingleRuleValues,
   StartingSetupValues,
@@ -20,6 +22,8 @@ type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
 type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
 type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
+type MediaBookDraft = components["schemas"]["MediaBookDraft"];
+type MediaBookCellDraftItem = components["schemas"]["MediaBookCellDraftItem"];
 
 // `formToServer.ts`의 OPERATOR_TO_API와 반대 방향(서버 -> FE) 매핑. 서버 enum이 애초에 5개뿐이라
 // (gte/lte/eq/gt/lt) 이 Record는 항상 완전하다 — "!="을 만들어낼 방법이 없다.
@@ -109,6 +113,33 @@ function fromApiStartingSetup(setup: StartingSetupDraftItem): StartingSetupValue
   };
 }
 
+// 이미지 크기는 서버가 아직 재지 못한 자산(크기 기록 전에 올라온 것)이면 null 이다.
+function fromApiMediaBookCell(cell: MediaBookCellDraftItem): MediaBookCellValues {
+  return {
+    id: cell.id,
+    personId: cell.personId,
+    sceneId: cell.sceneId,
+    imageAssetId: cell.imageAssetId,
+    imageUrl: cell.imageUrl,
+    imageWidth: cell.imageWidth ?? undefined,
+    imageHeight: cell.imageHeight ?? undefined,
+    situationDescription: cell.situationDescription,
+    unlockHint: cell.unlockHint,
+    excludeFromChat: cell.excludeFromChat,
+  };
+}
+
+// 응답의 `mediaBook`은 서버가 기본값을 둔 필드라 생성 타입에서 생략 가능하다 — 타입이 존재를 보장하지 않으므로
+// 없으면 빈 미디어 북으로 받는다.
+function fromApiMediaBook(mediaBook: MediaBookDraft | undefined): MediaBookValues {
+  if (!mediaBook) return { people: [], scenes: [], cells: [] };
+  return {
+    people: mediaBook.people.map(({ id, name }) => ({ id, name })),
+    scenes: mediaBook.scenes.map(({ id, name }) => ({ id, name })),
+    cells: mediaBook.cells.map(fromApiMediaBookCell),
+  };
+}
+
 /**
  * `GET /contents/{id}/draft` 응답 중 profile/storySetting/startingSetups/keywordNotes/shortcuts/
  * registration 부분 -> 폼 defaultValues(순수 함수).
@@ -143,6 +174,7 @@ export function serverToForm(data: StoryDraftContent): StoryBuilderFormValues {
     startingSetups: data.startingSetups.map(fromApiStartingSetup),
     keywordNotes: data.keywordNotes.map(fromApiKeywordNote),
     shortcuts: data.shortcuts,
+    mediaBook: fromApiMediaBook(data.mediaBook),
     registration: {
       description: data.description,
       genre: data.genreId,

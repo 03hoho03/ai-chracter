@@ -17,6 +17,7 @@ function baseFormValues(): StoryBuilderFormValues {
     startingSetups: [],
     keywordNotes: [],
     shortcuts: [],
+    mediaBook: { people: [], scenes: [], cells: [] },
     registration: {
       description: "표류한 선원들의 생존기",
       genre: null,

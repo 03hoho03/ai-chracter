@@ -3,6 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   endingSchema,
   keywordNoteSchema,
+  MAX_MEDIA_BOOK_CELLS,
+  MAX_MEDIA_BOOK_NAME_LENGTH,
+  mediaBookAxisSchema,
+  mediaBookCellSchema,
+  mediaBookSchema,
   ruleListItemSchema,
   shortcutSchema,
   startingSetupSchema,
@@ -375,6 +380,7 @@ function validFullForm() {
     },
     storySetting: { promptTemplate: "basic" as const, worldSetting: "근미래 해양 도시" },
     startingSetups: [validStartingSetup()],
+    mediaBook: { people: [], scenes: [], cells: [] },
     registration: {
       description: "표류한 선원들의 생존기",
       genre: "genre-adventure",
@@ -483,5 +489,217 @@ describe("storyBuilderSchema publish-required nullable fields", () => {
 
   it("passes once all three are filled", () => {
     expect(storyBuilderSchema.safeParse(validFullForm()).success).toBe(true);
+  });
+});
+
+/** 서버가 받는 uuid 모양 id. `prefix` 는 16진 한 글자라 종류별로 겹치지 않는다. */
+function guid(prefix: string, index: number): string {
+  return `00000000-0000-4000-8000-${prefix}${String(index).padStart(11, "0")}`;
+}
+
+const SCENE_ID = guid("b", 0);
+
+describe("mediaBookAxisSchema", () => {
+  function nameIssues(name: string) {
+    const result = mediaBookAxisSchema.safeParse({ id: "00000000-0000-4000-8000-0000000000a1", name });
+    return result.success ? [] : result.error.issues.map((issue) => issue.path);
+  }
+
+  it.each([
+    ["one character", "에"],
+    ["exactly the limit", "가".repeat(MAX_MEDIA_BOOK_NAME_LENGTH)],
+    ["the limit plus surrounding spaces the server trims", `  ${"가".repeat(MAX_MEDIA_BOOK_NAME_LENGTH)}  `],
+    ["emoji counted as one character each like the server", "😀".repeat(MAX_MEDIA_BOOK_NAME_LENGTH)],
+    ["a decomposed (NFD) name measured after NFC like the server", "가".normalize("NFD").repeat(MAX_MEDIA_BOOK_NAME_LENGTH)],
+  ])("accepts %s", (_label, name) => {
+    expect(nameIssues(name)).toEqual([]);
+  });
+
+  it.each([
+    ["an empty name", ""],
+    ["a whitespace-only name", "   "],
+    ["one character over the limit", "가".repeat(MAX_MEDIA_BOOK_NAME_LENGTH + 1)],
+    ["a slash", "에리/준"],
+    ["an opening brace", "에리{"],
+    ["a closing brace", "에리}"],
+    ["a colon", "에리:"],
+  ])("rejects %s", (_label, name) => {
+    expect(nameIssues(name)).toContainEqual(["name"]);
+  });
+});
+
+describe("mediaBookCellSchema", () => {
+  function validCell() {
+    return {
+      id: "00000000-0000-4000-8000-0000000000c1",
+      personId: "00000000-0000-4000-8000-0000000000a1",
+      sceneId: "00000000-0000-4000-8000-0000000000b1",
+      imageAssetId: "00000000-0000-4000-8000-0000000000d1",
+      situationDescription: "",
+      unlockHint: "",
+      excludeFromChat: false,
+    };
+  }
+
+  it("accepts a situation description of 100 characters and an unlock hint of 20", () => {
+    const result = mediaBookCellSchema.safeParse({
+      ...validCell(),
+      situationDescription: "가".repeat(100),
+      unlockHint: "가".repeat(20),
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a situation description of 101 characters", () => {
+    const result = mediaBookCellSchema.safeParse({ ...validCell(), situationDescription: "가".repeat(101) });
+
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual([
+      "situationDescription",
+    ]);
+  });
+
+  it("rejects an unlock hint of 21 characters", () => {
+    const result = mediaBookCellSchema.safeParse({ ...validCell(), unlockHint: "가".repeat(21) });
+
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["unlockHint"]);
+  });
+});
+
+describe("mediaBookSchema", () => {
+  // 칸마다 다른 인물 줄에 둬 같은 자리 중복 검사에 걸리지 않게 한다.
+  function mediaBookWithCells(count: number) {
+    const people = Array.from({ length: count }, (_, index) => ({ id: guid("a", index), name: `인물${index}` }));
+    return {
+      people,
+      scenes: [{ id: SCENE_ID, name: "기쁨" }],
+      cells: people.map((person, index) => ({
+        id: guid("c", index),
+        personId: person.id,
+        sceneId: SCENE_ID,
+        imageAssetId: guid("d", index),
+        situationDescription: "",
+        unlockHint: "",
+        excludeFromChat: false,
+      })),
+    };
+  }
+
+  it("accepts exactly the cell limit", () => {
+    expect(mediaBookSchema.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS)).success).toBe(true);
+  });
+
+  it("rejects one cell over the limit", () => {
+    const result = mediaBookSchema.safeParse(mediaBookWithCells(MAX_MEDIA_BOOK_CELLS + 1));
+
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["cells"]);
+  });
+
+  function issuePaths(value: unknown) {
+    const result = mediaBookSchema.safeParse(value);
+    return result.success ? [] : result.error.issues.map((issue) => issue.path);
+  }
+
+  // `index` 번째 인물 줄 × 첫 장면에 놓인 칸.
+  function cellAt(index: number, overrides: Partial<{ id: string; personId: string; imageAssetId: string }> = {}) {
+    return {
+      id: guid("c", index),
+      personId: guid("a", index),
+      sceneId: SCENE_ID,
+      imageAssetId: guid("d", index),
+      situationDescription: "",
+      unlockHint: "",
+      excludeFromChat: false,
+      ...overrides,
+    };
+  }
+
+  function twoCellBook() {
+    return {
+      people: [
+        { id: guid("a", 0), name: "에리" },
+        { id: guid("a", 1), name: "준" },
+      ],
+      scenes: [{ id: SCENE_ID, name: "기쁨" }],
+      cells: [cellAt(0), cellAt(1)],
+    };
+  }
+
+  it("accepts the same name on a person and a scene (names are unique per axis only)", () => {
+    expect(issuePaths({ ...twoCellBook(), scenes: [{ id: SCENE_ID, name: "에리" }] })).toEqual([]);
+  });
+
+  it("rejects an axis id that is not a uuid", () => {
+    const book = { ...twoCellBook(), people: [{ id: "person-1", name: "에리" }] };
+
+    expect(issuePaths(book)).toContainEqual(["people", 0, "id"]);
+  });
+
+  it.each([
+    ["cell id", { id: "cell-1" }, "id"],
+    ["image asset id", { imageAssetId: "asset-1" }, "imageAssetId"],
+  ] as const)("rejects a %s that is not a uuid", (_label, overrides, field) => {
+    const book = { ...twoCellBook(), cells: [cellAt(0, overrides), cellAt(1)] };
+
+    expect(issuePaths(book)).toContainEqual(["cells", 0, field]);
+  });
+
+  it.each([
+    ["the same name", "에리"],
+    ["a name equal after trimming", " 에리 "],
+    ["a name equal after NFC", "에리".normalize("NFD")],
+  ])("rejects a second person with %s", (_label, name) => {
+    const book = {
+      ...twoCellBook(),
+      people: [
+        { id: guid("a", 0), name: "에리" },
+        { id: guid("a", 1), name },
+      ],
+    };
+
+    expect(issuePaths(book)).toContainEqual(["people", 1, "name"]);
+  });
+
+  it("rejects a repeated scene name", () => {
+    const book = {
+      ...twoCellBook(),
+      scenes: [
+        { id: SCENE_ID, name: "기쁨" },
+        { id: guid("b", 1), name: "기쁨" },
+      ],
+    };
+
+    expect(issuePaths(book)).toContainEqual(["scenes", 1, "name"]);
+  });
+
+  it("rejects a repeated axis id", () => {
+    const book = {
+      ...twoCellBook(),
+      people: [
+        { id: guid("a", 0), name: "에리" },
+        { id: guid("a", 0), name: "준" },
+      ],
+      cells: [cellAt(0)],
+    };
+
+    expect(issuePaths(book)).toContainEqual(["people", 1, "id"]);
+  });
+
+  it("rejects a repeated cell id", () => {
+    const book = { ...twoCellBook(), cells: [cellAt(0), cellAt(1, { id: guid("c", 0) })] };
+
+    expect(issuePaths(book)).toContainEqual(["cells", 1, "id"]);
+  });
+
+  it("rejects a cell pointing at a person that is not in the media book", () => {
+    const book = { ...twoCellBook(), cells: [cellAt(0), cellAt(1, { personId: guid("a", 9) })] };
+
+    expect(issuePaths(book)).toContainEqual(["cells", 1]);
+  });
+
+  it("rejects two cells at the same person × scene", () => {
+    const book = { ...twoCellBook(), cells: [cellAt(0), cellAt(1, { personId: guid("a", 0) })] };
+
+    expect(issuePaths(book)).toContainEqual(["cells", 1]);
   });
 });
