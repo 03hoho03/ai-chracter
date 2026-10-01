@@ -3,6 +3,7 @@ import { toast } from "sonner";
 
 import { commentApi, commentKeys, redactCommentCaches, type CommentReportReason } from "@/entities/comment";
 import { notificationKeys, redactNotificationCaches } from "@/entities/notification";
+import { assertNever } from "@/shared/lib/assertNever";
 
 import { commentErrorMessage } from "../model/commentError";
 
@@ -41,6 +42,11 @@ export function useCommentActionMutation(viewerId: string) {
           await commentApi.mute(action.authorId, true);
           await redactCommentCaches(client, viewerId, { mutedUserId: action.authorId, state: "muted" });
           await redactNotificationCaches(client, viewerId, { mutedUserId: action.authorId });
+          return;
+        default:
+          // 반환이 `Promise<void>`라 새 action을 유니언에만 더하면 API를 부르지 않고 성공 처리된다 —
+          // 여기서 컴파일 에러로 막는다.
+          return assertNever(action);
       }
     },
     onSuccess: () => Promise.all([
