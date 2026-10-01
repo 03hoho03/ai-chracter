@@ -152,6 +152,7 @@ function AccountSection() {
   const logoutMutation = useLogoutMutation();
 
   const handleLogout = () => {
+    if (logoutMutation.isPending) return;
     logoutMutation.mutate(undefined, {
       onSuccess: () => {
         toast.success("로그아웃되었어요.");
@@ -190,7 +191,9 @@ function AccountSection() {
     // 2차 리뷰에서 제안됐지만 서로 반대 방향이라, 역할을 갈라 양쪽을 각각 완결시키는 쪽을 골랐다.
     <section className="flex flex-col items-start gap-4">
       <SectionHeading>계정</SectionHeading>
-      <Button variant="outline" disabled={logoutMutation.isPending} onClick={handleLogout}>
+      {/* `disabled`가 아니라 `aria-disabled` — `disabled`는 붙는 순간 버튼을 blur해 누를 때마다 포커스가 `<body>`로
+          떨어진다(같은 로그아웃인 `MobileNavDrawer`와 같은 처방). 중복 클릭은 핸들러 첫 줄이 막는다. */}
+      <Button variant="outline" aria-disabled={logoutMutation.isPending} className="aria-disabled:opacity-65" onClick={handleLogout}>
         {logoutMutation.isPending ? "로그아웃 중..." : "로그아웃"}
       </Button>
       <div className="flex flex-col items-start gap-1.5">

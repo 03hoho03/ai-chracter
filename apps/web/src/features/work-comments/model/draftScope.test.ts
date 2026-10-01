@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { newCommentDraft, changeCommentDraft, finishCommentDraftScope } from "./drafts";
-import { resolveCommentDraftScope, canUpdateCommentDraftScope } from "./draftScope";
+import { resolveCommentDraftScope, canUpdateCommentDraftScope, finishCommentDraftScope } from "./draftScope";
+import { newCommentDraft, changeCommentDraft } from "./drafts";
 
 describe("comment draft account boundaries", () => {
   it("claims guest text, sticker and reply for the first login and keeps them through 401 -> same account", () => {

@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { commentApi, commentKeys } from "@/entities/comment";
 
 import type { NotificationPreferenceFormValues } from "../model/notificationPreferenceSchema";
-import { notificationPreferenceFormToServer } from "./notificationPreferenceMappers";
+import { notificationPreferenceFormToServer } from "../model/formToServer";
 
 export function useSaveCommentPreferencesMutation(viewerId: string) {
   const client = useQueryClient();

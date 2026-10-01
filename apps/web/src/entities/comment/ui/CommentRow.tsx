@@ -8,7 +8,7 @@ import type { Comment } from "../model/comment";
 import { CommentStickerImage } from "./CommentStickerImage";
 import { CommentBody } from "./CommentBody";
 
-const dateFormatter = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" });
+const DATE_FORMATTER = new Intl.DateTimeFormat("ko-KR", { dateStyle: "medium", timeStyle: "short" });
 const STATE_LABELS = {
   deleted: "삭제된 댓글", muted: "숨긴 사용자의 댓글",
   "creator-hidden": "작가가 숨긴 댓글", "moderator-hidden": "운영자가 숨긴 댓글",
@@ -44,7 +44,7 @@ export function CommentRow({
             )}
             {!isHidden && !!comment.author?.isCreator && <span className="rounded bg-secondary px-1.5 py-0.5 text-badge text-secondary-foreground">작가</span>}
             {comment.isPinned && <span className="inline-flex items-center gap-1"><Pin aria-hidden className="size-3" />고정</span>}
-            <time dateTime={comment.createdAt}>{dateFormatter.format(new Date(comment.createdAt))}</time>
+            <time dateTime={comment.createdAt}>{DATE_FORMATTER.format(new Date(comment.createdAt))}</time>
             {comment.isEdited && <span>수정됨</span>}
           </div>
           {comment.displayState !== "normal" && <p className="text-sm text-muted-foreground">{STATE_LABELS[comment.displayState]}</p>}

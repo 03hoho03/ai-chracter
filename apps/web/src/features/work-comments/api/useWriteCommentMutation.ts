@@ -17,8 +17,7 @@ export function useWriteCommentMutation({ contentId, viewerId, editCommentId, re
     networkMode: "always",
     mutationFn: (values: CommentFormValues) => editCommentId
       ? commentApi.update(editCommentId, commentFormToServer(values))
-      : commentApi.create(contentId, commentCreateToServer(values, requestId,
-        replyTarget ? replyTarget.rootCommentId ?? replyTarget.id : null, replyTarget?.id ?? null)),
+      : commentApi.create(contentId, commentCreateToServer(values, requestId, replyTarget)),
     onSuccess: async (comment) => {
       if (editCommentId) await redactNotificationCaches(client, viewerId, { commentId: comment.id });
       await Promise.all([

@@ -47,7 +47,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils"
  * 칩 하나**여서 이건 엣지가 아니라 이 프리미티브의 기본 포커스 상태다(선택이 비어 있으면 Radix roving
  * focus가 마지막으로 포커스한 칩, 그것도 없으면 첫 칩으로 보낸다 — 헤더 유형 토글이 이미지 화면에서 그렇다). 불투명 링은 7.18(다크) / 6.70(라이트). */
 const toggleVariants = cva(
-  "group/toggle inline-flex items-center justify-center gap-1 rounded-full text-sm font-medium text-muted-foreground whitespace-nowrap motion-safe:transition-all outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-primary aria-pressed:text-primary-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/toggle inline-flex items-center justify-center gap-1 rounded-full text-sm font-medium text-muted-foreground whitespace-nowrap motion-safe:transition-all outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-primary aria-pressed:text-primary-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

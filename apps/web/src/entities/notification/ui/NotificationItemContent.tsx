@@ -3,7 +3,7 @@ import { ChevronRight } from "lucide-react";
 
 import { assertNever } from "@/shared/lib/assertNever";
 
-import type { NotificationResponse } from "../api/useNotificationListQuery";
+import type { NotificationResponse } from "../model/notification";
 import { resolveNotificationDestination } from "../model/notificationDestination";
 
 const REASON_CATEGORY_LABELS: Record<string, string> = {
@@ -14,10 +14,10 @@ const REASON_CATEGORY_LABELS: Record<string, string> = {
   other: "기타",
 };
 
-/** 이용제한/삭제 조치 통지(moderation-action)에 계정 경고(user-warned)·
- * 계정 정지(user-suspended)·공지(notice)·문의 답변(inquiry-reply)이 더해져 `type`이
- * 다섯이 됐다. type별로 제목 문구만 가르는 최소 구현이고, 모르는 type은 이용제한 문구로
- * 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
+/** 댓글이 붙지 않은 알림의 type별 제목 — 이용제한/삭제 조치 통지(moderation-action), 계정 경고(user-warned),
+ * 계정 정지(user-suspended), 공지(notice), 문의 답변(inquiry-reply). 댓글 알림(`comment-*`)은 아래
+ * `notification.comment` 분기가 따로 제목을 만든다. type별로 제목 문구만 가르는 최소 구현이고, 모르는
+ * type은 이용제한 문구로 폴백한다 — 여전히 범용 알림 프레임워크는 아니다. */
 const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {
   "moderation-action": "콘텐츠 이용제한 안내",
   "user-warned": "계정 경고 안내",

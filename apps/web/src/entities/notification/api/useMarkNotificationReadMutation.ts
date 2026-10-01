@@ -3,8 +3,9 @@ import { toast } from "sonner";
 
 import { apiClient } from "@/shared/api/client";
 
+import type { NotificationResponse } from "../model/notification";
 import { notificationKeys } from "./keys";
-import type { NotificationResponse, NotificationListResponse } from "./useNotificationListQuery";
+import type { NotificationListResponse } from "./useNotificationListQuery";
 
 export function useMarkNotificationReadMutation(viewerId: string) {
   const queryClient = useQueryClient();

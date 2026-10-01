@@ -21,28 +21,18 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 /** 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
  * 읽는다 — 두 곳이 각자 목록을 들면 한쪽에만 항목이 추가되는 게 이 저장소의 알려진 실패 모드다
- * (`toContentStatusTags` 선례: "같은 작품이 한 화면에서는 이용제한, 다른 화면에서는 공개가 됐다"). */
-export type ProfileDestinationKey =
-  | "builder"
-  | "my-works"
-  | "studio-images"
-  | "chats"
-  | "favorites"
-  | "profile"
-  | "personas"
-  | "clover"
-  | "mypage"
-  | "notices"
-  | "inquiry-new"
-  | "terms"
-  | "privacy";
-
-export const PROFILE_DESTINATION_GROUPS: readonly { label: string; keys: readonly ProfileDestinationKey[] }[] = [
+ * (`toContentStatusTags` 선례: "같은 작품이 한 화면에서는 이용제한, 다른 화면에서는 공개가 됐다").
+ *
+ * 키 유니언도 이 배열에서 도출한다. 유니언을 따로 적으면 키를 유니언과 `switch`에만 더하고 배열에서
+ * 빠뜨려도 컴파일이 통과해, 그 목적지가 메뉴와 드로어 어디에도 나타나지 않는다. */
+export const PROFILE_DESTINATION_GROUPS = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
   { label: "고객센터", keys: ["notices", "inquiry-new", "terms", "privacy"] },
-];
+] as const satisfies readonly { label: string; keys: readonly string[] }[];
+
+export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
 
 /** 라우트별 `to`/`params` 타입이 제각각이라(`/profile/$userId`만 params가 필요하다) 하나의 배열에
  * `to` 문자열을 담아 범용으로 렌더하면 라우터 제네릭과 계속 부딪힌다 — `switch`로 각 케이스를 그대로
@@ -154,8 +144,8 @@ export const ProfileDestinationLink = forwardRef<
         </Link>
       );
     default:
-      // default 가 없으면 키를 유니언·PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를
-      // 빠뜨려도 typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도
+      // default 가 없으면 키를 PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를 빠뜨려도
+      // typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도
       // 안 난다(2026-09-15 적대적 리뷰가 실증). assertNever 로 다음 키 추가 때 컴파일 에러로 막는다.
       return assertNever(destinationKey);
   }

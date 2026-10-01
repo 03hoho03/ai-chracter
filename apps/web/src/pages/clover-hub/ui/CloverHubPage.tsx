@@ -84,7 +84,7 @@ function BalanceSection() {
 function AttendanceSection() {
   const { data } = useCloverBalanceQuery();
   const claimAttendance = useClaimAttendanceMutation();
-  const claimable = data?.attendanceClaimable ?? false;
+  const isAttendanceClaimable = data?.attendanceClaimable ?? false;
 
   const handleClaim = () => {
     // apps/web/CLAUDE.md §포커스 — 로딩 중 재클릭을 막는 건 `disabled`가 아니라 핸들러
@@ -106,7 +106,7 @@ function AttendanceSection() {
   return (
     <section className="flex flex-col gap-4">
       <SectionHeading>출석체크</SectionHeading>
-      {claimable ? (
+      {isAttendanceClaimable ? (
         <Button
           onClick={handleClaim}
           aria-disabled={claimAttendance.isPending}
@@ -160,15 +160,13 @@ function MissionSection() {
   );
 }
 
-function MissionRow({
-  mission,
-  isClaiming,
-  onClaim,
-}: {
+type MissionRowProps = {
   mission: CloverMissionItem;
   isClaiming: boolean;
   onClaim: () => void;
-}) {
+};
+
+function MissionRow({ mission, isClaiming, onClaim }: MissionRowProps) {
   const state = projectCloverMissionState(mission);
   const label = CLOVER_MISSION_LABELS[mission.key] ?? mission.key;
 

@@ -1,4 +1,4 @@
-import type { CommentDraft } from "./drafts";
+import { finishCommentDraft, type CommentDraft } from "./drafts";
 
 export type CommentDraftScope = {
   ownerId?: string;
@@ -29,4 +29,14 @@ export function canUpdateCommentDraftScope(
 ) {
   return expected.logoutRevision === latestLogoutRevision &&
     (latest?.generation === expected.generation || latest === base);
+}
+
+export function finishCommentDraftScope(scope: CommentDraftScope, key: string, requestId: string): CommentDraftScope {
+  const draft = scope.drafts[key];
+  if (!draft) return scope;
+  const next = { ...scope, drafts: { ...scope.drafts, [key]: finishCommentDraft(draft, requestId) } };
+  const isCleared = draft.requestId === requestId || (draft.values.body === "" && !draft.values.stickerId && draft.values.mentions.length === 0);
+  if (isCleared && key === "reply:" + scope.activeReplyId) next.activeReplyId = undefined;
+  if (isCleared && key === "edit:" + scope.activeEditId) next.activeEditId = undefined;
+  return next;
 }

@@ -4,8 +4,8 @@ import { useAtom, useAtomValue, useStore } from "jotai";
 import { commentDraftLogoutRevisionAtom, type Comment } from "@/entities/comment";
 
 import { draftScopesAtom } from "./atoms";
-import { canUpdateCommentDraftScope, resolveCommentDraftScope } from "./draftScope";
-import { changeCommentDraft, finishCommentDraftScope, newCommentDraft, type CommentDraft } from "./drafts";
+import { canUpdateCommentDraftScope, finishCommentDraftScope, resolveCommentDraftScope } from "./draftScope";
+import { changeCommentDraft, newCommentDraft, type CommentDraft } from "./drafts";
 import type { CommentFormValues } from "./schema";
 
 export function useCommentDrafts(contentId: string, viewerId: string | undefined) {

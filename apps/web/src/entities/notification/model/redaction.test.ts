@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 
 import { notificationKeys } from "../api/keys";
-import type { NotificationListResponse, NotificationResponse } from "../api/useNotificationListQuery";
+import type { NotificationListResponse } from "../api/useNotificationListQuery";
+import type { NotificationResponse } from "./notification";
 import { redactNotificationComment, redactNotificationCaches } from "./redaction";
 
 function notification(type = "comment-reply"): NotificationResponse {

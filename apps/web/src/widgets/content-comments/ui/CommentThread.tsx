@@ -1,7 +1,8 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 
-import { CommentRow, uniqueComments, useCommentRepliesQuery, type Comment, type CommentLocation } from "@/entities/comment";
+import { COMMENT_GHOST_HOVER_CLASS_NAME, CommentRow, uniqueComments, useCommentRepliesQuery, type Comment, type CommentLocation } from "@/entities/comment";
 import { isApiError } from "@/shared/api/client";
 
 import { resolveThreadExpanded, type ThreadExpansionOverride } from "../model/interactionState";
@@ -39,7 +40,7 @@ export function CommentThread({
       <CommentRow comment={root} isRevealed={isRevealed} onReveal={() => setRevealedVersion(version)}
         isHighlighted={targetId === root.id || (!isRevealed && !!location)} editor={renderEditor(root)}>
         {renderControls(root, isRevealed)}
-        {root.replyCount > 0 && <Button type="button" variant="ghost" size="sm" className="w-fit in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10"
+        {root.replyCount > 0 && <Button type="button" variant="ghost" size="sm" className={cn("w-fit", COMMENT_GHOST_HOVER_CLASS_NAME)}
           aria-expanded={isExpanded} aria-controls={id} onClick={() => setExpansionOverride({ anchor, isExpanded: !isExpanded })}>
           답글 {root.replyCount}개 {isExpanded ? "접기" : "보기"}
         </Button>}

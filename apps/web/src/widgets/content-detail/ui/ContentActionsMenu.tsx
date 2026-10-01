@@ -42,8 +42,13 @@ export function ContentActionsMenu({
   const reportMutation = useReportContentMutation(contentId);
 
   const handleShare = async () => {
-    await navigator.clipboard.writeText(window.location.href);
-    toast.success("링크가 복사되었어요.");
+    // 권한 거부·비보안 컨텍스트에서는 쓰기가 거부된다 — 삼키면 눌러도 아무 반응이 없다.
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      toast.success("링크가 복사되었어요.");
+    } catch {
+      toast.error("링크를 복사하지 못했어요. 주소창의 링크를 직접 복사해주세요.");
+    }
   };
 
   const handleReport = () => {

@@ -1,7 +1,7 @@
 import { isApiError } from "@/shared/api/client";
 
 import { commentErrorDetail, commentErrorMessage } from "./commentError";
-import type { CommentFormValues } from "./schema";
+import { COMMENT_TOO_LONG_MESSAGE, type CommentFormValues } from "./schema";
 
 type CommentFormError = { field: keyof CommentFormValues | "root"; message: string };
 
@@ -20,7 +20,7 @@ const SERVER_FIELDS: Record<string, keyof CommentFormValues | undefined> = {
 export function commentFormErrors(error: unknown): CommentFormError[] {
   if (isApiError(error) && error.status === 422) {
     const code = commentErrorDetail(error)?.code;
-    if (code === "COMMENT_TEXT_TOO_LONG") return [{ field: "body", message: "댓글은 1,000자까지 입력할 수 있어요." }];
+    if (code === "COMMENT_TEXT_TOO_LONG") return [{ field: "body", message: COMMENT_TOO_LONG_MESSAGE }];
     if (code === "COMMENT_EMPTY") return [{ field: "body", message: "댓글 내용이나 스티커를 입력해주세요." }];
     if (code === "COMMENT_MENTION_INVALID") return [{ field: "mentions", message: FIELD_MESSAGES.mentions }];
     if (code === "COMMENT_STICKER_INVALID") return [{ field: "stickerId", message: FIELD_MESSAGES.stickerId }];

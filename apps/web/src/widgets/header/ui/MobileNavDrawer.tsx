@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import { useAtom } from "jotai";
 
 import { contentDetailModalAtom } from "@/entities/content";
-
 import {
   NotificationItemContent,
   resolveNotificationDestination,
@@ -111,7 +110,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
                 </SheetClose>
               ))}
               {/* 로그아웃은 `destructive`가 아니다 — `ProfileMenu`가 3단 근거(지우는 게 없고 다시 로그인하면
-                  되돌아온다 / 앱의 다른 destructive 4항목은 전부 데이터를 지운다 / `MyPagePage`의 로그아웃이
+                  되돌아온다 / 앱의 다른 destructive 항목은 전부 데이터를 지운다 / `MyPagePage`의 로그아웃이
                   이미 `outline`)로 중립으로 정한 결정을 그대로 따른다. 비동기 액션이라 `aria-disabled` +
                   핸들러 첫 줄 early return을 쓴다(`disabled`는 클릭마다 blur를 일으켜 포커스가 사라진다 —
                   `apps/web/CLAUDE.md` §포커스). */}

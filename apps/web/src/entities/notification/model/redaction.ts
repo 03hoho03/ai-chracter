@@ -1,7 +1,8 @@
 import type { InfiniteData, QueryClient } from "@tanstack/react-query";
 
 import { notificationKeys } from "../api/keys";
-import type { NotificationListResponse, NotificationResponse } from "../api/useNotificationListQuery";
+import type { NotificationListResponse } from "../api/useNotificationListQuery";
+import type { NotificationResponse } from "./notification";
 
 export type NotificationCommentRedaction = { commentId: string; shouldHideThread?: boolean } | { mutedUserId: string };
 

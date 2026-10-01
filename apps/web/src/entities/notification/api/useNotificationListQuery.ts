@@ -5,9 +5,7 @@ import { apiClient } from "@/shared/api/client";
 
 import { notificationKeys } from "./keys";
 
-export type NotificationResponse = components["schemas"]["NotificationResponse"];
 export type NotificationListResponse = components["schemas"]["NotificationListResponse"];
-export type NotificationUnreadCountResponse = components["schemas"]["NotificationUnreadCountResponse"];
 
 const POLL_INTERVAL_MS = 30_000;
 
