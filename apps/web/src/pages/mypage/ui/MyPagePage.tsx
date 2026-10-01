@@ -5,14 +5,16 @@ import { useAtom } from "jotai";
 import { Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
-import { useSessionQuery } from "@/entities/session";
+import { useSessionQuery, type MeResponse } from "@/entities/session";
 import { CommentSettings } from "@/features/work-comments";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
 import { isTheme, themeAtom } from "@/shared/model/theme";
 
-/** 설정 전용 페이지(테마 · 비밀번호 변경 · 계정).
+import { getPasswordSection } from "../model/passwordSection";
+
+/** 설정 전용 페이지(테마 · 비밀번호 변경 또는 로그인 방법 · 계정).
  *
  * `작성 중인 초안` 섹션은 `/my`로 옮겼다. 초안이 두 화면에 중복으로 살면 초안 삭제·
  * 편집 취소가 한쪽에만 있어 두 목록이 서로 다른 진실을 말하게 된다.
@@ -95,10 +97,7 @@ export function MyPagePage() {
 
       {!!me && <CommentSettings key={me.id} viewerId={me.id} />}
 
-      <section className="flex flex-col gap-4">
-        <SectionHeading>비밀번호 변경</SectionHeading>
-        <ChangePasswordForm />
-      </section>
+      <PasswordSection me={me} />
 
       <AccountSection />
     </main>
@@ -112,6 +111,28 @@ export function MyPagePage() {
  * 이 화면에서 제목과 섹션을 가르는 축이 태그 이름밖에 없었다는 뜻이다. */
 function SectionHeading({ children }: { children: string }) {
   return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
+}
+
+/** 비밀번호 자리. 무엇을 그릴지는 `getPasswordSection`이 정한다. 라우트가 `requireSession`이라 `me`는 사실상
+ * 늘 있지만, 없을 때는 예전처럼 폼을 그린다(제출하면 401 배너가 다시 로그인으로 안내한다). */
+function PasswordSection({ me }: { me: MeResponse | undefined }) {
+  const section = me ? getPasswordSection(me) : undefined;
+
+  if (section?.kind === "social-login") {
+    return (
+      <section className="flex flex-col gap-4">
+        <SectionHeading>{section.heading}</SectionHeading>
+        <p className="text-sm break-keep text-muted-foreground">{section.message}</p>
+      </section>
+    );
+  }
+
+  return (
+    <section className="flex flex-col gap-4">
+      <SectionHeading>비밀번호 변경</SectionHeading>
+      <ChangePasswordForm />
+    </section>
+  );
 }
 
 function ThemeSection() {
