@@ -23,8 +23,16 @@
 - 전개 예시(`developmentExamples`, 최대 3쌍) → `development_examples` 자리(값 `example_lines`). 쌍마다 `prompt_set.user_label`과 `prompt_set.story_example_label`을 코드가 붙인다. 대화 기록 쪽 라벨은 `story_assistant_label`이라 둘이 다르다(의도된 현재 동작).
 - 시작설정의 프롤로그(`startingSetups[].prologue`) → `prologue` 자리, **매 턴**. 미디어 북 태그는 지운 뒤 싣는다(아래 미디어 북 태그).
 - 시작상황(`startingSetups[].openingMessage`) → **전용 자리가 없다.** 방을 만들 때 `_insert_opening_message`가 `opening_message or prologue`를 첫 어시스턴트 메시지로 넣고, 그 뒤로는 대화 기록(`history` 자리, 값 `history_lines`)의 일부로 실린다. 시작상황이 비어 있으면 프롤로그가 첫 메시지가 되므로 같은 글이 `prologue` 자리와 대화 기록 맨 앞에 두 번 실린다. 첫 메시지는 태그를 칸 id 형태로 바꿔 저장되고, 대화 기록으로 실릴 때 태그가 지워진다.
-- 키워드북(`keywordNotes[].infoText`) → `keyword_notes` 자리(값 `keyword_note_lines`), 매칭된 노트만. 매칭은 `api/chat/keyword_notes.py`의 `match_keyword_notes`가 **이번 턴 사용자 메시지**에 트리거 키워드가 부분 문자열로 들어 있는지만 본다. 응답과 지난 대화는 보지 않는다. 적용 범위(`startingSetupId`, `null`이면 스토리 전체)는 호출부의 DB 조회가 좁힌다. 대화 기록보다 **뒤**에 실린다.
-- 단축어(`shortcuts[].prompt`) → 실행된 턴에만 `shortcut_prompt` 자리. FE는 단축어를 고르면 그 `prompt` 글을 사용자 메시지로 전송한다(`widgets/chat-room/ui/ChatRoomView.tsx`의 `handleShortcutSelect`). 그래서 같은 글이 사용자 메시지로 저장·표시되고, 그 턴의 키워드 매칭과 스탯 판정 입력에도 사용자 발화로 들어간다.
+- 키워드북(`keywordNotes[].infoText`) → `keyword_notes` 자리(값 `keyword_note_lines`), 고른 노트의 정보만 상시 노트 → 키워드로 열린 노트 순으로. 적용 범위(`startingSetupId`, `null`이면 스토리 전체)는 호출부의 DB 조회가 좁힌다. 대화 기록보다 **뒤**에 실린다. 고르는 규칙은 `api/chat/keyword_notes.py`(`match_keyword_notes` → `recent_scan_turns` + `select_keyword_notes`, DB 없는 순수 함수)에 있고 실방과 빌더 미리보기가 같은 함수를 쓴다.
+  - 스캔 글은 **직전 AI 응답 + 이번 사용자 메시지**다. 첫 턴의 직전 AI 응답은 첫 메시지(시작상황, 비었으면 프롤로그)다. 턴은 AI 응답을 경계로 묶는다 — 생성이 실패해 응답 없이 남은 사용자 메시지는 다음 메시지와 한 턴이 되어, 직전 AI 응답은 사용자가 마지막으로 읽은 응답이다. 편집·재생성·단축어 턴도 같은 규칙이다(재생성은 대상 사용자 메시지를 이번 메시지로 본다).
+  - 비교는 키워드와 글을 NFC로 맞추고 `casefold`로 접은 뒤 부분 문자열로 한다 — 영문 대소문자를 가리지 않고, 트리거 `도희`는 "강도희"에도 걸린다. 글은 하나씩 따로 본다(두 글을 이어 붙인 경계에서는 걸리지 않는다). 대화 기록 쪽 글은 모델 사본처럼 미디어 북 태그를 지운 뒤 보고, 이번 사용자 메시지는 그대로 본다.
+  - 노트 순서(`order`, 빌더 목록 위가 먼저)가 우선순위다. 한 턴에 키워드로 열리는 노트는 앞 5개(`MAX_TRIGGERED_KEYWORD_NOTES`)까지이고, 상시 노트(`alwaysOn`)는 트리거·유지와 무관하게 실리며 따로 센다(스토리당 최대 3개는 저장 검증이 보장한다).
+  - 유지 턴(`stickyTurns`, 0~5)이 k면 이번 턴부터 k턴 전까지 중 한 턴의 스캔 글에서 걸렸을 때 실린다. 상태를 저장하지 않고 매 턴 이번 생성 프롬프트에 실리는 대화(요약이 덮은 앞부분 제외)로 다시 계산한다.
+  - 금지 키워드(`excludeKeywords`)가 이번 턴 스캔 글에 있으면 그 노트는 유지 중이든 상시든 빠진다. 과거 턴에 트리거와 금지 키워드가 함께 있었으면 그 턴의 일치는 유지의 출발점이 되지 않는다.
+  - 이름(`name`)은 빌더 목록용이라 모델에 보내지 않는다. 정보가 공백뿐인 노트와 공백뿐인 키워드는 매칭에서 건너뛴다.
+  - **자기 강화 반복**: 실린 노트 때문에 AI가 응답에서 키워드를 말하면 그 응답이 다음 턴의 스캔 글이라 노트가 다시 열린다. 의도된 동작이고, 끊으려면 금지 키워드를 쓴다.
+  - 저장(자동저장 PATCH) 검증은 `api/content/schemas.py`의 `KeywordNoteDraftInput`·`StoryDraftPayload`: 정보 800자, 트리거·금지 키워드 각 노트당 10개 × 20자, 이름 20자, 유지 0~5, 노트 50개, 상시 3개를 넘으면 422, 공백뿐인 키워드와 대소문자·유니코드 조합만 다른 중복 키워드도 422. 같은 저장 페이로드에 없는 시작설정을 가리키는 노트는 400(`KEYWORD_NOTE_STARTING_SETUP_NOT_FOUND`, `_update_story_draft`). 키워드가 없는 노트(상시 제외)와 정보가 빈 노트는 저장은 받고 발행이 막는다(`validate_story_publish`).
+- 단축어(`shortcuts[].prompt`) → 실행된 턴에만 `shortcut_prompt` 자리. FE는 단축어를 고르면 그 `prompt` 글을 사용자 메시지로 전송한다(`widgets/chat-room/ui/ChatRoomView.tsx`의 `handleShortcutSelect`). 그래서 같은 글이 사용자 메시지로 저장·표시되고, 그 턴의 키워드 매칭에는 이번 사용자 메시지로(직전 AI 응답과 함께), 스탯 판정 입력에는 사용자 발화로 들어간다. 대화 기록에 남으므로 유지 턴이 있는 노트는 뒤 턴에서도 이 글로 열릴 수 있다.
 - 대화 프로필(사용자가 방에서 고른 것) → `user_persona` 자리. 빌더 필드가 아니다.
 - 생성 프롬프트에 **없는 것**: 이름·한줄소개, 플레이가이드(`playguide`), 추천 답변(`suggestedReplies`), 스탯 정의와 현재 값, 엔딩, 등록 설명, 미디어 북(칸 이름·상황 설명·해금 힌트). 이야기를 쓰는 모델은 게이지 값을 모른다 — 튜토리얼이 "상태창에 수치를 쓰게 하지 말라"고 가르치는 근거가 이것이다. 이야기를 쓰는 모델은 어떤 그림이 붙을지도 모르고, 그림은 아래 칸 판정이 응답 뒤에 따로 고른다.
 
@@ -171,7 +179,7 @@
    - `startingSetups[].openingMessage` → 시작상황, `playguide` → 플레이가이드, `suggestedReplies` → 추천 답변.
    - `statDefs[].perTurnDelta` → 턴당 자동 변화, `description` → 설명.
    - `endings[].turnCountGate` → 엔딩조건(최소 턴수), `judgmentPrompt` → 판단 프롬프트, `hint` → 엔딩힌트, `statRules` → 스탯 기반 규칙. JSON은 스탯을 이름(`"stat"`)으로 가리키고 로더가 id로 바꾼다(`_resolve_stat_refs`).
-   - `keywordNotes[].infoText` → 정보, `triggerKeywords` → 트리거 키워드, `startingSetupId: null` → 적용 대상 "스토리 전체". 입력표에 적용 대상 행을 따로 둔다. 시드 JSON은 `null`만 쓸 수 있어서 "특정 시작설정"을 고르면 대조가 어긋난다.
+   - `keywordNotes[].infoText` → 정보, `triggerKeywords` → 트리거 키워드, `startingSetupId: null` → 적용 대상 "스토리 전체". 입력표에 적용 대상 행을 따로 둔다. 시드 JSON은 `null`만 쓸 수 있어서 "특정 시작설정"을 고르면 대조가 어긋난다. 노트의 배열 순서가 빌더 목록 순서(우선순위)이니 그 순서대로 입력한다. 시드 JSON은 이름·금지 키워드·유지 턴·상시 적용 키를 쓰지 않으므로 입력표에서 이 넷은 기본값(이름 비움, 금지 없음, 유지 0, 상시 꺼짐)으로 둔다.
    - 캐릭터: `intro` → 인트로, `exampleDialogues` → 예시 대화, `characterPrompt` → 캐릭터 프롬프트, `situationalImages[].triggerCondition` → 노출 상황.
    - 루트 `description` → 등록 설명(캐릭터는 상세 탭).
 3. 이미지: 대표 이미지는 생성 이미지에서 고를 수 있다. 상황별 이미지는 업로드 전용이라 파일로 받아 올린다. 참조 생성은 본인의 완성된 생성 이미지만 참조로 쓸 수 있으므로 기준 이미지를 지우지 않는다.
