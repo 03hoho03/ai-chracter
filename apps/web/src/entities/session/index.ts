@@ -7,4 +7,5 @@ export { resetSessionIfLost } from "./lib/resetSessionIfLost";
 export { formatAuthRateLimitMessage, getAuthRateLimit, type AuthRateLimitDetail } from "./model/authRateLimitMessage";
 export { LOGIN_LINK_ERROR_TYPE, type AuthFormErrorBanner } from "./model/authFormErrorBanner";
 export { isSessionLostError } from "./model/sessionLost";
+export { SOCIAL_PROVIDER_LABELS, type SocialProvider } from "./model/socialProvider";
 export { isSuspendedError, SUSPENDED_ERROR_MESSAGE } from "./model/suspendedAccount";
