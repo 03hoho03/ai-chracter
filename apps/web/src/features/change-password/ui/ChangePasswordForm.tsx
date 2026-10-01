@@ -63,7 +63,7 @@ export function ChangePasswordForm() {
       {errors.root && (
         <div role="alert" className="rounded-lg bg-destructive/10 p-3 text-sm break-keep text-destructive-text">
           <p>{errors.root.message}</p>
-          {/* 링크 모양의 근거는 `GoogleBasicInfoStep`의 같은 배너 주석. */}
+          {/* 링크 모양의 근거는 `SocialBasicInfoStep`의 같은 배너 주석. */}
           {errors.root.type === LOGIN_LINK_ERROR_TYPE && (
             <Link
               to="/login"

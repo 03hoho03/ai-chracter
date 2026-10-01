@@ -9,8 +9,8 @@ const DETAIL_SUMMARY_TRIGGER_CLASSNAME =
 const DETAIL_PANEL_CLASSNAME =
   "mt-2 flex flex-col gap-3 rounded-lg border border-border p-3 text-xs text-muted-foreground motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200";
 
-/** 이메일 가입과 구글 온보딩 두 스텝이 이 fieldset을 바이트 단위로 똑같이 갖고 있어 한 벌로 묶었다 —
- * 문구·링크 수정이 한쪽에만 적용되는 사고를 막는 게 목적이다. `BasicInfoStep`·`GoogleBasicInfoStep`과
+/** 이메일 가입과 소셜(구글·카카오) 온보딩 두 스텝이 이 fieldset을 바이트 단위로 똑같이 갖고 있어 한 벌로 묶었다 —
+ * 문구·링크 수정이 한쪽에만 적용되는 사고를 막는 게 목적이다. `BasicInfoStep`·`SocialBasicInfoStep`과
  * 같은 결로 폼은 prop이 아니라 `FormProvider` 컨텍스트에서 읽는다(두 스텝 모두 같은
  * `SignUpFormValues`를 쓴다).
  *
@@ -128,6 +128,8 @@ export function LegalConsentFields() {
                     이메일, 비밀번호(해시하여 저장), 닉네임, 생년월일
                     <br />
                     구글 계정으로 가입하는 경우: 구글 계정 식별자, 이메일
+                    <br />
+                    카카오계정으로 가입하는 경우: 카카오 회원번호, 카카오계정 이메일
                   </dd>
                 </div>
                 <div>

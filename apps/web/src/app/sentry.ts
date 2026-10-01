@@ -29,8 +29,9 @@ function stripBreadcrumbUrls(breadcrumb: Breadcrumb): Breadcrumb {
  * - `breadcrumbsIntegration`(`integrations/breadcrumbs.js`)의 history 핸들러가 같은 URL을
  *   (동일 출처면 쿼리스트링이 실린 상대경로로) `breadcrumb.data.to`/`.from`에, xhr/fetch
  *   핸들러가 요청 URL을 `breadcrumb.data.url`에 남긴다.
- * `routes/reset-password.tsx`의 비밀번호 재설정 토큰과 `routes/onboarding.google.tsx`의
- * OAuth code/state가 전부 이 경로들로 실려서 세 군데 다 지운다.
+ * `routes/reset-password.tsx`의 비밀번호 재설정 토큰과 `routes/login.tsx`의 소셜 로그인 오류 코드 같은
+ * 웹 쿼리가 전부 이 경로들로 실려서 세 군데 다 지운다. 소셜 로그인의 OAuth code/state는 웹 URL이 아니라 API
+ * 콜백 URL에만 실리고(그쪽은 API가 지운다), 온보딩의 가입 대기 토큰은 URL이 아니라 HttpOnly 쿠키로 오간다.
  */
 export function stripQueryStrings(event: ErrorEvent): ErrorEvent {
   const { request } = event;

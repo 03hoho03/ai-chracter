@@ -4,7 +4,13 @@ import { useNavigate } from "@tanstack/react-router";
 import { FormProvider, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
-import { formatAuthRateLimitMessage, getAuthRateLimit, LOGIN_LINK_ERROR_TYPE, sessionKeys } from "@/entities/session";
+import {
+  formatAuthRateLimitMessage,
+  getAuthRateLimit,
+  LOGIN_LINK_ERROR_TYPE,
+  sessionKeys,
+  type SocialProvider,
+} from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
 
@@ -13,23 +19,23 @@ import {
   useSignUpMutation,
   useVerifyEmailMutation,
 } from "../api/mutations";
-import { useOnboardingGoogleMutation } from "../api/useOnboardingGoogleMutation";
+import { useOnboardingMutation } from "../api/useOnboardingMutation";
 import {
-  toOnboardingGoogleRequest,
   toSignUpLoginRequest,
   toSignupRequest,
+  toSocialOnboardingRequest,
   toVerifyEmailRequest,
 } from "../model/formToServer";
 import { getOnboardingErrorBanner } from "../model/onboardingErrorBanner";
 import { signUpDefaultValues, signUpSchema, type SignUpFormValues } from "../model/signUpSchema";
 import { BasicInfoStep } from "./BasicInfoStep";
 import { EmailVerifyStep } from "./EmailVerifyStep";
-import { GoogleBasicInfoStep } from "./GoogleBasicInfoStep";
+import { SocialBasicInfoStep } from "./SocialBasicInfoStep";
 
 export type SignUpStep = "basicInfo" | "emailVerify";
 
-/** 구글 온보딩은 비밀번호를 받지 않아 이메일 인증 스텝에 도달하지 않는다. */
-export type GoogleSignUpStep = Exclude<SignUpStep, "emailVerify">;
+/** 소셜 온보딩은 비밀번호를 받지 않아 이메일 인증 스텝에 도달하지 않는다. */
+export type SocialSignUpStep = Exclude<SignUpStep, "emailVerify">;
 
 // 현재 스텝은 page의 `useState`가 소유한다 — 위저드가 전역 atom을 들고 있으면 라우트를 떠난 뒤에도
 // 스텝이 살아남아, 폼 값만 비워진 채 중간 스텝으로 재진입하는 막다른 상태가 된다.
@@ -40,10 +46,9 @@ type SignUpWizardProps =
       onStepChange: (step: SignUpStep) => void;
     }
   | {
-      mode: "google";
-      token: string;
-      step: GoogleSignUpStep;
-      onStepChange: (step: GoogleSignUpStep) => void;
+      mode: SocialProvider;
+      step: SocialSignUpStep;
+      onStepChange: (step: SocialSignUpStep) => void;
     };
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
@@ -58,7 +63,7 @@ export function SignUpWizard(props: SignUpWizardProps) {
 
   const signUpMutation = useSignUpMutation();
   const verifyEmailMutation = useVerifyEmailMutation();
-  const onboardingMutation = useOnboardingGoogleMutation();
+  const onboardingMutation = useOnboardingMutation();
   const loginMutation = useSignUpLoginMutation();
 
   async function completeSignUp() {
@@ -110,12 +115,12 @@ export function SignUpWizard(props: SignUpWizardProps) {
     }
   }
 
-  async function handleGoogleBasicInfoSubmit(token: string) {
-    // `GoogleBasicInfoStep`은 `handleSubmit`이 아니라 `trigger()`로 제출해 RHF가 root 에러를 자동으로
+  async function handleSocialBasicInfoSubmit(provider: SocialProvider) {
+    // `SocialBasicInfoStep`은 `handleSubmit`이 아니라 `trigger()`로 제출해 RHF가 root 에러를 자동으로
     // 지워 주지 않는다 — 안 지우면 성공한 재제출 위에도 지난 배너가 남는다(이메일 갈래와 같은 처방).
     form.clearErrors("root");
     try {
-      await onboardingMutation.mutateAsync(toOnboardingGoogleRequest(form.getValues(), token));
+      await onboardingMutation.mutateAsync({ provider, payload: toSocialOnboardingRequest(form.getValues()) });
       await completeSignUp();
     } catch (error) {
       // 400·409·403은 이 폼을 다시 내서는 풀리지 않아 배너 + 로그인 링크로, 판별 못 한 실패만 toast로 간다.
@@ -134,15 +139,16 @@ export function SignUpWizard(props: SignUpWizardProps) {
   // 스텝 분기를 평범한 함수로 뽑아 `FormProvider`가 모든 갈래를 한 번에 감싸게 한다
   // (컴포넌트가 아니라 함수라 호출부에서 새 identity가 생기지 않는다 — 스텝 전환에 리마운트 없음).
   // `mode`로 먼저 가르는 이유: 이메일 전용 `onStepChange`(`SignUpStep` 콜백)는 `email` 갈래에서만 narrowing으로
-  // 꺼낼 수 있다. 구글이 이메일 인증 스텝에 닿지 않는 보증 자체는 props 유니언(`GoogleSignUpStep`)이 page 경계에서
-  // 이미 하고 있다.
+  // 꺼낼 수 있다. 소셜 가입이 이메일 인증 스텝에 닿지 않는 보증 자체는 props 유니언(`SocialSignUpStep`)이 page 경계에서
+  // 이미 하고 있다. 두 제공자는 요청 경로만 다르고 스텝이 같아 한 갈래로 모은다.
   function renderStep() {
     switch (props.mode) {
-      case "google": {
-        const { token } = props;
+      case "google":
+      case "kakao": {
+        const provider = props.mode;
         return (
-          <GoogleBasicInfoStep
-            onSubmit={() => void handleGoogleBasicInfoSubmit(token)}
+          <SocialBasicInfoStep
+            onSubmit={() => void handleSocialBasicInfoSubmit(provider)}
             isSubmitting={onboardingMutation.isPending}
           />
         );
