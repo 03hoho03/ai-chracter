@@ -237,9 +237,13 @@ async def test_change_password_still_open_without_consent(
 
 
 async def test_report_still_open_without_consent(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
-    user = await _unconsented_user(db_client, db_session)
+    await _unconsented_user(db_client, db_session)
+    # Reporting one's own work is rejected regardless of consent, so the target belongs to someone else.
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
     genre = await _get_genre(db_session)
-    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    content = await _make_published_story(db_session, creator_user_id=creator.id, genre_id=genre.id)
     await db_session.commit()
 
     resp = await db_client.post(f"/contents/{content.id}/report", json={"reasonCategory": "spam"})

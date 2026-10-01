@@ -30,7 +30,7 @@ type ContentActionsMenuProps = {
   moderationStatus: ModerationStatus;
 };
 
-/** 공유(클립보드 복사)/신고/(본인 소유일 때)
+/** 공유(클립보드 복사)와, 남의 작품이면 신고 / 본인 소유면
  * 공개범위 전환 진입점인 "⋯" 메뉴. */
 export function ContentActionsMenu({
   contentId,
@@ -79,10 +79,13 @@ export function ContentActionsMenu({
           <Share2 aria-hidden />
           공유
         </DropdownMenuItem>
-        <DropdownMenuItem onSelect={handleReport}>
-          <Flag aria-hidden />
-          신고
-        </DropdownMenuItem>
+        {/* 자기 작품은 신고할 수 없다 — 서버도 403으로 거부하므로 보여 주면 누르는 순간 실패한다. */}
+        {!isOwner && (
+          <DropdownMenuItem onSelect={handleReport}>
+            <Flag aria-hidden />
+            신고
+          </DropdownMenuItem>
+        )}
 
         {/* 완전 삭제는 여전히 없고 공개범위 전환만 허용된다. */}
         {isOwner && (

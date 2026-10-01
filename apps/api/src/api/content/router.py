@@ -2154,6 +2154,9 @@ async def report_content(
     content = await db.get(Content, id)
     if content is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    # A creator's report on their own work only adds noise to the moderation queue.
+    if content.creator_user_id == user_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cannot report own content")
 
     db.add(
         Report(

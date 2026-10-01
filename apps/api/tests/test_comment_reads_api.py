@@ -66,7 +66,8 @@ async def test_anonymous_reads_and_private_owner_management_flags(
     item = private.json()["items"][0]
     assert item["id"] == str(root.id)
     assert item["canDelete"] is True
-    assert item["canReport"] is True
+    # The owner wrote this comment, so reporting it is not offered.
+    assert item["canReport"] is False
     assert item["canLike"] is False
     assert item["canReply"] is False
 

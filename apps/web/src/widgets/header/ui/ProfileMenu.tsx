@@ -115,9 +115,8 @@ export function ProfileMenu({ me }: { me: MeResponse }) {
 
         {/* `variant="destructive"`를 쓰지 않는다. DESIGN.md §Destructive가 이 토큰의 뜻을 삭제·탈퇴·거부·
             이용제한 넷으로 못박았는데 로그아웃은 넷 중 아무것도 아니다(지우는 게 없고 다시 로그인하면 되돌아온다).
-            앱의 나머지 `DropdownMenuItem variant="destructive"`는 3파일 4항목이고 전부 사용자 데이터를
-            지운다(`MyWorkCardMenu`의 `삭제하기`·`편집한 내용 버리기`, `ChatRoomListItemRow`, `MessageBubble`
-            — 글리프는 `Trash2` 셋에 `RotateCcw` 하나다) — 여기만 예외로 두면 그 신호가 묽어진다.
+            앱의 나머지 `DropdownMenuItem variant="destructive"`는 전부 사용자 데이터를 지운다(작품 삭제·
+            편집한 내용 버리기·대화방·메시지·대화 프로필·댓글 삭제) — 여기만 예외로 두면 그 신호가 묽어진다.
             대비도 이쪽이 낫지만 **AA 논거는 사라졌다** — `--destructive-text`가 갈라져 나오면서
             destructive 행의 focus 대비가 다크 5.3097 / 라이트 5.4748로 올라갔다(고치기 전 4.3824/4.2059).
             중립 행의 12.6689/14.0576은 여전히 두 배 이상이라, 이건 이제 접근성 근거가 아니라 위계 근거다.
