@@ -5,11 +5,49 @@ import { formToServer } from "./formToServer";
 import { serverToForm } from "./serverToForm";
 
 type StoryDraftResponse = components["schemas"]["StoryDraftResponse"];
+type MediaBookDraft = components["schemas"]["MediaBookDraft"];
 
 function requireFirst<T>(items: readonly T[]): T {
   const [first] = items;
   if (!first) throw new Error("fixture empty");
   return first;
+}
+
+// 칸 하나는 크기를 아는 자산, 하나는 크기 기록 전 자산(null)이다.
+function mediaBookResponse(): MediaBookDraft {
+  return {
+    people: [
+      { id: "00000000-0000-4000-8000-0000000000a1", name: "에리" },
+      { id: "00000000-0000-4000-8000-0000000000a2", name: "준" },
+    ],
+    scenes: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "기쁨" }],
+    cells: [
+      {
+        id: "00000000-0000-4000-8000-0000000000c1",
+        personId: "00000000-0000-4000-8000-0000000000a1",
+        sceneId: "00000000-0000-4000-8000-0000000000b1",
+        imageAssetId: "00000000-0000-4000-8000-0000000000d1",
+        situationDescription: "합격 소식을 듣고 웃는다",
+        unlockHint: "합격 발표 날",
+        excludeFromChat: false,
+        imageUrl: "https://example.com/00000000-0000-4000-8000-0000000000d1_thumb.webp",
+        imageWidth: 512,
+        imageHeight: 683,
+      },
+      {
+        id: "00000000-0000-4000-8000-0000000000c2",
+        personId: "00000000-0000-4000-8000-0000000000a2",
+        sceneId: "00000000-0000-4000-8000-0000000000b1",
+        imageAssetId: "00000000-0000-4000-8000-0000000000d2",
+        situationDescription: "",
+        unlockHint: "",
+        excludeFromChat: true,
+        imageUrl: "https://example.com/00000000-0000-4000-8000-0000000000d2_thumb.webp",
+        imageWidth: null,
+        imageHeight: null,
+      },
+    ],
+  };
 }
 
 function baseDraftResponse(): StoryDraftResponse {
@@ -114,6 +152,7 @@ describe("serverToForm", () => {
       shortcuts: [
         { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
       ],
+      mediaBook: { people: [], scenes: [], cells: [] },
       registration: {
         description: "표류한 선원들의 생존기",
         genre: "genre-adventure",
@@ -355,5 +394,70 @@ describe("serverToForm", () => {
     const payload = formToServer(serverToForm(response));
 
     expect(payload.developmentExamples).toEqual(response.developmentExamples);
+  });
+  it("restores an absent mediaBook as an empty media book", () => {
+    const response = baseDraftResponse();
+    delete response.mediaBook;
+
+    expect(serverToForm(response).mediaBook).toEqual({ people: [], scenes: [], cells: [] });
+  });
+
+  it("maps media book axes and cells, turning unknown image dimensions into unset fields", () => {
+    const response = baseDraftResponse();
+    response.mediaBook = mediaBookResponse();
+
+    expect(serverToForm(response).mediaBook).toEqual({
+      people: [
+        { id: "00000000-0000-4000-8000-0000000000a1", name: "에리" },
+        { id: "00000000-0000-4000-8000-0000000000a2", name: "준" },
+      ],
+      scenes: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "기쁨" }],
+      cells: [
+        {
+          id: "00000000-0000-4000-8000-0000000000c1",
+          personId: "00000000-0000-4000-8000-0000000000a1",
+          sceneId: "00000000-0000-4000-8000-0000000000b1",
+          imageAssetId: "00000000-0000-4000-8000-0000000000d1",
+          imageUrl: "https://example.com/00000000-0000-4000-8000-0000000000d1_thumb.webp",
+          imageWidth: 512,
+          imageHeight: 683,
+          situationDescription: "합격 소식을 듣고 웃는다",
+          unlockHint: "합격 발표 날",
+          excludeFromChat: false,
+        },
+        {
+          id: "00000000-0000-4000-8000-0000000000c2",
+          personId: "00000000-0000-4000-8000-0000000000a2",
+          sceneId: "00000000-0000-4000-8000-0000000000b1",
+          imageAssetId: "00000000-0000-4000-8000-0000000000d2",
+          imageUrl: "https://example.com/00000000-0000-4000-8000-0000000000d2_thumb.webp",
+          imageWidth: undefined,
+          imageHeight: undefined,
+          situationDescription: "",
+          unlockHint: "",
+          excludeFromChat: true,
+        },
+      ],
+    });
+  });
+
+  it("round-trips a media book back to the payload shape without the display-only image fields", () => {
+    const response = baseDraftResponse();
+    response.mediaBook = mediaBookResponse();
+
+    const payload = formToServer(serverToForm(response));
+
+    expect(payload.mediaBook).toEqual({
+      people: response.mediaBook.people,
+      scenes: response.mediaBook.scenes,
+      cells: response.mediaBook.cells.map(({ imageUrl: _url, imageWidth: _width, imageHeight: _height, ...cell }) => cell),
+    });
+  });
+
+  it("round-trips an absent mediaBook as an explicit empty media book (the form owns the whole media book)", () => {
+    const response = baseDraftResponse();
+    delete response.mediaBook;
+
+    expect(formToServer(serverToForm(response)).mediaBook).toEqual({ people: [], scenes: [], cells: [] });
   });
 });

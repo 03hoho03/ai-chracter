@@ -4,8 +4,9 @@ import { createRootRouteWithContext, ErrorComponent, Outlet, useRouterState } fr
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
 import { ImageCropModal } from "@/features/crop-image";
+import { MediaBookConfirmModal, MediaBookOverwriteModal, MediaTagPickerModal } from "@/features/edit-media-book";
 import { EndingCollectionModal } from "@/features/ending-collection";
-import { ImageArchiveModal } from "@/features/image-archive";
+import { ImageArchiveModal, StoryImageArchiveModal } from "@/features/image-archive";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
 import { DeletePersonaModal } from "@/features/manage-persona";
 import { DeleteContentDraftModal, ResetContentDraftModal } from "@/features/manage-content-draft";
@@ -61,11 +62,15 @@ function RootComponent() {
       <PlayGuideModal />
       <EndingCollectionModal />
       <ImageArchiveModal />
+      <StoryImageArchiveModal />
       <ImageCropModal />
       <UpdateInfoModal />
       <ChangeStartingSetupModal />
       <ConfirmStartingSetupChangeModal />
       <GeneratedImagePickerModal />
+      <MediaBookConfirmModal />
+      <MediaBookOverwriteModal />
+      <MediaTagPickerModal />
       <AppealModal />
       <ChangeContentVisibilityModal />
       <DeleteContentDraftModal />

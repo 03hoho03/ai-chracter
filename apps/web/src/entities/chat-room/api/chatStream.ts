@@ -3,6 +3,8 @@
 
 import { z } from "zod";
 
+import { mediaTagImagesSchema } from "@/entities/media-book/@x/chat-room";
+
 /** SSE 이벤트는 **스키마가 단일 소스**다 — 타입을 따로 쓰고 스키마를 덧붙이면 둘이 갈린다
  * `openChatStream`이 이 스키마로 파싱하므로 서버가 모양을 바꾸면
  * 소비처가 아니라 여기서 걸린다. */
@@ -33,6 +35,18 @@ const chatMessageSchema = z.object({
     .nullish()
     .transform((value) => value ?? undefined)
     .optional(),
+  // 판정 이미지의 픽셀 크기(스토리 미디어 북 그림만 — 캐릭터 상황별 이미지에는 서버가 싣지 않는다). 화면이 그림이
+  // 오기 전에 원본 비율로 높이를 잡는 데 쓴다. 없으면 고정 웰이다. 같은 이유로 nullish + 같은 정규화.
+  imageWidth: z
+    .number()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
+  imageHeight: z
+    .number()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
   createdAt: z.string(),
 });
 
@@ -43,6 +57,8 @@ export const chatStreamEventSchema = z.discriminatedUnion("type", [
     type: z.literal("endingReached"),
     endingId: z.string(),
     epilogue: z.string().nullable(),
+    // 에필로그 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`).
+    mediaTagImages: mediaTagImagesSchema,
   }),
   // 캐시 변경 없음
   z.object({ type: z.literal("policyWarning"), message: z.string() }),

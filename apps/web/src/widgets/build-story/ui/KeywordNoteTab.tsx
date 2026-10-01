@@ -10,6 +10,8 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import type { StartingSetupValues, StoryBuilderFormValues } from "@/features/build-story";
 
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+
 /** 탭 전체가 선택사항(0개도 발행 가능). */
 export function KeywordNoteTab() {
   const form = useFormContext<StoryBuilderFormValues>();
@@ -138,6 +140,7 @@ function KeywordNoteRow({
             aria-describedby={noteErrors?.content ? `keyword-note-${id}-content-error` : undefined}
             {...register(`keywordNotes.${index}.content`)}
           />
+          <MediaTagOutsideNotice name={`keywordNotes.${index}.content`} />
           {noteErrors?.content && (
             <p id={`keyword-note-${id}-content-error`} role="alert" className="text-xs text-destructive-text">
               {noteErrors.content.message}

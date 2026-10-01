@@ -1,7 +1,16 @@
 import type { components } from "@ai-character-chat/api-types";
 import { describe, expect, it } from "vitest";
 
-import { buildPreviewStartState } from "./buildPreviewStartState";
+import { loadMediaTagCases } from "@/entities/media-book/@x/preview-session";
+
+import { buildPreviewStartState, PREVIEW_OPENING_MESSAGE_ID } from "./buildPreviewStartState";
+
+const {
+  cells: CELLS,
+  minaClassroom: MINA_CLASSROOM,
+  minaRooftop: MINA_ROOFTOP,
+  normalizeCases: NORMALIZE_CASES,
+} = loadMediaTagCases();
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
@@ -176,5 +185,84 @@ describe("buildPreviewStartState", () => {
     );
 
     expect(state.messages[0]?.content).toBe("첫 시작");
+  });
+
+  // 첫 메시지 속 미디어 북 태그는 실채팅에서 서버가 하는 정규화를 여기서 한다 — 같은 입력 표로 서버와 같은 결과인지 본다.
+  describe("opening media tags", () => {
+    const PERSON_MINA = "11111111-0000-0000-0000-000000000001";
+    const SCENE_CLASSROOM = "22222222-0000-0000-0000-000000000001";
+    const SCENE_ROOFTOP = "22222222-0000-0000-0000-000000000002";
+    const IMAGE = { url: "blob:classroom", width: 768, height: 1024 };
+
+    function mediaBook(): NonNullable<StoryDraftPayload["mediaBook"]> {
+      const sceneIdByName = new Map([
+        ["교실", SCENE_CLASSROOM],
+        ["옥상", SCENE_ROOFTOP],
+      ]);
+      return {
+        people: [{ id: PERSON_MINA, name: "민아" }],
+        scenes: [...sceneIdByName].map(([name, id]) => ({ id, name })),
+        cells: CELLS.map((cell) => ({
+          id: cell.cellId,
+          personId: PERSON_MINA,
+          sceneId: sceneIdByName.get(cell.scene) ?? "",
+          imageAssetId: "33333333-0000-0000-0000-000000000001",
+          situationDescription: "",
+          unlockHint: "",
+          excludeFromChat: false,
+        })),
+      };
+    }
+
+    function openingOf(text: string, overrides: Partial<StoryDraftPayload> = {}) {
+      return buildPreviewStartState(
+        undefined,
+        storyPayload({ startingSetups: [startingSetup({ openingMessage: text })], mediaBook: mediaBook(), ...overrides }),
+        { [MINA_CLASSROOM]: IMAGE },
+      );
+    }
+
+    it.each(NORMALIZE_CASES)("normalizes like the server: %s", (_id, text, expectedText) => {
+      expect(openingOf(text).messages[0]?.content).toBe(expectedText);
+    });
+
+    it("maps only the cells the opening points at that have an image", () => {
+      const state = openingOf("{{img::민아/교실}}\n\n{{img::민아/옥상}}");
+      expect(state.openingMediaTagImages).toEqual({ [MINA_CLASSROOM]: IMAGE });
+      expect(state.messages[0]?.content).toContain(`{{img::${MINA_ROOFTOP}}}`);
+    });
+
+    it("deletes every tag when the payload carries no media book", () => {
+      const state = openingOf("앞\n\n{{img::민아/교실}}\n\n뒤", { mediaBook: undefined });
+      expect(state.messages[0]?.content).toBe("앞\n\n뒤");
+      expect(state.openingMediaTagImages).toEqual({});
+    });
+
+    it("leaves a character intro untouched", () => {
+      const state = buildPreviewStartState(undefined, characterPayload({ intro: "{{img::민아/교실}}" }), {
+        [MINA_CLASSROOM]: IMAGE,
+      });
+      expect(state.messages[0]?.content).toBe("{{img::민아/교실}}");
+      expect(state.openingMediaTagImages).toEqual({});
+    });
+  });
+
+  // 세션 전 화면은 렌더마다 이 함수로 다시 만들어진다. 첫 메시지 id 가 매번 바뀌면 그 id 를 key 로 쓰는 첫 메시지
+  // (그림 포함)가 통째로 다시 마운트된다.
+  it("gives the opening message the same id on every call, session or not", () => {
+    const first = buildPreviewStartState(undefined, storyPayload());
+    const again = buildPreviewStartState(undefined, storyPayload());
+    const started = buildPreviewStartState("session-1", storyPayload());
+    const character = buildPreviewStartState(undefined, characterPayload());
+
+    expect(first.messages[0]?.id).toBe(PREVIEW_OPENING_MESSAGE_ID);
+    expect(again.messages[0]?.id).toBe(PREVIEW_OPENING_MESSAGE_ID);
+    expect(started.messages[0]?.id).toBe(PREVIEW_OPENING_MESSAGE_ID);
+    expect(character.messages[0]?.id).toBe(PREVIEW_OPENING_MESSAGE_ID);
+  });
+
+  // 서버가 주는 응답 메시지 id 는 UUID 다 — 고정 id 가 그 꼴이 아니어야 세션 뒤 메시지와 key 가 겹치지 않는다.
+  it("uses an opening id that cannot collide with server message UUIDs", () => {
+    expect(PREVIEW_OPENING_MESSAGE_ID).not.toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
   });
 });

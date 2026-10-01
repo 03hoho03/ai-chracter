@@ -12,7 +12,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Controller, useFormContext, useWatch } from "react-hook-form";
 
 import { useGenreListQuery } from "@/entities/content";
@@ -23,6 +23,9 @@ import {
   type Target,
   type Visibility,
 } from "@/features/build-story";
+
+import { MediaTagInsertButton } from "./MediaTagInsertButton";
+import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 // 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
 // 라벨만 매핑한다.
@@ -53,6 +56,9 @@ export function RegistrationTab() {
   const genreListQuery = useGenreListQuery();
   const hashtags = useWatch({ control, name: "registration.hashtags" });
   const [hashtagInput, setHashtagInput] = useState("");
+  const descriptionField = register("registration.description");
+  // "이미지 넣기"가 커서 자리를 읽을 입력창. `register` 의 ref 와 함께 건다.
+  const descriptionRef = useRef<HTMLTextAreaElement | null>(null);
 
   function addHashtag() {
     const trimmed = hashtagInput.trim();
@@ -72,15 +78,23 @@ export function RegistrationTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-registration-description">등록 설명 *</Label>
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor="story-registration-description">등록 설명 *</Label>
+          <MediaTagInsertButton name="registration.description" fieldLabel="등록 설명" textareaRef={descriptionRef} />
+        </div>
         <Textarea
           id="story-registration-description"
           placeholder="스토리를 목록에서 소개할 설명을 입력해주세요"
           rows={4}
           aria-invalid={!!errors.registration?.description}
           aria-describedby={errors.registration?.description ? "story-registration-description-error" : undefined}
-          {...register("registration.description")}
+          {...descriptionField}
+          ref={(element) => {
+            descriptionField.ref(element);
+            descriptionRef.current = element;
+          }}
         />
+        <UnknownMediaTagNotice name="registration.description" />
         {errors.registration?.description && (
           <p id="story-registration-description-error" role="alert" className="text-xs text-destructive-text">
             {errors.registration.description.message}

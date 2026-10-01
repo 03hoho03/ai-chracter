@@ -31,12 +31,14 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
+import { toMediaTagImages } from "@/entities/media-book";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
 import { CharacterPlayBar } from "./CharacterPlayBar";
 import { ContentActionsMenu } from "./ContentActionsMenu";
 import { ContentUnavailableState } from "./ContentUnavailableState";
+import { MediaTagText } from "./MediaTagText";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
@@ -360,11 +362,19 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
 
       {/* 우측 열 폭이 ~350px인데 본문이 `text-sm`이라 한 줄에 21자밖에
           안 들어간다. 긴 산문은 2열에 넣지 않고 전폭으로 둔다. */}
-      <p className="whitespace-pre-wrap text-sm text-muted-foreground">{content.detailDescription}</p>
+      {/* 글 속 미디어 북 태그 자리에만 그림 블록이 선다. 그림 자리 면은 모달 표면 위에서 `muted` 가 사라지므로 변형을
+          따라 고른다. */}
+      <MediaTagText
+        text={content.detailDescription}
+        images={toMediaTagImages(content.mediaTagImages)}
+        className="whitespace-pre-wrap text-sm text-muted-foreground"
+        surface={variant === "modal" ? "secondary" : "muted"}
+      />
 
       {content.type === "story" && (
         <StoryDetailBody
           startingSetups={content.startingSetups ?? []}
+          mediaTagImages={toMediaTagImages(content.mediaTagImages)}
           selectedSetupId={selectedSetupId}
           onSelectedSetupIdChange={setSelectedSetupIdOverride}
         />

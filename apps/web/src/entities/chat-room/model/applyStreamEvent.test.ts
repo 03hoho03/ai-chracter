@@ -24,6 +24,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
       pinnedStartingSetupId: "physical-setup-1",
     },
     messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
+    openingMediaTagImages: {},
     stats: { hp: 50 },
     endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: 3,

@@ -1,7 +1,7 @@
 import type { BuilderTab } from "@/entities/content";
 
 /**
- * 스토리 빌더 8탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던
+ * 스토리 빌더 탭의 단일 소스. `StoryBuilderShell.tsx`가 그리던
  * 탭 목록을 여기로 옮기고 `fields`(에러 탭 매칭용 경로 프리픽스)·`preview`를 더했다.
  *
  * `fields`는 **최상위 키가 아니다** — `startingSetups`가 `startingSetup`/`stat`/`ending` 세 탭에
@@ -14,6 +14,7 @@ export const STORY_TABS = [
   { id: "setting", label: "설정", fields: ["storySetting"], preview: "chat" },
   { id: "startingSetup", label: "시작설정", fields: ["startingSetups"], preview: "chat" },
   { id: "stat", label: "스탯", fields: ["startingSetups.*.stats"], preview: "chat" },
+  { id: "mediaBook", label: "미디어 북", fields: ["mediaBook"], preview: "chat" },
   { id: "keywordNote", label: "키워드북", fields: ["keywordNotes"], preview: "chat" },
   { id: "shortcut", label: "단축어", fields: ["shortcuts"], preview: "chat" },
   { id: "ending", label: "엔딩", fields: ["startingSetups.*.endings"], preview: "chat" },

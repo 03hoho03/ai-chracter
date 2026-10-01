@@ -1,5 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { toMediaTagImages } from "@/entities/media-book/@x/chat-room";
+
 import type { ChatMessage } from "./chatStream";
 import type {
   ChatRoomState,
@@ -84,6 +86,8 @@ function toChatMessage(dto: ChatMessageDto): ChatMessage {
     content: dto.content,
     imageId: dto.imageId ?? undefined,
     imageUrl: dto.imageUrl ?? undefined,
+    imageWidth: dto.imageWidth ?? undefined,
+    imageHeight: dto.imageHeight ?? undefined,
     createdAt: dto.createdAt,
   };
 }
@@ -109,6 +113,7 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
         }
       : undefined,
     messages: dto.messages.map(toChatMessage),
+    openingMediaTagImages: toMediaTagImages(dto.mediaTagImages),
     stats: dto.stats ?? {},
     endingStatus: { reached: dto.endingReached, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: dto.turnCount,

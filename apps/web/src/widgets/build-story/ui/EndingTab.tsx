@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { GripVertical, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
@@ -26,6 +26,10 @@ import {
   type StatDefValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
+
+import { MediaTagInsertButton } from "./MediaTagInsertButton";
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 type LogicOp = (typeof LOGIC_OPERATORS)[number];
 
@@ -392,6 +396,10 @@ function EndingRow({
     name: `startingSetups.${startingSetupIndex}.endings.${endingIndex}.statRules`,
   });
   const endingErrors = errors.startingSetups?.[startingSetupIndex]?.endings?.[endingIndex];
+  const epiloguePath = `startingSetups.${startingSetupIndex}.endings.${endingIndex}.epilogue` as const;
+  const epilogueField = register(epiloguePath);
+  // "이미지 넣기"가 커서 자리를 읽을 입력창. `register` 의 ref 와 함께 건다.
+  const epilogueRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
     <div
@@ -457,6 +465,7 @@ function EndingRow({
               aria-describedby={endingErrors?.judgePrompt ? `ending-${id}-judge-prompt-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.judgePrompt`)}
             />
+            <MediaTagOutsideNotice name={`startingSetups.${startingSetupIndex}.endings.${endingIndex}.judgePrompt`} />
             {endingErrors?.judgePrompt && (
               <p id={`ending-${id}-judge-prompt-error`} role="alert" className="text-xs text-destructive-text">
                 {endingErrors.judgePrompt.message}
@@ -465,15 +474,23 @@ function EndingRow({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`ending-${id}-epilogue`}>에필로그</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor={`ending-${id}-epilogue`}>에필로그</Label>
+              <MediaTagInsertButton name={epiloguePath} fieldLabel="에필로그" textareaRef={epilogueRef} />
+            </div>
             <Textarea
               id={`ending-${id}-epilogue`}
               placeholder="엔딩 도달 시 보여줄 에필로그를 입력해주세요"
               rows={3}
               aria-invalid={!!endingErrors?.epilogue}
               aria-describedby={endingErrors?.epilogue ? `ending-${id}-epilogue-error` : undefined}
-              {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.epilogue`)}
+              {...epilogueField}
+              ref={(element) => {
+                epilogueField.ref(element);
+                epilogueRef.current = element;
+              }}
             />
+            <UnknownMediaTagNotice name={epiloguePath} />
             {endingErrors?.epilogue && (
               <p id={`ending-${id}-epilogue-error`} role="alert" className="text-xs text-destructive-text">
                 {endingErrors.epilogue.message}
@@ -490,6 +507,7 @@ function EndingRow({
               aria-describedby={endingErrors?.hint ? `ending-${id}-hint-error` : undefined}
               {...register(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.hint`)}
             />
+            <MediaTagOutsideNotice name={`startingSetups.${startingSetupIndex}.endings.${endingIndex}.hint`} />
             {endingErrors?.hint && (
               <p id={`ending-${id}-hint-error`} role="alert" className="text-xs text-destructive-text">
                 {endingErrors.hint.message}

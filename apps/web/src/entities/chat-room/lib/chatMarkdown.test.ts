@@ -7,7 +7,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import Markdown from "react-markdown";
 import { describe, expect, it } from "vitest";
 
-import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "./chatMarkdown";
+import { CHAT_MARKDOWN_MEDIA_OPTIONS, CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "./chatMarkdown";
 
 function render(content: string): string {
   const html = renderToStaticMarkup(createElement(Markdown, CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource(content)));
@@ -16,6 +16,16 @@ function render(content: string): string {
 }
 
 const Q = "&quot;";
+
+function renderWithMediaTags(content: string): string {
+  const html = renderToStaticMarkup(
+    createElement(Markdown, CHAT_MARKDOWN_MEDIA_OPTIONS, prepareChatMarkdownSource(content)),
+  );
+  return html.replace(/>\n</g, "><").replace(/<br\/>\n/g, "<br/>");
+}
+
+const CELL = "aaaaaaaa-0000-0000-0000-000000000001";
+const IMG = `<img data-cell-id="${CELL}"/>`;
 
 describe("chat markdown pipeline", () => {
   describe("narration (em) and dialogue", () => {
@@ -350,6 +360,41 @@ describe("chat markdown pipeline", () => {
 
     it("keeps a trailing star inside an open code fence", () => {
       expect(render("```\n*")).toBe("<pre><code>*\n</code></pre>");
+    });
+  });
+
+  // 글 속 미디어 북 태그(칸 id 형태)는 그림 맵이 있는 자리(작성자 글)에서만 그림 블록이 된다. 그림은 문단 안에 둘 수
+  // 없으므로 태그가 든 문단을 쪼갠다. 맵에 없는 칸을 빈칸으로 만드는 일은 컴포넌트가 파서 앞에서 한다.
+  describe("media tag images", () => {
+    it.each([
+      [`{{img::${CELL}}}`, IMG],
+      [`앞 문장 {{img::${CELL}}} 뒤 문장`, `<p>앞 문장 </p>${IMG}<p> 뒤 문장</p>`],
+      [`앞 문단\n\n{{img::${CELL}}}\n\n뒤 문단`, `<p>앞 문단</p>${IMG}<p>뒤 문단</p>`],
+      [`첫 줄\n{{img::${CELL}}}\n둘째 줄`, `<p>첫 줄</p>${IMG}<p>둘째 줄</p>`],
+      [`*걷는다 {{img::${CELL}}} 멈춘다*`, `<p><em>걷는다 </em></p>${IMG}<p><em> 멈춘다</em></p>`],
+      [`*{{img::${CELL}}}*`, IMG],
+      [`{{img::${CELL.toUpperCase()}}}`, IMG],
+      [`> 헤더 {{img::${CELL}}}`, `<blockquote><p>헤더 </p>${IMG}</blockquote>`],
+    ])("%j", (input, expected) => {
+      expect(renderWithMediaTags(input)).toBe(expected);
+    });
+
+    it("never puts an image inside a paragraph", () => {
+      const html = renderWithMediaTags(`*앞 **굵게 {{img::${CELL}}} 끝** 뒤* 이어진다 {{img::${CELL}}}`);
+      expect(html).not.toMatch(/<p>(?:(?!<\/p>).)*<img/);
+    });
+
+    it.each([
+      ["half tag", `{{img::${CELL}`, `<p>{{img::${CELL}</p>`],
+      ["name form", "{{img::민아/교실}}", "<p>{{img::민아/교실}}</p>"],
+      ["inline code", `\`{{img::${CELL}}}\``, `<p><code>{{img::${CELL}}}</code></p>`],
+      ["external markdown image", "![그림](https://example.com/a.png)", "<p>![그림](https://example.com/a.png)</p>"],
+    ])("leaves a %s as text", (_name, input, expected) => {
+      expect(renderWithMediaTags(input)).toBe(expected);
+    });
+
+    it("does not turn tags into images without the media options", () => {
+      expect(render(`앞 {{img::${CELL}}} 뒤`)).toBe(`<p>앞 {{img::${CELL}}} 뒤</p>`);
     });
   });
 });

@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
   EndingDivider,
+  isAuthorOpeningMessage,
+  MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
   StatGaugePanel,
@@ -14,6 +16,7 @@ import {
   shouldShowSuggestedReplies,
 } from "@/entities/chat-room";
 import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
+import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
@@ -23,6 +26,13 @@ import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
 import { PreviewCloseHeader } from "./PreviewCloseHeader";
+
+type PreviewSessionViewProps = {
+  getPayload: () => PreviewStartPayload;
+  /** 첫 메시지 속 미디어 북 태그를 그릴 칸 그림(`{칸 id: 그림}`). 미디어 북이 없는 빌더(캐릭터)는 넘기지 않는다. */
+  getMediaBookImages?: () => MediaTagImages;
+  onClose?: () => void;
+};
 
 // 빌더 어디서든 열리는 테스트 대화 화면. 실제 채팅의 순수
 // 프레젠테이션 컴포넌트(메시지 리스트/스탯 게이지)는 entities/chat-room, 단축어 자동완성은
@@ -36,13 +46,7 @@ import { PreviewCloseHeader } from "./PreviewCloseHeader";
 // buildPreviewStartState로 계산한 로컬 플레이스홀더만 그린다(BE의 _build_preview_start_state를
 // 그대로 재현하므로 화면은 세션이 있을 때와 같다). 입력창·단축어·추천답변 세 전송 경로가 전부
 // ensurePreviewSession()을 거쳐 세션을 보장한 뒤에야 usePreviewSendMessage의 send()를 부른다.
-export function PreviewSessionView({
-  getPayload,
-  onClose,
-}: {
-  getPayload: () => PreviewStartPayload;
-  onClose?: () => void;
-}) {
+export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: PreviewSessionViewProps) {
   const startMutation = useStartPreviewMutation();
   const [previewSessionId, setPreviewSessionId] = useState<string>();
   const stateQuery = usePreviewSessionQuery(previewSessionId);
@@ -50,7 +54,7 @@ export function PreviewSessionView({
   // useStartPreviewMutation의 성공 콜백으로만 채워진다. 지연 시작 이후 첫 전송 전에는 그 캐시가
   // 비어 있으므로, 세션 id 없이 계산한 로컬 상태로 대신한다 — 안 그러면 첫 전송 전까지 영구
   // 스켈레톤이 된다.
-  const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload());
+  const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload(), getMediaBookImages?.());
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
@@ -78,7 +82,10 @@ export function PreviewSessionView({
   async function startPreview(): Promise<string | undefined> {
     setIsStarting(true);
     try {
-      const nextState = await startMutation.mutateAsync(getPayload());
+      const nextState = await startMutation.mutateAsync({
+        payload: getPayload(),
+        mediaBookImages: getMediaBookImages?.(),
+      });
       setPreviewSessionId(nextState.previewSessionId);
       return nextState.previewSessionId;
     } catch {
@@ -169,16 +176,25 @@ export function PreviewSessionView({
           {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
               같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
           <div className="flex flex-col gap-6">
-            {state.messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))}
+            {/* 스토리 첫 메시지는 작성자 글이라 글 속 미디어 북 태그를 그림으로 그린다(채팅방과 같은 규칙). */}
+            {state.messages.map((message, index) =>
+              isAuthorOpeningMessage({ index, role: message.role, contentType: state.contentType }) ? (
+                <MediaTagImagesProvider key={message.id} images={state.openingMediaTagImages}>
+                  <MessageBubble message={message} />
+                </MediaTagImagesProvider>
+              ) : (
+                <MessageBubble key={message.id} message={message} />
+              ),
+            )}
 
             {state.endingStatus.reached && !!state.endingStatus.epilogue && (
               <>
                 <EndingDivider />
-                <MessageBubble
-                  message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
-                />
+                <MediaTagImagesProvider images={state.endingStatus.mediaTagImages ?? {}}>
+                  <MessageBubble
+                    message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
+                  />
+                </MediaTagImagesProvider>
               </>
             )}
 

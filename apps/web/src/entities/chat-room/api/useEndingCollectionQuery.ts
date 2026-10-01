@@ -19,5 +19,7 @@ export function useEndingCollectionQuery(startingSetupId: string, enabled: boole
         )
       ).data,
     enabled,
+    // 에필로그 속 그림 주소가 만료되는 서명 주소라, 모달을 다시 열 때 직전 응답을 먼저 그리지 않는다.
+    gcTime: 0,
   });
 }

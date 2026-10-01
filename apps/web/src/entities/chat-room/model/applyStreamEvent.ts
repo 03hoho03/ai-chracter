@@ -46,6 +46,7 @@ export function applyStreamEvent(
               endingId: event.endingId,
               reachedAtTurn: prev.turnCount,
               epilogue: event.epilogue ?? undefined,
+              mediaTagImages: event.mediaTagImages,
             },
           },
       );

@@ -5,6 +5,7 @@ import { ContentCard, toThumbnailAspect, useContentListQuery } from "@/entities/
 import type { ContentCardProps, ContentType } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import { useSessionQuery } from "@/entities/session";
+import type { MediaTagImages } from "@/entities/media-book";
 
 import { PreviewCloseHeader } from "./PreviewCloseHeader";
 import { PreviewSessionView } from "./PreviewSessionView";
@@ -14,6 +15,8 @@ export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
    * 없어 카드·대화 2종뿐이다). */
   kind: "card" | "chat";
   getPayload: () => PreviewStartPayload;
+  /** 대화 미리보기 첫 메시지 속 미디어 북 태그를 그릴 칸 그림. 스토리 빌더만 넘긴다. */
+  getMediaBookImages?: () => MediaTagImages;
   /** Shell은 lg 이상에서도 항상 이 콜백을 넘긴다 — 분기는 값의 유무가 아니라 CSS다.
    * `PreviewCloseHeader`가 닫기 버튼 자체를 `lg:hidden`으로 숨기므로 lg 이상에서는 트리에 있어도
    * 화면에 없고, lg 미만 전체화면 모드에서만 실제로 보인다(JS `useMedia` 아님). */
@@ -48,6 +51,7 @@ const BACKGROUND_CARD_LIMIT = 7;
 export function BuilderPreview<TFieldValues extends FieldValues>({
   kind,
   getPayload,
+  getMediaBookImages,
   onClose,
   contentType,
   thumbnailUrl,
@@ -62,7 +66,7 @@ export function BuilderPreview<TFieldValues extends FieldValues>({
   return (
     <>
       <div className={cn(kind === "chat" ? undefined : "hidden")}>
-        <PreviewSessionView getPayload={getPayload} onClose={onClose} />
+        <PreviewSessionView getPayload={getPayload} getMediaBookImages={getMediaBookImages} onClose={onClose} />
       </div>
       <div className={cn(kind === "card" ? undefined : "hidden")}>
         <CardPreview

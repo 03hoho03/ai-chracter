@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { characterImageArchiveKeys } from "@/entities/character-image-archive";
 import {
   applyStreamEvent,
   buildEditPayload,
@@ -21,6 +20,8 @@ import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
+import { imageArchiveKeyToInvalidate, type ImageArchiveTarget } from "./imageArchiveKeyToInvalidate";
+
 type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerate" };
 
 // isSending(boolean) + error(SendMessageError | null)의 조합은 "전송 중이면서 동시에
@@ -38,11 +39,11 @@ type SendMessageStatus =
 
 /** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다.
- * characterId는 캐릭터 챗일 때만(스토리 챗은 undefined) 전달 — 상황별 이미지가 트리거된
- * 메시지가 도착하면 이미지 보관함 쿼리를 무효화한다. */
+ * imageArchive는 이 방의 작품(캐릭터·스토리) — 턴이 해금을 바꿨을 수 있으면 그 작품의 이미지 보관함 쿼리를
+ * 무효화한다(무엇이 해금을 바꾸는지는 `imageArchiveKeyToInvalidate`). */
 export function useSendMessage(
   roomId: string,
-  characterId?: string,
+  imageArchive?: ImageArchiveTarget,
   /** 오류를 받아 **"재시도해도 되는가"** 를 돌려준다.
    *
    * 🔴 위젯이 주입하는 이유는 FSD다 — 모달은 `features/confirm-clover-spend`에 있고 feature가
@@ -114,9 +115,8 @@ export function useSendMessage(
           kind: pending.kind,
           onDone: (message) => {
             hasCommitted = true;
-            if (message.imageId && characterId) {
-              void queryClient.invalidateQueries({ queryKey: characterImageArchiveKeys.list(characterId) });
-            }
+            const archiveKey = imageArchiveKeyToInvalidate(imageArchive, message);
+            if (archiveKey) void queryClient.invalidateQueries({ queryKey: archiveKey });
             // 무료 일일분을 넘긴 턴은 클로버를 깎았다. 이 훅이
             // 전송·재생성·편집 셋을 모두 태우므로 세 표면의 차감이 여기 한 곳에서 반영된다.
             // `invalidateQueries`를 쓰는 이유: 잔액은 "낡았다"이지 "틀렸다"(버리는 값)가 아니다

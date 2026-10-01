@@ -160,6 +160,34 @@ describe("buildContentHead", () => {
     );
   });
 
+  it("detailDescription으로 떨어질 때 미디어 북 그림 태그(칸 id·이름 형태)를 지운다", () => {
+    const head = buildContentHead(
+      createSource({
+        oneLiner: "",
+        detailDescription:
+          "첫 줄\n\n{{img::aaaaaaaa-0000-0000-0000-000000000001}}\n\n둘째 {{img::민아/옥상}}줄 {{user}}",
+      }),
+      origin,
+    );
+
+    expect(head).toContain(
+      '<meta name="description" content="첫 줄 둘째 줄 {{user}}" />',
+    );
+    expect(head).not.toContain("img::");
+  });
+
+  it("그림 태그만 있는 설명이면 description 태그를 만들지 않는다", () => {
+    const head = buildContentHead(
+      createSource({
+        oneLiner: "",
+        detailDescription: "{{img::AAAAAAAA-0000-0000-0000-000000000001}}",
+      }),
+      origin,
+    );
+
+    expect(head).not.toContain('name="description"');
+  });
+
   it("description을 160자로 자른다", () => {
     const head = buildContentHead(
       createSource({ oneLiner: "가".repeat(300) }),

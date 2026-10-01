@@ -8,6 +8,8 @@ import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-
 
 import { PROMPT_TEMPLATE_VALUES, type PromptTemplate, type StoryBuilderFormValues } from "@/features/build-story";
 
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+
 // 템플릿마다 실제로 다른 지시문(생성 프롬프트 variant)을
 // 가지므로, 여기 설명이 빈말이 아니다. 안내문이라 지시문을 그대로 옮기지 않고 창작자가 읽을 말로 풀었다.
 // 값 목록(PROMPT_TEMPLATE_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해 라벨·설명만
@@ -109,6 +111,7 @@ export function SettingTab() {
             aria-describedby={errors.storySetting?.customPrompt ? "story-setting-custom-prompt-error" : undefined}
             {...register("storySetting.customPrompt")}
           />
+          <MediaTagOutsideNotice name="storySetting.customPrompt" />
           {errors.storySetting?.customPrompt && (
             <p id="story-setting-custom-prompt-error" role="alert" className="text-xs text-destructive-text">
               {errors.storySetting.customPrompt.message}
@@ -126,6 +129,7 @@ export function SettingTab() {
             aria-describedby={errors.storySetting?.worldSetting ? "story-setting-world-error" : undefined}
             {...register("storySetting.worldSetting")}
           />
+          <MediaTagOutsideNotice name="storySetting.worldSetting" />
           {errors.storySetting?.worldSetting && (
             <p id="story-setting-world-error" role="alert" className="text-xs text-destructive-text">
               {errors.storySetting.worldSetting.message}
@@ -144,6 +148,7 @@ export function SettingTab() {
           aria-describedby={errors.storySetting?.rules ? "story-setting-rules-error" : undefined}
           {...register("storySetting.rules")}
         />
+        <MediaTagOutsideNotice name="storySetting.rules" />
         {errors.storySetting?.rules && (
           <p id="story-setting-rules-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.rules.message}
@@ -161,6 +166,7 @@ export function SettingTab() {
           aria-describedby={errors.storySetting?.userGoal ? "story-setting-user-goal-error" : undefined}
           {...register("storySetting.userGoal")}
         />
+        <MediaTagOutsideNotice name="storySetting.userGoal" />
         {errors.storySetting?.userGoal && (
           <p id="story-setting-user-goal-error" role="alert" className="text-xs text-destructive-text">
             {errors.storySetting.userGoal.message}
@@ -190,6 +196,7 @@ export function SettingTab() {
                     aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
                     {...register(`storySetting.developmentExamples.${index}.userLine`)}
                   />
+                  <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.userLine`} />
                   {exampleErrors?.userLine && (
                     <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
                       {exampleErrors.userLine.message}
@@ -202,6 +209,7 @@ export function SettingTab() {
                     aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
                     {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
                   />
+                  <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.assistantLine`} />
                   {exampleErrors?.assistantLine && (
                     <p id={assistantLineErrorId} role="alert" className="text-xs text-destructive-text">
                       {exampleErrors.assistantLine.message}

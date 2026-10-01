@@ -9,6 +9,8 @@ function requireFirst<T>(items: readonly T[]): T {
   return first;
 }
 
+const PERSON_ID = "00000000-0000-4000-8000-0000000000a1";
+
 function baseFormValues(): StoryBuilderFormValues {
   return {
     profile: { name: "여름밤의 항해", oneLiner: "바다 위 표류기", image: { assetId: "asset-thumbnail" } },
@@ -56,6 +58,24 @@ function baseFormValues(): StoryBuilderFormValues {
     shortcuts: [
       { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
     ],
+    mediaBook: {
+      people: [{ id: "00000000-0000-4000-8000-0000000000a1", name: "에리" }],
+      scenes: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "기쁨" }],
+      cells: [
+        {
+          id: "00000000-0000-4000-8000-0000000000c1",
+          personId: "00000000-0000-4000-8000-0000000000a1",
+          sceneId: "00000000-0000-4000-8000-0000000000b1",
+          imageAssetId: "00000000-0000-4000-8000-0000000000d1",
+          imageUrl: "https://example.com/00000000-0000-4000-8000-0000000000d1_thumb.webp",
+          imageWidth: 512,
+          imageHeight: 683,
+          situationDescription: "합격 소식을 듣고 웃는다",
+          unlockHint: "합격 발표 날",
+          excludeFromChat: true,
+        },
+      ],
+    },
     registration: {
       description: "표류한 선원들의 생존기",
       genre: "genre-adventure",
@@ -114,6 +134,21 @@ describe("formToServer", () => {
       shortcuts: [
         { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
       ],
+      mediaBook: {
+        people: [{ id: "00000000-0000-4000-8000-0000000000a1", name: "에리" }],
+        scenes: [{ id: "00000000-0000-4000-8000-0000000000b1", name: "기쁨" }],
+        cells: [
+          {
+            id: "00000000-0000-4000-8000-0000000000c1",
+            personId: "00000000-0000-4000-8000-0000000000a1",
+            sceneId: "00000000-0000-4000-8000-0000000000b1",
+            imageAssetId: "00000000-0000-4000-8000-0000000000d1",
+            situationDescription: "합격 소식을 듣고 웃는다",
+            unlockHint: "합격 발표 날",
+            excludeFromChat: true,
+          },
+        ],
+      },
       description: "표류한 선원들의 생존기",
       genreId: "genre-adventure",
       target: "all",
@@ -336,5 +371,46 @@ describe("formToServer", () => {
       "rule-b",
       "rule-a",
     ]);
+  });
+  // 표시 전용 값이 페이로드에 섞이면 서버 계약 밖 필드가 된다(서버는 조용히 버리므로 다른 테스트로는 안 드러난다).
+  it("never sends the display-only image url/width/height of a media book cell", () => {
+    const cell = requireFirst(formToServer(baseFormValues()).mediaBook?.cells ?? []);
+
+    expect(cell).not.toHaveProperty("imageUrl");
+    expect(cell).not.toHaveProperty("imageWidth");
+    expect(cell).not.toHaveProperty("imageHeight");
+  });
+
+  it("sends an empty media book explicitly so removing the last cell and axis reaches the server", () => {
+    const values = baseFormValues();
+    values.mediaBook = { people: [], scenes: [], cells: [] };
+
+    expect(formToServer(values).mediaBook).toEqual({ people: [], scenes: [], cells: [] });
+  });
+
+  // 서버는 `mediaBook` 이 없으면 미디어 북에 손대지 않는다. 서버가 거절할 미디어 북을 실으면 PATCH 전체가 422 가
+  // 돼 다른 탭의 수정까지 저장되지 않으므로, 그동안은 미디어 북만 빼고 나머지는 그대로 보낸다.
+  it.each([
+    ["an empty person name", (values: StoryBuilderFormValues) => (values.mediaBook.people = [{ id: PERSON_ID, name: "" }])],
+    [
+      "a person name over 20 characters",
+      (values: StoryBuilderFormValues) => (values.mediaBook.people = [{ id: PERSON_ID, name: "가".repeat(21) }]),
+    ],
+    [
+      "two scenes with the same name",
+      (values: StoryBuilderFormValues) =>
+        values.mediaBook.scenes.push({ id: "00000000-0000-4000-8000-0000000000b2", name: "기쁨" }),
+    ],
+    ["an axis id that is not a uuid", (values: StoryBuilderFormValues) => (values.mediaBook.people = [{ id: "person-1", name: "에리" }])],
+  ])("omits the media book but keeps every other field when it has %s", (_label, mutate) => {
+    const values = baseFormValues();
+    mutate(values);
+
+    const payload = formToServer(values);
+
+    expect(payload).not.toHaveProperty("mediaBook");
+    const validPayload = formToServer(baseFormValues());
+    delete validPayload.mediaBook;
+    expect(payload).toEqual(validPayload);
   });
 });

@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import type { Shortcut } from "@/entities/chat-room";
 import {
   EndingDivider,
+  isAuthorOpeningMessage,
+  MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
   StatGaugePanel,
@@ -48,13 +50,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
+  const storyId = room?.contentType === "story" ? room.contentId : undefined;
   // 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
   // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
   // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
-    characterId,
+    room && { contentType: room.contentType, contentId: room.contentId },
     (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
@@ -205,6 +208,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             contentType={room.contentType}
             startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
             characterId={characterId}
+            storyId={storyId}
           />
         </div>
       </header>
@@ -232,7 +236,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             <div className="flex flex-col gap-6">
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
-                return (
+                const bubble = (
                   <MessageBubble
                     key={message.id}
                     message={message}
@@ -249,6 +253,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     onDelete={() => handleDeleteMessage(message.id)}
                   />
                 );
+                // 스토리 방 첫 메시지는 작성자 글의 복사본이라 글 속 미디어 북 태그를 그림으로 그린다(판정 규칙은
+                // `isAuthorOpeningMessage`). 나머지 메시지의 태그는 글자 그대로다.
+                return isAuthorOpeningMessage({ index, role: message.role, contentType: room.contentType }) ? (
+                  <MediaTagImagesProvider key={message.id} images={room.openingMediaTagImages}>
+                    {bubble}
+                  </MediaTagImagesProvider>
+                ) : (
+                  bubble
+                );
               })}
 
               {room.endingStatus.reached && !!room.endingStatus.epilogue && (
@@ -256,9 +269,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   <EndingDivider
                     endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
                   />
-                  <MessageBubble
-                    message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
-                  />
+                  <MediaTagImagesProvider images={room.endingStatus.mediaTagImages ?? {}}>
+                    <MessageBubble
+                      message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
+                    />
+                  </MediaTagImagesProvider>
                 </>
               )}
 
@@ -362,6 +377,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           contentType={room.contentType}
           startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
           characterId={characterId}
+          storyId={storyId}
         />
         <ChatMemorySidebar roomId={roomId} triggerRef={memoryTriggerRef} />
       </div>

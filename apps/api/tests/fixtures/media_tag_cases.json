@@ -1,0 +1,219 @@
+{
+  "_comment": [
+    "미디어 북 이미지 태그 규칙의 입력 표. 서버(apps/api/tests/test_media_tags.py)와 웹(apps/web/src/entities/media-book/model/mediaTagCases.ts)의 테스트가 이 파일 하나를 함께 읽는다 — 빌더 미리보기 첫 메시지는 웹 구현으로, 실채팅 첫 메시지는 서버 구현으로 바뀌므로 두 구현이 갈라지면 같은 글이 다르게 보인다.",
+    "normalize: 칸 표(cells)로 이름 형태를 칸 id 형태로 바꾼 글과 글이 가리키는 칸 id. 슬래시가 하나면 한쪽 이름이 비어도 이름 형태 태그다 — 빈 이름의 칸은 없으므로 지운다.",
+    "strip: 두 형태의 태그를 모두 지운 글.",
+    "nfd-names 행의 입력은 한글을 자모로 풀어 쓴(NFD) 글이라 \\u 이스케이프로 적었다 — 편집기가 NFC 로 되돌려 저장하면 그 행이 아무것도 시험하지 않게 된다."
+  ],
+  "cells": [
+    {
+      "person": "민아",
+      "scene": "교실",
+      "cellId": "aaaaaaaa-0000-0000-0000-000000000001"
+    },
+    {
+      "person": "민아",
+      "scene": "옥상",
+      "cellId": "aaaaaaaa-0000-0000-0000-000000000002"
+    }
+  ],
+  "normalize": [
+    {
+      "id": "name-form",
+      "text": "{{img::민아/교실}}",
+      "expectedText": "{{img::aaaaaaaa-0000-0000-0000-000000000001}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "id": "two-tags-in-a-line",
+      "text": "앞 {{img::민아/교실}} 뒤 {{img::민아/옥상}}",
+      "expectedText": "앞 {{img::aaaaaaaa-0000-0000-0000-000000000001}} 뒤 {{img::aaaaaaaa-0000-0000-0000-000000000002}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000001",
+        "aaaaaaaa-0000-0000-0000-000000000002"
+      ]
+    },
+    {
+      "id": "spaces-around-names",
+      "text": "{{img:: 민아 / 교실 }}",
+      "expectedText": "{{img::aaaaaaaa-0000-0000-0000-000000000001}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "id": "nfd-names",
+      "text": "{{img::\u1106\u1175\u11ab\u110b\u1161/\u1100\u116d\u1109\u1175\u11af}}",
+      "expectedText": "{{img::aaaaaaaa-0000-0000-0000-000000000001}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000001"
+      ]
+    },
+    {
+      "id": "unknown-person-deleted",
+      "text": "앞 {{img::수아/교실}} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "unknown-scene-deleted",
+      "text": "앞 {{img::민아/복도}} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "known-id-form-kept",
+      "text": "{{img::aaaaaaaa-0000-0000-0000-000000000002}}",
+      "expectedText": "{{img::aaaaaaaa-0000-0000-0000-000000000002}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000002"
+      ]
+    },
+    {
+      "id": "upper-case-id-form-canonicalised",
+      "text": "{{img::AAAAAAAA-0000-0000-0000-000000000002}}",
+      "expectedText": "{{img::aaaaaaaa-0000-0000-0000-000000000002}}",
+      "expectedCellIds": [
+        "aaaaaaaa-0000-0000-0000-000000000002"
+      ]
+    },
+    {
+      "id": "unknown-id-form-deleted",
+      "text": "앞 {{img::bbbbbbbb-0000-0000-0000-000000000009}} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "empty-person-deleted",
+      "text": "앞 {{img::/교실}} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "empty-scene-deleted",
+      "text": "앞 {{img::민아/}} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "both-names-blank-deleted",
+      "text": "앞 {{img:: / }} 뒤",
+      "expectedText": "앞  뒤",
+      "expectedCellIds": []
+    },
+    {
+      "id": "no-slash-is-not-a-tag",
+      "text": "{{img::민아}}",
+      "expectedText": "{{img::민아}}",
+      "expectedCellIds": []
+    },
+    {
+      "id": "two-slashes-is-not-a-tag",
+      "text": "{{img::민아/교실/밤}}",
+      "expectedText": "{{img::민아/교실/밤}}",
+      "expectedCellIds": []
+    },
+    {
+      "id": "half-tag-is-not-a-tag",
+      "text": "{{img::민아/교실",
+      "expectedText": "{{img::민아/교실",
+      "expectedCellIds": []
+    },
+    {
+      "id": "empty-body-is-not-a-tag",
+      "text": "{{img::}}",
+      "expectedText": "{{img::}}",
+      "expectedCellIds": []
+    },
+    {
+      "id": "other-braces-untouched",
+      "text": "{{user}}와 {{char}}",
+      "expectedText": "{{user}}와 {{char}}",
+      "expectedCellIds": []
+    }
+  ],
+  "strip": [
+    {
+      "id": "name-form-alone",
+      "text": "{{img::민아/교실}}",
+      "expected": ""
+    },
+    {
+      "id": "id-form-alone",
+      "text": "{{img::aaaaaaaa-0000-0000-0000-000000000001}}",
+      "expected": ""
+    },
+    {
+      "id": "mid-line-only-the-tag-goes",
+      "text": "앞 {{img::민아/교실}} 뒤",
+      "expected": "앞  뒤"
+    },
+    {
+      "id": "id-form-mid-line",
+      "text": "앞{{img::bbbbbbbb-0000-0000-0000-000000000009}}뒤",
+      "expected": "앞뒤"
+    },
+    {
+      "id": "tag-line-between-blank-lines",
+      "text": "앞 문단\n\n{{img::민아/교실}}\n\n뒤 문단",
+      "expected": "앞 문단\n\n뒤 문단"
+    },
+    {
+      "id": "tag-line-without-blank-lines",
+      "text": "앞 문단\n{{img::민아/교실}}\n뒤 문단",
+      "expected": "앞 문단\n뒤 문단"
+    },
+    {
+      "id": "tag-line-with-spaces",
+      "text": "앞 문단\n\n  {{img::민아/교실}}  \n\n뒤 문단",
+      "expected": "앞 문단\n\n뒤 문단"
+    },
+    {
+      "id": "two-tag-lines-in-a-row",
+      "text": "앞 문단\n\n{{img::민아/교실}}\n{{img::aaaaaaaa-0000-0000-0000-000000000002}}\n\n뒤 문단",
+      "expected": "앞 문단\n\n뒤 문단"
+    },
+    {
+      "id": "leading-tag-line",
+      "text": "{{img::민아/교실}}\n\n본문",
+      "expected": "본문"
+    },
+    {
+      "id": "trailing-tag-line",
+      "text": "본문\n\n{{img::민아/교실}}\n",
+      "expected": "본문"
+    },
+    {
+      "id": "existing-blank-lines-kept",
+      "text": "앞 문단\n\n\n뒤 문단",
+      "expected": "앞 문단\n\n\n뒤 문단"
+    },
+    {
+      "id": "blank-lines-kept-when-the-tag-line-keeps-text",
+      "text": "앞 문단\n\n\n중간 {{img::민아/교실}}\n\n\n뒤 문단",
+      "expected": "앞 문단\n\n\n중간 \n\n\n뒤 문단"
+    },
+    {
+      "id": "name-forms-with-a-blank-side",
+      "text": "앞 {{img::/교실}}{{img::민아/}} 뒤",
+      "expected": "앞  뒤"
+    },
+    {
+      "id": "non-tags-untouched",
+      "text": "{{img::민아}} {{img::민아/교실",
+      "expected": "{{img::민아}} {{img::민아/교실"
+    },
+    {
+      "id": "other-braces-untouched",
+      "text": "{{user}}\n\n{{char}}",
+      "expected": "{{user}}\n\n{{char}}"
+    },
+    {
+      "id": "empty",
+      "text": "",
+      "expected": ""
+    }
+  ]
+}

@@ -11,6 +11,8 @@ import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
 import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+
 /** 탭 전체가 선택사항(0개도 발행 가능), 스탯은 시작설정별로
  * 독립이라 이 탭은 먼저 시작설정을 고른 뒤 그 시작설정의 스탯만 편집한다. */
 export function StatTab() {
@@ -254,6 +256,7 @@ function StatRow({
           aria-describedby={statErrors?.description ? `stat-${id}-description-error` : undefined}
           {...register(`startingSetups.${startingSetupIndex}.stats.${statIndex}.description`)}
         />
+        <MediaTagOutsideNotice name={`startingSetups.${startingSetupIndex}.stats.${statIndex}.description`} />
         {statErrors?.description && (
           <p id={`stat-${id}-description-error`} role="alert" className="text-xs text-destructive-text">
             {statErrors.description.message}
