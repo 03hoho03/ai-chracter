@@ -18,18 +18,18 @@ type MediaBookConfirmModalProps = {
    * 많아, 모달의 기본 복원(연 버튼으로)에 맡기면 포커스가 body 로 떨어진다. 결과를 받은 직후에 옮기면 아직 닫히는 중인
    * 모달이 포커스를 도로 가둔다 — 그래서 닫힘 뒤 자리(`onCloseAutoFocus`)에서 부른다.
    */
-  returnFocus: () => void;
+  onRestoreFocus: () => void;
 };
 
 /** 미디어 북에서 되돌릴 수 없는 삭제(축 항목·칸)를 확인한다. 삭제 동작은 호출부가 이어받는다. */
 export const MediaBookConfirmModal = createCallable<MediaBookConfirmModalProps, boolean>(
-  ({ call, title, description, confirmLabel, returnFocus }) => (
+  ({ call, title, description, confirmLabel, onRestoreFocus }) => (
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>
       <DialogContent
         className="sm:max-w-sm"
         onCloseAutoFocus={(event) => {
           event.preventDefault();
-          requestAnimationFrame(returnFocus);
+          requestAnimationFrame(onRestoreFocus);
         }}
       >
         <DialogHeader>

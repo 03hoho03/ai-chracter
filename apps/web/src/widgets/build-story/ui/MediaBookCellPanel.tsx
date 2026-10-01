@@ -77,7 +77,7 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
       description: "그림과 상황 설명·해금 힌트가 함께 지워져요. 글 속 표기는 그대로 남고 화면에는 빈칸이 돼요.",
       confirmLabel: "비우기",
       // 취소면 "이 칸 비우기" 버튼이 그대로라 그리로, 비웠으면 그 버튼이 빈 칸 화면으로 바뀌며 사라지므로 표의 칸으로.
-      returnFocus: () => {
+      onRestoreFocus: () => {
         if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
         else onReturnFocus();
       },

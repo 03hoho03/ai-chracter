@@ -72,7 +72,7 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
         description: `이 ${label}의 이미지 ${cellCount}장도 함께 지워져요. 글 속 표기는 그대로 남고 화면에는 빈칸이 돼요.`,
         confirmLabel: "지우기",
         // 취소면 지우기 버튼으로, 지웠으면 그 줄이 사라지므로 같은 목록의 새 이름 입력칸으로.
-        returnFocus: () => {
+        onRestoreFocus: () => {
           if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
           else focusNewNameInput();
         },

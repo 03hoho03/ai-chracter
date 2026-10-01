@@ -9,6 +9,11 @@ type MediaTagTextProps = {
   surface: MediaImageSurface;
 };
 
+type MediaTagTextImageProps = {
+  image: MediaTagImages[string] | undefined;
+  surface: MediaImageSurface;
+};
+
 /**
  * 상세의 작성자 글(등록 설명·프롤로그)을 평문 그대로 두고 칸 id 형태 태그 자리에만 그림 블록을 세운다. 마크다운으로
  * 바꾸지 않는 이유: 기존 설명이 `*`·`#` 를 글자로 쓰고 있으면 렌더러를 바꾸는 순간 기존 작품의 표시가 달라진다.
@@ -37,13 +42,7 @@ export function MediaTagText({ text, images, className, surface }: MediaTagTextP
   );
 }
 
-function MediaTagTextImage({
-  image,
-  surface,
-}: {
-  image: MediaTagImages[string] | undefined;
-  surface: MediaImageSurface;
-}) {
+function MediaTagTextImage({ image, surface }: MediaTagTextImageProps) {
   if (image === undefined) return null;
   return (
     <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 그림" surface={surface} />
