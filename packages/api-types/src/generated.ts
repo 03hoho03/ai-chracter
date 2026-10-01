@@ -4762,6 +4762,10 @@ export interface components {
             imageId?: string | null;
             /** Imageurl */
             imageUrl?: string | null;
+            /** Imagewidth */
+            imageWidth?: number | null;
+            /** Imageheight */
+            imageHeight?: number | null;
         };
         /**
          * ChatMessageRole
@@ -4922,6 +4926,10 @@ export interface components {
             versionAutoUpgraded: boolean;
             /** Personaid */
             personaId?: string | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
             /**
              * Createdat
              * Format: date-time
@@ -5470,6 +5478,10 @@ export interface components {
             isFavorited: boolean;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupSummary"][] | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
             /** Versionnumber */
             versionNumber: number;
             /**
@@ -5658,6 +5670,10 @@ export interface components {
             epilogue?: string | null;
             /** Hint */
             hint?: string | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
         };
         /** EndingDraftItem */
         EndingDraftItem: {
@@ -6185,6 +6201,22 @@ export interface components {
             scenes: components["schemas"]["MediaBookAxisInput"][];
             /** Cells */
             cells: components["schemas"]["MediaBookCellInput"][];
+        };
+        /**
+         * MediaTagImage
+         * @description 글 속 칸 id 형태 태그(`{{img::<칸 id>}}`)가 가리키는 그림. 응답은 `{칸 id: MediaTagImage}` 맵으로
+         *     싣고, 맵에 없는 칸(지워졌거나 버전에 없는 칸)의 태그는 화면이 빈칸으로 둔다.
+         *
+         *     `url` 은 원본 서명 URL 이다(대화 중 상황 이미지와 같다). `width`·`height` 는 자산의 픽셀 크기로 화면이
+         *     그림이 오기 전에 높이를 잡는 데 쓰고, 크기를 모르는 자산이면 null 이다.
+         */
+        MediaTagImage: {
+            /** Url */
+            url: string;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
         };
         /**
          * ModerationActionType

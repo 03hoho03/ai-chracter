@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.prompt_builder import load_active_prompt_set
+from api.content.media_book import normalize_texts, resolve_media_tag_images
 from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
@@ -52,6 +53,7 @@ from api.content.schemas import (
     MediaBookCellDraftItem,
     MediaBookDraft,
     MediaBookPayload,
+    MediaTagImage,
     ReportRequest,
     ShortcutDraftItem,
     StartingSetupDraftItem,
@@ -2307,6 +2309,8 @@ async def get_content_detail(
         background_tasks.add_task(_count_view, session_factory, id, viewer_key)
 
     starting_setups: list[StartingSetupSummary] | None = None
+    detail_description = version.detail_description
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = {}
     if content.type == ContentType.STORY:
         setups = (
             await db.scalars(
@@ -2315,9 +2319,21 @@ async def get_content_detail(
                 .order_by(StartingSetup.order)
             )
         ).all()
+        # 등록 설명·프롤로그의 미디어 북 태그를 이 발행본의 칸 id 형태로 바꾸고 그 칸 그림을 함께 싣는다.
+        # 상세는 해금 기록이 아니지만, 작성자가 소개에 직접 넣은 그림이라 보여 준다. 다만 이 응답은 볼 수
+        # 없는 작품에도 나가므로(화면이 "볼 수 없음"을 그린다) 그림 원본은 화면이 상세 본문을 그리는 경우 —
+        # 이용 가능하고, 비공개면 작성자 본인 — 에만 서명한다. 웹의 `canViewDetailPage` 와 같은 조건이다.
+        [detail_description, *prologues], referenced = await normalize_texts(
+            db, version.id, [version.detail_description, *(setup.prologue for setup in setups)]
+        )
+        can_view_detail = access_status.kind == "accessible" and (
+            content.visibility != ContentVisibility.PRIVATE or is_owner
+        )
+        if can_view_detail:
+            media_tag_images = await resolve_media_tag_images(db, version.id, referenced)
         starting_setups = [
-            StartingSetupSummary(id=setup.id, name=setup.name, prologue=setup.prologue)
-            for setup in setups
+            StartingSetupSummary(id=setup.id, name=setup.name, prologue=prologue)
+            for setup, prologue in zip(setups, prologues, strict=True)
         ]
 
     is_liked = False
@@ -2347,12 +2363,13 @@ async def get_content_detail(
         genre_name=genre_name,
         hashtags=content.hashtags,
         one_liner=one_liner,
-        detail_description=version.detail_description,
+        detail_description=detail_description,
         chat_count=content.chat_count,
         like_count=content.like_count,
         is_liked=is_liked,
         is_favorited=is_favorited,
         starting_setups=starting_setups,
+        media_tag_images=media_tag_images,
         version_number=version.version_number,
         updated_at=version.published_at,
         access_status=access_status,

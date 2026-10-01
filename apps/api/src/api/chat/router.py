@@ -77,6 +77,8 @@ from api.chat.schemas import (
     StatDefSnapshot,
 )
 from api.chat.stats import StatChange, apply_stat_changes
+from api.content.media_book import normalize_texts, normalize_texts_for_display, resolve_media_tag_images
+from api.content.media_tags import media_tag_refs, strip_media_tags
 from api.content.schemas import (
     CharacterDraftPayload,
     EndingRuleDraftItem,
@@ -335,12 +337,15 @@ async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRul
 
 
 async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
+    않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
+    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다."""
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
         turn_count_gate=ending.turn_count_gate,
         judgment_prompt=ending.judgment_prompt,
-        epilogue=ending.epilogue,
+        epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
         hint=ending.hint,
         stat_rules=await _ending_rule_items(db, ending),
     )
@@ -509,8 +514,14 @@ async def _match_situational_image(
 
 
 async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatMessage:
+    """방의 첫 assistant 메시지를 넣는다. 방 생성·시작설정 변경(`_create_room`)과 대화 초기화
+    (`reset_chat_room`)가 모두 이 함수를 지난다.
+
+    스토리면 작성자 글의 미디어 북 태그를 방이 고정한 버전의 칸 id 형태로 바꿔 저장한다(없는 이름은
+    지운다). 이름이 아니라 버전이 바뀌어도 유지되는 칸 id 로 두어야, 방이 새 발행본으로 옮겨 갔을 때 같은
+    칸의 새 그림으로 해석되고 지워진 칸은 빈칸이 된다."""
     if setup is not None:
-        opening_text = setup.opening_message or setup.prologue
+        [opening_text], _ = await normalize_texts(db, room.content_version_id, [setup.opening_message or setup.prologue])
     else:
         detail = await db.get(CharacterVersionDetail, room.content_version_id)
         assert detail is not None
@@ -572,6 +583,21 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
                 continue
             image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
 
+    # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
+    # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
+    # 모델 응답이 올 수 있다 — 그 글의 칸 id 를 그대로 믿으면 플레이어가 아무 칸 id 나 쳐 넣거나 모델에게
+    # 따라 쓰게 해서 아직 보지 못한 칸의 원본 URL 을 받는다.
+    media_tag_images = {}
+    if setup is not None and messages and messages[0].role == ChatMessageRole.ASSISTANT:
+        first_refs = media_tag_refs(messages[0].content)
+        if first_refs:
+            _, opening_refs = await normalize_texts(
+                db, room.content_version_id, [setup.opening_message or setup.prologue]
+            )
+            media_tag_images = await resolve_media_tag_images(
+                db, room.content_version_id, first_refs & opening_refs
+            )
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
@@ -593,6 +619,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
             for m in messages
         ],
         content_snapshot=content_snapshot,
+        media_tag_images=media_tag_images,
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
@@ -1190,6 +1217,23 @@ async def _stream_new_turn(
             matched_image = None
             matched_image_url = None
 
+    if ending_reached_event is not None and ending_reached_event.epilogue:
+        # 에필로그의 미디어 북 태그를 방 버전의 칸 id 형태로 바꾸고 그림을 서명한다. 커밋 뒤라 여기서 예외가
+        # 새면 SSE 제너레이터를 뚫으므로 흡수하고, 그때는 태그를 지운 글로 그림 없이 보낸다(이름 형태 태그를
+        # 화면에 남기지 않는다). `fold_memory` 예약 앞이어야 한다 — 예약 뒤에는 요청 세션 쿼리를 더하지 않는다.
+        epilogue = ending_reached_event.epilogue
+        try:
+            [epilogue_text], epilogue_images = await normalize_texts_for_display(
+                db, room.content_version_id, [epilogue]
+            )
+        except Exception as exc:
+            logger.warning("대화방 %s 에필로그 그림 해석 실패 — 태그 없이 보낸다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="db")
+            epilogue_text, epilogue_images = strip_media_tags(epilogue), {}
+        ending_reached_event = ending_reached_event.model_copy(
+            update={"epilogue": epilogue_text, "media_tag_images": epilogue_images}
+        )
+
     if settings.memory_window_generation:
         background_tasks.add_task(
             fold_memory,
@@ -1606,7 +1650,7 @@ async def list_chat_rooms(
             ChatRoomListItem(
                 id=room.id,
                 name=_display_name(room, ordinal),
-                last_message_preview=last_message.content if last_message is not None else "",
+                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
                 created_at=room.created_at,
             )
         )
@@ -1736,7 +1780,7 @@ async def list_my_chat_rooms(
                 content_type=content.type,
                 content_name=detail.name,
                 thumbnail_url=thumbnail_url,
-                last_message_preview=last_message.content if last_message is not None else "",
+                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
                 last_message_at=last_message.created_at if last_message is not None else None,
                 created_at=room.created_at,
             )
@@ -2111,16 +2155,32 @@ async def get_ending_collection(
         )
     )
 
-    return [
-        EndingCollectionItem(
-            id=ending.entity_id,
-            name=ending.name,
-            reached=ending.entity_id in unlocked_entity_ids,
-            epilogue=ending.epilogue if ending.entity_id in unlocked_entity_ids else None,
-            hint=ending.hint if ending.entity_id not in unlocked_entity_ids else None,
+    # 도달한 엔딩의 에필로그만 칸 id 형태로 바꾸고 그 칸만 서명한다 — 도달하지 않은 엔딩은 에필로그를
+    # 싣지 않으므로 그 칸 그림도 나가지 않는다.
+    reached = [ending for ending in endings if ending.entity_id in unlocked_entity_ids and ending.epilogue is not None]
+    epilogues, images = await normalize_texts_for_display(
+        db, setup.content_version_id, [ending.epilogue for ending in reached if ending.epilogue is not None]
+    )
+    epilogue_by_ending = dict(zip((ending.entity_id for ending in reached), epilogues, strict=True))
+
+    items: list[EndingCollectionItem] = []
+    for ending in endings:
+        epilogue = epilogue_by_ending.get(ending.entity_id)
+        items.append(
+            EndingCollectionItem(
+                id=ending.entity_id,
+                name=ending.name,
+                reached=ending.entity_id in unlocked_entity_ids,
+                epilogue=epilogue,
+                hint=ending.hint if ending.entity_id not in unlocked_entity_ids else None,
+                media_tag_images=(
+                    {cell_id: images[cell_id] for cell_id in media_tag_refs(epilogue) if cell_id in images}
+                    if epilogue is not None
+                    else {}
+                ),
+            )
         )
-        for ending in endings
-    ]
+    return items
 
 
 @characters_router.get("/{id}/image-archive")

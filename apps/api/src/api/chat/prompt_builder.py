@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.content.media_tags import strip_media_tags
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
@@ -404,6 +405,11 @@ def build_story_generation_prompt(
     자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다 —
     같은 스토리 챗인데 자리마다 라벨이 다른 것은 표류가 아니라 실측된 현재 동작이라
     여기서 통일하지 않는다.
+
+    `prologue` 와 히스토리 본문에서는 미디어 북 이미지 태그를 지운다. 태그는 화면에서만 그림이 되는
+    표지라, 모델이 받으면 태그를 흉내 내거나 인물·장면 이름이 문맥을 오염시킨다. 첫 메시지(작성자 글의
+    복사본)가 히스토리로 매 턴 다시 들어오므로 히스토리는 역할과 무관하게 모든 줄에 건다. 이번 턴
+    `user_message` 는 사용자가 방금 친 글이라 그대로 싣는다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
@@ -411,7 +417,7 @@ def build_story_generation_prompt(
     )
     history_lines = "\n".join(
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{message.content}"
+        f"{strip_media_tags(message.content)}"
         for message in history
     )
     values = {
@@ -420,7 +426,7 @@ def build_story_generation_prompt(
         "rules": rules or "",
         "user_goal": user_goal or "",
         "example_lines": example_lines,
-        "prologue": prologue,
+        "prologue": strip_media_tags(prologue),
         "user_persona": user_persona,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
@@ -515,10 +521,12 @@ def build_ending_judgment_prompt(
 
     `memory_summary`는 대화 기록 앞에 싣는 현재 요약이다. `""`이면 섹션째 빠져 이 인자가 없던 시절과
     바이트까지 같다(기본값이 없는 이유는 생성 빌더와 같다).
+
+    히스토리 본문의 미디어 북 이미지 태그는 생성 빌더와 같은 이유로 지운다.
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{message.content}"
+        f"{strip_media_tags(message.content)}"
         for message in history
     ]
     turn_lines.append(f"{prompt_set.user_label}: {user_message}")

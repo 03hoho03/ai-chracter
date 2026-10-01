@@ -11658,6 +11658,28 @@
               }
             ],
             "title": "Imageurl"
+          },
+          "imageWidth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imagewidth"
+          },
+          "imageHeight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageheight"
           }
         },
         "type": "object",
@@ -12038,6 +12060,16 @@
               }
             ],
             "title": "Personaid"
+          },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
           },
           "createdAt": {
             "type": "string",
@@ -13483,6 +13515,16 @@
             ],
             "title": "Startingsetups"
           },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
+          },
           "versionNumber": {
             "type": "integer",
             "title": "Versionnumber"
@@ -13923,6 +13965,16 @@
               }
             ],
             "title": "Hint"
+          },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
           }
         },
         "type": "object",
@@ -15169,6 +15221,44 @@
         ],
         "title": "MediaBookPayload",
         "description": "페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서\n라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring."
+      },
+      "MediaTagImage": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "width",
+          "height"
+        ],
+        "title": "MediaTagImage",
+        "description": "글 속 칸 id 형태 태그(`{{img::<칸 id>}}`)가 가리키는 그림. 응답은 `{칸 id: MediaTagImage}` 맵으로\n싣고, 맵에 없는 칸(지워졌거나 버전에 없는 칸)의 태그는 화면이 빈칸으로 둔다.\n\n`url` 은 원본 서명 URL 이다(대화 중 상황 이미지와 같다). `width`·`height` 는 자산의 픽셀 크기로 화면이\n그림이 오기 전에 높이를 잡는 데 쓰고, 크기를 모르는 자산이면 null 이다."
       },
       "ModerationActionType": {
         "type": "string",

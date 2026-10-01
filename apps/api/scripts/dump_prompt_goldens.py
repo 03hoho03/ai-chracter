@@ -91,6 +91,28 @@ DEVELOPMENT_EXAMPLE: dict[str, Any] = {
 }
 
 
+# 미디어 북 이미지 태그가 든 프롤로그·대화 기록. 태그는 화면에서만 이미지가 되고 모델로 가는 사본에서는
+# 지워져야 한다 — 빈 줄 사이에 홀로 선 태그 줄은 빈 줄 하나로 접히고, 글 맨 앞 태그 줄은 사라지고, 줄 중간
+# 태그는 글자만 사라진다. 미디어 북 태그가 아닌 `{{user}}` 는 그대로 남는다.
+STORY_PROLOGUE_WITH_MEDIA_TAGS = "옥상 문은 살짝 열려 있다.\n\n{{img::민아/옥상}}\n\n바람에 종잇조각 하나가 팔랑인다."
+# 태그 없이 빈 줄이 연달아 있는 글. 태그를 지우며 생긴 빈 줄만 접어야 하므로 이 글은 그대로 나가야 한다.
+STORY_PROLOGUE_WITH_BLANK_LINES = "옥상 문은 살짝 열려 있다.\n\n\n바람에 종잇조각 하나가 팔랑인다."
+
+
+def _story_history_with_media_tags() -> list[ChatMessage]:
+    return [
+        ChatMessage(
+            role=ChatMessageRole.ASSISTANT,
+            content="{{img::55555555-5555-5555-5555-555555555555}}\n옥상 문은 살짝 열려 있다. {{img::민아/옥상}}바람이 분다.",
+        ),
+        ChatMessage(role=ChatMessageRole.USER, content="{{user}}는 문을 두드려 본다."),
+    ]
+
+
+def _story_history_with_blank_lines() -> list[ChatMessage]:
+    return [ChatMessage(role=ChatMessageRole.ASSISTANT, content="안에서는 인기척이 없다.\n\n\n발소리만 멀어진다.")]
+
+
 def _character_history() -> list[ChatMessage]:
     return [
         ChatMessage(role=ChatMessageRole.USER, content="거기 누구 있어요?"),
@@ -323,6 +345,54 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             custom_prompt=None,
             prologue=STORY_PROLOGUE,
             history=[],
+            user_message=USER_MESSAGE,
+            user_persona="",
+            memory_note="",
+            memory_summary="",
+            keyword_note_texts=None,
+            shortcut_prompt=None,
+        ),
+    ),
+    # -- 생성 프롬프트: 미디어 북 태그 제거 --
+    # 아래 두 파일은 이관 전 코드에서 뜬 것이 아니라 기대 텍스트를 손으로 적은 것이다(이관 전에는 태그
+    # 제거가 없었다). 그래서 `main()` 으로 다시 뜨면 안 되는 이유가 하나 더 생긴다 — 렌더러가 내는 값을
+    # 정답으로 덮으면 손으로 적은 기대가 사라진다.
+    (
+        "generation_story_basic_media_tags.txt",
+        "story",
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
+            prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=None,
+            development_examples=[],
+            user_goal=None,
+            rules=None,
+            custom_prompt=None,
+            prologue=STORY_PROLOGUE_WITH_MEDIA_TAGS,
+            history=_story_history_with_media_tags(),
+            user_message=USER_MESSAGE,
+            user_persona="",
+            memory_note="",
+            memory_summary="",
+            keyword_note_texts=None,
+            shortcut_prompt=None,
+        ),
+    ),
+    (
+        "generation_story_basic_blank_lines.txt",
+        "story",
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
+            prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=None,
+            development_examples=[],
+            user_goal=None,
+            rules=None,
+            custom_prompt=None,
+            prologue=STORY_PROLOGUE_WITH_BLANK_LINES,
+            history=_story_history_with_blank_lines(),
             user_message=USER_MESSAGE,
             user_persona="",
             memory_note="",

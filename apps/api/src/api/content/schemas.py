@@ -100,6 +100,18 @@ class StartingSetupSummary(CamelModel):
     prologue: str
 
 
+class MediaTagImage(CamelModel):
+    """글 속 칸 id 형태 태그(`{{img::<칸 id>}}`)가 가리키는 그림. 응답은 `{칸 id: MediaTagImage}` 맵으로
+    싣고, 맵에 없는 칸(지워졌거나 버전에 없는 칸)의 태그는 화면이 빈칸으로 둔다.
+
+    `url` 은 원본 서명 URL 이다(대화 중 상황 이미지와 같다). `width`·`height` 는 자산의 픽셀 크기로 화면이
+    그림이 오기 전에 높이를 잡는 데 쓰고, 크기를 모르는 자산이면 null 이다."""
+
+    url: str
+    width: int | None
+    height: int | None
+
+
 AccessStatusKind = Literal["accessible", "restricted", "deleted"]
 
 
@@ -128,6 +140,9 @@ class ContentDetailResponse(CamelModel):
     is_liked: bool
     is_favorited: bool
     starting_setups: list[StartingSetupSummary] | None
+    # 등록 설명·프롤로그의 미디어 북 태그는 칸 id 형태로 바꿔 내보내고, 그 칸들의 그림을 여기 싣는다
+    # (현재 발행본 기준). 기본값을 둬 생성 타입에서 선택 필드가 되게 한다 — 이 필드를 모르는 화면은 그대로 돈다.
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
     version_number: int
     updated_at: datetime
     access_status: ContentAccessStatus
