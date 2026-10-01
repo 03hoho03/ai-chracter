@@ -49,11 +49,16 @@ function DropdownMenuTrigger({
  * 그 아래 24px는 위에서 본 대로 신호가 안 생긴다. 잘리는 위치가 달라 온전한 행의 글자가 밴드에 더
  * 깊이 들어오면 그 행은 더 흐려진다 — 스크롤로 닿는 행이고, 신호가 아예 없는 쪽보다 낫다고 봤다.
  *
- * 위쪽은 안 한다: 위가 잘리는 건 사용자가 **직접 스크롤한 뒤**라 이미 스크롤 가능함을 안다. */
+ * 위쪽은 안 한다: 위가 잘리는 건 사용자가 **직접 스크롤한 뒤**라 이미 스크롤 가능함을 안다.
+ *
+ * **`collisionPadding` 기본값은 8이다**(Radix 기본값 0). 0이면 충돌 보정이 메뉴를 뷰포트 끝에 정확히
+ * 붙인다 — 390px 폰에서 채팅 메시지 메뉴가 오른쪽 0px로 붙어 테두리와 둥근 모서리가 잘렸고, 가로 폰에서
+ * 헤더 프로필 메뉴는 바닥 0px에 닿았다(실측). 충돌이 없는 위치에서는 발화하지 않아 정렬이 바뀌지 않는다. */
 function DropdownMenuContent({
   className,
   align = "start",
   sideOffset = 4,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   const [isClippedBelow, setIsClippedBelow] = React.useState(false)
@@ -86,6 +91,7 @@ function DropdownMenuContent({
         data-clipped-below={isClippedBelow}
         sideOffset={sideOffset}
         align={align}
+        collisionPadding={collisionPadding}
         className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) w-(--radix-dropdown-menu-trigger-width) min-w-32 origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-md ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[clipped-below=true]:after:pointer-events-none data-[clipped-below=true]:after:sticky data-[clipped-below=true]:after:bottom-0 data-[clipped-below=true]:after:-mt-8 data-[clipped-below=true]:after:block data-[clipped-below=true]:after:h-8 data-[clipped-below=true]:after:bg-linear-to-t data-[clipped-below=true]:after:from-popover data-[state=closed]:overflow-hidden motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
         {...props}
       />
@@ -121,7 +127,12 @@ function DropdownMenuGroup({
  * 사유를 읽혀야 하는 비활성 항목은 `disabled` 대신 `aria-disabled` + `onSelect` `preventDefault`로 만든다
  * (`VisibilityTransitionMenuItems`). 그러면 `data-disabled`가 안 붙어 흐림이 사라지므로 두 선택자가
  * 같은 값을 물어야 한다. `pointer-events-none`은 일부러 안 걸었다 — 포커스와 hover가 살아 있어야
- * 그 자리에서 사유가 읽힌다. */
+ * 그 자리에서 사유가 읽힌다.
+ *
+ * **`pointer-coarse:min-h-10`** — 행 높이가 31px라 WCAG 2.5.8(24px)은 넘지만 손가락으로는 이웃 항목을
+ * 누르기 쉽다. 터치 기기에서만 40px로 올리고 마우스 데스크톱의 밀도는 그대로 둔다(폭이 아니라 입력
+ * 장치로 가르는 이유: 좁은 데스크톱 창도, 넓은 태블릿도 있다). `CheckboxItem`·`RadioItem`·`SubTrigger`와
+ * `SelectItem`이 같은 값을 문다. */
 function DropdownMenuItem({
   className,
   inset,
@@ -137,7 +148,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
-        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-65 aria-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
+        "group/dropdown-menu-item relative flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm pointer-coarse:min-h-10 outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-[variant=destructive]:text-destructive-text data-[variant=destructive]:focus:bg-destructive/10 data-[variant=destructive]:focus:text-destructive-text data-disabled:pointer-events-none data-disabled:opacity-65 aria-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 data-[variant=destructive]:*:[svg]:text-destructive-text",
         className
       )}
       {...props}
@@ -159,7 +170,7 @@ function DropdownMenuCheckboxItem({
       data-slot="dropdown-menu-checkbox-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm pointer-coarse:min-h-10 outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       checked={checked}
@@ -203,7 +214,7 @@ function DropdownMenuRadioItem({
       data-slot="dropdown-menu-radio-item"
       data-inset={inset}
       className={cn(
-        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "relative flex cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-sm pointer-coarse:min-h-10 outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground focus:**:text-accent-foreground data-inset:pl-7 data-disabled:pointer-events-none data-disabled:opacity-65 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -290,7 +301,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
-        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+        "flex cursor-default items-center gap-1.5 rounded-md px-1.5 py-1 text-sm pointer-coarse:min-h-10 outline-hidden select-none focus:inset-ring-1 focus:inset-ring-ring focus:bg-accent focus:text-accent-foreground not-data-[variant=destructive]:focus:**:text-accent-foreground data-inset:pl-7 data-open:bg-accent data-open:text-accent-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
       {...props}
@@ -301,14 +312,18 @@ function DropdownMenuSubTrigger({
   )
 }
 
+/** `Content`와 같은 이유로 `collisionPadding` 8과 가용 높이 캡을 갖는다 — 하위 메뉴는 옆으로 펼쳐져
+ * 뷰포트 끝에 더 쉽게 닿는다. */
 function DropdownMenuSubContent({
   className,
+  collisionPadding = 8,
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.SubContent>) {
   return (
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
-      className={cn("z-50 min-w-[96px] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
+      collisionPadding={collisionPadding}
+      className={cn("z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[96px] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-1 text-popover-foreground shadow-lg ring-1 ring-foreground/10 motion-safe:duration-100 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95", className )}
       {...props}
     />
   )

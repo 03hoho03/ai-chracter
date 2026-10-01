@@ -75,7 +75,8 @@ export function MessageBubble({
                 size="icon-xs"
                 aria-label="메시지 옵션"
                 disabled={disabled}
-                className="text-muted-foreground"
+                // 24px는 마우스로는 충분하지만 손가락으로는 본문을 함께 누르기 쉽다 — 터치 기기에서만 32px.
+                className="text-muted-foreground pointer-coarse:size-8"
               >
                 <MoreHorizontal aria-hidden />
               </Button>

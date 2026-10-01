@@ -33,9 +33,6 @@ type ContentCardActionMenuProps = {
  *   (`apps/web/CLAUDE.md` "카드 · 목록"의 ⚠️ 항목).
  * - **`w-auto`**: `DropdownMenuContent`의 폭이 트리거 폭(32px → `min-w-32`)에 고정돼 있어 조금만 긴
  *   라벨이 두 줄로 깨진다. 프리미티브를 고치면 헤더·알림 메뉴 폭이 함께 바뀌므로 call-site 처방이다.
- * - **`collisionPadding`**: Radix 기본값이 0이라, 좌측 열 카드의 `align="end"` 메뉴가 뷰포트를 넘칠 때
- *   충돌 보정이 딱 `x=0`에 붙여 놓는다(320px 실측 — 여백 0px). 카드 그리드는 뷰포트 가장자리까지 가는
- *   유일한 메뉴 트리거라 이 셸에서만 필요하다.
  * - **이름 있는 `aria-label`**(`title` prop) — 호출부 책임이 아니다. 근거는 그 prop의 주석에 있다. */
 export function ContentCardActionMenu({ title, children }: ContentCardActionMenuProps) {
   return (
@@ -55,7 +52,6 @@ export function ContentCardActionMenu({ title, children }: ContentCardActionMenu
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        collisionPadding={8}
         className="w-auto"
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => event.stopPropagation()}

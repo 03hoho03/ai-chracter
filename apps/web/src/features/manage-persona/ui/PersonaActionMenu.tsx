@@ -55,7 +55,6 @@ export function PersonaActionMenu({ persona, isDefault, onEdit }: PersonaActionM
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        collisionPadding={8}
         className="w-auto"
         onCloseAutoFocus={(event) => {
           if (!isEditSelectedRef.current) return;
