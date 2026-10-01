@@ -17,7 +17,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
-from api.assets.blur import create_blurred_asset
+from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE
 from api.chat.prompt_builder import load_active_prompt_set
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
@@ -112,9 +112,9 @@ from api.session.dependencies import get_current_user_id, get_current_user_id_op
 
 logger = logging.getLogger(__name__)
 
-# 발행 심사에 실을 칸 축소본을 동시에 내려받는 수. 공유 boto3 클라이언트의 기본 커넥션 풀(10개)보다 작게 둔다 —
-# 넘기면 풀이 남는 연결을 버렸다가 다시 맺는다.
-_FILTER_THUMBNAIL_CONCURRENCY = 8
+# 발행이 미디어 북 칸마다 하는 저장소 작업(심사에 실을 축소본 내려받기, 블러본 만들기)을 동시에 돌리는 칸 수.
+# 공유 boto3 클라이언트의 기본 커넥션 풀(10개)보다 작게 둔다 — 넘기면 풀이 남는 연결을 버렸다가 다시 맺는다.
+_MEDIA_BOOK_S3_CONCURRENCY = 8
 
 router = APIRouter(tags=["content"])
 
@@ -1811,7 +1811,7 @@ async def _load_story_publish_filter_images(
         .tuples()
         .all()
     )
-    semaphore = asyncio.Semaphore(_FILTER_THUMBNAIL_CONCURRENCY)
+    semaphore = asyncio.Semaphore(_MEDIA_BOOK_S3_CONCURRENCY)
 
     async def download_thumbnail(storage_key: str) -> bytes:
         async with semaphore:
@@ -2023,36 +2023,58 @@ async def _clone_story_children(
         )
 
 
-async def _blur_new_media_book_cells(db: AsyncSession, version_id: uuid.UUID, *, owner_user_id: uuid.UUID) -> None:
+async def _blur_new_media_book_cells(
+    db: AsyncSession, cells: Sequence[MediaBookCell], *, owner_user_id: uuid.UUID
+) -> None:
     """블러본이 없는 칸(그림을 새로 걸었거나 바꾼 칸)에만 블러본을 만든다. 보관함은 아직 못 본 칸을 이 블러본으로
     보여 준다. 앞 발행에서 만든 블러본은 복제로 초안에 따라오고, 그림을 바꾸면 자동저장이 비운다.
 
     발행 심사를 통과한 뒤에 부른다 — 탈락할 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다. 다음 초안
-    복제보다 앞이어야 새 블러본 id 가 초안으로 넘어간다."""
-    pairs = (
-        await db.execute(
-            select(MediaBookCell, Asset.storage_key)
-            .join(Asset, Asset.id == MediaBookCell.image_asset_id)
-            .where(MediaBookCell.content_version_id == version_id, MediaBookCell.blurred_asset_id.is_(None))
-        )
-    ).tuples().all()
-    if not pairs:
+    복제보다 앞이어야 새 블러본 id 가 초안으로 넘어간다.
+
+    칸마다 원본 받기·블러·올리기를 동시에 돌린다(발행은 콘텐츠 행을 잠근 채 진행되고, 운영 저장소 왕복이 칸마다
+    붙어 줄로 세우면 50칸에 1분이 넘는다). 세션은 동시에 쓸 수 없어 자산 행·칸 갱신은 모두 끝난 뒤 차례로 한다.
+    `cells` 는 배치표 순서(인물 → 장면)여야 한다 — 여러 칸이 실패하면 그 순서로 가장 앞 칸을 알린다."""
+    pending = [cell for cell in cells if cell.blurred_asset_id is None]
+    if not pending:
         return
-    blurred_by_cell: list[tuple[MediaBookCell, Asset]] = []
-    for cell, storage_key in pairs:
-        try:
-            blurred = await create_blurred_asset(db, source_storage_key=storage_key, owner_user_id=owner_user_id)
-        except (BotoCoreError, ClientError, OSError, ValueError) as exc:
+    storage_keys = dict(
+        (
+            await db.execute(
+                select(Asset.id, Asset.storage_key).where(Asset.id.in_({cell.image_asset_id for cell in pending}))
+            )
+        )
+        .tuples()
+        .all()
+    )
+    semaphore = asyncio.Semaphore(_MEDIA_BOOK_S3_CONCURRENCY)
+
+    async def blur(storage_key: str) -> BlurredUpload:
+        async with semaphore:
+            return await upload_blurred_copy(storage_key)
+
+    # 하나가 실패해도 나머지를 끝까지 기다린다. 남은 칸을 취소해도 스레드에서 돌던 저장소 호출은 끝날 때까지
+    # 멈추지 않고(기다리지 않고 응답하면 응답 뒤에도 돈다), 여러 칸이 깨졌을 때 어느 칸을 알릴지가 완료 타이밍에
+    # 따라 달라진다. 그사이 다른 칸이 올린 블러본은 가리키는 행 없이 남는다(아무 응답도 서명하지 않는다).
+    results = await asyncio.gather(
+        *(blur(storage_keys[cell.image_asset_id]) for cell in pending), return_exceptions=True
+    )
+    uploads: list[tuple[MediaBookCell, BlurredUpload]] = []
+    for cell, result in zip(pending, results, strict=True):
+        if isinstance(result, (BotoCoreError, ClientError, OSError, ValueError)):
             # 원본을 못 읽었거나(저장소에서 사라짐·연결 실패) 그림으로 풀지 못했다. 어느 칸인지 알려 발행을 멈춘다 —
-            # 심사 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내한다. 앞 칸에서 이미 올린 블러본은 행 없이 남는다.
-            logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell.entity_id, exc)
-            capture_dependency_failure(exc, dependency="s3")
-            raise _media_book_image_unavailable(cell.entity_id) from exc
-        blurred_by_cell.append((cell, blurred))
+            # 심사 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내한다.
+            logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell.entity_id, result)
+            capture_dependency_failure(result, dependency="s3")
+            raise _media_book_image_unavailable(cell.entity_id) from result
+        if isinstance(result, BaseException):
+            raise result
+        uploads.append((cell, result))
     # 블러 자산 행이 칸이 가리킬 FK 대상이라 먼저 넣는다.
+    db.add_all([blurred_asset_row(upload, owner_user_id=owner_user_id) for _, upload in uploads])
     await db.flush()
-    for cell, blurred in blurred_by_cell:
-        cell.blurred_asset_id = blurred.id
+    for cell, upload in uploads:
+        cell.blurred_asset_id = upload.asset_id
     await db.flush()
 
 
@@ -2152,7 +2174,7 @@ async def _publish_story_content(
             detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
         )
 
-    await _blur_new_media_book_cells(db, version.id, owner_user_id=content.creator_user_id)
+    await _blur_new_media_book_cells(db, ordered_cells, owner_user_id=content.creator_user_id)
 
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
