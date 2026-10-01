@@ -7,7 +7,7 @@ import { toMediaNameTag } from "@/entities/media-book";
 import { insertMediaTag, type MediaTagFieldPath, type StoryBuilderFormValues } from "@/features/build-story";
 import { MediaTagPickerModal, type MediaTagPickerGroup } from "@/features/edit-media-book";
 
-import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
+import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 type MediaTagInsertButtonProps = {
   name: MediaTagFieldPath;

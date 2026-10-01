@@ -1,14 +1,14 @@
-import { createContext, useContext, type ReactNode } from "react";
+import type { ReactNode } from "react";
 
 import type { MediaTagImages } from "@/entities/media-book/@x/chat-room";
+
+import { MediaTagImagesContext } from "../model/useMediaTagImages";
 
 type MediaTagImagesProviderProps = {
   /** 글 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`). 맵에 없는 칸의 태그는 빈칸이 된다. */
   images: MediaTagImages;
   children: ReactNode;
 };
-
-const MediaTagImagesContext = createContext<MediaTagImages | undefined>(undefined);
 
 /**
  * 이 안의 `ChatMarkdown` 만 글 속 미디어 북 태그를 그림으로 그린다. 맵은 서버가 작성자 글(첫 메시지·에필로그)에
@@ -18,9 +18,4 @@ const MediaTagImagesContext = createContext<MediaTagImages | undefined>(undefine
  */
 export function MediaTagImagesProvider({ images, children }: MediaTagImagesProviderProps) {
   return <MediaTagImagesContext.Provider value={images}>{children}</MediaTagImagesContext.Provider>;
-}
-
-/** 감싼 자리면 그림 맵, 아니면 undefined(태그를 그리지 않는다). */
-export function useMediaTagImages(): MediaTagImages | undefined {
-  return useContext(MediaTagImagesContext);
 }

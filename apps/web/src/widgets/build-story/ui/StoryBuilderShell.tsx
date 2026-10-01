@@ -86,7 +86,6 @@ const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(
 const MEDIA_BOOK_PATH = "mediaBook";
 const MEDIA_BOOK_LABEL = "미디어 북";
 
-
 /** 탭 단일 useForm 셸. 자동저장/발행/
  * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *

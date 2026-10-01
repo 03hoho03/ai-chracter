@@ -2,6 +2,7 @@ import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-boo
 
 import {
   MAX_MEDIA_BOOK_CELLS,
+  MEDIA_BOOK_DUPLICATE_NAME_MESSAGE,
   mediaBookAxisSchema,
   type MediaBookAxisValues,
   type MediaBookCellValues,
@@ -38,7 +39,7 @@ export function mediaBookNameError(
   if (!parsed.success) return parsed.error.issues[0]?.message;
   const normalized = normalizeMediaBookName(name);
   const isTaken = siblings.some((item) => item.id !== selfId && normalizeMediaBookName(item.name) === normalized);
-  return isTaken ? "같은 이름이 이미 있어요" : undefined;
+  return isTaken ? MEDIA_BOOK_DUPLICATE_NAME_MESSAGE : undefined;
 }
 
 export function addAxisItem(mediaBook: MediaBookValues, axis: MediaBookAxis, name: string, id: string): MediaBookValues {

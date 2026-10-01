@@ -176,6 +176,8 @@ export const MAX_MEDIA_BOOK_CELLS = 50;
 export const MAX_MEDIA_BOOK_NAME_LENGTH = 20;
 export const MAX_MEDIA_BOOK_SITUATION_LENGTH = 100;
 export const MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH = 20;
+// 같은 축 안 이름 중복 문구. 이름 입력 칸(`mediaBookNameError`)과 스키마 검사가 같은 문장을 내도록 여기 하나만 둔다.
+export const MEDIA_BOOK_DUPLICATE_NAME_MESSAGE = "같은 이름이 이미 있어요";
 // 본문 태그 `{{img::인물/장면}}`의 구분자들. 이름에 들어가면 태그를 인물·장면으로 가를 수 없다.
 const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 
@@ -255,7 +257,7 @@ export const mediaBookSchema = z.object({
         seenIds.add(item.id);
         const name = normalizeMediaBookName(item.name);
         if (seenNames.has(name)) {
-          ctx.addIssue({ code: "custom", path: [axis, index, "name"], message: "같은 이름이 이미 있습니다" });
+          ctx.addIssue({ code: "custom", path: [axis, index, "name"], message: MEDIA_BOOK_DUPLICATE_NAME_MESSAGE });
         }
         seenNames.add(name);
       });

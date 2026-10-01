@@ -50,7 +50,6 @@ const chatMessageSchema = z.object({
   createdAt: z.string(),
 });
 
-
 export const chatStreamEventSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("token"), delta: z.string() }),
   z.object({ type: z.literal("statChange"), statId: z.string(), newValue: z.number() }),

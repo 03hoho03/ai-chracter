@@ -5,25 +5,15 @@ import { toast } from "sonner";
 import { toMediaNameTag } from "@/entities/media-book";
 import { findCell, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
 
-import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
+import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 export type MediaBookPosition = { personId: string; sceneId: string };
-
-/** 표의 칸 버튼을 찾는 표식 값. uuid 에는 `|` 가 없어 자리끼리 겹치지 않는다. */
-export function toCellKey(position: MediaBookPosition): string {
-  return `${position.personId}|${position.sceneId}`;
-}
-
-/** 표의 그 칸 버튼으로 포커스를 옮긴다(상세를 닫거나 비운 뒤). */
-export function focusGridCell(position: MediaBookPosition) {
-  document.querySelector<HTMLButtonElement>(`[data-media-book-cell="${toCellKey(position)}"]`)?.focus();
-}
 
 type MediaBookGridProps = {
   mediaBook: MediaBookValues;
   selected: MediaBookPosition | undefined;
-  /** `viaKeyboard` — Enter·Space 로 눌렀는가(클릭 이벤트의 `detail` 이 0). */
-  onSelect: (position: MediaBookPosition, viaKeyboard: boolean) => void;
+  /** `isViaKeyboard` — Enter·Space 로 눌렀는가(클릭 이벤트의 `detail` 이 0). */
+  onSelect: (position: MediaBookPosition, isViaKeyboard: boolean) => void;
   panelId: string;
 };
 
@@ -71,7 +61,7 @@ export function MediaBookGrid({ mediaBook, selected, onSelect, panelId }: MediaB
                     cell={findCell(mediaBook, person.id, scene.id)}
                     isSelected={selected?.personId === person.id && selected.sceneId === scene.id}
                     panelId={panelId}
-                    onSelect={(viaKeyboard) => onSelect({ personId: person.id, sceneId: scene.id }, viaKeyboard)}
+                    onSelect={(isViaKeyboard) => onSelect({ personId: person.id, sceneId: scene.id }, isViaKeyboard)}
                     cellKey={toCellKey({ personId: person.id, sceneId: scene.id })}
                   />
                 </td>
@@ -90,7 +80,7 @@ type GridCellProps = {
   cell: MediaBookCellValues | undefined;
   isSelected: boolean;
   panelId: string;
-  onSelect: (viaKeyboard: boolean) => void;
+  onSelect: (isViaKeyboard: boolean) => void;
   cellKey: string;
 };
 
@@ -147,4 +137,14 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
       )}
     </div>
   );
+}
+
+/** 표의 칸 버튼을 찾는 표식 값. uuid 에는 `|` 가 없어 자리끼리 겹치지 않는다. */
+export function toCellKey(position: MediaBookPosition): string {
+  return `${position.personId}|${position.sceneId}`;
+}
+
+/** 표의 그 칸 버튼으로 포커스를 옮긴다(상세를 닫거나 비운 뒤). */
+export function focusGridCell(position: MediaBookPosition) {
+  document.querySelector<HTMLButtonElement>(`[data-media-book-cell="${toCellKey(position)}"]`)?.focus();
 }

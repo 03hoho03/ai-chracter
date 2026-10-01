@@ -11,7 +11,7 @@ import { MediaImageFrame, type MediaImageSurface } from "@/shared/ui/media-image
 
 import { CHAT_MARKDOWN_MEDIA_OPTIONS, CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
 import { copyCodeToClipboard } from "../lib/copyCodeToClipboard";
-import { useMediaTagImages } from "./MediaTagImagesProvider";
+import { useMediaTagImages } from "../model/useMediaTagImages";
 
 // 코드 블록과 글 속 그림 자리가 같은 면 값을 받으므로 그림 틀의 면 종류를 그대로 쓴다.
 type CodeBlockSurface = MediaImageSurface;

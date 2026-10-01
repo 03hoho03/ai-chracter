@@ -18,13 +18,13 @@ const CELL_PANEL_ID = "media-book-cell-panel";
 export function MediaBookTab() {
   const { mediaBook } = useMediaBookEditor();
   const [selected, setSelected] = useState<MediaBookPosition>();
-  function handleSelect(position: MediaBookPosition, viaKeyboard: boolean) {
+  function handleSelect(position: MediaBookPosition, isViaKeyboard: boolean) {
     setSelected(position);
     // 상세는 표 아래에 열려 좁은 화면이나 긴 표에서는 화면 밖일 수 있다. 키보드로 열면 포커스를 상세 제목으로 옮겨
     // 상세가 화면에 들어오고 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로 돌아온다). 마우스로 열면 포커스는 그대로
     // 두고 상세만 보이게 스크롤한다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과 무관하게 순간 이동).
     requestAnimationFrame(() => {
-      if (viaKeyboard) document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus();
+      if (isViaKeyboard) document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus();
       else document.getElementById(CELL_PANEL_ID)?.scrollIntoView({ block: "nearest" });
     });
   }

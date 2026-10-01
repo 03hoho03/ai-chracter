@@ -9,7 +9,13 @@ import {
   setCellImage,
   type CellImageResult,
 } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, mediaBookSchema, type MediaBookCellValues, type MediaBookValues } from "./schema";
+import {
+  MAX_MEDIA_BOOK_CELLS,
+  MEDIA_BOOK_DUPLICATE_NAME_MESSAGE,
+  mediaBookSchema,
+  type MediaBookCellValues,
+  type MediaBookValues,
+} from "./schema";
 
 const PERSON_A = "00000000-0000-4000-8000-000000000001";
 const PERSON_B = "00000000-0000-4000-8000-000000000002";
@@ -37,8 +43,15 @@ const base: MediaBookValues = {
 
 describe("mediaBookNameError", () => {
   it("rejects a name equal to a sibling after trimming and NFC, but not the item's own name", () => {
-    expect(mediaBookNameError(` ${"에리".normalize("NFD")}`, base.people)).toBe("같은 이름이 이미 있어요");
+    expect(mediaBookNameError(` ${"에리".normalize("NFD")}`, base.people)).toBe(MEDIA_BOOK_DUPLICATE_NAME_MESSAGE);
     expect(mediaBookNameError("에리", base.people, PERSON_A)).toBeUndefined();
+  });
+
+  it("says the same duplicate-name sentence as the form schema", () => {
+    const duplicated = { ...base, people: [...base.people, { id: NEW_ID, name: "에리" }] };
+    const issues = mediaBookSchema.safeParse(duplicated).error?.issues ?? [];
+
+    expect(issues.map((issue) => issue.message)).toContain(mediaBookNameError("에리", base.people));
   });
 
   it("reuses the form schema messages for blank and forbidden names", () => {

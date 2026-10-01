@@ -19,26 +19,12 @@ import { MediaBookOverwriteModal } from "@/features/edit-media-book";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
-import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
 import { createInOrderQueue } from "../lib/createInOrderQueue";
 import { runWithConcurrency } from "../lib/runWithConcurrency";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
+import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 type UploadOutcome = { ok: true; image: MediaBookCellImage } | { ok: false; reason: string };
-
-/** 파일 하나를 올린다. 실패도 결과로 돌려준다(파일 순서 반영 대기열이 실패한 번호에서 멈추지 않게). */
-async function uploadEntryFile(
-  file: File | undefined,
-  rememberUploadedFile: (assetId: string, file: File) => string,
-): Promise<UploadOutcome> {
-  if (!file) return { ok: false, reason: "파일을 읽지 못했어요" };
-  try {
-    const assetId = await uploadAsset(file, "situational-image");
-    return { ok: true, image: { assetId, imageUrl: rememberUploadedFile(assetId, file) } };
-  } catch (error) {
-    return { ok: false, reason: uploadAssetErrorMessage(error) };
-  }
-}
 
 // 동시에 올리는 파일 수. 파일마다 리사이즈(메인 스레드 캔버스)와 업로드가 돌아 많이 열면 화면이 굳는다.
 const UPLOAD_CONCURRENCY = 3;
@@ -173,4 +159,18 @@ function UploadResultNotice({ result, onDismiss }: { result: UploadResult; onDis
       )}
     </div>
   );
+}
+
+/** 파일 하나를 올린다. 실패도 결과로 돌려준다(파일 순서 반영 대기열이 실패한 번호에서 멈추지 않게). */
+async function uploadEntryFile(
+  file: File | undefined,
+  rememberUploadedFile: (assetId: string, file: File) => string,
+): Promise<UploadOutcome> {
+  if (!file) return { ok: false, reason: "파일을 읽지 못했어요" };
+  try {
+    const assetId = await uploadAsset(file, "situational-image");
+    return { ok: true, image: { assetId, imageUrl: rememberUploadedFile(assetId, file) } };
+  } catch (error) {
+    return { ok: false, reason: uploadAssetErrorMessage(error) };
+  }
 }

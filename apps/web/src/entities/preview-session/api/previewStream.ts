@@ -16,6 +16,29 @@ const previewChatMessageSchema = z.object({
   id: z.string(),
   role: z.union([z.literal("user"), z.literal("assistant")]),
   content: z.string(),
+  // 스토리 미리보기 턴이 판정한 미디어 북 그림. 이 키들을 적지 않으면 zod 가 조용히 버려 미리보기 판정
+  // 이미지가 한 장도 안 나온다. 캐릭터 미리보기는 판정하지 않아 서버가 null 을 싣는다 — entities/chat-room
+  // `chatStream.ts` 의 `chatMessageSchema` 와 같은 이유로 nullish 로 받고 출력은 undefined 로 정규화한다.
+  imageId: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
+  imageUrl: z
+    .string()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
+  imageWidth: z
+    .number()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
+  imageHeight: z
+    .number()
+    .nullish()
+    .transform((value) => value ?? undefined)
+    .optional(),
   createdAt: z.string(),
 });
 

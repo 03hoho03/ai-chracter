@@ -28,8 +28,8 @@ import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 
 import type { MediaBookPosition } from "./MediaBookGrid";
-import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
+import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 // 미리보기 상자의 긴 변 상한(px). 세로로 긴 그림이 패널을 길게 늘이지 않게 폭을 비율로 줄인다.
 const PREVIEW_MAX_HEIGHT_PX = 256;
