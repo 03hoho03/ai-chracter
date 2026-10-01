@@ -441,9 +441,9 @@ function MyWorksToolbar({
             축이 빠졌다는 사실은 아래 건수 라벨이 `미등록 1건`으로 이미 말한다. */}
         {typeFilter !== "unpublished" && (
           <Select
-            // `all`은 빈 값으로 넘긴다 — 그래야 `SelectValue`가 placeholder("공개 여부")를 띄운다.
-            // 목록의 `전체` 항목은 그대로 두고, 고르면 파라미터를 지워 다시 빈 값으로 돌아온다.
-            value={visibilityFilter === "all" ? "" : visibilityFilter}
+            // `all`도 실제 값으로 넘긴다 — 빈 값으로 넘기면 placeholder는 뜨지만 열린 목록에서 지금 상태인
+            // `전체` 항목에 선택 체크가 없어진다. 트리거 글자는 아래 `SelectValue` children이 따로 정한다.
+            value={visibilityFilter}
             onValueChange={(value) => {
               if (!isVisibilityFilter(value)) return;
               onSearchChange({ visibility: value === "all" ? undefined : value });
@@ -470,14 +470,19 @@ function MyWorksToolbar({
                 + 셰브론. 포커스와도 갈린다: 포커스는 base가 3px `ring-ring/50` 헤일로를 얹는다. */}
             <SelectTrigger
               size="sm"
-              className={cn("shrink-0", visibilityFilter !== "all" && "border-ring")}
+              // `전체`일 때 축 이름은 placeholder였던 때와 같은 흐린 글자로 둔다 — 값이 걸린 상태만 또렷해야 한다.
+              className={cn("shrink-0", visibilityFilter === "all" ? "text-muted-foreground" : "border-ring")}
               aria-label={
                 visibilityFilter === "all"
                   ? VISIBILITY_AXIS_LABEL
                   : `${VISIBILITY_AXIS_LABEL}: ${VISIBILITY_FILTER_LABEL[visibilityFilter]}`
               }
             >
-              <SelectValue placeholder={VISIBILITY_AXIS_LABEL} />
+              {/* 아무것도 안 거른 `전체`는 트리거에 축 이름("공개 여부")을 보인다 — 값 이름 `전체`를 그대로
+                  두면 옆의 `전체` 칩과 같은 낱말이 한 줄에 둘 놓여 어느 축의 전체인지 갈리지 않는다. */}
+              <SelectValue>
+                {visibilityFilter === "all" ? VISIBILITY_AXIS_LABEL : VISIBILITY_FILTER_LABEL[visibilityFilter]}
+              </SelectValue>
             </SelectTrigger>
             <SelectContent>
               {VISIBILITY_FILTER_OPTIONS.map((option) => (
@@ -522,9 +527,8 @@ function MyWorksToolbar({
               고를 것을 약속하고 주지 않는데, 축 이름이 붙으면 "고르시오"가 아니라 "지금 이렇게
               정렬돼 있다"는 **사실 진술**로 읽힌다. 폭은 78.3 → 109.6px이고 390px에서 건수 라벨까지
               101.2px가 남아 이 줄에는 여유가 충분하다(칩 줄이 아니다 — 실측).
-              `SelectValue`를 텍스트로 **대체**하면 안 되고 형제로만 둔다: Radix의 `item-aligned`가
-              `valueNode`를 기다리다 포지셔닝·포커스 이관을 아예 못 해 마우스로도 키보드로도 못 고르는
-              드롭다운이 된다(`apps/web/CLAUDE.md`). */}
+              축 이름은 `SelectValue`를 **대체**하지 않고 형제로 둔다 — `SelectValue`는 Radix가 선택값을
+              그리는 자리라, 고정 텍스트로 바꾸면 값이 바뀌어도 트리거가 따라오지 않는다(`apps/web/CLAUDE.md`). */}
           <SelectTrigger size="sm" aria-label={`정렬: ${SORT_LABEL[sort]}`}>
             <span className="text-muted-foreground">정렬</span>
             <SelectValue />

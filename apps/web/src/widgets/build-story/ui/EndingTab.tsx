@@ -141,52 +141,61 @@ function SingleRuleRow({
       <button
         type="button"
         aria-label="순서 변경"
-        className="cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        className="shrink-0 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         {...attributes}
         {...listeners}
       >
         <GripVertical aria-hidden className="size-4" />
       </button>
 
-      <Select value={rule.statId} onValueChange={(value) => onChange({ ...rule, statId: value })}>
-        <SelectTrigger className="w-32" aria-label="스탯 선택">
-          <SelectValue placeholder="스탯" />
-        </SelectTrigger>
-        <SelectContent>
-          {stats.map((stat) => (
-            <SelectItem key={stat.id} value={stat.id}>
-              {stat.name || "이름없음"}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      {/* 세 컨트롤의 고정 폭 합(128+80+96px + 간격)이 좁은 행보다 넓어서, 한 줄에 두면 줄어들 수 있는
+          유일한 칸인 기준값 입력이 26px로 찌그러지고 삭제 버튼이 행 밖으로 밀려났다(390px 실측).
+          같은 행이 최상위 목록과 규칙 그룹 안 양쪽에 들어가 폭이 뷰포트만으로 정해지지 않으므로
+          브레이크포인트 대신 컨테이너 폭으로 가른다 — 좁으면 스탯을 한 줄로 올리고 연산자·기준값을
+          다음 줄에 둔다. */}
+      <div className="@container min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <Select value={rule.statId} onValueChange={(value) => onChange({ ...rule, statId: value })}>
+            <SelectTrigger className="w-full @min-[20rem]:w-32" aria-label="스탯 선택">
+              <SelectValue placeholder="스탯" />
+            </SelectTrigger>
+            <SelectContent>
+              {stats.map((stat) => (
+                <SelectItem key={stat.id} value={stat.id}>
+                  {stat.name || "이름없음"}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-      <Select
-        value={rule.operator}
-        onValueChange={(value) => isComparisonOperator(value) && onChange({ ...rule, operator: value })}
-      >
-        <SelectTrigger className="w-20" aria-label="연산자 선택">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {COMPARISON_OPERATORS.map((op) => (
-            <SelectItem key={op} value={op}>
-              {op}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+          <Select
+            value={rule.operator}
+            onValueChange={(value) => isComparisonOperator(value) && onChange({ ...rule, operator: value })}
+          >
+            <SelectTrigger className="w-20 shrink-0" aria-label="연산자 선택">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {COMPARISON_OPERATORS.map((op) => (
+                <SelectItem key={op} value={op}>
+                  {op}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-      <Input
-        id={`rule-${rule.id}-value`}
-        type="number"
-        className="w-24"
-        aria-label="기준값"
-        value={rule.value}
-        onChange={(event) => onChange({ ...rule, value: Number(event.target.value) })}
-      />
+          <Input
+            id={`rule-${rule.id}-value`}
+            type="number"
+            className="w-24 shrink-0"
+            aria-label="기준값"
+            value={rule.value}
+            onChange={(event) => onChange({ ...rule, value: Number(event.target.value) })}
+          />
+        </div>
+      </div>
 
-      <Button type="button" variant="ghost" size="icon" aria-label="규칙 삭제" className="ml-auto" onClick={onRemove}>
+      <Button type="button" variant="ghost" size="icon" aria-label="규칙 삭제" className="shrink-0" onClick={onRemove}>
         <Trash2 aria-hidden className="size-4" />
       </Button>
     </div>

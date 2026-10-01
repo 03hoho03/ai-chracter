@@ -209,7 +209,9 @@ async def serialize_comments(
             can_reply=normal and participates and content.comments_enabled,
             can_edit=normal and viewer_id == comment.author_user_id,
             can_delete=authenticated and viewer_id == comment.author_user_id and comment.deleted_at is None,
-            can_like=normal and participates, can_report=normal and authenticated,
+            can_like=normal and participates,
+            # Reporting one's own comment only adds noise to the moderation queue; delete is the author's tool.
+            can_report=normal and authenticated and viewer_id != comment.author_user_id,
             can_pin=normal and manages and comment.root_comment_id is None,
             can_creator_hide=normal and manages,
             can_creator_restore=manages and comment.creator_hidden and (

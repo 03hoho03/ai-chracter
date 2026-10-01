@@ -5,7 +5,7 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import AdminUser, Content, ContentVisibility, ModerationStatus, Notification, User
@@ -350,3 +350,19 @@ async def test_moderator_can_unhide_deleted_root_without_replies_while_publicly_
     await _login_as(db_client,reader_id)
     listing=(await db_client.get(f"/contents/{root.content_id}/comments")).json()
     assert listing["items"]==[] and listing["visibleCommentCount"]==0
+
+
+async def test_author_cannot_report_own_comment(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    comment, _, _ = await setup_comment(db_session)
+    await _login_as(db_client, comment.author_user_id)
+    listing = await db_client.get(f"/contents/{comment.content_id}/comments")
+    assert listing.status_code == 200
+    assert listing.json()["items"][0]["canReport"] is False
+    response = await db_client.post(f"/comments/{comment.id}/reports", json={"reasonCategory": "spam"})
+    assert response.status_code == 404
+    count = await db_session.scalar(
+        select(func.count()).select_from(CommentReport).where(CommentReport.comment_id == comment.id)
+    )
+    assert count == 0

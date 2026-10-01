@@ -122,3 +122,25 @@ async def test_report_creates_pending_row_and_allows_repeat_reports(
     assert len(reports) == 2
     assert {r.reason_category for r in reports} == {ReportReasonCategory.HATE, ReportReasonCategory.ADULT}
     assert all(r.status == ReportStatus.PENDING for r in reports)
+
+
+async def test_report_own_content_is_forbidden_and_writes_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_content(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, creator.id)
+    resp = await db_client.post(
+        f"/contents/{content.id}/report", json={"reasonCategory": "spam"}
+    )
+    assert resp.status_code == 403
+
+    count = await db_session.scalar(
+        sa.select(sa.func.count()).select_from(Report).where(Report.content_id == content.id)
+    )
+    assert count == 0

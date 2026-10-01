@@ -26,6 +26,9 @@ export function CommentControls({
   const shouldSkipMenuRestore = useRef(false);
   const [isLikedOverride, setIsLikedOverride] = useState<boolean>();
   const isNormal = comment.displayState === "normal";
+  // 본인 댓글이면 신고(서버가 막는다)와 사용자 숨기기가 둘 다 빠진다 — 그때 구분선만 메뉴 끝에 남지 않게 함께 판정한다.
+  const canShowReport = isNormal && (comment.canReport || !isLoggedIn);
+  const canShowMute = isNormal && comment.author?.id !== viewerId;
   const hasMenu = isNormal || comment.canEdit || comment.canDelete || comment.canPin || comment.canCreatorHide || comment.canCreatorRestore;
   const isLiked = isLikedOverride ?? comment.isLiked;
   let likeDelta = 0;
@@ -68,12 +71,12 @@ export function CommentControls({
         <DropdownMenuTrigger asChild>
           <Button ref={menuRef} type="button" variant="ghost" size="icon-sm" className="in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10 in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:data-[state=open]:bg-secondary in-data-[comment-highlighted=true]:data-[state=open]:bg-foreground/10" aria-label="댓글 메뉴"><MoreHorizontal aria-hidden /></Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-auto" collisionPadding={8}
+        <DropdownMenuContent align="end" className="w-auto"
           onCloseAutoFocus={(event) => {
             if (shouldSkipMenuRestore.current) { event.preventDefault(); shouldSkipMenuRestore.current = false; }
           }}>
           {comment.canEdit && isBodyRevealed && <DropdownMenuItem onSelect={() => { shouldSkipMenuRestore.current = true; onEdit(); }}>수정</DropdownMenuItem>}
-          {comment.canDelete && <DropdownMenuItem className="text-destructive-text" onSelect={() => handleConfirm(
+          {comment.canDelete && <DropdownMenuItem variant="destructive" onSelect={() => handleConfirm(
             "댓글을 삭제할까요?", "내용과 스티커는 제거되고 다른 사람의 답글은 남아요. 삭제한 댓글은 복원할 수 없어요.", "삭제",
             { type: "delete", commentId: comment.id },
             true,
@@ -88,8 +91,8 @@ export function CommentControls({
           {comment.canCreatorRestore && <DropdownMenuItem onSelect={() => {
             void action.mutateAsync({ type: "creator-hide", commentId: comment.id, isHidden: false }).catch(() => {});
           }}>{comment.displayState === "deleted" && comment.rootCommentId === null ? "삭제된 원댓글 숨김 해제" : "작가 숨김 복원"}</DropdownMenuItem>}
-          {isNormal && <><DropdownMenuSeparator />
-            {(comment.canReport || !isLoggedIn) && <DropdownMenuItem onSelect={() => {
+          {(canShowReport || canShowMute) && <><DropdownMenuSeparator />
+            {canShowReport && <DropdownMenuItem onSelect={() => {
               if (!isLoggedIn) { handleLogin(); return; }
               void CommentReportModal.call({ returnFocus: handleReturnFocus, mutationFn: async (call, reason) => {
                 try {
@@ -98,7 +101,7 @@ export function CommentControls({
                 } catch { /* The report selection remains available for retry. */ }
               } });
             }}>신고</DropdownMenuItem>}
-            {comment.author?.id !== viewerId && <DropdownMenuItem onSelect={() => {
+            {canShowMute && <DropdownMenuItem onSelect={() => {
               if (!isLoggedIn) { handleLogin(); return; }
               const authorId = comment.author?.id;
               if (!authorId) return;
