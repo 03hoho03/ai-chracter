@@ -12,6 +12,7 @@ from api.core.email import get_email_sender
 from api.core.security import verify_password
 from api.db.models.auth import User
 from api.main import app
+from factories import _make_user
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -99,6 +100,28 @@ async def test_request_password_reset_for_unknown_email_returns_same_response(
         app.dependency_overrides.pop(get_email_sender, None)
     assert resp.status_code == 204
     assert called is False
+
+
+async def test_request_password_reset_for_social_only_account_sends_no_email(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """비밀번호가 없는 소셜 전용 계정에 재설정 링크가 가면 그 링크로 비밀번호가 새로 생긴다 —
+    의도하지 않은 두 번째 로그인 수단이다. 응답은 미등록 이메일과 같은 204 로 둔다(가입 여부 은닉)."""
+    user = _make_user(google_sub=f"google-sub-{uuid.uuid4()}")
+    db_session.add(user)
+    await db_session.flush()
+    sent: list[str] = []
+
+    async def _fake_sender(to: str, subject: str, body: str) -> None:
+        sent.append(to)
+
+    app.dependency_overrides[get_email_sender] = lambda: _fake_sender
+    try:
+        resp = await db_client.post("/auth/password-reset/request", json={"email": user.email})
+    finally:
+        app.dependency_overrides.pop(get_email_sender, None)
+    assert resp.status_code == 204
+    assert sent == []
 
 
 async def test_request_password_reset_rate_limited_by_email_hides_registration_status(

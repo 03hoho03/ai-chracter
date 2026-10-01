@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import UTC, datetime
 
@@ -11,28 +12,39 @@ from api.auth.age import is_under_minimum_age
 from api.comments.access import lock_active_user
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
-    GoogleProfile,
+    GoogleProfileFetcher,
     build_authorization_url,
     consume_oauth_state,
     delete_pending_google_signup,
-    get_google_profile,
+    get_google_profile_fetcher,
     get_pending_google_signup,
-    safe_redirect_path,
     store_oauth_state,
     store_pending_google_signup,
+)
+from api.auth.oauth_common import (
+    OAuthExchangeError,
+    clear_oauth_cookie,
+    finish_social_login,
+    oauth_callback_redirect,
+    oauth_login_error_redirect,
+    pending_signup_cookie_name,
+    resolve_oauth_state,
+    safe_redirect_path,
+    set_oauth_cookie,
+    state_cookie_name,
 )
 from api.auth.password_reset import delete_reset_token, get_reset_token, store_reset_token
 from api.auth.schemas import (
     ChangePasswordRequest,
     LoginRequest,
     MeResponse,
-    OnboardingGoogleRequest,
-    OnboardingGoogleResponse,
     PasswordResetConfirmRequest,
     PasswordResetRequestRequest,
     ResendVerificationCodeRequest,
     SignupRequest,
     SignupResponse,
+    SocialOnboardingRequest,
+    SocialOnboardingResponse,
     VerifyEmailRequest,
     VerifyEmailResponse,
 )
@@ -52,12 +64,15 @@ from api.core.config import settings
 from api.core.constants import WITHDRAWN_EMAIL_BLOCK_PERIOD
 from api.core.email import EmailSender, get_email_sender
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
+from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.session import get_db_session
 from api.legal.dependencies import _latest_published_legal_version, _reconsent_required
 from api.session.cookies import clear_session_cookie, get_session_id_from_request, set_session_cookie
 from api.session.dependencies import get_current_user_id
 from api.session.store import create_session, delete_session, revoke_user_sessions
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 me_router = APIRouter(tags=["auth"])
@@ -245,35 +260,49 @@ async def resend_verification_code(
 @router.get("/google")
 async def google_login(redirect: str = "/") -> RedirectResponse:
     state = await store_oauth_state(safe_redirect_path(redirect))
-    return RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
-
-
-async def _get_oauth_redirect_target(state: str) -> str:
-    """A separate dependency (resolved before `get_google_profile` below, in
-    signature order) so a forged/expired `state` is rejected before we spend a
-    real network round-trip exchanging `code` with Google."""
-    redirect_target = await consume_oauth_state(state)
-    if redirect_target is None:
-        # state는 1회용이라(consume_oauth_state 가 읽는 즉시 삭제) 위조뿐 아니라 정상 사용자도
-        # 여기 도달한다 — 온보딩 화면에서 뒤로가기 후 계정 재선택, 콜백 URL 새로고침, TTL 만료.
-        # 이때 400 JSON을 그대로 내면 브라우저에 날것의 본문이 렌더링되어 빠져나갈 수 없으므로,
-        # 로그인 화면으로 되돌려 재시도할 수 있게 한다(state 1회성 자체는 그대로 유지).
-        raise HTTPException(
-            status_code=status.HTTP_302_FOUND,
-            detail="Invalid or expired state",
-            headers={"Location": f"{settings.frontend_base_url}/login?error=google_state"},
-        )
-    # 저장 전(google_login)에도 거르지만, 이 검증이 배포되기 전에 Redis 에 들어간 state 까지
-    # 막기 위해 꺼낼 때 한 번 더 거른다.
-    return safe_redirect_path(redirect_target)
+    response = RedirectResponse(build_authorization_url(state), status_code=status.HTTP_302_FOUND)
+    # 같은 state 를 로그인을 시작한 브라우저에도 심는다 — 콜백이 대조한다(resolve_oauth_state).
+    set_oauth_cookie(
+        response,
+        state_cookie_name("google"),
+        state,
+        max_age=settings.google_oauth_state_ttl_seconds,
+    )
+    return response
 
 
 @router.get("/google/callback")
 async def google_callback(
-    redirect_target: str = Depends(_get_oauth_redirect_target),
-    profile: GoogleProfile = Depends(get_google_profile),
+    request: Request,
+    state: str | None = None,
+    code: str | None = None,
+    error: str | None = None,
+    fetch_profile: GoogleProfileFetcher = Depends(get_google_profile_fetcher),
     db: AsyncSession = Depends(get_db_session),
 ) -> RedirectResponse:
+    # 어떤 결과든 JSON 400·422 대신 로그인 화면으로 302 한다 — 브라우저가 최상위 이동으로 여는
+    # 주소라 날것의 오류 본문이 뜨면 사용자가 빠져나갈 수 없다. 그래서 쿼리 파라미터를 모두
+    # optional 로 받고 판정은 본문에서 한다.
+    #
+    # state 대조를 취소 판정보다 먼저 한다. 취소 응답에도 state 가 실려 오므로, 먼저 대조하면 이
+    # 브라우저가 시작한 흐름의 취소만 "취소"로 안내되고 그때 1회용 state 가 소비되고 쿠키도
+    # 지워져 흐름이 깨끗이 끝난다. 취소를 먼저 보면 Redis state 와 쿠키가 TTL 까지 남는다.
+    # 토큰 교환(네트워크)은 둘 다 통과한 뒤에만 부른다.
+    redirect_target = await resolve_oauth_state(
+        request, state, provider="google", consume=consume_oauth_state
+    )
+    if redirect_target is None:
+        return oauth_login_error_redirect("google_state", provider="google")
+    if error is not None or code is None:
+        return oauth_login_error_redirect("google_cancelled", provider="google")
+    try:
+        profile = await fetch_profile(code)
+    except OAuthExchangeError as exc:
+        # 리다이렉트 응답은 Sentry 가 자동으로 잡지 않으므로(5xx 만 잡는다) 명시적으로 올린다.
+        logger.warning("google oauth exchange failed: %s", exc)
+        capture_dependency_failure(exc, dependency="google_oauth")
+        return oauth_login_error_redirect("google_failed", provider="google")
+
     user = await db.scalar(select(User).where(User.google_sub == profile["sub"]))
     if user is None:
         # Same email already registered via the password flow: link this Google
@@ -285,50 +314,33 @@ async def google_callback(
 
     if user is None:
         token = await store_pending_google_signup(profile)
-        return RedirectResponse(
-            f"{settings.frontend_base_url}/onboarding/google?token={token}",
-            status_code=status.HTTP_302_FOUND,
+        # 토큰을 URL 쿼리가 아니라 HttpOnly 쿠키로 내린다 — URL 은 히스토리·리퍼러·로그로 새고,
+        # 쿠키면 새더라도 이 브라우저 밖에서는 온보딩을 끝낼 수 없다.
+        response = oauth_callback_redirect(
+            f"{settings.frontend_base_url}/onboarding/google", provider="google"
         )
-
-    # 탈퇴(deleted_at)한 계정은 비밀번호 로그인부터 막혀 있었지만 구글 로그인은
-    # 이 확인이 없던 기존 갭이었다 — 정지 확인을 넣는 김에 같이 메운다. 비밀번호 로그인과
-    # 달리 탈퇴 여부를 숨기지 않는다: 여긴 실제 자격증명(비밀번호) 추측 공격 표면이 없다
-    # (호출자가 이미 그 구글 계정을 실제로 소유하고 있어야 여기 도달한다).
-    if user.deleted_at is not None or user.suspended_at is not None:
-        error_code = "account_deleted" if user.deleted_at is not None else "account_suspended"
-        return RedirectResponse(
-            f"{settings.frontend_base_url}/login?error={error_code}",
-            status_code=status.HTTP_302_FOUND,
+        set_oauth_cookie(
+            response,
+            pending_signup_cookie_name("google"),
+            token,
+            max_age=settings.google_pending_signup_ttl_seconds,
         )
+        return response
 
-    # login()과 같은 게이트를 여기에도
-    # 둔다 — google_sub 직접 매치와 이메일 매칭으로 google_sub를 붙이는 두 분기가 모두 여기로
-    # 수렴하므로 한 곳만 막으면 둘 다 막힌다. 위 조건문이 deleted_at is not None인 계정을
-    # 이미 배제했다 — birth_date는 탈퇴 파기 시에만 None이 된다. 집계에서 0건 확인되면
-    # 이 블록을 걷어낼 것(login()의 동일 게이트와 짝).
-    assert user.birth_date is not None
-    if is_under_minimum_age(user.birth_date, datetime.now(UTC).date()):
-        return RedirectResponse(
-            f"{settings.frontend_base_url}/login?error=account_age_restricted",
-            status_code=status.HTTP_302_FOUND,
-        )
-
-    session_id = await create_session(user.id)
-    response = RedirectResponse(
-        f"{settings.frontend_base_url}{redirect_target}", status_code=status.HTTP_302_FOUND
-    )
-    set_session_cookie(response, session_id)
-    return response
+    return await finish_social_login(user, redirect_target, provider="google")
 
 
 @router.post("/onboarding/google")
 async def onboarding_google(
-    payload: OnboardingGoogleRequest,
+    payload: SocialOnboardingRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db_session),
-) -> OnboardingGoogleResponse:
-    pending = await get_pending_google_signup(payload.token)
-    if pending is None:
+) -> SocialOnboardingResponse:
+    # 쿠키가 없을 때와 만료됐을 때를 같은 400 으로 낸다 — 프런트가 이미 이 응답을 "만료"로 다룬다.
+    token = request.cookies.get(pending_signup_cookie_name("google"))
+    pending = await get_pending_google_signup(token) if token is not None else None
+    if token is None or pending is None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     now = datetime.now(UTC)
@@ -336,9 +348,11 @@ async def onboarding_google(
     if user is None:
         # 탈퇴 시 google_sub도 파기되므로
         # 재가입 시도는 위 google_sub 매치가 아니라 항상 이 신규 유저 생성 분기를 타게 된다.
+        # 409 는 아래 경합(이메일 중복)과 상태코드가 같아 프런트가 안내를 가를 수 있게 원인을
+        # `code` 로 담는다.
         if await _reregistration_blocked(db, pending["email"], now):
             raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT, detail="Email already registered"
+                status_code=status.HTTP_409_CONFLICT, detail={"code": "REREGISTRATION_BLOCKED"}
             )
         privacy_version = await _latest_published_legal_version(db, "privacy")
         user = User(
@@ -355,7 +369,18 @@ async def onboarding_google(
             # 국외이전 동의는 처리방침 버전에 묶인다.
             transfer_version=privacy_version,
         )
-        db.add(user)
+        try:
+            async with db.begin_nested():
+                db.add(user)
+                await db.flush()
+        except IntegrityError:
+            # 위 조회와 이 insert 사이의 경합에서 진 요청 — 콜백 뒤 온보딩 전에 같은 이메일로 다른
+            # 가입이 먼저 커밋됐거나, 같은 가입 대기를 두 탭에서 동시에 제출했다(users.email 또는
+            # google_sub UNIQUE). 어느 쪽이든 "이미 가입됨"이다. signup 과 같은 이유로
+            # db.rollback()은 쓰지 않는다 — begin_nested()가 SAVEPOINT까지만 되감는다.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail={"code": "EMAIL_ALREADY_REGISTERED"}
+            ) from None
     else:
         # 대입·커밋·pending 토큰 삭제 **전**에 막는다 — 뒤에서 막으면 403인데도
         # 닉네임·생년월일이 덮어써진 채 커밋되고, 토큰이 지워져 재시도가 400으로 바뀐다.
@@ -365,11 +390,13 @@ async def onboarding_google(
         user.nickname = payload.nickname
         user.birth_date = payload.birth_date
     await db.commit()
-    await delete_pending_google_signup(payload.token)
+    await delete_pending_google_signup(token)
 
     session_id = await create_session(user.id)
+    # 주입받은 `response` 에 걸고 모델을 반환하므로 FastAPI 가 두 쿠키를 응답에 합친다.
     set_session_cookie(response, session_id)
-    return OnboardingGoogleResponse(email=user.email)
+    clear_oauth_cookie(response, pending_signup_cookie_name("google"))
+    return SocialOnboardingResponse(email=user.email)
 
 
 @router.post("/login", status_code=status.HTTP_204_NO_CONTENT)
@@ -453,7 +480,9 @@ async def request_password_reset(
     # Same 204 response whether or not the email is registered, so the caller
     # can't use this endpoint to probe which emails have an account.
     user = await db.scalar(select(User).where(User.email == payload.email))
-    if user is not None:
+    # 비밀번호가 없는 소셜 전용 계정에는 보내지 않는다 — 재설정 링크가 그 계정에 비밀번호를 새로
+    # 만들어, 의도하지 않은 두 번째 로그인 수단이 생긴다. 응답은 미등록 이메일과 같은 204 다.
+    if user is not None and user.password_hash is not None:
         token = await store_reset_token(user.id)
         reset_link = f"{settings.frontend_base_url}/reset-password?token={token}"
         background_tasks.add_task(send_password_reset_email, email_sender, payload.email, reset_link)
@@ -518,6 +547,8 @@ async def get_me(
         profile_image_asset_id=user.profile_image_asset_id,
         terms_reconsent_required=_reconsent_required(user.terms_version, required_terms_version),
         privacy_reconsent_required=_reconsent_required(user.privacy_version, required_privacy_version),
+        has_password=user.password_hash is not None,
+        social_provider="google" if user.google_sub is not None else None,
     )
 
 
@@ -532,9 +563,13 @@ async def change_password(
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    if user.password_hash is None or not verify_password(
-        payload.current_password, user.password_hash
-    ):
+    # 소셜 전용 계정은 "현재 비밀번호가 틀렸다"가 아니라 비밀번호가 없다는 사실을 따로 알린다 —
+    # 같은 400 문자열이면 프런트가 존재하지 않는 비밀번호를 다시 입력하라고 안내하게 된다.
+    if user.password_hash is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail={"code": "PASSWORD_NOT_SET"}
+        )
+    if not verify_password(payload.current_password, user.password_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Current password is incorrect"
         )

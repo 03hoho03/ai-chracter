@@ -111,7 +111,9 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
   (`auth/google_oauth.py`의 `callback_redirect_uri`), FE는 Google에 직접 요청하지 않으므로 Authorized
   JavaScript origins도 필요 없다. FE 도메인이 바뀔 때 실제로 고칠 값은 콜백 뒤 돌려보낼 목적지인
   `FRONTEND_BASE_URL`이다.
-- OAuth state는 쿠키가 아니라 **Redis**에 있다(`store_oauth_state`).
+- OAuth state는 **Redis**(`store_oauth_state`)에 두고, 로그인을 시작한 브라우저에도 같은 값을 HttpOnly
+  쿠키(`oauth_state_google`, `Path=/`)로 심어 콜백에서 대조한다(`auth/oauth_common.py`의
+  `resolve_oauth_state`). 가입 대기 토큰도 URL이 아니라 HttpOnly 쿠키(`oauth_pending_google`)로 내린다.
 
 ---
 

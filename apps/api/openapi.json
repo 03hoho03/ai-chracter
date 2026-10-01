@@ -2704,19 +2704,49 @@
           {
             "name": "state",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "State"
             }
           },
           {
             "name": "code",
             "in": "query",
-            "required": true,
+            "required": false,
             "schema": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Code"
+            }
+          },
+          {
+            "name": "error",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Error"
             }
           }
         ],
@@ -2753,7 +2783,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/OnboardingGoogleRequest"
+                "$ref": "#/components/schemas/SocialOnboardingRequest"
               }
             }
           },
@@ -2765,7 +2795,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/OnboardingGoogleResponse"
+                  "$ref": "#/components/schemas/SocialOnboardingResponse"
                 }
               }
             }
@@ -15846,6 +15876,25 @@
           "privacyReconsentRequired": {
             "type": "boolean",
             "title": "Privacyreconsentrequired"
+          },
+          "hasPassword": {
+            "type": "boolean",
+            "title": "Haspassword"
+          },
+          "socialProvider": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "google",
+                  "kakao"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Socialprovider"
           }
         },
         "type": "object",
@@ -15856,7 +15905,9 @@
           "bio",
           "profileImageAssetId",
           "termsReconsentRequired",
-          "privacyReconsentRequired"
+          "privacyReconsentRequired",
+          "hasPassword",
+          "socialProvider"
         ],
         "title": "MeResponse"
       },
@@ -16597,59 +16648,6 @@
         ],
         "title": "NotificationUnreadCountResponse"
       },
-      "OnboardingGoogleRequest": {
-        "properties": {
-          "token": {
-            "type": "string",
-            "title": "Token"
-          },
-          "nickname": {
-            "type": "string",
-            "minLength": 1,
-            "title": "Nickname"
-          },
-          "birthDate": {
-            "type": "string",
-            "format": "date",
-            "title": "Birthdate"
-          },
-          "termsAgreed": {
-            "type": "boolean",
-            "title": "Termsagreed"
-          },
-          "privacyAgreed": {
-            "type": "boolean",
-            "title": "Privacyagreed"
-          },
-          "transferAgreed": {
-            "type": "boolean",
-            "title": "Transferagreed"
-          }
-        },
-        "type": "object",
-        "required": [
-          "token",
-          "nickname",
-          "birthDate",
-          "termsAgreed",
-          "privacyAgreed",
-          "transferAgreed"
-        ],
-        "title": "OnboardingGoogleRequest"
-      },
-      "OnboardingGoogleResponse": {
-        "properties": {
-          "email": {
-            "type": "string",
-            "title": "Email"
-          }
-        },
-        "type": "object",
-        "required": [
-          "email"
-        ],
-        "title": "OnboardingGoogleResponse"
-      },
       "PasswordResetConfirmRequest": {
         "properties": {
           "token": {
@@ -17221,6 +17219,55 @@
           "order"
         ],
         "title": "SituationalImageResponse"
+      },
+      "SocialOnboardingRequest": {
+        "properties": {
+          "nickname": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Nickname"
+          },
+          "birthDate": {
+            "type": "string",
+            "format": "date",
+            "title": "Birthdate"
+          },
+          "termsAgreed": {
+            "type": "boolean",
+            "title": "Termsagreed"
+          },
+          "privacyAgreed": {
+            "type": "boolean",
+            "title": "Privacyagreed"
+          },
+          "transferAgreed": {
+            "type": "boolean",
+            "title": "Transferagreed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "nickname",
+          "birthDate",
+          "termsAgreed",
+          "privacyAgreed",
+          "transferAgreed"
+        ],
+        "title": "SocialOnboardingRequest",
+        "description": "소셜 가입(구글·카카오) 온보딩이 함께 쓰는 요청 — 생성 타입이 provider 마다 갈리지 않게\n하나로 둔다. 가입 대기 토큰은 본문이 아니라 HttpOnly 쿠키로 받는다: URL·히스토리·리퍼러로\n토큰이 새도 그 쿠키가 없는 다른 브라우저에서는 가입을 끝낼 수 없게 하려는 것이다."
+      },
+      "SocialOnboardingResponse": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email"
+        ],
+        "title": "SocialOnboardingResponse"
       },
       "StartingSetupDraftItem": {
         "properties": {

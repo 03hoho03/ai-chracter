@@ -1,11 +1,12 @@
 import json
 import secrets
+from collections.abc import Awaitable, Callable
 from typing import TypedDict
 from urllib.parse import urlencode
 
 import httpx
-from fastapi import HTTPException, status
 
+from api.auth.oauth_common import OAuthExchangeError
 from api.core.config import settings
 from api.core.redis import redis_client
 
@@ -35,63 +36,48 @@ def build_authorization_url(state: str) -> str:
 
 
 async def exchange_code_for_profile(code: str) -> GoogleProfile:
-    async with httpx.AsyncClient() as client:
-        token_resp = await client.post(
-            GOOGLE_TOKEN_URL,
-            data={
-                "code": code,
-                "client_id": settings.google_client_id,
-                "client_secret": settings.google_client_secret,
-                "redirect_uri": callback_redirect_uri(),
-                "grant_type": "authorization_code",
-            },
-        )
-        if token_resp.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Google OAuth token exchange failed"
+    """실패는 전부 `OAuthExchangeError` 로 바꿔 던진다 — 비정상 상태코드뿐 아니라 네트워크
+    오류·타임아웃(`httpx.HTTPError`)과 응답 형식 오류(JSON 아님·키 누락)도 콜백이 잡을 수 있어야
+    브라우저에 500 화면이 뜨지 않는다."""
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                GOOGLE_TOKEN_URL,
+                data={
+                    "code": code,
+                    "client_id": settings.google_client_id,
+                    "client_secret": settings.google_client_secret,
+                    "redirect_uri": callback_redirect_uri(),
+                    "grant_type": "authorization_code",
+                },
             )
-        access_token = token_resp.json()["access_token"]
+            if token_resp.status_code != 200:
+                raise OAuthExchangeError(f"token exchange returned {token_resp.status_code}")
+            access_token = token_resp.json()["access_token"]
 
-        userinfo_resp = await client.get(
-            GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
-        )
-        if userinfo_resp.status_code != 200:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="Google OAuth userinfo fetch failed"
+            userinfo_resp = await client.get(
+                GOOGLE_USERINFO_URL, headers={"Authorization": f"Bearer {access_token}"}
             )
-        data = userinfo_resp.json()
-        return GoogleProfile(sub=data["sub"], email=data["email"])
+            if userinfo_resp.status_code != 200:
+                raise OAuthExchangeError(f"userinfo returned {userinfo_resp.status_code}")
+            data = userinfo_resp.json()
+            return GoogleProfile(sub=data["sub"], email=data["email"])
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        # ValueError 는 JSON 이 아닌 본문, KeyError·TypeError 는 기대한 키가 없거나 모양이 다른
+        # 본문이다. 예외 이름만 남긴다 — 메시지에 응답 본문이 섞일 수 있다.
+        raise OAuthExchangeError(type(exc).__name__) from exc
 
 
-async def get_google_profile(code: str) -> GoogleProfile:
-    """FastAPI dependency wrapper so tests can override the network call
-    (see `api/db/session.get_db_session`'s override for the established pattern)."""
-    return await exchange_code_for_profile(code)
+GoogleProfileFetcher = Callable[[str], Awaitable[GoogleProfile]]
 
 
-def safe_redirect_path(value: str) -> str:
-    """로그인 후 돌아갈 경로를 같은 오리진 경로로 제한한다.
-
-    콜백은 `frontend_base_url` 뒤에 이 값을 그대로 이어 붙이므로 "@evil.com"(userinfo)·
-    ".evil.com"(서브도메인)처럼 호스트를 바꾸는 값이 들어오면 로그인 직후 외부로 튄다.
-    어긋나면 거부하지 않고 "/"로 대체한다 — 로그인 자체는 정상 흐름이다.
-
-    이 이어 붙이기에서 실제로 호스트를 바꾸는 것은 "/"로 시작하지 않는 값뿐이다
-    ("https://ddona.site" + "//evil.com"은 호스트가 그대로다). 아래 나머지 조건은 같은 값이
-    상대 URL로 해석되는 순간(프런트가 이 경로로 이동하거나 이어 붙이기 방식이 바뀌면)
-    외부로 튀는 형태를 미리 막는 것이다 — 상대 URL로는 "//evil.com"·"/\\evil.com"
-    (브라우저는 "\\"를 "/"로 읽는다)·"/<탭>/evil.com"(파싱 전에 탭·개행을 지운다)이
-    모두 evil.com 으로 간다.
-
-    - "\\"는 두 번째 글자만이 아니라 위치와 무관하게 거부한다: 앱 라우트(apps/web/src/routes)
-      어디에도 역슬래시가 없어 잃는 정상 경로가 없고, 규칙이 더 단순하다.
-    - 제어문자(0x00-0x1f, 0x7f)는 위 탭·개행 제거 외에 Location 헤더에 실리는 값이라 거부한다.
-    """
-    if not value.startswith("/") or value.startswith("//") or "\\" in value:
-        return "/"
-    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in value):
-        return "/"
-    return value
+def get_google_profile_fetcher() -> GoogleProfileFetcher:
+    """토큰 교환 호출을 Depends 로 주입해 테스트가 네트워크 없이 갈아끼우게 한다
+    (`core/email.py` 의 `get_email_sender` 와 같은 모양). 프로필 자체가 아니라 호출 함수를 주입하는
+    이유는 콜백이 state 대조와 취소 판정을 끝낸 **뒤에** 교환을 부르고 그 실패를 직접 잡아
+    로그인 화면으로 되돌려야 하기 때문이다 — 프로필을 의존성으로 받으면 그 실패가 라우트 본문
+    밖에서 터진다."""
+    return exchange_code_for_profile
 
 
 def _state_key(state: str) -> str:
