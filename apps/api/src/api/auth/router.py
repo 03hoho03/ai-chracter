@@ -121,14 +121,20 @@ def _onboarding_conflict(code: str) -> HTTPException:
 async def _apply_onboarding_consent(
     db: AsyncSession, user: User, payload: SocialOnboardingRequest, now: datetime
 ) -> None:
-    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금 게시된 최신본이다."""
-    privacy_version = await _latest_published_legal_version(db, "privacy")
+    """소셜 온보딩이 받은 프로필과 약관 3종 동의를 행에 적는다. 동의 버전은 지금 게시된 최신본이다.
+
+    버전 조회가 자동 flush 를 일으키지 않게 막는다. 카카오 온보딩은 기존 행을 대체할 때 회원번호를
+    이 함수 호출 전에 대입하는데, 여기서 flush 되면 그 UPDATE 가 UNIQUE 충돌을 409 로 바꾸는
+    `_flush_social_signup` 의 savepoint 밖에서 나가 500 이 된다. 쓰기는 그 함수에서만 나가야 한다."""
+    with db.no_autoflush:
+        privacy_version = await _latest_published_legal_version(db, "privacy")
+        terms_version = await _latest_published_legal_version(db, "terms")
     user.nickname = payload.nickname
     user.birth_date = payload.birth_date
     user.terms_agreed_at = now
     user.privacy_agreed_at = now
     user.transfer_agreed_at = now
-    user.terms_version = await _latest_published_legal_version(db, "terms")
+    user.terms_version = terms_version
     user.privacy_version = privacy_version
     # 국외이전 동의는 처리방침 버전에 묶인다.
     user.transfer_version = privacy_version
@@ -385,7 +391,15 @@ async def google_callback(
     if user is None:
         # Same email already registered via the password flow: link this Google
         # account to it instead of failing on the users.email unique constraint.
-        user = await db.scalar(select(User).where(User.email == profile["email"]))
+        # 행을 잠그고 읽는다 — 카카오 온보딩이 같은 미인증 행을 카카오 계정으로 대체하는 중이면 그
+        # 커밋을 기다렸다가 바뀐 상태로 다시 판정한다. 잠그지 않으면 대체 전의 행을 보고 구글을
+        # 붙여 한 행이 카카오와 구글을 함께 갖게 된다.
+        user = await db.scalar(
+            select(User)
+            .where(User.email == profile["email"])
+            .with_for_update(key_share=True)
+            .execution_options(populate_existing=True)
+        )
         # 카카오 계정에는 구글을 자동으로 붙이지 않는다 — 카카오 로그인이 구글 계정에 붙지 않는
         # 것과 대칭이다. 이메일 재활용으로 남의 계정에 들어가는 경로를 새로 열지 않는다.
         if user is not None and user.kakao_id is not None:
@@ -651,7 +665,14 @@ async def _handle_kakao_unlink_webhook(
     user_id = user.id
     await erase_account(db, user, delete_storage_object=collect_storage_key)
     # 카카오 쪽 연결은 이미 끊겼으므로 연결 끊기 API 는 부르지 않는다.
-    await revoke_user_sessions(user_id)
+    # 세션 폐기가 실패해도 500 을 내지 않는다 — 파기는 이미 커밋됐고 카카오는 재전송하지 않으므로
+    # 500 은 아래 오브젝트 스토리지 삭제 예약만 빠뜨린다. 남은 세션은 `get_current_user_id` 의
+    # 탈퇴 행 조회가 401 로 막는다.
+    try:
+        await revoke_user_sessions(user_id)
+    except Exception as exc:
+        logger.warning("kakao unlink webhook: session revoke failed for user %s: %r", user_id, exc)
+        capture_dependency_failure(exc, dependency="redis")
     if storage_keys:
         background_tasks.add_task(delete_storage_objects_later, storage_keys)
     return Response(status_code=status.HTTP_200_OK)

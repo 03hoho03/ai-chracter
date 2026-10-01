@@ -7,7 +7,8 @@ import boto3
 import httpx
 import pytest
 from botocore.exceptions import ClientError
-from sqlalchemy import delete, insert, select
+import sqlalchemy as sa
+from sqlalchemy import delete, insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import GoogleProfile, get_google_profile_fetcher
@@ -26,6 +27,7 @@ from api.auth.kakao_oauth import (
     store_pending_kakao_signup,
     unlink_kakao_user,
 )
+from api.auth import router as auth_router
 from api.auth.oauth_common import OAuthExchangeError
 from api.auth.verification import get_verification_code, store_verification_code
 from api.auth.withdrawal import delete_storage_objects_later
@@ -608,6 +610,43 @@ async def test_onboarding_kakao_concurrent_same_kakao_account_returns_409(
             await interloper.commit()
 
 
+async def test_onboarding_kakao_replacement_concurrent_same_kakao_account_returns_409(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """미인증 행을 대체하는 경로도 회원번호 UNIQUE 충돌을 409 로 내야 한다. 대체는 기존 행의 UPDATE
+    라, 회원번호를 대입한 뒤 동의 버전 조회가 자동 flush 를 일으키면 그 UPDATE 가 충돌을 409 로
+    바꾸는 savepoint 밖에서 나가 500 이 된다. 별개 커넥션이 같은 회원번호를 미커밋으로 넣어 두고,
+    대체 UPDATE 가 그 잠금을 기다리는 것을 관측한 뒤 커밋해 진짜 경합을 만든다."""
+    kakao_id, email = _new_identity()
+    await _unverified_email_signup(db_client, email)
+    await _kakao_callback(db_client, kakao_id, email)
+
+    async with engine.connect() as interloper:
+        await interloper.execute(
+            insert(User).values(
+                id=uuid.uuid4(),
+                email=f"other-{email}",
+                kakao_id=kakao_id,
+                nickname="선점",
+                birth_date=date(2000, 1, 1),
+                terms_agreed_at=datetime.now(UTC),
+                privacy_agreed_at=datetime.now(UTC),
+            )
+        )
+        task = asyncio.create_task(db_client.post("/auth/onboarding/kakao", json=_ONBOARDING_FORM))
+        try:
+            await _wait_until_lock_wait(interloper, seconds=5.0)
+            await interloper.commit()
+            resp = await task
+
+            assert resp.status_code == 409
+            assert resp.json() == {"detail": {"code": "EMAIL_ALREADY_REGISTERED"}}
+            assert settings.session_cookie_name not in resp.cookies
+        finally:
+            await interloper.execute(delete(User).where(User.kakao_id == kakao_id))
+            await interloper.commit()
+
+
 async def test_onboarding_kakao_blocks_reregistration_after_withdrawal(
     db_client: httpx.AsyncClient, _recorded_unlinks: list[str]
 ) -> None:
@@ -657,6 +696,90 @@ async def test_google_callback_refuses_email_of_kakao_account(
     assert settings.session_cookie_name not in resp.cookies
     await db_session.refresh(user)
     assert user.google_sub is None
+
+
+async def test_google_callback_waits_for_concurrent_kakao_replacement_and_refuses(
+    api_client: httpx.AsyncClient,
+) -> None:
+    """구글 콜백이 이메일로 찾은 행에 구글을 붙이는 사이 카카오 온보딩이 같은 미인증 행을 카카오
+    계정으로 대체하면, 잠그지 않은 콜백은 대체 전의 행을 보고 구글을 붙여 한 행이 두 provider 를
+    갖게 된다. 콜백은 그 행을 잠가 대체의 커밋을 기다린 뒤 바뀐 행으로 다시 판정해야 한다.
+
+    양쪽 커넥션이 같은 행을 봐야 하므로 이 테스트는 롤백되는 테스트 트랜잭션이 아니라 실제로 커밋되는
+    앱 세션(`api_client`)을 쓰고, 만든 행은 끝에 지운다. 별개 커넥션이 카카오 대체를 흉내 내 그 행을
+    미커밋으로 고쳐 두고, 콜백이 그 잠금에 막힌 것을 관측한 뒤 커밋한다."""
+    kakao_id, email = _new_identity()
+    user_id = uuid.uuid4()
+    async with engine.connect() as setup:
+        await setup.execute(
+            insert(User).values(
+                id=user_id,
+                email=email,
+                password_hash=hash_password("password123"),
+                nickname="미인증",
+                birth_date=date(2000, 1, 1),
+                terms_agreed_at=datetime.now(UTC),
+                privacy_agreed_at=datetime.now(UTC),
+            )
+        )
+        await setup.commit()
+
+    api_client.cookies.clear()
+    async with engine.connect() as interloper:
+        try:
+            start = await api_client.get("/auth/google", follow_redirects=False)
+            state = httpx.URL(start.headers["location"]).params["state"]
+
+            interloper_pid = await interloper.scalar(sa.text("SELECT pg_backend_pid()"))
+            await interloper.execute(
+                update(User)
+                .where(User.id == user_id)
+                .values(kakao_id=kakao_id, email_verified_at=datetime.now(UTC), password_hash=None)
+            )
+
+            async def fetch(code: str) -> GoogleProfile:
+                return GoogleProfile(sub=f"google-sub-{uuid.uuid4()}", email=email)
+
+            app.dependency_overrides[get_google_profile_fetcher] = lambda: fetch
+            task = asyncio.create_task(
+                api_client.get(
+                    "/auth/google/callback",
+                    params={"state": state, "code": "c"},
+                    follow_redirects=False,
+                )
+            )
+            # 콜백이 이 커넥션의 행 잠금에 막혀 기다리기 시작한 것을 관측한다. 공용 헬퍼
+            # `_wait_until_lock_wait` 는 INSERT 대기(users 테이블 쓰기 잠금을 쥔 채 대기)만 보므로
+            # 쓰기 잠금 없이 행 잠금을 기다리는 SELECT 대기는 잡지 못한다.
+            async with asyncio.timeout(5.0):
+                while True:
+                    blocked = await interloper.scalar(
+                        sa.text(
+                            "SELECT count(*) FROM pg_locks"
+                            " WHERE NOT granted AND :pid = ANY(pg_blocking_pids(pid))"
+                        ),
+                        {"pid": interloper_pid},
+                    )
+                    if blocked:
+                        break
+                    await asyncio.sleep(0.01)
+            await interloper.commit()
+            resp = await task
+
+            assert resp.status_code == 302
+            assert resp.headers["location"] == (
+                f"{settings.frontend_base_url}/login?error=google_email_taken&method=kakao"
+            )
+            assert settings.session_cookie_name not in resp.cookies
+            row = (await interloper.execute(select(User).where(User.id == user_id))).one()
+            assert row.kakao_id == kakao_id
+            assert row.google_sub is None
+        finally:
+            app.dependency_overrides.pop(get_google_profile_fetcher, None)
+            api_client.cookies.clear()
+            await interloper.rollback()
+            await interloper.execute(delete(User).where(User.id == user_id))
+            await interloper.commit()
 
 
 async def test_signup_refuses_email_of_kakao_account(
@@ -1003,6 +1126,51 @@ async def test_kakao_unlink_webhook_post_form_erases_member_and_deletes_storage_
     assert await db_session.scalar(select(Asset).where(Asset.storage_key == storage_key)) is None
     listed = s3.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=storage_key.rsplit(".", 1)[0])
     assert listed["KeyCount"] == 0
+
+
+async def test_kakao_unlink_webhook_session_revoke_failure_still_returns_200_and_deletes_storage(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """파기는 세션 폐기 전에 이미 커밋됐고 카카오는 이 알림을 재전송하지 않는다. 세션 폐기(Redis)가
+    실패해도 500 으로 응답하면 남는 것은 빠진 오브젝트 스토리지 삭제뿐이므로, 실패는 기록만 하고
+    삭제 예약까지 마친 뒤 200 이어야 한다."""
+    user = await _kakao_member(db_session)
+    original_email = user.email
+    storage_key = f"assets/generated/{uuid.uuid4()}.png"
+    db_session.add(
+        Asset(
+            owner_user_id=user.id,
+            storage_key=storage_key,
+            kind=AssetKind.GENERATED,
+            status=AssetStatus.READY,
+        )
+    )
+    await db_session.flush()
+
+    async def fail_revoke(user_id: uuid.UUID) -> None:
+        raise ConnectionError("redis down")
+
+    scheduled: list[list[str]] = []
+
+    async def record_deletes(storage_keys: list[str]) -> None:
+        scheduled.append(storage_keys)
+
+    captured: list[str] = []
+    monkeypatch.setattr(auth_router, "revoke_user_sessions", fail_revoke)
+    monkeypatch.setattr(auth_router, "delete_storage_objects_later", record_deletes)
+    monkeypatch.setattr(
+        auth_router,
+        "capture_dependency_failure",
+        lambda exc, *, dependency: captured.append(dependency),
+    )
+
+    resp = await db_client.get(
+        "/auth/kakao/unlink", params={"user_id": user.kakao_id}, headers=_webhook_headers()
+    )
+    assert resp.status_code == 200
+    await _assert_erased_by_webhook(db_session, user, original_email)
+    assert scheduled == [[storage_key, build_thumbnail_key(storage_key)]]
+    assert captured == ["redis"]
 
 
 async def test_kakao_unlink_webhook_post_json_body_is_accepted(
