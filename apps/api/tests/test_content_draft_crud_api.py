@@ -1,13 +1,16 @@
 import io
 import uuid
 from datetime import datetime, timezone, UTC
+from typing import Any
 
 import boto3
 import httpx
 import pytest
 import sqlalchemy as sa
 from PIL import Image
+from sqlalchemy.engine import Result
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import ORMExecuteState
 
 from api.core.config import settings
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -605,6 +608,134 @@ async def test_patch_content_draft_preserves_image_asset_id_set_by_register_endp
     assert row.image_asset_id == asset.id
     assert str(row.blurred_asset_id) == blurred_asset_id
     assert row.trigger_condition == "수정된 조건"
+
+
+async def test_register_after_patch_for_same_new_entity_keeps_one_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """The builder autosaves a freshly added row (no image yet) and then registers its image
+    under the same entity_id. The registration must land on that row, not add a second one —
+    a second row would never be tracked by later PATCHes and would be copied into every
+    published version."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    asset = await _make_asset(
+        db_session, user.id, storage_key_prefix="assets/situational-image/", status=AssetStatus.READY
+    )
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), color=(200, 40, 40)).save(buffer, format="PNG")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=buffer.getvalue())
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    entity_id = uuid.uuid4()
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(situationalImages=[{"id": str(entity_id), "triggerCondition": "자동저장 조건"}]),
+    )
+    assert patch_resp.status_code == 200
+    register_resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={
+            "entityId": str(entity_id),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "등록 조건",
+            "order": 0,
+        },
+    )
+    assert register_resp.status_code == 200
+
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+        )
+    ).all()
+    [row] = rows
+    assert row.entity_id == entity_id
+    assert row.image_asset_id == asset.id
+    assert str(row.blurred_asset_id) == register_resp.json()["blurredAssetId"]
+    assert row.trigger_condition == "등록 조건"
+
+
+async def test_patch_racing_register_for_same_new_entity_keeps_one_row_and_its_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """The race the sequential case can't show: an image registration commits the row
+    *after* this PATCH has read the version's rows (so the PATCH thinks the entity is new)
+    but *before* it writes. The PATCH must update that row's text and order, keep its image,
+    and not fail or add a second row."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    image = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    blurred = await _make_asset(db_session, user.id, kind=AssetKind.BLURRED, status=AssetStatus.READY)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    entity_id = uuid.uuid4()
+    raced = False
+
+    def _register_lands_right_after_patch_reads(orm_execute_state: ORMExecuteState) -> Result[Any] | None:
+        nonlocal raced
+        statement = orm_execute_state.statement
+        if raced or not isinstance(statement, sa.Select):
+            return None
+        if SituationalImage.__table__ not in statement.get_final_froms():
+            return None
+        raced = True
+        # 읽기 결과를 먼저 다 받아 두고, 그 뒤에 경쟁 쓰기를 끼워 넣는다.
+        frozen = orm_execute_state.invoke_statement().freeze()
+        orm_execute_state.session.connection().execute(
+            sa.insert(SituationalImage).values(
+                id=uuid.uuid4(),
+                entity_id=entity_id,
+                content_version_id=version.id,
+                image_asset_id=image.id,
+                blurred_asset_id=blurred.id,
+                trigger_condition="등록 조건",
+                order=0,
+            )
+        )
+        return frozen()
+
+    sa.event.listen(db_session.sync_session, "do_orm_execute", _register_lands_right_after_patch_reads)
+    try:
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft",
+            json=_draft_payload(
+                situationalImages=[
+                    {"id": str(uuid.uuid4()), "triggerCondition": "앞 항목"},
+                    {"id": str(entity_id), "triggerCondition": "자동저장 조건"},
+                ]
+            ),
+        )
+    finally:
+        sa.event.remove(db_session.sync_session, "do_orm_execute", _register_lands_right_after_patch_reads)
+    assert raced
+    assert resp.status_code == 200
+
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage)
+            .where(SituationalImage.content_version_id == version.id, SituationalImage.entity_id == entity_id)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    [row] = rows
+    assert row.image_asset_id == image.id
+    assert row.blurred_asset_id == blurred.id
+    assert row.trigger_condition == "자동저장 조건"
+    assert row.order == 1
 
 
 async def test_patch_content_draft_returns_422_for_mismatched_payload_type(

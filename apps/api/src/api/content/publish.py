@@ -5,19 +5,26 @@ from typing import Any
 from pydantic import BaseModel
 
 from api.chat.prompt_builder import render_prompt_channel
-from api.db.models.character import CharacterVersionDetail
+from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentVersion
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import Ending, StartingSetup, StoryPromptTemplate, StoryVersionDetail
 
 
 def validate_character_publish(
-    content: Content, version: ContentVersion, detail: CharacterVersionDetail
+    content: Content,
+    version: ContentVersion,
+    detail: CharacterVersionDetail,
+    situational_images: Sequence[SituationalImage],
 ) -> list[str]:
     """Pure required-field check for
     character publish — DB I/O happens in the router, this only inspects already-loaded
     rows (same split as api/chat/stats.py's apply_stat_changes). Returns the camelCase
     field names FE would recognize as missing; empty list means the draft is publishable.
+
+    `situationalImages` is reported once when any row still has no image: autosave creates
+    the row before the image is uploaded, and a published row without one is a slot the chat
+    can never show.
     """
     missing: list[str] = []
     if not detail.name:
@@ -30,6 +37,8 @@ def validate_character_publish(
         missing.append("intro")
     if not detail.character_prompt:
         missing.append("characterPrompt")
+    if any(image.image_asset_id is None for image in situational_images):
+        missing.append("situationalImages")
     if not version.detail_description:
         missing.append("description")
     if content.genre_id is None:

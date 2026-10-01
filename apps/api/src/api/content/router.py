@@ -9,6 +9,7 @@ from typing import Literal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import and_, any_, func, or_, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -850,8 +851,22 @@ async def _update_character_draft(
     for order, item in enumerate(payload.situational_images):
         existing_image = existing_images.get(item.id)
         if existing_image is None:
-            existing_image = SituationalImage(entity_id=item.id, content_version_id=version.id)
-            db.add(existing_image)
+            # 위에서 읽은 뒤 이미지 등록(`register_situational_image`)이 같은 항목을 먼저 만들었을 수
+            # 있다. 그때는 그 행의 글·순서만 갱신하고 이미지 칸은 등록 쪽 값을 그대로 둔다.
+            await db.execute(
+                insert(SituationalImage)
+                .values(
+                    entity_id=item.id,
+                    content_version_id=version.id,
+                    trigger_condition=item.trigger_condition,
+                    order=order,
+                )
+                .on_conflict_do_update(
+                    constraint="ux_situational_images_version_entity",
+                    set_={"trigger_condition": item.trigger_condition, "order": order},
+                )
+            )
+            continue
         existing_image.trigger_condition = item.trigger_condition
         existing_image.order = order
 
@@ -1320,21 +1335,16 @@ async def reset_content_draft(
 
 
 async def _load_publish_filter_images(
-    db: AsyncSession, detail: CharacterVersionDetail, version_id: uuid.UUID
+    db: AsyncSession, detail: CharacterVersionDetail, situational_images: Sequence[SituationalImage]
 ) -> list[tuple[bytes, str]]:
     """썸네일(대표이미지) + 이 버전에 등록된 상황별 이미지 원본을 전부 내려받아
     (바이트, MIME 타입) 쌍으로 반환한다 — LLMClient.generate_structured()의 멀티모달
-    images 인자로 그대로 전달된다. 이미지 원본이 아직 없는 상황별 이미지 슬롯은
-    건너뛴다(situationalImageSchema의 image가 nullable이라 발행 필수 항목이 아님)."""
+    images 인자로 그대로 전달된다. 발행 검증이 이미지 없는 상황별 이미지 행을 먼저 거부하므로
+    아래 `is not None` 은 타입을 좁힐 뿐이다."""
     asset_ids: list[uuid.UUID] = []
     if detail.thumbnail_asset_id is not None:
         asset_ids.append(detail.thumbnail_asset_id)
 
-    situational_images = (
-        await db.scalars(
-            select(SituationalImage).where(SituationalImage.content_version_id == version_id)
-        )
-    ).all()
     asset_ids.extend(
         image.image_asset_id for image in situational_images if image.image_asset_id is not None
     )
@@ -1410,13 +1420,16 @@ async def _publish_character_content(
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 
-    missing_fields = validate_character_publish(content, version, detail)
+    situational_images = (
+        await db.scalars(select(SituationalImage).where(SituationalImage.content_version_id == version.id))
+    ).all()
+    missing_fields = validate_character_publish(content, version, detail, situational_images)
     if missing_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
         )
 
-    filter_images = await _load_publish_filter_images(db, detail, version.id)
+    filter_images = await _load_publish_filter_images(db, detail, situational_images)
     filter_prompt = build_character_publish_filter_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,

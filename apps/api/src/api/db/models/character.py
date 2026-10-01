@@ -1,7 +1,7 @@
 import uuid
 from typing import Any
 
-from sqlalchemy import ForeignKey, Integer, Text, Uuid
+from sqlalchemy import ForeignKey, Integer, Text, UniqueConstraint, Uuid
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -55,3 +55,10 @@ class SituationalImage(Base):
     )
     trigger_condition: Mapped[str] = mapped_column(Text, nullable=False)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # 한 버전에서 entity_id 는 항목 하나를 가리킨다. 자동저장 PATCH 와 이미지 등록이 같은 새 항목을
+    # 거의 동시에 만들면 둘 다 "아직 없다"를 보고 insert 해 행이 둘이 될 수 있었다 — 두 쓰기 경로는
+    # 이 제약을 대상으로 `ON CONFLICT DO UPDATE` 한다.
+    __table_args__ = (
+        UniqueConstraint("content_version_id", "entity_id", name="ux_situational_images_version_entity"),
+    )

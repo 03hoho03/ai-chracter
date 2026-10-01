@@ -388,6 +388,44 @@ async def test_publish_rejects_incomplete_draft_with_missing_fields(
     }
 
 
+async def test_publish_character_rejects_situational_image_without_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """The builder autosaves a situational-image row before its image is uploaded. Publishing
+    with such a row would ship a slot the chat can never show, so publish names it as missing
+    instead — before the moderation call, and without touching the draft."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=version.id,
+            trigger_condition="이미지를 아직 안 올린 상황",
+            order=1,
+        )
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["situationalImages"]}
+    assert fake.received_prompt is None
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
 async def test_publish_rejects_when_filter_fails_and_leaves_draft_unchanged(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:

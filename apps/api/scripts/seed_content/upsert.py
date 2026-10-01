@@ -142,6 +142,8 @@ async def upsert_character(
             intro=payload.intro,
             character_prompt=payload.character_prompt,
         ),
+        # 시드는 항목마다 이미지 자산을 만들어 붙이므로 이미지 없는 상황별 이미지 행이 생기지 않는다.
+        [],
     )
     if missing:
         raise SeedPublishError(f"{slug}: 발행 검증 실패 — 비어 있는 필드: {', '.join(missing)}")

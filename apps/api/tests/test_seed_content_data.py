@@ -52,6 +52,8 @@ def test_every_seed_character_passes_publish_validation() -> None:
                 intro=payload.intro,
                 character_prompt=payload.character_prompt,
             ),
+            # 시드는 항목마다 이미지 자산을 만들어 붙이므로 이미지 없는 상황별 이미지 행이 생기지 않는다.
+            [],
         )
         assert missing == [], f"{character.slug}: 발행 검증 실패 — {missing}"
 

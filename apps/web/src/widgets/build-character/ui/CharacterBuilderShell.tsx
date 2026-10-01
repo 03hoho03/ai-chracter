@@ -65,6 +65,8 @@ const MISSING_FIELD_LABELS = {
   thumbnailAssetId: "대표 이미지",
   intro: "인트로",
   characterPrompt: "캐릭터 프롬프트",
+  // 이미지를 올리지 않은 상황별 이미지 항목이 하나라도 있으면 서버가 이 키를 한 번 준다.
+  situationalImages: "상황별 이미지",
   description: "등록 설명",
   genreId: "장르",
   target: "타겟",
@@ -86,6 +88,7 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<CharacterBuilderFormV
   thumbnailAssetId: "profile.image",
   intro: "intro.firstMessage",
   characterPrompt: "prompt.characterPrompt",
+  situationalImages: "situationalImages",
   description: "registration.description",
   genreId: "registration.genre",
   target: "registration.target",

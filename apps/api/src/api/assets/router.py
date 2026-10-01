@@ -3,6 +3,7 @@ from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -179,6 +180,16 @@ async def register_situational_image(
     content = await db.get(Content, content_version.content_id)
     if content is None or content.creator_user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the content creator")
+    # 발행본은 독자가 대화하는 버전이고 발행 심사를 이미 통과한 상태다 — 여기서 이미지를 바로
+    # 바꿔 넣으면 심사를 건너뛴다. 이미지는 초안에만 등록하고 발행으로 넘긴다.
+    if content_version.published_at is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Content version is not a draft")
+    # 상황별 이미지는 캐릭터만 읽는다. 스토리 버전에 붙은 행은 아무도 보지도 정리하지도 않는다.
+    if content.type != ContentType.CHARACTER:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Situational images are only for character content",
+        )
 
     original_bytes = await run_in_threadpool(download_object, asset.storage_key)
     blurred_bytes = await run_in_threadpool(generate_blurred_image, original_bytes)
@@ -210,22 +221,20 @@ async def register_situational_image(
         )
     )
 
-    situational_image = await db.scalar(
-        select(SituationalImage).where(
-            SituationalImage.content_version_id == payload.content_version_id,
-            SituationalImage.entity_id == payload.entity_id,
-        )
+    # 읽고 나서 쓰면 그 사이 자동저장 PATCH 가 같은 새 항목을 만들 수 있다 — 읽지 않고 한 문장으로
+    # upsert 한다. 위에서 add 한 블러 자산이 이 행의 FK 대상이라 먼저 flush 한다.
+    await db.flush()
+    image_values = {
+        "image_asset_id": asset_id,
+        "blurred_asset_id": blurred_asset_id,
+        "trigger_condition": payload.trigger_condition,
+        "order": payload.order,
+    }
+    await db.execute(
+        insert(SituationalImage)
+        .values(entity_id=payload.entity_id, content_version_id=payload.content_version_id, **image_values)
+        .on_conflict_do_update(constraint="ux_situational_images_version_entity", set_=image_values)
     )
-    if situational_image is None:
-        situational_image = SituationalImage(
-            entity_id=payload.entity_id, content_version_id=payload.content_version_id
-        )
-        db.add(situational_image)
-
-    situational_image.image_asset_id = asset_id
-    situational_image.blurred_asset_id = blurred_asset_id
-    situational_image.trigger_condition = payload.trigger_condition
-    situational_image.order = payload.order
 
     await db.commit()
 

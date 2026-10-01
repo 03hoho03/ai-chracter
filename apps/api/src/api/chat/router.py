@@ -432,9 +432,10 @@ async def _match_situational_image(
                         .where(
                             SituationalImage.content_version_id == room.content_version_id,
                             # `PATCH /contents/{id}/draft`가
-                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고
-                            # (character.py의 SituationalImage docstring), 발행 검증은 이 필드를
-                            # 보지 않아 NULL이 발행본까지 간다. 그런 후보를 판단 프롬프트에
+                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있다
+                            # (character.py의 SituationalImage docstring). 지금은 발행 검증이 그런
+                            # 행을 거부하지만, 그 검증이 생기기 전에 발행된 버전에는 NULL 행이 남아
+                            # 있을 수 있다. 그런 후보를 판단 프롬프트에
                             # 싣지 않는다 — LLM이 존재하지 않는 이미지를 매칭할 원인을 여기서 끊는다.
                             SituationalImage.image_asset_id.is_not(None),
                         )
@@ -2143,7 +2144,8 @@ async def get_image_archive(
                 SituationalImage.content_version_id == content.current_published_version_id,
                 # `PATCH /contents/{id}/draft`가 이미지 파일
                 # 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고(SituationalImage
-                # docstring), 발행 검증은 이 필드를 보지 않아 NULL이 발행본까지 간다. 아직
+                # docstring), 발행 검증이 그런 행을 거부하기 전에 발행된 버전에는 NULL 행이
+                # 남아 있을 수 있다. 아직
                 # 이미지가 없는 슬롯은 보관함에도 내보내지 않는다 — `_match_situational_image`의
                 # 후보 필터와 같은 판단이다. register_situational_image가
                 # image_asset_id/blurred_asset_id를 항상 함께 채우므로(assets/router.py) 이
@@ -2171,8 +2173,9 @@ async def get_image_archive(
         asset_id = image.image_asset_id if exposed else image.blurred_asset_id
         # The query filter above guarantees both asset id columns are non-null for every
         # row reaching here — this assert only narrows the
-        # type. (The previous comment claimed publish validation guaranteed this;
-        # that was false — validate_character_publish never looks at situational_images.)
+        # type. Publish validation alone can't be relied on for it: versions published before
+        # validate_character_publish started checking situational images may still hold rows
+        # without an image.
         assert asset_id is not None
         asset = await db.get(Asset, asset_id)
         assert asset is not None
