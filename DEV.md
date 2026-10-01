@@ -80,6 +80,11 @@ https://<호스트>.<테일넷>.ts.net/s3/   → localhost:5001  (moto, 썸네�
    ```
    https://<호스트>.<테일넷>.ts.net/api/auth/google/callback
    ```
+   카카오 로그인은 카카오 디벨로퍼스 콘솔에 tailscale 오리진 3벌의 `https://<호스트>.<테일넷>.ts.net/api/auth/kakao/callback`
+   이 이미 등록돼 있다(localhost 콜백은 등록돼 있지 않으니 카카오 로그인은 tailscale 오리진에서 확인한다). 키 3개
+   (`KAKAO_REST_API_KEY`·`KAKAO_CLIENT_SECRET`·`KAKAO_ADMIN_KEY`)는 `apps/api/.env` 에 넣는다 — 비어 있으면 카카오
+   로그인 버튼이 `?error=kakao_failed` 로 로그인 화면에 돌아온다(정상 동작). 연결 해제 웹훅은 운영 URL 만 등록돼 있어
+   로컬에서는 오지 않는다.
 5. **env 전환** — `apps/api/.env`:
    ```sh
    API_BASE_URL=https://<호스트>.<테일넷>.ts.net/api
