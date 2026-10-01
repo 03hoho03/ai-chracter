@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <title>또나 favicon.ico 조각</title>
+    <!--
+      apps/web/public/favicon.ico 에 들어갈 16·32·48px PNG를 굽는 원본. favicon.svg를 창 크기에 맞춰
+      그리기만 하므로 generate.sh가 창 크기를 바꿔 가며 세 번 찍는다. 그림 자체의 원본은 favicon.svg다.
+    -->
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+      }
+
+      img {
+        display: block;
+        width: 100vw;
+        height: 100vh;
+      }
+    </style>
+  </head>
+  <body>
+    <img src="/apps/web/public/favicon.svg" alt="또나" />
+  </body>
+</html>
