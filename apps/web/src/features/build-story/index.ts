@@ -40,6 +40,7 @@ export {
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
+export { triggerKeywordError } from "./model/keywordNoteEdit";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
@@ -52,6 +53,8 @@ export {
   endingSchema,
   keywordNoteSchema,
   LOGIC_OPERATORS,
+  MAX_KEYWORD_NOTE_CONTENT_LENGTH,
+  MAX_KEYWORD_NOTES,
   MAX_MEDIA_BOOK_CELLS,
   MAX_MEDIA_BOOK_NAME_LENGTH,
   MAX_MEDIA_BOOK_SITUATION_LENGTH,

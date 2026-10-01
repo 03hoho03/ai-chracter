@@ -153,11 +153,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       if (mediaBookSchema.safeParse(values.mediaBook).success) toast.success("임시저장했어요.");
       else toast.warning("임시저장했어요. 미디어 북은 고칠 항목이 있어 이번에는 저장하지 않았어요.");
     } catch (error) {
-      toast.error(
-        isMediaBookPositionTakenError(error)
-          ? MEDIA_BOOK_POSITION_TAKEN_MESSAGE
-          : "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.",
-      );
+      toast.error(storyAutosaveErrorMessage(error) ?? "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
     }
   }
 
