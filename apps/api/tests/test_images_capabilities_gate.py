@@ -674,6 +674,14 @@ async def test_admission_is_released_when_the_job_finishes_so_a_later_request_is
         first = await db_client.post("/images/generate", json=_generate_payload())
         assert first.status_code == 202
         await _wait_for_job_to_finish(first.json()["jobId"], user.id)
+        # 잡의 종료 상태는 `_run_generation`이 반환하기 전에 Redis에 기록되고, admission 반납은 그 뒤
+        # `finally`에서 일어난다. 상태가 보이는 순간과 반납 사이에 백그라운드 태스크가 아직 재개되지 않은
+        # 틈이 있어, 전체 스위트처럼 부하가 있을 때 바로 단언하면 간헐적으로 `0 == 1`이 났다 — 반납이
+        # 실제로 일어날 때까지 기다린 뒤 "정확히 한 번"을 단언한다.
+        for _ in range(200):
+            if release_calls["n"] > 0:
+                break
+            await asyncio.sleep(0.01)
 
         assert release_calls["n"] == 1
 
