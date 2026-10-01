@@ -18,6 +18,8 @@ import { ContentDetailModalOutlet } from "@/widgets/content-detail";
 import { Header } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
 import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
+import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
+import { ContentComments } from "@/widgets/content-comments";
 
 export type RouterContext = {
   queryClient: QueryClient;
@@ -50,7 +52,10 @@ function RootComponent() {
     <>
       {!isBuilderRoute && <Header />}
       <Outlet />
-      <ContentDetailModalOutlet />
+      <ContentDetailModalOutlet renderComments={(id) => <ContentComments key={id} contentId={id} />} />
+      <CommentActionModal />
+      <CommentLoginModal />
+      <CommentReportModal />
       <ReportContentModal />
       <ConfirmChatRoomActionModal />
       <PlayGuideModal />

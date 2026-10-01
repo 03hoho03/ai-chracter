@@ -130,7 +130,7 @@ async def test_list_notifications_returns_empty_list_when_none_exist(
     await _login_as(db_client, user.id)
     resp = await db_client.get("/notifications")
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json() == {"items": [], "nextCursor": None, "unreadCount": 0}
 
 
 async def test_list_notifications_returns_own_notifications_newest_first(
@@ -155,7 +155,7 @@ async def test_list_notifications_returns_own_notifications_newest_first(
     resp = await db_client.get("/notifications")
     assert resp.status_code == 200
 
-    body = resp.json()
+    body = resp.json()["items"]
     assert [item["id"] for item in body] == [str(newer.id), str(older.id)]
     first = body[0]
     assert first["type"] == "moderation-action"
@@ -181,7 +181,7 @@ async def test_list_notifications_excludes_other_users_notifications(
     await _login_as(db_client, owner.id)
     resp = await db_client.get("/notifications")
     assert resp.status_code == 200
-    assert resp.json() == []
+    assert resp.json() == {"items": [], "nextCursor": None, "unreadCount": 0}
 
 
 async def test_mark_notification_read_requires_login(db_client: httpx.AsyncClient) -> None:
@@ -257,7 +257,7 @@ async def test_list_notifications_includes_null_content_notification(
     resp = await db_client.get("/notifications")
     assert resp.status_code == 200
 
-    body = resp.json()
+    body = resp.json()["items"]
     assert len(body) == 1
     assert body[0]["id"] == str(notification.id)
     assert body[0]["type"] == "user-warned"
@@ -300,7 +300,7 @@ async def test_list_notifications_fills_title_for_notice_type(
     resp = await db_client.get("/notifications")
     assert resp.status_code == 200
 
-    body = resp.json()
+    body = resp.json()["items"]
     assert len(body) == 1
     assert body[0]["id"] == str(notification.id)
     assert body[0]["type"] == "notice"
@@ -327,7 +327,7 @@ async def test_list_notifications_query_count_independent_of_notice_count(
     with _count_queries() as get_count:
         resp = await db_client.get("/notifications")
     assert resp.status_code == 200
-    assert len(resp.json()) == 1
+    assert len(resp.json()["items"]) == 1
     query_count_with_one_notice = get_count()
 
     for i in range(2, 7):
@@ -337,5 +337,5 @@ async def test_list_notifications_query_count_independent_of_notice_count(
     with _count_queries() as get_count:
         resp = await db_client.get("/notifications")
     assert resp.status_code == 200
-    assert len(resp.json()) == 6
+    assert len(resp.json()["items"]) == 6
     assert get_count() == query_count_with_one_notice

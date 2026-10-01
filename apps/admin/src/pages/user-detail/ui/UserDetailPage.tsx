@@ -139,7 +139,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>대상 작품</TableHead>
+                  <TableHead>대상 작품·댓글</TableHead>
                   <TableHead>사유</TableHead>
                   <TableHead>처리상태</TableHead>
                   <TableHead>신고일시</TableHead>
@@ -198,6 +198,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                       ) : (
                         "-"
                       )}
+                      {!!log.targetCommentId && <p className="mt-1 break-all text-xs">댓글 {log.targetCommentId}</p>}
                     </TableCell>
                     <TableCell className="text-muted-foreground">{reasonCategoryLabel(log.reasonCategory)}</TableCell>
                     <TableCell className="text-muted-foreground">{log.reasonText || "-"}</TableCell>

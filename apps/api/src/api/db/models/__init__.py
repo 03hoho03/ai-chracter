@@ -12,6 +12,16 @@ from api.db.models.chat import (
     StoryEndingUnlock,
 )
 from api.db.models.clover import CloverLedger, CloverLot
+from api.db.models.comments import (
+    Comment,
+    CommentLike,
+    CommentMention,
+    CommentModerationAction,
+    CommentMute,
+    CommentNotificationPreference,
+    CommentReport,
+    CommentSticker,
+)
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -75,6 +85,14 @@ __all__ = [
     "ChatRoomStat",
     "CloverLedger",
     "CloverLot",
+    "Comment",
+    "CommentLike",
+    "CommentMention",
+    "CommentModerationAction",
+    "CommentMute",
+    "CommentNotificationPreference",
+    "CommentReport",
+    "CommentSticker",
     "Content",
     "ContentTarget",
     "ContentType",

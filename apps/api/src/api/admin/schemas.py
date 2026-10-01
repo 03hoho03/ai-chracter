@@ -207,6 +207,7 @@ class AdminUserReportItem(CamelModel):
 
 
 class AdminUserActionLogItem(CamelModel):
+    target_comment_id: uuid.UUID | None
     id: uuid.UUID
     action_type: AdminActionType
     target_content_id: uuid.UUID | None

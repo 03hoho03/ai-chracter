@@ -25,6 +25,7 @@ async def record_admin_action(
     target_user_id: uuid.UUID | None = None,
     target_content_id: uuid.UUID | None = None,
     target_chat_room_id: uuid.UUID | None = None,
+    target_comment_id: uuid.UUID | None = None,
     reason_category: str | None = None,
     reason_text: str = "",
 ) -> None:
@@ -45,6 +46,7 @@ async def record_admin_action(
             target_user_id=target_user_id,
             target_content_id=target_content_id,
             target_chat_room_id=target_chat_room_id,
+            target_comment_id=target_comment_id,
             reason_category=reason_category,
             reason_text=reason_text,
         )

@@ -6,20 +6,23 @@ import { CONTENT_TYPE_LABELS, MODERATION_STATUS_LABELS } from "@/entities/admin-
 import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+import { CommentReportDetailBody } from "./CommentReportDetailBody";
+
 type ReportDetailPageProps = {
   reportId: string;
+  target: "content" | "comment";
 }
 
-export function ReportDetailPage({ reportId }: ReportDetailPageProps) {
+export function ReportDetailPage({ reportId, target }: ReportDetailPageProps) {
   return (
     <main className="mx-auto flex max-w-3xl flex-col gap-6 px-6 py-10">
       <Button asChild variant="outline" size="sm" className="self-start">
-        <Link to="/reports">목록으로</Link>
+        <Link to="/reports" search={{ target }}>목록으로</Link>
       </Button>
 
       <h1 className="text-2xl font-bold tracking-tight text-foreground">신고 상세</h1>
 
-      <ReportDetailBody reportId={reportId} />
+      {target === "comment" ? <CommentReportDetailBody reportId={reportId} /> : <ReportDetailBody reportId={reportId} />}
     </main>
   );
 }

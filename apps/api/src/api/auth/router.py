@@ -10,6 +10,8 @@ from starlette.concurrency import run_in_threadpool
 
 from api.assets.router import collect_asset_usages
 from api.auth.age import is_under_minimum_age
+from api.comments.access import lock_active_user
+from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.auth.emails import send_password_reset_email, send_verification_code_email
 from api.auth.google_oauth import (
     GoogleProfile,
@@ -560,10 +562,8 @@ async def withdraw(
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> None:
-    user = await db.get(User, user_id)
-    if user is None or user.deleted_at is not None:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-
+    user = await lock_active_user(db, user_id)
+    await lock_withdrawal_contents(db, user_id)
     now = datetime.now(UTC)
     original_email = user.email
 
@@ -610,6 +610,7 @@ async def withdraw(
         .where(Content.creator_user_id == user_id)
         .values(visibility=ContentVisibility.PRIVATE)
     )
+    await erase_user_comments(db, user_id, now)
 
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
     await delete_chat_rooms(db, room_ids)

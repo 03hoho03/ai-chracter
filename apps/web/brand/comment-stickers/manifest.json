@@ -1,0 +1,66 @@
+[
+  {
+    "id": "ddona-hello",
+    "name": "인사",
+    "alt": "손을 흔들며 인사하는 또나",
+    "imagePath": "/comment-stickers/ddona-hello.webp",
+    "source": "ddona-hello.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-thanks",
+    "name": "감사",
+    "alt": "두 손을 모아 감사하는 또나",
+    "imagePath": "/comment-stickers/ddona-thanks.webp",
+    "source": "ddona-thanks.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-cheer",
+    "name": "응원",
+    "alt": "양 주먹을 올려 응원하는 또나",
+    "imagePath": "/comment-stickers/ddona-cheer.webp",
+    "source": "ddona-cheer.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-happy",
+    "name": "기쁨",
+    "alt": "양팔을 들고 기뻐하는 또나",
+    "imagePath": "/comment-stickers/ddona-happy.webp",
+    "source": "ddona-happy.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-laugh",
+    "name": "웃음",
+    "alt": "눈을 감고 배를 잡으며 웃는 또나",
+    "imagePath": "/comment-stickers/ddona-laugh.webp",
+    "source": "ddona-laugh.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-moved",
+    "name": "감동",
+    "alt": "눈물을 글썽이며 감동한 또나",
+    "imagePath": "/comment-stickers/ddona-moved.webp",
+    "source": "ddona-moved.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-surprised",
+    "name": "놀람",
+    "alt": "눈을 크게 뜨고 놀란 또나",
+    "imagePath": "/comment-stickers/ddona-surprised.webp",
+    "source": "ddona-surprised.png",
+    "isSelectable": true
+  },
+  {
+    "id": "ddona-sad",
+    "name": "아쉬움",
+    "alt": "팔을 늘어뜨리고 아쉬워하는 또나",
+    "imagePath": "/comment-stickers/ddona-sad.webp",
+    "source": "ddona-sad.png",
+    "isSelectable": true
+  }
+]

@@ -4206,6 +4206,1281 @@
         }
       }
     },
+    "/comment-stickers": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Get Stickers",
+        "operationId": "get_stickers_comment_stickers_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentStickerCatalogResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comments": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Comments",
+        "operationId": "list_comments_contents__content_id__comments_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "latest",
+                "popular"
+              ],
+              "type": "string",
+              "default": "latest",
+              "title": "Sort"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Post Comment",
+        "operationId": "post_comment_contents__content_id__comments_post",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comments/{root_id}/replies": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Replies",
+        "operationId": "list_replies_contents__content_id__comments__root_id__replies_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "root_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Root Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "after",
+                "before"
+              ],
+              "type": "string",
+              "default": "after",
+              "title": "Direction"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentRepliesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comments/{comment_id}/location": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Locate Comment",
+        "operationId": "locate_comment_contents__content_id__comments__comment_id__location_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentLocationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comments/hidden": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Hidden Comments",
+        "operationId": "list_hidden_comments_contents__content_id__comments_hidden_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentHiddenListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comment-mention-candidates": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Mention Candidates",
+        "operationId": "list_mention_candidates_contents__content_id__comment_mention_candidates_get",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "",
+              "title": "Q"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentMentionCandidatesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comments/{comment_id}": {
+      "patch": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Patch Comment",
+        "operationId": "patch_comment_comments__comment_id__patch",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Remove Comment",
+        "operationId": "remove_comment_comments__comment_id__delete",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comments/{comment_id}/like": {
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Like Comment",
+        "operationId": "like_comment_comments__comment_id__like_put",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentLikeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Unlike Comment",
+        "operationId": "unlike_comment_comments__comment_id__like_delete",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentLikeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/comment-settings": {
+      "patch": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Patch Comment Settings",
+        "operationId": "patch_comment_settings_contents__content_id__comment_settings_patch",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentSettingsUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentSettingsResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contents/{content_id}/pinned-comment": {
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Pin Comment",
+        "operationId": "pin_comment_contents__content_id__pinned_comment_put",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentPinRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPinResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Unpin Comment",
+        "operationId": "unpin_comment_contents__content_id__pinned_comment_delete",
+        "parameters": [
+          {
+            "name": "content_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Content Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentPinResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comments/{comment_id}/creator-hidden": {
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Hide Creator Comment",
+        "operationId": "hide_creator_comment_comments__comment_id__creator_hidden_put",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Restore Creator Comment",
+        "operationId": "restore_creator_comment_comments__comment_id__creator_hidden_delete",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/comment-mutes": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "List Comment Mutes",
+        "operationId": "list_comment_mutes_me_comment_mutes_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentMutesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/comment-mutes/{target_id}": {
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Mute Comment User",
+        "operationId": "mute_comment_user_me_comment_mutes__target_id__put",
+        "parameters": [
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Unmute Comment User",
+        "operationId": "unmute_comment_user_me_comment_mutes__target_id__delete",
+        "parameters": [
+          {
+            "name": "target_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Target Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/me/comment-notification-preferences": {
+      "get": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Get Comment Notification Preferences",
+        "operationId": "get_comment_notification_preferences_me_comment_notification_preferences_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentNotificationPreferencesResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "comments"
+        ],
+        "summary": "Put Comment Notification Preferences",
+        "operationId": "put_comment_notification_preferences_me_comment_notification_preferences_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentNotificationPreferencesUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentNotificationPreferencesResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/comments/{comment_id}/reports": {
+      "post": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "Report Comment",
+        "operationId": "report_comment_comments__comment_id__reports_post",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentReportCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommentReportResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/comment-reports": {
+      "get": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "List Comment Reports",
+        "operationId": "list_comment_reports_admin_comment_reports_get",
+        "parameters": [
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "title": "Page"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ReportStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentReportListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/comment-reports/{report_id}": {
+      "get": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "Get Comment Report",
+        "operationId": "get_comment_report_admin_comment_reports__report_id__get",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/comment-reports/{report_id}/actions": {
+      "post": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "Act On Comment Report",
+        "operationId": "act_on_comment_report_admin_comment_reports__report_id__actions_post",
+        "parameters": [
+          {
+            "name": "report_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Report Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentReportActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminCommentReportDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/comments/{comment_id}/moderator-hidden": {
+      "put": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "Hide Comment As Moderator",
+        "operationId": "hide_comment_as_moderator_admin_comments__comment_id__moderator_hidden_put",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentModerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "comment-moderation"
+        ],
+        "summary": "Restore Comment As Moderator",
+        "operationId": "restore_comment_as_moderator_admin_comments__comment_id__moderator_hidden_delete",
+        "parameters": [
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminCommentModerationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/notifications": {
       "get": {
         "tags": [
@@ -4213,17 +5488,62 @@
         ],
         "summary": "List My Notifications",
         "operationId": "list_my_notifications_notifications_get",
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/NotificationResponse"
-                  },
-                  "type": "array",
-                  "title": "Response List My Notifications Notifications Get"
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/unread-count": {
+      "get": {
+        "tags": [
+          "moderation"
+        ],
+        "summary": "Get Notification Unread Count",
+        "operationId": "get_notification_unread_count_notifications_unread_count_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationUnreadCountResponse"
                 }
               }
             }
@@ -6758,6 +8078,415 @@
         ],
         "title": "AdminCloverLedgerListResponse"
       },
+      "AdminCommentContentContextResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "detailDescription": {
+            "type": "string",
+            "title": "Detaildescription"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "thumbnailUrl",
+          "detailDescription",
+          "visibility",
+          "moderationStatus"
+        ],
+        "title": "AdminCommentContentContextResponse"
+      },
+      "AdminCommentCurrentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "rootCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootcommentid"
+          },
+          "replyToCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replytocommentid"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAuthorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "sticker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentStickerResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAuthorResponse"
+            },
+            "type": "array",
+            "title": "Mentions"
+          },
+          "isSpoiler": {
+            "type": "boolean",
+            "title": "Isspoiler"
+          },
+          "inheritedSpoiler": {
+            "type": "boolean",
+            "title": "Inheritedspoiler"
+          },
+          "effectiveSpoiler": {
+            "type": "boolean",
+            "title": "Effectivespoiler"
+          },
+          "creatorHidden": {
+            "type": "boolean",
+            "title": "Creatorhidden"
+          },
+          "moderatorHidden": {
+            "type": "boolean",
+            "title": "Moderatorhidden"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "deletedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Deletedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "contentId",
+          "rootCommentId",
+          "replyToCommentId",
+          "author",
+          "body",
+          "sticker",
+          "mentions",
+          "isSpoiler",
+          "inheritedSpoiler",
+          "effectiveSpoiler",
+          "creatorHidden",
+          "moderatorHidden",
+          "createdAt",
+          "updatedAt",
+          "deletedAt"
+        ],
+        "title": "AdminCommentCurrentResponse"
+      },
+      "AdminCommentModerationRequest": {
+        "properties": {
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "adminComment"
+        ],
+        "title": "AdminCommentModerationRequest"
+      },
+      "AdminCommentReportActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "hide",
+              "restore",
+              "reject"
+            ],
+            "title": "Action"
+          },
+          "adminComment": {
+            "type": "string",
+            "title": "Admincomment"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "action",
+          "adminComment"
+        ],
+        "title": "AdminCommentReportActionRequest"
+      },
+      "AdminCommentReportDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "reporterUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reporteruserid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "resolvedByAdminId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedbyadminid"
+          },
+          "resolvedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolvedat"
+          },
+          "content": {
+            "$ref": "#/components/schemas/AdminCommentContentContextResponse"
+          },
+          "comment": {
+            "$ref": "#/components/schemas/AdminCommentCurrentResponse"
+          },
+          "root": {
+            "$ref": "#/components/schemas/AdminCommentCurrentResponse"
+          },
+          "replyTo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminCommentCurrentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/CommentReportEvidenceResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "reasonCategory",
+          "reporterUserId",
+          "status",
+          "createdAt",
+          "resolvedByAdminId",
+          "resolvedAt",
+          "content",
+          "comment",
+          "root",
+          "replyTo",
+          "evidence"
+        ],
+        "title": "AdminCommentReportDetailResponse"
+      },
+      "AdminCommentReportListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "commentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentid"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "contentName": {
+            "type": "string",
+            "title": "Contentname"
+          },
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "evidenceExpiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Evidenceexpiresat"
+          },
+          "evidenceAvailable": {
+            "type": "boolean",
+            "title": "Evidenceavailable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "commentId",
+          "contentId",
+          "contentType",
+          "contentName",
+          "reasonCategory",
+          "status",
+          "createdAt",
+          "evidenceExpiresAt",
+          "evidenceAvailable"
+        ],
+        "title": "AdminCommentReportListItem"
+      },
+      "AdminCommentReportListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminCommentReportListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "totalPages": {
+            "type": "integer",
+            "title": "Totalpages"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "page",
+          "totalPages",
+          "totalCount"
+        ],
+        "title": "AdminCommentReportListResponse"
+      },
       "AdminContentActionRequest": {
         "properties": {
           "action": {
@@ -8826,6 +10555,18 @@
       },
       "AdminUserActionLogItem": {
         "properties": {
+          "targetCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetcommentid"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -8836,6 +10577,9 @@
             "enum": [
               "appeal-accept",
               "chat-view",
+              "comment-hide",
+              "comment-report-reject",
+              "comment-restore",
               "content-delete",
               "content-lift",
               "content-restrict",
@@ -8902,6 +10646,7 @@
         },
         "type": "object",
         "required": [
+          "targetCommentId",
           "id",
           "actionType",
           "targetContentId",
@@ -10542,6 +12287,1052 @@
           "missions"
         ],
         "title": "CloverMissionsResponse"
+      },
+      "CommentAuthorResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "nickname": {
+            "type": "string",
+            "title": "Nickname"
+          },
+          "profileImageUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profileimageurl"
+          },
+          "isCreator": {
+            "type": "boolean",
+            "title": "Iscreator"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "nickname",
+          "profileImageUrl",
+          "isCreator"
+        ],
+        "title": "CommentAuthorResponse"
+      },
+      "CommentCreateRequest": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "stickerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stickerid"
+          },
+          "isSpoiler": {
+            "type": "boolean",
+            "title": "Isspoiler"
+          },
+          "mentionUserIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Mentionuserids"
+          },
+          "requestId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Requestid"
+          },
+          "rootCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootcommentid"
+          },
+          "replyToCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replytocommentid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "body",
+          "stickerId",
+          "isSpoiler",
+          "mentionUserIds",
+          "requestId",
+          "rootCommentId",
+          "replyToCommentId"
+        ],
+        "title": "CommentCreateRequest"
+      },
+      "CommentHiddenListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "totalCount": {
+            "type": "integer",
+            "title": "Totalcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor",
+          "totalCount"
+        ],
+        "title": "CommentHiddenListResponse"
+      },
+      "CommentLikeResponse": {
+        "properties": {
+          "commentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentid"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "isLiked": {
+            "type": "boolean",
+            "title": "Isliked"
+          }
+        },
+        "type": "object",
+        "required": [
+          "commentId",
+          "likeCount",
+          "isLiked"
+        ],
+        "title": "CommentLikeResponse"
+      },
+      "CommentListResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "creatorUserId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Creatoruserid"
+          },
+          "commentsPaused": {
+            "type": "boolean",
+            "title": "Commentspaused"
+          },
+          "canRead": {
+            "type": "boolean",
+            "const": true,
+            "title": "Canread"
+          },
+          "canParticipate": {
+            "type": "boolean",
+            "title": "Canparticipate"
+          },
+          "canCreate": {
+            "type": "boolean",
+            "title": "Cancreate"
+          },
+          "canManage": {
+            "type": "boolean",
+            "title": "Canmanage"
+          },
+          "visibleCommentCount": {
+            "type": "integer",
+            "title": "Visiblecommentcount"
+          },
+          "hiddenCommentCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hiddencommentcount"
+          },
+          "pinnedComment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentType",
+          "creatorUserId",
+          "commentsPaused",
+          "canRead",
+          "canParticipate",
+          "canCreate",
+          "canManage",
+          "visibleCommentCount",
+          "hiddenCommentCount",
+          "pinnedComment",
+          "items",
+          "nextCursor"
+        ],
+        "title": "CommentListResponse"
+      },
+      "CommentLocationResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "root": {
+            "$ref": "#/components/schemas/CommentResponse"
+          },
+          "target": {
+            "$ref": "#/components/schemas/CommentResponse"
+          },
+          "replies": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentRepliesResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentType",
+          "root",
+          "target",
+          "replies"
+        ],
+        "title": "CommentLocationResponse"
+      },
+      "CommentMentionCandidatesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAuthorResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "CommentMentionCandidatesResponse"
+      },
+      "CommentMutesResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAuthorResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor"
+        ],
+        "title": "CommentMutesResponse"
+      },
+      "CommentNotificationPreferencesResponse": {
+        "properties": {
+          "newComment": {
+            "type": "boolean",
+            "title": "Newcomment"
+          },
+          "reply": {
+            "type": "boolean",
+            "title": "Reply"
+          },
+          "mention": {
+            "type": "boolean",
+            "title": "Mention"
+          }
+        },
+        "type": "object",
+        "required": [
+          "newComment",
+          "reply",
+          "mention"
+        ],
+        "title": "CommentNotificationPreferencesResponse"
+      },
+      "CommentNotificationPreferencesUpdateRequest": {
+        "properties": {
+          "newComment": {
+            "type": "boolean",
+            "title": "Newcomment"
+          },
+          "reply": {
+            "type": "boolean",
+            "title": "Reply"
+          },
+          "mention": {
+            "type": "boolean",
+            "title": "Mention"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "newComment",
+          "reply",
+          "mention"
+        ],
+        "title": "CommentNotificationPreferencesUpdateRequest"
+      },
+      "CommentNotificationTargetResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "contentType": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "commentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentid"
+          },
+          "rootCommentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Rootcommentid"
+          },
+          "availability": {
+            "type": "string",
+            "enum": [
+              "available",
+              "unavailable"
+            ],
+            "title": "Availability"
+          },
+          "isSpoiler": {
+            "type": "boolean",
+            "title": "Isspoiler"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAuthorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bodyPreview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodypreview"
+          },
+          "stickerName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stickername"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "contentType",
+          "commentId",
+          "rootCommentId",
+          "availability",
+          "isSpoiler",
+          "author",
+          "bodyPreview",
+          "stickerName"
+        ],
+        "title": "CommentNotificationTargetResponse"
+      },
+      "CommentPinRequest": {
+        "properties": {
+          "commentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Commentid"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "commentId"
+        ],
+        "title": "CommentPinRequest"
+      },
+      "CommentPinResponse": {
+        "properties": {
+          "pinnedComment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "pinnedComment"
+        ],
+        "title": "CommentPinResponse"
+      },
+      "CommentRepliesResponse": {
+        "properties": {
+          "rootCommentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Rootcommentid"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "previousCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previouscursor"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "visibleReplyCount": {
+            "type": "integer",
+            "title": "Visiblereplycount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rootCommentId",
+          "items",
+          "previousCursor",
+          "nextCursor",
+          "visibleReplyCount"
+        ],
+        "title": "CommentRepliesResponse"
+      },
+      "CommentReplyTargetResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "displayState": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "deleted",
+              "muted",
+              "creator-hidden",
+              "moderator-hidden"
+            ],
+            "title": "Displaystate"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAuthorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "bodyPreview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bodypreview"
+          },
+          "effectiveSpoiler": {
+            "type": "boolean",
+            "title": "Effectivespoiler"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "displayState",
+          "author",
+          "bodyPreview",
+          "effectiveSpoiler"
+        ],
+        "title": "CommentReplyTargetResponse"
+      },
+      "CommentReportCreateRequest": {
+        "properties": {
+          "reasonCategory": {
+            "$ref": "#/components/schemas/ReportReasonCategory"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "reasonCategory"
+        ],
+        "title": "CommentReportCreateRequest"
+      },
+      "CommentReportEvidenceResponse": {
+        "properties": {
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          },
+          "available": {
+            "type": "boolean",
+            "title": "Available"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "stickerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stickerid"
+          },
+          "mentionUserIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Mentionuserids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "expiresAt",
+          "available",
+          "body",
+          "stickerId",
+          "mentionUserIds"
+        ],
+        "title": "CommentReportEvidenceResponse"
+      },
+      "CommentReportResponse": {
+        "properties": {
+          "reportId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Reportid"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReportStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "reportId",
+          "status"
+        ],
+        "title": "CommentReportResponse"
+      },
+      "CommentResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "rootCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Rootcommentid"
+          },
+          "replyToCommentId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replytocommentid"
+          },
+          "replyTo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentReplyTargetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "displayState": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "deleted",
+              "muted",
+              "creator-hidden",
+              "moderator-hidden"
+            ],
+            "title": "Displaystate"
+          },
+          "author": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentAuthorResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "body": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          },
+          "sticker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentStickerResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mentions": {
+            "items": {
+              "$ref": "#/components/schemas/CommentAuthorResponse"
+            },
+            "type": "array",
+            "title": "Mentions"
+          },
+          "isSpoiler": {
+            "type": "boolean",
+            "title": "Isspoiler"
+          },
+          "effectiveSpoiler": {
+            "type": "boolean",
+            "title": "Effectivespoiler"
+          },
+          "inheritedSpoiler": {
+            "type": "boolean",
+            "title": "Inheritedspoiler"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "isEdited": {
+            "type": "boolean",
+            "title": "Isedited"
+          },
+          "likeCount": {
+            "type": "integer",
+            "title": "Likecount"
+          },
+          "isLiked": {
+            "type": "boolean",
+            "title": "Isliked"
+          },
+          "replyCount": {
+            "type": "integer",
+            "title": "Replycount"
+          },
+          "isPinned": {
+            "type": "boolean",
+            "title": "Ispinned"
+          },
+          "creatorHidden": {
+            "type": "boolean",
+            "title": "Creatorhidden"
+          },
+          "moderatorHidden": {
+            "type": "boolean",
+            "title": "Moderatorhidden"
+          },
+          "canReply": {
+            "type": "boolean",
+            "title": "Canreply"
+          },
+          "canEdit": {
+            "type": "boolean",
+            "title": "Canedit"
+          },
+          "canDelete": {
+            "type": "boolean",
+            "title": "Candelete"
+          },
+          "canLike": {
+            "type": "boolean",
+            "title": "Canlike"
+          },
+          "canReport": {
+            "type": "boolean",
+            "title": "Canreport"
+          },
+          "canPin": {
+            "type": "boolean",
+            "title": "Canpin"
+          },
+          "canCreatorHide": {
+            "type": "boolean",
+            "title": "Cancreatorhide"
+          },
+          "canCreatorRestore": {
+            "type": "boolean",
+            "title": "Cancreatorrestore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "contentId",
+          "rootCommentId",
+          "replyToCommentId",
+          "replyTo",
+          "displayState",
+          "author",
+          "body",
+          "sticker",
+          "mentions",
+          "isSpoiler",
+          "effectiveSpoiler",
+          "inheritedSpoiler",
+          "createdAt",
+          "updatedAt",
+          "isEdited",
+          "likeCount",
+          "isLiked",
+          "replyCount",
+          "isPinned",
+          "creatorHidden",
+          "moderatorHidden",
+          "canReply",
+          "canEdit",
+          "canDelete",
+          "canLike",
+          "canReport",
+          "canPin",
+          "canCreatorHide",
+          "canCreatorRestore"
+        ],
+        "title": "CommentResponse"
+      },
+      "CommentSettingsResponse": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "commentsPaused": {
+            "type": "boolean",
+            "title": "Commentspaused"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId",
+          "commentsPaused"
+        ],
+        "title": "CommentSettingsResponse"
+      },
+      "CommentSettingsUpdateRequest": {
+        "properties": {
+          "commentsPaused": {
+            "type": "boolean",
+            "title": "Commentspaused"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "commentsPaused"
+        ],
+        "title": "CommentSettingsUpdateRequest"
+      },
+      "CommentStickerCatalogResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommentStickerResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "CommentStickerCatalogResponse"
+      },
+      "CommentStickerResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "alt": {
+            "type": "string",
+            "title": "Alt"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "isSelectable": {
+            "type": "boolean",
+            "title": "Isselectable"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "alt",
+          "imageUrl",
+          "isSelectable"
+        ],
+        "title": "CommentStickerResponse"
+      },
+      "CommentUpdateRequest": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "stickerId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stickerid"
+          },
+          "isSpoiler": {
+            "type": "boolean",
+            "title": "Isspoiler"
+          },
+          "mentionUserIds": {
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "type": "array",
+            "title": "Mentionuserids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "body",
+          "stickerId",
+          "isSpoiler",
+          "mentionUserIds"
+        ],
+        "title": "CommentUpdateRequest"
       },
       "ContentAccessStatus": {
         "properties": {
@@ -12433,8 +15224,63 @@
         ],
         "title": "NoticeListResponse"
       },
+      "NotificationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "nextCursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextcursor"
+          },
+          "unreadCount": {
+            "type": "integer",
+            "title": "Unreadcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "nextCursor",
+          "unreadCount"
+        ],
+        "title": "NotificationListResponse"
+      },
       "NotificationResponse": {
         "properties": {
+          "comment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentNotificationTargetResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "commentActionId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Commentactionid"
+          },
           "id": {
             "type": "string",
             "format": "uuid",
@@ -12550,6 +15396,19 @@
           "read"
         ],
         "title": "NotificationResponse"
+      },
+      "NotificationUnreadCountResponse": {
+        "properties": {
+          "unreadCount": {
+            "type": "integer",
+            "title": "Unreadcount"
+          }
+        },
+        "type": "object",
+        "required": [
+          "unreadCount"
+        ],
+        "title": "NotificationUnreadCountResponse"
       },
       "OnboardingGoogleRequest": {
         "properties": {

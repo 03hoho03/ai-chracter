@@ -9,20 +9,26 @@ import {
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { Link } from "@tanstack/react-router";
 import { Bell } from "lucide-react";
+import { useAtom } from "jotai";
 
+import { contentDetailModalAtom } from "@/entities/content";
 import {
   NotificationItemContent,
   resolveNotificationDestination,
   useMarkNotificationReadMutation,
   useNotificationListQuery,
+  useNotificationUnreadCountQuery,
   type NotificationResponse,
 } from "@/entities/notification";
 import { assertNever } from "@/shared/lib/assertNever";
 
-export function NotificationBell() {
-  const { data: notifications = [] } = useNotificationListQuery();
-  const markAsRead = useMarkNotificationReadMutation();
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
+import { NotificationFeedStatus } from "./NotificationFeedStatus";
+
+export function NotificationBell({ viewerId }: { viewerId: string }) {
+  const query = useNotificationListQuery(viewerId);
+  const notifications = [...new Map((query.data?.pages.flatMap((page) => page.items) ?? []).map((item) => [item.id, item])).values()];
+  const markAsRead = useMarkNotificationReadMutation(viewerId);
+  const unreadCount = useNotificationUnreadCountQuery(viewerId).data?.unreadCount ?? 0;
 
   return (
     <DropdownMenu>
@@ -42,10 +48,10 @@ export function NotificationBell() {
           )}
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-72">
+      <DropdownMenuContent align="end" className="w-72 max-h-[min(70dvh,var(--radix-dropdown-menu-content-available-height))] overflow-y-auto">
         <DropdownMenuLabel>알림</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        {notifications.length === 0 ? (
+        {notifications.length === 0 && !query.isPending && !query.isError ? (
           <p className="px-1.5 py-4 text-center text-sm text-muted-foreground">아직 알림이 없어요.</p>
         ) : (
           // 이 목록은 항목마다 동작이 갈린다: 공지·문의 답변은 목적지(`/notices/$noticeId`·
@@ -60,6 +66,9 @@ export function NotificationBell() {
             />
           ))
         )}
+        <NotificationFeedStatus isPending={query.isPending} hasError={query.isError} hasNext={!!query.hasNextPage} isFetchingNext={query.isFetchingNextPage}
+          onRetry={() => { if (query.isFetchNextPageError) void query.fetchNextPage(); else void query.refetch(); }}
+          onMore={() => void query.fetchNextPage()} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -73,6 +82,17 @@ function NotificationListItem({
   onRead: (id: string) => void;
 }) {
   const destination = resolveNotificationDestination(notification);
+  const [modalState, setModalState] = useAtom(contentDetailModalAtom);
+
+  if (destination.kind === "comment") {
+    return <DropdownMenuItem asChild className="py-2" onSelect={() => {
+      if (!notification.read) onRead(notification.id);
+      setModalState(undefined);
+    }}><Link to="/content/$type/$id" params={{ type: destination.contentType, id: destination.contentId }}
+      search={{ comment: destination.commentId }} replace={modalState !== undefined}>
+      <NotificationItemContent notification={notification} />
+    </Link></DropdownMenuItem>;
+  }
 
   if (destination.kind === "notice") {
     return (

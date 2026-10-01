@@ -291,6 +291,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
             AdminUserActionLogItem(
                 id=log.id,
                 action_type=log.action_type,
+                target_comment_id=log.target_comment_id,
                 target_content_id=log.target_content_id,
                 content_name=(
                     content_names_by_id.get(log.target_content_id, "")

@@ -11,6 +11,10 @@
 
 ## 재생성
 
+작품 댓글의 공식 스티커 8개와 원본·내보내기·검수 기록은
+[`comment-stickers/README.md`](comment-stickers/README.md)에 있다.
+파비콘/OG 재생성 스크립트와는 별도로 관리한다.
+
 ```sh
 apps/web/brand/generate.sh
 ```

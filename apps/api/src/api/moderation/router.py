@@ -13,7 +13,6 @@ from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
 from api.db.models.content import Content, ContentType, ContentVersion, ModerationStatus
-from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset
 from api.db.models.moderation import (
     Appeal,
@@ -26,7 +25,6 @@ from api.db.models.moderation import (
     Report,
     ReportStatus,
 )
-from api.db.models.notice import Notice
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
 from api.db.session import get_db_session
 from api.moderation.schemas import (
@@ -40,11 +38,14 @@ from api.moderation.schemas import (
     AppealResolveRequest,
     AppealResponse,
     NotificationResponse,
+    NotificationListResponse,
+    NotificationUnreadCountResponse,
     ReportActionRequest,
     UsageMetricsResponse,
     UsageMetricsTrendPoint,
 )
 from api.session.dependencies import get_current_user_id
+from api.moderation.notifications import notification_page, serialize_notifications, unread_count, visible_notification_filter
 
 router = APIRouter(tags=["moderation"])
 
@@ -52,60 +53,21 @@ ADMIN_REPORT_PAGE_SIZE = 20
 ADMIN_APPEAL_PAGE_SIZE = 20
 
 
-def _to_response(
-    notification: Notification,
-    notice_titles: dict[uuid.UUID, str],
-    inquiry_titles: dict[uuid.UUID, str],
-) -> NotificationResponse:
-    if notification.notice_id is not None:
-        title = notice_titles.get(notification.notice_id)
-    elif notification.inquiry_id is not None:
-        title = inquiry_titles.get(notification.inquiry_id)
-    else:
-        title = None
-
-    return NotificationResponse(
-        id=notification.id,
-        type=notification.type,
-        content_id=notification.content_id,
-        action_id=notification.action_id,
-        notice_id=notification.notice_id,
-        inquiry_id=notification.inquiry_id,
-        title=title,
-        reason_category=notification.reason_category,
-        admin_comment=notification.admin_comment,
-        created_at=notification.created_at,
-        read=notification.read,
-    )
-
-
 @router.get("/notifications")
 async def list_my_notifications(
+    cursor: str | None = Query(None),
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
-) -> list[NotificationResponse]:
-    notifications = (
-        await db.scalars(
-            select(Notification)
-            .where(Notification.user_id == user_id)
-            .order_by(Notification.created_at.desc())
-        )
-    ).all()
+) -> NotificationListResponse:
+    return await notification_page(db, user_id, cursor)
 
-    # notice/inquiry 알림의 제목을 각각 IN 조회 한 번으로 가져온다 — 행마다 조회하면 N+1이다.
-    notice_ids = {n.notice_id for n in notifications if n.notice_id is not None}
-    notice_titles: dict[uuid.UUID, str] = {}
-    if notice_ids:
-        rows = await db.execute(select(Notice.id, Notice.title).where(Notice.id.in_(notice_ids)))
-        notice_titles = {notice_id: title for notice_id, title in rows}
 
-    inquiry_ids = {n.inquiry_id for n in notifications if n.inquiry_id is not None}
-    inquiry_titles: dict[uuid.UUID, str] = {}
-    if inquiry_ids:
-        rows = await db.execute(select(Inquiry.id, Inquiry.title).where(Inquiry.id.in_(inquiry_ids)))
-        inquiry_titles = {inquiry_id: title for inquiry_id, title in rows}
-
-    return [_to_response(notification, notice_titles, inquiry_titles) for notification in notifications]
+@router.get("/notifications/unread-count")
+async def get_notification_unread_count(
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> NotificationUnreadCountResponse:
+    return NotificationUnreadCountResponse(unread_count=await unread_count(db, user_id))
 
 
 @router.patch("/notifications/{notification_id}/read")
@@ -116,29 +78,15 @@ async def mark_notification_read(
 ) -> NotificationResponse:
     notification = await db.get(Notification, notification_id)
     if notification is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Notification not found")
+        raise HTTPException(status_code=404, detail="Notification not found")
     if notification.user_id != user_id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Not the notification owner"
-        )
-
+        raise HTTPException(status_code=403, detail="Not the notification owner")
+    visible = await db.scalar(select(Notification.id).where(Notification.id == notification_id, visible_notification_filter(user_id)))
+    if visible is None:
+        raise HTTPException(status_code=404, detail="Notification not found")
     notification.read = True
     await db.commit()
-
-    # 단건이라 맵이 하나짜리다 — list_my_notifications와 같은 _to_response를 쓰기 위함.
-    notice_titles: dict[uuid.UUID, str] = {}
-    if notification.notice_id is not None:
-        notice = await db.get(Notice, notification.notice_id)
-        if notice is not None:
-            notice_titles[notice.id] = notice.title
-
-    inquiry_titles: dict[uuid.UUID, str] = {}
-    if notification.inquiry_id is not None:
-        inquiry = await db.get(Inquiry, notification.inquiry_id)
-        if inquiry is not None:
-            inquiry_titles[inquiry.id] = inquiry.title
-
-    return _to_response(notification, notice_titles, inquiry_titles)
+    return (await serialize_notifications(db, [notification], user_id))[0]
 
 
 @router.post("/appeals", status_code=status.HTTP_201_CREATED)
