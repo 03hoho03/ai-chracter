@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.auth.google_oauth import GoogleProfile, get_google_profile_fetcher
 from api.auth.kakao_oauth import (
     KAKAO_AUTH_URL,
-    KakaoEmailUnavailableError,
+    KakaoPendingSignup,
     KakaoProfile,
     KakaoProfileFetcher,
     KakaoUnlinkError,
@@ -124,6 +124,48 @@ async def _kakao_callback(
 
 def _new_identity() -> tuple[str, str]:
     return str(uuid.uuid4().int % 10**12), f"kakao-{uuid.uuid4()}@example.com"
+
+
+def _kakao_api(
+    user_me: httpx.Response, *, token: httpx.Response | None = None, seen: list[httpx.Request] | None = None
+) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if seen is not None:
+            seen.append(request)
+        if request.url.host == "kauth.kakao.com":
+            return token if token is not None else httpx.Response(200, json={"access_token": "at"})
+        return user_me
+
+    return handler
+
+
+def _user_me(**account: object) -> httpx.Response:
+    base: dict[str, object] = {
+        "has_email": True,
+        "email_needs_agreement": False,
+        "is_email_valid": True,
+        "is_email_verified": True,
+        "email": "kakao@example.com",
+    }
+    base.update(account)
+    return httpx.Response(
+        200, json={"id": 1234567890, "connected_at": "2026-10-01T00:00:00Z", "kakao_account": base}
+    )
+
+
+def _unusable_email_user_me_cases() -> list[object]:
+    """카카오가 인증된 이메일을 주지 않는 `/v2/user/me` 응답들. 회원번호는 모두 1234567890 이다.
+    응답 객체를 테스트마다 새로 만들도록 함수로 둔다."""
+    return [
+        pytest.param(_user_me(has_email=False, email=None), id="no-email"),
+        pytest.param(
+            httpx.Response(200, json={"id": 1234567890, "kakao_account": {"has_email": False}}),
+            id="email-field-absent",
+        ),
+        pytest.param(httpx.Response(200, json={"id": 1234567890}), id="no-kakao-account"),
+        pytest.param(_user_me(is_email_verified=False), id="unverified"),
+        pytest.param(_user_me(is_email_valid=False), id="invalid"),
+    ]
 
 
 # --- 로그인 시작 ---
@@ -256,26 +298,53 @@ async def test_kakao_callback_exchange_failure_returns_to_login(db_client: httpx
     assert "max-age=0" in cleared.lower()
 
 
-async def test_kakao_callback_without_verified_email_asks_for_email(
-    db_client: httpx.AsyncClient,
-) -> None:
-    async def no_email(code: str) -> KakaoProfile:
-        raise KakaoEmailUnavailableError
-
+async def _kakao_callback_via_api(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, user_me: httpx.Response
+) -> httpx.Response:
+    """프로필 교환을 갈아끼우지 않고 카카오 API 응답만 흉내 내 콜백을 끝까지 탄다."""
     state = await _start_kakao_login(db_client)
-    _override_fetcher(no_email)
-    try:
-        resp = await db_client.get(
-            "/auth/kakao/callback", params={"state": state, "code": "c"}, follow_redirects=False
-        )
-    finally:
-        _clear_fetcher_override()
+    _patch_httpx(monkeypatch, _kakao_api(user_me), module="api.auth.kakao_oauth")
+    return await db_client.get(
+        "/auth/kakao/callback", params={"state": state, "code": "c"}, follow_redirects=False
+    )
+
+
+@pytest.mark.parametrize("user_me", _unusable_email_user_me_cases())
+async def test_kakao_callback_new_member_without_verified_email_asks_for_email(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch, user_me: httpx.Response
+) -> None:
+    resp = await _kakao_callback_via_api(db_client, monkeypatch, user_me)
     assert resp.headers["location"] == _login_error("kakao_email_required")
     assert settings.session_cookie_name not in resp.cookies
     assert not _set_cookie_headers(resp, _PENDING_COOKIE)
 
 
 # --- 콜백: 기존 회원 ---
+
+
+@pytest.mark.parametrize("user_me", _unusable_email_user_me_cases())
+async def test_kakao_callback_existing_member_logs_in_without_verified_email(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+    user_me: httpx.Response,
+) -> None:
+    """가입 뒤 카카오계정 이메일이 무효가 되거나 이메일 제공 동의를 철회해도 회원번호로 찾은 기존
+    회원은 로그인된다 — 이메일 조건은 가입할 때만 따진다."""
+    db_session.add(
+        _make_user(
+            kakao_id="1234567890",
+            email=f"kakao-{uuid.uuid4()}@example.com",
+            email_verified_at=datetime.now(UTC),
+        )
+    )
+    await db_session.flush()
+
+    resp = await _kakao_callback_via_api(db_client, monkeypatch, user_me)
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/"
+    assert settings.session_cookie_name in resp.cookies
+    assert not _set_cookie_headers(resp, _PENDING_COOKIE)
 
 
 async def test_kakao_callback_existing_member_issues_session_and_redirects(
@@ -432,7 +501,7 @@ async def test_onboarding_kakao_creates_verified_member_and_issues_session(
 
 async def test_onboarding_kakao_without_pending_cookie_returns_400(db_client: httpx.AsyncClient) -> None:
     kakao_id, email = _new_identity()
-    token = await store_pending_kakao_signup(KakaoProfile(kakao_id=kakao_id, email=email))
+    token = await store_pending_kakao_signup(KakaoPendingSignup(kakao_id=kakao_id, email=email))
     resp = await db_client.post("/auth/onboarding/kakao", json={**_ONBOARDING_FORM, "token": token})
     assert resp.status_code == 400
     assert resp.json() == {"detail": "Invalid or expired token"}
@@ -464,7 +533,7 @@ async def test_onboarding_kakao_existing_member_resubmit_updates_profile(
     db_session.add(user)
     await db_session.flush()
     db_client.cookies.set(
-        _PENDING_COOKIE, await store_pending_kakao_signup(KakaoProfile(kakao_id=kakao_id, email=email))
+        _PENDING_COOKIE, await store_pending_kakao_signup(KakaoPendingSignup(kakao_id=kakao_id, email=email))
     )
 
     resp = await db_client.post("/auth/onboarding/kakao", json=_ONBOARDING_FORM)
@@ -480,7 +549,7 @@ async def test_onboarding_kakao_suspended_existing_member_is_rejected_without_si
     user = _make_user(kakao_id=kakao_id, email=email, nickname="원래", suspended_at=datetime.now(UTC))
     db_session.add(user)
     await db_session.flush()
-    token = await store_pending_kakao_signup(KakaoProfile(kakao_id=kakao_id, email=email))
+    token = await store_pending_kakao_signup(KakaoPendingSignup(kakao_id=kakao_id, email=email))
     db_client.cookies.set(_PENDING_COOKIE, token)
 
     resp = await db_client.post("/auth/onboarding/kakao", json=_ONBOARDING_FORM)
@@ -912,33 +981,6 @@ async def test_unlink_kakao_user_normalizes_failures(
 # --- 토큰 교환·사용자 정보 파싱 ---
 
 
-def _kakao_api(
-    user_me: httpx.Response, *, token: httpx.Response | None = None, seen: list[httpx.Request] | None = None
-) -> Callable[[httpx.Request], httpx.Response]:
-    def handler(request: httpx.Request) -> httpx.Response:
-        if seen is not None:
-            seen.append(request)
-        if request.url.host == "kauth.kakao.com":
-            return token if token is not None else httpx.Response(200, json={"access_token": "at"})
-        return user_me
-
-    return handler
-
-
-def _user_me(**account: object) -> httpx.Response:
-    base: dict[str, object] = {
-        "has_email": True,
-        "email_needs_agreement": False,
-        "is_email_valid": True,
-        "is_email_verified": True,
-        "email": "kakao@example.com",
-    }
-    base.update(account)
-    return httpx.Response(
-        200, json={"id": 1234567890, "connected_at": "2026-10-01T00:00:00Z", "kakao_account": base}
-    )
-
-
 async def test_exchange_code_for_profile_returns_string_id_and_email(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -963,24 +1005,12 @@ async def test_exchange_code_for_profile_returns_string_id_and_email(
     assert me_request.headers["authorization"] == "Bearer at"
 
 
-@pytest.mark.parametrize(
-    "user_me",
-    [
-        pytest.param(_user_me(has_email=False, email=None), id="no-email"),
-        pytest.param(
-            httpx.Response(200, json={"id": 1, "kakao_account": {"has_email": False}}), id="email-field-absent"
-        ),
-        pytest.param(httpx.Response(200, json={"id": 1}), id="no-kakao-account"),
-        pytest.param(_user_me(is_email_verified=False), id="unverified"),
-        pytest.param(_user_me(is_email_valid=False), id="invalid"),
-    ],
-)
-async def test_exchange_code_for_profile_rejects_unusable_email(
+@pytest.mark.parametrize("user_me", _unusable_email_user_me_cases())
+async def test_exchange_code_for_profile_drops_unusable_email(
     monkeypatch: pytest.MonkeyPatch, user_me: httpx.Response
 ) -> None:
     _patch_httpx(monkeypatch, _kakao_api(user_me), module="api.auth.kakao_oauth")
-    with pytest.raises(KakaoEmailUnavailableError):
-        await exchange_code_for_profile("code")
+    assert await exchange_code_for_profile("code") == {"kakao_id": "1234567890", "email": None}
 
 
 @pytest.mark.parametrize(

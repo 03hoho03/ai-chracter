@@ -26,7 +26,6 @@ from api.auth.google_oauth import (
     store_pending_google_signup,
 )
 from api.auth.kakao_oauth import (
-    KakaoEmailUnavailableError,
     KakaoProfileFetcher,
     KakaoUnlinker,
     get_kakao_profile_fetcher,
@@ -504,10 +503,6 @@ async def kakao_callback(
         return oauth_login_error_redirect("kakao_cancelled", provider="kakao")
     try:
         profile = await fetch_profile(code)
-    except KakaoEmailUnavailableError:
-        # 장애가 아니라 사용자가 이메일 제공에 동의하지 않았거나 카카오계정 이메일이 인증되지
-        # 않은 상태다 — 고칠 수 있는 원인이라 따로 안내하고 Sentry 에는 올리지 않는다.
-        return oauth_login_error_redirect("kakao_email_required", provider="kakao")
     except OAuthExchangeError as exc:
         logger.warning("kakao oauth exchange failed: %s", exc)
         capture_dependency_failure(exc, dependency="kakao_oauth")
@@ -515,13 +510,24 @@ async def kakao_callback(
 
     user = await db.scalar(select(User).where(User.kakao_id == profile["kakao_id"]))
     if user is not None:
+        # 기존 회원은 이메일 상태와 무관하게 들인다. 계정 키는 회원번호이고 이메일은 가입 시점의
+        # 충돌 판정과 인증 기록에만 쓰였다 — 가입 뒤 카카오계정 이메일이 무효가 되거나 이메일 제공
+        # 동의를 철회했다고 로그인을 막으면 고칠 길 없이 계정에 못 들어온다.
         return await finish_social_login(user, redirect_target, provider="kakao")
+
+    email = profile["email"]
+    if email is None:
+        # 신규 가입만 인증된 이메일을 요구한다. 이메일 충돌 판정과 `email_verified_at` 기록이 "이
+        # 이메일은 이 사람의 것"이라는 전제 위에 서 있어서, 미인증 이메일을 받으면 남의 이메일로
+        # 가입하거나 남의 계정과 충돌 판정이 날 수 있다. 장애가 아니라 사용자가 고칠 수 있는
+        # 상태(이메일 제공 미동의·미인증)라 따로 안내하고 Sentry 에는 올리지 않는다.
+        return oauth_login_error_redirect("kakao_email_required", provider="kakao")
 
     # 같은 이메일의 계정이 있어도 카카오를 자동으로 붙이지 않는다(구글과 다르다) — 미인증 이메일·
     # 이메일 재활용으로 남의 계정에 들어가는 경로를 없앤다. 원래 가입 수단을 알려 그쪽으로
     # 로그인하게 한다. 예외는 방치된 미인증 이메일 가입이다: 로그인할 수 없는 기록이라 막을 이유가
     # 없고, 카카오가 인증한 이메일이므로 온보딩이 그 행을 이 사람의 카카오 계정으로 대체한다.
-    same_email = await db.scalar(select(User).where(User.email == profile["email"]))
+    same_email = await db.scalar(select(User).where(User.email == email))
     if same_email is not None and not _is_abandoned_email_signup(same_email):
         return oauth_callback_redirect(
             f"{settings.frontend_base_url}/login?error=kakao_email_taken"
@@ -529,7 +535,9 @@ async def kakao_callback(
             provider="kakao",
         )
 
-    token = await kakao_oauth.store_pending_kakao_signup(profile)
+    token = await kakao_oauth.store_pending_kakao_signup(
+        kakao_oauth.KakaoPendingSignup(kakao_id=profile["kakao_id"], email=email)
+    )
     # 토큰을 URL 이 아니라 HttpOnly 쿠키로 내리는 이유는 google_callback 과 같다.
     response = oauth_callback_redirect(
         f"{settings.frontend_base_url}/onboarding/kakao", provider="kakao"

@@ -125,8 +125,9 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
   `…/api/auth/kakao/callback` 도 함께 등록돼 있다 — `DEV.md`). FE 도메인은 구글과 같은 이유로 등장하지 않는다.
 - **클라이언트 시크릿**: 켬(토큰 교환에 필수로 싣는다). PKCE 는 쓰지 않는다 — 카카오가 `code_verifier` 를
   검증하지 않는 것을 실측했다(`auth/kakao_oauth.py` 모듈 docstring).
-- 인증된 이메일만 받는다. 카카오가 이메일을 주지 않거나 미인증·무효면 로그인 화면으로
-  `?error=kakao_email_required` 와 함께 돌아간다. 같은 이메일의 기존 계정(이메일·구글)에 **자동 연동하지 않고**
+- 신규 가입은 인증된 이메일만 받는다. 카카오가 이메일을 주지 않거나 미인증·무효면 로그인 화면으로
+  `?error=kakao_email_required` 와 함께 돌아간다. 회원번호로 찾은 기존 회원은 이메일 상태와 무관하게
+  로그인된다(가입 뒤 이메일 동의를 철회해도 막히지 않는다). 같은 이메일의 기존 계정(이메일·구글)에 **자동 연동하지 않고**
   `?error=kakao_email_taken&method=…` 로 원래 가입 수단을 안내한다(이메일 인증을 마치지 않은 가입 기록만
   카카오 가입이 대체한다).
 - state·가입 대기 토큰은 구글과 같은 방식이다(Redis + HttpOnly 쿠키 `oauth_state_kakao`·`oauth_pending_kakao`, `Path=/`).

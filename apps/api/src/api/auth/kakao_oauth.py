@@ -37,17 +37,18 @@ _HTTP_TIMEOUT_SECONDS = 10.0
 
 
 class KakaoProfile(TypedDict):
+    """`/v2/user/me` 에서 읽은 값. `email` 은 카카오가 인증된 유효한 이메일을 줄 때만 있고 그 밖에는
+    `None` 이다(미동의·미보유·미인증·무효). 이메일이 꼭 필요한지는 콜백이 회원 판정 뒤에 정한다."""
+
+    kakao_id: str
+    email: str | None
+
+
+class KakaoPendingSignup(TypedDict):
+    """온보딩을 기다리는 신규 가입. 가입에는 인증된 이메일이 필수라 `email` 이 늘 있다."""
+
     kakao_id: str
     email: str
-
-
-class KakaoEmailUnavailableError(Exception):
-    """카카오가 이 사용자의 인증된 이메일을 주지 않았다(이메일 미동의·미보유·미인증·무효).
-
-    인증된 이메일만 받는다 — 이메일 충돌 판정과 `email_verified_at` 기록이 "이 이메일은 이
-    사람의 것"이라는 전제 위에 서 있어서, 미인증 이메일을 받으면 남의 이메일로 가입하거나 남의
-    계정과 충돌 판정이 날 수 있다. 교환 실패(`OAuthExchangeError`)와 달리 장애가 아니라
-    사용자가 고칠 수 있는 상태라 콜백이 따로 안내한다."""
 
 
 def kakao_login_configured() -> bool:
@@ -74,7 +75,7 @@ def build_authorization_url(state: str) -> str:
 def parse_user_me(data: object) -> KakaoProfile:
     """`/v2/user/me` 응답 본문을 프로필로 바꾼다. 회원번호(`id`)가 없거나 본문 모양이 다르면
     `KeyError`·`TypeError` 를 그대로 던진다(호출자가 교환 실패로 바꾼다). 이메일을 쓸 수 없으면
-    `KakaoEmailUnavailableError`.
+    `email` 을 `None` 으로 돌려준다 — 여기서 던지면 회원번호로 찾을 기존 회원까지 막힌다.
 
     회원번호는 카카오가 정수로 주지만 연결 해제 웹훅은 같은 값을 문자열로 보내므로 문자열로
     바꿔 저장·비교를 한 표현으로 맞춘다."""
@@ -83,7 +84,7 @@ def parse_user_me(data: object) -> KakaoProfile:
     kakao_id = str(data["id"])
     account = data.get("kakao_account")
     if not isinstance(account, dict):
-        raise KakaoEmailUnavailableError
+        return KakaoProfile(kakao_id=kakao_id, email=None)
     email = account.get("email")
     if (
         not isinstance(email, str)
@@ -91,14 +92,13 @@ def parse_user_me(data: object) -> KakaoProfile:
         or account.get("is_email_valid") is not True
         or account.get("is_email_verified") is not True
     ):
-        raise KakaoEmailUnavailableError
+        return KakaoProfile(kakao_id=kakao_id, email=None)
     return KakaoProfile(kakao_id=kakao_id, email=email)
 
 
 async def exchange_code_for_profile(code: str) -> KakaoProfile:
     """실패는 전부 `OAuthExchangeError` 로 바꿔 던진다(구글 모듈과 같은 이유 — 콜백이 그것만
-    잡아 로그인 화면으로 되돌린다). 이메일을 쓸 수 없는 경우만 `KakaoEmailUnavailableError` 로 따로
-    올린다."""
+    잡아 로그인 화면으로 되돌린다). 이메일을 쓸 수 없는 것은 실패가 아니다(`parse_user_me`)."""
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT_SECONDS) as client:
             token_resp = await client.post(
@@ -159,21 +159,21 @@ def _pending_signup_key(token: str) -> str:
     return f"kakao_pending_signup:{token}"
 
 
-async def store_pending_kakao_signup(profile: KakaoProfile) -> str:
+async def store_pending_kakao_signup(signup: KakaoPendingSignup) -> str:
     token = secrets.token_urlsafe(24)
     await redis_client.set(
         _pending_signup_key(token),
-        json.dumps({"kakao_id": profile["kakao_id"], "email": profile["email"]}),
+        json.dumps({"kakao_id": signup["kakao_id"], "email": signup["email"]}),
         ex=settings.kakao_pending_signup_ttl_seconds,
     )
     return token
 
 
-async def get_pending_kakao_signup(token: str) -> KakaoProfile | None:
+async def get_pending_kakao_signup(token: str) -> KakaoPendingSignup | None:
     raw = await redis_client.get(_pending_signup_key(token))
     if raw is None:
         return None
-    data: KakaoProfile = json.loads(raw)
+    data: KakaoPendingSignup = json.loads(raw)
     return data
 
 
