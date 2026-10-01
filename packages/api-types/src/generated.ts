@@ -1817,6 +1817,337 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/comment-stickers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Stickers */
+        get: operations["get_stickers_comment_stickers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Comments */
+        get: operations["list_comments_contents__content_id__comments_get"];
+        put?: never;
+        /** Post Comment */
+        post: operations["post_comment_contents__content_id__comments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comments/{root_id}/replies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Replies */
+        get: operations["list_replies_contents__content_id__comments__root_id__replies_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comments/{comment_id}/location": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Locate Comment */
+        get: operations["locate_comment_contents__content_id__comments__comment_id__location_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comments/hidden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Hidden Comments */
+        get: operations["list_hidden_comments_contents__content_id__comments_hidden_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comment-mention-candidates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Mention Candidates */
+        get: operations["list_mention_candidates_contents__content_id__comment_mention_candidates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/comments/{comment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Comment */
+        delete: operations["remove_comment_comments__comment_id__delete"];
+        options?: never;
+        head?: never;
+        /** Patch Comment */
+        patch: operations["patch_comment_comments__comment_id__patch"];
+        trace?: never;
+    };
+    "/comments/{comment_id}/like": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Like Comment */
+        put: operations["like_comment_comments__comment_id__like_put"];
+        post?: never;
+        /** Unlike Comment */
+        delete: operations["unlike_comment_comments__comment_id__like_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contents/{content_id}/comment-settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Patch Comment Settings */
+        patch: operations["patch_comment_settings_contents__content_id__comment_settings_patch"];
+        trace?: never;
+    };
+    "/contents/{content_id}/pinned-comment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Pin Comment */
+        put: operations["pin_comment_contents__content_id__pinned_comment_put"];
+        post?: never;
+        /** Unpin Comment */
+        delete: operations["unpin_comment_contents__content_id__pinned_comment_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/comments/{comment_id}/creator-hidden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Hide Creator Comment */
+        put: operations["hide_creator_comment_comments__comment_id__creator_hidden_put"];
+        post?: never;
+        /** Restore Creator Comment */
+        delete: operations["restore_creator_comment_comments__comment_id__creator_hidden_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/comment-mutes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Comment Mutes */
+        get: operations["list_comment_mutes_me_comment_mutes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/comment-mutes/{target_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Mute Comment User */
+        put: operations["mute_comment_user_me_comment_mutes__target_id__put"];
+        post?: never;
+        /** Unmute Comment User */
+        delete: operations["unmute_comment_user_me_comment_mutes__target_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/me/comment-notification-preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Comment Notification Preferences */
+        get: operations["get_comment_notification_preferences_me_comment_notification_preferences_get"];
+        /** Put Comment Notification Preferences */
+        put: operations["put_comment_notification_preferences_me_comment_notification_preferences_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/comments/{comment_id}/reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Report Comment */
+        post: operations["report_comment_comments__comment_id__reports_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/comment-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Comment Reports */
+        get: operations["list_comment_reports_admin_comment_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/comment-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Comment Report */
+        get: operations["get_comment_report_admin_comment_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/comment-reports/{report_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Act On Comment Report */
+        post: operations["act_on_comment_report_admin_comment_reports__report_id__actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/comments/{comment_id}/moderator-hidden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Hide Comment As Moderator */
+        put: operations["hide_comment_as_moderator_admin_comments__comment_id__moderator_hidden_put"];
+        post?: never;
+        /** Restore Comment As Moderator */
+        delete: operations["restore_comment_as_moderator_admin_comments__comment_id__moderator_hidden_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -1826,6 +2157,23 @@ export interface paths {
         };
         /** List My Notifications */
         get: operations["list_my_notifications_notifications_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/unread-count": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Notification Unread Count */
+        get: operations["get_notification_unread_count_notifications_unread_count_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2956,6 +3304,155 @@ export interface components {
             /** Totalcount */
             totalCount: number;
         };
+        /** AdminCommentContentContextResponse */
+        AdminCommentContentContextResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            /** Detaildescription */
+            detailDescription: string;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+        };
+        /** AdminCommentCurrentResponse */
+        AdminCommentCurrentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Rootcommentid */
+            rootCommentId: string | null;
+            /** Replytocommentid */
+            replyToCommentId: string | null;
+            author: components["schemas"]["CommentAuthorResponse"] | null;
+            /** Body */
+            body: string | null;
+            sticker: components["schemas"]["CommentStickerResponse"] | null;
+            /** Mentions */
+            mentions: components["schemas"]["CommentAuthorResponse"][];
+            /** Isspoiler */
+            isSpoiler: boolean;
+            /** Inheritedspoiler */
+            inheritedSpoiler: boolean;
+            /** Effectivespoiler */
+            effectiveSpoiler: boolean;
+            /** Creatorhidden */
+            creatorHidden: boolean;
+            /** Moderatorhidden */
+            moderatorHidden: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string | null;
+            /** Deletedat */
+            deletedAt: string | null;
+        };
+        /** AdminCommentModerationRequest */
+        AdminCommentModerationRequest: {
+            /** Admincomment */
+            adminComment: string;
+        };
+        /** AdminCommentReportActionRequest */
+        AdminCommentReportActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "hide" | "restore" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /** AdminCommentReportDetailResponse */
+        AdminCommentReportDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Resolvedbyadminid */
+            resolvedByAdminId: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            content: components["schemas"]["AdminCommentContentContextResponse"];
+            comment: components["schemas"]["AdminCommentCurrentResponse"];
+            root: components["schemas"]["AdminCommentCurrentResponse"];
+            replyTo: components["schemas"]["AdminCommentCurrentResponse"] | null;
+            evidence: components["schemas"]["CommentReportEvidenceResponse"];
+        };
+        /** AdminCommentReportListItem */
+        AdminCommentReportListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Commentid
+             * Format: uuid
+             */
+            commentId: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /** Contentname */
+            contentName: string;
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+        };
+        /** AdminCommentReportListResponse */
+        AdminCommentReportListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminCommentReportListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
+        };
         /**
          * AdminContentActionRequest
          * @description `reason_category`는 `restrict`/`delete`에만 필수다(`api/admin/contents.py`의
@@ -3831,6 +4328,8 @@ export interface components {
         };
         /** AdminUserActionLogItem */
         AdminUserActionLogItem: {
+            /** Targetcommentid */
+            targetCommentId: string | null;
             /**
              * Id
              * Format: uuid
@@ -3840,7 +4339,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-view" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -4537,6 +5036,363 @@ export interface components {
         CloverMissionsResponse: {
             /** Missions */
             missions: components["schemas"]["CloverMissionItem"][];
+        };
+        /** CommentAuthorResponse */
+        CommentAuthorResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Nickname */
+            nickname: string;
+            /** Profileimageurl */
+            profileImageUrl: string | null;
+            /** Iscreator */
+            isCreator: boolean;
+        };
+        /** CommentCreateRequest */
+        CommentCreateRequest: {
+            /** Body */
+            body: string;
+            /** Stickerid */
+            stickerId: string | null;
+            /** Isspoiler */
+            isSpoiler: boolean;
+            /** Mentionuserids */
+            mentionUserIds: string[];
+            /**
+             * Requestid
+             * Format: uuid
+             */
+            requestId: string;
+            /** Rootcommentid */
+            rootCommentId: string | null;
+            /** Replytocommentid */
+            replyToCommentId: string | null;
+        };
+        /** CommentHiddenListResponse */
+        CommentHiddenListResponse: {
+            /** Items */
+            items: components["schemas"]["CommentResponse"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Totalcount */
+            totalCount: number;
+        };
+        /** CommentLikeResponse */
+        CommentLikeResponse: {
+            /**
+             * Commentid
+             * Format: uuid
+             */
+            commentId: string;
+            /** Likecount */
+            likeCount: number;
+            /** Isliked */
+            isLiked: boolean;
+        };
+        /** CommentListResponse */
+        CommentListResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /**
+             * Creatoruserid
+             * Format: uuid
+             */
+            creatorUserId: string;
+            /** Commentspaused */
+            commentsPaused: boolean;
+            /**
+             * Canread
+             * @constant
+             */
+            canRead: true;
+            /** Canparticipate */
+            canParticipate: boolean;
+            /** Cancreate */
+            canCreate: boolean;
+            /** Canmanage */
+            canManage: boolean;
+            /** Visiblecommentcount */
+            visibleCommentCount: number;
+            /** Hiddencommentcount */
+            hiddenCommentCount: number | null;
+            pinnedComment: components["schemas"]["CommentResponse"] | null;
+            /** Items */
+            items: components["schemas"]["CommentResponse"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /** CommentLocationResponse */
+        CommentLocationResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            root: components["schemas"]["CommentResponse"];
+            target: components["schemas"]["CommentResponse"];
+            replies: components["schemas"]["CommentRepliesResponse"] | null;
+        };
+        /** CommentMentionCandidatesResponse */
+        CommentMentionCandidatesResponse: {
+            /** Items */
+            items: components["schemas"]["CommentAuthorResponse"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /** CommentMutesResponse */
+        CommentMutesResponse: {
+            /** Items */
+            items: components["schemas"]["CommentAuthorResponse"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+        };
+        /** CommentNotificationPreferencesResponse */
+        CommentNotificationPreferencesResponse: {
+            /** Newcomment */
+            newComment: boolean;
+            /** Reply */
+            reply: boolean;
+            /** Mention */
+            mention: boolean;
+        };
+        /** CommentNotificationPreferencesUpdateRequest */
+        CommentNotificationPreferencesUpdateRequest: {
+            /** Newcomment */
+            newComment: boolean;
+            /** Reply */
+            reply: boolean;
+            /** Mention */
+            mention: boolean;
+        };
+        /** CommentNotificationTargetResponse */
+        CommentNotificationTargetResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            contentType: components["schemas"]["ContentType"];
+            /**
+             * Commentid
+             * Format: uuid
+             */
+            commentId: string;
+            /**
+             * Rootcommentid
+             * Format: uuid
+             */
+            rootCommentId: string;
+            /**
+             * Availability
+             * @enum {string}
+             */
+            availability: "available" | "unavailable";
+            /** Isspoiler */
+            isSpoiler: boolean;
+            author: components["schemas"]["CommentAuthorResponse"] | null;
+            /** Bodypreview */
+            bodyPreview: string | null;
+            /** Stickername */
+            stickerName: string | null;
+        };
+        /** CommentPinRequest */
+        CommentPinRequest: {
+            /**
+             * Commentid
+             * Format: uuid
+             */
+            commentId: string;
+        };
+        /** CommentPinResponse */
+        CommentPinResponse: {
+            pinnedComment: components["schemas"]["CommentResponse"] | null;
+        };
+        /** CommentRepliesResponse */
+        CommentRepliesResponse: {
+            /**
+             * Rootcommentid
+             * Format: uuid
+             */
+            rootCommentId: string;
+            /** Items */
+            items: components["schemas"]["CommentResponse"][];
+            /** Previouscursor */
+            previousCursor: string | null;
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Visiblereplycount */
+            visibleReplyCount: number;
+        };
+        /** CommentReplyTargetResponse */
+        CommentReplyTargetResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Displaystate
+             * @enum {string}
+             */
+            displayState: "normal" | "deleted" | "muted" | "creator-hidden" | "moderator-hidden";
+            author: components["schemas"]["CommentAuthorResponse"] | null;
+            /** Bodypreview */
+            bodyPreview: string | null;
+            /** Effectivespoiler */
+            effectiveSpoiler: boolean;
+        };
+        /** CommentReportCreateRequest */
+        CommentReportCreateRequest: {
+            reasonCategory: components["schemas"]["ReportReasonCategory"];
+        };
+        /** CommentReportEvidenceResponse */
+        CommentReportEvidenceResponse: {
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /** Available */
+            available: boolean;
+            /** Body */
+            body: string | null;
+            /** Stickerid */
+            stickerId: string | null;
+            /** Mentionuserids */
+            mentionUserIds: string[];
+        };
+        /** CommentReportResponse */
+        CommentReportResponse: {
+            /**
+             * Reportid
+             * Format: uuid
+             */
+            reportId: string;
+            status: components["schemas"]["ReportStatus"];
+        };
+        /** CommentResponse */
+        CommentResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Rootcommentid */
+            rootCommentId: string | null;
+            /** Replytocommentid */
+            replyToCommentId: string | null;
+            replyTo: components["schemas"]["CommentReplyTargetResponse"] | null;
+            /**
+             * Displaystate
+             * @enum {string}
+             */
+            displayState: "normal" | "deleted" | "muted" | "creator-hidden" | "moderator-hidden";
+            author: components["schemas"]["CommentAuthorResponse"] | null;
+            /** Body */
+            body: string | null;
+            sticker: components["schemas"]["CommentStickerResponse"] | null;
+            /** Mentions */
+            mentions: components["schemas"]["CommentAuthorResponse"][];
+            /** Isspoiler */
+            isSpoiler: boolean;
+            /** Effectivespoiler */
+            effectiveSpoiler: boolean;
+            /** Inheritedspoiler */
+            inheritedSpoiler: boolean;
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string | null;
+            /** Isedited */
+            isEdited: boolean;
+            /** Likecount */
+            likeCount: number;
+            /** Isliked */
+            isLiked: boolean;
+            /** Replycount */
+            replyCount: number;
+            /** Ispinned */
+            isPinned: boolean;
+            /** Creatorhidden */
+            creatorHidden: boolean;
+            /** Moderatorhidden */
+            moderatorHidden: boolean;
+            /** Canreply */
+            canReply: boolean;
+            /** Canedit */
+            canEdit: boolean;
+            /** Candelete */
+            canDelete: boolean;
+            /** Canlike */
+            canLike: boolean;
+            /** Canreport */
+            canReport: boolean;
+            /** Canpin */
+            canPin: boolean;
+            /** Cancreatorhide */
+            canCreatorHide: boolean;
+            /** Cancreatorrestore */
+            canCreatorRestore: boolean;
+        };
+        /** CommentSettingsResponse */
+        CommentSettingsResponse: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Commentspaused */
+            commentsPaused: boolean;
+        };
+        /** CommentSettingsUpdateRequest */
+        CommentSettingsUpdateRequest: {
+            /** Commentspaused */
+            commentsPaused: boolean;
+        };
+        /** CommentStickerCatalogResponse */
+        CommentStickerCatalogResponse: {
+            /** Items */
+            items: components["schemas"]["CommentStickerResponse"][];
+        };
+        /** CommentStickerResponse */
+        CommentStickerResponse: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Alt */
+            alt: string;
+            /** Imageurl */
+            imageUrl: string;
+            /** Isselectable */
+            isSelectable: boolean;
+        };
+        /** CommentUpdateRequest */
+        CommentUpdateRequest: {
+            /** Body */
+            body: string;
+            /** Stickerid */
+            stickerId: string | null;
+            /** Isspoiler */
+            isSpoiler: boolean;
+            /** Mentionuserids */
+            mentionUserIds: string[];
         };
         /**
          * ContentAccessStatus
@@ -5333,8 +6189,20 @@ export interface components {
             /** Items */
             items: components["schemas"]["NoticeListItem"][];
         };
+        /** NotificationListResponse */
+        NotificationListResponse: {
+            /** Items */
+            items: components["schemas"]["NotificationResponse"][];
+            /** Nextcursor */
+            nextCursor: string | null;
+            /** Unreadcount */
+            unreadCount: number;
+        };
         /** NotificationResponse */
         NotificationResponse: {
+            comment?: components["schemas"]["CommentNotificationTargetResponse"] | null;
+            /** Commentactionid */
+            commentActionId?: string | null;
             /**
              * Id
              * Format: uuid
@@ -5363,6 +6231,11 @@ export interface components {
             createdAt: string;
             /** Read */
             read: boolean;
+        };
+        /** NotificationUnreadCountResponse */
+        NotificationUnreadCountResponse: {
+            /** Unreadcount */
+            unreadCount: number;
         };
         /** OnboardingGoogleRequest */
         OnboardingGoogleRequest: {
@@ -8642,7 +9515,7 @@ export interface operations {
             };
         };
     };
-    list_my_notifications_notifications_get: {
+    get_stickers_comment_stickers_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -8657,7 +9530,887 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["NotificationResponse"][];
+                    "application/json": components["schemas"]["CommentStickerCatalogResponse"];
+                };
+            };
+        };
+    };
+    list_comments_contents__content_id__comments_get: {
+        parameters: {
+            query?: {
+                sort?: "latest" | "popular";
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_comment_contents__content_id__comments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_replies_contents__content_id__comments__root_id__replies_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+                direction?: "after" | "before";
+            };
+            header?: never;
+            path: {
+                content_id: string;
+                root_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentRepliesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    locate_comment_contents__content_id__comments__comment_id__location_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentLocationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_hidden_comments_contents__content_id__comments_hidden_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentHiddenListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_mention_candidates_contents__content_id__comment_mention_candidates_get: {
+        parameters: {
+            query?: {
+                q?: string;
+                cursor?: string | null;
+            };
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentMentionCandidatesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_comment_comments__comment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_comment_comments__comment_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    like_comment_comments__comment_id__like_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentLikeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unlike_comment_comments__comment_id__like_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentLikeResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    patch_comment_settings_contents__content_id__comment_settings_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentSettingsResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    pin_comment_contents__content_id__pinned_comment_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentPinRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentPinResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unpin_comment_contents__content_id__pinned_comment_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentPinResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_creator_comment_comments__comment_id__creator_hidden_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_creator_comment_comments__comment_id__creator_hidden_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_comment_mutes_me_comment_mutes_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentMutesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mute_comment_user_me_comment_mutes__target_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unmute_comment_user_me_comment_mutes__target_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                target_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_comment_notification_preferences_me_comment_notification_preferences_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentNotificationPreferencesResponse"];
+                };
+            };
+        };
+    };
+    put_comment_notification_preferences_me_comment_notification_preferences_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentNotificationPreferencesUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentNotificationPreferencesResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_comment_comments__comment_id__reports_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentReportCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CommentReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_comment_reports_admin_comment_reports_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["ReportStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCommentReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_comment_report_admin_comment_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCommentReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_comment_report_admin_comment_reports__report_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCommentReportActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminCommentReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    hide_comment_as_moderator_admin_comments__comment_id__moderator_hidden_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCommentModerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    restore_comment_as_moderator_admin_comments__comment_id__moderator_hidden_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminCommentModerationRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_my_notifications_notifications_get: {
+        parameters: {
+            query?: {
+                cursor?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_notification_unread_count_notifications_unread_count_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NotificationUnreadCountResponse"];
                 };
             };
         };

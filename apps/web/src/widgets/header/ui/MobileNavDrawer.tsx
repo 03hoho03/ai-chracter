@@ -12,18 +12,23 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { Bell, ChevronDown, LogIn, LogOut, Menu } from "lucide-react";
 import { useId, useState, type ComponentProps } from "react";
 import { toast } from "sonner";
+import { useAtom } from "jotai";
+
+import { contentDetailModalAtom } from "@/entities/content";
 
 import {
   NotificationItemContent,
   resolveNotificationDestination,
   useMarkNotificationReadMutation,
   useNotificationListQuery,
+  useNotificationUnreadCountQuery,
   type NotificationResponse,
 } from "@/entities/notification";
 import { useSessionQuery } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
 import { assertNever } from "@/shared/lib/assertNever";
 
+import { NotificationFeedStatus } from "./NotificationFeedStatus";
 import { ContentTypeToggle } from "./ContentTypeToggle";
 import { PROFILE_DESTINATION_GROUPS, ProfileDestinationLink } from "./ProfileDestinationLink";
 
@@ -64,7 +69,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
   return (
     <Sheet open={isOpen} onOpenChange={setIsOpen}>
       <SheetTrigger asChild>
-        {me ? <BurgerButtonWithUnreadDot className={className} /> : <BurgerButton className={className} />}
+        {me ? <BurgerButtonWithUnreadDot viewerId={me.id} className={className} /> : <BurgerButton className={className} />}
       </SheetTrigger>
       <SheetContent side="left">
         <SheetHeader>
@@ -91,7 +96,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
               행과 구분선을 통째로 건너뛴다. */}
           {me && (
             <>
-              <NotificationDisclosure />
+              <NotificationDisclosure viewerId={me.id} />
               <hr className={DIVIDER_CLASS} />
             </>
           )}
@@ -144,9 +149,8 @@ function BurgerButton({ className, ...props }: ComponentProps<typeof Button>) {
  * 생긴 상태만 밝기 천장 `text-foreground`로 올린다"(문의 `답변완료` 선례)와 같은 규범이다. 개수는 노출하지
  * 않는다(버거는 여러 항목의 수납구라 숫자를 달면 무엇의 개수인지 모호해진다) — 개수는 드로어 안
  * `NotificationDisclosure`가 진다. */
-function BurgerButtonWithUnreadDot({ className, ...props }: ComponentProps<typeof Button>) {
-  const { data: notifications = [] } = useNotificationListQuery();
-  const hasUnread = notifications.some((notification) => !notification.read);
+function BurgerButtonWithUnreadDot({ viewerId, className, ...props }: ComponentProps<typeof Button> & { viewerId: string }) {
+  const hasUnread = (useNotificationUnreadCountQuery(viewerId).data?.unreadCount ?? 0) > 0;
 
   return (
     <Button
@@ -165,12 +169,13 @@ function BurgerButtonWithUnreadDot({ className, ...props }: ComponentProps<typeo
 
 /** 알림 벨이 `sm` 미만에서 숨어 알림을 열어볼 방법이 없던 퇴행을 고친다. 시트 안에서 Radix
  * 드롭다운을 다시 열면 안 되므로(`apps/web/CLAUDE.md` §메뉴·모달) 인라인 disclosure로 편다. */
-function NotificationDisclosure() {
+function NotificationDisclosure({ viewerId }: { viewerId: string }) {
   const listId = useId();
   const [isExpanded, setIsExpanded] = useState(false);
-  const { data: notifications = [] } = useNotificationListQuery();
-  const markAsRead = useMarkNotificationReadMutation();
-  const unreadCount = notifications.filter((notification) => !notification.read).length;
+  const query = useNotificationListQuery(viewerId);
+  const notifications = [...new Map((query.data?.pages.flatMap((page) => page.items) ?? []).map((item) => [item.id, item])).values()];
+  const markAsRead = useMarkNotificationReadMutation(viewerId);
+  const unreadCount = useNotificationUnreadCountQuery(viewerId).data?.unreadCount ?? 0;
 
   return (
     <>
@@ -195,7 +200,7 @@ function NotificationDisclosure() {
         // 모든 행(콘텐츠 유형 토글~로그아웃)을 아우르는 스크롤 컨테이너를 갖고 있다. 알림이 많아 이
         // 목록이 시트 높이를 넘기면 nav 전체가 스크롤되어 위아래 다른 행도 계속 스크롤로 닿는다.
         <div id={listId} className="flex flex-col gap-0.5">
-          {notifications.length === 0 ? (
+          {notifications.length === 0 && !query.isPending && !query.isError ? (
             <p className="px-2.5 py-4 text-center text-sm text-muted-foreground">아직 알림이 없어요.</p>
           ) : (
             notifications.map((notification) => (
@@ -206,6 +211,9 @@ function NotificationDisclosure() {
               />
             ))
           )}
+          <NotificationFeedStatus isPending={query.isPending} hasError={query.isError} hasNext={!!query.hasNextPage} isFetchingNext={query.isFetchingNextPage}
+            onRetry={() => { if (query.isFetchNextPageError) void query.fetchNextPage(); else void query.refetch(); }}
+            onMore={() => void query.fetchNextPage()} />
         </div>
       )}
     </>
@@ -223,6 +231,14 @@ function NotificationDrawerItem({
   onRead: (id: string) => void;
 }) {
   const destination = resolveNotificationDestination(notification);
+  const [modalState, setModalState] = useAtom(contentDetailModalAtom);
+  if (destination.kind === "comment") {
+    return <SheetClose asChild><Link to="/content/$type/$id" params={{ type: destination.contentType, id: destination.contentId }}
+      search={{ comment: destination.commentId }} replace={modalState !== undefined} className={ROW_CLASS}
+      onClick={() => { if (!notification.read) onRead(notification.id); setModalState(undefined); }}>
+      <NotificationItemContent notification={notification} />
+    </Link></SheetClose>;
+  }
 
   if (destination.kind === "notice") {
     return (

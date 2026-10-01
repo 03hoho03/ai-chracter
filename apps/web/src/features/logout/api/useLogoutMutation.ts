@@ -1,14 +1,21 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useSetAtom } from "jotai";
 
+import { commentDraftLogoutRevisionAtom, commentKeys } from "@/entities/comment";
+import { notificationKeys } from "@/entities/notification";
 import { sessionKeys } from "@/entities/session";
 import { apiClient } from "@/shared/api/client";
 
 export function useLogoutMutation() {
   const queryClient = useQueryClient();
+  const setLogoutRevision = useSetAtom(commentDraftLogoutRevisionAtom);
 
   return useMutation({
     mutationFn: () => apiClient.post<void>("/auth/logout").then((res) => res.data),
     onSuccess: () => {
+      setLogoutRevision((revision) => revision + 1);
+      void queryClient.resetQueries({ queryKey: commentKeys.all });
+      void queryClient.resetQueries({ queryKey: notificationKeys.all });
       // invalidateQueries only marks the query stale and refetches in the background — until that
       // refetch resolves, `data` keeps the previous (logged-in) value, so the header wouldn't switch
       // to the logged-out UI immediately. setQueryData(key, undefined) is a documented no-op (TanStack

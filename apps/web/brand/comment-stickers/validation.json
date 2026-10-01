@@ -1,0 +1,183 @@
+{
+  "date": "2026-09-30",
+  "mode": "built-in image_gen",
+  "originalsViewedIndividually": true,
+  "preview": "preview-128.png",
+  "displaySizePx": 128,
+  "backgrounds": [
+    "#fafafa",
+    "#0d0d0d"
+  ],
+  "browserIntegrationVerified": false,
+  "assets": [
+    {
+      "id": "ddona-hello",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 462275,
+      "sourceSha256": "55bb30dc94f117d8c1fe7c6c685d9cd3fd698eb56516364452a292fc8d2af729",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 23552,
+      "deploySha256": "255c19f71569131a57e87d1aa4f6ae3f83353b9929b5fb0a260f5d09afc49428",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 49690
+    },
+    {
+      "id": "ddona-thanks",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 430138,
+      "sourceSha256": "fc3f1b781e5ba5f5179dbee78f767b23a62a20f30bf9357361f3a3ba324ca062",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 21848,
+      "deploySha256": "b3a618ce8cf40515a0429c2557fe9bf9514ed317ff9cf9197f099b40bb3a17ba",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 49276
+    },
+    {
+      "id": "ddona-cheer",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 504699,
+      "sourceSha256": "7b2c9499fa474db478dbc4aebe83f1c4f07f3bb81a6eb1e976ed080f67890091",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 26364,
+      "deploySha256": "6cf8cf7ae2304dcca3479e0be8abcc0943c7bc2a0979e9edfd509c1c0a1dba2f",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 46572
+    },
+    {
+      "id": "ddona-happy",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 478224,
+      "sourceSha256": "4b05b1ffca27ac34a847ca29c4a9181787d8646ceffe59842d536759ab5a523a",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 25306,
+      "deploySha256": "85e95e0eba0e294578d66e3c20c203d609e6fc158067e92c9007941165ff46b7",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 48451
+    },
+    {
+      "id": "ddona-laugh",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 591380,
+      "sourceSha256": "e8a81b6bcbd18bea5ce29d081b1545ce1d05c9ffa56950ed4d900dd1a5029780",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 31270,
+      "deploySha256": "e0a99e999daab5ecda6226c11f144eb76a1919089f52b0ad12d77a1efe45a30c",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 44542
+    },
+    {
+      "id": "ddona-moved",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 490059,
+      "sourceSha256": "a43f61b9dfba91bc86767c8c183c275317b04cb55925b1e5309b58615e1877c2",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 24982,
+      "deploySha256": "85e6357433dd264fa84944f8a1cd76fb92e8cb4500b8539a1bae3a89dba4934a",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 47108
+    },
+    {
+      "id": "ddona-surprised",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 528000,
+      "sourceSha256": "3e55fdb4c5e139dd33f78cc42c7ac09656576ab1a1363d7c7c667cc726405293",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 26972,
+      "deploySha256": "04c271c12a9b7db1ff61515c823bf8474df44ade71b4c0b38d77ec91566d58cb",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 45730
+    },
+    {
+      "id": "ddona-sad",
+      "sourceSize": [
+        1254,
+        1254
+      ],
+      "sourceBytes": 487819,
+      "sourceSha256": "e6a2e0a1575a8387f611f7fdb64434471fd2e2a46874a9eb6069c9b5ab4b3357",
+      "deploySize": [
+        256,
+        256
+      ],
+      "deployBytes": 24832,
+      "deploySha256": "f370622964c879f9c2c364615b1d88869561e78923f7e22f7dad2e7eef3eee64",
+      "alphaExtrema": [
+        0,
+        255
+      ],
+      "transparentCornerPixels": true,
+      "fullyTransparentPixels": 46667
+    }
+  ],
+  "totalDeployBytes": 205126
+}

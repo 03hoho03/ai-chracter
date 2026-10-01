@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Text, Uuid, false, func
+from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Text, Uuid, false, func, true
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -82,6 +82,12 @@ class Content(Base):
     # 테이블이라 편집해도 버전 행을 건드리지 않는다. 자동저장이 세우고 발행·편집취소가 내린다.
     has_unpublished_changes: Mapped[bool] = mapped_column(
         Boolean, server_default=false(), nullable=False
+    )
+    comments_enabled: Mapped[bool] = mapped_column(Boolean, server_default=true(), nullable=False)
+    pinned_comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("comments.id", use_alter=True, name="fk_contents_pinned_comment_id"),
+        nullable=True,
     )
     view_count: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)
     like_count: Mapped[int] = mapped_column(BigInteger, server_default="0", nullable=False)

@@ -1,5 +1,6 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { useNavigate } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
@@ -11,6 +12,8 @@ import {
 } from "@/entities/report";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+
+import { CommentReportsTable } from "./CommentReportsTable";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
   { value: "all", label: "전체" },
@@ -24,9 +27,11 @@ type ReportsListPageProps = {
   status?: ReportStatusFilter;
   onPageChange: (page: number) => void;
   onStatusChange: (status?: ReportStatusFilter) => void;
+  target: "content" | "comment";
+  onTargetChange: (target: "content" | "comment") => void;
 }
 
-export function ReportsListPage({ page, status, onPageChange, onStatusChange }: ReportsListPageProps) {
+export function ReportsListPage({ page, status, target, onPageChange, onStatusChange, onTargetChange }: ReportsListPageProps) {
   return (
     <main className="mx-auto flex max-w-4xl flex-col gap-6 px-6 py-10">
       <div className="flex items-center justify-between">
@@ -49,7 +54,13 @@ export function ReportsListPage({ page, status, onPageChange, onStatusChange }: 
         </Select>
       </div>
 
-      <ReportsTable page={page} status={status} onPageChange={onPageChange} />
+      <ToggleGroup type="single" variant="outline" value={target} aria-label="신고 대상" className="max-w-full flex-wrap"
+        onValueChange={(value) => { if (value === "content" || value === "comment") onTargetChange(value); }}>
+        <ToggleGroupItem value="content" className="h-auto min-h-9 min-w-0 max-w-full whitespace-normal wrap-anywhere">작품 신고</ToggleGroupItem>
+        <ToggleGroupItem value="comment" className="h-auto min-h-9 min-w-0 max-w-full whitespace-normal wrap-anywhere">댓글 신고</ToggleGroupItem>
+      </ToggleGroup>
+      {target === "comment" ? <CommentReportsTable page={page} status={status} onPageChange={onPageChange} />
+        : <ReportsTable page={page} status={status} onPageChange={onPageChange} />}
     </main>
   );
 }

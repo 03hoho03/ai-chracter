@@ -40,6 +40,7 @@ import { ContentUnavailableState } from "./ContentUnavailableState";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
+import { useContentEditingViewport } from "../lib/useContentEditingViewport";
 
 type ContentDetailViewProps = {
   id: string;
@@ -48,6 +49,7 @@ type ContentDetailViewProps = {
    * 로직에는 절대 쓰지 않는다(아래에서는 전부 `content.type`을 쓴다). */
   type: ContentType;
   variant: "modal" | "page";
+  comments?: ReactNode;
 };
 
 const UPDATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
@@ -93,8 +95,9 @@ const SURFACE_FILL_CLASS = {
  * (홈, 프로필)는 이 컴포넌트를 직접 렌더링하지 않고 `useContentDetailModal().open()`만 호출한다.
  * `variant`가 필요한 이유: 플레이 CTA를 하단에 고정하는 방식이
  * 모달(카드 안 flex)과 풀페이지(lg 미만 fixed)에서 구조 자체가 달라 호출부가 명시한다. */
-export function ContentDetailView({ id, type, variant }: ContentDetailViewProps) {
+export function ContentDetailView({ id, type, variant, comments }: ContentDetailViewProps) {
   const detailQuery = useContentDetailQuery(id);
+  const editingViewport = useContentEditingViewport();
   const setModalState = useSetAtom(contentDetailModalAtom);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -405,8 +408,8 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
     // 다른 fixed/absolute 레이어가 없으므로 z-index 경쟁이 없다.
     return (
       <>
-        <div className="min-h-0 flex-1 overflow-y-auto">{body}</div>
-        <div className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-4-safe">
+        <div data-content-detail-scroll className="min-h-0 flex-1 overflow-y-auto">{body}{comments}</div>
+        <div data-content-play-bar className="-mx-4 -mb-4 shrink-0 rounded-b-xl border-t border-border bg-popover p-4 pb-4-safe">
           {footer}
         </div>
       </>
@@ -421,9 +424,11 @@ export function ContentDetailView({ id, type, variant }: ContentDetailViewProps)
           전폭 고정 바는 DESIGN.md가 경계하는 "상시 크롬"에 가깝다는 판단, 확정 결정).
           z-40: 헤더(`z-30`, sticky)와는 화면 위/아래로 겹칠 일이 없어 순서가 기능에 영향을 주지
           않지만, 이 화면에 뜨는 Dialog/Sheet(`z-50`)는 항상 이 바 위를 덮어야 하므로 그 아래로 둔다. */}
-      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background p-4 pb-4-safe lg:static lg:inset-auto lg:z-auto lg:mt-5 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pb-0">
+      <div data-content-play-bar style={editingViewport ? { bottom: editingViewport.bottomInset } : undefined}
+        className="fixed inset-x-0 bottom-0 z-40 border-t border-border bg-background p-4 pb-4-safe lg:static lg:inset-auto lg:z-auto lg:mt-5 lg:border-t-0 lg:bg-transparent lg:p-0 lg:pb-0">
         {footer}
       </div>
+      {comments}
     </>
   );
 }

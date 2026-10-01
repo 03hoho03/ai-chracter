@@ -83,10 +83,11 @@ class ModerationAction(Base):
 
 
 class Notification(Base):
-    """`type`은 지금 5종이다 — `moderation-action`(기본값, `moderation/router.py`의 신고
+    """`type`은 운영·공지·문의·댓글 사건을 구분한다 — `moderation-action`(기본값, `moderation/router.py`의 신고
     처리에서 INSERT), `user-warned`(`admin/users.py`의 경고), `user-suspended`
     (`admin/users.py`의 정지), `notice`(`admin/notices.py`의 공지 게시 fan-out),
-    `inquiry-reply`(`admin/inquiries.py`의 문의 답변). `type`이 Postgres enum이 아니라 `Text`인 이유가
+    `inquiry-reply`(`admin/inquiries.py`의 문의 답변), 댓글 생성·답글·멘션·운영 조치 알림이다.
+    `type`이 Postgres enum이 아니라 `Text`인 이유가
     그것이다 — 값이 늘어날 여지가 있어 새 값을 추가해도 마이그레이션이 필요 없다.
 
     그래도 범용 알림 프레임워크는 아니다 — type이 코드에 열거된 소수이고 임의 알림을
@@ -112,6 +113,17 @@ class Notification(Base):
     admin_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     notice_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("notices.id"), nullable=True)
     inquiry_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("inquiries.id"), nullable=True)
+    comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("comments.id", name="fk_notifications_comment_id"), nullable=True
+    )
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("users.id", name="fk_notifications_actor_user_id"), nullable=True
+    )
+    comment_action_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid,
+        ForeignKey("comment_moderation_actions.id", name="fk_notifications_comment_action_id"),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -130,6 +142,21 @@ class Notification(Base):
             unique=True,
             postgresql_where=notice_id.is_not(None),
         ),
+        Index(
+            "ux_notifications_comment_user",
+            "comment_id",
+            "user_id",
+            unique=True,
+            postgresql_where=comment_id.is_not(None) & comment_action_id.is_(None),
+        ),
+        Index(
+            "ux_notifications_comment_action_user",
+            "comment_action_id",
+            "user_id",
+            unique=True,
+            postgresql_where=comment_action_id.is_not(None),
+        ),
+        Index("ix_notifications_user_created", "user_id", "created_at", "id"),
     )
 
 
@@ -164,6 +191,9 @@ class Appeal(Base):
 AdminActionType = Literal[
     "appeal-accept",
     "chat-view",
+    "comment-hide",
+    "comment-report-reject",
+    "comment-restore",
     "content-delete",
     "content-lift",
     "content-restrict",
@@ -212,6 +242,9 @@ class AdminActionLog(Base):
     # 사라진 방을 가리키던 칸만 비운다 — 누가 언제 누구의 채팅을 봤는지는 `target_user_id`로 남는다.
     target_chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    target_comment_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("comments.id", name="fk_admin_action_logs_target_comment_id"), nullable=True
     )
     reason_category: Mapped[str | None] = mapped_column(Text, nullable=True)
     reason_text: Mapped[str] = mapped_column(Text, server_default="", nullable=False)

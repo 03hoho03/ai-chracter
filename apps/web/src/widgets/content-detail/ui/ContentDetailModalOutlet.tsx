@@ -1,9 +1,11 @@
 import { Dialog, DialogContent, DialogTitle } from "@ai-character-chat/ui/components/dialog";
 import { cn } from "@ai-character-chat/ui/lib/utils";
+import type { ReactNode } from "react";
 
 import { useContentDetailModal } from "@/entities/content";
 
 import { ContentDetailView } from "./ContentDetailView";
+import { useContentEditingViewport } from "../lib/useContentEditingViewport";
 
 /**
  * `routes/__root.tsx`에 `<Outlet />`과 함께 한 번만 마운트된다.
@@ -11,8 +13,9 @@ import { ContentDetailView } from "./ContentDetailView";
  * 구현할 필요가 없다. 아래 사용중인 리스트(홈, 프로필)는 언마운트되지 않으므로 스크롤 위치도
  * 그대로 유지된다.
  */
-export function ContentDetailModalOutlet() {
+export function ContentDetailModalOutlet({ renderComments }: { renderComments: (id: string) => ReactNode }) {
   const { state, close } = useContentDetailModal();
+  const editingViewport = useContentEditingViewport();
 
   return (
     <Dialog open={state !== undefined} onOpenChange={(open) => !open && close()}>
@@ -23,9 +26,11 @@ export function ContentDetailModalOutlet() {
           캐릭터는 지금 폭(`sm:max-w-lg`)을 그대로 유지한다. */}
       <DialogContent
         className={cn("flex max-h-[85vh] flex-col sm:max-w-lg", state?.type === "story" && "sm:max-w-2xl")}
+        data-content-detail
+        style={editingViewport ? { top: editingViewport.top + editingViewport.height / 2, maxHeight: Math.max(120, editingViewport.height - 24) } : undefined}
       >
         <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>
-        {state && <ContentDetailView id={state.id} type={state.type} variant="modal" />}
+        {state && <ContentDetailView key={state.id} id={state.id} type={state.type} variant="modal" comments={renderComments(state.id)} />}
       </DialogContent>
     </Dialog>
   );

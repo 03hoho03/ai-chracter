@@ -69,11 +69,13 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "boto3",
         "ops",
     },
+    "purge_comment_evidence": {"argparse", "os", "subprocess", "sys", "datetime", "ops"},
     "restore_db": {
         "argparse",
         "os",
         "sys",
         "pathlib",
+        "datetime",
         "ops",
     },
     # 리소스 감시도 시스템 python3로 돈다(ops/cron.d/ddona-resource-check). `notify.py`와
@@ -262,3 +264,10 @@ def test_pg_top_level_imports_are_satisfied_by_production_cron_environment() -> 
         "/usr/bin/python3(+boto3, PYTHONPATH=/opt/ddona/scripts)에 없다 — 배포하면 그 크론이 "
         "import 시점에 죽는다."
     )
+
+
+def test_comment_evidence_purge_uses_system_python_modules() -> None:
+    from ops import purge_comment_evidence
+
+    imports = _top_level_import_names(Path(purge_comment_evidence.__file__))
+    assert not imports - _ALLOWED_TOP_LEVEL_MODULES["purge_comment_evidence"]

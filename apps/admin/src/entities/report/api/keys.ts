@@ -7,4 +7,7 @@ export const reportKeys = {
   list: (params: { page: number; status?: ReportStatusFilter }) =>
     [...reportKeys.all, "list", params.page, params.status ?? "all"] as const,
   detail: (id: string) => [...reportKeys.all, "detail", id] as const,
+  commentList: (params: { page: number; status?: ReportStatusFilter }) =>
+    [...reportKeys.all, "comment-list", params.page, params.status ?? "all"] as const,
+  commentDetail: (id: string) => [...reportKeys.all, "comment-detail", id] as const,
 };

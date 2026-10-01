@@ -2,6 +2,10 @@ export { reportKeys, type ReportStatusFilter } from "./api/keys";
 export { useReportListQuery, type AdminReportListResponse } from "./api/useReportListQuery";
 export { useReportDetailQuery, type AdminReportDetailResponse } from "./api/useReportDetailQuery";
 export { useModerationActionMutation, type ModerationActionType } from "./api/useModerationActionMutation";
+export { useCommentReportListQuery } from "./api/useCommentReportListQuery";
+export { useCommentReportDetailQuery } from "./api/useCommentReportDetailQuery";
+export { useCommentReportActionMutation } from "./api/useCommentReportActionMutation";
+export type { CommentReportDetail, CommentCurrent, CommentReportAction } from "./api/commentReport";
 export {
   isReportReasonCategory,
   REPORT_REASON_LABELS,

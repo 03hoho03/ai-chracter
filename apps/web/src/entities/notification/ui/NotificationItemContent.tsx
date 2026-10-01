@@ -30,6 +30,28 @@ const NOTIFICATION_TITLE_BY_TYPE: Record<string, string> = {
  * 관리자 코멘트 2줄 클램프. 호스트(드롭다운/드로어)가 각자의 래퍼(`DropdownMenuItem`/`Link` 등)를 씌운다. */
 export function NotificationItemContent({ notification }: { notification: NotificationResponse }) {
   const destination = resolveNotificationDestination(notification);
+  const comment = notification.comment;
+  if (comment) {
+    let title: string;
+    if (notification.type === "comment-moderated") title = "댓글 운영 안내";
+    else if (comment.availability === "unavailable") title = "현재 확인할 수 없는 댓글 알림";
+    else if (comment.isSpoiler) title = "스포일러가 포함된 댓글 알림";
+    else {
+      const author = comment.author?.nickname ?? "사용자";
+      if (notification.type === "comment-reply") title = author + "님이 답글을 남겼어요.";
+      else if (notification.type === "comment-mention") title = author + "님이 나를 멘션했어요.";
+      else title = author + "님이 작품에 댓글을 남겼어요.";
+    }
+    const preview = comment.availability === "available" && !comment.isSpoiler
+      ? (comment.bodyPreview || comment.stickerName) ?? undefined : undefined;
+    return <span className="flex min-w-0 w-full items-center justify-between gap-2">
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className={cn("break-keep text-sm", !notification.read && "font-semibold text-foreground")}>{title}</span>
+        {!!preview && <span className="line-clamp-2 text-xs text-muted-foreground wrap-anywhere">{preview}</span>}
+        {notification.type === "comment-moderated" && <span className="line-clamp-2 text-xs text-muted-foreground">{notification.adminComment}</span>}
+      </span><ChevronRight aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+    </span>;
+  }
 
   if (destination.kind !== "none") {
     // 삼항이면 새 kind가 추가돼도 `!== "none"`을 그대로 통과해 무조건 "문의 답변" 제목을 달고 나간다 —
@@ -41,6 +63,9 @@ export function NotificationItemContent({ notification }: { notification: Notifi
         break;
       case "inquiry":
         title = NOTIFICATION_TITLE_BY_TYPE["inquiry-reply"];
+        break;
+      case "comment":
+        title = "댓글 알림";
         break;
       default:
         return assertNever(destination);

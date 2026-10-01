@@ -348,8 +348,16 @@ $C exec -T postgres psql -U postgres -d postgres -c "CREATE DATABASE ai_characte
 cd /opt/ddona/scripts
 sudo TARGET_DATABASE_URL="$(sudo grep ^DATABASE_URL= /opt/ddona/.env | cut -d= -f2-)" \
      PG_DOCKER_NETWORK=ddona_default PYTHONPATH=. python3 -m ops.restore_db /경로/백업.dump
+# 위 명령이 성공한 경우에만 API를 다시 연다. 실패했다면 중단 상태에서 원인을 확인한다.
 cd /opt/ddona/app && $C up -d --wait api
 ```
+
+`restore_db`는 `pg_restore` 성공 후 API를 공개하기 전에 만료된 댓글 신고 원문 증거를
+제거한다. `evidence_expires_at <= 현재 시각`인 본문·스티커·멘션 증거만 비우고 신고·조치
+처리 정보는 유지한다. 파기가 실패하면 복원 명령도 실패하며 ‘복원 완료’를 출력하지 않는다.
+댓글 테이블이 없는 이전 백업은 이 단계를 변경 없이 통과한다. 기존 일간 7일·주간 4주
+순환 보관은 유지되므로, 운영 DB에서 90일 뒤 파기된 증거가 백업 사본에는 해당 사본의
+순환 삭제 시점까지 남을 수 있다. 복원 시 만료 증거를 제거하는 이유다.
 
 R2에서 백업을 내려받으려면 `aws s3 cp s3://ai-chracter-chat/backup/daily/<파일> .`
 (`--endpoint-url`은 `S3_ENDPOINT_URL`).
@@ -721,6 +729,29 @@ tail -f /var/log/ddona-image-request-purge.log
 ⚠️ 매일 06:00 UTC로 골랐다 — `ddona-bugsink-vacuum`(05:00 UTC)과 한 시간 버퍼를 두고
 `ddona-backup`(18:00 UTC, "백업 · 복원" 절)과는 겹치지 않는다. 이 작업(DELETE 한 번)도 pg_dump보다 훨씬
 가벼워 시간대를 더 정교하게 고를 이유가 없다.
+
+### 댓글 신고 원문 증거 파기 — 배포 준비
+
+신고 접수 시각부터 90일이 지난 원문 증거는 관리자 조회에서 즉시 숨기고,
+`apps/api/scripts/ops/purge_comment_evidence.py`가 저장된 본문·스티커 식별자·멘션 식별자를
+제거한다. 신고·조치 메타데이터는 삭제하지 않는다. 중복 신고로 원래 만료 시각을 연장하지 않는다.
+
+아래는 신규 댓글 기능을 운영에 배포할 때 수행할 설치 절차이며, 저장소에 파일이 있다는
+사실만으로 VM에 설치됐다고 보지 않는다. 기존 `/opt/ddona/scripts` 심볼릭 링크가
+저장소의 `apps/api/scripts`를 가리키는지도 확인한다.
+
+```sh
+sudo ln -sf /opt/ddona/app/ops/purge-comment-evidence.sh /opt/ddona/purge-comment-evidence.sh
+sudo ln -sf /opt/ddona/app/ops/cron.d/ddona-comment-evidence-purge /etc/cron.d/ddona-comment-evidence-purge
+sudo -u root /opt/ddona/purge-comment-evidence.sh
+tail /var/log/ddona-comment-evidence-purge.log
+```
+
+크론은 매시간 17분에 시스템 Python으로 실행한다. 래퍼는 `/opt/ddona/.env`에서
+`DATABASE_URL`만 읽고 `PG_DOCKER_NETWORK=ddona_default`로 운영 DB에 연결한다.
+API 가상환경·SQLAlchemy를 import하지 않으며 Discord·메일·공지를 발송하지 않는다.
+실패는 nonzero exit와 stderr에 남으므로 로그에서 오류를 확인한다. 복원 경로도 같은
+파기 함수를 사용하며, 파기가 실패한 복원 대상의 API를 다시 공개하면 안 된다.
 
 ### 3-9. 클로버 만료 — expire cron
 

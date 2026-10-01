@@ -86,7 +86,7 @@ export function Header() {
             // 것처럼 배치되게 하고, `hidden`은 `sm` 미만에서 통째로 감춘다 — 컴포넌트는 마운트된 채라
             // 알림 쿼리는 계속 캐시를 공유한다.
             <div className="hidden sm:contents">
-              <NotificationBell />
+              <NotificationBell viewerId={me.id} />
               <ProfileMenu me={me} />
             </div>
           ) : (

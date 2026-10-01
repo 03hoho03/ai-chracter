@@ -27,6 +27,8 @@ from api.chat.router import (
     stories_router,
 )
 from api.clover.router import me_router as clover_me_router
+from api.comments.reports import router as comment_reports_router
+from api.comments.router import me_router as comments_me_router, router as comments_router
 from api.content.router import router as content_router
 from api.core.config import settings
 from api.core.redis import redis_client
@@ -121,6 +123,9 @@ app.include_router(notice_router)
 app.include_router(inquiry_router)
 app.include_router(inquiry_me_router)
 app.include_router(content_router)
+app.include_router(comments_router)
+app.include_router(comments_me_router)
+app.include_router(comment_reports_router)
 app.include_router(moderation_router)
 app.include_router(chat_router)
 app.include_router(chat_me_router)

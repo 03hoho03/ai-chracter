@@ -4,6 +4,7 @@ from datetime import date, datetime
 from pydantic import Field
 
 from api.core.schema import CamelModel
+from api.comments.schemas import CommentNotificationTargetResponse
 from api.db.models.content import ContentType, ModerationStatus
 from api.db.models.moderation import (
     AppealStatus,
@@ -16,6 +17,8 @@ from api.db.models.moderation import (
 
 
 class NotificationResponse(CamelModel):
+    comment: CommentNotificationTargetResponse | None = None
+    comment_action_id: uuid.UUID | None = None
     id: uuid.UUID
     type: str
     content_id: uuid.UUID | None
@@ -31,6 +34,16 @@ class NotificationResponse(CamelModel):
     admin_comment: str | None
     created_at: datetime
     read: bool
+
+
+class NotificationListResponse(CamelModel):
+    items: list[NotificationResponse]
+    next_cursor: str | None
+    unread_count: int
+
+
+class NotificationUnreadCountResponse(CamelModel):
+    unread_count: int
 
 
 class AppealCreateRequest(CamelModel):

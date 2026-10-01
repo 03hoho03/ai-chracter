@@ -6,6 +6,8 @@ import { Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
 import { CloverBalance, useCloverBalanceQuery } from "@/entities/clover";
+import { useSessionQuery } from "@/entities/session";
+import { CommentSettings } from "@/features/work-comments";
 import { ChangePasswordForm } from "@/features/change-password";
 import { useLogoutMutation } from "@/features/logout";
 import { WithdrawAccountDialog } from "@/features/withdraw-account";
@@ -33,6 +35,7 @@ import { isTheme, themeAtom } from "@/shared/model/theme";
  * 그래서 이 불변식은 **토스터를 포털로 옮기듯 `main` 바깥으로 무언가를 꺼내는 순간 조용히 깨진다.**
  */
 export function MyPagePage() {
+  const { data: me } = useSessionQuery();
   return (
     // 컬럼은 `max-w-2xl`(672px)이 아니라 `max-w-md`(448px)다. DESIGN.md Layout containers는 폼 화면을 `max-w-2xl`로,
     // 설정(`/mypage`)은 따로 `max-w-md`로 적어 뒀다. 이 화면이 `max-w-2xl`이던 근거는 초안 그리드였고, 그 그리드가
@@ -92,6 +95,8 @@ export function MyPagePage() {
       <ThemeSection />
 
       <CloverSection />
+
+      {!!me && <CommentSettings key={me.id} viewerId={me.id} />}
 
       <section className="flex flex-col gap-4">
         <SectionHeading>비밀번호 변경</SectionHeading>

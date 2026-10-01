@@ -1,0 +1,22 @@
+import type { components } from "@ai-character-chat/api-types";
+
+export type Comment = components["schemas"]["CommentResponse"];
+export type CommentAuthor = components["schemas"]["CommentAuthorResponse"];
+export type CommentSticker = components["schemas"]["CommentStickerResponse"];
+export type CommentList = components["schemas"]["CommentListResponse"];
+export type CommentReplies = components["schemas"]["CommentRepliesResponse"];
+export type CommentLocation = components["schemas"]["CommentLocationResponse"];
+export type CommentHiddenList = components["schemas"]["CommentHiddenListResponse"];
+export type CommentWriteRequest = components["schemas"]["CommentUpdateRequest"];
+export type CommentCreateRequest = components["schemas"]["CommentCreateRequest"];
+export type CommentPreferences = components["schemas"]["CommentNotificationPreferencesResponse"];
+export type CommentMutes = components["schemas"]["CommentMutesResponse"];
+export type CommentMentionCandidates = components["schemas"]["CommentMentionCandidatesResponse"];
+export type CommentStickerCatalog = components["schemas"]["CommentStickerCatalogResponse"];
+export type CommentLike = components["schemas"]["CommentLikeResponse"];
+export type CommentPin = components["schemas"]["CommentPinResponse"];
+export type CommentSettings = components["schemas"]["CommentSettingsResponse"];
+export type CommentReport = components["schemas"]["CommentReportResponse"];
+export type CommentReportReason = components["schemas"]["ReportReasonCategory"];
+export type CommentSort = "latest" | "popular";
+export type ReplyPageParam = { cursor: string; direction: "before" | "after" } | undefined;
