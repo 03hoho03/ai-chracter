@@ -43,8 +43,9 @@ import { cn } from "@ai-character-chat/ui/lib/utils"
  * 포커스 표시가 통째로 무너진다 — `focus-visible:border-ring`이 보더를 채움과 **같은 핑크**로
  * 바꿔 rest에 있던 윤곽을 지우고(라이트 대비 1.0000 / 다크 1.0437), 남는 건 50% 링 하나인데 그게
  * 페이지 배경 대비 2.5757(다크) / 2.5511(라이트)로 WCAG 1.4.11의 3:1에 미달한다(두 리뷰어가
- * 독립 측정해 일치). ToggleGroup은 roving tabindex라 **Tab이 닿는 칩은 언제나 선택된 칩 하나**여서
- * 이건 엣지가 아니라 이 프리미티브의 기본 포커스 상태다. 불투명 링은 7.18(다크) / 6.70(라이트). */
+ * 독립 측정해 일치). ToggleGroup은 roving tabindex라 **선택된 칩이 있으면 Tab이 닿는 칩은 언제나 그
+ * 칩 하나**여서 이건 엣지가 아니라 이 프리미티브의 기본 포커스 상태다(선택이 비어 있으면 Radix roving
+ * focus가 마지막으로 포커스한 칩, 그것도 없으면 첫 칩으로 보낸다 — 헤더 유형 토글이 이미지 화면에서 그렇다). 불투명 링은 7.18(다크) / 6.70(라이트). */
 const toggleVariants = cva(
   "group/toggle inline-flex items-center justify-center gap-1 rounded-full text-sm font-medium text-muted-foreground whitespace-nowrap motion-safe:transition-all outline-none hover:bg-muted hover:text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-pressed:bg-primary aria-pressed:text-primary-foreground data-[state=on]:bg-primary data-[state=on]:text-primary-foreground data-[state=on]:hover:bg-primary/80 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
@@ -70,7 +71,9 @@ const toggleVariants = cva(
          * 6.74:1도 또렷이 읽혔지만 그 확인이 "읽는 부담이 없다"를 보장하진 않는다 — 대비 수치와
          * 읽기 부담은 별개 축이라 눈으로 통과했다는 이유로 다운을 씌우지 않는다. */
         list: "rounded-lg border border-input bg-transparent text-foreground hover:bg-muted data-[state=on]:border-primary data-[state=on]:bg-primary/10 data-[state=on]:text-primary data-[state=on]:hover:bg-primary/15",
-        /** 라우트 전환 탭이 하나뿐인 자리(헤더 캐릭터/스토리).
+        /** 라우트 전환 탭이 하나뿐인 자리(헤더 캐릭터/스토리). 그 옆 "이미지" 링크(`ToggleGroup` 밖의
+         * TanStack `Link`)도 `toggleVariants({ variant })`로 이 시각을 빌리고 `data-state="on"`으로 활성을
+         * 켠다 — 밑줄(`after:opacity-100`)은 `data-[state=on]`에만 걸려 있어 `aria-pressed`로는 안 켜진다.
          * 필터 칩에는 쓰지 않는다 — 채움·보더 없이 글자색과 `after:` 밑줄로만 활성을 가른다.
          *
          * `relative` — 베이스에 없다. 없으면 `after:absolute` 밑줄이 포지셔닝 컨텍스트를 못 찾고
