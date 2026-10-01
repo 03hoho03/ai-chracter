@@ -47,6 +47,7 @@ export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessa
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
+export { STORY_MISSING_FIELD_FORM_PATH, STORY_MISSING_FIELD_LABELS } from "./model/publishMissingFields";
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";
 export {
