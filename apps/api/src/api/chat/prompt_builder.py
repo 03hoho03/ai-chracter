@@ -592,7 +592,9 @@ def build_image_judgment_prompt(
     같은 채널을 쓴다.
 
     후보 목록과 이번 턴까지의 대화를 근거로 LLMClient.generateStructured()가 ImageMatchJudgmentResult(구조화
-    출력)로 하나를 고른다. 응답은 항상 단수이므로 "여러 후보가 맞으면 더 앞의 하나"는 문안이 지시한다.
+    출력)로 하나를 고른다. 응답은 항상 단수라 여러 후보가 맞을 때의 고르는 법은 레인 문안(DB)이 정한다 — 현재
+    문안은 캐릭터 레인이 목록에서 더 앞의 하나를, story 레인이 상황 설명이 이번 턴과 가장 구체적으로 맞는 칸
+    하나를 고르게 지시한다(칸 목록의 축 순서는 우선순위가 아니다).
 
     `assistant_label` 은 레인이 게시 검증하는 라벨을 넘긴다 — 캐릭터는 `character_assistant_label`, 스토리는
     `story_assistant_label`(story 레인 게시 검증은 캐릭터 라벨을 보지 않는다).
