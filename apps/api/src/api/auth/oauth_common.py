@@ -119,7 +119,13 @@ async def resolve_oauth_state(
     오류 본문 대신 로그인 화면으로 되돌려 재시도할 수 있게 한다.
     """
     cookie = request.cookies.get(state_cookie_name(provider))
-    if state is None or cookie is None or not secrets.compare_digest(state, cookie):
+    # 바이트로 비교한다 — `compare_digest` 는 비ASCII 문자가 섞인 str 에 TypeError 를 던지는데,
+    # state 는 누구나 고를 수 있는 쿼리 값이라 그대로 넘기면 콜백이 500 이 된다.
+    if (
+        state is None
+        or cookie is None
+        or not secrets.compare_digest(state.encode(), cookie.encode())
+    ):
         return None
     redirect_target = await consume(state)
     if redirect_target is None:

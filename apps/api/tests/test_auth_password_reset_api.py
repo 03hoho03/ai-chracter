@@ -6,6 +6,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.auth.password_reset import store_reset_token
 from api.auth.verification import get_verification_code
 from api.core import rate_limit
 from api.core.email import get_email_sender
@@ -242,3 +243,22 @@ async def test_confirm_token_cannot_be_reused(db_client: httpx.AsyncClient) -> N
 
     validate_after_use = await db_client.get("/auth/password-reset/validate", params={"token": token})
     assert validate_after_use.status_code == 400
+
+
+async def test_confirm_rejects_token_for_social_only_account(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """재설정 요청 단계는 소셜 전용 계정에 메일을 보내지 않지만, 그 검사가 배포되기 전에 발급된
+    토큰은 아직 살아 있을 수 있다. 확정 단계에서도 막지 않으면 그 토큰이 비밀번호를 새로 만든다."""
+    user = _make_user(google_sub=f"google-sub-{uuid.uuid4()}")
+    db_session.add(user)
+    await db_session.flush()
+    token = await store_reset_token(user.id)
+
+    resp = await db_client.post(
+        "/auth/password-reset/confirm", json={"token": token, "newPassword": "new-password123"}
+    )
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "Invalid or expired token"}
+    await db_session.refresh(user)
+    assert user.password_hash is None

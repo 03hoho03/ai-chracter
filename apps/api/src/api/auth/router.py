@@ -510,6 +510,10 @@ async def confirm_password_reset(
     # 탈퇴 계정은 이메일이 자리표시자라 새 토큰은 못 받는다.
     if user is None or user.deleted_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
+    # 비밀번호가 없는 소셜 전용 계정에 비밀번호가 생기는 경로를 재설정 요청 단계와 함께 여기서도
+    # 닫는다 — 요청 단계의 검사가 배포되기 전에 발급된 토큰이 아직 살아 있을 수 있다.
+    if user.password_hash is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid or expired token")
 
     user.password_hash = hash_password(payload.new_password)
     await db.commit()

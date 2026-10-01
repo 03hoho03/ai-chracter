@@ -145,6 +145,24 @@ async def test_google_callback_rejects_state_that_does_not_match_cookie(
     assert await redis_client.get(_state_key(first_state)) is not None
 
 
+async def test_google_callback_rejects_non_ascii_state_against_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """state 는 공격자가 고를 수 있는 쿼리 값이다. 비ASCII 문자열을 str 그대로 상수 시간 비교에
+    넘기면 TypeError 로 500 이 나므로, 쿠키가 있는 상태에서도 로그인 화면으로 돌아오는지 본다."""
+    await _start_google_login(db_client)
+    _override_profile_fetcher(_fail_if_called)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": "\u00e9", "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+
+
 async def test_google_callback_rejects_expired_state_even_with_matching_cookie(
     db_client: httpx.AsyncClient,
 ) -> None:
