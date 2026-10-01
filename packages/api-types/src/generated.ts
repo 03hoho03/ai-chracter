@@ -1224,6 +1224,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/kakao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Kakao Login */
+        get: operations["kakao_login_auth_kakao_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/kakao/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Kakao Callback */
+        get: operations["kakao_callback_auth_kakao_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/onboarding/kakao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Onboarding Kakao */
+        post: operations["onboarding_kakao_auth_onboarding_kakao_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/login": {
         parameters: {
             query?: never;
@@ -4703,7 +4754,7 @@ export interface components {
              * Signupmethod
              * @enum {string}
              */
-            signupMethod: "google" | "email";
+            signupMethod: "kakao" | "google" | "email";
             /** Contentcount */
             contentCount: number;
             /** Restrictablecontentcount */
@@ -6441,6 +6492,10 @@ export interface components {
             termsReconsentRequired: boolean;
             /** Privacyreconsentrequired */
             privacyReconsentRequired: boolean;
+            /** Haspassword */
+            hasPassword: boolean;
+            /** Socialprovider */
+            socialProvider: ("google" | "kakao") | null;
         };
         /** MediaBookAxisInput */
         MediaBookAxisInput: {
@@ -6747,29 +6802,6 @@ export interface components {
             /** Unreadcount */
             unreadCount: number;
         };
-        /** OnboardingGoogleRequest */
-        OnboardingGoogleRequest: {
-            /** Token */
-            token: string;
-            /** Nickname */
-            nickname: string;
-            /**
-             * Birthdate
-             * Format: date
-             */
-            birthDate: string;
-            /** Termsagreed */
-            termsAgreed: boolean;
-            /** Privacyagreed */
-            privacyAgreed: boolean;
-            /** Transferagreed */
-            transferAgreed: boolean;
-        };
-        /** OnboardingGoogleResponse */
-        OnboardingGoogleResponse: {
-            /** Email */
-            email: string;
-        };
         /** PasswordResetConfirmRequest */
         PasswordResetConfirmRequest: {
             /** Token */
@@ -7009,6 +7041,32 @@ export interface components {
             triggerCondition: string;
             /** Order */
             order: number;
+        };
+        /**
+         * SocialOnboardingRequest
+         * @description 소셜 가입(구글·카카오) 온보딩이 함께 쓰는 요청 — 생성 타입이 provider 마다 갈리지 않게
+         *     하나로 둔다. 가입 대기 토큰은 본문이 아니라 HttpOnly 쿠키로 받는다: URL·히스토리·리퍼러로
+         *     토큰이 새도 그 쿠키가 없는 다른 브라우저에서는 가입을 끝낼 수 없게 하려는 것이다.
+         */
+        SocialOnboardingRequest: {
+            /** Nickname */
+            nickname: string;
+            /**
+             * Birthdate
+             * Format: date
+             */
+            birthDate: string;
+            /** Termsagreed */
+            termsAgreed: boolean;
+            /** Privacyagreed */
+            privacyAgreed: boolean;
+            /** Transferagreed */
+            transferAgreed: boolean;
+        };
+        /** SocialOnboardingResponse */
+        SocialOnboardingResponse: {
+            /** Email */
+            email: string;
         };
         /** StartingSetupDraftItem */
         StartingSetupDraftItem: {
@@ -9009,9 +9067,10 @@ export interface operations {
     };
     google_callback_auth_google_callback_get: {
         parameters: {
-            query: {
-                state: string;
-                code: string;
+            query?: {
+                state?: string | null;
+                code?: string | null;
+                error?: string | null;
             };
             header?: never;
             path?: never;
@@ -9048,7 +9107,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["OnboardingGoogleRequest"];
+                "application/json": components["schemas"]["SocialOnboardingRequest"];
             };
         };
         responses: {
@@ -9058,7 +9117,104 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OnboardingGoogleResponse"];
+                    "application/json": components["schemas"]["SocialOnboardingResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kakao_login_auth_kakao_get: {
+        parameters: {
+            query?: {
+                redirect?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    kakao_callback_auth_kakao_callback_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+                code?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    onboarding_kakao_auth_onboarding_kakao_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SocialOnboardingRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SocialOnboardingResponse"];
                 };
             };
             /** @description Validation Error */
