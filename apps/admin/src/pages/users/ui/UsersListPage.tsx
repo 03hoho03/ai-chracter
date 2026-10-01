@@ -2,6 +2,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
+import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
@@ -21,50 +22,73 @@ const SUSPENDED_FILTER_OPTIONS: { value: SuspendedFilterValue; label: string }[]
 type UsersFilterPatch = {
   q?: string;
   suspended?: boolean;
+  beta?: true;
 };
 
 type UsersListPageProps = {
   page: number;
   q?: string;
   suspended?: boolean;
+  beta?: true;
   onPageChange: (page: number) => void;
   onFilterChange: (patch: UsersFilterPatch) => void;
 };
 
 /** ContentsListPage 동형 — 필터·검색·페이지는 전부 라우트 search에 담긴다(routes/users.index.tsx).
  * 이메일·닉네임 검색은 제출 기반이다 — 타이핑마다 요청을 날리지 않는다. `sort`는 BE에 없어 만들지 않는다. */
-export function UsersListPage({ page, q, suspended, onPageChange, onFilterChange }: UsersListPageProps) {
+export function UsersListPage({ page, q, suspended, beta, onPageChange, onFilterChange }: UsersListPageProps) {
   return (
     <main className="mx-auto flex max-w-5xl flex-col gap-6 px-6 py-10">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 관리</h1>
 
-        <div className="flex flex-wrap items-center gap-3">
-          {/* 뒤로가기 등으로 라우트 search의 q가 외부에서 바뀌면 폼째 리마운트해 입력창을 맞춘다. */}
-          <UserSearchForm key={q ?? ""} defaultQuery={q} onSearch={(nextQuery) => onFilterChange({ q: nextQuery })} />
+        {/* 베타 칩은 정지 `Select`와 셸(높이·보더)이 같아 붙여 두면 한 축의 선택지로 읽힌다 —
+         * 축 사이를 `gap-6`으로 벌린다(`apps/web/CLAUDE.md` 필터 절). */}
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* 뒤로가기 등으로 라우트 search의 q가 외부에서 바뀌면 폼째 리마운트해 입력창을 맞춘다. */}
+            <UserSearchForm key={q ?? ""} defaultQuery={q} onSearch={(nextQuery) => onFilterChange({ q: nextQuery })} />
 
-          <Select
-            value={suspendedFilterValueOf(suspended)}
+            <Select
+              value={suspendedFilterValueOf(suspended)}
+              onValueChange={(value) => {
+                if (!isSuspendedFilterValue(value)) return;
+                onFilterChange({ suspended: value === "all" ? undefined : value === "suspended" });
+              }}
+            >
+              <SelectTrigger size="sm" aria-label="정지 상태 필터" className="w-28">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SUSPENDED_FILTER_OPTIONS.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* BE는 `beta=false`(미지정만)도 받지만 쓰는 일은 "베타 참가자만 보기"뿐이라 두 칩만 둔다
+           * (라우트 search도 `true`만 받는다). */}
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            size="sm"
+            value={beta ? "beta" : "all"}
+            aria-label="베타 참가자 필터"
             onValueChange={(value) => {
-              if (!isSuspendedFilterValue(value)) return;
-              onFilterChange({ suspended: value === "all" ? undefined : value === "suspended" });
+              // 선택된 칩을 다시 누르면 Radix가 `""`를 보낸다 — 단일선택이라 무시한다.
+              if (value === "all" || value === "beta") onFilterChange({ beta: value === "beta" ? true : undefined });
             }}
           >
-            <SelectTrigger size="sm" aria-label="정지 상태 필터" className="w-28">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SUSPENDED_FILTER_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+            <ToggleGroupItem value="all">전체</ToggleGroupItem>
+            <ToggleGroupItem value="beta">베타만</ToggleGroupItem>
+          </ToggleGroup>
         </div>
       </div>
 
-      <UsersTable params={{ page, q, suspended }} onPageChange={onPageChange} />
+      <UsersTable params={{ page, q, suspended, beta }} onPageChange={onPageChange} />
     </main>
   );
 }
@@ -154,7 +178,11 @@ function UsersTable({ params, onPageChange }: UsersTableProps) {
               >
                 <TableCell>{item.email}</TableCell>
                 <TableCell className="text-muted-foreground">{item.nickname}</TableCell>
-                <TableCell>{item.suspendedAt ? "정지" : "정상"}</TableCell>
+                <TableCell>
+                  {item.suspendedAt ? "정지" : "정상"}
+                  {/* 베타는 정지와 별개 축이라 같은 칸에 덧붙이되, 기본 상태(미지정)엔 아무것도 안 붙인다. */}
+                  {!!item.betaJoinedAt && <span className="text-muted-foreground"> · 베타</span>}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">{formatCount(item.contentCount)}</TableCell>
                 <TableCell className="text-right tabular-nums">{formatCount(item.chatRoomCount)}</TableCell>
                 <TableCell>{formatDateTime(item.createdAt)}</TableCell>

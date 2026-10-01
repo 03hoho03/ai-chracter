@@ -284,19 +284,28 @@ def _week_start(dt: datetime) -> date:
     return d - timedelta(days=d.weekday())
 
 
-async def _cohort_retention(db: AsyncSession) -> list[AdminDashboardCohort]:
+async def _cohort_retention(db: AsyncSession, *, beta: bool = False) -> list[AdminDashboardCohort]:
     """가입 주차 코호트별 유지율. **근사다** — 로그인 이벤트가 DB에 없어(`last_login`류
     필드 0건) '재방문'을 '그 주에 `ChatMessage.role == USER` 메시지를 보냈는가'로
     대체한다. 정확한 재방문율이 아니다. 아직 해당 주차에 도달하지 못한 코호트는 도달한
     주차까지만 채운다 — `trend`처럼 미래를 0으로 채우면 '유지 안 함'과 '아직 관측
-    불가'가 구분되지 않는다."""
-    user_rows = (
-        await db.execute(select(User.id, User.created_at).where(User.deleted_at.is_(None)))
-    ).all()
+    불가'가 구분되지 않는다.
+
+    `beta=True`면 베타 참가자로 지정된 사용자만 세고, 코호트를 가입 주차가 아니라 **베타
+    지정 주차**로 묶는다. 베타 전에 가입한 사용자를 지정해도 0주차가 지정한 주가 되게 하려는
+    것이다. 주차는 월요일 단위라 지정한 주 안에서도 지정 시각보다 앞선 메시지가 0주차로
+    떨어지므로, 각 사용자의 지정 시각 이전 메시지는 아예 세지 않는다 — 0주차는 지정 후 그
+    주 안의 활동이어야 한다. 전체 모드에선 가입 전 메시지가 있을 수 없어 이 거름이 필요 없다."""
+    cohort_at = User.beta_joined_at if beta else User.created_at
+    user_query = select(User.id, cohort_at.label("cohort_at")).where(User.deleted_at.is_(None))
+    if beta:
+        user_query = user_query.where(User.beta_joined_at.is_not(None))
+    user_rows = (await db.execute(user_query)).all()
     if not user_rows:
         return []
 
-    cohort_start_by_user = {row.id: _week_start(row.created_at) for row in user_rows}
+    cohort_start_by_user = {row.id: _week_start(row.cohort_at) for row in user_rows}
+    beta_joined_at_by_user = {row.id: row.cohort_at for row in user_rows} if beta else {}
     cohort_users: dict[date, set[uuid.UUID]] = {}
     for user_id, signup_week in cohort_start_by_user.items():
         cohort_users.setdefault(signup_week, set()).add(user_id)
@@ -315,6 +324,8 @@ async def _cohort_retention(db: AsyncSession) -> list[AdminDashboardCohort]:
         cohort_start = cohort_start_by_user.get(row.user_id)
         if cohort_start is None:
             continue  # 탈퇴 유저 — 코호트 분모에서 이미 빠졌다.
+        if beta and row.created_at < beta_joined_at_by_user[row.user_id]:
+            continue  # 베타 지정 전 활동 — 같은 주 안이어도 유지로 세지 않는다.
         offset = (_week_start(row.created_at) - cohort_start).days // 7
         if 0 <= offset <= _MAX_COHORT_WEEK_OFFSET:
             retained_by_cohort_offset.setdefault((cohort_start, offset), set()).add(row.user_id)
@@ -401,3 +412,16 @@ async def get_dashboard_growth(
         creator_rate=users_with_content / total_users if total_users else 0.0,
         cohort_retention=await _cohort_retention(db),
     )
+
+
+@router.get("/admin/dashboard/cohort-retention")
+async def get_dashboard_cohort_retention(
+    beta: bool = Query(False),
+    _admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[AdminDashboardCohort]:
+    """코호트 유지율만 따로 준다. `beta=false`(기본)는 `/growth`의 `cohort_retention`과 같은
+    값이고, `beta=true`는 베타 참가자만 지정 주차 기준으로 묶는다(`_cohort_retention` 참고).
+    `/growth`에 파라미터를 더하지 않은 이유는 한 응답 안에서 이 필드만 베타로 걸러지고 나머지
+    지표는 전체 기준으로 남아 섞여 읽히기 때문이다."""
+    return await _cohort_retention(db, beta=beta)

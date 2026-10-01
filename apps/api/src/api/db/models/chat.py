@@ -2,11 +2,28 @@ import enum
 import uuid
 from datetime import datetime
 from decimal import Decimal
+from typing import Literal
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Index, Integer, Numeric, Text, Uuid, false, func
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    false,
+    func,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+from api.db.models.moderation import ReportStatus
 
 
 class ChatMessageRole(str, enum.Enum):
@@ -189,4 +206,112 @@ class StoryMediaExposure(Base):
     cell_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     first_exposed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+DiscardedResponseKind = Literal["regenerate", "edit"]
+
+
+class DiscardedResponse(Base):
+    """재생성·편집으로 AI 응답이 실제로 지워진 한 번 = 한 행. 응답 품질 불만의 암묵 신호를 SQL로
+    세기 위한 기록이라 응답 원문은 저장하지 않는다.
+
+    `discarded_count`는 그 행동이 지운 AI 응답 수다 — 재생성은 항상 1, 편집은 편집한 메시지 뒤에서
+    지워진 AI 응답 수. 0개를 지운 행동은 행을 만들지 않으므로 CHECK가 1 이상을 강제한다.
+
+    방 삭제·탈퇴는 이 행을 지우지 않는다(`delete_chat_rooms`의 자식 목록에 없는 것이 의도다).
+    방이 사라지면 `chat_room_id`만 `SET NULL`로 비고 행과 `user_id`는 남는다 — 지표가 방 삭제로
+    줄면 안 되기 때문이다. `kind`는 native enum이 아니라 Text이고 위 Literal이 값 범위다(값이 늘
+    때 마이그레이션 없이 넓히기 위해서다)."""
+
+    __tablename__ = "discarded_responses"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    kind: Mapped[DiscardedResponseKind] = mapped_column(Text, nullable=False)
+    discarded_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 🔴 `alembic check`는 CHECK 제약을 비교하지 않는다 — 검증은 행위 테스트가 유일하다.
+    # 집계(일별 재생성 수·사용자별 재생성률)는 테이블 전체를 읽으므로 집계용 인덱스는 두지 않는다.
+    # `chat_room_id` 인덱스는 방 DELETE마다 Postgres가 이 테이블에서 그 방을 가리키는 행을 찾아
+    # 비우는 조회를 위한 것이다 — 없으면 재생성할 때마다 늘어나는 이 테이블을 방 하나 지울 때마다
+    # 처음부터 훑는다.
+    __table_args__ = (
+        CheckConstraint("discarded_count >= 1", name="ck_discarded_responses_count_positive"),
+        Index("ix_discarded_responses_chat_room_id", "chat_room_id"),
+    )
+
+
+ChatMessageReportReason = Literal[
+    "inappropriate",
+    "hateful",
+    "out_of_character",
+    "repetitive",
+    "broken",
+    "other",
+]
+
+
+class ChatMessageReport(Base):
+    """AI 응답 신고. 신고 metadata와 대화 사본(증거)의 수명을 분리한 댓글 신고(`CommentReport`)와 같은
+    구조다 — 증거는 접수 시 복사해 두고 90일이 지나면 조회에서 빠지며 파기 작업이 칸을 비운다.
+
+    `chat_room_id`·`chat_message_id`는 `SET NULL`이다. 재생성·메시지 삭제·편집·방 초기화·방 삭제가
+    신고된 메시지를 지워도 신고와 증거 사본은 남아야 하고, 지우는 쪽이 이 테이블을 몰라도 FK
+    위반으로 실패하지 않아야 한다. 그래서 대상 메시지를 가리키는 칸이 NULL일 수 있고, 증거
+    칸만으로 무엇이 신고됐는지 읽혀야 한다.
+
+    같은 회원이 같은 메시지를 두 번 신고하면 유니크 제약이 막는다. 이 제약은 Postgres 기본값인
+    NULLS DISTINCT여야 한다 — NULLS NOT DISTINCT면 한 회원이 신고한 메시지 둘이 지워져
+    `chat_message_id`가 둘 다 NULL이 되는 순간 그 DELETE가 유니크 위반으로 실패한다.
+
+    `reason`은 native enum이 아니라 Text이고 위 Literal이 값 범위다(베타 피드백으로 사유가 바뀌어도
+    마이그레이션 없이 넓히기 위해서다). `status`는 작품·댓글 신고와 같은 `report_status` 타입을
+    쓴다. 메모 길이 제한은 요청 스키마가 강제한다."""
+
+    __tablename__ = "chat_message_reports"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    reporter_user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), nullable=False)
+    chat_room_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_rooms.id", ondelete="SET NULL"), nullable=True
+    )
+    chat_message_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("chat_messages.id", ondelete="SET NULL"), nullable=True
+    )
+    reason: Mapped[ChatMessageReportReason] = mapped_column(Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[ReportStatus] = mapped_column(
+        Enum(ReportStatus, name="report_status"), nullable=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    resolved_by_admin_id: Mapped[uuid.UUID | None] = mapped_column(
+        Uuid, ForeignKey("admin_users.id"), nullable=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 신고된 AI 응답 본문과, 그보다 앞선 가장 최근 사용자 메시지(없으면 NULL — 오프닝 신고).
+    evidence_response: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_user_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=text("now() + interval '90 days'"), nullable=False
+    )
+    evidence_purged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # 유니크의 열 순서가 (메시지, 신고자)인 것은 이 인덱스가 메시지 DELETE의 `SET NULL` 조회도
+    # 받게 하기 위해서다 — 재생성은 매번 메시지를 지우므로, 메시지가 앞 열이 아니면 그때마다 이
+    # 테이블을 처음부터 훑는다. 유일성의 뜻은 열 순서와 무관하다.
+    __table_args__ = (
+        UniqueConstraint(
+            "chat_message_id", "reporter_user_id", name="ux_chat_message_reports_message_reporter"
+        ),
+        Index("ix_chat_message_reports_status_created", "status", "created_at", "id"),
+        Index("ix_chat_message_reports_evidence_expires", "evidence_expires_at"),
     )

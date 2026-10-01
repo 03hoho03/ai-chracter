@@ -12,6 +12,7 @@ export {
   useSetRateLimitExemptMutation,
   type AdminUserRateLimitExemptRequest,
 } from "./api/useSetRateLimitExemptMutation";
+export { useSetBetaMutation, type AdminUserBetaRequest } from "./api/useSetBetaMutation";
 export { useAdjustCloverMutation, type AdminUserCloverRequest } from "./api/useAdjustCloverMutation";
 export {
   useCloverLedgerQuery,

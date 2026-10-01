@@ -116,6 +116,7 @@ from api.db.models.chat import (
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatRoomStat,
+    DiscardedResponse,
     StoryEndingUnlock,
     StoryMediaExposure,
 )
@@ -1767,6 +1768,9 @@ async def regenerate_message(
 
     assistant_content = "".join(chunks)
     await db.execute(delete(ChatMessage).where(ChatMessage.id == last_message.id))
+    # 옛 응답 DELETE 와 같은 트랜잭션이라 응답이 실제로 지워진 재생성만 센다 — 렌더 실패·정책
+    # 위반·LLM 오류는 위에서 옛 응답을 남긴 채 끝나므로 기록되지 않는다.
+    db.add(DiscardedResponse(user_id=room.user_id, chat_room_id=room.id, kind="regenerate", discarded_count=1))
     new_message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content=assistant_content)
     db.add(new_message)
 
@@ -1920,6 +1924,14 @@ async def edit_message(
             await db.execute(
                 delete(ChatMessage).where(ChatMessage.id.in_([m.id for m in trailing]))
             )
+            # 지운 AI 응답을 아래 커밋에 함께 기록한다. 새 턴 생성이 실패해도 이 삭제는 이미 커밋돼
+            # 응답이 사라진 뒤라 기록도 남는 것이 맞다. AI 응답을 하나도 지우지 않은 편집은 세지 않는다.
+            if removed_turns >= 1:
+                db.add(
+                    DiscardedResponse(
+                        user_id=room.user_id, chat_room_id=room.id, kind="edit", discarded_count=removed_turns
+                    )
+                )
 
         message.content = payload.content
         await db.commit()

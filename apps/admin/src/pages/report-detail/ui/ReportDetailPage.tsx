@@ -3,14 +3,15 @@ import { Link } from "@tanstack/react-router";
 
 import { ReportActionPanel } from "@/features/act-on-report";
 import { CONTENT_TYPE_LABELS, MODERATION_STATUS_LABELS } from "@/entities/admin-content";
-import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery } from "@/entities/report";
+import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS, useReportDetailQuery, type ReportTarget } from "@/entities/report";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+import { ChatMessageReportDetailBody } from "./ChatMessageReportDetailBody";
 import { CommentReportDetailBody } from "./CommentReportDetailBody";
 
 type ReportDetailPageProps = {
   reportId: string;
-  target: "content" | "comment";
+  target: ReportTarget;
 }
 
 export function ReportDetailPage({ reportId, target }: ReportDetailPageProps) {
@@ -22,9 +23,28 @@ export function ReportDetailPage({ reportId, target }: ReportDetailPageProps) {
 
       <h1 className="text-2xl font-bold tracking-tight text-foreground">신고 상세</h1>
 
-      {target === "comment" ? <CommentReportDetailBody reportId={reportId} /> : <ReportDetailBody reportId={reportId} />}
+      <TargetReportDetailBody target={target} reportId={reportId} />
     </main>
   );
+}
+
+/** 대상마다 상세 API가 다르다. 두 갈래 삼항이면 새 대상이 그 id로 작품 신고 상세를 불러 404 화면이
+ * 되므로 대상을 하나씩 명시하고, `assertNever`로 대상이 늘었을 때 여기서 컴파일이 깨지게 한다. */
+function TargetReportDetailBody({ target, reportId }: { target: ReportTarget; reportId: string }) {
+  switch (target) {
+    case "content":
+      return <ReportDetailBody reportId={reportId} />;
+    case "comment":
+      return <CommentReportDetailBody reportId={reportId} />;
+    case "chat-message":
+      return <ChatMessageReportDetailBody reportId={reportId} />;
+    default:
+      return assertNever(target);
+  }
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected: ${String(value)}`);
 }
 
 type ReportDetailBodyProps = {

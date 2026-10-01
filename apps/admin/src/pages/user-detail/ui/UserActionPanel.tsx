@@ -6,17 +6,19 @@ type UserActionPanelProps = {
   userId: string;
   isSuspended: boolean;
   isRateLimitExempt: boolean;
+  isBeta: boolean;
   restrictableContentCount: number;
 };
 
 /** ContentActionPanel과 같은 결 — 정지 여부 하나로 분기한다: 정상이면 [경고][정지],
  * 정지 중이면 [경고][정지 해제]. 경고는 정지 중에도 BE가 허용한다.
  * 레이트리밋 면제는 정지와 무관한 별개 축이라 정지 여부와 상관없이
- * 항상 한 자리를 차지하고, 현재 면제 여부로만 라벨이 갈린다. */
+ * 항상 한 자리를 차지하고, 현재 면제 여부로만 라벨이 갈린다. 베타 지정도 같은 모양의 별개 축이다. */
 export function UserActionPanel({
   userId,
   isSuspended,
   isRateLimitExempt,
+  isBeta,
   restrictableContentCount,
 }: UserActionPanelProps) {
   return (
@@ -67,6 +69,20 @@ export function UserActionPanel({
           }
         >
           {isRateLimitExempt ? "면제 해제" : "레이트리밋 면제"}
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            void UserActionConfirmModal.call({
+              userId,
+              action: isBeta ? "beta-off" : "beta-on",
+              restrictableContentCount,
+            })
+          }
+        >
+          {isBeta ? "베타 해제" : "베타 지정"}
         </Button>
         {/* 지급·회수는 둘 다 있어야 오지급을 되돌릴 수 있다.
          * 면제 토글과 달리 **상태로 갈리지 않는다** — 잔액이 있든 없든 지급은 늘 가능하고,

@@ -16,7 +16,8 @@ export function DashboardPage() {
       <TrendChart />
 
       {/* 성장 지표는 `PRODUCT.md`가 선언한 성공 기준(가입자→첫 대화, 제작자→발행)을
-       * 그대로 옮긴 것이다. 카드와 표가 `useGrowthQuery` 하나를 공유한다(요청 1개). */}
+       * 그대로 옮긴 것이다. 유지율 표는 전체/베타 토글이 있어 카드의 `/growth`가 아니라 전용
+       * 엔드포인트를 따로 부른다(`/growth`의 다른 지표는 베타로 거르지 않는다). */}
       <GrowthCards />
       <CohortTable />
 

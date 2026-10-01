@@ -12,6 +12,9 @@ const usersSearchSchema = z.object({
   page: z.coerce.number().int().min(1).optional().catch(undefined),
   q: z.string().optional().catch(undefined),
   suspended: z.boolean().optional().catch(undefined),
+  // 화면의 필터는 "전체 / 베타만" 두 칩뿐이다. BE가 받는 `beta=false`(미지정만)를 URL로 통과시키면
+  // 칩은 "전체"로 보이는데 목록은 걸러진 채라 화면과 결과가 어긋난다 — `true`만 받고 나머지는 삼킨다.
+  beta: z.literal(true).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/users/")({
@@ -21,7 +24,7 @@ export const Route = createFileRoute("/users/")({
 });
 
 function RouteComponent() {
-  const { page = 1, q, suspended } = Route.useSearch();
+  const { page = 1, q, suspended, beta } = Route.useSearch();
   const navigate = Route.useNavigate();
 
   return (
@@ -29,6 +32,7 @@ function RouteComponent() {
       page={page}
       q={q}
       suspended={suspended}
+      beta={beta}
       onPageChange={(nextPage) => void navigate({ search: (prev) => ({ ...prev, page: nextPage }) })}
       onFilterChange={(patch) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: 1 }) })}
     />

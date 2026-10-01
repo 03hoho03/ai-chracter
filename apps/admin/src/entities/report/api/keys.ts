@@ -10,4 +10,7 @@ export const reportKeys = {
   commentList: (params: { page: number; status?: ReportStatusFilter }) =>
     [...reportKeys.all, "comment-list", params.page, params.status ?? "all"] as const,
   commentDetail: (id: string) => [...reportKeys.all, "comment-detail", id] as const,
+  chatMessageList: (params: { page: number; status?: ReportStatusFilter }) =>
+    [...reportKeys.all, "chat-message-list", params.page, params.status ?? "all"] as const,
+  chatMessageDetail: (id: string) => [...reportKeys.all, "chat-message-detail", id] as const,
 };

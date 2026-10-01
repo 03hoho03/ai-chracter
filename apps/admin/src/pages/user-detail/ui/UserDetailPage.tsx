@@ -10,7 +10,7 @@ import {
   useCloverLedgerQuery,
   useUserDetailQuery,
 } from "@/entities/admin-user";
-import { REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
+import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
@@ -24,15 +24,17 @@ type UserDetailPageProps = {
 const INLINE_LINK_CLASS = "font-medium text-primary hover:underline focus-visible:underline focus-visible:outline-none";
 
 /** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
- * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS)와 채팅 열람 로그(별도 사유 4종,
- * CHAT_VIEW_REASON_CATEGORY_LABELS)가 같은 테이블을 써서 두 사유 체계가 섞여 들어온다. `other`는
- * 두 집합 모두에 있지만 한글 라벨이 둘 다 "기타"로 같으므로(entities/report, entities/admin-user
+ * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS), 채팅 열람 로그(별도 사유 4종,
+ * CHAT_VIEW_REASON_CATEGORY_LABELS), 채팅 응답 신고 처리 로그(신고 사유 6종,
+ * CHAT_MESSAGE_REPORT_REASON_LABELS)가 같은 테이블을 써서 세 사유 체계가 섞여 들어온다. 겹치는 키는
+ * `other` 하나뿐이고 세 집합 모두 한글 라벨이 "기타"로 같으므로(entities/report, entities/admin-user
  * 각 model/labels.ts 확인) 스프레드 순서와 무관하게 값이 동일하다 — 합쳐도 의미가 바뀌지 않는다.
  * `Record<string, string>`이라 `??` 폴백으로 모르는 값은 원문 그대로 보여준다(CLOVER_KIND_LABELS와
  * 동일한 관례 — 유니언으로 강제하는 ACTION_TYPE_LABELS와는 다르다). */
 const REASON_CATEGORY_LABELS_ALL: Record<string, string> = {
   ...REPORT_REASON_LABELS,
   ...CHAT_VIEW_REASON_CATEGORY_LABELS,
+  ...CHAT_MESSAGE_REPORT_REASON_LABELS,
 };
 
 export function UserDetailPage({ userId }: UserDetailPageProps) {
@@ -81,6 +83,13 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
                 <span>레이트리밋 면제</span>
               </>
             )}
+            {/* 베타도 "아님"이 기본값이라 같은 이유로 지정된 경우만 붙인다. 지정 시각은 아래 `dl`에 둔다. */}
+            {!!userDetailQuery.data.betaJoinedAt && (
+              <>
+                <span aria-hidden>·</span>
+                <span>베타 참가</span>
+              </>
+            )}
           </div>
           <p className="text-lg font-semibold text-foreground">{userDetailQuery.data.nickname}</p>
           <p className="text-sm text-muted-foreground">{userDetailQuery.data.email}</p>
@@ -105,6 +114,13 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
             <dt className="text-muted-foreground">최근 활동</dt>
             <dd className="text-foreground">{formatDateTime(userDetailQuery.data.lastActiveAt)}</dd>
           </div>
+          {/* 재지정해도 BE가 첫 지정 시각을 유지한다 — 베타 코호트 리텐션이 이 시각의 주로 묶인다. */}
+          {!!userDetailQuery.data.betaJoinedAt && (
+            <div>
+              <dt className="text-muted-foreground">베타 지정</dt>
+              <dd className="text-foreground">{formatDateTime(userDetailQuery.data.betaJoinedAt)}</dd>
+            </div>
+          )}
         </dl>
 
         {/* 클로버 잔액을 여기 넣는 이유: 작품·채팅방·메시지와 같은 "이 유저의 현재 수치"이고,
@@ -279,6 +295,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
         userId={userDetailQuery.data.id}
         isSuspended={userDetailQuery.data.suspendedAt !== null}
         isRateLimitExempt={userDetailQuery.data.rateLimitExempt}
+        isBeta={userDetailQuery.data.betaJoinedAt !== null}
         restrictableContentCount={userDetailQuery.data.restrictableContentCount}
       />
     </>

@@ -2,13 +2,14 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import Field, StringConstraints
+from pydantic import ConfigDict, Field, StringConstraints, field_validator
 
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH
 from api.content.schemas import CharacterDraftPayload, MediaTagImage, StoryDraftPayload
 from api.core.schema import CamelModel
-from api.db.models.chat import ChatMessageRole
+from api.db.models.chat import ChatMessageReportReason, ChatMessageRole
 from api.db.models.content import ContentType
+from api.db.models.moderation import ReportStatus
 from api.db.models.story import EndingRuleOperator, LogicalOp
 
 
@@ -312,3 +313,84 @@ ChatStreamEvent = Annotated[
     | ChatErrorEvent,
     Field(discriminator="type"),
 ]
+
+
+# 신고 메모 상한. 웹 신고 모달의 입력 상한과 같은 값이어야 한다 — 다르면 모달이 허용한 메모가
+# 422로 거절된다. `strip_whitespace`가 길이 검사보다 먼저라 앞뒤 공백은 세지 않는다.
+CHAT_REPORT_NOTE_MAX_LENGTH = 200
+
+ChatReportNoteText = Annotated[str, StringConstraints(strip_whitespace=True, max_length=CHAT_REPORT_NOTE_MAX_LENGTH)]
+
+
+class ChatMessageReportCreateRequest(CamelModel):
+    """메모는 선택이다. 공백만 보내면 메모 없음(NULL)으로 저장한다 — 빈 문자열과 NULL 두 가지로
+    "메모 없음"이 갈리면 어드민이 둘을 따로 다뤄야 한다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    reason: ChatMessageReportReason
+    note: ChatReportNoteText | None = None
+
+    @field_validator("note")
+    @classmethod
+    def _blank_note_is_none(cls, value: str | None) -> str | None:
+        return value or None
+
+
+class ChatMessageReportResponse(CamelModel):
+    report_id: uuid.UUID
+    status: ReportStatus
+
+
+class AdminChatMessageReportListItem(CamelModel):
+    """`chat_room_id`·`chat_message_id`는 방 삭제·재생성·메시지 삭제로 대상이 지워지면 null이다."""
+
+    id: uuid.UUID
+    reporter_user_id: uuid.UUID
+    chat_room_id: uuid.UUID | None
+    chat_message_id: uuid.UUID | None
+    reason: ChatMessageReportReason
+    status: ReportStatus
+    created_at: datetime
+    evidence_expires_at: datetime
+    evidence_available: bool
+
+
+class AdminChatMessageReportListResponse(CamelModel):
+    items: list[AdminChatMessageReportListItem]
+    page: int
+    total_pages: int
+    total_count: int
+
+
+class ChatMessageReportEvidenceResponse(CamelModel):
+    """`available`이 false면(90일 만료·파기·탈퇴) 두 본문은 null이다. `available`이 true인데
+    `user_message`가 null이면 신고된 응답 앞에 사용자 메시지가 없었다는 뜻이다(오프닝 신고)."""
+
+    expires_at: datetime
+    available: bool
+    response: str | None
+    user_message: str | None
+
+
+class AdminChatMessageReportDetailResponse(CamelModel):
+    id: uuid.UUID
+    reporter_user_id: uuid.UUID
+    chat_room_id: uuid.UUID | None
+    chat_message_id: uuid.UUID | None
+    reason: ChatMessageReportReason
+    note: str | None
+    status: ReportStatus
+    created_at: datetime
+    resolved_by_admin_id: uuid.UUID | None
+    resolved_at: datetime | None
+    evidence: ChatMessageReportEvidenceResponse
+
+
+class AdminChatMessageReportActionRequest(CamelModel):
+    """AI 응답에는 숨기거나 제재할 작성자가 없어 처리는 해결·기각 둘뿐이다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["resolve", "reject"]
+    admin_comment: str

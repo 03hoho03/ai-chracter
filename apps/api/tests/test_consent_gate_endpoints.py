@@ -1,8 +1,8 @@
 """`require_legal_consent`가 "막는다" 28개에
-붙어 있고 "연다" 17개에는 안 붙어 있는지 3층으로 검증한다.
-개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다).
+붙어 있고 "연다" 18개에는 안 붙어 있는지 3층으로 검증한다.
+개수에는 대화 프로필 차단 4·개방 1과 방 기억 차단 3·개방 1이 들어 있다(그 전에는 21+15였다). 채팅 응답 신고 개방 1을 더해 18이다.
 
-(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 28개/17개의 실제 데코레이터를 대조한다.
+(a) 라우트 테이블 내성검사 — `app.routes`를 순회해 28개/18개의 실제 데코레이터를 대조한다.
     이 저장소가 신형 FastAPI(0.139) 내부 구조를 쓴다 — `app.routes`는 평범한 `APIRoute` 목록이
     아니라 `_IncludedRouter`(`app.include_router()`의 결과)로 감싸여 있어, 공개 API인
     `fastapi.routing.iter_route_contexts()`로 펼쳐야 각 라우트의 `.dependant`에 닿는다
@@ -12,7 +12,7 @@
     해석되므로(fastapi.dependencies.utils.solve_dependencies가 그 리스트를 순서대로 돌며 첫
     HTTPException에서 곧장 전파한다) 경로 파라미터는 실존할 필요가 없다 — 라우터 본문의
     소유권 조회(404) 이전에 게이트가 먼저 막는다.
-(c) 17개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
+(c) 18개 예외가 재동의가 실제로 필요한 상태에서도 여전히 200/204 — `require_legal_consent`를
     `get_current_user_id`에 잘못 넣는 변이를 이 층만이 잡는다.
 
 `factories._make_user`는 기본적으로 어떤 게시본보다 큰 `terms_version`/`privacy_version`을
@@ -84,13 +84,14 @@ _BLOCKED_REQUESTS: list[tuple[str, str, dict[str, object] | None]] = [
     ("POST", "/chat-rooms/{room_id}/memory/summary/revert", {"version": 0}),
 ]
 
-# ---- (a)/(c) 공통: "연다" 17개 ----
+# ---- (a)/(c) 공통: "연다" 18개 ----
 
 _OPEN_PATHS: list[tuple[str, str]] = [
     ("POST", "/legal/consent"),
     ("DELETE", "/me"),
     ("PATCH", "/me/password"),
     ("POST", "/contents/{id}/report"),
+    ("POST", "/chat-rooms/{room_id}/messages/{message_id}/report"),
     ("POST", "/appeals"),
     ("POST", "/inquiries"),
     ("PATCH", "/notifications/{notification_id}/read"),
@@ -175,7 +176,7 @@ async def test_blocked_endpoint_returns_403_without_consent(
     assert resp.json()["detail"]["code"] == "LEGAL_RECONSENT_REQUIRED"
 
 
-# ---- (c) 17개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
+# ---- (c) 18개 예외 — 재동의가 실제로 필요한 상태에서도 200/204 ----
 
 
 async def _unconsented_user(db_client: httpx.AsyncClient, db_session: AsyncSession) -> User:
@@ -249,6 +250,21 @@ async def test_report_still_open_without_consent(db_client: httpx.AsyncClient, d
     resp = await db_client.post(f"/contents/{content.id}/report", json={"reasonCategory": "spam"})
 
     assert resp.status_code == 204
+
+
+async def test_chat_message_report_still_open_without_consent(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = await _unconsented_user(db_client, db_session)
+    room = await _owned_chat_room(db_session, user)
+    message = ChatMessage(chat_room_id=room.id, role=ChatMessageRole.ASSISTANT, content="응답")
+    db_session.add(message)
+    await db_session.flush()
+    await db_session.commit()
+
+    resp = await db_client.post(f"/chat-rooms/{room.id}/messages/{message.id}/report", json={"reason": "other"})
+
+    assert resp.status_code == 200
 
 
 async def test_appeal_still_open_without_consent(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

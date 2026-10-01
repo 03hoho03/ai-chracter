@@ -1,6 +1,6 @@
 import uuid
-from collections.abc import AsyncGenerator
-from datetime import datetime, timedelta, timezone, UTC
+from collections.abc import AsyncGenerator, Callable
+from datetime import date, datetime, timedelta, timezone, UTC
 
 import httpx
 import pytest
@@ -190,6 +190,12 @@ _ADMIN_SESSION_GUARD_CASES = [
         f"/admin/users/{uuid.uuid4()}/rate-limit-exempt",
         {"exempt": True, "adminComment": "면제합니다"},
         id="rate-limit-exempt",
+    ),
+    pytest.param(
+        "post",
+        f"/admin/users/{uuid.uuid4()}/beta",
+        {"beta": True, "adminComment": "베타 참가"},
+        id="beta",
     ),
     pytest.param(
         "post",
@@ -1193,3 +1199,226 @@ async def test_set_rate_limit_exempt_on_deleted_user_returns_404(
         f"/admin/users/{user.id}/rate-limit-exempt", json={"exempt": True, "adminComment": "면제"}
     )
     assert resp.status_code == 404
+
+
+# ---- 베타 참가자 지정 ---------------------------------------------------------
+
+
+def _birth_date_turning(age: int, today: date) -> date:
+    """`today` 에 만 `age` 세가 되는 생년월일. 2월 29일에는 그 해(평년)에 같은 날이 없으므로
+    2월 28일생을 쓴다 — 그 사람도 오늘 이미 만 `age` 세다."""
+    try:
+        return today.replace(year=today.year - age)
+    except ValueError:
+        return date(today.year - age, 2, 28)
+
+
+async def _beta_logs(db_session: AsyncSession, user_id: uuid.UUID) -> list[AdminActionLog]:
+    return list(
+        (
+            await db_session.scalars(
+                sa.select(AdminActionLog).where(AdminActionLog.target_user_id == user_id)
+            )
+        ).all()
+    )
+
+
+async def test_set_beta_on_records_joined_at_and_the_on_action_log(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    before = datetime.now(UTC)
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "구글폼 신청자"}
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at is not None
+    assert user.beta_joined_at >= before - timedelta(seconds=5)
+
+    logs = await _beta_logs(db_session, user.id)
+    assert [(log.action_type, log.reason_text) for log in logs] == [("user-beta-on", "구글폼 신청자")]
+
+
+async def test_set_beta_off_clears_joined_at_and_writes_the_off_action_log(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(beta_joined_at=datetime(2026, 9, 1, tzinfo=UTC))
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/beta", json={"beta": False, "adminComment": "베타 종료"}
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at is None
+
+    logs = await _beta_logs(db_session, user.id)
+    assert [(log.action_type, log.reason_text) for log in logs] == [("user-beta-off", "베타 종료")]
+
+
+async def test_set_beta_again_keeps_the_first_joined_at_but_still_logs(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """베타 코호트는 첫 지정 시각으로 묶이므로 다시 지정해도 시각이 바뀌면 안 된다.
+    누른 사실은 감사 로그에 한 행 더 남는다."""
+    first_joined_at = datetime(2026, 9, 1, 9, tzinfo=UTC)
+    user = _make_user(beta_joined_at=first_joined_at)
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(
+        f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "다시 지정"}
+    )
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at == first_joined_at
+    assert [log.action_type for log in await _beta_logs(db_session, user.id)] == ["user-beta-on"]
+
+
+async def test_set_beta_blank_admin_comment_returns_422(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "   "})
+    assert resp.status_code == 422
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at is None
+    assert await _beta_logs(db_session, user.id) == []
+
+
+async def test_set_beta_on_deleted_user_returns_404(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user(deleted_at=datetime.now(UTC))
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "지정"})
+    assert resp.status_code == 404
+
+
+async def test_set_beta_allows_user_on_their_19th_birthday(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    today = datetime.now(UTC).date()
+    user = _make_user(birth_date=_birth_date_turning(19, today))
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "지정"})
+    assert resp.status_code == 204
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at is not None
+
+
+@pytest.mark.parametrize(
+    "birth_date_for",
+    [
+        pytest.param(lambda today: _birth_date_turning(19, today) + timedelta(days=1), id="day-before-19th-birthday"),
+        pytest.param(lambda today: None, id="birth-date-missing"),
+    ],
+)
+async def test_set_beta_rejects_user_under_19_without_any_change(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    birth_date_for: Callable[[date], date | None],
+) -> None:
+    """만 19세 생일 하루 전이면 아직 만 18세라 거부한다. 생년월일이 비어 있으면(탈퇴 파기
+    외에는 생기지 않는다) 나이를 확인할 수 없으므로 함께 거부한다. 거부는 컬럼도 감사
+    로그도 남기지 않는다."""
+    today = datetime.now(UTC).date()
+    user = _make_user(birth_date=birth_date_for(today))
+    db_session.add(user)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.post(f"/admin/users/{user.id}/beta", json={"beta": True, "adminComment": "지정"})
+    assert resp.status_code == 422
+    assert resp.json()["detail"]["code"] == "BETA_AGE_RESTRICTED"
+
+    await db_session.refresh(user)
+    assert user.beta_joined_at is None
+    assert await _beta_logs(db_session, user.id) == []
+
+
+async def test_user_detail_and_list_expose_beta_joined_at(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    joined_at = datetime(2026, 9, 1, 9, tzinfo=UTC)
+    beta_user = _make_user(beta_joined_at=joined_at)
+    plain_user = _make_user()
+    db_session.add_all([beta_user, plain_user])
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    beta_detail = (await db_client.get(f"/admin/users/{beta_user.id}")).json()
+    assert datetime.fromisoformat(beta_detail["betaJoinedAt"]) == joined_at
+    assert (await db_client.get(f"/admin/users/{plain_user.id}")).json()["betaJoinedAt"] is None
+
+    items = {item["id"]: item for item in (await db_client.get("/admin/users?page=1")).json()["items"]}
+    assert datetime.fromisoformat(items[str(beta_user.id)]["betaJoinedAt"]) == joined_at
+    assert items[str(plain_user.id)]["betaJoinedAt"] is None
+
+
+async def test_list_users_filters_by_beta(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    beta_user = _make_user(beta_joined_at=datetime.now(UTC))
+    plain_user = _make_user()
+    db_session.add_all([beta_user, plain_user])
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    ids = {item["id"] for item in (await db_client.get("/admin/users?page=1&beta=true")).json()["items"]}
+    assert str(beta_user.id) in ids
+    assert str(plain_user.id) not in ids
+
+    ids = {item["id"] for item in (await db_client.get("/admin/users?page=1&beta=false")).json()["items"]}
+    assert str(plain_user.id) in ids
+    assert str(beta_user.id) not in ids

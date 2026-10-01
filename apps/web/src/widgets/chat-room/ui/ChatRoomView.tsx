@@ -15,6 +15,7 @@ import {
   RateLimitNotice,
   StatGaugePanel,
   TypingIndicator,
+  canReportMessage,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
@@ -30,6 +31,7 @@ import {
 import { useContentDetailQuery } from "@/entities/content";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
+import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
@@ -251,6 +253,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                       setEditingMessageId(undefined);
                     }}
                     onDelete={() => handleDeleteMessage(message.id)}
+                    onReport={
+                      canReportMessage(message)
+                        ? (returnFocus) => void ReportChatMessageModal.call({ roomId, messageId: message.id, returnFocus })
+                        : undefined
+                    }
                   />
                 );
                 // 스토리 방 첫 메시지는 작성자 글의 복사본이라 글 속 미디어 북 태그를 그림으로 그린다(판정 규칙은

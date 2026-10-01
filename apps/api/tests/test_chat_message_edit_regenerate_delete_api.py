@@ -20,6 +20,7 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    DiscardedResponse,
     ModerationStatus,
     SituationalImage,
     StartingSetup,
@@ -1137,3 +1138,177 @@ async def test_delete_message_removes_user_and_assistant_messages(
     remaining = await _room_messages(db_session, room_id)
     assert len(remaining) == 1
     assert remaining[0].content == "안녕!"
+
+
+# ---------------------------------------------------------------------------
+# discarded responses — 재생성·편집이 AI 응답을 실제로 지운 경우에만 기록된다
+# ---------------------------------------------------------------------------
+
+
+async def _discarded_rows(db_session: AsyncSession, user_id: uuid.UUID) -> list[DiscardedResponse]:
+    return list(
+        (await db_session.scalars(sa.select(DiscardedResponse).where(DiscardedResponse.user_id == user_id))).all()
+    )
+
+
+async def _logged_in_character_room(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> tuple[uuid.UUID, uuid.UUID]:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
+    return user.id, room_id
+
+
+async def test_regenerate_success_records_one_discarded_response(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "반가워", ["원래응답"])
+
+    _override_llm_client(_FakeLLMClient(tokens=["새응답"]))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+    assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
+
+    rows = await _discarded_rows(db_session, user_id)
+    assert [(r.kind, r.discarded_count, r.chat_room_id) for r in rows] == [("regenerate", 1, room_id)]
+
+
+@pytest.mark.parametrize(
+    "error", [LLMPolicyViolationError("blocked"), LLMClientError("network down")], ids=["policy", "llm_error"]
+)
+async def test_regenerate_failure_keeps_old_response_and_records_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, error: Exception
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "반가워", ["원래응답"])
+
+    _override_llm_client(_FakeLLMClient(error=error))
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+    assert [e["type"] for e in _parse_sse_events(resp.text)] in (["policyWarning"], ["error"])
+
+    assert await _discarded_rows(db_session, user_id) == []
+
+
+async def test_edit_records_count_of_assistant_responses_it_removed(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "안녕", ["봇1"])
+    await _send_message(db_client, room_id, "안녕2", ["봇2"])
+    first_user_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "안녕")
+
+    _override_llm_client(_FakeLLMClient(tokens=["수정후응답"]))
+    try:
+        resp = await db_client.patch(
+            f"/chat-rooms/{room_id}/messages/{first_user_message_id}", json={"content": "수정"}
+        )
+    finally:
+        _clear_llm_override()
+    assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
+
+    rows = await _discarded_rows(db_session, user_id)
+    assert [(r.kind, r.discarded_count, r.chat_room_id) for r in rows] == [("edit", 2, room_id)]
+
+
+async def test_edit_with_failed_generation_still_records_removed_responses(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """편집은 이후 메시지를 지운 뒤 커밋하고 나서 새 응답을 만든다 — 생성이 실패해도 옛 응답은 이미
+    사라졌으므로 기록이 남아야 한다(실패하면 옛 응답이 남는 재생성과 다르다).
+
+    테스트는 요청과 세션을 공유해 커밋 안 된 행도 조회에 보인다. 실패 경로에는 그 뒤 커밋이 없어
+    운영에서는 삭제 커밋보다 늦게 넣은 행이 버려지므로, 마지막 커밋 시점에 행이 있었는지를 따로 본다."""
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "안녕", ["봇1"])
+    user_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "안녕")
+
+    rows_at_commit: list[int] = []
+    original_commit = db_session.commit
+
+    async def _commit_and_count_rows() -> None:
+        count = await db_session.scalar(
+            sa.select(sa.func.count()).select_from(DiscardedResponse).where(DiscardedResponse.user_id == user_id)
+        )
+        rows_at_commit.append(count or 0)
+        await original_commit()
+
+    monkeypatch.setattr(db_session, "commit", _commit_and_count_rows)
+    _override_llm_client(_FakeLLMClient(error=LLMClientError("network down")))
+    try:
+        resp = await db_client.patch(f"/chat-rooms/{room_id}/messages/{user_message_id}", json={"content": "수정"})
+    finally:
+        _clear_llm_override()
+    assert [e["type"] for e in _parse_sse_events(resp.text)] == ["error"]
+    assert "봇1" not in [m.content for m in await _room_messages(db_session, room_id)]
+    assert rows_at_commit[-1] == 1
+
+    rows = await _discarded_rows(db_session, user_id)
+    assert [(r.kind, r.discarded_count) for r in rows] == [("edit", 1)]
+
+
+async def test_edit_that_removes_only_user_messages_records_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "안녕", ["봇1"])
+    await _send_message(db_client, room_id, "안녕2", ["봇2"])
+    messages = await _room_messages(db_session, room_id)
+    by_content = {m.content: m.id for m in messages}
+    # AI 응답 둘을 지워 [오프닝, 안녕, 안녕2] 로 만든다 — "안녕" 편집은 USER 메시지 하나만 지운다.
+    for content in ("봇1", "봇2"):
+        assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{by_content[content]}")).status_code == 204
+
+    _override_llm_client(_FakeLLMClient(tokens=["수정후응답"]))
+    try:
+        resp = await db_client.patch(f"/chat-rooms/{room_id}/messages/{by_content['안녕']}", json={"content": "수정"})
+    finally:
+        _clear_llm_override()
+    assert [e["type"] for e in _parse_sse_events(resp.text)][-1] == "done"
+    assert "안녕2" not in [m.content for m in await _room_messages(db_session, room_id)]
+
+    assert await _discarded_rows(db_session, user_id) == []
+
+
+async def test_message_delete_and_room_reset_record_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "안녕", ["봇1"])
+    await _send_message(db_client, room_id, "안녕2", ["봇2"])
+    bot_message_id = next(m.id for m in await _room_messages(db_session, room_id) if m.content == "봇2")
+
+    assert (await db_client.delete(f"/chat-rooms/{room_id}/messages/{bot_message_id}")).status_code == 204
+    assert (await db_client.post(f"/chat-rooms/{room_id}/reset")).status_code == 200
+
+    assert await _discarded_rows(db_session, user_id) == []
+
+
+async def test_discarded_response_survives_room_deletion_with_room_reference_cleared(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user_id, room_id = await _logged_in_character_room(db_client, db_session)
+    await _send_message(db_client, room_id, "반가워", ["원래응답"])
+    _override_llm_client(_FakeLLMClient(tokens=["새응답"]))
+    try:
+        await db_client.post(f"/chat-rooms/{room_id}/regenerate")
+    finally:
+        _clear_llm_override()
+
+    assert (await db_client.delete(f"/chat-rooms/{room_id}")).status_code == 204
+
+    db_session.expire_all()
+    rows = await _discarded_rows(db_session, user_id)
+    assert [(r.kind, r.discarded_count, r.chat_room_id) for r in rows] == [("regenerate", 1, None)]

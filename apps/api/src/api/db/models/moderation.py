@@ -190,6 +190,8 @@ class Appeal(Base):
 # 값을 추가할 때 마이그레이션은 필요 없다(컬럼은 Text) — 이 목록과 FE 라벨만 늘린다.
 AdminActionType = Literal[
     "appeal-accept",
+    "chat-report-reject",
+    "chat-report-resolve",
     "chat-view",
     "comment-hide",
     "comment-report-reject",
@@ -204,6 +206,8 @@ AdminActionType = Literal[
     "notice-unpublish",
     "prompt-set-publish",
     "report-reject",
+    "user-beta-off",
+    "user-beta-on",
     "user-clover-grant",
     "user-clover-revoke",
     "user-rate-limit-exempt-off",

@@ -6,6 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import type { ChatMessage } from "../api/chatStream";
 import { MessageBubble } from "./MessageBubble";
+// 컴포넌트를 렌더할 DOM 이 없는 node 환경이라 메뉴 구성은 소스로 확인한다(닫힌 메뉴는 정적 마크업에 그려지지 않는다).
+import bubbleSource from "./MessageBubble.tsx?raw";
 
 function render(message: ChatMessage): string {
   return renderToStaticMarkup(createElement(MessageBubble, { message }));
@@ -36,5 +38,23 @@ describe("MessageBubble judged image slot", () => {
     const html = render({ ...CHARACTER_MESSAGE, imageWidth: 1200, imageHeight: 800 });
     expect(html).toContain('style="aspect-ratio:1200 / 800;width:480px;max-width:100%"');
     expect(html).not.toContain("aspect-3/4");
+  });
+});
+
+describe("MessageBubble options menu", () => {
+  // 파괴 항목(삭제)이 맨 끝에 오도록 신고는 그 앞에 둔다.
+  it("orders the items as regenerate, edit, report, delete", () => {
+    const positions = ["다시 생성", "수정", "신고", "삭제"].map((label) => bubbleSource.indexOf(`${label}\n`));
+    expect(positions.every((position) => position >= 0)).toBe(true);
+    expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+  });
+
+  // 신고만 받는 버블(삭제 콜백 없음)에서도 메뉴가 그려져야 한다.
+  it("renders the menu when either delete or report is provided", () => {
+    expect(bubbleSource).toContain("{(onDelete || onReport) && (");
+  });
+
+  it("does not style report as destructive — it removes no data", () => {
+    expect(bubbleSource).toMatch(/<DropdownMenuItem onSelect=\{\(\) => onReport\(/);
   });
 });

@@ -70,6 +70,9 @@ _ALLOWED_TOP_LEVEL_MODULES: dict[str, set[str]] = {
         "ops",
     },
     "purge_comment_evidence": {"argparse", "os", "subprocess", "sys", "datetime", "ops"},
+    # 자체 크론은 없지만 댓글 증거 크론(`purge_comment_evidence.main`)과 `restore_db`가 최상단에서
+    # import 하므로 같은 시스템 python3 위험을 진다.
+    "purge_chat_report_evidence": {"subprocess", "datetime", "ops"},
     "restore_db": {
         "argparse",
         "os",
@@ -271,3 +274,10 @@ def test_comment_evidence_purge_uses_system_python_modules() -> None:
 
     imports = _top_level_import_names(Path(purge_comment_evidence.__file__))
     assert not imports - _ALLOWED_TOP_LEVEL_MODULES["purge_comment_evidence"]
+
+
+def test_chat_report_evidence_purge_uses_system_python_modules() -> None:
+    from ops import purge_chat_report_evidence
+
+    imports = _top_level_import_names(Path(purge_chat_report_evidence.__file__))
+    assert not imports - _ALLOWED_TOP_LEVEL_MODULES["purge_chat_report_evidence"]

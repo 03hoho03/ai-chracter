@@ -5,4 +5,5 @@ export const dashboardKeys = {
   popular: (limit: number) => [...dashboardKeys.all, "popular", limit] as const,
   activity: () => [...dashboardKeys.all, "activity"] as const,
   growth: () => [...dashboardKeys.all, "growth"] as const,
+  cohortRetention: (beta: boolean) => [...dashboardKeys.all, "cohort-retention", beta ? "beta" : "all"] as const,
 };

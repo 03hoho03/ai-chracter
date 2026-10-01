@@ -13,6 +13,7 @@ from api.admin.schemas import (
     AdminCloverLedgerItem,
     AdminCloverLedgerListResponse,
     AdminUserActionLogItem,
+    AdminUserBetaRequest,
     AdminUserChatRoomItem,
     AdminUserCloverRequest,
     AdminUserDetailResponse,
@@ -25,6 +26,7 @@ from api.admin.schemas import (
     AdminUserUnsuspendRequest,
     AdminUserWarnRequest,
 )
+from api.auth.age import is_under_beta_minimum_age
 from api.core import clover
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
@@ -112,6 +114,7 @@ async def list_admin_users(
     page: int = Query(1, ge=1),
     q: str | None = Query(None),
     suspended: bool | None = Query(None),
+    beta: bool | None = Query(None),
     _admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AdminUserListResponse:
@@ -124,6 +127,8 @@ async def list_admin_users(
         filters.append(or_(User.email.ilike(f"%{q}%"), User.nickname.ilike(f"%{q}%")))
     if suspended is not None:
         filters.append(User.suspended_at.is_not(None) if suspended else User.suspended_at.is_(None))
+    if beta is not None:
+        filters.append(User.beta_joined_at.is_not(None) if beta else User.beta_joined_at.is_(None))
 
     total_count = (await db.scalar(select(func.count()).select_from(User).where(*filters))) or 0
     total_pages = -(-total_count // ADMIN_USER_PAGE_SIZE) if total_count else 0
@@ -164,6 +169,7 @@ async def list_admin_users(
             nickname=user.nickname,
             created_at=user.created_at,
             suspended_at=user.suspended_at,
+            beta_joined_at=user.beta_joined_at,
             content_count=content_count,
             chat_room_count=chat_room_count,
         )
@@ -272,6 +278,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         content_count=len(user_content_ids),
         restrictable_content_count=restrictable_content_count,
         rate_limit_exempt=user.rate_limit_exempt,
+        beta_joined_at=user.beta_joined_at,
         clover_balance=user.clover_balance,
         chat_room_count=chat_room_count,
         message_count=message_count,
@@ -549,6 +556,53 @@ async def set_user_rate_limit_exempt(
         db,
         admin_id=admin_id,
         action_type="user-rate-limit-exempt-on" if body.exempt else "user-rate-limit-exempt-off",
+        target_user_id=user_id,
+        reason_text=body.admin_comment or "",
+    )
+    await db.commit()
+
+
+@router.post("/admin/users/{user_id}/beta", status_code=status.HTTP_204_NO_CONTENT)
+async def set_user_beta(
+    user_id: uuid.UUID,
+    body: AdminUserBetaRequest,
+    admin_id: uuid.UUID = Depends(get_current_admin_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> None:
+    """`users.beta_joined_at`을 바꾸는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
+    같다(공백 코멘트 422 → 탈퇴 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
+
+    **지정할 때만 나이를 본다.** 베타는 성인만 받으므로 만 19세 미만이면 422
+    `{"code": "BETA_AGE_RESTRICTED"}`로 거부하고 컬럼도 감사 로그도 남기지 않는다. 같은
+    엔드포인트의 공백 코멘트 422와 갈리도록 code를 둔다. 생년월일이 비어 있으면(탈퇴 파기 외에는
+    생기지 않는다) 나이를 확인할 수 없으므로 함께 거부한다. 기준일은 가입 게이트와 같은 UTC
+    오늘이다 — 한국 시간 생일 아침 0~9시에는 아직 전날로 계산돼 더 엄격한 쪽으로 틀린다.
+
+    **이미 지정된 계정을 다시 지정해도 시각을 덮어쓰지 않는다** — 베타 코호트를 나누는 기준이
+    첫 지정 시각이기 때문이다. 누른 사실은 감사 로그에 한 행 더 남는다. 해제는 NULL로 되돌린다.
+    """
+    if not (body.admin_comment or "").strip():
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="admin_comment is required"
+        )
+
+    user = await db.get(User, user_id)
+    if user is None or user.deleted_at is not None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
+    if body.beta:
+        if user.birth_date is None or is_under_beta_minimum_age(user.birth_date, datetime.now(UTC).date()):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"code": "BETA_AGE_RESTRICTED"}
+            )
+        if user.beta_joined_at is None:
+            user.beta_joined_at = datetime.now(UTC)
+    else:
+        user.beta_joined_at = None
+    await record_admin_action(
+        db,
+        admin_id=admin_id,
+        action_type="user-beta-on" if body.beta else "user-beta-off",
         target_user_id=user_id,
         reason_text=body.admin_comment or "",
     )

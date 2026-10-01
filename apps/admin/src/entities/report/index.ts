@@ -6,11 +6,21 @@ export { useCommentReportListQuery } from "./api/useCommentReportListQuery";
 export { useCommentReportDetailQuery } from "./api/useCommentReportDetailQuery";
 export { useCommentReportActionMutation } from "./api/useCommentReportActionMutation";
 export type { CommentReportDetail, CommentCurrent, CommentReportAction } from "./api/commentReport";
+export { useChatMessageReportListQuery } from "./api/useChatMessageReportListQuery";
+export { useChatMessageReportDetailQuery } from "./api/useChatMessageReportDetailQuery";
+export { useChatMessageReportActionMutation } from "./api/useChatMessageReportActionMutation";
+export type { ChatMessageReportDetail, ChatMessageReportAction } from "./api/chatMessageReport";
 export {
   isReportReasonCategory,
+  isReportTarget,
+  CHAT_MESSAGE_REPORT_REASON_LABELS,
   REPORT_REASON_LABELS,
   REPORT_REASON_OPTIONS,
   REPORT_REASON_VALUES,
   REPORT_STATUS_LABELS,
+  REPORT_TARGETS,
+  REPORT_TARGET_LABELS,
+  type ChatMessageReportReason,
   type ReportReasonCategory,
+  type ReportTarget,
 } from "./model/labels";
