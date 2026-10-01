@@ -333,6 +333,28 @@ async def test_generate_creates_assets_and_completes_job(
             assert thumb.format == "WEBP"
 
 
+async def test_generated_image_records_dimensions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """생성 이미지도 칸에 걸리므로 화면이 제 비율로 그릴 너비·높이를 남긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    _stub_capabilities_ready(monkeypatch)
+
+    _override_image_client(lambda: (_png_bytes(96, 128), "image/png"))
+    try:
+        resp = await db_client.post("/images/generate", json=_generate_payload(count=1))
+    finally:
+        _clear_image_override()
+    assert resp.status_code == 202
+
+    job = await _wait_for_job_completion(resp.json()["jobId"], user.id)
+    [asset] = (await db_session.scalars(sa.select(Asset).where(Asset.id.in_(job.asset_ids)))).all()
+    assert (asset.width, asset.height) == (96, 128)
+
+
 async def test_generate_partial_failure_still_succeeds(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:

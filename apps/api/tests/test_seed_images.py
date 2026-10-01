@@ -178,14 +178,40 @@ async def test_ensure_asset_derives_distinct_ids_per_kind(
     monkeypatch.setattr(images, "IMAGES_DIR", tmp_path)
     await _seed_author(db_session)
 
+    blurred_bytes = _png(30, 20)
     original = await images.ensure_asset(db_session, "scene1", AssetKind.ORIGINAL)
-    blurred = await images.ensure_asset(db_session, "scene1", AssetKind.BLURRED, data=b"blurred")
+    blurred = await images.ensure_asset(db_session, "scene1", AssetKind.BLURRED, data=blurred_bytes)
     await db_session.flush()
 
     assert original != blurred
     blurred_asset = await db_session.get(Asset, blurred)
     assert blurred_asset is not None
-    assert download_object(blurred_asset.storage_key) == b"blurred"
+    assert download_object(blurred_asset.storage_key) == blurred_bytes
+
+
+def _png(width: int, height: int) -> bytes:
+    buffer = io.BytesIO()
+    Image.new("RGB", (width, height)).save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+async def test_ensure_asset_records_dimensions_of_the_uploaded_bytes(
+    db_session: AsyncSession, s3_bucket: None, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """시드 자산도 너비·높이가 있어야 로컬 화면이 원본 비율로 그려진다(없으면 늘 고정 칸으로 떨어져
+    브라우저 검증이 원본 비율을 못 본다). 목업이든 넘겨받은 바이트든 실제로 올린 그림의 크기다."""
+    monkeypatch.setattr(images, "IMAGES_DIR", tmp_path)
+    await _seed_author(db_session)
+
+    mock = await images.ensure_asset(db_session, "scene1", AssetKind.ORIGINAL)
+    given = await images.ensure_asset(db_session, "scene1", AssetKind.BLURRED, data=_png(30, 20))
+    await db_session.flush()
+
+    mock_asset = await db_session.get(Asset, mock)
+    given_asset = await db_session.get(Asset, given)
+    assert mock_asset is not None and given_asset is not None
+    assert (mock_asset.width, mock_asset.height) == images.SIZE
+    assert (given_asset.width, given_asset.height) == (30, 20)
 
 
 async def test_ensure_asset_survives_a_dead_object_store(

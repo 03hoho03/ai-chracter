@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone, UTC
 
 import boto3
 import httpx
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.config import settings
@@ -17,7 +18,7 @@ from api.db.models.content import (
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _login_as, _make_user
+from factories import _add_media_book_cell, _login_as, _make_user
 
 
 async def test_generated_images_requires_login(api_client: httpx.AsyncClient) -> None:
@@ -626,3 +627,62 @@ async def test_delete_generated_image_used_as_reference_clears_the_reference_on_
     assert await db_session.get(Asset, asset_id) is None
     await db_session.refresh(request)
     assert request.reference_asset_id is None
+
+
+@pytest.mark.parametrize("column", [pytest.param("image", id="image"), pytest.param("blurred", id="blurred")])
+async def test_generated_image_used_by_media_book_cell(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, column: str
+) -> None:
+    """미디어 북 칸은 이미지와 블러본 두 칸 다 자산을 붙잡는다 — 어느 쪽이든 사용 중이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    other = await _make_generated_asset(db_session, user.id)
+    content, version = await _make_story_content(db_session, creator_user_id=user.id, name="스토리M")
+    if column == "image":
+        await _add_media_book_cell(db_session, version.id, asset.id, other.id)
+    else:
+        await _add_media_book_cell(db_session, version.id, other.id, asset.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    assert await _get_usages(db_client, asset.id) == [
+        {
+            "contentId": str(content.id),
+            "contentType": "story",
+            "contentTitle": "스토리M",
+            "field": "mediaBook",
+        }
+    ]
+
+
+async def test_delete_generated_image_conflicts_when_used_by_media_book_draft(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """초안 칸만 쓰는 생성 이미지도 지우면 초안의 칸 FK 가 깨진다 — 발행본과 같이 409 다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_generated_asset(db_session, user.id)
+    content, _ = await _make_story_content(db_session, creator_user_id=user.id, name="발행본 제목")
+    draft = ContentVersion(content_id=content.id, detail_description="")
+    db_session.add(draft)
+    await db_session.flush()
+    db_session.add(
+        StoryVersionDetail(
+            content_version_id=draft.id, name="초안 제목", one_liner="", prompt_template=StoryPromptTemplate.BASIC
+        )
+    )
+    await db_session.flush()
+    await _add_media_book_cell(db_session, draft.id, asset.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.delete(f"/me/generated-images/{asset.id}")
+
+    assert resp.status_code == 409
+    assert resp.json()["detail"]["usages"] == [
+        {"contentId": str(content.id), "contentType": "story", "contentTitle": "초안 제목", "field": "mediaBook"}
+    ]
+    assert await db_session.get(Asset, asset.id) is not None

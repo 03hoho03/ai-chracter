@@ -30,6 +30,9 @@ from api.db.models.story import (
     EndingRuleOperator,
     KeywordNote,
     LogicalOp,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
@@ -37,7 +40,14 @@ from api.db.models.story import (
     StoryVersionDetail,
 )
 from api.llm.client import LLMCallContext, LLMClient
-from factories import _clear_llm_override, _get_genre, _login_as, _make_user, _override_llm_client
+from factories import (
+    _add_media_book_cell,
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_user,
+    _override_llm_client,
+)
 
 
 def _upload_test_image(storage_key: str) -> None:
@@ -1213,3 +1223,85 @@ async def test_publish_story_clears_has_unpublished_changes(
     assert resp.status_code == 200
     await db_session.refresh(content)
     assert content.has_unpublished_changes is False
+
+
+async def test_publish_clones_media_book_with_stable_entity_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행은 초안이 발행본이 되고 다음 편집용 새 초안에 칸·축을 복제한다. entity_id·이미지·블러본·글·
+    스위치가 그대로 가야 다음 발행이 블러본을 다시 만들지 않고 노출 기록도 같은 칸을 가리킨다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    blurred = await _make_ready_asset(db_session, owner_user_id=user.id)
+    cell = await _add_media_book_cell(db_session, version.id, image.id, blurred.id)
+    # 축이 둘 이상이어야 복제가 순서까지 옮기는지 드러난다(빌더 배치표의 열 순서).
+    second_person = MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=version.id, name="준", order=1)
+    second_scene = MediaBookScene(entity_id=uuid.uuid4(), content_version_id=version.id, name="옥상", order=1)
+    db_session.add_all([second_person, second_scene])
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    new_version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(
+            ContentVersion.content_id == content.id, ContentVersion.published_at.is_(None)
+        )
+    )
+    assert new_version_id is not None and new_version_id != version.id
+    for version_id in (version.id, new_version_id):
+        people = (
+            await db_session.scalars(
+                sa.select(MediaBookPerson)
+                .where(MediaBookPerson.content_version_id == version_id)
+                .order_by(MediaBookPerson.order)
+            )
+        ).all()
+        scenes = (
+            await db_session.scalars(
+                sa.select(MediaBookScene)
+                .where(MediaBookScene.content_version_id == version_id)
+                .order_by(MediaBookScene.order)
+            )
+        ).all()
+        [copied] = (
+            await db_session.scalars(sa.select(MediaBookCell).where(MediaBookCell.content_version_id == version_id))
+        ).all()
+        assert [(p.entity_id, p.name, p.order) for p in people] == [
+            (cell.person_entity_id, "민아", 0),
+            (second_person.entity_id, "준", 1),
+        ]
+        assert [(s.entity_id, s.name, s.order) for s in scenes] == [
+            (cell.scene_entity_id, "교실", 0),
+            (second_scene.entity_id, "옥상", 1),
+        ]
+        assert (
+            copied.entity_id,
+            copied.person_entity_id,
+            copied.scene_entity_id,
+            copied.image_asset_id,
+            copied.blurred_asset_id,
+            copied.situation_description,
+            copied.unlock_hint,
+            copied.exclude_from_chat,
+        ) == (
+            cell.entity_id,
+            cell.person_entity_id,
+            cell.scene_entity_id,
+            image.id,
+            blurred.id,
+            "창가에서 웃는다",
+            "첫 만남",
+            True,
+        )

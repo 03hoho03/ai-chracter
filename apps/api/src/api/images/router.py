@@ -15,6 +15,7 @@ from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     ReferenceImageRejectedError,
     generate_thumbnail,
+    read_image_size,
     validate_reference_image,
 )
 from api.core import clover
@@ -143,6 +144,7 @@ async def _generate_and_store_one(
         await run_in_threadpool(
             upload_object, build_thumbnail_key(storage_key), thumbnail_bytes, THUMBNAIL_CONTENT_TYPE
         )
+        width, height = await run_in_threadpool(read_image_size, data)
 
         async with session_factory() as session:
             session.add(
@@ -157,6 +159,8 @@ async def _generate_and_store_one(
                     style=style.value,
                     # 이 asset을 낳은 요청 행.
                     request_id=request_id,
+                    width=width,
+                    height=height,
                 )
             )
             await session.commit()

@@ -12,6 +12,7 @@ from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     generate_blurred_image,
     generate_thumbnail,
+    read_image_size,
 )
 from api.assets.schemas import (
     UPLOAD_SIZE_LIMIT_BYTES,
@@ -38,7 +39,7 @@ from api.core.s3 import (
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentType, ContentVersion
 from api.db.models.media import Asset, AssetKind, AssetStatus
-from api.db.models.story import StoryVersionDetail
+from api.db.models.story import MediaBookCell, StoryVersionDetail
 from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.session.dependencies import get_current_user_id
@@ -128,6 +129,7 @@ async def complete_asset_upload(
     original_bytes = await run_in_threadpool(download_object, asset.storage_key)
     try:
         thumbnail_bytes = await run_in_threadpool(generate_thumbnail, original_bytes)
+        width, height = await run_in_threadpool(read_image_size, original_bytes)
     except (OSError, ValueError) as exc:
         # Pillow can't decode the upload — deterministic failure, so clean up
         # like the oversize path instead of leaving an unretryable PENDING row.
@@ -146,6 +148,7 @@ async def complete_asset_upload(
     )
 
     asset.status = AssetStatus.READY
+    asset.width, asset.height = width, height
     await db.commit()
 
     return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
@@ -204,6 +207,8 @@ async def register_situational_image(
     # exists from that step). A failure here propagates before the commit, so the
     # registration fails as a whole and no READY asset is left without a thumbnail.
     blurred_thumbnail_bytes = await run_in_threadpool(generate_thumbnail, blurred_bytes)
+    # 원본 행의 크기를 베끼지 않고 블러 바이트에서 잰다 — 원본이 크기를 채우기 전 자산이면 그 값이 비어 있다.
+    blurred_width, blurred_height = await run_in_threadpool(read_image_size, blurred_bytes)
     await run_in_threadpool(
         upload_object,
         build_thumbnail_key(blurred_storage_key),
@@ -218,6 +223,8 @@ async def register_situational_image(
             storage_key=blurred_storage_key,
             kind=AssetKind.BLURRED,
             status=AssetStatus.READY,
+            width=blurred_width,
+            height=blurred_height,
         )
     )
 
@@ -252,8 +259,9 @@ async def collect_asset_usages(
 ) -> dict[uuid.UUID, list[GeneratedImageUsage]]:
     """어느 콘텐츠가 이 asset들을 참조 중인지 역조회한다.
 
-    assets.id를 참조하는 4개 컬럼(character/story thumbnail_asset_id,
-    situational_images.image/blurred_asset_id)을 컬럼별 일괄 select로 훑는다 —
+    assets.id를 참조하는 6개 컬럼(character/story thumbnail_asset_id,
+    situational_images.image/blurred_asset_id, media_book_cells.image/blurred_asset_id)을
+    테이블별 일괄 select로 훑는다 —
     이미지마다 개별 조회하지 않는다(N+1 금지). 초안/발행 버전을 구분하지 않고 둘 다
     '사용 중'으로 보며, 같은 (content_id, field) 참조는 하나로 합친다(제목은 최신
     버전의 detail name이 남는다). 생성 이미지 삭제의 사전 판정도 이 함수를 재사용한다.
@@ -323,6 +331,31 @@ async def collect_asset_usages(
         for referenced_id in (image_asset_id, blurred_asset_id):
             if referenced_id in requested_ids:
                 _add(referenced_id, content_id, content_type, name, "situationalImage")
+
+    # 미디어 북은 스토리 전용이라 제목은 소속 버전의 story_version_details.name이다.
+    media_book_rows = await db.execute(
+        select(
+            MediaBookCell.image_asset_id,
+            MediaBookCell.blurred_asset_id,
+            Content.id,
+            Content.type,
+            StoryVersionDetail.name,
+        )
+        .join(ContentVersion, ContentVersion.id == MediaBookCell.content_version_id)
+        .join(StoryVersionDetail, StoryVersionDetail.content_version_id == MediaBookCell.content_version_id)
+        .join(Content, Content.id == ContentVersion.content_id)
+        .where(
+            or_(
+                MediaBookCell.image_asset_id.in_(asset_ids),
+                MediaBookCell.blurred_asset_id.in_(asset_ids),
+            )
+        )
+        .order_by(ContentVersion.created_at)
+    )
+    for image_asset_id, blurred_asset_id, content_id, content_type, name in media_book_rows:
+        for referenced_id in (image_asset_id, blurred_asset_id):
+            if referenced_id in requested_ids:
+                _add(referenced_id, content_id, content_type, name, "mediaBook")
 
     return {asset_id: list(entries.values()) for asset_id, entries in merged.items()}
 

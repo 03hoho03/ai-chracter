@@ -10,6 +10,7 @@ from typing import Literal
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import and_, any_, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
@@ -46,6 +47,11 @@ from api.content.schemas import (
     ExampleDialogueItem,
     GenreResponse,
     KeywordNoteDraftItem,
+    MediaBookAxisInput,
+    MediaBookAxisItem,
+    MediaBookCellDraftItem,
+    MediaBookDraft,
+    MediaBookPayload,
     ReportRequest,
     ShortcutDraftItem,
     StartingSetupDraftItem,
@@ -72,7 +78,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetStatus
+from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -80,6 +86,9 @@ from api.db.models.story import (
     EndingRule,
     EndingRuleGroup,
     KeywordNote,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
@@ -690,6 +699,72 @@ async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> li
     return [item for _, item in items]
 
 
+def _sign_thumbnail_urls(storage_keys: list[str]) -> list[str]:
+    return [generate_presigned_get_url(build_thumbnail_key(key)) for key in storage_keys]
+
+
+async def _media_book_draft(db: AsyncSession, version_id: uuid.UUID) -> MediaBookDraft:
+    """칸은 인물 순서 → 장면 순서로 늘어놓는다(칸에는 자기 순서가 없다). 자동저장 응답마다 칸 50개가
+    돌므로 자산은 한 번에 읽는다."""
+    people = (
+        await db.scalars(
+            select(MediaBookPerson)
+            .where(MediaBookPerson.content_version_id == version_id)
+            .order_by(MediaBookPerson.order)
+        )
+    ).all()
+    scenes = (
+        await db.scalars(
+            select(MediaBookScene)
+            .where(MediaBookScene.content_version_id == version_id)
+            .order_by(MediaBookScene.order)
+        )
+    ).all()
+    cells = (await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version_id))).all()
+
+    person_rank = {person.entity_id: index for index, person in enumerate(people)}
+    scene_rank = {scene.entity_id: index for index, scene in enumerate(scenes)}
+    # 축이 없는 칸은 빼고 보낸다 — 칸 하나 때문에 초안 응답이 통째로 실패하면 빌더가 열리지 않아 화면에서
+    # 고칠 길이 없다. 다음 미디어 북 저장이 페이로드에 없는 그 칸을 지운다.
+    cells = sorted(
+        (cell for cell in cells if cell.person_entity_id in person_rank and cell.scene_entity_id in scene_rank),
+        key=lambda cell: (person_rank[cell.person_entity_id], scene_rank[cell.scene_entity_id]),
+    )
+    assets = (
+        {
+            asset.id: asset
+            for asset in await db.scalars(
+                select(Asset).where(Asset.id.in_({cell.image_asset_id for cell in cells}))
+            )
+        }
+        if cells
+        else {}
+    )
+    image_urls = await run_in_threadpool(
+        _sign_thumbnail_urls, [assets[cell.image_asset_id].storage_key for cell in cells]
+    )
+
+    return MediaBookDraft(
+        people=[MediaBookAxisItem(id=person.entity_id, name=person.name) for person in people],
+        scenes=[MediaBookAxisItem(id=scene.entity_id, name=scene.name) for scene in scenes],
+        cells=[
+            MediaBookCellDraftItem(
+                id=cell.entity_id,
+                person_id=cell.person_entity_id,
+                scene_id=cell.scene_entity_id,
+                image_asset_id=cell.image_asset_id,
+                situation_description=cell.situation_description,
+                unlock_hint=cell.unlock_hint,
+                exclude_from_chat=cell.exclude_from_chat,
+                image_url=image_url,
+                image_width=assets[cell.image_asset_id].width,
+                image_height=assets[cell.image_asset_id].height,
+            )
+            for cell, image_url in zip(cells, image_urls, strict=True)
+        ],
+    )
+
+
 async def _story_draft_response(
     db: AsyncSession, content: Content, version: ContentVersion
 ) -> StoryDraftResponse:
@@ -763,6 +838,7 @@ async def _story_draft_response(
     ).all()
 
     return StoryDraftResponse(
+        media_book=await _media_book_draft(db, version.id),
         id=content.id,
         name=detail.name,
         one_liner=detail.one_liner,
@@ -973,6 +1049,183 @@ async def _reconcile_ending_rules(
             nested_rule.order = nested_order
 
 
+# 두 탭이 서로 다른 새 칸으로 같은 빈 자리를 채운 경우의 409 code. 화면은 새로고침을 안내한다.
+MEDIA_BOOK_CELL_POSITION_TAKEN = "MEDIA_BOOK_CELL_POSITION_TAKEN"
+# 칸에 걸 수 있는 자산 종류. 블러본을 고르면 해금 전 이미지가 원본 자리에 나간다.
+_MEDIA_BOOK_CELL_IMAGE_KINDS = (AssetKind.ORIGINAL, AssetKind.GENERATED)
+
+
+async def _upsert_media_book_axis(
+    db: AsyncSession,
+    model: type[MediaBookPerson] | type[MediaBookScene],
+    constraint: str,
+    version_id: uuid.UUID,
+    existing: dict[uuid.UUID, MediaBookPerson] | dict[uuid.UUID, MediaBookScene],
+    items: list[MediaBookAxisInput],
+) -> None:
+    new_rows: list[dict[str, object]] = []
+    for order, item in enumerate(items):
+        row = existing.get(item.id)
+        if row is None:
+            new_rows.append(
+                {"id": uuid.uuid4(), "entity_id": item.id, "content_version_id": version_id, "name": item.name, "order": order}
+            )
+            continue
+        row.name = item.name
+        row.order = order
+    if not new_rows:
+        return
+    # 위에서 읽은 뒤 겹친 다른 저장이 같은 새 축을 먼저 넣었을 수 있다 — 그 행을 이 저장 값으로 고친다.
+    statement = insert(model).values(new_rows)
+    await db.execute(
+        statement.on_conflict_do_update(
+            constraint=constraint, set_={"name": statement.excluded.name, "order": statement.excluded.order}
+        )
+    )
+
+
+async def _update_media_book(
+    db: AsyncSession, content: Content, version: ContentVersion, media_book: MediaBookPayload
+) -> None:
+    """칸·축을 페이로드에 맞춘다. 쓰기 순서가 정해져 있다 — 빠진 행 삭제(칸 → 축) → 기존 행 갱신 →
+    새 행 insert. 칸 자리 UNIQUE 는 즉시 검사라 "칸 삭제 + 같은 자리 새 칸"을 한 저장에 담으면 insert 가
+    먼저 나가는 순간 걸린다. 그림을 바꾸는 덮어쓰기는 같은 칸 entity_id 를 유지한다 — 노출 기록과 첫
+    메시지에 저장된 칸 태그가 entity_id 로 칸을 가리킨다."""
+    # 같은 초안의 미디어 북 저장을 줄 세운다. 잠금 없이 두 탭의 저장이 겹치면, 한쪽이 지운 축을 다른
+    # 쪽은 아직 보이는 채 그 축에 새 칸을 넣어 축 없는 칸이 커밋된다. 잠금을 얻은 뒤의 읽기는 앞 저장의
+    # 커밋을 본다. 키를 바꾸지 않는 잠금이라 이 버전을 가리키는 행의 insert 는 막지 않는다.
+    await db.execute(
+        select(ContentVersion.id).where(ContentVersion.id == version.id).with_for_update(key_share=True)
+    )
+    existing_people = {
+        row.entity_id: row
+        for row in (
+            await db.scalars(select(MediaBookPerson).where(MediaBookPerson.content_version_id == version.id))
+        ).all()
+    }
+    existing_scenes = {
+        row.entity_id: row
+        for row in (
+            await db.scalars(select(MediaBookScene).where(MediaBookScene.content_version_id == version.id))
+        ).all()
+    }
+    existing_cells = {
+        row.entity_id: row
+        for row in (
+            await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version.id))
+        ).all()
+    }
+
+    # 빌더에는 칸을 옮기는 동작이 없다. 기존 칸 둘의 자리를 맞바꾸면 행을 하나씩 고치는 도중 같은
+    # 자리가 둘이 되어 자리 UNIQUE 가 500 을 내므로, 기존 칸의 자리는 바꾸지 못하게 한다.
+    for cell in media_book.cells:
+        existing_cell = existing_cells.get(cell.id)
+        if existing_cell is not None and (existing_cell.person_entity_id, existing_cell.scene_entity_id) != (
+            cell.person_id,
+            cell.scene_id,
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="An existing media book cell cannot move to another position",
+            )
+
+    # 저장 요청자는 위 게이트가 작성자로 확인했다. 남의 자산을 걸면 그 사람이 자기 이미지를 못 지운다.
+    image_asset_ids = {cell.image_asset_id for cell in media_book.cells}
+    if image_asset_ids:
+        usable_asset_ids = set(
+            await db.scalars(
+                select(Asset.id).where(
+                    Asset.id.in_(image_asset_ids),
+                    Asset.owner_user_id == content.creator_user_id,
+                    Asset.status == AssetStatus.READY,
+                    Asset.kind.in_(_MEDIA_BOOK_CELL_IMAGE_KINDS),
+                )
+            )
+        )
+        if usable_asset_ids != image_asset_ids:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+                detail="Media book images must be the creator's own ready uploads or generated images",
+            )
+
+    incoming_cell_ids = {cell.id for cell in media_book.cells}
+    for entity_id, existing_cell in existing_cells.items():
+        if entity_id not in incoming_cell_ids:
+            await db.delete(existing_cell)
+    await db.flush()
+    for existing_axis, incoming_axis in (
+        (existing_people, media_book.people),
+        (existing_scenes, media_book.scenes),
+    ):
+        incoming_axis_ids = {item.id for item in incoming_axis}
+        for entity_id, existing_row in existing_axis.items():
+            if entity_id not in incoming_axis_ids:
+                await db.delete(existing_row)
+    await db.flush()
+
+    await _upsert_media_book_axis(
+        db, MediaBookPerson, "ux_media_book_people_version_entity", version.id, existing_people, media_book.people
+    )
+    await _upsert_media_book_axis(
+        db, MediaBookScene, "ux_media_book_scenes_version_entity", version.id, existing_scenes, media_book.scenes
+    )
+
+    new_cells: list[dict[str, object]] = []
+    for cell in media_book.cells:
+        existing_cell = existing_cells.get(cell.id)
+        if existing_cell is None:
+            new_cells.append(
+                {
+                    "id": uuid.uuid4(),
+                    "entity_id": cell.id,
+                    "content_version_id": version.id,
+                    "person_entity_id": cell.person_id,
+                    "scene_entity_id": cell.scene_id,
+                    "image_asset_id": cell.image_asset_id,
+                    "situation_description": cell.situation_description,
+                    "unlock_hint": cell.unlock_hint,
+                    "exclude_from_chat": cell.exclude_from_chat,
+                }
+            )
+            continue
+        # 블러본은 발행 때 칸 그림에서 만든다 — 그림이 바뀌면 옛 블러본은 다른 그림의 블러다.
+        if existing_cell.image_asset_id != cell.image_asset_id:
+            existing_cell.blurred_asset_id = None
+        existing_cell.image_asset_id = cell.image_asset_id
+        existing_cell.situation_description = cell.situation_description
+        existing_cell.unlock_hint = cell.unlock_hint
+        existing_cell.exclude_from_chat = cell.exclude_from_chat
+    if not new_cells:
+        return
+
+    # 위에서 읽은 뒤 겹친 다른 저장이 같은 새 칸을 먼저 넣었으면 그 행을 이 저장 값으로 고친다(같은 칸).
+    # 다른 새 칸이 같은 빈 자리를 먼저 차지했으면 둘 중 하나만 남을 수 있어 409 로 거절한다 — 화면이
+    # 새로고침해 먼저 저장된 칸을 보게 한다. SAVEPOINT 안이라 거절해도 세션은 계속 쓸 수 있다.
+    statement = insert(MediaBookCell).values(new_cells)
+    excluded = statement.excluded
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                statement.on_conflict_do_update(
+                    constraint="ux_media_book_cells_version_entity",
+                    set_={
+                        "person_entity_id": excluded.person_entity_id,
+                        "scene_entity_id": excluded.scene_entity_id,
+                        "image_asset_id": excluded.image_asset_id,
+                        "situation_description": excluded.situation_description,
+                        "unlock_hint": excluded.unlock_hint,
+                        "exclude_from_chat": excluded.exclude_from_chat,
+                    },
+                )
+            )
+    except IntegrityError as exc:
+        if "ux_media_book_cells_version_person_scene" not in str(exc.orig):
+            raise
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail={"code": MEDIA_BOOK_CELL_POSITION_TAKEN}
+        ) from None
+
+
 async def _update_story_draft(
     db: AsyncSession, content: Content, version: ContentVersion, payload: StoryDraftPayload
 ) -> None:
@@ -1137,6 +1390,9 @@ async def _update_story_draft(
         shortcut.description = shortcut_item.description
         shortcut.prompt = shortcut_item.prompt
 
+    if payload.media_book is not None:
+        await _update_media_book(db, content, version, payload.media_book)
+
 
 @router.patch(
     "/contents/{id}/draft", dependencies=[Depends(require_legal_consent)]
@@ -1149,7 +1405,9 @@ async def update_content_draft(
 ) -> CharacterDraftResponse | StoryDraftResponse:
     """Autosave: no
     business validation (publish is where that happens) — the version-detail row is
-    overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
+    overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
+    검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
+    그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab
     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
     directly rather than the per-type detail table, since they're shared across versions,
     not per-version snapshot data."""
@@ -1193,6 +1451,22 @@ async def _delete_draft_children(db: AsyncSession, content_type: ContentType, ve
             await db.delete(image)
         await db.flush()
         return
+
+    cells = (
+        await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version_id))
+    ).all()
+    for cell in cells:
+        await db.delete(cell)
+    people = (
+        await db.scalars(select(MediaBookPerson).where(MediaBookPerson.content_version_id == version_id))
+    ).all()
+    for person in people:
+        await db.delete(person)
+    scenes = (
+        await db.scalars(select(MediaBookScene).where(MediaBookScene.content_version_id == version_id))
+    ).all()
+    for scene in scenes:
+        await db.delete(scene)
 
     notes = (
         await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version_id))
@@ -1648,6 +1922,43 @@ async def _clone_story_children(
                 name=shortcut.name,
                 description=shortcut.description,
                 prompt=shortcut.prompt,
+            )
+        )
+
+    # 칸의 블러본 id 도 그대로 옮긴다 — 그림이 안 바뀐 칸은 다음 발행이 블러본을 다시 만들지 않는다.
+    people = (
+        await db.scalars(select(MediaBookPerson).where(MediaBookPerson.content_version_id == src_version_id))
+    ).all()
+    for person in people:
+        db.add(
+            MediaBookPerson(
+                entity_id=person.entity_id, content_version_id=dst_version_id, name=person.name, order=person.order
+            )
+        )
+    scenes = (
+        await db.scalars(select(MediaBookScene).where(MediaBookScene.content_version_id == src_version_id))
+    ).all()
+    for scene in scenes:
+        db.add(
+            MediaBookScene(
+                entity_id=scene.entity_id, content_version_id=dst_version_id, name=scene.name, order=scene.order
+            )
+        )
+    cells = (
+        await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == src_version_id))
+    ).all()
+    for cell in cells:
+        db.add(
+            MediaBookCell(
+                entity_id=cell.entity_id,
+                content_version_id=dst_version_id,
+                person_entity_id=cell.person_entity_id,
+                scene_entity_id=cell.scene_entity_id,
+                image_asset_id=cell.image_asset_id,
+                blurred_asset_id=cell.blurred_asset_id,
+                situation_description=cell.situation_description,
+                unlock_hint=cell.unlock_hint,
+                exclude_from_chat=cell.exclude_from_chat,
             )
         )
 

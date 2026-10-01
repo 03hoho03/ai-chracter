@@ -38,7 +38,13 @@ from api.db.models import (
     UserPersona,
     WithdrawnEmail,
 )
-from factories import _create_admin, _get_genre, _make_published_character
+from factories import (
+    _add_media_book_cell,
+    _create_admin,
+    _get_genre,
+    _make_published_character,
+    _make_published_story,
+)
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -732,3 +738,32 @@ async def test_withdraw_deletes_generated_asset_that_a_kept_request_row_used_as_
     assert await db_session.get(Asset, asset_id) is None
     await db_session.refresh(request)
     assert request.reference_asset_id is None
+
+
+async def test_withdraw_keeps_generated_asset_used_by_media_book_cell(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """탈퇴는 쓰이지 않는 생성 이미지만 지운다. 미디어 북 칸이 쓰는 이미지를 사용처로 못 보면
+    지우려다 칸 FK 에 걸려 탈퇴 전체가 500 이 된다."""
+    payload = await _signup_and_login(db_client)
+    user = await db_session.scalar(select(User).where(User.email == payload["email"]))
+    assert user is not None
+    asset = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/generated/{uuid.uuid4()}.png",
+        kind=AssetKind.GENERATED,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert story.current_published_version_id is not None
+    await _add_media_book_cell(db_session, story.current_published_version_id, asset.id)
+    await db_session.commit()
+    asset_id = asset.id
+
+    resp = await db_client.delete("/me")
+
+    assert resp.status_code == 204
+    assert await db_session.get(Asset, asset_id) is not None

@@ -1,8 +1,10 @@
+import unicodedata
 import uuid
+from collections.abc import Hashable, Iterable
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Self
 
-from pydantic import Field
+from pydantic import AfterValidator, Field, model_validator
 
 from api.core.schema import CamelModel
 from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus
@@ -311,6 +313,107 @@ class ShortcutDraftItem(CamelModel):
     prompt: str
 
 
+# 미디어 북 축 이름은 본문 태그 `{{img::인물/장면}}` 에서 이름으로 칸을 찾는 열쇠다. 앞뒤 공백과 유니코드
+# 정규형(맥 파일명은 한글을 자모로 풀어 NFD 로 보낼 수 있다)이 다르면 화면에서 같은 이름이 다른 칸으로
+# 갈라지므로, 저장 전에 하나로 맞춘다.
+MEDIA_BOOK_NAME_MAX_LENGTH = 20
+# 태그 문법의 구분자. 이름에 들어가면 태그를 인물·장면으로 가를 수 없다.
+MEDIA_BOOK_NAME_FORBIDDEN_CHARACTERS = frozenset("/{}:")
+MEDIA_BOOK_MAX_CELLS = 50
+
+
+def _normalize_media_book_name(value: str) -> str:
+    name = unicodedata.normalize("NFC", value.strip())
+    if not 1 <= len(name) <= MEDIA_BOOK_NAME_MAX_LENGTH:
+        raise ValueError(f"name must be 1-{MEDIA_BOOK_NAME_MAX_LENGTH} characters after trimming")
+    if MEDIA_BOOK_NAME_FORBIDDEN_CHARACTERS & set(name):
+        raise ValueError("name must not contain / { } :")
+    return name
+
+
+class MediaBookAxisInput(CamelModel):
+    id: uuid.UUID
+    name: Annotated[str, AfterValidator(_normalize_media_book_name)]
+
+
+class MediaBookCellInput(CamelModel):
+    """`person_id`·`scene_id` 는 같은 페이로드의 축 entity_id 다."""
+
+    id: uuid.UUID
+    person_id: uuid.UUID
+    scene_id: uuid.UUID
+    image_asset_id: uuid.UUID
+    situation_description: str = Field(default="", max_length=100)
+    unlock_hint: str = Field(default="", max_length=20)
+    exclude_from_chat: bool = False
+
+
+def _first_repeated(values: Iterable[Hashable]) -> Hashable | None:
+    seen: set[Hashable] = set()
+    for value in values:
+        if value in seen:
+            return value
+        seen.add(value)
+    return None
+
+
+class MediaBookPayload(CamelModel):
+    """페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서
+    라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring."""
+
+    people: list[MediaBookAxisInput]
+    scenes: list[MediaBookAxisInput]
+    cells: list[MediaBookCellInput]
+
+    @model_validator(mode="after")
+    def _check_consistency(self) -> Self:
+        if len(self.cells) > MEDIA_BOOK_MAX_CELLS:
+            raise ValueError(f"a media book holds at most {MEDIA_BOOK_MAX_CELLS} cells")
+        for label, axis in (("person", self.people), ("scene", self.scenes)):
+            if _first_repeated([item.id for item in axis]) is not None:
+                raise ValueError(f"{label} ids must be unique")
+            repeated_name = _first_repeated([item.name for item in axis])
+            if repeated_name is not None:
+                raise ValueError(f"{label} name is used twice: {repeated_name}")
+        if _first_repeated([cell.id for cell in self.cells]) is not None:
+            raise ValueError("cell ids must be unique")
+        person_ids = {person.id for person in self.people}
+        scene_ids = {scene.id for scene in self.scenes}
+        for cell in self.cells:
+            # 축 참조에는 FK 가 없어 여기서 막지 않으면 가리키는 축이 없는 칸이 저장된다.
+            if cell.person_id not in person_ids or cell.scene_id not in scene_ids:
+                raise ValueError("every cell must point at a person and a scene in this payload")
+        if _first_repeated([(cell.person_id, cell.scene_id) for cell in self.cells]) is not None:
+            raise ValueError("a person-scene position holds at most one cell")
+        return self
+
+
+class MediaBookAxisItem(CamelModel):
+    id: uuid.UUID
+    name: str
+
+
+class MediaBookCellDraftItem(CamelModel):
+    id: uuid.UUID
+    person_id: uuid.UUID
+    scene_id: uuid.UUID
+    image_asset_id: uuid.UUID
+    situation_description: str
+    unlock_hint: str
+    exclude_from_chat: bool
+    # 칸 그리드는 원본이 필요 없어 썸네일 변형을 서명한다(`_resolve_thumbnail_url` 과 같은 규칙).
+    image_url: str
+    # 자산의 픽셀 크기. 모르는 자산(크기를 채우기 전이거나 원본을 못 읽은 자산)은 null 이다.
+    image_width: int | None
+    image_height: int | None
+
+
+class MediaBookDraft(CamelModel):
+    people: list[MediaBookAxisItem]
+    scenes: list[MediaBookAxisItem]
+    cells: list[MediaBookCellDraftItem]
+
+
 class StoryDraftPayload(CamelModel):
     name: str
     one_liner: str
@@ -335,6 +438,10 @@ class StoryDraftPayload(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    # 안 보내면(또는 null 이면) 미디어 북을 건드리지 않는다. 미디어 북을 모르는 화면(배포 전부터 열려
+    # 있던 탭의 옛 번들)·시드도 이 저장 경로를 쓰므로, 빈 목록을 기본값으로 두면 그 저장 한 번이 칸을
+    # 전부 지운다. 보냈을 때만 칸·축을 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
+    media_book: MediaBookPayload | None = None
 
 
 class StoryDraftResponse(CamelModel):
@@ -361,3 +468,5 @@ class StoryDraftResponse(CamelModel):
     target: ContentTarget | None
     hashtags: list[str]
     visibility: ContentVisibility
+    # 기본값은 응답을 옛 화면·생성 타입과 호환시키려는 것이고, 서버는 항상 채워 보낸다.
+    media_book: MediaBookDraft = Field(default_factory=lambda: MediaBookDraft(people=[], scenes=[], cells=[]))

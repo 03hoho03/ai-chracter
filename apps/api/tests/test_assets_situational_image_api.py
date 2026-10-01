@@ -414,3 +414,31 @@ async def test_register_situational_image_rejects_story_content(
         )
     ).all()
     assert rows == []
+
+
+async def test_register_situational_image_records_blurred_asset_dimensions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """블러본은 원본을 줄이지 않고 흐리기만 하므로 원본과 같은 너비·높이다 — 크기를 모르는 원본
+    (너비·높이 NULL)이어도 블러본에는 채워진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    buffer = io.BytesIO()
+    Image.new("RGB", (30, 20), color=(200, 40, 40)).save(buffer, format="PNG")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=buffer.getvalue())
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={"entityId": str(uuid.uuid4()), "contentVersionId": str(version.id), "triggerCondition": "조건", "order": 0},
+    )
+
+    assert resp.status_code == 200
+    blurred = await db_session.get(Asset, uuid.UUID(resp.json()["blurredAssetId"]))
+    assert blurred is not None
+    assert (blurred.width, blurred.height) == (30, 20)

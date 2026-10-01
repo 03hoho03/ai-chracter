@@ -29,6 +29,7 @@ os.environ.setdefault("S3_ENDPOINT_URL", "http://localhost:5001")
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets.image_processing import read_image_size
 from api.core.s3 import build_object_key, upload_object
 from api.core.security import hash_password
 from api.db.models.auth import User
@@ -120,8 +121,10 @@ async def seed_content_files(session: AsyncSession) -> None:
 
 async def main() -> None:
     # 1) 썸네일 이미지 업로드 (moto 없으면 경고만 — 썸네일만 깨지고 채팅은 됨)
+    thumbnail_bytes = read_image("mia")
+    thumbnail_width, thumbnail_height = read_image_size(thumbnail_bytes)
     try:
-        upload_object(THUMBNAIL_KEY, read_image("mia"), "image/png")
+        upload_object(THUMBNAIL_KEY, thumbnail_bytes, "image/png")
         print(f"  ✓ 미아 썸네일 업로드: {THUMBNAIL_KEY}")
     except Exception as exc:
         print(f"  ! 썸네일 업로드 건너뜀 ({exc!r}) — moto 기동 후 seed 재실행하면 채워짐")
@@ -171,6 +174,8 @@ async def main() -> None:
                 storage_key=THUMBNAIL_KEY,
                 kind=AssetKind.THUMBNAIL,
                 status=AssetStatus.READY,
+                width=thumbnail_width,
+                height=thumbnail_height,
             )
         )
         # contents ↔ content_versions 순환 FK: `current_published_version_id` 를 생성자에

@@ -42,6 +42,9 @@ from api.db.models import (
     ContentVisibility,
     Genre,
     LegalDocument,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     ModerationStatus,
     StartingSetup,
     StatDef,
@@ -216,6 +219,32 @@ async def _make_asset(
     db_session.add(asset)
     await db_session.flush()
     return asset
+
+
+async def _add_media_book_cell(
+    db_session: AsyncSession,
+    content_version_id: uuid.UUID,
+    image_asset_id: uuid.UUID,
+    blurred_asset_id: uuid.UUID | None = None,
+) -> MediaBookCell:
+    """인물 하나·장면 하나와 그 자리의 칸 하나를 버전에 넣는다. 칸의 글·스위치는 기본값과 다른 값을
+    넣어 복제·복원 테스트가 "그대로 옮겼는가"를 기본값과 구분할 수 있게 한다."""
+    person = MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=content_version_id, name="민아", order=0)
+    scene = MediaBookScene(entity_id=uuid.uuid4(), content_version_id=content_version_id, name="교실", order=0)
+    cell = MediaBookCell(
+        entity_id=uuid.uuid4(),
+        content_version_id=content_version_id,
+        person_entity_id=person.entity_id,
+        scene_entity_id=scene.entity_id,
+        image_asset_id=image_asset_id,
+        blurred_asset_id=blurred_asset_id,
+        situation_description="창가에서 웃는다",
+        unlock_hint="첫 만남",
+        exclude_from_chat=True,
+    )
+    db_session.add_all([person, scene, cell])
+    await db_session.flush()
+    return cell
 
 
 async def _make_published(

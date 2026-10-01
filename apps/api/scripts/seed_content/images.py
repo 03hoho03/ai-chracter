@@ -19,6 +19,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets.image_processing import read_image_size
 from api.core.s3 import build_object_key, upload_object
 from api.db.models.media import Asset, AssetKind, AssetStatus
 
@@ -158,6 +159,8 @@ async def ensure_asset(
     asset_id = seed_uuid("asset", slug, kind.value)
     storage_key = build_object_key("seed", asset_id, CONTENT_TYPE)
     body = data if data is not None else read_image(slug, genre_name)
+    # 화면이 원본 비율로 그리려면 크기가 있어야 한다. 넣지 않으면 로컬 화면이 늘 고정 비율 칸으로 떨어진다.
+    width, height = read_image_size(body)
 
     try:
         upload_object(storage_key, body, CONTENT_TYPE)
@@ -171,6 +174,8 @@ async def ensure_asset(
             storage_key=storage_key,
             kind=kind,
             status=AssetStatus.READY,
+            width=width,
+            height=height,
         )
     )
     return asset_id

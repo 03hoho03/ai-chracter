@@ -29,6 +29,7 @@ const CREATED_AT_FORMATTER = new Intl.DateTimeFormat("ko-KR", {
 const FIELD_LABEL: Record<GeneratedImageItem["usages"][number]["field"], string> = {
   thumbnail: "썸네일",
   situationalImage: "상황 이미지",
+  mediaBook: "미디어 북",
 };
 
 /** 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는

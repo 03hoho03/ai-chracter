@@ -277,10 +277,13 @@ class MediaBookScene(Base):
 class MediaBookCell(Base):
     """미디어 북의 칸 하나 — 인물 × 장면 자리에 놓인 이미지 한 장. entity_id 패턴.
 
-    `person_entity_id`·`scene_entity_id` 는 축 행의 물리 id 가 아니라 entity_id 값이고 FK 가 없다.
-    버전을 복제할 때 그대로 복사하면 되고 재매핑이 필요 없다(물리 FK 를 거는 키워드북은 복제 때
-    시작설정 id 를 다시 이어 줘야 한다). 대가로 DB 는 가리키는 축이 실제로 있는지 모른다 — 축을
-    지우면서 그 축의 칸을 남기지 않는 것은 저장 요청 검증과 쓰기 경로의 몫이다.
+    `person_entity_id`·`scene_entity_id` 는 축 행의 물리 id 가 아니라 entity_id 값이라 버전을 복제할 때
+    그대로 복사한다(물리 id 를 가리키는 키워드북의 시작설정 참조는 복제 때 다시 이어 줘야 한다).
+    FK 는 걸지 않는다. 축의 `(content_version_id, entity_id)` UNIQUE 를 대상으로 복합 FK 를 걸 수도
+    있지만, 같은 버전 안의 entity_id 참조에는 FK 를 두지 않는 기존 관례(`EndingRule.stat_def_entity_id`
+    가 같은 버전의 스탯을 그렇게 가리킨다)를 따른다 — 복합 FK 는 이 스키마에 아직 없고, 걸면 저장·복제·
+    삭제가 "축 먼저 넣고 칸 먼저 지운다"는 순서를 지켜야 한다. 대가로 DB 는 가리키는 축이 실제로 있는지
+    모른다 — 고아 칸은 저장 요청 검증(칸이 가리키는 축이 같은 페이로드에 있어야 한다)이 막는다.
 
     `blurred_asset_id` 는 발행할 때 채운다(초안 칸에는 블러본이 아직 없다). `situation_description`·
     `unlock_hint` 는 비어 있어도 되는 작성자 입력이라 NULL 대신 빈 문자열을 기본값으로 둔다.

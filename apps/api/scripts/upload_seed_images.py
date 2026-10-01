@@ -8,6 +8,9 @@
     cd apps/api && env S3_ENDPOINT_URL=… S3_BUCKET_NAME=… AWS_ACCESS_KEY_ID=… \
         AWS_SECRET_ACCESS_KEY=… AWS_REGION=auto uv run python scripts/upload_seed_images.py
 
+    # 이어서 같은 환경에 `scripts/backfill_asset_dimensions.py --force` 를 돌린다 — 바이트만 바뀌고
+    # DB 의 `assets.width`·`height` 는 옛 그림 크기로 남기 때문이다(크롭한 아트를 올린 뒤라면 특히).
+
 `seed_dev.py` 도 같은 바이트를 올리지만 그건 DB 업서트가 본체다. 이미 시딩된 환경(프로덕션)
 에서 바뀌는 건 "그 키가 가리키는 바이트"뿐이라 — `Asset.id` 도 storage key 도 slug 파생
 고정값이라 두 스토리지에서 같다 — 이미지만 갈아끼우는 이 스크립트로 충분하다.

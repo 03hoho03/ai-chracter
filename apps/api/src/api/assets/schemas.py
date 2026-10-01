@@ -68,7 +68,7 @@ class SituationalImageResponse(CamelModel):
     order: int
 
 
-GeneratedImageUsageField = Literal["thumbnail", "situationalImage"]
+GeneratedImageUsageField = Literal["thumbnail", "situationalImage", "mediaBook"]
 
 
 class GeneratedImageUsage(CamelModel):

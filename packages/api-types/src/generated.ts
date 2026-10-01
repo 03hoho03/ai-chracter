@@ -1631,7 +1631,9 @@ export interface paths {
          * Update Content Draft
          * @description Autosave: no
          *     business validation (publish is where that happens) — the version-detail row is
-         *     overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
+         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
+         *     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
+         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
          *     directly rather than the per-type detail table, since they're shared across versions,
          *     not per-version snapshot data.
@@ -5864,7 +5866,7 @@ export interface components {
              * Field
              * @enum {string}
              */
-            field: "thumbnail" | "situationalImage";
+            field: "thumbnail" | "situationalImage" | "mediaBook";
         };
         /** GenreResponse */
         GenreResponse: {
@@ -6065,6 +6067,124 @@ export interface components {
             termsReconsentRequired: boolean;
             /** Privacyreconsentrequired */
             privacyReconsentRequired: boolean;
+        };
+        /** MediaBookAxisInput */
+        MediaBookAxisInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** MediaBookAxisItem */
+        MediaBookAxisItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** MediaBookCellDraftItem */
+        MediaBookCellDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Personid
+             * Format: uuid
+             */
+            personId: string;
+            /**
+             * Sceneid
+             * Format: uuid
+             */
+            sceneId: string;
+            /**
+             * Imageassetid
+             * Format: uuid
+             */
+            imageAssetId: string;
+            /** Situationdescription */
+            situationDescription: string;
+            /** Unlockhint */
+            unlockHint: string;
+            /** Excludefromchat */
+            excludeFromChat: boolean;
+            /** Imageurl */
+            imageUrl: string;
+            /** Imagewidth */
+            imageWidth: number | null;
+            /** Imageheight */
+            imageHeight: number | null;
+        };
+        /**
+         * MediaBookCellInput
+         * @description `person_id`·`scene_id` 는 같은 페이로드의 축 entity_id 다.
+         */
+        MediaBookCellInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Personid
+             * Format: uuid
+             */
+            personId: string;
+            /**
+             * Sceneid
+             * Format: uuid
+             */
+            sceneId: string;
+            /**
+             * Imageassetid
+             * Format: uuid
+             */
+            imageAssetId: string;
+            /**
+             * Situationdescription
+             * @default
+             */
+            situationDescription: string;
+            /**
+             * Unlockhint
+             * @default
+             */
+            unlockHint: string;
+            /**
+             * Excludefromchat
+             * @default false
+             */
+            excludeFromChat: boolean;
+        };
+        /** MediaBookDraft */
+        MediaBookDraft: {
+            /** People */
+            people: components["schemas"]["MediaBookAxisItem"][];
+            /** Scenes */
+            scenes: components["schemas"]["MediaBookAxisItem"][];
+            /** Cells */
+            cells: components["schemas"]["MediaBookCellDraftItem"][];
+        };
+        /**
+         * MediaBookPayload
+         * @description 페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서
+         *     라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring.
+         */
+        MediaBookPayload: {
+            /** People */
+            people: components["schemas"]["MediaBookAxisInput"][];
+            /** Scenes */
+            scenes: components["schemas"]["MediaBookAxisInput"][];
+            /** Cells */
+            cells: components["schemas"]["MediaBookCellInput"][];
         };
         /**
          * ModerationActionType
@@ -6619,6 +6739,7 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            mediaBook?: components["schemas"]["MediaBookPayload"] | null;
         };
         /** StoryDraftResponse */
         StoryDraftResponse: {
@@ -6668,6 +6789,7 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            mediaBook?: components["schemas"]["MediaBookDraft"];
         };
         /**
          * StoryPromptTemplate

@@ -634,7 +634,7 @@ async def withdraw(
     if generated_assets:
         asset_ids = [asset.id for asset in generated_assets]
         usages_by_asset = await collect_asset_usages(db, asset_ids)
-        # collect_asset_usages는 캐릭터/스토리 썸네일과 상황별 이미지만 본다 —
+        # collect_asset_usages는 캐릭터/스토리 썸네일·상황별 이미지·미디어 북 칸만 본다 —
         # 문의 첨부(inquiries.attachment_asset_id)는 보지 않는다. 문의는 소유자만
         # 검사하고 kind를 안 보며(inquiry/router.py) 탈퇴해도 삭제되지 않으므로,
         # 제외하지 않으면 FK 위반으로 탈퇴 전체가 500으로 죽는다.

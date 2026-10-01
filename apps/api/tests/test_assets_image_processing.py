@@ -3,7 +3,12 @@ import io
 import pytest
 from PIL import Image
 
-from api.assets.image_processing import ReferenceImageRejectedError, generate_thumbnail, validate_reference_image
+from api.assets.image_processing import (
+    ReferenceImageRejectedError,
+    generate_thumbnail,
+    read_image_size,
+    validate_reference_image,
+)
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -139,3 +144,13 @@ def test_reference_image_rejects_formats_outside_the_contract() -> None:
 
 def test_reference_image_rejects_bytes_that_are_not_an_image() -> None:
     assert _rejection(b"not an image at all") == "undecodable"
+
+
+@pytest.mark.parametrize("image_format", ["PNG", "WEBP", "JPEG"])
+def test_read_image_size_returns_width_then_height(image_format: str) -> None:
+    assert read_image_size(_encoded(300, 200, image_format)) == (300, 200)
+
+
+def test_read_image_size_rejects_bytes_that_are_not_an_image() -> None:
+    with pytest.raises(OSError):
+        read_image_size(b"not an image")

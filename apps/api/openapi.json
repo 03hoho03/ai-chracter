@@ -3699,7 +3699,7 @@
           "content"
         ],
         "summary": "Update Content Draft",
-        "description": "Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data.",
+        "description": "Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때\n검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어\n그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data.",
         "operationId": "update_content_draft_contents__id__draft_patch",
         "parameters": [
           {
@@ -14409,7 +14409,8 @@
             "type": "string",
             "enum": [
               "thumbnail",
-              "situationalImage"
+              "situationalImage",
+              "mediaBook"
             ],
             "title": "Field"
           }
@@ -14939,6 +14940,235 @@
           "privacyReconsentRequired"
         ],
         "title": "MeResponse"
+      },
+      "MediaBookAxisInput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MediaBookAxisInput"
+      },
+      "MediaBookAxisItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MediaBookAxisItem"
+      },
+      "MediaBookCellDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Personid"
+          },
+          "sceneId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sceneid"
+          },
+          "imageAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Imageassetid"
+          },
+          "situationDescription": {
+            "type": "string",
+            "title": "Situationdescription"
+          },
+          "unlockHint": {
+            "type": "string",
+            "title": "Unlockhint"
+          },
+          "excludeFromChat": {
+            "type": "boolean",
+            "title": "Excludefromchat"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "imageWidth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imagewidth"
+          },
+          "imageHeight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageheight"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "personId",
+          "sceneId",
+          "imageAssetId",
+          "situationDescription",
+          "unlockHint",
+          "excludeFromChat",
+          "imageUrl",
+          "imageWidth",
+          "imageHeight"
+        ],
+        "title": "MediaBookCellDraftItem"
+      },
+      "MediaBookCellInput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Personid"
+          },
+          "sceneId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sceneid"
+          },
+          "imageAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Imageassetid"
+          },
+          "situationDescription": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Situationdescription",
+            "default": ""
+          },
+          "unlockHint": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Unlockhint",
+            "default": ""
+          },
+          "excludeFromChat": {
+            "type": "boolean",
+            "title": "Excludefromchat",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "personId",
+          "sceneId",
+          "imageAssetId"
+        ],
+        "title": "MediaBookCellInput",
+        "description": "`person_id`·`scene_id` 는 같은 페이로드의 축 entity_id 다."
+      },
+      "MediaBookDraft": {
+        "properties": {
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisItem"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisItem"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookCellDraftItem"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "people",
+          "scenes",
+          "cells"
+        ],
+        "title": "MediaBookDraft"
+      },
+      "MediaBookPayload": {
+        "properties": {
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisInput"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisInput"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookCellInput"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "people",
+          "scenes",
+          "cells"
+        ],
+        "title": "MediaBookPayload",
+        "description": "페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서\n라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring."
       },
       "ModerationActionType": {
         "type": "string",
@@ -16407,6 +16637,16 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "mediaBook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaBookPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -16593,6 +16833,9 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "mediaBook": {
+            "$ref": "#/components/schemas/MediaBookDraft"
           }
         },
         "type": "object",
