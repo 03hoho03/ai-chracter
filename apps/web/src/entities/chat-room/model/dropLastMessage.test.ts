@@ -15,6 +15,7 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     contentType: "character",
     name: "대화 1",
     messages,
+    openingMediaTagImages: {},
     stats: {},
     endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
     turnCount: messages.length,

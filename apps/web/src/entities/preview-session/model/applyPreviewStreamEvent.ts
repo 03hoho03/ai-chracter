@@ -27,7 +27,11 @@ export function applyPreviewStreamEvent(
     case "endingReached":
       queryClient.setQueryData<PreviewSessionState>(
         previewSessionKeys.detail(previewSessionId),
-        (prev) => prev && { ...prev, endingStatus: { reached: true, epilogue: event.epilogue ?? undefined } },
+        (prev) =>
+          prev && {
+            ...prev,
+            endingStatus: { reached: true, epilogue: event.epilogue ?? undefined, mediaTagImages: event.mediaTagImages },
+          },
       );
       return;
     case "done":

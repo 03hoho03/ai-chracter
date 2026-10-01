@@ -6,16 +6,21 @@ import { Copy } from "lucide-react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
-import { CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
-import { copyCodeToClipboard } from "../lib/copyCodeToClipboard";
+import { dropUnresolvedMediaTags } from "@/entities/media-book/@x/chat-room";
+import { MediaImageFrame, type MediaImageSurface } from "@/shared/ui/media-image-frame/MediaImageFrame";
 
-type CodeBlockSurface = "muted" | "secondary";
+import { CHAT_MARKDOWN_MEDIA_OPTIONS, CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
+import { copyCodeToClipboard } from "../lib/copyCodeToClipboard";
+import { useMediaTagImages } from "./MediaTagImagesProvider";
+
+// 코드 블록과 글 속 그림 자리가 같은 면 값을 받으므로 그림 틀의 면 종류를 그대로 쓴다.
+type CodeBlockSurface = MediaImageSurface;
 
 type ChatMarkdownProps = {
   content: string;
   /**
-   * 코드 블록 면. `bg-muted` 는 card·popover 면과 값이 같아 그 위에서 사라지므로, 다이얼로그 안에서는
-   * `secondary` 를 준다.
+   * 코드 블록과 글 속 그림 자리의 면. `bg-muted` 는 card·popover 면과 값이 같아 그 위에서 사라지므로, 다이얼로그
+   * 안에서는 `secondary` 를 준다.
    */
   codeBlockSurface?: CodeBlockSurface;
   className?: string;
@@ -23,6 +28,7 @@ type ChatMarkdownProps = {
 
 type HastNode = ExtraProps["node"];
 type ChatCodeBlockProps = ComponentProps<"pre"> & ExtraProps & { surface: CodeBlockSurface };
+type ChatMediaTagImageProps = ComponentProps<"img"> & ExtraProps & { surface: CodeBlockSurface };
 
 const CODE_BLOCK_SURFACE_CLASS: Record<CodeBlockSurface, string> = {
   muted: "bg-muted",
@@ -43,8 +49,16 @@ const BASE_COMPONENTS: Components = {
 // 컴포넌트 참조가 렌더마다 바뀌면 React 가 코드 블록을 매번 다시 마운트한다(스트리밍 중에는 토큰마다).
 // 면마다 한 번만 만들어 둔다.
 const COMPONENTS_BY_SURFACE: Record<CodeBlockSurface, Components> = {
-  muted: { ...BASE_COMPONENTS, pre: (props) => <ChatCodeBlock {...props} surface="muted" /> },
-  secondary: { ...BASE_COMPONENTS, pre: (props) => <ChatCodeBlock {...props} surface="secondary" /> },
+  muted: {
+    ...BASE_COMPONENTS,
+    pre: (props) => <ChatCodeBlock {...props} surface="muted" />,
+    img: (props) => <ChatMediaTagImage {...props} surface="muted" />,
+  },
+  secondary: {
+    ...BASE_COMPONENTS,
+    pre: (props) => <ChatCodeBlock {...props} surface="secondary" />,
+    img: (props) => <ChatMediaTagImage {...props} surface="secondary" />,
+  },
 };
 
 // 메시지 목록 화면은 입력창 글자·스트리밍 청크마다 다시 렌더되는데, 본문이 그대로인 메시지까지 매번
@@ -54,6 +68,9 @@ export const ChatMarkdown = memo(function ChatMarkdown({
   codeBlockSurface = "muted",
   className,
 }: ChatMarkdownProps) {
+  // 그림 맵은 `MediaTagImagesProvider` 로 감싼 메시지(작성자 글)에만 있다. 없으면 태그는 글자 그대로다.
+  const mediaTagImages = useMediaTagImages();
+  const source = mediaTagImages === undefined ? content : dropUnresolvedMediaTags(content, mediaTagImages);
   // `break-words` 가 아니라 `wrap-break-word` 인 이유: tailwind-merge 가 `break-words` 와 `break-keep` 을
   // 같은 무리로 보고 앞의 것을 지운다. 둘 다 살아 있어야 어절은 지키고 긴 URL 같은 한 덩어리는 접힌다.
   return (
@@ -63,8 +80,11 @@ export const ChatMarkdown = memo(function ChatMarkdown({
         className,
       )}
     >
-      <Markdown {...CHAT_MARKDOWN_OPTIONS} components={COMPONENTS_BY_SURFACE[codeBlockSurface]}>
-        {prepareChatMarkdownSource(content)}
+      <Markdown
+        {...(mediaTagImages === undefined ? CHAT_MARKDOWN_OPTIONS : CHAT_MARKDOWN_MEDIA_OPTIONS)}
+        components={COMPONENTS_BY_SURFACE[codeBlockSurface]}
+      >
+        {prepareChatMarkdownSource(source)}
       </Markdown>
     </div>
   );
@@ -149,6 +169,18 @@ function ChatCodeBlock({ node, surface }: ChatCodeBlockProps) {
       </Button>
     </div>
   );
+}
+
+/**
+ * 글 속 미디어 북 그림. `img` 요소는 그림 맵이 있는 자리의 플러그인만 만든다(마크다운 이미지 문법은 파서에서 꺼져
+ * 있다) — 요소가 가리키는 칸을 맵에서 찾아 그 주소와 크기로 그린다.
+ */
+function ChatMediaTagImage({ node, surface }: ChatMediaTagImageProps) {
+  const images = useMediaTagImages();
+  const cellId = node?.properties.dataCellId;
+  const image = typeof cellId === "string" ? images?.[cellId] : undefined;
+  if (image === undefined) return null;
+  return <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 그림" surface={surface} />;
 }
 
 function collectText(node: HastNode): string {

@@ -5,6 +5,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ChatMarkdown } from "./ChatMarkdown";
+import { MediaTagImagesProvider } from "./MediaTagImagesProvider";
 
 type RenderOptions = { codeBlockSurface?: "muted" | "secondary" };
 
@@ -102,5 +103,54 @@ describe("ChatMarkdown", () => {
   it("hides a trailing lone star line instead of an empty list", () => {
     expect(render("*")).not.toContain("<ul");
     expect(render("*a\n\n*")).not.toContain("<ul");
+  });
+
+  // 글 속 미디어 북 태그는 그림 맵으로 감싼 메시지(작성자 글)에서만 그림이 된다. 사용자 메시지·스트리밍 응답은 감싸지
+  // 않으므로 태그가 글자 그대로다 — 사용자가 칸 id 를 쳐서 그림을 불러내지 못한다.
+  describe("media tag images", () => {
+    const CELL = "aaaaaaaa-0000-0000-0000-000000000001";
+    const GONE = "bbbbbbbb-0000-0000-0000-000000000009";
+    const images = { [CELL]: { url: "https://cdn.example/a.webp", width: 1024, height: 768 } };
+
+    function renderWithImages(content: string, options: RenderOptions = {}): string {
+      return renderToStaticMarkup(
+        createElement(MediaTagImagesProvider, { images, children: createElement(ChatMarkdown, { content, ...options }) }),
+      );
+    }
+
+    it("leaves tags as text when no image map is given", () => {
+      const html = render(`앞 {{img::${CELL}}} 뒤`);
+      expect(html).toContain(`{{img::${CELL}}}`);
+      expect(html).not.toContain("<img");
+    });
+
+    it("draws a mapped tag as an image block at its own aspect ratio", () => {
+      const html = renderWithImages(`앞\n\n{{img::${CELL}}}\n\n뒤`);
+      expect(html).toContain('src="https://cdn.example/a.webp"');
+      expect(html).toContain("aspect-ratio:1024 / 768");
+      expect(html).not.toContain(`{{img::${CELL}}}`);
+    });
+
+    it("leaves a blank, not the raw tag, for a cell missing from the map", () => {
+      const html = renderWithImages(`앞\n\n{{img::${GONE}}}\n\n뒤`);
+      expect(html).not.toContain(GONE);
+      expect(html).not.toContain("<img");
+      expect(html).toContain("<p class=\"m-0\">앞</p>");
+    });
+
+    // 빈칸은 글을 쪼개지 않는다 — 문장 중간의 지워진 칸 때문에 한 문장이 두 문단으로 갈라지면 안 된다.
+    it("keeps a sentence in one paragraph around a cell missing from the map", () => {
+      expect(renderWithImages(`앞 {{img::${GONE}}} 뒤`)).toContain('<p class="m-0">앞  뒤</p>');
+    });
+
+    it("keeps name-form tags as text even where a map is given", () => {
+      expect(renderWithImages("{{img::민아/교실}}")).toContain("{{img::민아/교실}}");
+    });
+
+    it("uses the secondary surface for the image well inside dialogs", () => {
+      const html = renderWithImages(`{{img::${CELL}}}`, { codeBlockSurface: "secondary" });
+      expect(html).toMatch(/class="self-start overflow-hidden rounded-lg bg-secondary"/);
+      expect(html).not.toMatch(/rounded-lg bg-muted/);
+    });
   });
 });

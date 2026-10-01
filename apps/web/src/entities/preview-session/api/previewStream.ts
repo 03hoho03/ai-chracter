@@ -6,6 +6,8 @@
 import { z } from "zod";
 import type { components } from "@ai-character-chat/api-types";
 
+import { mediaTagImagesSchema } from "@/entities/media-book/@x/preview-session";
+
 export type PreviewStartPayload =
   components["schemas"]["CharacterDraftPayload"] | components["schemas"]["StoryDraftPayload"];
 
@@ -29,6 +31,8 @@ export const previewStreamEventSchema = z.discriminatedUnion("type", [
     type: z.literal("endingReached"),
     endingId: z.string(),
     epilogue: z.string().nullable(),
+    // 에필로그 속 칸 id 형태 태그가 가리키는 그림(`{칸 id: 그림}`).
+    mediaTagImages: mediaTagImagesSchema,
   }),
   z.object({ type: z.literal("policyWarning"), message: z.string() }),
   z.object({ type: z.literal("done"), finalMessage: previewChatMessageSchema }),

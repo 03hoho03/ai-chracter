@@ -2,6 +2,7 @@ import type { ApiError, components } from "@ai-character-chat/api-types";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
+import type { MediaTagImages } from "@/entities/media-book/@x/preview-session";
 
 import { buildPreviewStartState } from "../model/buildPreviewStartState";
 import { previewSessionKeys } from "./keys";
@@ -9,6 +10,9 @@ import type { PreviewStartPayload } from "./previewStream";
 import type { PreviewSessionState } from "../model/previewSessionState";
 
 type PreviewSessionStartResponseDto = components["schemas"]["PreviewSessionStartResponse"];
+
+/** 서버로 보내는 페이로드와, 첫 메시지 속 미디어 북 태그를 그릴 빌더의 칸 그림(`{칸 id: 그림}` — 서버로는 안 간다). */
+export type StartPreviewInput = { payload: PreviewStartPayload; mediaBookImages?: MediaTagImages };
 
 /**
  * formToServer(getValues())를 검증 없이 그대로 전송해 미리보기
@@ -19,10 +23,10 @@ type PreviewSessionStartResponseDto = components["schemas"]["PreviewSessionStart
 export function useStartPreviewMutation() {
   const queryClient = useQueryClient();
 
-  return useMutation<PreviewSessionState, ApiError, PreviewStartPayload>({
-    mutationFn: async (payload) => {
+  return useMutation<PreviewSessionState, ApiError, StartPreviewInput>({
+    mutationFn: async ({ payload, mediaBookImages }) => {
       const { data } = await apiClient.post<PreviewSessionStartResponseDto>("/preview-sessions", payload);
-      return buildPreviewStartState(data.previewSessionId, payload);
+      return buildPreviewStartState(data.previewSessionId, payload, mediaBookImages);
     },
     onSuccess: (state) => {
       // 이 훅이 만드는 state는 항상 서버가 내려준 실제 id로 계산된다(buildPreviewStartState의

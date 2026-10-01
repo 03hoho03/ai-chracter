@@ -1,6 +1,8 @@
 // StatDef/Shortcut/Ending은 이 스키마를 그대로 반영한다.
 // ChatRoomState는 캐릭터/스토리 챗 공용 상태 모델이다.
 
+import type { MediaTagImages } from "@/entities/media-book/@x/chat-room";
+
 import type { ChatMessage } from "../api/chatStream";
 import type { RuleListItem } from "./endingRules";
 
@@ -53,8 +55,19 @@ export type ChatRoomState = {
     pinnedStartingSetupId: string; // 물리적 PK(entity_id인 startingSetupId와 다름). GET /stories/starting-setups/{id}/ending-collection 호출에 쓴다.
   };
   messages: ChatMessage[];
+  // 첫 메시지(작성자 글의 복사본)의 칸 id 형태 태그가 가리키는 그림 — 서버가 첫 메시지에 대해서만 준다. 맵에 없는
+  // 칸의 태그는 빈칸이다. 필수인 이유: 렌더 때 빈 객체로 채우면 렌더마다 새 맵이 생겨 첫 메시지의 다시 그리기 생략이
+  // 깨진다 — 변환(`toChatRoomState`)에서 한 번 채운다.
+  openingMediaTagImages: MediaTagImages;
   stats: Record<string, number>; // statId -> 현재값 — 캐릭터 챗에서는 항상 빈 객체
-  endingStatus: { reached: boolean; endingId?: string; reachedAtTurn?: number; epilogue?: string };
+  // `mediaTagImages` 는 에필로그의 칸 id 형태 태그가 가리키는 그림이다(엔딩 도달 이벤트에만 실려 온다).
+  endingStatus: {
+    reached: boolean;
+    endingId?: string;
+    reachedAtTurn?: number;
+    epilogue?: string;
+    mediaTagImages?: MediaTagImages;
+  };
   turnCount: number;
   // 방의 대화 프로필. undefined = "선택 안 함"(서버 null). 다음 턴부터 반영된다.
   personaId?: string;

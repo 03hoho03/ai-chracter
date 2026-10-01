@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import type { Shortcut } from "@/entities/chat-room";
 import {
   EndingDivider,
+  isAuthorOpeningMessage,
+  MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
   StatGaugePanel,
@@ -232,7 +234,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             <div className="flex flex-col gap-6">
               {room.messages.map((message, index) => {
                 const isLastMessage = index === room.messages.length - 1;
-                return (
+                const bubble = (
                   <MessageBubble
                     key={message.id}
                     message={message}
@@ -249,6 +251,15 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     onDelete={() => handleDeleteMessage(message.id)}
                   />
                 );
+                // 스토리 방 첫 메시지는 작성자 글의 복사본이라 글 속 미디어 북 태그를 그림으로 그린다(판정 규칙은
+                // `isAuthorOpeningMessage`). 나머지 메시지의 태그는 글자 그대로다.
+                return isAuthorOpeningMessage({ index, role: message.role, contentType: room.contentType }) ? (
+                  <MediaTagImagesProvider key={message.id} images={room.openingMediaTagImages}>
+                    {bubble}
+                  </MediaTagImagesProvider>
+                ) : (
+                  bubble
+                );
               })}
 
               {room.endingStatus.reached && !!room.endingStatus.epilogue && (
@@ -256,9 +267,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                   <EndingDivider
                     endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
                   />
-                  <MessageBubble
-                    message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
-                  />
+                  <MediaTagImagesProvider images={room.endingStatus.mediaTagImages ?? {}}>
+                    <MessageBubble
+                      message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
+                    />
+                  </MediaTagImagesProvider>
                 </>
               )}
 

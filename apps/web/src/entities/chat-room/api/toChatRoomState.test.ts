@@ -24,12 +24,47 @@ describe("toChatRoomState", () => {
       contentType: "character",
       name: "대화 1",
       messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
+      openingMediaTagImages: {},
       stats: {},
       endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
       turnCount: 3,
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
     });
+  });
+
+  // 첫 메시지 속 미디어 북 그림 맵과 판정 이미지 크기는 그대로 옮기고, 서버 `null` 크기는 undefined 로 접는다.
+  it("carries the opening media tag images and judged image sizes", () => {
+    const image = { url: "https://cdn.example/a.webp", width: 768, height: 1024 };
+    const state = toChatRoomState({
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "story",
+      name: "대화 1",
+      turnCount: 1,
+      endingReached: false,
+      messages: [
+        { id: "m1", role: "assistant", content: "열림", createdAt: "2026-07-08T00:00:00Z" },
+        {
+          id: "m2",
+          role: "assistant",
+          content: "판정",
+          imageId: "cell-1",
+          imageUrl: image.url,
+          imageWidth: 1200,
+          imageHeight: null,
+          createdAt: "2026-07-08T00:00:00Z",
+        },
+      ],
+      mediaTagImages: { "cell-1": image },
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    });
+
+    expect(state.openingMediaTagImages).toEqual({ "cell-1": image });
+    expect(state.messages[1]).toMatchObject({ imageWidth: 1200, imageHeight: undefined });
   });
 
   // 방의 대화 프로필 선택. 서버 `null`(선택 없음)과 필드 부재는 둘 다 undefined다.

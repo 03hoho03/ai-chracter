@@ -41,12 +41,6 @@ const ALL_SOURCES: Record<string, string> = { ...WEB_SOURCES, ...UI_SOURCES };
  * (낡은 예외) 빨강이다. 새 토큰이 정말 background 위라면 `tokens`와 `reason`을 함께 고친다.
  */
 const ALLOWLIST: Record<string, { reason: string; tokens: string[] }> = {
-  "../../../entities/chat-room/ui/MessageBubble.tsx": {
-    reason:
-      "표식은 메시지 ⋯ 메뉴의 DropdownMenuContent뿐이다. bg-muted 이미지 웰은 그 메뉴 밖, 채팅방·미리보기 " +
-      "화면(h-below-header 전체 페이지)의 background 위에 있다.",
-    tokens: ["bg-muted"],
-  },
   "../../../features/submit-inquiry/ui/SubmitInquiryForm.tsx": {
     reason:
       "표식은 카테고리 Select의 SelectContent뿐이다. bg-muted 첨부 미리보기 웰은 InquiryNewPage의 <main> " +

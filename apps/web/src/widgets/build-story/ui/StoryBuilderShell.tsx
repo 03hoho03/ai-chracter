@@ -7,6 +7,7 @@ import { FormProvider, useForm, type FieldErrors, type Path, type Resolver } fro
 import { toast } from "sonner";
 
 import { usePublishContentMutation, type StoryDraftContent } from "@/entities/content";
+import type { MediaTagImages } from "@/entities/media-book";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   storyBuilderSchema,
@@ -17,6 +18,7 @@ import {
   serverToForm,
   storyAutosaveErrorMessage,
   STORY_TABS,
+  toMediaBookPreviewImages,
   type StoryBuilderFormValues,
   type StoryBuilderTab,
 } from "@/features/build-story";
@@ -39,6 +41,7 @@ import {
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
 
+import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
 import { MediaBookTab } from "./MediaBookTab";
@@ -56,6 +59,7 @@ type StoryBuilderShellProps = {
   renderPreview: (args: {
     kind: "card" | "chat";
     getPayload: () => PreviewStartPayload;
+    getMediaBookImages: () => MediaTagImages;
     onClose: () => void;
   }) => ReactNode;
 };
@@ -144,6 +148,8 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     resolver: zodResolver(storyBuilderSchema) as Resolver<StoryBuilderFormValues>,
     defaultValues: serverToForm(draft),
   });
+
+  const mediaBookThumbnails = useMediaBookThumbnailsStore(draft);
 
   const { saveDraft } = useDraftPersistence({ type: "story", draftId });
   const publishMutation = usePublishContentMutation();
@@ -254,6 +260,18 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   const previewNode = renderPreview({
     kind: activeTabConfig?.preview ?? "card",
     getPayload: () => formToServer(form.getValues()),
+    // 대화 미리보기 첫 메시지 그림. 크기는 폼 값에 없으면(이 기기에서 방금 올린 그림) 최근 저장 응답에서 찾는다.
+    getMediaBookImages: () =>
+      toMediaBookPreviewImages(
+        form.getValues("mediaBook.cells"),
+        mediaBookThumbnails.resolveUrl,
+        new Map(
+          (draft.mediaBook?.cells ?? []).map((cell) => [
+            cell.imageAssetId,
+            { width: cell.imageWidth ?? undefined, height: cell.imageHeight ?? undefined },
+          ]),
+        ),
+      ),
     onClose: () => setIsPreviewOpen(false),
   });
 
@@ -281,7 +299,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         }
       />
       {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
-      <MediaBookThumbnailsProvider draft={draft}>
+      <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
         <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
           {rejectionReason !== undefined && draftId !== undefined && (
             <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">

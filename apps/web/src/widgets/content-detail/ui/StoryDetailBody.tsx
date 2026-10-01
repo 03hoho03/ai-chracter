@@ -4,9 +4,14 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { ChevronDown } from "lucide-react";
 
 import type { ContentDetailResponse } from "@/entities/content";
+import { stripMediaTags, type MediaTagImages } from "@/entities/media-book";
+
+import { MediaTagText } from "./MediaTagText";
 
 type StoryDetailBodyProps = {
   startingSetups: NonNullable<ContentDetailResponse["startingSetups"]>;
+  /** 프롤로그 속 칸 id 형태 태그가 가리키는 그림. */
+  mediaTagImages: MediaTagImages;
   selectedSetupId: string | undefined;
   onSelectedSetupIdChange: (id: string) => void;
 }
@@ -16,7 +21,12 @@ type StoryDetailBodyProps = {
  * 플레이 버튼은 하단 고정 바(`StoryPlayBar.tsx`)로
  * 분리했다. 선택 state는 그 바와 공유해야 해서 `ContentDetailView`가 소유하고 여기는 controlled로
  * 받는다. */
-export function StoryDetailBody({ startingSetups, selectedSetupId, onSelectedSetupIdChange }: StoryDetailBodyProps) {
+export function StoryDetailBody({
+  startingSetups,
+  mediaTagImages,
+  selectedSetupId,
+  onSelectedSetupIdChange,
+}: StoryDetailBodyProps) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   const selectedSetup = startingSetups.find((setup) => setup.id === selectedSetupId) ?? startingSetups[0];
@@ -48,9 +58,21 @@ export function StoryDetailBody({ startingSetups, selectedSetupId, onSelectedSet
       </ToggleGroup>
 
       <div className="rounded-lg bg-secondary/50 p-4">
-        <p className={cn("whitespace-pre-wrap text-sm text-muted-foreground", !isExpanded && "line-clamp-4")}>
-          {selectedSetup.prologue}
-        </p>
+        {/* 접힌 요약은 글만 네 줄 보여 준다 — 그림 블록이 줄 수 자르기(`line-clamp`) 안에 들어가면 그림 하나가 요약
+            자리를 다 차지하거나 잘린 채 보인다. 그림은 펼쳤을 때 제자리에 선다. 상자 면이 `secondary/50` 이라 그림
+            자리 면은 그보다 한 칸 위인 `secondary` 다(`muted` 는 이 상자와 값이 같아 사라진다). */}
+        {isExpanded ? (
+          <MediaTagText
+            text={selectedSetup.prologue}
+            images={mediaTagImages}
+            className="whitespace-pre-wrap text-sm text-muted-foreground"
+            surface="secondary"
+          />
+        ) : (
+          <p className="line-clamp-4 whitespace-pre-wrap text-sm text-muted-foreground">
+            {stripMediaTags(selectedSetup.prologue)}
+          </p>
+        )}
         <button
           type="button"
           onClick={() => setIsExpanded((prev) => !prev)}

@@ -1,8 +1,9 @@
-import type { Emphasis, Nodes, Paragraph, PhrasingContent, Root, Strong, Text } from "mdast";
+import type { Emphasis, Nodes, Paragraph, PhrasingContent, Root, RootContent, Strong, Text } from "mdast";
 import type { Options } from "react-markdown";
 import type { Plugin } from "unified";
 
 import { assertNever } from "@/shared/lib/assertNever";
+import { findMediaIdTags } from "@/entities/media-book/@x/chat-room";
 
 import {
   ESCAPED_STAR,
@@ -112,9 +113,54 @@ const remarkNewlineToBreak: Plugin<[], Root> = function () {
   };
 };
 
+/** 글 속 미디어 북 그림 자리. 렌더 단계에서 `img` 요소가 되고, 그 `data-cell-id` 로 그림을 찾는다. */
+type MediaTagImageNode = {
+  type: "mediaTagImage";
+  cellId: string;
+  data: { hName: "img"; hProperties: { dataCellId: string } };
+};
+
+// 그림 자리는 문단과 같은 층의 블록이다 — 블록 목록에 끼워 넣을 수 있게 mdast 의 블록 종류에 더한다.
+declare module "mdast" {
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- 모듈 보강은 interface 선언 병합으로만 된다
+  interface BlockContentMap {
+    mediaTagImage: MediaTagImageNode;
+  }
+  // eslint-disable-next-line @typescript-eslint/consistent-type-definitions -- 위와 같다
+  interface RootContentMap {
+    mediaTagImage: MediaTagImageNode;
+  }
+}
+
+/**
+ * 칸 id 형태 태그(`{{img::<칸 id>}}`)를 그림 블록으로 바꾼다. 그림은 문단 안에 둘 수 없으므로(`<p>` 안 블록은 잘못된
+ * HTML) 태그가 든 문단을 그 자리에서 쪼개 "앞 문단 · 그림 · 뒤 문단"으로 세운다. 지문(`*…*`) 안의 태그도 지문을
+ * 둘로 쪼개고 그림을 밖으로 끌어낸다 — 그림이 지문 글자 사이에 겹쳐 보이지 않게 한다.
+ * 맵에 없는 칸의 태그는 이 플러그인 전에 지워져 있다(`dropUnresolvedMediaTags`). 코드 안의 태그는 글자로 남는다.
+ */
+const remarkMediaTagImages: Plugin<[], Root> = function () {
+  return (tree) => {
+    splitMediaParagraphs(tree);
+  };
+};
+
+const CHAT_PLUGINS = [remarkChatSubset, remarkRevertUnderscoreEmphasis, remarkRescueStars, remarkNewlineToBreak];
+const CHAT_ELEMENTS = ["p", "em", "strong", "blockquote", "pre", "code", "hr", "ul", "ol", "li", "br"];
+
 export const CHAT_MARKDOWN_OPTIONS = {
-  remarkPlugins: [remarkChatSubset, remarkRevertUnderscoreEmphasis, remarkRescueStars, remarkNewlineToBreak],
-  allowedElements: ["p", "em", "strong", "blockquote", "pre", "code", "hr", "ul", "ol", "li", "br"],
+  remarkPlugins: CHAT_PLUGINS,
+  allowedElements: CHAT_ELEMENTS,
+  unwrapDisallowed: true,
+} satisfies Options;
+
+/**
+ * 글 속 그림 맵이 주어진 자리(첫 메시지·에필로그)에서만 쓰는 설정. 맵이 없는 자리(사용자 메시지·스트리밍 응답·
+ * 그 밖의 대화)는 위 설정을 써서 태그가 글자 그대로 남는다. `img` 를 만드는 것은 이 플러그인뿐이다 — 마크다운 이미지
+ * 문법(`![](…)`)은 파서에서 꺼져 있어 외부 주소의 그림은 여전히 글자다.
+ */
+export const CHAT_MARKDOWN_MEDIA_OPTIONS = {
+  remarkPlugins: [...CHAT_PLUGINS, remarkMediaTagImages],
+  allowedElements: [...CHAT_ELEMENTS, "img"],
   unwrapDisallowed: true,
 } satisfies Options;
 
@@ -303,4 +349,96 @@ function restoreEscapedStars(node: Nodes): void {
     node.value = node.value.replaceAll(ESCAPED_STAR, "\\*").replaceAll(RAW_STAR, "*").replaceAll(RAW_UNDERSCORE, "_");
   }
   if ("children" in node) for (const child of node.children) restoreEscapedStars(child);
+}
+
+type MediaSplitItem = PhrasingContent[] | MediaTagImageNode;
+
+function mediaTagImageNode(cellId: string): MediaTagImageNode {
+  return { type: "mediaTagImage", cellId, data: { hName: "img", hProperties: { dataCellId: cellId } } };
+}
+
+/** 문단을 품을 수 있는 블록(루트·인용·목록 항목)을 돌며 태그 든 문단을 문단·그림 열로 갈아 끼운다. */
+function splitMediaParagraphs(node: Nodes): void {
+  if (!("children" in node)) return;
+  for (const child of node.children) splitMediaParagraphs(child);
+  if (node.type === "root") node.children = withMediaImages(node.children);
+  else if (node.type === "blockquote" || node.type === "listItem") node.children = withMediaImages(node.children);
+}
+
+function withMediaImages<T extends RootContent>(children: T[]): (T | Paragraph | MediaTagImageNode)[] {
+  return children.flatMap((child): (T | Paragraph | MediaTagImageNode)[] =>
+    child.type === "paragraph" ? paragraphWithMediaImages(child) : [child],
+  );
+}
+
+function paragraphWithMediaImages(paragraph: Paragraph): (Paragraph | MediaTagImageNode)[] {
+  const items = splitPhrasingAtMediaTags(paragraph.children);
+  if (items === undefined) return [paragraph];
+  return items.flatMap((item): (Paragraph | MediaTagImageNode)[] => {
+    if (!Array.isArray(item)) return [item];
+    const trimmed = trimEdgeBreaks(item);
+    return trimmed.length === 0 ? [] : [{ type: "paragraph", children: trimmed }];
+  });
+}
+
+/** 글 조각 배열과 그림 노드가 번갈아 나오는 열. 태그가 하나도 없으면 undefined. */
+function splitPhrasingAtMediaTags(children: PhrasingContent[]): MediaSplitItem[] | undefined {
+  const items: MediaSplitItem[] = [[]];
+  let hasMediaTag = false;
+  const current = (): PhrasingContent[] => {
+    const last = items.at(-1);
+    if (Array.isArray(last)) return last;
+    const fresh: PhrasingContent[] = [];
+    items.push(fresh);
+    return fresh;
+  };
+
+  for (const child of children) {
+    if (child.type === "text") {
+      let cursor = 0;
+      for (const tag of findMediaIdTags(child.value)) {
+        hasMediaTag = true;
+        if (tag.index > cursor) current().push(textNode(child.value.slice(cursor, tag.index)));
+        items.push(mediaTagImageNode(tag.cellId));
+        cursor = tag.index + tag.length;
+      }
+      if (cursor === 0) current().push(child);
+      else if (cursor < child.value.length) current().push(textNode(child.value.slice(cursor)));
+      continue;
+    }
+    if (child.type === "emphasis" || child.type === "strong") {
+      const inner = splitPhrasingAtMediaTags(child.children);
+      if (inner === undefined) {
+        current().push(child);
+        continue;
+      }
+      hasMediaTag = true;
+      for (const item of inner) {
+        if (!Array.isArray(item)) items.push(item);
+        else if (!isBlankPhrasing(item)) current().push({ ...child, children: item });
+      }
+      continue;
+    }
+    current().push(child);
+  }
+  return hasMediaTag ? items : undefined;
+}
+
+function isBlankPhrasing(nodes: PhrasingContent[]): boolean {
+  return nodes.every((node) => {
+    if (node.type === "break") return true;
+    if (node.type === "text") return node.value.trim() === "";
+    if (node.type === "emphasis" || node.type === "strong") return isBlankPhrasing(node.children);
+    return false;
+  });
+}
+
+/** 그림 앞뒤로 남은 줄바꿈·공백은 문단 가장자리에서 걷어 낸다 — 그림이 제 줄을 차지하므로 빈 줄이 덧붙을 뿐이다. */
+function trimEdgeBreaks(nodes: PhrasingContent[]): PhrasingContent[] {
+  if (isBlankPhrasing(nodes)) return [];
+  let start = 0;
+  let end = nodes.length;
+  while (start < end && isBlankPhrasing(nodes.slice(start, start + 1))) start += 1;
+  while (end > start && isBlankPhrasing(nodes.slice(end - 1, end))) end -= 1;
+  return nodes.slice(start, end);
 }

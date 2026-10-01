@@ -10,8 +10,9 @@ import {
 import { ArrowLeft, ChevronRight, Lock, Sparkles } from "lucide-react";
 import { createCallable } from "react-call";
 
-import { ChatMarkdown, useEndingCollectionQuery } from "@/entities/chat-room";
+import { ChatMarkdown, MediaTagImagesProvider, useEndingCollectionQuery } from "@/entities/chat-room";
 import type { EndingCollectionItem } from "@/entities/chat-room";
+import { toMediaTagImages } from "@/entities/media-book";
 
 type EndingCollectionModalProps = {
   startingSetupId: string;
@@ -34,7 +35,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-sm">
+      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-sm">
         {selectedEnding ? (
           <div key={selectedEnding.id} className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
             <DialogHeader>
@@ -53,7 +54,7 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
               </DialogTitle>
               <DialogDescription className="sr-only">엔딩 에필로그</DialogDescription>
             </DialogHeader>
-            <EndingEpilogue epilogue={selectedEnding.epilogue} />
+            <EndingEpilogue epilogue={selectedEnding.epilogue} mediaTagImages={selectedEnding.mediaTagImages} />
           </div>
         ) : (
           <div key="list" className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
@@ -72,13 +73,19 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
 
 type EndingEpilogueProps = {
   epilogue: EndingCollectionItem["epilogue"];
+  mediaTagImages: EndingCollectionItem["mediaTagImages"];
 };
 
-function EndingEpilogue({ epilogue }: EndingEpilogueProps) {
+function EndingEpilogue({ epilogue, mediaTagImages }: EndingEpilogueProps) {
   if (!epilogue) return <p className="text-sm text-foreground">이 엔딩에는 에필로그가 없어요.</p>;
 
-  // 채팅방에서 본 에필로그와 같은 표기로 보인다. 다이얼로그 면 위라 코드 블록 면은 secondary 다.
-  return <ChatMarkdown content={epilogue} codeBlockSurface="secondary" />;
+  // 채팅방에서 본 에필로그와 같은 표기로 보인다(글 속 미디어 북 그림 포함). 다이얼로그 면 위라 코드 블록·그림 자리
+  // 면은 secondary 다.
+  return (
+    <MediaTagImagesProvider images={toMediaTagImages(mediaTagImages)}>
+      <ChatMarkdown content={epilogue} codeBlockSurface="secondary" />
+    </MediaTagImagesProvider>
+  );
 }
 
 /** 네 상태(로딩·에러·목록·빈 목록)가 배타적이라 early return으로 순서를 강제한다.
