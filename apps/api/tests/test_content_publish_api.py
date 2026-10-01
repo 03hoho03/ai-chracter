@@ -1,4 +1,6 @@
 import io
+import threading
+import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timezone
@@ -12,7 +14,9 @@ import sqlalchemy as sa
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assets.image_processing import generate_blurred_image
 from api.content.publish import PublishFilterResult, validate_story_publish
+from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core.config import settings
 from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -1459,6 +1463,142 @@ async def test_publish_story_reports_cell_whose_image_cannot_be_blurred(
     assert "reason" not in detail
     await db_session.refresh(version)
     assert version.published_at is None
+
+
+async def test_publish_story_blurs_cells_concurrently_within_s3_connection_limit(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """칸 블러본은 동시에 만든다 — 운영 저장소 왕복이 칸마다 붙어 50칸을 줄 세우면 발행이 1분을 넘긴다. 다만
+    공유 저장소 클라이언트의 연결 수를 넘지 않게 한 번에 정해진 칸 수까지만 돌린다. 동시에 돌아도 칸마다 자기
+    그림의 블러본과 그 크기를 받아야 한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    limit = _MEDIA_BOOK_S3_CONCURRENCY
+    sized_cells: list[tuple[MediaBookCell, tuple[int, int]]] = []
+    for index in range(limit + 4):
+        cell, image = await _add_named_media_cell(db_session, version.id, user.id, f"인물{index}", "교실", size=None)
+        # 칸마다 크기를 달리 둬 블러본이 다른 칸의 것과 뒤바뀌면 크기로 드러나게 한다.
+        size = (10 + index, 40 - index)
+        _upload_test_image(image.storage_key, size=size)
+        _upload_test_thumbnail(image.storage_key)
+        sized_cells.append((cell, size))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    keys_before = _bucket_keys()
+
+    lock = threading.Lock()
+    counts = {"running": 0, "peak": 0}
+    limit_reached = threading.Event()
+
+    def counting_blur(image_bytes: bytes) -> bytes:
+        with lock:
+            counts["running"] += 1
+            counts["peak"] = max(counts["peak"], counts["running"])
+            if counts["running"] >= limit:
+                limit_reached.set()
+        try:
+            # 한도만큼 모일 때까지 붙잡아 둔다 — 한 칸씩 돌면 아무도 이 문을 열지 못해 시간이 지나서야 넘어간다.
+            # 연 뒤에도 잠깐 머물러, 한도가 없다면 남은 칸이 그사이 들어와 최댓값을 한도 위로 올리게 한다.
+            limit_reached.wait(timeout=1)
+            time.sleep(0.2)
+            return generate_blurred_image(image_bytes)
+        finally:
+            with lock:
+                counts["running"] -= 1
+
+    monkeypatch.setattr("api.assets.blur.generate_blurred_image", counting_blur)
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert counts["peak"] == limit
+    blurred_keys: set[str] = set()
+    for cell, size in sized_cells:
+        await db_session.refresh(cell)
+        assert cell.blurred_asset_id is not None
+        blurred = await db_session.get(Asset, cell.blurred_asset_id)
+        assert blurred is not None
+        assert (blurred.kind, blurred.status, blurred.owner_user_id, (blurred.width, blurred.height)) == (
+            AssetKind.BLURRED,
+            AssetStatus.READY,
+            user.id,
+            size,
+        )
+        assert Image.open(io.BytesIO(_object_bytes(blurred.storage_key))).size == size
+        blurred_keys |= {blurred.storage_key, build_thumbnail_key(blurred.storage_key)}
+    assert _bucket_keys() - keys_before == blurred_keys
+    assert len(blurred_keys) == 2 * len(sized_cells)
+
+
+async def test_publish_story_blur_failure_reports_first_cell_in_axis_order_after_all_blurs_finish(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """블러본을 동시에 만들다 여러 칸이 실패하면, 화면의 배치표 순서(인물 → 장면)로 가장 앞 칸을 알린다 — 한 칸씩
+    돌던 때 멈췄을 그 칸이고, 실행마다 바뀌지 않는다. 응답은 아직 돌고 있는 다른 칸이 끝난 뒤에 나간다(응답
+    뒤에 저장소 작업이 남아 돌지 않는다). 발행되지 않고 블러 자산 행도 칸의 블러 id 도 남지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    # 넣는 순서(민아/교실 → 준/교실 → 민아/옥상)와 배치표 순서(민아/교실 → 민아/옥상 → 준/교실)를 어긋나게 둔다.
+    readable, readable_image = await _add_named_media_cell(db_session, version.id, user.id, "민아", "교실")
+    later_missing, later_image = await _add_named_media_cell(db_session, version.id, user.id, "준", "교실")
+    first_missing, first_image = await _add_named_media_cell(db_session, version.id, user.id, "민아", "옥상")
+    _upload_test_image(readable_image.storage_key)
+    # 심사는 축소본만 읽으므로 원본 없는 칸도 축소본은 두어 블러 단계까지 가게 한다.
+    for image in (readable_image, later_image, first_image):
+        _upload_test_thumbnail(image.storage_key)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    lock = threading.Lock()
+    counts = {"running": 0, "finished": 0}
+
+    def slow_blur(image_bytes: bytes) -> bytes:
+        with lock:
+            counts["running"] += 1
+        try:
+            # 읽히는 칸은 원본이 없는 칸들이 실패한 뒤에도 한동안 돈다.
+            time.sleep(0.5)
+            return generate_blurred_image(image_bytes)
+        finally:
+            with lock:
+                counts["running"] -= 1
+                counts["finished"] += 1
+
+    monkeypatch.setattr("api.assets.blur.generate_blurred_image", slow_blur)
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert (detail["code"], detail["cellId"]) == ("MEDIA_BOOK_IMAGE_UNAVAILABLE", str(first_missing.entity_id))
+    assert counts == {"running": 0, "finished": 1}
+    await db_session.refresh(version)
+    assert version.published_at is None
+    for cell in (readable, later_missing, first_missing):
+        await db_session.refresh(cell)
+        assert cell.blurred_asset_id is None
+    blurred_rows = await db_session.scalar(
+        sa.select(sa.func.count())
+        .select_from(Asset)
+        .where(Asset.owner_user_id == user.id, Asset.kind == AssetKind.BLURRED)
+    )
+    assert blurred_rows == 0
 
 
 async def _story_with_media_cells(
