@@ -78,9 +78,9 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.clock_timestamp(), nullable=False
     )
-    # 상황이미지 매칭 결과의 entity_id. FK 없음 — entity_id는 버전 간
-    # 복제돼 유니크가 아니고 형제 컬럼과 같은 다형 참조 관례. 캐릭터 챗 assistant 메시지에만
-    # 채워지고 스토리 챗은 항상 NULL.
+    # 이미지 판정 결과의 entity_id — 캐릭터 방이면 상황별 이미지, 스토리 방이면 미디어 북 칸의
+    # entity_id 다. assistant 메시지에만 채워진다. FK 없음 — entity_id는 버전 간 복제돼 유니크가
+    # 아니고, 방 종류에 따라 가리키는 테이블도 달라 형제 컬럼과 같은 다형 참조 관례를 따른다.
     image_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, nullable=True)
 
 
@@ -169,6 +169,24 @@ class CharacterImageExposure(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
     content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), primary_key=True)
     image_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    first_exposed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class StoryMediaExposure(Base):
+    """스토리 미디어 북 보관함: 사용자 + 스토리별로 대화에 나온 칸을 쌓는다. `CharacterImageExposure`
+    와 같은 규칙 — 그 칸을 노출한 메시지를 재생성·편집·삭제해도, 방을 초기화하거나 지워도 행을
+    지우지 않는다.
+
+    `cell_entity_id` 는 칸의 entity_id 이고 FK 가 없다 — 칸 행은 버전마다 복제돼 entity_id 가
+    유일하지 않고, 버전이 바뀌어도 같은 칸으로 쌓여야 한다."""
+
+    __tablename__ = "story_media_exposures"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), primary_key=True)
+    cell_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     first_exposed_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

@@ -1,6 +1,6 @@
 import io
 import uuid
-from datetime import timezone
+from datetime import UTC, datetime, timezone
 
 import boto3
 import httpx
@@ -23,11 +23,16 @@ from api.db.models.media import Asset, AssetKind, AssetStatus
 from factories import _get_genre, _login_as, _make_user
 
 
-async def _make_draft_version(db_session: AsyncSession, *, creator_user_id: uuid.UUID) -> ContentVersion:
+async def _make_draft_version(
+    db_session: AsyncSession,
+    *,
+    creator_user_id: uuid.UUID,
+    content_type: ContentType = ContentType.CHARACTER,
+) -> ContentVersion:
     genre = await _get_genre(db_session)
     content = Content(
         creator_user_id=creator_user_id,
-        type=ContentType.CHARACTER,
+        type=content_type,
         genre_id=genre.id,
         target=ContentTarget.ALL,
         hashtags=[],
@@ -342,3 +347,98 @@ async def test_register_situational_image_rejects_non_creator_content_version(
         },
     )
     assert resp.status_code == 403
+
+
+async def test_register_situational_image_rejects_published_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """A published version is what readers chat with and what publish moderation already
+    approved — writing an image straight into it would skip that review."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    version.published_at = datetime.now(UTC)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={
+            "entityId": str(uuid.uuid4()),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "조건",
+            "order": 0,
+        },
+    )
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == "Content version is not a draft"
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+        )
+    ).all()
+    assert rows == []
+
+
+async def test_register_situational_image_rejects_story_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """Situational images belong to characters only; a story draft never reads this table,
+    so a row hung off it would be an orphan nobody sees or cleans up."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(
+        db_session, creator_user_id=user.id, content_type=ContentType.STORY
+    )
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={
+            "entityId": str(uuid.uuid4()),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "조건",
+            "order": 0,
+        },
+    )
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Situational images are only for character content"
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+        )
+    ).all()
+    assert rows == []
+
+
+async def test_register_situational_image_records_blurred_asset_dimensions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """블러본은 원본을 줄이지 않고 흐리기만 하므로 원본과 같은 너비·높이다 — 크기를 모르는 원본
+    (너비·높이 NULL)이어도 블러본에는 채워진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    buffer = io.BytesIO()
+    Image.new("RGB", (30, 20), color=(200, 40, 40)).save(buffer, format="PNG")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=buffer.getvalue())
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={"entityId": str(uuid.uuid4()), "contentVersionId": str(version.id), "triggerCondition": "조건", "order": 0},
+    )
+
+    assert resp.status_code == 200
+    blurred = await db_session.get(Asset, uuid.UUID(resp.json()["blurredAssetId"]))
+    assert blurred is not None
+    assert (blurred.width, blurred.height) == (30, 20)

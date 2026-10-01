@@ -1,13 +1,21 @@
+import asyncio
 import io
+import unicodedata
 import uuid
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone, UTC
+from typing import Any
 
 import boto3
 import httpx
 import pytest
+import pytest_asyncio
 import sqlalchemy as sa
 from PIL import Image
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.engine import Result
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.orm import ORMExecuteState
+from sqlalchemy.pool import NullPool
 
 from api.core.config import settings
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -19,6 +27,7 @@ from api.db.models.content import (
     ContentVisibility,
     ModerationStatus,
 )
+from api.db.models.auth import User
 from api.db.models.media import Asset, AssetKind, AssetStatus
 from api.db.models.moderation import AdminActionLog, ModerationAction, Notification
 from api.db.models.story import (
@@ -26,13 +35,27 @@ from api.db.models.story import (
     EndingRule,
     EndingRuleGroup,
     KeywordNote,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_asset, _make_user
+from api.db.session import get_db_session, get_session_factory
+from api.main import app
+from factories import (
+    _add_media_book_cell,
+    _count_queries,
+    _create_admin,
+    _get_genre,
+    _login_as,
+    _login_as_admin,
+    _make_asset,
+    _make_user,
+)
 
 
 async def _make_empty_character_draft(
@@ -605,6 +628,134 @@ async def test_patch_content_draft_preserves_image_asset_id_set_by_register_endp
     assert row.image_asset_id == asset.id
     assert str(row.blurred_asset_id) == blurred_asset_id
     assert row.trigger_condition == "수정된 조건"
+
+
+async def test_register_after_patch_for_same_new_entity_keeps_one_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """The builder autosaves a freshly added row (no image yet) and then registers its image
+    under the same entity_id. The registration must land on that row, not add a second one —
+    a second row would never be tracked by later PATCHes and would be copied into every
+    published version."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    asset = await _make_asset(
+        db_session, user.id, storage_key_prefix="assets/situational-image/", status=AssetStatus.READY
+    )
+    buffer = io.BytesIO()
+    Image.new("RGB", (16, 16), color=(200, 40, 40)).save(buffer, format="PNG")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=buffer.getvalue())
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    entity_id = uuid.uuid4()
+    patch_resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_draft_payload(situationalImages=[{"id": str(entity_id), "triggerCondition": "자동저장 조건"}]),
+    )
+    assert patch_resp.status_code == 200
+    register_resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={
+            "entityId": str(entity_id),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "등록 조건",
+            "order": 0,
+        },
+    )
+    assert register_resp.status_code == 200
+
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage).where(SituationalImage.content_version_id == version.id)
+        )
+    ).all()
+    [row] = rows
+    assert row.entity_id == entity_id
+    assert row.image_asset_id == asset.id
+    assert str(row.blurred_asset_id) == register_resp.json()["blurredAssetId"]
+    assert row.trigger_condition == "등록 조건"
+
+
+async def test_patch_racing_register_for_same_new_entity_keeps_one_row_and_its_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """The race the sequential case can't show: an image registration commits the row
+    *after* this PATCH has read the version's rows (so the PATCH thinks the entity is new)
+    but *before* it writes. The PATCH must update that row's text and order, keep its image,
+    and not fail or add a second row."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    image = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    blurred = await _make_asset(db_session, user.id, kind=AssetKind.BLURRED, status=AssetStatus.READY)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    entity_id = uuid.uuid4()
+    raced = False
+
+    def _register_lands_right_after_patch_reads(orm_execute_state: ORMExecuteState) -> Result[Any] | None:
+        nonlocal raced
+        statement = orm_execute_state.statement
+        if raced or not isinstance(statement, sa.Select):
+            return None
+        if SituationalImage.__table__ not in statement.get_final_froms():
+            return None
+        raced = True
+        # 읽기 결과를 먼저 다 받아 두고, 그 뒤에 경쟁 쓰기를 끼워 넣는다.
+        frozen = orm_execute_state.invoke_statement().freeze()
+        orm_execute_state.session.connection().execute(
+            sa.insert(SituationalImage).values(
+                id=uuid.uuid4(),
+                entity_id=entity_id,
+                content_version_id=version.id,
+                image_asset_id=image.id,
+                blurred_asset_id=blurred.id,
+                trigger_condition="등록 조건",
+                order=0,
+            )
+        )
+        return frozen()
+
+    sa.event.listen(db_session.sync_session, "do_orm_execute", _register_lands_right_after_patch_reads)
+    try:
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft",
+            json=_draft_payload(
+                situationalImages=[
+                    {"id": str(uuid.uuid4()), "triggerCondition": "앞 항목"},
+                    {"id": str(entity_id), "triggerCondition": "자동저장 조건"},
+                ]
+            ),
+        )
+    finally:
+        sa.event.remove(db_session.sync_session, "do_orm_execute", _register_lands_right_after_patch_reads)
+    assert raced
+    assert resp.status_code == 200
+
+    rows = (
+        await db_session.scalars(
+            sa.select(SituationalImage)
+            .where(SituationalImage.content_version_id == version.id, SituationalImage.entity_id == entity_id)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    [row] = rows
+    assert row.image_asset_id == image.id
+    assert row.blurred_asset_id == blurred.id
+    assert row.trigger_condition == "자동저장 조건"
+    assert row.order == 1
 
 
 async def test_patch_content_draft_returns_422_for_mismatched_payload_type(
@@ -1451,3 +1602,914 @@ async def test_accepting_an_appeal_on_an_action_whose_draft_was_deleted_resolves
     assert resp.status_code == 200
     assert resp.json()["status"] == "resolved"
     assert resp.json()["verdict"] == "accepted"
+
+
+# --- 미디어 북 -----------------------------------------------------------------------------------
+
+
+def _axis(entity_id: uuid.UUID, name: str) -> dict[str, object]:
+    return {"id": str(entity_id), "name": name}
+
+
+def _media_cell(
+    cell_id: uuid.UUID, person_id: uuid.UUID, scene_id: uuid.UUID, asset_id: uuid.UUID, **overrides: object
+) -> dict[str, object]:
+    cell: dict[str, object] = {
+        "id": str(cell_id),
+        "personId": str(person_id),
+        "sceneId": str(scene_id),
+        "imageAssetId": str(asset_id),
+        "situationDescription": "",
+        "unlockHint": "",
+        "excludeFromChat": False,
+    }
+    cell.update(overrides)
+    return cell
+
+
+def _media_book(
+    people: list[dict[str, object]], scenes: list[dict[str, object]], cells: list[dict[str, object]]
+) -> dict[str, object]:
+    return {"people": people, "scenes": scenes, "cells": cells}
+
+
+async def _logged_in_story_draft(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> tuple[User, Content, ContentVersion, Asset]:
+    """로그인한 작성자의 빈 스토리 초안과 그가 가진 READY 원본 자산 하나."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    asset = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return user, content, version, asset
+
+
+async def _media_rows(
+    db_session: AsyncSession, version_id: uuid.UUID
+) -> tuple[list[MediaBookPerson], list[MediaBookScene], list[MediaBookCell]]:
+    people = (
+        await db_session.scalars(
+            sa.select(MediaBookPerson)
+            .where(MediaBookPerson.content_version_id == version_id)
+            .order_by(MediaBookPerson.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    scenes = (
+        await db_session.scalars(
+            sa.select(MediaBookScene)
+            .where(MediaBookScene.content_version_id == version_id)
+            .order_by(MediaBookScene.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    cells = (
+        await db_session.scalars(
+            sa.select(MediaBookCell)
+            .where(MediaBookCell.content_version_id == version_id)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return list(people), list(scenes), list(cells)
+
+
+async def test_patch_story_draft_upserts_media_book_by_entity_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 번째 저장은 같은 entity_id 의 행을 고친다 — 지우고 새로 넣으면 물리 id 가 바뀐다.
+    생성 이미지(GENERATED)도 칸에 걸 수 있다."""
+    user, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    generated = await _make_asset(db_session, user.id, kind=AssetKind.GENERATED, status=AssetStatus.READY)
+    await db_session.commit()
+    person_a, person_b, scene_a, scene_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    cell_a, cell_b = uuid.uuid4(), uuid.uuid4()
+
+    first = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person_a, "민아"), _axis(person_b, "준")],
+                [_axis(scene_a, "교실")],
+                [_media_cell(cell_a, person_a, scene_a, asset.id, situationDescription="웃는다", unlockHint="첫 만남")],
+            )
+        ),
+    )
+    assert first.status_code == 200
+    _, _, [first_cell] = await _media_rows(db_session, version.id)
+    first_cell_physical_id = first_cell.id
+
+    second = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person_b, "준"), _axis(person_a, "민아 언니")],
+                [_axis(scene_a, "교실"), _axis(scene_b, "옥상")],
+                [
+                    _media_cell(cell_a, person_a, scene_a, asset.id, situationDescription="운다", excludeFromChat=True),
+                    _media_cell(cell_b, person_b, scene_b, generated.id),
+                ],
+            )
+        ),
+    )
+    assert second.status_code == 200
+
+    people, scenes, cells = await _media_rows(db_session, version.id)
+    assert [(p.entity_id, p.name, p.order) for p in people] == [(person_b, "준", 0), (person_a, "민아 언니", 1)]
+    assert [(s.entity_id, s.name) for s in scenes] == [(scene_a, "교실"), (scene_b, "옥상")]
+    cells_by_entity = {cell.entity_id: cell for cell in cells}
+    assert set(cells_by_entity) == {cell_a, cell_b}
+    updated = cells_by_entity[cell_a]
+    assert updated.id == first_cell_physical_id
+    assert (updated.situation_description, updated.unlock_hint, updated.exclude_from_chat) == ("운다", "", True)
+    inserted = cells_by_entity[cell_b]
+    assert (inserted.person_entity_id, inserted.scene_entity_id, inserted.image_asset_id) == (
+        person_b,
+        scene_b,
+        generated.id,
+    )
+
+    body = second.json()["mediaBook"]
+    assert [p["id"] for p in body["people"]] == [str(person_b), str(person_a)]
+    assert {c["id"]: c["excludeFromChat"] for c in body["cells"]} == {str(cell_a): True, str(cell_b): False}
+
+
+async def test_get_story_draft_returns_media_cells_with_thumbnail_url_and_dimensions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """칸 응답은 썸네일 서명 URL 과 자산의 너비·높이를 싣는다. 크기를 모르는 자산은 null 이다."""
+    user, content, _, sized = await _logged_in_story_draft(db_client, db_session)
+    sized.width, sized.height = 600, 800
+    unsized = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    await db_session.commit()
+    person, scene_a, scene_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    sized_cell, unsized_cell = uuid.uuid4(), uuid.uuid4()
+    patch = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person, "민아")],
+                [_axis(scene_a, "교실"), _axis(scene_b, "옥상")],
+                [
+                    _media_cell(sized_cell, person, scene_a, sized.id),
+                    _media_cell(unsized_cell, person, scene_b, unsized.id),
+                ],
+            )
+        ),
+    )
+    assert patch.status_code == 200
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert resp.status_code == 200
+    cells = {cell["id"]: cell for cell in resp.json()["mediaBook"]["cells"]}
+    assert (cells[str(sized_cell)]["imageWidth"], cells[str(sized_cell)]["imageHeight"]) == (600, 800)
+    assert (cells[str(unsized_cell)]["imageWidth"], cells[str(unsized_cell)]["imageHeight"]) == (None, None)
+    assert f"{sized.storage_key}_thumb.webp" in cells[str(sized_cell)]["imageUrl"]
+    assert cells[str(sized_cell)]["imageAssetId"] == str(sized.id)
+
+
+async def test_patch_story_draft_without_media_book_keeps_existing_cells(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """미디어 북을 모르는 옛 화면의 자동저장은 키를 안 보낸다 — 그 저장이 칸을 지우면 안 된다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    cell = await _add_media_book_cell(db_session, version.id, asset.id)
+    await db_session.commit()
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(name="바뀐 이름"))
+
+    assert resp.status_code == 200
+    people, scenes, cells = await _media_rows(db_session, version.id)
+    assert (len(people), len(scenes)) == (1, 1)
+    assert [c.entity_id for c in cells] == [cell.entity_id]
+    assert [c["id"] for c in resp.json()["mediaBook"]["cells"]] == [str(cell.entity_id)]
+
+
+async def test_patch_story_draft_with_empty_media_book_deletes_everything(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    await _add_media_book_cell(db_session, version.id, asset.id)
+    await db_session.commit()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(mediaBook=_media_book([], [], []))
+    )
+
+    assert resp.status_code == 200
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+async def _foreign_asset(db_session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
+    other = _make_user()
+    db_session.add(other)
+    await db_session.flush()
+    return (await _make_asset(db_session, other.id, kind=AssetKind.GENERATED, status=AssetStatus.READY)).id
+
+
+async def _pending_asset(db_session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
+    return (await _make_asset(db_session, owner_id)).id
+
+
+async def _blurred_asset(db_session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
+    return (await _make_asset(db_session, owner_id, kind=AssetKind.BLURRED, status=AssetStatus.READY)).id
+
+
+async def _missing_asset(db_session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
+    return uuid.uuid4()
+
+
+@pytest.mark.parametrize(
+    "make_asset_id",
+    [
+        pytest.param(_foreign_asset, id="owned-by-other-user"),
+        pytest.param(_pending_asset, id="pending"),
+        pytest.param(_blurred_asset, id="blurred-kind"),
+        pytest.param(_missing_asset, id="missing"),
+    ],
+)
+async def test_patch_story_draft_rejects_unusable_media_cell_asset(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, make_asset_id: Any
+) -> None:
+    """칸 이미지는 요청자 소유의 READY 원본·생성 이미지만 — 남의 생성 이미지를 고르면 그 사람의
+    삭제가 막히고, 블러본을 고르면 해금 전 이미지가 원본 자리에 나간다."""
+    user, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    asset_id = await make_asset_id(db_session, user.id)
+    await db_session.commit()
+    person, scene = uuid.uuid4(), uuid.uuid4()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person, "민아")], [_axis(scene, "교실")], [_media_cell(uuid.uuid4(), person, scene, asset_id)]
+            )
+        ),
+    )
+
+    assert resp.status_code == 422
+    assert (await _media_rows(db_session, version.id))[2] == []
+
+
+async def test_patch_story_draft_checks_media_cell_assets_in_one_query(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """자동저장마다 칸 50개가 돈다 — 자산 확인도 쓰기도 칸 수만큼 따로 묻지 않는다."""
+    _, content, _, asset = await _logged_in_story_draft(db_client, db_session)
+    person = uuid.uuid4()
+
+    async def _patch_with(cell_count: int) -> int:
+        scenes = [uuid.uuid4() for _ in range(cell_count)]
+        with _count_queries() as count:
+            resp = await db_client.patch(
+                f"/contents/{content.id}/draft",
+                json=_story_draft_payload(
+                    mediaBook=_media_book(
+                        [_axis(person, "민아")],
+                        [_axis(scene, f"장면{i}") for i, scene in enumerate(scenes)],
+                        [_media_cell(uuid.uuid4(), person, scene, asset.id) for scene in scenes],
+                    )
+                ),
+            )
+        assert resp.status_code == 200
+        return count()
+
+    # 같은 모양의 저장(칸 n 개 → 새 칸 n 개로 교체)을 두 크기에서 재서 칸 수만큼 늘어나는 쿼리가 없는지 본다.
+    await _patch_with(2)
+    small = await _patch_with(2)
+    await _patch_with(10)
+    large = await _patch_with(10)
+    assert large == small
+
+
+async def test_patch_story_draft_rejects_fifty_first_media_cell(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person = uuid.uuid4()
+    scenes = [uuid.uuid4() for _ in range(51)]
+
+    def _payload(cell_count: int) -> dict[str, object]:
+        return _story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person, "민아")],
+                [_axis(scene, f"장면{i}") for i, scene in enumerate(scenes)],
+                [_media_cell(uuid.uuid4(), person, scene, asset.id) for scene in scenes[:cell_count]],
+            )
+        )
+
+    rejected = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(51))
+    assert rejected.status_code == 422
+    assert (await _media_rows(db_session, version.id))[2] == []
+
+    accepted = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(50))
+    assert accepted.status_code == 200
+    assert len((await _media_rows(db_session, version.id))[2]) == 50
+
+
+@pytest.mark.parametrize(
+    ("people", "scenes"),
+    [
+        pytest.param(["민아", " 민아 "], ["교실"], id="person-after-trim"),
+        # 맥 파일명은 한글을 자모로 풀어(NFD) 보낼 수 있다 — 화면에선 같은 이름이다.
+        pytest.param(["민아", unicodedata.normalize("NFD", "민아")], ["교실"], id="person-after-nfc"),
+        pytest.param(["민아"], ["교실", "교실\t"], id="scene-after-trim"),
+    ],
+)
+async def test_patch_story_draft_rejects_duplicate_axis_name_after_normalizing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, people: list[str], scenes: list[str]
+) -> None:
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(uuid.uuid4(), name) for name in people], [_axis(uuid.uuid4(), name) for name in scenes], []
+            )
+        ),
+    )
+
+    assert resp.status_code == 422
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+async def test_patch_story_draft_stores_media_axis_names_trimmed_and_nfc(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """같은 이름이 다른 바이트로 저장되면 태그 `{{img::인물/장면}}` 의 이름 대조가 갈라진다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    twenty = "가" * 20
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(uuid.uuid4(), "  " + unicodedata.normalize("NFD", "민아") + " ")],
+                [_axis(uuid.uuid4(), twenty)],
+                [],
+            )
+        ),
+    )
+
+    assert resp.status_code == 200
+    people, scenes, _ = await _media_rows(db_session, version.id)
+    assert [p.name for p in people] == ["민아"]
+    assert [s.name for s in scenes] == [twenty]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("   ", id="blank"),
+        pytest.param("가" * 21, id="over-20"),
+        pytest.param("민/아", id="slash"),
+        pytest.param("민{아", id="open-brace"),
+        pytest.param("민}아", id="close-brace"),
+        pytest.param("민:아", id="colon"),
+    ],
+)
+async def test_patch_story_draft_rejects_invalid_media_axis_name(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, name: str
+) -> None:
+    """`/`·`{`·`}`·`:` 는 태그 `{{img::인물/장면}}` 의 구분자라 이름에 들어가면 태그를 못 가른다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(mediaBook=_media_book([], [_axis(uuid.uuid4(), name)], [])),
+    )
+
+    assert resp.status_code == 422
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+async def test_patch_story_draft_rejects_media_cell_pointing_outside_payload_axes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """축 참조에 FK 가 없어 DB 는 고아 칸을 못 막는다 — 요청 검증이 막는다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene = uuid.uuid4(), uuid.uuid4()
+
+    for cell in (
+        _media_cell(uuid.uuid4(), uuid.uuid4(), scene, asset.id),
+        _media_cell(uuid.uuid4(), person, uuid.uuid4(), asset.id),
+    ):
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft",
+            json=_story_draft_payload(mediaBook=_media_book([_axis(person, "민아")], [_axis(scene, "교실")], [cell])),
+        )
+        assert resp.status_code == 422
+
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+async def test_patch_story_draft_rejects_two_media_cells_at_same_position(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene = uuid.uuid4(), uuid.uuid4()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person, "민아")],
+                [_axis(scene, "교실")],
+                [_media_cell(uuid.uuid4(), person, scene, asset.id), _media_cell(uuid.uuid4(), person, scene, asset.id)],
+            )
+        ),
+    )
+
+    assert resp.status_code == 422
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+async def test_patch_story_draft_rejects_repeated_media_entity_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """한 목록에 같은 id 가 두 번이면 한 버전에 같은 entity_id 행이 둘이 되려다 500 이 난다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene_a, scene_b, cell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    for media_book in (
+        _media_book([_axis(person, "민아"), _axis(person, "준")], [], []),
+        _media_book([], [_axis(scene_a, "교실"), _axis(scene_a, "옥상")], []),
+        _media_book(
+            [_axis(person, "민아")],
+            [_axis(scene_a, "교실"), _axis(scene_b, "옥상")],
+            [_media_cell(cell, person, scene_a, asset.id), _media_cell(cell, person, scene_b, asset.id)],
+        ),
+    ):
+        resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(mediaBook=media_book))
+        assert resp.status_code == 422
+
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+
+
+@pytest.mark.parametrize(
+    ("field", "accepted", "rejected"),
+    [
+        pytest.param("situationDescription", "가" * 100, "가" * 101, id="situation-description"),
+        pytest.param("unlockHint", "가" * 20, "가" * 21, id="unlock-hint"),
+    ],
+)
+async def test_patch_story_draft_limits_media_cell_text_length(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, field: str, accepted: str, rejected: str
+) -> None:
+    _, content, _, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene, cell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+
+    def _payload(text: str) -> dict[str, object]:
+        return _story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(person, "민아")], [_axis(scene, "교실")], [_media_cell(cell, person, scene, asset.id, **{field: text})]
+            )
+        )
+
+    assert (await db_client.patch(f"/contents/{content.id}/draft", json=_payload(rejected))).status_code == 422
+    assert (await db_client.patch(f"/contents/{content.id}/draft", json=_payload(accepted))).status_code == 200
+
+
+async def test_patch_story_draft_clears_blur_when_cell_image_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """블러본은 발행 때 칸 이미지에서 만든다 — 이미지가 바뀌면 옛 블러본은 다른 그림의 블러다."""
+    user, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    blurred = await _make_asset(db_session, user.id, kind=AssetKind.BLURRED, status=AssetStatus.READY)
+    replacement = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    cell = await _add_media_book_cell(db_session, version.id, asset.id, blurred.id)
+    await db_session.commit()
+
+    def _payload(image_id: uuid.UUID) -> dict[str, object]:
+        return _story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(cell.person_entity_id, "민아")],
+                [_axis(cell.scene_entity_id, "교실")],
+                [_media_cell(cell.entity_id, cell.person_entity_id, cell.scene_entity_id, image_id)],
+            )
+        )
+
+    same = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(asset.id))
+    assert same.status_code == 200
+    [kept] = (await _media_rows(db_session, version.id))[2]
+    assert kept.blurred_asset_id == blurred.id
+
+    changed = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(replacement.id))
+    assert changed.status_code == 200
+    [cleared] = (await _media_rows(db_session, version.id))[2]
+    assert (cleared.entity_id, cleared.image_asset_id, cleared.blurred_asset_id) == (
+        cell.entity_id,
+        replacement.id,
+        None,
+    )
+
+
+async def test_patch_story_draft_replaces_deleted_cell_with_new_cell_at_same_position(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """칸 하나 자리 UNIQUE 는 즉시 검사라, 새 칸 insert 가 옛 칸 delete 보다 먼저 나가면 500 이다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    old = await _add_media_book_cell(db_session, version.id, asset.id)
+    await db_session.commit()
+    new_cell = uuid.uuid4()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                [_axis(old.person_entity_id, "민아")],
+                [_axis(old.scene_entity_id, "교실")],
+                [_media_cell(new_cell, old.person_entity_id, old.scene_entity_id, asset.id)],
+            )
+        ),
+    )
+
+    assert resp.status_code == 200
+    assert [c.entity_id for c in (await _media_rows(db_session, version.id))[2]] == [new_cell]
+
+
+async def test_patch_story_draft_repeated_new_cell_keeps_one_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene, cell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    payload = _story_draft_payload(
+        mediaBook=_media_book(
+            [_axis(person, "민아")], [_axis(scene, "교실")], [_media_cell(cell, person, scene, asset.id)]
+        )
+    )
+
+    assert (await db_client.patch(f"/contents/{content.id}/draft", json=payload)).status_code == 200
+    assert (await db_client.patch(f"/contents/{content.id}/draft", json=payload)).status_code == 200
+
+    people, scenes, cells = await _media_rows(db_session, version.id)
+    assert (len(people), len(scenes), [c.entity_id for c in cells]) == (1, 1, [cell])
+
+
+def _insert_competing_cell_after_patch_reads_cells(
+    db_session: AsyncSession, values: dict[str, object]
+) -> tuple[Any, list[bool]]:
+    """PATCH 가 칸 행을 읽은 직후·쓰기 전에 다른 저장(두 번째 탭)이 칸 하나를 커밋한 순서를 결정적으로
+    재현한다. 읽기 결과를 먼저 다 받아 두고 그 뒤에 경쟁 행을 넣는다."""
+    raced: list[bool] = []
+
+    def _hook(orm_execute_state: ORMExecuteState) -> Result[Any] | None:
+        statement = orm_execute_state.statement
+        if raced or not isinstance(statement, sa.Select):
+            return None
+        if MediaBookCell.__table__ not in statement.get_final_froms():
+            return None
+        raced.append(True)
+        frozen = orm_execute_state.invoke_statement().freeze()
+        orm_execute_state.session.connection().execute(sa.insert(MediaBookCell).values(id=uuid.uuid4(), **values))
+        return frozen()
+
+    return _hook, raced
+
+
+async def test_patch_racing_same_new_media_cell_keeps_one_row(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """겹친 두 저장이 같은 새 칸을 담으면 뒤의 insert 가 앞의 행을 고친다(500 이 아니다)."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene, cell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    hook, raced = _insert_competing_cell_after_patch_reads_cells(
+        db_session,
+        {
+            "entity_id": cell,
+            "content_version_id": version.id,
+            "person_entity_id": person,
+            "scene_entity_id": scene,
+            "image_asset_id": asset.id,
+            "situation_description": "먼저 저장된 글",
+        },
+    )
+
+    sa.event.listen(db_session.sync_session, "do_orm_execute", hook)
+    try:
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft",
+            json=_story_draft_payload(
+                mediaBook=_media_book(
+                    [_axis(person, "민아")],
+                    [_axis(scene, "교실")],
+                    [_media_cell(cell, person, scene, asset.id, situationDescription="나중 저장의 글")],
+                )
+            ),
+        )
+    finally:
+        sa.event.remove(db_session.sync_session, "do_orm_execute", hook)
+
+    assert raced
+    assert resp.status_code == 200
+    [row] = (await _media_rows(db_session, version.id))[2]
+    assert (row.entity_id, row.situation_description) == (cell, "나중 저장의 글")
+
+
+async def test_patch_racing_other_new_media_cell_at_same_position_returns_409(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 탭이 서로 다른 새 칸으로 같은 빈 자리를 채우면 둘 중 하나만 남을 수 있다 — 뒤의 저장은
+    500 이 아니라 409 와 code 로 거절되고(화면은 새로고침을 안내한다), 앞의 칸은 그대로다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene, winner, loser = uuid.uuid4(), uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    hook, raced = _insert_competing_cell_after_patch_reads_cells(
+        db_session,
+        {
+            "entity_id": winner,
+            "content_version_id": version.id,
+            "person_entity_id": person,
+            "scene_entity_id": scene,
+            "image_asset_id": asset.id,
+        },
+    )
+
+    sa.event.listen(db_session.sync_session, "do_orm_execute", hook)
+    try:
+        resp = await db_client.patch(
+            f"/contents/{content.id}/draft",
+            json=_story_draft_payload(
+                mediaBook=_media_book(
+                    [_axis(person, "민아")], [_axis(scene, "교실")], [_media_cell(loser, person, scene, asset.id)]
+                )
+            ),
+        )
+    finally:
+        sa.event.remove(db_session.sync_session, "do_orm_execute", hook)
+
+    assert raced
+    assert resp.status_code == 409
+    assert resp.json()["detail"] == {"code": "MEDIA_BOOK_CELL_POSITION_TAKEN"}
+    assert [c.entity_id for c in (await _media_rows(db_session, version.id))[2]] == [winner]
+
+
+async def test_get_story_draft_skips_media_cell_whose_axis_is_gone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """축이 사라진 칸 하나가 초안 전체를 500 으로 잠그면 빌더가 열리지 않아 화면에서 고칠 길이 없다.
+    응답은 그 칸을 빼고 만들고, 다음 미디어 북 저장이 페이로드에 없는 그 칸을 지운다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    kept = await _add_media_book_cell(db_session, version.id, asset.id)
+    orphan = MediaBookCell(
+        entity_id=uuid.uuid4(),
+        content_version_id=version.id,
+        person_entity_id=kept.person_entity_id,
+        scene_entity_id=uuid.uuid4(),
+        image_asset_id=asset.id,
+    )
+    db_session.add(orphan)
+    await db_session.commit()
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert resp.status_code == 200
+    assert [cell["id"] for cell in resp.json()["mediaBook"]["cells"]] == [str(kept.entity_id)]
+
+
+# --- 겹친 미디어 북 저장의 직렬화 -----------------------------------------------------------------
+#
+# 아래 테스트는 `db_session`(롤백되는 한 커넥션)을 쓰지 않는다. 행 잠금 대기는 한 트랜잭션 안에서는
+# 드러나지 않는다. 여기서 쓴 행은 커밋되므로 픽스처가 표지 도메인으로 골라 지운다.
+
+_MEDIA_BOOK_RACE_DOMAIN = "media-book-race.test"
+
+
+@pytest_asyncio.fixture
+async def committed_engine(db_engine: AsyncEngine) -> AsyncGenerator[AsyncEngine, None]:
+    """테스트 DB 에 붙는 별도 엔진. 잠금을 기다리다 영영 멈추지 않게 모든 커넥션에 `lock_timeout` 을
+    건다(공용 엔진의 풀 커넥션에 세션 설정을 남기지 않으려고 풀 없는 엔진을 따로 만든다)."""
+    committed = create_async_engine(
+        db_engine.url.render_as_string(hide_password=False),
+        poolclass=NullPool,
+        connect_args={"server_settings": {"lock_timeout": "5s"}},
+    )
+    yield committed
+    async with async_sessionmaker(committed, expire_on_commit=False)() as cleanup:
+        user_ids = (
+            await cleanup.scalars(sa.select(User.id).where(User.email.like(f"%@{_MEDIA_BOOK_RACE_DOMAIN}")))
+        ).all()
+        if user_ids:
+            content_ids = (
+                await cleanup.scalars(sa.select(Content.id).where(Content.creator_user_id.in_(user_ids)))
+            ).all()
+            version_ids = (
+                await cleanup.scalars(sa.select(ContentVersion.id).where(ContentVersion.content_id.in_(content_ids)))
+            ).all()
+            for model in (MediaBookCell, MediaBookPerson, MediaBookScene, StoryVersionDetail):
+                await cleanup.execute(sa.delete(model).where(model.content_version_id.in_(version_ids)))
+            await cleanup.execute(sa.delete(ContentVersion).where(ContentVersion.id.in_(version_ids)))
+            await cleanup.execute(sa.delete(Content).where(Content.id.in_(content_ids)))
+            await cleanup.execute(sa.delete(Asset).where(Asset.owner_user_id.in_(user_ids)))
+            await cleanup.execute(sa.delete(User).where(User.id.in_(user_ids)))
+        await cleanup.commit()
+    await committed.dispose()
+
+
+async def _wait_until_a_lock_is_awaited(engine: AsyncEngine) -> None:
+    """어떤 트랜잭션이 잠금을 기다리기 시작할 때까지 기다린다(시간이 아니라 상태로 순서를 강제한다).
+    행 잠금 대기는 상대 트랜잭션 id 를 기다리는 모양이라 `pg_locks` 로는 데이터베이스를 가릴 수 없어
+    `pg_stat_activity` 의 대기 종류로 본다."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    while True:
+        async with factory() as probe:
+            waiting = await probe.scalar(
+                sa.text(
+                    "SELECT count(*) FROM pg_stat_activity "
+                    "WHERE wait_event_type = 'Lock' AND datname = current_database()"
+                )
+            )
+        if waiting:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_patch_adding_a_cell_while_another_save_deletes_its_axis_leaves_no_orphan(
+    committed_engine: AsyncEngine, db_client: httpx.AsyncClient
+) -> None:
+    """두 탭이 같은 초안을 저장한다. 탭 A 의 저장이 장면 하나를 지운 채 커밋 직전에 있을 때, 그 장면이
+    아직 보이는 탭 B 가 그 자리에 새 칸을 담아 저장한다. B 가 A 의 커밋 전 상태를 읽고 칸만 넣으면 A 의
+    커밋 뒤 축 없는 칸이 남아 그 초안의 GET 이 500 이 된다. 미디어 북 쓰기는 초안 단위로 줄을 서므로
+    B 는 A 가 커밋할 때까지 기다렸다가 A 의 결과 위에 자기 페이로드(장면 포함)를 맞춰 넣는다."""
+    factory = async_sessionmaker(committed_engine, expire_on_commit=False)
+    async with factory() as setup:
+        user = _make_user(email=f"owner-{uuid.uuid4()}@{_MEDIA_BOOK_RACE_DOMAIN}")
+        setup.add(user)
+        await setup.flush()
+        content = await _make_empty_story_draft(setup, creator_user_id=user.id)
+        version_id = await setup.scalar(sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id))
+        asset = await _make_asset(setup, user.id, status=AssetStatus.READY)
+        await setup.commit()
+    assert version_id is not None
+    person, hallway, new_cell = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    both_axes = ([_axis(person, "민아")], [_axis(hallway, "복도")])
+
+    holding, release = asyncio.Event(), asyncio.Event()
+
+    class _StoppingSession(AsyncSession):
+        async def commit(self) -> None:
+            await self.flush()
+            holding.set()
+            await release.wait()
+            await super().commit()
+
+    request_factories: list[async_sessionmaker[AsyncSession]] = []
+
+    async def _request_session() -> AsyncGenerator[AsyncSession, None]:
+        chosen = request_factories.pop(0) if request_factories else factory
+        async with chosen() as session:
+            yield session
+
+    saved = {key: app.dependency_overrides[key] for key in (get_db_session, get_session_factory)}
+    app.dependency_overrides[get_db_session] = _request_session
+    app.dependency_overrides[get_session_factory] = lambda: factory
+    tab_a: asyncio.Task[httpx.Response] | None = None
+    tab_b: asyncio.Task[httpx.Response] | None = None
+    try:
+        await _login_as(db_client, user.id)
+        # 앞선 자동저장으로 장면 둘이 이미 저장돼 있다 — 두 탭의 나머지 필드는 같아 초안 상세 행에는
+        # 쓰지 않는다(그 행의 UPDATE 잠금이 우연히 둘을 줄 세우지 않게).
+        first = await db_client.patch(
+            f"/contents/{content.id}/draft", json=_story_draft_payload(mediaBook=_media_book(*both_axes, []))
+        )
+        assert first.status_code == 200
+
+        request_factories.append(async_sessionmaker(committed_engine, class_=_StoppingSession, expire_on_commit=False))
+        tab_a = asyncio.create_task(
+            db_client.patch(
+                f"/contents/{content.id}/draft",
+                json=_story_draft_payload(mediaBook=_media_book(both_axes[0], [], [])),
+            )
+        )
+        await asyncio.wait_for(holding.wait(), 5)
+        tab_b = asyncio.create_task(
+            db_client.patch(
+                f"/contents/{content.id}/draft",
+                json=_story_draft_payload(
+                    mediaBook=_media_book(*both_axes, [_media_cell(new_cell, person, hallway, asset.id)])
+                ),
+            )
+        )
+        lock_wait = asyncio.create_task(_wait_until_a_lock_is_awaited(committed_engine))
+        done, _ = await asyncio.wait({tab_b, lock_wait}, timeout=5, return_when=asyncio.FIRST_COMPLETED)
+        lock_wait.cancel()
+        # B 가 A 를 기다리지 않고 먼저 끝났다면 겹친 저장이 줄을 서지 않은 것이다.
+        b_waited_for_a = lock_wait in done and not tab_b.done()
+        release.set()
+        resp_a = await asyncio.wait_for(tab_a, 10)
+        resp_b = await asyncio.wait_for(tab_b, 10)
+        draft = await db_client.get(f"/contents/{content.id}/draft")
+    finally:
+        release.set()
+        for task in (tab_a, tab_b):
+            if task is not None and not task.done():
+                await asyncio.wait_for(task, 10)
+        app.dependency_overrides.update(saved)
+
+    assert (resp_a.status_code, resp_b.status_code) == (200, 200)
+    async with factory() as check:
+        scene_ids = (
+            await check.scalars(sa.select(MediaBookScene.entity_id).where(MediaBookScene.content_version_id == version_id))
+        ).all()
+        cells = (
+            await check.execute(
+                sa.select(MediaBookCell.entity_id, MediaBookCell.scene_entity_id).where(
+                    MediaBookCell.content_version_id == version_id
+                )
+            )
+        ).all()
+    assert (scene_ids, [tuple(cell) for cell in cells]) == ([hallway], [(new_cell, hallway)])
+    assert b_waited_for_a
+    assert draft.status_code == 200
+    assert [cell["id"] for cell in draft.json()["mediaBook"]["cells"]] == [str(new_cell)]
+
+
+async def test_patch_story_draft_rejects_moving_existing_media_cell(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빌더에는 칸을 옮기는 동작이 없다. 기존 칸 둘의 자리를 맞바꾸면 행을 하나씩 고치는 도중 같은
+    자리가 둘이 되어 500 이 나므로, 기존 칸의 자리 변경은 받지 않는다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    person, scene_a, scene_b = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    cell_a, cell_b = uuid.uuid4(), uuid.uuid4()
+    axes = ([_axis(person, "민아")], [_axis(scene_a, "교실"), _axis(scene_b, "옥상")])
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(*axes, [_media_cell(cell_a, person, scene_a, asset.id)])
+        ),
+    )
+    assert created.status_code == 200
+
+    moved = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(mediaBook=_media_book(*axes, [_media_cell(cell_a, person, scene_b, asset.id)])),
+    )
+    assert moved.status_code == 422
+
+    both = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                *axes,
+                [_media_cell(cell_a, person, scene_a, asset.id), _media_cell(cell_b, person, scene_b, asset.id)],
+            )
+        ),
+    )
+    assert both.status_code == 200
+    swapped = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            mediaBook=_media_book(
+                *axes,
+                [_media_cell(cell_a, person, scene_b, asset.id), _media_cell(cell_b, person, scene_a, asset.id)],
+            )
+        ),
+    )
+    assert swapped.status_code == 422
+
+    cells = {c.entity_id: c.scene_entity_id for c in (await _media_rows(db_session, version.id))[2]}
+    assert cells == {cell_a: scene_a, cell_b: scene_b}
+
+
+async def test_patch_story_draft_swaps_media_axis_names(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이름 중복은 DB 가 아니라 요청 검증이 막는다 — 그래서 한 저장 안의 이름 맞바꾸기가 된다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    person_a, person_b = uuid.uuid4(), uuid.uuid4()
+    first = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(mediaBook=_media_book([_axis(person_a, "민아"), _axis(person_b, "준")], [], [])),
+    )
+    assert first.status_code == 200
+
+    swapped = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(mediaBook=_media_book([_axis(person_a, "준"), _axis(person_b, "민아")], [], [])),
+    )
+
+    assert swapped.status_code == 200
+    people, _, _ = await _media_rows(db_session, version.id)
+    assert [(p.entity_id, p.name) for p in people] == [(person_a, "준"), (person_b, "민아")]
+
+
+async def test_delete_story_draft_with_media_book(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """칸·축은 버전에 물리 FK 로 매달려 있어 함께 지우지 않으면 초안 삭제가 FK 위반 500 이다."""
+    _, content, version, asset = await _logged_in_story_draft(db_client, db_session)
+    await _add_media_book_cell(db_session, version.id, asset.id)
+    await db_session.commit()
+
+    resp = await db_client.delete(f"/contents/{content.id}/draft")
+
+    assert resp.status_code == 204
+    assert await _media_rows(db_session, version.id) == ([], [], [])
+    assert await db_session.get(Asset, asset.id) is not None

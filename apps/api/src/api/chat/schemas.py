@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 from pydantic import Field, StringConstraints
 
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH
-from api.content.schemas import CharacterDraftPayload, StoryDraftPayload
+from api.content.schemas import CharacterDraftPayload, MediaTagImage, StoryDraftPayload
 from api.core.schema import CamelModel
 from api.db.models.chat import ChatMessageRole
 from api.db.models.content import ContentType
@@ -100,6 +100,10 @@ class ChatMessageResponse(CamelModel):
     # 서명한다(같은 15분 구간 안에서는 같은 URL, 받은 뒤 15~30분 유효). 해석이 안 되면
     # image_id는 남고 이 필드만 None.
     image_url: str | None = None
+    # 스토리 미디어 북 그림의 픽셀 크기 — 화면이 원본 비율로 높이를 미리 잡는다. 캐릭터 상황별 이미지에는
+    # 싣지 않는다(그쪽은 고정 비율 칸으로 그린다). 크기를 모르는 자산도 None 이다.
+    image_width: int | None = None
+    image_height: int | None = None
 
 
 # 스토리 챗 전용 스냅샷. entity_id 기반 id를 쓴다 —
@@ -185,6 +189,9 @@ class ChatRoomResponse(CamelModel):
     # 옆의 nullable 필드들처럼 `= None`을 둔다 — 생성 타입에서 선택 필드가 되어 이 필드를 모르는
     # 기존 FE 픽스처(`toChatRoomState.test.ts`)가 깨지지 않는다. 응답에는 항상 실린다.
     persona_id: uuid.UUID | None = None
+    # 첫 메시지(작성자 글의 복사본)에 든 칸 id 형태 태그가 가리키는 그림 — 방이 고정한 버전의 칸으로
+    # 해석한다. 사용자 메시지에 사용자가 친 태그는 보지 않는다(아무 칸 id 나 쳐서 원본을 받지 못하게).
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
 
@@ -214,12 +221,29 @@ class EndingCollectionItem(CamelModel):
     reached: bool
     epilogue: str | None = None
     hint: str | None = None
+    # 도달한 엔딩 에필로그의 칸 id 형태 태그가 가리키는 그림. 도달하지 않은 엔딩은 비어 있다.
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
 
 
 class ImageArchiveItem(CamelModel):
     id: uuid.UUID
     exposed: bool
     image_url: str
+
+
+class StoryImageArchiveItem(ImageArchiveItem):
+    """스토리 미디어 북 보관함의 칸 하나. `id` 는 칸 entity_id, `exposed` 는 사용자가 채팅에서 이 칸을 봤는가다
+    (대화 중 판정·첫 메시지·엔딩 에필로그). 본 칸은 `image_url` 이 원본 썸네일이고, 못 본 칸은 블러본 썸네일과
+    작가가 적은 `unlock_hint`(없으면 빈 문자열)다. `width`·`height` 는 그림의 픽셀 크기(모르면 null)로 화면이
+    그림이 오기 전에 높이를 잡는 데 쓴다. `person_name` 은 늘 싣고, `scene_name` 은 본 칸에만 싣는다(못 본 칸은
+    빈 문자열) — 장면 이름은 무엇이 그려졌는지를 미리 알려 주므로 해금 전까지 숨기고, 인물 이름은 누구의
+    그림인지만 알려 주는 안내라 남긴다."""
+
+    width: int | None = None
+    height: int | None = None
+    person_name: str = ""
+    scene_name: str = ""
+    unlock_hint: str = ""
 
 
 class PlayGuideResponse(CamelModel):
@@ -260,6 +284,8 @@ class ChatEndingReachedEvent(CamelModel):
     type: Literal["endingReached"] = "endingReached"
     ending_id: uuid.UUID
     epilogue: str | None
+    # 에필로그의 칸 id 형태 태그가 가리키는 그림(방이 고정한 버전 기준).
+    media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
 
 
 class ChatPolicyWarningEvent(CamelModel):

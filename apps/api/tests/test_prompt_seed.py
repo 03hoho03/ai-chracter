@@ -3,8 +3,8 @@
 `_migrated_schema`(세션 스코프 autouse, `conftest.py`)가 `alembic upgrade head`로 시드를
 이미 넣어 두므로, 여기서는 그 결과를 `db_session`으로 읽기만 한다. 읽는 대상은 **head 상태의
 활성 세트**(`load_active_prompt_set`, 프로덕션이 고르는 규칙과 같다)다 — 초기 시드
-(`a69cbd40dec8`)가 아니다. 마이그레이션 `b72c33c70240`·`c328445d4c2d`가 슬롯을 더한 새 published
-세트를 만들어 레인마다 published가 여럿이다.
+(`a69cbd40dec8`)가 아니다. 마이그레이션 `b72c33c70240`·`c328445d4c2d`·`2519dde454e0`이 행을 더한 새
+published 세트를 만들어 레인마다 published가 여럿이다.
 
 세 갈래:
 1. head 활성 세트의 (channel, scope, slot, variant) 집합이 아래 표와 정확히 일치
@@ -30,11 +30,12 @@ from api.chat.prompt_builder import PromptLane, load_active_prompt_set, system_i
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
-# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 33 / character 19 /
-# publish_filter 16 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
+# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 36 / character 19 /
+# publish_filter 17 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
 # 26/13/16에 마이그레이션 `b72c33c70240`이 story·character generation에 `user_persona`를 한 행씩 더했고,
 # `c328445d4c2d`가 채팅방 기억 행을 더했다 — generation 2 · story ending_judgment 1 · 새 channel
-# `memory_summary` 3).
+# `memory_summary` 3. `2519dde454e0`이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더했고,
+# `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더했다).
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] = {
     "story": {
@@ -80,6 +81,11 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("both", "instruction", ""),
             ("both", "previous_summary", ""),
             ("both", "turn_context", ""),
+        },
+        "image_judgment": {
+            ("story", "image_list_intro", ""),
+            ("story", "turn_context", ""),
+            ("story", "judgment_instruction", ""),
         },
     },
     "character": {
@@ -128,6 +134,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("character", "character_prompt", ""),
             ("both", "detail_description", ""),
             ("story", "starting_setups", ""),
+            ("story", "media_book", ""),
             ("both", "verdict_instruction", ""),
         },
     },

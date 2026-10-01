@@ -51,6 +51,7 @@ const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {
   "publish_filter:character_prompt": ["character_prompt"],
   "publish_filter:detail_description": ["detail_description"],
   "publish_filter:starting_setups": ["setup_lines"],
+  "publish_filter:media_book": ["media_book_lines"],
   "publish_filter:verdict_instruction": [],
 };
 

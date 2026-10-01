@@ -3,7 +3,20 @@ import uuid
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import ARRAY, CheckConstraint, Enum, ForeignKey, Integer, Numeric, Text, Uuid, text
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    Text,
+    UniqueConstraint,
+    Uuid,
+    false,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -217,3 +230,89 @@ class EndingRule(Base):
     threshold: Mapped[Decimal] = mapped_column(Numeric, nullable=False)
     next_op: Mapped[LogicalOp | None] = mapped_column(Enum(LogicalOp, name="logical_op"), nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+
+class MediaBookPerson(Base):
+    """미디어 북의 인물 축 한 줄. entity_id 패턴, 순서 있는 목록.
+
+    이름 중복은 DB 제약으로 막지 않는다. 한 저장 요청 안에서 두 인물의 이름을 맞바꾸면 행을 하나씩
+    고치는 도중 잠깐 같은 이름이 둘이 되어 UNIQUE 가 500 을 낸다 — 중복 검사는 요청 검증(422)이 한다.
+    """
+
+    __tablename__ = "media_book_people"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    content_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("content_versions.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # 칸은 축을 entity_id 로 가리키므로 한 버전에서 entity_id 가 두 줄이면 칸이 어느 줄인지 갈린다.
+    __table_args__ = (
+        UniqueConstraint("content_version_id", "entity_id", name="ux_media_book_people_version_entity"),
+    )
+
+
+class MediaBookScene(Base):
+    """미디어 북의 장면 축 한 줄. `MediaBookPerson` 과 같은 모양이고, 이름 중복을 DB 에서 막지 않는
+    이유도 같다."""
+
+    __tablename__ = "media_book_scenes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    content_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("content_versions.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("content_version_id", "entity_id", name="ux_media_book_scenes_version_entity"),
+    )
+
+
+class MediaBookCell(Base):
+    """미디어 북의 칸 하나 — 인물 × 장면 자리에 놓인 이미지 한 장. entity_id 패턴.
+
+    `person_entity_id`·`scene_entity_id` 는 축 행의 물리 id 가 아니라 entity_id 값이라 버전을 복제할 때
+    그대로 복사한다(물리 id 를 가리키는 키워드북의 시작설정 참조는 복제 때 다시 이어 줘야 한다).
+    FK 는 걸지 않는다. 축의 `(content_version_id, entity_id)` UNIQUE 를 대상으로 복합 FK 를 걸 수도
+    있지만, 같은 버전 안의 entity_id 참조에는 FK 를 두지 않는 기존 관례(`EndingRule.stat_def_entity_id`
+    가 같은 버전의 스탯을 그렇게 가리킨다)를 따른다 — 복합 FK 는 이 스키마에 아직 없고, 걸면 저장·복제·
+    삭제가 "축 먼저 넣고 칸 먼저 지운다"는 순서를 지켜야 한다. 대가로 DB 는 가리키는 축이 실제로 있는지
+    모른다 — 고아 칸은 저장 요청 검증(칸이 가리키는 축이 같은 페이로드에 있어야 한다)이 막는다.
+
+    `blurred_asset_id` 는 발행할 때 채운다(초안 칸에는 블러본이 아직 없다). `situation_description`·
+    `unlock_hint` 는 비어 있어도 되는 작성자 입력이라 NULL 대신 빈 문자열을 기본값으로 둔다.
+    """
+
+    __tablename__ = "media_book_cells"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    content_version_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("content_versions.id"), nullable=False
+    )
+    person_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    scene_entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    image_asset_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("assets.id"), nullable=False)
+    blurred_asset_id: Mapped[uuid.UUID | None] = mapped_column(Uuid, ForeignKey("assets.id"), nullable=True)
+    situation_description: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    unlock_hint: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    exclude_from_chat: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+
+    # 좌표 UNIQUE 는 "칸 하나에 이미지 한 장"의 마지막 방어다. 한 저장 요청에 "칸 삭제 + 같은 자리에
+    # 새 칸"이 함께 실리면 insert 가 delete 보다 먼저 나갈 때 이 제약에 걸리므로, 쓰기 경로는
+    # 삭제를 먼저 flush 한 뒤 insert 한다.
+    __table_args__ = (
+        UniqueConstraint("content_version_id", "entity_id", name="ux_media_book_cells_version_entity"),
+        UniqueConstraint(
+            "content_version_id",
+            "person_entity_id",
+            "scene_entity_id",
+            name="ux_media_book_cells_version_person_scene",
+        ),
+    )

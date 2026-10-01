@@ -1631,7 +1631,9 @@ export interface paths {
          * Update Content Draft
          * @description Autosave: no
          *     business validation (publish is where that happens) — the version-detail row is
-         *     overwritten wholesale and every child resource is upserted by entity_id. `registration`-tab
+         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
+         *     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
+         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
          *     directly rather than the per-type detail table, since they're shared across versions,
          *     not per-version snapshot data.
@@ -2453,10 +2455,9 @@ export interface paths {
          *     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
          *     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
          *     판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
-         *     이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
-         *     — 노출 기록(`CharacterImageExposure`)은
-         *     `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
-         *     않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
+         *     이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 그림 판정(캐릭터 상황별 이미지·스토리 미디어
+         *     북 칸 — 스토리는 엔딩 뒤에도)은 재실행한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은
+         *     첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지 않고, 새 응답 텍스트에 맞는 그림이 붙는다. 생성이 실패하면(policyWarning/error) 기존
          *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
          *     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
          */
@@ -2957,6 +2958,34 @@ export interface paths {
          *     새 대화방을 만들어도 이전 기록이 유지되게 한다.
          */
         get: operations["get_ending_collection_stories_starting_setups__starting_setup_id__ending_collection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stories/{id}/image-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Story Image Archive
+         * @description 스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재
+         *     발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로
+         *     쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.
+         *
+         *     대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은
+         *     작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.
+         *
+         *     이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를
+         *     시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다.
+         */
+        get: operations["get_story_image_archive_stories__id__image_archive_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4760,6 +4789,10 @@ export interface components {
             imageId?: string | null;
             /** Imageurl */
             imageUrl?: string | null;
+            /** Imagewidth */
+            imageWidth?: number | null;
+            /** Imageheight */
+            imageHeight?: number | null;
         };
         /**
          * ChatMessageRole
@@ -4920,6 +4953,10 @@ export interface components {
             versionAutoUpgraded: boolean;
             /** Personaid */
             personaId?: string | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
             /**
              * Createdat
              * Format: date-time
@@ -5468,6 +5505,10 @@ export interface components {
             isFavorited: boolean;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupSummary"][] | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
             /** Versionnumber */
             versionNumber: number;
             /**
@@ -5656,6 +5697,10 @@ export interface components {
             epilogue?: string | null;
             /** Hint */
             hint?: string | null;
+            /** Mediatagimages */
+            mediaTagImages?: {
+                [key: string]: components["schemas"]["MediaTagImage"];
+            };
         };
         /** EndingDraftItem */
         EndingDraftItem: {
@@ -5864,7 +5909,7 @@ export interface components {
              * Field
              * @enum {string}
              */
-            field: "thumbnail" | "situationalImage";
+            field: "thumbnail" | "situationalImage" | "mediaBook";
         };
         /** GenreResponse */
         GenreResponse: {
@@ -6065,6 +6110,140 @@ export interface components {
             termsReconsentRequired: boolean;
             /** Privacyreconsentrequired */
             privacyReconsentRequired: boolean;
+        };
+        /** MediaBookAxisInput */
+        MediaBookAxisInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** MediaBookAxisItem */
+        MediaBookAxisItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+        };
+        /** MediaBookCellDraftItem */
+        MediaBookCellDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Personid
+             * Format: uuid
+             */
+            personId: string;
+            /**
+             * Sceneid
+             * Format: uuid
+             */
+            sceneId: string;
+            /**
+             * Imageassetid
+             * Format: uuid
+             */
+            imageAssetId: string;
+            /** Situationdescription */
+            situationDescription: string;
+            /** Unlockhint */
+            unlockHint: string;
+            /** Excludefromchat */
+            excludeFromChat: boolean;
+            /** Imageurl */
+            imageUrl: string;
+            /** Imagewidth */
+            imageWidth: number | null;
+            /** Imageheight */
+            imageHeight: number | null;
+        };
+        /**
+         * MediaBookCellInput
+         * @description `person_id`·`scene_id` 는 같은 페이로드의 축 entity_id 다.
+         */
+        MediaBookCellInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Personid
+             * Format: uuid
+             */
+            personId: string;
+            /**
+             * Sceneid
+             * Format: uuid
+             */
+            sceneId: string;
+            /**
+             * Imageassetid
+             * Format: uuid
+             */
+            imageAssetId: string;
+            /**
+             * Situationdescription
+             * @default
+             */
+            situationDescription: string;
+            /**
+             * Unlockhint
+             * @default
+             */
+            unlockHint: string;
+            /**
+             * Excludefromchat
+             * @default false
+             */
+            excludeFromChat: boolean;
+        };
+        /** MediaBookDraft */
+        MediaBookDraft: {
+            /** People */
+            people: components["schemas"]["MediaBookAxisItem"][];
+            /** Scenes */
+            scenes: components["schemas"]["MediaBookAxisItem"][];
+            /** Cells */
+            cells: components["schemas"]["MediaBookCellDraftItem"][];
+        };
+        /**
+         * MediaBookPayload
+         * @description 페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서
+         *     라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring.
+         */
+        MediaBookPayload: {
+            /** People */
+            people: components["schemas"]["MediaBookAxisInput"][];
+            /** Scenes */
+            scenes: components["schemas"]["MediaBookAxisInput"][];
+            /** Cells */
+            cells: components["schemas"]["MediaBookCellInput"][];
+        };
+        /**
+         * MediaTagImage
+         * @description 글 속 칸 id 형태 태그(`{{img::<칸 id>}}`)가 가리키는 그림. 응답은 `{칸 id: MediaTagImage}` 맵으로
+         *     싣고, 맵에 없는 칸(지워졌거나 버전에 없는 칸)의 태그는 화면이 빈칸으로 둔다.
+         *
+         *     `url` 은 원본 서명 URL 이다(대화 중 상황 이미지와 같다). `width`·`height` 는 자산의 픽셀 크기로 화면이
+         *     그림이 오기 전에 높이를 잡는 데 쓰고, 크기를 모르는 자산이면 null 이다.
+         */
+        MediaTagImage: {
+            /** Url */
+            url: string;
+            /** Width */
+            width: number | null;
+            /** Height */
+            height: number | null;
         };
         /**
          * ModerationActionType
@@ -6619,6 +6798,7 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            mediaBook?: components["schemas"]["MediaBookPayload"] | null;
         };
         /** StoryDraftResponse */
         StoryDraftResponse: {
@@ -6668,6 +6848,46 @@ export interface components {
             /** Hashtags */
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
+            mediaBook?: components["schemas"]["MediaBookDraft"];
+        };
+        /**
+         * StoryImageArchiveItem
+         * @description 스토리 미디어 북 보관함의 칸 하나. `id` 는 칸 entity_id, `exposed` 는 사용자가 채팅에서 이 칸을 봤는가다
+         *     (대화 중 판정·첫 메시지·엔딩 에필로그). 본 칸은 `image_url` 이 원본 썸네일이고, 못 본 칸은 블러본 썸네일과
+         *     작가가 적은 `unlock_hint`(없으면 빈 문자열)다. `width`·`height` 는 그림의 픽셀 크기(모르면 null)로 화면이
+         *     그림이 오기 전에 높이를 잡는 데 쓴다. `person_name` 은 늘 싣고, `scene_name` 은 본 칸에만 싣는다(못 본 칸은
+         *     빈 문자열) — 장면 이름은 무엇이 그려졌는지를 미리 알려 주므로 해금 전까지 숨기고, 인물 이름은 누구의
+         *     그림인지만 알려 주는 안내라 남긴다.
+         */
+        StoryImageArchiveItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Exposed */
+            exposed: boolean;
+            /** Imageurl */
+            imageUrl: string;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /**
+             * Personname
+             * @default
+             */
+            personName: string;
+            /**
+             * Scenename
+             * @default
+             */
+            sceneName: string;
+            /**
+             * Unlockhint
+             * @default
+             */
+            unlockHint: string;
         };
         /**
          * StoryPromptTemplate
@@ -11655,6 +11875,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EndingCollectionItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_story_image_archive_stories__id__image_archive_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryImageArchiveItem"][];
                 };
             };
             /** @description Validation Error */

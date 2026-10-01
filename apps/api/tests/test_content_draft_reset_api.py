@@ -14,7 +14,7 @@ from api.db.models.content import (
     ContentVisibility,
     ModerationStatus,
 )
-from api.db.models.media import AssetStatus
+from api.db.models.media import AssetKind, AssetStatus
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -22,13 +22,16 @@ from api.db.models.story import (
     EndingRuleOperator,
     KeywordNote,
     LogicalOp,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _login_as, _make_asset, _make_user
+from factories import _add_media_book_cell, _login_as, _make_asset, _make_user
 
 
 async def _make_content(
@@ -691,3 +694,82 @@ async def test_reset_content_draft_leaves_published_story_version_intact(
     ).all()
     assert [note.entity_id for note in published_notes] == [published_note_entity_id]
     assert published_notes[0].starting_setup_id == published_setup.id
+
+
+async def test_draft_reset_restores_media_book(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """편집 취소는 초안의 칸·축을 지우고 발행본 것을 같은 entity_id 로 다시 깐다 — 블러본·글·노출 제외
+    스위치까지. entity_id 가 바뀌면 노출 기록과 첫 메시지의 칸 태그가 끊긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, content_type=ContentType.STORY)
+    image = await _make_asset(db_session, user.id, status=AssetStatus.READY)
+    blurred = await _make_asset(db_session, user.id, kind=AssetKind.BLURRED, status=AssetStatus.READY)
+    published = await _add_version(db_session, content, detail_description="발행본", published=True)
+    await _add_story_version_rows(
+        db_session,
+        published,
+        name="발행본",
+        setup_entity_id=uuid.uuid4(),
+        stat_entity_id=uuid.uuid4(),
+        ending_entity_id=uuid.uuid4(),
+        note_entity_id=uuid.uuid4(),
+        shortcut_entity_id=uuid.uuid4(),
+    )
+    published_cell = await _add_media_book_cell(db_session, published.id, image.id, blurred.id)
+    draft = await _add_version(db_session, content, detail_description="편집중", published=False)
+    await _add_story_version_rows(
+        db_session,
+        draft,
+        name="편집중",
+        setup_entity_id=uuid.uuid4(),
+        stat_entity_id=uuid.uuid4(),
+        ending_entity_id=uuid.uuid4(),
+        note_entity_id=uuid.uuid4(),
+        shortcut_entity_id=uuid.uuid4(),
+    )
+    draft_only_cell = await _add_media_book_cell(db_session, draft.id, image.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+
+    assert resp.status_code == 204
+    people = (
+        await db_session.scalars(sa.select(MediaBookPerson).where(MediaBookPerson.content_version_id == draft.id))
+    ).all()
+    scenes = (
+        await db_session.scalars(sa.select(MediaBookScene).where(MediaBookScene.content_version_id == draft.id))
+    ).all()
+    cells = (
+        await db_session.scalars(sa.select(MediaBookCell).where(MediaBookCell.content_version_id == draft.id))
+    ).all()
+    assert [p.entity_id for p in people] == [published_cell.person_entity_id]
+    assert [s.entity_id for s in scenes] == [published_cell.scene_entity_id]
+    [cell] = cells
+    assert cell.entity_id != draft_only_cell.entity_id
+    assert (
+        cell.entity_id,
+        cell.person_entity_id,
+        cell.scene_entity_id,
+        cell.image_asset_id,
+        cell.blurred_asset_id,
+        cell.situation_description,
+        cell.unlock_hint,
+        cell.exclude_from_chat,
+    ) == (
+        published_cell.entity_id,
+        published_cell.person_entity_id,
+        published_cell.scene_entity_id,
+        image.id,
+        blurred.id,
+        "창가에서 웃는다",
+        "첫 만남",
+        True,
+    )
+    published_cells = (
+        await db_session.scalars(sa.select(MediaBookCell).where(MediaBookCell.content_version_id == published.id))
+    ).all()
+    assert [c.id for c in published_cells] == [published_cell.id]

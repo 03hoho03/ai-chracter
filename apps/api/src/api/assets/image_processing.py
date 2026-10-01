@@ -34,6 +34,16 @@ def generate_blurred_image(image_bytes: bytes, radius: float = BLUR_RADIUS) -> b
     return output.getvalue()
 
 
+def read_image_size(image_bytes: bytes) -> tuple[int, int]:
+    """(너비, 높이) 픽셀. 헤더만 읽는다. EXIF 회전은 보지 않는다 — 업로드 원본은 화면이 회전을 픽셀에
+    굽고 EXIF 를 버린 WebP 로 올리고, 생성·블러 이미지는 EXIF 가 없어 이 값이 곧 화면의 가로세로다.
+    그림이 아니면 Pillow 가 `OSError`(`UnidentifiedImageError`)를 낸다."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        return image.size
+
+
 def generate_thumbnail(image_bytes: bytes) -> bytes:
     """CPU-bound (Pillow) — run via `run_in_threadpool`.
 

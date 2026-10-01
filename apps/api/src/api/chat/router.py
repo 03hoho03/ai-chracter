@@ -1,28 +1,33 @@
+import asyncio
 import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 from fastapi.sse import EventSourceResponse
 from redis.exceptions import RedisError
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
-from api.chat.memory_window import load_current_summary, prompt_window, select_current_snapshot
+from api.chat.memory_window import CurrentSummary, load_current_summary, prompt_window, select_current_snapshot
 from api.chat.preview_session import create_preview_session, get_preview_session, update_preview_session
 from api.chat.prompt_builder import (
     EndingJudgmentResult,
     ImageMatchJudgmentResult,
+    MediaCellCandidate,
     PromptLane,
     PromptRenderError,
     StatJudgmentResult,
@@ -33,7 +38,9 @@ from api.chat.prompt_builder import (
     build_story_generation_prompt,
     format_user_persona,
     load_active_prompt_set,
+    media_cell_image_lines,
     memory_note_rendered,
+    situational_image_lines,
     system_instruction_for,
     user_persona_rendered,
 )
@@ -75,10 +82,19 @@ from api.chat.schemas import (
     PreviewSessionState,
     ShortcutSnapshot,
     StatDefSnapshot,
+    StoryImageArchiveItem,
 )
 from api.chat.stats import StatChange, apply_stat_changes
+from api.content.media_book import (
+    normalize_texts,
+    normalize_texts_for_display,
+    resolve_media_tag_images,
+    sign_owned_cell_images,
+)
+from api.content.media_tags import media_tag_refs, normalize_media_tags, strip_media_tags
 from api.content.schemas import (
     CharacterDraftPayload,
+    MediaTagImage,
     EndingRuleDraftItem,
     EndingRuleGroupDraftItem,
     EndingRuleListDraftItem,
@@ -101,8 +117,9 @@ from api.db.models.chat import (
     ChatRoomMemorySnapshot,
     ChatRoomStat,
     StoryEndingUnlock,
+    StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType
+from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
@@ -111,6 +128,9 @@ from api.db.models.story import (
     EndingRule,
     EndingRuleGroup,
     KeywordNote,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
@@ -335,12 +355,15 @@ async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRul
 
 
 async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
+    """스냅숏은 아직 도달하지 않은 엔딩까지 싣는다. 그래서 에필로그의 미디어 북 태그는 그림으로 해석하지
+    않고 지운다 — 해석하면 플레이어가 보지 못한 칸의 원본 URL 이 응답에 실린다. 화면은 에필로그를
+    엔딩 이벤트·엔딩 모음에서 그리므로 여기서 태그가 사라져도 보이는 것이 없다."""
     return EndingSnapshot(
         id=ending.entity_id,
         name=ending.name,
         turn_count_gate=ending.turn_count_gate,
         judgment_prompt=ending.judgment_prompt,
-        epilogue=ending.epilogue,
+        epilogue=strip_media_tags(ending.epilogue) if ending.epilogue is not None else None,
         hint=ending.hint,
         stat_rules=await _ending_rule_items(db, ending),
     )
@@ -390,30 +413,15 @@ async def _build_content_snapshot(
     )
 
 
-async def _match_situational_image(
-    db: AsyncSession,
-    room: ChatRoom,
-    llm_client: LLMClient,
-    *,
-    prompt_set: PromptSet,
-    prompt_sections: list[PromptSection],
-    history: list[ChatMessage],
-    user_message: str,
-    assistant_message: str,
-) -> SituationalImage | None:
-    """캐릭터 챗 전용 상황별 이미지 매칭. 등록된 이미지가 없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상
-    단수라 "동시 매칭 시 order 최상위만 발동"은 buildJudgmentPrompt의 프롬프트 지시로 처리하고,
-    여기서는 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다. 매칭된 이미지
-    자체(entity_id뿐 아니라 image_asset_id도 필요, 인라인 렌더링 URL 조회용)를
-    그대로 반환한다.
+async def _load_situational_candidates(
+    db: AsyncSession, room: ChatRoom
+) -> tuple[list[SituationalImage], CurrentSummary | None]:
+    """캐릭터 상황별 이미지 판정의 DB 읽기 — 후보 이미지(order 순)와, 판정 윈도우를 켰으면 현재 요약.
 
-    두 DB 호출(후보·요약 조회, 노출 이력 조회) 모두 자체적으로 `SQLAlchemyError`를 흡수한다
-    — 호출부(`_stream_new_turn`)의 기존
-    `except (LLMClientError, PromptRenderError)`는 DB 예외를 잡지 않아 그대로 두면
-    제너레이터를 뚫는다. 어느 쪽이 실패하든 이번 턴의 이미지 매칭 자체를 포기한다(`None`) —
-    LLM 판단은 성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다.
+    조회 실패(`SQLAlchemyError`)는 여기서 흡수하고 후보 없음으로 돌려준다 — 호출부의
+    `except (LLMClientError, PromptRenderError)` 는 DB 예외를 잡지 않아 그대로 두면 제너레이터를 뚫는다.
 
-    두 DB 호출 모두 `db.begin_nested()`(SAVEPOINT)로 국소화한다 — 이 함수가 불리는 시점엔 `_stream_new_turn`이 이미
+    `db.begin_nested()`(SAVEPOINT)로 국소화한다 — 이 함수가 불리는 시점엔 `_stream_new_turn`이 이미
     `db.add(assistant_message)`→`flush()`→`room.turn_count += 1`로 dirty 상태를 쌓아 둔
     뒤다. SAVEPOINT 없이 여기서 진짜 Postgres 실행 오류(`DBAPIError` 계열)가 나면
     트랜잭션이 aborted 상태가 되고, 이 `except`가 예외를 삼켜도 트랜잭션은 여전히
@@ -432,9 +440,10 @@ async def _match_situational_image(
                         .where(
                             SituationalImage.content_version_id == room.content_version_id,
                             # `PATCH /contents/{id}/draft`가
-                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고
-                            # (character.py의 SituationalImage docstring), 발행 검증은 이 필드를
-                            # 보지 않아 NULL이 발행본까지 간다. 그런 후보를 판단 프롬프트에
+                            # 이미지 파일 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있다
+                            # (character.py의 SituationalImage docstring). 지금은 발행 검증이 그런
+                            # 행을 거부하지만, 그 검증이 생기기 전에 발행된 버전에는 NULL 행이 남아
+                            # 있을 수 있다. 그런 후보를 판단 프롬프트에
                             # 싣지 않는다 — LLM이 존재하지 않는 이미지를 매칭할 원인을 여기서 끊는다.
                             SituationalImage.image_asset_id.is_not(None),
                         )
@@ -442,18 +451,78 @@ async def _match_situational_image(
                     )
                 ).all()
             )
-            # 판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은
-            # 싣지 않는다. 후보가 없으면 판정 자체를 안 하므로 읽지 않는다.
-            current_summary = (
-                await load_current_summary(db, room.id)
-                if situational_images and settings.memory_window_generation and settings.memory_window_image_judgment
-                else None
-            )
+            current_summary = await _image_judgment_summary(db, room) if situational_images else None
     except SQLAlchemyError as exc:
         logger.warning("대화방 %s 상황이미지 후보 조회 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
-        return None
+        return [], None
+    return situational_images, current_summary
 
+
+async def _image_judgment_summary(db: AsyncSession, room: ChatRoom) -> CurrentSummary | None:
+    """판정 윈도우를 켜면 요약이 덮은 원문을 뺀다 — 장면 매칭은 최근 원문이면 충분해 요약은 싣지 않는다.
+    캐릭터 상황별 이미지와 스토리 칸 판정이 같은 스위치를 따른다. 후보가 있을 때만 부른다."""
+    if settings.memory_window_generation and settings.memory_window_image_judgment:
+        return await load_current_summary(db, room.id)
+    return None
+
+
+async def _judge_image_entity(
+    llm_client: LLMClient, prompt: str, candidate_ids: set[uuid.UUID], usage: LLMCallContext
+) -> uuid.UUID | None:
+    """그림 고르기 판정 LLM 호출 — DB 에 닿지 않는다(스토리 턴은 이것만 스탯 판정과 동시에 부른다). 응답
+    id 가 후보 안에 있을 때만 돌려준다: 응답은 문자열이라 형식이 틀리거나 후보 밖(노출 제외 칸 등)일 수 있다.
+    `LLMClientError` 는 그대로 올린다 — 흡수 범위는 호출부가 정한다."""
+    judgment = await llm_client.generate_structured(prompt, ImageMatchJudgmentResult, usage=usage)
+    return next(
+        (entity_id for entity_id in candidate_ids if str(entity_id) == judgment.matched_image_entity_id), None
+    )
+
+
+async def _record_character_image_exposure(db: AsyncSession, room: ChatRoom, image_entity_id: uuid.UUID) -> bool:
+    """첫 노출만 기록한다(멱등). 실패는 SAVEPOINT 안에 가두고 `False` — 그 턴은 이미지를 붙이지 않는다(판정은
+    성공했는데 노출 기록만 실패한 경우도 매칭을 절반만 살려두지 않는다)."""
+    try:
+        async with db.begin_nested():
+            existing_exposure = await db.scalar(
+                select(CharacterImageExposure).where(
+                    CharacterImageExposure.user_id == room.user_id,
+                    CharacterImageExposure.content_id == room.content_id,
+                    CharacterImageExposure.image_entity_id == image_entity_id,
+                )
+            )
+            if existing_exposure is None:
+                db.add(
+                    CharacterImageExposure(
+                        user_id=room.user_id,
+                        content_id=room.content_id,
+                        image_entity_id=image_entity_id,
+                    )
+                )
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 이미지 노출 기록 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+        return False
+    return True
+
+
+async def _match_situational_image(
+    db: AsyncSession,
+    room: ChatRoom,
+    llm_client: LLMClient,
+    *,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> SituationalImage | None:
+    """캐릭터 챗 전용 상황별 이미지 매칭 — 후보 조회 → 판정 → 노출 기록을 차례로 부른다. 등록된 이미지가
+    없으면 판단 호출 자체를 생략한다. 응답(matchedImageEntityId)은 항상 단수라 "동시 매칭 시 order 최상위만
+    발동"은 프롬프트 지시로 처리하고, 그 반환값이 실제 후보 목록에 존재하는지만 방어적으로 재확인한다.
+    매칭된 이미지 자체(entity_id뿐 아니라 image_asset_id도 필요, 인라인 렌더링 URL 조회용)를 그대로 반환한다.
+    DB 실패는 두 DB 단계가 각자 흡수하고, 판정 LLM·렌더 실패는 호출부가 흡수한다."""
+    situational_images, current_summary = await _load_situational_candidates(db, room)
     if not situational_images:
         return None
     if current_summary is not None:
@@ -462,54 +531,252 @@ async def _match_situational_image(
     judgment_prompt = build_image_judgment_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
-        situational_images=situational_images,
+        scope="character",
+        assistant_label=prompt_set.character_assistant_label,
+        image_lines=situational_image_lines(situational_images),
         history=history,
         user_message=user_message,
         assistant_message=assistant_message,
     )
-    judgment = await llm_client.generate_structured(
+    matched_id = await _judge_image_entity(
+        llm_client,
         judgment_prompt,
-        ImageMatchJudgmentResult,
-        usage=LLMCallContext(call_site="chat_situational_image", user_id=room.user_id, room_id=room.id),
+        {image.entity_id for image in situational_images},
+        LLMCallContext(call_site="chat_situational_image", user_id=room.user_id, room_id=room.id),
     )
-    if judgment.matched_image_entity_id is None:
+    if matched_id is None:
         return None
-
-    matched = next(
-        (image for image in situational_images if str(image.entity_id) == judgment.matched_image_entity_id),
-        None,
-    )
-    if matched is None:
+    if not await _record_character_image_exposure(db, room, matched_id):
         return None
+    return next(image for image in situational_images if image.entity_id == matched_id)
 
+
+@dataclass(frozen=True)
+class _MediaCellJudgment:
+    """스토리 칸 판정 한 번에 필요한 것 — DB 읽기·프롬프트 조립을 끝낸 상태라 LLM 호출만 남았다."""
+
+    prompt: str
+    candidate_ids: set[uuid.UUID]
+
+
+async def _prepare_media_cell_judgment(
+    db: AsyncSession,
+    room: ChatRoom,
+    *,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> _MediaCellJudgment | None:
+    """스토리 미디어 북 칸 판정의 DB 읽기와 프롬프트 조립. 후보는 방이 고정한 버전의 칸 중 대화 중 노출
+    제외가 아닌 것이고, 빌더 축 순서(인물 → 장면)로 싣는다. 후보가 없으면(미디어 북 없음·전부 노출 제외)
+    `None` — 판정을 부르지 않는다.
+
+    판정 쪽 실패는 전부 여기서 흡수하고 `None` 이다 — 조회 실패는 캐릭터 후보 조회와 같은 SAVEPOINT 규칙,
+    렌더 실패(배포 직후 캐시에 남은 옛 세트의 빈 프롬프트 포함)는 그 턴의 그림만 포기한다. 스탯·엔딩 판정은
+    이 실패와 무관하게 돈다."""
     try:
         async with db.begin_nested():
-            existing_exposure = await db.scalar(
-                select(CharacterImageExposure).where(
-                    CharacterImageExposure.user_id == room.user_id,
-                    CharacterImageExposure.content_id == room.content_id,
-                    CharacterImageExposure.image_entity_id == matched.entity_id,
-                )
-            )
-            if existing_exposure is None:
-                db.add(
-                    CharacterImageExposure(
-                        user_id=room.user_id,
-                        content_id=room.content_id,
-                        image_entity_id=matched.entity_id,
+            rows = (
+                await db.execute(
+                    select(
+                        MediaBookCell.entity_id,
+                        MediaBookPerson.name,
+                        MediaBookScene.name,
+                        MediaBookCell.situation_description,
                     )
+                    .select_from(MediaBookCell)
+                    .join(
+                        MediaBookPerson,
+                        and_(
+                            MediaBookPerson.content_version_id == MediaBookCell.content_version_id,
+                            MediaBookPerson.entity_id == MediaBookCell.person_entity_id,
+                        ),
+                    )
+                    .join(
+                        MediaBookScene,
+                        and_(
+                            MediaBookScene.content_version_id == MediaBookCell.content_version_id,
+                            MediaBookScene.entity_id == MediaBookCell.scene_entity_id,
+                        ),
+                    )
+                    .where(
+                        MediaBookCell.content_version_id == room.content_version_id,
+                        MediaBookCell.exclude_from_chat.is_(False),
+                    )
+                    .order_by(MediaBookPerson.order, MediaBookScene.order)
                 )
+            ).tuples().all()
+            candidates = [
+                MediaCellCandidate(entity_id=cell_id, person=person, scene=scene, situation_description=situation)
+                for cell_id, person, scene, situation in rows
+            ]
+            current_summary = await _image_judgment_summary(db, room) if candidates else None
     except SQLAlchemyError as exc:
-        logger.warning("대화방 %s 이미지 노출 기록 실패 — 이번 턴은 매칭을 건너뛴다: %s", room.id, exc)
+        logger.warning("대화방 %s 미디어 북 칸 후보 조회 실패 — 이번 턴은 칸 판정을 건너뛴다: %s", room.id, exc)
         capture_dependency_failure(exc, dependency="db")
         return None
+    if not candidates:
+        return None
+    if current_summary is not None:
+        history = prompt_window(history, current_summary.cursor)
+    try:
+        prompt = build_image_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=prompt_sections,
+            scope="story",
+            assistant_label=prompt_set.story_assistant_label,
+            image_lines=media_cell_image_lines(candidates),
+            history=history,
+            user_message=user_message,
+            assistant_message=assistant_message,
+        )
+    except PromptRenderError as exc:
+        logger.warning("대화방 %s 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+    return _MediaCellJudgment(prompt=prompt, candidate_ids={cell.entity_id for cell in candidates})
 
-    return matched
+
+async def _judge_media_cell(
+    llm_client: LLMClient, judgment: _MediaCellJudgment, usage: LLMCallContext, *, log_subject: str
+) -> uuid.UUID | None:
+    """스토리 칸 판정 LLM 호출. 실패(`LLMClientError`)는 여기서 흡수해 그림만 포기한다 — 스탯 판정과 동시에
+    돌 때 한쪽 예외가 다른 쪽 결과를 지우지 않게 한다. DB 에 닿지 않는다."""
+    try:
+        return await _judge_image_entity(llm_client, judgment.prompt, judgment.candidate_ids, usage)
+    except LLMClientError as exc:
+        logger.warning("%s 미디어 북 칸 판정 실패 — 이번 턴은 그림 없이 진행한다: %s", log_subject, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+
+
+async def _record_story_media_exposure(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> bool:
+    """보관함 해금 기록 — 사용자·스토리별로 처음 본 칸만 남는다(멱등, 겹친 두 턴도 복합 PK 충돌 없이). 실패는
+    SAVEPOINT 안에 가두고 `False` — 그 턴은 칸을 붙이지 않는다(캐릭터 노출 기록과 같은 규칙)."""
+    try:
+        async with db.begin_nested():
+            await db.execute(
+                pg_insert(StoryMediaExposure)
+                .values(user_id=room.user_id, content_id=room.content_id, cell_entity_id=cell_entity_id)
+                .on_conflict_do_nothing()
+            )
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 미디어 북 칸 노출 기록 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+        return False
+    return True
+
+
+async def _record_story_media_unlocks(db: AsyncSession, room: ChatRoom, cell_entity_ids: set[uuid.UUID]) -> None:
+    """첫 메시지·에필로그에 나온 칸의 보관함 해금 기록. 메시지와 같은 트랜잭션에 쓰고, 이미 본 칸과 겹치면 그대로
+    둔다(대화 초기화가 같은 첫 메시지를 다시 넣어도 실패하지 않는다)."""
+    if not cell_entity_ids:
+        return
+    await db.execute(
+        pg_insert(StoryMediaExposure)
+        .values(
+            [
+                {"user_id": room.user_id, "content_id": room.content_id, "cell_entity_id": cell_entity_id}
+                for cell_entity_id in cell_entity_ids
+            ]
+        )
+        .on_conflict_do_nothing()
+    )
+
+
+async def _unlock_epilogue_cells(db: AsyncSession, room: ChatRoom, epilogue: str | None) -> None:
+    """도달한 엔딩의 에필로그에 나온 칸을 해금한다. 스트림 본문에서 불리므로 실패는 SAVEPOINT 안에 가두고 기록만
+    포기한다 — 엔딩 도달 자체는 그대로 남는다."""
+    if not epilogue:
+        return
+    # SAVEPOINT 를 열면 세션이 먼저 flush 된다. 그때 터지는 것은 바로 앞의 엔딩 도달 기록이지 칸 해금이 아니다 —
+    # 여기서 따로 flush 해 그 실패가 아래 경고로 잘못 기록되지 않게 한다(이 실패는 전처럼 커밋 실패와 같은 길을 간다).
+    await db.flush()
+    try:
+        async with db.begin_nested():
+            _, refs = await normalize_texts(db, room.content_version_id, [epilogue])
+            await _record_story_media_unlocks(db, room, refs)
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 에필로그 칸 해금 기록 실패 — 엔딩은 그대로 진행한다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+
+
+async def _sign_judged_cell(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> MediaTagImage | None:
+    """커밋 뒤 판정 칸의 그림을 서명한다(원본, 너비·높이). 방 버전에서 칸·자산을 못 찾거나 서명이 실패하면
+    `None` — 커밋 뒤라 예외가 새면 SSE 제너레이터를 뚫으므로 전부 흡수하고 그림 없이 마무리한다.
+    `fold_memory` 예약 **앞**에서 부른다(예약 뒤에는 요청 세션 쿼리를 더하지 않는다)."""
+    try:
+        images = await resolve_media_tag_images(db, room.content_version_id, [cell_entity_id])
+    except Exception as exc:
+        logger.warning("대화방 %s 미디어 북 칸 URL 조립 실패 — 그림 없이 진행한다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="s3")
+        return None
+    return images.get(cell_entity_id)
+
+
+async def _await_stat_judgment(
+    llm_client: LLMClient, prompt: str, usage: LLMCallContext, *, log_subject: str
+) -> StatJudgmentResult | None:
+    """스탯 판정 LLM 호출. 실패는 흡수해 `None` — 칸 판정과 동시에 돌 때 이 실패가 칸 결과를 지우지 않게 한다.
+    `None` 이면 호출부는 지금처럼 스탯·엔딩 판정을 함께 건너뛴다."""
+    try:
+        return await llm_client.generate_structured(prompt, StatJudgmentResult, usage=usage)
+    except LLMClientError as exc:
+        logger.warning("%s 스탯 판정 실패 — 이번 턴의 스탯·엔딩 판정을 건너뛴다: %s", log_subject, exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+
+
+async def _no_judgment() -> None:
+    return None
+
+
+def _turn_message_response(
+    message: ChatMessage,
+    matched_image: SituationalImage | None,
+    matched_image_url: str | None,
+    judged_cell_id: uuid.UUID | None,
+    judged_cell_image: MediaTagImage | None,
+) -> ChatMessageResponse:
+    """턴(새 턴·재생성)의 `done.finalMessage`. 스토리 칸은 원본 비율로 그리게 너비·높이를 싣고, 캐릭터 상황별
+    이미지는 싣지 않는다(지금의 고정 비율 칸 그대로). 칸 그림을 서명하지 못했으면 이미지 없이 보낸다 —
+    상황별 이미지 URL 조립 실패와 같은 규칙이다."""
+    if judged_cell_id is not None and judged_cell_image is not None:
+        return ChatMessageResponse(
+            id=message.id,
+            role=message.role,
+            content=message.content,
+            created_at=message.created_at,
+            image_id=judged_cell_id,
+            image_url=judged_cell_image.url,
+            image_width=judged_cell_image.width,
+            image_height=judged_cell_image.height,
+        )
+    return ChatMessageResponse(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+        created_at=message.created_at,
+        image_id=matched_image.entity_id if matched_image is not None else None,
+        image_url=matched_image_url,
+    )
 
 
 async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: StartingSetup | None) -> ChatMessage:
+    """방의 첫 assistant 메시지를 넣는다. 방 생성·시작설정 변경(`_create_room`)과 대화 초기화
+    (`reset_chat_room`)가 모두 이 함수를 지난다.
+
+    스토리면 작성자 글의 미디어 북 태그를 방이 고정한 버전의 칸 id 형태로 바꿔 저장한다(없는 이름은
+    지운다). 이름이 아니라 버전이 바뀌어도 유지되는 칸 id 로 두어야, 방이 새 발행본으로 옮겨 갔을 때 같은
+    칸의 새 그림으로 해석되고 지워진 칸은 빈칸이 된다. 첫 메시지에 나온 칸은 보관함에서 해금한다 — 세 호출부가
+    모두 이 함수를 지나야 초기화도 같은 기록을 남긴다."""
     if setup is not None:
-        opening_text = setup.opening_message or setup.prologue
+        [opening_text], opening_refs = await normalize_texts(
+            db, room.content_version_id, [setup.opening_message or setup.prologue]
+        )
+        await _record_story_media_unlocks(db, room, opening_refs)
     else:
         detail = await db.get(CharacterVersionDetail, room.content_version_id)
         assert detail is not None
@@ -551,7 +818,13 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
     # 없음/image_asset_id None/Asset 없음) image_url만 None으로 두고 image_id는 그대로 둔다.
     image_entity_ids = {m.image_id for m in messages if m.image_id is not None}
     image_urls: dict[uuid.UUID, str] = {}
-    if image_entity_ids:
+    # 스토리 메시지의 image_id 는 미디어 북 칸이다 — 방이 고정한 버전의 칸으로 해석하고, 원본 비율로 그리게
+    # 크기도 싣는다(캐릭터 상황별 이미지는 크기를 싣지 않는다). 방이 새 버전으로 옮겨 가면 같은 칸의 새 그림,
+    # 지워진 칸이면 URL 없이 id 만 남는다.
+    cell_images: dict[uuid.UUID, MediaTagImage] = {}
+    if image_entity_ids and setup is not None:
+        cell_images = await resolve_media_tag_images(db, room.content_version_id, image_entity_ids)
+    elif image_entity_ids:
         situational_images = (
             await db.scalars(
                 select(SituationalImage).where(
@@ -571,6 +844,21 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
                 continue
             image_urls[si.entity_id] = await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
 
+    # 미디어 북 태그는 첫 메시지(작성자 글을 칸 id 형태로 복사한 것)에서만 해석하고, 그중에서도 방 버전의
+    # 시작설정 첫 메시지가 실제로 가리키는 칸만 서명한다. 오프닝은 지울 수 있어 첫 자리에 사용자 메시지나
+    # 모델 응답이 올 수 있다 — 그 글의 칸 id 를 그대로 믿으면 플레이어가 아무 칸 id 나 쳐 넣거나 모델에게
+    # 따라 쓰게 해서 아직 보지 못한 칸의 원본 URL 을 받는다.
+    media_tag_images = {}
+    if setup is not None and messages and messages[0].role == ChatMessageRole.ASSISTANT:
+        first_refs = media_tag_refs(messages[0].content)
+        if first_refs:
+            _, opening_refs = await normalize_texts(
+                db, room.content_version_id, [setup.opening_message or setup.prologue]
+            )
+            media_tag_images = await resolve_media_tag_images(
+                db, room.content_version_id, first_refs & opening_refs
+            )
+
     return ChatRoomResponse(
         id=room.id,
         content_id=room.content_id,
@@ -581,22 +869,41 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         ending_reached=room.ending_reached,
         stats=stats,
         messages=[
-            ChatMessageResponse(
-                id=m.id,
-                role=m.role,
-                content=m.content,
-                created_at=m.created_at,
-                image_id=m.image_id,
-                image_url=image_urls.get(m.image_id) if m.image_id is not None else None,
-            )
+            _room_message_response(m, image_urls, cell_images)
             for m in messages
         ],
         content_snapshot=content_snapshot,
+        media_tag_images=media_tag_images,
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
         created_at=room.created_at,
         updated_at=room.updated_at,
+    )
+
+
+def _room_message_response(
+    message: ChatMessage, image_urls: dict[uuid.UUID, str], cell_images: dict[uuid.UUID, MediaTagImage]
+) -> ChatMessageResponse:
+    cell_image = cell_images.get(message.image_id) if message.image_id is not None else None
+    if cell_image is not None:
+        return ChatMessageResponse(
+            id=message.id,
+            role=message.role,
+            content=message.content,
+            created_at=message.created_at,
+            image_id=message.image_id,
+            image_url=cell_image.url,
+            image_width=cell_image.width,
+            image_height=cell_image.height,
+        )
+    return ChatMessageResponse(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+        created_at=message.created_at,
+        image_id=message.image_id,
+        image_url=image_urls.get(message.image_id) if message.image_id is not None else None,
     )
 
 
@@ -981,11 +1288,11 @@ async def _stream_new_turn(
     """생성 + 판단(buildJudgmentPrompt+generateStructured) + turn_count 증가까지 "새 턴
     하나"를 전부 실행한다. `send_message`(새 사용자 메시지)와 `edit_message`(수정된 메시지부터
     이어서 생성)가 공유한다 — 둘 다 실제로는 동일한 "새 턴"이고 차이는 호출부가 넘기는
-    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만(결과는 `chat_messages.image_id`에
-    저장돼 done 이벤트의 finalMessage와 `GET /chat-rooms/{id}` 재조회 둘 다에 실린다),
-    스토리 챗은 스탯 변경과 엔딩 판정만 수행한다 —
-    서로의 판단 단계를 타지 않는다. 스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로는 이 판단 단계
-    전체(스탯/엔딩 모두)가 중단된다 — 메시지 생성 자체는 계속 허용.
+    history/user_content뿐이다. 캐릭터 챗은 상황별 이미지 매칭만, 스토리 챗은 스탯 변경·엔딩 판정과
+    미디어 북 칸 판정을 한다(그림 결과는 둘 다 `chat_messages.image_id`에 저장돼 done 이벤트의 finalMessage와
+    `GET /chat-rooms/{id}` 재조회 둘 다에 실린다 — 캐릭터는 상황별 이미지 entity_id, 스토리는 칸 entity_id).
+    스토리 챗은 최초 엔딩 도달(room.ending_reached) 이후로 스탯·엔딩 판정이 멈추고 칸 판정만 계속한다 —
+    메시지 생성 자체는 계속 허용.
 
     `regenerate_message`(같은 턴의 응답만 교체, 스탯/엔딩 판단·turn_count 재실행 없음 —
     이미지 매칭은 재실행한다)는 이 헬퍼를 쓰지 않는다
@@ -1049,109 +1356,147 @@ async def _stream_new_turn(
     stat_change_events: list[ChatStatChangeEvent] = []
     ending_reached_event: ChatEndingReachedEvent | None = None
     matched_image: SituationalImage | None = None
+    judged_cell_id: uuid.UUID | None = None
     # 판정 단계의 LLM 실패는 반드시 이 안에서 흡수한다 — 예외가 SSE 제너레이터 밖으로 새면
     # ASGI 태스크가 취소되면서 요청 스코프 DB 세션이 강제 종료되고, 망가진 asyncpg 커넥션이
     # 풀로 돌아가 그걸 집어간 **무관한 다른 요청**이 InterfaceError로 500이 난다(부하 실측).
     # 이미 응답은 스트리밍됐고 assistant 메시지도 flush된 뒤라, 그 턴의 판정만 포기하고
     # 정상적으로 커밋 → done 이벤트까지 마무리하는 것이 실패의 폭발 반경을 그 턴에 가둔다.
     try:
-        if setup is not None and not room.ending_reached:
-            stat_defs = list(
-                (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
-            )
-            stat_rows = {
-                str(row.stat_entity_id): row
-                for row in (
-                    await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
-                ).all()
-            }
-            current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
-
-            judgment_prompt = build_stat_judgment_prompt(
+        if setup is not None:
+            # 스토리: 스탯 판정(최초 엔딩 전만)과 미디어 북 칸 판정(엔딩 뒤에도)을 동시에 부른다. 요청 세션은
+            # 동시에 쓸 수 없어(asyncpg 커넥션 하나) DB 읽기는 전부 gather 앞, 쓰기는 전부 gather 뒤다 — gather
+            # 안의 두 코루틴은 LLM 만 부른다. 둘 다 자기 LLM 실패를 흡수해 한쪽이 실패해도 다른 쪽 결과가 남는다.
+            stat_prompt: str | None = None
+            stat_defs: list[StatDef] = []
+            stat_rows: dict[str, ChatRoomStat] = {}
+            current_stats: dict[str, float] = {}
+            if not room.ending_reached:
+                stat_defs = list(
+                    (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+                )
+                stat_rows = {
+                    str(row.stat_entity_id): row
+                    for row in (
+                        await db.scalars(select(ChatRoomStat).where(ChatRoomStat.chat_room_id == room.id))
+                    ).all()
+                }
+                current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
+                stat_prompt = build_stat_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=prompt_sections,
+                    stat_defs=stat_defs,
+                    current_stats=current_stats,
+                    user_message=user_content,
+                    assistant_message=assistant_content,
+                )
+            media_judgment = await _prepare_media_cell_judgment(
+                db,
+                room,
                 prompt_set=prompt_set,
-                sections=prompt_sections,
-                stat_defs=stat_defs,
-                current_stats=current_stats,
+                prompt_sections=prompt_sections,
+                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            judgment = await llm_client.generate_structured(
-                judgment_prompt,
-                StatJudgmentResult,
-                usage=LLMCallContext(call_site="chat_stat_judgment", user_id=room.user_id, room_id=room.id),
+
+            log_subject = f"대화방 {room.id}"
+            judgment, judged_cell_id = await asyncio.gather(
+                _await_stat_judgment(
+                    llm_client,
+                    stat_prompt,
+                    LLMCallContext(call_site="chat_stat_judgment", user_id=room.user_id, room_id=room.id),
+                    log_subject=log_subject,
+                )
+                if stat_prompt is not None
+                else _no_judgment(),
+                _judge_media_cell(
+                    llm_client,
+                    media_judgment,
+                    LLMCallContext(call_site="chat_media_book_image", user_id=room.user_id, room_id=room.id),
+                    log_subject=log_subject,
+                )
+                if media_judgment is not None
+                else _no_judgment(),
             )
-            changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-            updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
-            for stat_id, new_value in updated_stats.items():
-                if new_value != current_stats.get(stat_id):
-                    stat_rows[stat_id].current_value = Decimal(str(new_value))
-                    stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+            if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
+                judged_cell_id = None
 
-            # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
-            # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
-            # 첫 충족 엔딩에서 멈춘다(동시 충족 시 최상위 하나만 발동).
-            endings = list(
-                (
-                    await db.scalars(
-                        select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+            if judgment is not None:
+                changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+                updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
+
+                for stat_id, new_value in updated_stats.items():
+                    if new_value != current_stats.get(stat_id):
+                        stat_rows[stat_id].current_value = Decimal(str(new_value))
+                        stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+
+                # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
+                # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
+                # 첫 충족 엔딩에서 멈춘다(동시 충족 시 최상위 하나만 발동). 스탯 반영 뒤라 순차다.
+                endings = list(
+                    (
+                        await db.scalars(
+                            select(Ending).where(Ending.starting_setup_id == setup.id).order_by(Ending.order)
+                        )
+                    ).all()
+                )
+                # 판정 윈도우를 켜면 요약이 덮은 원문을 빼고 그 자리에 현재 요약을 싣는다 — 엔딩은 지금까지의
+                # 대화 전체를 보는 누적 판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다.
+                ending_history = history
+                ending_summary = ""
+                if settings.memory_window_generation and settings.memory_window_ending_judgment:
+                    current_summary = await load_current_summary(db, room.id)
+                    if current_summary is not None:
+                        ending_history = prompt_window(history, current_summary.cursor)
+                        ending_summary = current_summary.text
+                for ending in endings:
+                    if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
+                        continue
+                    ending_judgment_prompt = build_ending_judgment_prompt(
+                        prompt_set=prompt_set,
+                        sections=prompt_sections,
+                        judgment_prompt=ending.judgment_prompt,
+                        history=ending_history,
+                        user_message=user_content,
+                        assistant_message=assistant_content,
+                        memory_summary=ending_summary,
                     )
-                ).all()
-            )
-            # 판정 윈도우를 켜면 요약이 덮은 원문을 빼고 그 자리에 현재 요약을 싣는다 — 엔딩은 지금까지의
-            # 대화 전체를 보는 누적 판단이라 원문만 줄이면 앞부분을 잃는다. 끄면 전체 히스토리 그대로다.
-            ending_history = history
-            ending_summary = ""
-            if settings.memory_window_generation and settings.memory_window_ending_judgment:
-                current_summary = await load_current_summary(db, room.id)
-                if current_summary is not None:
-                    ending_history = prompt_window(history, current_summary.cursor)
-                    ending_summary = current_summary.text
-            for ending in endings:
-                if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
-                    continue
-                ending_judgment_prompt = build_ending_judgment_prompt(
-                    prompt_set=prompt_set,
-                    sections=prompt_sections,
-                    judgment_prompt=ending.judgment_prompt,
-                    history=ending_history,
-                    user_message=user_content,
-                    assistant_message=assistant_content,
-                    memory_summary=ending_summary,
-                )
-                ending_judgment = await llm_client.generate_structured(
-                    ending_judgment_prompt,
-                    EndingJudgmentResult,
-                    usage=LLMCallContext(call_site="chat_ending_judgment", user_id=room.user_id, room_id=room.id),
-                )
-                if not ending_judgment.triggered:
-                    continue
-                rule_items = await _ending_rule_items(db, ending)
-                if not evaluate_rule_list(rule_items, updated_stats):
-                    continue
-
-                room.ending_reached = True
-                room.ending_entity_id = ending.entity_id
-                room.ending_reached_at_turn = room.turn_count
-
-                existing_unlock = await db.scalar(
-                    select(StoryEndingUnlock).where(
-                        StoryEndingUnlock.user_id == room.user_id,
-                        StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
-                        StoryEndingUnlock.ending_entity_id == ending.entity_id,
+                    ending_judgment = await llm_client.generate_structured(
+                        ending_judgment_prompt,
+                        EndingJudgmentResult,
+                        usage=LLMCallContext(call_site="chat_ending_judgment", user_id=room.user_id, room_id=room.id),
                     )
-                )
-                if existing_unlock is None:
-                    db.add(
-                        StoryEndingUnlock(
-                            user_id=room.user_id,
-                            starting_setup_entity_id=setup.entity_id,
-                            ending_entity_id=ending.entity_id,
+                    if not ending_judgment.triggered:
+                        continue
+                    rule_items = await _ending_rule_items(db, ending)
+                    if not evaluate_rule_list(rule_items, updated_stats):
+                        continue
+
+                    room.ending_reached = True
+                    room.ending_entity_id = ending.entity_id
+                    room.ending_reached_at_turn = room.turn_count
+
+                    existing_unlock = await db.scalar(
+                        select(StoryEndingUnlock).where(
+                            StoryEndingUnlock.user_id == room.user_id,
+                            StoryEndingUnlock.starting_setup_entity_id == setup.entity_id,
+                            StoryEndingUnlock.ending_entity_id == ending.entity_id,
                         )
                     )
-                ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
-                break
-        elif setup is None:
+                    if existing_unlock is None:
+                        db.add(
+                            StoryEndingUnlock(
+                                user_id=room.user_id,
+                                starting_setup_entity_id=setup.entity_id,
+                                ending_entity_id=ending.entity_id,
+                            )
+                        )
+                    ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
+                    await _unlock_epilogue_cells(db, room, ending.epilogue)
+                    break
+        else:
             matched_image = await _match_situational_image(
                 db,
                 room,
@@ -1168,6 +1513,8 @@ async def _stream_new_turn(
 
     if matched_image is not None:
         assistant_message.image_id = matched_image.entity_id
+    elif judged_cell_id is not None:
+        assistant_message.image_id = judged_cell_id
 
     await db.commit()
 
@@ -1189,6 +1536,25 @@ async def _stream_new_turn(
             matched_image = None
             matched_image_url = None
 
+    judged_cell_image = await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
+
+    if ending_reached_event is not None and ending_reached_event.epilogue:
+        # 에필로그의 미디어 북 태그를 방 버전의 칸 id 형태로 바꾸고 그림을 서명한다. 커밋 뒤라 여기서 예외가
+        # 새면 SSE 제너레이터를 뚫으므로 흡수하고, 그때는 태그를 지운 글로 그림 없이 보낸다(이름 형태 태그를
+        # 화면에 남기지 않는다). `fold_memory` 예약 앞이어야 한다 — 예약 뒤에는 요청 세션 쿼리를 더하지 않는다.
+        epilogue = ending_reached_event.epilogue
+        try:
+            [epilogue_text], epilogue_images = await normalize_texts_for_display(
+                db, room.content_version_id, [epilogue]
+            )
+        except Exception as exc:
+            logger.warning("대화방 %s 에필로그 그림 해석 실패 — 태그 없이 보낸다: %s", room.id, exc)
+            capture_dependency_failure(exc, dependency="db")
+            epilogue_text, epilogue_images = strip_media_tags(epilogue), {}
+        ending_reached_event = ending_reached_event.model_copy(
+            update={"epilogue": epilogue_text, "media_tag_images": epilogue_images}
+        )
+
     if settings.memory_window_generation:
         background_tasks.add_task(
             fold_memory,
@@ -1208,13 +1574,8 @@ async def _stream_new_turn(
         yield ending_reached_event
 
     yield ChatDoneEvent(
-        final_message=ChatMessageResponse(
-            id=assistant_message.id,
-            role=assistant_message.role,
-            content=assistant_message.content,
-            created_at=assistant_message.created_at,
-            image_id=matched_image.entity_id if matched_image is not None else None,
-            image_url=matched_image_url,
+        final_message=_turn_message_response(
+            assistant_message, matched_image, matched_image_url, judged_cell_id, judged_cell_image
         )
     )
 
@@ -1342,10 +1703,9 @@ async def regenerate_message(
     스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는
     것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩
     판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별
-    이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다
-    — 노출 기록(`CharacterImageExposure`)은
-    `if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지
-    않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존
+    이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 그림 판정(캐릭터 상황별 이미지·스토리 미디어
+    북 칸 — 스토리는 엔딩 뒤에도)은 재실행한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은
+    첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지 않고, 새 응답 텍스트에 맞는 그림이 붙는다. 생성이 실패하면(policyWarning/error) 기존
     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다."""
     prompt_set, prompt_sections = prompt_set_data
@@ -1411,6 +1771,7 @@ async def regenerate_message(
     db.add(new_message)
 
     matched_image: SituationalImage | None = None
+    judged_cell_id: uuid.UUID | None = None
     # send_message와 같은 이유(§SSE)로 판정 실패를 흡수한다 — 이미 생성된 응답까지 버리지
     # 않고 그 턴의 이미지 매칭만 포기한다.
     if setup is None:
@@ -1428,9 +1789,32 @@ async def regenerate_message(
         except (LLMClientError, PromptRenderError) as exc:
             logger.warning("대화방 %s 재생성 이미지 매칭 실패 — 이번 재생성의 매칭을 건너뛴다: %s", room.id, exc)
             capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+    else:
+        # 스토리: `_stream_new_turn` 의 칸 판정과 같은 헬퍼·같은 규칙(엔딩 여부와 무관, 노출 제외 칸은 후보 밖,
+        # 실패는 그림만 포기). 스탯·엔딩 판정은 재생성에서 하지 않으므로 동시에 부를 짝이 없다.
+        media_judgment = await _prepare_media_cell_judgment(
+            db,
+            room,
+            prompt_set=prompt_set,
+            prompt_sections=prompt_sections,
+            history=history[:-1],
+            user_message=user_content,
+            assistant_message=assistant_content,
+        )
+        if media_judgment is not None:
+            judged_cell_id = await _judge_media_cell(
+                llm_client,
+                media_judgment,
+                LLMCallContext(call_site="chat_media_book_image", user_id=room.user_id, room_id=room.id),
+                log_subject=f"대화방 {room.id} 재생성",
+            )
+        if judged_cell_id is not None and not await _record_story_media_exposure(db, room, judged_cell_id):
+            judged_cell_id = None
 
     if matched_image is not None:
         new_message.image_id = matched_image.entity_id
+    elif judged_cell_id is not None:
+        new_message.image_id = judged_cell_id
 
     await db.commit()
 
@@ -1453,14 +1837,11 @@ async def regenerate_message(
             matched_image = None
             matched_image_url = None
 
+    judged_cell_image = await _sign_judged_cell(db, room, judged_cell_id) if judged_cell_id is not None else None
+
     yield ChatDoneEvent(
-        final_message=ChatMessageResponse(
-            id=new_message.id,
-            role=new_message.role,
-            content=new_message.content,
-            created_at=new_message.created_at,
-            image_id=matched_image.entity_id if matched_image is not None else None,
-            image_url=matched_image_url,
+        final_message=_turn_message_response(
+            new_message, matched_image, matched_image_url, judged_cell_id, judged_cell_image
         )
     )
 
@@ -1605,7 +1986,7 @@ async def list_chat_rooms(
             ChatRoomListItem(
                 id=room.id,
                 name=_display_name(room, ordinal),
-                last_message_preview=last_message.content if last_message is not None else "",
+                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
                 created_at=room.created_at,
             )
         )
@@ -1735,7 +2116,7 @@ async def list_my_chat_rooms(
                 content_type=content.type,
                 content_name=detail.name,
                 thumbnail_url=thumbnail_url,
-                last_message_preview=last_message.content if last_message is not None else "",
+                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
                 last_message_at=last_message.created_at if last_message is not None else None,
                 created_at=room.created_at,
             )
@@ -2110,16 +2491,32 @@ async def get_ending_collection(
         )
     )
 
-    return [
-        EndingCollectionItem(
-            id=ending.entity_id,
-            name=ending.name,
-            reached=ending.entity_id in unlocked_entity_ids,
-            epilogue=ending.epilogue if ending.entity_id in unlocked_entity_ids else None,
-            hint=ending.hint if ending.entity_id not in unlocked_entity_ids else None,
+    # 도달한 엔딩의 에필로그만 칸 id 형태로 바꾸고 그 칸만 서명한다 — 도달하지 않은 엔딩은 에필로그를
+    # 싣지 않으므로 그 칸 그림도 나가지 않는다.
+    reached = [ending for ending in endings if ending.entity_id in unlocked_entity_ids and ending.epilogue is not None]
+    epilogues, images = await normalize_texts_for_display(
+        db, setup.content_version_id, [ending.epilogue for ending in reached if ending.epilogue is not None]
+    )
+    epilogue_by_ending = dict(zip((ending.entity_id for ending in reached), epilogues, strict=True))
+
+    items: list[EndingCollectionItem] = []
+    for ending in endings:
+        epilogue = epilogue_by_ending.get(ending.entity_id)
+        items.append(
+            EndingCollectionItem(
+                id=ending.entity_id,
+                name=ending.name,
+                reached=ending.entity_id in unlocked_entity_ids,
+                epilogue=epilogue,
+                hint=ending.hint if ending.entity_id not in unlocked_entity_ids else None,
+                media_tag_images=(
+                    {cell_id: images[cell_id] for cell_id in media_tag_refs(epilogue) if cell_id in images}
+                    if epilogue is not None
+                    else {}
+                ),
+            )
         )
-        for ending in endings
-    ]
+    return items
 
 
 @characters_router.get("/{id}/image-archive")
@@ -2143,7 +2540,8 @@ async def get_image_archive(
                 SituationalImage.content_version_id == content.current_published_version_id,
                 # `PATCH /contents/{id}/draft`가 이미지 파일
                 # 업로드 전에 image_asset_id=NULL인 행을 먼저 만들 수 있고(SituationalImage
-                # docstring), 발행 검증은 이 필드를 보지 않아 NULL이 발행본까지 간다. 아직
+                # docstring), 발행 검증이 그런 행을 거부하기 전에 발행된 버전에는 NULL 행이
+                # 남아 있을 수 있다. 아직
                 # 이미지가 없는 슬롯은 보관함에도 내보내지 않는다 — `_match_situational_image`의
                 # 후보 필터와 같은 판단이다. register_situational_image가
                 # image_asset_id/blurred_asset_id를 항상 함께 채우므로(assets/router.py) 이
@@ -2171,14 +2569,134 @@ async def get_image_archive(
         asset_id = image.image_asset_id if exposed else image.blurred_asset_id
         # The query filter above guarantees both asset id columns are non-null for every
         # row reaching here — this assert only narrows the
-        # type. (The previous comment claimed publish validation guaranteed this;
-        # that was false — validate_character_publish never looks at situational_images.)
+        # type. Publish validation alone can't be relied on for it: versions published before
+        # validate_character_publish started checking situational images may still hold rows
+        # without an image.
         assert asset_id is not None
         asset = await db.get(Asset, asset_id)
         assert asset is not None
         image_url = await run_in_threadpool(generate_presigned_get_url, build_thumbnail_key(asset.storage_key))
         items.append(ImageArchiveItem(id=image.entity_id, exposed=exposed, image_url=image_url))
     return items
+
+
+async def _cells_with_unlock_path(db: AsyncSession, version_id: uuid.UUID) -> set[uuid.UUID]:
+    """대화 중 판정을 거치지 않고도 볼 수 있는 칸 — 어느 시작설정의 첫 메시지(시작상황, 없으면 프롤로그)나 어느
+    엔딩의 에필로그에 나오는 칸이다. 작가 글은 이름 형태로 저장돼 있어 그 버전의 칸 id 로 정규화해서 모은다."""
+    setups = (await db.scalars(select(StartingSetup).where(StartingSetup.content_version_id == version_id))).all()
+    epilogues = (
+        await db.scalars(
+            select(Ending.epilogue)
+            .join(StartingSetup, StartingSetup.id == Ending.starting_setup_id)
+            .where(StartingSetup.content_version_id == version_id, Ending.epilogue.is_not(None))
+        )
+    ).all()
+    texts = [setup.opening_message or setup.prologue for setup in setups]
+    texts += [epilogue for epilogue in epilogues if epilogue is not None]
+    _, referenced = await normalize_texts(db, version_id, texts)
+    return referenced
+
+
+def _sign_urls(storage_keys: list[str]) -> list[str]:
+    return [generate_presigned_get_url(key) for key in storage_keys]
+
+
+@stories_router.get("/{id}/image-archive")
+async def get_story_image_archive(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[StoryImageArchiveItem]:
+    """스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재
+    발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로
+    쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.
+
+    대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은
+    작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.
+
+    이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를
+    시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다."""
+    content = await db.get(Content, id)
+    if (
+        content is None
+        or content.current_published_version_id is None
+        or content.moderation_status != ModerationStatus.NORMAL
+        or (
+            content.visibility == ContentVisibility.PRIVATE
+            and content.creator_user_id != user_id
+            and await db.scalar(
+                select(ChatRoom.id).where(ChatRoom.user_id == user_id, ChatRoom.content_id == content.id).limit(1)
+            )
+            is None
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+    version_id = content.current_published_version_id
+
+    original_asset = aliased(Asset)
+    blurred_asset = aliased(Asset)
+    rows = (
+        await db.execute(
+            select(MediaBookCell, MediaBookPerson.name, MediaBookScene.name, original_asset, blurred_asset)
+            .join(
+                MediaBookPerson,
+                and_(
+                    MediaBookPerson.content_version_id == MediaBookCell.content_version_id,
+                    MediaBookPerson.entity_id == MediaBookCell.person_entity_id,
+                ),
+            )
+            .join(
+                MediaBookScene,
+                and_(
+                    MediaBookScene.content_version_id == MediaBookCell.content_version_id,
+                    MediaBookScene.entity_id == MediaBookCell.scene_entity_id,
+                ),
+            )
+            .join(original_asset, original_asset.id == MediaBookCell.image_asset_id)
+            .outerjoin(blurred_asset, blurred_asset.id == MediaBookCell.blurred_asset_id)
+            .where(MediaBookCell.content_version_id == version_id)
+            .order_by(MediaBookPerson.order, MediaBookScene.order)
+        )
+    ).tuples().all()
+    if not rows:
+        return []
+
+    exposed_entity_ids = set(
+        await db.scalars(
+            select(StoryMediaExposure.cell_entity_id).where(
+                StoryMediaExposure.user_id == user_id, StoryMediaExposure.content_id == content.id
+            )
+        )
+    )
+    # 작가 글을 읽어 정규화하는 비용은 판정에서 빠진 못 본 칸이 있을 때만 낸다.
+    needs_unlock_path = any(cell.exclude_from_chat and cell.entity_id not in exposed_entity_ids for cell, *_ in rows)
+    reachable = await _cells_with_unlock_path(db, version_id) if needs_unlock_path else set()
+
+    visible: list[tuple[MediaBookCell, str, str, bool, Asset]] = []
+    for cell, person_name, scene_name, original, blurred in rows:
+        exposed = cell.entity_id in exposed_entity_ids
+        if not exposed and cell.exclude_from_chat and cell.entity_id not in reachable:
+            continue
+        shown = original if exposed else blurred
+        # 블러본은 발행이 채운다. 없는 칸을 원본으로 대신 내면 못 본 그림이 새므로 빼 둔다.
+        if shown is None:
+            continue
+        visible.append((cell, person_name, scene_name, exposed, shown))
+
+    urls = await run_in_threadpool(_sign_urls, [build_thumbnail_key(asset.storage_key) for *_, asset in visible])
+    return [
+        StoryImageArchiveItem(
+            id=cell.entity_id,
+            exposed=exposed,
+            image_url=url,
+            width=asset.width,
+            height=asset.height,
+            person_name=person_name,
+            scene_name=scene_name if exposed else "",
+            unlock_hint="" if exposed else cell.unlock_hint,
+        )
+        for (cell, person_name, scene_name, exposed, asset), url in zip(visible, urls, strict=True)
+    ]
 
 
 def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayload) -> PreviewSessionState:
@@ -2290,6 +2808,26 @@ async def _preview_persona_dependency(
         return _format_persona(persona)
 
 
+async def _preview_media_book_dependency(
+    state: PreviewSessionState = Depends(_owned_preview_session_dependency),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
+) -> dict[uuid.UUID, MediaTagImage]:
+    """미리보기 페이로드 미디어 북의 칸 그림(칸 id → 원본 서명·크기). 판정 이미지와 엔딩 에필로그 태그가 쓴다.
+
+    페이로드는 저장되지 않은 빌더 폼이라 자산 id 를 그대로 서명하면 미리보기가 남의 자산 서명기가 된다 — 요청자
+    소유의 준비된 원본·생성 이미지인 칸만 맵에 넣는다. 아닌 칸(남의 자산·업로드가 끝나지 않은 자산)은 조용히
+    빠진다: 판정 후보에도 에필로그 그림에도 나오지 않고 턴은 그대로 진행한다(작가가 고칠 곳은 빌더 저장 검증이
+    알려 준다). 세션은 `_preview_persona_dependency` 처럼 짧게 열고 닫으며, 칸이 없으면 열지 않는다. DB 장애만
+    예외가 되므로 차감 전에 실패하도록 `charge` 보다 앞에 둔다(`send_preview_message`)."""
+    payload = state.payload
+    if not isinstance(payload, StoryDraftPayload) or payload.media_book is None or not payload.media_book.cells:
+        return {}
+    asset_ids_by_cell = {cell.id: cell.image_asset_id for cell in payload.media_book.cells}
+    async with session_factory() as session:
+        return await sign_owned_cell_images(session, user_id, asset_ids_by_cell)
+
+
 async def _validate_preview_shortcut(
     payload: ChatMessageCreateRequest,
     state: PreviewSessionState = Depends(_owned_preview_session_dependency),
@@ -2399,6 +2937,90 @@ def _build_preview_prompt(
     )
 
 
+def _preview_cells_by_name(
+    payload: StoryDraftPayload, media_images: dict[uuid.UUID, MediaTagImage]
+) -> dict[tuple[str, str], uuid.UUID]:
+    """페이로드 미디어 북을 (인물 이름, 장면 이름) → 칸 id 로. 축이 없는 칸은 이름이 없어 빠진다(실채팅의
+    `load_media_cells_by_name` 과 같은 규칙). 그림을 서명하지 못한 칸(남의 자산·준비 안 된 자산)도 빼서 그 칸의
+    태그는 없는 이름처럼 지워진다 — 빈칸 자리를 남기지 않는다."""
+    if payload.media_book is None:
+        return {}
+    people = {person.id: person.name for person in payload.media_book.people}
+    scenes = {scene.id: scene.name for scene in payload.media_book.scenes}
+    return {
+        (people[cell.person_id], scenes[cell.scene_id]): cell.id
+        for cell in payload.media_book.cells
+        if cell.person_id in people and cell.scene_id in scenes and cell.id in media_images
+    }
+
+
+def _prepare_preview_media_cell_judgment(
+    payload: StoryDraftPayload,
+    media_images: dict[uuid.UUID, MediaTagImage],
+    *,
+    prompt_set: PromptSet,
+    prompt_sections: list[PromptSection],
+    history: list[ChatMessage],
+    user_message: str,
+    assistant_message: str,
+) -> _MediaCellJudgment | None:
+    """미리보기 칸 판정 — 실채팅 `_prepare_media_cell_judgment` 의 페이로드판. 후보는 노출 제외가 아니고 그림을
+    서명한 칸(요청자 소유·준비 완료 — `_preview_media_book_dependency`)이며 빌더 축 순서다. 렌더 실패는 그림만
+    포기한다."""
+    if payload.media_book is None:
+        return None
+    people = {person.id: (order, person.name) for order, person in enumerate(payload.media_book.people)}
+    scenes = {scene.id: (order, scene.name) for order, scene in enumerate(payload.media_book.scenes)}
+    candidates = [
+        MediaCellCandidate(
+            entity_id=cell.id,
+            person=people[cell.person_id][1],
+            scene=scenes[cell.scene_id][1],
+            situation_description=cell.situation_description,
+        )
+        for cell in sorted(
+            payload.media_book.cells, key=lambda cell: (people[cell.person_id][0], scenes[cell.scene_id][0])
+        )
+        if not cell.exclude_from_chat and cell.id in media_images
+    ]
+    if not candidates:
+        return None
+    try:
+        prompt = build_image_judgment_prompt(
+            prompt_set=prompt_set,
+            sections=prompt_sections,
+            scope="story",
+            assistant_label=prompt_set.story_assistant_label,
+            image_lines=media_cell_image_lines(candidates),
+            history=history,
+            user_message=user_message,
+            assistant_message=assistant_message,
+        )
+    except PromptRenderError as exc:
+        logger.warning("미리보기 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", exc)
+        capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
+        return None
+    return _MediaCellJudgment(prompt=prompt, candidate_ids={cell.entity_id for cell in candidates})
+
+
+def _preview_ending_reached_event(
+    payload: StoryDraftPayload,
+    media_images: dict[uuid.UUID, MediaTagImage],
+    ending_id: uuid.UUID,
+    epilogue: str | None,
+) -> ChatEndingReachedEvent:
+    """미리보기 엔딩 이벤트. 에필로그는 페이로드 그대로라 이름 형태 태그다 — 실채팅처럼 칸 id 형태로 바꾸고(없는
+    이름은 지운다) 가리키는 칸의 그림 맵을 싣는다."""
+    if not epilogue:
+        return ChatEndingReachedEvent(ending_id=ending_id, epilogue=epilogue)
+    epilogue_text, refs = normalize_media_tags(epilogue, _preview_cells_by_name(payload, media_images))
+    return ChatEndingReachedEvent(
+        ending_id=ending_id,
+        epilogue=epilogue_text,
+        media_tag_images={cell_id: media_images[cell_id] for cell_id in refs if cell_id in media_images},
+    )
+
+
 async def _stream_preview_turn(
     state: PreviewSessionState,
     llm_client: LLMClient,
@@ -2413,6 +3035,8 @@ async def _stream_preview_turn(
     # `_stream_new_turn`은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
     # (`_owned_preview_session_dependency` docstring) — 그래서 여기만 인자로 받는다.
     user_id: uuid.UUID,
+    # 페이로드 칸 id → 서명된 그림(`_preview_media_book_dependency`). 이 함수는 세션을 열지 않는다.
+    media_images: dict[uuid.UUID, MediaTagImage],
 ) -> AsyncIterator[ChatStreamEvent]:
     """`_stream_new_turn`과 같은 순서(생성 스트리밍 → 스탯 판단 → 엔딩 판정)를 따르되
     `ChatRoom`/DB 대신 `PreviewSessionState`(Redis, 호출부가 커밋)를 직접 갱신한다. 스탯
@@ -2486,66 +3110,99 @@ async def _stream_preview_turn(
 
     # 실제 채팅(`_stream_new_turn`)과 같은 이유로 판정 실패를 여기서 흡수한다 — 미리보기는
     # `ChatRoom` 등 방 상태를 DB에 쓰지 않지만, 예외가 SSE 제너레이터 밖으로 새면 커넥션이
-    # 깨지는 것은 동일하다.
+    # 깨지는 것은 동일하다. 스탯 판정(최초 엔딩 전만)과 칸 판정(엔딩 뒤에도)을 실채팅처럼 동시에 부른다 —
+    # 이 경로엔 DB 세션이 없어 gather 앞뒤를 가를 쓰기가 없다. 노출(보관함 해금)은 기록하지 않는다.
     try:
-        if (
-            isinstance(state.payload, StoryDraftPayload)
-            and not state.ending_reached
-            and state.payload.starting_setups
-        ):
-            setup = state.payload.starting_setups[0]
-            stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
+        if isinstance(state.payload, StoryDraftPayload):
+            setup = state.payload.starting_setups[0] if state.payload.starting_setups else None
+            stat_prompt: str | None = None
+            stat_defs: list[StatDef] = []
             current_stats = dict(state.stats)
-
-            judgment_prompt = build_stat_judgment_prompt(
+            if setup is not None and not state.ending_reached:
+                stat_defs = [_preview_stat_def(stat_def) for stat_def in setup.stat_defs]
+                stat_prompt = build_stat_judgment_prompt(
+                    prompt_set=prompt_set,
+                    sections=prompt_sections,
+                    stat_defs=stat_defs,
+                    current_stats=current_stats,
+                    user_message=user_content,
+                    assistant_message=assistant_content,
+                )
+            media_judgment = _prepare_preview_media_cell_judgment(
+                state.payload,
+                media_images,
                 prompt_set=prompt_set,
-                sections=prompt_sections,
-                stat_defs=stat_defs,
-                current_stats=current_stats,
+                prompt_sections=prompt_sections,
+                history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
             )
-            judgment = await llm_client.generate_structured(
-                judgment_prompt,
-                StatJudgmentResult,
-                usage=LLMCallContext(call_site="preview_stat_judgment", user_id=user_id, room_id=None),
+
+            judgment, judged_cell_id = await asyncio.gather(
+                _await_stat_judgment(
+                    llm_client,
+                    stat_prompt,
+                    LLMCallContext(call_site="preview_stat_judgment", user_id=user_id, room_id=None),
+                    log_subject="미리보기",
+                )
+                if stat_prompt is not None
+                else _no_judgment(),
+                _judge_media_cell(
+                    llm_client,
+                    media_judgment,
+                    LLMCallContext(call_site="preview_media_book_image", user_id=user_id, room_id=None),
+                    log_subject="미리보기",
+                )
+                if media_judgment is not None
+                else _no_judgment(),
             )
-            changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
-            updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
-            for stat_id, new_value in updated_stats.items():
-                if new_value != current_stats.get(stat_id):
-                    stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
-            state.stats = updated_stats
+            judged_image = media_images.get(judged_cell_id) if judged_cell_id is not None else None
+            if judged_cell_id is not None and judged_image is not None:
+                assistant_message.image_id = judged_cell_id
+                assistant_message.image_url = judged_image.url
+                assistant_message.image_width = judged_image.width
+                assistant_message.image_height = judged_image.height
 
-            for ending in setup.endings:
-                if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
-                    continue
-                ending_judgment_prompt = build_ending_judgment_prompt(
-                    prompt_set=prompt_set,
-                    sections=prompt_sections,
-                    judgment_prompt=ending.judgment_prompt,
-                    history=history,
-                    user_message=user_content,
-                    assistant_message=assistant_content,
-                    memory_summary="",
-                )
-                ending_judgment = await llm_client.generate_structured(
-                    ending_judgment_prompt,
-                    EndingJudgmentResult,
-                    usage=LLMCallContext(call_site="preview_ending_judgment", user_id=user_id, room_id=None),
-                )
-                if not ending_judgment.triggered:
-                    continue
-                rule_items: list[EndingRuleListItem] = [
-                    _preview_ending_rule_list_item(item) for item in ending.stat_rules
-                ]
-                if not evaluate_rule_list(rule_items, updated_stats):
-                    continue
+            if setup is not None and judgment is not None:
+                changes = [StatChange(stat_id=c.stat_id, new_value=c.new_value) for c in judgment.stat_changes]
+                updated_stats = apply_stat_changes(current_stats, changes, stat_defs)
 
-                state.ending_reached = True
-                ending_reached_event = ChatEndingReachedEvent(ending_id=ending.id, epilogue=ending.epilogue)
-                break
+                for stat_id, new_value in updated_stats.items():
+                    if new_value != current_stats.get(stat_id):
+                        stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
+                state.stats = updated_stats
+
+                for ending in setup.endings:
+                    if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
+                        continue
+                    ending_judgment_prompt = build_ending_judgment_prompt(
+                        prompt_set=prompt_set,
+                        sections=prompt_sections,
+                        judgment_prompt=ending.judgment_prompt,
+                        history=history,
+                        user_message=user_content,
+                        assistant_message=assistant_content,
+                        memory_summary="",
+                    )
+                    ending_judgment = await llm_client.generate_structured(
+                        ending_judgment_prompt,
+                        EndingJudgmentResult,
+                        usage=LLMCallContext(call_site="preview_ending_judgment", user_id=user_id, room_id=None),
+                    )
+                    if not ending_judgment.triggered:
+                        continue
+                    rule_items: list[EndingRuleListItem] = [
+                        _preview_ending_rule_list_item(item) for item in ending.stat_rules
+                    ]
+                    if not evaluate_rule_list(rule_items, updated_stats):
+                        continue
+
+                    state.ending_reached = True
+                    ending_reached_event = _preview_ending_reached_event(
+                        state.payload, media_images, ending.id, ending.epilogue
+                    )
+                    break
     except (LLMClientError, PromptRenderError) as exc:
         logger.warning("미리보기 판정 실패 — 이번 턴의 판정을 건너뛴다: %s", exc)
         capture_dependency_failure(exc, dependency=_llm_dependency_tag(exc))
@@ -2578,6 +3235,8 @@ async def send_preview_message(
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
     # 작가의 기본 대화 프로필. `charge`보다 앞이다.
     user_persona: str = Depends(_preview_persona_dependency),
+    # 미디어 북 칸 그림(소유·준비 확인 + 서명, 아닌 칸은 뺀다). DB 장애가 차감 전에 실패하도록 `charge`보다 앞이다.
+    media_images: dict[uuid.UUID, MediaTagImage] = Depends(_preview_media_book_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
     # 의존성 전부보다 뒤에 둔다 — `send_message`의 같은 자리 주석 참조). 미리보기에서 앞에
     # 두면 만료·남의 세션(404)에서 차감만 남는다.
@@ -2608,6 +3267,7 @@ async def send_preview_message(
         charge,
         session_factory,
         user_id,
+        media_images,
     ):
         yield event
 

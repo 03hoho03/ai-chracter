@@ -7,12 +7,14 @@ from typing import Any
 
 import boto3
 import httpx
+import pytest
 import sqlalchemy as sa
 from PIL import Image
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.content.publish import PublishFilterResult
+from api.content.publish import PublishFilterResult, validate_story_publish
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -30,24 +32,52 @@ from api.db.models.story import (
     EndingRuleOperator,
     KeywordNote,
     LogicalOp,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from api.llm.client import LLMCallContext, LLMClient
-from factories import _clear_llm_override, _get_genre, _login_as, _make_user, _override_llm_client
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from factories import (
+    _add_media_book_cell,
+    _add_named_media_cell,
+    _clear_llm_override,
+    _get_genre,
+    _login_as,
+    _make_user,
+    _override_llm_client,
+)
 
 
-def _upload_test_image(storage_key: str) -> None:
+def _upload_test_image(storage_key: str, size: tuple[int, int] = (16, 16)) -> None:
     buffer = io.BytesIO()
-    Image.new("RGB", (16, 16), color=(10, 20, 30)).save(buffer, format="PNG")
+    Image.new("RGB", size, color=(10, 20, 30)).save(buffer, format="PNG")
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=buffer.getvalue())
 
 
+def _upload_test_thumbnail(storage_key: str, color: tuple[int, int, int] = (40, 50, 60)) -> bytes:
+    """원본 `storage_key` 옆 `_thumb.webp` 자리에 축소본을 올리고 그 바이트를 돌려준다. 색을 달리 주면 축소본마다
+    바이트가 달라 어느 칸의 축소본이 실렸는지 가릴 수 있다."""
+    buffer = io.BytesIO()
+    Image.new("RGB", (8, 8), color=color).save(buffer, format="WEBP")
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(storage_key), Body=buffer.getvalue())
+    return buffer.getvalue()
+
+
+def _object_bytes(storage_key: str) -> bytes:
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    body: bytes = s3.get_object(Bucket=settings.s3_bucket_name, Key=storage_key)["Body"].read()
+    return body
+
+
 async def _make_ready_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUID) -> Asset:
+    """READY 자산은 언제나 원본과 `_thumb.webp` 축소본을 함께 갖는다(업로드 완료·생성이 둘을 같이 올린다)."""
     asset = Asset(
         owner_user_id=owner_user_id,
         storage_key=f"assets/profile-image/{uuid.uuid4()}.png",
@@ -57,6 +87,7 @@ async def _make_ready_asset(db_session: AsyncSession, *, owner_user_id: uuid.UUI
     db_session.add(asset)
     await db_session.flush()
     _upload_test_image(asset.storage_key)
+    _upload_test_thumbnail(asset.storage_key)
     return asset
 
 
@@ -386,6 +417,44 @@ async def test_publish_rejects_incomplete_draft_with_missing_fields(
             "target",
         ]
     }
+
+
+async def test_publish_character_rejects_situational_image_without_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """The builder autosaves a situational-image row before its image is uploaded. Publishing
+    with such a row would ship a slot the chat can never show, so publish names it as missing
+    instead — before the moderation call, and without touching the draft."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _thumbnail, _image = await _make_publishable_character_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=version.id,
+            trigger_condition="이미지를 아직 안 올린 상황",
+            order=1,
+        )
+    )
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["situationalImages"]}
+    assert fake.received_prompt is None
+    await db_session.refresh(version)
+    assert version.published_at is None
 
 
 async def test_publish_rejects_when_filter_fails_and_leaves_draft_unchanged(
@@ -1175,3 +1244,504 @@ async def test_publish_story_clears_has_unpublished_changes(
     assert resp.status_code == 200
     await db_session.refresh(content)
     assert content.has_unpublished_changes is False
+
+
+async def test_publish_clones_media_book_with_stable_entity_ids(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행은 초안이 발행본이 되고 다음 편집용 새 초안에 칸·축을 복제한다. entity_id·이미지·블러본·글·
+    스위치가 그대로 가야 다음 발행이 블러본을 다시 만들지 않고 노출 기록도 같은 칸을 가리킨다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    blurred = await _make_ready_asset(db_session, owner_user_id=user.id)
+    cell = await _add_media_book_cell(db_session, version.id, image.id, blurred.id)
+    # 축이 둘 이상이어야 복제가 순서까지 옮기는지 드러난다(빌더 배치표의 열 순서).
+    second_person = MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=version.id, name="준", order=1)
+    second_scene = MediaBookScene(entity_id=uuid.uuid4(), content_version_id=version.id, name="옥상", order=1)
+    db_session.add_all([second_person, second_scene])
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    new_version_id = await db_session.scalar(
+        sa.select(ContentVersion.id).where(
+            ContentVersion.content_id == content.id, ContentVersion.published_at.is_(None)
+        )
+    )
+    assert new_version_id is not None and new_version_id != version.id
+    for version_id in (version.id, new_version_id):
+        people = (
+            await db_session.scalars(
+                sa.select(MediaBookPerson)
+                .where(MediaBookPerson.content_version_id == version_id)
+                .order_by(MediaBookPerson.order)
+            )
+        ).all()
+        scenes = (
+            await db_session.scalars(
+                sa.select(MediaBookScene)
+                .where(MediaBookScene.content_version_id == version_id)
+                .order_by(MediaBookScene.order)
+            )
+        ).all()
+        [copied] = (
+            await db_session.scalars(sa.select(MediaBookCell).where(MediaBookCell.content_version_id == version_id))
+        ).all()
+        assert [(p.entity_id, p.name, p.order) for p in people] == [
+            (cell.person_entity_id, "민아", 0),
+            (second_person.entity_id, "준", 1),
+        ]
+        assert [(s.entity_id, s.name, s.order) for s in scenes] == [
+            (cell.scene_entity_id, "교실", 0),
+            (second_scene.entity_id, "옥상", 1),
+        ]
+        assert (
+            copied.entity_id,
+            copied.person_entity_id,
+            copied.scene_entity_id,
+            copied.image_asset_id,
+            copied.blurred_asset_id,
+            copied.situation_description,
+            copied.unlock_hint,
+            copied.exclude_from_chat,
+        ) == (
+            cell.entity_id,
+            cell.person_entity_id,
+            cell.scene_entity_id,
+            image.id,
+            blurred.id,
+            "창가에서 웃는다",
+            "첫 만남",
+            True,
+        )
+
+
+def _bucket_keys() -> set[str]:
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    keys: set[str] = set()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=settings.s3_bucket_name):
+        keys |= {item["Key"] for item in page.get("Contents", [])}
+    return keys
+
+
+async def test_publish_story_creates_blur_only_for_cells_without_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """보관함의 잠긴 칸은 발행이 만든 블러본만 보여 준다. 블러본은 칸마다 한 번 — 앞 발행에서 만들어 복제된
+    블러본이 있는 칸은 건너뛰고, 없는 칸만 원본으로 블러본(PNG 와 `_thumb.webp`)을 만들어 원본과 같은 크기를
+    적는다. 다음 편집용 초안에는 새 블러본 id 가 복제돼야 다음 발행이 다시 만들지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    kept_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept_blur = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept = await _add_media_book_cell(db_session, version.id, kept_image.id, kept_blur.id)
+    fresh_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    _upload_test_image(fresh_image.storage_key, size=(20, 30))
+    fresh = await _add_media_book_cell(db_session, version.id, fresh_image.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    keys_before = _bucket_keys()
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    await db_session.refresh(kept)
+    await db_session.refresh(fresh)
+    assert kept.blurred_asset_id == kept_blur.id
+    assert fresh.blurred_asset_id is not None
+    blurred = await db_session.get(Asset, fresh.blurred_asset_id)
+    assert blurred is not None
+    assert (blurred.kind, blurred.status, blurred.owner_user_id, blurred.width, blurred.height) == (
+        AssetKind.BLURRED,
+        AssetStatus.READY,
+        user.id,
+        20,
+        30,
+    )
+    assert _bucket_keys() - keys_before == {blurred.storage_key, build_thumbnail_key(blurred.storage_key)}
+    copied_blur_id = await db_session.scalar(
+        sa.select(MediaBookCell.blurred_asset_id).where(
+            MediaBookCell.entity_id == fresh.entity_id, MediaBookCell.content_version_id != version.id
+        )
+    )
+    assert copied_blur_id == blurred.id
+
+
+async def test_publish_story_rejected_by_filter_creates_no_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """블러본은 심사를 통과한 뒤에 만든다 — 탈락한 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    cell = await _add_media_book_cell(db_session, version.id, image.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    keys_before = _bucket_keys()
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=False, reason="부적절")))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    await db_session.refresh(cell)
+    assert cell.blurred_asset_id is None
+    assert _bucket_keys() == keys_before
+    # 탈락한 발행은 초안을 그대로 둔다 — 칸은 여전히 그 초안 버전에 있고 버전은 발행되지 않았다.
+    await db_session.refresh(version)
+    assert (version.published_at, version.version_number, cell.content_version_id) == (None, None, version.id)
+
+
+async def test_publish_story_reports_cell_whose_image_cannot_be_blurred(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸 그림의 블러본을 만들지 못하면(원본이 저장소에 없음 등) 이름 없는 500 이 아니라 어느 칸 때문인지
+    알리는 응답으로 발행을 멈춘다. 심사 거부(`reason`)와는 다른 모양이어야 화면이 이의제기로 안내하지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    missing = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.png",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(missing)
+    await db_session.flush()
+    # 심사는 축소본만 읽으므로 축소본은 두어 심사를 지나 블러 단계에서 원본이 없음을 만나게 한다.
+    _upload_test_thumbnail(missing.storage_key)
+    cell = await _add_media_book_cell(db_session, version.id, missing.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert detail["code"] == "MEDIA_BOOK_IMAGE_UNAVAILABLE"
+    assert detail["cellId"] == str(cell.entity_id)
+    assert "reason" not in detail
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
+async def _story_with_media_cells(
+    db_session: AsyncSession, db_client: httpx.AsyncClient
+) -> tuple[Content, ContentVersion, Asset, list[tuple[MediaBookCell, bytes]]]:
+    """발행할 수 있는 스토리 초안에 칸 셋을 넣는다. 칸을 넣는 순서(민아/교실 → 준/교실 → 민아/옥상)와 축 순서
+    (민아/교실 → 민아/옥상 → 준/교실)를 일부러 어긋나게 둬, 심사가 행 순서가 아니라 축 순서로 싣는지 드러나게 한다.
+    칸 줄의 세 모양(상황 설명·해금 힌트 둘 다 / 설명만 / 힌트만)을 하나씩 두고, 준/교실은 대화 노출 제외 칸이다 —
+    노출 제외 칸도 첫 메시지·에필로그 태그와 보관함으로 보일 수 있어 심사에서 빼면 안 된다.
+    칸마다 원본과 색이 다른 축소본을 올려 축소본 바이트(축 순서)를 함께 돌려준다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, thumbnail, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    added: dict[tuple[str, str], tuple[MediaBookCell, bytes]] = {}
+    for index, (person, scene, description, hint, excluded) in enumerate(
+        [
+            ("민아", "교실", "창가에서 웃는다", "첫 만남", False),
+            ("준", "교실", "", "비 오는 날", True),
+            ("민아", "옥상", "난간에 기대 선다", "", False),
+        ]
+    ):
+        cell, asset = await _add_named_media_cell(
+            db_session, version.id, user.id, person, scene, situation_description=description, exclude_from_chat=excluded
+        )
+        cell.unlock_hint = hint
+        _upload_test_image(asset.storage_key)
+        added[(person, scene)] = (cell, _upload_test_thumbnail(asset.storage_key, color=(index * 60, 10, 200)))
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return content, version, thumbnail, [added[("민아", "교실")], added[("민아", "옥상")], added[("준", "교실")]]
+
+
+async def test_publish_story_sends_media_cell_thumbnails_to_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """심사에는 대표 이미지 뒤에 칸마다 512px 축소본(`_thumb.webp`)이 실린다 — 원본(장당 수 MB)을 50장 싣지
+    않는다. 순서는 심사 프롬프트의 칸 줄과 같은 축 순서(인물 → 장면)라 그림과 줄이 짝을 이룬다. 대화 노출 제외 칸
+    (준/교실)도 싣는다."""
+    content, _, thumbnail, cells = await _story_with_media_cells(db_session, db_client)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images == [
+        (_object_bytes(thumbnail.storage_key), "image/png"),
+        *[(thumb, "image/webp") for _, thumb in cells],
+    ]
+
+
+async def test_publish_story_filter_prompt_includes_media_book_names_and_descriptions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸의 인물·장면 이름·상황 설명·해금 힌트도 작성자가 쓴 글이라 심사 대상이다 — 힌트는 보관함에서 다른
+    플레이어에게 보인다. 빈 부분은 줄에서 빠진다. 대화 노출 제외 칸(준/교실)의 줄도 있다."""
+    content, _, _, _ = await _story_with_media_cells(db_session, db_client)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    lines = fake.received_prompt.splitlines()
+    cell_lines = [line for line in lines if line.startswith("- 민아/") or line.startswith("- 준/")]
+    assert cell_lines == [
+        "- 민아/교실: 창가에서 웃는다 (해금 힌트: 첫 만남)",
+        "- 민아/옥상: 난간에 기대 선다",
+        "- 준/교실 (해금 힌트: 비 오는 날)",
+    ]
+
+
+async def test_publish_story_fails_closed_when_media_cell_thumbnail_is_missing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸 축소본을 저장소에서 읽지 못하면 그 칸을 심사하지 못한 것이다 — 빼고 심사하면 안 본 그림이 발행된다.
+    심사를 부르지 않고 어느 칸인지 알려 발행을 멈춘다(심사 거부 `reason` 모양이 아니다)."""
+    content, version, _, cells = await _story_with_media_cells(db_session, db_client)
+    unreadable, _ = cells[1]
+    asset = await db_session.get(Asset, unreadable.image_asset_id)
+    assert asset is not None
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.delete_object(Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(asset.storage_key))
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert (detail["code"], detail["cellId"]) == ("MEDIA_BOOK_IMAGE_UNAVAILABLE", str(unreadable.entity_id))
+    assert "reason" not in detail
+    assert fake.received_prompt is None
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
+async def test_publish_story_does_not_publish_when_thumbnail_download_raises_unexpectedly(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """저장소 오류가 아닌 예외(동시 다운로드 중 무엇이든)는 칸 안내 없이 그대로 올라가지만, 심사를 부르지 않고
+    발행되지 않는 것은 같다 — 예외를 삼켜 그 칸을 빼고 심사하면 안 된다."""
+    content, version, _, _ = await _story_with_media_cells(db_session, db_client)
+
+    def failing_download(key: str) -> bytes:
+        if key.endswith("_thumb.webp"):
+            raise RuntimeError("축소본 읽기 중 예상 밖 오류")
+        return _object_bytes(key)
+
+    monkeypatch.setattr("api.content.router.download_object", failing_download)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        with pytest.raises(RuntimeError, match="예상 밖 오류"):
+            await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert fake.received_prompt is None
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
+class _FailingFilterLLMClient(_FakeLLMClient):
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        self.received_images = images
+        raise LLMClientError("심사 호출 실패(쿼터·요청 크기 초과 등)")
+
+
+async def test_publish_story_does_not_publish_when_filter_call_fails(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """심사 호출 자체가 실패하면(쿼터 소진, 요청 크기 초과로 거부 등) 판정이 없으므로 발행하지 않는다 — 블러도
+    만들지 않는다. 지금은 처리기 없이 500 으로 나간다."""
+    content, version, _, cells = await _story_with_media_cells(db_session, db_client)
+    keys_before = _bucket_keys()
+
+    fake = _FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        with pytest.raises(LLMClientError):
+            await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert fake.received_images is not None and len(fake.received_images) == 1 + len(cells)
+    await db_session.refresh(version)
+    assert version.published_at is None
+    assert _bucket_keys() == keys_before
+
+
+async def test_publish_story_rejects_more_than_fifty_media_cells(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """자동저장이 51번째 칸을 막지만 발행이 마지막 관문이다 — 심사(51장 이상 요청)까지 가지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    for index in range(51):
+        await _add_named_media_cell(db_session, version.id, user.id, f"인물{index}", "교실")
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["mediaBook.cells"]}
+    assert fake.received_prompt is None
+
+
+async def test_publish_story_rejects_media_cell_whose_axis_is_gone(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸의 인물·장면 참조에는 FK 가 없다. 가리키는 축이 없는 칸은 이름도 자리도 없어 심사 줄을 만들 수 없고
+    대화에서도 부를 수 없다 — 발행을 막는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    cell, _ = await _add_named_media_cell(db_session, version.id, user.id, "민아", "교실")
+    cell.scene_entity_id = uuid.uuid4()
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["mediaBook.orphanCells"]}
+    assert fake.received_prompt is None
+
+
+def _valid_story_rows() -> tuple[Content, ContentVersion, StoryVersionDetail, list[StartingSetup]]:
+    content = Content(genre_id=uuid.uuid4(), target=ContentTarget.ALL)
+    version = ContentVersion(detail_description="상세 설명")
+    detail = StoryVersionDetail(
+        name="이름",
+        one_liner="한 줄",
+        thumbnail_asset_id=uuid.uuid4(),
+        prompt_template=StoryPromptTemplate.BASIC,
+        setting_text="설정",
+    )
+    return content, version, detail, [StartingSetup(id=uuid.uuid4(), name="시작", prologue="프롤로그")]
+
+
+def _media_book_rows(
+    cell_count: int, *, orphan_person: bool = False, orphan_scene: bool = False
+) -> tuple[list[MediaBookPerson], list[MediaBookScene], list[MediaBookCell]]:
+    people = [MediaBookPerson(entity_id=uuid.uuid4(), name=f"인물{i}", order=i) for i in range(cell_count)]
+    scene = MediaBookScene(entity_id=uuid.uuid4(), name="교실", order=0)
+    cells = [
+        MediaBookCell(entity_id=uuid.uuid4(), person_entity_id=person.entity_id, scene_entity_id=scene.entity_id)
+        for person in people
+    ]
+    if orphan_person:
+        cells[0].person_entity_id = uuid.uuid4()
+    if orphan_scene:
+        cells[-1].scene_entity_id = uuid.uuid4()
+    return people, [scene], cells
+
+
+@pytest.mark.parametrize(
+    ("cell_count", "orphan_person", "orphan_scene", "expected"),
+    [
+        pytest.param(0, False, False, [], id="no-media-book"),
+        pytest.param(50, False, False, [], id="fifty-cells"),
+        pytest.param(51, False, False, ["mediaBook.cells"], id="fifty-one-cells"),
+        pytest.param(2, True, False, ["mediaBook.orphanCells"], id="person-gone"),
+        pytest.param(2, False, True, ["mediaBook.orphanCells"], id="scene-gone"),
+        pytest.param(2, True, True, ["mediaBook.orphanCells"], id="both-gone-reported-once"),
+    ],
+)
+def test_validate_story_publish_media_book(
+    cell_count: int, orphan_person: bool, orphan_scene: bool, expected: list[str]
+) -> None:
+    """칸 수의 경계(50 통과·51 거부)와 축 참조 — 인물만·장면만 사라진 칸을 각각 잡고, 여러 칸이 고아여도 한 번만
+    알린다(화면은 칸 하나하나가 아니라 미디어 북 전체를 다시 저장해 고친다)."""
+    people, scenes, cells = _media_book_rows(
+        cell_count, orphan_person=orphan_person, orphan_scene=orphan_scene
+    )
+    content, version, detail, setups = _valid_story_rows()
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=people,
+        media_book_scenes=scenes,
+        media_book_cells=cells,
+    )
+
+    assert missing == expected

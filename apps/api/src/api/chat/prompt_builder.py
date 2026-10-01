@@ -1,4 +1,6 @@
+import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from string import Formatter
 from typing import Any, Literal
 
@@ -6,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.content.media_tags import strip_media_tags
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
@@ -111,6 +114,7 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("publish_filter", "character_prompt"): frozenset({"character_prompt"}),
     ("publish_filter", "detail_description"): frozenset({"detail_description"}),
     ("publish_filter", "starting_setups"): frozenset({"setup_lines"}),
+    ("publish_filter", "media_book"): frozenset({"media_book_lines"}),
     ("publish_filter", "verdict_instruction"): frozenset(),
 }
 
@@ -404,6 +408,11 @@ def build_story_generation_prompt(
     자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다 —
     같은 스토리 챗인데 자리마다 라벨이 다른 것은 표류가 아니라 실측된 현재 동작이라
     여기서 통일하지 않는다.
+
+    `prologue` 와 히스토리 본문에서는 미디어 북 이미지 태그를 지운다. 태그는 화면에서만 그림이 되는
+    표지라, 모델이 받으면 태그를 흉내 내거나 인물·장면 이름이 문맥을 오염시킨다. 첫 메시지(작성자 글의
+    복사본)가 히스토리로 매 턴 다시 들어오므로 히스토리는 역할과 무관하게 모든 줄에 건다. 이번 턴
+    `user_message` 는 사용자가 방금 친 글이라 그대로 싣는다.
     """
     example_lines = "\n".join(
         f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
@@ -411,7 +420,7 @@ def build_story_generation_prompt(
     )
     history_lines = "\n".join(
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{message.content}"
+        f"{strip_media_tags(message.content)}"
         for message in history
     )
     values = {
@@ -420,7 +429,7 @@ def build_story_generation_prompt(
         "rules": rules or "",
         "user_goal": user_goal or "",
         "example_lines": example_lines,
-        "prologue": prologue,
+        "prologue": strip_media_tags(prologue),
         "user_persona": user_persona,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
@@ -515,10 +524,12 @@ def build_ending_judgment_prompt(
 
     `memory_summary`는 대화 기록 앞에 싣는 현재 요약이다. `""`이면 섹션째 빠져 이 인자가 없던 시절과
     바이트까지 같다(기본값이 없는 이유는 생성 빌더와 같다).
+
+    히스토리 본문의 미디어 북 이미지 태그는 생성 빌더와 같은 이유로 지운다.
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{message.content}"
+        f"{strip_media_tags(message.content)}"
         for message in history
     ]
     turn_lines.append(f"{prompt_set.user_label}: {user_message}")
@@ -538,39 +549,78 @@ class EndingJudgmentResult(BaseModel):
     triggered: bool
 
 
+def situational_image_lines(situational_images: Sequence[SituationalImage]) -> str:
+    """캐릭터 상황별 이미지 판정의 후보 줄 — 이미지마다 id 와 노출 조건(order 오름차순은 호출부가 정한다)."""
+    return "\n".join(
+        f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}" for image in situational_images
+    )
+
+
+@dataclass(frozen=True)
+class MediaCellCandidate:
+    """스토리 미디어 북 칸 판정의 후보 한 칸. 실채팅은 방 버전의 칸 행에서, 미리보기는 빌더 페이로드에서 만든다."""
+
+    entity_id: uuid.UUID
+    person: str
+    scene: str
+    situation_description: str
+
+
+def media_cell_image_lines(cells: Sequence[MediaCellCandidate]) -> str:
+    """스토리 칸 판정의 후보 줄 — 판정 근거는 칸의 인물·장면 이름과, 작성자가 적었으면 상황 설명이다(비었으면
+    그 항목을 줄에서 뺀다 — 빈 값을 근거처럼 보이게 하지 않는다)."""
+    return "\n".join(
+        f"- imageEntityId={cell.entity_id}, 인물={cell.person}, 장면={cell.scene}"
+        + (f", 상황 설명={cell.situation_description}" if cell.situation_description else "")
+        for cell in cells
+    )
+
+
 def build_image_judgment_prompt(
     *,
     prompt_set: PromptSet,
     sections: Sequence[PromptSection],
-    situational_images: list[SituationalImage],
+    scope: Literal["character", "story"],
+    assistant_label: str,
+    image_lines: str,
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
 ) -> str:
-    """판단 프롬프트를 조립한다 — 상황별 이미지 매칭(캐릭터 챗 전용).
+    """판단 프롬프트를 조립한다 — 이번 턴에 붙일 그림 하나 고르기. 캐릭터 상황별 이미지(`scope="character"`,
+    후보 = `situational_image_lines`)와 스토리 미디어 북 칸(`scope="story"`, 후보 = `media_cell_image_lines`)이
+    같은 채널을 쓴다.
 
-    등록된 이미지의 노출 조건(trigger_condition)과 이번 턴까지의 대화를 근거로
-    LLMClient.generateStructured()가 ImageMatchJudgmentResult(구조화 출력)로 매칭되는 이미지가
-    있는지 판단하게 한다. 목록을 order 오름차순으로 제시하고, 여러 조건이 동시에 충족돼도
-    응답은 항상 단수이므로 더 앞(우선순위가 높은) 이미지 하나만 고르도록 명시적으로 지시한다.
+    후보 목록과 이번 턴까지의 대화를 근거로 LLMClient.generateStructured()가 ImageMatchJudgmentResult(구조화
+    출력)로 하나를 고른다. 응답은 항상 단수라 여러 후보가 맞을 때의 고르는 법은 레인 문안(DB)이 정한다 — 현재
+    문안은 캐릭터 레인이 목록에서 더 앞의 하나를, story 레인이 상황 설명이 이번 턴과 가장 구체적으로 맞는 칸
+    하나를 고르게 지시한다(칸 목록의 축 순서는 우선순위가 아니다).
+
+    `assistant_label` 은 레인이 게시 검증하는 라벨을 넘긴다 — 캐릭터는 `character_assistant_label`, 스토리는
+    `story_assistant_label`(story 레인 게시 검증은 캐릭터 라벨을 보지 않는다).
+
+    히스토리 본문의 미디어 북 태그는 생성 빌더와 같은 이유로 지운다(스토리 첫 메시지가 칸 id 형태 태그를 담는다.
+    태그가 없는 글은 바이트 그대로다).
+
+    렌더 결과가 비면 `PromptRenderError` — 레인에 이 채널 행이 없는 세트(배포 직후 활성 세트 캐시에 남은 옛
+    story 세트)로는 빈 프롬프트로 판정을 부르지 않고 그 턴의 그림만 포기하게 한다(`fold_memory` 와 같은 가드).
     """
-    image_lines = "\n".join(
-        f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}"
-        for image in situational_images
-    )
     turn_lines = [
-        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.character_assistant_label}: "
-        f"{message.content}"
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: "
+        f"{strip_media_tags(message.content)}"
         for message in history
     ]
     turn_lines.append(f"{prompt_set.user_label}: {user_message}")
-    turn_lines.append(f"{prompt_set.character_assistant_label}: {assistant_message}")
+    turn_lines.append(f"{assistant_label}: {assistant_message}")
 
     values = {
         "image_lines": image_lines,
         "turn_lines": "\n".join(turn_lines),
     }
-    return render_prompt_channel(sections, channel="image_judgment", scope="character", values=values)
+    prompt = render_prompt_channel(sections, channel="image_judgment", scope=scope, values=values)
+    if not prompt:
+        raise PromptRenderError(f"channel='image_judgment' scope={scope!r} 렌더 결과가 비었다 — 이 레인 세트에 행이 없다")
+    return prompt
 
 
 class ImageMatchJudgmentResult(BaseModel):

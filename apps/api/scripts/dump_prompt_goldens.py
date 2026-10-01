@@ -28,6 +28,7 @@ from typing import Any, get_args
 from uuid import UUID
 
 from api.chat.prompt_builder import (
+    MediaCellCandidate,
     PromptLane,
     build_ending_judgment_prompt,
     build_generation_prompt,
@@ -35,9 +36,12 @@ from api.chat.prompt_builder import (
     build_stat_judgment_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
+    media_cell_image_lines,
+    situational_image_lines,
     system_instruction_for,
 )
 from api.content.publish import (
+    MediaBookFilterCell,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
 )
@@ -59,6 +63,8 @@ _AFFECTION_ENTITY_ID = UUID("11111111-1111-1111-1111-111111111111")
 _STAMINA_ENTITY_ID = UUID("22222222-2222-2222-2222-222222222222")
 _IMAGE_ENTITY_ID_SMILE = UUID("33333333-3333-3333-3333-333333333333")
 _IMAGE_ENTITY_ID_ANGRY = UUID("44444444-4444-4444-4444-444444444444")
+_MEDIA_CELL_ENTITY_ID_ROOFTOP = UUID("55555555-5555-5555-5555-555555555555")
+_MEDIA_CELL_ENTITY_ID_CLASSROOM = UUID("66666666-6666-6666-6666-666666666666")
 
 CHARACTER_PROMPT = "너는 밤늦게 옥상에서 마주친 낯선 사람이다. 말수는 적지만 관찰력이 좋다."
 CHARACTER_NAME = "밤의 목격자"
@@ -89,6 +95,28 @@ DEVELOPMENT_EXAMPLE: dict[str, Any] = {
     "userLine": "문을 두드려 본다.",
     "assistantLine": "안에서는 아무 대답도 들리지 않는다. 손잡이가 잠겨 있다.",
 }
+
+
+# 미디어 북 이미지 태그가 든 프롤로그·대화 기록. 태그는 화면에서만 이미지가 되고 모델로 가는 사본에서는
+# 지워져야 한다 — 빈 줄 사이에 홀로 선 태그 줄은 빈 줄 하나로 접히고, 글 맨 앞 태그 줄은 사라지고, 줄 중간
+# 태그는 글자만 사라진다. 미디어 북 태그가 아닌 `{{user}}` 는 그대로 남는다.
+STORY_PROLOGUE_WITH_MEDIA_TAGS = "옥상 문은 살짝 열려 있다.\n\n{{img::민아/옥상}}\n\n바람에 종잇조각 하나가 팔랑인다."
+# 태그 없이 빈 줄이 연달아 있는 글. 태그를 지우며 생긴 빈 줄만 접어야 하므로 이 글은 그대로 나가야 한다.
+STORY_PROLOGUE_WITH_BLANK_LINES = "옥상 문은 살짝 열려 있다.\n\n\n바람에 종잇조각 하나가 팔랑인다."
+
+
+def _story_history_with_media_tags() -> list[ChatMessage]:
+    return [
+        ChatMessage(
+            role=ChatMessageRole.ASSISTANT,
+            content="{{img::55555555-5555-5555-5555-555555555555}}\n옥상 문은 살짝 열려 있다. {{img::민아/옥상}}바람이 분다.",
+        ),
+        ChatMessage(role=ChatMessageRole.USER, content="{{user}}는 문을 두드려 본다."),
+    ]
+
+
+def _story_history_with_blank_lines() -> list[ChatMessage]:
+    return [ChatMessage(role=ChatMessageRole.ASSISTANT, content="안에서는 인기척이 없다.\n\n\n발소리만 멀어진다.")]
 
 
 def _character_history() -> list[ChatMessage]:
@@ -137,6 +165,24 @@ def _situational_images() -> list[SituationalImage]:
     ]
 
 
+def _media_cells() -> list[MediaCellCandidate]:
+    return [
+        MediaCellCandidate(
+            entity_id=_MEDIA_CELL_ENTITY_ID_ROOFTOP, person="민아", scene="옥상", situation_description="난간에 기대 웃는다"
+        ),
+        MediaCellCandidate(entity_id=_MEDIA_CELL_ENTITY_ID_CLASSROOM, person="민아", scene="교실", situation_description=""),
+    ]
+
+
+def _media_book_filter_cells() -> list[MediaBookFilterCell]:
+    """발행 심사 칸 줄의 세 모양 — 상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음."""
+    return [
+        MediaBookFilterCell(person="민아", scene="옥상", situation_description="난간에 기대 웃는다", unlock_hint="노을 지는 옥상"),
+        MediaBookFilterCell(person="민아", scene="교실", situation_description="", unlock_hint="비 오는 날"),
+        MediaBookFilterCell(person="준", scene="교실", situation_description="", unlock_hint=""),
+    ]
+
+
 def _starting_setup() -> StartingSetup:
     return StartingSetup(name="첫 만남", prologue=STORY_PROLOGUE)
 
@@ -149,7 +195,7 @@ def _starting_setup() -> StartingSetup:
 # 활성 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다. 레인 배정은
 # 채널→레인 매핑 그대로다 — system/generation은
 # scope(캐릭터/스토리)로, stat_judgment·ending_judgment는 story로, image_judgment는
-# character로, publish_filter는 publish_filter로 고정.
+# character로(스토리 미디어 북 칸 판정만 story), publish_filter는 publish_filter로 고정.
 
 GoldenBuilder = Callable[[PromptSet, list[PromptSection]], str]
 
@@ -331,6 +377,54 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             shortcut_prompt=None,
         ),
     ),
+    # -- 생성 프롬프트: 미디어 북 태그 제거 --
+    # 아래 두 파일은 이관 전 코드에서 뜬 것이 아니라 기대 텍스트를 손으로 적은 것이다(이관 전에는 태그
+    # 제거가 없었다). 그래서 `main()` 으로 다시 뜨면 안 되는 이유가 하나 더 생긴다 — 렌더러가 내는 값을
+    # 정답으로 덮으면 손으로 적은 기대가 사라진다.
+    (
+        "generation_story_basic_media_tags.txt",
+        "story",
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
+            prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=None,
+            development_examples=[],
+            user_goal=None,
+            rules=None,
+            custom_prompt=None,
+            prologue=STORY_PROLOGUE_WITH_MEDIA_TAGS,
+            history=_story_history_with_media_tags(),
+            user_message=USER_MESSAGE,
+            user_persona="",
+            memory_note="",
+            memory_summary="",
+            keyword_note_texts=None,
+            shortcut_prompt=None,
+        ),
+    ),
+    (
+        "generation_story_basic_blank_lines.txt",
+        "story",
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
+            prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=None,
+            development_examples=[],
+            user_goal=None,
+            rules=None,
+            custom_prompt=None,
+            prologue=STORY_PROLOGUE_WITH_BLANK_LINES,
+            history=_story_history_with_blank_lines(),
+            user_message=USER_MESSAGE,
+            user_persona="",
+            memory_note="",
+            memory_summary="",
+            keyword_note_texts=None,
+            shortcut_prompt=None,
+        ),
+    ),
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
     (
         "judgment_stat_filled.txt",
@@ -388,7 +482,9 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
-            situational_images=_situational_images(),
+            scope="character",
+            assistant_label=ps.character_assistant_label,
+            image_lines=situational_image_lines(_situational_images()),
             history=_character_history(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
@@ -400,8 +496,26 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
-            situational_images=[],
+            scope="character",
+            assistant_label=ps.character_assistant_label,
+            image_lines=situational_image_lines([]),
             history=[],
+            user_message=USER_MESSAGE,
+            assistant_message=ASSISTANT_MESSAGE,
+        ),
+    ),
+    # 스토리 미디어 북 칸 판정 — 위 캐릭터 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다.
+    # 상황 설명이 있는 칸과 없는 칸, 칸 id 형태·이름 형태 태그가 든 대화 기록(판정에는 실리지 않는다).
+    (
+        "judgment_media_cell_filled.txt",
+        "story",
+        lambda ps, sections: build_image_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
+            scope="story",
+            assistant_label=ps.story_assistant_label,
+            image_lines=media_cell_image_lines(_media_cells()),
+            history=_story_history_with_media_tags(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
         ),
@@ -451,6 +565,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
         ),
     ),
     (
@@ -469,6 +584,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=None,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[],
+            media_cells=[],
         ),
     ),
     # `development_example`(단수 레거시)과 `development_examples`(복수 신규)는 대각선
@@ -493,6 +609,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
         ),
     ),
     (
@@ -511,6 +628,28 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
+        ),
+    ),
+    # 미디어 북이 있는 스토리 — 위 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다. 칸 줄의 세 모양
+    # (상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음). 칸이 없는 위 네 케이스는 이 섹션이 빠져 바이트가 그대로다.
+    (
+        "publish_filter_story_media_book.txt",
+        "publish_filter",
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
+            name=STORY_NAME,
+            one_liner=STORY_ONE_LINER,
+            setting_text=STORY_SETTING_TEXT,
+            development_example=STORY_DEVELOPMENT_EXAMPLE_TEXT,
+            custom_prompt=STORY_CUSTOM_PROMPT,
+            development_examples=[DEVELOPMENT_EXAMPLE],
+            user_goal=STORY_USER_GOAL,
+            rules=STORY_RULES,
+            detail_description=STORY_DETAIL_DESCRIPTION,
+            starting_setups=[_starting_setup()],
+            media_cells=_media_book_filter_cells(),
         ),
     ),
 ]

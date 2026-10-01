@@ -21,6 +21,9 @@ from api.db.models import (
     Genre,
     KeywordNote,
     LogicalOp,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     ModerationStatus,
     Shortcut,
     StartingSetup,
@@ -324,5 +327,145 @@ async def test_ending_rule_rejects_neither_ending_nor_group_set(db_session: Asyn
     )
     db_session.add(rule)
 
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+# `alembic check` 는 모델과 마이그레이션의 UNIQUE 가 일치하는지만 본다. 제약이 실제로 무엇을 막고 무엇을
+# 허용하는지(같은 버전만 막고 다른 버전·같은 이름은 허용)는 아래 테스트들이 고정하고, 이 부류는 src 를
+# 실행하지 않아 지워도 커버리지가 떨어지지 않는다.
+@pytest.mark.parametrize(
+    "axis_model",
+    [pytest.param(MediaBookPerson, id="person"), pytest.param(MediaBookScene, id="scene")],
+)
+async def test_media_book_axis_rejects_second_row_for_same_entity_in_one_version(
+    db_session: AsyncSession, axis_model: type[MediaBookPerson] | type[MediaBookScene]
+) -> None:
+    """Cells point at an axis row by entity_id, so one version may hold that entity_id once.
+    The same entity_id in another version is how a row survives publish, and a repeated name
+    is left to request validation (a name swap inside one save would trip a DB constraint)."""
+    draft = await _make_story_draft(db_session)
+    other_version = ContentVersion(content_id=draft.content_id, detail_description="다른 버전")
+    db_session.add(other_version)
+    await db_session.flush()
+
+    entity_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            axis_model(entity_id=entity_id, content_version_id=draft.id, name="하나", order=0),
+            axis_model(entity_id=entity_id, content_version_id=other_version.id, name="하나", order=0),
+            axis_model(entity_id=uuid.uuid4(), content_version_id=draft.id, name="하나", order=1),
+        ]
+    )
+    await db_session.flush()
+
+    db_session.add(axis_model(entity_id=entity_id, content_version_id=draft.id, name="둘", order=2))
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def _make_cell_image(db_session: AsyncSession, draft: ContentVersion) -> Asset:
+    content = await db_session.get(Content, draft.content_id)
+    assert content is not None
+    image = Asset(
+        owner_user_id=content.creator_user_id, storage_key=f"uploads/{uuid.uuid4()}.webp", kind=AssetKind.ORIGINAL
+    )
+    db_session.add(image)
+    await db_session.flush()
+    return image
+
+
+async def test_media_book_cell_rejects_second_row_for_same_entity_in_one_version(
+    db_session: AsyncSession,
+) -> None:
+    """The duplicate sits on a different person × scene spot, so only the entity_id
+    constraint can refuse it."""
+    draft = await _make_story_draft(db_session)
+    other_version = ContentVersion(content_id=draft.content_id, detail_description="다른 버전")
+    db_session.add(other_version)
+    await db_session.flush()
+    image = await _make_cell_image(db_session, draft)
+
+    entity_id = uuid.uuid4()
+    person, scene = uuid.uuid4(), uuid.uuid4()
+    db_session.add_all(
+        [
+            MediaBookCell(
+                entity_id=entity_id,
+                content_version_id=draft.id,
+                person_entity_id=person,
+                scene_entity_id=scene,
+                image_asset_id=image.id,
+            ),
+            MediaBookCell(
+                entity_id=entity_id,
+                content_version_id=other_version.id,
+                person_entity_id=person,
+                scene_entity_id=scene,
+                image_asset_id=image.id,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    db_session.add(
+        MediaBookCell(
+            entity_id=entity_id,
+            content_version_id=draft.id,
+            person_entity_id=person,
+            scene_entity_id=uuid.uuid4(),
+            image_asset_id=image.id,
+        )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+async def test_media_book_cell_rejects_second_image_in_same_person_scene(db_session: AsyncSession) -> None:
+    """One person × scene spot holds one image per version. The same spot in another version
+    and the same person in another scene are separate spots."""
+    draft = await _make_story_draft(db_session)
+    other_version = ContentVersion(content_id=draft.content_id, detail_description="다른 버전")
+    db_session.add(other_version)
+    await db_session.flush()
+    image = await _make_cell_image(db_session, draft)
+
+    person, scene = uuid.uuid4(), uuid.uuid4()
+    db_session.add_all(
+        [
+            MediaBookCell(
+                entity_id=uuid.uuid4(),
+                content_version_id=draft.id,
+                person_entity_id=person,
+                scene_entity_id=scene,
+                image_asset_id=image.id,
+            ),
+            MediaBookCell(
+                entity_id=uuid.uuid4(),
+                content_version_id=other_version.id,
+                person_entity_id=person,
+                scene_entity_id=scene,
+                image_asset_id=image.id,
+            ),
+            MediaBookCell(
+                entity_id=uuid.uuid4(),
+                content_version_id=draft.id,
+                person_entity_id=person,
+                scene_entity_id=uuid.uuid4(),
+                image_asset_id=image.id,
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    db_session.add(
+        MediaBookCell(
+            entity_id=uuid.uuid4(),
+            content_version_id=draft.id,
+            person_entity_id=person,
+            scene_entity_id=scene,
+            image_asset_id=image.id,
+        )
+    )
     with pytest.raises(IntegrityError):
         await db_session.flush()

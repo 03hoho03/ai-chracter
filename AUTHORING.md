@@ -21,12 +21,33 @@
 - 커스텀 프롬프트(`customPrompt`) → 같은 `base_content` 자리의 `custom` 변형 행. 템플릿이 커스텀이면 `_story_generation_variant`가 `custom`을 고르고, `select_sections_for_render`가 같은 자리의 기본 행 대신 그 행을 실어 설정 글이 빠진다. 빌더에서도 커스텀을 고르면 스토리 설정 입력란이 숨는다(`widgets/build-story/ui/SettingTab.tsx`, 스키마는 `features/build-story/model/schema.ts`의 `storySettingSchema`).
 - 규칙(`rules`), 사용자의 역할과 목표(`userGoal`) → `rules`·`user_goal` 자리. 템플릿 변형이 없는 자리라 어느 템플릿에서나 실린다.
 - 전개 예시(`developmentExamples`, 최대 3쌍) → `development_examples` 자리(값 `example_lines`). 쌍마다 `prompt_set.user_label`과 `prompt_set.story_example_label`을 코드가 붙인다. 대화 기록 쪽 라벨은 `story_assistant_label`이라 둘이 다르다(의도된 현재 동작).
-- 시작설정의 프롤로그(`startingSetups[].prologue`) → `prologue` 자리, **매 턴**.
-- 시작상황(`startingSetups[].openingMessage`) → **전용 자리가 없다.** 방을 만들 때 `_insert_opening_message`가 `opening_message or prologue`를 첫 어시스턴트 메시지로 넣고, 그 뒤로는 대화 기록(`history` 자리, 값 `history_lines`)의 일부로 실린다. 시작상황이 비어 있으면 프롤로그가 첫 메시지가 되므로 같은 글이 `prologue` 자리와 대화 기록 맨 앞에 두 번 실린다.
+- 시작설정의 프롤로그(`startingSetups[].prologue`) → `prologue` 자리, **매 턴**. 미디어 북 태그는 지운 뒤 싣는다(아래 미디어 북 태그).
+- 시작상황(`startingSetups[].openingMessage`) → **전용 자리가 없다.** 방을 만들 때 `_insert_opening_message`가 `opening_message or prologue`를 첫 어시스턴트 메시지로 넣고, 그 뒤로는 대화 기록(`history` 자리, 값 `history_lines`)의 일부로 실린다. 시작상황이 비어 있으면 프롤로그가 첫 메시지가 되므로 같은 글이 `prologue` 자리와 대화 기록 맨 앞에 두 번 실린다. 첫 메시지는 태그를 칸 id 형태로 바꿔 저장되고, 대화 기록으로 실릴 때 태그가 지워진다.
 - 키워드북(`keywordNotes[].infoText`) → `keyword_notes` 자리(값 `keyword_note_lines`), 매칭된 노트만. 매칭은 `api/chat/keyword_notes.py`의 `match_keyword_notes`가 **이번 턴 사용자 메시지**에 트리거 키워드가 부분 문자열로 들어 있는지만 본다. 응답과 지난 대화는 보지 않는다. 적용 범위(`startingSetupId`, `null`이면 스토리 전체)는 호출부의 DB 조회가 좁힌다. 대화 기록보다 **뒤**에 실린다.
 - 단축어(`shortcuts[].prompt`) → 실행된 턴에만 `shortcut_prompt` 자리. FE는 단축어를 고르면 그 `prompt` 글을 사용자 메시지로 전송한다(`widgets/chat-room/ui/ChatRoomView.tsx`의 `handleShortcutSelect`). 그래서 같은 글이 사용자 메시지로 저장·표시되고, 그 턴의 키워드 매칭과 스탯 판정 입력에도 사용자 발화로 들어간다.
 - 대화 프로필(사용자가 방에서 고른 것) → `user_persona` 자리. 빌더 필드가 아니다.
-- 생성 프롬프트에 **없는 것**: 이름·한줄소개, 플레이가이드(`playguide`), 추천 답변(`suggestedReplies`), 스탯 정의와 현재 값, 엔딩, 등록 설명. 이야기를 쓰는 모델은 게이지 값을 모른다 — 튜토리얼이 "상태창에 수치를 쓰게 하지 말라"고 가르치는 근거가 이것이다.
+- 생성 프롬프트에 **없는 것**: 이름·한줄소개, 플레이가이드(`playguide`), 추천 답변(`suggestedReplies`), 스탯 정의와 현재 값, 엔딩, 등록 설명, 미디어 북(칸 이름·상황 설명·해금 힌트). 이야기를 쓰는 모델은 게이지 값을 모른다 — 튜토리얼이 "상태창에 수치를 쓰게 하지 말라"고 가르치는 근거가 이것이다. 이야기를 쓰는 모델은 어떤 그림이 붙을지도 모르고, 그림은 아래 칸 판정이 응답 뒤에 따로 고른다.
+
+### 스토리 — 미디어 북
+
+미디어 북은 스토리 버전에 딸린 인물 축 × 장면 축 표이고, 칸 하나에 이미지 한 장이 놓인다(`api/db/models/story.py`의 `MediaBookCell`, 좌표 UNIQUE). 칸마다 작성자가 상황 설명(100자)·해금 힌트(20자)·대화 중 노출 제외(`exclude_from_chat`)를 적는다. 칸은 버전당 `MEDIA_BOOK_MAX_CELLS`(50)개까지다. 시드 JSON에는 미디어 북 자리가 없고 `upsert.py`는 빈 미디어 북으로 검증하므로, 미디어 북이 있는 작품은 빌더로만 만든다.
+
+### 스토리 — 미디어 북 태그
+
+- 문법은 `{{img::인물/장면}}`이다. 슬래시가 정확히 하나여야 하고, 이름은 앞뒤 공백을 떼고 NFC로 맞춰 비교한다. 슬래시가 없거나 둘인 `{{…}}`는 태그가 아니라 글자 그대로 남는다. 문법과 태그를 지운 자리의 줄 정리 규칙은 `api/content/media_tags.py` 모듈 docstring에 있다.
+- 그림이 되는 필드는 넷뿐이다: 시작상황(비었으면 프롤로그)이 복사된 첫 메시지, 스토리 상세의 프롤로그, 엔딩 에필로그, 등록 설명. 화면으로 나갈 때 그 글이 속한 버전(방이면 방이 고정한 버전, 상세면 현재 발행본)의 칸 id 형태로 바뀌고(`api/content/media_book.py`의 `normalize_texts`), 그 버전에 없는 이름의 태그는 지워져 아무것도 보이지 않는다. 오타 난 태그가 원문으로 드러나지 않으니, 그림이 안 나오면 인물·장면 이름부터 대조한다.
+- 다른 필드(스토리 설정·규칙·키워드북 등)에 쓴 태그는 그림이 되지 않고, 지워지지도 않은 채 그 필드의 자리로 모델에 실린다.
+- 모델로 가는 사본에서는 지운다(`strip_media_tags`). 생성 프롬프트의 `prologue` 자리와 대화 기록의 모든 줄, 엔딩 판정과 칸 판정의 대화 기록이 대상이다. 스탯 판정은 대화 기록을 싣지 않아 작성자 글이 들어가지 않는다. 이번 턴 사용자 메시지는 사용자가 방금 친 글이라 그대로 싣는다. 지우는 이유는 태그가 화면에서만 그림이 되는 표지라서다 — 모델이 받으면 태그를 흉내 내거나 인물·장면 이름이 문맥에 섞인다(`build_story_generation_prompt` docstring).
+- 첫 메시지와 에필로그에 태그로 나온 칸은 보관함에서 본 칸으로 해금된다(`_insert_opening_message`, 엔딩 도달 경로).
+
+### 스토리 — 미디어 북 칸 판정 (`build_image_judgment_prompt`, `scope="story"`, 매 턴)
+
+- 캐릭터 상황별 이미지 판정과 같은 `image_judgment` 채널을 story 레인 문안으로 쓴다. 후보 줄(`media_cell_image_lines`)은 칸마다 entity_id, 인물 이름, 장면 이름, 그리고 비어 있지 않으면 상황 설명이다. 해금 힌트는 싣지 않는다 — 보관함에서 아직 못 본 칸 아래 보이는 글일 뿐 판정 근거가 아니다. 그래서 상황 설명이 빈 칸은 인물·장면 이름만으로 골라진다.
+- 후보는 방이 고정한 버전의 칸 중 노출 제외가 아닌 것이고, 빌더 축 순서(인물 → 장면)로 싣는다. 이 순서는 우선순위가 아니다 — 응답은 칸 하나라, 여러 칸이 맞으면 상황 설명이 이번 턴과 가장 구체적으로 맞는 칸 하나를 고르라고 문안이 지시한다(목록에서 앞의 것을 고르는 캐릭터 문안과 다르다). 맞는 칸이 없으면 그림을 붙이지 않는다. 문안의 출처는 이 판정 채널을 story 레인에 더한 마이그레이션의 `JUDGMENT_INSTRUCTION_BODY`이고, 운영에서 바꾸는 곳은 어드민 `/prompt-sets`다. 후보가 없으면(미디어 북 없음, 전부 노출 제외) 판정을 부르지 않는다.
+- 입력 대화는 요약 윈도우를 적용한 대화 기록(태그 제거)과 이번 턴의 사용자 메시지·응답이다.
+- 스탯 판정과 동시에 부르고, **최초 엔딩 도달 뒤에도 계속 돈다**(스탯·엔딩 판정은 엔딩 뒤 멈춘다). 재생성도 칸 판정을 다시 돈다.
+- 조회·렌더·LLM 실패는 그 턴의 그림만 포기하고 스탯·엔딩 판정과는 무관하다(`_prepare_media_cell_judgment`, `_judge_media_cell`). story 레인 세트에 이 채널 행이 없으면 렌더가 비어 판정을 건너뛴다.
+- 고른 칸은 응답 메시지의 `image_id`로 저장되고, 처음 본 칸은 보관함 해금 기록(`story_media_exposures`)에 남는다. 노출 제외 칸은 대화 중에는 나오지 않고 첫 메시지·에필로그 태그로만 해금된다. 그 길도 없는 못 본 노출 제외 칸은 보관함 목록에서 빠진다(`get_story_image_archive`). 못 본 칸은 발행 때 만든 블러본과 해금 힌트로 보인다.
 
 ### 캐릭터 — 생성 호출 (`build_generation_prompt`, 매 턴)
 
@@ -40,7 +61,7 @@
 - 플레이가이드는 `get_play_guide`가 따로 내려 주는 값이고 어떤 모델 호출에도 들어가지 않는다. 채팅방 더보기 메뉴의 플레이가이드 모달(`features/play-guide`)이 보여 준다.
 - 추천 답변은 첫 사용자 메시지 전까지만 칩으로 보이고(`shouldShowSuggestedReplies`), 누르면 그 글이 곧바로 사용자 메시지로 전송된다. 목록 자체는 모델이 읽지 않는다.
 - 프롤로그는 스토리 상세의 시작설정 선택 영역에도 보인다(`widgets/content-detail/ui/StoryDetailBody.tsx`).
-- 엔딩힌트는 엔딩 컬렉션 모달에서 아직 도달하지 못한 엔딩 아래에 보인다(`features/ending-collection/ui/EndingCollectionModal.tsx`). 에필로그는 모델이 쓰지 않고 저장된 글이 그대로 `ChatEndingReachedEvent`로 나간다.
+- 엔딩힌트는 엔딩 컬렉션 모달에서 아직 도달하지 못한 엔딩 아래에 보인다(`features/ending-collection/ui/EndingCollectionModal.tsx`). 에필로그는 모델이 쓰지 않고 저장된 글이 그대로 `ChatEndingReachedEvent`로 나간다(미디어 북 태그만 칸 id 형태로 바뀐다).
 
 ## 2. 스탯 판정
 
@@ -61,7 +82,7 @@
 - 판정 모델의 입력: 엔딩의 판단 프롬프트와 대화 기록, 이번 턴. 스탯 값·스탯 정의·스토리 설정은 싣지 않는다. 판정 윈도우 설정(`memory_window_ending_judgment`, 기본 꺼짐)을 켜면 요약이 덮은 원문 대신 현재 요약을 싣는다.
 - 그래서 판단 프롬프트는 규칙이 잴 수 없는 서사적 사건만 묻는다. 규칙의 임계값을 판단 프롬프트가 되물으면 모델이 그 숫자를 서사로 재해석해 발동을 거부한 실측이 있다(`test_seed_ending_judgment_prompts_do_not_restate_rule_thresholds` docstring).
 - 목록 순서는 **같은 판정 턴 안의** 우선순위일 뿐이다. 노말·배드가 루트와 같은 게이트에서 판단 프롬프트만으로 참이 되면 첫 판정 턴에 방이 끝나 뒤의 루트 기회가 사라진다. 예시 작품은 노말·배드의 게이트를 늦추고, 초기값에서 거짓인 시계 스탯(`perTurnDelta`) 조건을 넣어 이것을 막는다. 게이트는 턴 수로 판정되므로 메시지 수정으로 카운터가 앞서간 방에서도 이른 발동을 막는다.
-- 빌더 미리보기(`_stream_preview_turn`)는 같은 순서(생성 → 스탯 판정 → 엔딩 판정)와 같은 엔진(`apply_stat_changes`·`evaluate_rule_list`·`is_ending_check_due`·`match_keyword_notes`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다.
+- 빌더 미리보기(`_stream_preview_turn`)는 같은 순서(생성 → 스탯 판정 → 엔딩 판정)와 같은 엔진(`apply_stat_changes`·`evaluate_rule_list`·`is_ending_check_due`·`match_keyword_notes`)을 쓰고, 방 상태만 DB 대신 Redis(`api/chat/preview_session.py`)에 둔다. 미리보기는 페이로드의 첫 시작설정으로만 시작한다(`_build_preview_start_state`). 상황별 이미지 매칭은 미리보기에서 돌지 않는다. 미디어 북 칸 판정은 돌고, 후보는 페이로드의 칸 중 노출 제외가 아니고 요청자 소유의 준비된 이미지가 붙은 칸이다(`_prepare_preview_media_cell_judgment`).
 
 ## 4. 요약 접기와 첫 메시지 고정
 
@@ -72,7 +93,11 @@
 
 ## 5. 발행 자동 심사
 
-- 스토리: `api/content/publish.py`의 `build_story_publish_filter_prompt`. 이름·한줄소개·스토리 설정·커스텀 프롬프트·규칙·사용자 목표·전개 예시·등록 설명·시작설정 이름과 프롤로그, 그리고 대표 이미지(같은 호출의 이미지 파트, `_load_story_publish_filter_images`).
+- 스토리: `api/content/publish.py`의 `build_story_publish_filter_prompt`. 이름·한줄소개·스토리 설정·커스텀 프롬프트·규칙·사용자 목표·전개 예시·등록 설명·시작설정 이름과 프롤로그, 미디어 북 칸 줄, 그리고 대표 이미지와 미디어 북 칸 그림(같은 호출의 이미지 파트, `_load_story_publish_filter_images`).
+  - 칸 줄은 `media_book` 자리에 칸마다 `- 인물/장면: 상황 설명 (해금 힌트: …)` 꼴로 실린다. 상황 설명·힌트가 빈 칸은 그 부분을 빼고, 칸이 없으면 섹션째 빠진다. 해금 힌트는 대화 중 판정에는 안 쓰이지만 보관함에서 다른 플레이어에게 보이는 글이라 심사한다.
+  - 칸 그림은 대표 이미지 뒤에 칸마다 축소본(`_thumb.webp`, 긴 변 512px) 한 장씩, 칸 줄과 같은 축 순서(인물 → 장면)로 실린다. 원본을 50장 싣지 않으려고 축소본을 쓴다. 축소본을 하나라도 못 읽으면 심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다.
+  - **노출 제외 칸도 심사한다.** 대화 중에만 안 나올 뿐 태그·보관함으로 보이는 그림이다.
+  - 심사 앞의 필드 검증(`validate_story_publish`)은 칸 수 상한 초과(`mediaBook.cells`)와 그 버전에 없는 인물·장면을 가리키는 칸(`mediaBook.orphanCells`)을 400 `missingFields`로 막는다. 블러본은 발행 때 만든다.
 - 캐릭터: `build_character_publish_filter_prompt`. 이름·한줄소개·인트로·예시 대화·캐릭터 프롬프트·등록 설명, 그리고 대표 이미지와 상황별 이미지(`_load_publish_filter_images`).
 - **심사 밖**: 키워드북, 단축어, 스탯 정의, 엔딩(판단 프롬프트·에필로그·힌트), 시작상황, 추천 답변, 플레이가이드, 상황별 이미지의 노출 상황 문장.
 - 판정 축(선정성·폭력성·혐오 표현·불법 콘텐츠)은 코드가 아니라 DB의 발행 심사 문안에 있다(어드민 `/prompt-sets`의 발행 심사 레인). 결과 스키마는 `PublishFilterResult`(`passed`, `reason`).

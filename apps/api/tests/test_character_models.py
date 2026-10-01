@@ -1,7 +1,9 @@
 import uuid
 from datetime import timezone
 
+import pytest
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import (
@@ -104,3 +106,31 @@ async def test_situational_image_keeps_entity_id_stable_across_versions(
     assert image.id is not None
     assert image.id != entity_id
     assert image.entity_id == entity_id
+
+
+async def test_situational_image_rejects_second_row_for_same_entity_in_one_version(
+    db_session: AsyncSession,
+) -> None:
+    """One entity_id is one builder row per version. The same entity_id in *another* version
+    is how a row survives publish, so only the same-version pair is refused."""
+    _user, _thumbnail, draft = await _make_character_draft(db_session)
+    other_version = ContentVersion(content_id=draft.content_id, detail_description="다른 버전")
+    db_session.add(other_version)
+    await db_session.flush()
+
+    entity_id = uuid.uuid4()
+    db_session.add_all(
+        [
+            SituationalImage(entity_id=entity_id, content_version_id=draft.id, trigger_condition="조건", order=0),
+            SituationalImage(
+                entity_id=entity_id, content_version_id=other_version.id, trigger_condition="조건", order=0
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    db_session.add(
+        SituationalImage(entity_id=entity_id, content_version_id=draft.id, trigger_condition="중복", order=1)
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()

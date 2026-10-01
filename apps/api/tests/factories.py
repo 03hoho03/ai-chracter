@@ -40,8 +40,12 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Ending,
     Genre,
     LegalDocument,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     ModerationStatus,
     StartingSetup,
     StatDef,
@@ -218,6 +222,94 @@ async def _make_asset(
     return asset
 
 
+async def _add_media_book_cell(
+    db_session: AsyncSession,
+    content_version_id: uuid.UUID,
+    image_asset_id: uuid.UUID,
+    blurred_asset_id: uuid.UUID | None = None,
+) -> MediaBookCell:
+    """인물 하나·장면 하나와 그 자리의 칸 하나를 버전에 넣는다. 칸의 글·스위치는 기본값과 다른 값을
+    넣어 복제·복원 테스트가 "그대로 옮겼는가"를 기본값과 구분할 수 있게 한다."""
+    person = MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=content_version_id, name="민아", order=0)
+    scene = MediaBookScene(entity_id=uuid.uuid4(), content_version_id=content_version_id, name="교실", order=0)
+    cell = MediaBookCell(
+        entity_id=uuid.uuid4(),
+        content_version_id=content_version_id,
+        person_entity_id=person.entity_id,
+        scene_entity_id=scene.entity_id,
+        image_asset_id=image_asset_id,
+        blurred_asset_id=blurred_asset_id,
+        situation_description="창가에서 웃는다",
+        unlock_hint="첫 만남",
+        exclude_from_chat=True,
+    )
+    db_session.add_all([person, scene, cell])
+    await db_session.flush()
+    return cell
+
+
+async def _add_named_media_cell(
+    db_session: AsyncSession,
+    version_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    person: str,
+    scene: str,
+    *,
+    entity_id: uuid.UUID | None = None,
+    size: tuple[int, int] | None = (300, 400),
+    situation_description: str = "",
+    exclude_from_chat: bool = False,
+) -> tuple[MediaBookCell, Asset]:
+    """버전에 `person`×`scene` 칸 하나를 READY 원본 자산과 함께 넣는다. 축은 이름이 같으면 다시 쓰고, 없으면
+    새로 만든다(새 축의 order 는 그 버전에 이미 있는 축 수 — 넣은 순서가 축 순서다)."""
+    person_row = await db_session.scalar(
+        sa.select(MediaBookPerson).where(
+            MediaBookPerson.content_version_id == version_id, MediaBookPerson.name == person
+        )
+    )
+    if person_row is None:
+        person_count = await db_session.scalar(
+            sa.select(sa.func.count()).select_from(MediaBookPerson).where(MediaBookPerson.content_version_id == version_id)
+        )
+        person_row = MediaBookPerson(
+            entity_id=uuid.uuid4(), content_version_id=version_id, name=person, order=person_count or 0
+        )
+        db_session.add(person_row)
+    scene_row = await db_session.scalar(
+        sa.select(MediaBookScene).where(MediaBookScene.content_version_id == version_id, MediaBookScene.name == scene)
+    )
+    if scene_row is None:
+        scene_count = await db_session.scalar(
+            sa.select(sa.func.count()).select_from(MediaBookScene).where(MediaBookScene.content_version_id == version_id)
+        )
+        scene_row = MediaBookScene(
+            entity_id=uuid.uuid4(), content_version_id=version_id, name=scene, order=scene_count or 0
+        )
+        db_session.add(scene_row)
+    asset = Asset(
+        owner_user_id=owner_user_id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.webp",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+        width=size[0] if size is not None else None,
+        height=size[1] if size is not None else None,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    cell = MediaBookCell(
+        entity_id=entity_id or uuid.uuid4(),
+        content_version_id=version_id,
+        person_entity_id=person_row.entity_id,
+        scene_entity_id=scene_row.entity_id,
+        image_asset_id=asset.id,
+        situation_description=situation_description,
+        exclude_from_chat=exclude_from_chat,
+    )
+    db_session.add(cell)
+    await db_session.flush()
+    return cell, asset
+
+
 async def _make_published(
     db_session: AsyncSession,
     *,
@@ -324,6 +416,44 @@ async def _make_published_story(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
+
+
+async def _story_with_setup(
+    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그"
+) -> tuple[uuid.UUID, Content, StartingSetup]:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    setup = StartingSetup(
+        entity_id=uuid.uuid4(),
+        content_version_id=content.current_published_version_id,
+        name="첫 만남",
+        prologue=prologue,
+        opening_message=opening_message,
+        order=1,
+    )
+    db_session.add(setup)
+    await db_session.flush()
+    return user.id, content, setup
+
+
+async def _add_epilogue_ending(db_session: AsyncSession, setup: StartingSetup, epilogue: str, order: int = 1) -> Ending:
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name=f"엔딩 {order}",
+        turn_count_gate=1,
+        judgment_prompt="떠났는가?",
+        epilogue=epilogue,
+        hint="힌트",
+        order=order,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+    return ending
 
 
 class _FakeLLMClient(LLMClient):

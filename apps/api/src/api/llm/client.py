@@ -15,10 +15,13 @@ LLMCallSite = Literal[
     "chat_stat_judgment",
     "chat_ending_judgment",
     "chat_situational_image",
+    # 스토리 미디어 북 칸 판정. 재생성도 여기로 함께 집계한다(생성과 같은 규칙).
+    "chat_media_book_image",
     "chat_memory_summary",
     "preview_generate",
     "preview_stat_judgment",
     "preview_ending_judgment",
+    "preview_media_book_image",
     "publish_filter_character",
     "publish_filter_story",
     "seed_story_generate",

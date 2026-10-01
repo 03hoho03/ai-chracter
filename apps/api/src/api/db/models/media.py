@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, SmallInteger, Text, Uuid, func
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, Integer, SmallInteger, Text, Uuid, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -54,6 +54,11 @@ class Asset(Base):
     request_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid, ForeignKey("image_generation_requests.id"), nullable=True
     )
+    # 이 자산 이미지의 픽셀 너비·높이. 화면이 이미지를 제 비율로 그리려고 쓰며, 둘은 언제나 함께
+    # 기록한다. NULL 은 이 컬럼이 생기기 전에 만들어져 아직 값을 채우지 못했거나, 원본을 읽지
+    # 못해 크기를 모르는 자산이다 — 그런 자산은 화면이 고정 비율 칸에 맞춰 그린다.
+    width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    height: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ImageGenerationRequest(Base):

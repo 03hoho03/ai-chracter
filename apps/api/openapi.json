@@ -3699,7 +3699,7 @@
           "content"
         ],
         "summary": "Update Content Draft",
-        "description": "Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data.",
+        "description": "Autosave: no\nbusiness validation (publish is where that happens) — the version-detail row is\noverwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때\n검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어\n그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab\nfields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion\ndirectly rather than the per-type detail table, since they're shared across versions,\nnot per-version snapshot data.",
         "operationId": "update_content_draft_contents__id__draft_patch",
         "parameters": [
           {
@@ -6298,7 +6298,7 @@
           "chat"
         ],
         "summary": "Regenerate Message",
-        "description": "마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별\n이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 이미지 매칭은 재실행한다\n— 노출 기록(`CharacterImageExposure`)은\n`if existing_exposure is None`으로 첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지\n않고, 새 응답 텍스트에 맞는 이미지가 붙는다. 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을\n덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.",
+        "description": "마지막 AI 응답만 새로 생성해 교체한다(기존 메시지 전송과 동일한 SSE 이벤트\n스키마). `send_message`/`edit_message`와 달리 새 턴이 아니라 같은 턴의 응답을 바꾸는\n것이므로 `_stream_new_turn`을 재사용하지 않는다 — turn_count는 증가시키지 않고, 스탯/엔딩\n판단은 재실행하지 않는다(원 응답 생성 시 이미 한 번 반영됐고, 그 반영분을 되돌릴 턴별\n이력이 없어 재실행하면 오히려 중복 적용되어 부정확해진다). 그림 판정(캐릭터 상황별 이미지·스토리 미디어\n북 칸 — 스토리는 엔딩 뒤에도)은 재실행한다 — 노출 기록(`CharacterImageExposure`·`StoryMediaExposure`)은\n첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지 않고, 새 응답 텍스트에 맞는 그림이 붙는다. 생성이 실패하면(policyWarning/error) 기존\n응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을\n덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.",
         "operationId": "regenerate_message_chat_rooms__room_id__regenerate_post",
         "parameters": [
           {
@@ -7395,6 +7395,54 @@
                     "$ref": "#/components/schemas/EndingCollectionItem"
                   },
                   "title": "Response Get Ending Collection Stories Starting Setups  Starting Setup Id  Ending Collection Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/stories/{id}/image-archive": {
+      "get": {
+        "tags": [
+          "chat"
+        ],
+        "summary": "Get Story Image Archive",
+        "description": "스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재\n발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로\n쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.\n\n대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은\n작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.\n\n이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를\n시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다.",
+        "operationId": "get_story_image_archive_stories__id__image_archive_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StoryImageArchiveItem"
+                  },
+                  "title": "Response Get Story Image Archive Stories  Id  Image Archive Get"
                 }
               }
             }
@@ -11658,6 +11706,28 @@
               }
             ],
             "title": "Imageurl"
+          },
+          "imageWidth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imagewidth"
+          },
+          "imageHeight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageheight"
           }
         },
         "type": "object",
@@ -12038,6 +12108,16 @@
               }
             ],
             "title": "Personaid"
+          },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
           },
           "createdAt": {
             "type": "string",
@@ -13483,6 +13563,16 @@
             ],
             "title": "Startingsetups"
           },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
+          },
           "versionNumber": {
             "type": "integer",
             "title": "Versionnumber"
@@ -13923,6 +14013,16 @@
               }
             ],
             "title": "Hint"
+          },
+          "mediaTagImages": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/MediaTagImage"
+            },
+            "propertyNames": {
+              "format": "uuid"
+            },
+            "type": "object",
+            "title": "Mediatagimages"
           }
         },
         "type": "object",
@@ -14409,7 +14509,8 @@
             "type": "string",
             "enum": [
               "thumbnail",
-              "situationalImage"
+              "situationalImage",
+              "mediaBook"
             ],
             "title": "Field"
           }
@@ -14939,6 +15040,273 @@
           "privacyReconsentRequired"
         ],
         "title": "MeResponse"
+      },
+      "MediaBookAxisInput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MediaBookAxisInput"
+      },
+      "MediaBookAxisItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name"
+        ],
+        "title": "MediaBookAxisItem"
+      },
+      "MediaBookCellDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Personid"
+          },
+          "sceneId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sceneid"
+          },
+          "imageAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Imageassetid"
+          },
+          "situationDescription": {
+            "type": "string",
+            "title": "Situationdescription"
+          },
+          "unlockHint": {
+            "type": "string",
+            "title": "Unlockhint"
+          },
+          "excludeFromChat": {
+            "type": "boolean",
+            "title": "Excludefromchat"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "imageWidth": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imagewidth"
+          },
+          "imageHeight": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Imageheight"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "personId",
+          "sceneId",
+          "imageAssetId",
+          "situationDescription",
+          "unlockHint",
+          "excludeFromChat",
+          "imageUrl",
+          "imageWidth",
+          "imageHeight"
+        ],
+        "title": "MediaBookCellDraftItem"
+      },
+      "MediaBookCellInput": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "personId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Personid"
+          },
+          "sceneId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Sceneid"
+          },
+          "imageAssetId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Imageassetid"
+          },
+          "situationDescription": {
+            "type": "string",
+            "maxLength": 100,
+            "title": "Situationdescription",
+            "default": ""
+          },
+          "unlockHint": {
+            "type": "string",
+            "maxLength": 20,
+            "title": "Unlockhint",
+            "default": ""
+          },
+          "excludeFromChat": {
+            "type": "boolean",
+            "title": "Excludefromchat",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "personId",
+          "sceneId",
+          "imageAssetId"
+        ],
+        "title": "MediaBookCellInput",
+        "description": "`person_id`·`scene_id` 는 같은 페이로드의 축 entity_id 다."
+      },
+      "MediaBookDraft": {
+        "properties": {
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisItem"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisItem"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookCellDraftItem"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "people",
+          "scenes",
+          "cells"
+        ],
+        "title": "MediaBookDraft"
+      },
+      "MediaBookPayload": {
+        "properties": {
+          "people": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisInput"
+            },
+            "type": "array",
+            "title": "People"
+          },
+          "scenes": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookAxisInput"
+            },
+            "type": "array",
+            "title": "Scenes"
+          },
+          "cells": {
+            "items": {
+              "$ref": "#/components/schemas/MediaBookCellInput"
+            },
+            "type": "array",
+            "title": "Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "people",
+          "scenes",
+          "cells"
+        ],
+        "title": "MediaBookPayload",
+        "description": "페이로드 안에서 끝나는 검증만 여기서 한다(자산 소유·상태와 기존 칸의 자리는 DB 를 봐야 해서\n라우터가 한다). 이름 중복을 DB 제약이 아니라 여기서 막는 이유는 `MediaBookPerson` docstring."
+      },
+      "MediaTagImage": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "width",
+          "height"
+        ],
+        "title": "MediaTagImage",
+        "description": "글 속 칸 id 형태 태그(`{{img::<칸 id>}}`)가 가리키는 그림. 응답은 `{칸 id: MediaTagImage}` 맵으로\n싣고, 맵에 없는 칸(지워졌거나 버전에 없는 칸)의 태그는 화면이 빈칸으로 둔다.\n\n`url` 은 원본 서명 URL 이다(대화 중 상황 이미지와 같다). `width`·`height` 는 자산의 픽셀 크기로 화면이\n그림이 오기 전에 높이를 잡는 데 쓰고, 크기를 모르는 자산이면 null 이다."
       },
       "ModerationActionType": {
         "type": "string",
@@ -16407,6 +16775,16 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "mediaBook": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MediaBookPayload"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -16593,6 +16971,9 @@
           },
           "visibility": {
             "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "mediaBook": {
+            "$ref": "#/components/schemas/MediaBookDraft"
           }
         },
         "type": "object",
@@ -16619,6 +17000,68 @@
           "visibility"
         ],
         "title": "StoryDraftResponse"
+      },
+      "StoryImageArchiveItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "exposed": {
+            "type": "boolean",
+            "title": "Exposed"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "width": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Width"
+          },
+          "height": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Height"
+          },
+          "personName": {
+            "type": "string",
+            "title": "Personname",
+            "default": ""
+          },
+          "sceneName": {
+            "type": "string",
+            "title": "Scenename",
+            "default": ""
+          },
+          "unlockHint": {
+            "type": "string",
+            "title": "Unlockhint",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "exposed",
+          "imageUrl"
+        ],
+        "title": "StoryImageArchiveItem",
+        "description": "스토리 미디어 북 보관함의 칸 하나. `id` 는 칸 entity_id, `exposed` 는 사용자가 채팅에서 이 칸을 봤는가다\n(대화 중 판정·첫 메시지·엔딩 에필로그). 본 칸은 `image_url` 이 원본 썸네일이고, 못 본 칸은 블러본 썸네일과\n작가가 적은 `unlock_hint`(없으면 빈 문자열)다. `width`·`height` 는 그림의 픽셀 크기(모르면 null)로 화면이\n그림이 오기 전에 높이를 잡는 데 쓴다. `person_name` 은 늘 싣고, `scene_name` 은 본 칸에만 싣는다(못 본 칸은\n빈 문자열) — 장면 이름은 무엇이 그려졌는지를 미리 알려 주므로 해금 전까지 숨기고, 인물 이름은 누구의\n그림인지만 알려 주는 안내라 남긴다."
       },
       "StoryPromptTemplate": {
         "type": "string",

@@ -13,7 +13,7 @@ from typing import Any
 
 import pytest
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 import seed_dev
 from api.db.models.auth import User
@@ -153,3 +153,18 @@ async def test_seed_content_files_is_idempotent(db_session: AsyncSession, s3_buc
         await _count(db_session, model)
         for model in (Content, ContentVersion, SituationalImage, Asset)
     ] == before
+
+
+async def test_seed_dev_main_records_mia_thumbnail_dimensions(
+    db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """샘플 캐릭터 미아의 썸네일은 `ensure_asset` 을 거치지 않고 `main` 이 직접 만든다 — 여기도 크기를 남긴다."""
+    monkeypatch.setattr(
+        seed_dev, "async_session_factory", async_sessionmaker(bind=db_session.bind, expire_on_commit=False)
+    )
+
+    await seed_dev.main()
+
+    asset = await db_session.get(Asset, seed_dev.ASSET_ID, populate_existing=True)
+    assert asset is not None
+    assert (asset.width, asset.height) == images.SIZE

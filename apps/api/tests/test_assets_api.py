@@ -189,3 +189,27 @@ async def test_complete_unknown_asset_returns_404(
 
     resp = await db_client.post(f"/assets/{uuid.uuid4()}/complete")
     assert resp.status_code == 404
+
+
+async def test_complete_upload_records_image_dimensions(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """화면은 저장된 너비·높이로 이미지 자리를 미리 잡는다. 가로·세로가 다른 원본이라 뒤바뀌어도 걸린다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    presign_resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/png", "purpose": "situational-image"}
+    )
+    asset_id = presign_resp.json()["assetId"]
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=_png_bytes(300, 400))
+
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert resp.status_code == 200
+    await db_session.refresh(asset)
+    assert (asset.width, asset.height) == (300, 400)
