@@ -14,28 +14,10 @@ import {
 const CANCELLED_CODES: readonly LoginErrorCode[] = ["google_cancelled", "kakao_cancelled"];
 
 describe("getLoginErrorMessage", () => {
-  // 백엔드가 내는 코드 전체. 이 목록이 `LOGIN_ERROR_CODES`와 갈리면 새 코드가 일반 오류로 떨어진다.
-  it("백엔드가 보내는 리다이렉트 코드를 빠짐없이 안다", () => {
-    expect([...LOGIN_ERROR_CODES].sort()).toEqual(
-      [
-        "google_state",
-        "kakao_state",
-        "google_cancelled",
-        "kakao_cancelled",
-        "google_failed",
-        "kakao_failed",
-        "kakao_email_required",
-        "kakao_email_taken",
-        "google_email_taken",
-        "account_deleted",
-        "account_suspended",
-        "account_age_restricted",
-      ].sort(),
-    );
-  });
-
+  // 목록이 백엔드와 맞는지는 여기서 검사하지 않는다(백엔드 코드는 OpenAPI에 실리지 않는다). 여기서 지키는 것은
+  // FE가 아는 코드마다 일반 오류가 아닌 자기 문구가 있다는 것이다.
   it.each(LOGIN_ERROR_CODES.filter((code) => !CANCELLED_CODES.includes(code)))(
-    "%s 는 일반 오류가 아닌 자기 문구를 가진다",
+    "알려진 코드 %s 는 일반 오류가 아닌 자기 문구를 가진다",
     (code) => {
       const message = getLoginErrorMessage(code);
 
@@ -71,15 +53,17 @@ describe("getLoginErrorMessage", () => {
   });
 
   describe("이미 가입된 이메일", () => {
-    it.each(SIGNUP_METHODS)("kakao_email_taken + method=%s 는 그 방법마다 다른 문구다", (method) => {
-      const messages = SIGNUP_METHODS.map((m) => getLoginErrorMessage("kakao_email_taken", m));
+    it("kakao_email_taken 은 method 마다 서로 다른 문구이고 어느 것도 일반 오류가 아니다", () => {
+      const messages = SIGNUP_METHODS.map((method) => getLoginErrorMessage("kakao_email_taken", method));
 
       expect(new Set(messages).size).toBe(SIGNUP_METHODS.length);
-      expect(getLoginErrorMessage("kakao_email_taken", method)).not.toBe(GENERIC_LOGIN_ERROR_MESSAGE);
+      expect(messages).not.toContain(GENERIC_LOGIN_ERROR_MESSAGE);
     });
 
     it("kakao_email_taken 은 가입된 방법으로 로그인하라고 한다", () => {
-      expect(getLoginErrorMessage("kakao_email_taken", "email")).toContain("이메일과 비밀번호로 로그인");
+      expect(getLoginErrorMessage("kakao_email_taken", "email")).toBe(
+        "이미 이메일·비밀번호로 가입된 계정이 있어요. 이메일과 비밀번호로 로그인해주세요.",
+      );
       expect(getLoginErrorMessage("kakao_email_taken", "google")).toContain("구글로 가입된");
       expect(getLoginErrorMessage("kakao_email_taken", "kakao")).toContain("다른 카카오계정");
     });

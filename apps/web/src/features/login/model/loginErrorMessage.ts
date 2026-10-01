@@ -43,7 +43,7 @@ export const MINIMUM_AGE_ERROR_MESSAGE = "만 14세 미만은 이용할 수 없�
  * **다른** 계정이 그 이메일을 쓰고 있다는 뜻이다. */
 function emailTakenMessage(attempted: SocialProvider, method: SignupMethod | undefined): string {
   if (method === undefined) return "이미 가입된 이메일이에요. 처음 가입한 방법으로 로그인해주세요.";
-  if (method === "email") return "이미 이메일로 가입된 이메일이에요. 이메일과 비밀번호로 로그인해주세요.";
+  if (method === "email") return "이미 이메일·비밀번호로 가입된 계정이 있어요. 이메일과 비밀번호로 로그인해주세요.";
   const label = SOCIAL_PROVIDER_LABELS[method];
   if (method === attempted) {
     return `이미 다른 ${label}계정으로 가입된 이메일이에요. 그 ${label}계정으로 로그인해주세요.`;
