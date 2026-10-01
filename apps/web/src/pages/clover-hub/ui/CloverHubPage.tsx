@@ -19,8 +19,11 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 
 /** 클로버 허브 페이지.
  *
- * 컨테이너 폭은 마이페이지(`pages/mypage/ui/MyPagePage.tsx:56`)와 같은 `max-w-md`다 —
- * 진입점이 마이페이지라 폭이 이어지면 이동이 자연스럽다.
+ * 컨테이너 폭은 `max-w-md`다. `DESIGN.md` Layout containers 절은 폭을 콘텐츠 밀도로 고르고 텍스트
+ * 위주의 한 열인 설정 화면에 `max-w-md`를 준다 — 이 화면도 잔액·출석·미션 세 섹션이 텍스트 몇 줄과
+ * 짧은 행뿐이라 그리드도 표도 없는 같은 밀도다. 미션 행은 라벨과 버튼·배지를 양 끝으로 벌리므로
+ * (`justify-between`) 컬럼을 넓혀도 그 사이 빈자리만 늘어난다. 이 화면에서만 들어가는 내역 화면도
+ * 같은 `max-w-md`라 둘 사이를 오갈 때 컬럼 폭이 바뀌지 않는다.
  */
 export function CloverHubPage() {
   return (

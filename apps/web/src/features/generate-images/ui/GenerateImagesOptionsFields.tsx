@@ -55,7 +55,7 @@ export function GenerateImagesOptionsFields() {
               size="sm"
               value={field.value}
               onValueChange={(value) => {
-                // radix 단일 토글은 선택된 항목을 다시 누르면 ""를 흘려보낸다(ContentTypeToggle.tsx:13-18).
+                // radix 단일 토글은 선택된 항목을 다시 누르면 ""를 흘려보낸다.
                 if (!isImageAspectRatio(value)) return;
                 field.onChange(value);
               }}
@@ -120,7 +120,7 @@ export function GenerateImagesOptionsFields() {
               size="sm"
               value={String(field.value)}
               onValueChange={(value) => {
-                // radix 단일 토글은 선택된 항목을 다시 누르면 ""를 흘려보낸다(ContentTypeToggle.tsx:13-18).
+                // radix 단일 토글은 선택된 항목을 다시 누르면 ""를 흘려보낸다.
                 if (value === "") return;
                 field.onChange(Number(value));
               }}

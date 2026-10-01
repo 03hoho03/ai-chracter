@@ -5,7 +5,6 @@ import { useAtom } from "jotai";
 import { Moon, Sun } from "lucide-react";
 import { toast } from "sonner";
 
-import { CloverBalance, useCloverBalanceQuery } from "@/entities/clover";
 import { useSessionQuery } from "@/entities/session";
 import { CommentSettings } from "@/features/work-comments";
 import { ChangePasswordForm } from "@/features/change-password";
@@ -94,8 +93,6 @@ export function MyPagePage() {
 
       <ThemeSection />
 
-      <CloverSection />
-
       {!!me && <CommentSettings key={me.id} viewerId={me.id} />}
 
       <section className="flex flex-col gap-4">
@@ -115,46 +112,6 @@ export function MyPagePage() {
  * 이 화면에서 제목과 섹션을 가르는 축이 태그 이름밖에 없었다는 뜻이다. */
 function SectionHeading({ children }: { children: string }) {
   return <h2 className="text-xl font-semibold tracking-tight text-foreground">{children}</h2>;
-}
-
-/** 여기만 **상시** 노출이다. 채팅·이미지
- * 쪽은 무료 한도를 쓴 뒤에만 나타나지만, 설정 화면은 "지금 내 상태를 확인하러 오는 곳"이라
- * 조건을 걸면 사용자가 잔액을 볼 방법이 없어진다.
- *
- * 🔴 **노출을 줄여야 하면 이 섹션이 1순위다** — 여기부터 덜어내고 채팅·이미지의
- * "필요할 때만 노출"만 남긴다(사용자 결정).
- *
- * 컬럼이 `max-w-md`(448px)라 표를 넣지 않는다(DESIGN.md Layout containers) — 잔액 한 줄과
- * 짧은 설명뿐이다. 🔴 유저용 원장·허브 화면이
- * 있다 — 아래 링크가 `/clover`로 이어진다. */
-function CloverSection() {
-  const { data, isPending } = useCloverBalanceQuery();
-
-  return (
-    <section className="flex flex-col gap-4">
-      <SectionHeading>클로버</SectionHeading>
-      <div className="flex flex-col gap-1.5">
-        {/* 로딩 중에는 자리만 비워 둔다 — 스켈레톤을 쓰기엔 한 줄이라 과하고(DESIGN.md Components 절),
-            0을 먼저 그리면 "잔액이 0"이라는 틀린 사실을 잠깐 말한다. */}
-        {isPending ? (
-          <span className="text-sm text-muted-foreground">불러오는 중…</span>
-        ) : (
-          <CloverBalance balance={data?.balance ?? 0} className="text-sm" />
-        )}
-        {/* 자동 출석 지급은 없어졌다 — "매일 출석하면
-            자동으로 받아요"는 더 이상 사실이 아니다. 클릭형으로 바뀌었으므로 그 사실만 말한다. */}
-        <p className="text-sm break-keep text-muted-foreground">
-          무료 한도를 다 쓴 뒤 대화와 이미지 생성에 쓰여요. 출석체크와 미션으로도 받을 수 있어요.
-        </p>
-        <Link
-          to="/clover"
-          className="w-fit font-medium text-primary hover:underline focus-visible:underline"
-        >
-          클로버 더 보기
-        </Link>
-      </div>
-    </section>
-  );
 }
 
 function ThemeSection() {
