@@ -43,6 +43,7 @@ export { TypingIndicator } from "./ui/TypingIndicator";
 export { StatGaugePanel } from "./ui/StatGaugePanel";
 export { applyStreamEvent } from "./model/applyStreamEvent";
 export { buildEditPayload } from "./model/buildEditPayload";
+export { canReportMessage } from "./model/canReportMessage";
 export { buildRegeneratePayload } from "./model/buildRegeneratePayload";
 export { buildSendPayload } from "./model/buildSendPayload";
 export { getChatRateLimit, type ChatRateLimit } from "./model/chatRateLimit";

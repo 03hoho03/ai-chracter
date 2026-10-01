@@ -1,3 +1,4 @@
+import { useRef } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   DropdownMenu,
@@ -6,7 +7,7 @@ import {
   DropdownMenuTrigger,
 } from "@ai-character-chat/ui/components/dropdown-menu";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react";
+import { Flag, MoreHorizontal, Pencil, RotateCw, Trash2 } from "lucide-react";
 
 import { MediaImageFrame } from "@/shared/ui/media-image-frame/MediaImageFrame";
 
@@ -16,9 +17,9 @@ import { MessageEditForm } from "./MessageEditForm";
 
 type MessageBubbleProps = {
   message: ChatMessage;
-  // 재생성/수정/삭제 액션. 세 콜백 모두 optional인 이유는 스트리밍 중 임시 버블
+  // 재생성/수정/신고/삭제 액션. 모두 optional인 이유는 스트리밍 중 임시 버블
   // (streaming/ending-epilogue, ChatRoomView.tsx 참고)에는 실제 messageId가 없어 어떤 액션도
-  // 붙일 수 없기 때문 — onDelete가 없으면 "⋯" 메뉴 자체를 렌더링하지 않는다.
+  // 붙일 수 없기 때문 — onDelete·onReport가 둘 다 없으면 "⋯" 메뉴 자체를 렌더링하지 않는다.
   canRegenerate?: boolean;
   isEditing?: boolean;
   disabled?: boolean;
@@ -27,6 +28,9 @@ type MessageBubbleProps = {
   onCancelEdit?: () => void;
   onSaveEdit?: (text: string) => void;
   onDelete?: () => void;
+  // 신고 모달은 라우트 루트에 마운트돼 이 버블 밖에서 열리므로, 닫힌 뒤 포커스를 이 "⋯" 트리거로
+  // 돌려줄 함수를 함께 넘긴다(안 그러면 포커스가 `<body>`로 떨어져 Tab이 헤더부터 다시 시작한다).
+  onReport?: (returnFocus: () => void) => void;
 };
 
 // 사용자 메시지 표시. 대화는 소설처럼 한 컬럼에 흐르고 사용자와 캐릭터 모두 상자 없는 산문이라,
@@ -45,8 +49,10 @@ export function MessageBubble({
   onCancelEdit,
   onSaveEdit,
   onDelete,
+  onReport,
 }: MessageBubbleProps) {
   const isUser = message.role === "user";
+  const menuTriggerRef = useRef<HTMLButtonElement>(null);
 
   if (isEditing) {
     return (
@@ -68,10 +74,11 @@ export function MessageBubble({
             출력마다 줄바꿈이 달라진다)로 규범(65-75자) 안에 든다. 390px에서는 컬럼 폭 자체가 768px보다
             훨씬 좁아 캡이 걸리지 않는다. 사용자 메시지도 같은 캡이라 두 역할의 줄 길이가 같다. */}
         <ChatMarkdown content={message.content} className="max-w-3xl" />
-        {onDelete && (
+        {(onDelete || onReport) && (
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
+                ref={menuTriggerRef}
                 type="button"
                 variant="ghost"
                 size="icon-xs"
@@ -96,10 +103,19 @@ export function MessageBubble({
                   수정
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem variant="destructive" onSelect={onDelete}>
-                <Trash2 aria-hidden />
-                삭제
-              </DropdownMenuItem>
+              {/* 신고는 데이터를 지우지 않으므로 destructive가 아니다. 파괴 항목(삭제)을 맨 끝에 두려고 그 앞에 놓는다. */}
+              {onReport && (
+                <DropdownMenuItem onSelect={() => onReport(() => menuTriggerRef.current?.focus())}>
+                  <Flag aria-hidden />
+                  신고
+                </DropdownMenuItem>
+              )}
+              {onDelete && (
+                <DropdownMenuItem variant="destructive" onSelect={onDelete}>
+                  <Trash2 aria-hidden />
+                  삭제
+                </DropdownMenuItem>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         )}
