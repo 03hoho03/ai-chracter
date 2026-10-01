@@ -6,7 +6,7 @@ import { useState } from "react";
 import { CloverIcon } from "@/entities/clover";
 import { useSessionQuery } from "@/entities/session";
 
-import { BrandSymbol } from "./BrandSymbol";
+import { BrandLogo } from "./BrandLogo";
 import { ContentTypeToggle } from "./ContentTypeToggle";
 import { MobileNavDrawer } from "./MobileNavDrawer";
 import { NotificationBell } from "./NotificationBell";
@@ -41,18 +41,18 @@ export function Header() {
       <div className="grid h-14 grid-cols-[1fr_auto_1fr] items-center gap-2 px-4 sm:flex sm:px-6">
         <MobileNavDrawer className={cn("justify-self-start", isSearchExpanded ? "hidden" : "sm:hidden")} />
 
-        {/* 로고는 두 구성 모두에서 항상 노출된다(검색 독점 중인 sm 미만은 예외) — 심볼 포함 약 58px라
-            숨겨서 아낄 폭이 거의 없고, 숨기면 홈 링크에 접근 가능한 이름이 남지 않는다(심볼은 aria-hidden). `justify-self-center`는
+        {/* 로고는 두 구성 모두에서 항상 노출된다(검색 독점 중인 sm 미만은 예외) — 워드마크 하나가 약 65px라
+            숨겨서 아낄 폭이 거의 없다. 워드마크 SVG는 aria-hidden이라 링크 이름은 `aria-label`이 맡는다. `justify-self-center`는
             grid(모바일)에서만 의미가 있고 `sm:flex`에서는 무시된다. */}
         <Link
           to="/"
+          aria-label="또나"
           className={cn(
-            "inline-flex shrink-0 items-center gap-1.5 justify-self-center rounded-md text-lg font-bold tracking-tight text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            "inline-flex shrink-0 items-center justify-self-center rounded-md text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
             isSearchExpanded && "max-sm:hidden",
           )}
         >
-          <BrandSymbol className="h-5 w-auto" />
-          또나
+          <BrandLogo className="h-5 w-auto" />
         </Link>
 
         {/* 유형 토글과 "이미지" 링크는 `ContentTypeToggle`이 자기 flex 줄 하나로 묶어 내보낸다 — 이 래퍼는
