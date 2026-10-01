@@ -7,9 +7,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-    # 비밀 5종(`database_url`·`google_client_secret`·
-    # `gemini_api_key`·`local_image_access_client_secret`·`resend_api_key`)은 `Field(repr=False)`로
-    # repr에서 뺀다 — `monkeypatch.setattr(settings, "오타", ...)`가 내는
+    # 비밀 필드는 `Field(repr=False)`로 repr에서 뺀다. 어떤 필드가 비밀인지는 이 파일에서
+    # `repr=False` 를 찾으면 나온다 — 개수·목록을 여기 적어 두면 필드를 더할 때 이 주석만 낡는다.
+    # repr에서 빼는 이유는 `monkeypatch.setattr(settings, "오타", ...)`가 내는
     # `AttributeError(f"{target!r} has no attribute ...")` 메시지에 전 필드 repr이 실려 비밀이
     # 평문으로 찍히기 때문이다. 값이 traceback이 아니라 **예외 메시지 자체**에 있어 pytest
     # `--tb` 옵션으로는 못 막는다. 타입은 `str` 그대로다(`SecretStr` 전환은 별건).
@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     # Same TTL rationale as email_verification_code_ttl_seconds: how long a new
     # Google user has to finish POST /auth/onboarding/google before retrying.
     google_pending_signup_ttl_seconds: int = 60 * 15
+    # 카카오 로그인. REST API 키는 인가 URL 에 그대로 실리는 공개 식별자라 비밀이 아니고,
+    # 클라이언트 시크릿(토큰 교환에 필수)과 어드민 키(연결 끊기 API 호출과 연결 해제 웹훅의
+    # 인증 헤더 대조)는 비밀이다. REST API 키나 시크릿이 비면 로그인 시작이 카카오로 가지 않고
+    # 로그인 화면 오류로 돌아온다(로컬·CI 처럼 키가 없는 환경에서 카카오 오류 화면에 갇히지 않게).
+    kakao_rest_api_key: str = ""
+    kakao_client_secret: str = Field(default="", repr=False)
+    kakao_admin_key: str = Field(default="", repr=False)
+    # 구글과 같은 값이고 이유도 같다(인가 왕복 시간, 온보딩 작성 시간).
+    kakao_oauth_state_ttl_seconds: int = 60 * 10
+    kakao_pending_signup_ttl_seconds: int = 60 * 15
 
     # Password reset tokens expire 1 hour after issuance.
     password_reset_token_ttl_seconds: int = 60 * 60
