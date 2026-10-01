@@ -7,10 +7,9 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from api.assets.blur import create_blurred_asset
 from api.assets.image_processing import (
-    BLURRED_CONTENT_TYPE,
     THUMBNAIL_CONTENT_TYPE,
-    generate_blurred_image,
     generate_thumbnail,
     read_image_size,
 )
@@ -194,39 +193,8 @@ async def register_situational_image(
             detail="Situational images are only for character content",
         )
 
-    original_bytes = await run_in_threadpool(download_object, asset.storage_key)
-    blurred_bytes = await run_in_threadpool(generate_blurred_image, original_bytes)
-
-    blurred_asset_id = uuid.uuid4()
-    blurred_storage_key = build_object_key(
-        "situational-image-blurred", blurred_asset_id, BLURRED_CONTENT_TYPE
-    )
-    await run_in_threadpool(upload_object, blurred_storage_key, blurred_bytes, BLURRED_CONTENT_TYPE)
-    # The BLURRED asset goes READY below, so it needs its `_thumb.webp` variant too
-    # (same invariant as complete_asset_upload — the original's thumbnail already
-    # exists from that step). A failure here propagates before the commit, so the
-    # registration fails as a whole and no READY asset is left without a thumbnail.
-    blurred_thumbnail_bytes = await run_in_threadpool(generate_thumbnail, blurred_bytes)
-    # 원본 행의 크기를 베끼지 않고 블러 바이트에서 잰다 — 원본이 크기를 채우기 전 자산이면 그 값이 비어 있다.
-    blurred_width, blurred_height = await run_in_threadpool(read_image_size, blurred_bytes)
-    await run_in_threadpool(
-        upload_object,
-        build_thumbnail_key(blurred_storage_key),
-        blurred_thumbnail_bytes,
-        THUMBNAIL_CONTENT_TYPE,
-    )
-
-    db.add(
-        Asset(
-            id=blurred_asset_id,
-            owner_user_id=current_user_id,
-            storage_key=blurred_storage_key,
-            kind=AssetKind.BLURRED,
-            status=AssetStatus.READY,
-            width=blurred_width,
-            height=blurred_height,
-        )
-    )
+    blurred_asset = await create_blurred_asset(db, source_storage_key=asset.storage_key, owner_user_id=current_user_id)
+    blurred_asset_id = blurred_asset.id
 
     # 읽고 나서 쓰면 그 사이 자동저장 PATCH 가 같은 새 항목을 만들 수 있다 — 읽지 않고 한 문장으로
     # upsert 한다. 위에서 add 한 블러 자산이 이 행의 FK 대상이라 먼저 flush 한다.

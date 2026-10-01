@@ -33,6 +33,7 @@ from api.db.models import (
 )
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
+    _add_epilogue_ending,
     _add_named_media_cell,
     _clear_llm_override,
     _get_genre,
@@ -42,33 +43,12 @@ from factories import (
     _make_user,
     _override_llm_client,
     _parse_sse_events,
+    _story_with_setup,
 )
 
 
 def _id_tag(cell_id: uuid.UUID | str) -> str:
     return "{{img::" + str(cell_id) + "}}"
-
-
-async def _story_with_setup(
-    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그"
-) -> tuple[uuid.UUID, Content, StartingSetup]:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    genre = await _get_genre(db_session)
-    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
-    assert content.current_published_version_id is not None
-    setup = StartingSetup(
-        entity_id=uuid.uuid4(),
-        content_version_id=content.current_published_version_id,
-        name="첫 만남",
-        prologue=prologue,
-        opening_message=opening_message,
-        order=1,
-    )
-    db_session.add(setup)
-    await db_session.flush()
-    return user.id, content, setup
 
 
 async def _publish_next_version(db_session: AsyncSession, content: Content, setup: StartingSetup) -> ContentVersion:
@@ -445,22 +425,6 @@ async def test_character_room_message_image_carries_no_dimensions(
 # ---- 엔딩 에필로그 -------------------------------------------------------------------------------------
 
 
-async def _add_ending(db_session: AsyncSession, setup: StartingSetup, epilogue: str, order: int = 1) -> Ending:
-    ending = Ending(
-        entity_id=uuid.uuid4(),
-        starting_setup_id=setup.id,
-        name=f"엔딩 {order}",
-        turn_count_gate=1,
-        judgment_prompt="떠났는가?",
-        epilogue=epilogue,
-        hint="힌트",
-        order=order,
-    )
-    db_session.add(ending)
-    await db_session.flush()
-    return ending
-
-
 async def test_room_snapshot_epilogue_strips_media_tags_without_url_map(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -468,7 +432,7 @@ async def test_room_snapshot_epilogue_strips_media_tags_without_url_map(
     user_id, content, setup = await _story_with_setup(db_session, opening_message="태그 없는 시작")
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
-    await _add_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n안녕.")
+    await _add_epilogue_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n안녕.")
     await db_session.commit()
     await _login_as(db_client, user_id)
 
@@ -484,7 +448,7 @@ async def test_ending_reached_event_carries_cell_id_epilogue_and_url_map(
     user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
     assert content.current_published_version_id is not None
     cell, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
-    await _add_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
+    await _add_epilogue_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -513,8 +477,8 @@ async def test_ending_collection_carries_cell_id_epilogue_and_url_map_only_for_r
     assert content.current_published_version_id is not None
     rooftop, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
-    reached = await _add_ending(db_session, setup, "{{img::민아/옥상}}\n끝.", order=1)
-    await _add_ending(db_session, setup, "{{img::민아/교실}}\n다른 끝.", order=2)
+    reached = await _add_epilogue_ending(db_session, setup, "{{img::민아/옥상}}\n끝.", order=1)
+    await _add_epilogue_ending(db_session, setup, "{{img::민아/교실}}\n다른 끝.", order=2)
     db_session.add(
         StoryEndingUnlock(user_id=user_id, starting_setup_entity_id=setup.entity_id, ending_entity_id=reached.entity_id)
     )
@@ -632,7 +596,7 @@ async def test_ending_judgment_turn_lines_exclude_media_tags(
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}\n시작한다.")
     assert content.current_published_version_id is not None
     await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
-    await _add_ending(db_session, setup, "끝")
+    await _add_epilogue_ending(db_session, setup, "끝")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)

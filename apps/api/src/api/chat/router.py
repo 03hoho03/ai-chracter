@@ -15,6 +15,7 @@ from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
@@ -81,6 +82,7 @@ from api.chat.schemas import (
     PreviewSessionState,
     ShortcutSnapshot,
     StatDefSnapshot,
+    StoryImageArchiveItem,
 )
 from api.chat.stats import StatChange, apply_stat_changes
 from api.content.media_book import (
@@ -117,7 +119,7 @@ from api.db.models.chat import (
     StoryEndingUnlock,
     StoryMediaExposure,
 )
-from api.db.models.content import Content, ContentType
+from api.db.models.content import Content, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.media import Asset
 from api.db.models.persona import UserPersona
 from api.db.models.prompt import PromptSection, PromptSet
@@ -667,6 +669,40 @@ async def _record_story_media_exposure(db: AsyncSession, room: ChatRoom, cell_en
     return True
 
 
+async def _record_story_media_unlocks(db: AsyncSession, room: ChatRoom, cell_entity_ids: set[uuid.UUID]) -> None:
+    """첫 메시지·에필로그에 나온 칸의 보관함 해금 기록. 메시지와 같은 트랜잭션에 쓰고, 이미 본 칸과 겹치면 그대로
+    둔다(대화 초기화가 같은 첫 메시지를 다시 넣어도 실패하지 않는다)."""
+    if not cell_entity_ids:
+        return
+    await db.execute(
+        pg_insert(StoryMediaExposure)
+        .values(
+            [
+                {"user_id": room.user_id, "content_id": room.content_id, "cell_entity_id": cell_entity_id}
+                for cell_entity_id in cell_entity_ids
+            ]
+        )
+        .on_conflict_do_nothing()
+    )
+
+
+async def _unlock_epilogue_cells(db: AsyncSession, room: ChatRoom, epilogue: str | None) -> None:
+    """도달한 엔딩의 에필로그에 나온 칸을 해금한다. 스트림 본문에서 불리므로 실패는 SAVEPOINT 안에 가두고 기록만
+    포기한다 — 엔딩 도달 자체는 그대로 남는다."""
+    if not epilogue:
+        return
+    # SAVEPOINT 를 열면 세션이 먼저 flush 된다. 그때 터지는 것은 바로 앞의 엔딩 도달 기록이지 칸 해금이 아니다 —
+    # 여기서 따로 flush 해 그 실패가 아래 경고로 잘못 기록되지 않게 한다(이 실패는 전처럼 커밋 실패와 같은 길을 간다).
+    await db.flush()
+    try:
+        async with db.begin_nested():
+            _, refs = await normalize_texts(db, room.content_version_id, [epilogue])
+            await _record_story_media_unlocks(db, room, refs)
+    except SQLAlchemyError as exc:
+        logger.warning("대화방 %s 에필로그 칸 해금 기록 실패 — 엔딩은 그대로 진행한다: %s", room.id, exc)
+        capture_dependency_failure(exc, dependency="db")
+
+
 async def _sign_judged_cell(db: AsyncSession, room: ChatRoom, cell_entity_id: uuid.UUID) -> MediaTagImage | None:
     """커밋 뒤 판정 칸의 그림을 서명한다(원본, 너비·높이). 방 버전에서 칸·자산을 못 찾거나 서명이 실패하면
     `None` — 커밋 뒤라 예외가 새면 SSE 제너레이터를 뚫으므로 전부 흡수하고 그림 없이 마무리한다.
@@ -734,9 +770,13 @@ async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: Start
 
     스토리면 작성자 글의 미디어 북 태그를 방이 고정한 버전의 칸 id 형태로 바꿔 저장한다(없는 이름은
     지운다). 이름이 아니라 버전이 바뀌어도 유지되는 칸 id 로 두어야, 방이 새 발행본으로 옮겨 갔을 때 같은
-    칸의 새 그림으로 해석되고 지워진 칸은 빈칸이 된다."""
+    칸의 새 그림으로 해석되고 지워진 칸은 빈칸이 된다. 첫 메시지에 나온 칸은 보관함에서 해금한다 — 세 호출부가
+    모두 이 함수를 지나야 초기화도 같은 기록을 남긴다."""
     if setup is not None:
-        [opening_text], _ = await normalize_texts(db, room.content_version_id, [setup.opening_message or setup.prologue])
+        [opening_text], opening_refs = await normalize_texts(
+            db, room.content_version_id, [setup.opening_message or setup.prologue]
+        )
+        await _record_story_media_unlocks(db, room, opening_refs)
     else:
         detail = await db.get(CharacterVersionDetail, room.content_version_id)
         assert detail is not None
@@ -1454,6 +1494,7 @@ async def _stream_new_turn(
                             )
                         )
                     ending_reached_event = ChatEndingReachedEvent(ending_id=ending.entity_id, epilogue=ending.epilogue)
+                    await _unlock_epilogue_cells(db, room, ending.epilogue)
                     break
         else:
             matched_image = await _match_situational_image(
@@ -2537,6 +2578,125 @@ async def get_image_archive(
         image_url = await run_in_threadpool(generate_presigned_get_url, build_thumbnail_key(asset.storage_key))
         items.append(ImageArchiveItem(id=image.entity_id, exposed=exposed, image_url=image_url))
     return items
+
+
+async def _cells_with_unlock_path(db: AsyncSession, version_id: uuid.UUID) -> set[uuid.UUID]:
+    """대화 중 판정을 거치지 않고도 볼 수 있는 칸 — 어느 시작설정의 첫 메시지(시작상황, 없으면 프롤로그)나 어느
+    엔딩의 에필로그에 나오는 칸이다. 작가 글은 이름 형태로 저장돼 있어 그 버전의 칸 id 로 정규화해서 모은다."""
+    setups = (await db.scalars(select(StartingSetup).where(StartingSetup.content_version_id == version_id))).all()
+    epilogues = (
+        await db.scalars(
+            select(Ending.epilogue)
+            .join(StartingSetup, StartingSetup.id == Ending.starting_setup_id)
+            .where(StartingSetup.content_version_id == version_id, Ending.epilogue.is_not(None))
+        )
+    ).all()
+    texts = [setup.opening_message or setup.prologue for setup in setups]
+    texts += [epilogue for epilogue in epilogues if epilogue is not None]
+    _, referenced = await normalize_texts(db, version_id, texts)
+    return referenced
+
+
+def _sign_urls(storage_keys: list[str]) -> list[str]:
+    return [generate_presigned_get_url(key) for key in storage_keys]
+
+
+@stories_router.get("/{id}/image-archive")
+async def get_story_image_archive(
+    id: uuid.UUID,
+    user_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db_session),
+) -> list[StoryImageArchiveItem]:
+    """스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재
+    발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로
+    쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.
+
+    대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은
+    작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.
+
+    이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를
+    시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다."""
+    content = await db.get(Content, id)
+    if (
+        content is None
+        or content.current_published_version_id is None
+        or content.moderation_status != ModerationStatus.NORMAL
+        or (
+            content.visibility == ContentVisibility.PRIVATE
+            and content.creator_user_id != user_id
+            and await db.scalar(
+                select(ChatRoom.id).where(ChatRoom.user_id == user_id, ChatRoom.content_id == content.id).limit(1)
+            )
+            is None
+        )
+    ):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Story not found")
+    version_id = content.current_published_version_id
+
+    original_asset = aliased(Asset)
+    blurred_asset = aliased(Asset)
+    rows = (
+        await db.execute(
+            select(MediaBookCell, MediaBookPerson.name, MediaBookScene.name, original_asset, blurred_asset)
+            .join(
+                MediaBookPerson,
+                and_(
+                    MediaBookPerson.content_version_id == MediaBookCell.content_version_id,
+                    MediaBookPerson.entity_id == MediaBookCell.person_entity_id,
+                ),
+            )
+            .join(
+                MediaBookScene,
+                and_(
+                    MediaBookScene.content_version_id == MediaBookCell.content_version_id,
+                    MediaBookScene.entity_id == MediaBookCell.scene_entity_id,
+                ),
+            )
+            .join(original_asset, original_asset.id == MediaBookCell.image_asset_id)
+            .outerjoin(blurred_asset, blurred_asset.id == MediaBookCell.blurred_asset_id)
+            .where(MediaBookCell.content_version_id == version_id)
+            .order_by(MediaBookPerson.order, MediaBookScene.order)
+        )
+    ).tuples().all()
+    if not rows:
+        return []
+
+    exposed_entity_ids = set(
+        await db.scalars(
+            select(StoryMediaExposure.cell_entity_id).where(
+                StoryMediaExposure.user_id == user_id, StoryMediaExposure.content_id == content.id
+            )
+        )
+    )
+    # 작가 글을 읽어 정규화하는 비용은 판정에서 빠진 못 본 칸이 있을 때만 낸다.
+    needs_unlock_path = any(cell.exclude_from_chat and cell.entity_id not in exposed_entity_ids for cell, *_ in rows)
+    reachable = await _cells_with_unlock_path(db, version_id) if needs_unlock_path else set()
+
+    visible: list[tuple[MediaBookCell, str, str, bool, Asset]] = []
+    for cell, person_name, scene_name, original, blurred in rows:
+        exposed = cell.entity_id in exposed_entity_ids
+        if not exposed and cell.exclude_from_chat and cell.entity_id not in reachable:
+            continue
+        shown = original if exposed else blurred
+        # 블러본은 발행이 채운다. 없는 칸을 원본으로 대신 내면 못 본 그림이 새므로 빼 둔다.
+        if shown is None:
+            continue
+        visible.append((cell, person_name, scene_name, exposed, shown))
+
+    urls = await run_in_threadpool(_sign_urls, [build_thumbnail_key(asset.storage_key) for *_, asset in visible])
+    return [
+        StoryImageArchiveItem(
+            id=cell.entity_id,
+            exposed=exposed,
+            image_url=url,
+            width=asset.width,
+            height=asset.height,
+            person_name=person_name,
+            scene_name=scene_name if exposed else "",
+            unlock_hint="" if exposed else cell.unlock_hint,
+        )
+        for (cell, person_name, scene_name, exposed, asset), url in zip(visible, urls, strict=True)
+    ]
 
 
 def _build_preview_start_state(payload: CharacterDraftPayload | StoryDraftPayload) -> PreviewSessionState:

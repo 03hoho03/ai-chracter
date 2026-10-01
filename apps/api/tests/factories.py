@@ -40,6 +40,7 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    Ending,
     Genre,
     LegalDocument,
     MediaBookCell,
@@ -415,6 +416,44 @@ async def _make_published_story(
     content.current_published_version_id = version.id
     await db_session.flush()
     return content
+
+
+async def _story_with_setup(
+    db_session: AsyncSession, *, opening_message: str | None, prologue: str = "프롤로그"
+) -> tuple[uuid.UUID, Content, StartingSetup]:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    setup = StartingSetup(
+        entity_id=uuid.uuid4(),
+        content_version_id=content.current_published_version_id,
+        name="첫 만남",
+        prologue=prologue,
+        opening_message=opening_message,
+        order=1,
+    )
+    db_session.add(setup)
+    await db_session.flush()
+    return user.id, content, setup
+
+
+async def _add_epilogue_ending(db_session: AsyncSession, setup: StartingSetup, epilogue: str, order: int = 1) -> Ending:
+    ending = Ending(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name=f"엔딩 {order}",
+        turn_count_gate=1,
+        judgment_prompt="떠났는가?",
+        epilogue=epilogue,
+        hint="힌트",
+        order=order,
+    )
+    db_session.add(ending)
+    await db_session.flush()
+    return ending
 
 
 class _FakeLLMClient(LLMClient):

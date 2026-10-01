@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.content.publish import PublishFilterResult
 from api.core.config import settings
+from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
@@ -50,9 +51,9 @@ from factories import (
 )
 
 
-def _upload_test_image(storage_key: str) -> None:
+def _upload_test_image(storage_key: str, size: tuple[int, int] = (16, 16)) -> None:
     buffer = io.BytesIO()
-    Image.new("RGB", (16, 16), color=(10, 20, 30)).save(buffer, format="PNG")
+    Image.new("RGB", size, color=(10, 20, 30)).save(buffer, format="PNG")
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=buffer.getvalue())
 
@@ -1305,3 +1306,131 @@ async def test_publish_clones_media_book_with_stable_entity_ids(
             "첫 만남",
             True,
         )
+
+
+def _bucket_keys() -> set[str]:
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    keys: set[str] = set()
+    for page in s3.get_paginator("list_objects_v2").paginate(Bucket=settings.s3_bucket_name):
+        keys |= {item["Key"] for item in page.get("Contents", [])}
+    return keys
+
+
+async def test_publish_story_creates_blur_only_for_cells_without_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """보관함의 잠긴 칸은 발행이 만든 블러본만 보여 준다. 블러본은 칸마다 한 번 — 앞 발행에서 만들어 복제된
+    블러본이 있는 칸은 건너뛰고, 없는 칸만 원본으로 블러본(PNG 와 `_thumb.webp`)을 만들어 원본과 같은 크기를
+    적는다. 다음 편집용 초안에는 새 블러본 id 가 복제돼야 다음 발행이 다시 만들지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    kept_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept_blur = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept = await _add_media_book_cell(db_session, version.id, kept_image.id, kept_blur.id)
+    fresh_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    _upload_test_image(fresh_image.storage_key, size=(20, 30))
+    fresh = await _add_media_book_cell(db_session, version.id, fresh_image.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    keys_before = _bucket_keys()
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    await db_session.refresh(kept)
+    await db_session.refresh(fresh)
+    assert kept.blurred_asset_id == kept_blur.id
+    assert fresh.blurred_asset_id is not None
+    blurred = await db_session.get(Asset, fresh.blurred_asset_id)
+    assert blurred is not None
+    assert (blurred.kind, blurred.status, blurred.owner_user_id, blurred.width, blurred.height) == (
+        AssetKind.BLURRED,
+        AssetStatus.READY,
+        user.id,
+        20,
+        30,
+    )
+    assert _bucket_keys() - keys_before == {blurred.storage_key, build_thumbnail_key(blurred.storage_key)}
+    copied_blur_id = await db_session.scalar(
+        sa.select(MediaBookCell.blurred_asset_id).where(
+            MediaBookCell.entity_id == fresh.entity_id, MediaBookCell.content_version_id != version.id
+        )
+    )
+    assert copied_blur_id == blurred.id
+
+
+async def test_publish_story_rejected_by_filter_creates_no_blur(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """블러본은 심사를 통과한 뒤에 만든다 — 탈락한 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    cell = await _add_media_book_cell(db_session, version.id, image.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    keys_before = _bucket_keys()
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=False, reason="부적절")))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    await db_session.refresh(cell)
+    assert cell.blurred_asset_id is None
+    assert _bucket_keys() == keys_before
+
+
+async def test_publish_story_reports_cell_whose_image_cannot_be_blurred(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸 그림의 블러본을 만들지 못하면(원본이 저장소에 없음 등) 이름 없는 500 이 아니라 어느 칸 때문인지
+    알리는 응답으로 발행을 멈춘다. 심사 거부(`reason`)와는 다른 모양이어야 화면이 이의제기로 안내하지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    missing = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.png",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(missing)
+    await db_session.flush()
+    cell = await _add_media_book_cell(db_session, version.id, missing.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 502
+    detail = resp.json()["detail"]
+    assert detail["code"] == "MEDIA_BOOK_IMAGE_UNAVAILABLE"
+    assert detail["cellId"] == str(cell.entity_id)
+    assert "reason" not in detail
+    await db_session.refresh(version)
+    assert version.published_at is None

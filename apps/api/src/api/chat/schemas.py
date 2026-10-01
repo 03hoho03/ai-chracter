@@ -231,6 +231,21 @@ class ImageArchiveItem(CamelModel):
     image_url: str
 
 
+class StoryImageArchiveItem(ImageArchiveItem):
+    """스토리 미디어 북 보관함의 칸 하나. `id` 는 칸 entity_id, `exposed` 는 사용자가 채팅에서 이 칸을 봤는가다
+    (대화 중 판정·첫 메시지·엔딩 에필로그). 본 칸은 `image_url` 이 원본 썸네일이고, 못 본 칸은 블러본 썸네일과
+    작가가 적은 `unlock_hint`(없으면 빈 문자열)다. `width`·`height` 는 그림의 픽셀 크기(모르면 null)로 화면이
+    그림이 오기 전에 높이를 잡는 데 쓴다. `person_name` 은 늘 싣고, `scene_name` 은 본 칸에만 싣는다(못 본 칸은
+    빈 문자열) — 장면 이름은 무엇이 그려졌는지를 미리 알려 주므로 해금 전까지 숨기고, 인물 이름은 누구의
+    그림인지만 알려 주는 안내라 남긴다."""
+
+    width: int | None = None
+    height: int | None = None
+    person_name: str = ""
+    scene_name: str = ""
+    unlock_hint: str = ""
+
+
 class PlayGuideResponse(CamelModel):
     play_guide: str | None
 

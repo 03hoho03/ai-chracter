@@ -1,5 +1,6 @@
 import base64
 import json
+import logging
 import mimetypes
 import uuid
 from collections.abc import Sequence
@@ -7,6 +8,7 @@ from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Literal
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from sqlalchemy import and_, any_, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
@@ -14,6 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
+from api.assets.blur import create_blurred_asset
 from api.chat.prompt_builder import load_active_prompt_set
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
@@ -68,6 +71,7 @@ from api.content.schemas import (
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
 from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
+from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
@@ -102,6 +106,8 @@ from api.legal.dependencies import require_legal_consent
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["content"])
 
@@ -1963,6 +1969,46 @@ async def _clone_story_children(
         )
 
 
+async def _blur_new_media_book_cells(db: AsyncSession, version_id: uuid.UUID, *, owner_user_id: uuid.UUID) -> None:
+    """블러본이 없는 칸(그림을 새로 걸었거나 바꾼 칸)에만 블러본을 만든다. 보관함은 아직 못 본 칸을 이 블러본으로
+    보여 준다. 앞 발행에서 만든 블러본은 복제로 초안에 따라오고, 그림을 바꾸면 자동저장이 비운다.
+
+    발행 심사를 통과한 뒤에 부른다 — 탈락할 발행이 S3 에 블러본을 올리면 가리키는 행 없이 남는다. 다음 초안
+    복제보다 앞이어야 새 블러본 id 가 초안으로 넘어간다."""
+    pairs = (
+        await db.execute(
+            select(MediaBookCell, Asset.storage_key)
+            .join(Asset, Asset.id == MediaBookCell.image_asset_id)
+            .where(MediaBookCell.content_version_id == version_id, MediaBookCell.blurred_asset_id.is_(None))
+        )
+    ).tuples().all()
+    if not pairs:
+        return
+    blurred_by_cell: list[tuple[MediaBookCell, Asset]] = []
+    for cell, storage_key in pairs:
+        try:
+            blurred = await create_blurred_asset(db, source_storage_key=storage_key, owner_user_id=owner_user_id)
+        except (BotoCoreError, ClientError, OSError, ValueError) as exc:
+            # 원본을 못 읽었거나(저장소에서 사라짐·연결 실패) 그림으로 풀지 못했다. 어느 칸인지 알려 발행을 멈춘다 —
+            # 심사 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내한다. 앞 칸에서 이미 올린 블러본은 행 없이 남는다.
+            logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell.entity_id, exc)
+            capture_dependency_failure(exc, dependency="s3")
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail={
+                    "code": "MEDIA_BOOK_IMAGE_UNAVAILABLE",
+                    "cellId": str(cell.entity_id),
+                    "message": "미디어 북 칸 그림 하나를 처리하지 못했어요. 잠시 뒤 다시 발행하거나 그 칸 그림을 다시 올려 주세요.",
+                },
+            ) from exc
+        blurred_by_cell.append((cell, blurred))
+    # 블러 자산 행이 칸이 가리킬 FK 대상이라 먼저 넣는다.
+    await db.flush()
+    for cell, blurred in blurred_by_cell:
+        cell.blurred_asset_id = blurred.id
+    await db.flush()
+
+
 async def _publish_story_content(
     db: AsyncSession,
     content: Content,
@@ -2019,6 +2065,8 @@ async def _publish_story_content(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
         )
+
+    await _blur_new_media_book_cells(db, version.id, owner_user_id=content.creator_user_id)
 
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)

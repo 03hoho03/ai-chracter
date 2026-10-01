@@ -2966,6 +2966,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stories/{id}/image-archive": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Story Image Archive
+         * @description 스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재
+         *     발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로
+         *     쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.
+         *
+         *     대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은
+         *     작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.
+         *
+         *     이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를
+         *     시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다.
+         */
+        get: operations["get_story_image_archive_stories__id__image_archive_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/characters/{id}/image-archive": {
         parameters: {
             query?: never;
@@ -6821,6 +6849,45 @@ export interface components {
             hashtags: string[];
             visibility: components["schemas"]["ContentVisibility"];
             mediaBook?: components["schemas"]["MediaBookDraft"];
+        };
+        /**
+         * StoryImageArchiveItem
+         * @description 스토리 미디어 북 보관함의 칸 하나. `id` 는 칸 entity_id, `exposed` 는 사용자가 채팅에서 이 칸을 봤는가다
+         *     (대화 중 판정·첫 메시지·엔딩 에필로그). 본 칸은 `image_url` 이 원본 썸네일이고, 못 본 칸은 블러본 썸네일과
+         *     작가가 적은 `unlock_hint`(없으면 빈 문자열)다. `width`·`height` 는 그림의 픽셀 크기(모르면 null)로 화면이
+         *     그림이 오기 전에 높이를 잡는 데 쓴다. `person_name` 은 늘 싣고, `scene_name` 은 본 칸에만 싣는다(못 본 칸은
+         *     빈 문자열) — 장면 이름은 무엇이 그려졌는지를 미리 알려 주므로 해금 전까지 숨기고, 인물 이름은 누구의
+         *     그림인지만 알려 주는 안내라 남긴다.
+         */
+        StoryImageArchiveItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Exposed */
+            exposed: boolean;
+            /** Imageurl */
+            imageUrl: string;
+            /** Width */
+            width?: number | null;
+            /** Height */
+            height?: number | null;
+            /**
+             * Personname
+             * @default
+             */
+            personName: string;
+            /**
+             * Scenename
+             * @default
+             */
+            sceneName: string;
+            /**
+             * Unlockhint
+             * @default
+             */
+            unlockHint: string;
         };
         /**
          * StoryPromptTemplate
@@ -11808,6 +11875,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EndingCollectionItem"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_story_image_archive_stories__id__image_archive_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StoryImageArchiveItem"][];
                 };
             };
             /** @description Validation Error */
