@@ -39,7 +39,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
  * (`{{img::인물/장면}}`) 둘 다. 화면은 이 자리에 그림을 그리지만 봇 메타는 글자뿐이라 남기면 태그 원문이 검색 결과·
  * 공유 미리보기에 그대로 나간다. 둘 다 아닌 `{{…}}` 는 작성자가 쓴 글이라 둔다. 공백 정리는 `toMetaDescription` 이 한다.
  */
-function stripMediaTags(text: string): string {
+export function stripMediaTags(text: string): string {
   return text.replace(MEDIA_TAG, (match, body: string) =>
     UUID.test(body.trim()) || body.split("/").length === 2 ? "" : match,
   );

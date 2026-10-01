@@ -4,6 +4,7 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { FolderUp, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
 
+import type { OverwriteChoice } from "@/entities/media-book";
 import {
   applyBulkUploadEntry,
   cellImageRefusalMessage,
@@ -13,7 +14,6 @@ import {
   rememberEntryAxes,
   type BulkUploadExclusion,
   type MediaBookCellImage,
-  type OverwriteChoice,
 } from "@/features/build-story";
 import { MediaBookOverwriteModal } from "@/features/edit-media-book";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
@@ -26,10 +26,10 @@ import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 type UploadOutcome = { ok: true; image: MediaBookCellImage } | { ok: false; reason: string };
 
+type UploadResult = { addedCount: number; excluded: BulkUploadExclusion[] };
+
 // 동시에 올리는 파일 수. 파일마다 리사이즈(메인 스레드 캔버스)와 업로드가 돌아 많이 열면 화면이 굳는다.
 const UPLOAD_CONCURRENCY = 3;
-
-type UploadResult = { addedCount: number; excluded: BulkUploadExclusion[] };
 
 /**
  * 파일 이름(`인물_장면.확장자`)으로 칸을 한꺼번에 채운다. 순서: 이름 읽기 → (채워진 칸이 있으면) 덮어쓰기 묻기 →

@@ -10,7 +10,7 @@ const PERSON_MARIA = "00000000-0000-4000-8000-000000000002";
 const SCENE_JOY = "00000000-0000-4000-8000-000000000011";
 const SCENE_SAD = "00000000-0000-4000-8000-000000000012";
 
-const mediaBook: MediaBookValues = {
+const MEDIA_BOOK: MediaBookValues = {
   people: [
     { id: PERSON_RIA, name: "리아" },
     { id: PERSON_MARIA, name: "마리아" },
@@ -84,15 +84,15 @@ describe("findUnknownMediaTags", () => {
   it("reports tags that point at no filled cell, once each and in order", () => {
     const text = "{{img::리아/슬픔}} {{img::리아/기쁨}} {{img::없음/기쁨}} {{img::리아/슬픔}}";
 
-    expect(findUnknownMediaTags(text, mediaBook)).toEqual(["{{img::리아/슬픔}}", "{{img::없음/기쁨}}"]);
+    expect(findUnknownMediaTags(text, MEDIA_BOOK)).toEqual(["{{img::리아/슬픔}}", "{{img::없음/기쁨}}"]);
   });
 
   it("treats a tag with NFD or padded names as the same filled cell", () => {
-    expect(findUnknownMediaTags(`{{img:: ${"리아".normalize("NFD")}/기쁨 }}`, mediaBook)).toEqual([]);
+    expect(findUnknownMediaTags(`{{img:: ${"리아".normalize("NFD")}/기쁨 }}`, MEDIA_BOOK)).toEqual([]);
   });
 
   it("ignores id-form tags and non-tags", () => {
-    expect(findUnknownMediaTags("{{img::00000000-0000-4000-8000-000000000099}} {{user}}", mediaBook)).toEqual([]);
+    expect(findUnknownMediaTags("{{img::00000000-0000-4000-8000-000000000099}} {{user}}", MEDIA_BOOK)).toEqual([]);
   });
 });
 

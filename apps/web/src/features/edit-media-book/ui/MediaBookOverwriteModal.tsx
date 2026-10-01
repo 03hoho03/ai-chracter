@@ -9,9 +9,7 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { createCallable } from "react-call";
 
-/** 이미 그림이 있는 칸을 덮어쓸지(`overwrite`) 건너뛸지(`skip`). 이 값을 받는 일괄 업로드 계획 함수의 선택지와
- * 모양이 같아야 한다 — 다르면 둘을 잇는 호출부에서 타입 검사가 걸린다. */
-export type OverwriteChoice = "overwrite" | "skip";
+import type { OverwriteChoice } from "@/entities/media-book";
 
 type MediaBookOverwriteModalProps = { fileNames: string[] };
 

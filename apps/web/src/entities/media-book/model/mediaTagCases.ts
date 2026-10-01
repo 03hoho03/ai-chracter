@@ -26,10 +26,7 @@ export type MediaTagCases = {
   stripCases: [string, string, string][];
 };
 
-/**
- * 표를 읽어 편다. 상수가 아니라 함수인 이유: 이 모듈은 앱 코드가 쓰는 공개 API 로도 나가는데, 최상위에서 표를 펴면
- * 그 계산이 부수효과로 남아 운영 번들에 표 전체가 실린다(빌드로 확인했다). 부르지 않는 함수는 번들에서 빠진다.
- */
+/** 표를 읽어 편다. */
 export function loadMediaTagCases(): MediaTagCases {
   const [cases] = Object.values(CASE_FILES);
   if (cases === undefined) throw new Error("media_tag_cases.json 을 찾지 못했다");
