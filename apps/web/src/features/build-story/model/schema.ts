@@ -172,8 +172,8 @@ export const shortcutSchema = z.object({
 /** 서버가 422 로 막는 미디어 북 상한의 단일 소스. 스키마의 `.max()`와 메시지가 여기를 읽는다. */
 export const MAX_MEDIA_BOOK_CELLS = 50;
 export const MAX_MEDIA_BOOK_NAME_LENGTH = 20;
-const MAX_MEDIA_BOOK_SITUATION_LENGTH = 100;
-const MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH = 20;
+export const MAX_MEDIA_BOOK_SITUATION_LENGTH = 100;
+export const MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH = 20;
 // 본문 태그 `{{img::인물/장면}}`의 구분자들. 이름에 들어가면 태그를 인물·장면으로 가를 수 없다.
 const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 
@@ -182,13 +182,13 @@ const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 const mediaBookIdSchema = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
 
 /** 서버가 이름을 비교·저장하는 형태(앞뒤 공백 제거 + NFC). 길이와 중복을 이 값으로 잰다. */
-function normalizeMediaBookName(value: string): string {
+export function normalizeMediaBookName(value: string): string {
   return value.trim().normalize("NFC");
 }
 
 // 서버는 글자 수를 코드 포인트로 센다 — `.length`(UTF-16)로 세면 이모지가 두 글자가 돼 서버가 받는
 // 길이를 폼이 먼저 막는다.
-function countCharacters(value: string): number {
+export function countCharacters(value: string): number {
   return [...value].length;
 }
 

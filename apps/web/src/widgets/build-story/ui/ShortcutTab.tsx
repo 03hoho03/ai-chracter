@@ -7,6 +7,8 @@ import { useFieldArray, useFormContext } from "react-hook-form";
 
 import type { StoryBuilderFormValues } from "@/features/build-story";
 
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+
 /** 탭 전체가 선택사항(0개도 발행 가능), 작품 전역에 적용되는
  * 단축어 목록을 조회/수정/삭제 가능. */
 export function ShortcutTab() {
@@ -110,6 +112,7 @@ function ShortcutRow({
           aria-describedby={shortcutErrors?.description ? `shortcut-${id}-description-error` : undefined}
           {...register(`shortcuts.${index}.description`)}
         />
+        <MediaTagOutsideNotice name={`shortcuts.${index}.description`} />
         {shortcutErrors?.description && (
           <p id={`shortcut-${id}-description-error`} role="alert" className="text-xs text-destructive-text">
             {shortcutErrors.description.message}
@@ -127,6 +130,7 @@ function ShortcutRow({
           aria-describedby={shortcutErrors?.prompt ? `shortcut-${id}-prompt-error` : undefined}
           {...register(`shortcuts.${index}.prompt`)}
         />
+        <MediaTagOutsideNotice name={`shortcuts.${index}.prompt`} />
         {shortcutErrors?.prompt && (
           <p id={`shortcut-${id}-prompt-error`} role="alert" className="text-xs text-destructive-text">
             {shortcutErrors.prompt.message}

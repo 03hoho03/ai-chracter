@@ -14,7 +14,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { GripVertical, Trash2, X } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
@@ -23,6 +23,10 @@ import {
   reconcileKeywordNotesOnStartingSetupRemoval,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
+
+import { MediaTagInsertButton } from "./MediaTagInsertButton";
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
@@ -152,6 +156,11 @@ function StartingSetupRow({
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
   const canAddSuggestedReply = suggestedReplies.length < MAX_SUGGESTED_REPLIES;
   const [replyInput, setReplyInput] = useState("");
+  // "이미지 넣기"가 커서 자리를 읽을 입력창. `register` 의 ref 와 함께 건다.
+  const prologueRef = useRef<HTMLTextAreaElement | null>(null);
+  const openingSituationRef = useRef<HTMLTextAreaElement | null>(null);
+  const prologueField = register(`startingSetups.${index}.prologue`);
+  const openingSituationField = register(`startingSetups.${index}.openingSituation`);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(
     () =>
       Boolean(getValues(`startingSetups.${index}.playGuide`)) ||
@@ -216,15 +225,23 @@ function StartingSetupRow({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-prologue`}>프롤로그 *</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor={`starting-setup-${id}-prologue`}>프롤로그 *</Label>
+              <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
+            </div>
             <Textarea
               id={`starting-setup-${id}-prologue`}
               placeholder="이 시작설정의 도입부를 입력해주세요"
               rows={3}
               aria-invalid={!!rowErrors?.prologue}
               aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
-              {...register(`startingSetups.${index}.prologue`)}
+              {...prologueField}
+              ref={(element) => {
+                prologueField.ref(element);
+                prologueRef.current = element;
+              }}
             />
+            <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
             {rowErrors?.prologue && (
               <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
                 {rowErrors.prologue.message}
@@ -233,15 +250,27 @@ function StartingSetupRow({
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-opening-situation`}>시작상황</Label>
+            <div className="flex items-center justify-between gap-2">
+              <Label htmlFor={`starting-setup-${id}-opening-situation`}>시작상황</Label>
+              <MediaTagInsertButton
+                name={`startingSetups.${index}.openingSituation`}
+                fieldLabel="시작상황"
+                textareaRef={openingSituationRef}
+              />
+            </div>
             <Textarea
               id={`starting-setup-${id}-opening-situation`}
               placeholder="채팅 시작 시 상황을 입력해주세요"
               rows={2}
               aria-invalid={!!rowErrors?.openingSituation}
               aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
-              {...register(`startingSetups.${index}.openingSituation`)}
+              {...openingSituationField}
+              ref={(element) => {
+                openingSituationField.ref(element);
+                openingSituationRef.current = element;
+              }}
             />
+            <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
             <p className="text-xs text-muted-foreground">
               비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
             </p>
@@ -286,6 +315,7 @@ function StartingSetupRow({
               aria-describedby={rowErrors?.playGuide ? `starting-setup-${id}-play-guide-error` : undefined}
               {...register(`startingSetups.${index}.playGuide`)}
             />
+            <MediaTagOutsideNotice name={`startingSetups.${index}.playGuide`} />
             {rowErrors?.playGuide && (
               <p id={`starting-setup-${id}-play-guide-error`} role="alert" className="text-xs text-destructive-text">
                 {rowErrors.playGuide.message}

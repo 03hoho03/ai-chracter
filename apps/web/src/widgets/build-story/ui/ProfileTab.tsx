@@ -7,6 +7,8 @@ import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 
+import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+
 /** 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
  * `thumbnailUrl`은 초안 조회 응답의 표시 전용 값 — 폼 필드가 아니라 초안
  * 재진입 시 이미지 필드를 채우기 위한 prop이다. */
@@ -73,6 +75,7 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
           aria-describedby={errors.profile?.oneLiner ? "story-profile-oneliner-error" : undefined}
           {...register("profile.oneLiner")}
         />
+        <MediaTagOutsideNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (
           <p id="story-profile-oneliner-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.oneLiner.message}

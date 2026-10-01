@@ -66,6 +66,12 @@ export function useAutosave<TForm, TPayload>(opts: {
    * 바꾸면서 **이미 다른 화면에 있는 사용자를 빌더로 되돌려 놓는다**(실측으로 재현했다).
    */
   flushOnUnmount: () => boolean;
+  /**
+   * 실패 이유에 따라 토스트 문구를 바꿀 때만 준다(없거나 undefined 를 돌려주면 기본 문구). 기다려도 풀리지 않는
+   * 실패(다른 창이 먼저 저장해 새로고침이 필요한 경우 등)에 "잠시 후 다시 시도"라고 말하지 않기 위한 자리다.
+   * `save` 와 같은 이유로 렌더마다 같은 함수여야 한다.
+   */
+  errorMessage?: (error: unknown) => string | undefined;
   debounceMs?: number;
 }) {
   const debouncedSave = useMemo(
@@ -74,15 +80,18 @@ export function useAutosave<TForm, TPayload>(opts: {
         void opts
           .save(opts.formToServer(values))
           .then(() => toast.dismiss(AUTOSAVE_ERROR_TOAST_ID))
-          .catch(() => {
-            toast.error("자동저장에 실패했어요. 입력한 내용은 그대로 있으니 잠시 후 다시 시도해주세요.", {
+          .catch((error: unknown) => {
+            const message =
+              opts.errorMessage?.(error) ??
+              "자동저장에 실패했어요. 입력한 내용은 그대로 있으니 잠시 후 다시 시도해주세요.";
+            toast.error(message, {
               id: AUTOSAVE_ERROR_TOAST_ID,
               duration: Infinity,
               closeButton: true,
             });
           });
       }, opts.debounceMs ?? 1500),
-    [opts.save, opts.formToServer, opts.debounceMs],
+    [opts.save, opts.formToServer, opts.errorMessage, opts.debounceMs],
   );
 
   useEffect(() => opts.subscribe(debouncedSave), [opts, debouncedSave]);

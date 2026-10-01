@@ -11,7 +11,11 @@ import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   storyBuilderSchema,
   formToServer,
+  isMediaBookPositionTakenError,
+  MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
+  mediaBookSchema,
   serverToForm,
+  storyAutosaveErrorMessage,
   STORY_TABS,
   type StoryBuilderFormValues,
   type StoryBuilderTab,
@@ -37,6 +41,8 @@ import { AppealModal } from "@/features/submit-appeal";
 
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
+import { MediaBookTab } from "./MediaBookTab";
+import { MediaBookThumbnailsProvider } from "./MediaBookThumbnailsProvider";
 import { ProfileTab } from "./ProfileTab";
 import { RegistrationTab } from "./RegistrationTab";
 import { SettingTab } from "./SettingTab";
@@ -102,6 +108,14 @@ const MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBuilderFormValue
 // 맵에서 "폼 경로 → 라벨"을 파생시킨다 — 세 번째 맵을 손으로 적지 않는다.
 const MISSING_FIELD_LABEL_BY_FORM_PATH = fieldLabelByFormPath(MISSING_FIELD_FORM_PATH, MISSING_FIELD_LABELS);
 
+// 미디어 북의 오류는 항목마다 경로가 달라(`mediaBook.people.0.name` 등) 위 맵처럼 하나씩 적을 수 없다 — 토스트에서는
+// 경로를 `mediaBook` 하나로 접어 "미디어 북"으로 부른다. 미디어 북 탭은 폼 오류를 항목 옆에 그리지 않는다: 화면이 규칙에
+// 맞지 않는 값을 폼에 넣지 않으므로(이름 오류는 입력칸이 폼 밖에서 따로 보인다) 이 경로에 닿는 것은 서버만 아는
+// 상태뿐이고, 그때 사용자가 보는 것은 이 토스트와 탭 스트립의 오류 표시다.
+const MEDIA_BOOK_PATH = "mediaBook";
+const MEDIA_BOOK_LABEL = "미디어 북";
+
+
 /** 탭 단일 useForm 셸. 자동저장/발행/
  * 미리보기를 CharacterBuilderShell.tsx와 동일한 방식으로 연동한다.
  *
@@ -155,14 +169,23 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     formToServer,
     save: saveDraft,
     flushOnUnmount: () => draftId !== undefined,
+    errorMessage: storyAutosaveErrorMessage,
   });
 
   async function handleSaveNow() {
+    const values = form.getValues();
     try {
-      await saveNow(form.getValues());
-      toast.success("임시저장했어요.");
-    } catch {
-      toast.error("임시저장에 실패했어요. 잠시 후 다시 시도해주세요.");
+      await saveNow(values);
+      // 서버가 거절할 미디어 북은 저장 요청에서 빠진다(`formToServer`). 그때 "임시저장했어요"만 말하면 미디어 북도
+      // 저장된 줄 안다.
+      if (mediaBookSchema.safeParse(values.mediaBook).success) toast.success("임시저장했어요.");
+      else toast.warning("임시저장했어요. 미디어 북은 고칠 항목이 있어 이번에는 저장하지 않았어요.");
+    } catch (error) {
+      toast.error(
+        isMediaBookPositionTakenError(error)
+          ? MEDIA_BOOK_POSITION_TAKEN_MESSAGE
+          : "임시저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+      );
     }
   }
 
@@ -182,15 +205,19 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         setRejectionReason(reason);
         return;
       }
-      const missingFields = getMissingFields(error);
+      const missingFields = getMissingFields(error)?.map(collapseMediaBookPath);
       if (missingFields) {
         for (const field of missingFields) {
-          const formPath = MISSING_FIELD_FORM_PATH[field];
+          const formPath = field === MEDIA_BOOK_PATH ? MEDIA_BOOK_PATH : MISSING_FIELD_FORM_PATH[field];
           if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
         }
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
-        toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
+        toast.error(missingFieldsMessage(missingFields, { ...MISSING_FIELD_LABELS, [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL }));
+        return;
+      }
+      if (isMediaBookPositionTakenError(error)) {
+        toast.error(MEDIA_BOOK_POSITION_TAKEN_MESSAGE);
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");
@@ -205,7 +232,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   // 온다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     focusFirstError(firstErrorLocation(errors, TABS));
-    toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
+    toast.error(
+      invalidFieldsMessage(flattenFieldErrorPaths(errors).map(collapseMediaBookPath), {
+        ...MISSING_FIELD_LABEL_BY_FORM_PATH,
+        [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL,
+      }),
+    );
   }
 
   // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상
@@ -248,56 +280,62 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
           />
         }
       />
-      <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {rejectionReason !== undefined && draftId !== undefined && (
-          <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
-              <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+      {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
+      <MediaBookThumbnailsProvider draft={draft}>
+        <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+          {rejectionReason !== undefined && draftId !== undefined && (
+            <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
+                <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() =>
+                  void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
+                }
+              >
+                이의제기
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() =>
-                void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
-              }
-            >
-              이의제기
-            </Button>
-          </div>
-        )}
+          )}
 
-        <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
-          <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+          <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
+            <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
-          <TabsContent value="profile">
-            <ProfileTab thumbnailUrl={draft.thumbnailUrl} />
-          </TabsContent>
-          <TabsContent value="setting">
-            <SettingTab />
-          </TabsContent>
-          <TabsContent value="startingSetup">
-            <StartingSetupTab />
-          </TabsContent>
-          <TabsContent value="stat">
-            <StatTab />
-          </TabsContent>
-          <TabsContent value="keywordNote">
-            <KeywordNoteTab />
-          </TabsContent>
-          <TabsContent value="shortcut">
-            <ShortcutTab />
-          </TabsContent>
-          <TabsContent value="ending">
-            <EndingTab />
-          </TabsContent>
-          <TabsContent value="registration">
-            <RegistrationTab />
-          </TabsContent>
-        </Tabs>
-      </BuilderLayout>
+            <TabsContent value="profile">
+              <ProfileTab thumbnailUrl={draft.thumbnailUrl} />
+            </TabsContent>
+            <TabsContent value="setting">
+              <SettingTab />
+            </TabsContent>
+            <TabsContent value="startingSetup">
+              <StartingSetupTab />
+            </TabsContent>
+            <TabsContent value="stat">
+              <StatTab />
+            </TabsContent>
+            <TabsContent value="mediaBook">
+              <MediaBookTab />
+            </TabsContent>
+            <TabsContent value="keywordNote">
+              <KeywordNoteTab />
+            </TabsContent>
+            <TabsContent value="shortcut">
+              <ShortcutTab />
+            </TabsContent>
+            <TabsContent value="ending">
+              <EndingTab />
+            </TabsContent>
+            <TabsContent value="registration">
+              <RegistrationTab />
+            </TabsContent>
+          </Tabs>
+        </BuilderLayout>
+      </MediaBookThumbnailsProvider>
     </FormProvider>
   );
 }
@@ -306,4 +344,11 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
  * 그리는 `TABS`를 근거로 삼는다 — 탭을 추가해도 술어가 자동으로 따라온다. */
 function isStoryBuilderTab(value: string): value is StoryBuilderTab {
   return TABS.some((tab) => tab.id === value);
+}
+
+/** 미디어 북 오류 경로를 `mediaBook` 하나로 접는다(이유는 `MEDIA_BOOK_PATH` 주석). */
+function collapseMediaBookPath(path: string): string {
+  return path === MEDIA_BOOK_PATH || path.startsWith(`${MEDIA_BOOK_PATH}.`) || path.startsWith(`${MEDIA_BOOK_PATH}[`)
+    ? MEDIA_BOOK_PATH
+    : path;
 }

@@ -4,6 +4,7 @@ import { createRootRouteWithContext, ErrorComponent, Outlet, useRouterState } fr
 import { ChangeContentVisibilityModal } from "@/features/change-content-visibility";
 import { ChangeStartingSetupModal, ConfirmStartingSetupChangeModal } from "@/features/change-starting-setup";
 import { ImageCropModal } from "@/features/crop-image";
+import { MediaBookConfirmModal, MediaBookOverwriteModal, MediaTagPickerModal } from "@/features/edit-media-book";
 import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal } from "@/features/image-archive";
 import { ConfirmChatRoomActionModal } from "@/features/manage-chat-room";
@@ -66,6 +67,9 @@ function RootComponent() {
       <ChangeStartingSetupModal />
       <ConfirmStartingSetupChangeModal />
       <GeneratedImagePickerModal />
+      <MediaBookConfirmModal />
+      <MediaBookOverwriteModal />
+      <MediaTagPickerModal />
       <AppealModal />
       <ChangeContentVisibilityModal />
       <DeleteContentDraftModal />
