@@ -1,7 +1,7 @@
 import unicodedata
 import uuid
 
-from api.chat.keyword_notes import ScanTurn, recent_scan_turns, select_keyword_notes
+from api.chat.keyword_notes import ScanTurn, match_keyword_notes, recent_scan_turns, select_keyword_notes
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import KeywordNote
 
@@ -258,3 +258,10 @@ def test_always_on_notes_come_first_and_do_not_count_toward_five() -> None:
 
     assert selected == [*always, *fired[:5]]
 
+
+def test_match_keyword_notes_walks_back_as_far_as_longest_sticky_range() -> None:
+    note = _note(["마법사"], sticky_turns=2)
+    history = [_a("O"), _u("마법사"), _a("A1"), _u("U2"), _a("A2")]
+
+    assert match_keyword_notes([note], history, "U3") == [note]
+    assert match_keyword_notes([note], [*history, _u("U3"), _a("A3")], "U4") == []

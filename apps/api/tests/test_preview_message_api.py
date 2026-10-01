@@ -506,6 +506,91 @@ async def test_send_preview_message_keyword_note_injected_into_prompt(db_client:
     assert "비밀 통로가 존재한다" in fake.received_prompt
 
 
+def _keyword_note_item(info_text: str, trigger_keywords: list[str], **options: object) -> dict[str, object]:
+    return {"id": str(uuid.uuid4()), "infoText": info_text, "triggerKeywords": trigger_keywords, "startingSetupId": None, **options}
+
+
+async def _preview_prompts(
+    client: httpx.AsyncClient, db_session: AsyncSession, payload: dict[str, object], turns: list[tuple[str, str]]
+) -> list[str]:
+    """`turns` 는 (사용자 메시지, 그 턴의 모델 응답) 쌍. 턴마다 생성 프롬프트를 모은다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(client, user.id)
+    session_id = await _start_session(client, payload)
+    fake = _FakeLLMClient(tokens=[], structured_results=[StatJudgmentResult(stat_changes=[]) for _ in turns])
+    prompts: list[str] = []
+    _override_llm_client(fake)
+    try:
+        for message, reply in turns:
+            fake.tokens = [reply]
+            resp = await client.post(f"/preview-sessions/{session_id}/messages", json={"content": message})
+            assert resp.status_code == 200, resp.text
+            assert fake.received_prompt is not None
+            prompts.append(fake.received_prompt)
+    finally:
+        _clear_llm_override()
+    return prompts
+
+
+async def test_send_preview_message_loads_keyword_note_from_previous_ai_response(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    payload = _story_payload(
+        startingSetups=[_starting_setup_item()],
+        keywordNotes=[_keyword_note_item("표지-은빛열쇠 노트", ["은빛열쇠"])],
+    )
+
+    prompts = await _preview_prompts(
+        db_client, db_session, payload, [("주위를 둘러본다", "바닥에 은빛열쇠가 떨어져 있다."), ("그걸 줍는다", "응답")]
+    )
+
+    assert ["표지-은빛열쇠 노트" in prompt for prompt in prompts] == [False, True]
+
+
+async def test_send_preview_message_applies_keyword_note_options_and_builder_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    # 노트 id 를 목록 순서의 역순으로 고른다 — 미리보기가 목록 위치를 순서로 넘기지 않으면 id 순으로 정렬돼 뒤집힌다.
+    triggered = [
+        {**_keyword_note_item(f"표지-열쇠 노트 {index}", ["열쇠"]), "id": str(uuid.UUID(int=100 - index))}
+        for index in range(6)
+    ]
+    payload = _story_payload(
+        startingSetups=[_starting_setup_item()],
+        keywordNotes=[
+            _keyword_note_item("표지-유지 노트", ["마법사"], stickyTurns=1),
+            *triggered,
+            _keyword_note_item("표지-상시 노트", [], alwaysOn=True, excludeKeywords=["가짜"]),
+        ],
+    )
+
+    first, second = await _preview_prompts(
+        db_client, db_session, payload, [("마법사와 열쇠", "응답"), ("가짜 이야기", "응답")]
+    )
+
+    # 키워드로 열린 노트는 유지 노트 + 열쇠 노트 0~3 의 다섯이 위에서부터 들어가고 나머지 둘이 빠진다.
+    assert "표지-열쇠 노트 4" not in first and "표지-열쇠 노트 5" not in first
+    assert all(f"표지-열쇠 노트 {index}" in first for index in range(4))
+    assert "표지-상시 노트" in first and "표지-유지 노트" in first
+    assert "표지-상시 노트" not in second
+    assert "표지-유지 노트" in second
+
+
+async def test_send_preview_message_ignores_person_name_inside_opening_media_tag(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    payload = _story_payload(
+        startingSetups=[_starting_setup_item(openingMessage="문이 열린다.\n\n{{img::도희/웃음}}")],
+        keywordNotes=[_keyword_note_item("표지-도희 노트", ["도희"])],
+    )
+
+    [prompt] = await _preview_prompts(db_client, db_session, payload, [("안녕", "응답")])
+
+    assert "표지-도희 노트" not in prompt
+
+
 async def test_send_preview_message_shortcut_prompt_injected(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     user = _make_user()
     db_session.add(user)

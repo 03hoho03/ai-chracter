@@ -101,9 +101,11 @@ def select_keyword_notes(notes: Sequence[KeywordNote], turns: Sequence[ScanTurn]
     return always_on + triggered[:MAX_TRIGGERED_KEYWORD_NOTES]
 
 
-def match_keyword_notes(user_input: str, notes: list[KeywordNote]) -> list[KeywordNote]:
-    """trigger_keywords 중 하나라도 user_input에
-    포함되면 매칭. starting_setup_id 스코프(null=스토리 전체, 특정 시작설정 한정)로
-    후보 목록을 좁히는 건 호출부(DB 조회)의 책임이고, 이 함수는 그렇게 좁혀진
-    notes에 대해 키워드 매칭만 수행한다."""
-    return [note for note in notes if any(keyword in user_input for keyword in note.trigger_keywords)]
+def match_keyword_notes(
+    notes: Sequence[KeywordNote], history: Sequence[ChatMessage], user_content: str
+) -> list[KeywordNote]:
+    """실채팅과 빌더 미리보기가 함께 쓰는 진입점. `history` 는 이번 턴 생성 프롬프트에 실리는 대화(요약이 덮은 앞부분을
+    뺀 것)이고 `user_content` 는 이번 사용자 메시지다 — 유지 턴도 모델이 보는 대화 안에서만 센다. 노트 중 가장 긴
+    유지 범위만큼만 거슬러 올라간다."""
+    depth = max((note.sticky_turns for note in notes), default=0)
+    return select_keyword_notes(notes, recent_scan_turns(history, user_content, depth))
