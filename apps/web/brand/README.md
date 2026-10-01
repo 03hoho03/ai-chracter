@@ -1,6 +1,6 @@
 # 브랜드 자산 원본
 
-`apps/web/public/`의 자산 3개를 만드는 원본이다. **정식 디자인이 나오면 public의 파일 3개를
+`apps/web/public/`의 자산 4개를 만드는 원본이다. **정식 디자인이 나오면 public의 파일 4개를
 교체하면 끝난다** — 코드는 파일 이름만 참조하고 그림 내용에 의존하는 로직이 없다.
 
 | 산출물 | 규격 | 쓰이는 곳 | 원본 |
@@ -8,6 +8,7 @@
 | `public/og-default.png` | 1200x630 | 홈 `og:image`, 썸네일 없는 콘텐츠의 `og:image` 폴백 | `og-default.html` |
 | `public/favicon.svg` | 정사각(96 viewBox) | 브라우저 탭, 구글 검색 결과 | `favicon.svg` (복사) |
 | `public/favicon-96.png` | 96x96 | SVG를 못 읽는 크롤러용 폴백(구글 최소 48x48) | `favicon-96.html` (= favicon.svg를 굽는다) |
+| `public/favicon.ico` | 16·32·48 | HTML의 아이콘 링크를 읽지 않고 `/favicon.ico`를 직접 찾는 크롤러·브라우저 | `favicon-ico.html` (= favicon.svg를 세 크기로 굽는다) |
 
 ## 재생성
 

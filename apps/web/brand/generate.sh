@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# 브랜드 자산 3개를 재생성한다 — apps/web/public/{og-default.png,favicon.svg,favicon-96.png}.
+# 브랜드 자산 4개를 재생성한다 — apps/web/public/{og-default.png,favicon.svg,favicon-96.png,favicon.ico}.
 #
-# 원본은 이 디렉터리의 og-default.html / favicon-96.html / favicon.svg이고,
-# 정식 디자인이 나오면 public의 파일 3개를 교체하기만 하면 된다(코드는 파일 내용에
+# 원본은 이 디렉터리의 og-default.html / favicon-96.html / favicon-ico.html / favicon.svg이고,
+# 정식 디자인이 나오면 public의 파일 4개를 교체하기만 하면 된다(코드는 파일 내용에
 # 의존하지 않는다).
 #
 # 필요한 것: Chrome(헤드리스 스크린샷), python3(로컬 서버), pnpm install 완료(OG 이미지의 Pretendard)
@@ -44,3 +44,27 @@ shoot "apps/web/brand/og-default.html" "$PUBLIC/og-default.png" "1200,630"
 echo "og-default.png 생성"
 shoot "apps/web/brand/favicon-96.html" "$PUBLIC/favicon-96.png" "96,96"
 echo "favicon-96.png 생성"
+
+# 3) favicon.ico — HTML의 <link rel="icon">을 읽지 않고 /favicon.ico를 직접 찾는 크롤러·브라우저용.
+#    파일이 없으면 Worker가 앱 셸 HTML을 200으로 돌려줘 아이콘 자리에 HTML이 들어간다.
+#    16·32·48px PNG를 찍어 PNG 조각을 담는 ICO로 묶는다(표준 라이브러리만 쓴다)
+ICO_TMP="$(mktemp -d)"
+for size in 16 32 48; do
+  shoot "apps/web/brand/favicon-ico.html" "$ICO_TMP/$size.png" "$size,$size"
+done
+python3 - "$ICO_TMP" "$PUBLIC/favicon.ico" <<'PY'
+import struct, sys
+from pathlib import Path
+
+src, out = Path(sys.argv[1]), Path(sys.argv[2])
+sizes = (16, 32, 48)
+images = [(src / f"{size}.png").read_bytes() for size in sizes]
+offset = 6 + 16 * len(images)
+parts = [struct.pack("<HHH", 0, 1, len(images))]
+for size, data in zip(sizes, images):
+    parts.append(struct.pack("<BBBBHHII", size, size, 0, 0, 1, 32, len(data), offset))
+    offset += len(data)
+out.write_bytes(b"".join(parts + images))
+PY
+rm -rf "$ICO_TMP"
+echo "favicon.ico 생성"
