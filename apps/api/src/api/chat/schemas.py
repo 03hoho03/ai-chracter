@@ -97,7 +97,8 @@ class ChatMessageResponse(CamelModel):
     # `_to_response`가 채운다.
     image_id: uuid.UUID | None = None
     # 인라인 렌더링용 presigned GET URL(원본 키). 저장하지 않고 응답 시점에
-    # 서명한다(900초 만료). 해석이 안 되면 image_id는 남고 이 필드만 None.
+    # 서명한다(같은 15분 구간 안에서는 같은 URL, 받은 뒤 15~30분 유효). 해석이 안 되면
+    # image_id는 남고 이 필드만 None.
     image_url: str | None = None
 
 
