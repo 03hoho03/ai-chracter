@@ -43,6 +43,7 @@ export {
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
+export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";

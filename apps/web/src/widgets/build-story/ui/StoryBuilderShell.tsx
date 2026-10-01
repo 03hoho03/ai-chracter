@@ -14,6 +14,7 @@ import {
   formToServer,
   isMediaBookPositionTakenError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
+  mediaBookPublishErrorMessage,
   mediaBookSchema,
   serverToForm,
   storyAutosaveErrorMessage,
@@ -224,6 +225,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       }
       if (isMediaBookPositionTakenError(error)) {
         toast.error(MEDIA_BOOK_POSITION_TAKEN_MESSAGE);
+        return;
+      }
+      const mediaBookFailure = mediaBookPublishErrorMessage(error, values.mediaBook);
+      if (mediaBookFailure) {
+        setActiveTab("mediaBook");
+        toast.error(mediaBookFailure);
         return;
       }
       toast.error("발행에 실패했어요. 잠시 후 다시 시도해주세요.");

@@ -3,7 +3,7 @@ import { BookOpen, History, IdCard, Images, Repeat, Sparkles } from "lucide-reac
 
 import { ChangeStartingSetupModal } from "@/features/change-starting-setup";
 import { EndingCollectionModal } from "@/features/ending-collection";
-import { ImageArchiveModal } from "@/features/image-archive";
+import { ImageArchiveModal, StoryImageArchiveModal } from "@/features/image-archive";
 import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
 
@@ -29,6 +29,7 @@ const STORY_ITEMS: MorePanelItem[] = [
   { key: "update-info", label: "업데이트 정보", icon: History, isActive: true },
   { key: "change-starting-setup", label: "시작설정 변경", icon: Repeat, isActive: true },
   { key: "ending-collection", label: "엔딩 컬렉션", icon: Sparkles, isActive: true },
+  { key: "image-archive", label: "이미지 보관함", icon: Images, isActive: true },
   { key: "persona", label: "대화 프로필", icon: IdCard, isActive: true },
 ];
 
@@ -37,13 +38,15 @@ export type ChatMoreNavProps = {
   contentType: "character" | "story";
   startingSetupId?: string;
   characterId?: string;
+  /** 스토리 방일 때만 있다(캐릭터 방은 undefined) — 보관함이 작품마다 갈린다. */
+  storyId?: string;
 };
 
 // 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
 // 전용 react-call 모달을 연다 — 데스크톱 인라인 사이드바(ChatMoreSidebar)와 모바일 Sheet
 // (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 두 곳에서 그려져도 정의는 여기 한 곳뿐이다.
-export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId }: ChatMoreNavProps) {
+export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId, storyId }: ChatMoreNavProps) {
   const setPanel = useSetAtom(chatSidePanelAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
 
@@ -60,6 +63,9 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId 
     if (item.key === "persona") void RoomPersonaModal.call({ roomId });
     if (item.key === "image-archive" && characterId) {
       void ImageArchiveModal.call({ characterId });
+    }
+    if (item.key === "image-archive" && storyId) {
+      void StoryImageArchiveModal.call({ storyId });
     }
   }
 

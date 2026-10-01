@@ -50,13 +50,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   const content = contentQuery.data;
 
   const characterId = room?.contentType === "character" ? room.contentId : undefined;
+  const storyId = room?.contentType === "story" ? room.contentId : undefined;
   // 확인 게이트의 트리거를 **위젯이** 만들어 넘긴다(FSD: feature가
   // 다른 feature를 import하지 않는다). 단가를 여기서 묶는 이유는 표면마다 다르기 때문이다 —
   // 채팅은 한 턴 `CHAT_TURN_CLOVER_COST`, 이미지는 장수 × 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
   const { send, retry, regenerate, editMessage, status, policyWarning, streamingText } = useSendMessage(
     roomId,
-    characterId,
+    room && { contentType: room.contentType, contentId: room.contentId },
     (error) => confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
   );
   const isSending = status.kind === "sending";
@@ -207,6 +208,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             contentType={room.contentType}
             startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
             characterId={characterId}
+            storyId={storyId}
           />
         </div>
       </header>
@@ -375,6 +377,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           contentType={room.contentType}
           startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
           characterId={characterId}
+          storyId={storyId}
         />
         <ChatMemorySidebar roomId={roomId} triggerRef={memoryTriggerRef} />
       </div>
