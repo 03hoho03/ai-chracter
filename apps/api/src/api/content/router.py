@@ -30,6 +30,7 @@ from api.content.publish import (
     validate_story_publish,
 )
 from api.content.schemas import (
+    KEYWORD_NOTE_OPTION_FIELDS,
     CharacterDraftPayload,
     CharacterDraftResponse,
     CharacterSituationalImageItem,
@@ -845,8 +846,13 @@ async def _story_draft_response(
             )
         )
 
+    # 노트 순서가 곧 우선순위(대화 한 턴에 위에서부터 실린다)라 화면에 보이는 순서가 저장된 순서와 같아야 한다.
     keyword_notes = (
-        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+        await db.scalars(
+            select(KeywordNote)
+            .where(KeywordNote.content_version_id == version.id)
+            .order_by(KeywordNote.order, KeywordNote.entity_id)
+        )
     ).all()
     shortcuts = (
         await db.scalars(select(Shortcut).where(Shortcut.content_version_id == version.id))
@@ -879,6 +885,10 @@ async def _story_draft_response(
                     if note.starting_setup_id is not None
                     else None
                 ),
+                name=note.name,
+                exclude_keywords=note.exclude_keywords,
+                sticky_turns=note.sticky_turns,
+                always_on=note.always_on,
             )
             for note in keyword_notes
         ],
@@ -1246,7 +1256,22 @@ async def _update_story_draft(
     business validation — every child resource is upserted by entity_id (array index ->
     `order` column where applicable), removed entity_ids are deleted (children-first, since
     these FKs have no ON DELETE CASCADE), and `keywordNotes[].startingSetupId` (entity_id) is
-    mapped to the physical `starting_setups.id` FK column."""
+    mapped to the physical `starting_setups.id` FK column.
+
+    노트가 이 페이로드에 없는 시작설정을 가리키면 400 이다. 예전처럼 조용히 "스토리 전체"로 바꿔 저장하면 작가가
+    고른 적용 범위가 말없이 넓어진다."""
+    known_setup_ids = {setup_item.id for setup_item in payload.starting_setups}
+    for note_index, note_item in enumerate(payload.keyword_notes):
+        if note_item.starting_setup_id is not None and note_item.starting_setup_id not in known_setup_ids:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={
+                    "code": "KEYWORD_NOTE_STARTING_SETUP_NOT_FOUND",
+                    "index": note_index,
+                    "label": note_item.name or next(iter(note_item.trigger_keywords), ""),
+                },
+            )
+
     detail = await db.get(StoryVersionDetail, version.id)
     assert detail is not None
     detail.name = payload.name
@@ -1383,18 +1408,24 @@ async def _update_story_draft(
             await db.flush()
             await _reconcile_ending_rules(db, ending.id, ending_item.stat_rules)
 
-    for note_item in payload.keyword_notes:
+    for note_order, note_item in enumerate(payload.keyword_notes):
         note = existing_notes.get(note_item.id)
         if note is None:
             note = KeywordNote(entity_id=note_item.id, content_version_id=version.id)
             db.add(note)
+            # 새 노트는 안 보낸 옵션도 페이로드의 기본값으로 채운다.
+            provided_options = KEYWORD_NOTE_OPTION_FIELDS
+        else:
+            # 기존 노트에서 안 보낸 옵션은 그대로 둔다(`KeywordNoteDraftInput` docstring).
+            provided_options = KEYWORD_NOTE_OPTION_FIELDS & note_item.model_fields_set
         note.info_text = note_item.info_text
         note.trigger_keywords = note_item.trigger_keywords
         note.starting_setup_id = (
-            setup_physical_id.get(note_item.starting_setup_id)
-            if note_item.starting_setup_id is not None
-            else None
+            setup_physical_id[note_item.starting_setup_id] if note_item.starting_setup_id is not None else None
         )
+        note.order = note_order
+        for option in provided_options:
+            setattr(note, option, getattr(note_item, option))
 
     existing_shortcuts = {
         s.entity_id: s
@@ -1432,7 +1463,9 @@ async def update_content_draft(
     business validation (publish is where that happens) — the version-detail row is
     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
-    그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab
+    그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
+    저장 때 거절한다(422, `KeywordNoteDraftInput`) — 빌더가 같은 상한으로 입력을 먼저 막으므로 정상 입력으로는 닿지
+    않는다. 노트가 페이로드에 없는 시작설정을 가리키면 400 이다. `registration`-tab
     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
     directly rather than the per-type detail table, since they're shared across versions,
     not per-version snapshot data."""
@@ -1966,7 +1999,11 @@ async def _clone_story_children(
             await _clone_ending_rules(db, ending.id, new_ending.id)
 
     keyword_notes = (
-        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == src_version_id))
+        await db.scalars(
+            select(KeywordNote)
+            .where(KeywordNote.content_version_id == src_version_id)
+            .order_by(KeywordNote.order, KeywordNote.entity_id)
+        )
     ).all()
     for note in keyword_notes:
         new_starting_setup_id = None
@@ -1980,6 +2017,11 @@ async def _clone_story_children(
                 starting_setup_id=new_starting_setup_id,
                 info_text=note.info_text,
                 trigger_keywords=note.trigger_keywords,
+                name=note.name,
+                order=note.order,
+                exclude_keywords=note.exclude_keywords,
+                sticky_turns=note.sticky_turns,
+                always_on=note.always_on,
             )
         )
 
@@ -2127,6 +2169,9 @@ async def _publish_story_content(
         )
     ).all()
     cells = (await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version.id))).all()
+    keyword_notes = (
+        await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
+    ).all()
 
     missing_fields = validate_story_publish(
         content,
@@ -2137,6 +2182,7 @@ async def _publish_story_content(
         media_book_people=people,
         media_book_scenes=scenes,
         media_book_cells=cells,
+        keyword_notes=keyword_notes,
     )
     if missing_fields:
         raise HTTPException(

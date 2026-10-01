@@ -1102,6 +1102,10 @@ async def test_patch_content_draft_upserts_starting_setup_tree(
             "infoText": "키워드 노트",
             "triggerKeywords": ["단서"],
             "startingSetupId": setup_id,
+            "name": "",
+            "excludeKeywords": [],
+            "stickyTurns": 0,
+            "alwaysOn": False,
         }
     ]
     assert body["shortcuts"] == [
@@ -2515,7 +2519,7 @@ async def test_delete_story_draft_with_media_book(
     assert await db_session.get(Asset, asset.id) is not None
 
 
-# --- 키워드북: 시작설정 참조 ---
+# --- 키워드북: 저장 검증 · 순서 · 옵션 · 시작설정 참조 ---
 
 
 def _keyword_note_item(**overrides: object) -> dict[str, object]:
@@ -2540,6 +2544,279 @@ async def _keyword_notes_by_order(db_session: AsyncSession, version_id: uuid.UUI
             )
         ).all()
     )
+
+
+@pytest.mark.parametrize("field", ["triggerKeywords", "excludeKeywords"])
+async def test_patch_story_draft_rejects_blank_keyword(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, field: str
+) -> None:
+    """공백은 거의 모든 글에 들어 있어 공백뿐인 키워드는 키워드 구실을 못 한다 — 저장에서 막는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(keywordNotes=[_keyword_note_item(**{field: ["단서", " \u3000"]})]),
+    )
+
+    assert resp.status_code == 422
+    assert await _keyword_notes_by_order(db_session, version.id) == []
+
+
+@pytest.mark.parametrize("field", ["triggerKeywords", "excludeKeywords"])
+@pytest.mark.parametrize(
+    "keywords",
+    [
+        pytest.param(["USB", "usb"], id="ascii-case"),
+        pytest.param(["단서", unicodedata.normalize("NFD", "단서")], id="nfd"),
+        # casefold 는 ß 를 ss 로 접는다 — 소문자화만 하면 둘을 다른 키워드로 본다.
+        pytest.param(["strasse", "STRAßE"], id="casefold"),
+    ],
+)
+async def test_patch_story_draft_rejects_case_insensitive_duplicate_keyword(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, field: str, keywords: list[str]
+) -> None:
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(keywordNotes=[_keyword_note_item(**{field: keywords})]),
+    )
+
+    assert resp.status_code == 422
+    assert await _keyword_notes_by_order(db_session, version.id) == []
+
+
+async def test_patch_story_draft_measures_keyword_length_before_normalizing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빌더는 보낼 글자 그대로의 코드 포인트 수로 20자를 막는다. NFC 로 바꾸면 길어지는 문자(U+0344 는 두 코드
+    포인트가 된다)가 있어, 서버가 정규화한 뒤에 재면 빌더가 받아 준 키워드를 서버가 거절해 자동저장이 멈춘다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    # 앞 글자와 합쳐지지 않게 맨 앞에 둔다 — 뒤에 두면 앞의 a 와 합성돼 길이가 그대로다.
+    keyword = "\u0344" + "a" * 19
+    assert len(keyword) == 20 and len(unicodedata.normalize("NFC", keyword)) == 21
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(keywordNotes=[_keyword_note_item(triggerKeywords=[keyword])]),
+    )
+
+    assert resp.status_code == 200
+    [note] = await _keyword_notes_by_order(db_session, version.id)
+    assert note.trigger_keywords == [keyword]
+
+
+async def test_patch_story_draft_rejects_fourth_always_on_note(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    def _payload(always_on_count: int) -> dict[str, object]:
+        return _story_draft_payload(
+            keywordNotes=[_keyword_note_item(alwaysOn=True) for _ in range(always_on_count)]
+            + [_keyword_note_item(alwaysOn=False)]
+        )
+
+    rejected = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(4))
+    assert rejected.status_code == 422
+    assert await _keyword_notes_by_order(db_session, version.id) == []
+
+    accepted = await db_client.patch(f"/contents/{content.id}/draft", json=_payload(3))
+    assert accepted.status_code == 200
+    assert [n.always_on for n in await _keyword_notes_by_order(db_session, version.id)] == [True, True, True, False]
+
+
+async def test_patch_story_draft_accepts_new_keyword_note_without_keywords(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """빌더의 "노트 추가" 직후 자동저장은 빈 정보·빈 키워드 노트를 그대로 보낸다. 키워드가 있어야 한다는 규칙은
+    발행이 검사한다 — 저장에서 막으면 노트를 추가할 때마다 자동저장이 멈춘다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(keywordNotes=[_keyword_note_item(infoText="", triggerKeywords=[])]),
+    )
+
+    assert resp.status_code == 200
+    [note] = await _keyword_notes_by_order(db_session, version.id)
+    assert (note.info_text, note.trigger_keywords) == ("", [])
+
+
+async def test_patch_story_draft_accepts_exclude_keywords_on_always_on_note(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상시 노트도 금지 키워드가 나온 턴에는 빠진다 — 상시 노트의 금지 키워드는 버리는 값이 아니다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            keywordNotes=[_keyword_note_item(triggerKeywords=[], alwaysOn=True, excludeKeywords=["회상"])]
+        ),
+    )
+
+    assert resp.status_code == 200
+    [note] = await _keyword_notes_by_order(db_session, version.id)
+    assert (note.always_on, note.exclude_keywords) == (True, ["회상"])
+    assert resp.json()["keywordNotes"][0]["excludeKeywords"] == ["회상"]
+
+
+async def test_patch_story_draft_rejects_keyword_note_pointing_to_unknown_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """지금까지는 모르는 시작설정을 조용히 "스토리 전체"로 바꿔 저장했다 — 작가가 고른 범위가 말없이 넓어진다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(id=setup_id)],
+            keywordNotes=[
+                _keyword_note_item(startingSetupId=setup_id),
+                _keyword_note_item(name="", triggerKeywords=["잃어버린 열쇠"], startingSetupId=str(uuid.uuid4())),
+            ],
+        ),
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json()["detail"]
+    assert detail["code"] == "KEYWORD_NOTE_STARTING_SETUP_NOT_FOUND"
+    assert (detail["index"], detail["label"]) == (1, "잃어버린 열쇠")
+    assert await _keyword_notes_by_order(db_session, version.id) == []
+
+
+async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    items = [_keyword_note_item(triggerKeywords=[f"키{i}"]) for i in range(3)]
+
+    first = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(keywordNotes=items))
+    assert first.status_code == 200
+    reordered = [items[2], items[0], items[1]]
+    second = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(keywordNotes=reordered)
+    )
+
+    assert second.status_code == 200
+    notes = await _keyword_notes_by_order(db_session, version.id)
+    assert [(str(n.entity_id), n.order) for n in notes] == [(item["id"], i) for i, item in enumerate(reordered)]
+    assert [n["id"] for n in second.json()["keywordNotes"]] == [item["id"] for item in reordered]
+
+
+async def test_get_story_draft_returns_notes_in_saved_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """`order` 와 거꾸로 삽입해 힙 순서와 `order` 를 엇갈리게 둔다 — 같게 두면 ORDER BY 가 없어도 통과한다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    entity_ids = [uuid.uuid4() for _ in range(5)]
+    for order in reversed(range(5)):
+        db_session.add(
+            KeywordNote(
+                entity_id=entity_ids[order],
+                content_version_id=version.id,
+                info_text=f"정보{order}",
+                trigger_keywords=[f"키{order}"],
+                order=order,
+            )
+        )
+        await db_session.flush()
+    await db_session.commit()
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert resp.status_code == 200
+    assert [n["id"] for n in resp.json()["keywordNotes"]] == [str(e) for e in entity_ids]
+
+
+async def test_patch_story_draft_keeps_keyword_note_options_when_fields_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 켠 상시·유지·금지·이름을 기본값으로
+    되돌리면 안 된다. 새 노트는 기본값으로 들어간다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    kept_id = uuid.uuid4()
+    db_session.add(
+        KeywordNote(
+            entity_id=kept_id,
+            content_version_id=version.id,
+            info_text="정보",
+            trigger_keywords=["단서"],
+            name="이름",
+            exclude_keywords=["금지"],
+            sticky_turns=3,
+            always_on=True,
+        )
+    )
+    await db_session.commit()
+    new_id = str(uuid.uuid4())
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            keywordNotes=[
+                {"id": str(kept_id), "infoText": "고친 정보", "triggerKeywords": ["단서"], "startingSetupId": None},
+                {"id": new_id, "infoText": "새 정보", "triggerKeywords": ["새"], "startingSetupId": None},
+            ]
+        ),
+    )
+
+    assert resp.status_code == 200
+    kept, new = await _keyword_notes_by_order(db_session, version.id)
+    assert (kept.info_text, kept.name, kept.exclude_keywords, kept.sticky_turns, kept.always_on) == (
+        "고친 정보",
+        "이름",
+        ["금지"],
+        3,
+        True,
+    )
+    assert (new.name, new.exclude_keywords, new.sticky_turns, new.always_on) == ("", [], 0, False)
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            keywordNotes=[
+                _keyword_note_item(
+                    id=str(kept_id), name="", excludeKeywords=[], stickyTurns=0, alwaysOn=False
+                )
+            ]
+        ),
+    )
+    assert cleared.status_code == 200
+    [kept] = await _keyword_notes_by_order(db_session, version.id)
+    assert (kept.name, kept.exclude_keywords, kept.sticky_turns, kept.always_on) == ("", [], 0, False)
+
+
+async def test_get_story_draft_returns_keyword_notes_over_save_limits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """저장 상한은 요청에만 건다. 상한이 생기기 전에 저장된 행이나 서버를 이전 버전으로 되돌린 사이 저장된 행이
+    상한을 넘어도 초안을 열 수 있어야 한다 — 응답 직렬화에서 검증하면 그 초안의 GET 이 500 이다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    for index in range(51):
+        db_session.add(
+            KeywordNote(
+                entity_id=uuid.uuid4(),
+                content_version_id=version.id,
+                info_text="가" * 900,
+                trigger_keywords=["열쇠" * 11] * 11 + ["USB", "usb", " "],
+                name="이" * 30,
+                exclude_keywords=["금" * 21] * 11,
+                sticky_turns=9,
+                always_on=index < 4,
+                order=index,
+            )
+        )
+    await db_session.commit()
+
+    resp = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert resp.status_code == 200
+    notes = resp.json()["keywordNotes"]
+    assert len(notes) == 51
+    assert (len(notes[0]["infoText"]), notes[0]["stickyTurns"], notes[0]["name"]) == (900, 9, "이" * 30)
 
 
 @pytest.mark.parametrize("keep_other_setup", [True, False], ids=["other-setup-kept", "last-setup-removed"])

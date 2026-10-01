@@ -1158,10 +1158,12 @@ async def _build_prompt(
         assert story_detail is not None
         notes = (
             await db.scalars(
-                select(KeywordNote).where(
+                select(KeywordNote)
+                .where(
                     KeywordNote.content_version_id == room.content_version_id,
                     or_(KeywordNote.starting_setup_id.is_(None), KeywordNote.starting_setup_id == setup.id),
                 )
+                .order_by(KeywordNote.order, KeywordNote.entity_id)
             )
         ).all()
         matched_notes = match_keyword_notes(user_content, list(notes))
