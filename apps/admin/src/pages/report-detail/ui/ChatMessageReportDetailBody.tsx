@@ -29,8 +29,10 @@ export function ChatMessageReportDetailBody({ reportId }: { reportId: string }) 
          * 다를 수 있다는 걸 처리자가 알도록 밝힌다. */}
         <div><dt className="text-muted-foreground">원래 응답</dt><dd>{report.chatMessageId === null ? "대화에서 지워졌어요" : "대화에 남아 있어요"}</dd></div>
         {!!report.resolvedAt && <div><dt className="text-muted-foreground">처리일시</dt><dd>{formatDateTime(report.resolvedAt)}</dd></div>}
+        {/* 메모는 사본과 함께 파기돼 빈 값이 된다 — 사본이 없으면 원래 없었는지 파기됐는지 가릴 수 없어
+         * 두 경우를 함께 밝힌다. */}
         <div className="sm:col-span-2"><dt className="text-muted-foreground">신고자 메모</dt>
-          <dd className="whitespace-pre-wrap break-keep wrap-anywhere">{report.note ?? <span className="text-muted-foreground">메모 없음</span>}</dd></div>
+          <dd className="whitespace-pre-wrap break-keep wrap-anywhere">{report.note ?? <span className="text-muted-foreground">{report.evidence.available ? "메모 없음" : "메모 없음 또는 파기됨"}</span>}</dd></div>
       </dl>
     </section>
     <section className={SECTION_CLASS}>

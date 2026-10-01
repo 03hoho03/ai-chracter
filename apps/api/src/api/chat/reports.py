@@ -1,8 +1,8 @@
 """AI 응답 신고 — 회원 접수와 어드민 목록·상세·처리.
 
 댓글 신고(`comments/reports.py`)와 같은 모양이다: 접수 시 대화 사본을 증거로 복사해 두고, 90일이
-지나거나 파기되면 어드민 조회에서 숨긴다. 차이는 신고 대상이 사람이 쓴 글이 아니라 AI 응답이라
-처리가 해결·기각뿐이라는 점과, 신고자가 곧 대화 당사자라 탈퇴하면 사본을 즉시 비운다는 점이다
+지나거나 파기되면 신고자 메모와 함께 어드민 조회에서 숨긴다. 차이는 신고 대상이 사람이 쓴 글이 아니라
+AI 응답이라 처리가 해결·기각뿐이라는 점과, 신고자가 곧 대화 당사자라 탈퇴하면 사본·메모를 즉시 비운다는 점이다
 (탈퇴 처리는 `auth/router.py`의 `withdraw`).
 """
 
@@ -129,18 +129,20 @@ def _evidence(report: ChatMessageReport) -> ChatMessageReportEvidenceResponse:
 
 
 def _detail(report: ChatMessageReport) -> AdminChatMessageReportDetailResponse:
+    evidence = _evidence(report)
     return AdminChatMessageReportDetailResponse(
         id=report.id,
         reporter_user_id=report.reporter_user_id,
         chat_room_id=report.chat_room_id,
         chat_message_id=report.chat_message_id,
         reason=report.reason,
-        note=report.note,
+        # 메모는 사본과 함께 파기된다 — 만료 뒤 파기 작업이 돌기 전에도 사본처럼 숨긴다.
+        note=report.note if evidence.available else None,
         status=report.status,
         created_at=report.created_at,
         resolved_by_admin_id=report.resolved_by_admin_id,
         resolved_at=report.resolved_at,
-        evidence=_evidence(report),
+        evidence=evidence,
     )
 
 

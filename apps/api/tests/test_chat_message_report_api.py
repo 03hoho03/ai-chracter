@@ -296,13 +296,12 @@ async def test_withdrawal_clears_own_report_evidence_but_keeps_metadata(
     assert (await db_client.delete("/me")).status_code == 204
 
     report = await _report_row(db_session, mine.json()["reportId"])
-    assert (report.evidence_response, report.evidence_user_message) == (None, None)
+    assert (report.evidence_response, report.evidence_user_message, report.note) == (None, None, None)
     assert report.evidence_purged_at is not None
-    assert (report.reason, report.note, report.status) == ("hateful", "메모", ReportStatus.PENDING)
+    assert (report.reason, report.status) == ("hateful", ReportStatus.PENDING)
     assert report.reporter_user_id == room.user_id
     other_report = await _report_row(db_session, others.json()["reportId"])
-    assert other_report.evidence_response == "첫 응답"
-    assert other_report.evidence_purged_at is None
+    assert (other_report.evidence_response, other_report.evidence_purged_at) == ("첫 응답", None)
 
 
 # ---------------------------------------------------------------------------
@@ -452,12 +451,13 @@ async def test_purge_clears_only_expired_evidence_columns(
     assert [row[0] for row in returned] == [expired.id]
     for row in (expired, fresh, already):
         await db_session.refresh(row)
-    assert (expired.evidence_response, expired.evidence_user_message) == (None, None)
+    assert (expired.evidence_response, expired.evidence_user_message, expired.note) == (None, None, None)
     assert expired.evidence_purged_at == now
-    assert (expired.reason, expired.note, expired.chat_message_id) == ("other", "메모", messages[0].id)
-    assert (fresh.evidence_response, fresh.evidence_user_message, fresh.evidence_purged_at) == (
+    assert (expired.reason, expired.status, expired.chat_message_id) == ("other", ReportStatus.PENDING, messages[0].id)
+    assert (fresh.evidence_response, fresh.evidence_user_message, fresh.note, fresh.evidence_purged_at) == (
         "응답 사본",
         "질문 사본",
+        "메모",
         None,
     )
     assert (already.evidence_response, already.evidence_purged_at) == ("남은 값", earlier)
@@ -512,11 +512,13 @@ async def test_admin_detail_shows_evidence_and_hides_it_once_expired_or_purged(
     assert live_body["evidence"]["response"] == "응답 사본"
     assert live_body["evidence"]["userMessage"] is None  # 오프닝 신고 — 표시 문구는 FE 몫
     for hidden in (expired, purged):
-        evidence = (await db_client.get(f"/admin/chat-message-reports/{hidden.id}")).json()["evidence"]
+        body = (await db_client.get(f"/admin/chat-message-reports/{hidden.id}")).json()
+        evidence = body["evidence"]
         assert (evidence["available"], evidence["response"], evidence["userMessage"]) == (False, None, None)
+        assert (body["note"], body["reason"]) == (None, "other")
     # 숨기기만 하고 지우지 않는다 — 비우는 건 파기 작업의 몫이다.
     await db_session.refresh(expired)
-    assert expired.evidence_response == "응답 사본"
+    assert (expired.evidence_response, expired.note) == ("응답 사본", "메모")
 
 
 @pytest.mark.parametrize(("action", "expected_status", "log_type"), [

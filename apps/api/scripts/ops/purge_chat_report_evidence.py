@@ -2,9 +2,10 @@
 
 자체 크론이 없다. 이미 설치된 댓글 증거 매시 크론(`ops.purge_comment_evidence.main`)과 DB
 복원(`ops.restore_db.restore`)이 이 함수를 함께 부른다 — VM 에 새 크론을 설치하지 않아도 배포만으로
-같은 주기에 돈다. 시스템 Python에서 실행하므로 stdlib와 ops 모듈만 사용한다. 신고 사유·메모·처리
-메타데이터는 보존하고 신고된 응답과 직전 사용자 메시지 사본만 비운다. 채팅 신고 테이블이 없는
-이전 백업은 변경하지 않는다.
+같은 주기에 돈다. 시스템 Python에서 실행하므로 stdlib와 ops 모듈만 사용한다. 신고된 응답·직전
+사용자 메시지 사본과 함께 신고자 메모도 비운다 — 메모는 대화 내용을 옮겨 적을 수 있는 자유 입력이라
+사본만 비우면 같은 내용이 메모로 남을 수 있다. 신고 사유·처리 상태·시각·처리자는 보존한다.
+채팅 신고 테이블이 없는 이전 백업은 변경하지 않는다.
 """
 
 import subprocess
@@ -17,7 +18,7 @@ def purge_expired_chat_report_evidence(url: str, *, now: datetime) -> int:
     if not scalar("SELECT to_regclass('public.chat_message_reports')", url=url):
         return 0
     sql = (
-        "UPDATE chat_message_reports SET evidence_response = NULL, evidence_user_message = NULL, "
+        "UPDATE chat_message_reports SET evidence_response = NULL, evidence_user_message = NULL, note = NULL, "
         f"evidence_purged_at = '{now.isoformat()}' "
         f"WHERE evidence_expires_at <= '{now.isoformat()}' AND evidence_purged_at IS NULL "
         "RETURNING id;"
