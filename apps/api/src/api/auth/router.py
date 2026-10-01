@@ -57,7 +57,7 @@ from api.core.email import EmailSender, get_email_sender
 from api.core.s3 import build_thumbnail_key, delete_object
 from api.core.security import hash_password, hash_withdrawn_email, verify_password
 from api.db.models.auth import User, WithdrawnEmail
-from api.db.models.chat import ChatRoom
+from api.db.models.chat import ChatMessageReport, ChatRoom
 from api.db.models.content import Content, ContentVisibility
 from api.db.models.inquiry import Inquiry
 from api.db.models.media import Asset, AssetKind, ImageGenerationRequest
@@ -612,6 +612,14 @@ async def withdraw(
     )
     await erase_user_comments(db, user_id, now)
 
+    # 채팅 응답 신고의 증거는 신고자 본인의 대화 사본이다(신고자 = 방 소유자). 아래에서 그 대화를
+    # 지우는데 사본만 90일 남기면 탈퇴로 대화를 파기한다는 약속과 어긋나므로 같이 비운다. 신고
+    # 사유·메모·처리 상태·시각은 남긴다. 방만 지웠을 때는 비우지 않는다(신고가 처리될 시간을 둔다).
+    await db.execute(
+        update(ChatMessageReport)
+        .where(ChatMessageReport.reporter_user_id == user_id, ChatMessageReport.evidence_purged_at.is_(None))
+        .values(evidence_response=None, evidence_user_message=None, evidence_purged_at=now)
+    )
     room_ids = (await db.scalars(select(ChatRoom.id).where(ChatRoom.user_id == user_id))).all()
     await delete_chat_rooms(db, room_ids)
 

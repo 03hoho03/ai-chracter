@@ -20,6 +20,7 @@ from pathlib import Path
 
 from ops.db_url import describe, to_libpq_url
 from ops.pg import run_sh, scalar
+from ops.purge_chat_report_evidence import purge_expired_chat_report_evidence
 from ops.purge_comment_evidence import purge_expired_comment_evidence
 
 
@@ -33,8 +34,11 @@ def restore(dump_path: Path, url: str) -> None:
 
     # 백업에는 운영 DB에서 이미 만료된 증거가 남을 수 있다. 파기 실패를 복원 성공으로
     # 보고하면 서비스를 다시 열 때 원문이 되살아나므로 성공 메시지 전에 반드시 제거한다.
-    removed = purge_expired_comment_evidence(url, now=datetime.now(UTC))
+    now = datetime.now(UTC)
+    removed = purge_expired_comment_evidence(url, now=now)
     print(f"댓글 신고 만료 증거 파기: {removed}건")
+    removed_chat = purge_expired_chat_report_evidence(url, now=now)
+    print(f"채팅 신고 만료 증거 파기: {removed_chat}건")
 
 
 def main() -> int:

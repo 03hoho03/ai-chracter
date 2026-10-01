@@ -19,6 +19,7 @@ from api.admin.router import me_router as admin_me_router, router as admin_route
 from api.admin.users import router as admin_users_router
 from api.assets.router import me_router as assets_me_router, router as assets_router
 from api.auth.router import me_router, router as auth_router
+from api.chat.reports import router as chat_reports_router
 from api.chat.router import (
     characters_router,
     me_router as chat_me_router,
@@ -128,6 +129,7 @@ app.include_router(comments_me_router)
 app.include_router(comment_reports_router)
 app.include_router(moderation_router)
 app.include_router(chat_router)
+app.include_router(chat_reports_router)
 app.include_router(chat_me_router)
 app.include_router(clover_me_router)
 app.include_router(persona_me_router)
