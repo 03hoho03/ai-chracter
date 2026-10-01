@@ -1,9 +1,16 @@
 import type { components } from "@ai-character-chat/api-types";
 import { describe, expect, it } from "vitest";
 
-import { CELLS, MINA_CLASSROOM, MINA_ROOFTOP, NORMALIZE_CASES } from "@/entities/media-book/@x/preview-session";
+import { loadMediaTagCases } from "@/entities/media-book/@x/preview-session";
 
 import { buildPreviewStartState, PREVIEW_OPENING_MESSAGE_ID } from "./buildPreviewStartState";
+
+const {
+  cells: CELLS,
+  minaClassroom: MINA_CLASSROOM,
+  minaRooftop: MINA_ROOFTOP,
+  normalizeCases: NORMALIZE_CASES,
+} = loadMediaTagCases();
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];

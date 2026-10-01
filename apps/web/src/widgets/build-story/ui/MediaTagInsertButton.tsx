@@ -3,12 +3,8 @@ import { ImagePlus } from "lucide-react";
 import type { RefObject } from "react";
 import { useFormContext, useWatch } from "react-hook-form";
 
-import {
-  insertMediaTag,
-  toMediaTag,
-  type MediaTagFieldPath,
-  type StoryBuilderFormValues,
-} from "@/features/build-story";
+import { toMediaNameTag } from "@/entities/media-book";
+import { insertMediaTag, type MediaTagFieldPath, type StoryBuilderFormValues } from "@/features/build-story";
 import { MediaTagPickerModal, type MediaTagPickerGroup } from "@/features/edit-media-book";
 
 import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
@@ -40,7 +36,7 @@ export function MediaTagInsertButton({ name, fieldLabel, textareaRef }: MediaTag
     };
     const picked = await MediaTagPickerModal.call({ groups: toPickerGroups(mediaBook, thumbnails.resolveUrl) });
     if (!picked) return;
-    const next = insertMediaTag(selection, toMediaTag(picked.personName, picked.sceneName));
+    const next = insertMediaTag(selection, toMediaNameTag(picked.personName, picked.sceneName));
     setValue(name, next.text, { shouldDirty: true });
     requestAnimationFrame(() => {
       textarea?.focus();

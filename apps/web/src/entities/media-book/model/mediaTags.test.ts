@@ -1,17 +1,27 @@
-// 정규화·삭제 표는 서버 테스트 `apps/api/tests/test_media_tags.py` 의 행을 그대로 옮긴 것이다 — 빌더 미리보기의 첫
-// 메시지는 이 구현으로, 실채팅의 첫 메시지는 서버 구현으로 정규화되므로 둘이 갈라지면 같은 글이 다르게 보인다. 서버
-// 표에 행을 더하면 여기(정규화 표는 `mediaTagCases.ts`)에도 더한다.
+// 정규화·삭제 표는 서버 테스트 `apps/api/tests/test_media_tags.py` 와 함께 읽는 JSON 하나다(`mediaTagCases.ts` 가
+// 편다) — 빌더 미리보기의 첫 메시지는 이 구현으로, 실채팅의 첫 메시지는 서버 구현으로 정규화되므로 둘이 갈라지면
+// 같은 글이 다르게 보인다. 표에 없는 사례만 여기 적는다.
 import { describe, expect, it } from "vitest";
 
 import {
   dropUnresolvedMediaTags,
+  hasMediaTag,
   normalizeMediaTags,
+  renameMediaTagName,
   splitMediaTagText,
   stripMediaTags,
   type MediaTagImages,
 } from "./mediaTags";
-import { CELLS, MINA_CLASSROOM, MINA_ROOFTOP, NORMALIZE_CASES, UNKNOWN } from "./mediaTagCases";
+import { loadMediaTagCases } from "./mediaTagCases";
 
+const {
+  cells: CELLS,
+  minaClassroom: MINA_CLASSROOM,
+  normalizeCases: NORMALIZE_CASES,
+  stripCases: STRIP_CASES,
+} = loadMediaTagCases();
+
+const UNKNOWN = "bbbbbbbb-0000-0000-0000-000000000009";
 const tag = (cellId: string) => `{{img::${cellId}}}`;
 
 describe("normalizeMediaTags", () => {
@@ -32,32 +42,7 @@ describe("normalizeMediaTags", () => {
 });
 
 describe("stripMediaTags", () => {
-  it.each<[string, string, string]>([
-    ["name-form-alone", "{{img::민아/교실}}", ""],
-    ["id-form-alone", tag(MINA_CLASSROOM), ""],
-    ["mid-line-only-the-tag-goes", "앞 {{img::민아/교실}} 뒤", "앞  뒤"],
-    ["id-form-mid-line", `앞${tag(UNKNOWN)}뒤`, "앞뒤"],
-    ["tag-line-between-blank-lines", "앞 문단\n\n{{img::민아/교실}}\n\n뒤 문단", "앞 문단\n\n뒤 문단"],
-    ["tag-line-without-blank-lines", "앞 문단\n{{img::민아/교실}}\n뒤 문단", "앞 문단\n뒤 문단"],
-    ["tag-line-with-spaces", "앞 문단\n\n  {{img::민아/교실}}  \n\n뒤 문단", "앞 문단\n\n뒤 문단"],
-    [
-      "two-tag-lines-in-a-row",
-      `앞 문단\n\n{{img::민아/교실}}\n${tag(MINA_ROOFTOP)}\n\n뒤 문단`,
-      "앞 문단\n\n뒤 문단",
-    ],
-    ["leading-tag-line", "{{img::민아/교실}}\n\n본문", "본문"],
-    ["trailing-tag-line", "본문\n\n{{img::민아/교실}}\n", "본문"],
-    ["existing-blank-lines-kept", "앞 문단\n\n\n뒤 문단", "앞 문단\n\n\n뒤 문단"],
-    [
-      "blank-lines-kept-when-the-tag-line-keeps-text",
-      "앞 문단\n\n\n중간 {{img::민아/교실}}\n\n\n뒤 문단",
-      "앞 문단\n\n\n중간 \n\n\n뒤 문단",
-    ],
-    ["name-forms-with-a-blank-side", "앞 {{img::/교실}}{{img::민아/}} 뒤", "앞  뒤"],
-    ["non-tags-untouched", "{{img::민아}} {{img::민아/교실", "{{img::민아}} {{img::민아/교실"],
-    ["other-braces-untouched", "{{user}}\n\n{{char}}", "{{user}}\n\n{{char}}"],
-    ["empty", "", ""],
-  ])("%s", (_id, text, expected) => {
+  it.each(STRIP_CASES)("%s", (_id, text, expected) => {
     expect(stripMediaTags(text)).toBe(expected);
   });
 
@@ -105,5 +90,41 @@ describe("splitMediaTagText", () => {
 
   it("leaves a blank where the map has no image for the cell", () => {
     expect(splitMediaTagText(`앞\n\n${tag(UNKNOWN)}\n\n뒤`, IMAGES)).toEqual([{ kind: "text", text: "앞\n\n뒤" }]);
+  });
+});
+
+describe("renameMediaTagName", () => {
+  it("renames only the tag whose person is exactly the old name, not a name that contains it", () => {
+    const text = "{{img::리아/기쁨}} 그리고 {{img::마리아/기쁨}} — 리아가 웃었다";
+
+    expect(renameMediaTagName(text, "person", "리아", "레아")).toBe(
+      "{{img::레아/기쁨}} 그리고 {{img::마리아/기쁨}} — 리아가 웃었다",
+    );
+  });
+
+  it("renames the scene side without touching a person with the same name", () => {
+    const text = "{{img::기쁨/기쁨}}";
+
+    expect(renameMediaTagName(text, "scene", "기쁨", "환희")).toBe("{{img::기쁨/환희}}");
+  });
+
+  it("matches names after trimming and NFC, writing the normalized new name", () => {
+    const decomposed = "리아".normalize("NFD");
+
+    expect(renameMediaTagName(`{{img:: ${decomposed} /기쁨}}`, "person", "리아", " 레아 ")).toBe("{{img::레아/기쁨}}");
+  });
+
+  it("leaves id-form tags, other braces and tags with two slashes alone", () => {
+    const text = "{{img::00000000-0000-4000-8000-000000000021}} {{user}} {{img::리아/기쁨/2}}";
+
+    expect(renameMediaTagName(text, "person", "리아", "레아")).toBe(text);
+  });
+});
+
+describe("hasMediaTag", () => {
+  it("detects either tag form", () => {
+    expect(hasMediaTag("x {{img::00000000-0000-4000-8000-000000000021}}")).toBe(true);
+    expect(hasMediaTag("x {{user}}")).toBe(false);
+    expect(hasMediaTag(undefined)).toBe(false);
   });
 });

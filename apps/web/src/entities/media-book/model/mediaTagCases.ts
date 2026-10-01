@@ -1,41 +1,48 @@
-// 정규화 입력 표 — 서버 테스트 `apps/api/tests/test_media_tags.py` 의 `test_normalize_media_tags` 행을 그대로 옮긴 것이다.
-// 빌더 미리보기의 첫 메시지는 FE 구현으로, 실채팅의 첫 메시지는 서버 구현으로 정규화되므로 같은 표로 양쪽을 시험한다.
-// 서버 표에 행을 더하면 여기에도 더한다. 테스트만 이 파일을 읽는다.
+// 정규화·삭제 입력 표 — 서버 테스트 `apps/api/tests/test_media_tags.py` 와 함께 읽는 JSON 하나
+// (`apps/api/tests/fixtures/media_tag_cases.json`)를 테스트가 쓰기 좋은 모양으로 편다. 빌더 미리보기의 첫 메시지는
+// FE 구현으로, 실채팅의 첫 메시지는 서버 구현으로 정규화되므로 같은 표로 양쪽을 시험한다. 행은 JSON 에만 더한다.
+// 테스트만 이 파일을 읽는다.
 import type { MediaTagCell } from "./mediaTags";
 
-export const MINA_CLASSROOM = "aaaaaaaa-0000-0000-0000-000000000001";
-export const MINA_ROOFTOP = "aaaaaaaa-0000-0000-0000-000000000002";
-export const UNKNOWN = "bbbbbbbb-0000-0000-0000-000000000009";
+type MediaTagCasesFile = {
+  cells: MediaTagCell[];
+  normalize: { id: string; text: string; expectedText: string; expectedCellIds: string[] }[];
+  strip: { id: string; text: string; expected: string }[];
+};
 
-export const CELLS: MediaTagCell[] = [
-  { person: "민아", scene: "교실", cellId: MINA_CLASSROOM },
-  { person: "민아", scene: "옥상", cellId: MINA_ROOFTOP },
-];
+// 표가 앱 밖(`apps/api`)에 있어 레이어 alias 로 닿지 않는다. 글롭은 파일 하나만 맞춘다.
+const CASE_FILES = import.meta.glob<MediaTagCasesFile>("../../../../../api/tests/fixtures/media_tag_cases.json", {
+  import: "default",
+  eager: true,
+});
 
-const tag = (cellId: string) => `{{img::${cellId}}}`;
+export type MediaTagCases = {
+  cells: MediaTagCell[];
+  minaClassroom: string;
+  minaRooftop: string;
+  /** [행 이름, 입력, 기대 글, 기대 칸 id 목록] */
+  normalizeCases: [string, string, string, string[]][];
+  /** [행 이름, 입력, 기대 글] */
+  stripCases: [string, string, string][];
+};
 
-/** [행 이름, 입력, 기대 글, 기대 칸 id 목록] */
-export const NORMALIZE_CASES: [string, string, string, string[]][] = [
-  ["name-form", "{{img::민아/교실}}", tag(MINA_CLASSROOM), [MINA_CLASSROOM]],
-  [
-    "two-tags-in-a-line",
-    "앞 {{img::민아/교실}} 뒤 {{img::민아/옥상}}",
-    `앞 ${tag(MINA_CLASSROOM)} 뒤 ${tag(MINA_ROOFTOP)}`,
-    [MINA_CLASSROOM, MINA_ROOFTOP],
-  ],
-  ["spaces-around-names", "{{img:: 민아 / 교실 }}", tag(MINA_CLASSROOM), [MINA_CLASSROOM]],
-  ["nfd-names", `{{img::${"민아/교실".normalize("NFD")}}}`, tag(MINA_CLASSROOM), [MINA_CLASSROOM]],
-  ["unknown-person-deleted", "앞 {{img::수아/교실}} 뒤", "앞  뒤", []],
-  ["unknown-scene-deleted", "앞 {{img::민아/복도}} 뒤", "앞  뒤", []],
-  ["known-id-form-kept", tag(MINA_ROOFTOP), tag(MINA_ROOFTOP), [MINA_ROOFTOP]],
-  ["upper-case-id-form-canonicalised", tag(MINA_ROOFTOP.toUpperCase()), tag(MINA_ROOFTOP), [MINA_ROOFTOP]],
-  ["unknown-id-form-deleted", `앞 ${tag(UNKNOWN)} 뒤`, "앞  뒤", []],
-  ["empty-person-deleted", "앞 {{img::/교실}} 뒤", "앞  뒤", []],
-  ["empty-scene-deleted", "앞 {{img::민아/}} 뒤", "앞  뒤", []],
-  ["both-names-blank-deleted", "앞 {{img:: / }} 뒤", "앞  뒤", []],
-  ["no-slash-is-not-a-tag", "{{img::민아}}", "{{img::민아}}", []],
-  ["two-slashes-is-not-a-tag", "{{img::민아/교실/밤}}", "{{img::민아/교실/밤}}", []],
-  ["half-tag-is-not-a-tag", "{{img::민아/교실", "{{img::민아/교실", []],
-  ["empty-body-is-not-a-tag", "{{img::}}", "{{img::}}", []],
-  ["other-braces-untouched", "{{user}}와 {{char}}", "{{user}}와 {{char}}", []],
-];
+/**
+ * 표를 읽어 편다. 상수가 아니라 함수인 이유: 이 모듈은 앱 코드가 쓰는 공개 API 로도 나가는데, 최상위에서 표를 펴면
+ * 그 계산이 부수효과로 남아 운영 번들에 표 전체가 실린다(빌드로 확인했다). 부르지 않는 함수는 번들에서 빠진다.
+ */
+export function loadMediaTagCases(): MediaTagCases {
+  const [cases] = Object.values(CASE_FILES);
+  if (cases === undefined) throw new Error("media_tag_cases.json 을 찾지 못했다");
+  const cellIdOf = (person: string, scene: string): string => {
+    const cell = cases.cells.find((item) => item.person === person && item.scene === scene);
+    if (cell === undefined) throw new Error(`표에 ${person}/${scene} 칸이 없다`);
+    return cell.cellId;
+  };
+  return {
+    cells: cases.cells,
+    minaClassroom: cellIdOf("민아", "교실"),
+    minaRooftop: cellIdOf("민아", "옥상"),
+    normalizeCases: cases.normalize.map((row) => [row.id, row.text, row.expectedText, row.expectedCellIds]),
+    stripCases: cases.strip.map((row) => [row.id, row.text, row.expected]),
+  };
+}

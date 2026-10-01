@@ -1,7 +1,8 @@
 import { TriangleAlert } from "lucide-react";
 import { useFormContext, useWatch, type Path } from "react-hook-form";
 
-import { hasMediaTag, type StoryBuilderFormValues } from "@/features/build-story";
+import { hasMediaTag } from "@/entities/media-book";
+import type { StoryBuilderFormValues } from "@/features/build-story";
 
 /** 태그가 그림이 되는 글의 이름. 사용자에게 그 네 곳을 같은 말로 가리킨다. */
 const MEDIA_TAG_FIELDS_LABEL = "시작상황·프롤로그·에필로그·등록 설명";

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { normalizeMediaBookName } from "@/entities/media-book";
+
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // widgets/build-story/ui/RegistrationTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
 export const TARGET_VALUES = ["female", "male", "all"] as const;
@@ -180,11 +182,6 @@ const MEDIA_BOOK_NAME_FORBIDDEN = /[/{}:]/;
 // 축·칸·자산 id 는 서버가 uuid 로 받는다. `z.uuid()`는 RFC 변형 비트까지 요구해 서버가 받는 id 도 거절할 수
 // 있어, 서버(파이썬 `uuid.UUID`)처럼 16진 8-4-4-4-12 모양만 보는 `z.guid()`를 쓴다.
 const mediaBookIdSchema = z.guid("미디어 북 항목의 id 가 올바르지 않습니다");
-
-/** 서버가 이름을 비교·저장하는 형태(앞뒤 공백 제거 + NFC). 길이와 중복을 이 값으로 잰다. */
-export function normalizeMediaBookName(value: string): string {
-  return value.trim().normalize("NFC");
-}
 
 // 서버는 글자 수를 코드 포인트로 센다 — `.length`(UTF-16)로 세면 이모지가 두 글자가 돼 서버가 받는
 // 길이를 폼이 먼저 막는다.

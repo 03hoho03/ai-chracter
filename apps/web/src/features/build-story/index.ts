@@ -31,11 +31,8 @@ export {
 } from "./model/mediaBookBulkUpload";
 export {
   findUnknownMediaTags,
-  hasMediaTag,
   insertMediaTag,
   renameMediaTagsInFields,
-  toMediaTag,
-  type MediaBookAxis,
   type MediaTagFieldPath,
 } from "./model/mediaTags";
 export {
@@ -61,7 +58,6 @@ export {
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   mediaBookSchema,
   countCharacters,
-  normalizeMediaBookName,
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   PROMPT_TEMPLATE_VALUES,

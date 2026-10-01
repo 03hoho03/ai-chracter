@@ -1,12 +1,12 @@
+import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
+
 import {
   MAX_MEDIA_BOOK_CELLS,
   mediaBookAxisSchema,
-  normalizeMediaBookName,
   type MediaBookAxisValues,
   type MediaBookCellValues,
   type MediaBookValues,
 } from "./schema";
-import type { MediaBookAxis } from "./mediaTags";
 
 /**
  * 미디어 북 편집을 순수 함수로 모았다. 화면은 이 함수들이 돌려준 **새 미디어 북 전체**를 폼에 통째로 쓴다 —

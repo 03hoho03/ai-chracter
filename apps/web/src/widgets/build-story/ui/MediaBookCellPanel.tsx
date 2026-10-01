@@ -8,6 +8,7 @@ import { Camera, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
+import { toMediaNameTag } from "@/entities/media-book";
 import {
   cellImageRefusalMessage,
   countCharacters,
@@ -16,7 +17,6 @@ import {
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   removeCell,
   setCellImage,
-  toMediaTag,
   updateCell,
   type MediaBookCellImage,
   type MediaBookCellTextPatch,
@@ -85,7 +85,7 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
     if (isConfirmed) commit(removeCell(getMediaBook(), cell.id));
   }
 
-  const tag = toMediaTag(person.name, scene.name);
+  const tag = toMediaNameTag(person.name, scene.name);
   const headingId = `${id}-heading`;
 
   return (

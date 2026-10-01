@@ -2,7 +2,8 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Copy, EyeOff, Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import { findCell, toMediaTag, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
+import { toMediaNameTag } from "@/entities/media-book";
+import { findCell, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
 
 import { useMediaBookThumbnails } from "./MediaBookThumbnailsProvider";
 
@@ -96,7 +97,7 @@ type GridCellProps = {
 function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, cellKey }: GridCellProps) {
   const thumbnails = useMediaBookThumbnails();
   const imageUrl = cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined;
-  const tag = toMediaTag(personName, sceneName);
+  const tag = toMediaNameTag(personName, sceneName);
 
   async function handleCopy() {
     try {

@@ -8,6 +8,8 @@ on:
       - "packages/**"
       # 작성 가이드의 예시 인용 대조 테스트가 이 시드 파일을 읽는다 — 시드만 고친 변경에서도 돌아야 한다.
       - "apps/api/scripts/seed_content/data/tutorial/**"
+      # 미디어 북 태그 규칙 테스트가 서버 테스트와 함께 이 입력 표를 읽는다 — 표만 고친 변경에서도 돌아야 한다.
+      - "apps/api/tests/fixtures/media_tag_cases.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
   pull_request:
@@ -16,6 +18,8 @@ on:
       - "packages/**"
       # 작성 가이드의 예시 인용 대조 테스트가 이 시드 파일을 읽는다 — 시드만 고친 변경에서도 돌아야 한다.
       - "apps/api/scripts/seed_content/data/tutorial/**"
+      # 미디어 북 태그 규칙 테스트가 서버 테스트와 함께 이 입력 표를 읽는다 — 표만 고친 변경에서도 돌아야 한다.
+      - "apps/api/tests/fixtures/media_tag_cases.json"
       - "pnpm-lock.yaml"
       - "pnpm-workspace.yaml"
 

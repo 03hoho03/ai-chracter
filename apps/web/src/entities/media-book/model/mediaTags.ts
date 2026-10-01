@@ -21,8 +21,8 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 type ParsedTag = { kind: "id"; cellId: string } | { kind: "name"; person: string; scene: string };
 
-/** 빌더가 이름을 저장할 때와 같은 규칙(앞뒤 공백 제거 + NFC). */
-function normalizeName(name: string): string {
+/** 서버가 인물·장면 이름을 비교·저장하는 형태(앞뒤 공백 제거 + NFC). 빌더도 이 값으로 저장하고 길이·중복을 잰다. */
+export function normalizeMediaBookName(name: string): string {
   return name.trim().normalize("NFC");
 }
 
@@ -32,11 +32,21 @@ function parseTagBody(body: string): ParsedTag | undefined {
   const parts = body.split("/");
   if (parts.length !== 2) return undefined;
   const [person = "", scene = ""] = parts;
-  return { kind: "name", person: normalizeName(person), scene: normalizeName(scene) };
+  return { kind: "name", person: normalizeMediaBookName(person), scene: normalizeMediaBookName(scene) };
 }
 
 export function toMediaIdTag(cellId: string): string {
   return `{{img::${cellId}}}`;
+}
+
+/** 칸을 가리키는 이름 형태 태그. 이름은 이미 정규화된(저장된) 값을 받는다. */
+export function toMediaNameTag(personName: string, sceneName: string): string {
+  return `{{img::${personName}/${sceneName}}}`;
+}
+
+/** 글에 이미지 태그(어느 형태든)가 들어 있는가 — 태그가 그림이 되지 않는 칸의 경고에 쓴다. */
+export function hasMediaTag(text: string | undefined): boolean {
+  return text !== undefined && text.includes("{{img::");
 }
 
 /** 태그마다 `replace` 를 불러 바꾼다(undefined 면 지운다). 지워서 비게 된 줄은 모듈 설명의 규칙으로 정리한다. */
@@ -106,7 +116,33 @@ export function normalizeMediaTags(
 
 // 인물·장면 이름에는 `/` 가 들어갈 수 없어 구분자로 안전하다.
 function nameKey(person: string, scene: string): string {
-  return `${normalizeName(person)}/${normalizeName(scene)}`;
+  return `${normalizeMediaBookName(person)}/${normalizeMediaBookName(scene)}`;
+}
+
+/** 미디어 북의 두 축. 이름 형태 태그의 슬래시 앞이 인물, 뒤가 장면이다. */
+export type MediaBookAxis = "person" | "scene";
+
+/**
+ * 인물이나 장면 이름이 바뀌었을 때 글 속 이름 형태 태그를 새 이름으로 바꾼다. 태그 안에서 그 축 자리의 이름이
+ * 정확히 같을 때만 바꾼다 — 글자열 치환이 아니므로 `리아`를 바꿔도 `마리아`가 든 태그나 태그 밖 글은 그대로다.
+ * id 형태와 태그가 아닌 `{{…}}` 는 손대지 않는다.
+ */
+export function renameMediaTagName(text: string, axis: MediaBookAxis, oldName: string, newName: string): string {
+  const from = normalizeMediaBookName(oldName);
+  const to = normalizeMediaBookName(newName);
+  return rewriteMediaTags(text, (tag, original) => {
+    if (tag.kind !== "name" || tag[axis] !== from) return original;
+    return axis === "person" ? toMediaNameTag(to, tag.scene) : toMediaNameTag(tag.person, to);
+  });
+}
+
+/** 글 속 이름 형태 태그를 나온 순서대로(중복 포함) — 원문과 정규화한 인물·장면 이름. id 형태·태그가 아닌 `{{…}}` 는 뺀다. */
+export function findMediaNameTags(text: string): { original: string; person: string; scene: string }[] {
+  if (!text.includes("{{img::")) return [];
+  return [...text.matchAll(MEDIA_TAG)].flatMap((match) => {
+    const parsed = parseTagBody(match[1] ?? "");
+    return parsed?.kind === "name" ? [{ original: match[0], person: parsed.person, scene: parsed.scene }] : [];
+  });
 }
 
 /** 두 형태의 태그를 모두 지운다 — 그림을 그리지 않는 자리(접힌 미리보기·봇 메타)에 쓴다. */

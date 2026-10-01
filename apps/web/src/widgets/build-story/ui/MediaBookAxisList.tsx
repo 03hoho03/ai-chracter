@@ -6,16 +6,15 @@ import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
+import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
 import {
   addAxisItem,
   axisItems,
   countAxisItemCells,
   mediaBookNameError,
-  normalizeMediaBookName,
   removeAxisItem,
   renameAxisItem,
   renameMediaTagsInFields,
-  type MediaBookAxis,
   type MediaBookAxisValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";

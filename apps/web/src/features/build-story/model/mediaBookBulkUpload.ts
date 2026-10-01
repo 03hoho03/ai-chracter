@@ -1,3 +1,5 @@
+import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
+
 import {
   ensureAxisItem,
   findCell,
@@ -6,7 +8,7 @@ import {
   type CellImageResult,
   type MediaBookCellImage,
 } from "./mediaBookEdit";
-import { MAX_MEDIA_BOOK_CELLS, normalizeMediaBookName, type MediaBookValues } from "./schema";
+import { MAX_MEDIA_BOOK_CELLS, type MediaBookValues } from "./schema";
 
 /**
  * 파일 이름으로 칸을 한꺼번에 채우는 흐름의 순수 부분. 파일 이름 `인물_장면.확장자` 를 읽고(계획), 사용자가 덮어쓰기
@@ -167,7 +169,7 @@ export function applyBulkUploadEntry(
 /** 아는 이름이 지금 미디어 북에 없을 때 무슨 일이 있었는가. 이름이 있거나 처음 보는 이름이면 undefined. */
 function touchedAxis(
   mediaBook: MediaBookValues,
-  axis: "person" | "scene",
+  axis: MediaBookAxis,
   name: string,
   known: Map<string, string>,
 ): "renamed" | "removed" | undefined {
@@ -178,7 +180,7 @@ function touchedAxis(
   return items.some((item) => item.id === knownId) ? "renamed" : "removed";
 }
 
-function findAxisId(mediaBook: MediaBookValues, axis: "person" | "scene", name: string): string | undefined {
+function findAxisId(mediaBook: MediaBookValues, axis: MediaBookAxis, name: string): string | undefined {
   const items = axis === "person" ? mediaBook.people : mediaBook.scenes;
   return items.find((item) => normalizeMediaBookName(item.name) === name)?.id;
 }

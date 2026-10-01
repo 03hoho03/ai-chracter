@@ -1,13 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import {
-  findUnknownMediaTags,
-  hasMediaTag,
-  insertMediaTag,
-  renameMediaTagName,
-  renameMediaTagsInFields,
-  toMediaTag,
-} from "./mediaTags";
+import { toMediaNameTag } from "@/entities/media-book";
+
+import { findUnknownMediaTags, insertMediaTag, renameMediaTagsInFields } from "./mediaTags";
 import type { MediaBookValues, StartingSetupValues, StoryBuilderFormValues } from "./schema";
 
 const PERSON_RIA = "00000000-0000-4000-8000-000000000001";
@@ -36,34 +31,6 @@ const mediaBook: MediaBookValues = {
     },
   ],
 };
-
-describe("renameMediaTagName", () => {
-  it("renames only the tag whose person is exactly the old name, not a name that contains it", () => {
-    const text = "{{img::리아/기쁨}} 그리고 {{img::마리아/기쁨}} — 리아가 웃었다";
-
-    expect(renameMediaTagName(text, "person", "리아", "레아")).toBe(
-      "{{img::레아/기쁨}} 그리고 {{img::마리아/기쁨}} — 리아가 웃었다",
-    );
-  });
-
-  it("renames the scene side without touching a person with the same name", () => {
-    const text = "{{img::기쁨/기쁨}}";
-
-    expect(renameMediaTagName(text, "scene", "기쁨", "환희")).toBe("{{img::기쁨/환희}}");
-  });
-
-  it("matches names after trimming and NFC, writing the normalized new name", () => {
-    const decomposed = "리아".normalize("NFD");
-
-    expect(renameMediaTagName(`{{img:: ${decomposed} /기쁨}}`, "person", "리아", " 레아 ")).toBe("{{img::레아/기쁨}}");
-  });
-
-  it("leaves id-form tags, other braces and tags with two slashes alone", () => {
-    const text = "{{img::00000000-0000-4000-8000-000000000021}} {{user}} {{img::리아/기쁨/2}}";
-
-    expect(renameMediaTagName(text, "person", "리아", "레아")).toBe(text);
-  });
-});
 
 function setup(overrides: Partial<StartingSetupValues>): StartingSetupValues {
   return {
@@ -131,7 +98,7 @@ describe("findUnknownMediaTags", () => {
 
 describe("insertMediaTag", () => {
   it("inserts at the caret and puts the caret after the tag", () => {
-    const tag = toMediaTag("리아", "기쁨");
+    const tag = toMediaNameTag("리아", "기쁨");
 
     expect(insertMediaTag({ text: "앞뒤", selectionStart: 1, selectionEnd: 1 }, tag)).toEqual({
       text: `앞${tag}뒤`,
@@ -146,13 +113,5 @@ describe("insertMediaTag", () => {
       selectionStart: 2,
       selectionEnd: 2,
     });
-  });
-});
-
-describe("hasMediaTag", () => {
-  it("detects either tag form", () => {
-    expect(hasMediaTag("x {{img::00000000-0000-4000-8000-000000000021}}")).toBe(true);
-    expect(hasMediaTag("x {{user}}")).toBe(false);
-    expect(hasMediaTag(undefined)).toBe(false);
   });
 });
