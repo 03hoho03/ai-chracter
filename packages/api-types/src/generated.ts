@@ -164,6 +164,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/dashboard/cohort-retention": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dashboard Cohort Retention
+         * @description 코호트 유지율만 따로 준다. `beta=false`(기본)는 `/growth`의 `cohort_retention`과 같은
+         *     값이고, `beta=true`는 베타 참가자만 지정 주차 기준으로 묶는다(`_cohort_retention` 참고).
+         *     `/growth`에 파라미터를 더하지 않은 이유는 한 응답 안에서 이 필드만 베타로 걸러지고 나머지
+         *     지표는 전체 기준으로 남아 섞여 읽히기 때문이다.
+         */
+        get: operations["get_dashboard_cohort_retention_admin_dashboard_cohort_retention_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/contents": {
         parameters: {
             query?: never;
@@ -414,6 +437,36 @@ export interface paths {
          *     순서: 상태 변경 → `record_admin_action` → `commit()`(Redis 단계가 없다).
          */
         post: operations["set_user_rate_limit_exempt_admin_users__user_id__rate_limit_exempt_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{user_id}/beta": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set User Beta
+         * @description `users.beta_joined_at`을 바꾸는 유일한 경로다. 모양은 `set_user_rate_limit_exempt`와
+         *     같다(공백 코멘트 422 → 탈퇴 404 → 변경 → 감사 로그 → 커밋, 켤 때와 끌 때 액션 타입이 다르다).
+         *
+         *     **지정할 때만 나이를 본다.** 베타는 성인만 받으므로 만 19세 미만이면 422
+         *     `{"code": "BETA_AGE_RESTRICTED"}`로 거부하고 컬럼도 감사 로그도 남기지 않는다. 같은
+         *     엔드포인트의 공백 코멘트 422와 갈리도록 code를 둔다. 생년월일이 비어 있으면(탈퇴 파기 외에는
+         *     생기지 않는다) 나이를 확인할 수 없으므로 함께 거부한다. 기준일은 가입 게이트와 같은 UTC
+         *     오늘이다 — 한국 시간 생일 아침 0~9시에는 아직 전날로 계산돼 더 엄격한 쪽으로 틀린다.
+         *
+         *     **이미 지정된 계정을 다시 지정해도 시각을 덮어쓰지 않는다** — 베타 코호트를 나누는 기준이
+         *     첫 지정 시각이기 때문이다. 누른 사실은 감사 로그에 한 행 더 남는다. 해제는 NULL로 되돌린다.
+         */
+        post: operations["set_user_beta_admin_users__user_id__beta_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2699,6 +2752,83 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/chat-rooms/{room_id}/messages/{message_id}/report": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report Chat Message
+         * @description 같은 회원이 같은 메시지를 다시 신고하면 처음 행을 그대로 돌려준다(사유·메모·증거·만료를
+         *     갱신하지 않는다). 재동의 게이트를 걸지 않는다 — 신고는 새 약관에 동의하기 전에도 열려 있어야
+         *     하는 안전 경로다.
+         */
+        post: operations["report_chat_message_chat_rooms__room_id__messages__message_id__report_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/chat-message-reports": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Chat Message Reports */
+        get: operations["list_chat_message_reports_admin_chat_message_reports_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/chat-message-reports/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Chat Message Report */
+        get: operations["get_chat_message_report_admin_chat_message_reports__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/chat-message-reports/{report_id}/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Act On Chat Message Report
+         * @description 이미 처리된 신고도 다시 처리할 수 있다(댓글 신고와 같다) — 상태·처리자·시각을 덮어쓰고
+         *     감사 로그를 한 줄 더 남긴다.
+         */
+        post: operations["act_on_chat_message_report_admin_chat_message_reports__report_id__actions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/me/chat-rooms": {
         parameters: {
             query?: never;
@@ -3260,6 +3390,103 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /**
+         * AdminChatMessageReportActionRequest
+         * @description AI 응답에는 숨기거나 제재할 작성자가 없어 처리는 해결·기각 둘뿐이다.
+         */
+        AdminChatMessageReportActionRequest: {
+            /**
+             * Action
+             * @enum {string}
+             */
+            action: "resolve" | "reject";
+            /** Admincomment */
+            adminComment: string;
+        };
+        /** AdminChatMessageReportDetailResponse */
+        AdminChatMessageReportDetailResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            /** Chatroomid */
+            chatRoomId: string | null;
+            /** Chatmessageid */
+            chatMessageId: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            /** Note */
+            note: string | null;
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /** Resolvedbyadminid */
+            resolvedByAdminId: string | null;
+            /** Resolvedat */
+            resolvedAt: string | null;
+            evidence: components["schemas"]["ChatMessageReportEvidenceResponse"];
+        };
+        /**
+         * AdminChatMessageReportListItem
+         * @description `chat_room_id`·`chat_message_id`는 방 삭제·재생성·메시지 삭제로 대상이 지워지면 null이다.
+         */
+        AdminChatMessageReportListItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Reporteruserid
+             * Format: uuid
+             */
+            reporterUserId: string;
+            /** Chatroomid */
+            chatRoomId: string | null;
+            /** Chatmessageid */
+            chatMessageId: string | null;
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            status: components["schemas"]["ReportStatus"];
+            /**
+             * Createdat
+             * Format: date-time
+             */
+            createdAt: string;
+            /**
+             * Evidenceexpiresat
+             * Format: date-time
+             */
+            evidenceExpiresAt: string;
+            /** Evidenceavailable */
+            evidenceAvailable: boolean;
+        };
+        /** AdminChatMessageReportListResponse */
+        AdminChatMessageReportListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminChatMessageReportListItem"][];
+            /** Page */
+            page: number;
+            /** Totalpages */
+            totalPages: number;
+            /** Totalcount */
+            totalCount: number;
         };
         /**
          * AdminChatMessagesResponse
@@ -4368,7 +4595,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -4382,6 +4609,17 @@ export interface components {
              * Format: date-time
              */
             createdAt: string;
+        };
+        /**
+         * AdminUserBetaRequest
+         * @description 베타 참가자 지정/해제를 `beta` 한 필드로 받는 토글이다. `admin_comment`가 필수인 이유는
+         *     `AdminUserRateLimitExemptRequest`와 같다(비어 있으면 422).
+         */
+        AdminUserBetaRequest: {
+            /** Beta */
+            beta: boolean;
+            /** Admincomment */
+            adminComment?: string | null;
         };
         /** AdminUserChatRoomItem */
         AdminUserChatRoomItem: {
@@ -4470,6 +4708,8 @@ export interface components {
             restrictableContentCount: number;
             /** Ratelimitexempt */
             rateLimitExempt: boolean;
+            /** Betajoinedat */
+            betaJoinedAt: string | null;
             /** Cloverbalance */
             cloverBalance: number;
             /** Chatroomcount */
@@ -4503,6 +4743,8 @@ export interface components {
             createdAt: string;
             /** Suspendedat */
             suspendedAt: string | null;
+            /** Betajoinedat */
+            betaJoinedAt: string | null;
             /** Contentcount */
             contentCount: number;
             /** Chatroomcount */
@@ -4769,6 +5011,47 @@ export interface components {
         ChatMessageEditRequest: {
             /** Content */
             content: string;
+        };
+        /**
+         * ChatMessageReportCreateRequest
+         * @description 메모는 선택이다. 공백만 보내면 메모 없음(NULL)으로 저장한다 — 빈 문자열과 NULL 두 가지로
+         *     "메모 없음"이 갈리면 어드민이 둘을 따로 다뤄야 한다.
+         */
+        ChatMessageReportCreateRequest: {
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "inappropriate" | "hateful" | "out_of_character" | "repetitive" | "broken" | "other";
+            /** Note */
+            note?: string | null;
+        };
+        /**
+         * ChatMessageReportEvidenceResponse
+         * @description `available`이 false면(90일 만료·파기·탈퇴) 두 본문은 null이다. `available`이 true인데
+         *     `user_message`가 null이면 신고된 응답 앞에 사용자 메시지가 없었다는 뜻이다(오프닝 신고).
+         */
+        ChatMessageReportEvidenceResponse: {
+            /**
+             * Expiresat
+             * Format: date-time
+             */
+            expiresAt: string;
+            /** Available */
+            available: boolean;
+            /** Response */
+            response: string | null;
+            /** Usermessage */
+            userMessage: string | null;
+        };
+        /** ChatMessageReportResponse */
+        ChatMessageReportResponse: {
+            /**
+             * Reportid
+             * Format: uuid
+             */
+            reportId: string;
+            status: components["schemas"]["ReportStatus"];
         };
         /** ChatMessageResponse */
         ChatMessageResponse: {
@@ -7158,6 +7441,37 @@ export interface operations {
             };
         };
     };
+    get_dashboard_cohort_retention_admin_dashboard_cohort_retention_get: {
+        parameters: {
+            query?: {
+                beta?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminDashboardCohort"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_admin_contents_admin_contents_get: {
         parameters: {
             query?: {
@@ -7266,6 +7580,7 @@ export interface operations {
                 page?: number;
                 q?: string | null;
                 suspended?: boolean | null;
+                beta?: boolean | null;
             };
             header?: never;
             path?: never;
@@ -7437,6 +7752,39 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AdminUserRateLimitExemptRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_user_beta_admin_users__user_id__beta_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                user_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminUserBetaRequest"];
             };
         };
         responses: {
@@ -11535,6 +11883,140 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ChatRoomMemoryResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    report_chat_message_chat_rooms__room_id__messages__message_id__report_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                room_id: string;
+                message_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChatMessageReportCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChatMessageReportResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_chat_message_reports_admin_chat_message_reports_get: {
+        parameters: {
+            query?: {
+                page?: number;
+                status?: components["schemas"]["ReportStatus"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminChatMessageReportListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_chat_message_report_admin_chat_message_reports__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminChatMessageReportDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    act_on_chat_message_report_admin_chat_message_reports__report_id__actions_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminChatMessageReportActionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminChatMessageReportDetailResponse"];
                 };
             };
             /** @description Validation Error */
