@@ -7,7 +7,7 @@ import { adminUserKeys, type AdminUserListParams } from "./keys";
 
 export type AdminUserListResponse = components["schemas"]["AdminUserListResponse"];
 
-/** GET /admin/users — offset 페이지네이션(20건), q(이메일·닉네임 ILIKE OR)·suspended 필터.
+/** GET /admin/users — offset 페이지네이션(20건), q(이메일·닉네임 ILIKE OR)·suspended·beta 필터.
  * `sort` 파라미터는 BE에 없다 — 만들지 않는다. 탈퇴 유저는 BE가 항상 제외한다. */
 export function useUserListQuery(params: AdminUserListParams) {
   return useQuery<AdminUserListResponse, ApiError>({
@@ -15,7 +15,7 @@ export function useUserListQuery(params: AdminUserListParams) {
     queryFn: async () =>
       (
         await apiClient.get<AdminUserListResponse>("/admin/users", {
-          params: { page: params.page, q: params.q, suspended: params.suspended },
+          params: { page: params.page, q: params.q, suspended: params.suspended, beta: params.beta },
         })
       ).data,
   });

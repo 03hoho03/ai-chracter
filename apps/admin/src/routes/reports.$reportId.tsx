@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { z } from "zod";
 
+import { REPORT_TARGETS } from "../entities/report";
 import { requireSession } from "../entities/session";
 import { ReportDetailPage } from "../pages/report-detail";
 
 const reportSearchSchema = z.object({
-  target: z.enum(["content", "comment"]).optional().catch(undefined),
+  target: z.enum(REPORT_TARGETS).optional().catch(undefined),
 });
 
 export const Route = createFileRoute("/reports/$reportId")({

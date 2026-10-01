@@ -5,14 +5,19 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { CONTENT_TYPE_LABELS } from "@/entities/admin-content";
 import {
+  isReportTarget,
   REPORT_REASON_LABELS,
   REPORT_STATUS_LABELS,
+  REPORT_TARGET_LABELS,
+  REPORT_TARGETS,
   useReportListQuery,
   type ReportStatusFilter,
+  type ReportTarget,
 } from "@/entities/report";
 import { Pagination } from "@/shared/ui/Pagination";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+import { ChatMessageReportsTable } from "./ChatMessageReportsTable";
 import { CommentReportsTable } from "./CommentReportsTable";
 
 const STATUS_FILTER_OPTIONS: { value: "all" | ReportStatusFilter; label: string }[] = [
@@ -27,8 +32,8 @@ type ReportsListPageProps = {
   status?: ReportStatusFilter;
   onPageChange: (page: number) => void;
   onStatusChange: (status?: ReportStatusFilter) => void;
-  target: "content" | "comment";
-  onTargetChange: (target: "content" | "comment") => void;
+  target: ReportTarget;
+  onTargetChange: (target: ReportTarget) => void;
 }
 
 export function ReportsListPage({ page, status, target, onPageChange, onStatusChange, onTargetChange }: ReportsListPageProps) {
@@ -54,15 +59,34 @@ export function ReportsListPage({ page, status, target, onPageChange, onStatusCh
         </Select>
       </div>
 
+      {/* 탭·가드를 대상 목록 하나에서 도출한다 — 손으로 적은 가드에서 값을 빠뜨리면 그 탭은 눌러도
+       * 아무 일이 없다(타입 에러도 나지 않는다). */}
       <ToggleGroup type="single" variant="outline" value={target} aria-label="신고 대상" className="max-w-full flex-wrap"
-        onValueChange={(value) => { if (value === "content" || value === "comment") onTargetChange(value); }}>
-        <ToggleGroupItem value="content" className="h-auto min-h-9 min-w-0 max-w-full whitespace-normal wrap-anywhere">작품 신고</ToggleGroupItem>
-        <ToggleGroupItem value="comment" className="h-auto min-h-9 min-w-0 max-w-full whitespace-normal wrap-anywhere">댓글 신고</ToggleGroupItem>
+        onValueChange={(value) => { if (isReportTarget(value)) onTargetChange(value); }}>
+        {REPORT_TARGETS.map((value) => (
+          <ToggleGroupItem key={value} value={value} className="h-auto min-h-9 min-w-0 max-w-full whitespace-normal wrap-anywhere">
+            {REPORT_TARGET_LABELS[value]}
+          </ToggleGroupItem>
+        ))}
       </ToggleGroup>
-      {target === "comment" ? <CommentReportsTable page={page} status={status} onPageChange={onPageChange} />
-        : <ReportsTable page={page} status={status} onPageChange={onPageChange} />}
+      <TargetReportsTable target={target} page={page} status={status} onPageChange={onPageChange} />
     </main>
   );
+}
+
+/** 대상마다 표가 다르다. 두 갈래 삼항이면 새 대상이 작품 표로 조용히 떨어지므로 대상을 하나씩
+ * 명시하고, `assertNever`로 대상이 늘었을 때 여기서 컴파일이 깨지게 한다. */
+function TargetReportsTable({ target, ...tableProps }: ReportsTableProps & { target: ReportTarget }) {
+  switch (target) {
+    case "content":
+      return <ReportsTable {...tableProps} />;
+    case "comment":
+      return <CommentReportsTable {...tableProps} />;
+    case "chat-message":
+      return <ChatMessageReportsTable {...tableProps} />;
+    default:
+      return assertNever(target);
+  }
 }
 
 type ReportsTableProps = {
@@ -142,4 +166,8 @@ function ReportsTable({ page, status, onPageChange }: ReportsTableProps) {
  * 목록에 섞여 있는 `"all"`은 "필터 없음"이라 여기서 자연히 걸러진다. AppealsListPage 동형. */
 function isReportStatus(value: string): value is ReportStatusFilter {
   return STATUS_FILTER_OPTIONS.some((option) => option.value !== "all" && option.value === value);
+}
+
+function assertNever(value: never): never {
+  throw new Error(`Unexpected: ${String(value)}`);
 }

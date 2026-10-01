@@ -21,6 +21,7 @@ import { z } from "zod";
 import { adminContentKeys, type ContentActionReasonCategory } from "@/entities/admin-content";
 import {
   useAdjustCloverMutation,
+  useSetBetaMutation,
   useSetRateLimitExemptMutation,
   useSuspendUserMutation,
   useUnsuspendUserMutation,
@@ -35,6 +36,8 @@ type UserActionType =
   | "unsuspend"
   | "rate-limit-exempt-on"
   | "rate-limit-exempt-off"
+  | "beta-on"
+  | "beta-off"
   | "clover-grant"
   | "clover-revoke";
 
@@ -44,6 +47,8 @@ const ACTION_TITLE: Record<UserActionType, string> = {
   unsuspend: "정지 해제",
   "rate-limit-exempt-on": "레이트리밋 면제",
   "rate-limit-exempt-off": "면제 해제",
+  "beta-on": "베타 지정",
+  "beta-off": "베타 해제",
   "clover-grant": "클로버 지급",
   "clover-revoke": "클로버 회수",
 };
@@ -58,6 +63,8 @@ const IS_CLOVER_ACTION: Record<UserActionType, boolean> = {
   unsuspend: false,
   "rate-limit-exempt-on": false,
   "rate-limit-exempt-off": false,
+  "beta-on": false,
+  "beta-off": false,
   "clover-grant": true,
   "clover-revoke": true,
 };
@@ -78,6 +85,8 @@ const IS_REASON_CATEGORY_REQUIRED: Record<UserActionType, boolean> = {
   unsuspend: false,
   "rate-limit-exempt-on": false,
   "rate-limit-exempt-off": false,
+  "beta-on": false,
+  "beta-off": false,
   "clover-grant": false,
   "clover-revoke": false,
 };
@@ -87,6 +96,9 @@ const ERROR_MESSAGE = "처리에 실패했어요. 잠시 후 다시 시도해주
 /** 같은 키가 두 번 도착했다는 뜻이다(더블클릭·네트워크 재시도) — BE가 두 번째를 막았으므로
  * 잔액은 한 번만 움직였다. "실패했다"고 말하면 운영자가 다시 누르게 되니 사실대로 말한다. */
 const CLOVER_DUPLICATE_MESSAGE = "이미 처리된 요청이에요. 잔액은 한 번만 반영됐어요.";
+
+/** 베타는 성인만 받는다 — BE가 지정 시 만 19세 미만이거나 생년월일이 없으면 422로 거부한다. */
+const BETA_AGE_RESTRICTED_MESSAGE = "만 19세 미만이거나 생년월일이 없는 유저라 베타 참가자로 지정할 수 없어요.";
 
 const userActionSchema = z.object({
   reasonCategory: z.enum(REPORT_REASON_VALUES).optional(),
@@ -126,6 +138,7 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
     const suspendMutation = useSuspendUserMutation(userId);
     const unsuspendMutation = useUnsuspendUserMutation(userId);
     const setRateLimitExemptMutation = useSetRateLimitExemptMutation(userId);
+    const setBetaMutation = useSetBetaMutation(userId);
     const adjustCloverMutation = useAdjustCloverMutation(userId);
     const {
       control,
@@ -159,6 +172,12 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
         } else if (action === "rate-limit-exempt-off") {
           await setRateLimitExemptMutation.mutateAsync({ exempt: false, ...formToCommentOnlyRequest(values) });
           toast.success("레이트리밋 면제를 해제했어요.");
+        } else if (action === "beta-on") {
+          await setBetaMutation.mutateAsync({ beta: true, ...formToCommentOnlyRequest(values) });
+          toast.success("베타 참가자로 지정했어요.");
+        } else if (action === "beta-off") {
+          await setBetaMutation.mutateAsync({ beta: false, ...formToCommentOnlyRequest(values) });
+          toast.success("베타 지정을 해제했어요.");
         } else if (action === "clover-grant" || action === "clover-revoke") {
           // 스키마가 `optional()`이라 타입이 `number | undefined`다 — `superRefine`을 통과한 뒤라
           // 클로버 경로에서는 반드시 값이 있지만 타입체커는 그걸 모른다. `reasonCategory`를
@@ -201,6 +220,13 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           toast.error("현재 잔액보다 많이 회수할 수 없어요.");
           return;
         }
+        // 같은 엔드포인트의 공백 코멘트·검증 실패도 422라 status만으로는 못 가른다 — `detail.code`로
+        // 나이 거부만 골라낸다. 고칠 입력이 없는 거부라 모달은 닫는다(다시 눌러도 같은 결과다).
+        if (action === "beta-on" && status === 422 && isBetaAgeRestricted(error)) {
+          toast.error(BETA_AGE_RESTRICTED_MESSAGE);
+          call.end();
+          return;
+        }
         toast.error(ERROR_MESSAGE);
       }
     };
@@ -221,6 +247,10 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
                 "이 유저를 일일 상한과 이미지 토큰 상한에서 면제합니다. 분당 상한과 이미지 동시 생성 1건은 그대로 적용됩니다."}
               {action === "rate-limit-exempt-off" &&
                 "이 유저에게 일일 상한과 이미지 토큰 상한을 다시 적용합니다. 분당 상한과 이미지 동시 생성 1건은 면제 중에도 적용되고 있었습니다."}
+              {action === "beta-on" &&
+                "이 유저를 베타 참가자로 지정합니다. 만 19세 이상만 지정할 수 있습니다. 이미 지정된 유저면 처음 지정한 시각이 유지됩니다."}
+              {action === "beta-off" &&
+                "이 유저의 베타 지정을 해제합니다. 다시 지정하면 그때가 새 지정 시각이 됩니다."}
               {action === "clover-grant" && "이 유저에게 클로버를 지급합니다. 무료 일일 한도를 넘긴 뒤에 쓰입니다."}
               {action === "clover-revoke" &&
                 "이 유저의 클로버를 회수합니다. 현재 잔액보다 많이 회수할 수는 없습니다."}
@@ -344,7 +374,7 @@ function formToReasonedRequest(values: UserActionFormValues, reasonCategory: Con
   return { reasonCategory, adminComment: values.adminComment.trim() || undefined };
 }
 
-/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
+/** 사유 카테고리를 받지 않는 조치(정지 해제·레이트리밋 면제·베타 토글)는 코멘트가 필수다(빈 값이면 BE가 422). */
 function formToCommentOnlyRequest(values: UserActionFormValues) {
   return { adminComment: values.adminComment.trim() };
 }
@@ -390,6 +420,13 @@ function createUserActionSchema(action: UserActionType) {
       });
     }
   });
+}
+
+/** 나이 거부 code는 OpenAPI에 노출되지 않아 생성 타입이 없다 — 구조화 dict `detail`을 직접 읽는다
+ * (`PublishPromptSetDialog`의 `"rule" in error.detail`과 같은 모양). */
+function isBetaAgeRestricted(error: unknown) {
+  if (!isApiError(error) || typeof error.detail !== "object" || error.detail === null) return false;
+  return "code" in error.detail && error.detail.code === "BETA_AGE_RESTRICTED";
 }
 
 function assertNever(value: never): never {

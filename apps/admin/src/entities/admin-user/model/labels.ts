@@ -21,6 +21,8 @@ export const ACTION_TYPE_LABELS = {
   "user-unsuspend": "정지 해제",
   "user-rate-limit-exempt-on": "레이트리밋 면제",
   "user-rate-limit-exempt-off": "레이트리밋 면제 해제",
+  "user-beta-on": "베타 지정",
+  "user-beta-off": "베타 해제",
   // `admin/users.py`가 `body.amount > 0`으로 두 리터럴을 가른다.
   "user-clover-grant": "클로버 지급",
   "user-clover-revoke": "클로버 회수",
@@ -32,6 +34,11 @@ export const ACTION_TYPE_LABELS = {
   "comment-hide": "댓글 운영 숨김",
   "comment-restore": "댓글 운영 숨김 해제",
   "comment-report-reject": "댓글 신고 반려",
+  // 채팅 응답 신고 처리 로그는 대상 유저가 **신고를 낸 사람**이다(방이 지워져도 누구의 신고였는지
+  // 남기려고). 그래서 신고자의 조치 이력 표에 이 행이 뜨는데, "반려"만 적으면 그 유저가 제재받은
+  // 것처럼 읽힌다 — 이 유저가 낸 신고를 처리했다는 뜻이 문구에서 바로 읽히게 한다.
+  "chat-report-resolve": "본인이 낸 채팅 신고 처리완료",
+  "chat-report-reject": "본인이 낸 채팅 신고 반려",
   "appeal-accept": "이의제기 인용",
   "chat-view": "채팅 열람",
   "image-view": "이미지 열람",
