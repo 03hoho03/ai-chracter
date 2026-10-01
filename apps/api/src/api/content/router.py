@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -17,9 +18,11 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.assets.blur import create_blurred_asset
+from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE
 from api.chat.prompt_builder import load_active_prompt_set
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
+    MediaBookFilterCell,
     PublishFilterResult,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
@@ -108,6 +111,10 @@ from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
 logger = logging.getLogger(__name__)
+
+# 발행 심사에 실을 칸 축소본을 동시에 내려받는 수. 공유 boto3 클라이언트의 기본 커넥션 풀(10개)보다 작게 둔다 —
+# 넘기면 풀이 남는 연결을 버렸다가 다시 맺는다.
+_FILTER_THUMBNAIL_CONCURRENCY = 8
 
 router = APIRouter(tags=["content"])
 
@@ -1763,18 +1770,65 @@ async def _publish_character_content(
     return ContentPublishResponse(content_id=content.id, version_number=version.version_number)
 
 
+def _media_book_image_unavailable(cell_entity_id: uuid.UUID) -> HTTPException:
+    """칸 그림을 저장소에서 읽지 못해 발행을 멈출 때의 응답. 어느 칸인지 알린다 — 심사 거부(`reason`)의 모양을
+    쓰면 화면이 이의제기로 안내한다."""
+    return HTTPException(
+        status_code=status.HTTP_502_BAD_GATEWAY,
+        detail={
+            "code": "MEDIA_BOOK_IMAGE_UNAVAILABLE",
+            "cellId": str(cell_entity_id),
+            "message": "미디어 북 칸 그림 하나를 처리하지 못했어요. 잠시 뒤 다시 발행하거나 그 칸 그림을 다시 올려 주세요.",
+        },
+    )
+
+
 async def _load_story_publish_filter_images(
-    db: AsyncSession, detail: StoryVersionDetail
+    db: AsyncSession, detail: StoryVersionDetail, cells: Sequence[MediaBookCell]
 ) -> list[tuple[bytes, str]]:
-    """스토리는 상황별 이미지 개념이 없어 대표 이미지 하나만 첨부한다 —
-    캐릭터의 `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍 형태로 반환한다."""
-    if detail.thumbnail_asset_id is None:
-        return []
-    asset = await db.get(Asset, detail.thumbnail_asset_id)
-    assert asset is not None
-    data = await run_in_threadpool(download_object, asset.storage_key)
-    mime_type, _ = mimetypes.guess_type(asset.storage_key)
-    return [(data, mime_type or "application/octet-stream")]
+    """대표 이미지 원본과, 그 뒤로 미디어 북 칸마다 축소본(`_thumb.webp`, 긴 변 512px) 한 장씩을 캐릭터의
+    `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍으로 돌려준다. 칸은 받은 순서 그대로 싣는다 — 심사
+    프롬프트의 칸 줄과 짝이 맞아야 한다. 원본(장당 수 MB)을 50장 싣지 않으려고 축소본을 쓴다.
+
+    축소본은 동시에 내려받는다(발행은 콘텐츠 행을 잠근 채 진행되므로 왕복 50번을 줄로 세우지 않는다). 칸 하나라도
+    못 읽으면 심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다."""
+    images: list[tuple[bytes, str]] = []
+    if detail.thumbnail_asset_id is not None:
+        asset = await db.get(Asset, detail.thumbnail_asset_id)
+        assert asset is not None
+        data = await run_in_threadpool(download_object, asset.storage_key)
+        mime_type, _ = mimetypes.guess_type(asset.storage_key)
+        images.append((data, mime_type or "application/octet-stream"))
+    if not cells:
+        return images
+
+    storage_keys = dict(
+        (
+            await db.execute(
+                select(Asset.id, Asset.storage_key).where(Asset.id.in_({cell.image_asset_id for cell in cells}))
+            )
+        )
+        .tuples()
+        .all()
+    )
+    semaphore = asyncio.Semaphore(_FILTER_THUMBNAIL_CONCURRENCY)
+
+    async def download_thumbnail(storage_key: str) -> bytes:
+        async with semaphore:
+            return await run_in_threadpool(download_object, build_thumbnail_key(storage_key))
+
+    results = await asyncio.gather(
+        *(download_thumbnail(storage_keys[cell.image_asset_id]) for cell in cells), return_exceptions=True
+    )
+    for cell, result in zip(cells, results, strict=True):
+        if isinstance(result, (BotoCoreError, ClientError)):
+            logger.warning("미디어 북 칸 %s 축소본을 읽지 못함 — 심사 없이 발행을 멈춘다: %s", cell.entity_id, result)
+            capture_dependency_failure(result, dependency="s3")
+            raise _media_book_image_unavailable(cell.entity_id) from result
+        if isinstance(result, BaseException):
+            raise result
+        images.append((result, THUMBNAIL_CONTENT_TYPE))
+    return images
 
 
 async def _clone_ending_rules(db: AsyncSession, old_ending_id: uuid.UUID, new_ending_id: uuid.UUID) -> None:
@@ -1993,14 +2047,7 @@ async def _blur_new_media_book_cells(db: AsyncSession, version_id: uuid.UUID, *,
             # 심사 거부(`reason`)의 모양을 쓰면 화면이 이의제기로 안내한다. 앞 칸에서 이미 올린 블러본은 행 없이 남는다.
             logger.warning("미디어 북 칸 %s 블러본 생성 실패 — 발행을 멈춘다: %s", cell.entity_id, exc)
             capture_dependency_failure(exc, dependency="s3")
-            raise HTTPException(
-                status_code=status.HTTP_502_BAD_GATEWAY,
-                detail={
-                    "code": "MEDIA_BOOK_IMAGE_UNAVAILABLE",
-                    "cellId": str(cell.entity_id),
-                    "message": "미디어 북 칸 그림 하나를 처리하지 못했어요. 잠시 뒤 다시 발행하거나 그 칸 그림을 다시 올려 주세요.",
-                },
-            ) from exc
+            raise _media_book_image_unavailable(cell.entity_id) from exc
         blurred_by_cell.append((cell, blurred))
     # 블러 자산 행이 칸이 가리킬 FK 대상이라 먼저 넣는다.
     await db.flush()
@@ -2033,13 +2080,43 @@ async def _publish_story_content(
             await db.scalars(select(Ending).where(Ending.starting_setup_id == setup.id))
         ).all()
 
-    missing_fields = validate_story_publish(content, version, detail, starting_setups, endings_by_setup_id)
+    people = (
+        await db.scalars(
+            select(MediaBookPerson)
+            .where(MediaBookPerson.content_version_id == version.id)
+            .order_by(MediaBookPerson.order)
+        )
+    ).all()
+    scenes = (
+        await db.scalars(
+            select(MediaBookScene).where(MediaBookScene.content_version_id == version.id).order_by(MediaBookScene.order)
+        )
+    ).all()
+    cells = (await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version.id))).all()
+
+    missing_fields = validate_story_publish(
+        content,
+        version,
+        detail,
+        starting_setups,
+        endings_by_setup_id,
+        media_book_people=people,
+        media_book_scenes=scenes,
+        media_book_cells=cells,
+    )
     if missing_fields:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
         )
 
-    filter_images = await _load_story_publish_filter_images(db, detail)
+    # 검증이 고아 칸을 막았으므로 칸마다 축이 있다. 심사 그림과 심사 줄이 같은 축 순서(인물 → 장면)로 짝을 이룬다.
+    person_by_id = {person.entity_id: (index, person.name) for index, person in enumerate(people)}
+    scene_by_id = {scene.entity_id: (index, scene.name) for index, scene in enumerate(scenes)}
+    ordered_cells = sorted(
+        cells, key=lambda cell: (person_by_id[cell.person_entity_id][0], scene_by_id[cell.scene_entity_id][0])
+    )
+
+    filter_images = await _load_story_publish_filter_images(db, detail, ordered_cells)
     filter_prompt = build_story_publish_filter_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
@@ -2053,6 +2130,15 @@ async def _publish_story_content(
         rules=detail.rules,
         detail_description=version.detail_description,
         starting_setups=starting_setups,
+        media_cells=[
+            MediaBookFilterCell(
+                person=person_by_id[cell.person_entity_id][1],
+                scene=scene_by_id[cell.scene_entity_id][1],
+                situation_description=cell.situation_description,
+                unlock_hint=cell.unlock_hint,
+            )
+            for cell in ordered_cells
+        ],
     )
     filter_result = await llm_client.generate_structured(
         filter_prompt,

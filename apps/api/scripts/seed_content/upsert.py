@@ -304,6 +304,10 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
             for setup_item in payload.starting_setups
         ],
         endings_by_setup_id,
+        # 시드 스크립트는 미디어 북을 쓰지 않는다(축·칸 행을 만들지 않는다).
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
     )
 
 

@@ -43,7 +43,11 @@ from api.chat.prompt_builder import (
 from api.chat.prompt_builder import build_ending_judgment_prompt as _build_ending_judgment_prompt
 from api.chat.prompt_builder import build_image_judgment_prompt as _build_image_judgment_prompt
 from api.chat.prompt_set_cache import invalidate_active_prompt_set
-from api.content.publish import build_character_publish_filter_prompt, build_story_publish_filter_prompt
+from api.content.publish import (
+    MediaBookFilterCell,
+    build_character_publish_filter_prompt,
+    build_story_publish_filter_prompt,
+)
 from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
@@ -59,7 +63,8 @@ logger = logging.getLogger(__name__)
 # 정확한 집합. 마이그레이션 a69cbd40dec8이 심은 레인별 26/13/16행에 b72c33c70240이 story·
 # character generation에 `user_persona`를 한 행씩 더한 27/14/16행, 여기에 c328445d4c2d가 채팅방
 # 기억 행(generation 2 · story ending_judgment 1 · 새 channel `memory_summary` 3)을 더한 33/19/16행에,
-# 2519dde454e0이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더한 36/19/16행과 정확히 같다.
+# 2519dde454e0이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더한 36/19/16행, 여기에
+# bd29dd69bc0f가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더한 36/19/17행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -192,6 +197,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
                 ("character", "character_prompt", ""),
                 ("both", "detail_description", ""),
                 ("story", "starting_setups", ""),
+                ("story", "media_book", ""),
                 ("both", "verdict_instruction", ""),
             }
         ),
@@ -887,6 +893,14 @@ _SAMPLE_MEDIA_CELLS = [
     ),
     MediaCellCandidate(entity_id=uuid.uuid4(), person="[샘플] 민아", scene="[샘플] 교실", situation_description=""),
 ]
+# 발행 심사 칸 줄의 세 모양 — 상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음.
+_SAMPLE_MEDIA_BOOK_FILTER_CELLS = [
+    MediaBookFilterCell(
+        person="[샘플] 민아", scene="[샘플] 창가", situation_description="[샘플] 창가에서 웃는다", unlock_hint="[샘플] 첫 만남"
+    ),
+    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 옥상", situation_description="", unlock_hint="[샘플] 비 오는 날"),
+    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 교실", situation_description="", unlock_hint=""),
+]
 _SAMPLE_STARTING_SETUPS = [
     StartingSetup(
         entity_id=uuid.uuid4(),
@@ -1095,6 +1109,7 @@ def _publish_filter_preview_items(
                 rules="[샘플] 규칙",
                 detail_description="[샘플] 상세 설명",
                 starting_setups=_SAMPLE_STARTING_SETUPS,
+                media_cells=_SAMPLE_MEDIA_BOOK_FILTER_CELLS,
             ),
         )
     )

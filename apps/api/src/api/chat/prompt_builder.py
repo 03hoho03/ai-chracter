@@ -114,6 +114,7 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("publish_filter", "character_prompt"): frozenset({"character_prompt"}),
     ("publish_filter", "detail_description"): frozenset({"detail_description"}),
     ("publish_filter", "starting_setups"): frozenset({"setup_lines"}),
+    ("publish_filter", "media_book"): frozenset({"media_book_lines"}),
     ("publish_filter", "verdict_instruction"): frozenset(),
 }
 

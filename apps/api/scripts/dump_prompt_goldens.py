@@ -41,6 +41,7 @@ from api.chat.prompt_builder import (
     system_instruction_for,
 )
 from api.content.publish import (
+    MediaBookFilterCell,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
 )
@@ -170,6 +171,15 @@ def _media_cells() -> list[MediaCellCandidate]:
             entity_id=_MEDIA_CELL_ENTITY_ID_ROOFTOP, person="민아", scene="옥상", situation_description="난간에 기대 웃는다"
         ),
         MediaCellCandidate(entity_id=_MEDIA_CELL_ENTITY_ID_CLASSROOM, person="민아", scene="교실", situation_description=""),
+    ]
+
+
+def _media_book_filter_cells() -> list[MediaBookFilterCell]:
+    """발행 심사 칸 줄의 세 모양 — 상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음."""
+    return [
+        MediaBookFilterCell(person="민아", scene="옥상", situation_description="난간에 기대 웃는다", unlock_hint="노을 지는 옥상"),
+        MediaBookFilterCell(person="민아", scene="교실", situation_description="", unlock_hint="비 오는 날"),
+        MediaBookFilterCell(person="준", scene="교실", situation_description="", unlock_hint=""),
     ]
 
 
@@ -555,6 +565,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
         ),
     ),
     (
@@ -573,6 +584,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=None,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[],
+            media_cells=[],
         ),
     ),
     # `development_example`(단수 레거시)과 `development_examples`(복수 신규)는 대각선
@@ -597,6 +609,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
         ),
     ),
     (
@@ -615,6 +628,28 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             rules=STORY_RULES,
             detail_description=STORY_DETAIL_DESCRIPTION,
             starting_setups=[_starting_setup()],
+            media_cells=[],
+        ),
+    ),
+    # 미디어 북이 있는 스토리 — 위 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다. 칸 줄의 세 모양
+    # (상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음). 칸이 없는 위 네 케이스는 이 섹션이 빠져 바이트가 그대로다.
+    (
+        "publish_filter_story_media_book.txt",
+        "publish_filter",
+        lambda ps, sections: build_story_publish_filter_prompt(
+            prompt_set=ps,
+            sections=sections,
+            name=STORY_NAME,
+            one_liner=STORY_ONE_LINER,
+            setting_text=STORY_SETTING_TEXT,
+            development_example=STORY_DEVELOPMENT_EXAMPLE_TEXT,
+            custom_prompt=STORY_CUSTOM_PROMPT,
+            development_examples=[DEVELOPMENT_EXAMPLE],
+            user_goal=STORY_USER_GOAL,
+            rules=STORY_RULES,
+            detail_description=STORY_DETAIL_DESCRIPTION,
+            starting_setups=[_starting_setup()],
+            media_cells=_media_book_filter_cells(),
         ),
     ),
 ]

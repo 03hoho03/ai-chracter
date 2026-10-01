@@ -6,7 +6,7 @@
 라우트가 레인 스코프(`/admin/prompt-sets/{lane}/...`)로
 바뀌었고, R-1~R-8 규칙도 레인별 표(`_EXPECTED_ROWS_BY_LANE` 등)로 쪼개졌다.
 "게시가 실제로 성공하는지"를 보는 테스트는 이제 **실제 검증을 그대로 태운다** —
-레인 스코프 초안(36/19/16행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
+레인 스코프 초안(36/19/17행)이 그 레인의 표와 정확히 일치하므로 우회가 필요 없다.
 R-1~R-7 규칙 자체를 직접 고정하는 테스트들은 story 레인의 실제 활성 세트(36행)를
 baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 정확히 일치하지 않는다 —
 새 레인별 표는 각각 story/character/publish_filter가 실제로 쓰는 부분집합이다).
@@ -14,9 +14,9 @@ baseline으로 쓴다(`legacy` 48행은 더 이상 어느 레인의 표와도 �
 마이그레이션 `b72c33c70240`(M2)이 story·character 레인에
 `generation/user_persona` 행을 더한 **새 published 세트**를 만들고, 마이그레이션 `c328445d4c2d`가
 같은 방식으로 채팅방 기억 행을 더한 세트를 또 만들고, 마이그레이션 `2519dde454e0`이 story 레인에만 미디어
-북 칸 판정 행을 더한 세트를 만든다. 그래서 테스트 DB의 published는 레인별로 story v1·v2·v4·v6, character
-v1·v3·v5, publish_filter v1이고, 활성은 story v6·character v5·publish_filter v1이다. 다음 게시 버전은
-"7"부터다(전 레인 대상 자동 증가).
+북 칸 판정 행을 더한 세트를, 마이그레이션 `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 행을 더한
+세트를 만든다. 그래서 테스트 DB의 published는 레인별로 story v1·v2·v4·v6, character v1·v3·v5, publish_filter
+v1·v7이고, 활성은 story v6·character v5·publish_filter v7이다. 다음 게시 버전은 "8"부터다(전 레인 대상 자동 증가).
 섹션 수는 `_expected_section_count`로 코드 표에서 도출한다 — DB 행은 마이그레이션이
 만드므로 동어반복이 아니다.
 """
@@ -442,27 +442,28 @@ async def test_list_returns_metadata_only_and_marks_active(
 
     published = [item for item in items if item["status"] == "published"]
     draft = [item for item in items if item["status"] == "draft"]
-    # story v1·v2·v4·v6, character v1·v3·v5, publish_filter v1 (모듈 docstring — 행을 더한 세
-    # 마이그레이션이 v2·v3, v4·v5, v6을 만든다).
-    assert len(published) == 8
+    # story v1·v2·v4·v6, character v1·v3·v5, publish_filter v1·v7 (모듈 docstring — 행을 더한 네
+    # 마이그레이션이 v2·v3, v4·v5, v6, v7을 만든다).
+    assert len(published) == 9
     assert len(draft) == 1
     active = [item for item in published if item["isActive"]]
     assert sorted(item["lane"] for item in active) == ["character", "publish_filter", "story"]
     assert {(item["lane"], item["version"]) for item in active} == {
         ("story", "6"),
         ("character", "5"),
-        ("publish_filter", "1"),
+        ("publish_filter", "7"),
     }
-    # 레인별 마지막 마이그레이션 이전 세트 다섯은 비활성이다.
+    # 레인별 마지막 마이그레이션 이전 세트 여섯은 비활성이다.
     assert {(item["lane"], item["version"]) for item in published if not item["isActive"]} == {
         ("story", "1"),
         ("story", "2"),
         ("story", "4"),
         ("character", "1"),
         ("character", "3"),
+        ("publish_filter", "1"),
     }
     assert draft[0]["isActive"] is False
-    assert {item["version"] for item in published} == {"1", "2", "3", "4", "5", "6"}
+    assert {item["version"] for item in published} == {"1", "2", "3", "4", "5", "6", "7"}
 
 
 async def test_get_by_id_returns_full_sections(
@@ -611,7 +612,7 @@ async def test_publish_valid_unmodified_draft_succeeds_with_next_version(
     resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "정기 점검 후 재게시"})
     assert resp.status_code == 200
     body = resp.json()
-    assert body["version"] == "7"
+    assert body["version"] == "8"
     assert body["status"] == "published"
     assert body["lane"] == "story"
     assert body["note"] == "정기 점검 후 재게시"
@@ -638,34 +639,34 @@ async def test_publish_assigns_sequential_integer_versions(
 ) -> None:
     await _login_new_admin(db_client, db_session)
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v7"})
-    assert first.json()["version"] == "7"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v8"})
+    assert first.json()["version"] == "8"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v8"})
-    assert second.json()["version"] == "8"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "v9"})
+    assert second.json()["version"] == "9"
 
 
 async def test_next_version_is_global_monotonic_not_per_lane(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     """`_next_published_version`에 레인 필터가 없다("안 넣는 것"이 결정이다).
-    행을 더한 마이그레이션들이 story v2·v4·v6·character v3·v5를 만든 테스트 DB에서, story가 v7·v8을 게시한
-    뒤 character 게시가 v9를 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v6일 것이다) — 이
+    행을 더한 마이그레이션들이 story v2·v4·v6·character v3·v5·publish_filter v7을 만든 테스트 DB에서, story가
+    v8·v9를 게시한 뒤 character 게시가 v10을 받아야 한다(레인별 독립 증가라면 character의 다음 게시는 v6일 것이다) — 이
     테스트는 그 레인 필터의 **부재**를 고정한다."""
     await _login_new_admin(db_client, db_session)
 
     await _make_valid_draft(db_client, "story")
-    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v7"})
-    assert first.json()["version"] == "7"
+    first = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v8"})
+    assert first.json()["version"] == "8"
 
     await _make_valid_draft(db_client, "story")
-    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v8"})
-    assert second.json()["version"] == "8"
+    second = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "story v9"})
+    assert second.json()["version"] == "9"
 
     await _make_valid_draft(db_client, "character")
-    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v9"})
-    assert third.json()["version"] == "9"
+    third = await db_client.post("/admin/prompt-sets/character/publish", json={"note": "character v10"})
+    assert third.json()["version"] == "10"
 
 
 async def test_publishing_one_lane_does_not_affect_other_lanes_active_set(
@@ -749,7 +750,7 @@ async def test_publish_succeeds_even_when_cache_invalidation_fails(
         resp = await db_client.post("/admin/prompt-sets/story/publish", json={"note": "캐시 실패해도 성공"})
 
     assert resp.status_code == 200
-    assert resp.json()["version"] == "7"
+    assert resp.json()["version"] == "8"
     assert any(record.levelno >= logging.WARNING for record in caplog.records)
     assert captured == ["redis"]
 
