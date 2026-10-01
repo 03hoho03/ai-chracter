@@ -4,8 +4,12 @@ import {
   buildContentHead,
   handleContentMeta,
   parseContentPath,
+  stripMediaTags,
   type ContentMetaSource,
 } from "./contentMeta";
+import { toMetaDescription } from "./meta";
+
+import mediaTagCases from "../../api/tests/fixtures/media_tag_cases.json";
 import type { WorkerEnv } from "./workerRuntime";
 
 const ID = "11111111-2222-4333-8444-555555555555";
@@ -100,6 +104,20 @@ describe("parseContentPath", () => {
     expect(parseContentPath(`/content/character/${ID}/`)).toBeUndefined();
     expect(parseContentPath("/profile/me")).toBeUndefined();
   });
+});
+
+// 서버·웹 테스트가 함께 읽는 태그 삭제 표로 봇 메타의 태그 제거를 시험한다 — 상세 화면이 태그로 여기는 글을 봇
+// 메타만 남기거나, 화면이 글로 두는 `{{…}}` 를 봇 메타만 지우면 검색 결과와 화면이 어긋난다. 표는 태그만 남은 줄을
+// 접는 것까지 기대하지만 봇 메타는 `toMetaDescription` 이 공백을 한 칸으로 눕히므로, 그 뒤 값으로 비교한다.
+describe("stripMediaTags", () => {
+  it.each(mediaTagCases.strip.map((row) => [row.id, row.text, row.expected]))(
+    "%s",
+    (_id, text, expected) => {
+      expect(toMetaDescription(stripMediaTags(text))).toBe(
+        toMetaDescription(expected),
+      );
+    },
+  );
 });
 
 describe("buildContentHead", () => {

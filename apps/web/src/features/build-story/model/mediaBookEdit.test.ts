@@ -32,7 +32,7 @@ const CELL: MediaBookCellValues = {
   excludeFromChat: false,
 };
 
-const base: MediaBookValues = {
+const BASE_BOOK: MediaBookValues = {
   people: [
     { id: PERSON_A, name: "에리" },
     { id: PERSON_B, name: "하나" },
@@ -43,15 +43,15 @@ const base: MediaBookValues = {
 
 describe("mediaBookNameError", () => {
   it("rejects a name equal to a sibling after trimming and NFC, but not the item's own name", () => {
-    expect(mediaBookNameError(` ${"에리".normalize("NFD")}`, base.people)).toBe(MEDIA_BOOK_DUPLICATE_NAME_MESSAGE);
-    expect(mediaBookNameError("에리", base.people, PERSON_A)).toBeUndefined();
+    expect(mediaBookNameError(` ${"에리".normalize("NFD")}`, BASE_BOOK.people)).toBe(MEDIA_BOOK_DUPLICATE_NAME_MESSAGE);
+    expect(mediaBookNameError("에리", BASE_BOOK.people, PERSON_A)).toBeUndefined();
   });
 
   it("says the same duplicate-name sentence as the form schema", () => {
-    const duplicated = { ...base, people: [...base.people, { id: NEW_ID, name: "에리" }] };
+    const duplicated = { ...BASE_BOOK, people: [...BASE_BOOK.people, { id: NEW_ID, name: "에리" }] };
     const issues = mediaBookSchema.safeParse(duplicated).error?.issues ?? [];
 
-    expect(issues.map((issue) => issue.message)).toContain(mediaBookNameError("에리", base.people));
+    expect(issues.map((issue) => issue.message)).toContain(mediaBookNameError("에리", BASE_BOOK.people));
   });
 
   it("reuses the form schema messages for blank and forbidden names", () => {
@@ -62,16 +62,16 @@ describe("mediaBookNameError", () => {
 
 describe("axis edits", () => {
   it("stores names trimmed and NFC-composed so the saved value matches what the server keeps", () => {
-    const added = addAxisItem(base, "scene", ` ${"슬픔".normalize("NFD")} `, NEW_ID);
+    const added = addAxisItem(BASE_BOOK, "scene", ` ${"슬픔".normalize("NFD")} `, NEW_ID);
 
     expect(added.scenes.at(-1)).toEqual({ id: NEW_ID, name: "슬픔" });
-    expect(renameAxisItem(base, "person", PERSON_B, " 두리 ").people[1]).toEqual({ id: PERSON_B, name: "두리" });
+    expect(renameAxisItem(BASE_BOOK, "person", PERSON_B, " 두리 ").people[1]).toEqual({ id: PERSON_B, name: "두리" });
   });
 
   it("removes the axis item together with the cells on its line", () => {
-    expect(countAxisItemCells(base, "person", PERSON_A)).toBe(1);
+    expect(countAxisItemCells(BASE_BOOK, "person", PERSON_A)).toBe(1);
 
-    const removed = removeAxisItem(base, "person", PERSON_A);
+    const removed = removeAxisItem(BASE_BOOK, "person", PERSON_A);
 
     expect(removed.people.map((person) => person.id)).toEqual([PERSON_B]);
     expect(removed.cells).toEqual([]);
@@ -87,7 +87,7 @@ function accepted(result: CellImageResult): MediaBookValues {
 
 describe("setCellImage", () => {
   it("keeps the cell id when the image of a filled cell changes", () => {
-    const next = accepted(setCellImage(base, PERSON_A, SCENE, { assetId: NEW_ID }, () => "unused"));
+    const next = accepted(setCellImage(BASE_BOOK, PERSON_A, SCENE, { assetId: NEW_ID }, () => "unused"));
 
     expect(next.cells).toHaveLength(1);
     expect(next.cells[0]?.id).toBe(CELL.id);
@@ -95,26 +95,26 @@ describe("setCellImage", () => {
   });
 
   it("creates a cell with a fresh id for an empty position and refuses past the cap", () => {
-    const next = accepted(setCellImage(base, PERSON_B, SCENE, { assetId: NEW_ID }, () => NEW_ID));
+    const next = accepted(setCellImage(BASE_BOOK, PERSON_B, SCENE, { assetId: NEW_ID }, () => NEW_ID));
 
     expect(next.cells.at(-1)).toMatchObject({ id: NEW_ID, personId: PERSON_B, sceneId: SCENE, excludeFromChat: false });
 
     const full: MediaBookValues = {
-      ...base,
+      ...BASE_BOOK,
       cells: Array.from({ length: MAX_MEDIA_BOOK_CELLS }, (_, index) => ({ ...CELL, id: String(index) })),
     };
     expect(setCellImage(full, PERSON_B, SCENE, { assetId: NEW_ID }, () => NEW_ID)).toEqual({ ok: false, reason: "cap" });
   });
 
   it("refuses a cell whose person or scene was removed while the upload was running", () => {
-    const withoutPerson = removeAxisItem(base, "person", PERSON_B);
+    const withoutPerson = removeAxisItem(BASE_BOOK, "person", PERSON_B);
 
     expect(setCellImage(withoutPerson, PERSON_B, SCENE, { assetId: NEW_ID }, () => NEW_ID)).toEqual({
       ok: false,
       reason: "missing-axis",
     });
     // 채운 칸이라도 축이 사라졌으면 쓰지 않는다.
-    const withoutScene = { ...base, scenes: [] };
+    const withoutScene = { ...BASE_BOOK, scenes: [] };
     expect(setCellImage(withoutScene, PERSON_A, SCENE, { assetId: NEW_ID }, () => NEW_ID)).toEqual({
       ok: false,
       reason: "missing-axis",

@@ -22,9 +22,9 @@ import { MediaBookConfirmModal } from "@/features/edit-media-book";
 
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 
-const AXIS_LABEL = { person: "인물", scene: "장면" } as const satisfies Record<MediaBookAxis, string>;
-
 type MediaBookAxisListProps = { axis: MediaBookAxis };
+
+const AXIS_LABEL = { person: "인물", scene: "장면" } as const satisfies Record<MediaBookAxis, string>;
 
 /**
  * 인물 또는 장면 목록. 이름은 입력칸에서 바로 고치고(Enter·포커스 이동 때 반영, Esc 로 되돌림), 규칙에 맞지 않는

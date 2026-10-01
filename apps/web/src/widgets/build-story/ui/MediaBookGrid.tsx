@@ -117,7 +117,7 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         )}
       >
         {!cell && <Plus aria-hidden className="size-5" />}
-        {imageUrl && <img src={imageUrl} alt="" loading="lazy" decoding="async" className="size-full object-contain" />}
+        {!!imageUrl && <img src={imageUrl} alt="" loading="lazy" decoding="async" className="size-full object-contain" />}
       </button>
       {cell?.excludeFromChat && (
         // 그림 위에 얹는 표식이라 테마와 무관한 스크림 쌍을 쓴다.

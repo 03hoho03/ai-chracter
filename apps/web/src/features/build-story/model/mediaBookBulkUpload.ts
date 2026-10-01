@@ -1,6 +1,7 @@
-import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
+import { normalizeMediaBookName, type MediaBookAxis, type OverwriteChoice } from "@/entities/media-book";
 
 import {
+  axisItems,
   ensureAxisItem,
   findCell,
   mediaBookNameError,
@@ -55,8 +56,6 @@ export type BulkUploadEntry = {
 export type BulkUploadExclusion = { fileName: string; reason: string };
 
 export type BulkUploadPlan = { entries: BulkUploadEntry[]; excluded: BulkUploadExclusion[] };
-
-export type OverwriteChoice = "overwrite" | "skip";
 
 /** 파일 이름을 읽어 넣을 칸과 뺄 파일을 가른다. 같은 칸을 가리키는 파일이 둘 이상이면 앞의 것만 넣는다. */
 export function planBulkUpload(fileNames: readonly string[], mediaBook: MediaBookValues): BulkUploadPlan {
@@ -176,11 +175,9 @@ function touchedAxis(
   if (findAxisId(mediaBook, axis, name) !== undefined) return undefined;
   const knownId = known.get(name);
   if (knownId === undefined) return undefined;
-  const items = axis === "person" ? mediaBook.people : mediaBook.scenes;
-  return items.some((item) => item.id === knownId) ? "renamed" : "removed";
+  return axisItems(mediaBook, axis).some((item) => item.id === knownId) ? "renamed" : "removed";
 }
 
 function findAxisId(mediaBook: MediaBookValues, axis: MediaBookAxis, name: string): string | undefined {
-  const items = axis === "person" ? mediaBook.people : mediaBook.scenes;
-  return items.find((item) => normalizeMediaBookName(item.name) === name)?.id;
+  return axisItems(mediaBook, axis).find((item) => normalizeMediaBookName(item.name) === name)?.id;
 }

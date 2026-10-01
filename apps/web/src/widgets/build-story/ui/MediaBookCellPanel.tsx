@@ -31,10 +31,6 @@ import type { MediaBookPosition } from "./MediaBookGrid";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
-// 미리보기 상자의 긴 변 상한(px). 세로로 긴 그림이 패널을 길게 늘이지 않게 폭을 비율로 줄인다.
-const PREVIEW_MAX_HEIGHT_PX = 256;
-const PREVIEW_MAX_WIDTH_PX = 192;
-
 type MediaBookCellPanelProps = {
   id: string;
   position: MediaBookPosition;
@@ -42,6 +38,10 @@ type MediaBookCellPanelProps = {
   /** 누른 버튼이 사라질 때(비우기 뒤) 포커스를 표의 그 칸으로 돌려준다. */
   onReturnFocus: () => void;
 };
+
+// 미리보기 상자의 긴 변 상한(px). 세로로 긴 그림이 패널을 길게 늘이지 않게 폭을 비율로 줄인다.
+const PREVIEW_MAX_HEIGHT_PX = 256;
+const PREVIEW_MAX_WIDTH_PX = 192;
 
 /**
  * 배치표에서 고른 칸의 상세. 배치표 바로 아래에 펼친다(모달이 아니다 — 칸을 바꿔 가며 연달아 채우는 작업이라 표가
@@ -222,7 +222,7 @@ function CellPreview({ imageUrl, width, height }: CellPreviewProps) {
       className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-foreground/10 bg-muted"
       style={{ width: boxWidth, aspectRatio: ratio }}
     >
-      {imageUrl && <img src={imageUrl} alt="" decoding="async" className="size-full object-contain" />}
+      {!!imageUrl && <img src={imageUrl} alt="" decoding="async" className="size-full object-contain" />}
     </div>
   );
 }

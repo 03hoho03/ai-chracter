@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "미디어 북 이미지 태그 규칙의 입력 표. 서버(apps/api/tests/test_media_tags.py)와 웹(apps/web/src/entities/media-book/model/mediaTagCases.ts)의 테스트가 이 파일 하나를 함께 읽는다 — 빌더 미리보기 첫 메시지는 웹 구현으로, 실채팅 첫 메시지는 서버 구현으로 바뀌므로 두 구현이 갈라지면 같은 글이 다르게 보인다.",
+    "미디어 북 이미지 태그 규칙의 입력 표. 서버(apps/api/tests/test_media_tags.py)와 웹 테스트(apps/web/src/entities/media-book/model/mediaTagCases.ts, 빌더 미리보기 첫 메시지 테스트, 링크 미리보기 Worker 메타 테스트)가 이 파일 하나를 함께 읽는다 — 빌더 미리보기 첫 메시지는 웹 구현으로, 실채팅 첫 메시지는 서버 구현으로 바뀌므로 두 구현이 갈라지면 같은 글이 다르게 보인다.",
     "normalize: 칸 표(cells)로 이름 형태를 칸 id 형태로 바꾼 글과 글이 가리키는 칸 id. 슬래시가 하나면 한쪽 이름이 비어도 이름 형태 태그다 — 빈 이름의 칸은 없으므로 지운다.",
     "strip: 두 형태의 태그를 모두 지운 글.",
     "nfd-names 행의 입력은 한글을 자모로 풀어 쓴(NFD) 글이라 \\u 이스케이프로 적었다 — 편집기가 NFC 로 되돌려 저장하면 그 행이 아무것도 시험하지 않게 된다."

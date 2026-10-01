@@ -34,7 +34,7 @@ function idFactory() {
   return () => `00000000-0000-4000-8000-${String(next++).padStart(12, "0")}`;
 }
 
-const filled: MediaBookValues = {
+const FILLED_BOOK: MediaBookValues = {
   people: [{ id: PERSON, name: "에리" }],
   scenes: [{ id: SCENE, name: "기쁨" }],
   cells: [FILLED_CELL],
@@ -69,7 +69,7 @@ describe("parseMediaFileName", () => {
 
 describe("planBulkUpload", () => {
   it("marks files for filled cells as overwrites and keeps only the first file per cell", () => {
-    const plan = planBulkUpload(["에리_기쁨.png", "에리_슬픔.png", "에리_슬픔.webp", "규칙위반.png"], filled);
+    const plan = planBulkUpload(["에리_기쁨.png", "에리_슬픔.png", "에리_슬픔.webp", "규칙위반.png"], FILLED_BOOK);
 
     expect(plan.entries).toEqual([
       { fileIndex: 0, fileName: "에리_기쁨.png", person: "에리", scene: "기쁨", isOverwrite: true },
@@ -81,9 +81,9 @@ describe("planBulkUpload", () => {
 
 describe("finalizeBulkUploadPlan", () => {
   it("drops overwrites when the user chose to skip filled cells", () => {
-    const plan = planBulkUpload(["에리_기쁨.png", "에리_슬픔.png"], filled);
+    const plan = planBulkUpload(["에리_기쁨.png", "에리_슬픔.png"], FILLED_BOOK);
 
-    const final = finalizeBulkUploadPlan(plan, filled, "skip");
+    const final = finalizeBulkUploadPlan(plan, FILLED_BOOK, "skip");
 
     expect(final.entries.map((entry) => entry.fileName)).toEqual(["에리_슬픔.png"]);
     expect(final.excluded.map((item) => item.fileName)).toEqual(["에리_기쁨.png"]);
@@ -96,7 +96,7 @@ describe("finalizeBulkUploadPlan", () => {
       id: createId(),
       sceneId: `00000000-0000-4000-8000-${String(500 + index).padStart(12, "0")}`,
     }));
-    const nearlyFull: MediaBookValues = { ...filled, cells: [...filled.cells, ...cells] };
+    const nearlyFull: MediaBookValues = { ...FILLED_BOOK, cells: [...FILLED_BOOK.cells, ...cells] };
     const plan = planBulkUpload(["에리_새1.png", "에리_새2.png", "에리_기쁨.png"], nearlyFull);
 
     const final = finalizeBulkUploadPlan(plan, nearlyFull, "overwrite");
@@ -116,11 +116,11 @@ describe("applyBulkUploadEntry", () => {
   it("keeps the cell id and its text when overwriting, swapping only the image", () => {
     const next = accepted(
       applyBulkUploadEntry(
-        filled,
+        FILLED_BOOK,
         { person: "에리", scene: "기쁨" },
         { assetId: NEW_ASSET, imageUrl: "blob:new" },
         idFactory(),
-        knownAxisNamesOf(filled),
+        knownAxisNamesOf(FILLED_BOOK),
       ),
     );
 
@@ -133,24 +133,24 @@ describe("applyBulkUploadEntry", () => {
         imageHeight: undefined,
       },
     ]);
-    expect(next.people).toEqual(filled.people);
+    expect(next.people).toEqual(FILLED_BOOK.people);
   });
 
   it("creates missing axes and a new cell, producing a value the form schema accepts", () => {
     const next = accepted(
-      applyBulkUploadEntry(filled, { person: "하나", scene: "기쁨" }, { assetId: NEW_ASSET }, idFactory(), knownAxisNamesOf(filled)),
+      applyBulkUploadEntry(FILLED_BOOK, { person: "하나", scene: "기쁨" }, { assetId: NEW_ASSET }, idFactory(), knownAxisNamesOf(FILLED_BOOK)),
     );
 
     expect(next.people.map((person) => person.name)).toEqual(["에리", "하나"]);
-    expect(next.scenes).toEqual(filled.scenes);
+    expect(next.scenes).toEqual(FILLED_BOOK.scenes);
     expect(next.cells).toHaveLength(2);
     expect(mediaBookSchema.safeParse(next).success).toBe(true);
   });
 
   it("does not bring back a person the author deleted while the batch was uploading", () => {
     // 업로드를 시작할 때는 에리가 있었다.
-    const known = knownAxisNamesOf(filled);
-    const deletedDuringUpload: MediaBookValues = { ...filled, people: [], cells: [] };
+    const known = knownAxisNamesOf(FILLED_BOOK);
+    const deletedDuringUpload: MediaBookValues = { ...FILLED_BOOK, people: [], cells: [] };
 
     const result = applyBulkUploadEntry(
       deletedDuringUpload,
@@ -164,17 +164,17 @@ describe("applyBulkUploadEntry", () => {
   });
 
   it("does not bring back an axis this batch created and the author then deleted", () => {
-    const known = knownAxisNamesOf(filled);
+    const known = knownAxisNamesOf(FILLED_BOOK);
     known.person.set("하나", "00000000-0000-4000-8000-000000000077");
 
-    const result = applyBulkUploadEntry(filled, { person: "하나", scene: "기쁨" }, { assetId: NEW_ASSET }, idFactory(), known);
+    const result = applyBulkUploadEntry(FILLED_BOOK, { person: "하나", scene: "기쁨" }, { assetId: NEW_ASSET }, idFactory(), known);
 
     expect(result).toEqual({ ok: false, reason: "missing-axis" });
   });
 
   it("says the axis was renamed, not deleted, when its id survives under another name", () => {
-    const known = knownAxisNamesOf(filled);
-    const renamedDuringUpload: MediaBookValues = { ...filled, people: [{ id: PERSON, name: "에린" }] };
+    const known = knownAxisNamesOf(FILLED_BOOK);
+    const renamedDuringUpload: MediaBookValues = { ...FILLED_BOOK, people: [{ id: PERSON, name: "에린" }] };
 
     const result = applyBulkUploadEntry(
       renamedDuringUpload,

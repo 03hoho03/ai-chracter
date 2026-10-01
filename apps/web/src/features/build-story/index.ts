@@ -27,7 +27,6 @@ export {
   type BulkUploadExclusion,
   type BulkUploadPlan,
   type KnownAxisNames,
-  type OverwriteChoice,
 } from "./model/mediaBookBulkUpload";
 export {
   findUnknownMediaTags,
