@@ -15,8 +15,8 @@ export type MediaBookThumbnails = {
 
 /**
  * 미디어 북 칸 썸네일 주소를 빌더 셸 높이에서 붙잡아 둔다. 탭을 옮기면 탭 본문이 언마운트되므로 탭 안에 두면 방금
- * 올린 파일의 로컬 주소를 잃는다. 자동저장 응답(`draft`)이 올 때마다 새로 서명된 주소가 들어오지만, 같은 자산이면
- * 받은 지 얼마 안 된 주소를 계속 써서 `<img>` 가 다시 받지 않게 한다(규칙은 `nextThumbnailUrlEntry`).
+ * 올린 파일의 로컬 주소를 잃는다. 자동저장 응답(`draft`)의 서명 주소는 서버의 15분 구간이 바뀌면 같은 자산이라도
+ * 달라지지만, 받은 지 얼마 안 된 주소를 계속 써서 `<img>` 가 다시 받지 않게 한다(규칙은 `nextThumbnailUrlEntry`).
  * 셸이 직접 부르는 훅이다 — 대화 미리보기의 첫 메시지 그림도 같은 주소를 써야 해서 셸이 값을 쥐고 아래로 내려 준다.
  */
 export function useMediaBookThumbnailsStore(draft: StoryDraftContent): MediaBookThumbnails {
