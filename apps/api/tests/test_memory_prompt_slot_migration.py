@@ -51,6 +51,9 @@ def _load(revision: str) -> ModuleType:
 _M = _load("c328445d4c2d")
 # 이 리비전이 복사한 원본(이전 레인 활성 세트) — 테스트 DB에서는 `b72c33c70240`이 만든 세트다.
 _SOURCE_SET_IDS: dict[str, uuid.UUID] = _load("b72c33c70240").NEW_SET_IDS
+# 이 리비전 뒤에 같은 방식으로 story 레인에 행을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 함께
+# 거친다.
+_NEXT_STORY_MIGRATION = _load("2519dde454e0")
 
 _NOTE_KEY = ("generation", "both", "memory_note", "")
 _GEN_SUMMARY_KEY = ("generation", "both", "memory_summary", "")
@@ -332,15 +335,24 @@ def _keyed(sections: list[PromptSection]) -> dict[tuple[str, str, str, str], Pro
 
 
 @pytest.mark.parametrize("lane", _LANES)
-async def test_active_set_is_this_revisions_set_with_memory_rows(db_session: AsyncSession, lane: PromptLane) -> None:
+async def test_active_set_is_this_revisions_set_or_a_later_one_with_memory_rows(
+    db_session: AsyncSession, lane: PromptLane
+) -> None:
     """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못하고, 골든은 옛
-    세트로도 통과하므로 신호가 없다. 그래서 id를 직접 단언한다."""
-    active, sections = await load_active_prompt_set(db_session, lane=lane)
-    assert active.id == _M.NEW_SET_IDS[lane]
+    세트로도 통과하므로 신호가 없다. 그래서 활성 세트를 id·게시 시각으로 직접 단언한다 — 이 리비전의 세트이거나,
+    뒤 리비전이 이 세트를 복사해 만든 더 나중 세트다(story 레인은 미디어 북 칸 판정 리비전이 그렇다)."""
+    latest, _ = await load_active_prompt_set(db_session, lane=lane)
+    active = await db_session.get(PromptSet, _M.NEW_SET_IDS[lane])
+    assert active is not None
+    assert latest.published_at is not None and active.published_at is not None
+    assert latest.id == active.id or latest.published_at > active.published_at
     assert active.note == _M._NOTE
+    sections = await _sections_of(db_session, active.id)
 
     source_set = await db_session.get(PromptSet, _SOURCE_SET_IDS[lane])
     assert source_set is not None
+    assert source_set.published_at is not None
+    assert active.published_at > source_set.published_at
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
     assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
 
@@ -467,10 +479,13 @@ async def test_patch_draft_adds_memory_rows_in_place_and_draft_then_publishes(
     _assert_render_order(sections, before_sections, lane)
 
     # 게시 게이트 전체를 그대로 태운다 — 슬롯 집합·허용 플레이스홀더·order 중복 검사는 코드 표
-    # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 이 마이그레이션과 같이 갔는지도 함께 본다.
+    # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 이 마이그레이션과 같이 갔는지도 함께 본다. 코드 표는
+    # 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(story 레인 미디어 북 칸 판정 행)의 초안 패치도 거친다.
+    if lane == "story":
+        assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None
-    _validate_prompt_draft_for_publish(draft, sections, lane=lane)
+    _validate_prompt_draft_for_publish(draft, await _sections_of(db_session, draft_id), lane=lane)
 
 
 @pytest.mark.parametrize("lane", _LANES)

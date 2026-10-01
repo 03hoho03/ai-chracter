@@ -247,6 +247,68 @@ async def _add_media_book_cell(
     return cell
 
 
+async def _add_named_media_cell(
+    db_session: AsyncSession,
+    version_id: uuid.UUID,
+    owner_user_id: uuid.UUID,
+    person: str,
+    scene: str,
+    *,
+    entity_id: uuid.UUID | None = None,
+    size: tuple[int, int] | None = (300, 400),
+    situation_description: str = "",
+    exclude_from_chat: bool = False,
+) -> tuple[MediaBookCell, Asset]:
+    """버전에 `person`×`scene` 칸 하나를 READY 원본 자산과 함께 넣는다. 축은 이름이 같으면 다시 쓰고, 없으면
+    새로 만든다(새 축의 order 는 그 버전에 이미 있는 축 수 — 넣은 순서가 축 순서다)."""
+    person_row = await db_session.scalar(
+        sa.select(MediaBookPerson).where(
+            MediaBookPerson.content_version_id == version_id, MediaBookPerson.name == person
+        )
+    )
+    if person_row is None:
+        person_count = await db_session.scalar(
+            sa.select(sa.func.count()).select_from(MediaBookPerson).where(MediaBookPerson.content_version_id == version_id)
+        )
+        person_row = MediaBookPerson(
+            entity_id=uuid.uuid4(), content_version_id=version_id, name=person, order=person_count or 0
+        )
+        db_session.add(person_row)
+    scene_row = await db_session.scalar(
+        sa.select(MediaBookScene).where(MediaBookScene.content_version_id == version_id, MediaBookScene.name == scene)
+    )
+    if scene_row is None:
+        scene_count = await db_session.scalar(
+            sa.select(sa.func.count()).select_from(MediaBookScene).where(MediaBookScene.content_version_id == version_id)
+        )
+        scene_row = MediaBookScene(
+            entity_id=uuid.uuid4(), content_version_id=version_id, name=scene, order=scene_count or 0
+        )
+        db_session.add(scene_row)
+    asset = Asset(
+        owner_user_id=owner_user_id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.webp",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+        width=size[0] if size is not None else None,
+        height=size[1] if size is not None else None,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    cell = MediaBookCell(
+        entity_id=entity_id or uuid.uuid4(),
+        content_version_id=version_id,
+        person_entity_id=person_row.entity_id,
+        scene_entity_id=scene_row.entity_id,
+        image_asset_id=asset.id,
+        situation_description=situation_description,
+        exclude_from_chat=exclude_from_chat,
+    )
+    db_session.add(cell)
+    await db_session.flush()
+    return cell, asset
+
+
 async def _make_published(
     db_session: AsyncSession,
     *,

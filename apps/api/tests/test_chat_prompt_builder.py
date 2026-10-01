@@ -352,6 +352,8 @@ def test_build_ending_judgment_prompt_uses_story_assistant_label_for_history_and
 
 
 def test_build_image_judgment_prompt_uses_character_assistant_label() -> None:
+    """라벨은 호출부가 레인에 맞게 넘긴다 — 캐릭터 호출부의 값(`character_assistant_label`)이 대화 기록의 지난
+    응답과 이번 응답 양쪽에 쓰이는지 본다. 실제 캐릭터 호출부의 값은 캐릭터 판정 골든이 고정한다."""
     prompt_set = _prompt_set()
     sections = [
         _section(
@@ -362,7 +364,9 @@ def test_build_image_judgment_prompt_uses_character_assistant_label() -> None:
     prompt = build_image_judgment_prompt(
         prompt_set=prompt_set,
         sections=sections,
-        situational_images=[],
+        scope="character",
+        assistant_label=prompt_set.character_assistant_label,
+        image_lines="",
         history=[
             _message(ChatMessageRole.ASSISTANT, "이전 응답"),
             _message(ChatMessageRole.USER, "이전 메시지"),

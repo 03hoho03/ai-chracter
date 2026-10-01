@@ -42,6 +42,8 @@ _M2 = _load("b72c33c70240")
 _SEED_SET_IDS: dict[str, uuid.UUID] = _load("a69cbd40dec8").NEW_SET_IDS
 # M2 뒤에 같은 방식으로 슬롯을 더하는 리비전 — 초안 게시 검사가 head 코드 표를 쓰므로 함께 거친다.
 _NEXT_SLOT_MIGRATION = _load("c328445d4c2d")
+# 그 뒤 story 레인에만 행을 더하는 리비전(미디어 북 칸 판정) — 같은 이유로 story 초안은 이것도 거친다.
+_NEXT_STORY_MIGRATION = _load("2519dde454e0")
 
 _PERSONA_KEY = ("generation", "both", "user_persona", "")
 
@@ -368,6 +370,8 @@ async def test_patch_draft_adds_persona_row_in_place_and_draft_then_publishes(
     # (`_EXPECTED_ROWS_BY_LANE`·`ALLOWED_PLACEHOLDERS`)가 M2와 같이 갔는지도 함께 본다. 코드 표는
     # 지금 head 기준이라, 체인이 실제로 하듯 뒤 리비전(채팅방 기억 행)의 초안 패치도 거친 뒤 검사한다.
     assert await connection.run_sync(_NEXT_SLOT_MIGRATION._patch_draft, lane) is True
+    if lane == "story":
+        assert await connection.run_sync(_NEXT_STORY_MIGRATION._patch_draft) is True
     db_session.expire_all()  # 원시 SQL이 민 order를 식별자 맵의 옛 값이 가리지 않게
     draft = await db_session.get(PromptSet, draft_id)
     assert draft is not None

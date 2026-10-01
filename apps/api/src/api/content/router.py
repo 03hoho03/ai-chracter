@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.chat.prompt_builder import load_active_prompt_set
-from api.content.media_book import normalize_texts, resolve_media_tag_images
+from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
@@ -80,7 +80,7 @@ from api.db.models.content import (
     Like,
     ModerationStatus,
 )
-from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.media import Asset, AssetStatus
 from api.db.models.moderation import Report, ReportStatus
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
@@ -1053,8 +1053,6 @@ async def _reconcile_ending_rules(
 
 # 두 탭이 서로 다른 새 칸으로 같은 빈 자리를 채운 경우의 409 code. 화면은 새로고침을 안내한다.
 MEDIA_BOOK_CELL_POSITION_TAKEN = "MEDIA_BOOK_CELL_POSITION_TAKEN"
-# 칸에 걸 수 있는 자산 종류. 블러본을 고르면 해금 전 이미지가 원본 자리에 나간다.
-_MEDIA_BOOK_CELL_IMAGE_KINDS = (AssetKind.ORIGINAL, AssetKind.GENERATED)
 
 
 async def _upsert_media_book_axis(
@@ -1140,7 +1138,7 @@ async def _update_media_book(
                     Asset.id.in_(image_asset_ids),
                     Asset.owner_user_id == content.creator_user_id,
                     Asset.status == AssetStatus.READY,
-                    Asset.kind.in_(_MEDIA_BOOK_CELL_IMAGE_KINDS),
+                    Asset.kind.in_(MEDIA_BOOK_CELL_IMAGE_KINDS),
                 )
             )
         )

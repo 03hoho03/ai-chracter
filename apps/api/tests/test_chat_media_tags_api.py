@@ -14,7 +14,7 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.chat.prompt_builder import EndingJudgmentResult, StatJudgmentResult
+from api.chat.prompt_builder import EndingJudgmentResult, ImageMatchJudgmentResult, StatJudgmentResult
 from api.db.models import (
     Asset,
     AssetKind,
@@ -26,9 +26,6 @@ from api.db.models import (
     ContentVersion,
     ContentVisibility,
     Ending,
-    MediaBookCell,
-    MediaBookPerson,
-    MediaBookScene,
     ModerationStatus,
     SituationalImage,
     StartingSetup,
@@ -36,6 +33,7 @@ from api.db.models import (
 )
 from api.llm.client import LLMCallContext, LLMClient
 from factories import (
+    _add_named_media_cell,
     _clear_llm_override,
     _get_genre,
     _login_as,
@@ -49,51 +47,6 @@ from factories import (
 
 def _id_tag(cell_id: uuid.UUID | str) -> str:
     return "{{img::" + str(cell_id) + "}}"
-
-
-async def _add_cell(
-    db_session: AsyncSession,
-    version_id: uuid.UUID,
-    owner_user_id: uuid.UUID,
-    person: str,
-    scene: str,
-    *,
-    entity_id: uuid.UUID | None = None,
-    size: tuple[int, int] | None = (300, 400),
-) -> tuple[MediaBookCell, Asset]:
-    """버전에 `person`×`scene` 칸 하나를 넣는다. 축은 이름이 같으면 다시 쓰고, 없으면 새로 만든다."""
-    person_row = await db_session.scalar(
-        select(MediaBookPerson).where(MediaBookPerson.content_version_id == version_id, MediaBookPerson.name == person)
-    )
-    if person_row is None:
-        person_row = MediaBookPerson(entity_id=uuid.uuid4(), content_version_id=version_id, name=person, order=0)
-        db_session.add(person_row)
-    scene_row = await db_session.scalar(
-        select(MediaBookScene).where(MediaBookScene.content_version_id == version_id, MediaBookScene.name == scene)
-    )
-    if scene_row is None:
-        scene_row = MediaBookScene(entity_id=uuid.uuid4(), content_version_id=version_id, name=scene, order=0)
-        db_session.add(scene_row)
-    asset = Asset(
-        owner_user_id=owner_user_id,
-        storage_key=f"assets/situational-image/{uuid.uuid4()}.webp",
-        kind=AssetKind.ORIGINAL,
-        status=AssetStatus.READY,
-        width=size[0] if size is not None else None,
-        height=size[1] if size is not None else None,
-    )
-    db_session.add(asset)
-    await db_session.flush()
-    cell = MediaBookCell(
-        entity_id=entity_id or uuid.uuid4(),
-        content_version_id=version_id,
-        person_entity_id=person_row.entity_id,
-        scene_entity_id=scene_row.entity_id,
-        image_asset_id=asset.id,
-    )
-    db_session.add(cell)
-    await db_session.flush()
-    return cell, asset
 
 
 async def _story_with_setup(
@@ -160,13 +113,16 @@ async def _stored_messages(db_session: AsyncSession, room_id: str) -> list[str]:
 
 
 class _RecordingLLMClient(LLMClient):
-    """생성·판정 프롬프트를 모두 기록하고, 구조화 응답은 호출 순서대로 꺼낸다."""
+    """생성·판정 프롬프트를 모두 기록하고, 구조화 응답은 요청한 스키마의 것을 큐에서 순서대로 꺼낸다. 미디어
+    북 칸이 있는 스토리 방은 스탯 판정과 칸 판정을 동시에 부르므로 호출 순서로 꺼내면 결과가 엇갈린다 — 칸
+    판정은 큐에 없으면 "고른 칸 없음"으로 답한다. `judgment_prompts` 는 스키마별로 남는다."""
 
     def __init__(self, tokens: list[str], structured_results: list[Any] | None = None) -> None:
         self.tokens = tokens
         self._structured_results = list(structured_results or [])
         self.generation_prompts: list[str] = []
         self.judgment_prompts: list[str] = []
+        self.judgment_prompts_by_schema: dict[Any, list[str]] = {}
 
     async def generate(
         self,
@@ -184,7 +140,13 @@ class _RecordingLLMClient(LLMClient):
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
         self.judgment_prompts.append(prompt)
-        return self._structured_results.pop(0)
+        self.judgment_prompts_by_schema.setdefault(response_schema, []).append(prompt)
+        for index, result in enumerate(self._structured_results):
+            if isinstance(result, response_schema):
+                return self._structured_results.pop(index)
+        if response_schema is ImageMatchJudgmentResult:
+            return ImageMatchJudgmentResult(matched_image_entity_id=None)
+        raise AssertionError(f"큐에 {response_schema.__name__} 응답이 없다")
 
 
 # ---- 첫 메시지 저장 형태 ---------------------------------------------------------------------------
@@ -197,7 +159,7 @@ async def test_opening_message_stores_media_tags_as_cell_ids(
         db_session, opening_message="문이 열린다.\n\n{{img::민아/교실}}\n\n{{img::수아/교실}}\n\n민아가 웃는다."
     )
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
 
@@ -216,7 +178,7 @@ async def test_opening_message_falls_back_to_prologue_tags_as_cell_ids(
         db_session, opening_message=None, prologue="{{img::민아/교실}}\n프롤로그"
     )
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
 
@@ -239,7 +201,7 @@ async def test_change_starting_setup_stores_opening_media_tags_as_cell_ids(
         order=2,
     )
     db_session.add(other_setup)
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -257,7 +219,7 @@ async def test_reset_chat_room_stores_opening_media_tags_as_cell_ids(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -279,11 +241,11 @@ async def test_room_response_resolves_opening_media_tags_for_pinned_version(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    cell, asset = await _add_cell(
+    cell, asset = await _add_named_media_cell(
         db_session, content.current_published_version_id, user_id, "민아", "교실", size=(640, 480)
     )
     # 같은 버전의 다른 칸은 첫 메시지가 가리키지 않으므로 맵에 없다.
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -304,7 +266,7 @@ async def test_room_response_carries_null_size_for_asset_without_dimensions(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}")
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실", size=None)
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실", size=None)
     await db_session.commit()
     await _login_as(db_client, user_id)
 
@@ -320,7 +282,7 @@ async def test_room_response_ignores_media_tags_typed_in_user_messages(
     """사용자가 칸 id 를 쳐 넣어도 그 칸의 원본 URL 을 받지 못한다 — 맵은 첫 메시지(작성자 글)만 본다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="태그 없는 시작")
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -341,8 +303,8 @@ async def test_room_response_ignores_cells_in_model_reply_left_first_after_openi
     작성자의 첫 메시지가 가리키지 않는 칸은 서명하지 않는다 — 아직 보지 못한 칸의 원본이 새는 길이다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    classroom, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
-    rooftop, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    classroom, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    rooftop, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -369,7 +331,7 @@ async def test_room_response_ignores_user_message_left_first_after_opening_delet
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    classroom, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    classroom, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -392,14 +354,14 @@ async def test_pin_latest_version_resolves_opening_tag_to_new_version_cell(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    cell, old_asset = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, old_asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
 
     # 새 발행본은 같은 칸(entity_id)의 그림을 바꿨다.
     new_version = await _publish_next_version(db_session, content, setup)
-    _, new_asset = await _add_cell(
+    _, new_asset = await _add_named_media_cell(
         db_session, new_version.id, user_id, "민아", "교실", entity_id=cell.entity_id, size=(100, 200)
     )
     await db_session.commit()
@@ -417,7 +379,7 @@ async def test_pin_latest_version_resolves_opening_tag_to_new_version_cell(
 async def test_deleted_cell_tag_resolves_to_nothing(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}} 시작")
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -505,7 +467,7 @@ async def test_room_snapshot_epilogue_strips_media_tags_without_url_map(
     """스냅숏에는 아직 도달하지 않은 엔딩도 실린다 — 그 에필로그의 칸을 서명하면 미해금 원본이 샌다."""
     user_id, content, setup = await _story_with_setup(db_session, opening_message="태그 없는 시작")
     assert content.current_published_version_id is not None
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await _add_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n안녕.")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -521,7 +483,7 @@ async def test_ending_reached_event_carries_cell_id_epilogue_and_url_map(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
     assert content.current_published_version_id is not None
-    cell, asset = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    cell, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await _add_ending(db_session, setup, "끝났다.\n\n{{img::민아/옥상}}\n\n{{img::수아/옥상}}")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -549,8 +511,8 @@ async def test_ending_collection_carries_cell_id_epilogue_and_url_map_only_for_r
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="시작")
     assert content.current_published_version_id is not None
-    rooftop, asset = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    rooftop, asset = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     reached = await _add_ending(db_session, setup, "{{img::민아/옥상}}\n끝.", order=1)
     await _add_ending(db_session, setup, "{{img::민아/교실}}\n다른 끝.", order=2)
     db_session.add(
@@ -584,9 +546,9 @@ async def test_content_detail_resolves_prologue_and_description_media_tags(
     version = await db_session.get(ContentVersion, content.current_published_version_id)
     assert version is not None
     version.detail_description = "소개\n\n{{img::민아/옥상}}\n\n{{img::없는/칸}}"
-    classroom, _ = await _add_cell(db_session, version.id, user_id, "민아", "교실")
-    rooftop, rooftop_asset = await _add_cell(db_session, version.id, user_id, "민아", "옥상", size=(500, 700))
-    await _add_cell(db_session, version.id, user_id, "민아", "복도")
+    classroom, _ = await _add_named_media_cell(db_session, version.id, user_id, "민아", "교실")
+    rooftop, rooftop_asset = await _add_named_media_cell(db_session, version.id, user_id, "민아", "옥상", size=(500, 700))
+    await _add_named_media_cell(db_session, version.id, user_id, "민아", "복도")
     await db_session.commit()
 
     resp = await db_client.get(f"/contents/{content.id}")
@@ -608,7 +570,7 @@ async def test_content_detail_signs_media_tags_only_for_viewers_who_can_see_the_
     사람에게만 서명한다 — 비공개 작품은 작성자에게만, 이용제한 작품은 아무에게도."""
     user_id, content, _ = await _story_with_setup(db_session, opening_message=None, prologue="{{img::민아/교실}}")
     assert content.current_published_version_id is not None
-    cell, _ = await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     content.visibility = ContentVisibility.PRIVATE
     other = _make_user()
     db_session.add(other)
@@ -642,8 +604,8 @@ async def test_story_generation_prompt_excludes_media_tags_from_prologue_and_his
         prologue="프롤로그 {{img::민아/옥상}}끝",
     )
     assert content.current_published_version_id is not None
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "옥상")
     await db_session.commit()
     await _login_as(db_client, user_id)
     room = await _create_room(db_client, content, setup)
@@ -669,7 +631,7 @@ async def test_ending_judgment_turn_lines_exclude_media_tags(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}\n시작한다.")
     assert content.current_published_version_id is not None
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await _add_ending(db_session, setup, "끝")
     await db_session.commit()
     await _login_as(db_client, user_id)
@@ -686,7 +648,7 @@ async def test_ending_judgment_turn_lines_exclude_media_tags(
         _clear_llm_override()
 
     assert resp.status_code == 200
-    ending_prompt = fake.judgment_prompts[1]
+    (ending_prompt,) = fake.judgment_prompts_by_schema[EndingJudgmentResult]
     assert "시작한다." in ending_prompt
     assert "{{img::" not in ending_prompt
 
@@ -748,7 +710,7 @@ async def test_last_message_preview_excludes_media_tags(
 ) -> None:
     user_id, content, setup = await _story_with_setup(db_session, opening_message="{{img::민아/교실}}\n시작한다.")
     assert content.current_published_version_id is not None
-    await _add_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
+    await _add_named_media_cell(db_session, content.current_published_version_id, user_id, "민아", "교실")
     await db_session.commit()
     await _login_as(db_client, user_id)
     await _create_room(db_client, content, setup)

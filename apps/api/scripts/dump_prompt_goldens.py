@@ -28,6 +28,7 @@ from typing import Any, get_args
 from uuid import UUID
 
 from api.chat.prompt_builder import (
+    MediaCellCandidate,
     PromptLane,
     build_ending_judgment_prompt,
     build_generation_prompt,
@@ -35,6 +36,8 @@ from api.chat.prompt_builder import (
     build_stat_judgment_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
+    media_cell_image_lines,
+    situational_image_lines,
     system_instruction_for,
 )
 from api.content.publish import (
@@ -59,6 +62,8 @@ _AFFECTION_ENTITY_ID = UUID("11111111-1111-1111-1111-111111111111")
 _STAMINA_ENTITY_ID = UUID("22222222-2222-2222-2222-222222222222")
 _IMAGE_ENTITY_ID_SMILE = UUID("33333333-3333-3333-3333-333333333333")
 _IMAGE_ENTITY_ID_ANGRY = UUID("44444444-4444-4444-4444-444444444444")
+_MEDIA_CELL_ENTITY_ID_ROOFTOP = UUID("55555555-5555-5555-5555-555555555555")
+_MEDIA_CELL_ENTITY_ID_CLASSROOM = UUID("66666666-6666-6666-6666-666666666666")
 
 CHARACTER_PROMPT = "너는 밤늦게 옥상에서 마주친 낯선 사람이다. 말수는 적지만 관찰력이 좋다."
 CHARACTER_NAME = "밤의 목격자"
@@ -159,6 +164,15 @@ def _situational_images() -> list[SituationalImage]:
     ]
 
 
+def _media_cells() -> list[MediaCellCandidate]:
+    return [
+        MediaCellCandidate(
+            entity_id=_MEDIA_CELL_ENTITY_ID_ROOFTOP, person="민아", scene="옥상", situation_description="난간에 기대 웃는다"
+        ),
+        MediaCellCandidate(entity_id=_MEDIA_CELL_ENTITY_ID_CLASSROOM, person="민아", scene="교실", situation_description=""),
+    ]
+
+
 def _starting_setup() -> StartingSetup:
     return StartingSetup(name="첫 만남", prologue=STORY_PROLOGUE)
 
@@ -171,7 +185,7 @@ def _starting_setup() -> StartingSetup:
 # 활성 세트를 넘겨 각 콜러블의 실행 결과를 같은 이름의 골든 파일과 비교한다. 레인 배정은
 # 채널→레인 매핑 그대로다 — system/generation은
 # scope(캐릭터/스토리)로, stat_judgment·ending_judgment는 story로, image_judgment는
-# character로, publish_filter는 publish_filter로 고정.
+# character로(스토리 미디어 북 칸 판정만 story), publish_filter는 publish_filter로 고정.
 
 GoldenBuilder = Callable[[PromptSet, list[PromptSection]], str]
 
@@ -458,7 +472,9 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
-            situational_images=_situational_images(),
+            scope="character",
+            assistant_label=ps.character_assistant_label,
+            image_lines=situational_image_lines(_situational_images()),
             history=_character_history(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
@@ -470,8 +486,26 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
         lambda ps, sections: build_image_judgment_prompt(
             prompt_set=ps,
             sections=sections,
-            situational_images=[],
+            scope="character",
+            assistant_label=ps.character_assistant_label,
+            image_lines=situational_image_lines([]),
             history=[],
+            user_message=USER_MESSAGE,
+            assistant_message=ASSISTANT_MESSAGE,
+        ),
+    ),
+    # 스토리 미디어 북 칸 판정 — 위 캐릭터 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다.
+    # 상황 설명이 있는 칸과 없는 칸, 칸 id 형태·이름 형태 태그가 든 대화 기록(판정에는 실리지 않는다).
+    (
+        "judgment_media_cell_filled.txt",
+        "story",
+        lambda ps, sections: build_image_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
+            scope="story",
+            assistant_label=ps.story_assistant_label,
+            image_lines=media_cell_image_lines(_media_cells()),
+            history=_story_history_with_media_tags(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
         ),
