@@ -44,8 +44,9 @@ class Settings(BaseSettings):
     aws_region: str = "ap-northeast-2"
     s3_bucket_name: str = "ai-character-chat-assets-dev"
     s3_presigned_url_expires_seconds: int = 900
-    # Overridden for local dev/tests to point at a non-AWS S3-compatible endpoint
-    # (e.g. `uv run moto_server`); left unset in real AWS environments.
+    # Required in every environment: the Cloudflare R2 endpoint in production, moto
+    # (e.g. `uv run moto_server`) for local dev/tests. `generate_presigned_get_url`
+    # signs path-style URLs against it and raises when it is unset.
     s3_endpoint_url: str | None = None
 
     # No requirement fixes this TTL (only the 60s resend cooldown was specified) —

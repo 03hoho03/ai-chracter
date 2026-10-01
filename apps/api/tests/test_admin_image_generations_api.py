@@ -1,13 +1,14 @@
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import AdminActionLog, Asset, AssetKind, AssetStatus, ImageGenerationRequest
 from api.images.models import IMAGE_STYLE_PRESETS, IMAGE_STYLE_PRESETS_BY_ID
-from factories import _create_admin, _login_as, _login_as_admin, _make_user
+from factories import _create_admin, _login_as, _login_as_admin, _make_user, _set_signing_clock
 
 
 async def _assert_requires_admin_session(
@@ -225,6 +226,47 @@ async def test_view_response_includes_prompt_and_image_url(
     assert len(body["items"][0]["images"]) == 1
     assert body["items"][0]["images"][0]["assetId"] == str(asset_id)
     assert body["items"][0]["images"][0]["imageUrl"].startswith("http")
+
+
+async def test_more_returns_a_freshly_signed_image_url_on_every_request(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """어드민 화면은 이미지가 깨지면 더보기를 다시 불러 새 주소로 한 번 더 시도하고, 그래도 깨져야
+    깨짐으로 표시한다. 같은 15분 구간 안에서도 재조회가 다른 URL 을 줘야 그 두 번째 시도가 일어난다 —
+    구간 서명으로 바뀌면 1초 간격의 두 응답이 같은 URL 이 되어 이 테스트가 깨진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    request_row = await _make_image_generation_request(db_session, owner_user_id=user.id, completed_count=1)
+    asset_id = uuid.uuid4()
+    db_session.add(
+        Asset(
+            id=asset_id,
+            owner_user_id=user.id,
+            storage_key=f"assets/generated/{asset_id}.png",
+            kind=AssetKind.GENERATED,
+            status=AssetStatus.READY,
+            style="soft_portrait",
+            request_id=request_row.id,
+        )
+    )
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    async def image_url() -> str:
+        resp = await db_client.get(f"/admin/users/{user.id}/image-generations")
+        assert resp.status_code == 200
+        url: str = resp.json()["items"][0]["images"][0]["imageUrl"]
+        return url
+
+    at = datetime(2026, 10, 1, 10, 0, 1, tzinfo=UTC)
+    _set_signing_clock(monkeypatch, at)
+    first = await image_url()
+    _set_signing_clock(monkeypatch, at + timedelta(seconds=1))
+    second = await image_url()
+
+    assert first != second
 
 
 async def test_more_three_times_still_zero_log_rows(

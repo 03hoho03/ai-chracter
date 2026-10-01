@@ -22,7 +22,7 @@ from api.db.models import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from factories import _make_asset, _make_user
+from factories import _make_asset, _make_user, _set_signing_clock
 
 
 async def _get_genres(db_session: AsyncSession) -> list[Genre]:
@@ -302,6 +302,37 @@ async def test_list_signs_thumbnail_variant_while_detail_signs_original(
     detail_url = detail_resp.json()["thumbnailUrl"]
     assert "_thumb.webp" not in detail_url
     assert ".png" in detail_url
+
+
+async def test_list_thumbnail_url_is_identical_within_a_window_and_changes_at_its_boundary(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """목록을 다시 받아도 같은 15분 구간 안이면 썸네일 URL 이 글자까지 같아야 브라우저가 이미지를
+    캐시에서 바로 그린다 — URL 이 바뀌면 카드마다 이미지를 다시 받으며 잠깐 비어 보인다. 구간 경계를
+    넘으면 새 서명이라 URL 이 바뀐다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = (await _get_genres(db_session))[0]
+    await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id, name="캐릭터")
+    await db_session.commit()
+
+    async def thumbnail_url_at(at: datetime) -> str:
+        _set_signing_clock(monkeypatch, at)
+        resp = await db_client.get("/contents", params={"type": "character"})
+        assert resp.status_code == 200
+        [item] = resp.json()["items"]
+        url: str = item["thumbnailUrl"]
+        return url
+
+    window_start = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    window_end = window_start + timedelta(minutes=15)
+    first = await thumbnail_url_at(window_start + timedelta(seconds=1))
+    last = await thumbnail_url_at(window_end - timedelta(seconds=1))
+    next_window = await thumbnail_url_at(window_end)
+
+    assert first == last
+    assert next_window != last
 
 
 async def test_list_contents_search_matches_name_one_liner_and_description(

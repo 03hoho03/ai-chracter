@@ -23,7 +23,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 | 응답 후 가벼운 후처리 | `BackgroundTasks` + `Depends(get_session_factory)` |
 | 오래 걸리는 백그라운드 잡 | `images/jobs.py`의 `enqueue_generation` + 같은 세션 팩토리 |
 | Redis read-modify-write | pipeline + `WATCH`/`MULTI`/`EXEC` (단순 GET-then-SET 금지) |
-| 자산 → 렌더링 URL | `generate_presigned_get_url` + `run_in_threadpool` |
+| 자산 → 렌더링 URL | `generate_presigned_get_url` + `run_in_threadpool`. 문의 첨부·어드민 이미지 생성 이력만 요청마다 새로 서명하는 `generate_per_request_presigned_get_url` |
 | 실패를 서버 로그에 남기기 | `logger.warning()` 이상. uvicorn이 root logger에 핸들러를 안 붙여 `info`/`debug`는 사라지지만 `logging.lastResort`가 WARNING 이상을 stderr로 내보낸다(`chat/router.py`의 `_stream_new_turn` 등 `logger.warning` 선례) — `print`가 아니다 |
 | 테스트 클라이언트 | `db_client` / `api_client` 픽스처 (`TestClient` 금지) |
 | S3 흉내 | `moto.server.ThreadedMotoServer` (`mock_aws` 금지) |

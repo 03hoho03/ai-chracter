@@ -127,6 +127,18 @@ def _patch_httpx(
     monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
 
 
+def _set_signing_clock(monkeypatch: pytest.MonkeyPatch, at: datetime) -> None:
+    """GET 주소 서명 두 갈래의 시계를 함께 `at`(UTC aware)으로 고정한다 — 구간 서명은
+    `api.core.s3._utcnow` 를, 요청마다 새로 하는 서명은 botocore 의 `get_current_datetime` 을 읽는다.
+    둘을 같이 고정해야 호출부가 어느 서명을 쓰는지가 결과 URL 로 갈린다."""
+
+    def fixed(remove_tzinfo: bool = True) -> datetime:
+        return at.replace(tzinfo=None) if remove_tzinfo else at
+
+    monkeypatch.setattr("api.core.s3._utcnow", lambda: at)
+    monkeypatch.setattr("botocore.auth.get_current_datetime", fixed)
+
+
 # 인증 없이 임의 `user_id`로 쿠키를 굽던
 # `POST /dev/session-echo`(삭제됨) 대신 세션을 직접 만들어 쿠키에 넣는다. 호출
 # `create_session(user_id)`는 프로덕션 로그인 경로 세 곳(`auth/router.py`의 `google_callback`(구글
