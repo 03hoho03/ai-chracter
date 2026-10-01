@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from api.core.s3 import generate_presigned_get_url
+from api.core.s3 import generate_per_request_presigned_get_url
 from api.db.models.inquiry import Inquiry, InquiryStatus
 from api.db.models.media import Asset
 from api.db.session import get_db_session
@@ -30,7 +30,8 @@ async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> st
     asset = await db.get(Asset, asset_id)
     if asset is None:
         return None
-    return await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+    # 개인정보가 담길 수 있는 첨부 원본이라 주소가 살아 있는 시간을 늘리지 않도록 요청마다 새로 서명한다.
+    return await run_in_threadpool(generate_per_request_presigned_get_url, asset.storage_key)
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)

@@ -2,11 +2,12 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.db.models import Inquiry, InquiryCategory, InquiryStatus, Notification
-from factories import _create_admin, _login_as, _login_as_admin, _make_user
+from factories import _create_admin, _login_as, _login_as_admin, _make_asset, _make_user, _set_signing_clock
 
 
 async def _make_inquiry(db_session: AsyncSession, *, user_id: uuid.UUID, **overrides: object) -> Inquiry:
@@ -61,6 +62,30 @@ async def test_admin_inquiry_detail_includes_author_info(
     body = resp.json()
     assert body["authorNickname"] == "문의러"
     assert body["authorEmail"] == "inquirer@example.com"
+
+
+async def test_admin_inquiry_attachment_url_is_signed_afresh_on_every_request(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """어드민이 보는 문의 첨부 주소도 같은 15분 구간 안에서 요청마다 새로 서명된다 — 구간 서명으로
+    바뀌면 1초 간격의 두 응답이 같은 URL 이 되어 이 테스트가 깨진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    asset = await _make_asset(db_session, owner_user_id=user.id, storage_key_prefix="assets/inquiry-attachment/")
+    inquiry = await _make_inquiry(db_session, user_id=user.id, attachment_asset_id=asset.id)
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    at = datetime(2026, 10, 1, 10, 0, 1, tzinfo=UTC)
+    _set_signing_clock(monkeypatch, at)
+    first = (await db_client.get(f"/admin/inquiries/{inquiry.id}")).json()["attachmentUrl"]
+    _set_signing_clock(monkeypatch, at + timedelta(seconds=1))
+    second = (await db_client.get(f"/admin/inquiries/{inquiry.id}")).json()["attachmentUrl"]
+
+    assert first is not None
+    assert first != second
 
 
 async def test_admin_inquiry_detail_shows_placeholder_nickname_for_withdrawn_author(

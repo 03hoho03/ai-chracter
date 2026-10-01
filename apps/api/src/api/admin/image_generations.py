@@ -10,7 +10,7 @@ from starlette.concurrency import run_in_threadpool
 from api.admin.action_log import record_admin_action
 from api.admin.dependencies import get_current_admin_id
 from api.core.constants import WITHDRAWN_USER_NICKNAME
-from api.core.s3 import generate_presigned_get_url
+from api.core.s3 import generate_per_request_presigned_get_url
 from api.db.models.auth import User
 from api.db.models.media import Asset, ImageGenerationRequest
 from api.db.session import get_db_session
@@ -75,10 +75,12 @@ async def _list_owner_requests_page(
 
     items: list[AdminImageGenerationDetailItem] = []
     for request_row in requests:
+        # 어드민 화면은 이미지가 깨지면 목록을 다시 받아 새 주소로 한 번 더 시도하고, 그래도 깨지면
+        # 깨짐으로 표시한다. 재조회가 같은 주소를 돌려주면 두 번째 실패가 오지 않으므로 요청마다 새로 서명한다.
         images = [
             AdminImageGenerationImageItem(
                 asset_id=asset.id,
-                image_url=await run_in_threadpool(generate_presigned_get_url, asset.storage_key),
+                image_url=await run_in_threadpool(generate_per_request_presigned_get_url, asset.storage_key),
             )
             for asset in assets_by_request_id.get(request_row.id, [])
         ]
