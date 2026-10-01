@@ -5,16 +5,16 @@ import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 
 type CommentActionModalProps = {
   title: string; description: string; confirmLabel: string; isDestructive?: boolean;
-  mutationFn: MutationFn<void>; returnFocus: () => void;
+  mutationFn: MutationFn<void>; onRestoreFocus: () => void;
 };
 
 export const CommentActionModal = createCallable<CommentActionModalProps, void>(
-  ({ call, title, description, confirmLabel, isDestructive, mutationFn, returnFocus }) => {
+  ({ call, title, description, confirmLabel, isDestructive, mutationFn, onRestoreFocus }) => {
     const submit = useMutationFlow(call, mutationFn);
     return (
       <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
         <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-sm"
-          onCloseAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(returnFocus); }}>
+          onCloseAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(onRestoreFocus); }}>
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="break-keep">{description}</DialogDescription>

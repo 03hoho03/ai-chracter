@@ -12,6 +12,8 @@ export function useLogoutMutation() {
 
   return useMutation({
     mutationFn: () => apiClient.post<void>("/auth/logout").then((res) => res.data),
+    // 같은 정리를 `features/withdraw-account`도 한다 — features끼리는 서로 import할 수 없어 두 벌이다. 로그인 사용자별
+    // 캐시를 새로 만들면 양쪽 onSuccess에 함께 더한다.
     onSuccess: () => {
       setLogoutRevision((revision) => revision + 1);
       void queryClient.resetQueries({ queryKey: commentKeys.all });

@@ -7,7 +7,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 import { Smile, X } from "lucide-react";
 
-import { CommentStickerImage, useCommentStickersQuery, type Comment } from "@/entities/comment";
+import { COMMENT_GHOST_HOVER_CLASS_NAME, CommentStickerImage, useCommentStickersQuery, type Comment } from "@/entities/comment";
 
 import { useWriteCommentMutation } from "../api/useWriteCommentMutation";
 import type { CommentDraft } from "../model/drafts";
@@ -70,13 +70,13 @@ export function CommentComposer({
       <form noValidate className="flex min-w-0 flex-col gap-3 rounded-lg border border-border p-3"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!isLoggedIn) { void CommentLoginModal.call({ returnFocus: () => inputRef.current?.focus() }); return; }
+          if (!isLoggedIn) { void CommentLoginModal.call({ onRestoreFocus: () => inputRef.current?.focus() }); return; }
           if (!canSubmit || isSubmitting || isSubmittingRef.current) return;
           void form.handleSubmit(handleSubmit)(event);
         }}>
         {!!isReplyMode && <div className="flex min-w-0 items-center justify-between gap-2 text-xs text-muted-foreground">
           <span className="break-keep">{replyTarget?.author?.nickname ? replyTarget.author.nickname + "님에게 답글" : "선택한 댓글에 답글"}</span>
-          <Button type="button" variant="ghost" className="in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10" size="sm" onClick={onCancel}>답글 취소</Button>
+          <Button type="button" variant="ghost" className={COMMENT_GHOST_HOVER_CLASS_NAME} size="sm" onClick={onCancel}>답글 취소</Button>
         </div>}
         {(values.mentions ?? []).length > 0 && <div className="flex flex-wrap items-center gap-1.5" role="group" aria-label="선택한 멘션"
           aria-invalid={!!errors.mentions} aria-describedby={errors.mentions ? id + "-mentions-error" : undefined}>
@@ -92,7 +92,7 @@ export function CommentComposer({
         {!!errors.mentions && <p id={id + "-mentions-error"} role="alert" className="text-xs text-destructive-text">{errors.mentions.message}</p>}
         {!!selectedSticker && <div className="flex items-start gap-2">
           <CommentStickerImage sticker={selectedSticker} />
-          <Button type="button" variant="ghost" className="in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10" size="icon-sm" aria-label="선택한 스티커 제거"
+          <Button type="button" variant="ghost" className={COMMENT_GHOST_HOVER_CLASS_NAME} size="icon-sm" aria-label="선택한 스티커 제거"
             onClick={() => form.setValue("stickerId", null, { shouldDirty: true })}><X aria-hidden /></Button>
         </div>}
         <div className="flex flex-wrap items-center gap-3">

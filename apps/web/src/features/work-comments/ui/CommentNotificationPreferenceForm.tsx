@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import type { CommentPreferences } from "@/entities/comment";
 
-import { notificationPreferenceServerToForm } from "../api/notificationPreferenceMappers";
+import { notificationPreferenceServerToForm } from "../model/serverToForm";
 import { useSaveCommentPreferencesMutation } from "../api/useSaveCommentPreferencesMutation";
 import { notificationPreferenceErrors } from "../model/notificationPreferenceErrors";
 import { notificationPreferenceSchema, type NotificationPreferenceFormValues } from "../model/notificationPreferenceSchema";

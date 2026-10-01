@@ -1,4 +1,4 @@
-import type { NotificationResponse } from "../api/useNotificationListQuery";
+import type { NotificationResponse } from "./notification";
 
 export type NotificationDestination =
   | { kind: "notice"; noticeId: string }

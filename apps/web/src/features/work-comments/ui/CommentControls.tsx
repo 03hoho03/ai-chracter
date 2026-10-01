@@ -6,7 +6,7 @@ import { Heart, MoreHorizontal } from "lucide-react";
 import { useDebounce } from "react-use";
 import { toast } from "sonner";
 
-import type { Comment } from "@/entities/comment";
+import { COMMENT_GHOST_HOVER_CLASS_NAME, COMMENT_GHOST_OPEN_CLASS_NAME, type Comment } from "@/entities/comment";
 
 import { useCommentActionMutation, type CommentAction } from "../api/useCommentActionMutation";
 import { useLikeCommentMutation } from "../api/useLikeCommentMutation";
@@ -38,17 +38,20 @@ export function CommentControls({
   useDebounce(() => {
     if (isLikedOverride === undefined || isLikedOverride === comment.isLiked || !comment.canLike || like.isPending) return;
     const sent = isLikedOverride;
-    like.mutate(sent, { onSettled: () => setIsLikedOverride((current) => current === sent ? undefined : current) });
+    // 호출 단위 `onSettled`는 그 사이 observer가 바뀌면 불리지 않을 수 있다 — 프로미스에 걸어 override를 반드시 푼다.
+    // 실패 토스트는 훅의 `onError`가 띄운다.
+    void like.mutateAsync(sent).catch(() => undefined)
+      .then(() => setIsLikedOverride((current) => current === sent ? undefined : current));
   }, 400, [isLikedOverride, comment.isLiked, comment.canLike, like.isPending]);
 
   function handleReturnFocus() {
     if (menuRef.current?.isConnected) menuRef.current.focus();
     else onFocusFallback();
   }
-  function handleLogin() { void CommentLoginModal.call({ returnFocus: handleReturnFocus }); }
+  function handleLogin() { void CommentLoginModal.call({ onRestoreFocus: handleReturnFocus }); }
   function handleConfirm(title: string, description: string, confirmLabel: string, operation: CommentAction, isDestructive = false) {
     if (action.isPending) return;
-    void CommentActionModal.call({ title, description, confirmLabel, isDestructive, returnFocus: handleReturnFocus,
+    void CommentActionModal.call({ title, description, confirmLabel, isDestructive, onRestoreFocus: handleReturnFocus,
       mutationFn: async (call) => { try { await action.mutateAsync(operation); call.end(); } catch { /* Action error is shown by the mutation. */ } } });
   }
 
@@ -56,7 +59,7 @@ export function CommentControls({
     <div className="flex flex-wrap items-center gap-2">
       {isNormal && <Button type="button" variant="ghost" size="sm" aria-pressed={isLiked}
         aria-label={isLiked ? "댓글 좋아요 취소" : "댓글 좋아요"}
-        aria-disabled={isLoggedIn && !comment.canLike} className={cn("aria-disabled:opacity-65 in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10", isLiked && "text-primary")}
+        aria-disabled={isLoggedIn && !comment.canLike} className={cn("aria-disabled:opacity-65", COMMENT_GHOST_HOVER_CLASS_NAME, isLiked && "text-primary")}
         onClick={() => {
           if (!isLoggedIn) { handleLogin(); return; }
           if (!comment.canLike) return;
@@ -65,11 +68,11 @@ export function CommentControls({
         <Heart aria-hidden className={isLiked ? "fill-primary" : undefined} />
         {Math.max(0, comment.likeCount + likeDelta)}
       </Button>}
-      {(comment.canReply || (!isLoggedIn && isNormal)) && <Button type="button" variant="ghost" size="sm" className="in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10"
+      {(comment.canReply || (!isLoggedIn && isNormal)) && <Button type="button" variant="ghost" size="sm" className={COMMENT_GHOST_HOVER_CLASS_NAME}
         onClick={() => { if (!isLoggedIn) handleLogin(); else onReply(); }}>답글</Button>}
       {hasMenu && <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button ref={menuRef} type="button" variant="ghost" size="icon-sm" className="in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:hover:bg-secondary in-data-[comment-highlighted=true]:hover:bg-foreground/10 in-data-[slot=dialog-content]:not-in-data-[comment-highlighted=true]:data-[state=open]:bg-secondary in-data-[comment-highlighted=true]:data-[state=open]:bg-foreground/10" aria-label="댓글 메뉴"><MoreHorizontal aria-hidden /></Button>
+          <Button ref={menuRef} type="button" variant="ghost" size="icon-sm" className={cn(COMMENT_GHOST_HOVER_CLASS_NAME, COMMENT_GHOST_OPEN_CLASS_NAME)} aria-label="댓글 메뉴"><MoreHorizontal aria-hidden /></Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-auto"
           onCloseAutoFocus={(event) => {
@@ -94,7 +97,7 @@ export function CommentControls({
           {(canShowReport || canShowMute) && <><DropdownMenuSeparator />
             {canShowReport && <DropdownMenuItem onSelect={() => {
               if (!isLoggedIn) { handleLogin(); return; }
-              void CommentReportModal.call({ returnFocus: handleReturnFocus, mutationFn: async (call, reason) => {
+              void CommentReportModal.call({ onRestoreFocus: handleReturnFocus, mutationFn: async (call, reason) => {
                 try {
                   await action.mutateAsync({ type: "report", commentId: comment.id, reason });
                   toast.success("신고가 접수됐어요."); call.end();

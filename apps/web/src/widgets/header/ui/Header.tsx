@@ -49,7 +49,7 @@ export function Header() {
           aria-label="또나"
           className={cn(
             "inline-flex shrink-0 items-center justify-self-center rounded-md text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
-            isSearchExpanded && "max-sm:hidden",
+            isSearchExpanded && "hidden sm:inline-flex",
           )}
         >
           <BrandLogo className="h-5 w-auto" />
@@ -65,12 +65,12 @@ export function Header() {
             이 그룹이 기본값 min-width:auto면 그 축소가 막혀 헤더가 뷰포트를 넘는다(390px에서 실측).
             `justify-self-end`는 grid(모바일)에서 그룹을 우측에 붙이고, `sm:ml-auto`는 flex(데스크톱)에서
             같은 역할을 한다(justify-self는 flex 아이템에 효과가 없어 서로 간섭하지 않는다). 검색이
-            헤더를 독점할 때는 이 그룹이 3열 전체를 차지해야 하므로 `max-sm:col-span-3` +
-            `max-sm:justify-self-stretch`를 더한다. */}
+            헤더를 독점할 때는 이 그룹이 3열 전체를 차지해야 하므로 `col-span-3` + `justify-self-stretch`를
+            더한다 — `sm` 이상은 flex라 두 클래스 모두 효과가 없어 `max-sm:`로 막을 필요가 없다. */}
         <div
           className={cn(
             "flex min-w-0 items-center gap-1 justify-self-end sm:ml-auto",
-            isSearchExpanded && "max-sm:col-span-3 max-sm:justify-self-stretch",
+            isSearchExpanded && "col-span-3 justify-self-stretch",
           )}
         >
           {/* 클로버는 재화라 비로그인에게는 의미가 없고 누르면 로그인으로 튕기므로 알림·프로필처럼 로그인

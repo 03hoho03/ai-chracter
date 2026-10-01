@@ -1,7 +1,7 @@
-const segmenter = new Intl.Segmenter("ko", { granularity: "grapheme" });
+const GRAPHEME_SEGMENTER = new Intl.Segmenter("ko", { granularity: "grapheme" });
 
 export function countCommentGraphemes(value: string): number {
-  return [...segmenter.segment(value)].length;
+  return [...GRAPHEME_SEGMENTER.segment(value)].length;
 }
 
 /** Cursors can overlap when popularity or pinning changes while another page is loaded. */

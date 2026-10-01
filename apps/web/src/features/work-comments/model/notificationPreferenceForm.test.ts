@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { notificationPreferenceFormToServer, notificationPreferenceServerToForm } from "../api/notificationPreferenceMappers";
+import { notificationPreferenceFormToServer } from "./formToServer";
+import { notificationPreferenceServerToForm } from "./serverToForm";
 import { notificationPreferenceErrors } from "./notificationPreferenceErrors";
 
 describe("comment preference form/server boundary", () => {

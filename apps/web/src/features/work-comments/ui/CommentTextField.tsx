@@ -9,7 +9,7 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { countCommentGraphemes, uniqueComments, useCommentCandidatesQuery, type CommentAuthor } from "@/entities/comment";
 
 import { findCommentMentionToken } from "../model/mentionToken";
-import type { CommentFormValues } from "../model/schema";
+import { COMMENT_MAX_GRAPHEMES, COMMENT_MAX_MENTIONS, COMMENT_MENTION_LIMIT_MESSAGE, type CommentFormValues } from "../model/schema";
 
 type CommentTextFieldProps = {
   contentId: string; viewerId: string; canMention: boolean;
@@ -112,7 +112,7 @@ export function CommentTextField({
   }, [isOpen, inputRef, signature]);
 
   function handleChoose(author: CommentAuthor) {
-    if (!token || mentions.length >= 3) return;
+    if (!token || mentions.length >= COMMENT_MAX_MENTIONS) return;
     form.setValue("mentions", [...mentions, author], { shouldDirty: true, shouldValidate: true });
     // The selected account lives in an ID-backed chip; the typed search fragment is removed.
     form.setValue("body", body.slice(0, token.start) + body.slice(token.end), { shouldDirty: true });
@@ -146,7 +146,7 @@ export function CommentTextField({
           else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
             event.preventDefault();
             setActiveIndex((current) => Math.max(0, Math.min(items.length - 1, current + (event.key === "ArrowDown" ? 1 : -1))));
-          } else if (event.key === "Enter" && items[active] && mentions.length < 3) {
+          } else if (event.key === "Enter" && items[active] && mentions.length < COMMENT_MAX_MENTIONS) {
             event.preventDefault();
             const author = items[active];
             if (author) handleChoose(author);
@@ -154,7 +154,7 @@ export function CommentTextField({
         }} />
       <div id={id + "-help"} className="flex flex-wrap justify-between gap-1 text-xs text-muted-foreground">
         <span>{canMention ? "Enter는 줄바꿈 · @로 작품 참여자 멘션" : "Enter는 줄바꿈 · 멘션 선택은 참여 가능한 로그인 상태에서 이용해요."}</span>
-        <span aria-live="off" className={countCommentGraphemes(body) > 1000 ? "text-destructive-text" : undefined}>{countCommentGraphemes(body)} / 1,000</span>
+        <span aria-live="off" className={countCommentGraphemes(body) > COMMENT_MAX_GRAPHEMES ? "text-destructive-text" : undefined}>{countCommentGraphemes(body)} / {COMMENT_MAX_GRAPHEMES.toLocaleString("ko-KR")}</span>
       </div>
       {!!bodyError && <p id={id + "-error"} role="alert" className="text-xs text-destructive-text">{bodyError.message}</p>}
       {isOpen && !!position && createPortal(
@@ -164,9 +164,9 @@ export function CommentTextField({
           onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); setDismissed(signature); inputRef.current?.focus(); } }}>
           <div id={listId} role="listbox" aria-label="멘션할 사용자">
             <CommentMentionCandidates candidates={candidates} items={items} activeIndex={active} listId={listId}
-              canSelect={mentions.length < 3} onSelect={handleChoose} />
+              canSelect={mentions.length < COMMENT_MAX_MENTIONS} onSelect={handleChoose} />
           </div>
-          {mentions.length >= 3 && <p className="p-2 text-xs text-muted-foreground">멘션은 최대 3명까지 선택할 수 있어요.</p>}
+          {mentions.length >= COMMENT_MAX_MENTIONS && <p className="p-2 text-xs text-muted-foreground">{COMMENT_MENTION_LIMIT_MESSAGE}</p>}
           {candidates.hasNextPage && <Button type="button" size="sm" variant="ghost" className="w-full hover:bg-secondary"
             aria-disabled={candidates.isFetchingNextPage} onClick={() => { if (!candidates.isFetchingNextPage) void candidates.fetchNextPage(); }}>참여자 더 보기</Button>}
         </div>, position.host,

@@ -1,9 +1,11 @@
+import type { components } from "@ai-character-chat/api-types";
 import { useQuery } from "@tanstack/react-query";
 
 import { apiClient } from "@/shared/api/client";
 
 import { notificationKeys } from "./keys";
-import type { NotificationUnreadCountResponse } from "./useNotificationListQuery";
+
+type NotificationUnreadCountResponse = components["schemas"]["NotificationUnreadCountResponse"];
 
 const POLL_INTERVAL_MS = 30_000;
 

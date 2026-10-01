@@ -38,7 +38,7 @@ function CommentMutedUsersList({ query, restore, headerRef }: CommentMutedUsersL
           if (restore.isPending) return;
           const button = event.currentTarget;
           void CommentActionModal.call({ title: "이 사용자의 댓글 숨김을 해제할까요?", description: "현재 읽을 수 있는 댓글과 댓글 알림을 다시 볼 수 있어요.",
-            confirmLabel: "숨김 해제", returnFocus: () => { if (button.isConnected) button.focus(); else headerRef.current?.focus(); },
+            confirmLabel: "숨김 해제", onRestoreFocus: () => { if (button.isConnected) button.focus(); else headerRef.current?.focus(); },
             mutationFn: async (call) => { try { await restore.mutateAsync(author.id); call.end(); } catch { /* Keep retry available. */ } },
           });
         }}>숨김 해제</Button>

@@ -27,8 +27,10 @@ import {
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
+type LogicOp = (typeof LOGIC_OPERATORS)[number];
+
 /** 그룹 내부 규칙을 잇는 접속사. 화면이 이 목록(LOGIC_OPERATORS)으로 항목을 그리므로 술어와 어긋날 수 없다. */
-const GROUP_OPERATOR_LABEL: Record<(typeof LOGIC_OPERATORS)[number], string> = {
+const GROUP_OPERATOR_LABEL: Record<LogicOp, string> = {
   and: "그리고",
   or: "또는",
 };
@@ -84,7 +86,7 @@ export function EndingTab() {
 
 /** Radix 토글·셀렉트는 재클릭 시 빈 문자열을 흘려보내고 item value도 `string`이라 좁힘이 필요하다.
  * `as` 대신 술어를 쓴다 — 둘 다 화면이 실제로 그리는 목록을 근거로 삼는다. */
-function isGroupOperator(value: string): value is (typeof LOGIC_OPERATORS)[number] {
+function isGroupOperator(value: string): value is LogicOp {
   return LOGIC_OPERATORS.some((op) => op === value);
 }
 
@@ -94,8 +96,6 @@ function isComparisonOperator(value: string): value is SingleRuleValues["operato
 
 /** 목록 위에서 인접한 두 항목 사이의 and/or 관계. 마지막 항목의 nextOp는 평가에서 무시되므로
  * (entities/chat-room/model/endingRules.ts) 마지막 항목 뒤에는 렌더링하지 않는다. */
-type LogicOp = (typeof LOGIC_OPERATORS)[number];
-
 function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: LogicOp) => void }) {
   return (
     <ToggleGroup
@@ -156,7 +156,7 @@ function SingleRuleRow({
       <div className="@container min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-2">
           <Select value={rule.statId} onValueChange={(value) => onChange({ ...rule, statId: value })}>
-            <SelectTrigger className="w-full @min-[20rem]:w-32" aria-label="스탯 선택">
+            <SelectTrigger className="w-full @xs:w-32" aria-label="스탯 선택">
               <SelectValue placeholder="스탯" />
             </SelectTrigger>
             <SelectContent>

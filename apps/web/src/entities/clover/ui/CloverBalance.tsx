@@ -2,6 +2,12 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 
 import { CloverIcon } from "./CloverIcon";
 
+type CloverBalanceProps = {
+  balance: number;
+  isInsufficient?: boolean;
+  className?: string;
+};
+
 /** 잔량 한 줄.
  *
  * 형태는 `ContentCard`의 조회수 묶음(`ContentCardMetric`)을 그대로 쓴다: 아이콘 + 숫자,
@@ -27,15 +33,7 @@ import { CloverIcon } from "./CloverIcon";
  *
  * 정지 상태 그림자 없음(§Elevation Flat-at-Rest), 채움 없음(§Status badges — `bg-muted`는 카드·팝오버
  * 위에서 1.0000:1로 사라진다). 크기는 본문 기본보다 한 단 아래인 `text-xs`로, 조회수와 같다. */
-export function CloverBalance({
-  balance,
-  isInsufficient = false,
-  className,
-}: {
-  balance: number;
-  isInsufficient?: boolean;
-  className?: string;
-}) {
+export function CloverBalance({ balance, isInsufficient = false, className }: CloverBalanceProps) {
   return (
     <span
       className={cn(

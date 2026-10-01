@@ -1,11 +1,19 @@
+import type { components } from "@ai-character-chat/api-types";
+
 import { apiClient } from "@/shared/api/client";
 
 import type {
-  Comment, CommentCreateRequest, CommentHiddenList, CommentLike, CommentList, CommentLocation,
-  CommentMentionCandidates, CommentMutes, CommentPin, CommentPreferences, CommentReplies,
-  CommentReport, CommentReportReason, CommentSettings, CommentSort, CommentStickerCatalog,
-  CommentWriteRequest, ReplyPageParam,
+  Comment, CommentHiddenList, CommentList, CommentLocation, CommentMentionCandidates, CommentMutes,
+  CommentPreferences, CommentReplies, CommentReportReason, CommentSort, CommentStickerCatalog, ReplyPageParam,
 } from "../model/comment";
+
+// 요청 본문과 변경 응답은 이 요청 함수들만 쓰는 전송 형태라 엔티티 타입(`model/comment.ts`)과 갈라 둔다.
+export type CommentWriteRequest = components["schemas"]["CommentUpdateRequest"];
+export type CommentCreateRequest = components["schemas"]["CommentCreateRequest"];
+type CommentLike = components["schemas"]["CommentLikeResponse"];
+type CommentPin = components["schemas"]["CommentPinResponse"];
+type CommentSettings = components["schemas"]["CommentSettingsResponse"];
+type CommentReport = components["schemas"]["CommentReportResponse"];
 
 const contentPath = (contentId: string) => "/contents/" + contentId;
 const commentPath = (commentId: string) => "/comments/" + commentId;

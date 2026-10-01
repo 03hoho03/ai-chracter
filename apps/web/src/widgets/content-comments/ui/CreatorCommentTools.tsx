@@ -23,7 +23,7 @@ export function CreatorCommentTools({ contentId, viewerId, isPaused, hiddenCount
               title: isPaused ? "새 댓글 작성을 다시 열까요?" : "새 댓글 작성을 중지할까요?",
               description: isPaused ? "독자가 새 댓글과 답글을 남길 수 있어요." : "기존 댓글은 유지되고 작가 본인을 포함해 새 댓글과 답글을 남길 수 없어요.",
               confirmLabel: isPaused ? "다시 열기" : "작성 중지",
-              returnFocus: () => pauseRef.current?.isConnected ? pauseRef.current.focus() : onFocusFallback(),
+              onRestoreFocus: () => pauseRef.current?.isConnected ? pauseRef.current.focus() : onFocusFallback(),
               mutationFn: async (call) => { try { await pause.mutateAsync(!isPaused); call.end(); } catch { /* The mutation shows the error. */ } },
             });
           }}>{isPaused ? "새 댓글 작성 재개" : "새 댓글 작성 중지"}</Button>
@@ -56,7 +56,7 @@ function CreatorHiddenCommentsList({ query, viewerId, onFocusFallback }: Creator
       <CommentControls comment={comment} viewerId={viewerId} isLoggedIn onEdit={() => {}} onReply={() => {}} onFocusFallback={onFocusFallback} />
     </CommentRow>)}
     {query.isError && error}
-    {query.hasNextPage && <Button type="button" variant="outline" size="sm" aria-disabled={query.isFetchingNextPage}
+    {query.hasNextPage && <Button type="button" variant="outline" size="sm" className="aria-disabled:opacity-65" aria-disabled={query.isFetchingNextPage}
       onClick={() => { if (!query.isFetchingNextPage) void query.fetchNextPage(); }}>숨긴 댓글 더 보기</Button>}
   </>;
 }

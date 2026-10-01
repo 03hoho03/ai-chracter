@@ -13,8 +13,8 @@ import type { CommentReportReason } from "@/entities/comment";
 import { commentReportReasonSchema, commentReportSchema, REASON_OPTIONS } from "../model/reportSchema";
 
 export const CommentReportModal = createCallable<{
-  mutationFn: MutationFn<void, CommentReportReason>; returnFocus: () => void;
-}, void>(({ call, mutationFn, returnFocus }) => {
+  mutationFn: MutationFn<void, CommentReportReason>; onRestoreFocus: () => void;
+}, void>(({ call, mutationFn, onRestoreFocus }) => {
   const errorId = useId();
   const form = useForm<z.infer<typeof commentReportSchema>>({ resolver: zodResolver(commentReportSchema) });
   const submit = useMutationFlow(call, mutationFn);
@@ -22,7 +22,7 @@ export const CommentReportModal = createCallable<{
   return (
     <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
       <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-sm"
-        onCloseAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(returnFocus); }}>
+        onCloseAutoFocus={(event) => { event.preventDefault(); requestAnimationFrame(onRestoreFocus); }}>
         <DialogHeader><DialogTitle>댓글 신고</DialogTitle><DialogDescription className="break-keep">이 댓글의 신고 사유를 선택해주세요.</DialogDescription></DialogHeader>
         <form noValidate onSubmit={(event) => {
           event.preventDefault(); if (!isSubmitting) void form.handleSubmit((values) => submit(values.reason))(event);

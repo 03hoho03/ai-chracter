@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { toast } from "sonner";
 
-import { uniqueComments, useCommentsQuery, useCommentLocationQuery, type Comment, type CommentSort } from "@/entities/comment";
+import { COMMENT_SORTS, uniqueComments, useCommentsQuery, useCommentLocationQuery, type Comment, type CommentSort } from "@/entities/comment";
 import { CommentComposer, CommentControls, type useCommentDrafts, type CommentFormValues } from "@/features/work-comments";
 import { isApiError } from "@/shared/api/client";
 
@@ -33,7 +33,9 @@ export function ContentCommentsView({ contentId, targetCommentId, viewerId, isLo
   const meta = isInaccessible ? undefined : rootQuery.data?.pages[0];
   const headerRef = useRef<HTMLHeadingElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
-  const focusedTarget = useRef<string | undefined>(undefined);
+  // 이미 포커스를 옮긴 "대상 + 그 시점 viewer". 둘 중 하나가 바뀌면 키가 달라져 다시 포커스한다 —
+  // 별도 effect로 ref를 비우지 않아도 된다.
+  const focusedTargetKey = useRef<string | undefined>(undefined);
   const pinned = meta?.pinnedComment?.displayState === "normal" ? meta.pinnedComment : undefined;
   const regular = isInaccessible ? [] : rootQuery.data?.pages.flatMap((page) => page.items) ?? [];
   const located = location.isError && isApiError(location.error) && location.error.status === 404 ? undefined : location.data;
@@ -47,15 +49,15 @@ export function ContentCommentsView({ contentId, targetCommentId, viewerId, isLo
   const reply = replyLocation.isError || isInaccessible ? undefined : replyLocation.data?.target;
   const canSubmit = !!meta?.canCreate && (!replyId || !!reply?.canReply);
 
-  useEffect(() => { focusedTarget.current = undefined; }, [targetId, viewerId]);
   const handleFocusTarget = useCallback((id: string) => {
-    if (!targetId || focusedTarget.current === targetId) return;
+    const targetKey = targetId && viewerId + ":" + targetId;
+    if (!targetKey || focusedTargetKey.current === targetKey) return;
     const element = document.getElementById("comment-" + id);
     if (!element) return;
     element.focus({ preventScroll: true });
     element.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth" });
-    focusedTarget.current = targetId;
-  }, [targetId]);
+    focusedTargetKey.current = targetKey;
+  }, [targetId, viewerId]);
   function handleFocusFallback() { headerRef.current?.focus(); }
   function handleSelectReply(comment: Comment) {
     const nextKey = "reply:" + comment.id;
@@ -98,7 +100,7 @@ export function ContentCommentsView({ contentId, targetCommentId, viewerId, isLo
           댓글{meta && !rootQuery.isFetching ? " " + meta.visibleCommentCount : ""}
         </h2>
         <ToggleGroup type="single" variant="outline" size="sm" value={sort} aria-label="댓글 정렬"
-          onValueChange={(value) => { if (value === "latest" || value === "popular") setSort(value); }}>
+          onValueChange={(value) => { const next = COMMENT_SORTS.find((sort) => sort === value); if (next) setSort(next); }}>
           <ToggleGroupItem value="latest">최신순</ToggleGroupItem><ToggleGroupItem value="popular">인기순</ToggleGroupItem>
         </ToggleGroup>
       </div>
