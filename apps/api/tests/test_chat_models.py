@@ -20,6 +20,7 @@ from api.db.models import (
     Genre,
     ModerationStatus,
     StoryEndingUnlock,
+    StoryMediaExposure,
     User,
 )
 from factories import _make_user
@@ -257,6 +258,33 @@ async def test_character_image_exposure_rejects_duplicate_composite_pk(
             content_id=version.content_id,
             image_entity_id=image_entity_id,
         )
+    )
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
+
+
+# `alembic check` 는 복합 PK 구성을 비교하지 않는다 — story_media_exposures 의 복합 PK 는 이
+# 테스트에서만 검증된다.
+async def test_story_media_exposure_rejects_duplicate_composite_pk(db_session: AsyncSession) -> None:
+    """A cell is recorded once per user and story; another cell, or the same cell for another
+    user, is a separate row."""
+    user, other_user = _make_user(), _make_user()
+    db_session.add_all([user, other_user])
+    await db_session.flush()
+    version = await _make_published_version(db_session, user)
+    cell_entity_id = uuid.uuid4()
+
+    db_session.add_all(
+        [
+            StoryMediaExposure(user_id=user.id, content_id=version.content_id, cell_entity_id=cell_entity_id),
+            StoryMediaExposure(user_id=user.id, content_id=version.content_id, cell_entity_id=uuid.uuid4()),
+            StoryMediaExposure(user_id=other_user.id, content_id=version.content_id, cell_entity_id=cell_entity_id),
+        ]
+    )
+    await db_session.flush()
+
+    db_session.add(
+        StoryMediaExposure(user_id=user.id, content_id=version.content_id, cell_entity_id=cell_entity_id)
     )
     with pytest.raises(IntegrityError):
         await db_session.flush()

@@ -10,6 +10,7 @@ from api.db.models.chat import (
     ChatRoomMemorySnapshot,
     ChatRoomStat,
     StoryEndingUnlock,
+    StoryMediaExposure,
 )
 from api.db.models.clover import CloverLedger, CloverLot
 from api.db.models.comments import (
@@ -59,6 +60,9 @@ from api.db.models.story import (
     EndingRuleOperator,
     KeywordNote,
     LogicalOp,
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
     Shortcut,
     StartingSetup,
     StatDef,
@@ -113,6 +117,9 @@ __all__ = [
     "LegalDocument",
     "Like",
     "LogicalOp",
+    "MediaBookCell",
+    "MediaBookPerson",
+    "MediaBookScene",
     "ModerationAction",
     "ModerationActionType",
     "ModerationStatus",
@@ -128,6 +135,7 @@ __all__ = [
     "StartingSetup",
     "StatDef",
     "StoryEndingUnlock",
+    "StoryMediaExposure",
     "StoryPromptTemplate",
     "StoryVersionDetail",
     "User",
