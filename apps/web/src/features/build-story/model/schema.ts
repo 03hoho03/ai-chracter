@@ -151,13 +151,63 @@ export const startingSetupSchema = z.object({
   endings: z.array(endingSchema).default([]),
 });
 
+/** 키워드북 상한의 단일 소스. 스키마의 검사·메시지와 widgets/build-story/ui/KeywordNoteTab.tsx 의 입력 가드가 전부
+ * 여기를 읽는다. 자동저장은 이 스키마를 거치지 않고 폼 값을 그대로 보내므로, 서버가 거절할 값은 입력 단계에서부터
+ * 폼에 들어가지 않아야 한다(들어가면 그 초안의 자동저장이 통째로 멈춘다). */
+export const MAX_KEYWORD_NOTES = 50;
+export const MAX_KEYWORD_NOTE_CONTENT_LENGTH = 800;
+export const MAX_TRIGGER_KEYWORDS = 10;
+export const MAX_TRIGGER_KEYWORD_LENGTH = 20;
+export const TRIGGER_KEYWORD_BLANK_MESSAGE = "키워드를 입력해주세요";
+export const TRIGGER_KEYWORD_TOO_LONG_MESSAGE = `키워드는 ${MAX_TRIGGER_KEYWORD_LENGTH}자 이하로 입력해주세요`;
+export const TRIGGER_KEYWORD_LIMIT_MESSAGE = `트리거 키워드는 최대 ${MAX_TRIGGER_KEYWORDS}개까지만 추가할 수 있습니다`;
+export const TRIGGER_KEYWORD_DUPLICATE_MESSAGE = "같은 키워드가 이미 있어요(영문 대소문자는 구분하지 않아요)";
+
+/**
+ * 키워드 중복을 가리는 비교 키. 서버는 NFC 로 맞춘 뒤 파이썬 `casefold()` 로 접어 비교하는데 JS 에는 casefold 가
+ * 없다. 소문자화만 하면 서버보다 느슨해(예: `ß`·`ẞ` 는 서버에서 `ss` 와 같다) 서버만 중복으로 보는 값을 폼이
+ * 받아 자동저장이 거절된다. 소문자 → 대문자 → 소문자를 거치면 casefold 가 접는 모든 코드 포인트가 같은 키로
+ * 모인다(전 코드 포인트 대조로 확인 — 소문자화만으로는 101개가 어긋났다). 반대로 폼이 더 엄격한 경우(점 없는
+ * `ı` 와 `i` 등)는 서버가 받을 값을 폼이 막을 뿐이라 자동저장을 멈추지 않는다.
+ */
+export function normalizeKeyword(value: string): string {
+  return value.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
+}
+
 /** scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
 export const keywordNoteSchema = z.object({
   id: z.string(),
-  content: z.string().min(1, "정보를 입력해주세요"),
+  content: z
+    .string()
+    .min(1, "정보를 입력해주세요")
+    .refine(
+      (value) => countCharacters(value) <= MAX_KEYWORD_NOTE_CONTENT_LENGTH,
+      `정보는 ${MAX_KEYWORD_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
+    ),
+  // 원소 하나의 위반도 배열 자리에 싣는다 — 화면은 키워드 목록 아래 한 줄로만 오류를 보여 준다.
   triggerKeywords: z
-    .array(z.string().min(1, "키워드를 입력해주세요"))
-    .min(1, "트리거 키워드를 1개 이상 추가해주세요"),
+    .array(z.string())
+    .min(1, "트리거 키워드를 1개 이상 추가해주세요")
+    .max(MAX_TRIGGER_KEYWORDS, TRIGGER_KEYWORD_LIMIT_MESSAGE)
+    .superRefine((keywords, ctx) => {
+      const seen = new Set<string>();
+      for (const keyword of keywords) {
+        if (keyword.trim().length === 0) {
+          ctx.addIssue({ code: "custom", message: TRIGGER_KEYWORD_BLANK_MESSAGE });
+          return;
+        }
+        if (countCharacters(keyword) > MAX_TRIGGER_KEYWORD_LENGTH) {
+          ctx.addIssue({ code: "custom", message: TRIGGER_KEYWORD_TOO_LONG_MESSAGE });
+          return;
+        }
+        const key = normalizeKeyword(keyword);
+        if (seen.has(key)) {
+          ctx.addIssue({ code: "custom", message: TRIGGER_KEYWORD_DUPLICATE_MESSAGE });
+          return;
+        }
+        seen.add(key);
+      }
+    }),
   scope: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("global") }),
     z.object({ kind: z.literal("startingSetup"), startingSetupId: z.string() }),
@@ -307,7 +357,10 @@ export const storyBuilderSchema = z.object({
     .array(startingSetupSchema)
     .min(1, "시작설정을 1개 이상 추가해주세요")
     .max(MAX_STARTING_SETUPS, `시작설정은 최대 ${MAX_STARTING_SETUPS}개까지만 추가할 수 있습니다`),
-  keywordNotes: z.array(keywordNoteSchema).default([]),
+  keywordNotes: z
+    .array(keywordNoteSchema)
+    .max(MAX_KEYWORD_NOTES, `키워드 노트는 최대 ${MAX_KEYWORD_NOTES}개까지만 추가할 수 있습니다`)
+    .default([]),
   shortcuts: z.array(shortcutSchema).default([]),
   mediaBook: mediaBookSchema,
   registration: z.object({

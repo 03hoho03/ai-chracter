@@ -8,6 +8,7 @@ import {
   mediaBookAxisSchema,
   mediaBookCellSchema,
   mediaBookSchema,
+  normalizeKeyword,
   ruleListItemSchema,
   shortcutSchema,
   startingSetupSchema,
@@ -269,6 +270,73 @@ describe("keywordNoteSchema", () => {
     const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), scope: { kind: "unknown" } });
 
     expect(result.success).toBe(false);
+  });
+
+  it("accepts content up to the length limit and rejects one character more", () => {
+    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "가".repeat(800) });
+    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), content: "가".repeat(801) });
+
+    expect(atLimit.success).toBe(true);
+    expect(overLimit.success).toBe(false);
+  });
+
+  it("accepts up to 10 trigger keywords and rejects the 11th", () => {
+    const keywords = (count: number) => Array.from({ length: count }, (_, i) => `키워드${i}`);
+
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(10) }).success).toBe(true);
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: keywords(11) }).success).toBe(false);
+  });
+
+  it("accepts a 20-character trigger keyword and rejects a 21-character one", () => {
+    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(20)] });
+    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["가".repeat(21)] });
+
+    expect(atLimit.success).toBe(true);
+    expect(overLimit.success).toBe(false);
+  });
+
+  it("rejects a whitespace-only trigger keyword", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: ["밤", "  "] });
+
+    expect(result.success).toBe(false);
+  });
+
+  it.each([
+    ["letter case", "USB", "usb"],
+    ["Unicode composition", "한밤", "한밤".normalize("NFD")],
+    ["sharp s that the server folds to ss", "straße", "STRASSE"],
+  ])("rejects trigger keywords that differ only by %s", (_, first, second) => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [first, second] });
+
+    expect(result.success).toBe(false);
+    // 배열 자리에 실어야 화면의 키워드 오류 한 줄에 보인다(원소 자리 오류는 표시할 곳이 없다).
+    expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["triggerKeywords"]);
+  });
+});
+
+describe("normalizeKeyword", () => {
+  it("folds letter case and Unicode composition the way the server compares keywords", () => {
+    expect(normalizeKeyword("USB")).toBe("usb");
+    expect(normalizeKeyword("한밤".normalize("NFD"))).toBe("한밤");
+    // 파이썬 casefold 는 ß·ẞ 를 ss 로 접는다 — 소문자화만으로는 이 둘이 서버보다 느슨해진다.
+    expect(normalizeKeyword("ẞ")).toBe(normalizeKeyword("ss"));
+    expect(normalizeKeyword("ß")).toBe(normalizeKeyword("SS"));
+  });
+});
+
+describe("storyBuilderSchema keywordNotes", () => {
+  function notes(count: number) {
+    return Array.from({ length: count }, (_, i) => ({
+      id: `note-${i}`,
+      content: `표지 ${i}`,
+      triggerKeywords: [`키워드${i}`],
+      scope: { kind: "global" as const },
+    }));
+  }
+
+  it("accepts up to 50 keyword notes and rejects the 51st", () => {
+    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(50) }).success).toBe(true);
+    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(51) }).success).toBe(false);
   });
 });
 

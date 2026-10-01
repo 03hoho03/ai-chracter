@@ -15,7 +15,17 @@ export function isMediaBookPositionTakenError(error: unknown): boolean {
   return typeof error.detail === "object" && error.detail.code === POSITION_TAKEN_CODE;
 }
 
-/** 자동저장 실패 토스트 문구. 미디어 북 자리 경합이 아니면 undefined(기본 문구). */
+/**
+ * 서버가 저장 본문을 검증에서 거절한(422) 경우의 안내. 같은 값으로는 몇 번을 다시 보내도 거절되므로 기다리라고
+ * 하지 않고 줄이라고 말한다. 422 본문에서는 어느 항목이 넘쳤는지 화면이 가려낼 수 없어(필드 오류가 이름만 남고
+ * 위치는 버려진다) 항목을 짚지 않는다.
+ */
+export const STORY_SAVE_LIMIT_MESSAGE =
+  "글자 수나 개수 제한을 넘은 항목이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 긴 글이나 많이 추가한 항목을 줄여주세요.";
+
+/** 스토리 저장 실패 토스트 문구 — 자동저장과 임시저장 버튼이 함께 쓴다. 따로 안내할 이유가 없으면 undefined(호출부의 기본 문구). */
 export function storyAutosaveErrorMessage(error: unknown): string | undefined {
-  return isMediaBookPositionTakenError(error) ? MEDIA_BOOK_POSITION_TAKEN_MESSAGE : undefined;
+  if (isMediaBookPositionTakenError(error)) return MEDIA_BOOK_POSITION_TAKEN_MESSAGE;
+  if (isApiError(error) && error.status === 422) return STORY_SAVE_LIMIT_MESSAGE;
+  return undefined;
 }
