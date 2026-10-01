@@ -5,10 +5,12 @@ from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.chat import (
     CharacterImageExposure,
     ChatMessage,
+    ChatMessageReport,
     ChatMessageRole,
     ChatRoom,
     ChatRoomMemorySnapshot,
     ChatRoomStat,
+    DiscardedResponse,
     StoryEndingUnlock,
     StoryMediaExposure,
 )
@@ -83,6 +85,7 @@ __all__ = [
     "CharacterImageExposure",
     "CharacterVersionDetail",
     "ChatMessage",
+    "ChatMessageReport",
     "ChatMessageRole",
     "ChatRoom",
     "ChatRoomMemorySnapshot",
@@ -102,6 +105,7 @@ __all__ = [
     "ContentType",
     "ContentVersion",
     "ContentVisibility",
+    "DiscardedResponse",
     "Ending",
     "EndingRule",
     "EndingRuleGroup",

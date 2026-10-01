@@ -65,6 +65,9 @@ class User(Base):
     # 버스트는 유지한다. 값은 어드민 토글로만 바뀐다 — 상한값 자체는 상수라
     # 여기 담기지 않는다.
     rate_limit_exempt: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
+    # 베타 참가자로 처음 지정된 시각. NULL이면 참가자가 아니다. 다시 지정해도 덮어쓰지 않는다 —
+    # 베타 코호트를 나누는 기준이 첫 지정 시각이기 때문이다. 운영 플래그라 탈퇴해도 남긴다.
+    beta_joined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     # 잔액은 원장의 파생이 아니라
     # **불변식의 소재지**다 — 판정은 반드시 이 컬럼의 조건부 UPDATE로 하고 원장은 그
     # 트랜잭션에 얹는 기록이다. 순서를 뒤집어 원장 SUM으로 판정하면 이중 지불이 돌아온다.
