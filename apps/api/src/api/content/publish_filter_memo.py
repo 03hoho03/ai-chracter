@@ -1,7 +1,7 @@
 """발행 심사를 통과한 입력을 기억해, 아무것도 바뀌지 않은 재발행에서 심사 LLM 호출을 건너뛴다.
 
 심사 LLM 이 보는 것은 렌더된 심사 문장과 이미지(바이트·형식, 순서대로)뿐이고, 판정을 내리는 것은 활성 심사
-세트와 실제 모델·사고 예산이다. 이 여섯에 콘텐츠 id 를 더한 값이 직전에 통과한 심사와 완전히 같을 때만 건너뛴다. 콘텐츠
+세트와 실제 모델이다. 이 다섯에 콘텐츠 id 를 더한 값이 직전에 통과한 심사와 완전히 같을 때만 건너뛴다. 콘텐츠
 id 를 넣는 건 통과를 작품 하나에 묶으려는 것이다 — 다른 작품이 같은 글·그림을 들고 와도 각자 심사받는다.
 
 기억은 통과 직후에만 쓰고 거부·호출 실패·파싱 실패는 남기지 않는다. 읽기가 실패하거나 늦으면 기억이 없는
@@ -33,16 +33,13 @@ def screening_key(
     content_id: uuid.UUID,
     prompt_set_id: uuid.UUID,
     model: str,
-    thinking_budget: int | None,
     prompt: str,
     images: Sequence[tuple[bytes, str]],
 ) -> str:
     """입력마다 길이를 앞에 붙여 이어 붙인 뒤 해시한다. 길이가 없으면 경계를 옮긴 두 입력(글자 하나를 옆
-    칸으로)이 같은 바이트열이 되어 같은 키를 얻는다. 사고 예산은 None(넘기지 않음)을 빈 바이트열로, 숫자는
-    십진 문자열로 넣는다 — 0(사고 끔)과 None 이 서로 다른 키가 된다."""
+    칸으로)이 같은 바이트열이 되어 같은 키를 얻는다."""
     digest = hashlib.sha256()
-    budget = b"" if thinking_budget is None else str(thinking_budget).encode()
-    parts: list[bytes] = [content_id.bytes, prompt_set_id.bytes, model.encode(), budget, prompt.encode()]
+    parts: list[bytes] = [content_id.bytes, prompt_set_id.bytes, model.encode(), prompt.encode()]
     for data, mime_type in images:
         parts += [mime_type.encode(), data]
     for part in parts:

@@ -11,7 +11,7 @@ from google.genai import errors as genai_errors
 from google.genai import types as genai_types
 from pydantic import BaseModel
 
-from api.core.config import settings
+from api.core.config import Settings, settings
 from api.llm.client import LLMCallContext, LLMClientError, LLMPolicyViolationError, LLMRateLimitError
 from api.llm.gemini import GeminiLLMClient
 
@@ -630,20 +630,28 @@ async def test_generate_structured_usage_missing_and_logging_failure_do_not_rais
     assert await client.generate_structured("judge", _JudgmentResult, usage=_CTX) == expected
 
 
-# ── call_site 로 고르는 구조화 호출 모델·사고 설정, 사용량 집계 ─────────────────────────
+# ── call_site 로 고르는 구조화 호출 모델, 사용량 집계 ─────────────────────────────────
 
-_JUDGMENT_SITES = (
-    "chat_stat_judgment",
-    "chat_ending_judgment",
-    "chat_situational_image",
-    "chat_media_book_image",
-    "preview_stat_judgment",
-    "preview_ending_judgment",
-    "preview_media_book_image",
-)
+_STAT_SITES = ("chat_stat_judgment", "preview_stat_judgment")
+_ENDING_SITES = ("chat_ending_judgment", "preview_ending_judgment")
+_IMAGE_SITES = ("chat_situational_image", "chat_media_book_image", "preview_media_book_image")
+_JUDGMENT_SITES = _STAT_SITES + _ENDING_SITES + _IMAGE_SITES
 _PUBLISH_FILTER_SITES = ("publish_filter_character", "publish_filter_story")
 # 판정·심사가 아닌 구조화 호출 — 어느 스위치에도 끌려가면 안 된다.
 _OTHER_STRUCTURED_SITES = ("chat_memory_summary", "seed_story_generate", "seed_similarity_review")
+_ALL_STRUCTURED_SITES = _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES
+# 설정 이름 → 그 설정을 따라가야 하는 call_site.
+_MODEL_SWITCHES = {
+    "gemini_stat_judgment_model_name": _STAT_SITES,
+    "gemini_ending_judgment_model_name": _ENDING_SITES,
+    "gemini_image_judgment_model_name": _IMAGE_SITES,
+    "gemini_publish_filter_model_name": _PUBLISH_FILTER_SITES,
+}
+
+
+def _clear_model_switches(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in _MODEL_SWITCHES:
+        monkeypatch.setattr(settings, name, None)
 
 
 def _capture_structured(
@@ -679,60 +687,72 @@ async def _call_each(client: GeminiLLMClient, sites: tuple[str, ...]) -> None:
 async def test_structured_calls_use_the_base_model_when_no_override_is_configured(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
-    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    _clear_model_switches(monkeypatch)
     client, sent, recorded = _capture_structured(monkeypatch)
 
-    sites = _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES
-    await _call_each(client, sites)
+    await _call_each(client, _ALL_STRUCTURED_SITES)
 
-    assert [k["model"] for k in sent] == ["base-model"] * len(sites)
-    assert recorded == [(site, "base-model") for site in sites]
+    assert [k["model"] for k in sent] == ["base-model"] * len(_ALL_STRUCTURED_SITES)
+    assert recorded == [(site, "base-model") for site in _ALL_STRUCTURED_SITES]
 
 
-async def test_judgment_model_override_routes_only_judgment_call_sites(
-    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+@pytest.mark.parametrize("switch", list(_MODEL_SWITCHES))
+async def test_each_model_switch_routes_only_its_own_call_sites(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, switch: str
 ) -> None:
+    """판정 종류마다 모델을 따로 옮길 수 있어야 한다 — 스탯·엔딩만 옮기고 그림 매칭은 기본 모델에 두는 식이다."""
     caplog.set_level(logging.WARNING, logger="api.llm.gemini")
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
-    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    _clear_model_switches(monkeypatch)
+    monkeypatch.setattr(settings, switch, "switched-model")
     client, sent, recorded = _capture_structured(monkeypatch)
 
-    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+    await _call_each(client, _ALL_STRUCTURED_SITES)
 
-    expected = (
-        ["judge-model"] * len(_JUDGMENT_SITES)
-        + ["base-model"] * len(_PUBLISH_FILTER_SITES)
-        + ["base-model"] * len(_OTHER_STRUCTURED_SITES)
-    )
+    expected = ["switched-model" if site in _MODEL_SWITCHES[switch] else "base-model" for site in _ALL_STRUCTURED_SITES]
     assert [k["model"] for k in sent] == expected
     # 로그·집계의 model 은 실제로 호출한 모델이어야 전환 전후를 갈라 볼 수 있다.
     assert [m for _, m in recorded] == expected
     assert [_fields(r)["model"] for r in _usage_records(caplog)] == expected
 
 
-async def test_publish_filter_model_override_routes_only_publish_filter_call_sites(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
+async def test_model_switches_combine_without_crossing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """여럿을 함께 정해도 각 call_site 는 제 종류의 설정만 따른다. 빈 문자열은 정하지 않은 것과 같다."""
+    monkeypatch.setattr(settings, "gemini_stat_judgment_model_name", "stat-model")
+    monkeypatch.setattr(settings, "gemini_ending_judgment_model_name", "ending-model")
+    monkeypatch.setattr(settings, "gemini_image_judgment_model_name", "")
     monkeypatch.setattr(settings, "gemini_publish_filter_model_name", "filter-model")
-    client, sent, recorded = _capture_structured(monkeypatch)
+    client, sent, _ = _capture_structured(monkeypatch)
 
-    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+    await _call_each(client, _ALL_STRUCTURED_SITES)
 
     expected = (
-        ["base-model"] * len(_JUDGMENT_SITES)
+        ["stat-model"] * len(_STAT_SITES)
+        + ["ending-model"] * len(_ENDING_SITES)
+        + ["base-model"] * len(_IMAGE_SITES)
         + ["filter-model"] * len(_PUBLISH_FILTER_SITES)
         + ["base-model"] * len(_OTHER_STRUCTURED_SITES)
     )
     assert [k["model"] for k in sent] == expected
-    assert [m for _, m in recorded] == expected
+
+
+def test_judgment_call_sites_are_exactly_the_three_kinds() -> None:
+    """어드민 판정 비율은 판정 집합 전체를 본다 — 종류별 집합의 합이 그 집합이고 서로 겹치지 않아야 한다."""
+    from api.llm.client import (
+        ENDING_JUDGMENT_CALL_SITES,
+        IMAGE_JUDGMENT_CALL_SITES,
+        JUDGMENT_CALL_SITES,
+        STAT_JUDGMENT_CALL_SITES,
+    )
+
+    kinds = (STAT_JUDGMENT_CALL_SITES, ENDING_JUDGMENT_CALL_SITES, IMAGE_JUDGMENT_CALL_SITES)
+    assert JUDGMENT_CALL_SITES == frozenset(_JUDGMENT_SITES)
+    assert sum(len(k) for k in kinds) == len(JUDGMENT_CALL_SITES)
+    assert frozenset().union(*kinds) == JUDGMENT_CALL_SITES
 
 
 async def test_model_overrides_do_not_touch_streaming_generation(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
-    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", "filter-model")
-    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", 0)
+    for name in _MODEL_SWITCHES:
+        monkeypatch.setattr(settings, name, "switched-model")
     sent: list[dict[str, Any]] = []
 
     async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
@@ -752,35 +772,22 @@ async def test_model_overrides_do_not_touch_streaming_generation(monkeypatch: py
     assert sent[0]["config"].thinking_config is None
 
 
-async def test_structured_thinking_budgets_apply_only_to_their_call_site_sets(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """None 이면 thinking_config 를 넘기지 않고, 0(끔)도 값으로 실려야 한다 — 0 을 거짓으로 읽어
-    빠뜨리면 '사고 끄기' 측정이 조용히 기본 사고로 돈다."""
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
-    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
-    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", 0)
-    monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", 512)
-    client, sent, _ = _capture_structured(monkeypatch)
-
-    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
-
-    budgets = [
-        None if k["config"].thinking_config is None else k["config"].thinking_config.thinking_budget for k in sent
-    ]
-    assert budgets == [0] * len(_JUDGMENT_SITES) + [512] * len(_PUBLISH_FILTER_SITES) + [None] * len(
-        _OTHER_STRUCTURED_SITES
-    )
+def test_structured_calls_have_no_thinking_settings() -> None:
+    """판정·심사 전용 사고 예산 설정은 없다 — 판정 호출은 기본 설정에서도 사고 토큰이 0 이었고, 현행 운영 모델은
+    사고 끔(0)을 400 으로 거부해 그 설정은 판정을 조용히 멈추게 할 뿐이었다."""
+    assert "gemini_judgment_thinking_budget" not in Settings.model_fields
+    assert "gemini_publish_filter_thinking_budget" not in Settings.model_fields
+    assert "gemini_judgment_model_name" not in Settings.model_fields
 
 
-async def test_structured_calls_send_no_thinking_config_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", None)
-    monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", None)
-    # generate() 용 전역 예산은 구조화 호출에 새지 않는다.
+async def test_structured_calls_never_send_thinking_config(monkeypatch: pytest.MonkeyPatch) -> None:
+    # generate() 용 전역 예산은 구조화 호출에 새지 않는다 — 어느 call_site 든, 모델 스위치를 켜도.
     monkeypatch.setattr(settings, "gemini_thinking_budget", 0)
+    for name in _MODEL_SWITCHES:
+        monkeypatch.setattr(settings, name, "switched-model")
     client, sent, _ = _capture_structured(monkeypatch)
 
-    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+    await _call_each(client, _ALL_STRUCTURED_SITES)
 
     assert all(k["config"].thinking_config is None for k in sent)
 
@@ -792,7 +799,7 @@ async def test_generate_and_generate_structured_persist_usage_to_the_daily_hash(
     from api.core.rate_limit import KST
     from api.llm.usage_store import read_usage
 
-    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
+    monkeypatch.setattr(settings, "gemini_stat_judgment_model_name", "judge-model")
     client = _make_client(
         monkeypatch,
         generate_content_stream=_stream_of(SimpleNamespace(text="a", usage_metadata=_usage(10, 3, 2, 15))),

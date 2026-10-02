@@ -111,7 +111,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMCallContext, LLMClient, structured_model_and_thinking
+from api.llm.client import LLMCallContext, LLMClient, structured_model
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1716,15 +1716,14 @@ async def _screen_for_publish(
     images: list[tuple[bytes, str]],
 ) -> None:
     """발행 심사. 통과하지 못하면 400 `{reason}` 을 던진다. 직전에 통과한 심사와 입력이 전부 같으면 LLM 을
-    부르지 않는다(`content/publish_filter_memo.py`). 모델·사고 예산은 클라이언트가 실제로 고를 값과 같은 함수로
-    구해야 심사 설정을 바꾼 뒤 옛 설정의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
+    부르지 않는다(`content/publish_filter_memo.py`). 모델은 클라이언트가 실제로 고를 값과 같은 함수로
+    구해야 심사 모델을 바꾼 뒤 옛 모델의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
     쓰는 `settings.gemini_model_name` 이다."""
-    model, thinking_budget = structured_model_and_thinking(call_site, settings.gemini_model_name)
+    model = structured_model(call_site, settings.gemini_model_name)
     memo_key = screening_key(
         content_id=content.id,
         prompt_set_id=prompt_set.id,
         model=model,
-        thinking_budget=thinking_budget,
         prompt=prompt,
         images=images,
     )

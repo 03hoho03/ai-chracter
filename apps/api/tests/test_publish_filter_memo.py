@@ -10,7 +10,6 @@ _BASE: dict[str, Any] = {
     "content_id": _CONTENT_ID,
     "prompt_set_id": _SET_ID,
     "model": "gemini-a",
-    "thinking_budget": None,
     "prompt": "심사 문장",
     "images": [(b"first", "image/png"), (b"second", "image/webp")],
 }
@@ -28,8 +27,6 @@ def test_screening_key_changes_with_every_input() -> None:
         dict(_BASE, content_id=uuid.UUID("00000000-0000-0000-0000-000000000009")),
         dict(_BASE, prompt_set_id=uuid.UUID("00000000-0000-0000-0000-000000000009")),
         dict(_BASE, model="gemini-b"),
-        dict(_BASE, thinking_budget=0),
-        dict(_BASE, thinking_budget=512),
         dict(_BASE, prompt="심사 문장."),
         dict(_BASE, images=[(b"first", "image/png"), (b"second!", "image/webp")]),
         dict(_BASE, images=[(b"first", "image/png"), (b"second", "image/png")]),

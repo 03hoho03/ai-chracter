@@ -15,7 +15,7 @@ from api.llm.client import (
     LLMClientError,
     LLMPolicyViolationError,
     LLMRateLimitError,
-    structured_model_and_thinking,
+    structured_model,
 )
 from api.llm.usage_store import record_usage
 
@@ -149,14 +149,14 @@ class GeminiLLMClient(LLMClient):
                 *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
             ]
 
-        model, thinking_budget = structured_model_and_thinking(usage.call_site, self._model_name)
+        model = structured_model(usage.call_site, self._model_name)
+        # 사고 설정(thinking_config)은 넘기지 않는다 — 판정·심사 호출은 gemini-3.5·3.1-flash-lite 모두 모델 기본
+        # 설정에서 사고 토큰이 0 이라 끌 이득이 없었고, 3.5-flash-lite 는 사고 끔(thinking_budget=0)을 400 으로
+        # 거부해 끄는 설정은 판정을 실패시킬 뿐이었다(2026-10-02 실측).
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,
         )
-        if thinking_budget is not None:
-            # `generate()` 와 같은 이유로 None 이면 thinking_config 를 아예 넘기지 않는다.
-            config.thinking_config = genai_types.ThinkingConfig(thinking_budget=thinking_budget)
         try:
             response = await self._client.aio.models.generate_content(
                 model=model,
