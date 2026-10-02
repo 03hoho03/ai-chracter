@@ -1,4 +1,4 @@
-/** 인증 폼(구글 온보딩·비밀번호 변경) 오류 배너. (엔드포인트, status) → 배너 매핑은 각 feature의
+/** 인증 폼(소셜 온보딩·비밀번호 변경) 오류 배너. (엔드포인트, status) → 배너 매핑은 각 feature의
  * `model`이 갖고, 두 feature가 같이 읽는 모양·표식만 여기 둔다(features끼리는 import하지 못한다 — FSD). */
 export type AuthFormErrorBanner = {
   message: string;

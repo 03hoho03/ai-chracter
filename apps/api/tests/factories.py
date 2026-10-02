@@ -7,6 +7,7 @@ LLM 페이크 주입(`_override_llm_client`/`_clear_llm_override`)·SSE 파싱(`
 가져왔고, 모양이 다른 변종(큐 기반 LLM 페이크, `example_dialogues`가 빈 캐릭터 팩토리 등)은
 각 파일에 그대로 뒀다."""
 
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncIterator, Callable, Generator
@@ -19,7 +20,7 @@ from typing import Any
 import httpx
 import pytest
 import sqlalchemy as sa
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
 
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.config import settings
@@ -119,16 +120,19 @@ async def _make_user_with_clover_lot(
 
 
 def _patch_httpx(
-    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], object]
+    monkeypatch: pytest.MonkeyPatch,
+    handler: Callable[[httpx.Request], object],
+    *,
+    module: str = "api.llm.local_image",
 ) -> None:
-    """local_image가 만드는 httpx.AsyncClient에 MockTransport를 주입한다."""
+    """`module`(기본 local_image)이 만드는 httpx.AsyncClient에 MockTransport를 주입한다."""
     real_client = httpx.AsyncClient
 
     def factory(**kwargs: object) -> httpx.AsyncClient:
         kwargs.pop("transport", None)
         return real_client(transport=httpx.MockTransport(handler), **kwargs)  # type: ignore[arg-type]
 
-    monkeypatch.setattr("api.llm.local_image.httpx.AsyncClient", factory)
+    monkeypatch.setattr(f"{module}.httpx.AsyncClient", factory)
 
 
 def _set_signing_clock(monkeypatch: pytest.MonkeyPatch, at: datetime) -> None:
@@ -703,3 +707,38 @@ async def _memory_version(db_session: AsyncSession, room: Room) -> int | None:
         sa.select(ChatRoom.memory_version).where(ChatRoom.id == room.room_id)
     )
     return version
+
+
+async def _wait_until_lock_wait(observer: AsyncConnection, *, seconds: float) -> None:
+    """`asyncio.sleep`로 타이밍을 추측하는 대신, 가입 요청(이메일 가입·소셜 온보딩)의 INSERT가 실제로 users 테이블에
+    대한 쓰기 잠금(`RowExclusiveLock`)을 이미 쥔 채 인터로퍼의 트랜잭션 종료를 기다리는
+    상태(`pg_locks`의 미승인 `transactionid` 대기)에 들어갔는지 `pg_locks`로 직접 관측한다.
+    `pg_stat_activity.query`는 이 시나리오에서 신뢰할 수 없었다 — 실제로는 INSERT가 블록된
+    상태인데도 그 이전 SELECT의 텍스트를 그대로 보여줬다(직접 재현해 확인). `pg_locks`는
+    질의 텍스트가 아니라 실제 잠금 상태이므로 이 문제가 없다. 제한 시간 안에 관측되지 않으면
+    조용히 넘어가지 않고 실패시킨다."""
+    try:
+        async with asyncio.timeout(seconds):
+            while True:
+                waiting = await observer.scalar(
+                    sa.text(
+                        "SELECT count(*) FROM pg_locks blocked"
+                        " WHERE blocked.locktype = 'transactionid' AND NOT blocked.granted"
+                        " AND EXISTS ("
+                        "   SELECT 1 FROM pg_locks holding"
+                        "   WHERE holding.pid = blocked.pid"
+                        "     AND holding.locktype = 'relation'"
+                        "     AND holding.relation = 'users'::regclass"
+                        "     AND holding.mode = 'RowExclusiveLock'"
+                        "     AND holding.granted"
+                        " )"
+                    )
+                )
+                if waiting:
+                    return
+                await asyncio.sleep(0.01)
+    except TimeoutError:
+        raise AssertionError(
+            f"{seconds}초 안에 가입 요청 커넥션이 users 테이블 잠금 대기 상태로 관측되지"
+            " 않았다 (pg_locks: RowExclusiveLock 보유 + transactionid 미승인 대기)"
+        ) from None

@@ -28,6 +28,7 @@ import { Route as CloverIndexRouteImport } from './routes/clover.index'
 import { Route as BuilderIndexRouteImport } from './routes/builder.index'
 import { Route as StudioImagesRouteImport } from './routes/studio.images'
 import { Route as ProfileUserIdRouteImport } from './routes/profile.$userId'
+import { Route as OnboardingKakaoRouteImport } from './routes/onboarding.kakao'
 import { Route as OnboardingGoogleRouteImport } from './routes/onboarding.google'
 import { Route as NoticesNoticeIdRouteImport } from './routes/notices.$noticeId'
 import { Route as InquiriesNewRouteImport } from './routes/inquiries.new'
@@ -134,6 +135,11 @@ const ProfileUserIdRoute = ProfileUserIdRouteImport.update({
   path: '/profile/$userId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const OnboardingKakaoRoute = OnboardingKakaoRouteImport.update({
+  id: '/onboarding/kakao',
+  path: '/onboarding/kakao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const OnboardingGoogleRoute = OnboardingGoogleRouteImport.update({
   id: '/onboarding/google',
   path: '/onboarding/google',
@@ -207,6 +213,7 @@ export interface FileRoutesByFullPath {
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
+  '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
@@ -238,6 +245,7 @@ export interface FileRoutesByTo {
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
+  '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder': typeof BuilderIndexRoute
@@ -270,6 +278,7 @@ export interface FileRoutesById {
   '/inquiries/new': typeof InquiriesNewRoute
   '/notices/$noticeId': typeof NoticesNoticeIdRoute
   '/onboarding/google': typeof OnboardingGoogleRoute
+  '/onboarding/kakao': typeof OnboardingKakaoRoute
   '/profile/$userId': typeof ProfileUserIdRoute
   '/studio/images': typeof StudioImagesRoute
   '/builder/': typeof BuilderIndexRoute
@@ -303,6 +312,7 @@ export interface FileRouteTypes {
     | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
+    | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
@@ -334,6 +344,7 @@ export interface FileRouteTypes {
     | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
+    | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder'
@@ -365,6 +376,7 @@ export interface FileRouteTypes {
     | '/inquiries/new'
     | '/notices/$noticeId'
     | '/onboarding/google'
+    | '/onboarding/kakao'
     | '/profile/$userId'
     | '/studio/images'
     | '/builder/'
@@ -397,6 +409,7 @@ export interface RootRouteChildren {
   InquiriesNewRoute: typeof InquiriesNewRoute
   NoticesNoticeIdRoute: typeof NoticesNoticeIdRoute
   OnboardingGoogleRoute: typeof OnboardingGoogleRoute
+  OnboardingKakaoRoute: typeof OnboardingKakaoRoute
   ProfileUserIdRoute: typeof ProfileUserIdRoute
   StudioImagesRoute: typeof StudioImagesRoute
   BuilderIndexRoute: typeof BuilderIndexRoute
@@ -542,6 +555,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileUserIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/onboarding/kakao': {
+      id: '/onboarding/kakao'
+      path: '/onboarding/kakao'
+      fullPath: '/onboarding/kakao'
+      preLoaderRoute: typeof OnboardingKakaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/onboarding/google': {
       id: '/onboarding/google'
       path: '/onboarding/google'
@@ -637,6 +657,7 @@ const rootRouteChildren: RootRouteChildren = {
   InquiriesNewRoute: InquiriesNewRoute,
   NoticesNoticeIdRoute: NoticesNoticeIdRoute,
   OnboardingGoogleRoute: OnboardingGoogleRoute,
+  OnboardingKakaoRoute: OnboardingKakaoRoute,
   ProfileUserIdRoute: ProfileUserIdRoute,
   StudioImagesRoute: StudioImagesRoute,
   BuilderIndexRoute: BuilderIndexRoute,

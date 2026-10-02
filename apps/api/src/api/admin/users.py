@@ -27,6 +27,7 @@ from api.admin.schemas import (
     AdminUserWarnRequest,
 )
 from api.auth.age import is_under_beta_minimum_age
+from api.auth.oauth_common import signup_method
 from api.core import clover
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
@@ -274,7 +275,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         created_at=user.created_at,
         suspended_at=user.suspended_at,
         email_verified_at=user.email_verified_at,
-        signup_method="google" if user.google_sub is not None else "email",
+        signup_method=signup_method(user),
         content_count=len(user_content_ids),
         restrictable_content_count=restrictable_content_count,
         rate_limit_exempt=user.rate_limit_exempt,

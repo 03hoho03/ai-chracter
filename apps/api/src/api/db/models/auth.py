@@ -34,6 +34,9 @@ class User(Base):
     email: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
     password_hash: Mapped[str | None] = mapped_column(Text, nullable=True)
     google_sub: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
+    # 카카오 회원번호. 카카오는 정수로 주지만 연결 해제 웹훅은 같은 값을 문자열로 보내므로 한
+    # 표현(문자열)으로 저장해 두 경로가 같은 비교를 쓰게 한다.
+    kakao_id: Mapped[str | None] = mapped_column(Text, unique=True, nullable=True)
     # 탈퇴 시 파기 대상이라 nullable. 빈 문자열은
     # "닉네임이 빈 사람"과 구분되지 않으므로 NULL을 쓴다.
     nickname: Mapped[str | None] = mapped_column(Text, nullable=True)

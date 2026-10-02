@@ -31,6 +31,15 @@ describe("getChangePasswordErrorBanner", () => {
     });
   });
 
+  it("400 PASSWORD_NOT_SET(소셜 전용 계정)은 오답 문구가 아니라 비밀번호가 없다고 안내한다", () => {
+    const banner = getChangePasswordErrorBanner(apiError(400, { code: "PASSWORD_NOT_SET" }));
+
+    expect(banner).toEqual({
+      message: "소셜 로그인으로 가입한 계정이라 변경할 비밀번호가 없어요.",
+      shouldShowLoginLink: false,
+    });
+  });
+
   it("500은 undefined", () => {
     expect(getChangePasswordErrorBanner(apiError(500))).toBeUndefined();
   });

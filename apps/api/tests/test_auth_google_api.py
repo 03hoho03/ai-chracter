@@ -1,37 +1,57 @@
+import asyncio
 import uuid
+from collections.abc import Callable
 from datetime import UTC, date, datetime
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.google_oauth import (
     GoogleProfile,
+    GoogleProfileFetcher,
+    _pending_signup_key,
     _state_key,
-    get_google_profile,
+    exchange_code_for_profile,
+    get_google_profile_fetcher,
     get_pending_google_signup,
-    safe_redirect_path,
     store_pending_google_signup,
 )
+from api.auth.oauth_common import OAuthExchangeError, safe_redirect_path
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.core.security import hash_password
 from api.db.models.auth import User
+from api.db.session import engine
 from api.main import app
-from factories import _make_user
+from factories import _login_as, _make_user, _patch_httpx, _wait_until_lock_wait
+
+_STATE_COOKIE = "oauth_state_google"
+_PENDING_COOKIE = "oauth_pending_google"
 
 
 def _fake_profile(sub: str, email: str) -> GoogleProfile:
     return GoogleProfile(sub=sub, email=email)
 
 
+def _override_profile_fetcher(fetch: GoogleProfileFetcher) -> None:
+    app.dependency_overrides[get_google_profile_fetcher] = lambda: fetch
+
+
 def _override_google_profile(sub: str, email: str) -> None:
-    app.dependency_overrides[get_google_profile] = lambda: _fake_profile(sub, email)
+    async def fetch(code: str) -> GoogleProfile:
+        return _fake_profile(sub, email)
+
+    _override_profile_fetcher(fetch)
 
 
 def _clear_google_profile_override() -> None:
-    del app.dependency_overrides[get_google_profile]
+    del app.dependency_overrides[get_google_profile_fetcher]
+
+
+def _set_cookie_headers(resp: httpx.Response, name: str) -> list[str]:
+    return [h for h in resp.headers.get_list("set-cookie") if h.startswith(f"{name}=")]
 
 
 async def test_google_login_redirects_to_google_auth_url(db_client: httpx.AsyncClient) -> None:
@@ -65,6 +85,239 @@ async def _start_google_login(db_client: httpx.AsyncClient, redirect: str = "/")
     return state
 
 
+async def test_google_login_binds_state_to_browser_with_cookie(
+    db_client: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """state 를 Redis 에만 두면 공격자가 자기 인가 흐름의 콜백 URL 을 피해자 브라우저에서 열게 해
+    피해자를 공격자 계정으로 로그인시킬 수 있다. 시작한 브라우저에 같은 값을 쿠키로 심는지,
+    그리고 dev 의 `/api` 접두 프록시에서도 실리도록 Path 가 `/` 인지 본다."""
+    monkeypatch.setattr(settings, "session_cookie_secure", True)
+    resp = await db_client.get("/auth/google", follow_redirects=False)
+    state = httpx.URL(resp.headers["location"]).params["state"]
+
+    [header] = _set_cookie_headers(resp, _STATE_COOKIE)
+    assert header.startswith(f"{_STATE_COOKIE}={state};")
+    attrs = {part.strip().lower() for part in header.split(";")[1:]}
+    assert {"httponly", "path=/", "samesite=lax", "secure"} <= attrs
+    assert f"max-age={settings.google_oauth_state_ttl_seconds}" in attrs
+
+
+async def test_google_callback_rejects_state_without_browser_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """로그인 CSRF 의 모양 그대로다 — Redis 에는 살아 있는(공격자가 시작한) state 지만 콜백을 연
+    브라우저에는 그 쿠키가 없다. 쿠키 대조 없이 Redis 만 보면 여기서 세션이 나간다."""
+    state = await _start_google_login(db_client)
+    db_client.cookies.clear()
+    _override_google_profile(f"google-sub-{uuid.uuid4()}", f"csrf-{uuid.uuid4()}@example.com")
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+    assert settings.session_cookie_name not in resp.cookies
+    assert not _set_cookie_headers(resp, _PENDING_COOKIE)
+
+
+async def test_google_callback_rejects_state_that_does_not_match_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """같은 브라우저에서 로그인을 두 번 시작하면 쿠키는 뒤의 state 로 덮인다. 앞의 state 로 돌아온
+    콜백은 불일치로 거절되고, 대조가 consume 보다 먼저라 앞의 state 는 Redis 에 그대로 남는다."""
+    first_state = await _start_google_login(db_client)
+    await _start_google_login(db_client)
+    _override_google_profile(f"google-sub-{uuid.uuid4()}", f"two-tabs-{uuid.uuid4()}@example.com")
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback",
+            params={"state": first_state, "code": "c"},
+            follow_redirects=False,
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+    assert await redis_client.get(_state_key(first_state)) is not None
+
+
+async def test_google_callback_rejects_non_ascii_state_against_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """state 는 공격자가 고를 수 있는 쿼리 값이다. 비ASCII 문자열을 str 그대로 상수 시간 비교에
+    넘기면 TypeError 로 500 이 나므로, 쿠키가 있는 상태에서도 로그인 화면으로 돌아오는지 본다."""
+    await _start_google_login(db_client)
+    _override_profile_fetcher(_fail_if_called)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": "\u00e9", "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+
+
+async def test_google_callback_rejects_expired_state_even_with_matching_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """쿠키 대조는 Redis 의 1회성·TTL 을 대신하지 않는다 — 쿠키가 맞아도 Redis 에서 사라진
+    state(만료, 이미 소비)는 거절한다."""
+    state = await _start_google_login(db_client)
+    await redis_client.delete(_state_key(state))
+    _override_profile_fetcher(_fail_if_called)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+
+
+async def _fail_if_called(code: str) -> GoogleProfile:
+    raise AssertionError("취소된 콜백이 토큰 교환을 호출했다")
+
+
+async def test_google_callback_cancelled_by_user_returns_to_login(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """구글 동의 화면에서 취소하면 `code` 없이 `error=access_denied` 와 state 만 돌아온다.
+    전에는 `code` 필수 파라미터 검증의 422 JSON 이 브라우저에 그대로 떴다."""
+    state = await _start_google_login(db_client)
+    _override_profile_fetcher(_fail_if_called)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback",
+            params={"error": "access_denied", "state": state},
+            follow_redirects=False,
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_cancelled"
+    # 취소도 이 흐름의 끝이라 1회용 state 를 소비하고 브라우저 쿠키를 지운다.
+    assert await redis_client.get(_state_key(state)) is None
+    [cleared] = _set_cookie_headers(resp, _STATE_COOKIE)
+    assert "max-age=0" in cleared.lower()
+
+
+async def test_google_callback_without_code_or_error_is_treated_as_cancelled(
+    db_client: httpx.AsyncClient,
+) -> None:
+    state = await _start_google_login(db_client)
+    _override_profile_fetcher(_fail_if_called)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_cancelled"
+
+
+async def test_google_callback_cancel_with_unbound_state_reports_state_error(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """state 를 취소 판정보다 먼저 본다 — 이 브라우저가 시작하지 않은 흐름의 콜백은 취소든
+    아니든 같은 state 오류로 끝난다."""
+    state = await _start_google_login(db_client)
+    db_client.cookies.clear()
+    resp = await db_client.get(
+        "/auth/google/callback",
+        params={"error": "access_denied", "state": state},
+        follow_redirects=False,
+    )
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+
+
+async def test_google_callback_without_state_returns_to_login(db_client: httpx.AsyncClient) -> None:
+    resp = await db_client.get(
+        "/auth/google/callback", params={"code": "c"}, follow_redirects=False
+    )
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_state"
+
+
+async def test_google_callback_exchange_failure_returns_to_login(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """토큰 교환·userinfo 실패는 전에 400 JSON(비정상 응답)이나 500(네트워크 오류·키 누락)으로
+    브라우저에 그대로 떴다."""
+
+    async def failing(code: str) -> GoogleProfile:
+        raise OAuthExchangeError("token exchange returned 400")
+
+    state = await _start_google_login(db_client)
+    _override_profile_fetcher(failing)
+    try:
+        resp = await db_client.get(
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
+        )
+    finally:
+        _clear_google_profile_override()
+
+    assert resp.status_code == 302
+    assert resp.headers["location"] == f"{settings.frontend_base_url}/login?error=google_failed"
+    assert settings.session_cookie_name not in resp.cookies
+    [cleared] = _set_cookie_headers(resp, _STATE_COOKIE)
+    assert "max-age=0" in cleared.lower()
+
+
+def _token_ok_then(userinfo: httpx.Response) -> Callable[[httpx.Request], httpx.Response]:
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/token":
+            return httpx.Response(200, json={"access_token": "at"})
+        return userinfo
+
+    return handler
+
+
+def _raise_connect_error(request: httpx.Request) -> httpx.Response:
+    raise httpx.ConnectError("boom", request=request)
+
+
+@pytest.mark.parametrize(
+    "handler",
+    [
+        pytest.param(lambda request: httpx.Response(400, json={}), id="token-non-200"),
+        pytest.param(lambda request: httpx.Response(200, json={}), id="token-missing-key"),
+        pytest.param(lambda request: httpx.Response(200, text="<html>"), id="token-not-json"),
+        pytest.param(_token_ok_then(httpx.Response(500)), id="userinfo-non-200"),
+        pytest.param(
+            _token_ok_then(httpx.Response(200, json={"sub": "s"})), id="userinfo-missing-email"
+        ),
+        pytest.param(_raise_connect_error, id="network-error"),
+    ],
+)
+async def test_exchange_code_for_profile_normalizes_failures(
+    monkeypatch: pytest.MonkeyPatch, handler: Callable[[httpx.Request], httpx.Response]
+) -> None:
+    """콜백은 `OAuthExchangeError` 하나만 잡아 로그인 화면으로 되돌린다. 다른 예외가 새면
+    500 막다른 화면이 된다."""
+    _patch_httpx(monkeypatch, handler, module="api.auth.google_oauth")
+    with pytest.raises(OAuthExchangeError):
+        await exchange_code_for_profile("code")
+
+
+async def test_exchange_code_for_profile_returns_profile(monkeypatch: pytest.MonkeyPatch) -> None:
+    handler = _token_ok_then(httpx.Response(200, json={"sub": "s-1", "email": "a@example.com"}))
+    _patch_httpx(monkeypatch, handler, module="api.auth.google_oauth")
+    assert await exchange_code_for_profile("code") == {"sub": "s-1", "email": "a@example.com"}
+
+
 async def test_google_callback_new_user_redirects_to_onboarding_without_session(
     db_client: httpx.AsyncClient,
 ) -> None:
@@ -72,12 +325,19 @@ async def test_google_callback_new_user_redirects_to_onboarding_without_session(
     _override_google_profile(f"google-sub-{uuid.uuid4()}", f"new-{uuid.uuid4()}@example.com")
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
         assert resp.status_code == 302
-        location = resp.headers["location"]
-        assert location.startswith(f"{settings.frontend_base_url}/onboarding/google?token=")
+        # 토큰이 URL·히스토리·리퍼러로 새지 않게 URL 이 아니라 쿠키로 내린다.
+        assert resp.headers["location"] == f"{settings.frontend_base_url}/onboarding/google"
         assert settings.session_cookie_name not in resp.cookies
+        [pending] = _set_cookie_headers(resp, _PENDING_COOKIE)
+        attrs = {part.strip().lower() for part in pending.split(";")[1:]}
+        assert {"httponly", "path=/", "samesite=lax"} <= attrs
+        assert f"max-age={settings.google_pending_signup_ttl_seconds}" in attrs
+        assert await get_pending_google_signup(resp.cookies[_PENDING_COOKIE]) is not None
+        [cleared] = _set_cookie_headers(resp, _STATE_COOKIE)
+        assert "max-age=0" in cleared.lower()
     finally:
         _clear_google_profile_override()
 
@@ -91,14 +351,13 @@ async def _onboard_new_google_user(
     _override_google_profile(sub, email)
     try:
         callback = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
-    token = httpx.URL(callback.headers["location"]).params["token"]
+    assert callback.headers["location"] == f"{settings.frontend_base_url}/onboarding/google"
 
     payload: dict[str, object] = {
-        "token": token,
         "nickname": "구글유저",
         "birthDate": birth_date,
         "termsAgreed": True,
@@ -114,10 +373,14 @@ async def test_onboarding_google_adult_creates_user_and_issues_session(
 ) -> None:
     ctx = await _onboard_new_google_user(db_client, "2000-01-01")
 
+    token = db_client.cookies[_PENDING_COOKIE]
     resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
     assert resp.status_code == 200
     assert resp.json() == {"email": ctx["email"]}
     assert settings.session_cookie_name in resp.cookies
+    [cleared] = _set_cookie_headers(resp, _PENDING_COOKIE)
+    assert "max-age=0" in cleared.lower()
+    assert await get_pending_google_signup(token) is None
 
     user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
     assert user is not None
@@ -166,19 +429,38 @@ async def test_onboarding_google_rejects_transfer_agreement_field_omitted(
     assert resp.status_code == 422
 
 
-async def test_onboarding_google_rejects_invalid_token(db_client: httpx.AsyncClient) -> None:
-    resp = await db_client.post(
-        "/auth/onboarding/google",
-        json={
-            "token": "not-a-real-token",
-            "nickname": "구글유저",
-            "birthDate": "2000-01-01",
-            "termsAgreed": True,
-            "privacyAgreed": True,
-            "transferAgreed": True,
-        },
+_ONBOARDING_FORM = {
+    "nickname": "구글유저",
+    "birthDate": "2000-01-01",
+    "termsAgreed": True,
+    "privacyAgreed": True,
+    "transferAgreed": True,
+}
+
+
+async def test_onboarding_google_without_pending_cookie_ignores_token_in_body(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """URL·히스토리로 샌 토큰을 다른 브라우저가 들고 와도 가입을 끝낼 수 없어야 한다 — 쿠키만
+    본다. 본문의 옛 `token` 필드는 무시된다(구 프런트가 보내도 422 가 아니다)."""
+    token = await store_pending_google_signup(
+        GoogleProfile(sub=f"google-sub-{uuid.uuid4()}", email=f"leak-{uuid.uuid4()}@example.com")
     )
+    resp = await db_client.post("/auth/onboarding/google", json={**_ONBOARDING_FORM, "token": token})
     assert resp.status_code == 400
+    assert resp.json() == {"detail": "Invalid or expired token"}
+    assert await get_pending_google_signup(token) is not None
+
+
+async def test_onboarding_google_rejects_expired_pending_cookie(
+    db_client: httpx.AsyncClient,
+) -> None:
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    await redis_client.delete(_pending_signup_key(db_client.cookies[_PENDING_COOKIE]))
+
+    resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": "Invalid or expired token"}
 
 
 async def test_google_callback_existing_adult_user_issues_session_and_redirects(
@@ -193,7 +475,7 @@ async def test_google_callback_existing_adult_user_issues_session_and_redirects(
     _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -223,7 +505,7 @@ async def test_google_callback_links_existing_password_account_by_email(
     _override_google_profile(google_sub, str(signup_payload["email"]))
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -256,7 +538,7 @@ async def test_google_callback_redirects_suspended_existing_user(
     _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -287,8 +569,8 @@ async def test_onboarding_google_suspended_existing_user_is_rejected_without_sid
     db_session.add(user)
     await db_session.flush()
     token = await store_pending_google_signup(GoogleProfile(sub=sub, email=user.email))
+    db_client.cookies.set(_PENDING_COOKIE, token)
     payload = {
-        "token": token,
         "nickname": "바뀜",
         "birthDate": "2000-01-01",
         "termsAgreed": True,
@@ -328,7 +610,7 @@ async def test_google_callback_rejects_existing_minor_account_matched_by_google_
     _override_google_profile(sub, user.email)
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -359,7 +641,7 @@ async def test_google_callback_rejects_existing_minor_account_linked_by_email(
     _override_google_profile(google_sub, user.email)
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -390,7 +672,7 @@ async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdr
     _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
     try:
         callback = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -398,23 +680,94 @@ async def test_onboarding_google_blocks_reregistration_within_one_year_of_withdr
     # google_sub가 파기됐으므로 "기존 계정을 찾음"이 아니라 "신규 가입"으로 취급돼
     # 온보딩으로 되돌아간다 — google_sub가 안 지워졌다면 여긴 /login?error=account_deleted였을 것.
     assert callback.status_code == 302
-    assert callback.headers["location"].startswith(
-        f"{settings.frontend_base_url}/onboarding/google?token="
-    )
-    token = httpx.URL(callback.headers["location"]).params["token"]
+    assert callback.headers["location"] == f"{settings.frontend_base_url}/onboarding/google"
 
-    resp = await db_client.post(
-        "/auth/onboarding/google",
-        json={
-            "token": token,
-            "nickname": "구글유저",
-            "birthDate": "2000-01-01",
-            "termsAgreed": True,
-            "privacyAgreed": True,
-            "transferAgreed": True,
-        },
-    )
+    resp = await db_client.post("/auth/onboarding/google", json=_ONBOARDING_FORM)
     assert resp.status_code == 409
+    # 이메일 중복과 같은 409 라 프런트가 안내 문구를 가를 수 있게 원인을 담는다.
+    assert resp.json() == {"detail": {"code": "REREGISTRATION_BLOCKED"}}
+
+
+async def test_onboarding_google_concurrent_duplicate_email_returns_409_with_code(
+    db_client: httpx.AsyncClient,
+) -> None:
+    """콜백에서 pending 을 받은 뒤 온보딩을 끝내기 전에 같은 이메일로 다른 가입이 먼저 커밋되면
+    users.email UNIQUE 의 IntegrityError 를 맞는다. 전에는 이것이 500 이었다. 진짜 경합을
+    재현한다 — 별개 커넥션이 같은 이메일을 미커밋으로 넣어 두고, 온보딩 INSERT 가 그 잠금을
+    기다리기 시작한 것을 관측한 뒤 커밋한다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    email = str(ctx["email"])
+
+    async with engine.connect() as interloper:
+        await interloper.execute(
+            insert(User).values(
+                id=uuid.uuid4(),
+                email=email,
+                nickname="선점",
+                birth_date=date(2000, 1, 1),
+                terms_agreed_at=datetime.now(UTC),
+                privacy_agreed_at=datetime.now(UTC),
+            )
+        )
+        task = asyncio.create_task(db_client.post("/auth/onboarding/google", json=ctx["payload"]))
+        try:
+            await _wait_until_lock_wait(interloper, seconds=5.0)
+            await interloper.commit()
+            resp = await task
+
+            assert resp.status_code == 409
+            assert resp.json() == {"detail": {"code": "EMAIL_ALREADY_REGISTERED"}}
+            assert settings.session_cookie_name not in resp.cookies
+        finally:
+            await interloper.execute(delete(User).where(User.email == email))
+            await interloper.commit()
+
+
+async def test_me_reports_google_only_account_without_password(
+    db_client: httpx.AsyncClient,
+) -> None:
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+
+    me = await db_client.get("/me")
+    assert me.status_code == 200
+    assert me.json()["hasPassword"] is False
+    assert me.json()["socialProvider"] == "google"
+
+
+async def test_me_reports_password_account_linked_to_google_as_both(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """한 계정이 비밀번호와 구글을 함께 가질 수 있어(이메일 자동 연동) 두 필드가 따로 있다."""
+    user = _make_user(password_hash=hash_password("password123"), google_sub=f"g-{uuid.uuid4()}")
+    db_session.add(user)
+    await db_session.flush()
+
+    await _login_as(db_client, user.id)
+    me = await db_client.get("/me")
+    assert me.status_code == 200
+    assert me.json()["hasPassword"] is True
+    assert me.json()["socialProvider"] == "google"
+
+
+async def test_change_password_on_google_only_account_returns_password_not_set(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """소셜 전용 계정은 "현재 비밀번호가 틀렸다"가 아니라 비밀번호가 없다는 사실을 따로 알려야
+    프런트가 엉뚱한 안내를 하지 않는다."""
+    ctx = await _onboard_new_google_user(db_client, "2000-01-01")
+    onboard_resp = await db_client.post("/auth/onboarding/google", json=ctx["payload"])
+    assert onboard_resp.status_code == 200
+
+    resp = await db_client.patch(
+        "/me/password", json={"currentPassword": "anything1", "newPassword": "newpassword456"}
+    )
+    assert resp.status_code == 400
+    assert resp.json() == {"detail": {"code": "PASSWORD_NOT_SET"}}
+    user = await db_session.scalar(select(User).where(User.email == ctx["email"]))
+    assert user is not None
+    assert user.password_hash is None
 
 
 # redirect 는 콜백에서 frontend_base_url 뒤에 그대로 이어 붙으므로
@@ -464,7 +817,7 @@ async def test_google_callback_unsafe_redirect_lands_on_frontend_root(
     _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()
@@ -482,12 +835,14 @@ async def test_google_callback_revalidates_redirect_stored_before_fix(
     assert onboard_resp.status_code == 200
     db_client.cookies.clear()
 
+    # 브라우저 쿠키 대조는 통과시키고(같은 값을 쿠키로 심는다) Redis 에서 꺼낸 값의 재검증만 본다.
     state = f"pre-fix-{uuid.uuid4()}"
     await redis_client.set(_state_key(state), "@evil.com", ex=60)
+    db_client.cookies.set(_STATE_COOKIE, state)
     _override_google_profile(str(ctx["sub"]), str(ctx["email"]))
     try:
         resp = await db_client.get(
-            "/auth/google/callback", params={"state": state}, follow_redirects=False
+            "/auth/google/callback", params={"state": state, "code": "c"}, follow_redirects=False
         )
     finally:
         _clear_google_profile_override()

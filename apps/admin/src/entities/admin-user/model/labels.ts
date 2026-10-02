@@ -1,6 +1,7 @@
 import type { components } from "@ai-character-chat/api-types";
 
 export const SIGNUP_METHOD_LABELS: Record<components["schemas"]["AdminUserDetailResponse"]["signupMethod"], string> = {
+  kakao: "카카오",
   google: "구글",
   email: "이메일",
 };

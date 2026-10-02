@@ -1,1 +1,1 @@
-export { SignUpWizard, type GoogleSignUpStep, type SignUpStep } from "./ui/SignUpWizard";
+export { SignUpWizard, type SignUpStep, type SocialSignUpStep } from "./ui/SignUpWizard";

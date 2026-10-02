@@ -6,7 +6,7 @@ type SignupRequest = components["schemas"]["SignupRequest"];
 type VerifyEmailRequest = components["schemas"]["VerifyEmailRequest"];
 type LoginRequest = components["schemas"]["LoginRequest"];
 type ResendVerificationCodeRequest = components["schemas"]["ResendVerificationCodeRequest"];
-type OnboardingGoogleRequest = components["schemas"]["OnboardingGoogleRequest"];
+type SocialOnboardingRequest = components["schemas"]["SocialOnboardingRequest"];
 
 export function toSignupRequest(values: SignUpFormValues): SignupRequest {
   return {
@@ -32,12 +32,8 @@ export function toResendVerificationCodeRequest(email: string): ResendVerificati
   return { email };
 }
 
-export function toOnboardingGoogleRequest(
-  values: SignUpFormValues,
-  token: string,
-): OnboardingGoogleRequest {
+export function toSocialOnboardingRequest(values: SignUpFormValues): SocialOnboardingRequest {
   return {
-    token,
     nickname: values.nickname,
     birthDate: values.birthDate,
     termsAgreed: values.termsAgreed,

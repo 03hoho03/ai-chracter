@@ -1,9 +1,10 @@
 import { useState } from "react";
 
-import { SignUpWizard, type GoogleSignUpStep } from "@/features/sign-up";
+import type { SocialProvider } from "@/entities/session";
+import { SignUpWizard, type SocialSignUpStep } from "@/features/sign-up";
 
-type OnboardingGooglePageProps = {
-  token: string;
+type OnboardingPageProps = {
+  provider: SocialProvider;
 }
 
 const STEP_COPY = {
@@ -13,8 +14,10 @@ const STEP_COPY = {
   },
 } as const;
 
-export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {
-  const [step, setStep] = useState<GoogleSignUpStep>("basicInfo");
+/** 소셜 로그인 신규 가입자의 온보딩. 제공자는 라우트(`/onboarding/google`·`/onboarding/kakao`)가 정하고,
+ * 화면은 제공자와 무관하게 같다. */
+export function OnboardingPage({ provider }: OnboardingPageProps) {
+  const [step, setStep] = useState<SocialSignUpStep>("basicInfo");
   const { title, description } = STEP_COPY[step];
 
   return (
@@ -26,7 +29,7 @@ export function OnboardingGooglePage({ token }: OnboardingGooglePageProps) {
             <p className="text-sm text-muted-foreground">{description}</p>
           </div>
 
-          <SignUpWizard mode="google" token={token} step={step} onStepChange={setStep} />
+          <SignUpWizard mode={provider} step={step} onStepChange={setStep} />
         </div>
       </div>
     </main>

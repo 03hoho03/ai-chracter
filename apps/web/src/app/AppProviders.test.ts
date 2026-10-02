@@ -14,6 +14,8 @@ const ME: MeResponse = {
   profileImageAssetId: null,
   termsReconsentRequired: false,
   privacyReconsentRequired: false,
+  hasPassword: true,
+  socialProvider: null,
 };
 const SESSION_LOST = new ApiErrorObject({ status: 401, message: "x", detail: "Not authenticated" });
 

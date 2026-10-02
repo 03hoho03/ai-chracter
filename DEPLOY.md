@@ -111,7 +111,36 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
   (`auth/google_oauth.py`의 `callback_redirect_uri`), FE는 Google에 직접 요청하지 않으므로 Authorized
   JavaScript origins도 필요 없다. FE 도메인이 바뀔 때 실제로 고칠 값은 콜백 뒤 돌려보낼 목적지인
   `FRONTEND_BASE_URL`이다.
-- OAuth state는 쿠키가 아니라 **Redis**에 있다(`store_oauth_state`).
+- OAuth state는 **Redis**(`store_oauth_state`)에 두고, 로그인을 시작한 브라우저에도 같은 값을 HttpOnly
+  쿠키(`oauth_state_google`, `Path=/`)로 심어 콜백에서 대조한다(`auth/oauth_common.py`의
+  `resolve_oauth_state`). 가입 대기 토큰도 URL이 아니라 HttpOnly 쿠키(`oauth_pending_google`)로 내린다.
+
+### 1-4. 카카오 로그인
+
+카카오 디벨로퍼스 앱 하나를 쓴다. 콘솔 설정 요약:
+
+- **카카오 로그인 사용**: 켬. **OpenID Connect**: 끔(우리는 `id_token` 을 쓰지 않는다).
+- **동의항목**: 카카오계정(이메일) `account_email` 만. 프로필 항목은 받지 않는다.
+- **Redirect URI**: `https://api.ddona.site/auth/kakao/callback` (dev 용 tailscale 오리진 3벌의
+  `…/api/auth/kakao/callback` 도 함께 등록돼 있다 — `DEV.md`). FE 도메인은 구글과 같은 이유로 등장하지 않는다.
+- **클라이언트 시크릿**: 켬(토큰 교환에 필수로 싣는다). PKCE 는 쓰지 않는다 — 카카오가 `code_verifier` 를
+  검증하지 않는 것을 실측했다(`auth/kakao_oauth.py` 모듈 docstring).
+- 신규 가입은 인증된 이메일만 받는다. 카카오가 이메일을 주지 않거나 미인증·무효면 로그인 화면으로
+  `?error=kakao_email_required` 와 함께 돌아간다. 회원번호로 찾은 기존 회원은 이메일 상태와 무관하게
+  로그인된다(가입 뒤 이메일 동의를 철회해도 막히지 않는다). 같은 이메일의 기존 계정(이메일·구글)에 **자동 연동하지 않고**
+  `?error=kakao_email_taken&method=…` 로 원래 가입 수단을 안내한다(이메일 인증을 마치지 않은 가입 기록만
+  카카오 가입이 대체한다).
+- state·가입 대기 토큰은 구글과 같은 방식이다(Redis + HttpOnly 쿠키 `oauth_state_kakao`·`oauth_pending_kakao`, `Path=/`).
+- **연결 해제 웹훅**: 배포 **후** 콘솔 [앱] > [웹훅] > [연결 해제 웹훅]에 `https://api.ddona.site/auth/kakao/unlink`
+  를 등록한다(메서드는 GET·POST 둘 다 받는다). 웹훅이 오면 우리 탈퇴와 같은 파기(1년 재가입 차단 기록 포함)를 한다.
+  - 카카오는 `Authorization: KakaoAK {대표 어드민 키}` 로 인증해 보낸다. 그래서 **`KAKAO_ADMIN_KEY` 는 Primary(대표)
+    어드민 키여야 한다** — 다른 어드민 키를 넣거나 콘솔에서 키를 재발급·교체하고 VM 값을 안 바꾸면 웹훅이 전부 401 이
+    되고 연결 해제가 조용히 유실된다.
+  - 🔴 **연결 해제 웹훅은 재전송이 없다.** 3초 안에 200 을 못 주거나 API 가 내려가 있던 동안의 연결 해제는 다시 오지
+    않는다(배포 재기동 창 포함). 오래 실패가 이어지면 카카오가 웹훅을 [일시 중지]로 돌리고 앱 멤버에게 메일을 보낸다 —
+    그 메일을 받으면 원인을 고친 뒤 콘솔에서 [사용함]으로 되돌린다.
+- 우리 쪽 탈퇴(`DELETE /me`)는 커밋 뒤 `KAKAO_ADMIN_KEY` 로 연결 끊기 API 를 부른다(실패해도 탈퇴는 성공, 로그·Bugsink
+  `kakao_oauth` 태그로 남는다). 서비스가 직접 끊은 연결에는 카카오가 웹훅을 보내지 않는다.
 
 ---
 
@@ -119,7 +148,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**40개 키다**(2026-09-29 VM 실측, 키 이름만 셈): 아래 표 26개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+**43개 키다**(2026-10-02 VM 실측, 키 이름만 셈): 아래 표 29개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 4개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
@@ -139,6 +168,8 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
 | `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시. 되돌리려면 이 한 줄만 지우고 `up -d --wait api` — `.env` 백업을 통째로 복원하지 말 것(자동배포가 같은 파일의 `API_IMAGE`를 고친다) |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | "Google OAuth" 절 |
+| `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 자격증명 | "카카오 로그인" 절. 둘 중 하나라도 비면 카카오 로그인 시작이 `?error=kakao_failed` 로 돌아온다 |
+| `KAKAO_ADMIN_KEY` | 카카오 **Primary(대표)** 어드민 키 | "카카오 로그인" 절. 탈퇴 시 연결 끊기 + 연결 해제 웹훅 인증. 비면 웹훅은 전부 401, 연결 끊기는 경고 로그만 |
 | `WITHDRAWN_EMAIL_HMAC_KEY` | `openssl rand -hex 32` 등으로 발급한 무작위 값 | 탈퇴 재가입 차단용 HMAC 키. **한번 정하면 바꾸지 말 것** — 바뀌면 과거에 적립한 해시와 새 조회의 해시가 어긋나 재가입 차단이 조용히 멈춘다(모든 조회가 미스가 된다. 에러가 나지 않아 알아채기 어렵다) |
 | `LOCAL_IMAGE_BASE_URL` | 집 PC 서버를 가리키는 터널 origin | **이미지 생성 필수** — 비어 있으면 capabilities가 전부 불가로 내려가 생성이 사전 차단된다. "이미지 생성" 절 |
 | `LOCAL_IMAGE_ACCESS_CLIENT_ID` / `LOCAL_IMAGE_ACCESS_CLIENT_SECRET` | Cloudflare Access 서비스 토큰 | **이미지 생성 필수**. "이미지 생성" 절 |

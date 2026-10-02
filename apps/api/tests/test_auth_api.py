@@ -5,8 +5,8 @@ from datetime import UTC, date, datetime, timedelta
 
 import httpx
 import pytest
-from sqlalchemy import delete, insert, select, text
-from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession
+from sqlalchemy import delete, insert, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.auth.verification import (
     VERIFICATION_ATTEMPTS_LIMIT,
@@ -22,7 +22,7 @@ from api.core.security import hash_password
 from api.db.models.auth import GuardianConsent, User
 from api.db.session import engine
 from api.main import app
-from factories import _make_asset, _make_user
+from factories import _make_asset, _make_user, _wait_until_lock_wait
 
 
 def _signup_payload(**overrides: object) -> dict[str, object]:
@@ -158,41 +158,6 @@ async def test_signup_rejects_unverified_suspended_account(
 
     resp = await db_client.post("/auth/signup", json=_signup_payload(email=email))
     assert resp.status_code == 409
-
-
-async def _wait_until_lock_wait(observer: AsyncConnection, *, seconds: float) -> None:
-    """`asyncio.sleep`로 타이밍을 추측하는 대신, signup의 INSERT가 실제로 users 테이블에
-    대한 쓰기 잠금(`RowExclusiveLock`)을 이미 쥔 채 인터로퍼의 트랜잭션 종료를 기다리는
-    상태(`pg_locks`의 미승인 `transactionid` 대기)에 들어갔는지 `pg_locks`로 직접 관측한다.
-    `pg_stat_activity.query`는 이 시나리오에서 신뢰할 수 없었다 — 실제로는 INSERT가 블록된
-    상태인데도 그 이전 SELECT의 텍스트를 그대로 보여줬다(직접 재현해 확인). `pg_locks`는
-    질의 텍스트가 아니라 실제 잠금 상태이므로 이 문제가 없다. 제한 시간 안에 관측되지 않으면
-    조용히 넘어가지 않고 실패시킨다."""
-    try:
-        async with asyncio.timeout(seconds):
-            while True:
-                waiting = await observer.scalar(
-                    text(
-                        "SELECT count(*) FROM pg_locks blocked"
-                        " WHERE blocked.locktype = 'transactionid' AND NOT blocked.granted"
-                        " AND EXISTS ("
-                        "   SELECT 1 FROM pg_locks holding"
-                        "   WHERE holding.pid = blocked.pid"
-                        "     AND holding.locktype = 'relation'"
-                        "     AND holding.relation = 'users'::regclass"
-                        "     AND holding.mode = 'RowExclusiveLock'"
-                        "     AND holding.granted"
-                        " )"
-                    )
-                )
-                if waiting:
-                    return
-                await asyncio.sleep(0.01)
-    except TimeoutError:
-        raise AssertionError(
-            f"{seconds}초 안에 signup 커넥션이 users 테이블 잠금 대기 상태로 관측되지"
-            " 않았다 (pg_locks: RowExclusiveLock 보유 + transactionid 미승인 대기)"
-        ) from None
 
 
 async def test_signup_concurrent_duplicate_returns_409_via_integrity_error(
@@ -620,6 +585,8 @@ async def test_login_adult_issues_session_and_me_returns_user(
         "profileImageAssetId": None,
         "termsReconsentRequired": False,
         "privacyReconsentRequired": False,
+        "hasPassword": True,
+        "socialProvider": None,
     }
 
 

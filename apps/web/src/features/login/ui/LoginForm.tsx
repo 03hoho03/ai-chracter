@@ -12,32 +12,26 @@ import { isSuspendedError, sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entiti
 import { isApiError } from "@/shared/api/client";
 
 import { useLoginMutation } from "../api/useLoginMutation";
-import { buildGoogleLoginUrl } from "../lib/buildGoogleLoginUrl";
+import {
+  GENERIC_LOGIN_ERROR_MESSAGE,
+  getLoginErrorMessage,
+  MINIMUM_AGE_ERROR_MESSAGE,
+  type LoginErrorParam,
+  type SignupMethod,
+} from "../model/loginErrorMessage";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
+import { SocialLoginButtons } from "./SocialLoginButtons";
 
 type LoginFormProps = {
   redirectTo?: string;
-  errorCode?: string;
+  errorCode?: LoginErrorParam;
+  errorMethod?: SignupMethod;
 }
-
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
-
-// 만 14세 미만은 해결책이 없는 상태다 — "인증하면
-// 된다"처럼 읽히는 문구를 주지 않는다.
-const MINIMUM_AGE_ERROR_MESSAGE = "만 14세 미만은 이용할 수 없는 서비스예요.";
 
 const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
   "이메일 인증이 완료되지 않은 계정이에요. 같은 이메일로 회원가입을 다시 진행하면 인증 메일을 새로 받을 수 있어요.";
 
-/** 구글 콜백이 `?error=` 로 되돌려 보낸 코드 → 사용자용 문구. */
-const GOOGLE_ERROR_MESSAGES: Record<string, string> = {
-  google_state: "구글 로그인 요청이 만료되었어요. 다시 시도해주세요.",
-  account_suspended: SUSPENDED_ERROR_MESSAGE,
-  account_deleted: "탈퇴한 계정이에요.",
-  account_age_restricted: MINIMUM_AGE_ERROR_MESSAGE,
-};
-
-export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
+export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps) {
   const {
     register,
     handleSubmit,
@@ -49,11 +43,11 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
     defaultValues: loginDefaultValues,
   });
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
-  // 구글 리다이렉트 실패는 이 폼의 제출 결과가 아니라 진입 시점에 URL이 물고 온 상태라
+  // 소셜 로그인 리다이렉트 실패는 이 폼의 제출 결과가 아니라 진입 시점에 URL이 물고 온 상태라
   // `errors.root`(제출 실패)와 같은 자리에 그릴 뿐 출처를 섞지 않는다. 첫 제출에 지워진다.
   // 메시지 자체는 `errorCode`에서 계산 가능하므로 state에 담지 않는다 — 진짜 상태는
   // "이미 지웠나" 한 비트뿐이다.
-  const [isGoogleErrorDismissed, setIsGoogleErrorDismissed] = useState(false);
+  const [isRedirectErrorDismissed, setIsRedirectErrorDismissed] = useState(false);
 
   const queryClient = useQueryClient();
   const navigate = useNavigate();
@@ -61,7 +55,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
 
   async function handleValidSubmit(values: LoginFormValues) {
     clearErrors("root");
-    setIsGoogleErrorDismissed(true);
+    setIsRedirectErrorDismissed(true);
     try {
       await loginMutation.mutateAsync(values);
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
@@ -77,14 +71,14 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
       } else if (apiError?.status === 403) {
         setError("root", { message: EMAIL_VERIFICATION_REQUIRED_MESSAGE });
       } else {
-        setError("root", { message: GENERIC_ERROR_MESSAGE });
+        setError("root", { message: GENERIC_LOGIN_ERROR_MESSAGE });
       }
     }
   }
 
-  const googleErrorMessage =
-    errorCode && !isGoogleErrorDismissed ? (GOOGLE_ERROR_MESSAGES[errorCode] ?? GENERIC_ERROR_MESSAGE) : undefined;
-  const bannerMessage = errors.root?.message ?? googleErrorMessage;
+  const redirectErrorMessage =
+    errorCode && !isRedirectErrorDismissed ? getLoginErrorMessage(errorCode, errorMethod) : null;
+  const bannerMessage = errors.root?.message ?? redirectErrorMessage;
 
   return (
     <div className="flex flex-col gap-5">
@@ -164,22 +158,7 @@ export function LoginForm({ redirectTo, errorCode }: LoginFormProps) {
         </Button>
       </form>
 
-      <div className="flex items-center gap-3 text-xs text-muted-foreground">
-        <div className="h-px flex-1 bg-border" />
-        또는
-        <div className="h-px flex-1 bg-border" />
-      </div>
-
-      <Button
-        type="button"
-        variant="outline"
-        size="lg"
-        onClick={() => {
-          window.location.href = buildGoogleLoginUrl(redirectTo);
-        }}
-      >
-        구글로 로그인
-      </Button>
+      <SocialLoginButtons redirectTo={redirectTo} />
 
       <p className="text-center text-sm text-muted-foreground">
         아직 계정이 없으신가요?{" "}

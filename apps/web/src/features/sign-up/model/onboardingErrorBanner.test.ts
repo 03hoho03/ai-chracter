@@ -10,16 +10,36 @@ function apiError(status: number, detail: string | Record<string, unknown> = "x"
 }
 
 describe("getOnboardingErrorBanner", () => {
-  it("400(토큰 만료·이중 사용)은 처음부터 다시 하라고 안내하고 로그인 링크를 준다", () => {
+  it("400(가입 대기 쿠키 만료·없음)은 처음부터 다시 하라고 안내하고 로그인 링크를 준다", () => {
     expect(getOnboardingErrorBanner(apiError(400, "Invalid or expired token"))).toEqual({
       message: "인증이 만료되었어요. 처음부터 다시 시도해주세요.",
       shouldShowLoginLink: true,
     });
   });
 
-  it("409(탈퇴 1년 재가입 차단)는 '1년'을 명시한다", () => {
-    const banner = getOnboardingErrorBanner(apiError(409, "Email already registered"));
+  it("409 REREGISTRATION_BLOCKED(탈퇴 1년 재가입 차단)는 '1년'을 명시한다", () => {
+    const banner = getOnboardingErrorBanner(apiError(409, { code: "REREGISTRATION_BLOCKED" }));
 
+    expect(banner?.message).toContain("1년");
+    expect(banner?.message).not.toContain("이미 가입된");
+    expect(banner?.shouldShowLoginLink).toBe(true);
+  });
+
+  it("409 EMAIL_ALREADY_REGISTERED(그사이 같은 이메일 가입)는 이미 가입됐으니 로그인하라고 한다", () => {
+    const banner = getOnboardingErrorBanner(apiError(409, { code: "EMAIL_ALREADY_REGISTERED" }));
+
+    expect(banner?.message).toContain("이미 가입된 이메일");
+    expect(banner?.message).not.toContain("1년");
+    expect(banner?.shouldShowLoginLink).toBe(true);
+  });
+
+  it.each([
+    ["모르는 code", { code: "SOMETHING_NEW" }],
+    ["code 없는 문자열 detail", "Email already registered"],
+  ])("409 인데 %s 면 토스트로 떨어뜨리지 않고 두 사정을 함께 덮는 문구를 준다", (_label, detail) => {
+    const banner = getOnboardingErrorBanner(apiError(409, detail));
+
+    expect(banner?.message).toContain("이미 가입됐거나");
     expect(banner?.message).toContain("1년");
     expect(banner?.shouldShowLoginLink).toBe(true);
   });

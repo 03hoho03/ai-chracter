@@ -17,12 +17,14 @@ const BASIC_INFO_FIELDS = [
   "transferAgreed",
 ] as const;
 
-type GoogleBasicInfoStepProps = {
+type SocialBasicInfoStepProps = {
   onSubmit: () => void;
   isSubmitting: boolean;
 }
 
-export function GoogleBasicInfoStep({ onSubmit, isSubmitting }: GoogleBasicInfoStepProps) {
+/** 소셜(구글·카카오) 온보딩의 유일한 스텝. 이메일은 제공자에게서 받고 비밀번호는 없어서 닉네임·생년월일·동의만
+ * 묻는다. 제공자마다 다른 것이 없어 한 벌을 쓴다 — 두 벌이면 문구·검증 수정이 한쪽에만 적용된다. */
+export function SocialBasicInfoStep({ onSubmit, isSubmitting }: SocialBasicInfoStepProps) {
   const form = useFormContext<SignUpFormValues>();
 
   const {
@@ -63,33 +65,33 @@ export function GoogleBasicInfoStep({ onSubmit, isSubmitting }: GoogleBasicInfoS
       )}
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="onboarding-google-nickname">닉네임</Label>
+        <Label htmlFor="onboarding-nickname">닉네임</Label>
         <Input
-          id="onboarding-google-nickname"
+          id="onboarding-nickname"
           placeholder="다른 사용자에게 보여질 이름"
           aria-invalid={!!errors.nickname}
-          aria-describedby={errors.nickname ? "onboarding-google-nickname-error" : undefined}
+          aria-describedby={errors.nickname ? "onboarding-nickname-error" : undefined}
           {...register("nickname")}
         />
         {errors.nickname && (
-          <p id="onboarding-google-nickname-error" role="alert" className="text-xs text-destructive-text">
+          <p id="onboarding-nickname-error" role="alert" className="text-xs text-destructive-text">
             {errors.nickname.message}
           </p>
         )}
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="onboarding-google-birth-date">생년월일</Label>
+        <Label htmlFor="onboarding-birth-date">생년월일</Label>
         <Input
-          id="onboarding-google-birth-date"
+          id="onboarding-birth-date"
           type="date"
           max={new Date().toISOString().slice(0, 10)}
           aria-invalid={!!errors.birthDate}
-          aria-describedby={errors.birthDate ? "onboarding-google-birth-date-error" : undefined}
+          aria-describedby={errors.birthDate ? "onboarding-birth-date-error" : undefined}
           {...register("birthDate")}
         />
         {errors.birthDate && (
-          <p id="onboarding-google-birth-date-error" role="alert" className="text-xs text-destructive-text">
+          <p id="onboarding-birth-date-error" role="alert" className="text-xs text-destructive-text">
             {errors.birthDate.message}
           </p>
         )}
