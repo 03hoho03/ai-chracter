@@ -297,6 +297,7 @@ function UserDetailBody({ userId }: UserDetailBodyProps) {
         isRateLimitExempt={userDetailQuery.data.rateLimitExempt}
         isBeta={userDetailQuery.data.betaJoinedAt !== null}
         restrictableContentCount={userDetailQuery.data.restrictableContentCount}
+        restorableContentCount={userDetailQuery.data.restorableContentCount}
       />
     </>
   );
