@@ -341,3 +341,44 @@ async def test_converted_old_set_can_be_restored_and_published(
     assert restored.status_code == 200
     published = await db_client.post("/admin/prompt-sets/publish_filter/publish", json={"note": "옛 버전 복원"})
     assert published.status_code == 200
+
+
+async def test_restore_stops_when_a_draft_was_created_after_the_upgrade(db_session: AsyncSession) -> None:
+    """업그레이드 때 초안이 없었고 그 뒤 운영자가 레인을 저장해 이미지 목록 4행 초안이 생겼다면, 되돌리기는 그 초안 id 로
+    멈추고 아무것도 바꾸지 않는다 — 그대로 두면 옛 어드민의 게시·미리보기가 깨지고 다시 업그레이드할 때 배치 검사에 걸린다."""
+    active, sections = await load_active_prompt_set(db_session, lane="publish_filter")
+    draft = PromptSet(
+        version=None,
+        status="draft",
+        lane="publish_filter",
+        user_label=active.user_label,
+        story_assistant_label=active.story_assistant_label,
+        story_example_label=active.story_example_label,
+        character_assistant_label=active.character_assistant_label,
+    )
+    db_session.add(draft)
+    await db_session.flush()
+    draft_id = draft.id
+    for s in sections:
+        db_session.add(
+            PromptSection(
+                prompt_set_id=draft_id,
+                channel=s.channel,
+                scope=s.scope,
+                slot=s.slot,
+                variant=s.variant,
+                body=s.body,
+                conditional=s.conditional,
+                order=s.order,
+            )
+        )
+    await db_session.flush()
+    before = {set_id: await _rows_of(db_session, set_id) for set_id in (_SEED_SET_ID, _M.NEW_SET_ID, draft_id)}
+
+    connection = await db_session.connection()
+    with pytest.raises(RuntimeError, match=str(draft_id)):
+        await connection.run_sync(_M._restore_sets)
+
+    for set_id, rows in before.items():
+        assert await _rows_of(db_session, set_id) == rows
+    assert len(await _backup_rows_of(db_session, _SEED_SET_ID)) == 13

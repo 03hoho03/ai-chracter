@@ -42,9 +42,11 @@ publish_filter 레인은 활성 세트 캐시를 쓰지 않으므로(발행이 �
   백업 후 **새 이미지로** `alembic downgrade c130656318eb` 를 먼저 하고(옛 이미지에는 이 리비전 파일이 없다) 곧바로
   이미지를 되돌린다. 둘 사이 몇 초 동안은 새 코드가 옛 세트를 렌더해 발행이 500 이 된다.
 
-`downgrade()`: 이 리비전 뒤에 운영자가 publish_filter 세트를 새로 게시했다면(백업 행이 없는, 이 리비전이 만든 것
-아닌 published 세트) 그 세트가 활성으로 남아 옛 코드를 깨뜨리므로 **그 id 를 알리며 멈춘다** — 게시 이력을
-마이그레이션이 몰래 지우지 않는다. 운영자가 그 세트를 정리한 뒤 다시 돌린다. 아니면 새 세트를 지우고(직전 활성
+`downgrade()`: 이 리비전 뒤에 운영자가 publish_filter 세트를 새로 게시했거나 초안을 새로 만들었다면(백업 행이 없는,
+이 리비전이 만든 것 아닌 세트) **아무것도 바꾸기 전에 그 id 를 알리며 멈춘다**. 게시 세트는 활성으로 남아 옛 코드의
+발행을 깨뜨리고, 초안은 이미지 목록 4행 그대로 남아 옛 어드민의 게시·미리보기를 깨뜨리며 다시 업그레이드하는 배포도
+배치 검사에서 막는다. 게시 이력·초안을 마이그레이션이 몰래 지우지 않는다. 운영자가 그 세트를 정리한 뒤(초안은 옛
+버전을 복원해 덮거나 지운다) 다시 돌린다. 아니면 새 세트를 지우고(직전 활성
 세트가 다시 활성이 된다), 백업 행이 있는 세트마다 `image_list` 행을 PK 가 아니라 세트·슬롯으로 찾아 지운 뒤(초안은
 어드민 저장으로 섹션 PK 가 바뀌었을 수 있다) 백업 행을 되돌리고, 백업 테이블을 지운다. 업그레이드 뒤 편집된 초안은
 서두·판정 order 가 바뀌어 복원 행과 겹칠 수 있다 — DB 제약이 없어 실패하지는 않고 게시 검증에서만 드러난다.
@@ -300,29 +302,31 @@ def _publish_new_set(conn: Connection) -> None:
         raise RuntimeError(f"[{_LANE}] 새 세트가 활성으로 뽑히지 않는다: 활성={chosen}, 새 세트={NEW_SET_ID}")
 
 
-def _assert_no_set_published_after(conn: Connection) -> None:
-    """이 리비전 뒤에 게시된 publish_filter 세트가 있으면 멈춘다. 그런 세트는 백업 행이 없다 — 이 리비전 이전 세트는
-    전부 작가 글 행을 백업으로 옮겼고, 어드민 게시는 늘 새 id 로 세트를 만든다."""
-    later = list(
-        conn.execute(
-            sa.text(
-                "SELECT id FROM prompt_sets p WHERE p.lane = :lane AND p.status = 'published' AND p.id <> :new_id"
-                f" AND NOT EXISTS (SELECT 1 FROM {BACKUP_TABLE} b WHERE b.prompt_set_id = p.id)"
-                " ORDER BY p.published_at"
-            ),
-            {"lane": _LANE, "new_id": NEW_SET_ID},
-        ).scalars()
-    )
+def _assert_no_set_created_after(conn: Connection) -> None:
+    """이 리비전 뒤에 생긴 publish_filter 세트(게시·초안)가 있으면 아무것도 바꾸기 전에 멈춘다. 그런 세트는 백업 행이
+    없다 — 이 리비전 이전 세트는 전부 작가 글 행을 백업으로 옮겼고, 어드민 게시는 늘 새 id 로 세트를 만들며, 초안이
+    없던 레인을 저장하면 새 id 의 초안이 생긴다. 게시 세트는 되돌린 뒤 활성으로 남아 옛 코드의 발행을 깨뜨리고, 초안은
+    이미지 목록만 든 채 남아 옛 코드 어드민의 게시·미리보기를 깨뜨리고 다시 업그레이드할 때 배치 검사에 걸린다."""
+    later = conn.execute(
+        sa.text(
+            "SELECT id, status FROM prompt_sets p WHERE p.lane = :lane AND p.id <> :new_id"
+            f" AND NOT EXISTS (SELECT 1 FROM {BACKUP_TABLE} b WHERE b.prompt_set_id = p.id)"
+            " ORDER BY p.created_at, p.id"
+        ),
+        {"lane": _LANE, "new_id": NEW_SET_ID},
+    ).fetchall()
     if later:
         raise RuntimeError(
-            f"[{_LANE}] 이 리비전 뒤에 게시된 발행 심사 세트가 있다: {', '.join(str(set_id) for set_id in later)} — "
-            "되돌리면 그 세트가 활성으로 남아 옛 코드의 발행이 실패한다. 그 세트를 정리한 뒤 다시 돌린다."
+            f"[{_LANE}] 이 리비전 뒤에 생긴 발행 심사 세트가 있다: "
+            f"{', '.join(f'{set_id}({status})' for set_id, status in later)} — 게시 세트는 되돌린 뒤 활성으로 남아 옛 코드의"
+            " 발행이 실패하고, 초안은 옛 어드민에서 게시·미리보기가 깨진다. 그 세트를 정리한 뒤(초안은 옛 버전을 복원해"
+            " 덮거나 지운다) 다시 돌린다."
         )
 
 
 def _restore_sets(conn: Connection) -> None:
     """새 세트를 지우고, 백업 행이 있는 세트마다 `image_list` 행을 지운 뒤 백업 행을 원래대로 되돌린다."""
-    _assert_no_set_published_after(conn)
+    _assert_no_set_created_after(conn)
     conn.execute(sa.delete(prompt_sections_table).where(prompt_sections_table.c.prompt_set_id == NEW_SET_ID))
     conn.execute(sa.delete(prompt_sets_table).where(prompt_sets_table.c.id == NEW_SET_ID))
 
