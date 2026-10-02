@@ -51,7 +51,10 @@ const AUTOSAVE_ERROR_TOAST_ID = "builder-autosave-error";
  * 호출부("임시저장에 실패했어요")가 처리한다.
  *
  * `save`는 렌더마다 같은 함수여야 디바운스가 성립한다 — 매번 새 함수를 주면 타이머가 매 렌더
- * 새로 만들어져 입력 한 번마다 저장이 나간다. */
+ * 새로 만들어져 입력 한 번마다 저장이 나간다.
+ *
+ * 폼 구독은 렌더마다 끊지 않는다 — 구독이 렌더마다 끊기면 필드 배열 액션(추가·삭제·재정렬)의 변경
+ * 알림이 끊긴 틈에 사라져 그 동작이 단독으로는 저장되지 않는다(아래 구독 effect 주석). */
 export function useAutosave<TForm, TPayload>(opts: {
   subscribe: (cb: (values: TForm) => void) => () => void;
   formToServer: (values: TForm) => TPayload;
@@ -94,7 +97,16 @@ export function useAutosave<TForm, TPayload>(opts: {
     [opts.save, opts.formToServer, opts.errorMessage, opts.debounceMs],
   );
 
-  useEffect(() => opts.subscribe(debouncedSave), [opts, debouncedSave]);
+  // 구독은 `debouncedSave`가 바뀔 때만(사실상 마운트 한 번) 다시 건다. 호출부는 `opts`를 렌더마다 새
+  // 객체로 넘기므로 `opts`를 의존성에 두면 셸이 렌더될 때마다 구독이 풀렸다 다시 걸린다. 필드 배열의
+  // 추가·삭제·재정렬은 변경 알림을 자식(`useFieldArray`)의 effect에서 보내는데, 같은 커밋에서 셸도 다시
+  // 렌더되면 React가 "셸 구독 해제 → 자식 알림 → 셸 재구독" 순으로 돌아 알림이 구독자 없이 사라진다 —
+  // 그러면 그 동작은 다음 다른 편집 때까지 저장되지 않고, 그 전에 새로고침하면 유실된다.
+  // `subscribe`는 ref로 최신 것을 읽는다.
+  const subscribeRef = useRef(opts.subscribe);
+  subscribeRef.current = opts.subscribe;
+
+  useEffect(() => subscribeRef.current(debouncedSave), [debouncedSave]);
 
   // `debouncedSave`는 마운트 내내 같은 인스턴스라(위 `save` 계약) 이 정리는 사실상 언마운트에서만 돈다.
   const flushOnUnmountRef = useRef(opts.flushOnUnmount);
