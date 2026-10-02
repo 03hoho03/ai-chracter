@@ -17,7 +17,8 @@ import {
   type MediaBookCellImage,
 } from "@/features/build-story";
 import { MediaBookOverwriteModal } from "@/features/edit-media-book";
-import { MAX_UPLOAD_BYTES_BY_PURPOSE, uploadAsset } from "@/shared/api/asset/uploadAsset";
+import { uploadAsset } from "@/shared/api/asset/uploadAsset";
+import { MAX_SOURCE_BYTES } from "@/shared/lib/asset/resizeImage";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
@@ -33,8 +34,9 @@ type UploadResult = { addedCellNames: string[]; excluded: BulkUploadExclusion[] 
 // 동시에 올리는 파일 수. 파일마다 리사이즈(메인 스레드 캔버스)와 업로드가 돌아 많이 열면 화면이 굳는다.
 const UPLOAD_CONCURRENCY = 3;
 
-// 도움말에 적는 한 장 상한. 업로드가 실제로 거는 값에서 계산해 문구와 검사가 갈리지 않게 한다.
-const MAX_FILE_MEGABYTES = MAX_UPLOAD_BYTES_BY_PURPOSE["situational-image"] / (1024 * 1024);
+// 도움말에 적는 한 장 상한. 사용자가 고른 원본 파일에 걸리는 검사(리사이즈 전 크기 검사)와 같은 상수에서 계산해
+// 도움말 숫자와 그 검사가 갈리지 않게 한다. 업로드 상한(리사이즈 결과물에 건다)은 사용자가 고른 파일 크기와 무관하다.
+const MAX_FILE_MEGABYTES = MAX_SOURCE_BYTES / (1024 * 1024);
 
 /**
  * 파일 이름(`인물_장면.확장자`)으로 칸을 한꺼번에 채운다. 순서: 이름 읽기 → (채워진 칸이 있으면) 덮어쓰기 묻기 →
