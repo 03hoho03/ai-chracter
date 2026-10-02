@@ -55,11 +55,11 @@ export function MediaBookTab() {
     // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 끌어내리지 않는다.
     if (method === "copy") return;
     // 상세는 표 아래에 열려 좁은 화면이나 긴 표에서는 화면 밖일 수 있다. 다음 프레임(상세가 그려진 뒤)에 고른 칸과
-    // 상세의 첫 행동 줄이 함께 보이게, 안 되면 머리를 위에 맞춘다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과
-    // 무관하게 순간 이동). 키보드로 열었으면 포커스를 상세 제목으로 옮겨 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로
+    // 상세의 첫 행동 줄이 함께 보이게, 안 되면 빈 칸은 행동 줄을 화면 바닥에, 채운 칸은 머리를 위에 맞춘다. 부드러운
+    // 스크롤은 쓰지 않는다(움직임을 줄이는 설정과 무관하게 순간 이동). 키보드로 열었으면 포커스를 상세 제목으로 옮겨 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로
     // 돌아온다) — 스크롤은 위 규칙이 하므로 포커스가 화면을 다시 움직이지 않게 한다.
     requestAnimationFrame(() => {
-      scrollToSelection(position);
+      scrollToSelection(position, findCell(mediaBook, position.personId, position.sceneId) === undefined);
       if (method === "keyboard") document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus({ preventScroll: true });
     });
   }
@@ -185,7 +185,7 @@ function cellStatus(cell: MediaBookCellValues | undefined): string {
 }
 
 /** 고른 칸과 상세(머리와 첫 행동 줄)를 화면에 둔다. 판정은 `planCellSelectionScroll` 이 하고 여기서는 재고 움직이기만 한다. */
-function scrollToSelection(position: MediaBookPosition) {
+function scrollToSelection(position: MediaBookPosition, isEmpty: boolean) {
   const cell = document.querySelector<HTMLElement>(`[data-media-book-cell="${toCellKey(position)}"]`);
   const header = document.getElementById(`${CELL_PANEL_ID}-head`);
   const firstAction = document.querySelector<HTMLElement>(`#${CELL_PANEL_ID} ${MEDIA_BOOK_FIRST_ACTION_SELECTOR}`);
@@ -195,11 +195,14 @@ function scrollToSelection(position: MediaBookPosition) {
     firstActionBottom: firstAction.getBoundingClientRect().bottom,
     // 위아래 모두 숨 쉴 자리를 뺀다 — 위는 칸의 `scroll-mt`, 아래는 행동 줄의 `scroll-mb` 다.
     availableHeight: window.innerHeight - BUILDER_TOP_BAR_HEIGHT_PX - SCROLL_BREATHING_PX * 2,
+    isEmpty,
   });
   if (plan === "both") {
     // 둘의 거리가 보이는 높이 안이므로, 행동 줄을 먼저 맞춘 뒤 칸을 맞춰도 행동 줄이 화면 밖으로 밀리지 않는다.
     firstAction.scrollIntoView({ block: "nearest" });
     cell.scrollIntoView({ block: "nearest" });
+  } else if (plan === "action") {
+    firstAction.scrollIntoView({ block: "end" });
   } else {
     header.scrollIntoView({ block: "start" });
   }
