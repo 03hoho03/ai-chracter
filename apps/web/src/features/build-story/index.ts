@@ -1,3 +1,10 @@
+export {
+  MEDIA_BOOK_AXIS_SECTION_LIST,
+  SELECTED_STARTING_SETUP,
+  STARTING_SETUP_SCOPE,
+  STORY_COLLAPSIBLE_LISTS,
+  type StoryCollapsibleList,
+} from "./model/collapsibleLists";
 export { formToCard } from "./model/formToCard";
 export { formToServer, type StoryBuilderDraftPayload } from "./model/formToServer";
 export {
