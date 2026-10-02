@@ -10,14 +10,12 @@ from pydantic import BaseModel
 
 from api.core.config import settings
 from api.llm.client import (
-    JUDGMENT_CALL_SITES,
-    PUBLISH_FILTER_CALL_SITES,
     LLMCallContext,
-    LLMCallSite,
     LLMClient,
     LLMClientError,
     LLMPolicyViolationError,
     LLMRateLimitError,
+    structured_model_and_thinking,
 )
 from api.llm.usage_store import record_usage
 
@@ -136,24 +134,6 @@ class GeminiLLMClient(LLMClient):
         _log_usage(usage, self._model_name, usage_metadata)
         await record_usage(usage.call_site, self._model_name, usage_metadata)
 
-    def _structured_model_and_thinking(self, call_site: LLMCallSite) -> tuple[str, int | None]:
-        """판정·발행 심사 call_site 집합(`llm/client.py`)이면 그 스위치의 모델·사고 예산을, 아니면
-        기본 모델에 사고 설정 없음을 돌려준다. 설정은 호출마다 읽는다 — 클라이언트가 프로세스당
-        하나이고 설정은 실행 중에 바뀌지 않아 운영에서는 기동 때 읽는 것과 같다. 모델명을 `or` 로
-        고르는 건 env 에 키만 남아 빈 문자열이 들어와도 기본 모델로 돌게 하려는 것이다(빈 모델명은
-        어떤 모델도 가리키지 않는다)."""
-        if call_site in JUDGMENT_CALL_SITES:
-            return (
-                settings.gemini_judgment_model_name or self._model_name,
-                settings.gemini_judgment_thinking_budget,
-            )
-        if call_site in PUBLISH_FILTER_CALL_SITES:
-            return (
-                settings.gemini_publish_filter_model_name or self._model_name,
-                settings.gemini_publish_filter_thinking_budget,
-            )
-        return self._model_name, None
-
     async def generate_structured(
         self,
         prompt: str,
@@ -169,7 +149,7 @@ class GeminiLLMClient(LLMClient):
                 *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
             ]
 
-        model, thinking_budget = self._structured_model_and_thinking(usage.call_site)
+        model, thinking_budget = structured_model_and_thinking(usage.call_site, self._model_name)
         config = genai_types.GenerateContentConfig(
             response_mime_type="application/json",
             response_schema=response_schema,

@@ -31,6 +31,7 @@ from api.content.publish import (
     validate_character_publish,
     validate_story_publish,
 )
+from api.content.publish_filter_memo import PASSED_KEY_PREFIX, has_passed, remember_pass, screening_key
 from api.content.schemas import (
     KEYWORD_NOTE_OPTION_FIELDS,
     CharacterDraftPayload,
@@ -75,6 +76,7 @@ from api.content.schemas import (
     VisibilityFilter,
 )
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
+from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -109,7 +111,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMCallContext, LLMClient
+from api.llm.client import LLMCallContext, LLMClient, structured_model_and_thinking
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1704,6 +1706,43 @@ async def _load_publish_filter_images(
     return images
 
 
+async def _screen_for_publish(
+    llm_client: LLMClient,
+    *,
+    call_site: Literal["publish_filter_character", "publish_filter_story"],
+    content: Content,
+    prompt_set: PromptSet,
+    prompt: str,
+    images: list[tuple[bytes, str]],
+) -> None:
+    """발행 심사. 통과하지 못하면 400 `{reason}` 을 던진다. 직전에 통과한 심사와 입력이 전부 같으면 LLM 을
+    부르지 않는다(`content/publish_filter_memo.py`). 모델은 클라이언트가 실제로 고를 값과 같은 함수로 구해야
+    심사 모델을 바꾼 뒤 옛 모델의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
+    쓰는 `settings.gemini_model_name` 이다."""
+    model, _ = structured_model_and_thinking(call_site, settings.gemini_model_name)
+    memo_key = screening_key(
+        content_id=content.id, prompt_set_id=prompt_set.id, model=model, prompt=prompt, images=images
+    )
+    if await has_passed(memo_key):
+        # 키 앞부분만 남긴다 — 입력을 되짚을 수 없고, 같은 작품의 재시도끼리 묶어 보기에는 충분하다.
+        logger.warning(
+            "publish_filter_skipped call_site=%s key=%s", call_site, memo_key.removeprefix(PASSED_KEY_PREFIX)[:12]
+        )
+        return
+    filter_result = await llm_client.generate_structured(
+        prompt,
+        PublishFilterResult,
+        images=images,
+        usage=LLMCallContext(call_site=call_site, user_id=content.creator_user_id, room_id=None),
+    )
+    if not filter_result.passed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
+        )
+    await remember_pass(memo_key)
+
+
 @router.post(
     "/contents/{id}/publish", dependencies=[Depends(require_legal_consent)]
 )
@@ -1785,17 +1824,14 @@ async def _publish_character_content(
         character_prompt=detail.character_prompt,
         detail_description=version.detail_description,
     )
-    filter_result = await llm_client.generate_structured(
-        filter_prompt,
-        PublishFilterResult,
+    await _screen_for_publish(
+        llm_client,
+        call_site="publish_filter_character",
+        content=content,
+        prompt_set=prompt_set,
+        prompt=filter_prompt,
         images=filter_images,
-        usage=LLMCallContext(call_site="publish_filter_character", user_id=content.creator_user_id, room_id=None),
     )
-    if not filter_result.passed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
-        )
 
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
@@ -2239,17 +2275,14 @@ async def _publish_story_content(
             for cell in ordered_cells
         ],
     )
-    filter_result = await llm_client.generate_structured(
-        filter_prompt,
-        PublishFilterResult,
+    await _screen_for_publish(
+        llm_client,
+        call_site="publish_filter_story",
+        content=content,
+        prompt_set=prompt_set,
+        prompt=filter_prompt,
         images=filter_images,
-        usage=LLMCallContext(call_site="publish_filter_story", user_id=content.creator_user_id, room_id=None),
     )
-    if not filter_result.passed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
-        )
 
     await _blur_new_media_book_cells(db, ordered_cells, owner_user_id=content.creator_user_id)
 

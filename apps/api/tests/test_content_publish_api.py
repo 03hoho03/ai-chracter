@@ -1,10 +1,13 @@
+import asyncio
 import io
+import logging
 import threading
 import time
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timezone
 from decimal import Decimal
+from types import SimpleNamespace
 from typing import Any
 
 import boto3
@@ -12,12 +15,15 @@ import httpx
 import pytest
 import sqlalchemy as sa
 from PIL import Image
+from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.image_processing import generate_blurred_image
+from api.content import publish_filter_memo
 from api.content.publish import PublishFilterResult, validate_story_publish
 from api.content.router import _MEDIA_BOOK_S3_CONCURRENCY
 from api.core.config import settings
+from api.core.redis import redis_client
 from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
@@ -29,6 +35,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
+from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
     EndingRule,
@@ -331,6 +338,7 @@ class _FakeLLMClient(LLMClient):
         self.result = result
         self.received_prompt: str | None = None
         self.received_images: list[tuple[bytes, str]] | None = None
+        self.calls = 0
 
     async def generate(
         self,
@@ -346,6 +354,7 @@ class _FakeLLMClient(LLMClient):
     async def generate_structured(
         self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
     ) -> Any:
+        self.calls += 1
         self.received_prompt = prompt
         self.received_images = images
         return self.result
@@ -2057,3 +2066,424 @@ def test_validate_story_publish_keyword_notes(
     )
 
     assert missing == expected
+
+
+# --- 무변경 재발행의 심사 생략 ---
+#
+# 심사 LLM 은 발행마다 부르면 같은 입력에 같은 값을 다시 내는 호출이 된다. 직전에 통과한 심사와 입력(콘텐츠·활성
+# 심사 세트·실제 모델·렌더된 심사 문장·이미지 바이트와 형식의 순서)이 전부 같을 때만 건너뛴다. 하나라도 다르거나
+# 기억을 확인할 수 없으면 심사한다 — 생략이 틀리면 심사 안 된 콘텐츠가 공개된다.
+
+
+async def _draft_detail(db_session: AsyncSession, content: Content) -> CharacterVersionDetail:
+    """발행이 열어 둔 다음 편집용 초안의 캐릭터 상세."""
+    detail = await db_session.scalar(
+        sa.select(CharacterVersionDetail)
+        .join(ContentVersion, ContentVersion.id == CharacterVersionDetail.content_version_id)
+        .where(ContentVersion.content_id == content.id, ContentVersion.published_at.is_(None))
+    )
+    assert detail is not None
+    return detail
+
+
+async def _publish_twice(
+    db_client: httpx.AsyncClient, content: Content, fake: _FakeLLMClient, between: Any = None
+) -> httpx.Response:
+    """첫 발행이 통과한 것을 확인하고, `between` 을 돌린 뒤 다시 발행한 응답을 돌려준다."""
+    _override_llm_client(fake)
+    try:
+        first = await db_client.post(f"/contents/{content.id}/publish")
+        assert first.status_code == 200
+        if between is not None:
+            await between()
+        return await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+
+async def _publishable_character(
+    db_session: AsyncSession, db_client: httpx.AsyncClient
+) -> tuple[Content, ContentVersion, Asset, SituationalImage]:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    drafted = await _make_publishable_character_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    return drafted
+
+
+async def test_republish_unchanged_character_skips_filter_and_still_publishes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, caplog: pytest.LogCaptureFixture
+) -> None:
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    with caplog.at_level(logging.WARNING, logger="api.content.router"):
+        resp = await _publish_twice(db_client, content, fake)
+
+    assert resp.status_code == 200
+    assert resp.json()["versionNumber"] == 2
+    assert fake.calls == 1
+    skipped = [record.getMessage() for record in caplog.records if "publish_filter_skipped" in record.getMessage()]
+    assert len(skipped) == 1
+    assert str(content.id) not in skipped[0] and str(content.creator_user_id) not in skipped[0]
+    await db_session.refresh(content)
+    published = await db_session.get(ContentVersion, content.current_published_version_id)
+    assert published is not None and published.version_number == 2
+
+
+async def test_republish_character_with_one_letter_changed_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def change_one_letter() -> None:
+        detail = await _draft_detail(db_session, content)
+        detail.character_prompt = "너는 아리아야."
+        await db_session.commit()
+
+    resp = await _publish_twice(db_client, content, fake, change_one_letter)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+    assert fake.received_prompt is not None and "너는 아리아야." in fake.received_prompt
+
+
+async def test_republish_character_with_replaced_image_bytes_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """저장 위치는 그대로 두고 그 자리의 그림만 바뀌어도(시드 이미지 교체 등) 다시 심사한다."""
+    content, _, _, image = await _publishable_character(db_session, db_client)
+    asset = await db_session.get(Asset, image.image_asset_id)
+    assert asset is not None
+    storage_key = asset.storage_key
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def replace_bytes() -> None:
+        _upload_test_image(storage_key, size=(24, 24))
+
+    resp = await _publish_twice(db_client, content, fake, replace_bytes)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
+async def test_republish_character_with_swapped_image_order_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """같은 그림 두 장이라도 대표 이미지와 상황 이미지를 맞바꾸면 심사가 보는 순서가 달라지므로 다시 심사한다."""
+    content, _, thumbnail, image = await _publishable_character(db_session, db_client)
+    situational_asset = await db_session.get(Asset, image.image_asset_id)
+    assert situational_asset is not None
+    _upload_test_image(situational_asset.storage_key, size=(24, 24))
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def swap() -> None:
+        detail = await _draft_detail(db_session, content)
+        draft_image = await db_session.scalar(
+            sa.select(SituationalImage).where(SituationalImage.content_version_id == detail.content_version_id)
+        )
+        assert draft_image is not None
+        detail.thumbnail_asset_id, draft_image.image_asset_id = situational_asset.id, thumbnail.id
+        await db_session.commit()
+
+    resp = await _publish_twice(db_client, content, fake, swap)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
+async def test_republish_character_after_publish_filter_set_change_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """문안이 같아도 심사 세트를 새로 게시하면 다시 심사한다 — 게시는 운영자가 심사 기준을 다시 세운 일이다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def republish_same_set() -> None:
+        active = await db_session.scalar(
+            sa.select(PromptSet)
+            .where(PromptSet.status == "published", PromptSet.lane == "publish_filter")
+            .order_by(PromptSet.published_at.desc())
+            .limit(1)
+        )
+        assert active is not None
+        copy = PromptSet(
+            version=f"copy-{uuid.uuid4()}",
+            status="published",
+            lane="publish_filter",
+            user_label=active.user_label,
+            story_assistant_label=active.story_assistant_label,
+            story_example_label=active.story_example_label,
+            character_assistant_label=active.character_assistant_label,
+            published_at=sa.func.now(),
+        )
+        db_session.add(copy)
+        await db_session.flush()
+        sections = (
+            await db_session.scalars(sa.select(PromptSection).where(PromptSection.prompt_set_id == active.id))
+        ).all()
+        db_session.add_all(
+            PromptSection(
+                prompt_set_id=copy.id,
+                channel=section.channel,
+                scope=section.scope,
+                slot=section.slot,
+                variant=section.variant,
+                body=section.body,
+                conditional=section.conditional,
+                order=section.order,
+            )
+            for section in sections
+        )
+        await db_session.commit()
+
+    first_prompt: list[str | None] = []
+
+    async def remember_prompt_then_republish_set() -> None:
+        first_prompt.append(fake.received_prompt)
+        await republish_same_set()
+
+    resp = await _publish_twice(db_client, content, fake, remember_prompt_then_republish_set)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+    assert fake.received_prompt == first_prompt[0]
+
+
+@pytest.mark.parametrize(
+    "setting",
+    [
+        pytest.param("gemini_publish_filter_model_name", id="publish-filter-model"),
+        pytest.param("gemini_model_name", id="default-model"),
+    ],
+)
+async def test_republish_character_after_model_setting_change_rescreens(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    setting: str,
+) -> None:
+    """심사를 실제로 맡는 모델이 바뀌면 옛 모델의 통과로 건너뛰지 않는다. 심사 전용 설정이 비어 있으면 기본
+    모델이 심사를 맡으므로 기본 모델 설정이 바뀌어도 다시 심사한다."""
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def change_model() -> None:
+        monkeypatch.setattr(settings, setting, "gemini-other-model")
+
+    resp = await _publish_twice(db_client, content, fake, change_model)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
+async def test_republish_character_with_unrelated_model_setting_change_still_skips(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """심사 전용 모델이 정해져 있으면 기본 모델이 바뀌어도 심사 모델은 그대로라 건너뛴다 — 키가 설정값이 아니라
+    실제로 쓸 모델을 본다는 확인이다."""
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", "gemini-filter-model")
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def change_default_model() -> None:
+        monkeypatch.setattr(settings, "gemini_model_name", "gemini-other-model")
+
+    resp = await _publish_twice(db_client, content, fake, change_default_model)
+
+    assert resp.status_code == 200
+    assert fake.calls == 1
+
+
+async def test_identical_character_drafts_do_not_share_a_pass(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """같은 사람이 같은 글·그림으로 작품을 둘 만들어도 각자 심사한다 — 통과는 작품 하나에 묶인다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    first, _, _, _ = await _make_publishable_character_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    second, _, _, _ = await _make_publishable_character_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
+    try:
+        first_resp = await db_client.post(f"/contents/{first.id}/publish")
+        first_prompt, first_images = fake.received_prompt, fake.received_images
+        second_resp = await db_client.post(f"/contents/{second.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert (first_resp.status_code, second_resp.status_code) == (200, 200)
+    assert (fake.received_prompt, fake.received_images) == (first_prompt, first_images)
+    assert fake.calls == 2
+
+
+async def test_rejected_publish_is_not_remembered(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    rejecting = _FakeLLMClient(PublishFilterResult(passed=False, reason="부적절"))
+    passing = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    try:
+        _override_llm_client(rejecting)
+        rejected = await db_client.post(f"/contents/{content.id}/publish")
+        _override_llm_client(passing)
+        retried = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert (rejected.status_code, retried.status_code) == (400, 200)
+    assert passing.calls == 1
+
+
+async def test_failed_filter_call_is_not_remembered(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    passing = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    try:
+        _override_llm_client(_FailingFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
+        with pytest.raises(LLMClientError):
+            await db_client.post(f"/contents/{content.id}/publish")
+        _override_llm_client(passing)
+        retried = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert retried.status_code == 200
+    assert passing.calls == 1
+
+
+async def _raise_redis_error(*_args: object, **_kwargs: object) -> object:
+    raise RedisError("connection refused")
+
+
+async def _hang(*_args: object, **_kwargs: object) -> object:
+    await asyncio.sleep(30)
+    raise AssertionError("unreachable")  # pragma: no cover - the timeout cancels the sleep
+
+
+@pytest.mark.parametrize(
+    "failure", [pytest.param(_raise_redis_error, id="redis-error"), pytest.param(_hang, id="hang")]
+)
+async def test_republish_screens_when_pass_cannot_be_read(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Any,
+) -> None:
+    """통과 기억을 읽지 못하면 없는 것으로 보고 심사한다 — 생략은 통과를 확인했을 때만이다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def break_reads() -> None:
+        monkeypatch.setattr(publish_filter_memo, "redis_client", SimpleNamespace(exists=failure, set=redis_client.set))
+
+    resp = await _publish_twice(db_client, content, fake, break_reads)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
+@pytest.mark.parametrize(
+    "failure", [pytest.param(_raise_redis_error, id="redis-error"), pytest.param(_hang, id="hang")]
+)
+async def test_publish_succeeds_when_pass_cannot_be_written(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: Any,
+) -> None:
+    """기억을 남기지 못해도 이번 발행은 그대로 성공하고, 다음 발행은 다시 심사한다."""
+    monkeypatch.setattr(publish_filter_memo, "redis_client", SimpleNamespace(exists=redis_client.exists, set=failure))
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    resp = await _publish_twice(db_client, content, fake)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
+async def test_republish_unchanged_story_skips_filter_and_still_blurs(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """통과 뒤 칸 블러본을 만들지 못해 멈춘 발행을 다시 시도하면 심사는 건너뛰고 블러·발행은 끝까지 간다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, _, _ = await _make_publishable_story_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    version = await db_session.scalar(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    assert version is not None
+    late = Asset(
+        owner_user_id=user.id,
+        storage_key=f"assets/situational-image/{uuid.uuid4()}.png",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(late)
+    await db_session.flush()
+    _upload_test_thumbnail(late.storage_key)
+    cell = await _add_media_book_cell(db_session, version.id, late.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    _override_llm_client(fake)
+    try:
+        stalled = await db_client.post(f"/contents/{content.id}/publish")
+        _upload_test_image(late.storage_key)
+        retried = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert (stalled.status_code, retried.status_code) == (502, 200)
+    assert fake.calls == 1
+    await db_session.refresh(cell)
+    await db_session.refresh(version)
+    assert cell.blurred_asset_id is not None
+    assert version.version_number == 1
+
+
+async def test_republish_story_with_one_letter_changed_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, _, _, _ = await _make_publishable_story_draft(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def change_one_letter() -> None:
+        detail = await db_session.scalar(
+            sa.select(StoryVersionDetail)
+            .join(ContentVersion, ContentVersion.id == StoryVersionDetail.content_version_id)
+            .where(ContentVersion.content_id == content.id, ContentVersion.published_at.is_(None))
+        )
+        assert detail is not None
+        detail.rules = "폭력 묘사는 암시로만 한다!"
+        await db_session.commit()
+
+    resp = await _publish_twice(db_client, content, fake, change_one_letter)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+    assert fake.received_prompt is not None and "암시로만 한다!" in fake.received_prompt
