@@ -2335,6 +2335,60 @@
         }
       }
     },
+    "/admin/llm-usage": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Get Llm Usage",
+        "description": "LLM 호출 사용량 집계(일자 × call_site × 모델)와 단가표로 낸 추정 원가. `from`·`to` 는 KST\n날짜다 — 집계 키가 KST 하루라서, UTC 날짜로 자르는 `/admin/usage-metrics` 와 경계가 9시간\n어긋난다. 응답을 받은 호출만 세므로 실패한 판정은 호출 수에서 빠지고, 그래서 판정 비율이\n떨어지는 것이 조용한 판정 누락의 신호가 된다.",
+        "operationId": "get_llm_usage_admin_llm_usage_get",
+        "parameters": [
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date",
+              "title": "To"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminLlmUsageResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/assets/presigned-upload": {
       "post": {
         "tags": [
@@ -10585,6 +10639,190 @@
           "items"
         ],
         "title": "AdminLegalVersionsResponse"
+      },
+      "AdminLlmModelPrice": {
+        "properties": {
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "inputUsdPerMillion": {
+            "type": "number",
+            "title": "Inputusdpermillion"
+          },
+          "cachedInputUsdPerMillion": {
+            "type": "number",
+            "title": "Cachedinputusdpermillion"
+          },
+          "outputUsdPerMillion": {
+            "type": "number",
+            "title": "Outputusdpermillion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model",
+          "inputUsdPerMillion",
+          "cachedInputUsdPerMillion",
+          "outputUsdPerMillion"
+        ],
+        "title": "AdminLlmModelPrice"
+      },
+      "AdminLlmUsageResponse": {
+        "properties": {
+          "rows": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLlmUsageRow"
+            },
+            "type": "array",
+            "title": "Rows"
+          },
+          "totals": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLlmUsageRow"
+            },
+            "type": "array",
+            "title": "Totals"
+          },
+          "estimatedCostUsdTotal": {
+            "type": "number",
+            "title": "Estimatedcostusdtotal"
+          },
+          "unpricedCalls": {
+            "type": "integer",
+            "title": "Unpricedcalls"
+          },
+          "pricesAsOf": {
+            "type": "string",
+            "format": "date",
+            "title": "Pricesasof"
+          },
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/AdminLlmModelPrice"
+            },
+            "type": "array",
+            "title": "Prices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rows",
+          "totals",
+          "estimatedCostUsdTotal",
+          "unpricedCalls",
+          "pricesAsOf",
+          "prices"
+        ],
+        "title": "AdminLlmUsageResponse"
+      },
+      "AdminLlmUsageRow": {
+        "properties": {
+          "day": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day"
+          },
+          "callSite": {
+            "type": "string",
+            "title": "Callsite"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "calls": {
+            "type": "integer",
+            "title": "Calls"
+          },
+          "promptTokens": {
+            "type": "integer",
+            "title": "Prompttokens"
+          },
+          "cachedTokens": {
+            "type": "integer",
+            "title": "Cachedtokens"
+          },
+          "outputTokens": {
+            "type": "integer",
+            "title": "Outputtokens"
+          },
+          "thoughtsTokens": {
+            "type": "integer",
+            "title": "Thoughtstokens"
+          },
+          "totalTokens": {
+            "type": "integer",
+            "title": "Totaltokens"
+          },
+          "missingCalls": {
+            "type": "integer",
+            "title": "Missingcalls"
+          },
+          "inputTokens": {
+            "type": "integer",
+            "title": "Inputtokens"
+          },
+          "cacheHitRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cachehitrate"
+          },
+          "judgmentRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judgmentratio"
+          },
+          "estimatedCostUsd": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimatedcostusd"
+          }
+        },
+        "type": "object",
+        "required": [
+          "day",
+          "callSite",
+          "model",
+          "calls",
+          "promptTokens",
+          "cachedTokens",
+          "outputTokens",
+          "thoughtsTokens",
+          "totalTokens",
+          "missingCalls",
+          "inputTokens",
+          "cacheHitRate",
+          "judgmentRatio",
+          "estimatedCostUsd"
+        ],
+        "title": "AdminLlmUsageRow",
+        "description": "`day` 가 None 이면 조회 기간을 합친 줄이다. 날짜는 KST."
       },
       "AdminLoginRequest": {
         "properties": {

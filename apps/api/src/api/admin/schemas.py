@@ -529,3 +529,40 @@ class AdminPromptPreviewItem(CamelModel):
 
 class AdminPromptPreviewResponse(CamelModel):
     items: list[AdminPromptPreviewItem]
+
+
+class AdminLlmUsageRow(CamelModel):
+    """`day` 가 None 이면 조회 기간을 합친 줄이다. 날짜는 KST."""
+
+    day: date | None
+    call_site: str
+    model: str
+    calls: int
+    prompt_tokens: int
+    cached_tokens: int
+    output_tokens: int
+    thoughts_tokens: int
+    total_tokens: int
+    missing_calls: int
+    # 입력 토큰이 비어 온 호출(이미지가 실린 호출)까지 `total − 출력 − 사고` 로 복원한 입력 전체.
+    input_tokens: int
+    cache_hit_rate: float | None
+    judgment_ratio: float | None
+    estimated_cost_usd: float | None
+
+
+class AdminLlmModelPrice(CamelModel):
+    model: str
+    input_usd_per_million: float
+    cached_input_usd_per_million: float
+    output_usd_per_million: float
+
+
+class AdminLlmUsageResponse(CamelModel):
+    rows: list[AdminLlmUsageRow]
+    totals: list[AdminLlmUsageRow]
+    estimated_cost_usd_total: float
+    # 단가표에 없는 모델의 호출 수 — 0 이 아니면 위 합계가 그만큼 빠진 값이다.
+    unpriced_calls: int
+    prices_as_of: date
+    prices: list[AdminLlmModelPrice]

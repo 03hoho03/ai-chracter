@@ -1022,6 +1022,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/llm-usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Llm Usage
+         * @description LLM 호출 사용량 집계(일자 × call_site × 모델)와 단가표로 낸 추정 원가. `from`·`to` 는 KST
+         *     날짜다 — 집계 키가 KST 하루라서, UTC 날짜로 자르는 `/admin/usage-metrics` 와 경계가 9시간
+         *     어긋난다. 응답을 받은 호출만 세므로 실패한 판정은 호출 수에서 빠지고, 그래서 판정 비율이
+         *     떨어지는 것이 조용한 판정 누락의 신호가 된다.
+         */
+        get: operations["get_llm_usage_admin_llm_usage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assets/presigned-upload": {
         parameters: {
             query?: never;
@@ -4313,6 +4336,69 @@ export interface components {
         AdminLegalVersionsResponse: {
             /** Items */
             items: components["schemas"]["AdminLegalVersionItem"][];
+        };
+        /** AdminLlmModelPrice */
+        AdminLlmModelPrice: {
+            /** Model */
+            model: string;
+            /** Inputusdpermillion */
+            inputUsdPerMillion: number;
+            /** Cachedinputusdpermillion */
+            cachedInputUsdPerMillion: number;
+            /** Outputusdpermillion */
+            outputUsdPerMillion: number;
+        };
+        /** AdminLlmUsageResponse */
+        AdminLlmUsageResponse: {
+            /** Rows */
+            rows: components["schemas"]["AdminLlmUsageRow"][];
+            /** Totals */
+            totals: components["schemas"]["AdminLlmUsageRow"][];
+            /** Estimatedcostusdtotal */
+            estimatedCostUsdTotal: number;
+            /** Unpricedcalls */
+            unpricedCalls: number;
+            /**
+             * Pricesasof
+             * Format: date
+             */
+            pricesAsOf: string;
+            /** Prices */
+            prices: components["schemas"]["AdminLlmModelPrice"][];
+        };
+        /**
+         * AdminLlmUsageRow
+         * @description `day` 가 None 이면 조회 기간을 합친 줄이다. 날짜는 KST.
+         */
+        AdminLlmUsageRow: {
+            /** Day */
+            day: string | null;
+            /** Callsite */
+            callSite: string;
+            /** Model */
+            model: string;
+            /** Calls */
+            calls: number;
+            /** Prompttokens */
+            promptTokens: number;
+            /** Cachedtokens */
+            cachedTokens: number;
+            /** Outputtokens */
+            outputTokens: number;
+            /** Thoughtstokens */
+            thoughtsTokens: number;
+            /** Totaltokens */
+            totalTokens: number;
+            /** Missingcalls */
+            missingCalls: number;
+            /** Inputtokens */
+            inputTokens: number;
+            /** Cachehitrate */
+            cacheHitRate: number | null;
+            /** Judgmentratio */
+            judgmentRatio: number | null;
+            /** Estimatedcostusd */
+            estimatedCostUsd: number | null;
         };
         /** AdminLoginRequest */
         AdminLoginRequest: {
@@ -8791,6 +8877,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AdminPromptSetListResponse"];
+                };
+            };
+        };
+    };
+    get_llm_usage_admin_llm_usage_get: {
+        parameters: {
+            query: {
+                from: string;
+                to: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminLlmUsageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
