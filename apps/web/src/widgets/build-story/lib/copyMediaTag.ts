@@ -1,6 +1,6 @@
 import { toast } from "sonner";
 
-/** 칸의 표기를 복사하고 결과를 토스트로 알린다. 표의 칸 복사 버튼과 칸 상세의 표기 복사가 같은 문구를 쓴다. */
+/** 칸의 표기를 복사하고 결과를 토스트로 알린다(칸 상세의 표기 복사). */
 export async function copyMediaTag(tag: string) {
   try {
     await navigator.clipboard.writeText(tag);

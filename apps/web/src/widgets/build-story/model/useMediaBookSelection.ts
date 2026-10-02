@@ -2,7 +2,7 @@ import { createContext, useContext } from "react";
 
 import type { MediaBookValues } from "@/features/build-story";
 
-import type { MediaBookPosition, MediaBookSelectMethod } from "../ui/MediaBookGrid";
+import type { MediaBookPosition } from "../ui/MediaBookGrid";
 
 /** 고른 칸의 상세. 표의 칸 버튼이 `aria-controls` 로 가리키므로 표와 상세가 같은 값을 쓴다. */
 export const CELL_PANEL_ID = "media-book-cell-panel";
@@ -16,7 +16,7 @@ export const PROGRESS_ID = "media-book-progress";
 export type MediaBookSelection = {
   /** 마지막으로 고른 칸. 그 뒤 축이 지워졌을 수 있으니 화면에 쓸 때는 `resolveSelectedPosition` 을 거친다. */
   selected: MediaBookPosition | undefined;
-  select: (position: MediaBookPosition, method: MediaBookSelectMethod) => void;
+  select: (position: MediaBookPosition) => void;
   selectNext: (position: MediaBookPosition) => void;
   close: (position: MediaBookPosition) => void;
   /** 좁은 화면에서 상세를 둔 채 배치표 화면으로 돌아가 그 칸에 포커스를 둔다. */

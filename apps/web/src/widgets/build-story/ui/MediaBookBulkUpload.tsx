@@ -23,6 +23,7 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { createInOrderQueue } from "../lib/createInOrderQueue";
+import { MEDIA_BOOK_IMAGE_ACCEPT } from "../lib/mediaBookImageFile";
 import { runWithConcurrency } from "../lib/runWithConcurrency";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
@@ -160,7 +161,7 @@ export function MediaBookBulkUpload() {
             id={inputId}
             type="file"
             multiple
-            accept="image/png,image/jpeg,image/webp"
+            accept={MEDIA_BOOK_IMAGE_ACCEPT}
             className="sr-only"
             aria-describedby={helpId}
             aria-disabled={isUploading}
