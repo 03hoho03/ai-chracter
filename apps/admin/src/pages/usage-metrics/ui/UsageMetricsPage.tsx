@@ -10,6 +10,8 @@ import { CartesianGrid, Line, LineChart, XAxis, YAxis } from "recharts";
 
 import { useUsageMetricsQuery } from "@/entities/usage-metrics";
 
+import { LlmUsageSection } from "./LlmUsageSection";
+
 const chartConfig = {
   messageCount: {
     label: "메시지 전송량",
@@ -124,6 +126,8 @@ export function UsageMetricsPage({ from, to, onRangeChange }: UsageMetricsPagePr
           </div>
         </>
       )}
+
+      <LlmUsageSection from={from} to={to} />
     </main>
   );
 }
