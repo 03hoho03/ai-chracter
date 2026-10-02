@@ -180,7 +180,7 @@ function ChatMediaTagImage({ node, surface }: ChatMediaTagImageProps) {
   const cellId = node?.properties.dataCellId;
   const image = typeof cellId === "string" ? images?.[cellId] : undefined;
   if (image === undefined) return null;
-  return <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 그림" surface={surface} />;
+  return <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 이미지" surface={surface} />;
 }
 
 function collectText(node: HastNode): string {

@@ -32,12 +32,12 @@ function imageUnavailable(cellId: unknown) {
 describe("mediaBookPublishErrorMessage", () => {
   it("names the cell whose picture could not be processed", () => {
     expect(mediaBookPublishErrorMessage(imageUnavailable("c1"), MEDIA_BOOK)).toBe(
-      "미디어 북 '민아 / 옥상' 칸의 그림을 처리하지 못해 발행이 멈췄어요. 잠시 뒤 다시 발행하고, 같은 일이 반복되면 그 칸 그림을 다시 올려 주세요.",
+      "미디어 북 '민아 / 옥상' 칸의 이미지를 처리하지 못해 발행이 멈췄어요. 잠시 뒤 다시 발행하고, 같은 일이 반복되면 그 칸 이미지를 다시 올려 주세요.",
     );
   });
 
   it("still explains the failure when the cell is no longer in the form", () => {
-    expect(mediaBookPublishErrorMessage(imageUnavailable("gone"), MEDIA_BOOK)).toMatch(/^미디어 북 칸 그림 하나를 처리하지 못해/);
+    expect(mediaBookPublishErrorMessage(imageUnavailable("gone"), MEDIA_BOOK)).toMatch(/^미디어 북 칸 이미지 하나를 처리하지 못해/);
   });
 
   it("leaves other publish failures to the default message", () => {

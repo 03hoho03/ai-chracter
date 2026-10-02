@@ -45,6 +45,6 @@ export function MediaTagText({ text, images, className, surface }: MediaTagTextP
 function MediaTagTextImage({ image, surface }: MediaTagTextImageProps) {
   if (image === undefined) return null;
   return (
-    <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 그림" surface={surface} />
+    <MediaImageFrame url={image.url} width={image.width} height={image.height} alt="작품 속 이미지" surface={surface} />
   );
 }

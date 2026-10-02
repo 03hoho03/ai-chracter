@@ -94,8 +94,8 @@ export type CellImageRefusal = "cap" | "missing-axis" | "renamed-axis";
 
 const CELL_IMAGE_REFUSAL_MESSAGE = {
   cap: `미디어 북 이미지는 ${MAX_MEDIA_BOOK_CELLS}장까지 넣을 수 있어요`,
-  "missing-axis": "그림을 올리는 동안 이 칸의 인물이나 장면이 지워져서 넣지 않았어요",
-  "renamed-axis": "그림을 올리는 동안 이 칸의 인물이나 장면 이름이 바뀌어서 넣지 않았어요",
+  "missing-axis": "이미지를 올리는 동안 이 칸의 인물이나 장면이 지워져서 넣지 않았어요",
+  "renamed-axis": "이미지를 올리는 동안 이 칸의 인물이나 장면 이름이 바뀌어서 넣지 않았어요",
 } as const satisfies Record<CellImageRefusal, string>;
 
 export function cellImageRefusalMessage(reason: CellImageRefusal): string {

@@ -11,6 +11,12 @@ export type MediaBookThumbnails = {
   rememberUploadedFile: (assetId: string, file: File) => string;
   /** 생성 이미지 목록에서 고른 그림의 서명 주소를 그 자산의 썸네일로 기억한다. */
   rememberPickedUrl: (assetId: string, url: string) => void;
+  /**
+   * 빌더 셸이 내려가면 끊기는 신호. 이름은 썸네일 저장소지만 셸 수명을 아는 유일한 미디어 북 자리라, 탭보다 오래
+   * 사는 미디어 북 작업(일괄 업로드)이 여기서 멈출 때를 안다 — 탭을 옮기는 것은 셸이 남아 있어 끊기지 않는다.
+   * 작업을 시작할 때 한 번 받아 들고 다닌다.
+   */
+  getShellSignal: () => AbortSignal;
 };
 
 /**
@@ -22,10 +28,18 @@ export type MediaBookThumbnails = {
 export function useMediaBookThumbnailsStore(draft: StoryDraftContent): MediaBookThumbnails {
   const entriesRef = useRef(new Map<string, ThumbnailUrlEntry>());
   const objectUrlsRef = useRef<string[]>([]);
+  const shellLifetimeRef = useRef<AbortController>(undefined);
 
   useEffect(() => {
     const objectUrls = objectUrlsRef.current;
     return () => objectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }, []);
+
+  // 효과 안에서 만든다 — 개발 모드의 마운트→언마운트→재마운트가 첫 신호를 끊어도 다시 마운트될 때 새 신호가 선다.
+  useEffect(() => {
+    const controller = new AbortController();
+    shellLifetimeRef.current = controller;
+    return () => controller.abort();
   }, []);
 
   const serverCells = draft.mediaBook?.cells;
@@ -54,6 +68,8 @@ export function useMediaBookThumbnailsStore(draft: StoryDraftContent): MediaBook
       rememberPickedUrl: (assetId, url) => {
         entriesRef.current.set(assetId, { url, receivedAt: Date.now(), canExpire: true });
       },
+      // 마운트 효과가 돌기 전에는 사용자가 무엇도 시작할 수 없어 비어 있을 일이 없다 — 타입만 채운다.
+      getShellSignal: () => shellLifetimeRef.current?.signal ?? new AbortController().signal,
     }),
     [offeredUrlByAssetId],
   );
