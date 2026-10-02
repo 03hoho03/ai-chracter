@@ -442,3 +442,32 @@ async def test_register_situational_image_records_blurred_asset_dimensions(
     blurred = await db_session.get(Asset, uuid.UUID(resp.json()["blurredAssetId"]))
     assert blurred is not None
     assert (blurred.width, blurred.height) == (30, 20)
+
+
+async def test_register_situational_image_marks_content_as_having_unpublished_changes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """초안에 이미지를 등록하는 것도 발행본과 달라지는 변경이다 — 초안 저장(PATCH)처럼 작품에 '발행 안 한 변경'
+    표시를 세워야 작가 화면이 발행을 권한다. 플래그는 컬럼 단위 select 로 DB 에서 읽는다(세션 캐시를 보지 않게)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    version = await _make_draft_version(db_session, creator_user_id=user.id)
+    asset = await _make_ready_asset(db_session, user.id)
+    await db_session.commit()
+    flag = sa.select(Content.has_unpublished_changes).where(Content.id == version.content_id)
+    assert await db_session.scalar(flag) is False
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.post(
+        f"/assets/{asset.id}/register-situational-image",
+        json={
+            "entityId": str(uuid.uuid4()),
+            "contentVersionId": str(version.id),
+            "triggerCondition": "문을 열었을 때",
+            "order": 0,
+        },
+    )
+
+    assert resp.status_code == 200
+    assert await db_session.scalar(flag) is True

@@ -7941,7 +7941,7 @@
           "chat"
         ],
         "summary": "Get Story Image Archive",
-        "description": "스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재\n발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로\n쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.\n\n대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은\n작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.\n\n이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를\n시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다.",
+        "description": "스토리 미디어 북 보관함. `id` 는 스토리 콘텐츠의 물리적 PK 이고(캐릭터 보관함과 같은 관례), 칸은 현재\n발행본의 것을 축 순서(인물 → 장면)로 싣는다. 본 칸 판정은 `story_media_exposures` — 사용자+스토리 단위로\n쌓이고 칸 entity_id 라 버전이 바뀌어도 이어진다.\n\n대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은\n작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.\n\n스토리가 아닌 작품과 이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는\n사용자(공개였을 때 대화를 시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두\n없는 작품과 같은 404 다.",
         "operationId": "get_story_image_archive_stories__id__image_archive_get",
         "parameters": [
           {
@@ -7989,7 +7989,7 @@
           "chat"
         ],
         "summary": "Get Image Archive",
-        "description": "`id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와\n동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,\n노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`\n존재 여부로 사용자+캐릭터 단위 누적 판정한다.",
+        "description": "`id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와\n동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,\n노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`\n존재 여부로 사용자+캐릭터 단위 누적 판정한다.\n\n캐릭터가 아닌 작품과 이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는\n사용자(공개였을 때 대화를 시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두\n없는 캐릭터와 같은 404 다.",
         "operationId": "get_image_archive_characters__id__image_archive_get",
         "parameters": [
           {

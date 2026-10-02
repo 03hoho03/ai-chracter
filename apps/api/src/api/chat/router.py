@@ -2542,9 +2542,26 @@ async def get_image_archive(
     """`id`는 캐릭터 콘텐츠의 물리적 PK(`GET /contents/{id}`와
     동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
     노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
-    존재 여부로 사용자+캐릭터 단위 누적 판정한다."""
+    존재 여부로 사용자+캐릭터 단위 누적 판정한다.
+
+    캐릭터가 아닌 작품과 이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는
+    사용자(공개였을 때 대화를 시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두
+    없는 캐릭터와 같은 404 다."""
     content = await db.get(Content, id)
-    if content is None or content.current_published_version_id is None:
+    if (
+        content is None
+        or content.type != ContentType.CHARACTER
+        or content.current_published_version_id is None
+        or content.moderation_status != ModerationStatus.NORMAL
+        or (
+            content.visibility == ContentVisibility.PRIVATE
+            and content.creator_user_id != user_id
+            and await db.scalar(
+                select(ChatRoom.id).where(ChatRoom.user_id == user_id, ChatRoom.content_id == content.id).limit(1)
+            )
+            is None
+        )
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     images = (
@@ -2628,11 +2645,13 @@ async def get_story_image_archive(
     대화 중 판정에서 빠진 칸 중 첫 메시지·에필로그에도 나오지 않는 칸은 볼 길이 없어 빼되, 이미 본 칸은
     작가가 나중에 판정에서 뺐어도 남긴다. 못 본 칸은 블러본만 서명한다 — 원본 키는 응답 어디에도 나가지 않는다.
 
-    이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는 사용자(공개였을 때 대화를
-    시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두 없는 작품과 같은 404 다."""
+    스토리가 아닌 작품과 이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는
+    사용자(공개였을 때 대화를 시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두
+    없는 작품과 같은 404 다."""
     content = await db.get(Content, id)
     if (
         content is None
+        or content.type != ContentType.STORY
         or content.current_published_version_id is None
         or content.moderation_status != ModerationStatus.NORMAL
         or (
