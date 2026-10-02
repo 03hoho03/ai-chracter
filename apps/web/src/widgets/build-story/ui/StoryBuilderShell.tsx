@@ -3,6 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
+import { Grid3x3 } from "lucide-react";
 import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
@@ -51,6 +52,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
+import { MediaBookGridPane } from "./MediaBookGridPane";
 import { MediaBookSelectionProvider } from "./MediaBookSelectionProvider";
 import { MediaBookTab } from "./MediaBookTab";
 import { MediaBookThumbnailsProvider } from "./MediaBookThumbnailsProvider";
@@ -241,7 +243,8 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상
   // isPreviewOpen으로 렌더 트리 자체를 분기하지 않는다. 매 렌더 같은 트리 위치(BuilderLayout의
   // preview 슬롯)에 같은 노드를 그려 넣어 React가 리마운트하지 않게 하고, lg 미만에서 그 노드를
-  // 화면에 보일지는 BuilderLayout이 CSS로만 정한다(전체화면 토글).
+  // 화면에 보일지는 BuilderLayout이 CSS로만 정한다(전체화면 토글). 미디어 북 탭에서는 그 열에 배치표가
+  // 서는데, 대화 노드는 그때도 같은 자리(아래 슬롯의 첫 자식)에 숨겨 둔 채 남겨 대화·입력·스트림이 이어진다.
   //
   // `kind`는 활성 탭에서 파생한다(TABS[].preview). `TABS.find`가
   // undefined를 돌려줄 수 있는 건 타입상 뿐이다 — activeTab의 타입(StoryBuilderTab)이 TABS에서
@@ -285,6 +288,9 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
             guidePath="/guide/story"
             isPublishing={isPublishing}
             isPreviewOpen={isPreviewOpen}
+            // 미디어 북 탭에서는 이 버튼이 여는 화면이 배치표라 그 화면의 머리와 같은 이름을 단다.
+            previewLabel={activeTab === "mediaBook" ? "배치표" : undefined}
+            previewIcon={activeTab === "mediaBook" ? <Grid3x3 aria-hidden className="size-3.5" /> : undefined}
             onPreview={() => setIsPreviewOpen((prev) => !prev)}
             onSaveNow={() => void handleSaveNow()}
             onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
@@ -295,7 +301,17 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
         {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
         <MediaBookSelectionProvider>
-          <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+          <BuilderLayout
+            isPreviewOpen={isPreviewOpen}
+            preview={
+              // 대화 노드는 언제나 첫 자식 자리에 있어 탭을 바꿔도 리마운트되지 않는다(래퍼를 조건부로 그리면 대화가
+              // 사라진다). 배치표는 둘째 자리에 미디어 북 탭일 때만 그려, 숨은 칸 버튼이 다른 탭에 남지 않는다.
+              <>
+                <div className={activeTab === "mediaBook" ? "hidden" : undefined}>{previewNode}</div>
+                {activeTab === "mediaBook" && <MediaBookGridPane onClose={() => setIsPreviewOpen(false)} />}
+              </>
+            }
+          >
             {rejectionReason !== undefined && draftId !== undefined && (
               <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
                 <div>

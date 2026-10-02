@@ -6,12 +6,16 @@ import { CREATION_GUIDE_TOPIC_IDS, type CreationGuidePath, creationGuidePath } f
 
 import { BuilderTopBarActions } from "./BuilderTopBarActions";
 
-function renderActions(guidePath: CreationGuidePath): string {
+function renderActions(
+  guidePath: CreationGuidePath,
+  preview: { isPreviewOpen?: boolean; previewLabel?: string } = {},
+): string {
   return renderToStaticMarkup(
     createElement(BuilderTopBarActions, {
       guidePath,
       isPublishing: false,
-      isPreviewOpen: false,
+      isPreviewOpen: preview.isPreviewOpen ?? false,
+      previewLabel: preview.previewLabel,
       onPreview: () => {},
       onSaveNow: () => {},
       onPublish: () => {},
@@ -21,6 +25,11 @@ function renderActions(guidePath: CreationGuidePath): string {
 
 function guideLinkOf(html: string): string {
   const match = /<a [^>]*>/.exec(html);
+  return match?.[0] ?? "";
+}
+
+function previewButtonOf(html: string): string {
+  const match = /<button [^>]*aria-expanded[^>]*>/.exec(html);
   return match?.[0] ?? "";
 }
 
@@ -41,5 +50,21 @@ describe("BuilderTopBarActions guide link", () => {
   // 좁은 화면에서는 아이콘만 남으므로 접근 가능한 이름이 따로 있어야 한다.
   it("has an accessible name that says it opens a new tab", () => {
     expect(guideLinkOf(renderActions(STORY_GUIDE_PATH))).toContain('aria-label="작성 가이드 (새 탭에서 열림)"');
+  });
+});
+
+describe("BuilderTopBarActions preview toggle", () => {
+  // 캐릭터 빌더와 스토리 빌더의 다른 탭은 이름을 넘기지 않는다 — 지금까지와 같은 "미리보기" 여야 한다.
+  it("is called 미리보기 unless the shell names it", () => {
+    expect(previewButtonOf(renderActions(STORY_GUIDE_PATH))).toContain('aria-label="미리보기"');
+    expect(previewButtonOf(renderActions(STORY_GUIDE_PATH, { isPreviewOpen: true }))).toContain('aria-label="미리보기 닫기"');
+  });
+
+  // 여는 화면이 대화가 아니면 버튼이 그 화면의 이름을 말해야 누른 결과와 약속이 맞는다.
+  it("uses the name the shell passes, both closed and open", () => {
+    expect(previewButtonOf(renderActions(STORY_GUIDE_PATH, { previewLabel: "배치표" }))).toContain('aria-label="배치표"');
+    expect(
+      previewButtonOf(renderActions(STORY_GUIDE_PATH, { isPreviewOpen: true, previewLabel: "배치표" })),
+    ).toContain('aria-label="배치표 닫기"');
   });
 });

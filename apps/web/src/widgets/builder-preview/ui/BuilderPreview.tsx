@@ -6,8 +6,8 @@ import type { ContentCardProps, ContentType } from "@/entities/content";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import { useSessionQuery } from "@/entities/session";
 import type { MediaTagImages } from "@/entities/media-book";
+import { PreviewCloseHeader } from "@/features/build-common";
 
-import { PreviewCloseHeader } from "./PreviewCloseHeader";
 import { PreviewSessionView } from "./PreviewSessionView";
 
 export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
@@ -122,7 +122,7 @@ function CardPreview<TFieldValues extends FieldValues>({
     // 늘려 닫기 버튼이 스크롤 밖으로 사라졌다. `PreviewSessionView`가 쓰는 패턴대로 조상에 기대지
     // 않고 자기 높이를 직접 확정한다.
     <div className="flex h-below-header flex-col">
-      <PreviewCloseHeader onClose={onClose} />
+      <PreviewCloseHeader title="미리보기" onClose={onClose} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-4 sm:px-6 py-4">
         {/* 목록 로딩·실패·빈 응답이어도 내 카드는 반드시 그린다 — 프리뷰의 주인공은 내 카드이고

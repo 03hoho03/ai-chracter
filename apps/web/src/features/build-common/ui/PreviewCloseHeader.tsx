@@ -3,7 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { ChevronLeft } from "lucide-react";
 
 /**
- * 카드·대화 프리뷰가 함께 쓰는 헤더 크롬. 두 프리뷰가 각자 들고 있던 동일한
+ * 빌더 미리보기 열의 머리(카드·대화 프리뷰와 미디어 북 탭의 배치표가 함께 쓴다). 두 프리뷰가 각자 들고 있던 동일한
  * `border-b`+패딩 래퍼(`BuilderPreview.tsx`의 `CardPreview`, `PreviewSessionView.tsx`)를 여기 하나로
  * 모은다 — 대화 쪽에만 있던 [미리보기 초기화] 버튼이 `action` 슬롯으로 들어오면서 헤더 높이가 탭마다
  * 12px씩 출렁였다(사용자 피드백). 콘텐츠 행을 `h-8`(32px)로 고정해 `action`이 있든 없든 같은
@@ -18,14 +18,23 @@ import { ChevronLeft } from "lucide-react";
  *
  * `onClose`는 lg 미만 전체화면 모드에서만 온다 — lg 이상(2단)에서는 프리뷰가 상시 노출이라 닫을
  * 대상이 아니므로 버튼만 `lg:hidden`으로 숨긴다(BuilderLayout의 다른 lg 분기와 같은 원칙: 트리에는
- * 남고 화면에만 없다). "미리보기" 라벨은 onClose 유무와 무관하게 항상 보인다.
+ * 남고 화면에만 없다). 제목(`title`)은 onClose 유무와 무관하게 항상 보인다 — 열의 내용이 탭에 따라 바뀌므로(미리보기 ·
+ * 배치표) 그 한 단어가 지금 무엇을 보고 있는지 알린다.
  *
  * 이 버튼의 `aria-label`이 "빌더로 돌아가기"인 이유: 상단바의
  * 프리뷰 토글도 같은 구간(`lg:hidden`)에 보여 둘 다 "미리보기 닫기"면 스크린리더에 같은 항목이 연달아
  * 읽힌다. apps/web/CLAUDE.md의 "같은 목적지로 가는 진입점이 한 화면에 둘이면 라벨로 가른다"에 따라
  * 아이콘(ChevronLeft)이 이미 말하는 뒤로 가기 쪽으로 이 버튼만 갈랐다.
  */
-export function PreviewCloseHeader({ onClose, action }: { onClose?: () => void; action?: ReactNode }) {
+export function PreviewCloseHeader({
+  title,
+  onClose,
+  action,
+}: {
+  title: string;
+  onClose?: () => void;
+  action?: ReactNode;
+}) {
   return (
     <header className="shrink-0 border-b border-border px-4 sm:px-6 py-3">
       <div className="mx-auto flex h-8 max-w-5xl items-center justify-between gap-3">
@@ -41,7 +50,7 @@ export function PreviewCloseHeader({ onClose, action }: { onClose?: () => void; 
               <ChevronLeft aria-hidden className="size-4" />
             </Button>
           )}
-          <span className="text-sm font-semibold text-foreground">미리보기</span>
+          <span className="text-sm font-semibold text-foreground">{title}</span>
         </div>
         {action}
       </div>

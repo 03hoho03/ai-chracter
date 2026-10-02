@@ -12,3 +12,4 @@ export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";
 export { BuilderTopBarActions } from "./ui/BuilderTopBarActions";
+export { PreviewCloseHeader } from "./ui/PreviewCloseHeader";
