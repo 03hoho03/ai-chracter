@@ -43,7 +43,8 @@ const LABEL_FIELDS: { key: LabelFieldKey; id: string; title: string; hint: strin
 const UNUSED_LABELS_BY_LANE: Record<PromptLane, readonly LabelFieldKey[]> = {
   story: ["characterAssistantLabel"],
   character: ["storyAssistantLabel", "storyExampleLabel"],
-  publish_filter: ["storyAssistantLabel"],
+  // 발행 심사는 이미지 목록만 싣고 대화 줄을 조립하지 않아 라벨을 하나도 읽지 않는다.
+  publish_filter: ["userLabel", "storyAssistantLabel", "storyExampleLabel", "characterAssistantLabel"],
 };
 
 type LabelsCardProps = {

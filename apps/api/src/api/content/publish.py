@@ -1,7 +1,6 @@
 import uuid
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
-from typing import Any
 
 from pydantic import BaseModel
 
@@ -14,7 +13,7 @@ from api.content.schemas import (
 )
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentVersion
-from api.db.models.prompt import PromptSection, PromptSet
+from api.db.models.prompt import PromptSection
 from api.db.models.story import (
     Ending,
     KeywordNote,
@@ -71,37 +70,21 @@ class PublishFilterResult(BaseModel):
     reason: str | None
 
 
-def build_character_publish_filter_prompt(
-    *,
-    prompt_set: PromptSet,
-    sections: Sequence[PromptSection],
-    name: str,
-    one_liner: str,
-    intro: str,
-    example_dialogues: list[dict[str, Any]],
-    character_prompt: str,
-    detail_description: str,
-) -> str:
-    """텍스트 검열 지시문 — 첨부된 이미지(대표이미지/
-    상황별이미지)는 같은 LLMClient.generate_structured() 호출의 멀티모달 파트로 함께
-    전달되므로(images 인자), 이 프롬프트가 그 이미지들도 함께 심사하도록 명시한다.
+def _image_lines(labels: Sequence[str]) -> str:
+    """심사 프롬프트의 이미지 목록 줄. 번호는 첨부 이미지 안에서의 1부터 센 자리라, 판정 사유가 그 번호나 라벨로
+    그림을 가리킬 수 있다."""
+    return "\n".join(f"{position}. {label}" for position, label in enumerate(labels, start=1))
 
-    `[예시 대화]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도 `prompt_set`에서 읽는다.
-    """
-    dialogue_lines = "\n".join(
-        f"- {prompt_set.user_label}: {pair['userLine']} / {prompt_set.character_assistant_label}: "
-        f"{pair['characterLine']}"
-        for pair in example_dialogues
+
+def build_character_publish_filter_prompt(*, sections: Sequence[PromptSection], situational_image_count: int) -> str:
+    """발행 심사는 첨부 이미지만 본다 — 이미지는 같은 `LLMClient.generate_structured()` 호출의 멀티모달
+    파트(`images` 인자)로 전달되고, 프롬프트에는 작가가 쓴 글을 싣지 않고 그 이미지들의 목록 라벨만 싣는다.
+    첨부 순서는 대표 이미지 한 장, 그 뒤로 상황 이미지 `situational_image_count` 장이다 — 호출부가 이미지를
+    실은 것과 같은 시퀀스에서 개수를 세어야 라벨과 그림이 짝을 이룬다."""
+    labels = ["대표 이미지", *(f"상황 이미지 {index}" for index in range(1, situational_image_count + 1))]
+    return render_prompt_channel(
+        sections, channel="publish_filter", scope="character", values={"image_lines": _image_lines(labels)}
     )
-    values = {
-        "name": name,
-        "one_liner": one_liner,
-        "intro": intro,
-        "dialogue_lines": dialogue_lines,
-        "character_prompt": character_prompt,
-        "detail_description": detail_description,
-    }
-    return render_prompt_channel(sections, channel="publish_filter", scope="character", values=values)
 
 
 def validate_story_publish(
@@ -124,7 +107,7 @@ def validate_story_publish(
 
     미디어 북은 자동저장이 이미 칸 수와 축 참조를 막지만 발행이 마지막 관문이다. 칸 수 상한을 넘으면
     `mediaBook.cells`, 그 버전에 없는 인물·장면을 가리키는 칸이 하나라도 있으면 `mediaBook.orphanCells` 를 한 번씩
-    알린다 — 축 참조에는 FK 가 없고, 그런 칸은 이름이 없어 심사 줄도 만들 수 없다. 고아 칸은 빌더 화면에 나오지
+    알린다 — 축 참조에는 FK 가 없고, 그런 칸은 이름이 없어 심사 이미지 라벨도 만들 수 없다. 고아 칸은 빌더 화면에 나오지
     않아 칸 하나하나를 가리킬 수 없고, 미디어 북을 한 번 다시 저장하면 지워진다.
 
     키워드북은 자동저장이 빈 노트(노트 추가 직후)를 받아 주므로 여기서 막는다. 상시가 아닌 노트에 공백 아닌 키워드가
@@ -223,65 +206,20 @@ def draft_dangling_stat_rule_paths(starting_setups: Sequence[StartingSetupDraftI
 
 @dataclass(frozen=True)
 class MediaBookFilterCell:
-    """발행 심사에 싣는 미디어 북 칸 하나의 글. 대화 중 칸 판정 후보(`MediaCellCandidate`)와 따로 두는 이유는
-    해금 힌트다 — 힌트는 보관함에서 다른 플레이어에게 보이는 글이라 심사하지만, 판정 근거는 아니라 판정에는 싣지
-    않는다."""
+    """발행 심사 이미지 목록에서 미디어 북 칸 그림 하나를 가리키는 이름. 대화 중 칸 판정 후보(`MediaCellCandidate`)와
+    따로 두는 이유는 심사에 필요한 것이 라벨뿐이라서다 — 칸의 상황 설명·해금 힌트는 심사하지 않는다."""
 
     person: str
     scene: str
-    situation_description: str
-    unlock_hint: str
 
 
 def build_story_publish_filter_prompt(
-    *,
-    prompt_set: PromptSet,
-    sections: Sequence[PromptSection],
-    name: str,
-    one_liner: str,
-    setting_text: str | None,
-    development_example: str | None,
-    custom_prompt: str | None,
-    development_examples: list[dict[str, Any]],
-    user_goal: str | None,
-    rules: str | None,
-    detail_description: str,
-    starting_setups: Sequence[StartingSetup],
-    media_cells: Sequence[MediaBookFilterCell],
+    *, sections: Sequence[PromptSection], media_cells: Sequence[MediaBookFilterCell]
 ) -> str:
-    """첨부 이미지는 대표 이미지와, 그 뒤로 미디어 북 칸마다 축소본 한 장씩이다 — 호출부가 같은
-    `generate_structured` 호출의 `images` 인자로 함께 전달한다. 칸 그림은 `media_cells` 와 같은 순서로 실어야
-    프롬프트의 칸 줄(`- 인물/장면: 상황 설명 (해금 힌트: …)`)과 짝이 맞는다. 칸 이름·상황 설명·해금 힌트도 작성자가
-    쓴 글이라 심사한다. 상황 설명·힌트가 빈 칸은 그 부분을 빼고(빈 값을 내용처럼 보이게 하지 않는다), 칸이 없으면
-    값이 비어 섹션째 빠진다.
-
-    `developmentExamples`/`userGoal`/`rules`도 창작자가 적는 텍스트라
-    `development_example`과 함께 심사 대상에 넣는다(발행 필수 항목이 아니라는 것과는 별개 — 값이
-    있으면 걸러야 한다). `[전개 예시(쌍)]` 목록의 화자 라벨은 코드가 조립하는 줄 안에서도
-    `prompt_set`에서 읽는다 — 전개 예시 자리는 `story_example_label`("서술자")을 쓴다.
-    """
-    example_lines = "\n".join(
-        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
-        for pair in development_examples
+    """발행 심사는 첨부 이미지만 본다 — 첨부는 대표 이미지와, 그 뒤로 미디어 북 칸마다 축소본 한 장씩이고 호출부가
+    같은 `generate_structured` 호출의 `images` 인자로 함께 전달한다. 프롬프트에는 작가가 쓴 글을 싣지 않고 이미지
+    목록 라벨만 싣는다. 칸 그림은 `media_cells` 와 같은 순서로 실어야 `미디어 북 {인물}·{장면}` 라벨과 짝이 맞는다."""
+    labels = ["대표 이미지", *(f"미디어 북 {cell.person}·{cell.scene}" for cell in media_cells)]
+    return render_prompt_channel(
+        sections, channel="publish_filter", scope="story", values={"image_lines": _image_lines(labels)}
     )
-    setup_lines = "\n".join(f"- {setup.name}: {setup.prologue}" for setup in starting_setups)
-    media_book_lines = "\n".join(
-        f"- {cell.person}/{cell.scene}"
-        + (f": {cell.situation_description}" if cell.situation_description else "")
-        + (f" (해금 힌트: {cell.unlock_hint})" if cell.unlock_hint else "")
-        for cell in media_cells
-    )
-    values = {
-        "name": name,
-        "one_liner": one_liner,
-        "setting_text": setting_text or "",
-        "development_example": development_example or "",
-        "custom_prompt": custom_prompt or "",
-        "rules": rules or "",
-        "user_goal": user_goal or "",
-        "example_lines": example_lines,
-        "detail_description": detail_description,
-        "setup_lines": setup_lines,
-        "media_book_lines": media_book_lines,
-    }
-    return render_prompt_channel(sections, channel="publish_filter", scope="story", values=values)

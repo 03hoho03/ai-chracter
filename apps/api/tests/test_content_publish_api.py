@@ -1,6 +1,7 @@
 import asyncio
 import io
 import logging
+import re
 import threading
 import time
 import uuid
@@ -360,6 +361,11 @@ class _FakeLLMClient(LLMClient):
         return self.result
 
 
+def _image_label_lines(prompt: str) -> list[str]:
+    """심사 프롬프트의 이미지 목록 줄(`1. 대표 이미지` 꼴)만 순서대로 뽑는다."""
+    return [line for line in prompt.splitlines() if re.match(r"\d+\. ", line)]
+
+
 async def test_publish_requires_login(db_client: httpx.AsyncClient) -> None:
     resp = await db_client.post(f"/contents/{uuid.uuid4()}/publish")
     assert resp.status_code == 401
@@ -514,8 +520,18 @@ async def test_publish_passes_thumbnail_and_situational_images_to_filter(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    content, _version, _thumbnail, _image = await _make_publishable_character_draft(
+    content, version, _thumbnail, _image = await _make_publishable_character_draft(
         db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    second_asset = await _make_ready_asset(db_session, owner_user_id=user.id)
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=version.id,
+            image_asset_id=second_asset.id,
+            trigger_condition="비가 내릴 때",
+            order=1,
+        )
     )
     await db_session.commit()
     await _login_as(db_client, user.id)
@@ -529,12 +545,31 @@ async def test_publish_passes_thumbnail_and_situational_images_to_filter(
 
     assert resp.status_code == 200
     assert fake.received_images is not None
-    assert len(fake.received_images) == 2
+    assert len(fake.received_images) == 3
     for _data, mime_type in fake.received_images:
         assert mime_type == "image/png"
     assert fake.received_prompt is not None
-    assert "아리아" in fake.received_prompt
-    assert "너는 아리아다." in fake.received_prompt
+    assert _image_label_lines(fake.received_prompt) == ["1. 대표 이미지", "2. 상황 이미지 1", "3. 상황 이미지 2"]
+
+
+async def test_publish_character_filter_prompt_carries_no_creator_text(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행 심사는 그림만 본다 — 작가가 쓴 글(이름·소개·예시 대화·프롬프트·상세 설명·상황 이미지 조건)은
+    프롬프트에 하나도 실리지 않는다. 글은 공개 뒤 신고로만 걸러진다."""
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_prompt is not None
+    for creator_text in ("아리아", "한 줄 소개", "안녕하세요", "반가워", "너는 아리아다.", "상세 설명", "사용자가 인사할 때"):
+        assert creator_text not in fake.received_prompt
 
 
 async def test_publish_confirms_transaction_and_clones_draft(
@@ -807,9 +842,13 @@ async def test_publish_story_passes_thumbnail_to_filter(
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    content, _version, _thumbnail, _setup, _ending, _stat_def = await _make_publishable_story_draft(
+    content, version, _thumbnail, _setup, _ending, _stat_def = await _make_publishable_story_draft(
         db_session, creator_user_id=user.id, genre_id=genre.id
     )
+    detail = await db_session.get(StoryVersionDetail, version.id)
+    assert detail is not None
+    detail.custom_prompt = "커스텀 지시문"
+    detail.development_example = "옛 전개 예시"
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -826,8 +865,21 @@ async def test_publish_story_passes_thumbnail_to_filter(
     _data, mime_type = fake.received_images[0]
     assert mime_type == "image/png"
     assert fake.received_prompt is not None
-    assert "잃어버린 도시" in fake.received_prompt
-    assert "세계관 설명" in fake.received_prompt
+    assert _image_label_lines(fake.received_prompt) == ["1. 대표 이미지"]
+    for creator_text in (
+        "잃어버린 도시",
+        "한 줄 소개",
+        "세계관 설명",
+        "커스텀 지시문",
+        "옛 전개 예시",
+        "어서오세요",
+        "용을 물리친다",
+        "폭력 묘사는 암시로만 한다",
+        "시작설정1",
+        "프롤로그",
+        "상세 설명",
+    ):
+        assert creator_text not in fake.received_prompt
 
 
 async def test_publish_story_confirms_transaction_and_clones_draft(
@@ -1690,11 +1742,11 @@ async def test_publish_story_sends_media_cell_thumbnails_to_filter(
     ]
 
 
-async def test_publish_story_filter_prompt_includes_media_book_names_and_descriptions(
+async def test_publish_story_filter_prompt_labels_media_book_cells_by_name_only(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """칸의 인물·장면 이름·상황 설명·해금 힌트도 작성자가 쓴 글이라 심사 대상이다 — 힌트는 보관함에서 다른
-    플레이어에게 보인다. 빈 부분은 줄에서 빠진다. 대화 노출 제외 칸(준/교실)의 줄도 있다."""
+    """칸 그림은 프롬프트의 이미지 목록에서 인물·장면 이름 라벨로 가리킨다. 라벨은 실린 그림과 같은 축 순서이고
+    줄 수도 그림 수와 같다. 칸의 상황 설명·해금 힌트는 싣지 않는다. 대화 노출 제외 칸(준/교실)의 라벨도 있다."""
     content, _, _, _ = await _story_with_media_cells(db_session, db_client)
 
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
@@ -1705,14 +1757,12 @@ async def test_publish_story_filter_prompt_includes_media_book_names_and_descrip
         _clear_llm_override()
 
     assert resp.status_code == 200
-    assert fake.received_prompt is not None
-    lines = fake.received_prompt.splitlines()
-    cell_lines = [line for line in lines if line.startswith("- 민아/") or line.startswith("- 준/")]
-    assert cell_lines == [
-        "- 민아/교실: 창가에서 웃는다 (해금 힌트: 첫 만남)",
-        "- 민아/옥상: 난간에 기대 선다",
-        "- 준/교실 (해금 힌트: 비 오는 날)",
-    ]
+    assert fake.received_prompt is not None and fake.received_images is not None
+    labels = _image_label_lines(fake.received_prompt)
+    assert labels == ["1. 대표 이미지", "2. 미디어 북 민아·교실", "3. 미디어 북 민아·옥상", "4. 미디어 북 준·교실"]
+    assert len(labels) == len(fake.received_images)
+    for cell_text in ("창가에서 웃는다", "첫 만남", "난간에 기대 선다", "비 오는 날"):
+        assert cell_text not in fake.received_prompt
 
 
 async def test_publish_story_fails_closed_when_media_cell_thumbnail_is_missing(
@@ -2134,9 +2184,10 @@ async def test_republish_unchanged_character_skips_filter_and_still_publishes(
     assert published is not None and published.version_number == 2
 
 
-async def test_republish_character_with_one_letter_changed_rescreens(
+async def test_republish_character_with_only_text_changed_skips_filter(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
+    """심사는 그림만 보므로 글만 고친 재발행은 렌더된 심사 입력이 같아 지난 통과를 그대로 쓴다."""
     content, _, _, _ = await _publishable_character(db_session, db_client)
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
 
@@ -2148,8 +2199,8 @@ async def test_republish_character_with_one_letter_changed_rescreens(
     resp = await _publish_twice(db_client, content, fake, change_one_letter)
 
     assert resp.status_code == 200
-    assert fake.calls == 2
-    assert fake.received_prompt is not None and "너는 아리아야." in fake.received_prompt
+    assert resp.json()["versionNumber"] == 2
+    assert fake.calls == 1
 
 
 async def test_republish_character_with_replaced_image_bytes_rescreens(
@@ -2460,9 +2511,10 @@ async def test_republish_unchanged_story_skips_filter_and_still_blurs(
     assert version.version_number == 1
 
 
-async def test_republish_story_with_one_letter_changed_rescreens(
+async def test_republish_story_with_only_text_changed_skips_filter(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
+    """심사는 그림만 보므로 글만 고친 재발행은 렌더된 심사 입력이 같아 지난 통과를 그대로 쓴다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -2485,5 +2537,33 @@ async def test_republish_story_with_one_letter_changed_rescreens(
     resp = await _publish_twice(db_client, content, fake, change_one_letter)
 
     assert resp.status_code == 200
+    assert resp.json()["versionNumber"] == 2
+    assert fake.calls == 1
+
+
+async def test_republish_story_with_media_book_name_changed_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """칸 라벨에는 인물·장면 이름이 들어가므로, 그림이 같아도 이름을 바꾸면 심사 입력이 달라져 다시 심사한다."""
+    content, _, _, _ = await _story_with_media_cells(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def rename_person() -> None:
+        person = await db_session.scalar(
+            sa.select(MediaBookPerson)
+            .join(ContentVersion, ContentVersion.id == MediaBookPerson.content_version_id)
+            .where(
+                ContentVersion.content_id == content.id,
+                ContentVersion.published_at.is_(None),
+                MediaBookPerson.name == "준",
+            )
+        )
+        assert person is not None
+        person.name = "준호"
+        await db_session.commit()
+
+    resp = await _publish_twice(db_client, content, fake, rename_person)
+
+    assert resp.status_code == 200
     assert fake.calls == 2
-    assert fake.received_prompt is not None and "암시로만 한다!" in fake.received_prompt
+    assert fake.received_prompt is not None and "4. 미디어 북 준호·교실" in fake.received_prompt

@@ -3,7 +3,11 @@
 마이그레이션 자체는 다시 돌리지 않는다(`test_media_judgment_prompt_migration.py`와 같은 방식). 세션 스코프
 스키마(`_migrated_schema`)가 이미 `upgrade head`를 했으므로 published 분기는 "마이그레이션 뒤 DB 상태"를
 단언하고, 순수 함수·`_patch_draft`·`_delete_draft_rows`는 직접 부른다(뒤 둘은 테스트마다 롤백되는
-`db_session`의 커넥션에 `run_sync`로)."""
+`db_session`의 커넥션에 `run_sync`로).
+
+head 에서는 발행 심사를 이미지 전용으로 바꾼 뒤 리비전(`859b0fb86629`)이 publish_filter 세트의 작가 글 슬롯 행을
+백업 테이블로 옮겨 두었다. 그래서 이 리비전이 만든 세트는 지금 섹션과 백업 행을 합쳐 본다. 초안 경로는 이 리비전
+이전 배치를 손으로 만든 초안으로 시험한다 — head 의 세트를 복제하면 이미 이미지 전용 배치라 가드가 먼저 멈춘다."""
 
 import importlib.util
 import uuid
@@ -15,9 +19,8 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.admin.prompts import _validate_prompt_draft_for_publish
-from api.chat.prompt_builder import PromptLane, load_active_prompt_set, render_prompt_channel
-from api.db.models.prompt import PromptSection, PromptSet
+from api.chat.prompt_builder import PromptLane, load_active_prompt_set
+from api.db.models.prompt import PromptSection, PromptSet, PublishFilterTextSectionBackup
 
 _VERSIONS_DIR = Path(__file__).resolve().parents[1] / "migrations" / "versions"
 
@@ -68,6 +71,20 @@ async def _sections_of(db_session: AsyncSession, set_id: uuid.UUID) -> list[Prom
 
 def _keyed(sections: list[PromptSection]) -> dict[tuple[str, str, str, str], tuple[str, bool, int]]:
     return {(s.channel, s.scope, s.slot, s.variant): (s.body, s.conditional, s.order) for s in sections}
+
+
+async def _before_image_only(
+    db_session: AsyncSession, set_id: uuid.UUID
+) -> dict[tuple[str, str, str, str], tuple[str, bool, int]]:
+    """이미지 전용 리비전 이전의 그 세트 — 지금 섹션에서 그 리비전이 더한 `image_list` 를 빼고 백업 행을 합친다."""
+    keyed = _keyed(await _sections_of(db_session, set_id))
+    del keyed[("publish_filter", "both", "image_list", "")]
+    backups = (
+        await db_session.scalars(
+            sa.select(PublishFilterTextSectionBackup).where(PublishFilterTextSectionBackup.prompt_set_id == set_id)
+        )
+    ).all()
+    return keyed | {(b.channel, b.scope, b.slot, b.variant): (b.body, b.conditional, b.order) for b in backups}
 
 
 # ---- 문안 성질 --------------------------------------------------------------------------------
@@ -134,23 +151,21 @@ def test_build_published_rows_shifts_rows_from_the_insert_order_and_adds_one_row
 # ---- 마이그레이션 뒤 DB 상태 — published 분기 ----------------------------------------------------
 
 
-async def test_active_publish_filter_set_is_this_revisions_set_with_the_media_book_row(
-    db_session: AsyncSession,
-) -> None:
-    """회귀 방지 — `published_at`이 원본보다 과거가 되면 새 세트가 활성이 되지 못한다. 그래서 id를 직접
-    단언한다. 다른 행은 판정 지시문의 order 가 하나 밀린 것 말고는 원본과 바이트까지 같다."""
-    active, sections = await load_active_prompt_set(db_session, lane="publish_filter")
-    assert active.id == _M.NEW_SET_ID
-    assert active.note == _M._NOTE
-    assert active.version == "7"
+async def test_this_revisions_set_carries_the_media_book_row(db_session: AsyncSession) -> None:
+    """회귀 방지 — 이 리비전이 만든 세트(지금 섹션 + 뒤 리비전이 백업으로 옮긴 행)는 판정 지시문의 order 가 하나
+    밀린 것과 `media_book` 행 말고는 원본과 바이트까지 같다. 활성은 아니지만 어드민에서 복원할 수 있는 옛 버전이다."""
+    this_set = await db_session.get(PromptSet, _M.NEW_SET_ID)
+    assert this_set is not None
+    assert this_set.note == _M._NOTE
+    assert this_set.version == "7"
 
     source_set = await db_session.get(PromptSet, _PREVIOUS_SET_ID)
     assert source_set is not None
     labels = ("user_label", "story_assistant_label", "story_example_label", "character_assistant_label")
-    assert [getattr(active, a) for a in labels] == [getattr(source_set, a) for a in labels]
+    assert [getattr(this_set, a) for a in labels] == [getattr(source_set, a) for a in labels]
 
-    new = _keyed(sections)
-    old = _keyed(await _sections_of(db_session, _PREVIOUS_SET_ID))
+    new = await _before_image_only(db_session, _M.NEW_SET_ID)
+    old = await _before_image_only(db_session, _PREVIOUS_SET_ID)
     assert new.pop(_NEW_KEY) == (_M.MEDIA_BOOK_BODY, True, 15)
     verdict_body, verdict_conditional, verdict_order = old.pop(_VERDICT_KEY)
     assert new.pop(_VERDICT_KEY) == (verdict_body, verdict_conditional, verdict_order + 1)
@@ -162,110 +177,61 @@ async def test_other_lanes_keep_their_active_sets(db_session: AsyncSession) -> N
     assert story.id == _STORY_SET_ID
 
 
-async def test_media_book_section_renders_between_setups_and_verdict(db_session: AsyncSession) -> None:
-    """스토리 렌더에서 미디어 북 줄은 시작 설정 뒤·판정 지시문 앞에 나오고, 값이 비면 섹션째 빠진다
-    (미디어 북이 없는 스토리의 심사 프롬프트가 이 리비전 전과 같다)."""
-    _, sections = await load_active_prompt_set(db_session, lane="publish_filter")
-    values = {
-        "name": "<이름>",
-        "one_liner": "<한 줄>",
-        "detail_description": "<설명>",
-        "setup_lines": "<시작>",
-        "media_book_lines": "<칸>",
-    }
-
-    rendered = render_prompt_channel(sections, channel="publish_filter", scope="story", values=values)
-    without = render_prompt_channel(
-        sections, channel="publish_filter", scope="story", values={**values, "media_book_lines": ""}
-    )
-
-    setups_at = rendered.index("<시작>")
-    media_at = rendered.index(_M.MEDIA_BOOK_BODY.format(media_book_lines="<칸>"))
-    verdict_at = rendered.index("passed=true")
-    assert setups_at < media_at < verdict_at
-    assert without == rendered.replace(_M.MEDIA_BOOK_BODY.format(media_book_lines="<칸>") + "\n\n", "")
-
-
-async def test_character_render_does_not_carry_the_media_book_section(db_session: AsyncSession) -> None:
-    _, sections = await load_active_prompt_set(db_session, lane="publish_filter")
-
-    rendered = render_prompt_channel(
-        sections,
-        channel="publish_filter",
-        scope="character",
-        values={
-            "name": "<이름>",
-            "one_liner": "<한 줄>",
-            "intro": "<인트로>",
-            "character_prompt": "<프롬프트>",
-            "detail_description": "<설명>",
-            "media_book_lines": "<칸>",
-        },
-    )
-
-    assert "<칸>" not in rendered
-
-
 # ---- `_patch_draft` ------------------------------------------------------------------------
 
 
-async def _clone_as_draft(db_session: AsyncSession, set_id: uuid.UUID, lane: PromptLane) -> uuid.UUID:
-    source = await db_session.get(PromptSet, set_id)
-    assert source is not None
+async def _make_draft(
+    db_session: AsyncSession, lane: PromptLane, layout: list[tuple[str, str, str, str, int]]
+) -> uuid.UUID:
+    """`layout` 배치의 초안. 본문은 슬롯마다 다른 표지 글이다."""
     draft = PromptSet(
         version=None,
         status="draft",
         lane=lane,
-        user_label=source.user_label,
-        story_assistant_label=source.story_assistant_label,
-        story_example_label=source.story_example_label,
-        character_assistant_label=source.character_assistant_label,
+        user_label="사용자",
+        story_assistant_label="진행자",
+        story_example_label="서술자",
+        character_assistant_label="캐릭터",
     )
     db_session.add(draft)
     await db_session.flush()
     draft_id = draft.id
-    for s in await _sections_of(db_session, set_id):
+    for channel, scope, slot, variant, order in layout:
         db_session.add(
             PromptSection(
                 prompt_set_id=draft_id,
-                channel=s.channel,
-                scope=s.scope,
-                slot=s.slot,
-                variant=s.variant,
-                body=s.body,
-                conditional=s.conditional,
-                order=s.order,
+                channel=channel,
+                scope=scope,
+                slot=slot,
+                variant=variant,
+                body=f"<{slot}/{scope}>",
+                conditional=False,
+                order=order,
             )
         )
     await db_session.flush()
     return draft_id
 
 
-async def test_patch_draft_adds_the_row_in_place_and_draft_then_publishes(db_session: AsyncSession) -> None:
-    """이 리비전 이전 배치의 초안(이전 활성 세트 복제)에 1행이 판정 지시문 자리에 들어가고 판정 지시문만 한 칸
-    밀리며, 게시 게이트 전체(head 코드 표)를 통과한다."""
-    draft_id = await _clone_as_draft(db_session, _PREVIOUS_SET_ID, "publish_filter")
+async def test_patch_draft_adds_the_row_in_place(db_session: AsyncSession) -> None:
+    """이 리비전 이전 배치의 초안에 1행이 판정 지시문 자리에 들어가고 판정 지시문만 한 칸 밀린다."""
+    draft_id = await _make_draft(db_session, "publish_filter", _SEED_LAYOUT)
     before = _keyed(await _sections_of(db_session, draft_id))
 
     connection = await db_session.connection()
     assert await connection.run_sync(_M._patch_draft) is True
 
-    sections = await _sections_of(db_session, draft_id)
-    after = _keyed(sections)
+    after = _keyed(await _sections_of(db_session, draft_id))
     assert after.pop(_NEW_KEY) == (_M.MEDIA_BOOK_BODY, True, 15)
     verdict_body, verdict_conditional, verdict_order = before.pop(_VERDICT_KEY)
     assert after.pop(_VERDICT_KEY) == (verdict_body, verdict_conditional, verdict_order + 1)
     assert after == before
 
-    draft = await db_session.get(PromptSet, draft_id)
-    assert draft is not None
-    _validate_prompt_draft_for_publish(draft, sections, lane="publish_filter")
-
 
 async def test_patch_draft_leaves_other_lane_drafts_alone(db_session: AsyncSession) -> None:
     """story 초안만 있으면 할 일이 없다 — 레인 조건이 빠지면 story 초안을 publish_filter 배치로 검사하다 멈추거나
     엉뚱한 레인에 행을 넣는다."""
-    story_draft = await _clone_as_draft(db_session, _STORY_SET_ID, "story")
+    story_draft = await _make_draft(db_session, "story", _SEED_LAYOUT)
     before = _keyed(await _sections_of(db_session, story_draft))
 
     connection = await db_session.connection()
@@ -275,7 +241,7 @@ async def test_patch_draft_leaves_other_lane_drafts_alone(db_session: AsyncSessi
 
 
 async def test_patch_draft_raises_when_the_draft_already_has_the_slot(db_session: AsyncSession) -> None:
-    await _clone_as_draft(db_session, _M.NEW_SET_ID, "publish_filter")
+    await _make_draft(db_session, "publish_filter", [*_SEED_LAYOUT, ("publish_filter", "story", "media_book", "", 15)])
 
     connection = await db_session.connection()
     with pytest.raises(RuntimeError, match="media_book 행이 이미 있다"):
@@ -288,7 +254,7 @@ async def test_patch_draft_raises_when_the_draft_already_has_the_slot(db_session
 async def test_delete_draft_rows_restores_the_draft_layout(db_session: AsyncSession) -> None:
     """되돌리기는 publish_filter 초안의 미디어 북 행을 지우고 판정 지시문 order 를 되돌린다 — 초안 upsert 가
     섹션을 통째로 바꿔 PK 가 달라졌을 수 있어 PK 가 아니라 슬롯으로 찾는다. published 세트 행은 남는다."""
-    draft_id = await _clone_as_draft(db_session, _PREVIOUS_SET_ID, "publish_filter")
+    draft_id = await _make_draft(db_session, "publish_filter", _SEED_LAYOUT)
     original = _keyed(await _sections_of(db_session, draft_id))
     connection = await db_session.connection()
     await connection.run_sync(_M._patch_draft)

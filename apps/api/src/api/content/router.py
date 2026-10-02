@@ -1818,15 +1818,10 @@ async def _publish_character_content(
         )
 
     filter_images = await _load_publish_filter_images(db, detail, situational_images)
+    # 라벨 수는 로더가 그림을 고른 것과 같은 조건으로 센다 — 그래야 이미지 목록 줄과 실린 그림이 짝을 이룬다.
     filter_prompt = build_character_publish_filter_prompt(
-        prompt_set=prompt_set,
         sections=prompt_sections,
-        name=detail.name,
-        one_liner=detail.one_liner,
-        intro=detail.intro,
-        example_dialogues=detail.example_dialogues,
-        character_prompt=detail.character_prompt,
-        detail_description=version.detail_description,
+        situational_image_count=sum(1 for image in situational_images if image.image_asset_id is not None),
     )
     await _screen_for_publish(
         llm_client,
@@ -1886,7 +1881,7 @@ async def _load_story_publish_filter_images(
 ) -> list[tuple[bytes, str]]:
     """대표 이미지 원본과, 그 뒤로 미디어 북 칸마다 축소본(`_thumb.webp`, 긴 변 512px) 한 장씩을 캐릭터의
     `_load_publish_filter_images`와 같은 (바이트, MIME 타입) 쌍으로 돌려준다. 칸은 받은 순서 그대로 싣는다 — 심사
-    프롬프트의 칸 줄과 짝이 맞아야 한다. 원본(장당 수 MB)을 50장 싣지 않으려고 축소본을 쓴다.
+    프롬프트의 이미지 목록 라벨과 짝이 맞아야 한다. 원본(장당 수 MB)을 50장 싣지 않으려고 축소본을 쓴다.
 
     축소본은 동시에 내려받는다(발행은 콘텐츠 행을 잠근 채 진행되므로 왕복 50번을 줄로 세우지 않는다). 칸 하나라도
     못 읽으면 심사 없이 발행을 멈춘다 — 그 칸을 빼고 심사하면 아무도 보지 않은 그림이 발행된다."""
@@ -2248,7 +2243,7 @@ async def _publish_story_content(
             status_code=status.HTTP_400_BAD_REQUEST, detail={"missingFields": missing_fields}
         )
 
-    # 검증이 고아 칸을 막았으므로 칸마다 축이 있다. 심사 그림과 심사 줄이 같은 축 순서(인물 → 장면)로 짝을 이룬다.
+    # 검증이 고아 칸을 막았으므로 칸마다 축이 있다. 심사 그림과 이미지 목록 라벨이 같은 축 순서(인물 → 장면)로 짝을 이룬다.
     person_by_id = {person.entity_id: (index, person.name) for index, person in enumerate(people)}
     scene_by_id = {scene.entity_id: (index, scene.name) for index, scene in enumerate(scenes)}
     ordered_cells = sorted(
@@ -2257,24 +2252,10 @@ async def _publish_story_content(
 
     filter_images = await _load_story_publish_filter_images(db, detail, ordered_cells)
     filter_prompt = build_story_publish_filter_prompt(
-        prompt_set=prompt_set,
         sections=prompt_sections,
-        name=detail.name,
-        one_liner=detail.one_liner,
-        setting_text=detail.setting_text,
-        development_example=detail.development_example,
-        custom_prompt=detail.custom_prompt,
-        development_examples=detail.development_examples,
-        user_goal=detail.user_goal,
-        rules=detail.rules,
-        detail_description=version.detail_description,
-        starting_setups=starting_setups,
         media_cells=[
             MediaBookFilterCell(
-                person=person_by_id[cell.person_entity_id][1],
-                scene=scene_by_id[cell.scene_entity_id][1],
-                situation_description=cell.situation_description,
-                unlock_hint=cell.unlock_hint,
+                person=person_by_id[cell.person_entity_id][1], scene=scene_by_id[cell.scene_entity_id][1]
             )
             for cell in ordered_cells
         ],
