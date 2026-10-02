@@ -1716,12 +1716,17 @@ async def _screen_for_publish(
     images: list[tuple[bytes, str]],
 ) -> None:
     """발행 심사. 통과하지 못하면 400 `{reason}` 을 던진다. 직전에 통과한 심사와 입력이 전부 같으면 LLM 을
-    부르지 않는다(`content/publish_filter_memo.py`). 모델은 클라이언트가 실제로 고를 값과 같은 함수로 구해야
-    심사 모델을 바꾼 뒤 옛 모델의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
+    부르지 않는다(`content/publish_filter_memo.py`). 모델·사고 예산은 클라이언트가 실제로 고를 값과 같은 함수로
+    구해야 심사 설정을 바꾼 뒤 옛 설정의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
     쓰는 `settings.gemini_model_name` 이다."""
-    model, _ = structured_model_and_thinking(call_site, settings.gemini_model_name)
+    model, thinking_budget = structured_model_and_thinking(call_site, settings.gemini_model_name)
     memo_key = screening_key(
-        content_id=content.id, prompt_set_id=prompt_set.id, model=model, prompt=prompt, images=images
+        content_id=content.id,
+        prompt_set_id=prompt_set.id,
+        model=model,
+        thinking_budget=thinking_budget,
+        prompt=prompt,
+        images=images,
     )
     if await has_passed(memo_key):
         # 키 앞부분만 남긴다 — 입력을 되짚을 수 없고, 같은 작품의 재시도끼리 묶어 보기에는 충분하다.

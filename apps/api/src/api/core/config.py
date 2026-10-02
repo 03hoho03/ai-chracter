@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -114,6 +114,22 @@ class Settings(BaseSettings):
     gemini_judgment_thinking_budget: int | None = None
     gemini_publish_filter_model_name: str | None = None
     gemini_publish_filter_thinking_budget: int | None = None
+
+    @field_validator(
+        "gemini_thinking_budget",
+        "gemini_judgment_thinking_budget",
+        "gemini_publish_filter_thinking_budget",
+        mode="before",
+    )
+    @classmethod
+    def _empty_thinking_budget_is_unset(cls, value: object) -> object:
+        """env 에 값을 비운 줄(`KEY=`)이 남으면 빈 문자열이 들어와 정수 파싱이 실패하고 api 가 기동하지 못한다.
+        빈 값은 "정하지 않음"이므로 None(사고 설정을 넘기지 않음)으로 읽는다 — 빈 모델명이 기본 모델로 도는
+        것과 같다. `0`(사고 끔)은 빈 값이 아니라 그대로 0 이다."""
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
     # 회차 재현성을 위한 결정적 시드. None = seed 를 아예 안
     # 넘김(현재와 동일한 매 회차 난수 동작). generate()에만 붙인다 — generate_structured()
     # (판단 호출)는 회차 재현 측정 대상이 아니다.

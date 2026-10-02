@@ -2283,6 +2283,23 @@ async def test_republish_character_after_model_setting_change_rescreens(
     assert fake.calls == 2
 
 
+async def test_republish_character_after_publish_filter_thinking_budget_change_rescreens(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """같은 모델이라도 심사의 사고 예산이 바뀌면 판정이 달라질 수 있으므로 옛 통과로 건너뛰지 않는다."""
+    monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", None)
+    content, _, _, _ = await _publishable_character(db_session, db_client)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    async def change_thinking_budget() -> None:
+        monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", 0)
+
+    resp = await _publish_twice(db_client, content, fake, change_thinking_budget)
+
+    assert resp.status_code == 200
+    assert fake.calls == 2
+
+
 async def test_republish_character_with_unrelated_model_setting_change_still_skips(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
