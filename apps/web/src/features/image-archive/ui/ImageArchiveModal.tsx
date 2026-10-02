@@ -48,9 +48,12 @@ function ImageArchiveBody({ query }: { query: ReturnType<typeof useCharacterImag
   }
 
   if (query.isError) {
+    // 404 는 작품이 없거나(내려감·발행본 없음) 이 사용자가 볼 수 없는 작품이다 — 다시 시도해도 같다.
     return (
       <p className="py-4 text-center text-sm text-destructive-text">
-        불러오지 못했어요. 잠시 후 다시 시도해주세요.
+        {query.error.status === 404
+          ? "볼 수 없는 작품이에요."
+          : "불러오지 못했어요. 잠시 후 다시 시도해주세요."}
       </p>
     );
   }
