@@ -3,7 +3,12 @@ import { useNavigate } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
 import { toast } from "sonner";
 
-import { useChatRoomListQuery, useStartChatMutation } from "@/entities/chat-room";
+import {
+  CONTENT_RESTRICTED_START_MESSAGE,
+  isContentRestrictedError,
+  useChatRoomListQuery,
+  useStartChatMutation,
+} from "@/entities/chat-room";
 
 import { ChatRoomListItemRow } from "./ChatRoomListItemRow";
 
@@ -25,8 +30,13 @@ export function ChatRoomListView({
       // "새 대화 시작" 버튼은 캐릭터 목록에만 있어 `contentType`은 항상 "character"다.
       const room = await startChatMutation.mutateAsync({ contentId, contentType: "character" });
       void navigate({ to: "/chat/$roomId", params: { roomId: room.id } });
-    } catch {
-      toast.error("새 대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+    } catch (error) {
+      // 이용제한된 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
+      toast.error(
+        isContentRestrictedError(error)
+          ? CONTENT_RESTRICTED_START_MESSAGE
+          : "새 대화를 시작하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
     }
   };
 

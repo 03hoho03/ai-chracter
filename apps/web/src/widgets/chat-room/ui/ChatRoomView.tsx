@@ -3,11 +3,12 @@ import { useAtomValue } from "jotai";
 import { Avatar, AvatarFallback, AvatarImage } from "@ai-character-chat/ui/components/avatar";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { ArrowLeft, History, RotateCw, Send, TriangleAlert } from "lucide-react";
+import { ArrowLeft, Ban, History, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
 import type { Shortcut } from "@/entities/chat-room";
 import {
+  CONTENT_RESTRICTED_NOTICE,
   EndingDivider,
   isAuthorOpeningMessage,
   MediaTagImagesProvider,
@@ -150,9 +151,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
     );
   }
 
+  // 작품이 이용제한·삭제됐다 — 방을 열 때 서버가 알려 주거나(`contentRestricted`), 연 뒤에 제한돼 보내기가 거부됐다.
+  // 어느 쪽이든 입력창·재생성·편집을 걷고 안내만 남긴다(읽기·삭제·신고는 그대로).
+  const isRestricted = room.contentRestricted || (status.kind === "error" && status.restricted === true);
+
   // no-nested-ternary — 세 갈래(레이트리밋/거절/실패)를 렌더 전에 미리 갈라 둔다.
+  // 제한 거부는 실패 배너를 띄우지 않는다 — 다시 시도해도 안 풀리고, 안내는 입력창 자리가 맡는다.
   let errorNotice: ReactNode = null;
-  if (status.kind === "error") {
+  if (status.kind === "error" && !isRestricted) {
     if (status.rateLimit) {
       errorNotice = <RateLimitNotice rateLimit={status.rateLimit} surface="chat" onRetry={retry} />;
     } else if (status.declined) {
@@ -244,9 +250,11 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     message={message}
                     disabled={isSending}
                     isEditing={editingMessageId === message.id}
-                    canRegenerate={isLastMessage && message.role === "assistant" && room.messages.length >= 2}
-                    onRegenerate={isLastMessage && message.role === "assistant" ? regenerate : undefined}
-                    onStartEdit={message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
+                    canRegenerate={
+                      !isRestricted && isLastMessage && message.role === "assistant" && room.messages.length >= 2
+                    }
+                    onRegenerate={!isRestricted && isLastMessage && message.role === "assistant" ? regenerate : undefined}
+                    onStartEdit={!isRestricted && message.role === "user" ? () => setEditingMessageId(message.id) : undefined}
                     onCancelEdit={() => setEditingMessageId(undefined)}
                     onSaveEdit={(newText) => {
                       editMessage(message.id, newText);
@@ -310,72 +318,83 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           </div>
 
           <div className="shrink-0 border-t border-border bg-background px-4 sm:px-6 py-3">
-            {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르지만,
-                사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
-                구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로 칩은 되살아나지
-                않는다 — 재시도는 오류 배너의 "다시 시도"가 담당한다. */}
-            {room.contentSnapshot &&
-              shouldShowSuggestedReplies(
-                room.contentSnapshot.suggestedReplies,
-                room.turnCount,
-                room.messages.some((message) => message.role === "user"),
-              ) && (
-                <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
-                  {room.contentSnapshot.suggestedReplies.map((reply) => (
-                    <Button
-                      key={reply}
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      disabled={isSending}
-                      onClick={() => handleSuggestedReplyClick(reply)}
-                      className="shrink-0 rounded-full"
-                    >
-                      {reply}
-                    </Button>
-                  ))}
-                </div>
-              )}
-
-            {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
-                칩 줄 자체가 조건부라 "필요할 때만 노출"과 형태가 같다.
-                429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
-            {shouldShowClover && (
-              <div className="mb-2 flex justify-end">
-                <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
+            {/* 이용제한·삭제된 작품이면 입력창 대신 안내. 실패가 아니라 상태라 `destructive` 틴트를 쓰지 않고 중립 윤곽에
+                사실만 말한다. 방을 열 때 이미 보이는 정보라 `role="status"`(polite)다. */}
+            {isRestricted ? (
+              <div role="status" className="flex items-center gap-2 rounded-lg border border-border px-3.5 py-2.5">
+                <Ban aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+                <span className="text-xs break-keep text-muted-foreground">{CONTENT_RESTRICTED_NOTICE}</span>
               </div>
-            )}
+            ) : (
+              <>
+                {/* 첫 턴 전송을 시작한 순간부터 감춘다 — turnCount는 스트림 종료(done)에야 오르지만,
+                    사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
+                    구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로 칩은 되살아나지
+                    않는다 — 재시도는 오류 배너의 "다시 시도"가 담당한다. */}
+                {room.contentSnapshot &&
+                  shouldShowSuggestedReplies(
+                    room.contentSnapshot.suggestedReplies,
+                    room.turnCount,
+                    room.messages.some((message) => message.role === "user"),
+                  ) && (
+                    <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
+                      {room.contentSnapshot.suggestedReplies.map((reply) => (
+                        <Button
+                          key={reply}
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          disabled={isSending}
+                          onClick={() => handleSuggestedReplyClick(reply)}
+                          className="shrink-0 rounded-full"
+                        >
+                          {reply}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
 
-            <div className="flex items-end gap-2">
-              <div className="relative flex-1">
-                <Textarea
-                  ref={inputRef}
-                  value={text}
-                  onChange={(event) => setText(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && !event.shiftKey) {
-                      event.preventDefault();
-                      handleSend();
-                    }
-                  }}
-                  placeholder="메시지를 입력하세요"
-                  disabled={isSending}
-                  rows={1}
-                  className="max-h-40 resize-none"
-                />
-                {room.contentSnapshot && text.startsWith("/") && (
-                  <ShortcutAutocomplete
-                    shortcuts={room.contentSnapshot.shortcuts}
-                    query={text.slice(1)}
-                    onSelect={handleShortcutSelect}
-                  />
+                {/* 추천 답변 칩 줄과 **같은 층위**(입력 행의 형제)로 한 줄.
+                    칩 줄 자체가 조건부라 "필요할 때만 노출"과 형태가 같다.
+                    429 배너(`RateLimitNotice`)는 메시지 목록 하단에 있는 별개 자리다. */}
+                {shouldShowClover && (
+                  <div className="mb-2 flex justify-end">
+                    <CloverBalance balance={cloverBalance} isInsufficient={isCloverShort} />
+                  </div>
                 )}
-              </div>
-              <NarrationMarkerButton textareaRef={inputRef} value={text} onValueChange={setText} disabled={isSending} />
-              <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
-                <Send aria-hidden className="size-4" />
-              </Button>
-            </div>
+
+                <div className="flex items-end gap-2">
+                  <div className="relative flex-1">
+                    <Textarea
+                      ref={inputRef}
+                      value={text}
+                      onChange={(event) => setText(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          handleSend();
+                        }
+                      }}
+                      placeholder="메시지를 입력하세요"
+                      disabled={isSending}
+                      rows={1}
+                      className="max-h-40 resize-none"
+                    />
+                    {room.contentSnapshot && text.startsWith("/") && (
+                      <ShortcutAutocomplete
+                        shortcuts={room.contentSnapshot.shortcuts}
+                        query={text.slice(1)}
+                        onSelect={handleShortcutSelect}
+                      />
+                    )}
+                  </div>
+                  <NarrationMarkerButton textareaRef={inputRef} value={text} onValueChange={setText} disabled={isSending} />
+                  <Button size="icon" aria-label="전송" disabled={isSending || !text.trim()} onClick={handleSend}>
+                    <Send aria-hidden className="size-4" />
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

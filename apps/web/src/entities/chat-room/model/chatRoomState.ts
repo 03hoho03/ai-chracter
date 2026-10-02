@@ -73,4 +73,5 @@ export type ChatRoomState = {
   personaId?: string;
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지
   versionAutoUpgraded: boolean; // 이번 조회에서 서버가 자동 마이그레이션했는지
+  contentRestricted: boolean; // 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는지(읽기·삭제·초기화는 된다)
 };

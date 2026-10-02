@@ -9,6 +9,7 @@ import {
   chatRoomKeys,
   dropLastMessage,
   getChatRateLimit,
+  isContentRestrictedError,
   restoreMessage,
   truncateAndEdit,
 } from "@/entities/chat-room";
@@ -32,10 +33,12 @@ type PendingRequest = { payload: ChatStreamRequest; kind: "newTurn" | "regenerat
 // 실패가 아니다. 같은 `error` 자리를 쓰는 이유는 낙관적 사용자 메시지가 이미 목록에 있어
 // 아무것도 안 보여 주면 멈춘 것처럼 읽히기 때문이고(재시도 버튼도 그대로 유용하다), 문구만
 // 배너가 갈라 쓴다 — 실패하지 않은 일에 "실패했습니다"를 쓰면 거짓이다.
+// `restricted`는 작품이 이용제한·삭제돼 서버가 거부한 것이다. 기다려도 다시 보내도 안 풀리므로 화면은 재시도 대신
+// 입력창 자리에 안내를 띄운다(방을 열 때 이미 제한이었다면 응답의 `contentRestricted`가 같은 일을 한다).
 type SendMessageStatus =
   | { kind: "idle" }
   | { kind: "sending" }
-  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit; declined?: boolean };
+  | { kind: "error"; retryPayload: PendingRequest; rateLimit?: ChatRateLimit; declined?: boolean; restricted?: boolean };
 
 /** 낙관적 업데이트가 핵심: 사용자 메시지는 스트림 성공 여부와
  * 무관하게 먼저 캐시에 반영해 실패해도 화면에서 사라지지 않는다.
@@ -135,6 +138,13 @@ export function useSendMessage(
       }
       // 같은 이유로 세션 소실 401·정지 403도 여기서 세션을 비운다.
       resetSessionIfLost(queryClient, error);
+      // 방을 연 뒤에 작품이 제한된 경우다. 방을 다시 받아 `contentRestricted`를 서버 값으로 맞춘다 — 확인 모달은
+      // 띄우지 않는다(429가 아니라 클로버와 무관하다).
+      if (isContentRestrictedError(error)) {
+        void queryClient.invalidateQueries({ queryKey: chatRoomKeys.detail(roomId) });
+        setStatus({ kind: "error", retryPayload: pending, restricted: true });
+        return;
+      }
       // 동의가 필요하면 배너가 아니라 모달이다. 동의하면 **같은
       // payload로** 재전송한다(`send()`를 다시 부르지 않으므로 낙관적 사용자 메시지가 중복되지
       // 않는다 — `retry()`와 같은 이유로 `openStream`을 직접 부른다).

@@ -30,6 +30,7 @@ function buildState(overrides: Partial<ChatRoomState> = {}): ChatRoomState {
     turnCount: 3,
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
+    contentRestricted: false,
     ...overrides,
   };
 }

@@ -4,7 +4,7 @@ import { useAtom } from "jotai";
 import { toast } from "sonner";
 
 import { contentDetailModalAtom, type ContentType } from "@/entities/content";
-import { useStartChatMutation } from "@/entities/chat-room";
+import { CONTENT_RESTRICTED_START_MESSAGE, isContentRestrictedError, useStartChatMutation } from "@/entities/chat-room";
 import { useSessionQuery } from "@/entities/session";
 
 type UsePlayContentOptions = {
@@ -68,10 +68,15 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
       // ("Failed to fetch dynamically imported module"). 그 시점에 방은 **이미 생성돼 있고** URL도 이미
       // `/chat/<id>`라, 새로고침하면 그 방으로 정상 진입해 복구된다. 잃는 건 실패한 그 화면뿐이고,
       // 성공 경로의 중복 방 생성을 막는 값이 그보다 크다고 봤다.
-    } catch {
+    } catch (error) {
       isStartingRef.current = false;
       setIsStarting(false);
-      toast.error("대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.");
+      // 이용제한된 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
+      toast.error(
+        isContentRestrictedError(error)
+          ? CONTENT_RESTRICTED_START_MESSAGE
+          : "대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.",
+      );
     }
   }
 
