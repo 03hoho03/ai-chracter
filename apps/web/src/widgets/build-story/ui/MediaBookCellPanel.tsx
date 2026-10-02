@@ -90,6 +90,7 @@ export function MediaBookCellPanel({
   // 비활성인데 지금 칸이 미완성이면 진척 줄만으로는 "미완성 칸이 남았는데 왜 못 가나" 로 들린다 — 이유를 덧붙인다.
   const isOnlyIncompleteHere = !hasNextIncomplete && isIncompleteCell(mediaBook, position);
   const onlyHereId = `${id}-only-incomplete`;
+  const tagHelpId = `${id}-tag-help`;
   const nextDescribedBy = isOnlyIncompleteHere ? `${progressId} ${onlyHereId}` : progressId;
 
   function focusHeading() {
@@ -253,9 +254,18 @@ export function MediaBookCellPanel({
               <X aria-hidden />
             </Button>
           </div>
+          {/* 이 줄의 버튼들은 터치에서 손가락 타깃으로 40px 까지 키운다. */}
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
             <p className="text-xs break-all text-muted-foreground">{tag}</p>
-            <Button type="button" variant="ghost" size="xs" aria-label={`${tag} 표기 복사`} onClick={() => void copyMediaTag(tag)}>
+            <Button
+              type="button"
+              variant="ghost"
+              size="xs"
+              aria-label={`${tag} 표기 복사`}
+              aria-describedby={tagHelpId}
+              className="pointer-coarse:h-10"
+              onClick={() => void copyMediaTag(tag)}
+            >
               <Copy aria-hidden />
               표기 복사
             </Button>
@@ -264,7 +274,7 @@ export function MediaBookCellPanel({
               type="button"
               variant="outline"
               size="sm"
-              className="ml-auto aria-disabled:opacity-65"
+              className="ml-auto pointer-coarse:h-10 aria-disabled:opacity-65"
               aria-disabled={!hasNextIncomplete}
               aria-describedby={hasNextIncomplete ? undefined : nextDescribedBy}
               onClick={handleNext}
@@ -278,6 +288,10 @@ export function MediaBookCellPanel({
               </span>
             )}
           </div>
+          {/* 표기 문법은 이 칸에서만 보이는데 무엇에 쓰는지 말하는 곳이 없어, 복사 버튼의 설명으로 함께 읽히게 한다. */}
+          <p id={tagHelpId} className="text-xs break-keep text-muted-foreground">
+            표기를 시작상황·프롤로그·에필로그·등록 설명에 붙여 넣으면 그 자리에 이 칸의 이미지가 보여요.
+          </p>
         </div>
       </div>
 
@@ -407,7 +421,7 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
         />
       </div>
 
-      <Button type="button" variant="destructive" size="sm" className="w-fit" onClick={onClear}>
+      <Button type="button" variant="destructive" size="sm" className="w-fit pointer-coarse:h-10" onClick={onClear}>
         이 칸 비우기
       </Button>
     </div>
@@ -532,7 +546,7 @@ function CellImageButtons({
         aria-disabled={isUploading}
         className={cn(
           buttonVariants({ variant: "outline", size: "sm" }),
-          "cursor-pointer aria-disabled:pointer-events-none aria-disabled:opacity-65",
+          "cursor-pointer pointer-coarse:h-10 aria-disabled:pointer-events-none aria-disabled:opacity-65",
           FOCUS_WITHIN_RING_CLASSNAME,
         )}
       >
@@ -551,7 +565,7 @@ function CellImageButtons({
           onChange={(event) => void handleFileChange(event)}
         />
       </Label>
-      <Button type="button" variant="outline" size="sm" onClick={() => void handlePick()}>
+      <Button type="button" variant="outline" size="sm" className="pointer-coarse:h-10" onClick={() => void handlePick()}>
         <Images aria-hidden />
         생성한 이미지에서 고르기
       </Button>

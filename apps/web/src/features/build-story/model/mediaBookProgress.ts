@@ -35,9 +35,13 @@ export type MediaBookProgress = {
   isOverCellLimit: boolean;
 };
 
-/** 해금 힌트는 비워도 되는 값이라 세지 않는다 — 이미지와 상황 설명(AI가 이미지를 고를 때 읽는 글)만 본다. */
-function hasDescription(cell: MediaBookCellValues): boolean {
-  return cell.situationDescription.trim() !== "";
+/**
+ * 이미지는 있는데 상황 설명(AI가 이미지를 고를 때 읽는 글)이 공백뿐인 칸인가. 해금 힌트는 비워도 되는 값이라 보지
+ * 않는다. 표의 칸 표식·칸 접근 이름·진척 줄·"다음 미완성 칸" 이 모두 이 판정 하나를 쓴다 — 한 곳이라도 따로 재면
+ * 표식은 없는데 다음 칸으로 불려 가는 칸이 생긴다.
+ */
+export function isMissingDescription(cell: MediaBookCellValues): boolean {
+  return cell.situationDescription.trim() === "";
 }
 
 export function summarizeMediaBookProgress(mediaBook: MediaBookValues): MediaBookProgress {
@@ -48,7 +52,7 @@ export function summarizeMediaBookProgress(mediaBook: MediaBookValues): MediaBoo
       const cell = findCell(mediaBook, person.id, scene.id);
       if (!cell) continue;
       filledCells += 1;
-      if (!hasDescription(cell)) missingDescriptionCells += 1;
+      if (isMissingDescription(cell)) missingDescriptionCells += 1;
     }
   }
   const totalCells = mediaBook.people.length * mediaBook.scenes.length;
@@ -72,7 +76,7 @@ export function formatMediaBookProgress(progress: MediaBookProgress): string {
  */
 export function isIncompleteCell(mediaBook: MediaBookValues, position: CellPosition): boolean {
   const cell = findCell(mediaBook, position.personId, position.sceneId);
-  return cell ? !hasDescription(cell) : mediaBook.cells.length < MAX_MEDIA_BOOK_CELLS;
+  return cell ? isMissingDescription(cell) : mediaBook.cells.length < MAX_MEDIA_BOOK_CELLS;
 }
 
 /**

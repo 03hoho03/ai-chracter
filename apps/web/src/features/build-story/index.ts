@@ -55,6 +55,7 @@ export {
   findNextIncompleteCell,
   formatMediaBookProgress,
   isIncompleteCell,
+  isMissingDescription,
   summarizeMediaBookProgress,
   toUsedAssetLabels,
   type MediaBookProgress,

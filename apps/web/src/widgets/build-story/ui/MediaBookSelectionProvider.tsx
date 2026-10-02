@@ -4,12 +4,13 @@ import { useFormContext } from "react-hook-form";
 
 import {
   findCell,
+  isMissingDescription,
   type MediaBookCellValues,
   type MediaBookValues,
   type StoryBuilderFormValues,
 } from "@/features/build-story";
 
-import { toCellKey, type MediaBookPosition, type MediaBookSelectMethod } from "./MediaBookGrid";
+import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
 import {
   CELL_PANEL_HEAD_ID,
   CELL_PANEL_HEADING_ID,
@@ -40,29 +41,22 @@ export function MediaBookSelectionProvider({ children, setPreviewOpen }: MediaBo
   const clearAnnouncement = useCallback(() => setAnnouncement(""), []);
 
   const value = useMemo<MediaBookSelection>(() => {
-    function select(position: MediaBookPosition, method: MediaBookSelectMethod) {
-      const isSameCell = selected !== undefined && toCellKey(selected) === toCellKey(position);
-      // 처음 열 때와 같은 칸을 다시 누를 때는 바뀐 것이 없어 알리지 않는다.
-      const nextAnnouncement =
-        selected === undefined || isSameCell ? "" : announceCell(getValues("mediaBook"), position);
+    function select(position: MediaBookPosition) {
       setSelected(position);
-      // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 움직이지 않는다(좁은 화면에서도 배치표에 머문다).
-      if (method === "copy") {
-        setAnnouncement(nextAnnouncement);
-        return;
-      }
-      // 좁은 화면에서는 배치표 화면을 닫고 폼 열의 상세로 넘어간다. 누른 칸이 화면에서 사라지므로 아래에서 포커스가
-      // 상세 제목으로 간다.
+      // 스크린리더가 옮겨 간 제목을 읽으므로 알림은 비운다.
+      setAnnouncement("");
+      // 좁은 화면에서는 배치표 화면을 닫고 폼 열의 상세로 넘어간다.
       setPreviewOpen(false);
       // 다음 프레임(상세가 그려진 뒤)에 상세 머리를 화면 맨 위에 맞춘다. 표는 다른 열에 그대로 보이므로 상세를 위에서부터
       // 보여 주면 되고, 연달아 다른 칸을 고르면 머리가 이미 위라 움직이지 않는다. 부드러운 스크롤은 쓰지 않는다(움직임을
-      // 줄이는 설정과 무관하게 순간 이동). 키보드로 열었거나 누른 칸이 화면에서 사라졌으면 포커스를 상세 제목으로 옮겨
-      // 다음 Tab 이 상세 안으로 가게 하고(닫으면 그 칸으로 돌아온다), 스크린리더가 제목을 읽으므로 알림은 비운다.
+      // 줄이는 설정과 무관하게 순간 이동).
+      // 포커스는 어떻게 골랐든 상세 제목으로 옮겨 다음 Tab 이 상세 안으로 가게 한다(닫으면 그 칸으로 돌아온다). 넓은
+      // 화면에서 칸에 남겨 두면 상세가 표보다 앞 열이라, 상세로 가려면 표의 칸을 하나씩 거슬러 Shift+Tab 해야 했다 —
+      // 마우스로 고른 뒤 키보드로 넘어가는 사람도 같다. 화면은 위에서 이미 맞췄으므로 포커스는 스크롤 없이 옮기고, 마우스로
+      // 고른 뒤의 스크립트 포커스는 포커스 링을 띄우지 않아 보이는 것은 그대로다.
       requestAnimationFrame(() => {
         document.getElementById(CELL_PANEL_HEAD_ID)?.scrollIntoView({ block: "start" });
-        const shouldFocusHeading = method === "keyboard" || findVisibleCell(position) === undefined;
-        if (shouldFocusHeading) focusHeading();
-        setAnnouncement(shouldFocusHeading ? "" : nextAnnouncement);
+        focusHeading();
       });
     }
 
@@ -117,7 +111,7 @@ export function MediaBookSelectionProvider({ children, setPreviewOpen }: MediaBo
     <MediaBookSelectionContext.Provider value={value}>
       {children}
       {/* 알림 영역은 두 열 밖에 하나만 둔다. 좁은 화면에서는 폼 열과 배치표 화면 중 한쪽이 숨는데, 숨은 열 안의 live
-          영역은 읽히지 않아 배치표 화면에서 칸 모서리 복사로 칸을 옮긴 것이 들리지 않았다. 첫 알림부터 읽히도록 탭과
+          영역은 읽히지 않는다. 첫 알림부터 읽히도록 탭과
           무관하게 늘 그려 두고, 미디어 북 탭을 떠나면 탭이 문장을 비운다. `fixed` 래퍼는 화면 밖 글자가 문서 끝에
           자리를 잡아 문서 전체를 세로로 스크롤시키지 않게 한다 — 고정 위치 요소는 문서의 스크롤 길이에 들어가지 않는다. */}
       <div className="fixed top-0 left-0">
@@ -150,7 +144,10 @@ function focusHeading() {
   document.getElementById(CELL_PANEL_HEADING_ID)?.focus({ preventScroll: true });
 }
 
-/** 마우스로 칸을 옮겼을 때 스크린리더에 들려줄 한 줄 — 상세가 다른 칸으로 바뀌었다는 것과 그 칸에 무엇이 비었는지. */
+/**
+ * "다음 미완성 칸" 으로 칸을 옮겼을 때 스크린리더에 들려줄 한 줄 — 포커스가 누른 버튼에 남아 제목이 읽히지 않으므로,
+ * 상세가 다른 칸으로 바뀌었다는 것과 그 칸에 무엇이 비었는지를 알린다.
+ */
 function announceCell(mediaBook: MediaBookValues, position: MediaBookPosition): string {
   const person = mediaBook.people.find((item) => item.id === position.personId);
   const scene = mediaBook.scenes.find((item) => item.id === position.sceneId);
@@ -160,6 +157,6 @@ function announceCell(mediaBook: MediaBookValues, position: MediaBookPosition): 
 
 function cellStatus(cell: MediaBookCellValues | undefined): string {
   if (!cell) return "이미지 없음";
-  if (cell.situationDescription.trim() === "") return "상황 설명 없음";
+  if (isMissingDescription(cell)) return "상황 설명 없음";
   return "다 채운 칸";
 }

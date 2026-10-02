@@ -4,6 +4,7 @@ import {
   findNextIncompleteCell,
   formatMediaBookProgress,
   isIncompleteCell,
+  isMissingDescription,
   summarizeMediaBookProgress,
   toUsedAssetLabels,
 } from "./mediaBookProgress";
@@ -129,6 +130,24 @@ describe("findNextIncompleteCell", () => {
 
   it("has nothing to offer when the table has no cells", () => {
     expect(findNextIncompleteCell({ people: [], scenes: [], cells: [] }, { personId: DOHEE, sceneId: READING })).toBeUndefined();
+  });
+});
+
+// 판정 기준: 상황 설명이 비었거나 공백·줄바꿈뿐이면 "설명 없음"이고, 공백 아닌 글자가 하나라도 있으면 아니다. 해금
+// 힌트는 비워도 되는 값이라 판정에 끼지 않는다. 표의 표식·접근 이름·진척 줄·"다음 미완성 칸" 이 모두 이 판정을 쓴다.
+describe("isMissingDescription", () => {
+  it("is true for an empty or whitespace-only situation description", () => {
+    expect(isMissingDescription(described(CELL_A, DOHEE, READING, ""))).toBe(true);
+    expect(isMissingDescription(described(CELL_A, DOHEE, READING, " \n\t "))).toBe(true);
+  });
+
+  it("is false once the description has any visible character", () => {
+    expect(isMissingDescription(described(CELL_A, DOHEE, READING, " 웃음 "))).toBe(false);
+  });
+
+  it("ignores the unlock hint either way", () => {
+    expect(isMissingDescription({ ...described(CELL_A, DOHEE, READING, ""), unlockHint: "첫 리딩 뒤" })).toBe(true);
+    expect(isMissingDescription({ ...described(CELL_A, DOHEE, READING), unlockHint: "" })).toBe(false);
   });
 });
 

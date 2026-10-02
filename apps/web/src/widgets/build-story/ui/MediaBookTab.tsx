@@ -4,8 +4,6 @@ import { Grid3x3 } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { MAX_MEDIA_BOOK_CELLS } from "@/features/build-story";
-
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
 import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
@@ -46,13 +44,10 @@ export function MediaBookTab() {
     // 기준으로 자리를 잡아, 넓은 화면에서 폼 열이 아니라 문서가 세로로 스크롤되고 칸을 고를 때 창이 밀려 폼 열 위쪽이
     // 상단바 밑으로 들어간다.
     <div className="relative flex flex-col gap-6 py-6" data-field-path="mediaBook">
+      {/* 장 수·상한은 여기 두지 않는다 — 배치표 위 진척 한 줄 하나가 맡는다. 둘을 두면 같은 장 수에 분모가 둘(상한과
+          표의 칸 수)이 서서 상한을 채워야 할 칸 수로 읽힌다. 상한은 표가 그보다 클 때(그때만 다 채울 수 없다) 그 줄에 붙는다. */}
       <div className="flex flex-col gap-1">
-        <div className="flex items-baseline justify-between gap-3">
-          <Label>미디어 북</Label>
-          <span className="text-xs text-muted-foreground tabular-nums" aria-label={`이미지 ${mediaBook.cells.length}장, 최대 ${MAX_MEDIA_BOOK_CELLS}장`}>
-            {mediaBook.cells.length}/{MAX_MEDIA_BOOK_CELLS}
-          </span>
-        </div>
+        <Label>미디어 북</Label>
         <p className="text-sm break-keep text-muted-foreground">
           인물과 장면이 만나는 칸마다 이미지를 한 장씩 넣으면, 대화 중에 AI가 어울리는 이미지를 골라 답 아래에 보여
           줘요. 넣지 않아도 발행할 수 있어요.
