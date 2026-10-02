@@ -1035,10 +1035,6 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
     assert pre_reset_note is not None
 
     # the editor renames the setup and throws away its stats, endings and the shortcut.
-    # The keyword note is kept pointing at the setup: `_update_story_draft` deletes
-    # removed setups before it reconciles keyword_notes, so a payload that drops a setup a
-    # note still references dies on the physical FK — a pre-existing autosave bug, out of
-    # this story's scope.
     patch_resp = await db_client.patch(
         f"/contents/{content.id}/draft",
         json={
@@ -1882,6 +1878,152 @@ def test_validate_story_publish_media_book(
         media_book_people=people,
         media_book_scenes=scenes,
         media_book_cells=cells,
+        keyword_notes=[],
+    )
+
+    assert missing == expected
+
+
+def _keyword_note_fields(note: KeywordNote) -> tuple[object, ...]:
+    return (note.info_text, note.trigger_keywords, note.name, note.order, note.exclude_keywords, note.sticky_turns, note.always_on)
+
+
+async def test_publish_and_reset_clone_every_keyword_note_field(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행과 편집 취소는 노트를 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
+    돌아가므로, 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    note = KeywordNote(
+        entity_id=uuid.uuid4(),
+        content_version_id=version.id,
+        info_text="상시 정보",
+        trigger_keywords=["열쇠"],
+        name="목록 이름",
+        order=3,
+        exclude_keywords=["회상"],
+        sticky_turns=2,
+        always_on=True,
+    )
+    db_session.add(note)
+    await db_session.flush()
+    expected = _keyword_note_fields(note)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id, note_entity_id = content.id, note.entity_id
+
+    async def _draft_copy() -> KeywordNote:
+        copy = await db_session.scalar(
+            sa.select(KeywordNote)
+            .join(ContentVersion, ContentVersion.id == KeywordNote.content_version_id)
+            .where(
+                ContentVersion.content_id == content_id,
+                ContentVersion.published_at.is_(None),
+                KeywordNote.entity_id == note_entity_id,
+            )
+            .execution_options(populate_existing=True)
+        )
+        assert copy is not None
+        return copy
+
+    assert _keyword_note_fields(await _draft_copy()) == expected
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert _keyword_note_fields(await _draft_copy()) == expected
+
+
+async def test_publish_rejects_keyword_note_without_keywords_unless_always_on(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """자동저장은 키워드 없는 노트를 받아 준다(노트 추가 직후의 빈 노트). 키워드가 없으면 상시가 아닌 노트는 열릴 길이
+    없으니 발행이 막는다 — 심사(LLM 호출)까지 가지 않는다. 상시 노트는 키워드 없이 매 턴 실리므로 통과한다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    db_session.add(
+        KeywordNote(
+            entity_id=uuid.uuid4(), content_version_id=version.id, info_text="상시", trigger_keywords=[], always_on=True
+        )
+    )
+    keywordless = KeywordNote(
+        entity_id=uuid.uuid4(), content_version_id=version.id, info_text="키워드 없음", trigger_keywords=[]
+    )
+    db_session.add(keywordless)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        rejected = await db_client.post(f"/contents/{content.id}/publish")
+        assert rejected.status_code == 400
+        assert rejected.json()["detail"] == {"missingFields": ["keywordNotes.triggerKeywords"]}
+        assert fake.received_prompt is None
+
+        await db_session.delete(keywordless)
+        await db_session.commit()
+        accepted = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert accepted.status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("notes", "expected"),
+    [
+        pytest.param([], [], id="no-notes"),
+        pytest.param([("정보", ["단서"], False)], [], id="complete"),
+        pytest.param([("정보", [], True)], [], id="always-on-without-keywords"),
+        pytest.param([("정보", [], False)], ["keywordNotes.triggerKeywords"], id="no-keywords"),
+        # 저장 검증이 생기기 전에 저장된 공백 키워드는 키워드 구실을 못 하므로 없는 것과 같이 본다.
+        pytest.param([("정보", [" "], False)], ["keywordNotes.triggerKeywords"], id="blank-keywords-only"),
+        pytest.param([(" \n", ["단서"], False)], ["keywordNotes.infoText"], id="blank-info"),
+        pytest.param([(" ", [], True)], ["keywordNotes.infoText"], id="always-on-blank-info"),
+        pytest.param(
+            [("", [], False), ("", [], False)],
+            ["keywordNotes.triggerKeywords", "keywordNotes.infoText"],
+            id="several-notes-reported-once-each",
+        ),
+    ],
+)
+def test_validate_story_publish_keyword_notes(
+    notes: list[tuple[str, list[str], bool]], expected: list[str]
+) -> None:
+    """노트 하나하나가 아니라 키 하나씩만 알린다 — 어느 노트인지는 빌더 폼 검증이 노트 자리에서 먼저 보여 준다."""
+    content, version, detail, setups = _valid_story_rows()
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[
+            KeywordNote(info_text=info, trigger_keywords=keywords, always_on=always_on)
+            for info, keywords, always_on in notes
+        ],
     )
 
     assert missing == expected

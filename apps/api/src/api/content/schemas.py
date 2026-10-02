@@ -6,6 +6,7 @@ from typing import Annotated, Literal, Self
 
 from pydantic import AfterValidator, Field, model_validator
 
+from api.chat.keyword_notes import normalize_keyword_text
 from api.core.schema import CamelModel
 from api.db.models.content import ContentTarget, ContentType, ContentVisibility, ModerationStatus
 from api.db.models.moderation import ReportReasonCategory
@@ -314,11 +315,87 @@ class StartingSetupDraftItem(CamelModel):
     endings: list[EndingDraftItem]
 
 
+# 키워드북 저장 상한. 빌더 자동저장은 폼 검증 없이 폼 값을 그대로 보내므로, 빌더가 입력 단계에서 같은 상한을 지켜야
+# 한다(`apps/web` `features/build-story/model/schema.ts` 의 키워드북 상수) — 여기가 더 엄격하면 그 초안의 자동저장이
+# 통째로 멈춘다.
+# 길이는 보낸 글자 그대로의 코드 포인트 수다(빌더도 그렇게 센다). NFC 로 바꾼 뒤 재면 길어지는 문자가 있어 빌더가
+# 받아 준 값을 여기서 거절하게 된다.
+KEYWORD_NOTE_MAX_INFO_LENGTH = 800
+KEYWORD_NOTE_MAX_KEYWORDS = 10
+KEYWORD_NOTE_MAX_KEYWORD_LENGTH = 20
+KEYWORD_NOTE_MAX_NAME_LENGTH = 20
+KEYWORD_NOTE_MAX_STICKY_TURNS = 5
+MAX_KEYWORD_NOTES = 50
+MAX_ALWAYS_ON_KEYWORD_NOTES = 3
+
+
+def _check_keywords(keywords: list[str]) -> list[str]:
+    """공백은 거의 모든 글에 들어 있어 공백뿐인 키워드는 키워드 구실을 못 한다. 매칭이 같게 보는 두 키워드(대소문자·
+    유니코드 조합만 다른 것)는 매칭을 바꾸지 않으면서 노트당 개수 상한의 한 자리를 차지한다. 저장하는 값은 바꾸지
+    않는다."""
+    seen: set[str] = set()
+    for keyword in keywords:
+        if not keyword.strip():
+            raise ValueError("keywords must not be blank")
+        key = normalize_keyword_text(keyword)
+        if key in seen:
+            raise ValueError(f"keyword is used twice ignoring case: {keyword}")
+        seen.add(key)
+    return keywords
+
+
+KeywordList = Annotated[
+    list[Annotated[str, Field(max_length=KEYWORD_NOTE_MAX_KEYWORD_LENGTH)]],
+    Field(max_length=KEYWORD_NOTE_MAX_KEYWORDS),
+    AfterValidator(_check_keywords),
+]
+
+
+class KeywordNoteDraftInput(CamelModel):
+    """저장 요청의 노트 하나. 상한은 요청에만 건다 — 응답(`KeywordNoteDraftItem`)에 걸면 상한이 생기기 전에 저장됐거나
+    서버를 이전 버전으로 되돌린 사이 저장된 행이 있는 초안을 열 수 없다(GET 500).
+
+    키워드가 하나도 없거나 정보가 빈 노트는 받아 준다. 빌더가 "노트 추가" 직후의 빈 노트를 그대로 자동저장하므로
+    여기서 막으면 노트를 추가할 때마다 자동저장이 멈춘다 — 그 검사는 발행(`validate_story_publish`)이 한다.
+
+    `name`·`exclude_keywords`·`sticky_turns`·`always_on` 은 안 보내면 기존 노트의 값을 그대로 둔다(router 가
+    `model_fields_set` 으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 켠
+    값을 기본값으로 되돌리지 않게 하려는 것이다. 새 노트는 기본값으로 들어간다."""
+
+    id: uuid.UUID
+    info_text: str = Field(max_length=KEYWORD_NOTE_MAX_INFO_LENGTH)
+    trigger_keywords: KeywordList
+    starting_setup_id: uuid.UUID | None
+    # 아래 옵션의 기본값은 `default=` 가 아니라 `default_factory` 로 둔다. OpenAPI 에 `default` 가 찍히면 FE 생성
+    # 타입(openapi-typescript)이 그 필드를 필수로 만들어 화면이 기본값을 명시해 보내게 되고, 그러면 그 화면이 옛 번들로
+    # 남았을 때 "생략 = 기존 값 유지"가 깨진다.
+    # 목록에서 노트를 알아보게 하는 이름이라 앞뒤 공백은 의미가 없다. 길이는 빌더처럼 보낸 그대로 잰다.
+    name: Annotated[str, Field(max_length=KEYWORD_NOTE_MAX_NAME_LENGTH), AfterValidator(str.strip)] = Field(
+        default_factory=str
+    )
+    # 상시 노트도 받는다 — 금지 키워드가 나온 턴에는 상시 노트도 빠진다.
+    exclude_keywords: KeywordList = Field(default_factory=list)
+    sticky_turns: int = Field(default_factory=int, ge=0, le=KEYWORD_NOTE_MAX_STICKY_TURNS)
+    always_on: bool = Field(default_factory=bool)
+
+
+# 생략하면 기존 노트의 값을 그대로 두는 필드들(`KeywordNoteDraftInput` docstring).
+KEYWORD_NOTE_OPTION_FIELDS = frozenset({"name", "exclude_keywords", "sticky_turns", "always_on"})
+
+
 class KeywordNoteDraftItem(CamelModel):
+    """초안 응답의 노트 하나. 배열 순서가 `order`(위가 먼저 실린다)라 순서 필드는 따로 없다. 서버는 새 필드를 항상
+    채워 보낸다. 기본값은 그 필드가 생기기 전에 만든 FE 타입·픽스처와의 호환용이라 생성 타입에서 선택 필드로 남게
+    `default_factory` 로 둔다(`KeywordNoteDraftInput` 의 같은 주석)."""
+
     id: uuid.UUID
     info_text: str
     trigger_keywords: list[str]
     starting_setup_id: uuid.UUID | None
+    name: str = Field(default_factory=str)
+    exclude_keywords: list[str] = Field(default_factory=list)
+    sticky_turns: int = Field(default_factory=int)
+    always_on: bool = Field(default_factory=bool)
 
 
 class ShortcutDraftItem(CamelModel):
@@ -446,7 +523,7 @@ class StoryDraftPayload(CamelModel):
     user_goal: str | None = None
     rules: str | None = None
     starting_setups: list[StartingSetupDraftItem]
-    keyword_notes: list[KeywordNoteDraftItem]
+    keyword_notes: list[KeywordNoteDraftInput] = Field(max_length=MAX_KEYWORD_NOTES)
     shortcuts: list[ShortcutDraftItem]
     description: str
     genre_id: uuid.UUID | None
@@ -457,6 +534,13 @@ class StoryDraftPayload(CamelModel):
     # 있던 탭의 옛 번들)·시드도 이 저장 경로를 쓰므로, 빈 목록을 기본값으로 두면 그 저장 한 번이 칸을
     # 전부 지운다. 보냈을 때만 칸·축을 페이로드에 맞춘다 — 빈 목록이면 전부 지운다.
     media_book: MediaBookPayload | None = None
+
+    @model_validator(mode="after")
+    def _check_always_on_count(self) -> Self:
+        # 상시 노트는 매 턴 키워드 발동 노트와 따로 실린다. 개수를 저장에서 막아 두면 대화 중에는 자르지 않아도 된다.
+        if sum(note.always_on for note in self.keyword_notes) > MAX_ALWAYS_ON_KEYWORD_NOTES:
+            raise ValueError(f"at most {MAX_ALWAYS_ON_KEYWORD_NOTES} keyword notes can be always on")
+        return self
 
 
 class StoryDraftResponse(CamelModel):

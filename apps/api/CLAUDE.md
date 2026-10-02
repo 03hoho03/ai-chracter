@@ -186,7 +186,7 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 - `db_session`은 커넥션 단위 트랜잭션 + 롤백이고, `db_client`가 `get_db_session`·`get_session_factory`를 그 커넥션에 바인딩해 오버라이드한다(`conditional_savepoint` 덕에 애플리케이션 `commit()`이 바깥 트랜잭션을 끝내지 않는다).
   - **그래서 `now()`는 한 테스트 안에서 완전히 동일한 값이다**(트랜잭션 시작 시각 고정). 라이브 호출 여러 번으로 `created_at` 순서를 검증하려 하지 말고 `created_at`을 명시적으로 다르게 넣을 것. 예외는 `chat_messages.created_at`이다 — 기본값이 `clock_timestamp()`(문장 실행 시각)라 한 트랜잭션 안에서도 삽입 순서대로 값이 달라진다.
 - **S3는 `mock_aws()`가 아니라 `ThreadedMotoServer`로 흉내낸다** — `api.main`을 이미 import한 프로세스에서는 `mock_aws`의 패치가 `run_in_threadpool` 워커 스레드에 적용되지 않아 HeadObject가 **실제 AWS로 나간다**(실측). 새로 만드는 `boto3.client(...)`에도 항상 `endpoint_url=settings.s3_endpoint_url`을 명시할 것.
-- DB I/O가 없는 순수 함수(스탯 클램핑, 규칙 평가, 키워드 매칭)는 **ORM 모델을 세션 없이 생성자로만 채워** 테스트한다(`nullable=False`는 DB 제약일 뿐이라 나머지 필드는 생략 가능).
+- DB I/O가 없는 순수 함수(스탯 클램핑, 규칙 평가, 키워드 매칭)는 **ORM 모델을 세션 없이 생성자로만 채워** 테스트한다(`nullable=False`는 DB 제약일 뿐이라 그 함수가 읽지 않는 필드는 생략 가능). 생략한 필드는 컬럼 `default`·`server_default`가 있어도 INSERT 전까지 `None`이다 — 키워드 매칭(`api/chat/keyword_notes.py`)은 `entity_id`·`order`·`info_text`·`trigger_keywords`·`exclude_keywords`·`sticky_turns`·`always_on`을 전부 읽으므로 이 일곱 개는 채워야 한다(빌더 미리보기의 메모리 노트도 같다).
 - **`LLMClient`를 상속하는 모든 페이크는 실제 시그니처를 그대로 따라야 한다**(예: `generate_structured`의 `images` 파라미터) — 빠지면 `[override]` mypy 에러가 여러 테스트 파일에서 동시에 난다. LLM을 실제로 안 쓰는 실패 케이스 테스트도 `get_llm_client` 오버라이드가 필요하다(라우트 본문 전에 resolve되고, 키가 없으면 즉시 `ValueError`).
 
 ## mypy strict 함정
@@ -205,5 +205,4 @@ uv run alembic check                 # 모델과 마이그레이션이 정확히
 
 ## 알려진 갭
 
-- **`_update_story_draft`의 선재 버그**: 제거된 시작설정을 `keyword_notes` 조정보다 먼저 지워서, 어떤 키워드북이 가리키는 시작설정을 빼는 PATCH는 물리 FK 위반으로 500이 난다. 빌더의 시작설정 삭제를 다시 만질 때 같이 고칠 것(노트 prune을 앞으로 옮기거나 참조를 먼저 끊는다).
 - **`contents.has_unpublished_changes`가 "초안이 발행본과 다른가"의 단일 소스다**(타임스탬프로는 판정 불가). 세우는 곳은 자동저장·편집취소·발행 셋뿐 — **초안을 바꾸는 새 엔드포인트를 추가하면 이 플래그를 반드시 함께 세울 것.**

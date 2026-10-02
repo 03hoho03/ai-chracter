@@ -1686,7 +1686,9 @@ export interface paths {
          *     business validation (publish is where that happens) — the version-detail row is
          *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
          *     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
-         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. `registration`-tab
+         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
+         *     저장 때 거절한다(422, `KeywordNoteDraftInput`) — 빌더가 같은 상한으로 입력을 먼저 막으므로 정상 입력으로는 닿지
+         *     않는다. 노트가 페이로드에 없는 시작설정을 가리키면 400 이다. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
          *     directly rather than the per-type detail table, since they're shared across versions,
          *     not per-version snapshot data.
@@ -6318,7 +6320,45 @@ export interface components {
          * @enum {string}
          */
         InquiryStatus: "pending" | "answered";
-        /** KeywordNoteDraftItem */
+        /**
+         * KeywordNoteDraftInput
+         * @description 저장 요청의 노트 하나. 상한은 요청에만 건다 — 응답(`KeywordNoteDraftItem`)에 걸면 상한이 생기기 전에 저장됐거나
+         *     서버를 이전 버전으로 되돌린 사이 저장된 행이 있는 초안을 열 수 없다(GET 500).
+         *
+         *     키워드가 하나도 없거나 정보가 빈 노트는 받아 준다. 빌더가 "노트 추가" 직후의 빈 노트를 그대로 자동저장하므로
+         *     여기서 막으면 노트를 추가할 때마다 자동저장이 멈춘다 — 그 검사는 발행(`validate_story_publish`)이 한다.
+         *
+         *     `name`·`exclude_keywords`·`sticky_turns`·`always_on` 은 안 보내면 기존 노트의 값을 그대로 둔다(router 가
+         *     `model_fields_set` 으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 켠
+         *     값을 기본값으로 되돌리지 않게 하려는 것이다. 새 노트는 기본값으로 들어간다.
+         */
+        KeywordNoteDraftInput: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Infotext */
+            infoText: string;
+            /** Triggerkeywords */
+            triggerKeywords: string[];
+            /** Startingsetupid */
+            startingSetupId: string | null;
+            /** Name */
+            name?: string;
+            /** Excludekeywords */
+            excludeKeywords?: string[];
+            /** Stickyturns */
+            stickyTurns?: number;
+            /** Alwayson */
+            alwaysOn?: boolean;
+        };
+        /**
+         * KeywordNoteDraftItem
+         * @description 초안 응답의 노트 하나. 배열 순서가 `order`(위가 먼저 실린다)라 순서 필드는 따로 없다. 서버는 새 필드를 항상
+         *     채워 보낸다. 기본값은 그 필드가 생기기 전에 만든 FE 타입·픽스처와의 호환용이라 생성 타입에서 선택 필드로 남게
+         *     `default_factory` 로 둔다(`KeywordNoteDraftInput` 의 같은 주석).
+         */
         KeywordNoteDraftItem: {
             /**
              * Id
@@ -6331,6 +6371,14 @@ export interface components {
             triggerKeywords: string[];
             /** Startingsetupid */
             startingSetupId: string | null;
+            /** Name */
+            name?: string;
+            /** Excludekeywords */
+            excludeKeywords?: string[];
+            /** Stickyturns */
+            stickyTurns?: number;
+            /** Alwayson */
+            alwaysOn?: boolean;
         };
         /** LegalConsentRequest */
         LegalConsentRequest: {
@@ -7070,7 +7118,7 @@ export interface components {
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */
-            keywordNotes: components["schemas"]["KeywordNoteDraftItem"][];
+            keywordNotes: components["schemas"]["KeywordNoteDraftInput"][];
             /** Shortcuts */
             shortcuts: components["schemas"]["ShortcutDraftItem"][];
             /** Description */

@@ -42,7 +42,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import AssetKind
-from api.db.models.story import Ending, StartingSetup, StoryVersionDetail
+from api.db.models.story import Ending, KeywordNote, StartingSetup, StoryVersionDetail
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 from .images import ensure_asset, read_image, situational_image_slug
@@ -308,6 +308,14 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
         media_book_people=[],
         media_book_scenes=[],
         media_book_cells=[],
+        keyword_notes=[
+            KeywordNote(
+                info_text=note_item.info_text,
+                trigger_keywords=note_item.trigger_keywords,
+                always_on=note_item.always_on,
+            )
+            for note_item in payload.keyword_notes
+        ],
     )
 
 

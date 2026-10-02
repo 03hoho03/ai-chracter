@@ -1158,13 +1158,15 @@ async def _build_prompt(
         assert story_detail is not None
         notes = (
             await db.scalars(
-                select(KeywordNote).where(
+                select(KeywordNote)
+                .where(
                     KeywordNote.content_version_id == room.content_version_id,
                     or_(KeywordNote.starting_setup_id.is_(None), KeywordNote.starting_setup_id == setup.id),
                 )
+                .order_by(KeywordNote.order, KeywordNote.entity_id)
             )
         ).all()
-        matched_notes = match_keyword_notes(user_content, list(notes))
+        matched_notes = match_keyword_notes(notes, history, user_content)
         prompt = build_story_generation_prompt(
             prompt_set=prompt_set,
             sections=prompt_sections,
@@ -2891,10 +2893,22 @@ def _preview_ending_rule_list_item(item: EndingRuleListDraftItem) -> EndingRuleL
 
 def _preview_keyword_notes(payload: StoryDraftPayload, setup_id: uuid.UUID | None) -> list[KeywordNote]:
     """실제 방의 `starting_setup_id IS NULL OR == 현재 setup` DB 필터와 동일한
-    스코프 규칙을 payload 안에서 그대로 적용한다."""
+    스코프 규칙을 payload 안에서 그대로 적용한다.
+
+    매칭 엔진이 읽는 필드는 전부 채운다 — 세션 없이 만든 ORM 객체는 지정하지 않은 속성이 None 이다. 순서는 빌더 목록
+    위치이고(저장도 그 위치를 순서로 쓴다), 같은 순서끼리 가르는 값은 노트 id 다."""
     return [
-        KeywordNote(info_text=note.info_text, trigger_keywords=note.trigger_keywords)
-        for note in payload.keyword_notes
+        KeywordNote(
+            entity_id=note.id,
+            info_text=note.info_text,
+            trigger_keywords=note.trigger_keywords,
+            name=note.name,
+            order=index,
+            exclude_keywords=note.exclude_keywords,
+            sticky_turns=note.sticky_turns,
+            always_on=note.always_on,
+        )
+        for index, note in enumerate(payload.keyword_notes)
         if note.starting_setup_id is None or note.starting_setup_id == setup_id
     ]
 
@@ -2926,7 +2940,7 @@ def _build_preview_prompt(
 
     setup = payload.starting_setups[0] if payload.starting_setups else None
     notes = _preview_keyword_notes(payload, setup.id if setup is not None else None)
-    matched_notes = match_keyword_notes(user_content, notes)
+    matched_notes = match_keyword_notes(notes, history, user_content)
     return build_story_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,

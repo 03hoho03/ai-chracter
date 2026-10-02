@@ -125,7 +125,11 @@ class StatDef(Base):
 
 class KeywordNote(Base):
     """entity_id pattern; starting_setup_id null = applies to
-    the whole story rather than a single starting setup."""
+    the whole story rather than a single starting setup.
+
+    `order` 를 포함해 뒤에 붙은 다섯 컬럼은 전부 `server_default` 를 둔다. 형제 테이블의 `order` 처럼
+    기본값 없이 두면, API 를 이 컬럼을 모르는 이전 이미지로 되돌렸을 때 그 코드의 노트 INSERT(노트 추가 저장,
+    발행·편집 취소의 노트 복제, 시드)가 NOT NULL 위반 500 이 된다."""
 
     __tablename__ = "keyword_notes"
 
@@ -139,6 +143,14 @@ class KeywordNote(Base):
     )
     info_text: Mapped[str] = mapped_column(Text, nullable=False)
     trigger_keywords: Mapped[list[str]] = mapped_column(ARRAY(Text), nullable=False)
+    # 목록에서 노트를 알아보게 하는 이름이다. 모델에 보내는 프롬프트에는 싣지 않는다.
+    name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    order: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    exclude_keywords: Mapped[list[str]] = mapped_column(
+        ARRAY(Text), server_default=text("'{}'::text[]"), nullable=False
+    )
+    sticky_turns: Mapped[int] = mapped_column(Integer, server_default=text("0"), nullable=False)
+    always_on: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
 class Shortcut(Base):

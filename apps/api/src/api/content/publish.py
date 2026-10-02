@@ -12,6 +12,7 @@ from api.db.models.content import Content, ContentVersion
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import (
     Ending,
+    KeywordNote,
     MediaBookCell,
     MediaBookPerson,
     MediaBookScene,
@@ -108,6 +109,7 @@ def validate_story_publish(
     media_book_people: Sequence[MediaBookPerson],
     media_book_scenes: Sequence[MediaBookScene],
     media_book_cells: Sequence[MediaBookCell],
+    keyword_notes: Sequence[KeywordNote],
 ) -> list[str]:
     """Mirrors `validate_character_publish`'s
     shape. `endings_by_setup_id` is keyed by `StartingSetup.id` (physical) since that's how the
@@ -118,6 +120,10 @@ def validate_story_publish(
     `mediaBook.cells`, 그 버전에 없는 인물·장면을 가리키는 칸이 하나라도 있으면 `mediaBook.orphanCells` 를 한 번씩
     알린다 — 축 참조에는 FK 가 없고, 그런 칸은 이름이 없어 심사 줄도 만들 수 없다. 고아 칸은 빌더 화면에 나오지
     않아 칸 하나하나를 가리킬 수 없고, 미디어 북을 한 번 다시 저장하면 지워진다.
+
+    키워드북은 자동저장이 빈 노트(노트 추가 직후)를 받아 주므로 여기서 막는다. 상시가 아닌 노트에 공백 아닌 키워드가
+    하나도 없으면 `keywordNotes.triggerKeywords`(열릴 길이 없다), 정보가 공백뿐인 노트가 있으면 `keywordNotes.infoText`
+    (실려도 빈 줄이다)를 노트 수와 상관없이 한 번씩 알린다 — 어느 노트인지는 빌더 폼 검증이 노트 자리에서 먼저 보여 준다.
     """
     missing: list[str] = []
     if not detail.name:
@@ -151,6 +157,11 @@ def validate_story_publish(
         cell.person_entity_id not in person_ids or cell.scene_entity_id not in scene_ids for cell in media_book_cells
     ):
         missing.append("mediaBook.orphanCells")
+
+    if any(not note.always_on and not any(k.strip() for k in note.trigger_keywords) for note in keyword_notes):
+        missing.append("keywordNotes.triggerKeywords")
+    if any(not note.info_text.strip() for note in keyword_notes):
+        missing.append("keywordNotes.infoText")
 
     if not version.detail_description:
         missing.append("description")
