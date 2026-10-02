@@ -26,6 +26,8 @@ from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
+    draft_dangling_stat_rule_paths,
+    setup_dangling_stat_rule_paths,
     validate_character_publish,
     validate_story_publish,
 )
@@ -1259,7 +1261,12 @@ async def _update_story_draft(
     mapped to the physical `starting_setups.id` FK column.
 
     노트가 이 페이로드에 없는 시작설정을 가리키면 400 이다. 예전처럼 조용히 "스토리 전체"로 바꿔 저장하면 작가가
-    고른 적용 범위가 말없이 넓어진다."""
+    고른 적용 범위가 말없이 넓어진다.
+
+    엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 422 `{"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": [...]}` 이다
+    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 스키마 validator 가 아니라 여기서
+    막는 것은 같은 페이로드 모델을 미리보기 시작·Redis 의 미리보기 세션 복원도 쓰기 때문이다 — validator 로 두면 이미
+    저장된 미리보기 세션의 다음 턴이 역직렬화에서 깨진다."""
     known_setup_ids = {setup_item.id for setup_item in payload.starting_setups}
     for note_index, note_item in enumerate(payload.keyword_notes):
         if note_item.starting_setup_id is not None and note_item.starting_setup_id not in known_setup_ids:
@@ -1271,6 +1278,12 @@ async def _update_story_draft(
                     "label": note_item.name or next(iter(note_item.trigger_keywords), ""),
                 },
             )
+    dangling_stat_rule_paths = draft_dangling_stat_rule_paths(payload.starting_setups)
+    if dangling_stat_rule_paths:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": dangling_stat_rule_paths},
+        )
 
     detail = await db.get(StoryVersionDetail, version.id)
     assert detail is not None
@@ -2172,6 +2185,11 @@ async def _publish_story_content(
     keyword_notes = (
         await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
     ).all()
+    dangling_stat_rule_paths: list[str] = []
+    for setup_index, setup in enumerate(starting_setups):
+        stat_ids = set((await db.scalars(select(StatDef.entity_id).where(StatDef.starting_setup_id == setup.id))).all())
+        endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
+        dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
 
     missing_fields = validate_story_publish(
         content,
@@ -2183,6 +2201,7 @@ async def _publish_story_content(
         media_book_scenes=scenes,
         media_book_cells=cells,
         keyword_notes=keyword_notes,
+        dangling_stat_rule_paths=dangling_stat_rule_paths,
     )
     if missing_fields:
         raise HTTPException(

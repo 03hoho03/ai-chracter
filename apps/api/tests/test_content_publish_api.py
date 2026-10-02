@@ -722,6 +722,34 @@ async def test_publish_story_rejects_ending_with_low_turn_count_gate(
     assert resp.json()["detail"] == {"missingFields": ["startingSetups[0].endings[0].turnCountGate"]}
 
 
+async def test_publish_story_rejects_ending_rules_on_stat_missing_from_their_setup_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """초안 저장이 막기 전에 저장된 초안이나 API 직접 호출도 발행에서 막는다. 규칙 몇 개가 어긋나도 키는 한 번만
+    알리고(어느 규칙인지는 초안 저장이 경로로 알린다) 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    # 맨 위 규칙과 그룹 안 규칙이 모두 이 스탯을 가리킨다.
+    await db_session.delete(stat_def)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["endings.statRules"]}
+    assert fake.received_prompt is None
+
+
 async def test_publish_story_rejects_when_filter_fails_and_leaves_draft_unchanged(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
@@ -1879,6 +1907,7 @@ def test_validate_story_publish_media_book(
         media_book_scenes=scenes,
         media_book_cells=cells,
         keyword_notes=[],
+        dangling_stat_rule_paths=[],
     )
 
     assert missing == expected
@@ -2024,6 +2053,7 @@ def test_validate_story_publish_keyword_notes(
             KeywordNote(info_text=info, trigger_keywords=keywords, always_on=always_on)
             for info, keywords, always_on in notes
         ],
+        dangling_stat_rule_paths=[],
     )
 
     assert missing == expected
