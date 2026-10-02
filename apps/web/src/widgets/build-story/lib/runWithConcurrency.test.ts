@@ -31,4 +31,41 @@ describe("runWithConcurrency", () => {
 
     expect(seen).toEqual([2, 3]);
   });
+
+  it("starts no more items once the signal aborts, but lets the running ones finish", async () => {
+    const controller = new AbortController();
+    const started: number[] = [];
+    const finished: number[] = [];
+
+    await runWithConcurrency(
+      [1, 2, 3, 4, 5],
+      2,
+      async (item) => {
+        started.push(item);
+        if (item === 2) controller.abort();
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        finished.push(item);
+      },
+      controller.signal,
+    );
+
+    expect(started).toEqual([1, 2]);
+    expect([...finished].sort()).toEqual([1, 2]);
+  });
+
+  it("starts nothing when the signal has already aborted", async () => {
+    const started: number[] = [];
+
+    await runWithConcurrency(
+      [1, 2],
+      2,
+      (item) => {
+        started.push(item);
+        return Promise.resolve();
+      },
+      AbortSignal.abort(),
+    );
+
+    expect(started).toEqual([]);
+  });
 });

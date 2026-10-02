@@ -3,6 +3,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { FolderUp, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
+import { toast } from "sonner";
 
 import type { OverwriteChoice } from "@/entities/media-book";
 import {
@@ -27,7 +28,7 @@ import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 type UploadOutcome = { ok: true; image: MediaBookCellImage } | { ok: false; reason: string };
 
-type UploadResult = { addedCount: number; excluded: BulkUploadExclusion[] };
+type UploadResult = { addedCellNames: string[]; excluded: BulkUploadExclusion[] };
 
 // 동시에 올리는 파일 수. 파일마다 리사이즈(메인 스레드 캔버스)와 업로드가 돌아 많이 열면 화면이 굳는다.
 const UPLOAD_CONCURRENCY = 3;
@@ -38,7 +39,9 @@ const MAX_FILE_MEGABYTES = MAX_UPLOAD_BYTES_BY_PURPOSE["situational-image"] / (1
 /**
  * 파일 이름(`인물_장면.확장자`)으로 칸을 한꺼번에 채운다. 순서: 이름 읽기 → (채워진 칸이 있으면) 덮어쓰기 묻기 →
  * 상한 적용 → 파일마다 올리고 끝나는 대로 한 장씩 폼에 반영. 업로드 주소는 `uploadAsset` 이 파일마다 올리기 직전에
- * 받으므로 대기열이 길어도 만료되지 않는다. 도중에 탭을 옮겨도 남은 파일은 계속 올라가 폼에 반영된다.
+ * 받으므로 대기열이 길어도 만료되지 않는다. 도중에 탭을 옮겨도 남은 파일은 계속 올라가 폼에 반영된다(폼은 빌더
+ * 셸에 있다). 빌더 자체를 떠나면 폼이 사라지므로 남은 파일은 올리지 않고, 올라가던 것도 폼에 쓰지 않고, 넣지 못한
+ * 장 수를 한 번 알린다.
  */
 export function MediaBookBulkUpload() {
   const { getMediaBook, commit } = useMediaBookEditor();
@@ -46,6 +49,8 @@ export function MediaBookBulkUpload() {
   const inputId = useId();
   const helpId = useId();
   const [progress, setProgress] = useState<{ done: number; total: number }>();
+  // 시작할 때 한 번 읽히는 알림. 파일마다 바뀌는 버튼 글자는 읽히면 시끄러워 live 로 두지 않는다.
+  const [startAnnouncement, setStartAnnouncement] = useState("");
   const [result, setResult] = useState<UploadResult>();
   const isUploading = progress !== undefined;
 
@@ -54,6 +59,7 @@ export function MediaBookBulkUpload() {
     event.target.value = "";
     if (files.length === 0 || isUploading) return;
     setResult(undefined);
+    const shellSignal = thumbnails.getShellSignal();
 
     const plan = planBulkUpload(
       files.map((file) => file.name),
@@ -69,13 +75,17 @@ export function MediaBookBulkUpload() {
     const final = finalizeBulkUploadPlan(plan, getMediaBook(), choice);
 
     const failed: BulkUploadExclusion[] = [];
-    let addedCount = 0;
+    const addedCellNames: string[] = [];
+    // 파일 순서 대기열이 처리(반영 또는 실패)한 수 — 빌더를 떠난 순간 나머지가 넣지 못한 장이다.
+    let settledCount = 0;
     // 업로드 도중 사용자가 지운 인물·장면을 되살리지 않도록, 이번 업로드가 이미 아는 이름을 들고 다닌다.
     const known = knownAxisNamesOf(getMediaBook());
     // 업로드는 동시에 돌지만 폼 반영은 파일 순서대로 — 새 인물·장면이 파일 순서로 만들어진다.
     const applyInFileOrder = createInOrderQueue<UploadOutcome>((index, outcome) => {
       const entry = final.entries[index];
-      if (!entry) return;
+      // 빌더를 떠난 뒤 끝난 업로드는 사라진 폼에 쓰지 않는다.
+      if (!entry || shellSignal.aborted) return;
+      settledCount += 1;
       if (!outcome.ok) {
         failed.push({ fileName: entry.fileName, reason: outcome.reason });
         return;
@@ -87,19 +97,34 @@ export function MediaBookBulkUpload() {
       }
       rememberEntryAxes(known, result.mediaBook, entry);
       commit(result.mediaBook);
-      addedCount += 1;
+      addedCellNames.push(`${entry.person} · ${entry.scene}`);
     });
+    // 떠난 화면 위에 뜨지만, "자동으로 저장돼요" 를 믿은 사람에게 잃은 것을 알리는 유일한 자리다.
+    const notifyLeftBuilder = () => {
+      const notInserted = final.entries.length - settledCount;
+      if (notInserted > 0) toast(`빌더를 떠나서 이미지 ${notInserted}장은 넣지 않았어요. 다시 열어 올려 주세요.`);
+    };
+    shellSignal.addEventListener("abort", notifyLeftBuilder, { once: true });
     setProgress({ done: 0, total: final.entries.length });
+    setStartAnnouncement(`이미지 ${final.entries.length}장을 올리는 중이에요`);
     const indexedEntries = final.entries.map((entry, index) => ({ entry, index }));
-    await runWithConcurrency(indexedEntries, UPLOAD_CONCURRENCY, async ({ entry, index }) => {
-      const outcome = await uploadEntryFile(files[entry.fileIndex], (assetId, file) =>
-        thumbnails.rememberUploadedFile(assetId, file),
-      );
-      applyInFileOrder(index, outcome);
-      setProgress((current) => current && { ...current, done: current.done + 1 });
-    });
+    await runWithConcurrency(
+      indexedEntries,
+      UPLOAD_CONCURRENCY,
+      async ({ entry, index }) => {
+        const outcome = await uploadEntryFile(files[entry.fileIndex], (assetId, file) =>
+          thumbnails.rememberUploadedFile(assetId, file),
+        );
+        applyInFileOrder(index, outcome);
+        setProgress((current) => current && { ...current, done: current.done + 1 });
+      },
+      shellSignal,
+    );
+    shellSignal.removeEventListener("abort", notifyLeftBuilder);
+    if (shellSignal.aborted) return;
     setProgress(undefined);
-    setResult({ addedCount, excluded: [...final.excluded, ...failed] });
+    setStartAnnouncement("");
+    setResult({ addedCellNames, excluded: [...final.excluded, ...failed] });
   }
 
   return (
@@ -137,6 +162,9 @@ export function MediaBookBulkUpload() {
         </p>
       </div>
 
+      <p role="status" className="sr-only">
+        {startAnnouncement}
+      </p>
       {result && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
     </div>
   );
@@ -147,13 +175,17 @@ function UploadResultNotice({ result, onDismiss }: { result: UploadResult; onDis
     <div role="status" className="flex flex-col gap-2 rounded-xl border border-border p-4">
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium text-foreground">
-          {result.addedCount}장을 넣었어요
+          {result.addedCellNames.length}장을 넣었어요
           {result.excluded.length > 0 && ` · ${result.excluded.length}개 파일은 넣지 않았어요`}
         </p>
         <Button type="button" variant="ghost" size="icon-sm" aria-label="결과 닫기" onClick={onDismiss}>
           <X aria-hidden />
         </Button>
       </div>
+      {result.addedCellNames.length > 0 && (
+        // 어느 칸에 들어갔는지 — 표에서 찾아보지 않아도 되게 칸 이름을 넣은 순서대로 적는다.
+        <p className="text-xs break-keep text-muted-foreground">{result.addedCellNames.join(", ")}</p>
+      )}
       {result.excluded.length > 0 && (
         <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
           {result.excluded.map((item, index) => (

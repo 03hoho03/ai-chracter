@@ -262,7 +262,10 @@ function CellBody({ cell, imageButtonsProps, onPatch, onClear }: CellBodyProps) 
       <p className="text-sm break-keep text-muted-foreground">
         아직 이미지가 없는 칸이에요. 이미지를 넣으면 상황 설명과 해금 힌트를 적을 수 있어요.
       </p>
-      <CellImageButtons {...imageButtonsProps} />
+      {/* 버튼 묶음이 상세 폭으로 늘어나지 않게 — 채운 칸의 같은 버튼과 폭을 맞춘다. */}
+      <div className="self-start">
+        <CellImageButtons {...imageButtonsProps} />
+      </div>
     </div>
   );
 }
