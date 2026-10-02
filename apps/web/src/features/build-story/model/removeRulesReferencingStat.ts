@@ -27,3 +27,35 @@ export function removeRulesReferencingStat(items: RuleListItemValues[], statId: 
   }
   return changed ? next : items;
 }
+
+type StatRemovalRuleUpdate = { endingIndex: number; statRules: RuleListItemValues[] };
+
+/** 그 스탯을 가리키는 엔딩 조건 수. 그룹 안의 조건도 하나씩 센다. */
+function countRulesReferencingStat(items: RuleListItemValues[], statId: string): number {
+  let count = 0;
+  for (const item of items) {
+    if (item.kind === "rule") count += item.statId === statId ? 1 : 0;
+    else count += item.rules.filter((rule) => rule.statId === statId).length;
+  }
+  return count;
+}
+
+/**
+ * 스탯 하나를 지우기 전에 같은 시작설정의 엔딩들에서 함께 지울 조건을 정한다. 함께 지워질 조건이 있으면 작가가 모른 채
+ * 엔딩 조건을 잃지 않도록 그 수를 들고 먼저 묻고, 거절하면 `undefined` 를 돌려줘 호출부가 스탯도 조건도 건드리지 않게 한다.
+ * 조건이 없으면 묻지 않고 빈 목록을 돌려준다. 바뀌는 엔딩만 담는다.
+ */
+export async function planStatRemoval(
+  endings: { statRules: RuleListItemValues[] }[],
+  statId: string,
+  confirm: (ruleCount: number) => Promise<boolean>,
+): Promise<StatRemovalRuleUpdate[] | undefined> {
+  const ruleCount = endings.reduce((sum, ending) => sum + countRulesReferencingStat(ending.statRules, statId), 0);
+  if (ruleCount > 0 && !(await confirm(ruleCount))) return undefined;
+  const updates: StatRemovalRuleUpdate[] = [];
+  endings.forEach((ending, endingIndex) => {
+    const statRules = removeRulesReferencingStat(ending.statRules, statId);
+    if (statRules !== ending.statRules) updates.push({ endingIndex, statRules });
+  });
+  return updates;
+}

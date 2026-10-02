@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { removeRulesReferencingStat } from "./removeRulesReferencingStat";
+import { planStatRemoval, removeRulesReferencingStat } from "./removeRulesReferencingStat";
 import type { RuleListItemValues, SingleRuleValues } from "./schema";
 
 function rule(id: string, statId: string, nextOp: SingleRuleValues["nextOp"] = null): SingleRuleValues {
@@ -47,5 +47,43 @@ describe("removeRulesReferencingStat", () => {
     ];
 
     expect(removeRulesReferencingStat(items, "gone")).toBe(items);
+  });
+});
+
+describe("planStatRemoval", () => {
+  const confirmed = () => vi.fn((_ruleCount: number) => Promise.resolve(true));
+
+  it("asks first with the number of conditions that go with the stat, counting rules inside groups", async () => {
+    const confirm = confirmed();
+    const group: RuleListItemValues = {
+      kind: "group",
+      id: "g1",
+      nextOp: null,
+      rules: [rule("r3", "gone", "or"), rule("r4", "gone")],
+    };
+    const endings = [{ statRules: [rule("r1", "gone", "and"), rule("r2", "kept")] }, { statRules: [group] }];
+
+    const updates = await planStatRemoval(endings, "gone", confirm);
+
+    expect(confirm).toHaveBeenCalledExactlyOnceWith(3);
+    expect(updates).toEqual([
+      { endingIndex: 0, statRules: [rule("r2", "kept")] },
+      { endingIndex: 1, statRules: [] },
+    ]);
+  });
+
+  it("changes nothing when the author cancels", async () => {
+    const endings = [{ statRules: [rule("r1", "gone")] }];
+    const cancelled = vi.fn(() => Promise.resolve(false));
+
+    expect(await planStatRemoval(endings, "gone", cancelled)).toBeUndefined();
+  });
+
+  it("removes without asking when no condition uses the stat", async () => {
+    const confirm = confirmed();
+    const endings = [{ statRules: [rule("r1", "kept")] }, { statRules: [] }];
+
+    expect(await planStatRemoval(endings, "gone", confirm)).toEqual([]);
+    expect(confirm).not.toHaveBeenCalled();
   });
 });
