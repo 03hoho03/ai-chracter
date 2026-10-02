@@ -1,4 +1,6 @@
+import { Button } from "@ai-character-chat/ui/components/button";
 import { Label } from "@ai-character-chat/ui/components/label";
+import { Grid3x3 } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -24,7 +26,7 @@ import {
  */
 export function MediaBookTab() {
   const { mediaBook } = useMediaBookEditor();
-  const { selected, announcement, selectNext, close, clearAnnouncement } = useMediaBookSelection();
+  const { selected, announcement, selectNext, close, returnToGrid, openGrid, clearAnnouncement } = useMediaBookSelection();
 
   // 이미지를 바꾼 뒤의 되돌리기는 이 탭이 보이는 동안만 둔다. 알림도 탭을 떠날 때 비워, 돌아왔을 때 지난 문장이
   // 남아 있지 않게 한다.
@@ -64,17 +66,24 @@ export function MediaBookTab() {
         <MediaBookAxisList axis="scene" />
       </div>
 
-      {selectedPosition ? (
+      {selectedPosition !== undefined && (
         <MediaBookCellPanel
           id={CELL_PANEL_ID}
           position={selectedPosition}
           onClose={() => close(selectedPosition)}
+          onReturnToGrid={() => returnToGrid(selectedPosition)}
           onReturnFocus={() => focusCellOrHeading(selectedPosition)}
           onSelectNext={selectNext}
           progressId={PROGRESS_ID}
         />
-      ) : (
-        hasGrid && <CellPanelPlaceholder />
+      )}
+      {selectedPosition === undefined && hasGrid && <CellPanelPlaceholder onOpenGrid={openGrid} />}
+      {selectedPosition === undefined && !hasGrid && (
+        // 넓은 화면은 바로 옆 열의 빈 상태가 안내한다. 좁은 화면에서는 그 빈 상태가 배치표 화면 안에 숨어 있어 여기서 한
+        // 번 더 알린다.
+        <p className="text-sm break-keep text-muted-foreground lg:hidden">
+          인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요. 배치표는 위쪽 ‘배치표’ 버튼으로 열어요.
+        </p>
       )}
       <p role="status" className="sr-only">
         {announcement}
@@ -87,13 +96,25 @@ export function MediaBookTab() {
  * 칸을 고르기 전 상세 자리. 상세와 같은 윤곽이라 칸을 고르면 같은 자리에서 내용만 바뀐다. 점선이 아닌 것은 비어 있는
  * 상태가 아니라 상세가 열릴 자리여서다.
  */
-function CellPanelPlaceholder() {
+function CellPanelPlaceholder({ onOpenGrid }: { onOpenGrid: () => void }) {
   return (
-    <div className="rounded-xl border border-border p-4">
+    <div className="flex flex-col items-start gap-3 rounded-xl border border-border p-4">
       <p className="text-sm break-keep text-muted-foreground">
         <span className="hidden lg:inline">오른쪽 </span>배치표에서 칸을 고르면 여기에서 이미지를 넣고 상황 설명을 적을 수
         있어요.
       </p>
+      {/* 좁은 화면에서는 표가 다른 화면이라 본문 안에도 그리로 가는 길을 둔다. 이 상태에서 화면의 유일한 앞길이라 작게
+          줄이지 않는다. 상세를 닫으면 포커스가 이 버튼으로 온다. */}
+      <Button
+        type="button"
+        variant="outline"
+        className="lg:hidden"
+        data-media-book-open-grid
+        onClick={onOpenGrid}
+      >
+        <Grid3x3 aria-hidden />
+        배치표에서 칸 고르기
+      </Button>
     </div>
   );
 }

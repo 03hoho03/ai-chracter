@@ -4,7 +4,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Camera, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
@@ -42,6 +42,8 @@ type MediaBookCellPanelProps = {
   id: string;
   position: MediaBookPosition;
   onClose: () => void;
+  /** 좁은 화면에서 상세를 둔 채 배치표 화면으로 돌아간다. */
+  onReturnToGrid: () => void;
   /** 누른 버튼이 사라질 때(비우기 뒤) 포커스를 표의 그 칸(보이지 않으면 상세 제목)으로 옮긴다. */
   onReturnFocus: () => void;
   /** "다음 미완성 칸" 으로 고른 칸을 연다. */
@@ -69,6 +71,7 @@ export function MediaBookCellPanel({
   id,
   position,
   onClose,
+  onReturnToGrid,
   onReturnFocus,
   onSelectNext,
   progressId,
@@ -215,6 +218,11 @@ export function MediaBookCellPanel({
       {/* 칸을 고르면 이 머리를 화면 맨 위에 맞춘다. 위쪽 여유는 상세의 안쪽 여백(16px) + 숨 쉴 자리(8px)라
           상세 윤곽의 윗변까지 보인다. 좁은 화면은 페이지가 상단바(56px) 밑으로 스크롤되므로 그 높이를 더한다. */}
       <div id={`${id}-head`} className="flex scroll-mt-20 items-start gap-3 lg:scroll-mt-6">
+        {/* 좁은 화면에서는 표가 다른 화면이라 그리로 돌아갈 길을 머리 맨 앞에 둔다. 넓은 화면에서는 표가 옆 열에 보여
+            필요 없다. 상단 버튼·자리표시 버튼과 같은 화면을 열지만 하는 일(이 칸으로 돌아가기)이 달라 이름으로 가른다. */}
+        <Button type="button" variant="ghost" size="icon-sm" aria-label="배치표로 돌아가기" className="lg:hidden" onClick={onReturnToGrid}>
+          <ChevronLeft aria-hidden />
+        </Button>
         <CellThumbnail imageUrl={cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined} hasImage={!!cell} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex items-start justify-between gap-2">

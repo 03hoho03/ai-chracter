@@ -300,7 +300,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
       <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
         {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
-        <MediaBookSelectionProvider>
+        <MediaBookSelectionProvider setPreviewOpen={setIsPreviewOpen}>
           <BuilderLayout
             isPreviewOpen={isPreviewOpen}
             preview={

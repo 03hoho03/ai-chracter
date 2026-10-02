@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
+import { flushSync } from "react-dom";
 import { useFormContext } from "react-hook-form";
 
 import {
@@ -18,6 +19,8 @@ import {
 
 type MediaBookSelectionProviderProps = {
   children: ReactNode;
+  /** 셸의 lg 미만 미리보기 화면(미디어 북 탭에서는 배치표) 열림 상태를 바꾼다. lg 이상에서는 레이아웃이 이 값을 무시한다. */
+  setPreviewOpen: Dispatch<SetStateAction<boolean>>;
 };
 
 /**
@@ -26,7 +29,7 @@ type MediaBookSelectionProviderProps = {
  * 전체가 다시 그려지지 않고 이 컨텍스트를 읽는 쪽만 다시 그려지게 하려는 것이다. 폼은 구독하지 않고 동작하는 순간의
  * 값만 읽는다.
  */
-export function MediaBookSelectionProvider({ children }: MediaBookSelectionProviderProps) {
+export function MediaBookSelectionProvider({ children, setPreviewOpen }: MediaBookSelectionProviderProps) {
   const { getValues } = useFormContext<StoryBuilderFormValues>();
   const [selected, setSelected] = useState<MediaBookPosition>();
   const [announcement, setAnnouncement] = useState("");
@@ -40,11 +43,14 @@ export function MediaBookSelectionProvider({ children }: MediaBookSelectionProvi
       const nextAnnouncement =
         selected === undefined || isSameCell ? "" : announceCell(getValues("mediaBook"), position);
       setSelected(position);
-      // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 움직이지 않는다.
+      // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 움직이지 않는다(좁은 화면에서도 배치표에 머문다).
       if (method === "copy") {
         setAnnouncement(nextAnnouncement);
         return;
       }
+      // 좁은 화면에서는 배치표 화면을 닫고 폼 열의 상세로 넘어간다. 누른 칸이 화면에서 사라지므로 아래에서 포커스가
+      // 상세 제목으로 간다.
+      setPreviewOpen(false);
       // 다음 프레임(상세가 그려진 뒤)에 상세 머리를 화면 맨 위에 맞춘다. 표는 다른 열에 그대로 보이므로 상세를 위에서부터
       // 보여 주면 되고, 연달아 다른 칸을 고르면 머리가 이미 위라 움직이지 않는다. 부드러운 스크롤은 쓰지 않는다(움직임을
       // 줄이는 설정과 무관하게 순간 이동). 키보드로 열었거나 누른 칸이 화면에서 사라졌으면 포커스를 상세 제목으로 옮겨
@@ -71,16 +77,44 @@ export function MediaBookSelectionProvider({ children }: MediaBookSelectionProvi
     }
 
     function close(position: MediaBookPosition) {
-      // 닫기 버튼이 사라지기 전에 포커스를 표의 그 칸으로 돌려준다.
-      findVisibleCell(position)?.focus();
-      setSelected(undefined);
+      const cell = findVisibleCell(position);
+      if (cell) {
+        // 닫기 버튼이 사라지기 전에 포커스를 표의 그 칸으로 돌려준다.
+        cell.focus();
+        setSelected(undefined);
+        return;
+      }
+      // 표가 다른 화면이면(좁은 화면) 폼에 남아, 같은 자리에 서는 자리표시의 "배치표에서 칸 고르기" 로 보낸다. 그
+      // 버튼은 선택을 비운 뒤에야 생기므로 화면을 먼저 바꾸고 곧바로 옮긴다 — 닫기 버튼이 사라진 채 포커스가 body 로
+      // 떨어진 틈이 남지 않게.
+      flushSync(() => setSelected(undefined));
+      document.querySelector<HTMLElement>(OPEN_GRID_SELECTOR)?.focus();
     }
 
-    return { selected, announcement, select, selectNext, close, clearAnnouncement };
-  }, [selected, announcement, getValues, clearAnnouncement]);
+    function returnToGrid(position: MediaBookPosition) {
+      // 좁은 화면에서 상세를 둔 채 배치표 화면으로 돌아가 그 칸에 포커스를 둔다(선택은 남아 표에 테두리가 보인다). 누른
+      // 버튼은 폼과 함께 숨으므로 화면을 먼저 바꾸고 곧바로 옮긴다. 배치표 화면이 숨어 있던 동안의 스크롤 위치에 기대지
+      // 않고 매번 그 칸을 화면에 들인다.
+      flushSync(() => setPreviewOpen(true));
+      const cell = findVisibleCell(position);
+      cell?.focus({ preventScroll: true });
+      cell?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+
+    function openGrid() {
+      // 좁은 화면에서 자리표시의 버튼으로 배치표 화면을 연다. 누른 버튼이 폼과 함께 숨으므로 표의 첫 칸으로 포커스를 옮긴다.
+      flushSync(() => setPreviewOpen(true));
+      document.querySelector<HTMLElement>("[data-media-book-cell]")?.focus();
+    }
+
+    return { selected, announcement, select, selectNext, close, returnToGrid, openGrid, clearAnnouncement };
+  }, [selected, announcement, getValues, clearAnnouncement, setPreviewOpen]);
 
   return <MediaBookSelectionContext.Provider value={value}>{children}</MediaBookSelectionContext.Provider>;
 }
+
+/** 좁은 화면의 상세 자리표시에 있는 "배치표에서 칸 고르기" 버튼. 상세를 닫으면 포커스가 여기로 온다. */
+const OPEN_GRID_SELECTOR = "[data-media-book-open-grid]";
 
 /**
  * 상세 안에서 누른 버튼이 사라졌을 때(비우기 확인 뒤, 되돌리기 토스트) 포커스를 둘 곳. 표의 그 칸이 보이면 그 칸,

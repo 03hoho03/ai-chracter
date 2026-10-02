@@ -21,6 +21,10 @@ export type MediaBookSelection = {
   select: (position: MediaBookPosition, method: MediaBookSelectMethod) => void;
   selectNext: (position: MediaBookPosition) => void;
   close: (position: MediaBookPosition) => void;
+  /** 좁은 화면에서 상세를 둔 채 배치표 화면으로 돌아가 그 칸에 포커스를 둔다. */
+  returnToGrid: (position: MediaBookPosition) => void;
+  /** 좁은 화면에서 칸을 고르기 전에 배치표 화면을 연다. */
+  openGrid: () => void;
   clearAnnouncement: () => void;
 };
 
