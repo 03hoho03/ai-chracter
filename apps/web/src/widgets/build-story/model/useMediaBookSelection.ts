@@ -16,8 +16,6 @@ export const PROGRESS_ID = "media-book-progress";
 export type MediaBookSelection = {
   /** 마지막으로 고른 칸. 그 뒤 축이 지워졌을 수 있으니 화면에 쓸 때는 `resolveSelectedPosition` 을 거친다. */
   selected: MediaBookPosition | undefined;
-  /** 마우스로 칸을 옮겼을 때 스크린리더에 들려줄 한 줄. */
-  announcement: string;
   select: (position: MediaBookPosition, method: MediaBookSelectMethod) => void;
   selectNext: (position: MediaBookPosition) => void;
   close: (position: MediaBookPosition) => void;

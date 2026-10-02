@@ -107,10 +107,23 @@ export function MediaBookSelectionProvider({ children, setPreviewOpen }: MediaBo
       document.querySelector<HTMLElement>("[data-media-book-cell]")?.focus();
     }
 
-    return { selected, announcement, select, selectNext, close, returnToGrid, openGrid, clearAnnouncement };
-  }, [selected, announcement, getValues, clearAnnouncement, setPreviewOpen]);
+    return { selected, select, selectNext, close, returnToGrid, openGrid, clearAnnouncement };
+  }, [selected, getValues, clearAnnouncement, setPreviewOpen]);
 
-  return <MediaBookSelectionContext.Provider value={value}>{children}</MediaBookSelectionContext.Provider>;
+  return (
+    <MediaBookSelectionContext.Provider value={value}>
+      {children}
+      {/* 알림 영역은 두 열 밖에 하나만 둔다. 좁은 화면에서는 폼 열과 배치표 화면 중 한쪽이 숨는데, 숨은 열 안의 live
+          영역은 읽히지 않아 배치표 화면에서 칸 모서리 복사로 칸을 옮긴 것이 들리지 않았다. 첫 알림부터 읽히도록 탭과
+          무관하게 늘 그려 두고, 미디어 북 탭을 떠나면 탭이 문장을 비운다. `fixed` 래퍼는 화면 밖 글자가 문서 끝에
+          자리를 잡아 문서 전체를 세로로 스크롤시키지 않게 한다 — 고정 위치 요소는 문서의 스크롤 길이에 들어가지 않는다. */}
+      <div className="fixed top-0 left-0">
+        <p role="status" className="sr-only">
+          {announcement}
+        </p>
+      </div>
+    </MediaBookSelectionContext.Provider>
+  );
 }
 
 /** 좁은 화면의 상세 자리표시에 있는 "배치표에서 칸 고르기" 버튼. 상세를 닫으면 포커스가 여기로 온다. */

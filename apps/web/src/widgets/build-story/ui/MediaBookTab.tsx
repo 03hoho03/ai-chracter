@@ -26,7 +26,7 @@ import {
  */
 export function MediaBookTab() {
   const { mediaBook } = useMediaBookEditor();
-  const { selected, announcement, selectNext, close, returnToGrid, openGrid, clearAnnouncement } = useMediaBookSelection();
+  const { selected, selectNext, close, returnToGrid, openGrid, clearAnnouncement } = useMediaBookSelection();
 
   // 이미지를 바꾼 뒤의 되돌리기는 이 탭이 보이는 동안만 둔다. 알림도 탭을 떠날 때 비워, 돌아왔을 때 지난 문장이
   // 남아 있지 않게 한다.
@@ -42,7 +42,7 @@ export function MediaBookTab() {
   const selectedPosition = resolveSelectedPosition(mediaBook, selected);
 
   return (
-    // `relative` 는 화면 밖 글자(`sr-only` 알림·파일 입력)의 기준을 이 탭으로 묶는다. 없으면 그 요소들이 문서 맨 위
+    // `relative` 는 화면 밖 글자(`sr-only` 파일 입력)의 기준을 이 탭으로 묶는다. 없으면 그 요소들이 문서 맨 위
     // 기준으로 자리를 잡아, 넓은 화면에서 폼 열이 아니라 문서가 세로로 스크롤되고 칸을 고를 때 창이 밀려 폼 열 위쪽이
     // 상단바 밑으로 들어간다.
     <div className="relative flex flex-col gap-6 py-6" data-field-path="mediaBook">
@@ -85,9 +85,6 @@ export function MediaBookTab() {
           인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요. 배치표는 위쪽 ‘배치표’ 버튼으로 열어요.
         </p>
       )}
-      <p role="status" className="sr-only">
-        {announcement}
-      </p>
     </div>
   );
 }
