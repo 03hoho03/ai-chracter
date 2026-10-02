@@ -23,7 +23,7 @@ type MediaBookGridProps = {
 };
 
 /**
- * 배치표 — 열은 인물, 줄은 장면이다. 인물은 대개 몇 명이고 장면은 늘어나므로 늘어나는 쪽을 세로(페이지 스크롤)로
+ * 배치표 — 열은 인물, 줄은 장면이다. 인물은 대개 몇 명이고 장면은 늘어나므로 늘어나는 쪽을 세로(열 안 스크롤)로
  * 둔다. 인물이 많아 폭을 넘으면 표만 가로로 밀린다(장면 이름 열은 고정). 칸은 고정 크기이고 그림은 원래 비율 그대로
  * 칸 안에 맞춘다(`object-contain`) — 칸 크기가 그림과 무관해 그림이 도착해도 표가 움직이지 않는다.
  */
@@ -110,9 +110,9 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         data-media-book-cell={cellKey}
         onClick={(event) => onSelect(event.detail === 0 ? "keyboard" : "pointer")}
         className={cn(
-          // 고른 뒤 스크롤이 이 칸을 상단바 밑에 숨기지 않게 위쪽 여유를 둔다(좁은 화면은 페이지가, 넓은 화면은 상단바
-          // 아래에서 시작하는 폼 열이 스크롤된다).
-          "scroll-mt-16 lg:scroll-mt-4",
+          // 칸을 화면에 들일 때(다음 미완성 칸, 배치표로 돌아가기) 남기는 여유. 위는 배치표 묶음 본문 안의 숨 쉴 자리,
+          // 왼쪽은 표를 가로로 민 상태에서 칸이 고정된 장면 이름 열(최대 96px + 안쪽 여백 + 칸 사이 간격) 밑에 숨지 않게.
+          "scroll-mt-2 scroll-ml-28",
           // 포커스는 하우스 레시피 — 3:1 은 불투명 보더가 지고, 반투명 링은 어디인지 보여 준다.
           "flex size-full items-center justify-center overflow-hidden rounded-lg focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           cell
@@ -157,9 +157,4 @@ function describeCell(cell: MediaBookCellValues | undefined): string {
 /** 표의 칸 버튼을 찾는 표식 값. uuid 에는 `|` 가 없어 자리끼리 겹치지 않는다. */
 export function toCellKey(position: MediaBookPosition): string {
   return `${position.personId}|${position.sceneId}`;
-}
-
-/** 표의 그 칸 버튼으로 포커스를 옮긴다(상세를 닫거나 비운 뒤). */
-export function focusGridCell(position: MediaBookPosition) {
-  document.querySelector<HTMLButtonElement>(`[data-media-book-cell="${toCellKey(position)}"]`)?.focus();
 }

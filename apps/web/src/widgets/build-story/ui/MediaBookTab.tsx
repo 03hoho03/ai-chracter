@@ -7,7 +7,7 @@ import { MAX_MEDIA_BOOK_CELLS } from "@/features/build-story";
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
 import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
-import { focusGridCell } from "./MediaBookGrid";
+import { focusCellOrHeading } from "./MediaBookSelectionProvider";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import {
   CELL_PANEL_ID,
@@ -69,7 +69,7 @@ export function MediaBookTab() {
           id={CELL_PANEL_ID}
           position={selectedPosition}
           onClose={() => close(selectedPosition)}
-          onReturnFocus={() => focusGridCell(selectedPosition)}
+          onReturnFocus={() => focusCellOrHeading(selectedPosition)}
           onSelectNext={selectNext}
           progressId={PROGRESS_ID}
         />
