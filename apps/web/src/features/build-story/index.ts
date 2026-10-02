@@ -42,7 +42,13 @@ export {
 export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
 export { dragMoveIndices, stepMoveIndices, type MoveIndices } from "./model/keywordNoteOrder";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
-export { toUsedAssetLabels } from "./model/mediaBookProgress";
+export {
+  findNextIncompleteCell,
+  formatMediaBookProgress,
+  summarizeMediaBookProgress,
+  toUsedAssetLabels,
+  type MediaBookProgress,
+} from "./model/mediaBookProgress";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";

@@ -106,7 +106,7 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         type="button"
         aria-pressed={isSelected}
         aria-controls={isSelected ? panelId : undefined}
-        aria-label={`${personName} / ${sceneName} — ${cell ? "이미지 있음" : "비어 있음"}${cell?.excludeFromChat ? ", 대화 중 띄우지 않음" : ""}`}
+        aria-label={`${personName} / ${sceneName} — ${describeCell(cell)}`}
         data-media-book-cell={cellKey}
         onClick={(event) => onSelect(event.detail === 0 ? "keyboard" : "pointer")}
         className={cn(
@@ -142,6 +142,15 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
       )}
     </div>
   );
+}
+
+/** 칸 버튼 접근 이름의 상태 부분. 표에는 상황 설명 유무 표식이 없어 이름이 그 정보를 싣는다. */
+function describeCell(cell: MediaBookCellValues | undefined): string {
+  if (!cell) return "비어 있음";
+  const parts = ["이미지 있음"];
+  if (cell.situationDescription.trim() === "") parts.push("상황 설명 없음");
+  if (cell.excludeFromChat) parts.push("대화 중 띄우지 않음");
+  return parts.join(", ");
 }
 
 /** 표의 칸 버튼을 찾는 표식 값. uuid 에는 `|` 가 없어 자리끼리 겹치지 않는다. */

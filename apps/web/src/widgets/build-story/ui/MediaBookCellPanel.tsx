@@ -4,7 +4,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Camera, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
+import { Camera, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
@@ -13,6 +13,7 @@ import {
   cellImageRefusalMessage,
   countCharacters,
   findCell,
+  findNextIncompleteCell,
   MAX_MEDIA_BOOK_SITUATION_LENGTH,
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   removeCell,
@@ -30,6 +31,7 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
+import { clampCharacters } from "../lib/clampCharacters";
 import { copyMediaTag } from "../lib/copyMediaTag";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
@@ -40,6 +42,10 @@ type MediaBookCellPanelProps = {
   onClose: () => void;
   /** 누른 버튼이 사라질 때(비우기 뒤) 포커스를 표의 그 칸으로 돌려준다. */
   onReturnFocus: () => void;
+  /** "다음 미완성 칸" 으로 고른 칸을 연다. */
+  onSelectNext: (position: MediaBookPosition) => void;
+  /** 더 갈 미완성 칸이 없을 때 그 이유를 말하는 진척 한 줄의 id. */
+  progressId: string;
 };
 
 // 미리보기 상자의 긴 변 상한(px). 세로로 긴 그림이 패널을 길게 늘이지 않게 폭을 비율로 줄인다.
@@ -57,7 +63,14 @@ const UNDO_TOAST_DURATION_MS = 8000;
  * 칸별 상태가 다른 칸으로 넘어가지 않게 하면서, 머리의 버튼에 있던 포커스가 칸을 바꿀 때 사라지지 않게 한다.
  * 빈 칸이면 이미지 넣기만, 채운 칸이면 이미지 바꾸기·상황 설명·해금 힌트·노출 제외·비우기.
  */
-export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: MediaBookCellPanelProps) {
+export function MediaBookCellPanel({
+  id,
+  position,
+  onClose,
+  onReturnFocus,
+  onSelectNext,
+  progressId,
+}: MediaBookCellPanelProps) {
   const { mediaBook, getMediaBook, commit } = useMediaBookEditor();
   const thumbnails = useMediaBookThumbnails();
   const person = mediaBook.people.find((item) => item.id === position.personId);
@@ -68,9 +81,17 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
   const cellName = `${person.name} · ${scene.name}`;
   const tag = toMediaNameTag(person.name, scene.name);
   const headingId = `${id}-heading`;
+  const hasNextIncomplete = findNextIncompleteCell(mediaBook, position) !== undefined;
 
   function focusHeading() {
     document.getElementById(headingId)?.focus({ preventScroll: true });
+  }
+
+  function handleNext() {
+    // 비활성이어도 `disabled` 로 막지 않는다 — 누르는 순간 포커스가 body 로 떨어져, 키보드로 연달아 누르던 사람이
+    // 처음부터 Tab 을 다시 시작해야 한다.
+    const next = findNextIncompleteCell(getMediaBook(), position);
+    if (next) onSelectNext(next);
   }
 
   function handleImageChange(image: MediaBookCellImage) {
@@ -204,6 +225,19 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
               <Copy aria-hidden />
               표기 복사
             </Button>
+            {/* 머리는 칸을 바꿔도 그대로라 연달아 눌러도 포커스가 이 버튼에 남는다. */}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="ml-auto aria-disabled:opacity-65"
+              aria-disabled={!hasNextIncomplete}
+              aria-describedby={hasNextIncomplete ? undefined : progressId}
+              onClick={handleNext}
+            >
+              다음 미완성 칸
+              <ChevronRight aria-hidden />
+            </Button>
           </div>
         </div>
       </div>
@@ -260,6 +294,8 @@ type FilledCellFieldsProps = {
 
 function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledCellFieldsProps) {
   const thumbnails = useMediaBookThumbnails();
+  // 방금 입력이 상한에서 잘렸는가 — 그 순간에만 도움말 자리에 알린다. 칸마다 본문을 새로 그려 다른 칸으로 넘어가지 않는다.
+  const [truncatedField, setTruncatedField] = useState<"situation" | "hint">();
   const imageUrl = thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl);
   const fieldId = `media-book-cell-${cell.id}`;
 
@@ -278,16 +314,19 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           placeholder="예) 리딩 중 웃음이 터져 대본으로 얼굴을 가린 유나"
           value={cell.situationDescription}
           aria-describedby={`${fieldId}-situation-help`}
-          onChange={(event) =>
-            onPatch({ situationDescription: clampCharacters(event.target.value, MAX_MEDIA_BOOK_SITUATION_LENGTH) })
-          }
+          onChange={(event) => {
+            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_SITUATION_LENGTH);
+            setTruncatedField(clamped.isTruncated ? "situation" : undefined);
+            onPatch({ situationDescription: clamped.value });
+          }}
         />
-        <p id={`${fieldId}-situation-help`} className="flex justify-between gap-2 text-xs text-muted-foreground">
-          <span className="break-keep">대화 중 어떤 이미지를 띄울지 AI가 고를 때 이름과 함께 읽어요.</span>
-          <span className="shrink-0 tabular-nums">
-            {countCharacters(cell.situationDescription)}/{MAX_MEDIA_BOOK_SITUATION_LENGTH}
-          </span>
-        </p>
+        <LimitedFieldHelp
+          id={`${fieldId}-situation-help`}
+          help="대화 중 어떤 이미지를 띄울지 AI가 고를 때 이름과 함께 읽어요."
+          count={countCharacters(cell.situationDescription)}
+          max={MAX_MEDIA_BOOK_SITUATION_LENGTH}
+          isTruncated={truncatedField === "situation"}
+        />
       </div>
 
       <div className="flex flex-col gap-1.5">
@@ -297,16 +336,19 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
           placeholder="예) 첫 리딩을 끝까지 지켜본 뒤"
           value={cell.unlockHint}
           aria-describedby={`${fieldId}-hint-help`}
-          onChange={(event) =>
-            onPatch({ unlockHint: clampCharacters(event.target.value, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH) })
-          }
+          onChange={(event) => {
+            const clamped = clampCharacters(event.target.value, MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH);
+            setTruncatedField(clamped.isTruncated ? "hint" : undefined);
+            onPatch({ unlockHint: clamped.value });
+          }}
         />
-        <p id={`${fieldId}-hint-help`} className="flex justify-between gap-2 text-xs text-muted-foreground">
-          <span className="break-keep">아직 못 본 사람의 이미지 보관함에 흐린 이미지와 함께 보여요. 비우면 자물쇠만 보여요.</span>
-          <span className="shrink-0 tabular-nums">
-            {countCharacters(cell.unlockHint)}/{MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH}
-          </span>
-        </p>
+        <LimitedFieldHelp
+          id={`${fieldId}-hint-help`}
+          help="아직 못 본 사람의 이미지 보관함에 흐린 이미지와 함께 보여요. 비우면 자물쇠만 보여요."
+          count={countCharacters(cell.unlockHint)}
+          max={MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH}
+          isTruncated={truncatedField === "hint"}
+        />
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
@@ -330,9 +372,27 @@ function FilledCellFields({ cell, imageButtonsProps, onPatch, onClear }: FilledC
   );
 }
 
-/** 글자 수를 서버와 같은 코드 포인트로 잘라, 입력이 상한을 넘는 값을 폼에 만들지 않는다. */
-function clampCharacters(value: string, max: number): string {
-  return countCharacters(value) <= max ? value : [...value].slice(0, max).join("");
+type LimitedFieldHelpProps = { id: string; help: string; count: number; max: number; isTruncated: boolean };
+
+/**
+ * 글자 상한이 있는 입력칸 아래 줄 — 도움말과 글자 수. 상한에 닿으면 글자 수를 굵게 올리고(오류가 아니라 꽉 찬
+ * 상태라 경고색을 쓰지 않는다), 입력이 잘린 그 순간에는 도움말 자리에 잘렸다고 알린다. 알림 자리는 늘 있어야
+ * 스크린리더가 바뀐 글을 읽으므로 비워 둔 채 둔다.
+ */
+function LimitedFieldHelp({ id, help, count, max, isTruncated }: LimitedFieldHelpProps) {
+  return (
+    <p id={id} className="flex justify-between gap-2 text-xs text-muted-foreground">
+      <span className="break-keep">
+        <span hidden={isTruncated}>{help}</span>
+        <span role="status" className="text-foreground">
+          {isTruncated ? `${max}자까지 들어가요. 넘친 글자는 넣지 않았어요.` : ""}
+        </span>
+      </span>
+      <span className={cn("shrink-0 tabular-nums", count >= max && "font-medium text-foreground")}>
+        {count}/{max}
+      </span>
+    </p>
+  );
 }
 
 type CellPreviewProps = { imageUrl: string | undefined; width: number | undefined; height: number | undefined };

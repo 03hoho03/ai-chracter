@@ -4,7 +4,9 @@ import { toast } from "sonner";
 
 import {
   findCell,
+  formatMediaBookProgress,
   MAX_MEDIA_BOOK_CELLS,
+  summarizeMediaBookProgress,
   type MediaBookCellValues,
   type MediaBookValues,
 } from "@/features/build-story";
@@ -23,6 +25,7 @@ import { planCellSelectionScroll } from "../lib/planCellSelectionScroll";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 
 const CELL_PANEL_ID = "media-book-cell-panel";
+const PROGRESS_ID = "media-book-progress";
 
 // 빌더 상단바(`BuilderTopBar` 의 `h-14`) 높이. 좁은 화면에서는 페이지가 그 밑으로 스크롤되고, 넓은 화면에서는 폼
 // 열 창이 그 아래에서 시작하므로 어느 쪽이든 보이는 구간은 "상단바 아래 ~ 화면 바닥"이다.
@@ -58,6 +61,15 @@ export function MediaBookTab() {
       scrollToSelection(position);
       if (method === "keyboard") document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus({ preventScroll: true });
     });
+  }
+
+  function handleSelectNext(position: MediaBookPosition) {
+    setSelected(position);
+    setAnnouncement(announceCell(mediaBook, position));
+    // 포커스는 누른 버튼에 그대로 둔다(머리는 칸이 바뀌어도 남는다). 머리가 이미 다 보이면 움직이지 않아, 마우스로
+    // 연달아 누를 때 버튼이 손 밑에서 도망가지 않는다. 제목이 아니라 머리 전체를 맞추는 것은 버튼이 제목 아래 줄에
+    // 있어서다 — 제목만 맞추면 버튼 줄이 화면 아래로 잘릴 수 있다.
+    requestAnimationFrame(() => document.getElementById(`${CELL_PANEL_ID}-head`)?.scrollIntoView({ block: "nearest" }));
   }
 
   function handleClose(position: MediaBookPosition) {
@@ -101,12 +113,18 @@ export function MediaBookTab() {
       </div>
 
       {hasGrid ? (
-        <MediaBookGrid
-          mediaBook={mediaBook}
-          selected={selectedPosition}
-          onSelect={handleSelect}
-          panelId={CELL_PANEL_ID}
-        />
+        <div className="flex flex-col gap-2">
+          {/* 편집할 때마다 읽히면 시끄러워 live 영역이 아니다. "다음 미완성 칸" 이 비활성일 때 그 이유로 가리킨다. */}
+          <p id={PROGRESS_ID} className="text-xs text-muted-foreground tabular-nums">
+            {formatMediaBookProgress(summarizeMediaBookProgress(mediaBook))}
+          </p>
+          <MediaBookGrid
+            mediaBook={mediaBook}
+            selected={selectedPosition}
+            onSelect={handleSelect}
+            panelId={CELL_PANEL_ID}
+          />
+        </div>
       ) : (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-10 text-center">
           {/* 기본 경로(한 칸씩 추가)를 먼저, 파일이 이미 있는 사람의 지름길을 뒤에 둔다. 폼 열이 넓은 화면에서 줄이
@@ -136,6 +154,8 @@ export function MediaBookTab() {
           position={selectedPosition}
           onClose={() => handleClose(selectedPosition)}
           onReturnFocus={() => focusGridCell(selectedPosition)}
+          onSelectNext={handleSelectNext}
+          progressId={PROGRESS_ID}
         />
       )}
       <p role="status" className="sr-only">
