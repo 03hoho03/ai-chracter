@@ -103,17 +103,18 @@ R2 무료 한도는 10GB이고 **생성 이미지가 여기부터 병목**이다
 시간 동안 살아 있지만 임시 키만 가리키므로 검사가 끝난 원본을 덮을 수 없다. 완료되지 않은 업로드와 삭제에 실패한
 임시 객체는 `uploads/tmp/`에 남는다. CORS 규칙은 접두사 조건이 없어 바꿀 필요가 없다.
 
-**남은 운영 작업(아직 적용 전): `uploads/tmp/`에 1일 만료 수명 규칙을 건다.** 이 접두사는 `assets/`·`backup/`과
-겹치지 않아 자산·DB 백업에 닿지 않는다. 적용은 운영 버킷 설정 변경이라 승인 뒤 `apps/web`에서:
+**`uploads/tmp/`에는 1일 만료 수명 규칙이 걸려 있다**(2026-10-02 19:07 UTC 적용, 규칙 이름 `expire-upload-tmp`,
+접두사 `uploads/tmp/`, 1일 뒤 만료). 버킷에 원래 있던 "Default Multipart Abort Rule"은 그대로 두었다. 이 접두사는
+`assets/`·`backup/`과 겹치지 않아 자산·DB 백업에 닿지 않는다. 확인·되돌리기는 `apps/web`에서:
 
 ```sh
 pnpm exec wrangler r2 bucket lifecycle list ai-chracter-chat
-pnpm exec wrangler r2 bucket lifecycle add ai-chracter-chat expire-upload-tmp uploads/tmp/ --expire-days 1
+pnpm exec wrangler r2 bucket lifecycle add ai-chracter-chat expire-upload-tmp uploads/tmp/ --expire-days 1   # 적용에 쓴 명령
 pnpm exec wrangler r2 bucket lifecycle remove ai-chracter-chat --name expire-upload-tmp   # 되돌리기
 ```
 
 `lifecycle set --file`은 **설정 전체를 바꿔** 기존 규칙(버킷 기본 규칙 포함)을 지울 수 있으니 쓰지 않는다 —
-규칙 하나만 더하는 `add`를 쓴다.
+규칙을 더하거나 뺄 때는 하나씩 다루는 `add`/`remove`를 쓴다.
 
 ### 1-2. Gemini
 
