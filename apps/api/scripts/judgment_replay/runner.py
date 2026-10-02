@@ -1,11 +1,12 @@
 """판정 입력을 설정별로 반복 호출하고 한 호출을 JSONL 한 줄로 남긴다.
 
-모델·사고 예산은 서버와 같은 경로로 바꾼다 — 판정·발행 심사 call_site 는 `structured_model_and_thinking` 이
-`settings.gemini_judgment_*`·`gemini_publish_filter_*` 를 호출마다 읽으므로, 설정 하나를 다 돌 때까지 그 값을 세워 두고
-다음 설정으로 넘어간다(설정을 섞어 동시에 돌리면 서로의 값을 덮는다). 동시 실행은 한 설정 안에서만 한다.
+호출은 서버 클라이언트(`GeminiLLMClient.generate_structured`)를 그대로 지나되, 모델·사고 설정은 앱 설정을 바꾸지 않고
+측정 설정마다 따로 만든 클라이언트의 SDK 호출 직전에 직접 넣는다(`install_usage_capture`). 앱의 판정·심사 모델 스위치는
+env 에 값이 있으면 구조화 호출의 모델을 바꾸고 그 키의 이름·갈래도 앱 쪽 사정으로 바뀌므로, 그것을 거치면 측정 설정이
+아닌 값이 나가거나 리플레이가 앱 설정 변경마다 깨진다.
 
-토큰·실제로 보낸 모델·사고 설정은 `generate_structured` 가 돌려주지 않아, Gemini SDK 의 `generate_content` 를 감싸
-호출 태스크의 컨텍스트 변수에 담는다(`install_usage_capture`). 그 래퍼는 응답·예외를 그대로 통과시킨다.
+토큰·실제로 보낸 모델·사고 설정은 `generate_structured` 가 돌려주지 않아, 같은 래퍼가 호출 태스크의 컨텍스트 변수에
+담는다. 래퍼는 모델·사고 설정만 바꾸고 응답·예외는 그대로 통과시킨다.
 """
 
 import asyncio
@@ -21,6 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from google.genai import types as genai_types
 from PIL import Image
 from pydantic import BaseModel
 
@@ -31,7 +33,6 @@ from api.chat.prompt_builder import (
 )
 from api.chat.stats import StatChange, apply_stat_changes
 from api.content.publish import PublishFilterResult
-from api.core.config import settings
 from api.db.models.story import StatDef
 from api.llm.client import (
     LLMCallContext,
@@ -58,22 +59,20 @@ CONFIGS: dict[str, ReplayConfig] = {
     config.name: config
     for config in (
         ReplayConfig("3.5-default", "gemini-3.5-flash-lite", None),
+        # 측정 불가 — gemini-3.5-flash-lite 는 thinking_budget=0 을 400 INVALID_ARGUMENT 로 거부한다(2026-10-02 probe).
+        # 사고 끔 수용을 다시 확인할 때만 쓰도록 남기고, 기본 측정 목록(`DEFAULT_CONFIGS`)에서는 뺀다.
         ReplayConfig("3.5-off", "gemini-3.5-flash-lite", 0),
         ReplayConfig("3.1-default", "gemini-3.1-flash-lite", None),
         ReplayConfig("3.1-off", "gemini-3.1-flash-lite", 0),
     )
 }
+UNMEASURABLE_CONFIGS = frozenset({"3.5-off"})
+DEFAULT_CONFIGS = [name for name in CONFIGS if name not in UNMEASURABLE_CONFIGS]
 # 비교 기준 — 지금 운영 판정이 도는 설정.
 BASELINE_CONFIG = "3.5-default"
 
 Sink = Callable[[dict[str, Any]], None]
-
-
-def apply_settings(config: ReplayConfig) -> None:
-    settings.gemini_judgment_model_name = config.model
-    settings.gemini_judgment_thinking_budget = config.thinking_budget
-    settings.gemini_publish_filter_model_name = config.model
-    settings.gemini_publish_filter_thinking_budget = config.thinking_budget
+ClientFactory = Callable[[ReplayConfig], LLMClient]
 
 
 class CallBudget:
@@ -103,11 +102,19 @@ _TOKEN_FIELDS = {
 }
 
 
-def install_usage_capture(client: GeminiLLMClient) -> None:
+def install_usage_capture(client: GeminiLLMClient, config: ReplayConfig) -> None:
+    """`client` 의 SDK 호출이 언제나 `config` 의 모델·사고 설정으로 나가게 하고, 호출별 토큰·전송값을 담는다. 사고 설정이
+    None 이면 앱이 무엇을 넣었든 thinking_config 를 빼고 보낸다(모델 기본)."""
     models = client._client.aio.models
     original = models.generate_content
+    thinking_config = (
+        None if config.thinking_budget is None else genai_types.ThinkingConfig(thinking_budget=config.thinking_budget)
+    )
 
     async def generate_content(**kwargs: Any) -> Any:
+        kwargs["model"] = config.model
+        sdk_config = kwargs.get("config") or genai_types.GenerateContentConfig()
+        kwargs["config"] = sdk_config.model_copy(update={"thinking_config": thinking_config})
         response = await original(**kwargs)
         slot = _capture.get()
         if slot is not None:
@@ -127,6 +134,13 @@ def install_usage_capture(client: GeminiLLMClient) -> None:
         return response
 
     setattr(models, "generate_content", generate_content)  # noqa: B010 — 메서드 대입은 mypy 가 막는다
+
+
+def replay_client(config: ReplayConfig) -> GeminiLLMClient:
+    """측정 설정 하나 전용 클라이언트. 기본 모델도 그 설정의 모델로 둬 사용량 집계의 모델 라벨이 실제 전송과 맞는다."""
+    client = GeminiLLMClient(model_name=config.model)
+    install_usage_capture(client, config)
+    return client
 
 
 def derive(item: ReplayInput, parsed: BaseModel) -> dict[str, Any]:
@@ -254,7 +268,6 @@ _TRANSPORT_ERRORS = frozenset({"api", "rate_limit", "unexpected"})
 
 
 async def run_replay(
-    client: LLMClient,
     inputs: Sequence[ReplayInput],
     configs: Sequence[ReplayConfig],
     *,
@@ -262,7 +275,7 @@ async def run_replay(
     budget: CallBudget,
     concurrency: int,
     sink: Sink,
-    apply_config: Callable[[ReplayConfig], None] = apply_settings,
+    make_client: ClientFactory = replay_client,
     run_id: str = "",
     max_consecutive_errors: int = 5,
 ) -> RunResult:
@@ -276,7 +289,7 @@ async def run_replay(
     for config in configs:
         if stopped:
             break
-        apply_config(config)
+        client = make_client(config)
         jobs = deque(
             (item, rep)
             for rep in range(max(reps.values(), default=0))
@@ -284,7 +297,9 @@ async def run_replay(
             if rep < reps.get(item.kind, 0)
         )
 
-        async def worker(config: ReplayConfig = config, jobs: deque[tuple[ReplayInput, int]] = jobs) -> None:
+        async def worker(
+            client: LLMClient = client, config: ReplayConfig = config, jobs: deque[tuple[ReplayInput, int]] = jobs
+        ) -> None:
             nonlocal stopped, calls, consecutive_errors, error_stop
             while jobs and not stopped and error_stop is None:
                 item, rep = jobs.popleft()
@@ -314,7 +329,12 @@ def _probe_image() -> tuple[bytes, str]:
 
 
 async def probe_thinking(
-    client: LLMClient, models: Sequence[str], *, budget: CallBudget, sink: Sink, run_id: str = ""
+    models: Sequence[str],
+    *,
+    budget: CallBudget,
+    sink: Sink,
+    make_client: ClientFactory = replay_client,
+    run_id: str = "",
 ) -> RunResult:
     """모델마다 사고 기본·끔(thinking_budget=0) 텍스트 호출 하나씩과, 끔 설정의 이미지 첨부 호출 하나 — 사고 끔이
     받아들여지는지, 사고 토큰이 0 이 되는지, 구조화 출력·이미지 입력이 되는지만 본다."""
@@ -331,7 +351,7 @@ async def probe_thinking(
             return RunResult(calls=calls, stopped_by_limit=True)
         calls += 1
         config = ReplayConfig(f"probe:{model}:{thinking}", model, thinking)
-        apply_settings(config)
+        client = make_client(config)
         schema: type[BaseModel] = PublishFilterResult if with_image else EndingJudgmentResult
         call_site: LLMCallSite = "publish_filter_character" if with_image else "chat_ending_judgment"
         parsed, exc, slot, latency_ms = await _call(

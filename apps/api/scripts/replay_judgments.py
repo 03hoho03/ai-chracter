@@ -9,7 +9,7 @@
     # 3) 측정
     REDIS_URL=redis://localhost:6388/7 uv run --env-file .env python scripts/replay_judgments.py \\
         --prompt-snapshot SNAPSHOT.json --images-dir <그림이 있는 체크아웃>/apps/api/scripts/seed_content/images \\
-        --limit-calls 536 --concurrency 2 --out probe-runs/judgment-replay.jsonl
+        --limit-calls 402 --concurrency 2 --out probe-runs/judgment-replay.jsonl
 
 `--prompt-snapshot` 은 운영 활성 세트의 판정·심사 채널 섹션을 떠 둔 JSON 이다(모양은 `judgment_replay/prompts.py`).
 렌더는 이 문안으로만 한다 — 저장소 마이그레이션 문안은 운영 게시본과 다를 수 있다.
@@ -41,15 +41,14 @@ from judgment_replay.prompts import read_prompt_snapshot
 from judgment_replay.runner import (
     BASELINE_CONFIG,
     CONFIGS,
+    DEFAULT_CONFIGS,
     CallBudget,
     ReplayConfig,
-    install_usage_capture,
     probe_thinking,
     run_replay,
 )
 from judgment_replay.scenes import KINDS, JudgmentKind, ReplayInput, build_inputs
 
-from api.llm.gemini import GeminiLLMClient
 from api.llm.pricing import MODEL_PRICES
 
 DEFAULT_IMAGES_DIR = Path(__file__).parent / "seed_content" / "images"
@@ -71,7 +70,13 @@ def _parse_args(argv: Sequence[str] | None) -> argparse.Namespace:
     parser.add_argument("--limit-calls", type=int, default=None, help="Gemini 호출 하드 상한(실호출 시 필수)")
     parser.add_argument("--concurrency", type=int, default=1)
     parser.add_argument("--only", nargs="+", choices=KINDS, default=list(KINDS))
-    parser.add_argument("--configs", nargs="+", choices=list(CONFIGS), default=list(CONFIGS))
+    parser.add_argument(
+        "--configs",
+        nargs="+",
+        choices=list(CONFIGS),
+        default=DEFAULT_CONFIGS,
+        help="기본은 측정 가능한 설정 전부(3.5-off 는 모델이 사고 끔을 거부해 기본에서 빠진다)",
+    )
     parser.add_argument("--reps", type=int, default=3, help="스탯·그림·엔딩 반복 횟수")
     parser.add_argument("--publish-reps", type=int, default=2, help="발행 심사 반복 횟수")
     args = parser.parse_args(argv)
@@ -152,15 +157,13 @@ async def _run(args: argparse.Namespace) -> int:
     run_id = uuid.uuid4().hex[:12]
     out: Path = args.out or Path("probe-runs") / f"judgment-replay-{datetime.now(UTC):%Y%m%dT%H%M%S}.jsonl"
     out.parent.mkdir(parents=True, exist_ok=True)
-    client = GeminiLLMClient()
-    install_usage_capture(client)
     budget = CallBudget(args.limit_calls)
     with out.open("a", encoding="utf-8") as handle:
         sink = _sink(handle)
         if args.probe_thinking:
             models = list(dict.fromkeys(config.model for config in configs))
             sink({"kind": "run", "run_id": run_id, "mode": "probe", "models": models, "limit": args.limit_calls})
-            result = await probe_thinking(client, models, budget=budget, sink=sink, run_id=run_id)
+            result = await probe_thinking(models, budget=budget, sink=sink, run_id=run_id)
         else:
             planned = sum(reps[item.kind] for item in inputs) * len(configs)
             sink(
@@ -178,7 +181,6 @@ async def _run(args: argparse.Namespace) -> int:
                 }
             )
             result = await run_replay(
-                client,
                 inputs,
                 configs,
                 reps=reps,
