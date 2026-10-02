@@ -38,6 +38,13 @@ const UPLOAD_CONCURRENCY = 3;
 // 도움말 숫자와 그 검사가 갈리지 않게 한다. 업로드 상한(리사이즈 결과물에 건다)은 사용자가 고른 파일 크기와 무관하다.
 const MAX_FILE_MEGABYTES = MAX_SOURCE_BYTES / (1024 * 1024);
 
+// 다 올린 뒤 버튼에 마지막 진행(`n/n`)을 남겨 두는 시간. 결과와 같은 순간에 원래 문구로 돌아가면 마지막 장이 끝났다는
+// 표시가 한 번도 그려지지 않는다. 결과는 기다리지 않고 바로 보인다.
+const FINAL_PROGRESS_HOLD_MS = 600;
+
+// 결과 줄에 이름을 다 적는 칸 수. 넘으면 앞의 몇 칸과 남은 칸 수만 적어 결과 줄이 표를 아래로 밀지 않게 한다.
+const RESULT_CELL_NAME_LIMIT = 3;
+
 /**
  * 파일 이름(`인물_장면.확장자`)으로 칸을 한꺼번에 채운다. 순서: 이름 읽기 → (채워진 칸이 있으면) 덮어쓰기 묻기 →
  * 상한 적용 → 파일마다 올리고 끝나는 대로 한 장씩 폼에 반영. 업로드 주소는 `uploadAsset` 이 파일마다 올리기 직전에
@@ -130,9 +137,9 @@ export function MediaBookBulkUpload() {
     );
     shellSignal.removeEventListener("abort", notifyLeftBuilder);
     if (shellSignal.aborted) return;
-    setProgress(undefined);
     setStartAnnouncement("");
     setResult({ addedCellNames, excluded: [...final.excluded, ...failed] });
+    window.setTimeout(() => setProgress(undefined), FINAL_PROGRESS_HOLD_MS);
   }
 
   return (
@@ -164,7 +171,10 @@ export function MediaBookBulkUpload() {
             onChange={(event) => void handleFiles(event)}
           />
         </Label>
-        <p id={helpId} className="text-xs break-keep text-muted-foreground">
+        {/* 결과는 도움말 자리에 대신 놓는다 — 버튼 아래에 따로 두면 그만큼 표가 밀려, 방금 채운 칸이 화면 아래로 간다.
+            도움말은 숨겨도 파일 입력의 설명으로는 그대로 읽힌다. */}
+        {result && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
+        <p id={helpId} hidden={result !== undefined} className="text-xs break-keep text-muted-foreground">
           ‘<span className="text-foreground">유나_리딩.png</span>’처럼 이름의 첫 _ 앞을 인물, 뒤를 장면으로 읽어 그 칸에
           넣어요. 없는 인물·장면은 새로 만들어요. PNG·JPG·WebP, 한 장에 {MAX_FILE_MEGABYTES}MB까지예요.
         </p>
@@ -173,39 +183,45 @@ export function MediaBookBulkUpload() {
       <p role="status" className="sr-only">
         {startAnnouncement}
       </p>
-      {result && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
     </div>
   );
 }
 
 function UploadResultNotice({ result, onDismiss }: { result: UploadResult; onDismiss: () => void }) {
   return (
-    <div role="status" className="flex flex-col gap-2 rounded-xl border border-border p-4">
-      <div className="flex items-start justify-between gap-2">
+    // 넓은 화면에서는 버튼 옆에, 좁은 화면에서는 버튼 아래 한 줄로 놓인다(도움말과 같은 자리).
+    <div role="status" className="flex min-w-0 flex-1 basis-60 items-start gap-2">
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
         <p className="text-sm font-medium text-foreground">
           {result.addedCellNames.length}장을 넣었어요
           {result.excluded.length > 0 && ` · ${result.excluded.length}개 파일은 넣지 않았어요`}
         </p>
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="결과 닫기" onClick={onDismiss}>
-          <X aria-hidden />
-        </Button>
+        {result.addedCellNames.length > 0 && (
+          // 어느 칸에 들어갔는지 — 표에서 찾아보지 않아도 되게 칸 이름을 넣은 순서대로 적는다.
+          <p className="text-xs break-keep text-muted-foreground">{summarizeCellNames(result.addedCellNames)}</p>
+        )}
+        {result.excluded.length > 0 && (
+          <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
+            {result.excluded.map((item, index) => (
+              // 같은 이름의 파일을 두 번 고를 수 있어 이름만으로는 key 가 겹친다.
+              <li key={`${index}-${item.fileName}`} className="break-all">
+                <span className="text-foreground">{item.fileName}</span> — {item.reason}
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
-      {result.addedCellNames.length > 0 && (
-        // 어느 칸에 들어갔는지 — 표에서 찾아보지 않아도 되게 칸 이름을 넣은 순서대로 적는다.
-        <p className="text-xs break-keep text-muted-foreground">{result.addedCellNames.join(", ")}</p>
-      )}
-      {result.excluded.length > 0 && (
-        <ul className="flex flex-col gap-1 text-xs text-muted-foreground">
-          {result.excluded.map((item, index) => (
-            // 같은 이름의 파일을 두 번 고를 수 있어 이름만으로는 key 가 겹친다.
-            <li key={`${index}-${item.fileName}`} className="break-all">
-              <span className="text-foreground">{item.fileName}</span> — {item.reason}
-            </li>
-          ))}
-        </ul>
-      )}
+      <Button type="button" variant="ghost" size="icon-sm" aria-label="결과 닫기" onClick={onDismiss}>
+        <X aria-hidden />
+      </Button>
     </div>
   );
+}
+
+/** 넣은 칸 이름 한 줄. 많으면 앞의 몇 칸과 남은 칸 수만 적는다. */
+function summarizeCellNames(names: string[]): string {
+  if (names.length <= RESULT_CELL_NAME_LIMIT) return names.join(", ");
+  return `${names.slice(0, RESULT_CELL_NAME_LIMIT).join(", ")} 외 ${names.length - RESULT_CELL_NAME_LIMIT}칸`;
 }
 
 /** 파일 하나를 올린다. 실패도 결과로 돌려준다(파일 순서 반영 대기열이 실패한 번호에서 멈추지 않게). */
