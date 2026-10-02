@@ -106,8 +106,13 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 `GEMINI_PUBLISH_FILTER_*`("BE 런타임" 절 표)로 따로 돌릴 수 있다. 어느 호출이 어느 쪽인지는
 `apps/api/src/api/llm/client.py` 의 `JUDGMENT_CALL_SITES`·`PUBLISH_FILTER_CALL_SITES` 가 정한다
 (기억 요약·생성은 늘 `GEMINI_MODEL_NAME`). 판정 실패는 채팅에서 조용히 흡수되므로, 모델을 바꾼 뒤에는
-아래 집계에서 판정 call_site 의 호출 수가 생성(`chat_generate`) 대비 급락하지 않는지 본다. 되돌리기는
-env 줄을 지우고 `up -d --wait api`.
+아래 집계에서 판정 call_site 의 호출 수가 생성(`chat_generate`) 대비 급락하지 않는지 본다. 단 집계가 잡는
+것은 응답을 못 받은 실패(없는 모델명·429 등)뿐이다 — 응답은 왔는데 스키마로 파싱되지 않는 실패는 토큰이
+이미 과금된 호출이라 집계에 정상 호출과 똑같이 더해진다. 그건 Bugsink 에서 본다: 판정 쪽은
+`dependency=gemini` 태그 이벤트 가운데 메시지가 `Gemini structured response could not be parsed` 로
+시작하는 것(같은 태그에 생성 실패·API 오류도 섞인다), 발행 심사 쪽은 흡수되지 않고 발행이 500 으로 나가므로
+`dependency` 태그 없는 처리되지 않은 `LLMClientError` 이벤트(메시지는 같다)다. 되돌리기는 env 줄을
+지우거나 값을 비우고 `up -d --wait api`.
 
 **사용량 집계** — 호출마다 call_site·실제 모델별 호출 수와 토큰(입력·캐시 적중·출력·사고·합계, 입력
 토큰이 비어 온 호출 수)을 Redis 해시 `llm_usage:{KST 날짜}`에 더한다(보존 400일, 사용자·방 단위 없음).
@@ -187,7 +192,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `SESSION_COOKIE_SAMESITE` | `lax` | FE·BE가 같은 등록가능 도메인이라 가능 |
 | `GEMINI_API_KEY` | AI Studio 키 | 채팅 |
 | `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시. 되돌리려면 이 한 줄만 지우고 `up -d --wait api` — `.env` 백업을 통째로 복원하지 말 것(자동배포가 같은 파일의 `API_IMAGE`를 고친다) |
-| `GEMINI_JUDGMENT_MODEL_NAME` / `GEMINI_JUDGMENT_THINKING_BUDGET` | 기본 비어 있음 | 판정 호출(스탯·엔딩·그림 매칭, 실채팅·미리보기)만 다른 모델·사고 예산으로 돌리는 스위치. 비면 `GEMINI_MODEL_NAME`·사고 설정 안 넘김(지금 동작). 예산은 `0` = 사고 끔, 양수 = 예산. 어느 호출이 판정인지와 확인 방법은 "Gemini" 절 |
+| `GEMINI_JUDGMENT_MODEL_NAME` / `GEMINI_JUDGMENT_THINKING_BUDGET` | 기본 비어 있음 | 판정 호출(스탯·엔딩·그림 매칭, 실채팅·미리보기)만 다른 모델·사고 예산으로 돌리는 스위치. 줄이 없거나 값이 비면(`KEY=`) `GEMINI_MODEL_NAME`·사고 설정 안 넘김(지금 동작). 예산은 `0` = 사고 끔, 양수 = 예산. 어느 호출이 판정인지와 확인 방법은 "Gemini" 절 |
 | `GEMINI_PUBLISH_FILTER_MODEL_NAME` / `GEMINI_PUBLISH_FILTER_THINKING_BUDGET` | 기본 비어 있음 | 발행 심사만 따로 바꾸는 같은 꼴의 스위치. ⚠️ 심사는 실패하면 발행이 500으로 막히므로(fail-closed) 바꾼 직후 발행 1회로 확인한다 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | "Google OAuth" 절 |
 | `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 자격증명 | "카카오 로그인" 절. 둘 중 하나라도 비면 카카오 로그인 시작이 `?error=kakao_failed` 로 돌아온다 |
