@@ -1769,9 +1769,9 @@ export interface paths {
          * Update Content Draft
          * @description Autosave: no
          *     business validation (publish is where that happens) — the version-detail row is
-         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
-         *     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
-         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
+         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북과 새로 거는 대표
+         *     이미지는 저장 때 검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를
+         *     걸어 그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
          *     저장 때 거절한다(422, `KeywordNoteDraftInput`) — 빌더가 같은 상한으로 입력을 먼저 막으므로 정상 입력으로는 닿지
          *     않는다. 노트가 페이로드에 없는 시작설정을 가리키면 400 이다. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion

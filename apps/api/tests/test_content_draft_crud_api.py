@@ -828,7 +828,7 @@ async def test_patch_content_draft_returns_thumbnail_url_for_character(
     db_session.add(user)
     await db_session.flush()
     content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
-    thumbnail = await _make_asset(db_session, user.id)
+    thumbnail = await _make_asset(db_session, user.id, status=AssetStatus.READY)
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -850,7 +850,7 @@ async def test_patch_content_draft_returns_thumbnail_url_for_story(
     db_session.add(user)
     await db_session.flush()
     content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
-    thumbnail = await _make_asset(db_session, user.id)
+    thumbnail = await _make_asset(db_session, user.id, status=AssetStatus.READY)
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -1890,6 +1890,123 @@ async def test_patch_story_draft_checks_media_cell_assets_in_one_query(
     await _patch_with(10)
     large = await _patch_with(10)
     assert large == small
+
+
+async def _thumbnail_kind_asset(db_session: AsyncSession, owner_id: uuid.UUID) -> uuid.UUID:
+    return (await _make_asset(db_session, owner_id, kind=AssetKind.THUMBNAIL, status=AssetStatus.READY)).id
+
+
+@pytest.mark.parametrize(
+    "make_asset_id",
+    [
+        pytest.param(_foreign_asset, id="owned-by-other-user"),
+        pytest.param(_pending_asset, id="pending"),
+        pytest.param(_blurred_asset, id="blurred-kind"),
+        pytest.param(_thumbnail_kind_asset, id="thumbnail-kind"),
+        pytest.param(_missing_asset, id="missing"),
+    ],
+)
+async def test_patch_character_draft_rejects_unusable_new_thumbnail_asset(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, make_asset_id: Any
+) -> None:
+    """새로 거는 대표 이미지는 작가 본인의 업로드 완료 원본이나 생성 이미지여야 한다. 남의 이미지를 걸면 그
+    사람이 자기 이미지를 못 지우고, 업로드가 끝나지 않은 자산은 최종 키에 객체가 없다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    asset_id = await make_asset_id(db_session, user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_draft_payload(name="바뀐 이름", thumbnailAssetId=str(asset_id))
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Thumbnail must be the creator's own ready upload or generated image"
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    detail = await db_session.get(CharacterVersionDetail, version.id)
+    assert detail is not None
+    await db_session.refresh(detail)
+    assert (detail.name, detail.thumbnail_asset_id) == ("", None)
+
+
+async def test_patch_story_draft_rejects_another_users_thumbnail_asset(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user, content, _version, _asset = await _logged_in_story_draft(db_client, db_session)
+    foreign_asset_id = await _foreign_asset(db_session, user.id)
+    await db_session.commit()
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(thumbnailAssetId=str(foreign_asset_id))
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == "Thumbnail must be the creator's own ready upload or generated image"
+
+
+async def test_patch_character_draft_accepts_own_generated_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """갤러리에서 고른 생성 이미지 — 업로드 원본과 함께 정상 화면이 거는 두 종류 중 하나다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    generated = await _make_asset(db_session, user.id, kind=AssetKind.GENERATED, status=AssetStatus.READY)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_draft_payload(thumbnailAssetId=str(generated.id))
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["thumbnailAssetId"] == str(generated.id)
+
+
+@pytest.mark.parametrize(
+    ("content_type", "detail_model"),
+    [
+        pytest.param(ContentType.CHARACTER, CharacterVersionDetail, id="character"),
+        pytest.param(ContentType.STORY, StoryVersionDetail, id="story"),
+    ],
+)
+async def test_patch_draft_keeps_saving_an_unchanged_seed_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, content_type: ContentType, detail_model: Any
+) -> None:
+    """시드 작품의 대표 이미지는 시드 스크립트가 THUMBNAIL 종류로 직접 넣었다. 빌더 자동저장은 그 값을 그대로
+    다시 보내므로, 값이 그대로면 검사하지 않아야 시드 작품을 계속 고칠 수 있다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    if content_type == ContentType.CHARACTER:
+        content = await _make_empty_character_draft(db_session, creator_user_id=user.id)
+    else:
+        content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    version = (
+        await db_session.execute(sa.select(ContentVersion).where(ContentVersion.content_id == content.id))
+    ).scalar_one()
+    detail = await db_session.get(detail_model, version.id)
+    assert detail is not None
+    seed_thumbnail_id = await _thumbnail_kind_asset(db_session, user.id)
+    detail.thumbnail_asset_id = seed_thumbnail_id
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+    payload_fn = _draft_payload if content_type == ContentType.CHARACTER else _story_draft_payload
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=payload_fn(name="고친 이름", thumbnailAssetId=str(seed_thumbnail_id)),
+    )
+
+    assert resp.status_code == 200
+    assert resp.json()["name"] == "고친 이름"
+    assert resp.json()["thumbnailAssetId"] == str(seed_thumbnail_id)
 
 
 async def test_patch_story_draft_rejects_fifty_first_media_cell(

@@ -922,6 +922,36 @@ async def get_content_draft(
     return await _story_draft_response(db, content, version)
 
 
+async def _check_new_draft_thumbnail(
+    db: AsyncSession, content: Content, current_asset_id: uuid.UUID | None, new_asset_id: uuid.UUID | None
+) -> None:
+    """새로 거는 대표 이미지는 작가 본인의 업로드 완료 원본이나 생성 이미지여야 한다(미디어 북 칸과 같은 조건 —
+    빌더가 대표 이미지로 거는 것은 업로드한 원본과 갤러리의 생성 이미지 둘뿐이다). 남의 자산을 걸면 그 사람이
+    자기 이미지를 못 지우고, 업로드가 끝나지 않은 자산은 최종 키에 객체가 없다.
+
+    값이 그대로면 보지 않는다. 시드 작품의 대표 이미지는 시드 스크립트가 THUMBNAIL 종류로 직접 넣은 것이라 이
+    조건을 못 넘는데, 빌더 자동저장은 그 값을 매번 다시 보낸다. 발행본으로 되돌리기도 서버가 값을 직접 옮기므로
+    그 뒤의 자동저장은 같은 값을 다시 보낼 뿐이다.
+
+    자동저장 라우트에서만 부른다. 시드 스크립트는 `_update_character_draft`·`_update_story_draft` 를 직접 불러 시드
+    작가의 THUMBNAIL 자산을 처음 거는데, 그 경로는 이 검사 대상이 아니다."""
+    if new_asset_id is None or new_asset_id == current_asset_id:
+        return
+    usable_asset_id = await db.scalar(
+        select(Asset.id).where(
+            Asset.id == new_asset_id,
+            Asset.owner_user_id == content.creator_user_id,
+            Asset.status == AssetStatus.READY,
+            Asset.kind.in_(MEDIA_BOOK_CELL_IMAGE_KINDS),
+        )
+    )
+    if usable_asset_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="Thumbnail must be the creator's own ready upload or generated image",
+        )
+
+
 async def _update_character_draft(
     db: AsyncSession, content: Content, version: ContentVersion, payload: CharacterDraftPayload
 ) -> None:
@@ -1476,9 +1506,9 @@ async def update_content_draft(
 ) -> CharacterDraftResponse | StoryDraftResponse:
     """Autosave: no
     business validation (publish is where that happens) — the version-detail row is
-    overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
-    검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
-    그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
+    overwritten wholesale and every child resource is upserted by entity_id. 미디어 북과 새로 거는 대표
+    이미지는 저장 때 검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를
+    걸어 그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
     저장 때 거절한다(422, `KeywordNoteDraftInput`) — 빌더가 같은 상한으로 입력을 먼저 막으므로 정상 입력으로는 닿지
     않는다. 노트가 페이로드에 없는 시작설정을 가리키면 400 이다. `registration`-tab
     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
@@ -1496,6 +1526,9 @@ async def update_content_draft(
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Payload does not match content type"
             )
+        character_detail = await db.get(CharacterVersionDetail, version.id)
+        assert character_detail is not None
+        await _check_new_draft_thumbnail(db, content, character_detail.thumbnail_asset_id, payload.thumbnail_asset_id)
         await _update_character_draft(db, content, version, payload)
         await db.commit()
         return await _character_draft_response(db, content, version)
@@ -1504,6 +1537,9 @@ async def update_content_draft(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="Payload does not match content type"
         )
+    story_detail = await db.get(StoryVersionDetail, version.id)
+    assert story_detail is not None
+    await _check_new_draft_thumbnail(db, content, story_detail.thumbnail_asset_id, payload.thumbnail_asset_id)
     await _update_story_draft(db, content, version, payload)
     await db.commit()
     return await _story_draft_response(db, content, version)
