@@ -172,7 +172,7 @@ function GeneratedImageGridBody({
           >
             {/* 모달 안 그리드는 열리는 순간 이미 뷰포트라 lazy가 이득이 없다(decoding만). */}
             <img src={image.imageUrl} alt="" decoding="async" className="size-full object-cover" />
-            {marker && (
+            {marker !== undefined && (
               // 이미지 위에 얹는 글자라 테마와 무관한 스크림 쌍을 쓴다. 이름은 버튼의 접근 이름이 이미 싣는다.
               <span
                 aria-hidden

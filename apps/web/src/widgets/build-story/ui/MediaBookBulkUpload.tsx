@@ -173,7 +173,7 @@ export function MediaBookBulkUpload() {
         </Label>
         {/* 결과는 도움말 자리에 대신 놓는다 — 버튼 아래에 따로 두면 그만큼 표가 밀려, 방금 채운 칸이 화면 아래로 간다.
             도움말은 숨겨도 파일 입력의 설명으로는 그대로 읽힌다. */}
-        {result && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
+        {result !== undefined && <UploadResultNotice result={result} onDismiss={() => setResult(undefined)} />}
         <p id={helpId} hidden={result !== undefined} className="text-xs break-keep text-muted-foreground">
           ‘<span className="text-foreground">유나_리딩.png</span>’처럼 이름의 첫 _ 앞을 인물, 뒤를 장면으로 읽어 그 칸에
           넣어요. 없는 인물·장면은 새로 만들어요. PNG·JPG·WebP, 한 장에 {MAX_FILE_MEGABYTES}MB까지예요.
