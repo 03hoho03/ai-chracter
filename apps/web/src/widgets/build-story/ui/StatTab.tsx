@@ -4,11 +4,12 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
-import type { StoryBuilderFormValues } from "@/features/build-story";
+import { planStatRemoval, type StoryBuilderFormValues } from "@/features/build-story";
+import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -273,11 +274,42 @@ function StatRow({
 function StatSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { control } = form;
+  const { control, getValues, setValue } = form;
   const { fields, append, remove } = useFieldArray({
     control,
     name: `startingSetups.${startingSetupIndex}.stats`,
   });
+
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  // 스탯은 시작설정마다 독립이라 이 시작설정의 엔딩만 본다. 그 스탯을 쓰는 엔딩 조건이 있으면 먼저 묻고,
+  // 확인하면 그 조건을 지운 뒤 스탯을 지운다. 취소하면 아무것도 바꾸지 않는다.
+  async function handleRemove(statIndex: number) {
+    const removedStatId = getValues(`startingSetups.${startingSetupIndex}.stats.${statIndex}.id`);
+    const trigger = document.activeElement;
+    const updates = await planStatRemoval(
+      getValues(`startingSetups.${startingSetupIndex}.endings`),
+      removedStatId,
+      (ruleCount) =>
+        MediaBookConfirmModal.call({
+          title: "스탯을 지울까요?",
+          description: `이 스탯을 쓰는 엔딩 조건 ${ruleCount}개도 함께 지워져요.`,
+          confirmLabel: "지우기",
+          // 취소면 삭제 버튼으로, 지웠으면 그 줄이 사라지므로 스탯 추가 버튼으로.
+          onRestoreFocus: () => {
+            if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+            else addButtonRef.current?.focus();
+          },
+        }),
+    );
+    if (updates === undefined) return;
+    for (const { endingIndex, statRules } of updates) {
+      setValue(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.statRules`, statRules, {
+        shouldDirty: true,
+      });
+    }
+    remove(statIndex);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -292,12 +324,13 @@ function StatSection({ startingSetupIndex }: { startingSetupIndex: number }) {
             id={field.id}
             startingSetupIndex={startingSetupIndex}
             statIndex={statIndex}
-            onRemove={() => remove(statIndex)}
+            onRemove={() => void handleRemove(statIndex)}
           />
         ))
       )}
 
       <Button
+        ref={addButtonRef}
         type="button"
         variant="secondary"
         className="w-fit"

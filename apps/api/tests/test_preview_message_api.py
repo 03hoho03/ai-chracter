@@ -1,4 +1,5 @@
 import inspect
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from typing import Any
@@ -670,6 +671,110 @@ async def test_send_preview_message_reaches_ending(db_client: httpx.AsyncClient,
     # 미리보기는 방이 없다(room_id=None) — chat_ 값이 섞이면 미리보기 원가가 실사용으로 집계된다.
     assert [u.call_site for u in fake.usages] == ["preview_generate", "preview_stat_judgment", "preview_ending_judgment"]
     assert {(u.user_id, u.room_id) for u in fake.usages} == {(user.id, None)}
+
+
+def _gte_rule(stat_id: object, threshold: float) -> dict[str, object]:
+    return {"kind": "rule", "id": str(uuid.uuid4()), "statId": str(stat_id), "operator": "gte", "threshold": threshold, "nextOp": None}
+
+
+async def _send_preview(
+    client: httpx.AsyncClient, session_id: str, fake: "_FakeLLMClient"
+) -> list[dict[str, Any]]:
+    _override_llm_client(fake)
+    try:
+        resp = await client.post(f"/preview-sessions/{session_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 200
+    return _parse_sse_events(resp.text)
+
+
+async def test_send_preview_message_does_not_call_ending_judgment_when_stat_rule_is_false(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """실채팅과 같이 규칙을 먼저 본다 — 초기값 50 에서 `>= 80` 은 거짓이라 엔딩 판정을 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    stat = _stat_def_item(initialValue=50)
+    session_id = await _start_session(
+        db_client,
+        _story_payload(
+            startingSetups=[
+                _starting_setup_item(statDefs=[stat], endings=[_ending_item(statRules=[_gte_rule(stat["id"], 80)])])
+            ]
+        ),
+    )
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    events = await _send_preview(db_client, session_id, fake)
+
+    assert [e["type"] for e in events] == ["token", "done"]
+    assert [u.call_site for u in fake.usages] == ["preview_generate", "preview_stat_judgment"]
+
+
+async def test_send_preview_message_judges_endings_in_order_and_stops_at_first_reached(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙 거짓인 첫 엔딩은 판정 없이 넘어가고, 규칙 참·판정 거짓인 둘째 다음 셋째에서 발동하면 넷째는 판정하지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    stat = _stat_def_item(initialValue=50)
+    endings = [
+        _ending_item(name="1", statRules=[_gte_rule(stat["id"], 80)]),
+        _ending_item(name="2", statRules=[_gte_rule(stat["id"], 40)]),
+        _ending_item(name="3", statRules=[_gte_rule(stat["id"], 40)]),
+        _ending_item(name="4"),
+    ]
+    session_id = await _start_session(
+        db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat], endings=endings)])
+    )
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[
+            StatJudgmentResult(stat_changes=[]),
+            EndingJudgmentResult(triggered=False),
+            EndingJudgmentResult(triggered=True),
+        ],
+    )
+    events = await _send_preview(db_client, session_id, fake)
+
+    assert [e["type"] for e in events] == ["token", "endingReached", "done"]
+    assert events[1]["endingId"] == endings[2]["id"]
+    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult, EndingJudgmentResult]
+
+
+async def test_send_preview_message_treats_rule_on_missing_stat_as_false_and_completes_the_turn(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, caplog: pytest.LogCaptureFixture
+) -> None:
+    """빌더는 스탯을 지워도 그 스탯을 가리키는 규칙을 남길 수 있고 미리보기 시작은 이를 막지 않는다. 그 항목은
+    거짓이고 턴은 세션에 저장되며, 어느 엔딩·스탯인지 경고로 남긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _login_as(db_client, user.id)
+    missing_stat_id = uuid.uuid4()
+    ending = _ending_item(statRules=[_gte_rule(missing_stat_id, 0)])
+    session_id = await _start_session(
+        db_client,
+        _story_payload(startingSetups=[_starting_setup_item(statDefs=[_stat_def_item()], endings=[ending])]),
+    )
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+        events = await _send_preview(db_client, session_id, fake)
+
+    assert [e["type"] for e in events] == ["token", "done"]
+    assert fake.generate_structured_calls == [StatJudgmentResult]
+    state = await get_preview_session(session_id)
+    assert state is not None
+    assert (state.turn_count, state.ending_reached) == (1, False)
+    [warning] = [r.getMessage() for r in caplog.records if str(missing_stat_id) in r.getMessage()]
+    assert str(ending["id"]) in warning
 
 
 async def test_send_preview_message_skips_judgment_after_ending_reached(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:

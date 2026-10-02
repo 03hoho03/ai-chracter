@@ -2687,6 +2687,65 @@ async def test_patch_story_draft_rejects_keyword_note_pointing_to_unknown_starti
     assert await _keyword_notes_by_order(db_session, version.id) == []
 
 
+async def test_patch_story_draft_rejects_ending_rule_pointing_to_stat_missing_from_its_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """스탯을 지우고 규칙을 남긴 초안을 그대로 받으면 그 엔딩 조건은 영영 참이 될 수 없다. 다른 시작설정의 스탯도
+    같은 시작설정에 없으면 없는 스탯이다. 그룹 안 규칙까지 경로로 알리고 아무것도 저장하지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    own_stat, other_setup_stat = str(uuid.uuid4()), str(uuid.uuid4())
+
+    def rule(stat_id: str) -> dict[str, object]:
+        return {"kind": "rule", "id": str(uuid.uuid4()), "statId": stat_id, "operator": "gte", "threshold": 1, "nextOp": "and"}
+
+    ending = {
+        "id": str(uuid.uuid4()),
+        "name": "엔딩",
+        "turnCountGate": 10,
+        "judgmentPrompt": "판정",
+        "epilogue": None,
+        "hint": None,
+        "statRules": [
+            rule(own_stat),
+            rule(other_setup_stat),
+            {"kind": "group", "id": str(uuid.uuid4()), "nextOp": None, "rules": [rule(own_stat), rule(str(uuid.uuid4()))]},
+        ],
+    }
+    stat_item = {
+        "name": "체력",
+        "icon": "heart",
+        "color": "rose",
+        "minValue": 0,
+        "maxValue": 100,
+        "initialValue": 50,
+        "unit": None,
+        "description": "체력",
+    }
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(statDefs=[{**stat_item, "id": own_stat}], endings=[ending]),
+                _starting_setup_item(statDefs=[{**stat_item, "id": other_setup_stat}]),
+            ]
+        ),
+    )
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {
+        "code": "ENDING_RULE_STAT_NOT_FOUND",
+        "paths": [
+            "startingSetups[0].endings[0].statRules[1].statId",
+            "startingSetups[0].endings[0].statRules[2].rules[1].statId",
+        ],
+    }
+    saved_setups = (
+        await db_session.scalars(sa.select(StartingSetup).where(StartingSetup.content_version_id == version.id))
+    ).all()
+    assert saved_setups == []
+
+
 async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

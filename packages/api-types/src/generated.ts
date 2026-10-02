@@ -2637,7 +2637,8 @@ export interface paths {
          * Pin Latest Version
          * @description `messages`는 그대로 두고 방이 고정한
          *     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-         *     새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
+         *     새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.
+         *     버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상).
          */
         post: operations["pin_latest_version_chat_rooms__room_id__pin_latest_version_post"];
         delete?: never;

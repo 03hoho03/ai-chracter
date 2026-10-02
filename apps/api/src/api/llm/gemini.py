@@ -15,7 +15,9 @@ from api.llm.client import (
     LLMClientError,
     LLMPolicyViolationError,
     LLMRateLimitError,
+    structured_model_and_thinking,
 )
+from api.llm.usage_store import record_usage
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -130,6 +132,7 @@ class GeminiLLMClient(LLMClient):
         # 정상 종료한 스트림만 여기 닿는다 — 정책 차단·SDK 예외는 위에서 올라가고, 소비자가 중간에
         # 끊으면(aclose) `yield` 자리에서 GeneratorExit으로 빠진다. 그 경우는 기록하지 않는다.
         _log_usage(usage, self._model_name, usage_metadata)
+        await record_usage(usage.call_site, self._model_name, usage_metadata)
 
     async def generate_structured(
         self,
@@ -146,14 +149,19 @@ class GeminiLLMClient(LLMClient):
                 *(genai_types.Part.from_bytes(data=data, mime_type=mime_type) for data, mime_type in images),
             ]
 
+        model, thinking_budget = structured_model_and_thinking(usage.call_site, self._model_name)
+        config = genai_types.GenerateContentConfig(
+            response_mime_type="application/json",
+            response_schema=response_schema,
+        )
+        if thinking_budget is not None:
+            # `generate()` 와 같은 이유로 None 이면 thinking_config 를 아예 넘기지 않는다.
+            config.thinking_config = genai_types.ThinkingConfig(thinking_budget=thinking_budget)
         try:
             response = await self._client.aio.models.generate_content(
-                model=self._model_name,
+                model=model,
                 contents=contents,
-                config=genai_types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                    response_schema=response_schema,
-                ),
+                config=config,
             )
         except (genai_errors.APIError, httpx.HTTPError) as exc:
             # `generate()`와 동일하게 두 계열을 함께 잡는다 — SDK의 네트워크/타임아웃 실패는
@@ -164,7 +172,9 @@ class GeminiLLMClient(LLMClient):
             raise LLMClientError(f"Gemini generate_structured() call failed: {exc}") from exc
 
         # 파싱 검사 **앞**이다 — 응답을 받은 시점에 토큰은 이미 과금됐다.
-        _log_usage(usage, self._model_name, getattr(response, "usage_metadata", None))
+        usage_metadata = getattr(response, "usage_metadata", None)
+        _log_usage(usage, model, usage_metadata)
+        await record_usage(usage.call_site, model, usage_metadata)
         if not isinstance(response.parsed, response_schema):
             raise LLMClientError(
                 f"Gemini structured response could not be parsed into {response_schema.__name__}"

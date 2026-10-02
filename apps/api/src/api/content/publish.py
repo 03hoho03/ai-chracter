@@ -1,12 +1,17 @@
 import uuid
-from collections.abc import Sequence
+from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from pydantic import BaseModel
 
 from api.chat.prompt_builder import render_prompt_channel
-from api.content.schemas import MEDIA_BOOK_MAX_CELLS
+from api.content.schemas import (
+    MEDIA_BOOK_MAX_CELLS,
+    EndingRuleGroupDraftItem,
+    EndingRuleListDraftItem,
+    StartingSetupDraftItem,
+)
 from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import Content, ContentVersion
 from api.db.models.prompt import PromptSection, PromptSet
@@ -110,6 +115,7 @@ def validate_story_publish(
     media_book_scenes: Sequence[MediaBookScene],
     media_book_cells: Sequence[MediaBookCell],
     keyword_notes: Sequence[KeywordNote],
+    dangling_stat_rule_paths: Sequence[str],
 ) -> list[str]:
     """Mirrors `validate_character_publish`'s
     shape. `endings_by_setup_id` is keyed by `StartingSetup.id` (physical) since that's how the
@@ -124,6 +130,10 @@ def validate_story_publish(
     키워드북은 자동저장이 빈 노트(노트 추가 직후)를 받아 주므로 여기서 막는다. 상시가 아닌 노트에 공백 아닌 키워드가
     하나도 없으면 `keywordNotes.triggerKeywords`(열릴 길이 없다), 정보가 공백뿐인 노트가 있으면 `keywordNotes.infoText`
     (실려도 빈 줄이다)를 노트 수와 상관없이 한 번씩 알린다 — 어느 노트인지는 빌더 폼 검증이 노트 자리에서 먼저 보여 준다.
+
+    엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면(`dangling_stat_rule_paths`, 호출부가 `setup_dangling_stat_rule_paths`
+    로 구한다) `endings.statRules` 를 한 번 알린다. 그 조건은 영영 참이 될 수 없다. 초안 저장이 같은 검사로 경로까지
+    알려 막으므로, 여기는 그 검사 전에 저장된 초안과 API 직접 호출을 막는 마지막 관문이다.
     """
     missing: list[str] = []
     if not detail.name:
@@ -148,6 +158,8 @@ def validate_story_publish(
         for ending_index, ending in enumerate(endings_by_setup_id.get(setup.id, [])):
             if ending.turn_count_gate < 10:
                 missing.append(f"startingSetups[{setup_index}].endings[{ending_index}].turnCountGate")
+    if dangling_stat_rule_paths:
+        missing.append("endings.statRules")
 
     if len(media_book_cells) > MEDIA_BOOK_MAX_CELLS:
         missing.append("mediaBook.cells")
@@ -170,6 +182,43 @@ def validate_story_publish(
     if content.target is None:
         missing.append("target")
     return missing
+
+
+def setup_dangling_stat_rule_paths(
+    setup_index: int,
+    stat_ids: Collection[uuid.UUID],
+    endings_rules: Sequence[Sequence[EndingRuleListDraftItem]],
+) -> list[str]:
+    """시작설정 하나에서, 그 시작설정의 스탯(`stat_ids`, entity_id)에 없는 스탯을 가리키는 엔딩 규칙의 필드 경로.
+
+    규칙의 스탯 참조에는 FK 가 없어 스탯을 지운 뒤 남은 규칙을 저장이 받아 준다. 대화는 그 항목을 거짓으로 보고
+    계속되므로, 어긋난 규칙은 엔딩이 조용히 영영 안 열리는 형태로만 드러난다. 그래서 초안 저장·발행·시드가 이 검사로
+    막는다. 경로는 빌더 폼과 같은 `startingSetups[i].endings[j].statRules[k](.rules[n]).statId` 꼴이다.
+    """
+    dangling: list[str] = []
+    for ending_index, rule_items in enumerate(endings_rules):
+        for rule_index, rule_item in enumerate(rule_items):
+            path = f"startingSetups[{setup_index}].endings[{ending_index}].statRules[{rule_index}]"
+            if isinstance(rule_item, EndingRuleGroupDraftItem):
+                for nested_index, nested_item in enumerate(rule_item.rules):
+                    if nested_item.stat_id not in stat_ids:
+                        dangling.append(f"{path}.rules[{nested_index}].statId")
+            elif rule_item.stat_id not in stat_ids:
+                dangling.append(f"{path}.statId")
+    return dangling
+
+
+def draft_dangling_stat_rule_paths(starting_setups: Sequence[StartingSetupDraftItem]) -> list[str]:
+    """초안 페이로드 전체에 `setup_dangling_stat_rule_paths` 를 적용한다(초안 저장과 시드가 쓴다)."""
+    return [
+        path
+        for setup_index, setup_item in enumerate(starting_setups)
+        for path in setup_dangling_stat_rule_paths(
+            setup_index,
+            {stat_item.id for stat_item in setup_item.stat_defs},
+            [ending_item.stat_rules for ending_item in setup_item.endings],
+        )
+    ]
 
 
 @dataclass(frozen=True)

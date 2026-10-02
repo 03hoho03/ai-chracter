@@ -6,6 +6,8 @@ from typing import Literal, TypeVar
 
 from pydantic import BaseModel
 
+from api.core.config import settings
+
 T = TypeVar("T", bound=BaseModel)
 
 # `gemini_usage` 로그의 grep 키다. 호출부와 1:1이라
@@ -27,6 +29,51 @@ LLMCallSite = Literal[
     "seed_story_generate",
     "seed_similarity_review",
 ]
+
+# 아래 두 집합은 로그 라벨이면서 **모델·사고 설정 선택도 겸한다** — `llm/gemini.py` 의
+# `generate_structured` 가 아래 `structured_model_and_thinking` 으로 이 집합을 보고
+# `gemini_judgment_*`·`gemini_publish_filter_*` 설정을 고른다.
+# 그래서 call_site 를 새로 만들거나 합치거나 나누면 그 호출이 어느 모델로 가는지도 바뀐다.
+# 새 판정·심사 call_site 는 여기에 넣어야 스위치를 따라가고, 빠뜨리면 조용히 기본 모델로 돈다.
+# 기억 요약(`chat_memory_summary`)은 매 턴 생성 프롬프트에 실려 생성 품질에 바로 닿고, 시드
+# 스크립트 호출은 운영 판정이 아니라서 둘 다 넣지 않는다.
+JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {
+        "chat_stat_judgment",
+        "chat_ending_judgment",
+        "chat_situational_image",
+        "chat_media_book_image",
+        "preview_stat_judgment",
+        "preview_ending_judgment",
+        "preview_media_book_image",
+    }
+)
+# 발행 심사는 실패하면 발행이 막히는(fail-closed) 경로라 판정과 따로 바꾸고 되돌릴 수 있게 둔다.
+PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {"publish_filter_character", "publish_filter_story"}
+)
+
+
+def structured_model_and_thinking(call_site: LLMCallSite, default_model: str) -> tuple[str, int | None]:
+    """구조화 호출 하나가 실제로 쓸 모델과 사고 예산. 판정·발행 심사 집합이면 그 스위치의 값을, 아니면
+    `default_model` 에 사고 설정 없음을 돌려준다. Gemini 클라이언트가 호출마다 이 함수로 모델을 고르고,
+    발행 심사의 통과 기억도 같은 함수로 모델을 구한다 — 둘이 따로 계산하면 심사 모델이 바뀌었는데 옛
+    모델의 통과로 심사를 건너뛸 수 있다.
+
+    설정은 호출마다 읽는다 — 클라이언트가 프로세스당 하나이고 설정은 실행 중에 바뀌지 않아 운영에서는
+    기동 때 읽는 것과 같다. 모델명을 `or` 로 고르는 건 env 에 키만 남아 빈 문자열이 들어와도 기본
+    모델로 돌게 하려는 것이다(빈 모델명은 어떤 모델도 가리키지 않는다)."""
+    if call_site in JUDGMENT_CALL_SITES:
+        return (
+            settings.gemini_judgment_model_name or default_model,
+            settings.gemini_judgment_thinking_budget,
+        )
+    if call_site in PUBLISH_FILTER_CALL_SITES:
+        return (
+            settings.gemini_publish_filter_model_name or default_model,
+            settings.gemini_publish_filter_thinking_budget,
+        )
+    return default_model, None
 
 
 @dataclass(frozen=True)

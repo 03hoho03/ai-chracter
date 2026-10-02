@@ -50,7 +50,11 @@ function compare(statValue: number, operator: ComparisonOp, value: number): bool
 
 export function evaluateItem(item: RuleListItem, statValues: Record<string, number>): boolean {
   if (item.kind === "rule") {
-    return compare(statValues[item.statId] ?? 0, item.operator, item.value);
+    // 방에 없는 스탯을 가리키는 규칙은 거짓이다. 0 으로 읽으면 `< 10` 같은 조건이 첫 판정에서 바로 참이 되어
+    // 작가가 의도하지 않은 엔딩이 열린다(BE 짝도 같은 처리).
+    const statValue = statValues[item.statId];
+    if (statValue === undefined) return false;
+    return compare(statValue, item.operator, item.value);
   }
   return evaluateRuleList(item.rules, statValues); // 그룹 내부도 동일 알고리즘 재귀 적용
 }

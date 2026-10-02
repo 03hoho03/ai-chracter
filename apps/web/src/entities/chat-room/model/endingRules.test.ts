@@ -61,4 +61,16 @@ describe("evaluateRuleList", () => {
     // group: a>0(true) or b>0(false) => true; top: true and c==1(true) => true
     expect(evaluateRuleList(items, { a: 1, b: 0, c: 1 })).toBe(true);
   });
+
+  it("treats a rule on a stat the room does not have as false, whatever the operator", () => {
+    // 없는 스탯을 0 으로 읽으면 `< 10` 같은 조건이 첫 판정에서 바로 참이 되어 엔딩이 열린다.
+    expect(evaluateRuleList([rule({ statId: "gone", operator: "<", value: 10 })], {})).toBe(false);
+    expect(evaluateRuleList([rule({ statId: "gone", operator: "!=", value: 5 })], {})).toBe(false);
+    expect(
+      evaluateRuleList(
+        [rule({ statId: "gone", operator: "<=", value: 0, nextOp: "or" }), rule({ statId: "a", operator: "==", value: 1 })],
+        { a: 1 },
+      ),
+    ).toBe(true);
+  });
 });

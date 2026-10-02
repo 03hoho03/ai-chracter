@@ -22,7 +22,7 @@ type MediaBookConfirmModalProps = {
   onRestoreFocus: () => void;
 };
 
-/** 미디어 북에서 되돌릴 수 없는 삭제(축 항목·칸)를 확인한다. 삭제 동작은 호출부가 이어받는다. */
+/** 스토리 빌더에서 되돌릴 수 없는 삭제(미디어 북 축 항목·칸, 엔딩 조건이 딸린 스탯)를 확인한다. 삭제 동작은 호출부가 이어받는다. */
 export const MediaBookConfirmModal = createCallable<MediaBookConfirmModalProps, boolean>(
   ({ call, title, description, confirmLabel, onRestoreFocus }) => (
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(false)}>

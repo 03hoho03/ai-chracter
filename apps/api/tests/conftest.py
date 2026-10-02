@@ -68,9 +68,11 @@ os.environ["DATABASE_URL"] = os.environ.get(
 os.environ["REDIS_URL"] = os.environ.get("TEST_REDIS_URL", "redis://localhost:6379/1")
 
 from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
+from api.content.publish_filter_memo import PASSED_KEY_PREFIX
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.session import engine
+from api.llm.usage_store import USAGE_KEY_PREFIX
 from api.db.session import get_db_session, get_session_factory
 from api.main import app
 
@@ -165,6 +167,24 @@ async def _flush_rate_limit_keys() -> None:
     자연 격리되지 않는다. 안 지우면 무관한 테스트가 쌓아둔 IP 카운터 때문에 뒤에 실행되는
     테스트가 실행 순서에 따라 간헐적으로 429를 받는다."""
     keys = await redis_client.keys("rate_limit:*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_llm_usage_keys() -> None:
+    """LLM 사용량 집계는 날짜 하나에 해시 하나라 랜덤 값으로 격리되지 않는다 — 실제
+    `GeminiLLMClient` 를 쓰는 테스트가 오늘 해시에 쌓은 수가 다음 테스트의 단언에 섞인다."""
+    keys = await redis_client.keys(f"{USAGE_KEY_PREFIX}*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_publish_filter_passes() -> None:
+    """발행 심사 통과 기억은 키에 콘텐츠 id 가 들어가 테스트끼리 자연히 갈리지만, Redis 는 테스트마다
+    롤백되지 않으므로 앞 테스트가 남긴 기억이 쌓이지 않게 지운다."""
+    keys = await redis_client.keys(f"{PASSED_KEY_PREFIX}*")
     if keys:
         await redis_client.delete(*keys)
 

@@ -26,9 +26,12 @@ from api.content.publish import (
     PublishFilterResult,
     build_character_publish_filter_prompt,
     build_story_publish_filter_prompt,
+    draft_dangling_stat_rule_paths,
+    setup_dangling_stat_rule_paths,
     validate_character_publish,
     validate_story_publish,
 )
+from api.content.publish_filter_memo import PASSED_KEY_PREFIX, has_passed, remember_pass, screening_key
 from api.content.schemas import (
     KEYWORD_NOTE_OPTION_FIELDS,
     CharacterDraftPayload,
@@ -73,6 +76,7 @@ from api.content.schemas import (
     VisibilityFilter,
 )
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
+from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
 from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
@@ -107,7 +111,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMCallContext, LLMClient
+from api.llm.client import LLMCallContext, LLMClient, structured_model_and_thinking
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1259,7 +1263,12 @@ async def _update_story_draft(
     mapped to the physical `starting_setups.id` FK column.
 
     노트가 이 페이로드에 없는 시작설정을 가리키면 400 이다. 예전처럼 조용히 "스토리 전체"로 바꿔 저장하면 작가가
-    고른 적용 범위가 말없이 넓어진다."""
+    고른 적용 범위가 말없이 넓어진다.
+
+    엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 422 `{"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": [...]}` 이다
+    (경로 꼴은 `setup_dangling_stat_rule_paths`). 그 엔딩은 영영 열리지 않는다. 스키마 validator 가 아니라 여기서
+    막는 것은 같은 페이로드 모델을 미리보기 시작·Redis 의 미리보기 세션 복원도 쓰기 때문이다 — validator 로 두면 이미
+    저장된 미리보기 세션의 다음 턴이 역직렬화에서 깨진다."""
     known_setup_ids = {setup_item.id for setup_item in payload.starting_setups}
     for note_index, note_item in enumerate(payload.keyword_notes):
         if note_item.starting_setup_id is not None and note_item.starting_setup_id not in known_setup_ids:
@@ -1271,6 +1280,12 @@ async def _update_story_draft(
                     "label": note_item.name or next(iter(note_item.trigger_keywords), ""),
                 },
             )
+    dangling_stat_rule_paths = draft_dangling_stat_rule_paths(payload.starting_setups)
+    if dangling_stat_rule_paths:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail={"code": "ENDING_RULE_STAT_NOT_FOUND", "paths": dangling_stat_rule_paths},
+        )
 
     detail = await db.get(StoryVersionDetail, version.id)
     assert detail is not None
@@ -1691,6 +1706,48 @@ async def _load_publish_filter_images(
     return images
 
 
+async def _screen_for_publish(
+    llm_client: LLMClient,
+    *,
+    call_site: Literal["publish_filter_character", "publish_filter_story"],
+    content: Content,
+    prompt_set: PromptSet,
+    prompt: str,
+    images: list[tuple[bytes, str]],
+) -> None:
+    """발행 심사. 통과하지 못하면 400 `{reason}` 을 던진다. 직전에 통과한 심사와 입력이 전부 같으면 LLM 을
+    부르지 않는다(`content/publish_filter_memo.py`). 모델·사고 예산은 클라이언트가 실제로 고를 값과 같은 함수로
+    구해야 심사 설정을 바꾼 뒤 옛 설정의 통과로 건너뛰지 않는다. 기본 모델은 `get_llm_client` 가 만드는 클라이언트가
+    쓰는 `settings.gemini_model_name` 이다."""
+    model, thinking_budget = structured_model_and_thinking(call_site, settings.gemini_model_name)
+    memo_key = screening_key(
+        content_id=content.id,
+        prompt_set_id=prompt_set.id,
+        model=model,
+        thinking_budget=thinking_budget,
+        prompt=prompt,
+        images=images,
+    )
+    if await has_passed(memo_key):
+        # 키 앞부분만 남긴다 — 입력을 되짚을 수 없고, 같은 작품의 재시도끼리 묶어 보기에는 충분하다.
+        logger.warning(
+            "publish_filter_skipped call_site=%s key=%s", call_site, memo_key.removeprefix(PASSED_KEY_PREFIX)[:12]
+        )
+        return
+    filter_result = await llm_client.generate_structured(
+        prompt,
+        PublishFilterResult,
+        images=images,
+        usage=LLMCallContext(call_site=call_site, user_id=content.creator_user_id, room_id=None),
+    )
+    if not filter_result.passed:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
+        )
+    await remember_pass(memo_key)
+
+
 @router.post(
     "/contents/{id}/publish", dependencies=[Depends(require_legal_consent)]
 )
@@ -1772,17 +1829,14 @@ async def _publish_character_content(
         character_prompt=detail.character_prompt,
         detail_description=version.detail_description,
     )
-    filter_result = await llm_client.generate_structured(
-        filter_prompt,
-        PublishFilterResult,
+    await _screen_for_publish(
+        llm_client,
+        call_site="publish_filter_character",
+        content=content,
+        prompt_set=prompt_set,
+        prompt=filter_prompt,
         images=filter_images,
-        usage=LLMCallContext(call_site="publish_filter_character", user_id=content.creator_user_id, room_id=None),
     )
-    if not filter_result.passed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
-        )
 
     latest_version_number = await db.scalar(
         select(func.max(ContentVersion.version_number)).where(ContentVersion.content_id == content.id)
@@ -2172,6 +2226,11 @@ async def _publish_story_content(
     keyword_notes = (
         await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
     ).all()
+    dangling_stat_rule_paths: list[str] = []
+    for setup_index, setup in enumerate(starting_setups):
+        stat_ids = set((await db.scalars(select(StatDef.entity_id).where(StatDef.starting_setup_id == setup.id))).all())
+        endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
+        dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
 
     missing_fields = validate_story_publish(
         content,
@@ -2183,6 +2242,7 @@ async def _publish_story_content(
         media_book_scenes=scenes,
         media_book_cells=cells,
         keyword_notes=keyword_notes,
+        dangling_stat_rule_paths=dangling_stat_rule_paths,
     )
     if missing_fields:
         raise HTTPException(
@@ -2220,17 +2280,14 @@ async def _publish_story_content(
             for cell in ordered_cells
         ],
     )
-    filter_result = await llm_client.generate_structured(
-        filter_prompt,
-        PublishFilterResult,
+    await _screen_for_publish(
+        llm_client,
+        call_site="publish_filter_story",
+        content=content,
+        prompt_set=prompt_set,
+        prompt=filter_prompt,
         images=filter_images,
-        usage=LLMCallContext(call_site="publish_filter_story", user_id=content.creator_user_id, room_id=None),
     )
-    if not filter_result.passed:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"reason": filter_result.reason or "발행 심사를 통과하지 못했습니다."},
-        )
 
     await _blur_new_media_book_cells(db, ordered_cells, owner_user_id=content.creator_user_id)
 

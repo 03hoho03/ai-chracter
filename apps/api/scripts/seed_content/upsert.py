@@ -26,11 +26,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.image_processing import generate_blurred_image
-from api.content.publish import validate_character_publish, validate_story_publish
+from api.content.publish import draft_dangling_stat_rule_paths, validate_character_publish, validate_story_publish
 from api.content.router import _update_character_draft, _update_story_draft
 from api.content.schemas import (
     CharacterDraftPayload,
-    EndingRuleGroupDraftItem,
     StoryDraftPayload,
 )
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -281,6 +280,9 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
     검증 함수가 요구하는 건 ORM 행의 값뿐이라 세션 없이 생성자로만 채운 인메모리 인스턴스로
     충분하다(빌더 미리보기가 `chat/router.py` 의 `_preview_*` 헬퍼로 하는 것과 같은 패턴). 시작설정의 물리적 id 자리에는 entity_id
     를 그대로 쓴다 — 여기서는 엔딩 목록을 되찾는 dict 키로만 쓰인다.
+
+    규칙 참조 검사는 어긋난 경로를 하나하나 돌려준다. 시드 JSON 의 entity_id 는 loader 가 파일 안의 위치로 파생하므로
+    손으로 쓴 스탯 참조가 어긋나기 쉽다.
     """
     endings_by_setup_id: dict[uuid.UUID, Sequence[Ending]] = {
         setup_item.id: [
@@ -288,7 +290,8 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
         ]
         for setup_item in payload.starting_setups
     }
-    return _dangling_stat_refs(payload) + validate_story_publish(
+    dangling_stat_rule_paths = draft_dangling_stat_rule_paths(payload.starting_setups)
+    return dangling_stat_rule_paths + validate_story_publish(
         Content(genre_id=payload.genre_id, target=payload.target),
         ContentVersion(detail_description=payload.description),
         StoryVersionDetail(
@@ -316,27 +319,5 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
             )
             for note_item in payload.keyword_notes
         ],
+        dangling_stat_rule_paths=dangling_stat_rule_paths,
     )
-
-
-def _dangling_stat_refs(payload: StoryDraftPayload) -> list[str]:
-    """엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면 그 필드 경로를 돌려준다.
-
-    `statId` 는 스탯의 entity_id 참조인데 시드 JSON 의 entity_id 는 loader 가
-    파일 안의 위치로 파생하므로, 손으로 쓴 참조는 어긋나기 쉽다. 어긋난 규칙은 발행도
-    채팅도 에러 없이 통과한 뒤 엔딩이 조용히 영영 안 열리는 형태로만 드러나므로,
-    시드 시점에 발행 검증과 같은 통로로 막는다.
-    """
-    dangling: list[str] = []
-    for setup_index, setup_item in enumerate(payload.starting_setups):
-        known_stat_ids = {stat_item.id for stat_item in setup_item.stat_defs}
-        for ending_index, ending_item in enumerate(setup_item.endings):
-            for rule_index, rule_item in enumerate(ending_item.stat_rules):
-                path = f"startingSetups[{setup_index}].endings[{ending_index}].statRules[{rule_index}]"
-                if isinstance(rule_item, EndingRuleGroupDraftItem):
-                    for nested_index, nested_item in enumerate(rule_item.rules):
-                        if nested_item.stat_id not in known_stat_ids:
-                            dangling.append(f"{path}.rules[{nested_index}].statId")
-                elif rule_item.stat_id not in known_stat_ids:
-                    dangling.append(f"{path}.statId")
-    return dangling

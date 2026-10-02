@@ -26,6 +26,9 @@ export const STORY_MISSING_FIELD_LABELS = {
   // 정상 흐름에선 정보가 공백뿐인 노트나 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
   "keywordNotes.triggerKeywords": "키워드북 트리거 키워드(상시 적용이 아닌 노트마다 1개 이상)",
   "keywordNotes.infoText": "키워드북 정보",
+  // 엔딩 조건이 같은 시작설정에 없는 스탯을 가리킬 때 한 번 온다. 스탯을 지우면 그 조건도 함께 지워지고 자동저장도 같은
+  // 조건을 먼저 거절하므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  "endings.statRules": "엔딩 조건(지워진 스탯을 쓰는 조건)",
 };
 
 /** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
@@ -56,4 +59,6 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   // 노트 하나를 짚을 수 없어 배열 자리로 보낸다 — 키워드북 탭으로 이동하고 탭 머리 한 줄에 보인다.
   "keywordNotes.triggerKeywords": "keywordNotes",
   "keywordNotes.infoText": "keywordNotes",
+  // 서버가 어느 시작설정인지 알려 주지 않는 키라 첫 시작설정의 엔딩 목록을 가리킨다 — 엔딩 탭으로 이동시키는 데만 쓴다.
+  "endings.statRules": "startingSetups.0.endings",
 } satisfies Record<Exclude<MissingField, FieldWithoutFormPath>, Path<StoryBuilderFormValues>>;
