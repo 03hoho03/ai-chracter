@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { toThumbnailAspectClass, type ThumbnailAspect } from "@/entities/content";
 import { uploadAsset, type AssetPurpose } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { GeneratedImagePickerModal } from "./GeneratedImagePickerModal";
 
@@ -151,7 +152,8 @@ export function GeneratedImageField({
           htmlFor={inputId}
           className={cn(
             buttonVariants({ variant: "outline", size: "sm" }),
-            "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
+            "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50",
+            FOCUS_WITHIN_RING_CLASSNAME
           )}
         >
           <Camera aria-hidden className="size-4" />

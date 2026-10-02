@@ -132,7 +132,8 @@ export function renameMediaTagName(text: string, axis: MediaBookAxis, oldName: s
   const to = normalizeMediaBookName(newName);
   return rewriteMediaTags(text, (tag, original) => {
     if (tag.kind !== "name" || tag[axis] !== from) return original;
-    return axis === "person" ? toMediaNameTag(to, tag.scene) : toMediaNameTag(tag.person, to);
+    const renamed = { person: tag.person, scene: tag.scene, [axis]: to };
+    return toMediaNameTag(renamed.person, renamed.scene);
   });
 }
 
