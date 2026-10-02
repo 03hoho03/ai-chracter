@@ -61,7 +61,10 @@ export function MediaBookTab() {
 
       <MediaBookBulkUpload />
 
-      <div className="grid gap-6 sm:grid-cols-2">
+      {/* 두 목록은 접힌 머리 줄이 위아래로 선다. 나란히 두면 반 폭 머리 줄에서는 이름 나열이 몇 개 못 가 잘리고, 한쪽만
+          펼치면 두 열 높이가 어긋나 상세가 긴 쪽 아래로 밀린다. 둘 다 접히면 칸 상세가 한꺼번에 넣기와 머리 줄 둘
+          바로 아래에 선다. */}
+      <div className="flex flex-col gap-4">
         <MediaBookAxisList axis="person" />
         <MediaBookAxisList axis="scene" />
       </div>

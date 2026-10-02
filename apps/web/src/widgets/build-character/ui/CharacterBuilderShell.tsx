@@ -12,6 +12,7 @@ import {
   characterBuilderSchema,
   formToServer,
   serverToForm,
+  CHARACTER_COLLAPSIBLE_LISTS,
   CHARACTER_TABS,
   type CharacterBuilderFormValues,
   type CharacterBuilderTab,
@@ -19,8 +20,10 @@ import {
 import {
   BuilderLayout,
   BuilderTabStrip,
+  BuilderUiStateContext,
   BuilderTopBar,
   BuilderTopBarActions,
+  errorItemKeys,
   errorTabs,
   fieldLabelByFormPath,
   firstErrorLocation,
@@ -31,6 +34,7 @@ import {
   missingFieldsMessage,
   resolveProfileImageUrl,
   useAutosave,
+  useCreateBuilderUiState,
   useDraftPersistence,
   useFocusFirstError,
   useProfileImageLocalUrl,
@@ -114,6 +118,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   // body로 떨어진다. onValid 경로(handlePublish)에서만 켜지는 로컬 state로 대신한다.
   const [isPublishing, setIsPublishing] = useState(false);
   const [rejectionReason, setRejectionReason] = useState<string>();
+  // 반복 항목의 열림 여부. 탭 본문은 탭을 바꿀 때 언마운트되므로 탭을 오가도 펼쳐 둔 항목이 남도록 셸이 쥔다.
+  const uiState = useCreateBuilderUiState();
   // mode/reValidateMode/shouldUnregister를 명시하지 않는다 — RHF 기본값(제출 전엔 조용히, 제출 후엔
   // onChange 재검증)이 이미 "발행 시도 후에는 고치는 즉시 에러가 풀린다"는 요구와 정확히 같다.
   // 기본값을 그대로 두는 것 자체가 의도된 결정이다.
@@ -206,6 +212,8 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
           if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
         }
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
+        // 서버는 목록 전체(상황별 이미지)만 가리켜 여기서 열릴 항목은 보통 없지만, 클라 검증 경로와 같은 순서를 지킨다.
+        revealErrorItems(form.formState.errors);
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
         toast.error(missingFieldsMessage(missingFields, MISSING_FIELD_LABELS));
         return;
@@ -216,11 +224,20 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
     }
   }
 
+  // 오류를 품은 접힌 항목을 연다. 첫 오류로 포커스를 옮기기 전에 불러야 그 필드가 보이는 상태에서 포커스가 간다. 렌더에서
+  // 오류로 파생하지 않고 열림으로 기록하는 이유는, 발행 뒤에는 고치는 입력마다 다시 검증돼 오류가 풀리는 순간 항목이 접히며
+  // 입력 중이던 칸의 포커스를 잃기 때문이다. 값 id 는 지금 폼 값에서 읽는다 — 오류는 방금 이 값으로 검증해 만든 것이라 오류 경로의
+  // 인덱스가 지금 배열의 같은 자리를 가리킨다.
+  function revealErrorItems(errors: FieldErrors<CharacterBuilderFormValues>) {
+    uiState.open(errorItemKeys(errors, form.getValues(), CHARACTER_COLLAPSIBLE_LISTS, TABS));
+  }
+
   // zodResolver 검증 실패(폼 스키마 위반) 경로. 먼저 걸리는 쪽이 덜
   // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
   // 문장이 갈린다 — 이 경로에는 누락뿐 아니라 배열 상한 위반도
   // 온다.
   function handlePublishInvalid(errors: FieldErrors<CharacterBuilderFormValues>) {
+    revealErrorItems(errors);
     focusFirstError(firstErrorLocation(errors, TABS));
     toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
   }
@@ -248,69 +265,77 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
 
   return (
     <FormProvider {...form}>
-      {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
-          56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
-          여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
-          토스트다. */}
-      <BuilderTopBar
-        title="캐릭터 만들기"
-        autosaveNotice="변경사항은 자동으로 저장돼요."
-        actions={
-          <BuilderTopBarActions
-            guidePath="/guide/character"
-            isPublishing={isPublishing}
-            isPreviewOpen={isPreviewOpen}
-            onPreview={() => setIsPreviewOpen((prev) => !prev)}
-            onSaveNow={() => void handleSaveNow()}
-            onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
-          />
-        }
-      />
-      <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-        {rejectionReason !== undefined && draftId !== undefined && (
-          <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-            <div>
-              <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
-              <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() =>
-                void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
-              }
-            >
-              이의제기
-            </Button>
-          </div>
-        )}
-
-        <Tabs value={activeTab} onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}>
-          <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
-
-          <TabsContent value="profile">
-            <ProfileTab
-              thumbnailUrl={thumbnailUrl}
-              onUploadComplete={profileImageLocal.rememberUploadedFile}
-              onPick={profileImageLocal.rememberPickedImage}
+      <BuilderUiStateContext.Provider value={uiState}>
+        {/* 빌더는 전역 Header 대신 이 전용 상단바를 쓴다(같은
+            56px 자리, `routes/__root.tsx`가 `/builder` 경로에서 Header를 뺀다). 저장 계약("자동저장")을
+            여기서 한 번 말해 둔다 — 안 그러면 사용자가 그 단어를 처음 만나는 자리가 빨간 실패
+            토스트다. */}
+        <BuilderTopBar
+          title="캐릭터 만들기"
+          autosaveNotice="변경사항은 자동으로 저장돼요."
+          actions={
+            <BuilderTopBarActions
+              guidePath="/guide/character"
+              isPublishing={isPublishing}
+              isPreviewOpen={isPreviewOpen}
+              onPreview={() => setIsPreviewOpen((prev) => !prev)}
+              onSaveNow={() => void handleSaveNow()}
+              onPublish={() => void form.handleSubmit(handlePublish, handlePublishInvalid)()}
             />
-          </TabsContent>
-          <TabsContent value="intro">
-            <IntroTab />
-          </TabsContent>
-          <TabsContent value="prompt">
-            <PromptTab />
-          </TabsContent>
-          <TabsContent value="advanced">
-            <AdvancedTab ensureContentVersionId={ensureContentVersionId} />
-          </TabsContent>
-          <TabsContent value="detail">
-            <DetailTab />
-          </TabsContent>
-        </Tabs>
-      </BuilderLayout>
+          }
+        />
+        <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+          {rejectionReason !== undefined && draftId !== undefined && (
+            <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
+                <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="shrink-0"
+                onClick={() =>
+                  void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
+                }
+              >
+                이의제기
+              </Button>
+            </div>
+          )}
+
+          {/* lg 이상에서는 탭 목록과 첫 내용 사이를 각 탭 본문 컴포넌트 루트의 윗여백(`py-6`, 24px) 하나로 둔다 — `Tabs` 기본 간격까지 더하면
+              상단바 → 탭 목록(24px)보다 벌어진다. lg 미만은 그대로다. */}
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => isCharacterBuilderTab(value) && setActiveTab(value)}
+            className="lg:gap-0"
+          >
+            <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+
+            <TabsContent value="profile">
+              <ProfileTab
+                thumbnailUrl={thumbnailUrl}
+                onUploadComplete={profileImageLocal.rememberUploadedFile}
+                onPick={profileImageLocal.rememberPickedImage}
+              />
+            </TabsContent>
+            <TabsContent value="intro">
+              <IntroTab />
+            </TabsContent>
+            <TabsContent value="prompt">
+              <PromptTab />
+            </TabsContent>
+            <TabsContent value="advanced">
+              <AdvancedTab ensureContentVersionId={ensureContentVersionId} />
+            </TabsContent>
+            <TabsContent value="detail">
+              <DetailTab />
+            </TabsContent>
+          </Tabs>
+        </BuilderLayout>
+      </BuilderUiStateContext.Provider>
     </FormProvider>
   );
 }

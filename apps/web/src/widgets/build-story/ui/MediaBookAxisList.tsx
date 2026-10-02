@@ -1,13 +1,14 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Input } from "@ai-character-chat/ui/components/input";
-import { Label } from "@ai-character-chat/ui/components/label";
 import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { useFormContext } from "react-hook-form";
 import { toast } from "sonner";
 
 import { normalizeMediaBookName, type MediaBookAxis } from "@/entities/media-book";
+import { CollapsibleSection, itemOpenKey, useBuilderUiState } from "@/features/build-common";
 import {
+  MEDIA_BOOK_AXIS_SECTION_LIST,
   addAxisItem,
   axisItems,
   countAxisItemCells,
@@ -29,6 +30,11 @@ const AXIS_LABEL = { person: "인물", scene: "장면" } as const satisfies Reco
 /**
  * 인물 또는 장면 목록. 이름은 입력칸에서 바로 고치고(Enter·포커스 이동 때 반영, Esc 로 되돌림), 규칙에 맞지 않는
  * 이름은 폼에 쓰지 않고 입력칸 아래에 이유를 보인다 — 폼에는 언제나 서버가 받는 이름만 들어간다.
+ *
+ * 목록은 통째로 접힌다(머리 줄 `인물 3` + 이름 나열). 항목이 있으면 처음엔 접혀 있어 칸 상세가 한꺼번에 넣기 바로
+ * 아래로 올라온다. 목록이 비었거나 저장하지 못한 이름이 남아 있으면 접지 못하게 펼쳐 둔다 — 비었으면 새 이름 입력칸이
+ * 곧 첫 길이고, 저장하지 못한 이름은 그 이유가 입력칸 아래에만 있어 접으면 고쳤다고 믿게 된다(머리 줄은 폼에 남은 옛
+ * 이름을 보인다). 접고 펴는 것은 화면 상태만 바꾸고 폼에는 아무것도 쓰지 않는다.
  */
 export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
   const { getValues, setValue } = useFormContext<StoryBuilderFormValues>();
@@ -37,7 +43,23 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
   const label = AXIS_LABEL[axis];
   const [newName, setNewName] = useState("");
   const [newNameError, setNewNameError] = useState<string>();
+  // 줄마다 저장하지 못한 이름의 이유. 섹션이 접히지 않게 하려고 줄이 아니라 여기서 쥔다. 지운 줄의 이유가 남아도
+  // 지금 목록에 있는 줄만 본다.
+  const [rowErrors, setRowErrors] = useState<Readonly<Record<string, string>>>({});
+  const hasUnsavedName = items.some((item) => rowErrors[item.id] !== undefined);
+  const uiState = useBuilderUiState();
+  const openKey = itemOpenKey(MEDIA_BOOK_AXIS_SECTION_LIST, axis);
   const listId = `media-book-${axis}`;
+
+  function setRowError(id: string, error: string | undefined) {
+    setRowErrors((prev) => {
+      if (prev[id] === error) return prev;
+      const next = { ...prev };
+      if (error === undefined) delete next[id];
+      else next[id] = error;
+      return next;
+    });
+  }
 
   function handleAdd() {
     const current = getMediaBook();
@@ -46,6 +68,9 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
       setNewNameError(error);
       return;
     }
+    // 비어 있던 목록은 열림 기록과 무관하게 펼쳐 둔 상태라 기록이 없을 수 있다. 첫 항목이 생기는 순간 기본
+    // 접힘으로 바뀌어 방금 쓰던 입력칸이 숨지 않도록, 반영과 같은 핸들러에서 열림을 기록한다.
+    uiState.open([openKey]);
     commit(addAxisItem(current, axis, newName, crypto.randomUUID()));
     setNewName("");
     setNewNameError(undefined);
@@ -97,10 +122,16 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
   }
 
   return (
-    <div className="flex min-w-0 flex-col gap-2">
-      {/* 목록의 제목이다 — 새 이름 입력칸의 이름은 입력칸에 따로 준다(이 글자를 이름으로 물려받으면 "인물 2"로 읽힌다). */}
-      {/* 0 은 "아직 없음"을 숫자로 말할 뿐이라 덧붙이지 않는다. */}
-      <Label>{items.length > 0 ? `${label} ${items.length}` : label}</Label>
+    // 제목은 목록의 이름이다 — 새 이름 입력칸의 이름은 입력칸에 따로 준다(이 글자를 이름으로 물려받으면 "인물 2"로
+    // 읽힌다). 0 은 "아직 없음"을 숫자로 말할 뿐이라 덧붙이지 않는다.
+    <CollapsibleSection
+      openKey={openKey}
+      title={items.length > 0 ? `${label} ${items.length}` : label}
+      summary={items.map((item) => item.name).join(" · ")}
+      isEmpty={items.length === 0}
+      isAlwaysOpen={hasUnsavedName}
+      className="min-w-0"
+    >
       {items.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label={`${label} 목록`}>
           {items.map((item) => (
@@ -108,6 +139,8 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
               key={item.id}
               item={item}
               label={label}
+              error={rowErrors[item.id]}
+              onErrorChange={(error) => setRowError(item.id, error)}
               onRename={(name) => handleRename(item, name)}
               onRemove={() => void handleRemove(item)}
             />
@@ -137,22 +170,24 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
           {newNameError}
         </p>
       )}
-    </div>
+    </CollapsibleSection>
   );
 }
 
 type AxisItemRowProps = {
   item: MediaBookAxisValues;
   label: string;
+  /** 저장하지 못한 이름의 이유. 목록이 쥔다(있으면 섹션이 접히지 않는다). */
+  error: string | undefined;
+  onErrorChange: (error: string | undefined) => void;
   /** 반영하지 못하면 이유를 돌려준다. */
   onRename: (name: string) => string | undefined;
   onRemove: () => void;
 };
 
-function AxisItemRow({ item, label, onRename, onRemove }: AxisItemRowProps) {
+function AxisItemRow({ item, label, error, onErrorChange, onRename, onRemove }: AxisItemRowProps) {
   // 입력 중인 이름. 폼 값(item.name)은 반영할 때만 바뀐다.
   const [draftName, setDraftName] = useState(item.name);
-  const [error, setError] = useState<string>();
   const inputId = `media-book-axis-${item.id}`;
   // 반영하지 못한 이름을 둔 채 이 줄이 사라지면(다른 탭으로 옮김) 입력이 말없이 옛 이름으로 돌아간다 — 그 사실을
   // 알린다. 정리 함수가 마지막 값을 읽도록 ref 에 둔다.
@@ -167,11 +202,11 @@ function AxisItemRow({ item, label, onRename, onRemove }: AxisItemRowProps) {
 
   function commitDraft() {
     if (draftName === item.name) {
-      setError(undefined);
+      onErrorChange(undefined);
       return;
     }
     const renameError = onRename(draftName);
-    setError(renameError);
+    onErrorChange(renameError);
     // 폼에는 앞뒤 공백을 지운 이름이 들어가므로 입력칸도 그 값으로 맞춘다.
     if (renameError === undefined) setDraftName(normalizeMediaBookName(draftName));
   }
@@ -183,7 +218,7 @@ function AxisItemRow({ item, label, onRename, onRemove }: AxisItemRowProps) {
       commitDraft();
     } else if (event.key === "Escape") {
       setDraftName(item.name);
-      setError(undefined);
+      onErrorChange(undefined);
     }
   }
 
@@ -207,7 +242,7 @@ function AxisItemRow({ item, label, onRename, onRemove }: AxisItemRowProps) {
           aria-label={`${item.name} ${label} 지우기`}
           onClick={() => {
             // 지우는 줄이라 "옛 이름 그대로" 안내는 맞지 않다.
-            setError(undefined);
+            onErrorChange(undefined);
             unsavedRef.current = undefined;
             onRemove();
           }}

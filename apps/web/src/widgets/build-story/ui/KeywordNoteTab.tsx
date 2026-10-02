@@ -13,6 +13,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { useEffect, useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import { focusNeighborToggle, itemOpenKey, useBuilderUiState } from "@/features/build-common";
 import {
   createKeywordNote,
   dragMoveIndices,
@@ -20,10 +21,12 @@ import {
   MAX_KEYWORD_NOTES,
   stepMoveIndices,
   type StoryBuilderFormValues,
+  type StoryCollapsibleList,
 } from "@/features/build-story";
 
 import { KeywordNoteCard, keywordNoteHandleId } from "./KeywordNoteCard";
 
+const KEYWORD_NOTE_LIST: StoryCollapsibleList = "keywordNote";
 const ADD_BUTTON_ID = "keyword-note-add";
 const ADD_LIMIT_REASON_ID = "keyword-note-add-limit";
 
@@ -39,9 +42,11 @@ export function KeywordNoteTab() {
 
   const {
     control,
+    getValues,
     formState: { errors },
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "keywordNotes" });
+  const uiState = useBuilderUiState();
   const startingSetups = useWatch({ control, name: "startingSetups" });
   // 상시 개수만 따로 구독한다 — 노트 배열 전체를 구독하면 아무 노트에 한 글자 칠 때마다 카드 50개가 다시 그려진다.
   const alwaysOnFlags = useWatch({
@@ -51,7 +56,7 @@ export function KeywordNoteTab() {
   const alwaysOnCount = alwaysOnFlags.filter(Boolean).length;
   const sensors = useSensors(useSensor(PointerSensor));
   const [announcement, setAnnouncement] = useState("");
-  // 재정렬·삭제 뒤 포커스를 둘 요소. 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
+  // 재정렬 뒤 포커스를 둘 요소. 렌더가 끝난 뒤에야 그 요소가 제자리에 있으므로 effect 에서 옮긴다.
   const pendingFocusIdRef = useRef<string | undefined>(undefined);
   // 배열 자체의 위반(노트 수·상시 수 상한)이 담기는 자리는 탭 마운트 상태에 따라 `.message` 와 `.root.message` 로
   // 갈린다(StartingSetupTab 의 같은 자리 주석 참고). 둘 다 읽는다.
@@ -84,18 +89,23 @@ export function KeywordNoteTab() {
   }
 
   function handleRemove(index: number) {
+    // 지운 자리의 다음 노트(없으면 앞 노트, 그것도 없으면 추가 버튼)의 머리 줄 토글로 포커스를 옮긴다 — 삭제 버튼이
+    // 사라지며 포커스가 body 로 떨어지면 키보드 사용자가 처음부터 다시 Tab 해야 한다. 이웃 토글은 지우기 전에도 화면에
+    // 있으므로 지우기 전에 옮긴다.
+    const keys = getValues("keywordNotes").map((note) => itemOpenKey(KEYWORD_NOTE_LIST, note.id));
+    focusNeighborToggle(keys, index, document.getElementById(ADD_BUTTON_ID));
     remove(index);
-    // 지운 자리의 다음 노트(없으면 앞 노트, 그것도 없으면 추가 버튼)로 포커스를 옮긴다 — 삭제 버튼이 사라지며
-    // 포커스가 body 로 떨어지면 키보드 사용자가 처음부터 다시 Tab 해야 한다.
-    const next = fields[index + 1] ?? fields[index - 1];
-    pendingFocusIdRef.current = next ? keywordNoteHandleId(next.id) : ADD_BUTTON_ID;
     setAnnouncement("노트를 삭제했어요.");
   }
 
   function handleAdd() {
     // 51번째 노트는 서버가 저장을 거절해 그 초안의 자동저장 전체가 멈추므로 폼에 들어가지 않게 한다.
     if (isFull) return;
-    append(createKeywordNote(crypto.randomUUID()));
+    const id = crypto.randomUUID();
+    // 새 노트를 열림으로 기록하는 일은 append 와 같은 핸들러에서 그보다 먼저 한다. 같은 커밋에 본문이 보여야 append 가
+    // 주는 포커스가 숨은 입력칸에 걸려 헛돌지 않는다.
+    uiState.open([itemOpenKey(KEYWORD_NOTE_LIST, id)]);
+    append(createKeywordNote(id), { focusName: `keywordNotes.${fields.length}.name` });
   }
 
   const announcements: Announcements = {

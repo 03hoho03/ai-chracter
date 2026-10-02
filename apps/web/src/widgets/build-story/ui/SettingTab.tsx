@@ -3,10 +3,23 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Trash2 } from "lucide-react";
+import { useRef } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-import { PROMPT_TEMPLATE_VALUES, type PromptTemplate, type StoryBuilderFormValues } from "@/features/build-story";
+import {
+  CollapsibleItemCard,
+  firstLine,
+  focusNeighborToggle,
+  indexOpenKey,
+  ItemRemoveButton,
+  useBuilderUiState,
+} from "@/features/build-common";
+import {
+  PROMPT_TEMPLATE_VALUES,
+  type PromptTemplate,
+  type StoryBuilderFormValues,
+  type StoryCollapsibleList,
+} from "@/features/build-story";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
@@ -35,6 +48,9 @@ const PROMPT_TEMPLATE_LABELS: Record<PromptTemplate, { label: string; descriptio
 
 const MAX_DEVELOPMENT_EXAMPLES = 3;
 
+// 전개 예시는 폼 값에 id 가 없어 열림 키를 배열 위치로 만든다. 지울 때 저장소가 뒤 항목의 열림을 한 칸 당긴다.
+const DEVELOPMENT_EXAMPLE_LIST: StoryCollapsibleList = "developmentExample";
+
 /** 프롬프트 템플릿(필수, 기본값 "기본") 선택에 따라 세계관 또는
  * 커스텀 프롬프트 입력 폼을 전환한다. 숨겨진 필드는 RHF 기본 동작(shouldUnregister: false)대로
  * 언마운트돼도 값이 폼 상태에 그대로 보존된다.
@@ -54,6 +70,32 @@ export function SettingTab() {
   const isCustom = promptTemplate === "custom";
 
   const { fields, append, remove } = useFieldArray({ control, name: "storySetting.developmentExamples" });
+  // 머리 줄 요약은 사용자 메시지만 쓴다 — 배열 전체를 구독하면 긴 스토리 응답에 한 글자 칠 때마다 탭 전체가 다시 그려진다.
+  const exampleUserLines = useWatch({
+    control,
+    name: fields.map((_, index) => `storySetting.developmentExamples.${index}.userLine` as const),
+  });
+  const uiState = useBuilderUiState();
+  const addButtonRef = useRef<HTMLButtonElement>(null);
+
+  function handleAppendExample() {
+    // 새 항목을 열림으로 기록하는 일은 append 와 같은 핸들러에서 그보다 먼저 한다. 같은 커밋에 본문이 보여야 append 가
+    // 주는 포커스가 숨은 입력칸에 걸려 헛돌지 않는다.
+    uiState.open([indexOpenKey(DEVELOPMENT_EXAMPLE_LIST, fields.length)]);
+    append(
+      { userLine: "", assistantLine: "" },
+      { focusName: `storySetting.developmentExamples.${fields.length}.userLine` },
+    );
+  }
+
+  function handleRemoveExample(index: number) {
+    // 지우기 전에 포커스를 옮긴다 — 지운 뒤로 미루면 누른 삭제 버튼이 사라지며 포커스가 문서 맨 앞으로 떨어진다. 다음
+    // 항목의 토글은 지운 뒤에도 같은 요소로 남고(React key 가 필드 배열 id 다) 열림 키만 한 칸 당겨진다.
+    const keys = fields.map((_, itemIndex) => indexOpenKey(DEVELOPMENT_EXAMPLE_LIST, itemIndex));
+    focusNeighborToggle(keys, index, addButtonRef.current);
+    remove(index);
+    uiState.removeIndexKey(DEVELOPMENT_EXAMPLE_LIST, index);
+  }
 
   return (
     <div className="flex flex-col gap-6 py-6">
@@ -185,46 +227,50 @@ export function SettingTab() {
           const exampleErrors = errors.storySetting?.developmentExamples?.[index];
           const userLineErrorId = `story-setting-example-${field.id}-user-line-error`;
           const assistantLineErrorId = `story-setting-example-${field.id}-assistant-line-error`;
+          const title = `전개 예시 ${index + 1}`;
           return (
-            <div key={field.id} className="flex flex-col gap-2 rounded-xl border border-border p-4">
-              <div className="flex items-start gap-2">
-                <div className="flex flex-1 flex-col gap-2">
-                  <Textarea
-                    placeholder="사용자 메시지"
-                    rows={2}
-                    aria-invalid={!!exampleErrors?.userLine}
-                    aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
-                    {...register(`storySetting.developmentExamples.${index}.userLine`)}
-                  />
-                  <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.userLine`} />
-                  {exampleErrors?.userLine && (
-                    <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
-                      {exampleErrors.userLine.message}
-                    </p>
-                  )}
-                  <Textarea
-                    placeholder="스토리 응답"
-                    rows={6}
-                    aria-invalid={!!exampleErrors?.assistantLine}
-                    aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
-                    {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
-                  />
-                  <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.assistantLine`} />
-                  {exampleErrors?.assistantLine && (
-                    <p id={assistantLineErrorId} role="alert" className="text-xs text-destructive-text">
-                      {exampleErrors.assistantLine.message}
-                    </p>
-                  )}
-                </div>
-                <Button type="button" variant="ghost" size="icon" aria-label="전개 예시 삭제" onClick={() => remove(index)}>
-                  <Trash2 />
-                </Button>
+            <CollapsibleItemCard
+              key={field.id}
+              openKey={indexOpenKey(DEVELOPMENT_EXAMPLE_LIST, index)}
+              title=""
+              placeholderTitle={title}
+              summary={firstLine(exampleUserLines[index] ?? "")}
+              hasError={!!exampleErrors}
+              trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={() => handleRemoveExample(index)} />}
+            >
+              <div className="flex flex-col gap-2">
+                <Textarea
+                  placeholder="사용자 메시지"
+                  rows={2}
+                  aria-invalid={!!exampleErrors?.userLine}
+                  aria-describedby={exampleErrors?.userLine ? userLineErrorId : undefined}
+                  {...register(`storySetting.developmentExamples.${index}.userLine`)}
+                />
+                <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.userLine`} />
+                {exampleErrors?.userLine && (
+                  <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
+                    {exampleErrors.userLine.message}
+                  </p>
+                )}
+                <Textarea
+                  placeholder="스토리 응답"
+                  rows={6}
+                  aria-invalid={!!exampleErrors?.assistantLine}
+                  aria-describedby={exampleErrors?.assistantLine ? assistantLineErrorId : undefined}
+                  {...register(`storySetting.developmentExamples.${index}.assistantLine`)}
+                />
+                <MediaTagOutsideNotice name={`storySetting.developmentExamples.${index}.assistantLine`} />
+                {exampleErrors?.assistantLine && (
+                  <p id={assistantLineErrorId} role="alert" className="text-xs text-destructive-text">
+                    {exampleErrors.assistantLine.message}
+                  </p>
+                )}
               </div>
-            </div>
+            </CollapsibleItemCard>
           );
         })}
         {fields.length < MAX_DEVELOPMENT_EXAMPLES ? (
-          <Button type="button" variant="secondary" onClick={() => append({ userLine: "", assistantLine: "" })}>
+          <Button ref={addButtonRef} type="button" variant="secondary" onClick={handleAppendExample}>
             전개 예시 추가
           </Button>
         ) : null}

@@ -7,6 +7,9 @@ type ColorPickerProps = {
   value: string;
   onChange: (value: string) => void;
   triggerLabel: string;
+  /** 오류가 있을 때 트리거를 오류 상태로 알리고(`Input` 과 같은 붉은 보더), 오류 문장을 설명으로 잇는다. */
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }
 
 /** 자유 컬러피커가 아니라 사전 정의 팔레트(packages/ui의
@@ -17,7 +20,13 @@ type ColorPickerProps = {
  * 5색에서(다크 `foreground`로 바꿔 달아도 6색에서) 3:1을 못 넘겨 글리프가 배경에 묻혔다. 링은 스와치가 아니라 `popover` 지면
  * 위에 앉으므로 스와치 색과 무관하게 대비가 고정된다(`foreground`↔`popover` 다크 14.4 / 라이트 15.9).
  * 열림·키보드 동작은 `useGridPicker`가 진다(5열 격자). */
-export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps) {
+export function ColorPicker({
+  value,
+  onChange,
+  triggerLabel,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+}: ColorPickerProps) {
   const selectedIndex = COLOR_PALETTE.findIndex((swatch) => swatch.value === value);
   const selected = COLOR_PALETTE[selectedIndex];
   const picker = useGridPicker({ optionCount: COLOR_PALETTE.length, selectedIndex, columns: 5 });
@@ -30,8 +39,10 @@ export function ColorPicker({ value, onChange, triggerLabel }: ColorPickerProps)
         aria-label={triggerLabel}
         aria-haspopup="listbox"
         aria-expanded={picker.isOpen}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         onClick={picker.toggle}
-        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input hover:bg-secondary/50"
+        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input hover:bg-secondary/50 aria-invalid:border-destructive"
       >
         {selected ? (
           <span aria-hidden className="size-5 rounded-full" style={{ backgroundColor: selected.value }} />
