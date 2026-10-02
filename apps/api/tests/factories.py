@@ -226,6 +226,13 @@ async def _make_asset(
     return asset
 
 
+def _put_via_presigned_url(upload_url: str, body: bytes, content_type: str = "image/png") -> None:
+    """브라우저처럼 발급받은 서명 URL 로 바로 PUT 한다 — 서버가 어느 키에 서명했는지 테스트가 몰라도 된다.
+    서명에 Content-Type 이 묶여 있어 발급 때 보낸 값과 같아야 한다."""
+    resp = httpx.put(upload_url, content=body, headers={"Content-Type": content_type})
+    resp.raise_for_status()
+
+
 async def _add_media_book_cell(
     db_session: AsyncSession,
     content_version_id: uuid.UUID,
