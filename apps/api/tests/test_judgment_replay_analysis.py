@@ -128,3 +128,8 @@ def test_runs_split_across_files_keep_their_reps_apart() -> None:
     ]
     report = analysis.analyze(records, baseline="3.5-default", margin_pp=5.0)
     assert report.self_agreement["ending"] == pytest.approx(0.0)
+
+
+def test_units_expected_to_change_exist_only_for_stats() -> None:
+    report = analysis.analyze(_ending_records(), baseline="3.5-default", margin_pp=5.0)
+    assert report.rows[("ending", "3.1-off")].nontrivial_cross_agreement is None

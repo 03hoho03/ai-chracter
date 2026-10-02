@@ -192,6 +192,9 @@ def analyze(records: list[dict[str, Any]], *, baseline: str, margin_pp: float) -
             nontrivial_cross = _pair_rate(
                 ((reps[c], base[b]) for c, b in product(sorted(reps), sorted(base))), nontrivial
             )
+        if nontrivial is None:
+            # 변화 기대 단위는 스탯에만 있다 — 다른 판정에서 이 열을 채우면 전체 일치율이 다른 이름으로 한 번 더 찍힌다.
+            nontrivial_cross = None
         majority = _majority(base)
         majority_agreement = _pair_rate((units, majority) for units in reps.values())
 
