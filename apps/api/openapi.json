@@ -13281,6 +13281,10 @@
             "type": "object",
             "title": "Mediatagimages"
           },
+          "contentRestricted": {
+            "type": "boolean",
+            "title": "Contentrestricted"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -13303,6 +13307,7 @@
           "messages",
           "latestVersionAvailable",
           "versionAutoUpgraded",
+          "contentRestricted",
           "createdAt",
           "updatedAt"
         ],

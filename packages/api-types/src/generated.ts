@@ -5396,6 +5396,8 @@ export interface components {
             mediaTagImages?: {
                 [key: string]: components["schemas"]["MediaTagImage"];
             };
+            /** Contentrestricted */
+            contentRestricted: boolean;
             /**
              * Createdat
              * Format: date-time
