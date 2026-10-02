@@ -34,7 +34,7 @@ export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps
         <DialogHeader>
           <DialogTitle>이미지 보관함</DialogTitle>
           <DialogDescription className="break-keep">
-            대화 중 만난 그림을 모아봤어요. 아직 못 본 그림은 흐리게 보여요.
+            대화 중 만난 이미지를 모아봤어요. 아직 못 본 이미지는 흐리게 보여요.
           </DialogDescription>
         </DialogHeader>
 
@@ -71,7 +71,7 @@ function StoryImageArchiveBody({ query }: { query: ReturnType<typeof useStoryIma
   if (totalCount === 0) {
     return (
       <p className="py-4 text-center text-sm break-keep text-muted-foreground">
-        이 작품에는 보관함에 모을 그림이 없어요.
+        이 작품에는 보관함에 모을 이미지가 없어요.
       </p>
     );
   }

@@ -78,7 +78,7 @@ function toTile(item: StoryImageArchiveItem): StoryImageArchiveTile {
     imageUrl: item.imageUrl,
     hint: hint || undefined,
     aspectRatio,
-    alt: `${item.personName}의 아직 보지 못한 그림`,
+    alt: `${item.personName}의 아직 보지 못한 이미지`,
   };
 }
 
