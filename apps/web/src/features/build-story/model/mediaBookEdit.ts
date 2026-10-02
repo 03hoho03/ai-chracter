@@ -17,13 +17,17 @@ import {
  */
 
 const AXIS_KEY = { person: "people", scene: "scenes" } as const satisfies Record<MediaBookAxis, keyof MediaBookValues>;
+const CELL_AXIS_ID_KEY = { person: "personId", scene: "sceneId" } as const satisfies Record<
+  MediaBookAxis,
+  keyof MediaBookCellValues
+>;
 
 export function axisItems(mediaBook: MediaBookValues, axis: MediaBookAxis): MediaBookAxisValues[] {
   return mediaBook[AXIS_KEY[axis]];
 }
 
 function cellAxisId(cell: MediaBookCellValues, axis: MediaBookAxis): string {
-  return axis === "person" ? cell.personId : cell.sceneId;
+  return cell[CELL_AXIS_ID_KEY[axis]];
 }
 
 /**

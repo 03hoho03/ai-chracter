@@ -1,36 +1,18 @@
 import type { components } from "@ai-character-chat/api-types";
 import { describe, expect, it } from "vitest";
 
+import { loadMediaTagCases } from "../../../../test/mediaTagCases";
+
 import { buildPreviewStartState, PREVIEW_OPENING_MESSAGE_ID } from "./buildPreviewStartState";
 
 // 미리보기 첫 메시지는 FE 구현으로, 실채팅 첫 메시지는 서버 구현으로 정규화되므로 서버 테스트가 읽는 입력 표
-// (`apps/api/tests/fixtures/media_tag_cases.json`)로 같은 결과가 나오는지 본다. 표가 앱 밖에 있어 레이어 alias 로
-// 닿지 않아 글롭으로 읽는다(파일 하나만 맞춘다).
-type MediaTagCasesFile = {
-  cells: { person: string; scene: string; cellId: string }[];
-  normalize: { id: string; text: string; expectedText: string }[];
-};
-const [MEDIA_TAG_CASES] = Object.values(
-  import.meta.glob<MediaTagCasesFile>("../../../../../api/tests/fixtures/media_tag_cases.json", {
-    import: "default",
-    eager: true,
-  }),
-);
-if (MEDIA_TAG_CASES === undefined) throw new Error("media_tag_cases.json 을 찾지 못했다");
-const CELLS = MEDIA_TAG_CASES.cells;
-const NORMALIZE_CASES = MEDIA_TAG_CASES.normalize.map((row): [string, string, string] => [
-  row.id,
-  row.text,
-  row.expectedText,
-]);
-
-function cellIdOf(person: string, scene: string): string {
-  const cell = CELLS.find((item) => item.person === person && item.scene === scene);
-  if (cell === undefined) throw new Error(`표에 ${person}/${scene} 칸이 없다`);
-  return cell.cellId;
-}
-const MINA_CLASSROOM = cellIdOf("민아", "교실");
-const MINA_ROOFTOP = cellIdOf("민아", "옥상");
+// (`apps/api/tests/fixtures/media_tag_cases.json`)로 같은 결과가 나오는지 본다.
+const {
+  cells: CELLS,
+  minaClassroom: MINA_CLASSROOM,
+  minaRooftop: MINA_ROOFTOP,
+  normalizeCases: NORMALIZE_CASES,
+} = loadMediaTagCases();
 
 type CharacterDraftPayload = components["schemas"]["CharacterDraftPayload"];
 type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];

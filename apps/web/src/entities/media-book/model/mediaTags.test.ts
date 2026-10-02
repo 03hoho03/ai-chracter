@@ -1,7 +1,9 @@
-// 정규화·삭제 표는 서버 테스트 `apps/api/tests/test_media_tags.py` 와 함께 읽는 JSON 하나다(`mediaTagCases.ts` 가
+// 정규화·삭제 표는 서버 테스트 `apps/api/tests/test_media_tags.py` 와 함께 읽는 JSON 하나다(`apps/web/test/mediaTagCases.ts` 가
 // 편다) — 빌더 미리보기의 첫 메시지는 이 구현으로, 실채팅의 첫 메시지는 서버 구현으로 정규화되므로 둘이 갈라지면
 // 같은 글이 다르게 보인다. 표에 없는 사례만 여기 적는다.
 import { describe, expect, it } from "vitest";
+
+import { loadMediaTagCases } from "../../../../test/mediaTagCases";
 
 import {
   dropUnresolvedMediaTags,
@@ -12,7 +14,6 @@ import {
   stripMediaTags,
   type MediaTagImages,
 } from "./mediaTags";
-import { loadMediaTagCases } from "./mediaTagCases";
 
 const {
   cells: CELLS,
