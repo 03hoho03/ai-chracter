@@ -4,7 +4,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { X } from "lucide-react";
 
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
-import { chatSidePanelAtom } from "../model/atoms";
+import { CHAT_MORE_SIDEBAR_ID, chatSidePanelAtom } from "../model/atoms";
 import type { ChatMoreNavProps } from "./ChatMoreNav";
 import { ChatMoreNav } from "./ChatMoreNav";
 
@@ -48,6 +48,7 @@ export function ChatMoreSidebar(props: ChatMoreSidebarProps) {
 
   return (
     <aside
+      id={CHAT_MORE_SIDEBAR_ID}
       aria-label="더보기"
       className="flex w-72 shrink-0 flex-col border-l border-border bg-card motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200"
     >

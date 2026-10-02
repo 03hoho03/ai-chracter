@@ -7,10 +7,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import type { Persona } from "@/entities/persona";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useDeletePersonaMutation } from "../api/useDeletePersonaMutation";
 import { personaErrorMessage } from "../model/personaErrorMessage";

@@ -12,9 +12,10 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createCallable } from "react-call";
 import { Controller, useForm, useWatch } from "react-hook-form";
 import { toast } from "sonner";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useReportChatMessageMutation } from "../api/useReportChatMessageMutation";
 import { formToServer } from "../model/formToServer";

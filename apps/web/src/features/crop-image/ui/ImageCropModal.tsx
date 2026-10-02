@@ -2,7 +2,6 @@ import { Loader2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area, Point } from "react-easy-crop";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { Button } from "@ai-character-chat/ui/components/button";
@@ -15,6 +14,8 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Slider } from "@ai-character-chat/ui/components/slider";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { cropToFile } from "../lib/cropToFile";
 

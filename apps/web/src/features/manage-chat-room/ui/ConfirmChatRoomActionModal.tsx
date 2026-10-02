@@ -7,8 +7,9 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type ConfirmChatRoomActionModalProps = {
   title: string;

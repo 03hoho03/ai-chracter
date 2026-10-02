@@ -13,7 +13,7 @@
 | 인증 라우트 가드 | `beforeLoad: requireSession` — 진입에 데이터 필요 시 `loader`/`loaderDeps` |
 | 라우트 파라미터/서치 | RouteComponent가 읽어 페이지에 props 주입(routes↔pages 순환 방지) |
 | 서치 파라미터 스키마 | 모든 필드를 `.catch(...)`로 끝낸다 (빠지면 페이지가 통째로 죽는다) |
-| 액션/확인 모달 | react-call 2계열 — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
+| 액션/확인 모달 | react-call 2계열(`@/shared/lib/callable/createCallable`로 만든다) — 후속 동작이 호출부마다 다르면 `mutationFn` 주입형, 같으면 자체 호출형 |
 | 자산 업로드 | `shared/api/asset/uploadAsset(file, purpose)` 재사용 |
 | 카드 목록 | `entities/content`의 `ContentCard` + `ContentCardActionMenu` + `toContentStatusTags` |
 | 브랜드 자산(파비콘·OG) | `public/`을 직접 고치지 말고 `brand/generate.sh`로 재생성 |
@@ -117,7 +117,7 @@
 - **자동완성 드롭다운**은 `relative` 래퍼 + 조건부 `absolute` div로 충분하다(`packages/ui`에 Popover/Command 없음). 스크롤 컨테이너 **안**이면 `fixed`/포털이 필요하다.
 - **뷰포트에 따라 Sheet ↔ 인라인 패널을 갈라야 하면 CSS가 아니라 JS로 분기한다**(`useMedia`). Sheet는 body로 포털되어 부모의 `lg:hidden`이 닿지 않고, 열린 Sheet는 포커스 트랩과 바깥 클릭 차단까지 걸어 인라인 패널과 공존할 수 없다 — **둘 중 하나만 마운트되어야 한다.** 브레이크포인트는 두 분기가 공유하는 훅 한 곳에 둔다.
 - **`asChild` 아래에 커스텀 컴포넌트를 끼우면 Radix가 얹는 `onClick`·`ref`가 조용히 사라진다.** `SheetTrigger`·`SheetClose`·`DropdownMenuItem`의 `asChild`는 Radix `Slot`이 **바로 아래 자식**에 props를 머지한다. 그 자리에 `className`만 구조분해하고 나머지를 버리는 함수 컴포넌트를 두면 **버튼을 눌러도 아무 일도 안 나고**(트리거가 안 열린다) **링크는 이동하지만 패널이 안 닫힌다**. typecheck·lint가 둘 다 통과하므로 화면에서만 드러난다. 처방은 `...props` 전개 + 필요하면 `forwardRef`이고, **더 단순한 쪽은 `<Link>`·`<button>`을 `asChild`의 직계 자식으로 두고 커스텀 컴포넌트는 그 안쪽 내용으로만 쓰는 것**이다. (2026-09-15 실측)
-- **알려진 갭 — 루트에 마운트된 react-call 모달은 트리거로 포커스를 돌려주지 않는다**(WCAG 2.4.3). 드롭다운 항목 → 확인 모달 → 닫기 뒤 `activeElement`가 `<body>`로 떨어져 다음 Tab이 헤더부터 다시 시작한다(취소로 닫아도 그렇다). 원인은 Callable이 `__root.tsx`에 마운트돼 카드 트리 밖에서 열리는 것 — DropdownMenu의 복원과 Dialog의 복원이 서로를 모른다. **한 호출부만 고치면 관습이 갈리므로 Callable 래퍼가 `call()` 시점의 `activeElement`를 저장했다가 `call.end()`에서 복원하는 전역 작업으로 잡을 것.**
+- **Callable은 `react-call`이 아니라 `@/shared/lib/callable/createCallable`로 만든다**(eslint `no-restricted-imports`가 직접 import를 막는다). 모달 `DialogContent`는 닫힐 때 포커스 범위의 기본 복원(열기 전 요소로)을 언제나 막고 `DialogTrigger`로 포커스를 보내는데, Callable은 `DialogTrigger` 없이 `call()`로 열려 보낼 곳이 없다 — 그래서 버튼·메뉴 어디서 열었든 닫히면 `activeElement`가 `<body>`로 떨어져 다음 Tab이 헤더부터 다시 시작했다(WCAG 2.4.3, 취소·Esc로 닫아도 같다). 래퍼는 `call()` 시점의 포커스 요소와, 그 요소를 품은 메뉴·시트·패널을 `aria-expanded="true"` + `aria-controls`로 가리키는 트리거를 기억했다가, 모달이 언마운트된 뒤 **포커스가 `<body>`로 떨어져 있을 때만** 살아 있는 첫 후보로 돌려준다. 호출부가 닫힘 뒤 포커스를 직접 옮기는 모달(지우면 연 버튼도 사라지는 확인 모달처럼 `onCloseAutoFocus`에서 `preventDefault` 후 옮기는 것)은 그대로 이긴다. **항목을 누르면 스스로 닫히는 패널을 새로 만들면 그 토글에 열린 동안 `aria-controls`를 단다**(채팅 데스크톱 더보기 사이드바가 그 예다 — 없으면 항목이 사라진 뒤 돌아갈 곳이 없다). **래퍼가 못 고치는 자리**: 연 버튼이 결과로 사라지거나 다시 마운트되는 흐름(삭제 확정 뒤 카드, 빈 칸에서 그림을 고른 뒤 바뀌는 버튼)은 돌아갈 곳이 없어 여전히 `<body>`다 — 그 호출부가 닫힌 뒤 포커스를 둘 곳을 정해야 한다.
 
 ### 필터 · 빈 상태
 

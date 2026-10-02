@@ -8,11 +8,11 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { ArrowLeft, ChevronRight, Lock, Sparkles } from "lucide-react";
-import { createCallable } from "react-call";
 
 import { ChatMarkdown, MediaTagImagesProvider, useEndingCollectionQuery } from "@/entities/chat-room";
 import type { EndingCollectionItem } from "@/entities/chat-room";
 import { toMediaTagImages } from "@/entities/media-book";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type EndingCollectionModalProps = {
   startingSetupId: string;

@@ -8,10 +8,10 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { contentKeys, useResetContentDraftMutation } from "@/entities/content";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type ResetContentDraftModalProps = {
   /** 편집 변경분을 버릴 콘텐츠 id. 발행 이력이 있는 콘텐츠만 올 수 있다(호출부가 `kind`로 거른다). */

@@ -7,9 +7,9 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { ExternalLink, Images } from "lucide-react";
-import { createCallable } from "react-call";
 
 import { useGeneratedImagesQuery } from "@/entities/generated-image";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 export type PickedGeneratedImage = { assetId: string; imageUrl: string };
 
