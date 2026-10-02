@@ -71,6 +71,7 @@ from api.chat.prompt_set_cache import ACTIVE_PROMPT_SET_KEY_PREFIX
 from api.core.config import settings
 from api.core.redis import redis_client
 from api.db.session import engine
+from api.llm.usage_store import USAGE_KEY_PREFIX
 from api.db.session import get_db_session, get_session_factory
 from api.main import app
 
@@ -165,6 +166,15 @@ async def _flush_rate_limit_keys() -> None:
     자연 격리되지 않는다. 안 지우면 무관한 테스트가 쌓아둔 IP 카운터 때문에 뒤에 실행되는
     테스트가 실행 순서에 따라 간헐적으로 429를 받는다."""
     keys = await redis_client.keys("rate_limit:*")
+    if keys:
+        await redis_client.delete(*keys)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _flush_llm_usage_keys() -> None:
+    """LLM 사용량 집계는 날짜 하나에 해시 하나라 랜덤 값으로 격리되지 않는다 — 실제
+    `GeminiLLMClient` 를 쓰는 테스트가 오늘 해시에 쌓은 수가 다음 테스트의 단언에 섞인다."""
+    keys = await redis_client.keys(f"{USAGE_KEY_PREFIX}*")
     if keys:
         await redis_client.delete(*keys)
 

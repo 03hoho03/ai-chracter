@@ -28,6 +28,28 @@ LLMCallSite = Literal[
     "seed_similarity_review",
 ]
 
+# 아래 두 집합은 로그 라벨이면서 **모델·사고 설정 선택도 겸한다** — `llm/gemini.py` 의
+# `generate_structured` 가 이 집합으로 `gemini_judgment_*`·`gemini_publish_filter_*` 설정을 고른다.
+# 그래서 call_site 를 새로 만들거나 합치거나 나누면 그 호출이 어느 모델로 가는지도 바뀐다.
+# 새 판정·심사 call_site 는 여기에 넣어야 스위치를 따라가고, 빠뜨리면 조용히 기본 모델로 돈다.
+# 기억 요약(`chat_memory_summary`)은 매 턴 생성 프롬프트에 실려 생성 품질에 바로 닿고, 시드
+# 스크립트 호출은 운영 판정이 아니라서 둘 다 넣지 않는다.
+JUDGMENT_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {
+        "chat_stat_judgment",
+        "chat_ending_judgment",
+        "chat_situational_image",
+        "chat_media_book_image",
+        "preview_stat_judgment",
+        "preview_ending_judgment",
+        "preview_media_book_image",
+    }
+)
+# 발행 심사는 실패하면 발행이 막히는(fail-closed) 경로라 판정과 따로 바꾸고 되돌릴 수 있게 둔다.
+PUBLISH_FILTER_CALL_SITES: frozenset[LLMCallSite] = frozenset(
+    {"publish_filter_character", "publish_filter_story"}
+)
+
 
 @dataclass(frozen=True)
 class LLMCallContext:

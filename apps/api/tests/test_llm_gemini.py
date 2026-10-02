@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 import uuid
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
@@ -626,4 +627,215 @@ async def test_generate_structured_usage_missing_and_logging_failure_do_not_rais
         return SimpleNamespace(parsed=expected, usage_metadata=_ExplodingUsage())
 
     client = _make_client(monkeypatch, generate_content=exploding)
+    assert await client.generate_structured("judge", _JudgmentResult, usage=_CTX) == expected
+
+
+# ── call_site 로 고르는 구조화 호출 모델·사고 설정, 사용량 집계 ─────────────────────────
+
+_JUDGMENT_SITES = (
+    "chat_stat_judgment",
+    "chat_ending_judgment",
+    "chat_situational_image",
+    "chat_media_book_image",
+    "preview_stat_judgment",
+    "preview_ending_judgment",
+    "preview_media_book_image",
+)
+_PUBLISH_FILTER_SITES = ("publish_filter_character", "publish_filter_story")
+# 판정·심사가 아닌 구조화 호출 — 어느 스위치에도 끌려가면 안 된다.
+_OTHER_STRUCTURED_SITES = ("chat_memory_summary", "seed_story_generate", "seed_similarity_review")
+
+
+def _capture_structured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> tuple[GeminiLLMClient, list[dict[str, Any]], list[tuple[str, str]]]:
+    """`generate_content` 에 넘어간 인자와 사용량 기록(call_site, model)을 함께 모은다."""
+    sent: list[dict[str, Any]] = []
+    recorded: list[tuple[str, str]] = []
+
+    async def generate_content(**kwargs: Any) -> SimpleNamespace:
+        sent.append(kwargs)
+        return SimpleNamespace(parsed=_JudgmentResult(triggered=False, ending_id=None))
+
+    async def fake_record(call_site: str, model: str, _usage_metadata: object | None) -> None:
+        recorded.append((call_site, model))
+
+    monkeypatch.setattr("api.llm.gemini.record_usage", fake_record)
+    client = GeminiLLMClient(api_key="test-key", model_name="base-model")
+    monkeypatch.setattr(
+        client,
+        "_client",
+        SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))),
+    )
+    return client, sent, recorded
+
+
+async def _call_each(client: GeminiLLMClient, sites: tuple[str, ...]) -> None:
+    for site in sites:
+        ctx = LLMCallContext(call_site=site, user_id=None, room_id=None)  # type: ignore[arg-type]
+        await client.generate_structured("judge", _JudgmentResult, usage=ctx)
+
+
+async def test_structured_calls_use_the_base_model_when_no_override_is_configured(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    client, sent, recorded = _capture_structured(monkeypatch)
+
+    sites = _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES
+    await _call_each(client, sites)
+
+    assert [k["model"] for k in sent] == ["base-model"] * len(sites)
+    assert recorded == [(site, "base-model") for site in sites]
+
+
+async def test_judgment_model_override_routes_only_judgment_call_sites(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    caplog.set_level(logging.WARNING, logger="api.llm.gemini")
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    client, sent, recorded = _capture_structured(monkeypatch)
+
+    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+
+    expected = (
+        ["judge-model"] * len(_JUDGMENT_SITES)
+        + ["base-model"] * len(_PUBLISH_FILTER_SITES)
+        + ["base-model"] * len(_OTHER_STRUCTURED_SITES)
+    )
+    assert [k["model"] for k in sent] == expected
+    # 로그·집계의 model 은 실제로 호출한 모델이어야 전환 전후를 갈라 볼 수 있다.
+    assert [m for _, m in recorded] == expected
+    assert [_fields(r)["model"] for r in _usage_records(caplog)] == expected
+
+
+async def test_publish_filter_model_override_routes_only_publish_filter_call_sites(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", "filter-model")
+    client, sent, recorded = _capture_structured(monkeypatch)
+
+    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+
+    expected = (
+        ["base-model"] * len(_JUDGMENT_SITES)
+        + ["filter-model"] * len(_PUBLISH_FILTER_SITES)
+        + ["base-model"] * len(_OTHER_STRUCTURED_SITES)
+    )
+    assert [k["model"] for k in sent] == expected
+    assert [m for _, m in recorded] == expected
+
+
+async def test_model_overrides_do_not_touch_streaming_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", "filter-model")
+    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", 0)
+    sent: list[dict[str, Any]] = []
+
+    async def generate_content_stream(**kwargs: Any) -> AsyncIterator[SimpleNamespace]:
+        sent.append(kwargs)
+        return _chunks("a")
+
+    client = GeminiLLMClient(api_key="test-key", model_name="base-model")
+    monkeypatch.setattr(
+        client,
+        "_client",
+        SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content_stream=generate_content_stream))),
+    )
+    monkeypatch.setattr(settings, "gemini_thinking_budget", None)
+
+    assert [t async for t in client.generate("hi", usage=_CTX)] == ["a"]
+    assert sent[0]["model"] == "base-model"
+    assert sent[0]["config"].thinking_config is None
+
+
+async def test_structured_thinking_budgets_apply_only_to_their_call_site_sets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """None 이면 thinking_config 를 넘기지 않고, 0(끔)도 값으로 실려야 한다 — 0 을 거짓으로 읽어
+    빠뜨리면 '사고 끄기' 측정이 조용히 기본 사고로 돈다."""
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", None)
+    monkeypatch.setattr(settings, "gemini_publish_filter_model_name", None)
+    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", 0)
+    monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", 512)
+    client, sent, _ = _capture_structured(monkeypatch)
+
+    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+
+    budgets = [
+        None if k["config"].thinking_config is None else k["config"].thinking_config.thinking_budget for k in sent
+    ]
+    assert budgets == [0] * len(_JUDGMENT_SITES) + [512] * len(_PUBLISH_FILTER_SITES) + [None] * len(
+        _OTHER_STRUCTURED_SITES
+    )
+
+
+async def test_structured_calls_send_no_thinking_config_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(settings, "gemini_judgment_thinking_budget", None)
+    monkeypatch.setattr(settings, "gemini_publish_filter_thinking_budget", None)
+    # generate() 용 전역 예산은 구조화 호출에 새지 않는다.
+    monkeypatch.setattr(settings, "gemini_thinking_budget", 0)
+    client, sent, _ = _capture_structured(monkeypatch)
+
+    await _call_each(client, _JUDGMENT_SITES + _PUBLISH_FILTER_SITES + _OTHER_STRUCTURED_SITES)
+
+    assert all(k["config"].thinking_config is None for k in sent)
+
+
+async def test_generate_and_generate_structured_persist_usage_to_the_daily_hash(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """실제 Redis(테스트 DB)까지 — 스트리밍 생성과 구조화 호출 둘 다 오늘(KST) 해시에 쌓인다."""
+    from api.core.rate_limit import KST
+    from api.llm.usage_store import read_usage
+
+    monkeypatch.setattr(settings, "gemini_judgment_model_name", "judge-model")
+    client = _make_client(
+        monkeypatch,
+        generate_content_stream=_stream_of(SimpleNamespace(text="a", usage_metadata=_usage(10, 3, 2, 15))),
+    )
+    gen_ctx = LLMCallContext(call_site="chat_generate", user_id=_USER_ID, room_id=_ROOM_ID)
+    assert [t async for t in client.generate("hi", usage=gen_ctx)] == ["a"]
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            parsed=_JudgmentResult(triggered=False, ending_id=None), usage_metadata=_usage(40, 5, 0, 45)
+        )
+
+    monkeypatch.setattr(
+        client,
+        "_client",
+        SimpleNamespace(aio=SimpleNamespace(models=SimpleNamespace(generate_content=generate_content))),
+    )
+    await client.generate_structured("judge", _JudgmentResult, usage=_CTX)
+
+    today = datetime.now(KST).date()
+    rows = {(r.call_site, r.model): r for r in await read_usage(today, today)}
+    assert rows[("chat_generate", client._model_name)].calls == 1
+    assert rows[("chat_generate", client._model_name)].total == 15
+    assert rows[("chat_stat_judgment", "judge-model")].prompt == 40
+
+
+async def test_usage_persistence_failure_does_not_break_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    """집계 저장이 죽어도(여기선 Redis 클라이언트 자체가 터짐) 스트림과 판정 결과는 그대로다."""
+
+    def exploding_pipeline(**_: Any) -> Any:
+        raise RuntimeError("redis client broken")
+
+    monkeypatch.setattr("api.llm.usage_store.redis_client", SimpleNamespace(pipeline=exploding_pipeline))
+    expected = _JudgmentResult(triggered=True, ending_id=None)
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(parsed=expected, usage_metadata=_usage(1, 1, None, 2))
+
+    client = _make_client(
+        monkeypatch,
+        generate_content_stream=_stream_of(SimpleNamespace(text="a", usage_metadata=_usage(1, 1, None, 2))),
+        generate_content=generate_content,
+    )
+
+    assert [t async for t in client.generate("hi", usage=_USAGE)] == ["a"]
     assert await client.generate_structured("judge", _JudgmentResult, usage=_CTX) == expected

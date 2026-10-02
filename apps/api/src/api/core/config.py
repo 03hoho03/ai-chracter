@@ -105,6 +105,15 @@ class Settings(BaseSettings):
     # 0 = 사고 끔, 양수 = 그 토큰까지 허용. 세 상태가 서로 다른 동작이라 bool 로 합치지
     # 않는다.
     gemini_thinking_budget: int | None = None
+    # 구조화 호출 중 판정(스탯·엔딩·그림 매칭)과 발행 심사만 다른 모델·사고 설정으로 돌리는
+    # 스위치. 어느 호출이 판정·심사인지는 `llm/client.py` 의 call_site 집합이 정한다. 모델명이
+    # None(또는 빈 문자열)이면 `gemini_model_name` 을 그대로 쓴다. 사고 예산은
+    # `gemini_thinking_budget` 와 같은 세 상태(None = 안 넘김, 0 = 끔, 양수 = 예산)이고 그 집합의
+    # 호출에만 실린다. 넷 다 기본값이면 지금 동작과 같다 — 되돌리려면 env 줄을 지우고 재기동한다.
+    gemini_judgment_model_name: str | None = None
+    gemini_judgment_thinking_budget: int | None = None
+    gemini_publish_filter_model_name: str | None = None
+    gemini_publish_filter_thinking_budget: int | None = None
     # 회차 재현성을 위한 결정적 시드. None = seed 를 아예 안
     # 넘김(현재와 동일한 매 회차 난수 동작). generate()에만 붙인다 — generate_structured()
     # (판단 호출)는 회차 재현 측정 대상이 아니다.
