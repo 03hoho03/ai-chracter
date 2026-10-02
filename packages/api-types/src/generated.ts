@@ -1033,8 +1033,11 @@ export interface paths {
          * Get Llm Usage
          * @description LLM 호출 사용량 집계(일자 × call_site × 모델)와 단가표로 낸 추정 원가. `from`·`to` 는 KST
          *     날짜다 — 집계 키가 KST 하루라서, UTC 날짜로 자르는 `/admin/usage-metrics` 와 경계가 9시간
-         *     어긋난다. 응답을 받은 호출만 세므로 실패한 판정은 호출 수에서 빠지고, 그래서 판정 비율이
-         *     떨어지는 것이 조용한 판정 누락의 신호가 된다.
+         *     어긋난다. 응답을 받은 호출만 세므로 응답을 못 받은 판정 실패(없는 모델·429·네트워크 오류)는
+         *     호출 수에서 빠지고, 그래서 판정 비율이 떨어지는 것이 조용한 판정 누락의 신호가 된다. 응답은
+         *     왔지만 스키마로 파싱되지 않은 실패는 토큰이 이미 과금된 호출이라 정상 호출과 똑같이 세어져
+         *     비율에 드러나지 않는다 — Bugsink 의 `dependency=gemini` 태그 이벤트 가운데 메시지가
+         *     `Gemini structured response could not be parsed` 로 시작하는 것으로 본다.
          */
         get: operations["get_llm_usage_admin_llm_usage_get"];
         put?: never;
