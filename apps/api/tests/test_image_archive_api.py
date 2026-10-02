@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from api.chat.prompt_builder import ImageMatchJudgmentResult
 from api.core.s3 import build_thumbnail_key
 from api.db.models.character import CharacterVersionDetail, SituationalImage
-from api.db.models.chat import CharacterImageExposure
+from api.db.models.chat import CharacterImageExposure, ChatRoom
 from api.db.models.content import (
     Content,
     ContentTarget,
@@ -22,7 +22,7 @@ from api.db.models.media import Asset, AssetKind
 from api.llm.client import LLMCallContext, LLMClient
 from api.llm.dependencies import get_llm_client
 from api.main import app
-from factories import _get_genre, _login_as, _make_asset, _make_user, _parse_sse_events
+from factories import _get_genre, _login_as, _make_asset, _make_published_story, _make_user, _parse_sse_events
 
 
 async def _make_published_character(
@@ -329,3 +329,86 @@ async def test_image_archive_exposure_accumulates_across_chat_rooms_not_scoped_t
     resp = await db_client.get(f"/characters/{content.id}/image-archive")
     assert resp.status_code == 200
     assert resp.json()[0]["exposed"] is True
+
+
+async def _archive_status(client: httpx.AsyncClient, viewer_id: uuid.UUID, content_id: uuid.UUID) -> int:
+    await _login_as(client, viewer_id)
+    return (await client.get(f"/characters/{content_id}/image-archive")).status_code
+
+
+async def test_image_archive_blocks_sanctioned_character(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """이용제한·삭제된 캐릭터의 보관함은 작가에게도 열지 않는다 — 상세 화면이 본문을 그리지 않는 작품의
+    그림이 보관함으로 새면 제재가 무력해진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await _add_situational_image(db_session, content, owner_user_id=user.id)
+    content.moderation_status = ModerationStatus.RESTRICTED
+    await db_session.commit()
+    assert await _archive_status(db_client, user.id, content.id) == 404
+
+    content.moderation_status = ModerationStatus.DELETED
+    await db_session.commit()
+    assert await _archive_status(db_client, user.id, content.id) == 404
+
+
+async def test_image_archive_private_character_opens_only_to_creator_and_players(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """비공개 캐릭터는 작가 본인과 그 캐릭터에 대화방이 있는 사용자(공개였을 때 대화를 시작한 독자 — 자기가 본
+    그림을 다시 보는 곳이다)에게만 열고, 그 밖의 사용자에게는 없는 캐릭터와 같은 404 를 준다."""
+    creator = _make_user()
+    player = _make_user()
+    stranger = _make_user()
+    db_session.add_all([creator, player, stranger])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    assert content.current_published_version_id is not None
+    await _add_situational_image(db_session, content, owner_user_id=creator.id)
+    content.visibility = ContentVisibility.PRIVATE
+    db_session.add(
+        ChatRoom(user_id=player.id, content_id=content.id, content_version_id=content.current_published_version_id)
+    )
+    await db_session.commit()
+
+    assert await _archive_status(db_client, creator.id, content.id) == 200
+    assert await _archive_status(db_client, player.id, content.id) == 200
+    assert await _archive_status(db_client, stranger.id, content.id) == 404
+
+
+async def test_image_archive_public_character_opens_to_any_logged_in_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """공개·정상 캐릭터는 대화방이 없는 사용자에게도 그대로 열린다 — 비공개·제재 차단이 공개 작품까지 막으면
+    탐색 화면에서 들어온 독자가 보관함을 못 본다."""
+    creator = _make_user()
+    visitor = _make_user()
+    db_session.add_all([creator, visitor])
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    image = await _add_situational_image(db_session, content, owner_user_id=creator.id)
+    await db_session.commit()
+
+    await _login_as(db_client, visitor.id)
+    resp = await db_client.get(f"/characters/{content.id}/image-archive")
+    assert resp.status_code == 200
+    assert [(item["id"], item["exposed"]) for item in resp.json()] == [(str(image.entity_id), False)]
+
+
+async def test_image_archive_rejects_story_id(db_client: httpx.AsyncClient, db_session: AsyncSession) -> None:
+    """캐릭터 보관함 주소에 스토리 id 를 넣으면 없는 캐릭터와 같은 404 다 — 스토리는 상황별 이미지가 없고 자기
+    보관함(미디어 북)이 따로 있어서, 여기서 빈 목록으로 열어 주면 엉뚱한 작품의 빈 보관함이 정상처럼 보인다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    assert await _archive_status(db_client, user.id, story.id) == 404

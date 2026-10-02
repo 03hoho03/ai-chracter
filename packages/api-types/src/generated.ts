@@ -3190,6 +3190,10 @@ export interface paths {
          *     동일 관례). 등록된 이미지는 캐릭터의 현재 발행 버전(`current_published_version_id`) 기준이고,
          *     노출 여부는 방 단위가 아니라 `character_image_exposures(user_id, content_id, image_entity_id)`
          *     존재 여부로 사용자+캐릭터 단위 누적 판정한다.
+         *
+         *     캐릭터가 아닌 작품과 이용제한·삭제된 작품은 막고, 비공개 작품은 작가 본인과 그 작품에 대화방이 있는
+         *     사용자(공개였을 때 대화를 시작한 독자 — 자기가 본 그림을 다시 보는 곳이다)에게만 연다. 막힌 경우는 모두
+         *     없는 캐릭터와 같은 404 다.
          */
         get: operations["get_image_archive_characters__id__image_archive_get"];
         put?: never;
