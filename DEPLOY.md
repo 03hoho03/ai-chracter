@@ -134,7 +134,10 @@ call_site 가 옛·새 모델 두 행으로 나뉘어 각 행의 비율이 낮�
 이미 과금된 호출이라 집계에 정상 호출과 똑같이 더해진다. 그건 Bugsink 에서 본다: 판정 쪽은
 `dependency=gemini` 태그 이벤트 가운데 메시지가 `Gemini structured response could not be parsed` 로
 시작하는 것(같은 태그에 생성 실패·API 오류도 섞인다), 발행 심사 쪽은 흡수되지 않고 발행이 500 으로 나가므로
-`dependency` 태그 없는 처리되지 않은 `LLMClientError` 이벤트(메시지는 같다)다. 되돌리기는 env 줄을
+`dependency` 태그 없는 처리되지 않은 `LLMClientError` 이벤트(메시지는 같다)다. 안전 기준에 막힌 응답은
+여기 잡히지 않는다 — 판정 쪽은 메시지가 `Gemini blocked the structured prompt via safetySettings`(또는
+`… structured output …`)인 이벤트로, 발행 심사 쪽은 발행 400 과 API 로그의 `publish_filter_blocked` 경고
+줄로만 남고 Bugsink 이벤트는 없으니, 새 모델이 더 많이 막는지는 파싱 실패 수로 알 수 없다. 되돌리기는 env 줄을
 지우거나 값을 비우고 `up -d --wait api`.
 
 **사용량 집계** — 호출마다 call_site·실제 모델별 호출 수와 토큰(입력·캐시 적중·출력·사고·합계, 입력
