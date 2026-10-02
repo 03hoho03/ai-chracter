@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 from starlette.concurrency import run_in_threadpool
 
-from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due
+from api.chat.ending_rules import evaluate_rule_list, is_ending_check_due, referenced_stat_ids
 from api.chat.keyword_notes import match_keyword_notes
 from api.chat.memory_fold import SUMMARY_MAX_LENGTH, fold_memory
 from api.chat.memory_rewind import rewind_memory
@@ -353,6 +353,22 @@ async def _ending_rule_items(db: AsyncSession, ending: Ending) -> list[EndingRul
         )
     items.sort(key=lambda pair: pair[0])
     return [item for _, item in items]
+
+
+def _ending_rules_pass(
+    rule_items: list[EndingRuleListItem], stats: dict[str, float], *, log_subject: str, ending_id: uuid.UUID
+) -> bool:
+    """실채팅·미리보기 엔딩 루프가 판정 모델 앞에서 부른다. 값이 없는 스탯을 가리키는 항목은 `evaluate_rule_list`
+    가 거짓으로 보고, 여기서 어느 엔딩의 어느 스탯인지 경고로 남긴다 — 그 엔딩이 영영 안 열리는 이유를 찾을 단서다."""
+    missing_stat_ids = referenced_stat_ids(rule_items) - stats.keys()
+    if missing_stat_ids:
+        logger.warning(
+            "%s 엔딩 %s 의 규칙이 값이 없는 스탯 %s 을 가리킨다 — 그 항목은 거짓으로 본다",
+            log_subject,
+            ending_id,
+            ", ".join(sorted(missing_stat_ids)),
+        )
+    return evaluate_rule_list(rule_items, stats)
 
 
 async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
@@ -1438,6 +1454,8 @@ async def _stream_new_turn(
                 # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
                 # 턴은 스킵한다. endings.order가 가장 낮은(우선순위 최상위) 엔딩부터 순서대로 판정해
                 # 첫 충족 엔딩에서 멈춘다(동시 충족 시 최상위 하나만 발동). 스탯 반영 뒤라 순차다.
+                # 엔딩마다 스탯 규칙을 먼저 보고 참일 때만 판정 모델을 부른다. 규칙은 이번 턴 반영 뒤 스탯만으로
+                # 정해지고 발동은 둘의 논리곱이라 결과는 모델을 먼저 부를 때와 같고, 규칙이 거짓인 엔딩의 호출만 준다.
                 endings = list(
                     (
                         await db.scalars(
@@ -1457,6 +1475,11 @@ async def _stream_new_turn(
                 for ending in endings:
                     if not is_ending_check_due(room.turn_count, ending.turn_count_gate):
                         continue
+                    rule_items = await _ending_rule_items(db, ending)
+                    if not _ending_rules_pass(
+                        rule_items, updated_stats, log_subject=log_subject, ending_id=ending.entity_id
+                    ):
+                        continue
                     ending_judgment_prompt = build_ending_judgment_prompt(
                         prompt_set=prompt_set,
                         sections=prompt_sections,
@@ -1472,9 +1495,6 @@ async def _stream_new_turn(
                         usage=LLMCallContext(call_site="chat_ending_judgment", user_id=room.user_id, room_id=room.id),
                     )
                     if not ending_judgment.triggered:
-                        continue
-                    rule_items = await _ending_rule_items(db, ending)
-                    if not evaluate_rule_list(rule_items, updated_stats):
                         continue
 
                     room.ending_reached = True
@@ -3218,8 +3238,14 @@ async def _stream_preview_turn(
                         stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
                 state.stats = updated_stats
 
+                # 실채팅과 같이 스탯 규칙을 먼저 보고 참인 엔딩만 판정 모델을 부른다.
                 for ending in setup.endings:
                     if not is_ending_check_due(state.turn_count, ending.turn_count_gate):
+                        continue
+                    rule_items: list[EndingRuleListItem] = [
+                        _preview_ending_rule_list_item(item) for item in ending.stat_rules
+                    ]
+                    if not _ending_rules_pass(rule_items, updated_stats, log_subject="미리보기", ending_id=ending.id):
                         continue
                     ending_judgment_prompt = build_ending_judgment_prompt(
                         prompt_set=prompt_set,
@@ -3236,11 +3262,6 @@ async def _stream_preview_turn(
                         usage=LLMCallContext(call_site="preview_ending_judgment", user_id=user_id, room_id=None),
                     )
                     if not ending_judgment.triggered:
-                        continue
-                    rule_items: list[EndingRuleListItem] = [
-                        _preview_ending_rule_list_item(item) for item in ending.stat_rules
-                    ]
-                    if not evaluate_rule_list(rule_items, updated_stats):
                         continue
 
                     state.ending_reached = True

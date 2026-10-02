@@ -1,9 +1,11 @@
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from datetime import timezone
 from typing import Any
 
 import httpx
+import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -84,6 +86,21 @@ async def _add_ending(db_session: AsyncSession, setup: StartingSetup, **override
     db_session.add(ending)
     await db_session.flush()
     return ending
+
+
+def _add_rule(db_session: AsyncSession, ending: Ending, stat_entity_id: uuid.UUID, *, threshold: float) -> None:
+    """`stat >= threshold` 규칙 하나. 판정 순서 테스트는 이 모양 하나로 참·거짓을 가른다(초기값 50)."""
+    db_session.add(
+        EndingRule(
+            entity_id=uuid.uuid4(),
+            ending_id=ending.id,
+            stat_def_entity_id=stat_entity_id,
+            operator=EndingRuleOperator.GTE,
+            threshold=threshold,
+            next_op=None,
+            order=1,
+        )
+    )
 
 
 async def _create_story_room_via_api(
@@ -208,9 +225,11 @@ async def test_send_message_skips_ending_judgment_before_turn_gate(
     assert room.ending_reached is False
 
 
-async def test_send_message_ending_not_reached_when_stat_rule_fails_despite_llm_trigger(
+async def test_send_message_does_not_call_ending_judgment_when_stat_rule_is_false(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
+    """규칙은 이번 턴 반영 뒤 스탯만으로 정해지므로 먼저 평가한다 — 거짓이면 판정 모델을 부르지 않는다.
+    큐에 엔딩 판정 응답을 넣지 않아, 판정을 부르면 빈 큐에서 꺼내다 턴이 깨진다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
@@ -219,26 +238,13 @@ async def test_send_message_ending_not_reached_when_stat_rule_fails_despite_llm_
     setup = await _add_starting_setup(db_session, content)
     stat_def = await _add_stat_def(db_session, setup, min_value=0, max_value=100, initial_value=50)
     ending = await _add_ending(db_session, setup, turn_count_gate=1)
-    db_session.add(
-        EndingRule(
-            entity_id=uuid.uuid4(),
-            ending_id=ending.id,
-            stat_def_entity_id=stat_def.entity_id,
-            operator=EndingRuleOperator.GTE,
-            threshold=80,
-            next_op=None,
-            order=1,
-        )
-    )
+    _add_rule(db_session, ending, stat_def.entity_id, threshold=80)
     await db_session.commit()
 
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(
-        tokens=["안녕"],
-        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=True)],
-    )
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
@@ -248,10 +254,132 @@ async def test_send_message_ending_not_reached_when_stat_rule_fails_despite_llm_
     assert resp.status_code == 200
     events = _parse_sse_events(resp.text)
     assert [e["type"] for e in events] == ["token", "done"]
+    assert fake.generate_structured_calls == [StatJudgmentResult]
 
     room = await db_session.get(ChatRoom, room_id)
     assert room is not None
     assert room.ending_reached is False
+
+
+async def test_send_message_does_not_reach_ending_when_stat_rule_passes_but_judgment_declines(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """규칙이 참이어도 판정 모델이 거짓이면 발동하지 않는다 — 규칙을 먼저 본다고 판정을 건너뛰지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    ending = await _add_ending(db_session, setup, turn_count_gate=1)
+    _add_rule(db_session, ending, stat_def.entity_id, threshold=40)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[StatJudgmentResult(stat_changes=[]), EndingJudgmentResult(triggered=False)],
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "done"]
+    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult]
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert room.ending_reached is False
+
+
+async def test_send_message_judges_due_endings_in_order_and_stops_at_first_reached(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """order 순으로 본다. 규칙이 거짓인 1순위는 판정 없이 넘어가고, 규칙은 참이나 판정이 거짓인 2순위 다음
+    3순위에서 발동하면 규칙 없는 4순위는 판정하지 않는다. 행은 order 와 다른 순서로 넣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    stat_def = await _add_stat_def(db_session, setup, initial_value=50)
+    await _add_ending(db_session, setup, turn_count_gate=1, order=4, name="규칙 없는 4순위")
+    third = await _add_ending(db_session, setup, turn_count_gate=1, order=3, name="3순위")
+    second = await _add_ending(db_session, setup, turn_count_gate=1, order=2, name="2순위")
+    first = await _add_ending(db_session, setup, turn_count_gate=1, order=1, name="1순위")
+    _add_rule(db_session, first, stat_def.entity_id, threshold=80)
+    _add_rule(db_session, second, stat_def.entity_id, threshold=40)
+    _add_rule(db_session, third, stat_def.entity_id, threshold=40)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(
+        tokens=["안녕"],
+        structured_results=[
+            StatJudgmentResult(stat_changes=[]),
+            EndingJudgmentResult(triggered=False),
+            EndingJudgmentResult(triggered=True),
+        ],
+    )
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "endingReached", "done"]
+    assert events[1]["endingId"] == str(third.entity_id)
+    assert fake.generate_structured_calls == [StatJudgmentResult, EndingJudgmentResult, EndingJudgmentResult]
+
+
+async def test_send_message_treats_rule_on_missing_stat_as_false_and_completes_the_turn(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """시작설정에 없는 스탯을 가리키는 규칙 항목은 거짓이다. 예외로 SSE 가 끊기지 않고 턴이 커밋되며,
+    어느 방·엔딩·스탯인지 경고로 남긴다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_published_story(db_session, creator_user_id=user.id, genre_id=genre.id)
+    setup = await _add_starting_setup(db_session, content)
+    await _add_stat_def(db_session, setup, initial_value=50)
+    ending = await _add_ending(db_session, setup, turn_count_gate=1)
+    missing_stat_id = uuid.uuid4()
+    _add_rule(db_session, ending, missing_stat_id, threshold=0)
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
+
+    fake = _FakeLLMClient(tokens=["안녕"], structured_results=[StatJudgmentResult(stat_changes=[])])
+    _override_llm_client(fake)
+    try:
+        with caplog.at_level(logging.WARNING, logger="api.chat.router"):
+            resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})
+    finally:
+        _clear_llm_override()
+
+    events = _parse_sse_events(resp.text)
+    assert [e["type"] for e in events] == ["token", "done"]
+    assert fake.generate_structured_calls == [StatJudgmentResult]
+    room = await db_session.get(ChatRoom, room_id)
+    assert room is not None
+    assert (room.turn_count, room.ending_reached) == (1, False)
+    [warning] = [r.getMessage() for r in caplog.records if str(missing_stat_id) in r.getMessage()]
+    assert str(room_id) in warning
+    assert str(ending.entity_id) in warning
 
 
 async def test_send_message_only_top_priority_ending_reached_when_multiple_due(

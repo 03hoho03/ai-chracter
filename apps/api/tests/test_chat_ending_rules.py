@@ -1,6 +1,6 @@
 import uuid
 
-from api.chat.ending_rules import evaluate_item, evaluate_rule_list, is_ending_check_due
+from api.chat.ending_rules import evaluate_item, evaluate_rule_list, is_ending_check_due, referenced_stat_ids
 from api.chat.schemas import EndingRuleGroupItem, EndingRuleItem, EndingRuleListItem
 from api.db.models.story import EndingRuleOperator, LogicalOp
 
@@ -121,6 +121,39 @@ def test_evaluate_rule_list_with_nested_group() -> None:
     assert evaluate_rule_list(items, {str(affection): 60, str(tension): 20, str(trust): 90}) is True
     assert evaluate_rule_list(items, {str(affection): 60, str(tension): 20, str(trust): 0}) is False
     assert evaluate_rule_list(items, {str(affection): 10, str(tension): 5, str(trust): 90}) is False
+
+
+def test_evaluate_item_on_missing_stat_is_false_even_where_zero_would_pass() -> None:
+    """값이 없는 스탯을 0 으로 읽으면 `<= 10` 이 참이 된다 — 없는 스탯은 어떤 비교에서도 거짓이다."""
+    missing = uuid.uuid4()
+
+    assert evaluate_item(_rule(missing, EndingRuleOperator.LTE, 10), {}) is False
+    assert evaluate_item(_rule(missing, EndingRuleOperator.GTE, 0), {}) is False
+
+
+def test_evaluate_rule_list_missing_stat_is_one_false_item_not_a_failed_list() -> None:
+    """없는 스탯은 그 항목만 거짓이라 OR 로 이어진 다른 항목이 참이면 목록은 참이다."""
+    missing = uuid.uuid4()
+    affection = uuid.uuid4()
+    items = [
+        _rule(missing, EndingRuleOperator.GTE, 0, next_op=LogicalOp.OR),
+        _rule(affection, EndingRuleOperator.GTE, 50, next_op=None),
+    ]
+
+    assert evaluate_rule_list(items, {str(affection): 60}) is True
+    assert evaluate_rule_list(items, {str(affection): 40}) is False
+
+
+def test_referenced_stat_ids_includes_rules_inside_groups() -> None:
+    """없는 스탯 경고는 이 집합으로 고른다 — 그룹 안 규칙이 빠지면 그 스탯은 경고 없이 거짓이 된다."""
+    top = uuid.uuid4()
+    nested = uuid.uuid4()
+    group = EndingRuleGroupItem(id=uuid.uuid4(), rules=[_rule(nested, EndingRuleOperator.GTE, 1)], next_op=None)
+
+    assert referenced_stat_ids([_rule(top, EndingRuleOperator.GTE, 1, next_op=LogicalOp.AND), group]) == {
+        str(top),
+        str(nested),
+    }
 
 
 def test_is_ending_check_due_before_gate_is_false() -> None:
