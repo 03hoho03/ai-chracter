@@ -1,6 +1,8 @@
+import logging
 import uuid
 from collections.abc import Sequence
 
+from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -11,6 +13,7 @@ from api.assets.blur import create_blurred_asset
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     generate_thumbnail,
+    read_image_content_type,
     read_image_size,
 )
 from api.assets.schemas import (
@@ -28,6 +31,7 @@ from api.assets.schemas import (
 from api.core.s3 import (
     build_object_key,
     build_thumbnail_key,
+    build_upload_key,
     delete_object,
     download_object,
     generate_presigned_get_url,
@@ -43,6 +47,8 @@ from api.db.session import get_db_session
 from api.legal.dependencies import require_legal_consent
 from api.session.dependencies import get_current_user_id
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/assets", tags=["assets"])
 me_router = APIRouter(prefix="/me", tags=["assets"])
 
@@ -57,8 +63,9 @@ async def create_presigned_upload(
 ) -> PresignedUploadResponse:
     asset_id = uuid.uuid4()
     storage_key = build_object_key(payload.purpose.value, asset_id, payload.content_type)
+    # 서명은 임시 키에 한다 — 최종 키는 `complete_asset_upload` 가 검사한 바이트로만 채워진다.
     upload_url, expires_at = await run_in_threadpool(
-        generate_presigned_put_url, storage_key, payload.content_type
+        generate_presigned_put_url, build_upload_key(storage_key), payload.content_type
     )
 
     db.add(
@@ -88,6 +95,15 @@ def _upload_size_limit(storage_key: str) -> int | None:
     return UPLOAD_SIZE_LIMIT_BYTES[purpose]
 
 
+async def _discard_upload(db: AsyncSession, asset: Asset, upload_key: str) -> None:
+    """검사에서 떨어진 업로드를 지운다. 저장소를 먼저 지워 실패하면 행이 남아 다시 시도할 수 있게 하고
+    (`delete_generated_image` 와 같은 순서), 그다음 행을 지운다 — 검사를 못 넘은 업로드가 READY 로 남는 일은 없다.
+    최종 키에는 아직 아무것도 쓰지 않았으므로 지울 것은 임시 객체뿐이다."""
+    await run_in_threadpool(delete_object, upload_key)
+    await db.delete(asset)
+    await db.commit()
+
+
 @router.post(
     "/{asset_id}/complete", dependencies=[Depends(require_legal_consent)]
 )
@@ -96,49 +112,67 @@ async def complete_asset_upload(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db_session),
 ) -> AssetCompleteResponse:
-    asset = await db.get(Asset, asset_id)
+    """브라우저가 임시 키에 올린 객체를 검사하고, 검사한 그 바이트를 최종 키(`storage_key`)에 다시 올린다.
+
+    저장소 안에서 임시 객체를 복사하지 않는 이유: 검사와 복사 사이에 같은 서명 URL 로 임시 객체를 바꿔 올리면
+    검사하지 않은 바이트가 최종 키로 간다. 이미 메모리에 있는 바이트를 올리면 최종 키 = 검사·축소본을 만든 바이트가
+    보장된다. 이미 READY 인 자산은 저장소를 건드리지 않고 같은 응답을 돌려준다 — 같은 요청을 다시 보내는
+    클라이언트를 깨지 않으면서, 완료 뒤 같은 URL 로 다시 올린 객체는 아무도 읽지 않는다."""
+    # 같은 자산의 complete 가 겹치면 하나씩 처리한다 — 뒤의 요청은 앞의 커밋 뒤 READY 를 보고 그대로 돌아간다.
+    asset = await db.scalar(select(Asset).where(Asset.id == asset_id).with_for_update())
     if asset is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Asset not found")
     if asset.owner_user_id != current_user_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the asset owner")
+    if asset.status == AssetStatus.READY:
+        return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
 
-    actual_bytes = await run_in_threadpool(get_object_size, asset.storage_key)
-    if actual_bytes is None:
+    upload_key = build_upload_key(asset.storage_key)
+    reported_bytes = await run_in_threadpool(get_object_size, upload_key)
+    if reported_bytes is None:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Uploaded object not found in storage yet",
         )
 
+    # The FE resizes before upload, so oversize means the client bypassed it. The size
+    # seen here only spares downloading an obviously oversized object; the object can
+    # be replaced before the download, so the bytes actually downloaded are checked too.
     max_bytes = _upload_size_limit(asset.storage_key)
-    if max_bytes is not None and actual_bytes > max_bytes:
-        # The FE resizes before upload, so oversize means the client bypassed it.
-        # Delete S3 first so a failure leaves the row for a retry (delete_generated_image's
-        # ordering), then drop the Asset row — never READY with an oversized original.
-        await run_in_threadpool(delete_object, asset.storage_key)
-        await db.delete(asset)
-        await db.commit()
+    if max_bytes is not None and reported_bytes > max_bytes:
+        await _discard_upload(db, asset, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"maxBytes": max_bytes, "actualBytes": actual_bytes},
+            detail={"maxBytes": max_bytes, "actualBytes": reported_bytes},
+        )
+    original_bytes = await run_in_threadpool(download_object, upload_key)
+    if max_bytes is not None and len(original_bytes) > max_bytes:
+        await _discard_upload(db, asset, upload_key)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"maxBytes": max_bytes, "actualBytes": len(original_bytes)},
         )
 
     # Invariant: a READY image asset always has a `{key}_thumb.webp` variant, so
     # list endpoints can derive the key without an existence check. A failed
     # variant therefore fails the whole asset — never READY with only the original.
-    original_bytes = await run_in_threadpool(download_object, asset.storage_key)
     try:
         thumbnail_bytes = await run_in_threadpool(generate_thumbnail, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
+        detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except (OSError, ValueError) as exc:
         # Pillow can't decode the upload — deterministic failure, so clean up
         # like the oversize path instead of leaving an unretryable PENDING row.
-        await run_in_threadpool(delete_object, asset.storage_key)
-        await db.delete(asset)
-        await db.commit()
+        await _discard_upload(db, asset, upload_key)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded object is not a decodable image",
         ) from exc
+    # 최종 키의 Content-Type 은 검사한 바이트의 실제 형식에서 정한다. 키의 확장자로는 되살릴 수 없다 — 시스템 MIME
+    # 표가 없는 운영 이미지에서는 WebP 키에 확장자가 붙지 않아 `application/octet-stream` 이 되고, 원본을 새 탭에서
+    # 열면 그림 대신 다운로드가 된다.
+    content_type = detected_content_type or "application/octet-stream"
+    await run_in_threadpool(upload_object, asset.storage_key, original_bytes, content_type)
     await run_in_threadpool(
         upload_object,
         build_thumbnail_key(asset.storage_key),
@@ -149,6 +183,13 @@ async def complete_asset_upload(
     asset.status = AssetStatus.READY
     asset.width, asset.height = width, height
     await db.commit()
+
+    # 임시 객체는 이제 아무도 읽지 않는다. 지우지 못해도 업로드는 끝난 것이라 실패로 돌리지 않는다 — 남은
+    # 객체는 임시 접두사의 버킷 수명 규칙이 치운다.
+    try:
+        await run_in_threadpool(delete_object, upload_key)
+    except (BotoCoreError, ClientError):
+        logger.warning("Failed to delete temporary upload object %s", upload_key, exc_info=True)
 
     return AssetCompleteResponse(asset_id=asset.id, status=asset.status)
 

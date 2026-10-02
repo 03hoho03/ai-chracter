@@ -14,6 +14,7 @@ describe("toChatRoomState", () => {
       messages: [{ id: "m1", role: "assistant", content: "안녕", createdAt: "2026-07-08T00:00:00Z" }],
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
+      contentRestricted: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
@@ -30,6 +31,7 @@ describe("toChatRoomState", () => {
       turnCount: 3,
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
+      contentRestricted: false,
     });
   });
 
@@ -59,6 +61,7 @@ describe("toChatRoomState", () => {
       mediaTagImages: { "cell-1": image },
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
+      contentRestricted: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
@@ -79,6 +82,7 @@ describe("toChatRoomState", () => {
       messages: [],
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
+      contentRestricted: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     };
@@ -97,6 +101,7 @@ describe("toChatRoomState", () => {
       messages: [],
       latestVersionAvailable: false,
       versionAutoUpgraded: false,
+      contentRestricted: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });
@@ -154,6 +159,7 @@ describe("toChatRoomState", () => {
       },
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
+      contentRestricted: false,
       createdAt: "2026-07-08T00:00:00Z",
       updatedAt: "2026-07-08T00:00:00Z",
     });

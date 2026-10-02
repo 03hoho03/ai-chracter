@@ -41,6 +41,18 @@ def build_object_key(purpose: str, asset_id: uuid.UUID, content_type: str) -> st
     return f"assets/{purpose}/{asset_id}{extension}"
 
 
+def build_upload_key(storage_key: str) -> str:
+    """`assets/profile-image/abc.png` -> `uploads/tmp/profile-image/abc.png`.
+
+    The browser PUTs to this temporary key, never to the stored key: the upload URL
+    stays valid for minutes after the upload is completed, and if it pointed at the
+    stored key it could overwrite an image after it had been checked. The prefix sits
+    apart from `assets/` and `backup/` so a bucket lifecycle rule can expire leftovers
+    under it without touching anything else.
+    """
+    return f"uploads/tmp/{storage_key.removeprefix('assets/')}"
+
+
 def build_thumbnail_key(storage_key: str) -> str:
     """`assets/profile-image/abc.png` -> `assets/profile-image/abc_thumb.webp`."""
     base, _extension = posixpath.splitext(storage_key)

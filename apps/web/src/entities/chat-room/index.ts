@@ -47,6 +47,11 @@ export { canReportMessage } from "./model/canReportMessage";
 export { buildRegeneratePayload } from "./model/buildRegeneratePayload";
 export { buildSendPayload } from "./model/buildSendPayload";
 export { getChatRateLimit, type ChatRateLimit } from "./model/chatRateLimit";
+export {
+  CONTENT_RESTRICTED_NOTICE,
+  CONTENT_RESTRICTED_START_MESSAGE,
+  isContentRestrictedError,
+} from "./model/contentRestricted";
 export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { isAuthorOpeningMessage } from "./model/isAuthorOpeningMessage";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";

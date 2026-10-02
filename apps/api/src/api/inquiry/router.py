@@ -7,7 +7,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.core.s3 import generate_per_request_presigned_get_url
 from api.db.models.inquiry import Inquiry, InquiryStatus
-from api.db.models.media import Asset
+from api.db.models.media import Asset, AssetStatus
 from api.db.session import get_db_session
 from api.inquiry.schemas import (
     InquiryCreateRequest,
@@ -49,6 +49,11 @@ async def create_inquiry(
             # (assets/router.py)가 업로드 완료 시점에 같은 검사를 이미 하지만, 그건
             # 다른 시점이라 여기서 다시 본다.
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not the asset owner")
+        if asset.status != AssetStatus.READY:
+            # 업로드가 끝나지 않은 자산은 최종 키에 객체가 없다 — 접수되면 운영자가 여는 첨부 주소가 깨진다.
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT, detail="Asset upload is not complete yet"
+            )
 
     inquiry = Inquiry(
         user_id=user_id,

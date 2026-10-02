@@ -9,7 +9,12 @@ import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Check } from "lucide-react";
 import { toast } from "sonner";
 
-import { useChangeStartingSetupMutation, useChatRoomQuery } from "@/entities/chat-room";
+import {
+  CONTENT_RESTRICTED_START_MESSAGE,
+  isContentRestrictedError,
+  useChangeStartingSetupMutation,
+  useChatRoomQuery,
+} from "@/entities/chat-room";
 import { useContentDetailQuery } from "@/entities/content";
 import { createCallable } from "@/shared/lib/callable/createCallable";
 
@@ -44,7 +49,13 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
           call.end();
           void navigate({ to: "/chat/$roomId", params: { roomId: newRoom.id } });
         },
-        onError: () => toast.error("시작설정 변경에 실패했어요. 잠시 후 다시 시도해주세요."),
+        // 시작설정 변경은 새 방을 만든다 — 이용제한된 작품이면 새 대화 시작과 같은 이유로 막힌다.
+        onError: (error) =>
+          toast.error(
+            isContentRestrictedError(error)
+              ? CONTENT_RESTRICTED_START_MESSAGE
+              : "시작설정 변경에 실패했어요. 잠시 후 다시 시도해주세요.",
+          ),
       },
     );
   }

@@ -20,7 +20,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import Asset, AssetKind, AssetStatus
-from factories import _get_genre, _login_as, _make_user
+from factories import _get_genre, _login_as, _make_user, _put_via_presigned_url
 
 
 async def _make_draft_version(
@@ -155,8 +155,8 @@ async def test_register_situational_image_creates_thumbnails_for_original_and_bl
     asset_id = presign_resp.json()["assetId"]
     asset = await db_session.get(Asset, uuid.UUID(asset_id))
     assert asset is not None
+    _put_via_presigned_url(presign_resp.json()["uploadUrl"], _sample_png_bytes())
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
-    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=_sample_png_bytes())
     complete_resp = await db_client.post(f"/assets/{asset_id}/complete")
     assert complete_resp.status_code == 200
 

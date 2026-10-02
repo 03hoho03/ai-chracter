@@ -7,7 +7,11 @@ export {
   type AdminUserSuspendRequest,
   type AdminUserSuspendResponse,
 } from "./api/useSuspendUserMutation";
-export { useUnsuspendUserMutation, type AdminUserUnsuspendRequest } from "./api/useUnsuspendUserMutation";
+export {
+  useUnsuspendUserMutation,
+  type AdminUserUnsuspendRequest,
+  type AdminUserUnsuspendResponse,
+} from "./api/useUnsuspendUserMutation";
 export {
   useSetRateLimitExemptMutation,
   type AdminUserRateLimitExemptRequest,

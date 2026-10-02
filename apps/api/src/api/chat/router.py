@@ -192,6 +192,30 @@ async def _owned_room_dependency(
     return await _get_owned_room(db, room_id, user_id)
 
 
+def _ensure_content_playable(content: Content) -> None:
+    """이용제한·삭제된 작품에서는 모델을 부르거나 새 방을 만들지 않는다. 지난 대화 읽기·방 삭제·초기화는 막지
+    않는다 — 초기화는 저장된 오프닝을 다시 넣을 뿐 모델을 부르지 않는다. 작가 본인의 실제 방도 같이 막고, 빌더
+    미리보기는 작품 행을 보지 않아 이 검사 밖이다.
+
+    403 을 고른 이유: 기다려도 풀리지 않는 거부라 429(게이트 계약)가 아니고, 같은 꼴의 dict-code 403 을 재동의
+    게이트가 이미 쓴다. FE 는 정지 403 을 detail 문자열로만 가르므로 이 dict 403 이 세션을 비우지 않는다."""
+    if content.moderation_status != ModerationStatus.NORMAL:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail={"code": "CONTENT_RESTRICTED"})
+
+
+async def _playable_room_dependency(
+    room: ChatRoom = Depends(_owned_room_dependency),
+    db: AsyncSession = Depends(get_db_session),
+) -> ChatRoom:
+    """모델을 부르는 세 경로(전송·재생성·편집)의 방 의존성. 소유권 검사 바로 뒤에서 작품 상태를 본다 — 차감
+    게이트(`enforce_chat_rate_limit`)보다 앞이라 막힌 작품에서는 분당 상한도 세지 않고, 클로버 확인 모달도 뜨지 않고,
+    클로버도 깎이지 않는다. SSE 제너레이터 본문에서 raise 하면 깨진 스트림이 되므로 `Depends` 로 둔다."""
+    content = await db.get(Content, room.content_id)
+    assert content is not None
+    _ensure_content_playable(content)
+    return room
+
+
 async def _validate_shortcut(
     payload: ChatMessageCreateRequest,
     room: ChatRoom = Depends(_owned_room_dependency),
@@ -908,6 +932,7 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
+        content_restricted=content.moderation_status != ModerationStatus.NORMAL,
         created_at=room.created_at,
         updated_at=room.updated_at,
     )
@@ -995,6 +1020,7 @@ async def create_chat_room(
     content = await db.get(Content, payload.content_id)
     if content is None or content.current_published_version_id is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Content not found")
+    _ensure_content_playable(content)
 
     expected_type = ContentType.STORY if payload.content_type == "story" else ContentType.CHARACTER
     if content.type != expected_type:
@@ -1630,7 +1656,7 @@ async def send_message(
     # 관례와 일관되게 시그니처 쪽을 골랐다) — 소유권 검사(room)보다 먼저 두어 존재하지
     # 않는 room_id에서도 404가 아니라 403이 먼저 뜨게 한다.
     _consent: None = Depends(require_legal_consent),
-    room: ChatRoom = Depends(_owned_room_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
     shortcut: Shortcut | None = Depends(_validate_shortcut),
     db: AsyncSession = Depends(get_db_session),
     # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
@@ -1726,7 +1752,7 @@ async def _regeneratable_last_message_dependency(
 async def regenerate_message(
     # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    room: ChatRoom = Depends(_owned_room_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
     last_message: ChatMessage = Depends(_regeneratable_last_message_dependency),
     db: AsyncSession = Depends(get_db_session),
     # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
@@ -1912,7 +1938,7 @@ async def edit_message(
     background_tasks: BackgroundTasks,
     # send_message와 같은 이유로 시그니처 Depends
     _consent: None = Depends(require_legal_consent),
-    room: ChatRoom = Depends(_owned_room_dependency),
+    room: ChatRoom = Depends(_playable_room_dependency),
     message: ChatMessage = Depends(_editable_user_message_dependency),
     db: AsyncSession = Depends(get_db_session),
     # 환불은 별도 트랜잭션이라 요청 세션(`db`)으로는 못 한다
@@ -2268,6 +2294,7 @@ async def change_starting_setup(
 
     content = await db.get(Content, room.content_id)
     assert content is not None
+    _ensure_content_playable(content)
     setup = await _resolve_setup_for_content(db, content, payload.starting_setup_id)
 
     # 기본이 아니라 원래 방의 선택을 잇는다. `room.persona_id`는

@@ -7,6 +7,7 @@ import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { ContentActionPanel } from "./ContentActionPanel";
+import { PublishedImagesSection } from "./PublishedImagesSection";
 
 type ContentDetailPageProps = {
   contentId: string;
@@ -99,6 +100,8 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
           </div>
         )}
       </section>
+
+      <PublishedImagesSection images={contentDetailQuery.data.publishedImages} />
 
       <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
         <h2 className="text-lg font-semibold text-foreground">제작자</h2>

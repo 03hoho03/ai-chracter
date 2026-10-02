@@ -8,6 +8,7 @@ type UserActionPanelProps = {
   isRateLimitExempt: boolean;
   isBeta: boolean;
   restrictableContentCount: number;
+  restorableContentCount: number;
 };
 
 /** ContentActionPanel과 같은 결 — 정지 여부 하나로 분기한다: 정상이면 [경고][정지],
@@ -20,7 +21,10 @@ export function UserActionPanel({
   isRateLimitExempt,
   isBeta,
   restrictableContentCount,
+  restorableContentCount,
 }: UserActionPanelProps) {
+  // 정지·해제 확인창이 예고하는 작품 수. 모달 props 가 조치와 무관하게 같은 모양이라 모든 호출에 함께 넘긴다.
+  const previewCounts = { restrictableContentCount, restorableContentCount };
   return (
     <section className="flex flex-col gap-4 rounded-xl border border-border bg-card p-6">
       <h2 className="text-lg font-semibold text-foreground">조치</h2>
@@ -29,7 +33,7 @@ export function UserActionPanel({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => void UserActionConfirmModal.call({ userId, action: "warn", restrictableContentCount })}
+          onClick={() => void UserActionConfirmModal.call({ userId, action: "warn", ...previewCounts })}
         >
           경고
         </Button>
@@ -39,7 +43,7 @@ export function UserActionPanel({
             variant="outline"
             size="sm"
             onClick={() =>
-              void UserActionConfirmModal.call({ userId, action: "unsuspend", restrictableContentCount })
+              void UserActionConfirmModal.call({ userId, action: "unsuspend", ...previewCounts })
             }
           >
             정지 해제
@@ -50,7 +54,7 @@ export function UserActionPanel({
             variant="outline"
             size="sm"
             onClick={() =>
-              void UserActionConfirmModal.call({ userId, action: "suspend", restrictableContentCount })
+              void UserActionConfirmModal.call({ userId, action: "suspend", ...previewCounts })
             }
           >
             정지
@@ -64,7 +68,7 @@ export function UserActionPanel({
             void UserActionConfirmModal.call({
               userId,
               action: isRateLimitExempt ? "rate-limit-exempt-off" : "rate-limit-exempt-on",
-              restrictableContentCount,
+              ...previewCounts,
             })
           }
         >
@@ -78,7 +82,7 @@ export function UserActionPanel({
             void UserActionConfirmModal.call({
               userId,
               action: isBeta ? "beta-off" : "beta-on",
-              restrictableContentCount,
+              ...previewCounts,
             })
           }
         >
@@ -91,7 +95,7 @@ export function UserActionPanel({
           type="button"
           variant="outline"
           size="sm"
-          onClick={() => void UserActionConfirmModal.call({ userId, action: "clover-grant", restrictableContentCount })}
+          onClick={() => void UserActionConfirmModal.call({ userId, action: "clover-grant", ...previewCounts })}
         >
           클로버 지급
         </Button>
@@ -100,7 +104,7 @@ export function UserActionPanel({
           variant="outline"
           size="sm"
           onClick={() =>
-            void UserActionConfirmModal.call({ userId, action: "clover-revoke", restrictableContentCount })
+            void UserActionConfirmModal.call({ userId, action: "clover-revoke", ...previewCounts })
           }
         >
           클로버 회수

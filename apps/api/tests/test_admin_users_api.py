@@ -6,11 +6,15 @@ import httpx
 import pytest
 import pytest_asyncio
 import sqlalchemy as sa
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.redis import redis_client
 from api.db.models import (
     AdminActionLog,
+    Appeal,
+    AppealStatus,
+    AppealTargetKind,
     CharacterVersionDetail,
     ChatMessage,
     ChatMessageRole,
@@ -19,6 +23,8 @@ from api.db.models import (
     ContentType,
     ContentVersion,
     ContentVisibility,
+    ModerationAction,
+    ModerationActionType,
     ModerationStatus,
     Notification,
     Report,
@@ -1006,7 +1012,7 @@ async def test_suspend_blocks_existing_session_immediately(
 # ---- 해제 --------------------------------------------------------------------
 
 
-async def test_unsuspend_clears_suspended_at_removes_marker_and_keeps_content_restricted(
+async def test_unsuspend_clears_suspended_at_removes_marker_and_restores_the_suspended_content(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
     user = _make_user()
@@ -1024,18 +1030,19 @@ async def test_unsuspend_clears_suspended_at_removes_marker_and_keeps_content_re
     )
     assert suspend_resp.status_code == 200
     assert await is_user_suspended(user.id) is True
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.RESTRICTED, True)
 
     unsuspend_resp = await db_client.post(
         f"/admin/users/{user.id}/unsuspend", json={"adminComment": "해제합니다"}
     )
-    assert unsuspend_resp.status_code == 204
+    assert unsuspend_resp.status_code == 200
+    assert unsuspend_resp.json() == {"restoredContentCount": 1}
 
     await db_session.refresh(user)
     assert user.suspended_at is None
     assert await is_user_suspended(user.id) is False
 
-    await db_session.refresh(content)
-    assert content.moderation_status == ModerationStatus.RESTRICTED  # 작품은 안 돌아온다
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.NORMAL, False)
 
     logs = (
         await db_session.scalars(
@@ -1047,10 +1054,320 @@ async def test_unsuspend_clears_suspended_at_removes_marker_and_keeps_content_re
     ).all()
     assert len(logs) == 1
 
+    # 작품별 알림도, 해제 알림도 없다 — 정지 때의 알림 1건뿐이다.
     notifications = (
         await db_session.scalars(sa.select(Notification).where(Notification.user_id == user.id))
     ).all()
-    assert all(n.type != "user-unsuspended" for n in notifications)
+    assert [n.type for n in notifications] == ["user-suspended"]
+
+
+async def _suspend(db_client: httpx.AsyncClient, user_id: uuid.UUID) -> None:
+    resp = await db_client.post(f"/admin/users/{user_id}/suspend", json={"reasonCategory": "spam"})
+    assert resp.status_code == 200
+
+
+async def _unsuspend(db_client: httpx.AsyncClient, user_id: uuid.UUID) -> int:
+    resp = await db_client.post(f"/admin/users/{user_id}/unsuspend", json={"adminComment": "해제합니다"})
+    assert resp.status_code == 200
+    count = resp.json()["restoredContentCount"]
+    assert isinstance(count, int)
+    return count
+
+
+async def _status_and_flag(db_session: AsyncSession, content: Content) -> tuple[ModerationStatus, bool]:
+    await db_session.refresh(content)
+    return content.moderation_status, content.restricted_by_suspension
+
+
+async def test_unsuspend_restores_only_what_the_suspension_restricted_and_the_preview_matches(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """정지 전부터 제한·삭제였던 작품, 비공개 초안, 함께 정지된 다른 작가의 작품은 해제가 건드리지 않는다.
+    상세의 `restorableContentCount` 는 해제 응답의 개수와 같아야 한다(해제 확인창의 예고)."""
+    user = _make_user()
+    other = _make_user()
+    db_session.add_all([user, other])
+    await db_session.flush()
+    public = await _make_content(db_session, creator_user_id=user.id)
+    link = await _make_content(db_session, creator_user_id=user.id, visibility=ContentVisibility.LINK)
+    private = await _make_content(db_session, creator_user_id=user.id, visibility=ContentVisibility.PRIVATE)
+    already_restricted = await _make_content(
+        db_session, creator_user_id=user.id, moderation_status=ModerationStatus.RESTRICTED
+    )
+    already_deleted = await _make_content(
+        db_session, creator_user_id=user.id, moderation_status=ModerationStatus.DELETED
+    )
+    others = await _make_content(db_session, creator_user_id=other.id)
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+    await _suspend(db_client, other.id)
+
+    detail = await db_client.get(f"/admin/users/{user.id}")
+    assert detail.status_code == 200
+    assert detail.json()["restorableContentCount"] == 2
+
+    assert await _unsuspend(db_client, user.id) == 2
+
+    assert await _status_and_flag(db_session, public) == (ModerationStatus.NORMAL, False)
+    assert await _status_and_flag(db_session, link) == (ModerationStatus.NORMAL, False)
+    assert await _status_and_flag(db_session, private) == (ModerationStatus.NORMAL, False)
+    assert await _status_and_flag(db_session, already_restricted) == (ModerationStatus.RESTRICTED, False)
+    assert await _status_and_flag(db_session, already_deleted) == (ModerationStatus.DELETED, False)
+    assert await _status_and_flag(db_session, others) == (ModerationStatus.RESTRICTED, True)
+
+    after = await db_client.get(f"/admin/users/{user.id}")
+    assert after.json()["restorableContentCount"] == 0
+
+
+async def test_unsuspend_after_a_repeated_suspend_restores_the_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """두 번째 정지(복구용 재호출)는 이미 내린 작품을 다시 세지 않지만 표식도 지우지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    await _suspend(db_client, user.id)
+    await _suspend(db_client, user.id)
+
+    assert await _unsuspend(db_client, user.id) == 1
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.NORMAL, False)
+
+
+async def test_unsuspend_again_restores_nothing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    await _make_content(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    assert await _unsuspend(db_client, user.id) == 1
+    assert await _unsuspend(db_client, user.id) == 0
+
+
+async def test_report_restrict_during_suspension_keeps_the_content_restricted_after_unsuspend(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """정지로 이미 제한인 작품을 신고 조치로 다시 제한하면 상태는 그대로라 표식을 내리지 않으면 구분이 안 된다 —
+    그 작품은 신고 때문에 제한된 것이므로 해제 뒤에도 남아야 한다."""
+    user = _make_user()
+    reporter = _make_user()
+    db_session.add_all([user, reporter])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id)
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=content.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json={"action": "restrict"})
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.RESTRICTED, False)
+
+    assert await _unsuspend(db_client, user.id) == 0
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.RESTRICTED, False)
+
+
+async def test_report_reject_during_suspension_keeps_the_content_restorable(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    reporter = _make_user()
+    db_session.add_all([user, reporter])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id)
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=content.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json={"action": "reject"})
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.RESTRICTED, True)
+
+    assert await _unsuspend(db_client, user.id) == 1
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.NORMAL, False)
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param(
+            {"action": "restrict", "reasonCategory": "spam"},
+            (ModerationStatus.RESTRICTED, False),
+            id="restrict",
+        ),
+        pytest.param(
+            {"action": "delete", "reasonCategory": "spam"},
+            (ModerationStatus.DELETED, False),
+            id="delete",
+        ),
+        pytest.param(
+            {"action": "lift-restriction", "adminComment": "풀어 줍니다"},
+            (ModerationStatus.NORMAL, False),
+            id="lift",
+        ),
+    ],
+)
+async def test_direct_action_during_suspension_takes_the_content_out_of_the_restore(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    body: dict[str, str],
+    expected: tuple[ModerationStatus, bool],
+) -> None:
+    """정지 대상 작품은 현실에선 발행본이 있다 — 발행본이 있어야 제한 해제가 대화방을 최신 버전으로 올리는 쿼리를
+    실제로 돌리고, 그 쿼리의 자동 flush 가 상태와 정지 표식이 어긋난 중간 값을 쓰지 않는지가 드러난다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, name="정지된 작가의 작품")
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/contents/{content.id}/action", json=body)
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == expected
+
+    assert await _unsuspend(db_client, user.id) == 0
+    assert await _status_and_flag(db_session, content) == expected
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param({"action": "restrict"}, (ModerationStatus.RESTRICTED, False), id="restrict"),
+        pytest.param({"action": "delete"}, (ModerationStatus.DELETED, False), id="delete"),
+        pytest.param(
+            {"action": "lift-restriction", "adminComment": "풀어 줍니다"},
+            (ModerationStatus.NORMAL, False),
+            id="lift",
+        ),
+    ],
+)
+async def test_report_action_during_suspension_on_a_published_content_takes_it_out_of_the_restore(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    body: dict[str, str],
+    expected: tuple[ModerationStatus, bool],
+) -> None:
+    """신고 처리 경로도 직접 조치와 같다 — 발행본이 있는 작품이라 제한 해제가 대화방 갱신 쿼리까지 돈다."""
+    user = _make_user()
+    reporter = _make_user()
+    db_session.add_all([user, reporter])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, name="정지된 작가의 작품")
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=content.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json=body)
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == expected
+
+    assert await _unsuspend(db_client, user.id) == 0
+    assert await _status_and_flag(db_session, content) == expected
+
+
+async def test_appeal_accepted_during_suspension_clears_the_flag(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """정지 전에 낸 이의를 정지 중에 수용하면 작품은 정상이 되고 표식이 내려간다(제한 상태에서만 서는 표식이다)."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id)
+    admin_payload = await _create_admin(db_session)
+    action = ModerationAction(
+        content_id=content.id, admin_id=uuid.UUID(str(admin_payload["id"])), action=ModerationActionType.RESTRICT
+    )
+    db_session.add(action)
+    await db_session.flush()
+    appeal = Appeal(
+        user_id=user.id,
+        target_kind=AppealTargetKind.MODERATION_ACTION,
+        target_id=action.id,
+        reason_text="이의 있습니다.",
+        status=AppealStatus.PENDING,
+    )
+    db_session.add(appeal)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/appeals/{appeal.id}/resolve", json={"verdict": "accepted"})
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == (ModerationStatus.NORMAL, False)
+
+    assert await _unsuspend(db_client, user.id) == 0
+
+
+async def test_unsuspend_does_not_move_rooms_to_the_latest_version(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """복구는 정지 전 상태 그대로다 — 작품별 해제(`lift-restriction`)와 달리 방을 최신 발행본으로 옮기지 않는다."""
+    user = _make_user()
+    reader = _make_user()
+    db_session.add_all([user, reader])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, name="작품")
+    room = await _make_chat_room(db_session, user_id=reader.id, content=content)
+    first_version_id = room.content_version_id
+    newer = ContentVersion(
+        content_id=content.id, version_number=2, published_at=datetime.now(UTC), detail_description=""
+    )
+    db_session.add(newer)
+    await db_session.flush()
+    content.current_published_version_id = newer.id
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    assert await _unsuspend(db_client, user.id) == 1
+
+    await db_session.refresh(room)
+    assert room.content_version_id == first_version_id
+    assert room.version_auto_upgraded is False
+
+
+async def test_suspension_flag_on_unrestricted_content_is_rejected_by_the_database(
+    db_session: AsyncSession,
+) -> None:
+    """표식은 제한 상태에서만 설 수 있다(CHECK). `alembic check` 가 CHECK 를 비교하지 않아 이 테스트가 유일한 검증이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id)
+    content.restricted_by_suspension = True
+
+    with pytest.raises(IntegrityError):
+        await db_session.flush()
 
 
 async def test_unsuspend_missing_admin_comment_returns_422(

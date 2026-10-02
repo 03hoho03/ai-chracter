@@ -122,6 +122,7 @@ type UserActionConfirmModalProps = {
   userId: string;
   action: UserActionType;
   restrictableContentCount: number;
+  restorableContentCount: number;
 };
 
 /** ContentActionConfirmModal과 같은 결 — `warn`/`suspend`는 사유 카테고리가 필수다. `unsuspend`는
@@ -130,9 +131,10 @@ type UserActionConfirmModalProps = {
  * 가역이다(콘텐츠 조치도 그 확인을 되돌릴 수 없는 삭제에만 쓴다). `suspend`는 실제로 이용제한으로 전환될
  * 작품 개수(상세 응답의 `restrictableContentCount` — 이미 restricted/deleted인 작품은 제외한 값)를
  * 미리 보여주고, 성공 시 응답의 `restrictedContentCount`로 실제 내려간 개수를 toast에 담는다.
- * 두 값은 항상 일치해야 정지 확인의 예고가 사실과 맞는다. */
+ * 두 값은 항상 일치해야 정지 확인의 예고가 사실과 맞는다. `unsuspend`도 같은 모양이다 — 정지로 이용제한됐다가
+ * 해제로 정상으로 돌아올 작품 수(`restorableContentCount`)를 예고하고, 응답의 `restoredContentCount`를 toast에 담는다. */
 export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps, void>(
-  ({ call, userId, action, restrictableContentCount }) => {
+  ({ call, userId, action, restrictableContentCount, restorableContentCount }) => {
     const queryClient = useQueryClient();
     const warnMutation = useWarnUserMutation(userId);
     const suspendMutation = useSuspendUserMutation(userId);
@@ -164,8 +166,12 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
           const result = await suspendMutation.mutateAsync(formToReasonedRequest(values, values.reasonCategory));
           toast.success(`정지했어요. 작품 ${result.restrictedContentCount}건이 이용제한으로 전환됐어요.`);
         } else if (action === "unsuspend") {
-          await unsuspendMutation.mutateAsync(formToCommentOnlyRequest(values));
-          toast.success("정지를 해제했어요.");
+          const result = await unsuspendMutation.mutateAsync(formToCommentOnlyRequest(values));
+          toast.success(
+            result.restoredContentCount > 0
+              ? `정지를 해제했어요. 작품 ${result.restoredContentCount}건이 정상으로 돌아왔어요.`
+              : "정지를 해제했어요.",
+          );
         } else if (action === "rate-limit-exempt-on") {
           await setRateLimitExemptMutation.mutateAsync({ exempt: true, ...formToCommentOnlyRequest(values) });
           toast.success("레이트리밋을 면제했어요.");
@@ -242,7 +248,10 @@ export const UserActionConfirmModal = createCallable<UserActionConfirmModalProps
                 (restrictableContentCount > 0
                   ? `이 유저를 정지합니다. 작품 ${restrictableContentCount}건이 함께 이용제한으로 전환됩니다.`
                   : "이 유저를 정지합니다.")}
-              {action === "unsuspend" && "이 유저의 정지를 해제합니다. 작품은 이용제한 상태로 남습니다."}
+              {action === "unsuspend" &&
+                (restorableContentCount > 0
+                  ? `이 유저의 정지를 해제합니다. 정지로 이용제한된 작품 ${restorableContentCount}건이 함께 정상으로 돌아갑니다. 신고나 직접 조치로 제한된 작품은 그대로입니다.`
+                  : "이 유저의 정지를 해제합니다. 신고나 직접 조치로 제한된 작품은 그대로입니다.")}
               {action === "rate-limit-exempt-on" &&
                 "이 유저를 일일 상한과 이미지 토큰 상한에서 면제합니다. 분당 상한과 이미지 동시 생성 1건은 그대로 적용됩니다."}
               {action === "rate-limit-exempt-off" &&

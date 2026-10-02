@@ -270,6 +270,8 @@ async def _publish(session: AsyncSession, content: Content, version: ContentVers
     # 이용제한 상태가 아니라 이 값이 진실 공급원이다.
     content.visibility = ContentVisibility.PUBLIC
     content.moderation_status = ModerationStatus.NORMAL
+    # 정지 표식은 제한 상태에서만 설 수 있다 — 정상으로 되돌리면서 같이 내린다.
+    content.restricted_by_suspension = False
     content.current_published_version_id = version.id
     await session.flush()
 

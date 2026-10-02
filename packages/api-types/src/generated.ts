@@ -343,8 +343,8 @@ export interface paths {
          *
          *     ```
          *     1. users.suspended_at = now()
-         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
-         *        (visibility는 불변; PRIVATE는 제외)
+         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted' + restricted_by_suspension = true
+         *        (visibility는 불변; PRIVATE는 제외. 표식은 해제 때 되돌릴 작품을 가린다)
          *     3. Notification(type='user-suspended', content_id=None, action_id=None)
          *     4. record_admin_action(action_type='user-suspend')
          *     5. db.commit()                  ← 여기까지 원자적
@@ -381,9 +381,13 @@ export interface paths {
         put?: never;
         /**
          * Unsuspend User
-         * @description 계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,
-         *     관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
-         *     한다.
+         * @description 계정을 되살리고, **정지가 내린 작품**(`restricted_by_suspension`)을 같은 트랜잭션에서 정상으로 되돌린다.
+         *     정지 전부터 제한·삭제였던 작품, 정지 중에 신고·관리자 조치로 다시 제한된 작품은 표식이 없어 그대로 남는다 —
+         *     그건 관리자가 작품 관리 화면(`/admin/contents`)에서 개별로 `lift-restriction`한다.
+         *
+         *     작품별 `lift-restriction`과 달리 방을 최신 발행본으로 옮기지 않는다 — 정지 중엔 작가가 편집·발행을 못 하므로
+         *     정지 전 상태로 되돌리는 것으로 충분하고, 독자에게 버전 변경 배너도 띄우지 않는다. 작품별 알림도 없다(정지 알림도
+         *     작품을 나열하지 않는다). 이 리비전 이전에 정지된 사용자의 작품은 표식이 없어 돌아오지 않는다.
          *
          *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
          *     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
@@ -395,7 +399,7 @@ export interface paths {
          *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
          *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
          *
-         *     순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
+         *     순서: `suspended_at = None` → 작품 복구 → `record_admin_action` → `commit()` → Redis `DEL`.
          */
         post: operations["unsuspend_user_admin_users__user_id__unsuspend_post"];
         delete?: never;
@@ -1074,7 +1078,15 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Complete Asset Upload */
+        /**
+         * Complete Asset Upload
+         * @description 브라우저가 임시 키에 올린 객체를 검사하고, 검사한 그 바이트를 최종 키(`storage_key`)에 다시 올린다.
+         *
+         *     저장소 안에서 임시 객체를 복사하지 않는 이유: 검사와 복사 사이에 같은 서명 URL 로 임시 객체를 바꿔 올리면
+         *     검사하지 않은 바이트가 최종 키로 간다. 이미 메모리에 있는 바이트를 올리면 최종 키 = 검사·축소본을 만든 바이트가
+         *     보장된다. 이미 READY 인 자산은 저장소를 건드리지 않고 같은 응답을 돌려준다 — 같은 요청을 다시 보내는
+         *     클라이언트를 깨지 않으면서, 완료 뒤 같은 URL 로 다시 올린 객체는 아무도 읽지 않는다.
+         */
         post: operations["complete_asset_upload_assets__asset_id__complete_post"];
         delete?: never;
         options?: never;
@@ -1761,9 +1773,9 @@ export interface paths {
          * Update Content Draft
          * @description Autosave: no
          *     business validation (publish is where that happens) — the version-detail row is
-         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북만은 저장 때
-         *     검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를 칸에 걸어
-         *     그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
+         *     overwritten wholesale and every child resource is upserted by entity_id. 미디어 북과 새로 거는 대표
+         *     이미지는 저장 때 검사한다(422) — 틀린 채 저장되면 칸 자리·entity_id UNIQUE 가 500 을 내거나, 남의 이미지를
+         *     걸어 그 사람의 이미지 삭제를 막는 것들이라 발행까지 미룰 수 없다. 키워드북도 길이·개수 상한과 빈·중복 키워드를
          *     저장 때 거절한다(422, `KeywordNoteDraftInput`) — 빌더가 같은 상한으로 입력을 먼저 막으므로 정상 입력으로는 닿지
          *     않는다. 노트가 페이로드에 없는 시작설정을 가리키면 400 이다. `registration`-tab
          *     fields (description/genreId/target/hashtags/visibility) live on Content/ContentVersion
@@ -3848,10 +3860,24 @@ export interface components {
             detailDescription: string;
             /** Thumbnailurl */
             thumbnailUrl: string | null;
+            /** Publishedimages */
+            publishedImages: components["schemas"]["AdminContentImage"][];
             /** Hasunpublishedchanges */
             hasUnpublishedChanges: boolean;
             /** Versions */
             versions: components["schemas"]["AdminContentVersionItem"][];
+        };
+        /**
+         * AdminContentImage
+         * @description 발행본 그림 하나. `image_url` 은 원본(블러본이 아니다), `thumbnail_url` 은 목록에 그릴 축소본이다.
+         */
+        AdminContentImage: {
+            /** Label */
+            label: string;
+            /** Imageurl */
+            imageUrl: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string;
         };
         /** AdminContentListItem */
         AdminContentListItem: {
@@ -4854,6 +4880,8 @@ export interface components {
             contentCount: number;
             /** Restrictablecontentcount */
             restrictableContentCount: number;
+            /** Restorablecontentcount */
+            restorableContentCount: number;
             /** Ratelimitexempt */
             rateLimitExempt: boolean;
             /** Betajoinedat */
@@ -4965,6 +4993,11 @@ export interface components {
         AdminUserUnsuspendRequest: {
             /** Admincomment */
             adminComment?: string | null;
+        };
+        /** AdminUserUnsuspendResponse */
+        AdminUserUnsuspendResponse: {
+            /** Restoredcontentcount */
+            restoredContentCount: number;
         };
         /** AdminUserWarnRequest */
         AdminUserWarnRequest: {
@@ -5388,6 +5421,8 @@ export interface components {
             mediaTagImages?: {
                 [key: string]: components["schemas"]["MediaTagImage"];
             };
+            /** Contentrestricted */
+            contentRestricted: boolean;
             /**
              * Createdat
              * Format: date-time
@@ -7924,11 +7959,13 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminUserUnsuspendResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

@@ -193,6 +193,9 @@ class ChatRoomResponse(CamelModel):
     # 첫 메시지(작성자 글의 복사본)에 든 칸 id 형태 태그가 가리키는 그림 — 방이 고정한 버전의 칸으로
     # 해석한다. 사용자 메시지에 사용자가 친 태그는 보지 않는다(아무 칸 id 나 쳐서 원본을 받지 못하게).
     media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)
+    # 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는가. 방을 여는 순간 입력창 대신 안내를 띄우려고 싣는다 —
+    # 없으면 보내 본 뒤 403 을 받고서야 안다.
+    content_restricted: bool
     created_at: datetime
     updated_at: datetime
 

@@ -152,6 +152,14 @@ class AdminContentCreator(CamelModel):
     nickname: str
 
 
+class AdminContentImage(CamelModel):
+    """발행본 그림 하나. `image_url` 은 원본(블러본이 아니다), `thumbnail_url` 은 목록에 그릴 축소본이다."""
+
+    label: str
+    image_url: str
+    thumbnail_url: str
+
+
 class AdminContentDetailResponse(CamelModel):
     id: uuid.UUID
     type: ContentType
@@ -166,6 +174,7 @@ class AdminContentDetailResponse(CamelModel):
     prompt: str | None
     detail_description: str
     thumbnail_url: str | None
+    published_images: list[AdminContentImage]
     has_unpublished_changes: bool
     versions: list[AdminContentVersionItem]
 
@@ -243,6 +252,9 @@ class AdminUserDetailResponse(CamelModel):
     # 달리 이미 restricted/deleted인 작품은 제외한다. `api/admin/users.py`의
     # `suspend_user()`가 실제로 UPDATE하는 조건과 정확히 같아야 한다.
     restrictable_content_count: int
+    # 지금 정지를 해제하면 정상으로 돌아올 작품 수 — 정지가 내렸고 그 뒤 작품 단위 조치가 없었던 작품.
+    # `api/admin/users.py`의 `unsuspend_user()`가 실제로 UPDATE하는 조건과 정확히 같아야 한다.
+    restorable_content_count: int
     # 레이트리밋 면제 플래그는 상세에만 실린다(목록·필터 없음).
     # 값을 바꾸는 유일한 경로는 `POST /admin/users/{id}/rate-limit-exempt`다.
     rate_limit_exempt: bool
@@ -273,6 +285,10 @@ class AdminUserSuspendRequest(CamelModel):
 
 class AdminUserSuspendResponse(CamelModel):
     restricted_content_count: int
+
+
+class AdminUserUnsuspendResponse(CamelModel):
+    restored_content_count: int
 
 
 class AdminUserUnsuspendRequest(CamelModel):

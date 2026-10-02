@@ -6,7 +6,7 @@ import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.db.models import Inquiry, InquiryCategory, InquiryStatus
+from api.db.models import AssetStatus, Inquiry, InquiryCategory, InquiryStatus
 from factories import _login_as, _make_asset, _make_user, _set_signing_clock
 
 
@@ -55,7 +55,12 @@ async def test_create_inquiry_with_own_attachment_succeeds(
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    asset = await _make_asset(db_session, owner_user_id=user.id, storage_key_prefix="assets/inquiry-attachment/")
+    asset = await _make_asset(
+        db_session,
+        owner_user_id=user.id,
+        storage_key_prefix="assets/inquiry-attachment/",
+        status=AssetStatus.READY,
+    )
     await db_session.commit()
 
     await _login_as(db_client, user.id)
@@ -118,6 +123,29 @@ async def test_create_inquiry_with_other_users_attachment_is_rejected(
     )
     assert resp.status_code == 403
 
+    inquiries = (await db_session.execute(sa.select(Inquiry).where(Inquiry.user_id == user.id))).scalars().all()
+    assert inquiries == []
+
+
+async def test_create_inquiry_with_unfinished_upload_is_rejected(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """업로드가 끝나지 않은 자산은 최종 키에 객체가 없다 — 접수되면 운영자가 여는 첨부 주소가 깨진다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    pending_asset = await _make_asset(
+        db_session, owner_user_id=user.id, storage_key_prefix="assets/inquiry-attachment/"
+    )
+    await db_session.commit()
+
+    await _login_as(db_client, user.id)
+    resp = await db_client.post(
+        "/inquiries",
+        json={"category": "bug", "title": "제목", "body": "본문", "attachmentAssetId": str(pending_asset.id)},
+    )
+
+    assert resp.status_code == 409
     inquiries = (await db_session.execute(sa.select(Inquiry).where(Inquiry.user_id == user.id))).scalars().all()
     assert inquiries == []
 

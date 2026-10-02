@@ -120,5 +120,6 @@ export function toChatRoomState(dto: ChatRoomResponseDto): ChatRoomState {
     personaId: dto.personaId ?? undefined,
     latestVersionAvailable: dto.latestVersionAvailable,
     versionAutoUpgraded: dto.versionAutoUpgraded,
+    contentRestricted: dto.contentRestricted,
   };
 }

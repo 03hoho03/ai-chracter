@@ -332,6 +332,12 @@ async def act_on_report(
     db.add(action_row)
     await db.flush()
 
+    # 작품 단위 조치는 정지 표식을 내린다 — 이제 이 작품의 상태는 이 조치가 정한 것이라 정지 해제가 되돌리면 안 된다.
+    # 이미 정지로 제한인 작품을 다시 제한하면 상태가 그대로라 이 줄 없이는 구분되지 않는다. 신고 반려는 상태를 바꾸지
+    # 않으므로 표식도 두어 해제 때 돌아오게 한다. 상태보다 먼저 내린다 — 제한 해제가 부르는 대화방 갱신 쿼리가 자동
+    # flush 하면서 "정상 + 표식" 을 쓰면 CHECK 에 걸린다.
+    if body.action != ModerationActionType.REJECT:
+        content.restricted_by_suspension = False
     if body.action == ModerationActionType.RESTRICT:
         content.moderation_status = ModerationStatus.RESTRICTED
     elif body.action == ModerationActionType.DELETE:
@@ -462,6 +468,8 @@ async def resolve_appeal(
             assert content is not None
 
             content.moderation_status = ModerationStatus.NORMAL
+            # 정지 표식은 제한 상태에서만 설 수 있다 — 수용으로 정상이 됐으니 내린다.
+            content.restricted_by_suspension = False
             await upgrade_content_chat_rooms_to_latest_version(db, content)
 
             # 작품 상태를 되돌리는 건 이 분기뿐이라 로그도 여기서만

@@ -21,6 +21,7 @@ function buildState(messages: ChatMessage[]): ChatRoomState {
     turnCount: messages.length,
     latestVersionAvailable: false,
     versionAutoUpgraded: false,
+    contentRestricted: false,
   };
 }
 
