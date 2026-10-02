@@ -128,7 +128,8 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
       openKey={openKey}
       title={items.length > 0 ? `${label} ${items.length}` : label}
       summary={items.map((item) => item.name).join(" · ")}
-      isAlwaysOpen={items.length === 0 || hasUnsavedName}
+      isEmpty={items.length === 0}
+      isAlwaysOpen={hasUnsavedName}
       className="min-w-0"
     >
       {items.length > 0 && (
