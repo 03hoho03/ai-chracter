@@ -53,6 +53,10 @@ function baseFormValues(): StoryBuilderFormValues {
         content: "밤에는 늑대 울음소리가 들린다.",
         triggerKeywords: ["밤", "늑대"],
         scope: { kind: "startingSetup", startingSetupId: "setup-1" },
+        name: "늑대 울음",
+        excludeKeywords: ["낮"],
+        stickyTurns: 2,
+        alwaysOn: true,
       },
     ],
     shortcuts: [
@@ -129,6 +133,10 @@ describe("formToServer", () => {
           infoText: "밤에는 늑대 울음소리가 들린다.",
           triggerKeywords: ["밤", "늑대"],
           startingSetupId: "setup-1",
+          name: "늑대 울음",
+          excludeKeywords: ["낮"],
+          stickyTurns: 2,
+          alwaysOn: true,
         },
       ],
       shortcuts: [
@@ -249,6 +257,32 @@ describe("formToServer", () => {
 
     expect(payload.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
     expect(requireFirst(payload.startingSetups).statDefs.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+  });
+
+  it("always sends the four keyword note options, even at their defaults", () => {
+    // 생략하면 서버가 기존 값을 그대로 둔다(옛 화면용 규칙) — 이 화면이 기본값으로 되돌린 것도 저장되려면 늘 보내야 한다.
+    const values = baseFormValues();
+    values.keywordNotes = [
+      { ...requireFirst(values.keywordNotes), name: "", excludeKeywords: [], stickyTurns: 0, alwaysOn: false },
+    ];
+
+    const note = requireFirst(formToServer(values).keywordNotes);
+
+    expect(note).toMatchObject({ name: "", excludeKeywords: [], stickyTurns: 0, alwaysOn: false });
+    expect(Object.keys(note)).toEqual(
+      expect.arrayContaining(["name", "excludeKeywords", "stickyTurns", "alwaysOn"]),
+    );
+  });
+
+  it("sends keyword notes in form array order", () => {
+    const values = baseFormValues();
+    const first = requireFirst(values.keywordNotes);
+    values.keywordNotes = [
+      { ...first, id: "note-b" },
+      { ...first, id: "note-a" },
+    ];
+
+    expect(formToServer(values).keywordNotes.map((note) => note.id)).toEqual(["note-b", "note-a"]);
   });
 
   it("maps a global keyword note scope to a null startingSetupId", () => {

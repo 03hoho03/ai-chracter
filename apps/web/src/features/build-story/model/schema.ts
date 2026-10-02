@@ -162,6 +162,12 @@ export const TRIGGER_KEYWORD_BLANK_MESSAGE = "키워드를 입력해주세요";
 export const TRIGGER_KEYWORD_TOO_LONG_MESSAGE = `키워드는 ${MAX_TRIGGER_KEYWORD_LENGTH}자 이하로 입력해주세요`;
 export const TRIGGER_KEYWORD_LIMIT_MESSAGE = `트리거 키워드는 최대 ${MAX_TRIGGER_KEYWORDS}개까지만 추가할 수 있습니다`;
 export const TRIGGER_KEYWORD_DUPLICATE_MESSAGE = "같은 키워드가 이미 있어요(영문 대소문자는 구분하지 않아요)";
+// 금지 키워드는 트리거 키워드와 같은 개수·길이·정규화 규칙을 쓴다(서버도 같은 검사를 두 목록에 건다).
+export const MAX_EXCLUDE_KEYWORDS = MAX_TRIGGER_KEYWORDS;
+export const EXCLUDE_KEYWORD_LIMIT_MESSAGE = `금지 키워드는 최대 ${MAX_EXCLUDE_KEYWORDS}개까지만 추가할 수 있습니다`;
+export const MAX_KEYWORD_NOTE_NAME_LENGTH = 20;
+export const MAX_KEYWORD_NOTE_STICKY_TURNS = 5;
+export const MAX_ALWAYS_ON_KEYWORD_NOTES = 3;
 
 /**
  * 키워드 중복을 가리는 비교 키. 서버는 NFC 로 맞춘 뒤 파이썬 `casefold()` 로 접어 비교하는데 JS 에는 casefold 가
@@ -174,21 +180,14 @@ export function normalizeKeyword(value: string): string {
   return value.normalize("NFC").toLowerCase().toUpperCase().toLowerCase();
 }
 
-/** scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다. */
-export const keywordNoteSchema = z.object({
-  id: z.string(),
-  content: z
-    .string()
-    .min(1, "정보를 입력해주세요")
-    .refine(
-      (value) => countCharacters(value) <= MAX_KEYWORD_NOTE_CONTENT_LENGTH,
-      `정보는 ${MAX_KEYWORD_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
-    ),
-  // 원소 하나의 위반도 배열 자리에 싣는다 — 화면은 키워드 목록 아래 한 줄로만 오류를 보여 준다.
-  triggerKeywords: z
+/**
+ * 키워드 칩 목록(트리거·금지 공용). 원소 하나의 위반도 배열 자리에 싣는다 — 화면은 키워드 목록 아래 한 줄로만 오류를
+ * 보여 준다. "1개 이상"은 여기 두지 않는다 — 트리거 키워드만, 그것도 상시가 아닌 노트에만 요구한다(노트 스키마).
+ */
+function keywordListSchema(limitMessage: string) {
+  return z
     .array(z.string())
-    .min(1, "트리거 키워드를 1개 이상 추가해주세요")
-    .max(MAX_TRIGGER_KEYWORDS, TRIGGER_KEYWORD_LIMIT_MESSAGE)
+    .max(MAX_TRIGGER_KEYWORDS, limitMessage)
     .superRefine((keywords, ctx) => {
       const seen = new Set<string>();
       for (const keyword of keywords) {
@@ -207,12 +206,60 @@ export const keywordNoteSchema = z.object({
         }
         seen.add(key);
       }
-    }),
-  scope: z.discriminatedUnion("kind", [
-    z.object({ kind: z.literal("global") }),
-    z.object({ kind: z.literal("startingSetup"), startingSetupId: z.string() }),
-  ]),
-});
+    });
+}
+
+/**
+ * scope는 discriminated union, 서버는 nullable startingSetupId FK로 저장한다.
+ *
+ * 상시(`alwaysOn`) 노트는 키워드 없이 매 턴 실리므로 트리거 키워드 1개 이상을 요구하지 않는다. 금지 키워드는 상시
+ * 노트에도 걸린다(금지 키워드가 나온 턴에는 상시 노트도 빠진다). 이름은 목록에서 노트를 알아보는 용도라 AI 에게
+ * 보내지 않는다.
+ */
+export const keywordNoteSchema = z
+  .object({
+    id: z.string(),
+    content: z
+      .string()
+      .min(1, "정보를 입력해주세요")
+      .refine(
+        (value) => countCharacters(value) <= MAX_KEYWORD_NOTE_CONTENT_LENGTH,
+        `정보는 ${MAX_KEYWORD_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
+      ),
+    triggerKeywords: keywordListSchema(TRIGGER_KEYWORD_LIMIT_MESSAGE),
+    scope: z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("global") }),
+      z.object({ kind: z.literal("startingSetup"), startingSetupId: z.string() }),
+    ]),
+    name: z
+      .string()
+      .refine(
+        (value) => countCharacters(value) <= MAX_KEYWORD_NOTE_NAME_LENGTH,
+        `이름은 ${MAX_KEYWORD_NOTE_NAME_LENGTH}자 이하로 입력해주세요`,
+      ),
+    excludeKeywords: keywordListSchema(EXCLUDE_KEYWORD_LIMIT_MESSAGE),
+    stickyTurns: z.number().int().min(0).max(MAX_KEYWORD_NOTE_STICKY_TURNS),
+    alwaysOn: z.boolean(),
+  })
+  .superRefine((note, ctx) => {
+    if (!note.alwaysOn && note.triggerKeywords.length === 0) {
+      ctx.addIssue({ code: "custom", path: ["triggerKeywords"], message: "트리거 키워드를 1개 이상 추가해주세요" });
+    }
+  });
+
+/** "노트 추가"가 넣는 새 노트. 옵션은 서버가 새 노트에 주는 기본값과 같다. */
+export function createKeywordNote(id: string): KeywordNoteValues {
+  return {
+    id,
+    content: "",
+    triggerKeywords: [],
+    scope: { kind: "global" },
+    name: "",
+    excludeKeywords: [],
+    stickyTurns: 0,
+    alwaysOn: false,
+  };
+}
 
 export const shortcutSchema = z.object({
   id: z.string(),
@@ -360,6 +407,15 @@ export const storyBuilderSchema = z.object({
   keywordNotes: z
     .array(keywordNoteSchema)
     .max(MAX_KEYWORD_NOTES, `키워드 노트는 최대 ${MAX_KEYWORD_NOTES}개까지만 추가할 수 있습니다`)
+    // 배열 자리 오류라 키워드북 탭 머리의 한 줄에 보인다.
+    .superRefine((notes, ctx) => {
+      if (notes.filter((note) => note.alwaysOn).length > MAX_ALWAYS_ON_KEYWORD_NOTES) {
+        ctx.addIssue({
+          code: "custom",
+          message: `상시 적용 노트는 최대 ${MAX_ALWAYS_ON_KEYWORD_NOTES}개까지만 켤 수 있습니다`,
+        });
+      }
+    })
     .default([]),
   shortcuts: z.array(shortcutSchema).default([]),
   mediaBook: mediaBookSchema,

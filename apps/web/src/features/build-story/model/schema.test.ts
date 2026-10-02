@@ -236,7 +236,15 @@ describe("keywordNoteSchema", () => {
       content: "주인공은 밤에만 등장한다.",
       triggerKeywords: ["밤"],
       scope: { kind: "global" as const },
+      name: "",
+      excludeKeywords: [],
+      stickyTurns: 0,
+      alwaysOn: false,
     };
+  }
+
+  function issuePaths(result: { success: boolean; error?: { issues: { path: PropertyKey[] }[] } }) {
+    return result.error?.issues.map((issue) => issue.path) ?? [];
   }
 
   it("requires content and at least one triggerKeyword", () => {
@@ -312,6 +320,78 @@ describe("keywordNoteSchema", () => {
     // 배열 자리에 실어야 화면의 키워드 오류 한 줄에 보인다(원소 자리 오류는 표시할 곳이 없다).
     expect(result.success ? [] : result.error.issues.map((issue) => issue.path)).toContainEqual(["triggerKeywords"]);
   });
+
+  it("puts the missing-keyword error on triggerKeywords for a note that is not always on", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), triggerKeywords: [] });
+
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["triggerKeywords"]);
+  });
+
+  it("lets an always-on note have no trigger keywords", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: [] });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("still checks trigger keyword limits on an always-on note", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, triggerKeywords: ["USB", "usb"] });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("accepts exclude keywords on an always-on note", () => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), alwaysOn: true, excludeKeywords: ["회상"] });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("accepts up to 10 exclude keywords and rejects the 11th on excludeKeywords", () => {
+    const keywords = (count: number) => Array.from({ length: count }, (_, i) => `금지${i}`);
+    const over = keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(11) });
+
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: keywords(10) }).success).toBe(true);
+    expect(over.success).toBe(false);
+    expect(issuePaths(over)).toContainEqual(["excludeKeywords"]);
+  });
+
+  it.each([
+    ["longer than 20 characters", ["가".repeat(21)]],
+    ["blank", ["  "]],
+    ["a duplicate after case folding", ["USB", "usb"]],
+    ["a duplicate after Unicode composition", ["한밤", "한밤".normalize("NFD")]],
+  ])("rejects an exclude keyword that is %s", (_, excludeKeywords) => {
+    const result = keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords });
+
+    expect(result.success).toBe(false);
+    expect(issuePaths(result)).toContainEqual(["excludeKeywords"]);
+  });
+
+  it("accepts a 20-character exclude keyword", () => {
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), excludeKeywords: ["가".repeat(20)] }).success).toBe(true);
+  });
+
+  it("accepts a name up to 20 characters and rejects one character more", () => {
+    const atLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "가".repeat(20) });
+    const overLimit = keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "가".repeat(21) });
+
+    expect(atLimit.success).toBe(true);
+    expect(overLimit.success).toBe(false);
+    expect(issuePaths(overLimit)).toContainEqual(["name"]);
+  });
+
+  it("counts name length in code points like the server", () => {
+    // 이모지 하나는 JS length 2, 코드 포인트 1 — 서버(파이썬 len)는 20자로 센다.
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), name: "😀".repeat(20) }).success).toBe(true);
+  });
+
+  it.each([0, 5])("accepts stickyTurns %i", (stickyTurns) => {
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(true);
+  });
+
+  it.each([-1, 6, 1.5])("rejects stickyTurns %s", (stickyTurns) => {
+    expect(keywordNoteSchema.safeParse({ ...validKeywordNote(), stickyTurns }).success).toBe(false);
+  });
 });
 
 describe("normalizeKeyword", () => {
@@ -331,12 +411,29 @@ describe("storyBuilderSchema keywordNotes", () => {
       content: `표지 ${i}`,
       triggerKeywords: [`키워드${i}`],
       scope: { kind: "global" as const },
+      name: "",
+      excludeKeywords: [],
+      stickyTurns: 0,
+      alwaysOn: false,
     }));
+  }
+
+  function withAlwaysOn(count: number) {
+    return notes(5).map((note, i) => ({ ...note, alwaysOn: i < count }));
   }
 
   it("accepts up to 50 keyword notes and rejects the 51st", () => {
     expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(50) }).success).toBe(true);
     expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: notes(51) }).success).toBe(false);
+  });
+
+  it("accepts three always-on notes and rejects a fourth on the keywordNotes array", () => {
+    const four = storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(4) });
+
+    expect(storyBuilderSchema.safeParse({ ...validFullForm(), keywordNotes: withAlwaysOn(3) }).success).toBe(true);
+    expect(four.success).toBe(false);
+    // 배열 자리 오류라 키워드북 탭 머리의 한 줄(`errors.keywordNotes` 또는 `.root`)에 보인다.
+    expect(four.error?.issues.map((issue) => issue.path)).toContainEqual(["keywordNotes"]);
   });
 });
 

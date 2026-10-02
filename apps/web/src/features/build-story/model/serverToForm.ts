@@ -86,7 +86,8 @@ function fromApiDevelopmentExample(dto: DevelopmentExampleItem): DevelopmentExam
   return { userLine: dto.userLine, assistantLine: dto.assistantLine };
 }
 
-// startingSetupId === null이면 global, 아니면 startingSetup 스코프로 역변환한다.
+// startingSetupId === null이면 global, 아니면 startingSetup 스코프로 역변환한다. 옵션 넷은 생성 타입에서 선택 필드라
+// (서버는 늘 채워 보낸다) 빠지면 새 노트와 같은 기본값으로 채운다.
 function fromApiKeywordNote(note: KeywordNoteDraftItem): KeywordNoteValues {
   return {
     id: note.id,
@@ -96,6 +97,10 @@ function fromApiKeywordNote(note: KeywordNoteDraftItem): KeywordNoteValues {
       note.startingSetupId === null
         ? { kind: "global" }
         : { kind: "startingSetup", startingSetupId: note.startingSetupId },
+    name: note.name ?? "",
+    excludeKeywords: note.excludeKeywords ?? [],
+    stickyTurns: note.stickyTurns ?? 0,
+    alwaysOn: note.alwaysOn ?? false,
   };
 }
 

@@ -18,7 +18,7 @@ type StoryDraftPayload = components["schemas"]["StoryDraftPayload"];
 type DevelopmentExampleItem = components["schemas"]["DevelopmentExampleItem"];
 type StartingSetupDraftItem = components["schemas"]["StartingSetupDraftItem"];
 type StatDefDraftItem = components["schemas"]["StatDefDraftItem"];
-type KeywordNoteDraftItem = components["schemas"]["KeywordNoteDraftItem"];
+type KeywordNoteDraftInput = components["schemas"]["KeywordNoteDraftInput"];
 type EndingDraftItem = components["schemas"]["EndingDraftItem"];
 type EndingRuleDraftItem = components["schemas"]["EndingRuleDraftItem"];
 type EndingRuleGroupDraftItem = components["schemas"]["EndingRuleGroupDraftItem"];
@@ -93,13 +93,19 @@ function toApiDevelopmentExample(item: DevelopmentExampleValues): DevelopmentExa
   return { userLine: item.userLine, assistantLine: item.assistantLine };
 }
 
-// scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다.
-function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftItem {
+// scope.kind === 'global'이면 null, 아니면 참조한 시작설정 id로 변환한다. 옵션 넷(이름·금지 키워드·유지 턴·상시)은
+// 기본값이어도 늘 보낸다 — 서버는 빠진 옵션을 "기존 값 유지"로 읽으므로(옵션을 모르는 옛 화면용) 빼면 이 화면에서
+// 기본값으로 되돌린 것이 저장되지 않는다. 순서는 배열 위치다.
+function toApiKeywordNote(note: KeywordNoteValues): KeywordNoteDraftInput {
   return {
     id: note.id,
     infoText: note.content,
     triggerKeywords: note.triggerKeywords,
     startingSetupId: note.scope.kind === "global" ? null : note.scope.startingSetupId,
+    name: note.name,
+    excludeKeywords: note.excludeKeywords,
+    stickyTurns: note.stickyTurns,
+    alwaysOn: note.alwaysOn,
   };
 }
 

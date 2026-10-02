@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 
 import { reconcileKeywordNotesOnStartingSetupRemoval } from "./reconcileKeywordNotes";
-import type { KeywordNoteValues } from "./schema";
+import { createKeywordNote, type KeywordNoteValues } from "./schema";
 
 function globalNote(id: string): KeywordNoteValues {
-  return { id, content: "글로벌 노트", triggerKeywords: ["항상"], scope: { kind: "global" } };
+  return { ...createKeywordNote(id), content: "글로벌 노트", triggerKeywords: ["항상"] };
 }
 
 function scopedNote(id: string, startingSetupId: string): KeywordNoteValues {
   return {
-    id,
+    ...createKeywordNote(id),
     content: "설정 전용 노트",
     triggerKeywords: ["밤"],
     scope: { kind: "startingSetup", startingSetupId },
@@ -20,7 +20,7 @@ describe("reconcileKeywordNotesOnStartingSetupRemoval", () => {
   it("converts a note scoped to the removed starting setup into a global note", () => {
     const result = reconcileKeywordNotesOnStartingSetupRemoval([scopedNote("note-1", "setup-1")], "setup-1");
 
-    expect(result).toEqual([{ id: "note-1", content: "설정 전용 노트", triggerKeywords: ["밤"], scope: { kind: "global" } }]);
+    expect(result).toEqual([{ ...scopedNote("note-1", "setup-1"), scope: { kind: "global" } }]);
   });
 
   it("leaves notes scoped to a different starting setup untouched", () => {
