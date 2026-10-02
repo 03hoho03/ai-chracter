@@ -5,7 +5,8 @@
 
 통과 기준(판정 종류 × 후보 설정):
 - 스탯·그림·엔딩 — 후보와 현행의 일치율이 현행 자기 반복 일치율보다 `margin_pp` 넘게 낮지 않고, 구조화 실패가 0.
-- 발행 심사 — 설계 정답과 다른 판정이 한 번도 없고, 구조화 실패가 0.
+  스탯은 전체 단위와 "변화 기대 단위"(설계 정답이 0 이 아닌 단위) 두 열 모두에 같은 폭을 건다.
+- 발행 심사 — 설계 정답과 다른 판정이 한 번도 없고, 구조화 실패와 호출 실패가 0.
 
 두 일치율은 같은 추정 방식으로 잰다 — 현행 자기 반복은 현행 회차끼리의 모든 쌍, 후보는 후보 회차 × 현행 회차의
 모든 쌍에서 단위별로 같은 값을 낸 비율이다. 후보를 현행 다수결과 비교하면 다수결이 회차 잡음을 걸러 준 값과 견주게 돼
@@ -83,11 +84,12 @@ def _expected_units(record: dict[str, Any]) -> dict[str, Hashable]:
     return {record["input_id"]: expected}
 
 
-def _by_rep(records: Iterable[dict[str, Any]]) -> dict[int, dict[str, Hashable]]:
-    reps: dict[int, dict[str, Hashable]] = defaultdict(dict)
+def _by_rep(records: Iterable[dict[str, Any]]) -> dict[tuple[str, int], dict[str, Hashable]]:
+    # 회차는 실행마다 0 부터 센다 — 실행을 나눠 돌린 파일을 합쳐도 회차가 서로 덮어쓰지 않게 실행 id 와 묶는다.
+    reps: dict[tuple[str, int], dict[str, Hashable]] = defaultdict(dict)
     for record in records:
         if record["ok"]:
-            reps[record["rep"]].update(_units(record))
+            reps[(record.get("run_id", ""), record["rep"])].update(_units(record))
     return reps
 
 
@@ -104,7 +106,7 @@ def _pair_rate(
     return same / total if total else None
 
 
-def _majority(reps: dict[int, dict[str, Hashable]]) -> dict[str, Hashable]:
+def _majority(reps: dict[tuple[str, int], dict[str, Hashable]]) -> dict[str, Hashable]:
     votes: dict[str, Counter[Hashable]] = defaultdict(Counter)
     for units in reps.values():
         for unit, value in units.items():
@@ -144,29 +146,44 @@ def _percentile(values: list[float], q: float) -> float | None:
     return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
+def _within(candidate: float | None, reference: float | None, margin_pp: float) -> bool:
+    if candidate is None or reference is None:
+        return False
+    return candidate * 100 >= reference * 100 - margin_pp
+
+
 def analyze(records: list[dict[str, Any]], *, baseline: str, margin_pp: float) -> Report:
     records = [r for r in records if r.get("kind") in KIND_ORDER]
     grouped: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
     for record in records:
         grouped[(record["kind"], record["config"])].append(record)
 
+    # 스탯에서 정답이 0 이 아닌 단위 — 장면에 없는 인물의 0 이 대부분이라 전체 일치율만 보면 변화 판정의 차이가 묽어진다.
+    nontrivial_units = {
+        unit
+        for record in records
+        if record["kind"] == "stat"
+        for unit, value in _expected_units(record).items()
+        if value != "0"
+    }
     self_agreement: dict[str, float | None] = {}
-    baseline_reps: dict[str, dict[int, dict[str, Hashable]]] = {}
+    self_nontrivial: float | None = None
+    baseline_reps: dict[str, dict[tuple[str, int], dict[str, Hashable]]] = {}
     for kind in KIND_ORDER:
         reps = _by_rep(grouped.get((kind, baseline), []))
         baseline_reps[kind] = reps
         self_agreement[kind] = _pair_rate((reps[a], reps[b]) for a, b in combinations(sorted(reps), 2))
+        if kind == "stat":
+            self_nontrivial = _pair_rate(
+                ((reps[a], reps[b]) for a, b in combinations(sorted(reps), 2)), nontrivial_units
+            )
 
     rows: dict[tuple[str, str], Row] = {}
     for (kind, config), group in grouped.items():
         reps = _by_rep(group)
         base = baseline_reps[kind]
         is_baseline = config == baseline
-        nontrivial = (
-            {unit for record in group for unit, value in _expected_units(record).items() if value != "0"}
-            if kind == "stat"
-            else None
-        )
+        nontrivial = nontrivial_units if kind == "stat" else None
         if is_baseline:
             cross = self_agreement[kind]
             nontrivial_cross = _pair_rate(((base[a], base[b]) for a, b in combinations(sorted(base), 2)), nontrivial)
@@ -214,11 +231,14 @@ def analyze(records: list[dict[str, Any]], *, baseline: str, margin_pp: float) -
         if is_baseline:
             passes = None
         elif kind == "publish":
-            passes = structural == 0 and mismatches == 0
+            # 호출이 실패해 판정이 없는 건 불일치 0 이 아니라 기준 미충족이다 — 운영 발행은 심사 실패를 거부로 막는다.
+            passes = structural == 0 and mismatches == 0 and other == 0 and judged > 0
         elif cross is None or self_agreement[kind] is None:
             passes = None
         else:
-            passes = structural == 0 and cross * 100 >= (self_agreement[kind] or 0) * 100 - margin_pp
+            passes = structural == 0 and _within(cross, self_agreement[kind], margin_pp)
+            if kind == "stat":
+                passes = passes and _within(nontrivial_cross, self_nontrivial, margin_pp)
 
         rows[(kind, config)] = Row(
             kind=kind,

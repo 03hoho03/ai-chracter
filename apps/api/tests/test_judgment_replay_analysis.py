@@ -96,3 +96,35 @@ def test_units_without_a_strict_baseline_majority_are_left_out_of_the_majority_r
     report = analysis.analyze(records, baseline="3.5-default", margin_pp=5.0)
     # i1 은 다수결이 없어 빠지고(첫 표 A 로 채우면 후보 A 와 맞아 50% 가 된다), i2 만 남는다(후보 B ≠ 다수결 A).
     assert report.rows[("image", "3.1-off")].majority_agreement == pytest.approx(0.0)
+
+
+def test_stat_gate_also_holds_on_units_expected_to_change() -> None:
+    """정답 0 단위가 대부분이면 전체 일치율은 거의 안 떨어진다 — 변화 기대 단위에서 반이 틀려도 전체는 3%p 만 낮다."""
+    zeros = {f"z{i}": "0" for i in range(30)}
+    expected = {**zeros, "a": "+", "b": "-"}
+    records = [_rec("stat", "s1", "3.5-default", rep, {"directions": expected}, expected) for rep in range(2)]
+    records.append(_rec("stat", "s1", "3.1-off", 0, {"directions": {**zeros, "a": "+", "b": "0"}}, expected))
+    row = analysis.analyze(records, baseline="3.5-default", margin_pp=5.0).rows[("stat", "3.1-off")]
+    assert row.cross_agreement == pytest.approx(31 / 32)
+    assert row.nontrivial_cross_agreement == pytest.approx(0.5)
+    assert row.passes is False
+
+
+def test_publish_gate_fails_when_calls_failed_instead_of_judging() -> None:
+    records = [
+        _rec("publish", "p1", "3.5-default", 0, {"passed": True, "reason": None}, True),
+        {**_rec("publish", "p1", "3.1-off", 0, None, True, ok=False), "error_type": "rate_limit"},
+    ]
+    row = analysis.analyze(records, baseline="3.5-default", margin_pp=5.0).rows[("publish", "3.1-off")]
+    assert row.label_mismatches == 0
+    assert row.passes is False
+
+
+def test_runs_split_across_files_keep_their_reps_apart() -> None:
+    """회차는 실행마다 0 부터라, 실행 id 로 묶지 않으면 나눠 돌린 두 실행의 회차 0 이 서로 덮어써 쌍이 사라진다."""
+    records = [
+        {**_rec("ending", "e1", "3.5-default", 0, {"triggered": value}, True), "run_id": run_id}
+        for run_id, value in (("a", True), ("b", False))
+    ]
+    report = analysis.analyze(records, baseline="3.5-default", margin_pp=5.0)
+    assert report.self_agreement["ending"] == pytest.approx(0.0)

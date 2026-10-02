@@ -117,6 +117,9 @@ def install_usage_capture(client: GeminiLLMClient) -> None:
             slot["thinking_config_sent"] = thinking is not None
             slot["sent_thinking_budget"] = getattr(thinking, "thinking_budget", None)
             slot["tokens"] = {key: getattr(usage, attr, None) for key, attr in _TOKEN_FIELDS.items()}
+            candidates = getattr(response, "candidates", None) or []
+            reason = getattr(candidates[0], "finish_reason", None) if candidates else None
+            slot["finish_reason"] = getattr(reason, "name", reason)
             try:
                 slot["raw_text"] = response.text
             except Exception:
@@ -234,6 +237,7 @@ async def _replay_once(
     }
     if exc is not None:
         record["raw_text"] = slot.get("raw_text")
+        record["finish_reason"] = slot.get("finish_reason")
     return record
 
 
@@ -241,6 +245,12 @@ async def _replay_once(
 class RunResult:
     calls: int
     stopped_by_limit: bool
+    # 쿼터·네트워크 실패가 연달아 나서 멈췄으면 그 마지막 실패 종류.
+    stopped_by_errors: str | None = None
+
+
+# 모델 응답이 아니라 호출 자체가 막힌 실패 — 연달아 나면 쿼터 소진·장애라 남은 호출을 전부 같은 실패로 태운다.
+_TRANSPORT_ERRORS = frozenset({"api", "rate_limit", "unexpected"})
 
 
 async def run_replay(
@@ -254,11 +264,15 @@ async def run_replay(
     sink: Sink,
     apply_config: Callable[[ReplayConfig], None] = apply_settings,
     run_id: str = "",
+    max_consecutive_errors: int = 5,
 ) -> RunResult:
     """설정 순서대로, 설정 안에서는 회차 순서대로(회차 0 의 전 입력 → 회차 1 …) 부른다 — 상한에 걸려 멈춰도 앞 설정·앞
-    회차가 온전히 남는다. 상한을 넘는 호출은 보내지 않고 멈춘다. 실패한 호출도 한 줄로 남기고 계속한다."""
+    회차가 온전히 남는다. 상한을 넘는 호출은 보내지 않고 멈춘다. 실패한 호출도 한 줄로 남기고 계속하되, 쿼터·네트워크
+    실패가 `max_consecutive_errors` 번 연달아 나면 멈춘다(운영과 같은 키에 헛호출을 더 얹지 않는다)."""
     stopped = False
     calls = 0
+    consecutive_errors = 0
+    error_stop: str | None = None
     for config in configs:
         if stopped:
             break
@@ -271,17 +285,26 @@ async def run_replay(
         )
 
         async def worker(config: ReplayConfig = config, jobs: deque[tuple[ReplayInput, int]] = jobs) -> None:
-            nonlocal stopped, calls
-            while jobs and not stopped:
+            nonlocal stopped, calls, consecutive_errors, error_stop
+            while jobs and not stopped and error_stop is None:
                 item, rep = jobs.popleft()
                 if not budget.take():
                     stopped = True
                     return
                 calls += 1
-                sink(await _replay_once(client, item, config, rep, run_id))
+                record = await _replay_once(client, item, config, rep, run_id)
+                sink(record)
+                if record["error_type"] in _TRANSPORT_ERRORS:
+                    consecutive_errors += 1
+                    if consecutive_errors >= max_consecutive_errors:
+                        error_stop = record["error_type"]
+                else:
+                    consecutive_errors = 0
 
         await asyncio.gather(*(worker() for _ in range(max(1, concurrency))))
-    return RunResult(calls=calls, stopped_by_limit=stopped)
+        if error_stop is not None:
+            break
+    return RunResult(calls=calls, stopped_by_limit=stopped, stopped_by_errors=error_stop)
 
 
 def _probe_image() -> tuple[bytes, str]:

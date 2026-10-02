@@ -4,12 +4,12 @@
     # 1) 호출 없이 렌더만: 판정별 프롬프트 글자 수·예상 호출 수·예상 원가
     uv run --env-file .env python scripts/replay_judgments.py --prompt-snapshot SNAPSHOT.json --dry-run
     # 2) 사고 끔(thinking_budget=0)이 모델마다 받아들여지는지 — 모델당 3회
-    REDIS_URL=redis://localhost:6379/7 uv run --env-file .env python scripts/replay_judgments.py \\
+    REDIS_URL=redis://localhost:6388/7 uv run --env-file .env python scripts/replay_judgments.py \\
         --prompt-snapshot SNAPSHOT.json --probe-thinking --limit-calls 6
     # 3) 측정
-    REDIS_URL=redis://localhost:6379/7 uv run --env-file .env python scripts/replay_judgments.py \\
+    REDIS_URL=redis://localhost:6388/7 uv run --env-file .env python scripts/replay_judgments.py \\
         --prompt-snapshot SNAPSHOT.json --images-dir <그림이 있는 체크아웃>/apps/api/scripts/seed_content/images \\
-        --limit-calls 540 --concurrency 2 --out probe-runs/judgment-replay.jsonl
+        --limit-calls 536 --concurrency 2 --out probe-runs/judgment-replay.jsonl
 
 `--prompt-snapshot` 은 운영 활성 세트의 판정·심사 채널 섹션을 떠 둔 JSON 이다(모양은 `judgment_replay/prompts.py`).
 렌더는 이 문안으로만 한다 — 저장소 마이그레이션 문안은 운영 게시본과 다를 수 있다.
@@ -187,7 +187,13 @@ async def _run(args: argparse.Namespace) -> int:
                 sink=sink,
                 run_id=run_id,
             )
-    status = "상한에 걸려 멈춤" if result.stopped_by_limit else "완료"
+    status = (
+        f"{result.stopped_by_errors} 실패가 연달아 나서 멈춤"
+        if result.stopped_by_errors
+        else "상한에 걸려 멈춤"
+        if result.stopped_by_limit
+        else "완료"
+    )
     print(f"{status}: 호출 {result.calls}회 (상한 {args.limit_calls}) → {out}")
     return 0
 

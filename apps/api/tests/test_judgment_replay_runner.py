@@ -6,7 +6,7 @@ from typing import Any
 import pytest
 
 from api.chat.prompt_builder import EndingJudgmentResult
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMRateLimitError
 from judgment_replay import scenes
 from judgment_replay.runner import CONFIGS, CallBudget, run_replay
 
@@ -105,3 +105,34 @@ async def test_failed_call_is_recorded_and_the_run_continues() -> None:
     assert [r["ok"] for r in records] == [True, False, True]
     assert records[1]["error_type"] == "parse"
     assert records[0]["derived"] == {"triggered": False}
+
+
+async def test_consecutive_transport_failures_stop_the_run() -> None:
+    """쿼터가 막히면 남은 호출이 전부 같은 실패로 타 버린다 — 연달아 다섯 번이면 멈춘다."""
+
+    class _Exhausted(_CountingClient):
+        async def generate_structured(
+            self,
+            prompt: str,
+            response_schema: Any,
+            images: list[tuple[bytes, str]] | None = None,
+            *,
+            usage: LLMCallContext,
+        ) -> Any:
+            self.calls += 1
+            raise LLMRateLimitError("Gemini generate_structured() call failed: 429")
+
+    client = _Exhausted()
+    records: list[dict[str, Any]] = []
+    result = await run_replay(
+        client,
+        _ending_inputs(10),
+        [CONFIGS["3.5-default"], CONFIGS["3.1-off"]],
+        reps={"ending": 2},
+        budget=CallBudget(40),
+        concurrency=1,
+        sink=records.append,
+        apply_config=lambda config: None,
+    )
+    assert client.calls == 5
+    assert result.stopped_by_errors == "rate_limit"
