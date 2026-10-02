@@ -121,6 +121,35 @@ async def test_complete_writes_the_checked_bytes_to_the_final_key_and_removes_th
     assert _object_bytes(_signed_key(upload_url)) is None
 
 
+async def test_complete_stores_the_type_of_the_checked_image_even_when_the_key_has_no_extension(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """운영 이미지에는 시스템 MIME 표가 없어 WebP 에 확장자를 못 붙이고 키에서 타입을 되살릴 수도 없다. 그래도 최종
+    객체는 검사한 바이트의 실제 형식으로 저장돼야 한다 — 새 탭에서 원본을 열면 다운로드가 아니라 그림이 떠야 한다."""
+    monkeypatch.setattr("mimetypes.guess_extension", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("mimetypes.guess_type", lambda *_args, **_kwargs: (None, None))
+    await _logged_in_user(db_client, db_session)
+    resp = await db_client.post(
+        "/assets/presigned-upload", json={"contentType": "image/webp", "purpose": "situational-image"}
+    )
+    assert resp.status_code == 201
+    asset_id, upload_url = resp.json()["assetId"], resp.json()["uploadUrl"]
+    output = io.BytesIO()
+    Image.new("RGB", (64, 64), color=(120, 40, 200)).save(output, format="WEBP")
+    _put_via_presigned_url(upload_url, output.getvalue(), content_type="image/webp")
+
+    assert (await db_client.post(f"/assets/{asset_id}/complete")).status_code == 200
+
+    asset = await db_session.get(Asset, uuid.UUID(asset_id))
+    assert asset is not None
+    assert asset.storage_key == f"assets/situational-image/{asset_id}"
+    final = _s3().head_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
+    assert final["ContentType"] == "image/webp"
+
+
 async def test_reusing_the_upload_url_after_complete_cannot_change_the_stored_image(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:

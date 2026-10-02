@@ -44,6 +44,15 @@ def read_image_size(image_bytes: bytes) -> tuple[int, int]:
         return image.size
 
 
+def read_image_content_type(image_bytes: bytes) -> str | None:
+    """Pillow 가 바이트에서 읽은 형식의 MIME 타입(`image/webp` 등). Pillow 가 MIME 을 모르는 형식이면 `None`.
+    헤더만 읽는다. 그림이 아니면 `read_image_size` 처럼 `OSError` 를 낸다."""
+    from PIL import Image
+
+    with Image.open(io.BytesIO(image_bytes)) as image:
+        return image.get_format_mimetype()
+
+
 def generate_thumbnail(image_bytes: bytes) -> bytes:
     """CPU-bound (Pillow) — run via `run_in_threadpool`.
 

@@ -1,5 +1,4 @@
 import logging
-import mimetypes
 import uuid
 from collections.abc import Sequence
 
@@ -14,6 +13,7 @@ from api.assets.blur import create_blurred_asset
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     generate_thumbnail,
+    read_image_content_type,
     read_image_size,
 )
 from api.assets.schemas import (
@@ -159,6 +159,7 @@ async def complete_asset_upload(
     try:
         thumbnail_bytes = await run_in_threadpool(generate_thumbnail, original_bytes)
         width, height = await run_in_threadpool(read_image_size, original_bytes)
+        detected_content_type = await run_in_threadpool(read_image_content_type, original_bytes)
     except (OSError, ValueError) as exc:
         # Pillow can't decode the upload — deterministic failure, so clean up
         # like the oversize path instead of leaving an unretryable PENDING row.
@@ -167,9 +168,10 @@ async def complete_asset_upload(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Uploaded object is not a decodable image",
         ) from exc
-    # 최종 키의 Content-Type 은 키의 확장자에서 되살린다. 확장자는 서명 때 받은 content_type 에서
-    # 만들어졌으므로(`build_object_key`) 서명된 업로드의 Content-Type 과 같다.
-    content_type = mimetypes.guess_type(asset.storage_key)[0] or "application/octet-stream"
+    # 최종 키의 Content-Type 은 검사한 바이트의 실제 형식에서 정한다. 키의 확장자로는 되살릴 수 없다 — 시스템 MIME
+    # 표가 없는 운영 이미지에서는 WebP 키에 확장자가 붙지 않아 `application/octet-stream` 이 되고, 원본을 새 탭에서
+    # 열면 그림 대신 다운로드가 된다.
+    content_type = detected_content_type or "application/octet-stream"
     await run_in_threadpool(upload_object, asset.storage_key, original_bytes, content_type)
     await run_in_threadpool(
         upload_object,
