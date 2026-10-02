@@ -165,8 +165,70 @@ async def test_generate_structured_raises_when_unparseable(monkeypatch: pytest.M
 
     client = _make_client(monkeypatch, generate_content=generate_content)
 
-    with pytest.raises(LLMClientError):
+    with pytest.raises(LLMClientError) as exc_info:
         await client.generate_structured("judge this", _JudgmentResult, usage=_USAGE)
+
+    # 차단 표시가 없는 파싱 실패는 평범한 실패다 — 하위 타입(정책 차단)으로 올라가면 발행이 그것을 안전 기준
+    # 거부로 안내해 버린다.
+    assert type(exc_info.value) is LLMClientError
+
+
+@pytest.mark.parametrize(
+    ("prompt_feedback", "candidates"),
+    [
+        pytest.param(
+            genai_types.GenerateContentResponsePromptFeedback(block_reason=genai_types.BlockedReason.IMAGE_SAFETY),
+            None,
+            id="blocked-prompt",
+        ),
+        pytest.param(
+            None,
+            [genai_types.Candidate(finish_reason=genai_types.FinishReason.PROHIBITED_CONTENT)],
+            id="blocked-output",
+        ),
+    ],
+)
+async def test_generate_structured_raises_policy_violation_when_gemini_blocks(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    prompt_feedback: object,
+    candidates: object,
+) -> None:
+    """안전 차단은 응답에 본문이 없어 파싱 실패로 보인다. 차단 표시가 있으면 정책 위반으로 갈라 올려야 발행이
+    작가에게 이의제기할 수 있는 거부로 돌려줄 수 있다. 토큰은 이미 과금됐으므로 사용량은 그대로 한 줄 찍는다."""
+    caplog.set_level(logging.WARNING, logger="api.llm.gemini")
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            parsed=None, prompt_feedback=prompt_feedback, candidates=candidates, usage_metadata=_usage(9, 0, None, 9)
+        )
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    with pytest.raises(LLMPolicyViolationError):
+        await client.generate_structured("judge this", _JudgmentResult, usage=_CTX)
+
+    assert len(_usage_records(caplog)) == 1
+
+
+async def test_generate_structured_returns_parsed_result_even_with_block_markers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """차단 표시는 파싱에 실패했을 때만 본다 — 판정·심사가 파싱해 낸 결과는 지금처럼 그대로 돌려준다."""
+    expected = _JudgmentResult(triggered=False, ending_id=None)
+
+    async def generate_content(**_: Any) -> SimpleNamespace:
+        return SimpleNamespace(
+            parsed=expected,
+            prompt_feedback=genai_types.GenerateContentResponsePromptFeedback(
+                block_reason=genai_types.BlockedReason.SAFETY
+            ),
+            candidates=[genai_types.Candidate(finish_reason=genai_types.FinishReason.SAFETY)],
+        )
+
+    client = _make_client(monkeypatch, generate_content=generate_content)
+
+    assert await client.generate_structured("judge this", _JudgmentResult, usage=_USAGE) == expected
 
 
 async def test_generate_structured_wraps_api_error(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -482,8 +482,15 @@ async def test_send_message_repeated_match_does_not_duplicate_exposure_row(
     assert exposures[0].image_entity_id == image.entity_id
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("429 RESOURCE_EXHAUSTED"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
     """상황별 이미지 매칭 판단이 실패해도(429 등) 예외가 SSE 제너레이터 밖으로 새면 안 된다 —
     새면 ASGI 태스크 취소로 DB 커넥션이 망가진 채 풀로 돌아가 무관한 다음 요청이 500이 된다.
@@ -501,7 +508,7 @@ async def test_send_message_image_judgment_llm_failure_still_completes_the_turn(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_room_via_api(db_client, content.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안녕"], structured_error=LLMClientError("429 RESOURCE_EXHAUSTED"))
+    fake = _FakeLLMClient(tokens=["안녕"], structured_error=judgment_error)
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "안녕"})
