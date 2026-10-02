@@ -1234,10 +1234,12 @@ async def test_direct_action_during_suspension_takes_the_content_out_of_the_rest
     body: dict[str, str],
     expected: tuple[ModerationStatus, bool],
 ) -> None:
+    """정지 대상 작품은 현실에선 발행본이 있다 — 발행본이 있어야 제한 해제가 대화방을 최신 버전으로 올리는 쿼리를
+    실제로 돌리고, 그 쿼리의 자동 flush 가 상태와 정지 표식이 어긋난 중간 값을 쓰지 않는지가 드러난다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
-    content = await _make_content(db_session, creator_user_id=user.id)
+    content = await _make_content(db_session, creator_user_id=user.id, name="정지된 작가의 작품")
     await db_session.commit()
     admin_payload = await _create_admin(db_session)
     await db_session.commit()
@@ -1245,6 +1247,45 @@ async def test_direct_action_during_suspension_takes_the_content_out_of_the_rest
     await _suspend(db_client, user.id)
 
     resp = await db_client.post(f"/admin/contents/{content.id}/action", json=body)
+    assert resp.status_code == 200
+    assert await _status_and_flag(db_session, content) == expected
+
+    assert await _unsuspend(db_client, user.id) == 0
+    assert await _status_and_flag(db_session, content) == expected
+
+
+@pytest.mark.parametrize(
+    ("body", "expected"),
+    [
+        pytest.param({"action": "restrict"}, (ModerationStatus.RESTRICTED, False), id="restrict"),
+        pytest.param({"action": "delete"}, (ModerationStatus.DELETED, False), id="delete"),
+        pytest.param(
+            {"action": "lift-restriction", "adminComment": "풀어 줍니다"},
+            (ModerationStatus.NORMAL, False),
+            id="lift",
+        ),
+    ],
+)
+async def test_report_action_during_suspension_on_a_published_content_takes_it_out_of_the_restore(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    body: dict[str, str],
+    expected: tuple[ModerationStatus, bool],
+) -> None:
+    """신고 처리 경로도 직접 조치와 같다 — 발행본이 있는 작품이라 제한 해제가 대화방 갱신 쿼리까지 돈다."""
+    user = _make_user()
+    reporter = _make_user()
+    db_session.add_all([user, reporter])
+    await db_session.flush()
+    content = await _make_content(db_session, creator_user_id=user.id, name="정지된 작가의 작품")
+    report = await _make_report(db_session, reporter_user_id=reporter.id, content_id=content.id)
+    await db_session.commit()
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+    await _suspend(db_client, user.id)
+
+    resp = await db_client.post(f"/admin/reports/{report.id}/action", json=body)
     assert resp.status_code == 200
     assert await _status_and_flag(db_session, content) == expected
 
