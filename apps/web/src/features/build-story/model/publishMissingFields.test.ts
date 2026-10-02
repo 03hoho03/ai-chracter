@@ -32,4 +32,19 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
       expect(tabIdsCovering(STORY_MISSING_FIELD_FORM_PATH[key] ?? "")).toEqual(["keywordNote"]);
     }
   });
+
+  it("엔딩 조건이 지워진 스탯을 가리킨다는 키는 라벨이 있고 엔딩 탭 프리픽스 아래로 간다", () => {
+    expect(STORY_MISSING_FIELD_LABELS["endings.statRules"]).toMatch(/엔딩.*스탯/);
+
+    const formPath = STORY_MISSING_FIELD_FORM_PATH["endings.statRules"] ?? "";
+    const endingTab = STORY_TABS.find((tab) => tab.id === "ending");
+    const [prefix] = endingTab?.fields ?? [];
+    const prefixSegments = (prefix ?? "").split(".");
+    const pathSegments = formPath.split(".");
+    // 엔딩 탭 프리픽스(`startingSetups.*.endings`)와 세그먼트 단위로 맞아야 탭 이동이 엔딩 탭으로 간다.
+    expect(pathSegments.length).toBe(prefixSegments.length);
+    prefixSegments.forEach((segment, index) => {
+      if (segment !== "*") expect(pathSegments[index]).toBe(segment);
+    });
+  });
 });

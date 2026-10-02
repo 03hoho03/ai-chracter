@@ -8,7 +8,7 @@ import { useState } from "react";
 import { Controller, useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import { STAT_ICON_OPTIONS } from "@/entities/chat-room";
-import type { StoryBuilderFormValues } from "@/features/build-story";
+import { removeRulesReferencingStat, type StoryBuilderFormValues } from "@/features/build-story";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -273,11 +273,24 @@ function StatRow({
 function StatSection({ startingSetupIndex }: { startingSetupIndex: number }) {
   const form = useFormContext<StoryBuilderFormValues>();
 
-  const { control } = form;
+  const { control, getValues, setValue } = form;
   const { fields, append, remove } = useFieldArray({
     control,
     name: `startingSetups.${startingSetupIndex}.stats`,
   });
+
+  // 스탯은 시작설정마다 독립이라 이 시작설정의 엔딩만 본다. 그 스탯을 가리키던 엔딩 규칙을 먼저 지운 뒤 스탯을 지운다.
+  function handleRemove(statIndex: number) {
+    const removedStatId = getValues(`startingSetups.${startingSetupIndex}.stats.${statIndex}.id`);
+    getValues(`startingSetups.${startingSetupIndex}.endings`).forEach((ending, endingIndex) => {
+      const statRules = removeRulesReferencingStat(ending.statRules, removedStatId);
+      if (statRules === ending.statRules) return;
+      setValue(`startingSetups.${startingSetupIndex}.endings.${endingIndex}.statRules`, statRules, {
+        shouldDirty: true,
+      });
+    });
+    remove(statIndex);
+  }
 
   return (
     <div className="flex flex-col gap-4">
@@ -292,7 +305,7 @@ function StatSection({ startingSetupIndex }: { startingSetupIndex: number }) {
             id={field.id}
             startingSetupIndex={startingSetupIndex}
             statIndex={statIndex}
-            onRemove={() => remove(statIndex)}
+            onRemove={() => handleRemove(statIndex)}
           />
         ))
       )}

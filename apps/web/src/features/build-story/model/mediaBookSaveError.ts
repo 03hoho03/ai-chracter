@@ -2,6 +2,8 @@ import { isApiError } from "@/shared/api/client";
 
 // 서버가 칸 자리 경합에 돌려주는 409 의 `detail.code`. 응답에 실리는 실제 식별자다.
 const POSITION_TAKEN_CODE = "MEDIA_BOOK_CELL_POSITION_TAKEN";
+// 엔딩 규칙이 같은 시작설정에 없는 스탯을 가리킬 때 서버가 초안 저장에 돌려주는 422 의 `detail.code`. 응답에 실리는 실제 식별자다.
+const ENDING_RULE_STAT_NOT_FOUND_CODE = "ENDING_RULE_STAT_NOT_FOUND";
 
 /**
  * 다른 창(또는 기기)이 같은 인물 × 장면 자리에 먼저 새 칸을 저장해, 이 화면의 저장이 거절된 경우의 안내. 이 화면의
@@ -23,9 +25,23 @@ export function isMediaBookPositionTakenError(error: unknown): boolean {
 export const STORY_SAVE_LIMIT_MESSAGE =
   "글자 수나 개수 제한을 넘은 항목이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 긴 글이나 많이 추가한 항목을 줄여주세요.";
 
+/**
+ * 엔딩 규칙이 지워진 스탯을 가리켜 저장이 거절된 경우의 안내. 같은 422 라도 글자 수 문제가 아니므로 줄이라고 하지 않고
+ * 고칠 자리(엔딩 탭)를 짚는다. 이 화면에서 스탯을 지우면 그 규칙도 함께 지워지므로, 이 문구는 그 처리 전에 저장된 초안이나
+ * 다른 기기에서 고친 초안에서만 보인다. 그런 규칙 줄은 스탯 칸이 빈칸으로 보인다.
+ */
+export const ENDING_RULE_STAT_NOT_FOUND_MESSAGE =
+  "지워진 스탯을 쓰는 엔딩 조건이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 엔딩 탭에서 스탯 칸이 빈 조건을 지우거나 다른 스탯으로 바꿔주세요.";
+
+function isEndingRuleStatNotFoundError(error: unknown): boolean {
+  if (!isApiError(error) || error.status !== 422) return false;
+  return typeof error.detail === "object" && error.detail.code === ENDING_RULE_STAT_NOT_FOUND_CODE;
+}
+
 /** 스토리 저장 실패 토스트 문구 — 자동저장과 임시저장 버튼이 함께 쓴다. 따로 안내할 이유가 없으면 undefined(호출부의 기본 문구). */
 export function storyAutosaveErrorMessage(error: unknown): string | undefined {
   if (isMediaBookPositionTakenError(error)) return MEDIA_BOOK_POSITION_TAKEN_MESSAGE;
+  if (isEndingRuleStatNotFoundError(error)) return ENDING_RULE_STAT_NOT_FOUND_MESSAGE;
   if (isApiError(error) && error.status === 422) return STORY_SAVE_LIMIT_MESSAGE;
   return undefined;
 }

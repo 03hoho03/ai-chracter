@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { ApiErrorObject } from "@/shared/api/client";
 
 import {
+  ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   STORY_SAVE_LIMIT_MESSAGE,
   storyAutosaveErrorMessage,
@@ -32,5 +33,20 @@ describe("storyAutosaveErrorMessage", () => {
 
     expect(storyAutosaveErrorMessage(error)).toBe(STORY_SAVE_LIMIT_MESSAGE);
     expect(STORY_SAVE_LIMIT_MESSAGE).not.toMatch(/잠시 후/);
+  });
+
+  it("names the deleted-stat ending condition instead of blaming length limits", () => {
+    const error = new ApiErrorObject({
+      status: 422,
+      message: "Request failed with status code 422",
+      detail: {
+        code: "ENDING_RULE_STAT_NOT_FOUND",
+        paths: ["startingSetups[0].endings[1].statRules[0].statId"],
+      },
+    });
+
+    expect(storyAutosaveErrorMessage(error)).toBe(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
+    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toMatch(/엔딩/);
+    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).not.toMatch(/글자 수|잠시 후/);
   });
 });
