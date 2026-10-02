@@ -1,18 +1,15 @@
 export { useAutosave } from "./model/useAutosave";
 export { useDraftPersistence } from "./model/useDraftPersistence";
 export { errorTabs } from "./model/errorTabs";
-export { errorItemKeys, type CollapsibleListSpec } from "./model/errorItemKeys";
-export { errorParentItemId, type ErrorParentScope } from "./model/errorParentItemId";
+export { errorItemKeys } from "./model/errorItemKeys";
+export { errorParentItemId } from "./model/errorParentItemId";
 export {
   BuilderUiStateContext,
-  createBuilderUiState,
   indexOpenKey,
   itemOpenKey,
   useBuilderSelection,
   useBuilderUiState,
   useCreateBuilderUiState,
-  useIsItemOpen,
-  type BuilderUiState,
 } from "./model/builderUiState";
 export { flattenFieldErrorPaths } from "./model/fieldErrorPaths";
 export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
