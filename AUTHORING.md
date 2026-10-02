@@ -108,10 +108,12 @@
   - **노출 제외 칸도 심사한다.** 대화 중에만 안 나올 뿐 태그·보관함으로 보이는 그림이다.
   - 심사 앞의 필드 검증(`validate_story_publish`)은 칸 수 상한 초과(`mediaBook.cells`)와 그 버전에 없는 인물·장면을 가리키는 칸(`mediaBook.orphanCells`)을 400 `missingFields`로 막는다. 블러본은 발행 때 만든다.
 - 캐릭터: `build_character_publish_filter_prompt`. 대표 이미지와 상황별 이미지(`_load_publish_filter_images`). 상황별 이미지의 노출 상황 문장은 싣지 않는다.
+  - 대표 이미지는 원본, 상황별 이미지는 축소본(`_thumb.webp`)을 싣는다. 상황별 이미지는 빌더의 순서(`order`, 같으면 `entity_id`) 그대로 실려 라벨 `상황 이미지 k`와 짝을 이룬다. 축소본이 없을 때만 원본으로 대신하고, 그 밖의 저장소 오류는 발행을 멈춘다(스토리 칸과 달리 대신할 길이 있다).
 - 그림이 작품과 어울리는지는 심사하지 않는다(심사 문안에 그렇게 적혀 있다).
 - 같은 작품을 다시 발행할 때 그림·순서·칸 이름·활성 심사 세트·모델이 그대로면 지난 통과를 그대로 쓴다(`api/content/publish_filter_memo.py`). 글만 고친 재발행은 다시 심사하지 않는다.
 - 판정 축(선정성·폭력성·혐오 표현·불법 콘텐츠)은 코드가 아니라 DB의 발행 심사 문안에 있다(어드민 `/prompt-sets`의 발행 심사 레인). 결과 스키마는 `PublishFilterResult`(`passed`, `reason`).
-- fail-closed: `passed`가 거짓이면 400 `{reason}`으로 발행하지 않는다. 심사 호출 자체가 실패하면 예외가 발행 라우트 밖으로 나가 역시 발행되지 않는다.
+- 원본을 실을 때 MIME 타입은 저장 키의 확장자가 아니라 그림 바이트에서 읽는다(운영 업로드 키에는 확장자가 없을 수 있다). 축소본은 늘 `image/webp`다.
+- fail-closed: `passed`가 거짓이면 400 `{reason}`으로 발행하지 않는다. Gemini가 자체 안전 기준으로 응답을 막아도 같은 400 `{reason}`(범주를 알리지 않는 고정 문구)으로 거부해 작가가 이의제기할 수 있다. 그 밖에 심사 호출 자체가 실패하면 예외가 발행 라우트 밖으로 나가(500) 역시 발행되지 않는다.
 - 시드 경로(`apps/api/scripts/seed_content/upsert.py`)는 이 모델 심사를 부르지 않고 필드 검증(`validate_story_publish`·`validate_character_publish`)만 한다. 로컬 시드가 들어갔다고 운영 심사를 통과한다는 뜻이 아니다.
 
 ## 6. 레이트리밋과 클로버 요점
