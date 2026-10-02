@@ -130,8 +130,10 @@ export function MediaBookCellPanel({
           size="sm"
           className="ml-auto hover:bg-secondary"
           onClick={() => {
-            // 마우스로 누르면 버튼이 토스트와 함께 사라져 포커스가 body 로 떨어진다 — 표의 그 칸으로 옮겨 둔다(화면은
-            // 움직이지 않게). Alt+T 로 들어온 키보드는 sonner 가 들어오기 전 자리로 다시 돌려준다.
+            // 포커스가 토스트를 떠나면 sonner 가 토스트에 들어오기 전 자리(대개 방금 누른 고르기 버튼)로 돌려준다 —
+            // 마우스든 Alt+T 키보드든 같다. 그래서 아래에서 칸으로 옮겨도 그 자리가 있으면 곧바로 그리로 간다. 칸으로
+            // 옮기는 것은 돌려줄 자리가 없을 때(포커스가 body 였을 때)를 위해서다 — 버튼이 토스트와 함께 사라지며
+            // 포커스가 body 로 떨어지지 않게 표의 그 칸에 둔다(화면은 움직이지 않게).
             document
               .querySelector<HTMLElement>(`[data-media-book-cell="${toCellKey(position)}"]`)
               ?.focus({ preventScroll: true });
