@@ -22,9 +22,9 @@ export const MediaBookOverwriteModal = createCallable<MediaBookOverwriteModalPro
     <Dialog open={!call.ended} onOpenChange={(isOpen) => !isOpen && call.end(undefined)}>
       <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>이미 그림이 있는 칸이 {fileNames.length}곳 있어요</DialogTitle>
+          <DialogTitle>이미 이미지가 있는 칸이 {fileNames.length}곳 있어요</DialogTitle>
           <DialogDescription className="break-keep">
-            덮어쓰면 그 칸의 그림만 바뀌고 상황 설명·해금 힌트는 그대로 남아요.
+            덮어쓰면 그 칸의 이미지만 바뀌고 상황 설명·해금 힌트는 그대로 남아요.
           </DialogDescription>
         </DialogHeader>
         <ul className="flex flex-col gap-1 text-sm break-all text-foreground">

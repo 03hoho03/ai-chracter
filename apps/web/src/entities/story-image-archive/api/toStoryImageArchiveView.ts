@@ -78,7 +78,8 @@ function toTile(item: StoryImageArchiveItem): StoryImageArchiveTile {
     imageUrl: item.imageUrl,
     hint: hint || undefined,
     aspectRatio,
-    alt: `${item.personName}의 아직 보지 못한 그림`,
+    // 본 칸과 같은 `인물 · …` 꼴. 소유격 "의" 를 붙이면 '하나' 같은 이름이 "하나의(=한 개의)" 로 읽힌다.
+    alt: `${item.personName} · 아직 보지 못한 이미지`,
   };
 }
 
