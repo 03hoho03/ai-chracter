@@ -27,6 +27,11 @@ export type GeneratedImagePickerOptions = {
   currentAssetId?: string;
   /** 다른 자리에서 이미 쓰는 이미지 → 그 자리를 말하는 한 구절. 표식은 짧게 "사용 중"이고 구절은 접근 이름이 싣는다. */
   usedAssetLabels?: ReadonlyMap<string, string>;
+  /**
+   * 모달이 완전히 닫힌 뒤 포커스를 둘 곳으로 옮긴다(고른 경우·닫은 경우 모두). 고른 결과로 연 버튼이 사라지는
+   * 호출부만 넘긴다 — 넘기지 않으면 연 자리로 돌아가는 기본 동작 그대로다.
+   */
+  onRestoreFocus?: () => void;
 };
 
 // 접근 이름에 넣는 만든 때. 같은 날 여러 번 만들기 때문에 날짜와 분까지 읽는다.
@@ -50,6 +55,7 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
     shouldShowCreateLink = true,
     currentAssetId,
     usedAssetLabels,
+    onRestoreFocus,
   }) => {
     const isOpen = !call.ended;
     const galleryQuery = useGeneratedImagesQuery(isOpen);
@@ -58,7 +64,17 @@ export const GeneratedImagePickerModal = createCallable<GeneratedImagePickerOpti
       <Dialog open={isOpen} onOpenChange={(next) => !next && call.end(undefined)}>
         {/* 이미지가 많으면 그리드가 화면보다 길어진다 — `DialogContent`엔 최대 높이도 내부 스크롤도
             없어서, 빼먹으면 Radix가 body 스크롤을 잠근 채 아래 행과 닫기에 닿을 방법이 없다. */}
-        <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+        <DialogContent
+          className="max-h-dialog overflow-y-auto sm:max-w-md"
+          onCloseAutoFocus={
+            onRestoreFocus &&
+            ((event) => {
+              // 결과를 받은 직후에 옮기면 아직 닫히는 중인 모달이 포커스를 도로 가둔다 — 닫힘 뒤 자리에서 옮긴다.
+              event.preventDefault();
+              requestAnimationFrame(onRestoreFocus);
+            })
+          }
+        >
           <DialogHeader>
             <DialogTitle>{title}</DialogTitle>
             <DialogDescription className="break-keep">{description}</DialogDescription>

@@ -1,19 +1,24 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Copy, EyeOff, Plus } from "lucide-react";
-import { toast } from "sonner";
 
 import { toMediaNameTag } from "@/entities/media-book";
 import { findCell, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
 
+import { copyMediaTag } from "../lib/copyMediaTag";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 export type MediaBookPosition = { personId: string; sceneId: string };
 
+/**
+ * 칸을 어떻게 골랐는가 — 탭이 스크롤·포커스·알림을 이걸로 가른다. `keyboard` 는 Enter·Space(클릭 이벤트의
+ * `detail` 이 0), `copy` 는 칸 모서리의 표기 복사 버튼이다.
+ */
+export type MediaBookSelectMethod = "pointer" | "keyboard" | "copy";
+
 type MediaBookGridProps = {
   mediaBook: MediaBookValues;
   selected: MediaBookPosition | undefined;
-  /** `isViaKeyboard` — Enter·Space 로 눌렀는가(클릭 이벤트의 `detail` 이 0). */
-  onSelect: (position: MediaBookPosition, isViaKeyboard: boolean) => void;
+  onSelect: (position: MediaBookPosition, method: MediaBookSelectMethod) => void;
   panelId: string;
 };
 
@@ -61,7 +66,7 @@ export function MediaBookGrid({ mediaBook, selected, onSelect, panelId }: MediaB
                     cell={findCell(mediaBook, person.id, scene.id)}
                     isSelected={selected?.personId === person.id && selected.sceneId === scene.id}
                     panelId={panelId}
-                    onSelect={(isViaKeyboard) => onSelect({ personId: person.id, sceneId: scene.id }, isViaKeyboard)}
+                    onSelect={(method) => onSelect({ personId: person.id, sceneId: scene.id }, method)}
                     cellKey={toCellKey({ personId: person.id, sceneId: scene.id })}
                   />
                 </td>
@@ -80,7 +85,7 @@ type GridCellProps = {
   cell: MediaBookCellValues | undefined;
   isSelected: boolean;
   panelId: string;
-  onSelect: (isViaKeyboard: boolean) => void;
+  onSelect: (method: MediaBookSelectMethod) => void;
   cellKey: string;
 };
 
@@ -89,13 +94,10 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
   const imageUrl = cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined;
   const tag = toMediaNameTag(personName, sceneName);
 
-  async function handleCopy() {
-    try {
-      await navigator.clipboard.writeText(tag);
-      toast.success("이미지 표기를 복사했어요. 시작상황·프롤로그·에필로그·등록 설명에 붙여 넣으면 그 자리에 이미지가 보여요.");
-    } catch {
-      toast.error(`복사하지 못했어요. 직접 입력해 주세요: ${tag}`);
-    }
+  function handleCopy() {
+    // 모서리를 눌러도 그 칸을 함께 고른다 — 아니면 선택이 직전 칸에 남아, 다음에 고른 이미지가 엉뚱한 칸에 들어간다.
+    onSelect("copy");
+    void copyMediaTag(tag);
   }
 
   return (
@@ -106,8 +108,11 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         aria-controls={isSelected ? panelId : undefined}
         aria-label={`${personName} / ${sceneName} — ${cell ? "이미지 있음" : "비어 있음"}${cell?.excludeFromChat ? ", 대화 중 띄우지 않음" : ""}`}
         data-media-book-cell={cellKey}
-        onClick={(event) => onSelect(event.detail === 0)}
+        onClick={(event) => onSelect(event.detail === 0 ? "keyboard" : "pointer")}
         className={cn(
+          // 고른 뒤 스크롤이 이 칸을 상단바 밑에 숨기지 않게 위쪽 여유를 둔다(좁은 화면은 페이지가, 넓은 화면은 상단바
+          // 아래에서 시작하는 폼 열이 스크롤된다).
+          "scroll-mt-16 lg:scroll-mt-4",
           "flex size-full items-center justify-center overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
           cell
             ? "border border-foreground/10 bg-muted"
@@ -129,7 +134,7 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         <button
           type="button"
           aria-label={`${tag} 표기 복사`}
-          onClick={() => void handleCopy()}
+          onClick={handleCopy}
           className="absolute right-1 bottom-1 inline-flex size-6 items-center justify-center rounded-md bg-scrim/70 text-scrim-foreground hover:bg-scrim focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <Copy aria-hidden className="size-3.5" />

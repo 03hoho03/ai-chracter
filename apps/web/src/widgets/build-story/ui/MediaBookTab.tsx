@@ -1,15 +1,34 @@
 import { Label } from "@ai-character-chat/ui/components/label";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import { MAX_MEDIA_BOOK_CELLS } from "@/features/build-story";
+import {
+  findCell,
+  MAX_MEDIA_BOOK_CELLS,
+  type MediaBookCellValues,
+  type MediaBookValues,
+} from "@/features/build-story";
 
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
-import { MediaBookCellPanel } from "./MediaBookCellPanel";
-import { focusGridCell, MediaBookGrid, toCellKey, type MediaBookPosition } from "./MediaBookGrid";
+import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
+import {
+  focusGridCell,
+  MediaBookGrid,
+  toCellKey,
+  type MediaBookPosition,
+  type MediaBookSelectMethod,
+} from "./MediaBookGrid";
+import { planCellSelectionScroll } from "../lib/planCellSelectionScroll";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 
 const CELL_PANEL_ID = "media-book-cell-panel";
+
+// 빌더 상단바(`BuilderTopBar` 의 `h-14`) 높이. 좁은 화면에서는 페이지가 그 밑으로 스크롤되고, 넓은 화면에서는 폼
+// 열 창이 그 아래에서 시작하므로 어느 쪽이든 보이는 구간은 "상단바 아래 ~ 화면 바닥"이다.
+const BUILDER_TOP_BAR_HEIGHT_PX = 56;
+// 보이는 구간 위쪽에 남길 여유 — 칸과 상세에 준 `scroll-mt` 와 같은 숨 쉴 자리.
+const SCROLL_BREATHING_PX = 8;
 
 /**
  * 미디어 북 탭 — 인물 × 장면 배치표에 칸마다 그림 한 장. 위에서부터 한꺼번에 넣기 → 인물·장면 목록 → 배치표 →
@@ -18,14 +37,26 @@ const CELL_PANEL_ID = "media-book-cell-panel";
 export function MediaBookTab() {
   const { mediaBook } = useMediaBookEditor();
   const [selected, setSelected] = useState<MediaBookPosition>();
-  function handleSelect(position: MediaBookPosition, isViaKeyboard: boolean) {
+  const [announcement, setAnnouncement] = useState("");
+
+  // 이미지를 바꾼 뒤의 되돌리기는 이 탭이 보이는 동안만 둔다.
+  useEffect(() => () => void toast.dismiss(MEDIA_BOOK_IMAGE_UNDO_TOAST_ID), []);
+
+  function handleSelect(position: MediaBookPosition, method: MediaBookSelectMethod) {
+    const isSameCell = selected !== undefined && toCellKey(selected) === toCellKey(position);
     setSelected(position);
-    // 상세는 표 아래에 열려 좁은 화면이나 긴 표에서는 화면 밖일 수 있다. 키보드로 열면 포커스를 상세 제목으로 옮겨
-    // 상세가 화면에 들어오고 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로 돌아온다). 마우스로 열면 포커스는 그대로
-    // 두고 상세만 보이게 스크롤한다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과 무관하게 순간 이동).
+    // 키보드로 열면 포커스가 상세 제목으로 가 스크린리더가 제목을 읽는다 — 같은 말을 두 번 하지 않게 알림은 비운다.
+    // 처음 열 때와 같은 칸을 다시 누를 때도 바뀐 것이 없어 비운다.
+    setAnnouncement(method === "keyboard" || selected === undefined || isSameCell ? "" : announceCell(mediaBook, position));
+    // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 끌어내리지 않는다.
+    if (method === "copy") return;
+    // 상세는 표 아래에 열려 좁은 화면이나 긴 표에서는 화면 밖일 수 있다. 다음 프레임(상세가 그려진 뒤)에 고른 칸과
+    // 상세 머리가 함께 보이게, 안 되면 머리가 보이게 맞춘다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과
+    // 무관하게 순간 이동). 키보드로 열었으면 포커스를 상세 제목으로 옮겨 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로
+    // 돌아온다) — 스크롤은 위 규칙이 하므로 포커스가 화면을 다시 움직이지 않게 한다.
     requestAnimationFrame(() => {
-      if (isViaKeyboard) document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus();
-      else document.getElementById(CELL_PANEL_ID)?.scrollIntoView({ block: "nearest" });
+      scrollToSelection(position);
+      if (method === "keyboard") document.getElementById(`${CELL_PANEL_ID}-heading`)?.focus({ preventScroll: true });
     });
   }
 
@@ -45,7 +76,10 @@ export function MediaBookTab() {
       : undefined;
 
   return (
-    <div className="flex flex-col gap-6 py-6" data-field-path="mediaBook">
+    // `relative` 는 화면 밖 글자(`sr-only` 알림·파일 입력)의 기준을 이 탭으로 묶는다. 없으면 그 요소들이 문서 맨 위
+    // 기준으로 자리를 잡아, 넓은 화면에서 폼 열이 아니라 문서가 세로로 스크롤되고 칸을 고를 때 창이 밀려 폼 열 위쪽이
+    // 상단바 밑으로 들어간다.
+    <div className="relative flex flex-col gap-6 py-6" data-field-path="mediaBook">
       <div className="flex flex-col gap-1">
         <div className="flex items-baseline justify-between gap-3">
           <Label>미디어 북</Label>
@@ -98,14 +132,48 @@ export function MediaBookTab() {
 
       {selectedPosition && (
         <MediaBookCellPanel
-          // 칸을 바꾸면 상세를 새로 그린다 — 업로드 중 표시 같은 칸별 상태가 다른 칸으로 넘어가지 않게.
-          key={toCellKey(selectedPosition)}
           id={CELL_PANEL_ID}
           position={selectedPosition}
           onClose={() => handleClose(selectedPosition)}
           onReturnFocus={() => focusGridCell(selectedPosition)}
         />
       )}
+      <p role="status" className="sr-only">
+        {announcement}
+      </p>
     </div>
   );
+}
+
+/** 마우스로 칸을 옮겼을 때 스크린리더에 들려줄 한 줄 — 상세가 다른 칸으로 바뀌었다는 것과 그 칸에 무엇이 비었는지. */
+function announceCell(mediaBook: MediaBookValues, position: MediaBookPosition): string {
+  const person = mediaBook.people.find((item) => item.id === position.personId);
+  const scene = mediaBook.scenes.find((item) => item.id === position.sceneId);
+  if (!person || !scene) return "";
+  return `${person.name} · ${scene.name} 칸 — ${cellStatus(findCell(mediaBook, position.personId, position.sceneId))}`;
+}
+
+function cellStatus(cell: MediaBookCellValues | undefined): string {
+  if (!cell) return "이미지 없음";
+  if (cell.situationDescription.trim() === "") return "상황 설명 없음";
+  return "다 채운 칸";
+}
+
+/** 고른 칸과 상세 머리를 화면에 둔다. 판정은 `planCellSelectionScroll` 이 하고 여기서는 재고 움직이기만 한다. */
+function scrollToSelection(position: MediaBookPosition) {
+  const cell = document.querySelector<HTMLElement>(`[data-media-book-cell="${toCellKey(position)}"]`);
+  const header = document.getElementById(`${CELL_PANEL_ID}-head`);
+  if (!cell || !header) return;
+  const plan = planCellSelectionScroll({
+    cellTop: cell.getBoundingClientRect().top,
+    headerBottom: header.getBoundingClientRect().bottom,
+    availableHeight: window.innerHeight - BUILDER_TOP_BAR_HEIGHT_PX - SCROLL_BREATHING_PX,
+  });
+  if (plan === "both") {
+    // 둘의 거리가 보이는 높이 안이므로, 머리를 먼저 맞춘 뒤 칸을 맞춰도 머리가 화면 밖으로 밀리지 않는다.
+    header.scrollIntoView({ block: "nearest" });
+    cell.scrollIntoView({ block: "nearest" });
+  } else {
+    header.scrollIntoView({ block: "start" });
+  }
 }
