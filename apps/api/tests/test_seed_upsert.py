@@ -443,6 +443,26 @@ async def test_upsert_story_updates_content_in_place(
     assert version.published_at == first_published_at
 
 
+async def test_reseed_restores_a_content_restricted_by_a_suspension(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드 작가가 정지된 적이 있어 정지 표식이 선 작품도 재시드가 정상으로 되돌린다 — 표식은 제한 상태에서만 설 수
+    있어서, 상태만 정상으로 바꾸고 표식을 두면 flush 가 CHECK 에 걸려 스크립트가 멈춘다."""
+    await _seed_author(db_session)
+    content_id = await upsert_story(db_session, SLUG, await _load_seed_payload(db_session, tmp_path))
+    content = await db_session.get(Content, content_id)
+    assert content is not None
+    content.moderation_status = ModerationStatus.RESTRICTED
+    content.restricted_by_suspension = True
+    await db_session.flush()
+
+    await upsert_story(db_session, SLUG, await _load_seed_payload(db_session, tmp_path))
+
+    await db_session.refresh(content)
+    assert content.moderation_status == ModerationStatus.NORMAL
+    assert content.restricted_by_suspension is False
+
+
 async def test_reseed_keeps_existing_chat_room_version_pin_valid(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:
