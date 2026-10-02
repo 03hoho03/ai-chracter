@@ -103,24 +103,19 @@ class Settings(BaseSettings):
     gemini_max_output_tokens: int = 8192
     # 사고(thinking) 예산: None = thinking_config 를 아예 넘기지 않음(모델 기본 사고 동작),
     # 0 = 사고 끔, 양수 = 그 토큰까지 허용. 세 상태가 서로 다른 동작이라 bool 로 합치지
-    # 않는다.
+    # 않는다. ⚠️ gemini-3.5-flash-lite 는 0 을 400 으로 거부했다(2026-10-02, 구조화 호출 실측) — 그 모델에
+    # 0 을 주면 생성이 실패할 수 있다.
     gemini_thinking_budget: int | None = None
-    # 구조화 호출 중 판정(스탯·엔딩·그림 매칭)과 발행 심사만 다른 모델·사고 설정으로 돌리는
-    # 스위치. 어느 호출이 판정·심사인지는 `llm/client.py` 의 call_site 집합이 정한다. 모델명이
-    # None(또는 빈 문자열)이면 `gemini_model_name` 을 그대로 쓴다. 사고 예산은
-    # `gemini_thinking_budget` 와 같은 세 상태(None = 안 넘김, 0 = 끔, 양수 = 예산)이고 그 집합의
-    # 호출에만 실린다. 넷 다 기본값이면 지금 동작과 같다 — 되돌리려면 env 줄을 지우고 재기동한다.
-    gemini_judgment_model_name: str | None = None
-    gemini_judgment_thinking_budget: int | None = None
+    # 구조화 호출 중 판정(스탯·엔딩·그림 매칭)과 발행 심사만 다른 모델로 돌리는 스위치. 판정은 종류마다 따로
+    # 옮길 수 있게 셋으로 나눈다. 어느 호출이 어느 종류인지는 `llm/client.py` 의 call_site 집합이 정한다.
+    # None(또는 빈 문자열)이면 `gemini_model_name` 을 그대로 쓴다 — 넷 다 기본값이면 지금 동작과 같고, 되돌리려면
+    # env 줄을 지우고 재기동한다. 사고 설정은 이 호출들에 넘기지 않는다(`llm/gemini.py` 의 `generate_structured`).
+    gemini_stat_judgment_model_name: str | None = None
+    gemini_ending_judgment_model_name: str | None = None
+    gemini_image_judgment_model_name: str | None = None
     gemini_publish_filter_model_name: str | None = None
-    gemini_publish_filter_thinking_budget: int | None = None
 
-    @field_validator(
-        "gemini_thinking_budget",
-        "gemini_judgment_thinking_budget",
-        "gemini_publish_filter_thinking_budget",
-        mode="before",
-    )
+    @field_validator("gemini_thinking_budget", mode="before")
     @classmethod
     def _empty_thinking_budget_is_unset(cls, value: object) -> object:
         """env 에 값을 비운 줄(`KEY=`)이 남으면 빈 문자열이 들어와 정수 파싱이 실패하고 api 가 기동하지 못한다.

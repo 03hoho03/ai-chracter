@@ -166,3 +166,31 @@ async def test_llm_usage_empty_range_returns_no_rows(db_client: httpx.AsyncClien
     assert body["rows"] == [] and body["totals"] == []
     assert body["estimatedCostUsdTotal"] == 0
     assert body["unpricedCalls"] == 0
+
+
+async def test_llm_usage_judgment_ratio_covers_every_judgment_kind(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """판정 모델을 종류별로 나눠 옮겨도 스탯·엔딩·그림 매칭 모두 판정 비율을 받는다. 종류마다 다른 모델이어도
+    분모(생성 호출)는 모델을 가리지 않고 더한다."""
+    await _put(DAY0, "chat_generate", LITE, calls=4)
+    await _put(DAY0, "preview_generate", LITE, calls=2)
+    judgments = {
+        "chat_stat_judgment": ("gemini-3.1-flash-lite", 4 / 4),
+        "chat_ending_judgment": ("gemini-3.1-flash-lite", 2 / 4),
+        "chat_situational_image": (LITE, 1 / 4),
+        "chat_media_book_image": (LITE, 3 / 4),
+        "preview_stat_judgment": ("gemini-3.1-flash-lite", 2 / 2),
+        "preview_ending_judgment": ("gemini-3.1-flash-lite", 1 / 2),
+        "preview_media_book_image": (LITE, 1 / 2),
+    }
+    for call_site, (model, ratio) in judgments.items():
+        await _put(DAY0, call_site, model, calls=round(ratio * (2 if call_site.startswith("preview_") else 4)))
+
+    resp = await _admin_get(db_client, db_session, _url(DAY0, DAY0))
+
+    assert resp.status_code == 200
+    rows = resp.json()["rows"]
+    for call_site, (model, ratio) in judgments.items():
+        assert _row(rows, call_site, model, DAY0)["judgmentRatio"] == pytest.approx(ratio)
+    assert _row(rows, "chat_generate", day=DAY0)["judgmentRatio"] is None
