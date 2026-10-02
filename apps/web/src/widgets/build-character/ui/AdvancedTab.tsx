@@ -21,6 +21,7 @@ import { registerSituationalImage } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 /** 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
@@ -191,7 +192,8 @@ function SituationalImageRow({
           htmlFor={inputId}
           className={cn(
             buttonVariants({ variant: "outline", size: "default" }),
-            "w-fit cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
+            "w-fit cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50",
+            FOCUS_WITHIN_RING_CLASSNAME
           )}
         >
           <Camera aria-hidden className="size-4" />

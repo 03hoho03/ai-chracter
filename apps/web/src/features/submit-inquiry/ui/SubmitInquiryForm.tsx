@@ -20,6 +20,7 @@ import { toast } from "sonner";
 import { INQUIRY_CATEGORIES, INQUIRY_CATEGORY_LABEL } from "@/entities/inquiry";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { useCreateInquiryMutation } from "../api/useCreateInquiryMutation";
 import { formToServer } from "../model/formToServer";
@@ -241,7 +242,8 @@ function InquiryAttachmentField({
         htmlFor="submit-inquiry-attachment"
         className={cn(
           buttonVariants({ variant: "outline", size: "default" }),
-          "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
+          "cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50",
+          FOCUS_WITHIN_RING_CLASSNAME
         )}
       >
         <Camera aria-hidden className="size-4" />

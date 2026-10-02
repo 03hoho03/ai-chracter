@@ -18,6 +18,7 @@ import {
 import { MediaBookOverwriteModal } from "@/features/edit-media-book";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
+import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { createInOrderQueue } from "../lib/createInOrderQueue";
 import { runWithConcurrency } from "../lib/runWithConcurrency";
@@ -105,7 +106,8 @@ export function MediaBookBulkUpload() {
           aria-disabled={isUploading}
           className={cn(
             buttonVariants({ variant: "outline" }),
-            "cursor-pointer aria-disabled:pointer-events-none aria-disabled:opacity-65 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50",
+            "cursor-pointer aria-disabled:pointer-events-none aria-disabled:opacity-65",
+            FOCUS_WITHIN_RING_CLASSNAME,
           )}
         >
           {isUploading ? <Loader2 aria-hidden className="size-4 animate-spin" /> : <FolderUp aria-hidden className="size-4" />}

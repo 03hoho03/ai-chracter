@@ -13,6 +13,7 @@ import {
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
+import { cn } from "@ai-character-chat/ui/lib/utils";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Camera, Pencil } from "lucide-react";
 import { useForm } from "react-hook-form";
@@ -22,6 +23,7 @@ import type { UserProfileResponse } from "@/entities/profile";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { isApiError } from "@/shared/api/client";
+import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { useUpdateProfileMutation } from "../api/useUpdateProfileMutation";
 import { formToServer } from "../model/formToServer";
@@ -141,7 +143,10 @@ export function EditProfileDialog({ userId, profile, beforeUpload }: EditProfile
             </Avatar>
             <Label
               htmlFor="edit-profile-image"
-              className="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-secondary has-disabled:pointer-events-none has-disabled:opacity-50 has-[input:focus-visible]:border-ring has-[input:focus-visible]:ring-3 has-[input:focus-visible]:ring-ring/50"
+              className={cn(
+                "inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-md border border-input px-3 text-sm font-medium hover:bg-secondary has-disabled:pointer-events-none has-disabled:opacity-50",
+                FOCUS_WITHIN_RING_CLASSNAME
+              )}
             >
               <Camera aria-hidden className="size-4" />
               {isUploadingImage ? "업로드 중..." : "이미지 변경"}
