@@ -198,7 +198,7 @@ Redis 가 느리거나 죽어 있으면 기록은 100ms 안에 포기하고 그 
 | `GEMINI_MODEL_NAME` | `gemini-3.5-flash-lite`(코드 기본값은 `gemini-2.5-flash`) | 2026-09-24부터 프로덕션에 명시. 되돌리려면 이 한 줄만 지우고 `up -d --wait api` — `.env` 백업을 통째로 복원하지 말 것(자동배포가 같은 파일의 `API_IMAGE`를 고친다) |
 | `GEMINI_STAT_JUDGMENT_MODEL_NAME` / `GEMINI_ENDING_JUDGMENT_MODEL_NAME` / `GEMINI_IMAGE_JUDGMENT_MODEL_NAME` | 기본 비어 있음 | 판정 호출(실채팅·미리보기)을 종류별로 다른 모델로 돌리는 스위치 — 스탯 / 엔딩 / 그림 매칭(상황 이미지·미디어 북 칸). 줄이 없거나 값이 비면(`KEY=`) `GEMINI_MODEL_NAME`(지금 동작). 어느 호출이 어느 종류인지와 확인 방법은 "Gemini" 절 |
 | `GEMINI_PUBLISH_FILTER_MODEL_NAME` | 기본 비어 있음 | 발행 심사만 따로 바꾸는 같은 꼴의 스위치. ⚠️ 심사는 실패하면 발행이 500으로 막히므로(fail-closed) 바꾼 직후 발행 1회로 확인한다. 바꾸면 무변경 재발행도 한 번씩 다시 심사한다(통과 기억이 실제 심사 모델에 묶인다) |
-| `GEMINI_THINKING_BUDGET` | 기본 비어 있음 | 채팅 생성의 사고 예산(비면 사고 설정을 넘기지 않음, `0` = 끔). ⚠️ `gemini-3.5-flash-lite` 는 `0` 을 400 으로 거부했다(2026-10-02 실측) — 그 모델에 `0` 을 넣지 않는다 |
+| `GEMINI_THINKING_BUDGET` | 기본 비어 있음 | 채팅 생성의 사고 예산(비면 사고 설정을 넘기지 않음, `0` = 끔). ⚠️ `gemini-3.5-flash-lite` 는 `0` 을 400 으로 거부했다(2026-10-02, 구조화 호출에서 실측 — 스트리밍 생성은 측정하지 않았다) — 그 모델에 `0` 을 넣지 않는다 |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | OAuth 자격증명 | "Google OAuth" 절 |
 | `KAKAO_REST_API_KEY` / `KAKAO_CLIENT_SECRET` | 카카오 로그인 자격증명 | "카카오 로그인" 절. 둘 중 하나라도 비면 카카오 로그인 시작이 `?error=kakao_failed` 로 돌아온다 |
 | `KAKAO_ADMIN_KEY` | 카카오 **Primary(대표)** 어드민 키 | "카카오 로그인" 절. 탈퇴 시 연결 끊기 + 연결 해제 웹훅 인증. 비면 웹훅은 전부 401, 연결 끊기는 경고 로그만 |
