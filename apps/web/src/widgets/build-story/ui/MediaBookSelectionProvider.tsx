@@ -23,6 +23,9 @@ type MediaBookSelectionProviderProps = {
   setPreviewOpen: Dispatch<SetStateAction<boolean>>;
 };
 
+/** 좁은 화면의 상세 자리표시에 있는 "배치표에서 칸 고르기" 버튼. 상세를 닫으면 포커스가 여기로 온다. */
+const OPEN_GRID_SELECTOR = "[data-media-book-open-grid]";
+
 /**
  * 미디어 북의 고른 칸과 그 알림을 쥐고, 칸 고르기·다음 칸·닫기 동작을 내려 준다. 표와 상세가 서로 다른 열에 있어도
  * 같은 선택을 보도록 셸이 두 열을 함께 감싼다. 셸이 아니라 이 컴포넌트가 상태를 쥐는 이유는 칸을 고를 때 셸과 미리보기
@@ -125,9 +128,6 @@ export function MediaBookSelectionProvider({ children, setPreviewOpen }: MediaBo
     </MediaBookSelectionContext.Provider>
   );
 }
-
-/** 좁은 화면의 상세 자리표시에 있는 "배치표에서 칸 고르기" 버튼. 상세를 닫으면 포커스가 여기로 온다. */
-const OPEN_GRID_SELECTOR = "[data-media-book-open-grid]";
 
 /**
  * 상세 안에서 누른 버튼이 사라졌을 때(비우기 확인 뒤, 되돌리기 토스트) 포커스를 둘 곳. 표의 그 칸이 보이면 그 칸,

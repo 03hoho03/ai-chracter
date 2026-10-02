@@ -2,6 +2,12 @@ import type { ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ChevronLeft } from "lucide-react";
 
+type PreviewCloseHeaderProps = {
+  title: string;
+  onClose?: () => void;
+  action?: ReactNode;
+};
+
 /**
  * 빌더 미리보기 열의 머리(카드·대화 프리뷰와 미디어 북 탭의 배치표가 함께 쓴다). 두 프리뷰가 각자 들고 있던 동일한
  * `border-b`+패딩 래퍼(`BuilderPreview.tsx`의 `CardPreview`, `PreviewSessionView.tsx`)를 여기 하나로
@@ -26,15 +32,7 @@ import { ChevronLeft } from "lucide-react";
  * 읽힌다. apps/web/CLAUDE.md의 "같은 목적지로 가는 진입점이 한 화면에 둘이면 라벨로 가른다"에 따라
  * 아이콘(ChevronLeft)이 이미 말하는 뒤로 가기 쪽으로 이 버튼만 갈랐다.
  */
-export function PreviewCloseHeader({
-  title,
-  onClose,
-  action,
-}: {
-  title: string;
-  onClose?: () => void;
-  action?: ReactNode;
-}) {
+export function PreviewCloseHeader({ title, onClose, action }: PreviewCloseHeaderProps) {
   return (
     <header className="shrink-0 border-b border-border px-4 sm:px-6 py-3">
       <div className="mx-auto flex h-8 max-w-5xl items-center justify-between gap-3">
