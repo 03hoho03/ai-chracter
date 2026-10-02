@@ -35,8 +35,8 @@ const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 �
 type EditProfileDialogProps = {
   userId: string;
   profile: UserProfileResponse;
-  /** GeneratedImageField와 동일한 콜백 주입(features 간 직접 import
-   * 금지 회피). undefined를 돌려주면 취소로 간주해 업로드하지 않는다. */
+  /** GeneratedImageField와 동일한 콜백 주입(슬라이스끼리는 직접 import 하지 않는 관례라 — eslint 가
+   * 강제하지는 않는다 — 크롭 단계를 밖에서 받는다). undefined를 돌려주면 취소로 간주해 업로드하지 않는다. */
   beforeUpload?: (file: File) => Promise<File | undefined>;
 };
 
