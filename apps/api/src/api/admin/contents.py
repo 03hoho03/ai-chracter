@@ -362,6 +362,9 @@ async def act_on_content(
     elif body.action == ModerationActionType.LIFT_RESTRICTION:
         content.moderation_status = ModerationStatus.NORMAL
         await upgrade_content_chat_rooms_to_latest_version(db, content)
+    # 작품 단위 조치는 정지 표식을 내린다 — 이제 이 작품의 상태는 이 조치가 정한 것이라 정지 해제가 되돌리면 안 된다
+    # (이미 정지로 제한인 작품을 다시 제한하면 상태가 그대로라 이 줄 없이는 구분되지 않는다). 반려는 위에서 400 이다.
+    content.restricted_by_suspension = False
 
     if body.action in (ModerationActionType.RESTRICT, ModerationActionType.DELETE):
         assert body.reason_category is not None  # 위에서 422로 이미 검증됨

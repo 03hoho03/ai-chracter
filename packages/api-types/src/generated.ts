@@ -343,8 +343,8 @@ export interface paths {
          *
          *     ```
          *     1. users.suspended_at = now()
-         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
-         *        (visibility는 불변; PRIVATE는 제외)
+         *     2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted' + restricted_by_suspension = true
+         *        (visibility는 불변; PRIVATE는 제외. 표식은 해제 때 되돌릴 작품을 가린다)
          *     3. Notification(type='user-suspended', content_id=None, action_id=None)
          *     4. record_admin_action(action_type='user-suspend')
          *     5. db.commit()                  ← 여기까지 원자적
@@ -381,9 +381,13 @@ export interface paths {
         put?: never;
         /**
          * Unsuspend User
-         * @description 계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,
-         *     관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
-         *     한다.
+         * @description 계정을 되살리고, **정지가 내린 작품**(`restricted_by_suspension`)을 같은 트랜잭션에서 정상으로 되돌린다.
+         *     정지 전부터 제한·삭제였던 작품, 정지 중에 신고·관리자 조치로 다시 제한된 작품은 표식이 없어 그대로 남는다 —
+         *     그건 관리자가 작품 관리 화면(`/admin/contents`)에서 개별로 `lift-restriction`한다.
+         *
+         *     작품별 `lift-restriction`과 달리 방을 최신 발행본으로 옮기지 않는다 — 정지 중엔 작가가 편집·발행을 못 하므로
+         *     정지 전 상태로 되돌리는 것으로 충분하고, 독자에게 버전 변경 배너도 띄우지 않는다. 작품별 알림도 없다(정지 알림도
+         *     작품을 나열하지 않는다). 이 리비전 이전에 정지된 사용자의 작품은 표식이 없어 돌아오지 않는다.
          *
          *     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
          *     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
@@ -395,7 +399,7 @@ export interface paths {
          *     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
          *     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
          *
-         *     순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
+         *     순서: `suspended_at = None` → 작품 복구 → `record_admin_action` → `commit()` → Redis `DEL`.
          */
         post: operations["unsuspend_user_admin_users__user_id__unsuspend_post"];
         delete?: never;
@@ -4862,6 +4866,8 @@ export interface components {
             contentCount: number;
             /** Restrictablecontentcount */
             restrictableContentCount: number;
+            /** Restorablecontentcount */
+            restorableContentCount: number;
             /** Ratelimitexempt */
             rateLimitExempt: boolean;
             /** Betajoinedat */
@@ -4973,6 +4979,11 @@ export interface components {
         AdminUserUnsuspendRequest: {
             /** Admincomment */
             adminComment?: string | null;
+        };
+        /** AdminUserUnsuspendResponse */
+        AdminUserUnsuspendResponse: {
+            /** Restoredcontentcount */
+            restoredContentCount: number;
         };
         /** AdminUserWarnRequest */
         AdminUserWarnRequest: {
@@ -7934,11 +7945,13 @@ export interface operations {
         };
         responses: {
             /** @description Successful Response */
-            204: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["AdminUserUnsuspendResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

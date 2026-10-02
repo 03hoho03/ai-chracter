@@ -2,7 +2,21 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ARRAY, BigInteger, Boolean, DateTime, Enum, ForeignKey, Integer, Text, Uuid, false, func, true
+from sqlalchemy import (
+    ARRAY,
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Text,
+    Uuid,
+    false,
+    func,
+    true,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
@@ -70,6 +84,10 @@ class Content(Base):
     moderation_status: Mapped[ModerationStatus] = mapped_column(
         Enum(ModerationStatus, name="moderation_status"), nullable=False
     )
+    # 작가 계정 정지가 이 작품을 이용제한으로 내렸는가. 정지 해제는 이 표식이 선 작품만 정상으로 되돌린다 — 신고·관리자
+    # 조치로 제한된 작품, 정지 전부터 제한이던 작품은 해제 뒤에도 그대로다. 정지가 세우고, 작품 단위 조치(제한·삭제·
+    # 해제)와 이의 수용이 내린다. 신고 반려는 상태를 바꾸지 않으므로 내리지 않는다.
+    restricted_by_suspension: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
     current_published_version_id: Mapped[uuid.UUID | None] = mapped_column(
         Uuid,
         ForeignKey(
@@ -97,6 +115,16 @@ class Content(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    # 표식은 제한 상태에서만 설 수 있다. 삭제·해제·이의 수용에서 표식 내리기를 빠뜨리면 여기서 IntegrityError 로 터진다
+    # (이미 제한인 작품을 다시 제한하는 경우의 누락은 상태가 그대로라 못 잡는다 — 그건 행위 테스트가 본다).
+    # 🔴 `alembic check` 는 CHECK 제약을 비교하지 않는다 — 검증은 행위 테스트가 유일하다.
+    __table_args__ = (
+        CheckConstraint(
+            "NOT restricted_by_suspension OR moderation_status = 'RESTRICTED'",
+            name="ck_contents_suspension_flag_only_when_restricted",
+        ),
     )
 
 

@@ -23,6 +23,7 @@ from api.admin.schemas import (
     AdminUserReportItem,
     AdminUserSuspendRequest,
     AdminUserSuspendResponse,
+    AdminUserUnsuspendResponse,
     AdminUserUnsuspendRequest,
     AdminUserWarnRequest,
 )
@@ -46,13 +47,19 @@ ADMIN_USER_PAGE_SIZE = 20
 # 정지 시 restricted로 내려갈 작품의 판정 조건(그 유저의 공개 작품 전부 비공개 —
 # PUBLIC과 LINK 둘 다 내리고 PRIVATE만 제외한다. LINK는 링크를 아는 사람이 열람할 수
 # 있어 정지된 사용자의 콘텐츠가 계속 노출되기 때문이다). 한 번도 공개한 적 없는 PRIVATE
-# 초안까지 내리면 정지 해제 후(자동 복구 없음) 관리자가 그 초안까지 하나씩 되돌려야
-# 하는 부담이 생긴다. `suspend_user`의 UPDATE WHERE와 `_build_user_detail_response`의
+# 초안은 노출될 일이 없어 내릴 이유가 없다. `suspend_user`의 UPDATE WHERE와 `_build_user_detail_response`의
 # `restrictable_content_count` 계산이 반드시 같은 조건을 써야 하므로(어긋나면 정지 확인
 # 다이얼로그의 예고와 실제 결과가 갈린다) 이 한 곳에만 정의해 두 곳에서 공유한다.
 _RESTRICTABLE_CONTENT_CONDITION: ColumnElement[bool] = and_(
     Content.moderation_status == ModerationStatus.NORMAL,
     Content.visibility != ContentVisibility.PRIVATE,
+)
+
+# 정지 해제가 정상으로 되돌릴 작품의 판정 조건 — 정지가 내렸고 그 뒤 작품 단위 조치가 없었던 작품. 위 조건과 같은
+# 이유로 `unsuspend_user`의 UPDATE WHERE와 상세의 `restorable_content_count`(해제 확인창의 예고)가 공유한다.
+_RESTORABLE_CONTENT_CONDITION: ColumnElement[bool] = and_(
+    Content.moderation_status == ModerationStatus.RESTRICTED,
+    Content.restricted_by_suspension.is_(True),
 )
 
 
@@ -190,13 +197,16 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
     # UPDATE WHERE와 정확히 같은 조건 객체를 재사용하므로 두 곳이 어긋날 수 없다.
     user_contents = (
         await db.execute(
-            select(Content.id, _RESTRICTABLE_CONTENT_CONDITION.label("restrictable")).where(
-                Content.creator_user_id == user.id
-            )
+            select(
+                Content.id,
+                _RESTRICTABLE_CONTENT_CONDITION.label("restrictable"),
+                _RESTORABLE_CONTENT_CONDITION.label("restorable"),
+            ).where(Content.creator_user_id == user.id)
         )
     ).all()
-    user_content_ids = [content_id for content_id, _ in user_contents]
-    restrictable_content_count = sum(1 for _, restrictable in user_contents if restrictable)
+    user_content_ids = [content_id for content_id, _, _ in user_contents]
+    restrictable_content_count = sum(1 for _, restrictable, _ in user_contents if restrictable)
+    restorable_content_count = sum(1 for _, _, restorable in user_contents if restorable)
 
     chat_room_count = (
         await db.scalar(select(func.count()).select_from(ChatRoom).where(ChatRoom.user_id == user.id))
@@ -278,6 +288,7 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         signup_method=signup_method(user),
         content_count=len(user_content_ids),
         restrictable_content_count=restrictable_content_count,
+        restorable_content_count=restorable_content_count,
         rate_limit_exempt=user.rate_limit_exempt,
         beta_joined_at=user.beta_joined_at,
         clover_balance=user.clover_balance,
@@ -393,8 +404,8 @@ async def suspend_user(
 
     ```
     1. users.suspended_at = now()
-    2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted'
-       (visibility는 불변; PRIVATE는 제외)
+    2. 그 유저의 PUBLIC/LINK contents.moderation_status = 'restricted' + restricted_by_suspension = true
+       (visibility는 불변; PRIVATE는 제외. 표식은 해제 때 되돌릴 작품을 가린다)
     3. Notification(type='user-suspended', content_id=None, action_id=None)
     4. record_admin_action(action_type='user-suspend')
     5. db.commit()                  ← 여기까지 원자적
@@ -433,7 +444,7 @@ async def suspend_user(
         await db.scalars(
             update(Content)
             .where(Content.creator_user_id == user_id, _RESTRICTABLE_CONTENT_CONDITION)
-            .values(moderation_status=ModerationStatus.RESTRICTED)
+            .values(moderation_status=ModerationStatus.RESTRICTED, restricted_by_suspension=True)
             .returning(Content.id)
         )
     ).all()
@@ -470,16 +481,20 @@ async def suspend_user(
     return AdminUserSuspendResponse(restricted_content_count=restricted_content_count)
 
 
-@router.post("/admin/users/{user_id}/unsuspend", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/admin/users/{user_id}/unsuspend")
 async def unsuspend_user(
     user_id: uuid.UUID,
     body: AdminUserUnsuspendRequest,
     admin_id: uuid.UUID = Depends(get_current_admin_id),
     db: AsyncSession = Depends(get_db_session),
-) -> None:
-    """계정만 되살린다 — **작품은 restricted로 남는다**. 자동 복구하지 않으며,
-    관리자가 작품 관리 화면(`/admin/contents`)에서 작품을 개별적으로 `lift-restriction`해야
-    한다.
+) -> AdminUserUnsuspendResponse:
+    """계정을 되살리고, **정지가 내린 작품**(`restricted_by_suspension`)을 같은 트랜잭션에서 정상으로 되돌린다.
+    정지 전부터 제한·삭제였던 작품, 정지 중에 신고·관리자 조치로 다시 제한된 작품은 표식이 없어 그대로 남는다 —
+    그건 관리자가 작품 관리 화면(`/admin/contents`)에서 개별로 `lift-restriction`한다.
+
+    작품별 `lift-restriction`과 달리 방을 최신 발행본으로 옮기지 않는다 — 정지 중엔 작가가 편집·발행을 못 하므로
+    정지 전 상태로 되돌리는 것으로 충분하고, 독자에게 버전 변경 배너도 띄우지 않는다. 작품별 알림도 없다(정지 알림도
+    작품을 나열하지 않는다). 이 리비전 이전에 정지된 사용자의 작품은 표식이 없어 돌아오지 않는다.
 
     `reason_category`는 받지 않는다 — 이 액션은 `Notification`을 만들지 않으므로 통지가
     없어 인용할 자리가 없다(경고/정지가 카테고리를 요구하는 것과 반대). 예전엔
@@ -491,7 +506,7 @@ async def unsuspend_user(
     상태 변화를 알 수 있어(정지는 접근이 막히는 순간 이유를 알 방법이 알림뿐이라 필수인
     것과 대칭) 별도 통지 없이도 정보 비대칭이 생기지 않는다.
 
-    순서: `suspended_at = None` → `record_admin_action` → `commit()` → Redis `DEL`.
+    순서: `suspended_at = None` → 작품 복구 → `record_admin_action` → `commit()` → Redis `DEL`.
     """
     if not (body.admin_comment or "").strip():
         raise HTTPException(
@@ -503,6 +518,15 @@ async def unsuspend_user(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
 
     user.suspended_at = None
+    # `_RESTORABLE_CONTENT_CONDITION`은 상세의 `restorable_content_count`와 같은 조건이다(해제 확인창의 예고).
+    restored_content_ids = (
+        await db.scalars(
+            update(Content)
+            .where(Content.creator_user_id == user_id, _RESTORABLE_CONTENT_CONDITION)
+            .values(moderation_status=ModerationStatus.NORMAL, restricted_by_suspension=False)
+            .returning(Content.id)
+        )
+    ).all()
     await record_admin_action(
         db,
         admin_id=admin_id,
@@ -513,6 +537,8 @@ async def unsuspend_user(
     await db.commit()
 
     await unmark_user_suspended(user_id)
+
+    return AdminUserUnsuspendResponse(restored_content_count=len(restored_content_ids))
 
 
 @router.post("/admin/users/{user_id}/rate-limit-exempt", status_code=status.HTTP_204_NO_CONTENT)
