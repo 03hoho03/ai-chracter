@@ -46,7 +46,6 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
           <BuilderPreview
             {...previewProps}
             contentType="character"
-            thumbnailUrl={draft.thumbnailUrl}
             formToCard={characterFormToCard}
           />
         )}
@@ -62,7 +61,6 @@ export function BuilderPage({ type, draftId }: { type: ContentType; draftId: str
         <BuilderPreview
           {...previewProps}
           contentType="story"
-          thumbnailUrl={draft.thumbnailUrl}
           formToCard={storyFormToCard}
         />
       )}

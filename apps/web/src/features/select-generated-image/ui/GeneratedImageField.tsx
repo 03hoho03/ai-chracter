@@ -18,14 +18,20 @@ type GeneratedImageFieldProps = {
   value: SelectedImageValue;
   onChange: (value: SelectedImageValue) => void;
   purpose: AssetPurpose;
+  /** 지금 보여 줄 그림의 주소. 업로드 중이 아닐 때 칸에 그려지는 것은 이 값뿐이다. */
   previewUrl?: string;
+  /** 업로드가 끝나 자산 ID 가 생겼을 때 그 자산 ID 와 올린(가공을 거친) 파일을 알린다. `onChange` 와 같은
+   * 핸들러에서 불린다. */
+  onUploadComplete: (assetId: string, file: File) => void;
+  /** 갤러리에서 그림을 골랐을 때 그 자산 ID 와 피커가 준 표시 주소를 알린다. `onChange` 와 같은 핸들러에서 불린다. */
+  onPick: (assetId: string, imageUrl: string) => void;
   label?: string;
   /** 미리보기 웰의 비율. 카드에서 실제로 보일 모양과 같게 둔다 — 스토리는 세로 2:3이라
    * 정사각 미리보기로는 잘려나갈 위아래를 판단할 수 없다. 폭(`w-28`)을 고정하고 높이가 비율을
    * 따라가므로 스토리 빌더에서만 이 줄이 56px 높아진다. */
   previewAspect?: ThumbnailAspect;
-  /** `features` 간 직접 import는 eslint가 막아서(`features/crop-image`를
-   * 여기서 부를 수 없다) 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
+  /** 슬라이스끼리는 직접 import 하지 않는 관례라(eslint 가 강제하지는 않는다) `features/crop-image`를
+   * 여기서 부르지 않고 콜백 주입으로 뒤집는다. 파일 선택 직후 원본을 가로채 가공한 File을 돌려주고,
    * undefined를 돌려주면 취소로 간주해 업로드하지 않는다. 갤러리 선택 경로(`handlePickFromGallery`)는
    * 거치지 않는다. */
   beforeUpload?: (file: File) => Promise<File | undefined>;
@@ -35,22 +41,28 @@ type GeneratedImageFieldProps = {
  * 캐릭터/스토리 빌더가 공유하는 이미지 필드. 업로드/갤러리선택/삭제
  * 세 경로 모두 `{assetId}`(또는 삭제 시 null) 하나로 수렴하므로, 이 컴포넌트를 쓰는 zod 폼 필드는
  * 항상 `z.object({ assetId: z.string() }).nullable()` 모양이면 된다(situationalImageSchema/
- * profile.image와 동일 shape). `previewUrl`은 이미 서버에 저장된 값을 편집할 때 소비자가 알고 있는
- * 경우에만 넘기는 표시 전용 prop — assetId만으로는 렌더링 가능한 URL을 만들 수 없다(apps/api
- * CLAUDE.md의 "thumbnailAssetId만 주고 URL을 안 준다" 갭과 동일한 이유). 이번 세션에 직접 업로드/
- * 선택한 이미지는 로컬 상태의 미리보기 URL이 항상 우선한다.
+ * profile.image와 동일 shape).
+ *
+ * 표시 주소는 소비자가 `previewUrl`로 준다 — assetId만으로는 렌더링 가능한 URL을 만들 수 없다. 업로드가 끝나면
+ * `onUploadComplete`, 갤러리에서 고르면 `onPick`으로 그 그림을 소비자에게 알리고, 소비자가 그 그림의 주소를
+ * `previewUrl`로 돌려준다. 주소를 이 필드 안에 쥐지 않는 이유: 탭을 옮기면 이 필드가 언마운트돼 주소를 잃고,
+ * 같은 그림을 보여야 하는 다른 화면(빌더 미리보기 카드)이 읽을 수 없다. 이 필드가 스스로 그리는 것은 업로드
+ * 중인 파일 하나뿐이다 — 크롭 확정 즉시 그 파일을 그리고(그동안은 `previewUrl`보다 우선해야 업로드 중에 옛
+ * 그림이 비치지 않는다), 업로드가 끝나거나 실패하면 내려서 `previewUrl`로 돌아간다. 실패면 콜백을 부르지
+ * 않으므로 이전 그림이 그대로 돌아온다.
  */
 export function GeneratedImageField({
   value,
   onChange,
   purpose,
   previewUrl,
+  onUploadComplete,
+  onPick,
   label = "이미지",
   previewAspect = "square",
   beforeUpload,
 }: GeneratedImageFieldProps) {
   const [selectedFile, setSelectedFile] = useState<File>();
-  const [pickedPreviewUrl, setPickedPreviewUrl] = useState<string>();
   const [isUploading, setIsUploading] = useState(false);
 
   const objectPreviewUrl = useMemo(
@@ -62,7 +74,7 @@ export function GeneratedImageField({
     return () => URL.revokeObjectURL(objectPreviewUrl);
   }, [objectPreviewUrl]);
 
-  const displayUrl = objectPreviewUrl ?? pickedPreviewUrl ?? previewUrl;
+  const displayUrl = objectPreviewUrl ?? previewUrl;
   const inputId = `generated-image-field-${label}`;
 
   async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -74,15 +86,17 @@ export function GeneratedImageField({
     if (!prepared) return; // 크롭 취소 — 기존 이미지를 그대로 둔다
 
     setSelectedFile(prepared);
-    setPickedPreviewUrl(undefined);
     setIsUploading(true);
     try {
       const assetId = await uploadAsset(prepared, purpose);
+      onUploadComplete(assetId, prepared);
       onChange({ assetId });
     } catch (error) {
       toast.error(uploadAssetErrorMessage(error));
-      setSelectedFile(undefined);
     } finally {
+      // 성공이면 소비자가 같은 그림을 `previewUrl`로 돌려주고, 실패면 이전 그림으로 돌아간다 — 어느 쪽이든
+      // 업로드 중 사본은 더 그리지 않는다.
+      setSelectedFile(undefined);
       setIsUploading(false);
     }
   }
@@ -91,13 +105,12 @@ export function GeneratedImageField({
     const picked = await GeneratedImagePickerModal.call({});
     if (!picked) return;
     setSelectedFile(undefined);
-    setPickedPreviewUrl(picked.imageUrl);
+    onPick(picked.assetId, picked.imageUrl);
     onChange({ assetId: picked.assetId });
   }
 
   function handleDelete() {
     setSelectedFile(undefined);
-    setPickedPreviewUrl(undefined);
     onChange(null);
   }
 

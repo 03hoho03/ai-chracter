@@ -9,10 +9,17 @@ import { GeneratedImageField } from "@/features/select-generated-image";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
-/** 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택).
- * `thumbnailUrl`은 초안 조회 응답의 표시 전용 값 — 폼 필드가 아니라 초안
- * 재진입 시 이미지 필드를 채우기 위한 prop이다. */
-export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
+type ProfileTabProps = {
+  /** 폼이 지금 가진 대표 이미지의 표시 주소. 미리보기 카드와 같은 값을 셸이 정해 내려 준다. */
+  thumbnailUrl: string | null;
+  /** 업로드·갤러리 선택 결과를 셸에 알린다. 탭을 옮기면 이 탭이 언마운트되므로 방금 올리거나 고른 그림의
+   * 주소는 셸이 쥔다. */
+  onUploadComplete: (assetId: string, file: File) => void;
+  onPick: (assetId: string, imageUrl: string) => void;
+};
+
+/** 이름/한줄소개(필수 텍스트)와 대표 이미지(업로드/AI생성 선택). */
+export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTabProps) {
   const form = useFormContext<StoryBuilderFormValues>();
 
   const {
@@ -35,6 +42,8 @@ export function ProfileTab({ thumbnailUrl }: { thumbnailUrl: string | null }) {
                 onChange={field.onChange}
                 purpose="content-thumbnail"
                 previewUrl={thumbnailUrl ?? undefined}
+                onUploadComplete={onUploadComplete}
+                onPick={onPick}
                 previewAspect={toThumbnailAspect("story")}
                 beforeUpload={(file) =>
                   ImageCropModal.call({ file, aspect: toThumbnailAspectRatio(toThumbnailAspect("story")) })

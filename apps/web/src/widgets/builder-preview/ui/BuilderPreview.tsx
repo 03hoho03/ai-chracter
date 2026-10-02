@@ -23,8 +23,8 @@ export type BuilderPreviewProps<TFieldValues extends FieldValues> = {
   onClose?: () => void;
   /** `kind === "card"`에서만 쓰인다. `useContentListQuery`가 배경 목록을 가져올 콘텐츠 타입. */
   contentType: ContentType;
-  /** `kind === "card"`에서만 쓰인다. 초안 응답의 표시 전용 썸네일 URL —
-   * 폼 값엔 `{assetId}`뿐이라 URL은 항상 인자로 받는다. */
+  /** `kind === "card"`에서만 쓰인다. 폼이 지금 가진 대표 이미지의 표시 주소로, 빌더 셸이 정해 대표 이미지 칸과
+   * 같은 값을 넘긴다 — 폼 값엔 `{assetId}`뿐이라 URL은 항상 인자로 받는다. */
   thumbnailUrl: string | null;
   /** `kind === "card"`에서만 쓰인다. `features/build-story`·`features/build-character`가 이미
    * 만들어 둔 순수 변환 함수를 그대로 주입받는다 — 이 위젯은 스토리/캐릭터를 구분하지 않는다. */
