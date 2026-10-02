@@ -116,3 +116,25 @@ class PromptSection(Base):
         ),
         Index("ix_prompt_sections_set_channel_order", "prompt_set_id", "channel", "order"),
     )
+
+
+class PublishFilterTextSectionBackup(Base):
+    """발행 심사가 작가 글을 싣던 시절의 publish_filter 텍스트 슬롯 행 보관함 — 코드가 읽지 않는 되돌리기 전용 테이블이다.
+
+    발행 심사를 이미지 전용으로 바꾼 마이그레이션이 publish_filter 레인 세트마다 작가 글 슬롯 행을
+    `prompt_sections` 에서 이 테이블로 옮기고, 그 마이그레이션의 downgrade 가 원래 id·순서·본문 그대로 되돌린다.
+    컬럼은 `prompt_sections` 와 같다. 모델로 선언하는 이유는 `alembic check` 가 DB 에만 있는 테이블을 "제거할
+    테이블"로 잡기 때문이다.
+    """
+
+    __tablename__ = "publish_filter_text_section_backups"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    prompt_set_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("prompt_sets.id"), nullable=False)
+    channel: Mapped[str] = mapped_column(Text, nullable=False)
+    scope: Mapped[str] = mapped_column(Text, nullable=False)
+    slot: Mapped[str] = mapped_column(Text, nullable=False)
+    variant: Mapped[str] = mapped_column(Text, nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    conditional: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, nullable=False)

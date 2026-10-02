@@ -100,21 +100,9 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
     ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "judgment_instruction"): frozenset(),
+    # 발행 심사는 이미지만 본다 — 작가 글은 싣지 않고, 코드가 만든 이미지 목록 라벨 하나만 넘긴다.
     ("publish_filter", "intro_instruction"): frozenset(),
-    ("publish_filter", "name"): frozenset({"name"}),
-    ("publish_filter", "one_liner"): frozenset({"one_liner"}),
-    ("publish_filter", "intro"): frozenset({"intro"}),
-    ("publish_filter", "setting_text"): frozenset({"setting_text"}),
-    ("publish_filter", "development_example_legacy"): frozenset({"development_example"}),
-    ("publish_filter", "custom_prompt"): frozenset({"custom_prompt"}),
-    ("publish_filter", "rules"): frozenset({"rules"}),
-    ("publish_filter", "user_goal"): frozenset({"user_goal"}),
-    ("publish_filter", "development_examples_pairs"): frozenset({"example_lines"}),
-    ("publish_filter", "example_dialogues"): frozenset({"dialogue_lines"}),
-    ("publish_filter", "character_prompt"): frozenset({"character_prompt"}),
-    ("publish_filter", "detail_description"): frozenset({"detail_description"}),
-    ("publish_filter", "starting_setups"): frozenset({"setup_lines"}),
-    ("publish_filter", "media_book"): frozenset({"media_book_lines"}),
+    ("publish_filter", "image_list"): frozenset({"image_lines"}),
     ("publish_filter", "verdict_instruction"): frozenset(),
 }
 

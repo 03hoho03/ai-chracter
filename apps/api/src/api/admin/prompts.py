@@ -52,7 +52,7 @@ from api.core.sentry import capture_dependency_failure
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StartingSetup, StatDef, StoryPromptTemplate
+from api.db.models.story import StatDef, StoryPromptTemplate
 from api.db.session import get_db_session
 
 router = APIRouter(tags=["admin"])
@@ -64,7 +64,9 @@ logger = logging.getLogger(__name__)
 # character generation에 `user_persona`를 한 행씩 더한 27/14/16행, 여기에 c328445d4c2d가 채팅방
 # 기억 행(generation 2 · story ending_judgment 1 · 새 channel `memory_summary` 3)을 더한 33/19/16행에,
 # 2519dde454e0이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더한 36/19/16행, 여기에
-# bd29dd69bc0f가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더한 36/19/17행과 정확히 같다.
+# bd29dd69bc0f가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더한 36/19/17행, 여기에
+# 859b0fb86629가 publish_filter 레인의 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더한
+# 36/19/4행과 정확히 같다.
 # `tests/test_prompt_seed.py`의 `_EXPECTED_SLOTS_BY_LANE`이 "시드가 이 표와 일치하는가"를 보는
 # 반면, 이 상수는 "임의의 초안이 이 표와 일치하는가"(게시 검증)를 본다 — 검증 대상이
 # 달라 두 파일에 따로 둔다(시드 하나는 상수 데이터, 이건 임의 입력을 거부하는 게이트).
@@ -184,20 +186,7 @@ _EXPECTED_ROWS_BY_LANE: dict[PromptLane, dict[str, frozenset[tuple[str, str, str
             {
                 ("character", "intro_instruction", ""),
                 ("story", "intro_instruction", ""),
-                ("both", "name", ""),
-                ("both", "one_liner", ""),
-                ("character", "intro", ""),
-                ("story", "setting_text", ""),
-                ("story", "development_example_legacy", ""),
-                ("story", "custom_prompt", ""),
-                ("story", "rules", ""),
-                ("story", "user_goal", ""),
-                ("story", "development_examples_pairs", ""),
-                ("character", "example_dialogues", ""),
-                ("character", "character_prompt", ""),
-                ("both", "detail_description", ""),
-                ("story", "starting_setups", ""),
-                ("story", "media_book", ""),
+                ("both", "image_list", ""),
                 ("both", "verdict_instruction", ""),
             }
         ),
@@ -245,8 +234,8 @@ _REQUIRED_VARIANT_SLOTS_BY_LANE: dict[PromptLane, dict[tuple[str, str, str], fro
 
 # 레인마다 실제로 읽는 라벨만 검사한다. `ast`로 함수별
 # 라벨 사용을 전수 추출해 도출했다: story={user,story_assistant,story_example} /
-# character={user,character_assistant} / publish_filter={user,character_assistant,
-# story_example}. 헤더 컬럼 4개는 레인과 무관하게 그대로 남는다.
+# character={user,character_assistant} / publish_filter=없음(발행 심사는 이미지 목록만 싣고 대화 줄을
+# 조립하지 않는다). 헤더 컬럼 4개는 레인과 무관하게 그대로 남는다.
 _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
     "story": (
         ("userLabel", "user_label"),
@@ -257,11 +246,7 @@ _LABEL_FIELDS_BY_LANE: dict[PromptLane, tuple[tuple[str, str], ...]] = {
         ("userLabel", "user_label"),
         ("characterAssistantLabel", "character_assistant_label"),
     ),
-    "publish_filter": (
-        ("userLabel", "user_label"),
-        ("characterAssistantLabel", "character_assistant_label"),
-        ("storyExampleLabel", "story_example_label"),
-    ),
+    "publish_filter": (),
 }
 
 
@@ -893,22 +878,10 @@ _SAMPLE_MEDIA_CELLS = [
     ),
     MediaCellCandidate(entity_id=uuid.uuid4(), person="[샘플] 민아", scene="[샘플] 교실", situation_description=""),
 ]
-# 발행 심사 칸 줄의 세 모양 — 상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음.
+# 발행 심사 이미지 목록의 칸 라벨 — 인물·장면 이름만 쓴다.
 _SAMPLE_MEDIA_BOOK_FILTER_CELLS = [
-    MediaBookFilterCell(
-        person="[샘플] 민아", scene="[샘플] 창가", situation_description="[샘플] 창가에서 웃는다", unlock_hint="[샘플] 첫 만남"
-    ),
-    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 옥상", situation_description="", unlock_hint="[샘플] 비 오는 날"),
-    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 교실", situation_description="", unlock_hint=""),
-]
-_SAMPLE_STARTING_SETUPS = [
-    StartingSetup(
-        entity_id=uuid.uuid4(),
-        content_version_id=uuid.uuid4(),
-        name="[샘플] 시작 설정",
-        prologue="[샘플] 이야기가 여기서 시작된다.",
-        order=1,
-    )
+    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 창가"),
+    MediaBookFilterCell(person="[샘플] 민아", scene="[샘플] 옥상"),
 ]
 
 
@@ -1069,9 +1042,7 @@ def _character_preview_items(prompt_set: PromptSet, sections: list[PromptSection
     return items
 
 
-def _publish_filter_preview_items(
-    prompt_set: PromptSet, sections: list[PromptSection]
-) -> list[AdminPromptPreviewItem]:
+def _publish_filter_preview_items(sections: list[PromptSection]) -> list[AdminPromptPreviewItem]:
     items: list[AdminPromptPreviewItem] = []
 
     # ⚠️ 이 두 label 문자열을 다듬지 않는다. 응답에 scope 필드가 없어
@@ -1081,14 +1052,7 @@ def _publish_filter_preview_items(
             channel="publish_filter",
             label="publish_filter · 캐릭터",
             text=build_character_publish_filter_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                name="[샘플] 캐릭터 이름",
-                one_liner="[샘플] 한줄소개",
-                intro="[샘플] 인트로",
-                example_dialogues=_SAMPLE_EXAMPLE_DIALOGUES,
-                character_prompt="[샘플] 캐릭터 프롬프트",
-                detail_description="[샘플] 상세 설명",
+                sections=sections, situational_image_count=len(_SAMPLE_SITUATIONAL_IMAGES)
             ),
         )
     )
@@ -1096,21 +1060,7 @@ def _publish_filter_preview_items(
         AdminPromptPreviewItem(
             channel="publish_filter",
             label="publish_filter · 스토리",
-            text=build_story_publish_filter_prompt(
-                prompt_set=prompt_set,
-                sections=sections,
-                name="[샘플] 스토리 이름",
-                one_liner="[샘플] 한줄소개",
-                setting_text="[샘플] 세계관 설정",
-                development_example=None,
-                custom_prompt=None,
-                development_examples=_SAMPLE_DEVELOPMENT_EXAMPLES,
-                user_goal="[샘플] 사용자의 목표",
-                rules="[샘플] 규칙",
-                detail_description="[샘플] 상세 설명",
-                starting_setups=_SAMPLE_STARTING_SETUPS,
-                media_cells=_SAMPLE_MEDIA_BOOK_FILTER_CELLS,
-            ),
+            text=build_story_publish_filter_prompt(sections=sections, media_cells=_SAMPLE_MEDIA_BOOK_FILTER_CELLS),
         )
     )
 
@@ -1124,4 +1074,4 @@ def _build_preview_items(
         return _story_preview_items(prompt_set, sections)
     if lane == "character":
         return _character_preview_items(prompt_set, sections)
-    return _publish_filter_preview_items(prompt_set, sections)
+    return _publish_filter_preview_items(sections)

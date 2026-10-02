@@ -48,7 +48,7 @@ from api.content.publish import (
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.prompt import PromptSection, PromptSet
-from api.db.models.story import StartingSetup, StatDef, StoryPromptTemplate
+from api.db.models.story import StatDef, StoryPromptTemplate
 from api.db.session import async_session_factory
 
 GOLDEN_DIR = Path(__file__).resolve().parent.parent / "tests" / "golden" / "prompts"
@@ -67,20 +67,12 @@ _MEDIA_CELL_ENTITY_ID_ROOFTOP = UUID("55555555-5555-5555-5555-555555555555")
 _MEDIA_CELL_ENTITY_ID_CLASSROOM = UUID("66666666-6666-6666-6666-666666666666")
 
 CHARACTER_PROMPT = "너는 밤늦게 옥상에서 마주친 낯선 사람이다. 말수는 적지만 관찰력이 좋다."
-CHARACTER_NAME = "밤의 목격자"
-CHARACTER_ONE_LINER = "이름도 모르는 밤의 목격자와 나누는 대화."
-CHARACTER_INTRO = "옥상 난간에 기대 선 채로, 그가 담배 연기 사이로 너를 돌아본다."
-CHARACTER_DETAIL_DESCRIPTION = "매일 자정 옥상에 올라오는 정체불명의 인물과 이야기를 나누는 캐릭터 챗입니다."
 
-STORY_NAME = "옥상의 약속"
-STORY_ONE_LINER = "떠난 사람이 남긴 옥상의 약속을 되짚는 이야기."
 STORY_SETTING_TEXT = "낡은 아파트 옥상. 화자는 3인칭으로 장면을 서술하며 인물의 속마음은 직접 말하지 않는다."
 STORY_CUSTOM_PROMPT = "당신은 이 이야기의 진행자다. 매 턴 옥상의 날씨를 한 줄로 묘사한 뒤 장면을 이어간다."
 STORY_RULES = "인물은 절대 사용자의 이름을 먼저 부르지 않는다."
 STORY_USER_GOAL = "사용자는 떠난 친구가 옥상에 남긴 마지막 메모를 찾아야 한다."
 STORY_PROLOGUE = "옥상 문은 살짝 열려 있다. 바람에 종잇조각 하나가 팔랑인다."
-STORY_DEVELOPMENT_EXAMPLE_TEXT = "사용자가 문을 두드리면, 안에서는 대답 대신 발소리만 들린다."
-STORY_DETAIL_DESCRIPTION = "옥상에 남겨진 마지막 메모를 찾아가는 짧은 미스터리 스토리 챗입니다."
 
 KEYWORD_NOTE_TEXT = "종잇조각: 친구가 옥상에서 마지막으로 쓴 메모. 젖어서 글씨가 반쯤 지워졌다."
 SHORTCUT_PROMPT = "[단축어: 주변 둘러보기] 사용자가 옥상 구석구석을 살펴본다."
@@ -175,16 +167,12 @@ def _media_cells() -> list[MediaCellCandidate]:
 
 
 def _media_book_filter_cells() -> list[MediaBookFilterCell]:
-    """발행 심사 칸 줄의 세 모양 — 상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음."""
+    """발행 심사 이미지 목록의 칸 라벨 — 축 순서(인물 → 장면)로 이미 정렬된 칸 셋."""
     return [
-        MediaBookFilterCell(person="민아", scene="옥상", situation_description="난간에 기대 웃는다", unlock_hint="노을 지는 옥상"),
-        MediaBookFilterCell(person="민아", scene="교실", situation_description="", unlock_hint="비 오는 날"),
-        MediaBookFilterCell(person="준", scene="교실", situation_description="", unlock_hint=""),
+        MediaBookFilterCell(person="민아", scene="옥상"),
+        MediaBookFilterCell(person="민아", scene="교실"),
+        MediaBookFilterCell(person="준", scene="교실"),
     ]
-
-
-def _starting_setup() -> StartingSetup:
-    return StartingSetup(name="첫 만남", prologue=STORY_PROLOGUE)
 
 
 # ---- 골든 케이스 ------------------------------------------------------------
@@ -520,137 +508,23 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             assistant_message=ASSISTANT_MESSAGE,
         ),
     ),
-    # -- 발행 검열: 캐릭터/스토리 × filled/empty --
+    # -- 발행 심사: 이미지 목록만 싣는다 --
+    # 발행 심사를 이미지 전용으로 바꾼 뒤에 다시 적은 케이스라 기대 텍스트를 손으로 적었다. 작가 글이 프롬프트에
+    # 실리지 않으므로 이미지 수와 칸 이름만 입력이다.
     (
-        "publish_filter_character_filled.txt",
+        "publish_filter_character.txt",
         "publish_filter",
-        lambda ps, sections: build_character_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=CHARACTER_NAME,
-            one_liner=CHARACTER_ONE_LINER,
-            intro=CHARACTER_INTRO,
-            example_dialogues=[EXAMPLE_DIALOGUE],
-            character_prompt=CHARACTER_PROMPT,
-            detail_description=CHARACTER_DETAIL_DESCRIPTION,
-        ),
+        lambda ps, sections: build_character_publish_filter_prompt(sections=sections, situational_image_count=2),
     ),
     (
-        "publish_filter_character_empty.txt",
+        "publish_filter_story.txt",
         "publish_filter",
-        lambda ps, sections: build_character_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=CHARACTER_NAME,
-            one_liner=CHARACTER_ONE_LINER,
-            intro=CHARACTER_INTRO,
-            example_dialogues=[],
-            character_prompt=CHARACTER_PROMPT,
-            detail_description=CHARACTER_DETAIL_DESCRIPTION,
-        ),
+        lambda ps, sections: build_story_publish_filter_prompt(sections=sections, media_cells=[]),
     ),
-    (
-        "publish_filter_story_filled.txt",
-        "publish_filter",
-        lambda ps, sections: build_story_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=STORY_NAME,
-            one_liner=STORY_ONE_LINER,
-            setting_text=STORY_SETTING_TEXT,
-            development_example=STORY_DEVELOPMENT_EXAMPLE_TEXT,
-            custom_prompt=STORY_CUSTOM_PROMPT,
-            development_examples=[DEVELOPMENT_EXAMPLE],
-            user_goal=STORY_USER_GOAL,
-            rules=STORY_RULES,
-            detail_description=STORY_DETAIL_DESCRIPTION,
-            starting_setups=[_starting_setup()],
-            media_cells=[],
-        ),
-    ),
-    (
-        "publish_filter_story_empty.txt",
-        "publish_filter",
-        lambda ps, sections: build_story_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=STORY_NAME,
-            one_liner=STORY_ONE_LINER,
-            setting_text=None,
-            development_example=None,
-            custom_prompt=None,
-            development_examples=[],
-            user_goal=None,
-            rules=None,
-            detail_description=STORY_DETAIL_DESCRIPTION,
-            starting_setups=[],
-            media_cells=[],
-        ),
-    ),
-    # `development_example`(단수 레거시)과 `development_examples`(복수 신규)는 대각선
-    # (둘 다 참/둘 다 거짓)만으로는 부족하다 — router.py의 `_update_story_draft`가
-    # `development_example`은 payload에 명시된 경우에만 갱신하고(FE가 더 이상 안 보내는
-    # 필드라 사실상 기존 값이 그대로 남는다) `development_examples`는 매번 통째로 덮어쓰므로,
-    # "쌍 목록만 채워짐"이 신규 스토리의 기본 상태이자 "레거시 텍스트만 남고 쌍 목록은
-    # 비워짐"도 사용자가 쌍을 전부 지우면 그대로 도달한다.
-    (
-        "publish_filter_story_pairs_only.txt",
-        "publish_filter",
-        lambda ps, sections: build_story_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=STORY_NAME,
-            one_liner=STORY_ONE_LINER,
-            setting_text=STORY_SETTING_TEXT,
-            development_example=None,
-            custom_prompt=STORY_CUSTOM_PROMPT,
-            development_examples=[DEVELOPMENT_EXAMPLE],
-            user_goal=STORY_USER_GOAL,
-            rules=STORY_RULES,
-            detail_description=STORY_DETAIL_DESCRIPTION,
-            starting_setups=[_starting_setup()],
-            media_cells=[],
-        ),
-    ),
-    (
-        "publish_filter_story_legacy_only.txt",
-        "publish_filter",
-        lambda ps, sections: build_story_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=STORY_NAME,
-            one_liner=STORY_ONE_LINER,
-            setting_text=STORY_SETTING_TEXT,
-            development_example=STORY_DEVELOPMENT_EXAMPLE_TEXT,
-            custom_prompt=STORY_CUSTOM_PROMPT,
-            development_examples=[],
-            user_goal=STORY_USER_GOAL,
-            rules=STORY_RULES,
-            detail_description=STORY_DETAIL_DESCRIPTION,
-            starting_setups=[_starting_setup()],
-            media_cells=[],
-        ),
-    ),
-    # 미디어 북이 있는 스토리 — 위 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다. 칸 줄의 세 모양
-    # (상황 설명·해금 힌트 둘 다, 힌트만, 둘 다 없음). 칸이 없는 위 네 케이스는 이 섹션이 빠져 바이트가 그대로다.
     (
         "publish_filter_story_media_book.txt",
         "publish_filter",
-        lambda ps, sections: build_story_publish_filter_prompt(
-            prompt_set=ps,
-            sections=sections,
-            name=STORY_NAME,
-            one_liner=STORY_ONE_LINER,
-            setting_text=STORY_SETTING_TEXT,
-            development_example=STORY_DEVELOPMENT_EXAMPLE_TEXT,
-            custom_prompt=STORY_CUSTOM_PROMPT,
-            development_examples=[DEVELOPMENT_EXAMPLE],
-            user_goal=STORY_USER_GOAL,
-            rules=STORY_RULES,
-            detail_description=STORY_DETAIL_DESCRIPTION,
-            starting_setups=[_starting_setup()],
-            media_cells=_media_book_filter_cells(),
-        ),
+        lambda ps, sections: build_story_publish_filter_prompt(sections=sections, media_cells=_media_book_filter_cells()),
     ),
 ]
 

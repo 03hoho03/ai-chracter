@@ -31,11 +31,12 @@ from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
 # 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 36 / character 19 /
-# publish_filter 17 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
+# publish_filter 4 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
 # 26/13/16에 마이그레이션 `b72c33c70240`이 story·character generation에 `user_persona`를 한 행씩 더했고,
 # `c328445d4c2d`가 채팅방 기억 행을 더했다 — generation 2 · story ending_judgment 1 · 새 channel
 # `memory_summary` 3. `2519dde454e0`이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더했고,
-# `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더했다).
+# `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더했고, `859b0fb86629`가
+# publish_filter 레인을 이미지 전용으로 바꿔 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더했다).
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] = {
     "story": {
@@ -121,20 +122,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         "publish_filter": {
             ("character", "intro_instruction", ""),
             ("story", "intro_instruction", ""),
-            ("both", "name", ""),
-            ("both", "one_liner", ""),
-            ("character", "intro", ""),
-            ("story", "setting_text", ""),
-            ("story", "development_example_legacy", ""),
-            ("story", "custom_prompt", ""),
-            ("story", "rules", ""),
-            ("story", "user_goal", ""),
-            ("story", "development_examples_pairs", ""),
-            ("character", "example_dialogues", ""),
-            ("character", "character_prompt", ""),
-            ("both", "detail_description", ""),
-            ("story", "starting_setups", ""),
-            ("story", "media_book", ""),
+            ("both", "image_list", ""),
             ("both", "verdict_instruction", ""),
         },
     },
