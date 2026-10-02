@@ -24,9 +24,12 @@ export function StatTab() {
   const [selectedSetupId, setSelectedSetupId] = useState<string | undefined>(startingSetups[0]?.id);
 
   if (startingSetups.length === 0) {
+    // 다른 탭 본문과 같은 `py-6` 루트로 감싸야 탭 목록과의 간격이 탭마다 같다.
     return (
-      <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-        <p className="text-sm text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
+      <div className="py-6">
+        <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
+          <p className="text-sm text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
+        </div>
       </div>
     );
   }

@@ -332,7 +332,13 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
               </div>
             )}
 
-            <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
+            {/* lg 이상에서는 탭 목록과 첫 내용 사이를 각 탭 본문 컴포넌트 루트의 윗여백(`py-6`, 24px) 하나로 둔다 — `Tabs` 기본 간격까지 더하면
+                상단바 → 탭 목록(24px)보다 벌어진다. lg 미만은 그대로다. */}
+            <Tabs
+              value={activeTab}
+              onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
+              className="lg:gap-0"
+            >
               <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
               <TabsContent value="profile">

@@ -18,9 +18,10 @@ type BuilderTopBarProps = {
  * 전용 상단바를 쓴다(크랙 실측 기준). 같은 56px(`h-14`) 자리를 차지하므로 BuilderLayout의
  * `calc(100dvh-3.5rem)` 높이 계산이 그대로 유지된다 — 헤더 자리만 바뀌고 높이 계산식은 그대로다.
  *
- * 전역 헤더와 같은 규칙으로 full-bleed다(`mx-auto max-w-*` 없이 `px-4 sm:px-6`만) — 대가로
- * 뒤로가기 버튼의 left와 `BuilderLayout` 폼 열의 left가 폭에 따라 갈릴 수 있다(drift 0을 포기, 의도된
- * 것이다).
+ * 전역 헤더와 같은 규칙으로 full-bleed다(`mx-auto max-w-*` 없이 `px-4 sm:px-6`만). lg 이상에서는
+ * `BuilderLayout`이 폼 열을 왼쪽에 붙이고 같은 `px-6`을 쓰므로 뒤로가기 버튼 left와 탭 목록 left가
+ * 어느 폭에서나 같다 — 이 패딩을 바꾸면 그쪽도 함께 바꿔야 한다. lg 미만은 본문이 `max-w-2xl`로
+ * 가운데 정렬돼 두 left가 폭에 따라 갈린다(의도된 것이다).
  *
  * 뒤로가기 목적지는 인터뷰로 확정된 `/my`(내 작품) 하나뿐이라 prop으로 받지 않는다. 폭이 좁을 때는
  * 액션 버튼의 라벨을 숨기고 아이콘만 남긴다(`hidden sm:inline`, DESIGN.md §Navigation의 모바일
