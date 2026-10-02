@@ -113,7 +113,8 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
           // 고른 뒤 스크롤이 이 칸을 상단바 밑에 숨기지 않게 위쪽 여유를 둔다(좁은 화면은 페이지가, 넓은 화면은 상단바
           // 아래에서 시작하는 폼 열이 스크롤된다).
           "scroll-mt-16 lg:scroll-mt-4",
-          "flex size-full items-center justify-center overflow-hidden rounded-lg focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+          // 포커스는 하우스 레시피 — 3:1 은 불투명 보더가 지고, 반투명 링은 어디인지 보여 준다.
+          "flex size-full items-center justify-center overflow-hidden rounded-lg focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           cell
             ? "border border-foreground/10 bg-muted"
             : "border border-dashed border-input text-muted-foreground hover:bg-muted hover:text-foreground",
@@ -135,7 +136,7 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
           type="button"
           aria-label={`${tag} 표기 복사`}
           onClick={handleCopy}
-          className="absolute right-1 bottom-1 inline-flex size-6 items-center justify-center rounded-md bg-scrim/70 text-scrim-foreground hover:bg-scrim focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="absolute right-1 bottom-1 inline-flex size-6 items-center justify-center rounded-md border border-transparent bg-scrim/70 text-scrim-foreground hover:bg-scrim focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <Copy aria-hidden className="size-3.5" />
         </button>
