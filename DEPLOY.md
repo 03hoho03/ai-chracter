@@ -148,7 +148,7 @@ Google AI Studio에서 발급한 키 1개(`GEMINI_API_KEY`)를 채팅에 쓴다.
 
 ### 2-1. BE 런타임 — VM의 `/opt/ddona/.env` (root, 0600)
 
-**40개 키다**(2026-09-29 VM 실측, 키 이름만 셈): 아래 표 26개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
+**43개 키다**(2026-10-02 VM 실측, 키 이름만 셈): 아래 표 29개(생략 가능한 `LOCAL_IMAGE_TIMEOUT_SECONDS`·
 `LOCAL_IMAGE_CAPABILITIES_TTL_SECONDS`·`LOCAL_IMAGE_QUEUE_LIMIT`·`EXPOSE_API_DOCS` 4개 제외) + compose용
 5개(`API_IMAGE`·`SITE_ADDRESS`·`POSTGRES_PASSWORD`·`POSTGRES_DB`·`DDONA_ENV_FILE`) + "Bugsink(에러 트래커)" 절의 6개
 (`BUGSINK_*` 3개·`INGEST_SHARED_SECRET`·`SENTRY_DSN`·`SENTRY_ENVIRONMENT`) + 크론 알림 3개
