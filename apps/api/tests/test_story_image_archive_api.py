@@ -33,7 +33,9 @@ from factories import (
     _add_epilogue_ending,
     _add_named_media_cell,
     _clear_llm_override,
+    _get_genre,
     _login_as,
+    _make_published_character,
     _make_user,
     _override_llm_client,
     _parse_sse_events,
@@ -424,3 +426,18 @@ async def test_story_image_archive_private_story_opens_only_to_creator_and_playe
     assert await _archive_status(db_client, user_id, content) == 200
     assert await _archive_status(db_client, player.id, content) == 200
     assert await _archive_status(db_client, stranger.id, content) == 404
+
+
+async def test_story_image_archive_rejects_character_id(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """스토리 보관함 주소에 캐릭터 id 를 넣으면 없는 스토리와 같은 404 다 — 캐릭터에는 미디어 북이 없어서, 빈
+    목록으로 열어 주면 엉뚱한 작품의 빈 보관함이 정상처럼 보인다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    assert await _archive_status(db_client, user.id, character) == 404
