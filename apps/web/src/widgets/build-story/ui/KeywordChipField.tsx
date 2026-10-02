@@ -3,7 +3,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { X } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 type ChipStyle = "filled" | "outlined";
 
@@ -65,6 +65,9 @@ export function KeywordChipField({
   const limitId = `${idPrefix}-limit`;
   const refusalId = `${idPrefix}-refusal`;
   const errorId = `${idPrefix}-error`;
+  const removeButtonId = (index: number) => `${idPrefix}-remove-${index}`;
+  // 칩을 지운 뒤 포커스를 둘 요소. 렌더가 끝나 칩 목록이 줄어든 뒤에야 그 자리에 맞는 버튼이 있으므로 effect 에서 옮긴다.
+  const pendingFocusIdRef = useRef<string | undefined>(undefined);
   const describedBy =
     [
       countId,
@@ -75,6 +78,23 @@ export function KeywordChipField({
     ]
       .filter(Boolean)
       .join(" ") || undefined;
+
+  useEffect(() => {
+    const targetId = pendingFocusIdRef.current;
+    if (!targetId) return;
+    pendingFocusIdRef.current = undefined;
+    document.getElementById(targetId)?.focus();
+  }, [keywords]);
+
+  function handleRemove(keyword: string, index: number) {
+    setRefusal(undefined);
+    onRemove(keyword);
+    // 다음 칩(지운 뒤엔 같은 순번으로 당겨진다) → 없으면 앞 칩 → 없으면 입력칸으로 포커스를 옮긴다. 삭제 버튼이
+    // 사라지며 포커스가 body 로 떨어지면 키보드로 칩을 여럿 지울 때마다 처음부터 다시 Tab 해야 한다.
+    if (index + 1 < keywords.length) pendingFocusIdRef.current = removeButtonId(index);
+    else if (index > 0) pendingFocusIdRef.current = removeButtonId(index - 1);
+    else pendingFocusIdRef.current = inputId;
+  }
 
   function handleAdd() {
     // 꽉 찬 상태의 이유는 이미 입력칸 아래 문장이 늘 보여 주므로 같은 말을 오류로 한 번 더 띄우지 않는다.
@@ -149,7 +169,7 @@ export function KeywordChipField({
       )}
       {keywords.length > 0 && (
         <ul className={cn("flex flex-wrap gap-2", disabled && "opacity-65")} aria-label={`${label} 목록`}>
-          {keywords.map((keyword) => (
+          {keywords.map((keyword, index) => (
             <li
               key={keyword}
               className={cn(
@@ -158,17 +178,18 @@ export function KeywordChipField({
               )}
             >
               {keyword}
+              {/* 보이는 크기는 칩 안의 16px 그대로 두고 `after` 로 누르는 영역만 30×30 으로 넓힌다(공용 체크박스·스위치와
+                  같은 방식. `after` 는 버튼의 투명 보더 1px 안쪽에서 8px 씩 나가므로 32 가 아니라 30 이다). 오른쪽은 칩
+                  패딩 안에 머물고, 위아래는 칩 밖으로 2px 이하만 나가 줄 간격(8px) 안에서 윗줄·아랫줄 칩과 겹치지 않는다. */}
               <Button
+                id={removeButtonId(index)}
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-4"
+                className="relative size-4 after:absolute after:-inset-2"
                 disabled={disabled}
                 aria-label={`${keyword} ${chipNoun} 삭제`}
-                onClick={() => {
-                  setRefusal(undefined);
-                  onRemove(keyword);
-                }}
+                onClick={() => handleRemove(keyword, index)}
               >
                 <X aria-hidden className="size-3" />
               </Button>
