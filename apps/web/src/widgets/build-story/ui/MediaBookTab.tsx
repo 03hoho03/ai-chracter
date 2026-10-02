@@ -6,8 +6,9 @@ import { toast } from "sonner";
 
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
-import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
+import { MediaBookCellPanel } from "./MediaBookCellPanel";
 import { focusCellOrHeading } from "./MediaBookSelectionProvider";
+import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID } from "../model/useMediaBookCellImage";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import {
   CELL_PANEL_ID,

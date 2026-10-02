@@ -6,11 +6,9 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
-import { toast } from "sonner";
 
 import { toMediaNameTag } from "@/entities/media-book";
 import {
-  cellImageRefusalMessage,
   countCharacters,
   findCell,
   findNextIncompleteCell,
@@ -18,7 +16,6 @@ import {
   MAX_MEDIA_BOOK_SITUATION_LENGTH,
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   removeCell,
-  setCellImage,
   toUsedAssetLabels,
   updateCell,
   type MediaBookCellImage,
@@ -27,14 +24,14 @@ import {
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
-import { uploadAsset } from "@/shared/api/asset/uploadAsset";
-import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
 import { focusCellOrHeading } from "./MediaBookSelectionProvider";
 import { clampCharacters } from "../lib/clampCharacters";
 import { copyMediaTag } from "../lib/copyMediaTag";
+import { MEDIA_BOOK_IMAGE_ACCEPT } from "../lib/mediaBookImageFile";
+import { useMediaBookCellImage } from "../model/useMediaBookCellImage";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
@@ -56,11 +53,6 @@ type MediaBookCellPanelProps = {
 const PREVIEW_MAX_HEIGHT_PX = 256;
 const PREVIEW_MAX_WIDTH_PX = 192;
 
-/** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
-export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";
-// 기본 4초는 바뀐 이미지를 확인하고 되돌리기를 누르기에 짧다.
-const UNDO_TOAST_DURATION_MS = 8000;
-
 /**
  * 배치표에서 고른 칸의 상세. 폼 열에 펼친다(모달이 아니다 — 칸을 바꿔 가며 연달아 채우는 작업이라 표가 계속 보여야
  * 한다). 넓은 화면에서는 옆 열의 표와 나란히 서고, 좁은 화면에서는 표가 미리보기 화면이라 그 화면과 오간다. 머리(썸네일·이름·표기)는 칸을 바꿔도 그대로 두고 본문만 칸마다 새로 그린다 — 업로드 중 표시 같은
@@ -78,6 +70,7 @@ export function MediaBookCellPanel({
 }: MediaBookCellPanelProps) {
   const { mediaBook, getMediaBook, commit } = useMediaBookEditor();
   const thumbnails = useMediaBookThumbnails();
+  const { uploadImage, applyImage } = useMediaBookCellImage(focusCellOrHeading);
   const person = mediaBook.people.find((item) => item.id === position.personId);
   const scene = mediaBook.scenes.find((item) => item.id === position.sceneId);
   const cell = findCell(mediaBook, position.personId, position.sceneId);
@@ -102,76 +95,6 @@ export function MediaBookCellPanel({
     // 처음부터 Tab 을 다시 시작해야 한다.
     const next = findNextIncompleteCell(getMediaBook(), position);
     if (next) onSelectNext(next);
-  }
-
-  function handleImageChange(image: MediaBookCellImage) {
-    // 업로드를 기다리는 동안 다른 칸이 채워졌을 수 있다 — 그 순간의 값 위에 쓴다.
-    const before = findCell(getMediaBook(), position.personId, position.sceneId);
-    // 지금 이미지를 다시 골랐으면 바뀌는 것이 없다(저장도 되돌리기도 띄우지 않는다).
-    if (before?.imageAssetId === image.assetId) return;
-    // 업로드를 기다리는 사이 이 칸의 인물·장면이 지워졌으면 거절된다(없는 축을 가리키는 칸을 만들지 않는다).
-    const result = setCellImage(getMediaBook(), position.personId, position.sceneId, image, () => crypto.randomUUID());
-    if (!result.ok) {
-      toast.error(`${cellImageRefusalMessage(result.reason)}.`);
-      return;
-    }
-    commit(result.mediaBook);
-    if (before) offerUndo(before, image.assetId);
-  }
-
-  /** 확인 없이 바꾸는 대신 직전 이미지 하나로 되돌릴 길을 둔다 — 반복해서 채우는 작업이 확인 창으로 느려지지 않게. */
-  function offerUndo(previous: MediaBookCellValues, replacedWith: string) {
-    toast(`${cellName} 칸의 이미지를 바꿨어요.`, {
-      id: MEDIA_BOOK_IMAGE_UNDO_TOAST_ID,
-      duration: UNDO_TOAST_DURATION_MS,
-      // sonner 의 기본 동작 버튼은 밝은 면·작은 반경·다크에서 안 보이는 포커스라 이 앱의 버튼을 넘긴다. 토스트 면이
-      // popover 라 outline 의 hover 채움(muted)이 사라지므로 secondary 로 올린다.
-      action: (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="ml-auto hover:bg-secondary"
-          onClick={() => {
-            // 포커스가 토스트를 떠나면 sonner 가 토스트에 들어오기 전 자리(대개 방금 누른 고르기 버튼)로 돌려준다 —
-            // 마우스든 Alt+T 키보드든 같다. 그래서 아래에서 칸으로 옮겨도 그 자리가 있으면 곧바로 그리로 간다. 칸으로
-            // 옮기는 것은 돌려줄 자리가 없을 때(포커스가 body 였을 때)를 위해서다 — 버튼이 토스트와 함께 사라지며
-            // 포커스가 body 로 떨어지지 않게 표의 그 칸(보이지 않으면 상세 제목)에 둔다(화면은 움직이지 않게).
-            focusCellOrHeading(position, { preventScroll: true });
-            toast.dismiss(MEDIA_BOOK_IMAGE_UNDO_TOAST_ID);
-            undoImageChange(previous, replacedWith);
-          }}
-        >
-          되돌리기
-        </Button>
-      ),
-    });
-  }
-
-  function undoImageChange(previous: MediaBookCellValues, replacedWith: string) {
-    // 그 사이 이 칸을 또 바꿨거나 비웠으면 지금 값을 덮지 않는다.
-    const current = findCell(getMediaBook(), previous.personId, previous.sceneId);
-    const result =
-      current?.imageAssetId === replacedWith
-        ? setCellImage(
-            getMediaBook(),
-            previous.personId,
-            previous.sceneId,
-            {
-              assetId: previous.imageAssetId,
-              imageUrl: previous.imageUrl,
-              imageWidth: previous.imageWidth,
-              imageHeight: previous.imageHeight,
-            },
-            () => crypto.randomUUID(),
-          )
-        : undefined;
-    if (!result?.ok) {
-      toast(`${cellName} 칸이 그 뒤에 바뀌어서 되돌리지 않았어요.`);
-      return;
-    }
-    commit(result.mediaBook);
-    toast.success(`${cellName} 칸을 원래 이미지로 되돌렸어요.`);
   }
 
   function handlePatch(patch: MediaBookCellTextPatch) {
@@ -202,7 +125,10 @@ export function MediaBookCellPanel({
     // 빈 칸을 채우면 누른 버튼이 빈 칸 본문째 사라진다 — 포커스를 언제나 남는 상세 제목으로 보낸다. 입력칸으로 보내면
     // 폰에서 키보드가 예고 없이 올라온다.
     onTriggerGone: focusHeading,
-    onImageChange: handleImageChange,
+    uploadImage,
+    onImageChange: (image: MediaBookCellImage) => {
+      applyImage(position, image);
+    },
   };
 
   return (
@@ -211,7 +137,7 @@ export function MediaBookCellPanel({
       aria-labelledby={headingId}
       className={cn(
         "flex flex-col gap-4 rounded-xl border border-border p-4",
-        // 키보드로 칸을 열면 포커스가 제목으로 온다. 제목 자체에는 링을 그리지 않고 상세 윤곽에 하우스 포커스
+        // 칸을 고르면 입력 방식과 무관하게 포커스가 제목으로 온다. 제목 자체에는 링을 그리지 않고 상세 윤곽에 하우스 포커스
         // 레시피를 건다 — 불투명 보더가 대비를 지고 링이 어디가 열렸는지 보여 준다.
         "has-[h3:focus-visible]:border-ring has-[h3:focus-visible]:ring-3 has-[h3:focus-visible]:ring-ring/50",
       )}
@@ -238,7 +164,7 @@ export function MediaBookCellPanel({
         <CellThumbnail imageUrl={cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined} hasImage={!!cell} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex items-start justify-between gap-2">
-            {/* 키보드로 칸을 열면 포커스가 여기로 온다(표가 다른 열·다른 화면에 있어도 따라가게). */}
+            {/* 칸을 고르면 입력 방식과 무관하게 포커스가 여기로 온다(표가 다른 열·다른 화면에 있어도 따라가게). */}
             <h3 id={headingId} tabIndex={-1} className="truncate text-lg font-semibold text-foreground focus-visible:outline-none">
               {cellName}
             </h3>
@@ -336,7 +262,8 @@ function CellThumbnail({ imageUrl, hasImage }: CellThumbnailProps) {
   }
   return (
     <div className="size-12 shrink-0 overflow-hidden rounded-md border border-foreground/10 bg-muted">
-      {!!imageUrl && <img src={imageUrl} alt="" decoding="async" className="size-full object-contain" />}
+      {/* 배치표 칸에 끌어 놓으면 브라우저에 따라 파일 끌기로 받혀 그림 사본이 올라갈 수 있어 끌지 못하게 한다. */}
+      {!!imageUrl && <img src={imageUrl} alt="" draggable={false} decoding="async" className="size-full object-contain" />}
     </div>
   );
 }
@@ -467,7 +394,8 @@ function CellPreview({ imageUrl, width, height }: CellPreviewProps) {
       className="flex shrink-0 items-center justify-center overflow-hidden rounded-lg border border-foreground/10 bg-muted"
       style={{ width: boxWidth, aspectRatio: ratio }}
     >
-      {!!imageUrl && <img src={imageUrl} alt="" decoding="async" className="size-full object-contain" />}
+      {/* 배치표 칸에 끌어 놓으면 브라우저에 따라 파일 끌기로 받혀 그림 사본이 올라갈 수 있어 끌지 못하게 한다. */}
+      {!!imageUrl && <img src={imageUrl} alt="" draggable={false} decoding="async" className="size-full object-contain" />}
     </div>
   );
 }
@@ -481,6 +409,8 @@ type CellImageButtonsProps = {
   getUsedAssetLabels: () => ReadonlyMap<string, string>;
   /** 누른 버튼이 결과로 사라졌을 때(빈 칸을 채운 뒤) 포커스를 둘 곳으로 옮긴다. */
   onTriggerGone: () => void;
+  /** 파일을 올린다. 실패하면 안내를 띄우고 `undefined` 다. */
+  uploadImage: (file: File) => Promise<MediaBookCellImage | undefined>;
   onImageChange: (image: MediaBookCellImage) => void;
 };
 
@@ -490,6 +420,7 @@ function CellImageButtons({
   currentAssetId,
   getUsedAssetLabels,
   onTriggerGone,
+  uploadImage,
   onImageChange,
 }: CellImageButtonsProps) {
   const thumbnails = useMediaBookThumbnails();
@@ -505,14 +436,13 @@ function CellImageButtons({
     if (!file || isUploading) return;
     setIsUploading(true);
     try {
-      const assetId = await uploadAsset(file, "situational-image");
+      const image = await uploadImage(file);
+      if (!image) return;
       // 빈 칸이었다면 이 입력은 채운 뒤 사라진다. 올리는 동안 사용자가 다른 곳으로 옮겨 가지 않았을 때만, 사라지기
       // 전에 포커스를 남는 자리로 옮긴다.
       const shouldMoveFocus = !isReplacing && document.activeElement === input;
-      onImageChange({ assetId, imageUrl: thumbnails.rememberUploadedFile(assetId, file) });
+      onImageChange(image);
       if (shouldMoveFocus) onTriggerGone();
-    } catch (error) {
-      toast.error(uploadAssetErrorMessage(error));
     } finally {
       setIsUploading(false);
     }
@@ -555,7 +485,7 @@ function CellImageButtons({
         <input
           id={inputId}
           type="file"
-          accept="image/png,image/jpeg,image/webp"
+          accept={MEDIA_BOOK_IMAGE_ACCEPT}
           className="sr-only"
           aria-disabled={isUploading}
           // 업로드 중에는 파일 창을 열지 않는다. `disabled` 를 주면 키보드로 이 입력에 있던 포커스가 body 로 떨어진다.

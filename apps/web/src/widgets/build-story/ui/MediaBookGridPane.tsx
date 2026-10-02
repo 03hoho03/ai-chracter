@@ -1,7 +1,12 @@
+import type { DragEvent } from "react";
+
 import { formatMediaBookProgress, summarizeMediaBookProgress } from "@/features/build-story";
 import { PreviewCloseHeader } from "@/features/build-common";
 
-import { MediaBookGrid } from "./MediaBookGrid";
+import { MediaBookGrid, type MediaBookPosition } from "./MediaBookGrid";
+import { focusCellOrHeading } from "./MediaBookSelectionProvider";
+import { isFileDrag } from "../lib/mediaBookImageFile";
+import { useMediaBookCellImage } from "../model/useMediaBookCellImage";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
 import {
   CELL_PANEL_ID,
@@ -24,13 +29,53 @@ type MediaBookGridPaneProps = {
 export function MediaBookGridPane({ onClose }: MediaBookGridPaneProps) {
   const { mediaBook } = useMediaBookEditor();
   const { selected, select } = useMediaBookSelection();
+  const { uploadImage, applyImage } = useMediaBookCellImage(focusCellOrHeading);
   const hasGrid = mediaBook.people.length > 0 && mediaBook.scenes.length > 0;
+
+  /**
+   * 칸에 끌어다 놓은 이미지 — 칸 상세의 "파일 올리기" 와 같은 길로 올려 넣고(채운 칸이면 같은 되돌리기), 넣은 칸을 골라
+   * 상세에 띄운다. 올리는 동안 사용자가 무엇이든 누르거나 입력했으면 고르지 않는다 — 그 사이 고른 다른 칸이나 쓰던 글을
+   * 업로드가 끝나는 순간 빼앗지 않게. 칸에는 그대로 들어가 표에서 보인다. 포커스가 옮겨 갔는지로는 가를 수 없다 — 칸을
+   * 고르면 포커스가 늘 같은 상세 제목으로 가서, 올리는 동안 다른 칸을 골라도 포커스 요소는 그대로다.
+   */
+  async function handleDropImage(position: MediaBookPosition, file: File) {
+    let hasInteracted = false;
+    const markInteracted = () => {
+      hasInteracted = true;
+    };
+    document.addEventListener("pointerdown", markInteracted, true);
+    document.addEventListener("keydown", markInteracted, true);
+    try {
+      const image = await uploadImage(file);
+      if (!image || !applyImage(position, image)) return;
+      if (!hasInteracted) select(position);
+    } finally {
+      document.removeEventListener("pointerdown", markInteracted, true);
+      document.removeEventListener("keydown", markInteracted, true);
+    }
+  }
+
+  /**
+   * 칸이 아닌 자리(칸 사이 틈·이름 머리·진척 줄·빈 상태)에 파일을 놓으면 브라우저가 그 파일을 새 화면으로 열어 쓰던
+   * 빌더를 떠난다. 이 묶음 안에서는 "놓을 수 없음" 으로 받아 막는다. 칸이 이미 받은 끌기(기본 동작을 막았다)는 건드리지
+   * 않는다 — 여기서 덮으면 칸 위에서도 놓을 수 없게 된다.
+   */
+  function handlePaneDrag(event: DragEvent<HTMLElement>) {
+    if (event.defaultPrevented || !isFileDrag(event.dataTransfer.types)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "none";
+  }
 
   return (
     // 높이를 스스로 정하는 이유는 대화·카드 미리보기와 같다 — lg 미만에서는 조상에 정해진 높이가 없다. `relative` 는
     // 표의 화면 밖 제목(`sr-only` caption)의 기준을 이 묶음으로 묶는다. 없으면 그 요소가 문서 맨 위 기준으로 자리를
     // 잡아 넓은 화면에서 열이 아니라 문서가 세로로 스크롤된다.
-    <section aria-label="배치표" className="relative flex h-below-header flex-col">
+    <section
+      aria-label="배치표"
+      className="relative flex h-below-header flex-col"
+      onDragOver={handlePaneDrag}
+      onDrop={handlePaneDrag}
+    >
       <PreviewCloseHeader title="배치표" onClose={onClose} />
       <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto px-4 sm:px-6 py-4">
         {hasGrid ? (
@@ -43,6 +88,7 @@ export function MediaBookGridPane({ onClose }: MediaBookGridPaneProps) {
               mediaBook={mediaBook}
               selected={resolveSelectedPosition(mediaBook, selected)}
               onSelect={select}
+              onDropImage={handleDropImage}
               panelId={CELL_PANEL_ID}
             />
           </>
