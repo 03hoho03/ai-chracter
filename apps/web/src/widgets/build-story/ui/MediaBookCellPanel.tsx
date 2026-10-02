@@ -55,6 +55,8 @@ const PREVIEW_MAX_WIDTH_PX = 192;
 
 /** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
 export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";
+/** 상세 본문의 첫 행동 줄(이미지 넣기·바꾸기 버튼 묶음)을 찾는 선택자. 칸을 고른 뒤 스크롤이 이 줄까지 화면에 둔다. */
+export const MEDIA_BOOK_FIRST_ACTION_SELECTOR = "[data-media-book-first-action]";
 // 기본 4초는 바뀐 이미지를 확인하고 되돌리기를 누르기에 짧다.
 const UNDO_TOAST_DURATION_MS = 8000;
 
@@ -497,7 +499,8 @@ function CellImageButtons({
   }
 
   return (
-    <div className="flex flex-col gap-2">
+    // 칸을 고른 뒤 스크롤이 이 묶음의 아래 끝을 화면 바닥에 맞출 때 남기는 숨 쉴 자리(8px).
+    <div data-media-book-first-action className="flex scroll-mb-2 flex-col gap-2">
       <Label
         htmlFor={inputId}
         aria-disabled={isUploading}

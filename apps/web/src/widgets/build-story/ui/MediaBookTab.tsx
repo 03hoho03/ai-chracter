@@ -13,7 +13,7 @@ import {
 
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
-import { MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
+import { MEDIA_BOOK_FIRST_ACTION_SELECTOR, MEDIA_BOOK_IMAGE_UNDO_TOAST_ID, MediaBookCellPanel } from "./MediaBookCellPanel";
 import {
   focusGridCell,
   MediaBookGrid,
@@ -30,7 +30,8 @@ const PROGRESS_ID = "media-book-progress";
 // 빌더 상단바(`BuilderTopBar` 의 `h-14`) 높이. 좁은 화면에서는 페이지가 그 밑으로 스크롤되고, 넓은 화면에서는 폼
 // 열 창이 그 아래에서 시작하므로 어느 쪽이든 보이는 구간은 "상단바 아래 ~ 화면 바닥"이다.
 const BUILDER_TOP_BAR_HEIGHT_PX = 56;
-// 보이는 구간 위쪽에 남길 여유 — 칸과 상세에 준 `scroll-mt` 와 같은 숨 쉴 자리.
+// 보이는 구간 위아래에 남길 여유. 아래는 상세 행동 줄의 `scroll-mb`(8px)와 같고, 위는 칸의 `scroll-mt` 에서 상단바를
+// 뺀 값이다(좁은 화면 8px, 넓은 화면은 16px 이라 그쪽 판정이 8px 너그럽다).
 const SCROLL_BREATHING_PX = 8;
 
 /**
@@ -54,7 +55,7 @@ export function MediaBookTab() {
     // 복사 버튼은 표기를 다른 칸에 붙이러 가는 동작이라 화면을 끌어내리지 않는다.
     if (method === "copy") return;
     // 상세는 표 아래에 열려 좁은 화면이나 긴 표에서는 화면 밖일 수 있다. 다음 프레임(상세가 그려진 뒤)에 고른 칸과
-    // 상세 머리가 함께 보이게, 안 되면 머리가 보이게 맞춘다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과
+    // 상세의 첫 행동 줄이 함께 보이게, 안 되면 머리를 위에 맞춘다. 부드러운 스크롤은 쓰지 않는다(움직임을 줄이는 설정과
     // 무관하게 순간 이동). 키보드로 열었으면 포커스를 상세 제목으로 옮겨 다음 Tab 이 상세 안으로 간다(닫으면 그 칸으로
     // 돌아온다) — 스크롤은 위 규칙이 하므로 포커스가 화면을 다시 움직이지 않게 한다.
     requestAnimationFrame(() => {
@@ -179,19 +180,21 @@ function cellStatus(cell: MediaBookCellValues | undefined): string {
   return "다 채운 칸";
 }
 
-/** 고른 칸과 상세 머리를 화면에 둔다. 판정은 `planCellSelectionScroll` 이 하고 여기서는 재고 움직이기만 한다. */
+/** 고른 칸과 상세(머리와 첫 행동 줄)를 화면에 둔다. 판정은 `planCellSelectionScroll` 이 하고 여기서는 재고 움직이기만 한다. */
 function scrollToSelection(position: MediaBookPosition) {
   const cell = document.querySelector<HTMLElement>(`[data-media-book-cell="${toCellKey(position)}"]`);
   const header = document.getElementById(`${CELL_PANEL_ID}-head`);
-  if (!cell || !header) return;
+  const firstAction = document.querySelector<HTMLElement>(`#${CELL_PANEL_ID} ${MEDIA_BOOK_FIRST_ACTION_SELECTOR}`);
+  if (!cell || !header || !firstAction) return;
   const plan = planCellSelectionScroll({
     cellTop: cell.getBoundingClientRect().top,
-    headerBottom: header.getBoundingClientRect().bottom,
-    availableHeight: window.innerHeight - BUILDER_TOP_BAR_HEIGHT_PX - SCROLL_BREATHING_PX,
+    firstActionBottom: firstAction.getBoundingClientRect().bottom,
+    // 위아래 모두 숨 쉴 자리를 뺀다 — 위는 칸의 `scroll-mt`, 아래는 행동 줄의 `scroll-mb` 다.
+    availableHeight: window.innerHeight - BUILDER_TOP_BAR_HEIGHT_PX - SCROLL_BREATHING_PX * 2,
   });
   if (plan === "both") {
-    // 둘의 거리가 보이는 높이 안이므로, 머리를 먼저 맞춘 뒤 칸을 맞춰도 머리가 화면 밖으로 밀리지 않는다.
-    header.scrollIntoView({ block: "nearest" });
+    // 둘의 거리가 보이는 높이 안이므로, 행동 줄을 먼저 맞춘 뒤 칸을 맞춰도 행동 줄이 화면 밖으로 밀리지 않는다.
+    firstAction.scrollIntoView({ block: "nearest" });
     cell.scrollIntoView({ block: "nearest" });
   } else {
     header.scrollIntoView({ block: "start" });
