@@ -6,7 +6,7 @@ import { builderMainMaxWidth } from "../lib/builderMainMaxWidth";
 type BuilderLayoutProps = {
   /** 폼 열 콘텐츠(헤더·탭 등 — 기존 Shell이 `<main>`에 직접 그리던 것 전부). */
   children: ReactNode;
-  /** 프리뷰 열 콘텐츠. Shell이 `renderPreview`로 받은 노드를 그대로 넘긴다 — `widgets/builder-preview`를
+  /** 프리뷰 열 콘텐츠. Shell이 정한 미리보기 열 내용(대개 `renderPreview` 결과)을 넘긴다 — `widgets/builder-preview`를
    * 여기서 import하지 않는다("Shell은 renderPreview만 알고 프리뷰 위젯을
    * 직접 import하지 않는다"). */
   preview: ReactNode;

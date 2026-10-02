@@ -19,13 +19,13 @@ import { CHAT_TURN_CLOVER_COST } from "@/entities/clover";
 import type { MediaTagImages } from "@/entities/media-book";
 import { usePersonasQuery } from "@/entities/persona";
 import { buildPreviewStartState, usePreviewSessionQuery, useStartPreviewMutation } from "@/entities/preview-session";
+import { PreviewCloseHeader } from "@/features/build-common";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
 
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
-import { PreviewCloseHeader } from "./PreviewCloseHeader";
 
 type PreviewSessionViewProps = {
   getPayload: () => PreviewStartPayload;
@@ -160,6 +160,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   return (
     <div className="flex h-below-header flex-col">
       <PreviewCloseHeader
+        title="미리보기"
         onClose={onClose}
         action={
           <Button variant="outline" size="sm" onClick={() => void startPreview()} disabled={isStarting}>

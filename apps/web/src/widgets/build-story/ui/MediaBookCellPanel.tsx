@@ -4,7 +4,7 @@ import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Camera, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
+import { Camera, ChevronLeft, ChevronRight, Copy, ImageOff, Images, Loader2, X } from "lucide-react";
 import { useId, useState, type ChangeEvent } from "react";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
 import { toCellKey, type MediaBookPosition } from "./MediaBookGrid";
+import { focusCellOrHeading } from "./MediaBookSelectionProvider";
 import { clampCharacters } from "../lib/clampCharacters";
 import { copyMediaTag } from "../lib/copyMediaTag";
 import { useMediaBookEditor } from "../model/useMediaBookEditor";
@@ -41,7 +42,9 @@ type MediaBookCellPanelProps = {
   id: string;
   position: MediaBookPosition;
   onClose: () => void;
-  /** 누른 버튼이 사라질 때(비우기 뒤) 포커스를 표의 그 칸으로 돌려준다. */
+  /** 좁은 화면에서 상세를 둔 채 배치표 화면으로 돌아간다. */
+  onReturnToGrid: () => void;
+  /** 누른 버튼이 사라질 때(비우기 뒤) 포커스를 표의 그 칸(보이지 않으면 상세 제목)으로 옮긴다. */
   onReturnFocus: () => void;
   /** "다음 미완성 칸" 으로 고른 칸을 연다. */
   onSelectNext: (position: MediaBookPosition) => void;
@@ -55,14 +58,12 @@ const PREVIEW_MAX_WIDTH_PX = 192;
 
 /** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
 export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";
-/** 상세 본문의 첫 행동 줄(이미지 넣기·바꾸기 버튼 묶음)을 찾는 선택자. 칸을 고른 뒤 스크롤이 이 줄까지 화면에 둔다. */
-export const MEDIA_BOOK_FIRST_ACTION_SELECTOR = "[data-media-book-first-action]";
 // 기본 4초는 바뀐 이미지를 확인하고 되돌리기를 누르기에 짧다.
 const UNDO_TOAST_DURATION_MS = 8000;
 
 /**
- * 배치표에서 고른 칸의 상세. 배치표 바로 아래에 펼친다(모달이 아니다 — 칸을 바꿔 가며 연달아 채우는 작업이라 표가
- * 계속 보여야 한다). 머리(썸네일·이름·표기)는 칸을 바꿔도 그대로 두고 본문만 칸마다 새로 그린다 — 업로드 중 표시 같은
+ * 배치표에서 고른 칸의 상세. 폼 열에 펼친다(모달이 아니다 — 칸을 바꿔 가며 연달아 채우는 작업이라 표가 계속 보여야
+ * 한다). 넓은 화면에서는 옆 열의 표와 나란히 서고, 좁은 화면에서는 표가 미리보기 화면이라 그 화면과 오간다. 머리(썸네일·이름·표기)는 칸을 바꿔도 그대로 두고 본문만 칸마다 새로 그린다 — 업로드 중 표시 같은
  * 칸별 상태가 다른 칸으로 넘어가지 않게 하면서, 머리의 버튼에 있던 포커스가 칸을 바꿀 때 사라지지 않게 한다.
  * 빈 칸이면 이미지 넣기만, 채운 칸이면 이미지 바꾸기·상황 설명·해금 힌트·노출 제외·비우기.
  */
@@ -70,6 +71,7 @@ export function MediaBookCellPanel({
   id,
   position,
   onClose,
+  onReturnToGrid,
   onReturnFocus,
   onSelectNext,
   progressId,
@@ -133,10 +135,8 @@ export function MediaBookCellPanel({
             // 포커스가 토스트를 떠나면 sonner 가 토스트에 들어오기 전 자리(대개 방금 누른 고르기 버튼)로 돌려준다 —
             // 마우스든 Alt+T 키보드든 같다. 그래서 아래에서 칸으로 옮겨도 그 자리가 있으면 곧바로 그리로 간다. 칸으로
             // 옮기는 것은 돌려줄 자리가 없을 때(포커스가 body 였을 때)를 위해서다 — 버튼이 토스트와 함께 사라지며
-            // 포커스가 body 로 떨어지지 않게 표의 그 칸에 둔다(화면은 움직이지 않게).
-            document
-              .querySelector<HTMLElement>(`[data-media-book-cell="${toCellKey(position)}"]`)
-              ?.focus({ preventScroll: true });
+            // 포커스가 body 로 떨어지지 않게 표의 그 칸(보이지 않으면 상세 제목)에 둔다(화면은 움직이지 않게).
+            focusCellOrHeading(position, { preventScroll: true });
             toast.dismiss(MEDIA_BOOK_IMAGE_UNDO_TOAST_ID);
             undoImageChange(previous, replacedWith);
           }}
@@ -184,7 +184,8 @@ export function MediaBookCellPanel({
       title: "이 칸을 비울까요?",
       description: "이미지와 상황 설명·해금 힌트가 함께 지워져요. 글 속 표기는 그대로 남고 화면에는 빈칸이 돼요.",
       confirmLabel: "비우기",
-      // 취소면 "이 칸 비우기" 버튼이 그대로라 그리로, 비웠으면 그 버튼이 빈 칸 화면으로 바뀌며 사라지므로 표의 칸으로.
+      // 취소면 "이 칸 비우기" 버튼이 그대로라 그리로, 비웠으면 그 버튼이 빈 칸 화면으로 바뀌며 사라지므로 표의 칸으로
+      // (좁은 화면에서 표가 보이지 않으면 상세 제목으로).
       onRestoreFocus: () => {
         if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
         else onReturnFocus();
@@ -214,17 +215,41 @@ export function MediaBookCellPanel({
         "has-[h3:focus-visible]:border-ring has-[h3:focus-visible]:ring-3 has-[h3:focus-visible]:ring-ring/50",
       )}
     >
-      {/* 칸을 고르면 이 머리가 화면에 들어오게 스크롤한다. 위쪽 여유는 상세의 안쪽 여백(16px) + 숨 쉴 자리(8px)라
+      {/* 칸을 고르면 이 머리를 화면 맨 위에 맞춘다. 위쪽 여유는 상세의 안쪽 여백(16px) + 숨 쉴 자리(8px)라
           상세 윤곽의 윗변까지 보인다. 좁은 화면은 페이지가 상단바(56px) 밑으로 스크롤되므로 그 높이를 더한다. */}
       <div id={`${id}-head`} className="flex scroll-mt-20 items-start gap-3 lg:scroll-mt-6">
+        {/* 좁은 화면에서는 표가 다른 화면이라 그리로 돌아갈 길을 머리 맨 앞에 둔다. 넓은 화면에서는 표가 옆 열에 보여
+            필요 없다. 상단 버튼·자리표시 버튼과 같은 화면을 열지만 하는 일(이 칸으로 돌아가기)이 달라 이름으로 가른다.
+            아이콘만 두면 같은 줄의 닫기(X)와 모양이 같아 뜻이 갈리지 않고, 배치표 화면 머리의 ‹(폼으로)와도 방향이
+            반대라 목적지를 글자로 적는다. 접근 이름은 보이는 글자를 품은 채 하는 일까지 말한다. 터치에서는 손가락
+            타깃으로 40px 까지 키운다. */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="배치표로 돌아가기"
+          className="shrink-0 pointer-coarse:h-10 lg:hidden"
+          onClick={onReturnToGrid}
+        >
+          <ChevronLeft aria-hidden />
+          배치표
+        </Button>
         <CellThumbnail imageUrl={cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined} hasImage={!!cell} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
           <div className="flex items-start justify-between gap-2">
-            {/* 키보드로 칸을 열면 포커스가 여기로 온다(상세가 표 아래 화면 밖에 열려도 따라가게). */}
+            {/* 키보드로 칸을 열면 포커스가 여기로 온다(표가 다른 열·다른 화면에 있어도 따라가게). */}
             <h3 id={headingId} tabIndex={-1} className="truncate text-lg font-semibold text-foreground focus-visible:outline-none">
               {cellName}
             </h3>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="칸 상세 닫기" onClick={onClose}>
+            {/* 터치에서는 손가락 타깃으로 40px 까지 키운다. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="칸 상세 닫기"
+              className="pointer-coarse:size-10"
+              onClick={onClose}
+            >
               <X aria-hidden />
             </Button>
           </div>
@@ -286,7 +311,7 @@ function CellBody({ cell, imageButtonsProps, onPatch, onClear }: CellBodyProps) 
 
 type CellThumbnailProps = { imageUrl: string | undefined; hasImage: boolean };
 
-/** 머리의 48px 썸네일 — 상세를 화면 위로 올려 표가 안 보여도 어느 칸인지 이름과 함께 알려 준다. 이름은 옆 제목이 진다. */
+/** 머리의 48px 썸네일 — 좁은 화면에서 표가 다른 화면에 있어도 어느 칸인지 이름과 함께 알려 준다. 이름은 옆 제목이 진다. */
 function CellThumbnail({ imageUrl, hasImage }: CellThumbnailProps) {
   if (!hasImage) {
     return (
@@ -501,8 +526,7 @@ function CellImageButtons({
   }
 
   return (
-    // 칸을 고른 뒤 스크롤이 이 묶음의 아래 끝을 화면 바닥에 맞출 때 남기는 숨 쉴 자리(8px).
-    <div data-media-book-first-action className="flex scroll-mb-2 flex-col gap-2">
+    <div className="flex flex-col gap-2">
       <Label
         htmlFor={inputId}
         aria-disabled={isUploading}

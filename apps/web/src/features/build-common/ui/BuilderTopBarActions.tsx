@@ -1,5 +1,6 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { BookOpen, Eye, Save, X } from "lucide-react";
+import type { ReactNode } from "react";
 
 import type { CreationGuidePath } from "@/shared/config/creationGuide";
 
@@ -15,6 +16,11 @@ type BuilderTopBarActionsProps = {
   /** [미리보기] 버튼을 토글로 만드는 데 필요한 표시용 상태.
    * 열고 닫는 로직(state 갱신)은 두 셸이 이미 갖고 있어 여기서는 아이콘·라벨·aria-expanded만 이 값을 따른다. */
   isPreviewOpen: boolean;
+  /** 닫힌 [미리보기] 버튼의 이름. lg 미만에서 이 버튼이 여는 화면이 탭에 따라 대화가 아닐 수 있어(스토리 빌더
+   * 미디어 북 탭은 배치표) 셸이 그 화면의 머리와 같은 말을 넘긴다. 열렸을 때는 "{이름} 닫기"다. */
+  previewLabel?: string;
+  /** 닫힌 [미리보기] 버튼의 아이콘(`size-3.5`, `aria-hidden`). 이름을 바꿀 때 함께 넘긴다. */
+  previewIcon?: ReactNode;
   onPreview: () => void;
   onSaveNow: () => void;
   onPublish: () => void;
@@ -33,6 +39,8 @@ export function BuilderTopBarActions({
   guidePath,
   isPublishing,
   isPreviewOpen,
+  previewLabel = "미리보기",
+  previewIcon = <Eye aria-hidden className="size-3.5" />,
   onPreview,
   onSaveNow,
   onPublish,
@@ -55,17 +63,13 @@ export function BuilderTopBarActions({
         type="button"
         variant="outline"
         size="sm"
-        aria-label={isPreviewOpen ? "미리보기 닫기" : "미리보기"}
+        aria-label={isPreviewOpen ? `${previewLabel} 닫기` : previewLabel}
         aria-expanded={isPreviewOpen}
         className="lg:hidden"
         onClick={onPreview}
       >
-        {isPreviewOpen ? (
-          <X aria-hidden className="size-3.5" />
-        ) : (
-          <Eye aria-hidden className="size-3.5" />
-        )}
-        <span className="hidden sm:inline">{isPreviewOpen ? "닫기" : "미리보기"}</span>
+        {isPreviewOpen ? <X aria-hidden className="size-3.5" /> : previewIcon}
+        <span className="hidden sm:inline">{isPreviewOpen ? "닫기" : previewLabel}</span>
       </Button>
       <Button type="button" variant="outline" size="sm" aria-label="임시저장" onClick={onSaveNow}>
         <Save aria-hidden className="size-3.5" />
