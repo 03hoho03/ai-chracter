@@ -1,5 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Copy, EyeOff, Plus } from "lucide-react";
+import type { FocusEvent } from "react";
 
 import { toMediaNameTag } from "@/entities/media-book";
 import { findCell, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
@@ -8,6 +9,15 @@ import { copyMediaTag } from "../lib/copyMediaTag";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
 
 export type MediaBookPosition = { personId: string; sceneId: string };
+
+/**
+ * 고정된 장면 이름 열(머리 행 모서리 칸 포함). 배경색 채움을 왼쪽으로 표 스크롤러 안쪽 여백(4px)만큼, 오른쪽으로 칸 사이
+ * 간격(`border-spacing-2`, 8px)만큼 늘린다 — 셀 배경은 셀 상자만 덮어서, 표를 가로로 밀면 그 두 틈으로 밀려 들어간
+ * 칸과 인물 이름 조각이 비치기 때문이다. 셀이 `truncate`(overflow hidden)라 의사 요소는 잘리므로 상자 밖으로 그려지는
+ * box-shadow 를 쓴다. 번지기 없는 배경색 그대로라 깊이를 만드는 그림자가 아니라 면을 늘리는 채움이다.
+ */
+const STICKY_COLUMN_FILL =
+  "sticky left-0 z-10 bg-background shadow-[-4px_0_var(--color-background),8px_0_var(--color-background)]";
 
 /**
  * 칸을 어떻게 골랐는가 — 탭이 스크롤·포커스·알림을 이걸로 가른다. `keyboard` 는 Enter·Space(클릭 이벤트의
@@ -30,12 +40,15 @@ type MediaBookGridProps = {
 export function MediaBookGrid({ mediaBook, selected, onSelect, panelId }: MediaBookGridProps) {
   return (
     // `overflow-x-auto` 는 포커스 링을 네 방향 모두 자른다 — 링 두께만큼 안팎으로 상쇄한다.
-    <div className="-m-1 overflow-x-auto p-1">
+    // `scroll-pl-28` 은 칸이나 칸 모서리 버튼을 표 안으로 들일 때(다음 미완성 칸, 배치표로 돌아가기, 키보드 포커스)
+    // 왼쪽 기준선을 고정된 장면 이름 열(안쪽 여백 4px + 최대 96px + 칸 사이 간격 8px) 너머로 옮겨, 표를 가로로 민
+    // 상태에서도 들인 것이 그 열 밑에 숨지 않게 한다.
+    <div className="-m-1 overflow-x-auto scroll-pl-28 p-1">
       <table className="border-separate border-spacing-2 text-left">
         <caption className="sr-only">미디어 북 배치표 — 열은 인물, 줄은 장면</caption>
         <thead>
           <tr>
-            <td className="sticky left-0 z-10 bg-background" />
+            <td className={STICKY_COLUMN_FILL} />
             {mediaBook.people.map((person) => (
               <th
                 key={person.id}
@@ -53,7 +66,7 @@ export function MediaBookGrid({ mediaBook, selected, onSelect, panelId }: MediaB
             <tr key={scene.id}>
               <th
                 scope="row"
-                className="sticky left-0 z-10 max-w-24 truncate bg-background pr-1 text-xs font-medium text-foreground"
+                className={cn(STICKY_COLUMN_FILL, "max-w-24 truncate pr-1 text-xs font-medium text-foreground")}
                 title={scene.name}
               >
                 {scene.name}
@@ -94,6 +107,13 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
   const imageUrl = cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined;
   const tag = toMediaNameTag(personName, sceneName);
 
+  function handleFocus(event: FocusEvent<HTMLDivElement>) {
+    // 표를 가로로 민 채 키보드로 들어온 칸·버튼이 고정된 장면 이름 열 밑에 걸쳐 있어도, 브라우저는 일부가 보이면
+    // 스크롤하지 않는다. 가까운 쪽으로 직접 들인다(표 스크롤러의 scroll-padding 이 장면 열 너머에 세운다).
+    // 마우스로 누른 칸은 포커스 링이 없어 그대로 둔다.
+    if (event.target.matches(":focus-visible")) event.target.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+
   function handleCopy() {
     // 모서리를 눌러도 그 칸을 함께 고른다 — 아니면 선택이 직전 칸에 남아, 다음에 고른 이미지가 엉뚱한 칸에 들어간다.
     onSelect("copy");
@@ -101,7 +121,9 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
   }
 
   return (
-    <div className="relative size-20">
+    // 포커스 링이 있는 동안은 고정된 장면 이름 열보다 위에 그린다 — 그 열의 배경 채움이 칸 사이 간격까지 덮어서,
+    // 첫 인물 열 칸의 링 왼쪽이 그 밑에 깔리기 때문이다.
+    <div className="relative size-20 has-[:focus-visible]:z-20" onFocus={handleFocus}>
       <button
         type="button"
         aria-pressed={isSelected}
@@ -110,9 +132,9 @@ function GridCell({ personName, sceneName, cell, isSelected, panelId, onSelect, 
         data-media-book-cell={cellKey}
         onClick={(event) => onSelect(event.detail === 0 ? "keyboard" : "pointer")}
         className={cn(
-          // 칸을 화면에 들일 때(다음 미완성 칸, 배치표로 돌아가기) 남기는 여유. 위는 배치표 묶음 본문 안의 숨 쉴 자리,
-          // 왼쪽은 표를 가로로 민 상태에서 칸이 고정된 장면 이름 열(최대 96px + 안쪽 여백 + 칸 사이 간격) 밑에 숨지 않게.
-          "scroll-mt-2 scroll-ml-28",
+          // 칸을 화면에 들일 때(다음 미완성 칸, 배치표로 돌아가기) 위에 남기는 여유 — 배치표 묶음 본문 안의 숨 쉴 자리.
+          // 왼쪽 여유는 표 스크롤러의 scroll-padding 이 맡는다(칸 모서리 버튼도 같은 기준선을 쓰게).
+          "scroll-mt-2",
           // 포커스는 하우스 레시피 — 3:1 은 불투명 보더가 지고, 반투명 링은 어디인지 보여 준다.
           "flex size-full items-center justify-center overflow-hidden rounded-lg focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
           cell
