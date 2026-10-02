@@ -51,6 +51,7 @@ import { AppealModal } from "@/features/submit-appeal";
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
 import { KeywordNoteTab } from "./KeywordNoteTab";
+import { MediaBookSelectionProvider } from "./MediaBookSelectionProvider";
 import { MediaBookTab } from "./MediaBookTab";
 import { MediaBookThumbnailsProvider } from "./MediaBookThumbnailsProvider";
 import { ProfileTab } from "./ProfileTab";
@@ -292,63 +293,66 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       />
       {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
       <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
-        <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
-          {rejectionReason !== undefined && draftId !== undefined && (
-            <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
-                <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+        {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
+        <MediaBookSelectionProvider>
+          <BuilderLayout isPreviewOpen={isPreviewOpen} preview={previewNode}>
+            {rejectionReason !== undefined && draftId !== undefined && (
+              <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+                <div>
+                  <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
+                  <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="shrink-0"
+                  onClick={() =>
+                    void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
+                  }
+                >
+                  이의제기
+                </Button>
               </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="shrink-0"
-                onClick={() =>
-                  void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
-                }
-              >
-                이의제기
-              </Button>
-            </div>
-          )}
+            )}
 
-          <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
-            <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+            <Tabs value={activeTab} onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}>
+              <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
-            <TabsContent value="profile">
-              <ProfileTab
-                thumbnailUrl={thumbnailUrl}
-                onUploadComplete={profileImageLocal.rememberUploadedFile}
-                onPick={profileImageLocal.rememberPickedImage}
-              />
-            </TabsContent>
-            <TabsContent value="setting">
-              <SettingTab />
-            </TabsContent>
-            <TabsContent value="startingSetup">
-              <StartingSetupTab />
-            </TabsContent>
-            <TabsContent value="stat">
-              <StatTab />
-            </TabsContent>
-            <TabsContent value="mediaBook">
-              <MediaBookTab />
-            </TabsContent>
-            <TabsContent value="keywordNote">
-              <KeywordNoteTab />
-            </TabsContent>
-            <TabsContent value="shortcut">
-              <ShortcutTab />
-            </TabsContent>
-            <TabsContent value="ending">
-              <EndingTab />
-            </TabsContent>
-            <TabsContent value="registration">
-              <RegistrationTab />
-            </TabsContent>
-          </Tabs>
-        </BuilderLayout>
+              <TabsContent value="profile">
+                <ProfileTab
+                  thumbnailUrl={thumbnailUrl}
+                  onUploadComplete={profileImageLocal.rememberUploadedFile}
+                  onPick={profileImageLocal.rememberPickedImage}
+                />
+              </TabsContent>
+              <TabsContent value="setting">
+                <SettingTab />
+              </TabsContent>
+              <TabsContent value="startingSetup">
+                <StartingSetupTab />
+              </TabsContent>
+              <TabsContent value="stat">
+                <StatTab />
+              </TabsContent>
+              <TabsContent value="mediaBook">
+                <MediaBookTab />
+              </TabsContent>
+              <TabsContent value="keywordNote">
+                <KeywordNoteTab />
+              </TabsContent>
+              <TabsContent value="shortcut">
+                <ShortcutTab />
+              </TabsContent>
+              <TabsContent value="ending">
+                <EndingTab />
+              </TabsContent>
+              <TabsContent value="registration">
+                <RegistrationTab />
+              </TabsContent>
+            </Tabs>
+          </BuilderLayout>
+        </MediaBookSelectionProvider>
       </MediaBookThumbnailsProvider>
     </FormProvider>
   );
