@@ -4,6 +4,7 @@ import type { FocusEvent } from "react";
 
 import { toMediaNameTag } from "@/entities/media-book";
 import { findCell, type MediaBookCellValues, type MediaBookValues } from "@/features/build-story";
+import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
 import { copyMediaTag } from "../lib/copyMediaTag";
 import { useMediaBookThumbnails } from "../model/useMediaBookThumbnails";
@@ -38,56 +39,69 @@ type MediaBookGridProps = {
  * 칸 안에 맞춘다(`object-contain`) — 칸 크기가 그림과 무관해 그림이 도착해도 표가 움직이지 않는다.
  */
 export function MediaBookGrid({ mediaBook, selected, onSelect, panelId }: MediaBookGridProps) {
+  const tableScroll = useHorizontalScrollClip();
+
   return (
-    // `overflow-x-auto` 는 포커스 링을 네 방향 모두 자른다 — 링 두께만큼 안팎으로 상쇄한다.
-    // `scroll-pl-28` 은 칸이나 칸 모서리 버튼을 표 안으로 들일 때(다음 미완성 칸, 배치표로 돌아가기, 키보드 포커스)
-    // 왼쪽 기준선을 고정된 장면 이름 열(안쪽 여백 4px + 최대 96px + 칸 사이 간격 8px) 너머로 옮겨, 표를 가로로 민
-    // 상태에서도 들인 것이 그 열 밑에 숨지 않게 한다.
-    <div className="-m-1 overflow-x-auto scroll-pl-28 p-1">
-      <table className="border-separate border-spacing-2 text-left">
-        <caption className="sr-only">미디어 북 배치표 — 열은 인물, 줄은 장면</caption>
-        <thead>
-          <tr>
-            <td className={STICKY_COLUMN_FILL} />
-            {mediaBook.people.map((person) => (
-              <th
-                key={person.id}
-                scope="col"
-                className="w-20 max-w-20 truncate px-0.5 pb-1 text-xs font-medium text-foreground"
-                title={person.name}
-              >
-                {person.name}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {mediaBook.scenes.map((scene) => (
-            <tr key={scene.id}>
-              <th
-                scope="row"
-                className={cn(STICKY_COLUMN_FILL, "max-w-24 truncate pr-1 text-xs font-medium text-foreground")}
-                title={scene.name}
-              >
-                {scene.name}
-              </th>
+    // 오른쪽 페이드의 기준 상자. 표가 길면 스크롤러가 묶음 높이에 맞춰 줄어 세로로도 스크롤되므로, flex 열에서
+    // 줄어드는 자리를 이 상자가 이어받는다.
+    <div className="relative flex min-h-0 flex-col">
+      {/* `overflow-x-auto` 는 포커스 링을 네 방향 모두 자른다 — 링 두께만큼 안팎으로 상쇄한다.
+          `scroll-pl-28` 은 칸이나 칸 모서리 버튼을 표 안으로 들일 때(다음 미완성 칸, 배치표로 돌아가기, 키보드 포커스)
+          왼쪽 기준선을 고정된 장면 이름 열(안쪽 여백 4px + 최대 96px + 칸 사이 간격 8px) 너머로 옮겨, 표를 가로로 민
+          상태에서도 들인 것이 그 열 밑에 숨지 않게 한다. `scroll-pr-8` 은 같은 이유로 오른쪽 기준선을 페이드 폭만큼
+          안으로 들여, 들인 것이 페이드에 덮이지 않게 한다. */}
+      <div ref={tableScroll.ref} className="-m-1 overflow-x-auto scroll-pr-8 scroll-pl-28 p-1">
+        <table className="border-separate border-spacing-2 text-left">
+          <caption className="sr-only">미디어 북 배치표 — 열은 인물, 줄은 장면</caption>
+          <thead>
+            <tr>
+              <td className={STICKY_COLUMN_FILL} />
               {mediaBook.people.map((person) => (
-                <td key={person.id} className="p-0">
-                  <GridCell
-                    personName={person.name}
-                    sceneName={scene.name}
-                    cell={findCell(mediaBook, person.id, scene.id)}
-                    isSelected={selected?.personId === person.id && selected.sceneId === scene.id}
-                    panelId={panelId}
-                    onSelect={(method) => onSelect({ personId: person.id, sceneId: scene.id }, method)}
-                    cellKey={toCellKey({ personId: person.id, sceneId: scene.id })}
-                  />
-                </td>
+                <th
+                  key={person.id}
+                  scope="col"
+                  className="w-20 max-w-20 truncate px-0.5 pb-1 text-xs font-medium text-foreground"
+                  title={person.name}
+                >
+                  {person.name}
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {mediaBook.scenes.map((scene) => (
+              <tr key={scene.id}>
+                <th
+                  scope="row"
+                  className={cn(STICKY_COLUMN_FILL, "max-w-24 truncate pr-1 text-xs font-medium text-foreground")}
+                  title={scene.name}
+                >
+                  {scene.name}
+                </th>
+                {mediaBook.people.map((person) => (
+                  <td key={person.id} className="p-0">
+                    <GridCell
+                      personName={person.name}
+                      sceneName={scene.name}
+                      cell={findCell(mediaBook, person.id, scene.id)}
+                      isSelected={selected?.personId === person.id && selected.sceneId === scene.id}
+                      panelId={panelId}
+                      onSelect={(method) => onSelect({ personId: person.id, sceneId: scene.id }, method)}
+                      cellKey={toCellKey({ personId: person.id, sceneId: scene.id })}
+                    />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {/* 오버레이 스크롤바는 평소에 보이지 않아, 좁은 열에서 인물 열이 오른쪽으로 잘려도 더 있다는 신호가 없다. 실제로
+          잘린 동안만 오른쪽 끝을 배경색으로 흐린다(그림자가 아니라 배경 그라데이션 면이다). 끝까지 밀면 사라진다. 잘리는
+          경계는 스크롤러 안쪽 여백의 바깥 끝이라 그만큼(4px) 바깥으로 낸다. */}
+      {tableScroll.isClippedRight && (
+        <div aria-hidden className="pointer-events-none absolute inset-y-0 -right-1 w-8 bg-linear-to-l from-background" />
+      )}
     </div>
   );
 }

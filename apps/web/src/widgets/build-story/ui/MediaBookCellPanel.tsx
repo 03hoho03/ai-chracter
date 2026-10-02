@@ -219,9 +219,20 @@ export function MediaBookCellPanel({
           상세 윤곽의 윗변까지 보인다. 좁은 화면은 페이지가 상단바(56px) 밑으로 스크롤되므로 그 높이를 더한다. */}
       <div id={`${id}-head`} className="flex scroll-mt-20 items-start gap-3 lg:scroll-mt-6">
         {/* 좁은 화면에서는 표가 다른 화면이라 그리로 돌아갈 길을 머리 맨 앞에 둔다. 넓은 화면에서는 표가 옆 열에 보여
-            필요 없다. 상단 버튼·자리표시 버튼과 같은 화면을 열지만 하는 일(이 칸으로 돌아가기)이 달라 이름으로 가른다. */}
-        <Button type="button" variant="ghost" size="icon-sm" aria-label="배치표로 돌아가기" className="lg:hidden" onClick={onReturnToGrid}>
+            필요 없다. 상단 버튼·자리표시 버튼과 같은 화면을 열지만 하는 일(이 칸으로 돌아가기)이 달라 이름으로 가른다.
+            아이콘만 두면 같은 줄의 닫기(X)와 모양이 같아 뜻이 갈리지 않고, 배치표 화면 머리의 ‹(폼으로)와도 방향이
+            반대라 목적지를 글자로 적는다. 접근 이름은 보이는 글자를 품은 채 하는 일까지 말한다. 터치에서는 손가락
+            타깃으로 40px 까지 키운다. */}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          aria-label="배치표로 돌아가기"
+          className="shrink-0 pointer-coarse:h-10 lg:hidden"
+          onClick={onReturnToGrid}
+        >
           <ChevronLeft aria-hidden />
+          배치표
         </Button>
         <CellThumbnail imageUrl={cell ? thumbnails.resolveUrl(cell.imageAssetId, cell.imageUrl) : undefined} hasImage={!!cell} />
         <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -230,7 +241,15 @@ export function MediaBookCellPanel({
             <h3 id={headingId} tabIndex={-1} className="truncate text-lg font-semibold text-foreground focus-visible:outline-none">
               {cellName}
             </h3>
-            <Button type="button" variant="ghost" size="icon-sm" aria-label="칸 상세 닫기" onClick={onClose}>
+            {/* 터치에서는 손가락 타깃으로 40px 까지 키운다. */}
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-sm"
+              aria-label="칸 상세 닫기"
+              className="pointer-coarse:size-10"
+              onClick={onClose}
+            >
               <X aria-hidden />
             </Button>
           </div>

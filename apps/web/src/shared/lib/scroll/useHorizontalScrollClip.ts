@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
  * 가로 스크롤 컨테이너의 오른쪽이 더 잘려 있는지 추적한다. `packages/ui/CLAUDE.md`의
  * `data-clipped-below`(드롭다운 메뉴 하단 페이드)와 같은 이유다 — macOS·iOS 오버레이 스크롤바는
  * 상시 표시가 없어 **잘렸다는 신호가 하나도 없다**. 빌더 고유 지식이 없어 `shared`로 옮겼다 —
- * 지금은 `features/build-common`의 `BuilderTabStrip`이 쓴다.
+ * `features/build-common`의 `BuilderTabStrip`, 홈 장르 캐러셀, 스토리 빌더의 미디어 북 배치표가 쓴다.
  *
  * 콜백 ref인 이유는 두 Shell 모두 컨테이너가 마운트 시점에 항상 존재해 `useEffect`로도 되지만,
  * `useFocusFirstError.ts`와 같은 관례(콜백 ref + `ResizeObserver`)를 맞춘 것이다. 폭이 바뀌는 계기가
@@ -29,6 +29,8 @@ export function useHorizontalScrollClip() {
 
     const observer = new ResizeObserver(update);
     observer.observe(el);
+    // 컨테이너 크기는 그대로인데 내용만 넓어지는 경우(탭 라벨이 늘거나 표에 열이 붙을 때)는 컨테이너 관찰로 안 잡힌다.
+    if (el.firstElementChild) observer.observe(el.firstElementChild);
     el.addEventListener("scroll", update);
     return () => {
       observer.disconnect();

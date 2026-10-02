@@ -80,9 +80,9 @@ export function MediaBookTab() {
       {selectedPosition === undefined && hasGrid && <CellPanelPlaceholder onOpenGrid={openGrid} />}
       {selectedPosition === undefined && !hasGrid && (
         // 넓은 화면은 바로 옆 열의 빈 상태가 안내한다. 좁은 화면에서는 그 빈 상태가 배치표 화면 안에 숨어 있어 여기서 한
-        // 번 더 알린다.
+        // 번 더 알린다. 그 버튼은 640px 미만에서 글자가 숨고 아이콘만 남아, 글자 대신 보이는 모양으로도 가리킨다.
         <p className="text-sm break-keep text-muted-foreground lg:hidden">
-          인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요. 배치표는 위쪽 ‘배치표’ 버튼으로 열어요.
+          인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요. 배치표는 위쪽의 표 모양 ‘배치표’ 버튼으로 열어요.
         </p>
       )}
     </div>
