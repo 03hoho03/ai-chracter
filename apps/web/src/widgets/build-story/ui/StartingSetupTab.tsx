@@ -13,20 +13,34 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Switch } from "@ai-character-chat/ui/components/switch";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
-import { GripVertical, Trash2, X } from "lucide-react";
+import { X } from "lucide-react";
 import { useRef, useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
+import {
+  CollapsibleItemCard,
+  firstLine,
+  focusNeighborToggle,
+  ItemDragHandle,
+  ItemRemoveButton,
+  itemOpenKey,
+  useBuilderUiState,
+} from "@/features/build-common";
 import {
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
   reconcileKeywordNotesOnStartingSetupRemoval,
   type StoryBuilderFormValues,
+  type StoryCollapsibleList,
 } from "@/features/build-story";
+import { MediaBookConfirmModal } from "@/features/edit-media-book";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
+
+/** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
+const STARTING_SETUP_LIST: StoryCollapsibleList = "startingSetup";
 
 /** "설정 추가"로 여러 시작설정 생성, 발행하려면 최소 1개 필요.
  * 그 최소 1개는 storyBuilderSchema의 `.min(1)`이 막고, 위반은 발행을 눌렀을 때 토스트와 탭 에러로
@@ -42,15 +56,72 @@ export function StartingSetupTab() {
   } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "startingSetups" });
   const sensors = useSensors(useSensor(PointerSensor));
+  const uiState = useBuilderUiState();
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
-  function handleRemove(index: number) {
-    const removedId = getValues(`startingSetups.${index}.id`);
+  // 지운 시작설정 자리에서 포커스를 다음 시작설정의 머리 줄로(없으면 이전, 그것도 없으면 설정 추가 버튼으로) 옮긴다. `keys`
+  // 는 지우기 전 목록이다 — 이웃의 머리 줄은 지운 뒤에도 남는다. 상한(4개)에서는 추가 버튼이 없지만 그때는 이웃이 늘 있다.
+  function focusAfterRemoval(keys: readonly string[], index: number) {
+    focusNeighborToggle(keys, index, addButtonRef.current);
+  }
+
+  // 시작설정 하나가 그 아래 스탯·엔딩을 통째로 품으므로, 그것들이 있으면 몇 개가 함께 사라지는지 먼저 묻는다. 비어 있는
+  // 시작설정은 묻지 않고 지운다. 취소하면 아무것도 바꾸지 않는다.
+  async function handleRemove(index: number) {
+    const setups = getValues("startingSetups");
+    const removed = setups[index];
+    if (removed === undefined) return;
+    const keys = setups.map((setup) => itemOpenKey(STARTING_SETUP_LIST, setup.id));
+    const trigger = document.activeElement;
+    const contents = [
+      removed.stats.length > 0 ? `스탯 ${removed.stats.length}개` : undefined,
+      removed.endings.length > 0 ? `엔딩 ${removed.endings.length}개` : undefined,
+    ].filter((part) => part !== undefined);
+
+    if (contents.length > 0) {
+      const isConfirmed = await MediaBookConfirmModal.call({
+        title: "시작설정을 지울까요?",
+        description: `이 시작설정의 ${contents.join("와 ")}도 함께 지워져요.`,
+        confirmLabel: "지우기",
+        // 취소면 삭제 버튼으로, 지웠으면 그 카드가 사라지므로 이웃 시작설정의 머리 줄(없으면 설정 추가 버튼)로.
+        onRestoreFocus: () => {
+          if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+          else focusAfterRemoval(keys, index);
+        },
+      });
+      if (!isConfirmed) return;
+    } else {
+      // 묻지 않는 경로는 지우기 전에 옮긴다 — 지운 뒤로 미루면 누른 삭제 버튼이 사라지며 포커스가 body 로 떨어진다.
+      focusAfterRemoval(keys, index);
+    }
+
     setValue(
       "keywordNotes",
-      reconcileKeywordNotesOnStartingSetupRemoval(getValues("keywordNotes"), removedId),
+      reconcileKeywordNotesOnStartingSetupRemoval(getValues("keywordNotes"), removed.id),
       { shouldDirty: true },
     );
     remove(index);
+  }
+
+  // 새 시작설정은 펼친 채 이름 칸에 포커스한다. 열림 기록은 `append` 와 같은 핸들러에서 먼저 해야 새 본문이 보이는 채로
+  // 커밋된다. 포커스 칸을 이름으로 못 박는 이유: 지정하지 않으면 RHF 는 그 항목에서 먼저 등록된 칸으로 보내는데, 시작설정은
+  // "이미지 넣기"용 ref 때문에 프롤로그가 먼저 등록된다.
+  function handleAdd() {
+    const id = crypto.randomUUID();
+    uiState.open([itemOpenKey(STARTING_SETUP_LIST, id)]);
+    append(
+      {
+        id,
+        name: "",
+        prologue: "",
+        openingSituation: "",
+        playGuide: "",
+        suggestedReplies: [],
+        stats: [],
+        endings: [],
+      },
+      { focusName: `startingSetups.${fields.length}.name` },
+    );
   }
 
   function handleDragEnd({ active, over }: DragEndEvent) {
@@ -93,7 +164,7 @@ export function StartingSetupTab() {
                   key={field.id}
                   id={field.id}
                   index={index}
-                  onRemove={() => handleRemove(index)}
+                  onRemove={() => void handleRemove(index)}
                 />
               ))}
             </div>
@@ -104,23 +175,7 @@ export function StartingSetupTab() {
       {/* 상한에 닿으면 추가 버튼을 렌더하지 않는다(SettingTab의
           전개 예시와 같은 형태). 스키마의 `.max()`만으로는 발행 시점에야 막혀 5개째를 만들게 둔다. */}
       {fields.length < MAX_STARTING_SETUPS ? (
-        <Button
-          type="button"
-          variant="secondary"
-          className="w-fit"
-          onClick={() =>
-            append({
-              id: crypto.randomUUID(),
-              name: "",
-              prologue: "",
-              openingSituation: "",
-              playGuide: "",
-              suggestedReplies: [],
-              stats: [],
-              endings: [],
-            })
-          }
-        >
+        <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAdd}>
           설정 추가
         </Button>
       ) : null}
@@ -152,7 +207,15 @@ function StartingSetupRow({
     formState: { errors },
   } = form;
   const rowErrors = errors.startingSetups?.[index];
+  // 이 시작설정 아래 스탯·엔딩 오류도 같은 자리에 매달리지만 그 둘은 다른 탭 몫이라 머리 줄 오류 표시에서 뺀다.
+  const hasOwnError =
+    rowErrors !== undefined &&
+    Object.entries(rowErrors).some(([key, value]) => key !== "stats" && key !== "endings" && value !== undefined);
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
+  // 머리 줄 열림 키·제목·요약 재료.
+  const setupId = useWatch({ control, name: `startingSetups.${index}.id` });
+  const name = useWatch({ control, name: `startingSetups.${index}.name` });
+  const prologue = useWatch({ control, name: `startingSetups.${index}.prologue` });
   const suggestedReplies = useWatch({ control, name: `startingSetups.${index}.suggestedReplies` });
   const canAddSuggestedReply = suggestedReplies.length < MAX_SUGGESTED_REPLIES;
   const [replyInput, setReplyInput] = useState("");
@@ -190,105 +253,105 @@ function StartingSetupRow({
     );
   }
 
+  const trimmedName = name.trim();
+  // 첫 시작설정이 기본 선택이라 그 사실과 프롤로그 첫 줄로 가른다(비어 있는 재료는 뺀다).
+  const summary = [index === 0 ? "기본" : undefined, firstLine(prologue) || undefined]
+    .filter((part) => part !== undefined)
+    .join(" · ");
+
   return (
-    <div
+    <CollapsibleItemCard
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="flex flex-col gap-4 rounded-xl border border-border bg-background p-4"
+      openKey={itemOpenKey(STARTING_SETUP_LIST, setupId)}
+      title={name}
+      placeholderTitle="새 시작설정"
+      srTitlePrefix={`${index + 1}번째 시작설정: `}
+      summary={summary}
+      hasError={hasOwnError}
+      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${index + 1}번째 시작설정 순서 변경`} />}
+      trailing={
+        <ItemRemoveButton
+          label={trimmedName ? `${trimmedName} 시작설정 삭제` : `${index + 1}번째 시작설정 삭제`}
+          onClick={onRemove}
+        />
+      }
     >
-      <div className="flex items-start gap-3">
-        <button
-          type="button"
-          aria-label="순서 변경"
-          className="mt-1.5 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical aria-hidden />
-        </button>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor={`starting-setup-${id}-name`}>이름 *</Label>
+        <Input
+          id={`starting-setup-${id}-name`}
+          placeholder="시작설정 이름을 입력해주세요"
+          aria-invalid={!!rowErrors?.name}
+          aria-describedby={rowErrors?.name ? `starting-setup-${id}-name-error` : undefined}
+          {...register(`startingSetups.${index}.name`)}
+        />
+        {rowErrors?.name && (
+          <p id={`starting-setup-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
+            {rowErrors.name.message}
+          </p>
+        )}
+      </div>
 
-        <div className="flex flex-1 flex-col gap-4">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor={`starting-setup-${id}-name`}>이름 *</Label>
-            <Input
-              id={`starting-setup-${id}-name`}
-              placeholder="시작설정 이름을 입력해주세요"
-              aria-invalid={!!rowErrors?.name}
-              aria-describedby={rowErrors?.name ? `starting-setup-${id}-name-error` : undefined}
-              {...register(`startingSetups.${index}.name`)}
-            />
-            {rowErrors?.name && (
-              <p id={`starting-setup-${id}-name-error`} role="alert" className="text-xs text-destructive-text">
-                {rowErrors.name.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor={`starting-setup-${id}-prologue`}>프롤로그 *</Label>
-              <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
-            </div>
-            <Textarea
-              id={`starting-setup-${id}-prologue`}
-              placeholder="이 시작설정의 도입부를 입력해주세요"
-              rows={3}
-              aria-invalid={!!rowErrors?.prologue}
-              aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
-              {...prologueField}
-              ref={(element) => {
-                prologueField.ref(element);
-                prologueRef.current = element;
-              }}
-            />
-            <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
-            {rowErrors?.prologue && (
-              <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
-                {rowErrors.prologue.message}
-              </p>
-            )}
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <div className="flex items-center justify-between gap-2">
-              <Label htmlFor={`starting-setup-${id}-opening-situation`}>시작상황</Label>
-              <MediaTagInsertButton
-                name={`startingSetups.${index}.openingSituation`}
-                fieldLabel="시작상황"
-                textareaRef={openingSituationRef}
-              />
-            </div>
-            <Textarea
-              id={`starting-setup-${id}-opening-situation`}
-              placeholder="채팅 시작 시 상황을 입력해주세요"
-              rows={2}
-              aria-invalid={!!rowErrors?.openingSituation}
-              aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
-              {...openingSituationField}
-              ref={(element) => {
-                openingSituationField.ref(element);
-                openingSituationRef.current = element;
-              }}
-            />
-            <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
-            <p className="text-xs text-muted-foreground">
-              비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
-            </p>
-            {rowErrors?.openingSituation && (
-              <p
-                id={`starting-setup-${id}-opening-situation-error`}
-                role="alert"
-                className="text-xs text-destructive-text"
-              >
-                {rowErrors.openingSituation.message}
-              </p>
-            )}
-          </div>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor={`starting-setup-${id}-prologue`}>프롤로그 *</Label>
+          <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
+        <Textarea
+          id={`starting-setup-${id}-prologue`}
+          placeholder="이 시작설정의 도입부를 입력해주세요"
+          rows={3}
+          aria-invalid={!!rowErrors?.prologue}
+          aria-describedby={rowErrors?.prologue ? `starting-setup-${id}-prologue-error` : undefined}
+          {...prologueField}
+          ref={(element) => {
+            prologueField.ref(element);
+            prologueRef.current = element;
+          }}
+        />
+        <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
+        {rowErrors?.prologue && (
+          <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
+            {rowErrors.prologue.message}
+          </p>
+        )}
+      </div>
 
-        <Button type="button" variant="ghost" size="icon" aria-label="시작설정 삭제" onClick={onRemove}>
-          <Trash2 aria-hidden />
-        </Button>
+      <div className="flex flex-col gap-1.5">
+        <div className="flex items-center justify-between gap-2">
+          <Label htmlFor={`starting-setup-${id}-opening-situation`}>시작상황</Label>
+          <MediaTagInsertButton
+            name={`startingSetups.${index}.openingSituation`}
+            fieldLabel="시작상황"
+            textareaRef={openingSituationRef}
+          />
+        </div>
+        <Textarea
+          id={`starting-setup-${id}-opening-situation`}
+          placeholder="채팅 시작 시 상황을 입력해주세요"
+          rows={2}
+          aria-invalid={!!rowErrors?.openingSituation}
+          aria-describedby={rowErrors?.openingSituation ? `starting-setup-${id}-opening-situation-error` : undefined}
+          {...openingSituationField}
+          ref={(element) => {
+            openingSituationField.ref(element);
+            openingSituationRef.current = element;
+          }}
+        />
+        <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
+        <p className="text-xs text-muted-foreground">
+          비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
+        </p>
+        {rowErrors?.openingSituation && (
+          <p
+            id={`starting-setup-${id}-opening-situation-error`}
+            role="alert"
+            className="text-xs text-destructive-text"
+          >
+            {rowErrors.openingSituation.message}
+          </p>
+        )}
       </div>
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
@@ -391,6 +454,6 @@ function StartingSetupRow({
           </div>
         </div>
       )}
-    </div>
+    </CollapsibleItemCard>
   );
 }

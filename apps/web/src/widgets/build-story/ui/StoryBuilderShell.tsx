@@ -19,8 +19,11 @@ import {
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   mediaBookPublishErrorMessage,
   mediaBookSchema,
+  SELECTED_STARTING_SETUP,
   serverToForm,
+  STARTING_SETUP_SCOPE,
   storyAutosaveErrorMessage,
+  STORY_COLLAPSIBLE_LISTS,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
   STORY_TABS,
@@ -33,6 +36,9 @@ import {
   BuilderTabStrip,
   BuilderTopBar,
   BuilderTopBarActions,
+  BuilderUiStateContext,
+  errorItemKeys,
+  errorParentItemId,
   errorTabs,
   fieldLabelByFormPath,
   firstErrorLocation,
@@ -43,6 +49,7 @@ import {
   missingFieldsMessage,
   resolveProfileImageUrl,
   useAutosave,
+  useCreateBuilderUiState,
   useDraftPersistence,
   useFocusFirstError,
   useProfileImageLocalUrl,
@@ -148,6 +155,23 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     },
   });
 
+  // 반복 항목의 열림과 스탯·엔딩 탭이 함께 보는 고른 시작설정. 탭 본문은 탭을 바꿀 때 언마운트되므로 셸이 쥐고, 폼 값이
+  // 아니라서 자동저장·검증과 무관하다.
+  const uiState = useCreateBuilderUiState();
+
+  // 발행 실패 때 첫 오류로 가기 전에 오류를 품은 항목을 펼치고(오류가 풀려도 펼친 채 둔다 — 고치는 키 입력에 접히면
+  // 포커스가 body 로 떨어진다), 스탯·엔딩 탭이 오류가 있는 시작설정을 보이게 바꿔 둔다. 포커스보다 먼저여야 그 필드가
+  // 숨거나 그려지지 않은 채로 포커스를 받지 않는다. 서버 거절은 목록·섹션 경로만 가리켜 펼칠 항목이 없을 수 있다 — 그때는
+  // 목록 머리의 오류 문장이 맡는다.
+  function revealAndFocusFirstError(errors: FieldErrors<StoryBuilderFormValues>) {
+    const location = firstErrorLocation(errors, TABS);
+    const values = form.getValues();
+    uiState.open(errorItemKeys(errors, values, STORY_COLLAPSIBLE_LISTS, TABS));
+    const setupId = errorParentItemId(errors, values, STARTING_SETUP_SCOPE, TABS, location?.fieldPath);
+    if (setupId !== undefined) uiState.select(SELECTED_STARTING_SETUP, setupId);
+    focusFirstError(location);
+  }
+
   const { saveNow } = useAutosave({
     subscribe: (cb) => {
       // `watch` 콜백이 주는 값은 `DeepPartial`이다(미등록 필드가 있을 수 있어서). 구독은 **변경
@@ -197,7 +221,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
           if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
         }
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
-        focusFirstError(firstErrorLocation(form.formState.errors, TABS));
+        revealAndFocusFirstError(form.formState.errors);
         toast.error(missingFieldsMessage(missingFields, STORY_MISSING_FIELD_LABELS));
         return;
       }
@@ -206,7 +230,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       if (isEndingRuleStatNotFoundError(error)) {
         const formPath = STORY_MISSING_FIELD_FORM_PATH["endings.statRules"];
         if (formPath) form.setError(formPath, { type: "server", message: ENDING_RULE_STAT_NOT_FOUND_MESSAGE });
-        focusFirstError(firstErrorLocation(form.formState.errors, TABS));
+        revealAndFocusFirstError(form.formState.errors);
         toast.error(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
         return;
       }
@@ -230,8 +254,10 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   // 친절할 이유가 없어 여기서도 토스트를 띄운다. 문구는 서버 400 경로와 같은 파일이 소유하되
   // 문장이 갈린다 — 이 경로에는 누락뿐 아니라 `.max(4)` 위반도
   // 온다.
+  // `form.formState.errors` 가 아니라 인자로 받은 `errors` 를 쓴다 — 검증이 오류 객체를 새것으로 바꾼 직후라 폼 상태
+  // 쪽은 아직 이전 객체다.
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
-    focusFirstError(firstErrorLocation(errors, TABS));
+    revealAndFocusFirstError(errors);
     toast.error(
       invalidFieldsMessage(flattenFieldErrorPaths(errors).map(collapseMediaBookPath), {
         ...MISSING_FIELD_LABEL_BY_FORM_PATH,
@@ -297,85 +323,88 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
           />
         }
       />
-      {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
-      <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
-        {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
-        <MediaBookSelectionProvider setPreviewOpen={setIsPreviewOpen}>
-          <BuilderLayout
-            isPreviewOpen={isPreviewOpen}
-            preview={
-              // 대화 노드는 언제나 첫 자식 자리에 있어 탭을 바꿔도 리마운트되지 않는다(래퍼를 조건부로 그리면 대화가
-              // 사라진다). 배치표는 둘째 자리에 미디어 북 탭일 때만 그려, 숨은 칸 버튼이 다른 탭에 남지 않는다.
-              <>
-                <div className={activeTab === "mediaBook" ? "hidden" : undefined}>{previewNode}</div>
-                {activeTab === "mediaBook" && <MediaBookGridPane onClose={() => setIsPreviewOpen(false)} />}
-              </>
-            }
-          >
-            {rejectionReason !== undefined && draftId !== undefined && (
-              <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
-                <div>
-                  <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() =>
-                    void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
-                  }
-                >
-                  이의제기
-                </Button>
-              </div>
-            )}
-
-            {/* lg 이상에서는 탭 목록과 첫 내용 사이를 각 탭 본문 컴포넌트 루트의 윗여백(`py-6`, 24px) 하나로 둔다 — `Tabs` 기본 간격까지 더하면
-                상단바 → 탭 목록(24px)보다 벌어진다. lg 미만은 그대로다. */}
-            <Tabs
-              value={activeTab}
-              onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
-              className="lg:gap-0"
+      {/* 화면 상태는 탭과 미리보기 열(미디어 북 배치표) 양쪽이 읽을 수 있게 둘을 함께 감싼다. */}
+      <BuilderUiStateContext.Provider value={uiState}>
+        {/* 미디어 북 칸 썸네일 주소는 탭을 옮겨도 남아야 해서(방금 올린 파일의 로컬 주소) 탭 바깥에서 붙잡는다. */}
+        <MediaBookThumbnailsProvider value={mediaBookThumbnails}>
+          {/* 미디어 북의 고른 칸도 탭을 옮겨도 남아야 해 탭 바깥에 둔다. 셸 상태가 아닌 것은 칸을 고를 때마다 셸과 미리보기가 다시 그려지지 않게 하려는 것이다. */}
+          <MediaBookSelectionProvider setPreviewOpen={setIsPreviewOpen}>
+            <BuilderLayout
+              isPreviewOpen={isPreviewOpen}
+              preview={
+                // 대화 노드는 언제나 첫 자식 자리에 있어 탭을 바꿔도 리마운트되지 않는다(래퍼를 조건부로 그리면 대화가
+                // 사라진다). 배치표는 둘째 자리에 미디어 북 탭일 때만 그려, 숨은 칸 버튼이 다른 탭에 남지 않는다.
+                <>
+                  <div className={activeTab === "mediaBook" ? "hidden" : undefined}>{previewNode}</div>
+                  {activeTab === "mediaBook" && <MediaBookGridPane onClose={() => setIsPreviewOpen(false)} />}
+                </>
+              }
             >
-              <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+              {rejectionReason !== undefined && draftId !== undefined && (
+                <div role="alert" className="flex items-start justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-medium text-destructive-text">발행이 거부되었어요</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{rejectionReason}</p>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="shrink-0"
+                    onClick={() =>
+                      void AppealModal.call({ target: { kind: "publish-rejection", rejectionId: draftId } })
+                    }
+                  >
+                    이의제기
+                  </Button>
+                </div>
+              )}
 
-              <TabsContent value="profile">
-                <ProfileTab
-                  thumbnailUrl={thumbnailUrl}
-                  onUploadComplete={profileImageLocal.rememberUploadedFile}
-                  onPick={profileImageLocal.rememberPickedImage}
-                />
-              </TabsContent>
-              <TabsContent value="setting">
-                <SettingTab />
-              </TabsContent>
-              <TabsContent value="startingSetup">
-                <StartingSetupTab />
-              </TabsContent>
-              <TabsContent value="stat">
-                <StatTab />
-              </TabsContent>
-              <TabsContent value="mediaBook">
-                <MediaBookTab />
-              </TabsContent>
-              <TabsContent value="keywordNote">
-                <KeywordNoteTab />
-              </TabsContent>
-              <TabsContent value="shortcut">
-                <ShortcutTab />
-              </TabsContent>
-              <TabsContent value="ending">
-                <EndingTab />
-              </TabsContent>
-              <TabsContent value="registration">
-                <RegistrationTab />
-              </TabsContent>
-            </Tabs>
-          </BuilderLayout>
-        </MediaBookSelectionProvider>
-      </MediaBookThumbnailsProvider>
+              {/* lg 이상에서는 탭 목록과 첫 내용 사이를 각 탭 본문 컴포넌트 루트의 윗여백(`py-6`, 24px) 하나로 둔다 — `Tabs` 기본 간격까지 더하면
+                  상단바 → 탭 목록(24px)보다 벌어진다. lg 미만은 그대로다. */}
+              <Tabs
+                value={activeTab}
+                onValueChange={(value) => isStoryBuilderTab(value) && setActiveTab(value)}
+                className="lg:gap-0"
+              >
+                <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
+
+                <TabsContent value="profile">
+                  <ProfileTab
+                    thumbnailUrl={thumbnailUrl}
+                    onUploadComplete={profileImageLocal.rememberUploadedFile}
+                    onPick={profileImageLocal.rememberPickedImage}
+                  />
+                </TabsContent>
+                <TabsContent value="setting">
+                  <SettingTab />
+                </TabsContent>
+                <TabsContent value="startingSetup">
+                  <StartingSetupTab />
+                </TabsContent>
+                <TabsContent value="stat">
+                  <StatTab />
+                </TabsContent>
+                <TabsContent value="mediaBook">
+                  <MediaBookTab />
+                </TabsContent>
+                <TabsContent value="keywordNote">
+                  <KeywordNoteTab />
+                </TabsContent>
+                <TabsContent value="shortcut">
+                  <ShortcutTab />
+                </TabsContent>
+                <TabsContent value="ending">
+                  <EndingTab />
+                </TabsContent>
+                <TabsContent value="registration">
+                  <RegistrationTab />
+                </TabsContent>
+              </Tabs>
+            </BuilderLayout>
+          </MediaBookSelectionProvider>
+        </MediaBookThumbnailsProvider>
+      </BuilderUiStateContext.Provider>
     </FormProvider>
   );
 }

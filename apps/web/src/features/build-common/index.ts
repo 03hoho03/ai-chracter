@@ -3,7 +3,6 @@ export { useDraftPersistence } from "./model/useDraftPersistence";
 export { errorTabs } from "./model/errorTabs";
 export { errorItemKeys, type CollapsibleListSpec } from "./model/errorItemKeys";
 export { errorParentItemId, type ErrorParentScope } from "./model/errorParentItemId";
-export { pickFocusKeyAfterRemoval } from "./model/removalFocusKey";
 export {
   BuilderUiStateContext,
   createBuilderUiState,
@@ -22,7 +21,8 @@ export { getFilterRejectionReason, getMissingFields } from "./model/publishRejec
 export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/resolveProfileImageUrl";
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
-export { focusItemToggle } from "./lib/focusItemToggle";
+export { focusNeighborToggle } from "./lib/focusNeighborToggle";
+export { firstLine } from "./lib/firstLine";
 export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
 export { BuilderTopBar } from "./ui/BuilderTopBar";

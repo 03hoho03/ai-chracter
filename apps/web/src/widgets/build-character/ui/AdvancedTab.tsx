@@ -12,31 +12,62 @@ import { Button, buttonVariants } from "@ai-character-chat/ui/components/button"
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { cn } from "@ai-character-chat/ui/lib/utils";
-import { Camera, GripVertical, ImageOff, Loader2, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { useFieldArray, useFormContext } from "react-hook-form";
+import { Camera, ImageOff, Loader2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
+import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import { toast } from "sonner";
 
 import { registerSituationalImage } from "@/entities/content";
-import type { CharacterBuilderFormValues } from "@/features/build-character";
+import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
+import {
+  CollapsibleItemCard,
+  firstLine,
+  focusNeighborToggle,
+  ItemDragHandle,
+  ItemRemoveButton,
+  itemOpenKey,
+  useBuilderUiState,
+} from "@/features/build-common";
 import { uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
+
+const SITUATIONAL_IMAGE_LIST: CharacterCollapsibleList = "situationalImage";
 
 /** 탭 전체가 선택사항, 이미지+노출상황 쌍을 여러 개
  * 등록/조회/수정/삭제, dnd-kit 재정렬, 동시매칭 시 최상단 1개만 노출된다는 안내. */
 export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId: () => Promise<string> }) {
   const form = useFormContext<CharacterBuilderFormValues>();
 
-  const { control } = form;
+  const { control, getValues } = form;
   const { fields, append, remove, move } = useFieldArray({ control, name: "situationalImages" });
   const sensors = useSensors(useSensor(PointerSensor));
+  const uiState = useBuilderUiState();
+  const addButtonRef = useRef<HTMLButtonElement>(null);
 
   function handleDragEnd({ active, over }: DragEndEvent) {
     if (!over || active.id === over.id) return;
     const oldIndex = fields.findIndex((field) => field.id === active.id);
     const newIndex = fields.findIndex((field) => field.id === over.id);
     if (oldIndex !== -1 && newIndex !== -1) move(oldIndex, newIndex);
+  }
+
+  function handleAppend() {
+    const id = crypto.randomUUID();
+    // 새 항목을 열림으로 기록하는 일은 append 와 같은 핸들러에서 그보다 먼저 한다. 같은 커밋에 본문이 보여야 append 가
+    // 주는 포커스가 숨은 입력칸에 걸려 헛돌지 않는다.
+    uiState.open([itemOpenKey(SITUATIONAL_IMAGE_LIST, id)]);
+    append(
+      { id, image: null, situationDescription: "" },
+      { focusName: `situationalImages.${fields.length}.situationDescription` },
+    );
+  }
+
+  function handleRemove(index: number) {
+    // 지우기 전에 포커스를 옮긴다 — 지운 뒤로 미루면 누른 삭제 버튼이 사라지며 포커스가 문서 맨 앞으로 떨어진다.
+    const keys = getValues("situationalImages").map((image) => itemOpenKey(SITUATIONAL_IMAGE_LIST, image.id));
+    focusNeighborToggle(keys, index, addButtonRef.current);
+    remove(index);
   }
 
   return (
@@ -63,7 +94,7 @@ export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId
                   id={field.id}
                   index={index}
                   ensureContentVersionId={ensureContentVersionId}
-                  onRemove={() => remove(index)}
+                  onRemove={() => handleRemove(index)}
                 />
               ))}
             </div>
@@ -71,12 +102,7 @@ export function AdvancedTab({ ensureContentVersionId }: { ensureContentVersionId
         </DndContext>
       )}
 
-      <Button
-        type="button"
-        variant="secondary"
-        className="w-fit"
-        onClick={() => append({ id: crypto.randomUUID(), image: null, situationDescription: "" })}
-      >
+      <Button ref={addButtonRef} type="button" variant="secondary" className="w-fit" onClick={handleAppend}>
         상황별 이미지 추가
       </Button>
     </div>
@@ -98,7 +124,11 @@ type SituationalImageRowProps = {
  * 않음) — 그래서 "노출 상황" 텍스트가 비어있으면(서버가 필수로 요구) 업로드를 막는다.
  *
  * content_version_id를 값이 아니라 `ensureContentVersionId()`로 받는 이유는 초안 지연 생성이다 — 초안은 첫
- * 저장 시점에야 만들어지므로, 이 등록이 초안 생성을 먼저 트리거해야 한다. */
+ * 저장 시점에야 만들어지므로, 이 등록이 초안 생성을 먼저 트리거해야 한다.
+ *
+ * 접힌 머리 줄에는 이미지 상태를 꼭 보인다 — 이미지 없는 항목은 서버가 발행을 거절하는데 그 거절은 목록 전체만 가리켜,
+ * 접힌 목록에서 어느 항목인지 찾을 단서가 이것뿐이다. 업로드 중에 접어도 본문을 언마운트하지 않아 진행 상태와 미리보기가
+ * 남는다. 열림 키는 폼 값의 id 다(`id` prop 은 끌어 옮기기용 필드 배열 id 라 탭을 다시 열면 바뀐다). */
 function SituationalImageRow({
   id,
   index,
@@ -111,15 +141,18 @@ function SituationalImageRow({
     register,
     getValues,
     setValue,
-    watch,
+    control,
     formState: { errors },
   } = form;
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id });
   const [selectedFile, setSelectedFile] = useState<File>();
   const [isUploading, setIsUploading] = useState(false);
-  const hasRegisteredImage = watch(`situationalImages.${index}.image`) !== null;
-  const situationDescriptionError = errors.situationalImages?.[index]?.situationDescription;
+  const situationalImage = useWatch({ control, name: `situationalImages.${index}` });
+  const hasRegisteredImage = situationalImage.image !== null;
+  const itemErrors = errors.situationalImages?.[index];
+  const situationDescriptionError = itemErrors?.situationDescription;
   const situationDescriptionErrorId = `situational-image-${id}-description-error`;
+  const title = `상황별 이미지 ${index + 1}`;
 
   const objectPreviewUrl = useMemo(
     () => (selectedFile ? URL.createObjectURL(selectedFile) : undefined),
@@ -158,74 +191,75 @@ function SituationalImageRow({
   }
 
   const inputId = `situational-image-upload-${id}`;
+  const description = firstLine(situationalImage.situationDescription);
 
   return (
-    <div
+    <CollapsibleItemCard
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className="flex items-start gap-3 rounded-xl border border-border bg-background p-4"
+      openKey={itemOpenKey(SITUATIONAL_IMAGE_LIST, situationalImage.id)}
+      title=""
+      placeholderTitle={title}
+      summary={[imageStatusLabel(isUploading, hasRegisteredImage), description].filter(Boolean).join(" · ")}
+      hasError={!!itemErrors}
+      leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${index + 1}번째 상황별 이미지 순서 변경`} />}
+      trailing={<ItemRemoveButton label={`${title} 삭제`} onClick={onRemove} />}
     >
-      <button
-        type="button"
-        aria-label="순서 변경"
-        className="mt-1.5 cursor-grab touch-none rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-        {...attributes}
-        {...listeners}
-      >
-        <GripVertical aria-hidden />
-      </button>
-
-      <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
-        <SituationalImageThumb objectPreviewUrl={objectPreviewUrl} hasRegisteredImage={hasRegisteredImage} />
-        {isUploading && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-            <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
-          </div>
-        )}
-      </div>
-
-      <div className="flex flex-1 flex-col gap-2">
-        {/* 같은 행의 삭제 Button(variant="ghost" size="icon", 36px)과 하단 "상황별 이미지 추가"
-            Button(variant="secondary" size="default", 36px)이 모두 36px라 default로 맞춘다.
-            숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다. */}
-        <Label
-          htmlFor={inputId}
-          className={cn(
-            buttonVariants({ variant: "outline", size: "default" }),
-            "w-fit cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50",
-            FOCUS_WITHIN_RING_CLASSNAME
+      <div className="flex items-start gap-3">
+        <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+          <SituationalImageThumb objectPreviewUrl={objectPreviewUrl} hasRegisteredImage={hasRegisteredImage} />
+          {isUploading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-background/70">
+              <Loader2 aria-hidden className="size-4 animate-spin text-foreground" />
+            </div>
           )}
-        >
-          <Camera aria-hidden className="size-4" />
-          {isUploading ? "업로드 중..." : "파일 업로드"}
-          <input
-            id={inputId}
-            type="file"
-            accept="image/png,image/jpeg,image/webp"
-            className="sr-only"
-            disabled={isUploading}
-            onChange={(event) => void handleFileChange(event)}
-          />
-        </Label>
-        <Textarea
-          placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"
-          rows={2}
-          aria-invalid={!!situationDescriptionError}
-          aria-describedby={situationDescriptionError ? situationDescriptionErrorId : undefined}
-          {...register(`situationalImages.${index}.situationDescription`)}
-        />
-        {situationDescriptionError && (
-          <p id={situationDescriptionErrorId} role="alert" className="text-xs text-destructive-text">
-            {situationDescriptionError.message}
-          </p>
-        )}
-      </div>
+        </div>
 
-      <Button type="button" variant="ghost" size="icon" aria-label="상황별 이미지 삭제" onClick={onRemove}>
-        <Trash2 aria-hidden />
-      </Button>
-    </div>
+        <div className="flex flex-1 flex-col gap-2">
+          {/* 머리 줄의 삭제 Button(variant="ghost" size="icon", 36px)과 하단 "상황별 이미지 추가"
+              Button(variant="secondary" size="default", 36px)이 모두 36px라 default로 맞춘다.
+              숫자를 손코딩하지 않고 buttonVariants로 치수를 위임해 다음 변경에 자동으로 따라가게 한다. */}
+          <Label
+            htmlFor={inputId}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "default" }),
+              "w-fit cursor-pointer has-disabled:pointer-events-none has-disabled:opacity-50",
+              FOCUS_WITHIN_RING_CLASSNAME
+            )}
+          >
+            <Camera aria-hidden className="size-4" />
+            {isUploading ? "업로드 중..." : "파일 업로드"}
+            <input
+              id={inputId}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="sr-only"
+              disabled={isUploading}
+              onChange={(event) => void handleFileChange(event)}
+            />
+          </Label>
+          <Textarea
+            placeholder="어떤 상황에서 이 이미지를 노출할지 입력해주세요"
+            rows={2}
+            aria-invalid={!!situationDescriptionError}
+            aria-describedby={situationDescriptionError ? situationDescriptionErrorId : undefined}
+            {...register(`situationalImages.${index}.situationDescription`)}
+          />
+          {situationDescriptionError && (
+            <p id={situationDescriptionErrorId} role="alert" className="text-xs text-destructive-text">
+              {situationDescriptionError.message}
+            </p>
+          )}
+        </div>
+      </div>
+    </CollapsibleItemCard>
   );
+}
+
+/** 접힌 머리 줄의 이미지 상태. 업로드가 끝나야 폼 값에 이미지가 들어가므로 진행 중은 따로 가른다. */
+function imageStatusLabel(isUploading: boolean, hasRegisteredImage: boolean): string {
+  if (isUploading) return "올리는 중";
+  return hasRegisteredImage ? "등록됨" : "이미지 없음";
 }
 
 /** 세 갈래(로컬 미리보기·등록된 이미지·없음)가 배타적이라 early return으로 편다. */

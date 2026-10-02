@@ -10,7 +10,7 @@ type CollapsibleSectionProps = {
   title: string;
   /** 접혀 있어도 보이는 내용 요약(예: 이름 나열). */
   summary?: ReactNode;
-  /** 열림 기록과 무관하게 펼쳐 둔다(예: 목록이 비어 새 이름 입력칸이 곧 보여야 할 때). 이때 토글은 그리지 않고 제목만 둔다. */
+  /** 열림 기록과 무관하게 펼쳐 둔다(예: 목록이 비어 새 이름 입력칸이 곧 보여야 할 때). 이때 토글은 누를 수 없게 잠긴다. */
   isAlwaysOpen?: boolean;
   children: ReactNode;
   className?: string;
@@ -36,27 +36,22 @@ export function CollapsibleSection({
 
   return (
     <div className={cn("flex flex-col gap-2", className)}>
-      {isAlwaysOpen ? (
-        // 접을 수 없을 때 누를 수 있는 모양을 남기면 눌러도 아무 일이 없는 버튼이 된다. 높이는 토글과 같게 맞춘다 — 첫
-        // 항목이 생겨 토글로 바뀌는 순간 터치 화면에서 제목 줄이 커지며 아래 목록이 밀리지 않게.
-        <p id={ids.title} className="flex min-h-9 items-center text-sm font-semibold pointer-coarse:min-h-10">
-          {title}
-        </p>
-      ) : (
-        <div className="flex">
-          <CollapsibleItemToggle
-            openKey={openKey}
-            isOpen={isOpen}
-            onToggle={() => uiState.toggle(openKey)}
-            titleId={ids.title}
-            bodyId={ids.body}
-            title={title}
-            placeholderTitle={title}
-            summary={summary}
-            className="-mx-2"
-          />
-        </div>
-      )}
+      {/* 접을 수 없을 때도 같은 버튼을 남기고 잠금만 건다. 다른 요소로 바꿔 그리면, 행 이름의 blur 커밋이 오류를 세우는
+          바로 그 순간 Shift+Tab 으로 이 버튼에 오던 포커스가 사라진 요소와 함께 `<body>` 로 떨어진다. 높이도 그대로다. */}
+      <div className="flex">
+        <CollapsibleItemToggle
+          openKey={openKey}
+          isOpen={isOpen}
+          onToggle={() => uiState.toggle(openKey)}
+          titleId={ids.title}
+          bodyId={ids.body}
+          title={title}
+          placeholderTitle={title}
+          summary={summary}
+          isLocked={isAlwaysOpen}
+          className="-mx-2"
+        />
+      </div>
       <div id={ids.body} role="group" aria-labelledby={ids.title} hidden={!isOpen} className="flex flex-col gap-2">
         {children}
       </div>

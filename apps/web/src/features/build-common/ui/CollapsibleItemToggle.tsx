@@ -18,6 +18,8 @@ type CollapsibleItemToggleProps = {
   /** 제목 오른쪽의 보조 정보. 한 줄로 잘린다. */
   summary?: ReactNode;
   hasError?: boolean;
+  /** 지금은 접을 수 없다(늘 펼침). 버튼은 그대로 두고 누를 수 없음만 알린다 — 요소를 바꾸면 그 위의 포커스가 사라진다. */
+  isLocked?: boolean;
   className?: string;
 };
 
@@ -43,6 +45,7 @@ export function CollapsibleItemToggle({
   srTitlePrefix,
   summary,
   hasError = false,
+  isLocked = false,
   className,
 }: CollapsibleItemToggleProps) {
   const trimmedTitle = title?.trim();
@@ -53,9 +56,12 @@ export function CollapsibleItemToggle({
       {...{ [ITEM_TOGGLE_ATTRIBUTE]: openKey }}
       aria-expanded={isOpen}
       aria-controls={bodyId}
-      onClick={onToggle}
+      // `disabled` 를 쓰지 않는다 — 붙는 순간 브라우저가 포커스를 빼 `<body>` 로 떨어진다.
+      aria-disabled={isLocked || undefined}
+      onClick={isLocked ? undefined : onToggle}
       className={cn(
-        "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent px-2 text-left outline-none select-none first:-ml-2 hover:bg-muted focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10",
+        "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent px-2 text-left outline-none select-none first:-ml-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10",
+        !isLocked && "hover:bg-muted",
         className,
       )}
     >
@@ -71,7 +77,9 @@ export function CollapsibleItemToggle({
           <span className="sr-only"> (입력 오류가 있어요)</span>
         </>
       )}
-      <ChevronDown aria-hidden className={cn("size-4 shrink-0 text-muted-foreground", isOpen && "rotate-180")} />
+      {!isLocked && (
+        <ChevronDown aria-hidden className={cn("size-4 shrink-0 text-muted-foreground", isOpen && "rotate-180")} />
+      )}
     </button>
   );
 }

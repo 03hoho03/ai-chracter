@@ -16,13 +16,23 @@ type IconPickerProps = {
   onChange: (value: string) => void;
   options: readonly IconPickerOption[];
   triggerLabel: string;
+  /** 오류가 있을 때 트리거를 오류 상태로 알리고(`Input` 과 같은 붉은 보더), 오류 문장을 설명으로 잇는다. */
+  "aria-invalid"?: boolean;
+  "aria-describedby"?: string;
 }
 
 /** lucide-react 아이콘 서브셋 중에서만 고르는 피커. 서브셋은
  * 도메인 어휘라 `options`로 주입받는다.
  * ColorPicker와 동일한 relative 트리거 + absolute 패널 구조이고, 열림·키보드 동작도 같은
  * `useGridPicker`를 쓴다(4열 격자). */
-export function IconPicker({ value, onChange, options, triggerLabel }: IconPickerProps) {
+export function IconPicker({
+  value,
+  onChange,
+  options,
+  triggerLabel,
+  "aria-invalid": ariaInvalid,
+  "aria-describedby": ariaDescribedBy,
+}: IconPickerProps) {
   const selectedIndex = options.findIndex((option) => option.name === value);
   const selected = options[selectedIndex];
   const picker = useGridPicker({ optionCount: options.length, selectedIndex, columns: 4 });
@@ -36,8 +46,10 @@ export function IconPicker({ value, onChange, options, triggerLabel }: IconPicke
         aria-label={triggerLabel}
         aria-haspopup="listbox"
         aria-expanded={picker.isOpen}
+        aria-invalid={ariaInvalid}
+        aria-describedby={ariaDescribedBy}
         onClick={picker.toggle}
-        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input text-foreground hover:bg-secondary/50"
+        className="flex size-9 shrink-0 items-center justify-center rounded-md border border-input text-foreground hover:bg-secondary/50 aria-invalid:border-destructive"
       >
         {SelectedIcon ? (
           <SelectedIcon aria-hidden className="size-5" />
