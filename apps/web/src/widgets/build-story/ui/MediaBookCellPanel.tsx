@@ -75,7 +75,7 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
     const trigger = document.activeElement;
     const isConfirmed = await MediaBookConfirmModal.call({
       title: "이 칸을 비울까요?",
-      description: "그림과 상황 설명·해금 힌트가 함께 지워져요. 글 속 표기는 그대로 남고 화면에는 빈칸이 돼요.",
+      description: "이미지와 상황 설명·해금 힌트가 함께 지워져요. 글 속 표기는 그대로 남고 화면에는 빈칸이 돼요.",
       confirmLabel: "비우기",
       // 취소면 "이 칸 비우기" 버튼이 그대로라 그리로, 비웠으면 그 버튼이 빈 칸 화면으로 바뀌며 사라지므로 표의 칸으로.
       onRestoreFocus: () => {
@@ -114,7 +114,7 @@ export function MediaBookCellPanel({ id, position, onClose, onReturnFocus }: Med
       ) : (
         <div className="flex flex-col gap-3">
           <p className="text-sm break-keep text-muted-foreground">
-            아직 그림이 없는 칸이에요. 그림을 넣으면 상황 설명과 해금 힌트를 적을 수 있어요.
+            아직 이미지가 없는 칸이에요. 이미지를 넣으면 상황 설명과 해금 힌트를 적을 수 있어요.
           </p>
           <CellImageButtons onImageChange={handleImageChange} />
         </div>
@@ -147,7 +147,7 @@ function FilledCellFields({ cell, onImageChange, onPatch, onClear }: FilledCellF
         <Textarea
           id={`${fieldId}-situation`}
           rows={2}
-          placeholder="예) 에리가 선물을 받고 환하게 웃는 순간"
+          placeholder="예) 리딩 중 웃음이 터져 대본으로 얼굴을 가린 유나"
           value={cell.situationDescription}
           aria-describedby={`${fieldId}-situation-help`}
           onChange={(event) =>
@@ -155,7 +155,7 @@ function FilledCellFields({ cell, onImageChange, onPatch, onClear }: FilledCellF
           }
         />
         <p id={`${fieldId}-situation-help`} className="flex justify-between gap-2 text-xs text-muted-foreground">
-          <span className="break-keep">대화 중 어떤 그림을 띄울지 AI 가 고를 때 이름과 함께 읽어요.</span>
+          <span className="break-keep">대화 중 어떤 이미지를 띄울지 AI가 고를 때 이름과 함께 읽어요.</span>
           <span className="shrink-0 tabular-nums">
             {countCharacters(cell.situationDescription)}/{MAX_MEDIA_BOOK_SITUATION_LENGTH}
           </span>
@@ -166,7 +166,7 @@ function FilledCellFields({ cell, onImageChange, onPatch, onClear }: FilledCellF
         <Label htmlFor={`${fieldId}-hint`}>해금 힌트</Label>
         <Input
           id={`${fieldId}-hint`}
-          placeholder="예) 에리와 친해지면 볼 수 있어요"
+          placeholder="예) 첫 리딩을 끝까지 지켜본 뒤"
           value={cell.unlockHint}
           aria-describedby={`${fieldId}-hint-help`}
           onChange={(event) =>
@@ -174,7 +174,7 @@ function FilledCellFields({ cell, onImageChange, onPatch, onClear }: FilledCellF
           }
         />
         <p id={`${fieldId}-hint-help`} className="flex justify-between gap-2 text-xs text-muted-foreground">
-          <span className="break-keep">아직 못 본 사람의 이미지 보관함에 흐린 그림과 함께 보여요. 비우면 자물쇠만 보여요.</span>
+          <span className="break-keep">아직 못 본 사람의 이미지 보관함에 흐린 이미지와 함께 보여요. 비우면 자물쇠만 보여요.</span>
           <span className="shrink-0 tabular-nums">
             {countCharacters(cell.unlockHint)}/{MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH}
           </span>
@@ -185,7 +185,7 @@ function FilledCellFields({ cell, onImageChange, onPatch, onClear }: FilledCellF
         <div className="flex flex-col gap-0.5">
           <Label htmlFor={`${fieldId}-exclude`}>대화 중에는 띄우지 않기</Label>
           <p className="text-sm break-keep text-muted-foreground">
-            켜면 AI 가 대화 중에 이 그림을 고르지 않아요. 글 속 표기로 넣은 자리에는 그대로 보여요.
+            켜면 AI가 대화 중에 이 이미지를 고르지 않아요. 글 속 표기로 넣은 자리에는 그대로 보여요.
           </p>
         </div>
         <Switch

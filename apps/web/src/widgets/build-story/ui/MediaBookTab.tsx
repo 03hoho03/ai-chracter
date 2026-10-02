@@ -54,8 +54,8 @@ export function MediaBookTab() {
           </span>
         </div>
         <p className="text-sm break-keep text-muted-foreground">
-          인물과 장면을 정하고 칸마다 그림을 한 장 넣어요. 대화 중에는 AI 가 어울리는 칸을 골라 답 아래에 보여 주고,
-          칸의 표기를 시작상황·프롤로그·에필로그·등록 설명에 넣으면 그 자리에 그림이 보여요. 넣지 않아도 발행할 수 있어요.
+          인물과 장면이 만나는 칸마다 이미지를 한 장씩 넣으면, 대화 중에 AI가 어울리는 이미지를 골라 답 아래에 보여
+          줘요. 넣지 않아도 발행할 수 있어요.
         </p>
       </div>
 
@@ -75,8 +75,23 @@ export function MediaBookTab() {
         />
       ) : (
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-10 text-center">
-          <p className="text-sm break-keep text-muted-foreground">
-            인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요. 파일 이름으로 한꺼번에 넣으면 둘 다 자동으로 만들어져요.
+          {/* 기본 경로(한 칸씩 추가)를 먼저, 파일이 이미 있는 사람의 지름길을 뒤에 둔다. 폼 열이 넓은 화면에서 줄이
+              너무 길어지지 않게 문단 폭을 묶는다. */}
+          <p className="max-w-md text-sm font-medium break-keep text-foreground">
+            인물과 장면을 하나씩 이상 추가하면 배치표가 생겨요
+          </p>
+          <p className="max-w-md text-sm break-keep text-muted-foreground">
+            예를 들어 인물 ‘<span className="text-foreground">유나</span>’와 장면 ‘
+            <span className="text-foreground">리딩</span>’을 추가하면{" "}
+            {/* 칸 이름은 가운뎃점 앞뒤에서 줄이 갈리면 두 이름으로 읽힌다. */}
+            <span className="whitespace-nowrap">
+              ‘<span className="text-foreground">유나 · 리딩</span>’
+            </span>{" "}
+            칸이 생겨요. 칸을 눌러 파일을 올리거나 생성한 이미지에서 고르면 돼요.
+          </p>
+          <p className="max-w-md text-sm break-keep text-muted-foreground">
+            이미지 파일이 이미 있다면 위의 ‘<span className="text-foreground">파일 이름으로 한꺼번에 넣기</span>’로
+            인물·장면과 칸을 한 번에 만들 수 있어요.
           </p>
         </div>
       )}

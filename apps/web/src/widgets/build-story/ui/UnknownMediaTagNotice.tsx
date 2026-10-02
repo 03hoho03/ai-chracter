@@ -15,7 +15,7 @@ export function UnknownMediaTagNotice({ name }: { name: MediaTagFieldPath }) {
     <p className="flex items-start gap-1.5 text-xs break-keep text-muted-foreground">
       <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
       <span>
-        미디어 북에 그림이 없는 칸이라 화면에는 빈칸으로 남아요:{" "}
+        미디어 북에 이미지가 없는 칸이라 화면에는 빈칸으로 남아요:{" "}
         <span className="break-all text-foreground">{unknown.join(" ")}</span>
       </span>
     </p>

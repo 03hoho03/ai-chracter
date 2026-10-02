@@ -16,7 +16,7 @@ import {
   type MediaBookCellImage,
 } from "@/features/build-story";
 import { MediaBookOverwriteModal } from "@/features/edit-media-book";
-import { uploadAsset } from "@/shared/api/asset/uploadAsset";
+import { MAX_UPLOAD_BYTES_BY_PURPOSE, uploadAsset } from "@/shared/api/asset/uploadAsset";
 import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMessage";
 import { FOCUS_WITHIN_RING_CLASSNAME } from "@/shared/ui/focusWithinRing";
 
@@ -32,6 +32,9 @@ type UploadResult = { addedCount: number; excluded: BulkUploadExclusion[] };
 // 동시에 올리는 파일 수. 파일마다 리사이즈(메인 스레드 캔버스)와 업로드가 돌아 많이 열면 화면이 굳는다.
 const UPLOAD_CONCURRENCY = 3;
 
+// 도움말에 적는 한 장 상한. 업로드가 실제로 거는 값에서 계산해 문구와 검사가 갈리지 않게 한다.
+const MAX_FILE_MEGABYTES = MAX_UPLOAD_BYTES_BY_PURPOSE["situational-image"] / (1024 * 1024);
+
 /**
  * 파일 이름(`인물_장면.확장자`)으로 칸을 한꺼번에 채운다. 순서: 이름 읽기 → (채워진 칸이 있으면) 덮어쓰기 묻기 →
  * 상한 적용 → 파일마다 올리고 끝나는 대로 한 장씩 폼에 반영. 업로드 주소는 `uploadAsset` 이 파일마다 올리기 직전에
@@ -41,6 +44,7 @@ export function MediaBookBulkUpload() {
   const { getMediaBook, commit } = useMediaBookEditor();
   const thumbnails = useMediaBookThumbnails();
   const inputId = useId();
+  const helpId = useId();
   const [progress, setProgress] = useState<{ done: number; total: number }>();
   const [result, setResult] = useState<UploadResult>();
   const isUploading = progress !== undefined;
@@ -118,6 +122,7 @@ export function MediaBookBulkUpload() {
             multiple
             accept="image/png,image/jpeg,image/webp"
             className="sr-only"
+            aria-describedby={helpId}
             aria-disabled={isUploading}
             // 업로드 중에는 파일 창을 열지 않는다. `disabled` 를 주면 키보드로 이 입력에 있던 포커스가 body 로 떨어진다.
             onClick={(event) => {
@@ -126,9 +131,9 @@ export function MediaBookBulkUpload() {
             onChange={(event) => void handleFiles(event)}
           />
         </Label>
-        <p className="text-xs break-keep text-muted-foreground">
-          파일 이름을 <span className="text-foreground">인물_장면</span>으로 지어 주세요. 예) 에리_기쁨.png → 인물 에리,
-          장면 기쁨. 없는 인물·장면은 새로 만들어요.
+        <p id={helpId} className="text-xs break-keep text-muted-foreground">
+          ‘<span className="text-foreground">유나_리딩.png</span>’처럼 이름의 첫 _ 앞을 인물, 뒤를 장면으로 읽어 그 칸에
+          넣어요. 없는 인물·장면은 새로 만들어요. PNG·JPG·WebP, 한 장에 {MAX_FILE_MEGABYTES}MB까지예요.
         </p>
       </div>
 

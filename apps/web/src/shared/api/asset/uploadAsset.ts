@@ -29,7 +29,7 @@ const RESIZE_SPEC_BY_PURPOSE: Record<AssetPurpose, ResizeSpec> = {
 };
 
 /** 서버의 `UPLOAD_SIZE_LIMIT_BYTES`(apps/api/src/api/assets/schemas.py)와 같은 값 — 리사이즈 *결과물*에 건다. */
-const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
+export const MAX_UPLOAD_BYTES_BY_PURPOSE: Record<AssetPurpose, number> = {
   "profile-image": 2 * 1024 * 1024,
   "content-thumbnail": 5 * 1024 * 1024,
   "situational-image": 5 * 1024 * 1024,

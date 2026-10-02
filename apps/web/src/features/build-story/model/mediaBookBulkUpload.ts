@@ -17,7 +17,7 @@ import { MAX_MEDIA_BOOK_CELLS, type MediaBookValues } from "./schema";
  * 멈춰도 그때까지 반영된 미디어 북은 그 자체로 완결된 값이다.
  */
 
-// 이미지 파일 확장자. `에리_기쁨.png.webp` 처럼 변환을 거쳐 둘 붙은 것도 모두 뗀다 — 이름 끝의 다른 `.` 은 이름이다.
+// 이미지 파일 확장자. `유나_리딩.png.webp` 처럼 변환을 거쳐 둘 붙은 것도 모두 뗀다 — 이름 끝의 다른 `.` 은 이름이다.
 const IMAGE_EXTENSION = /\.(png|jpe?g|webp|gif)$/i;
 
 export type ParsedMediaFileName =
@@ -26,7 +26,7 @@ export type ParsedMediaFileName =
 
 /**
  * 파일 이름을 인물·장면 이름으로 읽는다. 확장자를 떼고 **첫 번째** `_` 에서 나눈다 — 뒤쪽 `_` 는 장면 이름에 남는다
- * (`에리_기쁨_2` → 장면 `기쁨_2`). 나눈 두 이름은 직접 입력과 같은 정규화(앞뒤 공백 제거 + NFC)와 규칙을 거치므로,
+ * (`유나_리딩_2` → 장면 `리딩_2`). 나눈 두 이름은 직접 입력과 같은 정규화(앞뒤 공백 제거 + NFC)와 규칙을 거치므로,
  * 맥 Finder 처럼 자모를 나눠(NFD) 보내는 파일 이름도 같은 이름이 된다.
  */
 export function parseMediaFileName(fileName: string): ParsedMediaFileName {
@@ -103,7 +103,7 @@ export function finalizeBulkUploadPlan(
   for (const entry of plan.entries) {
     if (entry.isOverwrite) {
       if (choice === "overwrite") entries.push(entry);
-      else excluded.push({ fileName: entry.fileName, reason: "이미 그림이 있는 칸이라 건너뛰었어요" });
+      else excluded.push({ fileName: entry.fileName, reason: "이미 이미지가 있는 칸이라 건너뛰었어요" });
       continue;
     }
     if (room <= 0) {
