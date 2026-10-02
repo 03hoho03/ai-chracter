@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { planStatRemoval, removeRulesReferencingStat } from "./removeRulesReferencingStat";
+import { planStatRemoval, removeRuleListItem, removeRulesReferencingStat } from "./removeRulesReferencingStat";
 import type { RuleListItemValues, SingleRuleValues } from "./schema";
 
 function rule(id: string, statId: string, nextOp: SingleRuleValues["nextOp"] = null): SingleRuleValues {
@@ -47,6 +47,56 @@ describe("removeRulesReferencingStat", () => {
     ];
 
     expect(removeRulesReferencingStat(items, "gone")).toBe(items);
+  });
+});
+
+describe("removeRulesReferencingStat matches deleting the same conditions by hand", () => {
+  // 엔딩 탭에서 작가가 조건 줄의 삭제 버튼을 하나씩 누른 결과. 그룹 안 조건은 그 그룹의 목록에서 지우고, 그래서 그룹이 비면
+  // 그룹 삭제 버튼까지 누른다(스탯 삭제가 빈 그룹을 그룹째 지우는 것과 같은 결과를 얻는 수동 동작).
+  function removeByHand(items: RuleListItemValues[], statId: string): RuleListItemValues[] {
+    let next = items;
+    for (const item of items) {
+      if (item.kind === "rule") {
+        if (item.statId === statId) next = removeRuleListItem(next, item.id);
+        continue;
+      }
+      let groupRules: RuleListItemValues[] = item.rules;
+      for (const groupRule of item.rules) {
+        if (groupRule.statId === statId) groupRules = removeRuleListItem(groupRules, groupRule.id);
+      }
+      if (groupRules === item.rules) continue;
+      next =
+        groupRules.length === 0
+          ? removeRuleListItem(next, item.id)
+          : next.map((current) =>
+              current.id === item.id
+                ? { ...item, rules: groupRules.filter((rule): rule is SingleRuleValues => rule.kind === "rule") }
+                : current,
+            );
+    }
+    return next;
+  }
+
+  it.each<[string, RuleListItemValues[]]>([
+    ["A 또는 X 그리고 B", [rule("a", "kept", "or"), rule("x", "gone", "and"), rule("b", "kept")]],
+    ["A 그리고 X 또는 B", [rule("a", "kept", "and"), rule("x", "gone", "or"), rule("b", "kept")]],
+    ["맨 앞 X", [rule("x", "gone", "or"), rule("a", "kept", "and"), rule("b", "kept")]],
+    ["맨 뒤 X", [rule("a", "kept", "or"), rule("x", "gone", null)]],
+    [
+      "그룹 안의 X 와 비게 되는 그룹",
+      [
+        {
+          kind: "group",
+          id: "g1",
+          nextOp: "or",
+          rules: [rule("a", "kept", "or"), rule("x", "gone", "and"), rule("b", "kept")],
+        },
+        { kind: "group", id: "g2", nextOp: "and", rules: [rule("y", "gone")] },
+        rule("c", "kept"),
+      ],
+    ],
+  ])("keeps the same and/or links as manual deletion: %s", (_label, items) => {
+    expect(removeRulesReferencingStat(items, "gone")).toEqual(removeByHand(items, "gone"));
   });
 });
 

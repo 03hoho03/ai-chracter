@@ -11,7 +11,9 @@ import type { MediaTagImages } from "@/entities/media-book";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   storyBuilderSchema,
+  ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   formToServer,
+  isEndingRuleStatNotFoundError,
   isMediaBookPositionTakenError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   mediaBookPublishErrorMessage,
@@ -194,6 +196,15 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         // setError는 formState.errors를 동기로 갱신한다 — 위 루프 직후 바로 읽어도 최신값이다.
         focusFirstError(firstErrorLocation(form.formState.errors, TABS));
         toast.error(missingFieldsMessage(missingFields, STORY_MISSING_FIELD_LABELS));
+        return;
+      }
+      // 발행 전 초안 저장이 지워진 스탯을 쓰는 엔딩 조건으로 거절된 경우. 일반 실패 문구로 끝내면 작가는 다시 눌러 볼 뿐이라,
+      // 자동저장과 같은 원인 문구를 보이고 발행 400 의 같은 원인(`endings.statRules`)과 같은 자리로 엔딩 탭을 연다.
+      if (isEndingRuleStatNotFoundError(error)) {
+        const formPath = STORY_MISSING_FIELD_FORM_PATH["endings.statRules"];
+        if (formPath) form.setError(formPath, { type: "server", message: ENDING_RULE_STAT_NOT_FOUND_MESSAGE });
+        focusFirstError(firstErrorLocation(form.formState.errors, TABS));
+        toast.error(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
         return;
       }
       if (isMediaBookPositionTakenError(error)) {

@@ -35,6 +35,8 @@ export {
   type MediaTagFieldPath,
 } from "./model/mediaTags";
 export {
+  ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
+  isEndingRuleStatNotFoundError,
   isMediaBookPositionTakenError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   storyAutosaveErrorMessage,
@@ -53,7 +55,7 @@ export {
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
-export { planStatRemoval } from "./model/removeRulesReferencingStat";
+export { planStatRemoval, removeRuleListItem } from "./model/removeRulesReferencingStat";
 export { STORY_MISSING_FIELD_FORM_PATH, STORY_MISSING_FIELD_LABELS } from "./model/publishMissingFields";
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";

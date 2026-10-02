@@ -21,6 +21,7 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import {
   COMPARISON_OPERATORS,
   LOGIC_OPERATORS,
+  removeRuleListItem,
   type RuleListItemValues,
   type SingleRuleValues,
   type StatDefValues,
@@ -279,7 +280,7 @@ function RuleListEditor({
   }
 
   function removeItem(id: string) {
-    onChange(items.filter((item) => item.id !== id));
+    onChange(removeRuleListItem(items, id));
   }
 
   function handleDragEnd({ active, over }: DragEndEvent) {

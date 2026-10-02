@@ -1,6 +1,15 @@
 import type { RuleListItemValues } from "./schema";
 
 /**
+ * 엔딩 탭에서 조건 줄이나 규칙 그룹의 삭제 버튼을 눌렀을 때의 처리. 지운 항목은 자기 `nextOp` 와 함께 사라지고 남은 항목의
+ * `nextOp` 는 그대로 둔다 — `A 또는 X 그리고 B` 에서 X 를 지우면 `A 또는 B` 가 된다. 스탯 삭제로 조건이 함께 지워질 때도
+ * 같은 결과가 나와야 작가가 같은 조건을 손으로 지웠을 때와 다른 엔딩 조건을 받지 않는다.
+ */
+export function removeRuleListItem(items: RuleListItemValues[], id: string): RuleListItemValues[] {
+  return items.filter((item) => item.id !== id);
+}
+
+/**
  * 스탯을 지울 때 그 스탯을 가리키는 엔딩 규칙도 함께 지운다. 남겨 두면 규칙 줄은 빈칸으로 보이고, 서버는 없는 스탯을
  * 가리키는 규칙이 든 초안의 저장을 거절해 그 뒤 자동저장이 통째로 멈춘다.
  *

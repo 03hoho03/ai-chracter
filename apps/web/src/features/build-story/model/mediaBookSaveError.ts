@@ -33,7 +33,7 @@ export const STORY_SAVE_LIMIT_MESSAGE =
 export const ENDING_RULE_STAT_NOT_FOUND_MESSAGE =
   "지워진 스탯을 쓰는 엔딩 조건이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 엔딩 탭에서 스탯 칸이 빈 조건을 지우거나 다른 스탯으로 바꿔주세요.";
 
-function isEndingRuleStatNotFoundError(error: unknown): boolean {
+export function isEndingRuleStatNotFoundError(error: unknown): boolean {
   if (!isApiError(error) || error.status !== 422) return false;
   return typeof error.detail === "object" && error.detail.code === ENDING_RULE_STAT_NOT_FOUND_CODE;
 }
