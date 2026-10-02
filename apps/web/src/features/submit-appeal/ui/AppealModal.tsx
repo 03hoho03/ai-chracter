@@ -9,9 +9,10 @@ import {
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createCallable } from "react-call";
 import { useForm } from "react-hook-form";
 import { toast } from "sonner";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { useSubmitAppealMutation, type AppealTarget } from "../api/useSubmitAppealMutation";
 import { submitAppealSchema, type SubmitAppealFormValues } from "../model/schema";

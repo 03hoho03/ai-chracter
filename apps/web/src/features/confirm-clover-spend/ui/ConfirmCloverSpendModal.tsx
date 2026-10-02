@@ -7,9 +7,9 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
-import { createCallable } from "react-call";
 
 import { CloverBalance } from "@/entities/clover";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { formatCloverSpendConfirmDescription } from "../model/confirmCloverSpendCopy";
 import type { CloverSpendSurface } from "../model/confirmCloverSpendCopy";

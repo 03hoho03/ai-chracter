@@ -182,6 +182,30 @@ export default tseslint.config(
   },
 
   {
+    // web의 Callable은 `shared/lib/callable/createCallable`로만 만든다 — 그 래퍼가 모달이 닫힌 뒤
+    // 연 자리로 포커스를 돌려준다. `react-call`에서 직접 만들면 조용히 그 복원이 빠지고(포커스가
+    // `<body>`로 떨어진다) 화면에서 Tab을 눌러 봐야만 드러난다. `react-call/mutation-flow`는 다른
+    // 경로라 걸리지 않는다. admin은 래퍼가 없어 대상이 아니다.
+    files: ["apps/web/src/**/*.{ts,tsx}"],
+    ignores: ["apps/web/src/shared/lib/callable/createCallable.ts"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "react-call",
+              importNames: ["createCallable"],
+              message:
+                "`@/shared/lib/callable/createCallable`을 쓴다 — 모달이 닫힌 뒤 연 자리로 포커스를 돌려준다.",
+            },
+          ],
+        },
+      ],
+    },
+  },
+
+  {
     // `chart.tsx`는 shadcn 레지스트리에서 그대로 들여온 파일이다(세미콜론 없는 상류 스타일이
     // 저장소 자체 파일과 다르다). 14건 전부 **recharts의 상류 타입**에서 흘러나온다 —
     // `TooltipNameType`이 `number | string | ((obj: any) => any)`이고 `payload`가 `any`다.

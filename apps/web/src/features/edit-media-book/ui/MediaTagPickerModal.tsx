@@ -6,7 +6,8 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { ImageOff, Images } from "lucide-react";
-import { createCallable } from "react-call";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 export type MediaTagPickerGroup = {
   personName: string;

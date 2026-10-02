@@ -6,9 +6,9 @@ import {
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
 import { Lock } from "lucide-react";
-import { createCallable } from "react-call";
 
 import { useCharacterImageArchiveQuery } from "@/entities/character-image-archive";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type ImageArchiveModalProps = {
   characterId: string;

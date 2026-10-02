@@ -5,9 +5,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 
 import { useChatRoomPlayGuideQuery } from "@/entities/chat-room";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type PlayGuideModalProps = {
   roomId: string;

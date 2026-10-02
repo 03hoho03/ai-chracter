@@ -9,13 +9,13 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
 import { Plus } from "lucide-react";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { useChatRoomQuery } from "@/entities/chat-room";
 import { usePersonasQuery, type Persona, type PersonaList } from "@/entities/persona";
 import { CreatePersonaForm } from "@/features/manage-persona";
 import { RoomPersonaPicker, useSetRoomPersonaMutation } from "@/features/select-room-persona";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type RoomPersonaModalProps = {
   roomId: string;

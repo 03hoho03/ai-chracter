@@ -8,7 +8,6 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Lock } from "lucide-react";
-import { createCallable } from "react-call";
 
 import {
   useStoryImageArchiveQuery,
@@ -16,6 +15,7 @@ import {
   type StoryImageArchiveGroup,
   type UnlockedArchiveTile,
 } from "@/entities/story-image-archive";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type StoryImageArchiveModalProps = {
   storyId: string;

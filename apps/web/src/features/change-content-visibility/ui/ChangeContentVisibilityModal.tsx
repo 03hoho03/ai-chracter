@@ -8,7 +8,6 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import {
@@ -16,6 +15,7 @@ import {
   useUpdateContentVisibilityMutation,
   type ContentVisibility,
 } from "@/entities/content";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { VISIBILITY_TRANSITION_COPY } from "../model/visibilityTransition";
 

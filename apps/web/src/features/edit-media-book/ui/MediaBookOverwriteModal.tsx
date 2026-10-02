@@ -7,9 +7,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 
 import type { OverwriteChoice } from "@/entities/media-book";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type MediaBookOverwriteModalProps = { fileNames: string[] };
 

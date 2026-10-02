@@ -9,11 +9,11 @@ import {
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 import { Controller, useForm } from "react-hook-form";
 
 import type { ReportReasonCategory } from "@/entities/content";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import {
   isReportReason,

@@ -8,11 +8,11 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { useQueryClient } from "@tanstack/react-query";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { contentKeys, useDeleteContentDraftMutation } from "@/entities/content";
 import { draftKeys } from "@/entities/draft";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type DeleteContentDraftModalProps = {
   /** 지울 초안의 콘텐츠 id. 한 번도 발행된 적 없는 콘텐츠만 올 수 있다(호출부가 `kind`로 거른다). */

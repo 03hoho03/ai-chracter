@@ -7,7 +7,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type MediaBookConfirmModalProps = {
   title: string;

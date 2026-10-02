@@ -8,10 +8,10 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { CheckCircle2 } from "lucide-react";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { useChatRoomQuery, usePinLatestVersionMutation } from "@/entities/chat-room";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type UpdateInfoModalProps = {
   roomId: string;

@@ -4,11 +4,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { Controller, useForm } from "react-hook-form";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
 import type { z } from "zod";
 
 import type { CommentReportReason } from "@/entities/comment";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { commentReportReasonSchema, commentReportSchema, REASON_OPTIONS } from "../model/reportSchema";
 

@@ -7,11 +7,11 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Check } from "lucide-react";
-import { createCallable } from "react-call";
 import { toast } from "sonner";
 
 import { useChangeStartingSetupMutation, useChatRoomQuery } from "@/entities/chat-room";
 import { useContentDetailQuery } from "@/entities/content";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 import { ConfirmStartingSetupChangeModal } from "./ConfirmStartingSetupChangeModal";
 

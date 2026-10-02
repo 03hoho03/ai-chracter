@@ -1,10 +1,10 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@ai-character-chat/ui/components/dialog";
 import { Link } from "@tanstack/react-router";
-import { createCallable } from "react-call";
 import { useAtom } from "jotai";
 
 import { contentDetailModalAtom } from "@/entities/content";
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 export const CommentLoginModal = createCallable<{ onRestoreFocus: () => void }, void>(({ call, onRestoreFocus }) => {
   const [modalState, setModalState] = useAtom(contentDetailModalAtom);

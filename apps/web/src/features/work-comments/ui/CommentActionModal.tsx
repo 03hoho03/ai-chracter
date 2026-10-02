@@ -1,7 +1,8 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@ai-character-chat/ui/components/dialog";
-import { createCallable } from "react-call";
 import { useMutationFlow, type MutationFn } from "react-call/mutation-flow";
+
+import { createCallable } from "@/shared/lib/callable/createCallable";
 
 type CommentActionModalProps = {
   title: string; description: string; confirmLabel: string; isDestructive?: boolean;

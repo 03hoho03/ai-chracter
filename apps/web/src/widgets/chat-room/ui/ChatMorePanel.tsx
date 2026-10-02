@@ -4,7 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@ai-
 import { MoreVertical } from "lucide-react";
 
 import { useIsChatMoreSidebarLayout } from "../lib/useIsChatMoreSidebarLayout";
-import { chatSidePanelAtom } from "../model/atoms";
+import { CHAT_MORE_SIDEBAR_ID, chatSidePanelAtom } from "../model/atoms";
 import type { ChatMoreNavProps } from "./ChatMoreNav";
 import { ChatMoreNav } from "./ChatMoreNav";
 
@@ -21,7 +21,14 @@ export function ChatMorePanel(props: ChatMorePanelProps) {
 
   if (isSidebarLayout) {
     return (
-      <Button variant="ghost" size="icon" aria-label="더보기" aria-expanded={isOpen} onClick={() => setIsOpen(!isOpen)}>
+      <Button
+        variant="ghost"
+        size="icon"
+        aria-label="더보기"
+        aria-expanded={isOpen}
+        aria-controls={isOpen ? CHAT_MORE_SIDEBAR_ID : undefined}
+        onClick={() => setIsOpen(!isOpen)}
+      >
         <MoreVertical aria-hidden className="size-4" />
       </Button>
     );
