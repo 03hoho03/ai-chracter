@@ -3860,10 +3860,24 @@ export interface components {
             detailDescription: string;
             /** Thumbnailurl */
             thumbnailUrl: string | null;
+            /** Publishedimages */
+            publishedImages: components["schemas"]["AdminContentImage"][];
             /** Hasunpublishedchanges */
             hasUnpublishedChanges: boolean;
             /** Versions */
             versions: components["schemas"]["AdminContentVersionItem"][];
+        };
+        /**
+         * AdminContentImage
+         * @description 발행본 그림 하나. `image_url` 은 원본(블러본이 아니다), `thumbnail_url` 은 목록에 그릴 축소본이다.
+         */
+        AdminContentImage: {
+            /** Label */
+            label: string;
+            /** Imageurl */
+            imageUrl: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string;
         };
         /** AdminContentListItem */
         AdminContentListItem: {

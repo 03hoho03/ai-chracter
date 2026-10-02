@@ -9491,6 +9491,13 @@
             ],
             "title": "Thumbnailurl"
           },
+          "publishedImages": {
+            "items": {
+              "$ref": "#/components/schemas/AdminContentImage"
+            },
+            "type": "array",
+            "title": "Publishedimages"
+          },
           "hasUnpublishedChanges": {
             "type": "boolean",
             "title": "Hasunpublishedchanges"
@@ -9518,10 +9525,35 @@
           "prompt",
           "detailDescription",
           "thumbnailUrl",
+          "publishedImages",
           "hasUnpublishedChanges",
           "versions"
         ],
         "title": "AdminContentDetailResponse"
+      },
+      "AdminContentImage": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "imageUrl": {
+            "type": "string",
+            "title": "Imageurl"
+          },
+          "thumbnailUrl": {
+            "type": "string",
+            "title": "Thumbnailurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "label",
+          "imageUrl",
+          "thumbnailUrl"
+        ],
+        "title": "AdminContentImage",
+        "description": "발행본 그림 하나. `image_url` 은 원본(블러본이 아니다), `thumbnail_url` 은 목록에 그릴 축소본이다."
       },
       "AdminContentListItem": {
         "properties": {

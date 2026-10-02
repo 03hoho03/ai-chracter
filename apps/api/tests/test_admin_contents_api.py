@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime, timedelta, timezone, UTC
+from urllib.parse import urlparse
 
 import httpx
 import sqlalchemy as sa
@@ -9,6 +10,7 @@ from api.db.models import (
     AdminActionLog,
     Asset,
     AssetKind,
+    AssetStatus,
     CharacterVersionDetail,
     ChatRoom,
     Content,
@@ -20,8 +22,10 @@ from api.db.models import (
     ModerationStatus,
     Notification,
 )
+from api.core.s3 import build_thumbnail_key
+from api.db.models.character import SituationalImage
 from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
-from factories import _create_admin, _get_genre, _login_as, _login_as_admin, _make_user
+from factories import _add_named_media_cell, _create_admin, _get_genre, _login_as, _login_as_admin, _make_user
 
 
 async def _make_published_character(
@@ -594,6 +598,181 @@ async def test_content_detail_uses_custom_prompt_for_story(
     assert body["type"] == "story"
     assert body["prompt"] == "커스텀 프롬프트"
     assert body["thumbnailUrl"] is None
+
+
+def _url_key(url: str) -> str:
+    """서명 URL 이 가리키는 객체 키(경로에서 버킷 이름을 뗀 나머지)."""
+    return urlparse(url).path.split("/", 2)[2]
+
+
+async def _ready_asset(db_session: AsyncSession, owner_user_id: uuid.UUID, prefix: str) -> Asset:
+    asset = Asset(
+        owner_user_id=owner_user_id,
+        storage_key=f"assets/{prefix}/{uuid.uuid4()}.webp",
+        kind=AssetKind.ORIGINAL,
+        status=AssetStatus.READY,
+    )
+    db_session.add(asset)
+    await db_session.flush()
+    return asset
+
+
+async def _add_draft_version(db_session: AsyncSession, content: Content) -> ContentVersion:
+    """발행본 위에 열린 편집 중 초안. 초안에만 있는 그림이 상세에 섞이지 않는지 보려고 쓴다."""
+    draft = ContentVersion(content_id=content.id, version_number=None, published_at=None, detail_description="")
+    db_session.add(draft)
+    await db_session.flush()
+    return draft
+
+
+async def test_content_detail_lists_published_character_images_in_builder_order(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    character = await _make_published_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    assert character.current_published_version_id is not None
+    detail = await db_session.get(CharacterVersionDetail, character.current_published_version_id)
+    assert detail is not None
+    thumbnail = await db_session.get(Asset, detail.thumbnail_asset_id)
+    assert thumbnail is not None
+
+    # 빌더 순서와 반대로 넣는다 — 순서를 안 정하면 넣은 순서대로 나와 라벨이 뒤바뀐다.
+    second = await _ready_asset(db_session, creator.id, "situational-image")
+    first = await _ready_asset(db_session, creator.id, "situational-image")
+    first_blurred = await _ready_asset(db_session, creator.id, "situational-image")
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=character.current_published_version_id,
+            image_asset_id=second.id,
+            trigger_condition="두 번째",
+            order=1,
+        )
+    )
+    await db_session.flush()
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=character.current_published_version_id,
+            image_asset_id=first.id,
+            blurred_asset_id=first_blurred.id,
+            trigger_condition="첫 번째",
+            order=0,
+        )
+    )
+    draft = await _add_draft_version(db_session, character)
+    draft_only = await _ready_asset(db_session, creator.id, "situational-image")
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=draft.id,
+            image_asset_id=draft_only.id,
+            trigger_condition="초안에만",
+            order=0,
+        )
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/contents/{character.id}")
+    assert resp.status_code == 200
+    images = resp.json()["publishedImages"]
+    assert [image["label"] for image in images] == ["대표 이미지", "상황 이미지 1", "상황 이미지 2"]
+    # 원본은 블러본이 아니라 작가가 올린 그림이다.
+    assert [_url_key(image["imageUrl"]) for image in images] == [
+        thumbnail.storage_key,
+        first.storage_key,
+        second.storage_key,
+    ]
+    assert [_url_key(image["thumbnailUrl"]) for image in images] == [
+        build_thumbnail_key(thumbnail.storage_key),
+        build_thumbnail_key(first.storage_key),
+        build_thumbnail_key(second.storage_key),
+    ]
+
+
+async def test_content_detail_lists_published_story_media_book_cells_person_then_scene(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    story = await _make_published_story(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    version_id = story.current_published_version_id
+    assert version_id is not None
+
+    # 축은 넣은 순서가 축 순서다(민아 → 서준, 교실 → 옥상). 칸은 그 순서와 다르게 넣는다.
+    mina_class, mina_class_asset = await _add_named_media_cell(db_session, version_id, creator.id, "민아", "교실")
+    _, seojun_roof_asset = await _add_named_media_cell(db_session, version_id, creator.id, "서준", "옥상")
+    _, mina_roof_asset = await _add_named_media_cell(db_session, version_id, creator.id, "민아", "옥상")
+    _, seojun_class_asset = await _add_named_media_cell(db_session, version_id, creator.id, "서준", "교실")
+    blurred = await _ready_asset(db_session, creator.id, "media-book-blur")
+    mina_class.blurred_asset_id = blurred.id
+    draft = await _add_draft_version(db_session, story)
+    await _add_named_media_cell(db_session, draft.id, creator.id, "초안인물", "초안장면")
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/contents/{story.id}")
+    assert resp.status_code == 200
+    images = resp.json()["publishedImages"]
+    assert [image["label"] for image in images] == [
+        "미디어 북 민아·교실",
+        "미디어 북 민아·옥상",
+        "미디어 북 서준·교실",
+        "미디어 북 서준·옥상",
+    ]
+    expected_keys = [
+        mina_class_asset.storage_key,
+        mina_roof_asset.storage_key,
+        seojun_class_asset.storage_key,
+        seojun_roof_asset.storage_key,
+    ]
+    assert [_url_key(image["imageUrl"]) for image in images] == expected_keys
+    assert [_url_key(image["thumbnailUrl"]) for image in images] == [build_thumbnail_key(key) for key in expected_keys]
+
+
+async def test_content_detail_has_no_published_images_for_draft_only_content(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    creator = _make_user()
+    db_session.add(creator)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content = await _make_draft_only_character(db_session, creator_user_id=creator.id, genre_id=genre.id)
+    draft_id = await db_session.scalar(sa.select(ContentVersion.id).where(ContentVersion.content_id == content.id))
+    assert draft_id is not None
+    draft_detail = await db_session.get(CharacterVersionDetail, draft_id)
+    assert draft_detail is not None
+    draft_detail.thumbnail_asset_id = (await _ready_asset(db_session, creator.id, "thumbnail")).id
+    db_session.add(
+        SituationalImage(
+            entity_id=uuid.uuid4(),
+            content_version_id=draft_id,
+            image_asset_id=(await _ready_asset(db_session, creator.id, "situational-image")).id,
+            trigger_condition="초안에만",
+            order=0,
+        )
+    )
+    await db_session.commit()
+
+    admin_payload = await _create_admin(db_session)
+    await db_session.commit()
+    await _login_as_admin(db_client, admin_payload)
+
+    resp = await db_client.get(f"/admin/contents/{content.id}")
+    assert resp.status_code == 200
+    assert resp.json()["publishedImages"] == []
 
 
 # ---- 조치 --------------------------------------------------------------

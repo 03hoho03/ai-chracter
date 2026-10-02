@@ -152,6 +152,14 @@ class AdminContentCreator(CamelModel):
     nickname: str
 
 
+class AdminContentImage(CamelModel):
+    """발행본 그림 하나. `image_url` 은 원본(블러본이 아니다), `thumbnail_url` 은 목록에 그릴 축소본이다."""
+
+    label: str
+    image_url: str
+    thumbnail_url: str
+
+
 class AdminContentDetailResponse(CamelModel):
     id: uuid.UUID
     type: ContentType
@@ -166,6 +174,7 @@ class AdminContentDetailResponse(CamelModel):
     prompt: str | None
     detail_description: str
     thumbnail_url: str | None
+    published_images: list[AdminContentImage]
     has_unpublished_changes: bool
     versions: list[AdminContentVersionItem]
 

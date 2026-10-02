@@ -70,6 +70,19 @@ class PublishFilterResult(BaseModel):
     reason: str | None
 
 
+REPRESENTATIVE_IMAGE_LABEL = "대표 이미지"
+
+
+def situational_image_label(position: int) -> str:
+    """상황 이미지를 1부터 센 자리로 부르는 이름. 발행 심사 이미지 목록과 어드민 콘텐츠 상세가 함께 쓴다."""
+    return f"상황 이미지 {position}"
+
+
+def media_book_cell_label(person: str, scene: str) -> str:
+    """미디어 북 칸 그림을 인물·장면 이름으로 부르는 이름. 발행 심사 이미지 목록과 어드민 콘텐츠 상세가 함께 쓴다."""
+    return f"미디어 북 {person}·{scene}"
+
+
 def _image_lines(labels: Sequence[str]) -> str:
     """심사 프롬프트의 이미지 목록 줄. 번호는 첨부 이미지 안에서의 1부터 센 자리라, 판정 사유가 그 번호나 라벨로
     그림을 가리킬 수 있다."""
@@ -81,7 +94,10 @@ def build_character_publish_filter_prompt(*, sections: Sequence[PromptSection], 
     파트(`images` 인자)로 전달되고, 프롬프트에는 작가가 쓴 글을 싣지 않고 그 이미지들의 목록 라벨만 싣는다.
     첨부 순서는 대표 이미지 한 장, 그 뒤로 상황 이미지 `situational_image_count` 장이다 — 호출부가 이미지를
     실은 것과 같은 시퀀스에서 개수를 세어야 라벨과 그림이 짝을 이룬다."""
-    labels = ["대표 이미지", *(f"상황 이미지 {index}" for index in range(1, situational_image_count + 1))]
+    labels = [
+        REPRESENTATIVE_IMAGE_LABEL,
+        *(situational_image_label(index) for index in range(1, situational_image_count + 1)),
+    ]
     return render_prompt_channel(
         sections, channel="publish_filter", scope="character", values={"image_lines": _image_lines(labels)}
     )
@@ -219,7 +235,7 @@ def build_story_publish_filter_prompt(
     """발행 심사는 첨부 이미지만 본다 — 첨부는 대표 이미지와, 그 뒤로 미디어 북 칸마다 축소본 한 장씩이고 호출부가
     같은 `generate_structured` 호출의 `images` 인자로 함께 전달한다. 프롬프트에는 작가가 쓴 글을 싣지 않고 이미지
     목록 라벨만 싣는다. 칸 그림은 `media_cells` 와 같은 순서로 실어야 `미디어 북 {인물}·{장면}` 라벨과 짝이 맞는다."""
-    labels = ["대표 이미지", *(f"미디어 북 {cell.person}·{cell.scene}" for cell in media_cells)]
+    labels = [REPRESENTATIVE_IMAGE_LABEL, *(media_book_cell_label(cell.person, cell.scene) for cell in media_cells)]
     return render_prompt_channel(
         sections, channel="publish_filter", scope="story", values={"image_lines": _image_lines(labels)}
     )

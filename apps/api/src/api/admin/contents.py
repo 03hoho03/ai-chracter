@@ -12,14 +12,16 @@ from api.admin.schemas import (
     AdminContentActionRequest,
     AdminContentCreator,
     AdminContentDetailResponse,
+    AdminContentImage,
     AdminContentListItem,
     AdminContentListResponse,
     AdminContentVersionItem,
 )
 from api.core.constants import WITHDRAWN_USER_NICKNAME
-from api.core.s3 import generate_presigned_get_url
+from api.content.publish import REPRESENTATIVE_IMAGE_LABEL, media_book_cell_label, situational_image_label
+from api.core.s3 import build_thumbnail_key, generate_presigned_get_url
 from api.db.models.auth import User
-from api.db.models.character import CharacterVersionDetail
+from api.db.models.character import CharacterVersionDetail, SituationalImage
 from api.db.models.content import (
     Content,
     ContentType,
@@ -33,7 +35,13 @@ from api.db.models.moderation import (
     ModerationActionType,
     Notification,
 )
-from api.db.models.story import StoryPromptTemplate, StoryVersionDetail
+from api.db.models.story import (
+    MediaBookCell,
+    MediaBookPerson,
+    MediaBookScene,
+    StoryPromptTemplate,
+    StoryVersionDetail,
+)
 from api.db.session import get_db_session
 from api.moderation.router import upgrade_content_chat_rooms_to_latest_version
 
@@ -228,6 +236,92 @@ async def _content_version_history(db: AsyncSession, content: Content) -> list[A
     ]
 
 
+def _sign_original_and_thumbnail_urls(storage_keys: list[str]) -> list[tuple[str, str]]:
+    return [
+        (generate_presigned_get_url(key), generate_presigned_get_url(build_thumbnail_key(key))) for key in storage_keys
+    ]
+
+
+async def _published_images(
+    db: AsyncSession, content_type: ContentType, version_id: uuid.UUID, thumbnail_asset_id: uuid.UUID | None
+) -> list[AdminContentImage]:
+    """발행본의 그림 전부 — 대표 이미지, 그 뒤로 캐릭터면 상황 이미지(빌더 순서), 스토리면 미디어 북 칸(인물 순서 →
+    장면 순서, 발행 심사가 그림을 싣는 순서). 라벨은 발행 심사 이미지 목록과 같은 이름이다. 블러본이 아니라 작가가
+    올린 원본을 가리킨다 — 운영자는 독자에게 가려진 그림을 봐야 한다. 칸 50장을 원본으로 그리지 않도록 목록에는
+    축소본 주소를 함께 준다.
+
+    축이 없는 칸은 뺀다 — 발행 검증이 그런 칸을 막지만, 칸 하나 때문에 상세가 통째로 실패하면 운영자가 그 작품을
+    볼 수 없다."""
+    labeled_asset_ids: list[tuple[str, uuid.UUID]] = []
+    if thumbnail_asset_id is not None:
+        labeled_asset_ids.append((REPRESENTATIVE_IMAGE_LABEL, thumbnail_asset_id))
+
+    if content_type == ContentType.CHARACTER:
+        situational_images = (
+            await db.scalars(
+                select(SituationalImage)
+                .where(SituationalImage.content_version_id == version_id)
+                .order_by(SituationalImage.order, SituationalImage.entity_id)
+            )
+        ).all()
+        asset_ids = [image.image_asset_id for image in situational_images if image.image_asset_id is not None]
+        labeled_asset_ids += [
+            (situational_image_label(position), asset_id) for position, asset_id in enumerate(asset_ids, start=1)
+        ]
+    else:
+        people = (
+            await db.scalars(
+                select(MediaBookPerson)
+                .where(MediaBookPerson.content_version_id == version_id)
+                .order_by(MediaBookPerson.order)
+            )
+        ).all()
+        scenes = (
+            await db.scalars(
+                select(MediaBookScene)
+                .where(MediaBookScene.content_version_id == version_id)
+                .order_by(MediaBookScene.order)
+            )
+        ).all()
+        cells = (
+            await db.scalars(select(MediaBookCell).where(MediaBookCell.content_version_id == version_id))
+        ).all()
+        person_by_id = {person.entity_id: (rank, person.name) for rank, person in enumerate(people)}
+        scene_by_id = {scene.entity_id: (rank, scene.name) for rank, scene in enumerate(scenes)}
+        ordered_cells = sorted(
+            (cell for cell in cells if cell.person_entity_id in person_by_id and cell.scene_entity_id in scene_by_id),
+            key=lambda cell: (person_by_id[cell.person_entity_id][0], scene_by_id[cell.scene_entity_id][0]),
+        )
+        labeled_asset_ids += [
+            (
+                media_book_cell_label(person_by_id[cell.person_entity_id][1], scene_by_id[cell.scene_entity_id][1]),
+                cell.image_asset_id,
+            )
+            for cell in ordered_cells
+        ]
+
+    if not labeled_asset_ids:
+        return []
+    storage_keys = dict(
+        (
+            await db.execute(
+                select(Asset.id, Asset.storage_key).where(
+                    Asset.id.in_({asset_id for _, asset_id in labeled_asset_ids})
+                )
+            )
+        )
+        .tuples()
+        .all()
+    )
+    urls = await run_in_threadpool(
+        _sign_original_and_thumbnail_urls, [storage_keys[asset_id] for _, asset_id in labeled_asset_ids]
+    )
+    return [
+        AdminContentImage(label=label, image_url=image_url, thumbnail_url=thumbnail_url)
+        for (label, _), (image_url, thumbnail_url) in zip(labeled_asset_ids, urls, strict=True)
+    ]
+
+
 async def _build_content_detail_response(db: AsyncSession, content: Content) -> AdminContentDetailResponse:
     """`GET /admin/contents/{id}`와 `POST .../action` 응답이 공유하는 조립 로직. 프롬프트
     추출·썸네일 로직은 `moderation/router.py`의 `_admin_report_content_detail()`을 그대로
@@ -281,6 +375,9 @@ async def _build_content_detail_response(db: AsyncSession, content: Content) -> 
         prompt=prompt,
         detail_description=detail_description,
         thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
+        published_images=(
+            await _published_images(db, content.type, version_id, thumbnail_asset_id) if version_id is not None else []
+        ),
         has_unpublished_changes=content.has_unpublished_changes,
         versions=await _content_version_history(db, content),
     )
