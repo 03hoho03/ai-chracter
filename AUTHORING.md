@@ -179,11 +179,11 @@
    - `startingSetups[].openingMessage` → 시작상황, `playguide` → 플레이가이드, `suggestedReplies` → 추천 답변.
    - `statDefs[].perTurnDelta` → 턴당 자동 변화, `description` → 설명.
    - `endings[].turnCountGate` → 엔딩조건(최소 턴수), `judgmentPrompt` → 판단 프롬프트, `hint` → 엔딩힌트, `statRules` → 스탯 기반 규칙. JSON은 스탯을 이름(`"stat"`)으로 가리키고 로더가 id로 바꾼다(`_resolve_stat_refs`).
-   - `keywordNotes[].infoText` → 정보, `triggerKeywords` → 트리거 키워드, `startingSetupId: null` → 적용 대상 "스토리 전체". 입력표에 적용 대상 행을 따로 둔다. 시드 JSON은 `null`만 쓸 수 있어서 "특정 시작설정"을 고르면 대조가 어긋난다. 노트의 배열 순서가 빌더 목록 순서(우선순위)이니 그 순서대로 입력한다. 시드 JSON은 이름·금지 키워드·유지 턴·상시 적용 키를 쓰지 않으므로 입력표에서 이 넷은 기본값(이름 비움, 금지 없음, 유지 0, 상시 꺼짐)으로 둔다.
+   - `keywordNotes[].infoText` → 정보, `triggerKeywords` → 트리거 키워드, `startingSetupId: null` → 적용 대상 "스토리 전체". 입력표에 적용 대상 행을 따로 둔다. 시드 JSON은 `null`만 쓸 수 있어서 "특정 시작설정"을 고르면 대조가 어긋난다. 노트의 배열 순서가 빌더 목록 순서(우선순위)이니 그 순서대로 입력한다. `name` → 이름, `excludeKeywords` → 금지 키워드, `stickyTurns` → 유지 턴, `alwaysOn` → 상시 적용. 시드 JSON에 키가 없는 옵션은 입력표에서 기본값(이름 비움, 금지 없음, 유지 0, 상시 꺼짐)으로 둔다.
    - 캐릭터: `intro` → 인트로, `exampleDialogues` → 예시 대화, `characterPrompt` → 캐릭터 프롬프트, `situationalImages[].triggerCondition` → 노출 상황.
    - 루트 `description` → 등록 설명(캐릭터는 상세 탭).
 3. 이미지: 대표 이미지는 생성 이미지에서 고를 수 있다. 상황별 이미지는 업로드 전용이라 파일로 받아 올린다. 참조 생성은 본인의 완성된 생성 이미지만 참조로 쓸 수 있으므로 기준 이미지를 지우지 않는다.
-4. 대조: 발행 전에 운영 초안을 API로 읽어 저장소 JSON과 필드별로 비교한다. id·이미지 id·순서에서 파생되는 값은 빼고, 엔딩 규칙은 운영의 `statId`를 스탯 이름으로 풀어 JSON의 `"stat"`과 비교한다. 불일치가 0이어야 발행한다.
+4. 대조: 발행 전에 운영 초안을 API로 읽어 저장소 JSON과 필드별로 비교한다. id·이미지 id·순서에서 파생되는 값은 빼고, 엔딩 규칙은 운영의 `statId`를 스탯 이름으로 풀어 JSON의 `"stat"`과 비교한다. 키워드북 노트의 순서는 우선순위라 파생값이 아니니, 시드 배열 순서와 운영 빌더 목록 순서도 비교한다. 불일치가 0이어야 발행한다.
 5. 발행하고 자동 심사 결과를 기록한다. 탈락하면 사유를 받아 문안을 고치되, **저장소 JSON도 같이** 고친다(원고 인용 대조가 그 뒤를 따른다).
 6. 스모크: 스토리는 루트 하나로 몇 턴(게이지 변화, 상태창, 표기), 캐릭터는 몇 턴(호칭·말투, 상황별 이미지 노출).
 7. 되돌리기: 콘텐츠는 삭제가 아니라 비공개로 전환한다. 프롬프트는 기록해 둔 이전 버전을 다시 게시한다.

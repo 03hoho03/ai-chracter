@@ -20,7 +20,7 @@ export function MediaTagOutsideNotice({ name }: { name: Path<StoryBuilderFormVal
     <p className="flex items-start gap-1.5 text-xs break-keep text-muted-foreground">
       <TriangleAlert aria-hidden className="mt-px size-3.5 shrink-0" />
       <span>
-        이미지 표기는 {MEDIA_TAG_FIELDS_LABEL}에서만 그림이 돼요. 대화 중 이미지는 미디어 북에서 자동으로 골라 보여 줘요.
+        이미지 표기는 {MEDIA_TAG_FIELDS_LABEL}에서만 이미지로 보여요. 대화 중 이미지는 미디어 북에서 자동으로 골라 보여 줘요.
       </span>
     </p>
   );

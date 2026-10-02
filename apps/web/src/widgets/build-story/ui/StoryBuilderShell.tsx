@@ -3,7 +3,7 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent } from "@ai-character-chat/ui/components/tabs";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useNavigate } from "@tanstack/react-router";
-import { FormProvider, useForm, type FieldErrors, type Resolver } from "react-hook-form";
+import { FormProvider, useForm, useWatch, type FieldErrors, type Resolver } from "react-hook-form";
 import { toast } from "sonner";
 
 import { usePublishContentMutation, type StoryDraftContent } from "@/entities/content";
@@ -38,9 +38,11 @@ import {
   getMissingFields,
   invalidFieldsMessage,
   missingFieldsMessage,
+  resolveProfileImageUrl,
   useAutosave,
   useDraftPersistence,
   useFocusFirstError,
+  useProfileImageLocalUrl,
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
 
@@ -64,6 +66,7 @@ type StoryBuilderShellProps = {
     getPayload: () => PreviewStartPayload;
     getMediaBookImages: () => MediaTagImages;
     onClose: () => void;
+    thumbnailUrl: string | null;
   }) => ReactNode;
 };
 
@@ -114,6 +117,15 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     resolver: zodResolver(storyBuilderSchema) as Resolver<StoryBuilderFormValues>,
     defaultValues: serverToForm(draft),
   });
+
+  // 대표 이미지 칸과 미리보기 카드가 같은 그림, 곧 폼이 지금 가진 그림을 보이도록 표시 주소를 여기서 한 번 정해
+  // 둘에 내려 준다. 초안 응답의 주소는 마지막 저장이 본 그림일 뿐이라 그대로 쓰면 저장이 끝날 때까지 카드가 옛
+  // 그림에 머문다. 방금 올리거나 고른 그림의 주소를 탭이 아니라 셸이 쥐는 이유는 탭을 옮기면 탭 본문이
+  // 언마운트되기 때문이다. 셸은 폼 값 변화를 구독하지 않으므로(자동저장의 `form.watch` 콜백 구독은 재렌더를
+  // 일으키지 않는다) 이 필드만 따로 구독한다.
+  const profileImage = useWatch({ control: form.control, name: "profile.image" });
+  const profileImageLocal = useProfileImageLocalUrl();
+  const thumbnailUrl = resolveProfileImageUrl({ image: profileImage, local: profileImageLocal.local, draft });
 
   const mediaBookThumbnails = useMediaBookThumbnailsStore(draft);
 
@@ -241,6 +253,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         ),
       ),
     onClose: () => setIsPreviewOpen(false),
+    thumbnailUrl,
   });
 
   // 발행 시도가 실패하면 누락 필드를 담은 탭 라벨을 에러 상태로 표시한다.
@@ -293,7 +306,11 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
             <BuilderTabStrip tabs={TABS} errorTabIds={errorTabIds} />
 
             <TabsContent value="profile">
-              <ProfileTab thumbnailUrl={draft.thumbnailUrl} />
+              <ProfileTab
+                thumbnailUrl={thumbnailUrl}
+                onUploadComplete={profileImageLocal.rememberUploadedFile}
+                onPick={profileImageLocal.rememberPickedImage}
+              />
             </TabsContent>
             <TabsContent value="setting">
               <SettingTab />

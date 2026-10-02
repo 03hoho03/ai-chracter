@@ -17,6 +17,9 @@ import re
 from collections import Counter
 from pathlib import Path
 
+from api.chat.keyword_notes import match_keyword_notes
+from api.db.models.chat import ChatMessage, ChatMessageRole
+from api.db.models.story import KeywordNote
 from seed_content.images import situational_image_slug
 from seed_content.loader import (
     CHARACTER_DIRS,
@@ -151,4 +154,46 @@ def test_tutorial_ending_gates_meet_the_builder_minimum() -> None:
                 assert ending.turn_count_gate >= minimum, (
                     f"{story.slug} / {ending.name}: 최소 턴수 {ending.turn_count_gate} 이 "
                     f"빌더 하한 {minimum} 보다 작다"
+                )
+
+
+def test_tutorial_suggested_replies_load_their_heroine_note_on_the_first_turn() -> None:
+    """제작 가이드는 추천 답변을 누르면 첫 턴부터 그 인물의 키워드북 노트가 열린다고 설명한다. 첫 화면이
+    여섯 노트의 키워드를 모두 담아 첫 턴에는 상한(5개)이 걸리고 맨 아래 노트가 빠지므로, 노트 순서를
+    바꾸다 추천 답변의 인물 노트가 맨 아래로 가면 그 설명이 조용히 거짓이 된다. 실방처럼 첫 화면을 바로
+    앞 AI 응답으로 두고 실제 선택 함수를 돌린다. 인물은 노트 이름 칸으로 찾는다."""
+    for story in load_stories(TUTORIAL_STORIES_DIR):
+        notes = [
+            KeywordNote(
+                entity_id=note.id,
+                starting_setup_id=note.starting_setup_id,
+                info_text=note.info_text,
+                trigger_keywords=note.trigger_keywords,
+                name=note.name,
+                order=order,
+                exclude_keywords=note.exclude_keywords,
+                sticky_turns=note.sticky_turns,
+                always_on=note.always_on,
+            )
+            for order, note in enumerate(story.payload.keyword_notes)
+        ]
+        for setup in story.payload.starting_setups:
+            # 방을 만들 때 첫 화면은 시작상황, 없으면 프롤로그가 AI 메시지로 들어간다.
+            opening = ChatMessage(role=ChatMessageRole.ASSISTANT, content=setup.opening_message or setup.prologue)
+            for reply in setup.suggested_replies:
+                heroine_notes = [note.name for note in notes if note.name and note.name in reply]
+                assert heroine_notes, f"{story.slug} / {reply!r}: 이름 칸으로 찾은 인물 노트가 없다"
+
+                selected = [note.name for note in match_keyword_notes(notes, [opening], reply)]
+
+                for name in heroine_notes:
+                    assert name in selected, f"{story.slug} / {reply!r}: 첫 턴에 {name} 노트가 빠진다 (실림 {selected})"
+
+                # 가이드는 첫 턴에 빠지는 노트가 맨 아래 태민의 노트 하나뿐이라고 설명한다. "맨 아래 노트"로만
+                # 검사하면 장소 노트를 맨 아래로 옮겨도 통과하므로 이름으로 고정한다 — 장소 노트가 빠지면 그
+                # 노트에만 있는 사실(편집실 마감 시각 등)을 첫 턴의 AI가 받지 못한다.
+                hit = [note.name for note in notes if match_keyword_notes([note], [opening], reply)]
+                dropped = [name for name in hit if name not in selected]
+                assert dropped == ["태민"], (
+                    f"{story.slug} / {reply!r}: 첫 턴에 태민 노트만 빠져야 한다 (빠짐 {dropped})"
                 )

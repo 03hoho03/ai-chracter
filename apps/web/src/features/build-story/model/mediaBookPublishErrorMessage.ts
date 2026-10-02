@@ -17,8 +17,8 @@ export function mediaBookPublishErrorMessage(error: unknown, mediaBook: MediaBoo
   if (typeof error.detail !== "object" || error.detail.code !== IMAGE_UNAVAILABLE_CODE) return undefined;
 
   const cellLabel = findCellLabel(mediaBook, error.detail.cellId);
-  const subject = cellLabel ? `미디어 북 '${cellLabel}' 칸의 그림을` : "미디어 북 칸 그림 하나를";
-  return `${subject} 처리하지 못해 발행이 멈췄어요. 잠시 뒤 다시 발행하고, 같은 일이 반복되면 그 칸 그림을 다시 올려 주세요.`;
+  const subject = cellLabel ? `미디어 북 '${cellLabel}' 칸의 이미지를` : "미디어 북 칸 이미지 하나를";
+  return `${subject} 처리하지 못해 발행이 멈췄어요. 잠시 뒤 다시 발행하고, 같은 일이 반복되면 그 칸 이미지를 다시 올려 주세요.`;
 }
 
 function findCellLabel(mediaBook: MediaBookValues, cellId: unknown): string | undefined {

@@ -99,9 +99,8 @@ export function MediaBookAxisList({ axis }: MediaBookAxisListProps) {
   return (
     <div className="flex min-w-0 flex-col gap-2">
       {/* 목록의 제목이다 — 새 이름 입력칸의 이름은 입력칸에 따로 준다(이 글자를 이름으로 물려받으면 "인물 2"로 읽힌다). */}
-      <Label>
-        {label} {items.length}
-      </Label>
+      {/* 0 은 "아직 없음"을 숫자로 말할 뿐이라 덧붙이지 않는다. */}
+      <Label>{items.length > 0 ? `${label} ${items.length}` : label}</Label>
       {items.length > 0 && (
         <ul className="flex flex-col gap-2" aria-label={`${label} 목록`}>
           {items.map((item) => (
