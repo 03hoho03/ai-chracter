@@ -91,7 +91,16 @@ function baseDraftResponse(): StoryDraftResponse {
       },
     ],
     keywordNotes: [
-      { id: "note-1", infoText: "밤에는 늑대 울음소리가 들린다.", triggerKeywords: ["밤", "늑대"], startingSetupId: "setup-1" },
+      {
+        id: "note-1",
+        infoText: "밤에는 늑대 울음소리가 들린다.",
+        triggerKeywords: ["밤", "늑대"],
+        startingSetupId: "setup-1",
+        name: "늑대 울음",
+        excludeKeywords: ["낮"],
+        stickyTurns: 2,
+        alwaysOn: true,
+      },
     ],
     shortcuts: [
       { id: "shortcut-1", name: "회상", description: "과거 회상 장면 삽입", prompt: "회상 장면을 묘사해줘" },
@@ -147,6 +156,10 @@ describe("serverToForm", () => {
           content: "밤에는 늑대 울음소리가 들린다.",
           triggerKeywords: ["밤", "늑대"],
           scope: { kind: "startingSetup", startingSetupId: "setup-1" },
+          name: "늑대 울음",
+          excludeKeywords: ["낮"],
+          stickyTurns: 2,
+          alwaysOn: true,
         },
       ],
       shortcuts: [
@@ -237,6 +250,27 @@ describe("serverToForm", () => {
 
     expect(form.startingSetups.map((setup) => setup.id)).toEqual(["second", "first"]);
     expect(requireFirst(form.startingSetups).stats.map((stat) => stat.id)).toEqual(["stat-b", "stat-a"]);
+  });
+
+  it("fills keyword note options the response omits with their defaults", () => {
+    const data = baseDraftResponse();
+    const { id, infoText, triggerKeywords, startingSetupId } = requireFirst(data.keywordNotes);
+    data.keywordNotes = [{ id, infoText, triggerKeywords, startingSetupId }];
+
+    const note = requireFirst(serverToForm(data).keywordNotes);
+
+    expect(note).toMatchObject({ name: "", excludeKeywords: [], stickyTurns: 0, alwaysOn: false });
+  });
+
+  it("keeps keyword notes in response array order", () => {
+    const data = baseDraftResponse();
+    const first = requireFirst(data.keywordNotes);
+    data.keywordNotes = [
+      { ...first, id: "note-b" },
+      { ...first, id: "note-a" },
+    ];
+
+    expect(serverToForm(data).keywordNotes.map((note) => note.id)).toEqual(["note-b", "note-a"]);
   });
 
   it("maps a null startingSetupId to a global keyword note scope", () => {

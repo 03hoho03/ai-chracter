@@ -25,4 +25,11 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     expect(STORY_MISSING_FIELD_LABELS["mediaBook.orphanCells"]).toBeTruthy();
     expect(STORY_MISSING_FIELD_FORM_PATH["mediaBook.orphanCells"]).toBeUndefined();
   });
+
+  it("키워드북 두 키는 라벨이 있고 키워드북 탭으로 간다", () => {
+    for (const key of ["keywordNotes.triggerKeywords", "keywordNotes.infoText"] as const) {
+      expect(STORY_MISSING_FIELD_LABELS[key]).toMatch(/키워드북/);
+      expect(tabIdsCovering(STORY_MISSING_FIELD_FORM_PATH[key] ?? "")).toEqual(["keywordNote"]);
+    }
+  });
 });

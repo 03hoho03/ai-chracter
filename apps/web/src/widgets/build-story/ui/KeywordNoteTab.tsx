@@ -9,6 +9,7 @@ import { useState } from "react";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
 import {
+  createKeywordNote,
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
   MAX_KEYWORD_NOTES,
   triggerKeywordError,
@@ -72,14 +73,7 @@ export function KeywordNoteTab() {
           type="button"
           variant="secondary"
           className="w-fit"
-          onClick={() =>
-            append({
-              id: crypto.randomUUID(),
-              content: "",
-              triggerKeywords: [],
-              scope: { kind: "global" },
-            })
-          }
+          onClick={() => append(createKeywordNote(crypto.randomUUID()))}
         >
           노트 추가
         </Button>

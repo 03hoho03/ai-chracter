@@ -22,6 +22,10 @@ export const STORY_MISSING_FIELD_LABELS = {
   // 초안처럼 서버만 아는 상태에서만 닿는다.
   "mediaBook.cells": `미디어 북 칸(${MAX_MEDIA_BOOK_CELLS}개 이하)`,
   "mediaBook.orphanCells": "미디어 북(인물·장면이 사라진 칸)",
+  // 키워드북 두 키는 노트 수와 상관없이 한 번씩 온다. 어느 노트인지는 발행 전 폼 검증이 노트 자리에서 먼저 보여 주므로
+  // 정상 흐름에선 정보가 공백뿐인 노트나 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  "keywordNotes.triggerKeywords": "키워드북 트리거 키워드(상시 적용이 아닌 노트마다 1개 이상)",
+  "keywordNotes.infoText": "키워드북 정보",
 };
 
 /** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
@@ -49,4 +53,7 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   genreId: "registration.genre",
   target: "registration.target",
   "mediaBook.cells": "mediaBook.cells",
+  // 노트 하나를 짚을 수 없어 배열 자리로 보낸다 — 키워드북 탭으로 이동하고 탭 머리 한 줄에 보인다.
+  "keywordNotes.triggerKeywords": "keywordNotes",
+  "keywordNotes.infoText": "keywordNotes",
 } satisfies Record<Exclude<MissingField, FieldWithoutFormPath>, Path<StoryBuilderFormValues>>;

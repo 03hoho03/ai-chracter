@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { triggerKeywordError } from "./keywordNoteEdit";
+import { excludeKeywordError, triggerKeywordError } from "./keywordNoteEdit";
 
 describe("triggerKeywordError", () => {
   it("accepts a new keyword within the limits", () => {
@@ -25,5 +25,31 @@ describe("triggerKeywordError", () => {
 
   it("refuses a blank keyword", () => {
     expect(triggerKeywordError("   ", [])).toBeDefined();
+  });
+});
+
+describe("excludeKeywordError", () => {
+  it("accepts a new exclude keyword within the limits", () => {
+    expect(excludeKeywordError("회상", [])).toBeUndefined();
+    expect(excludeKeywordError("가".repeat(20), ["밤"])).toBeUndefined();
+  });
+
+  it("refuses an exclude keyword longer than 20 characters with a reason", () => {
+    expect(excludeKeywordError("가".repeat(21), [])).toMatch(/20자/);
+  });
+
+  it("refuses an 11th exclude keyword with a reason", () => {
+    const ten = Array.from({ length: 10 }, (_, i) => `금지${i}`);
+
+    expect(excludeKeywordError("새 금지어", ten)).toMatch(/10개/);
+  });
+
+  it("refuses an exclude keyword that matches an existing one after case and Unicode folding", () => {
+    expect(excludeKeywordError("usb", ["USB"])).toBeDefined();
+    expect(excludeKeywordError("한밤".normalize("NFD"), ["한밤"])).toBeDefined();
+  });
+
+  it("refuses a blank exclude keyword", () => {
+    expect(excludeKeywordError("   ", [])).toBeDefined();
   });
 });

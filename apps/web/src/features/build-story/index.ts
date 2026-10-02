@@ -39,7 +39,8 @@ export {
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   storyAutosaveErrorMessage,
 } from "./model/mediaBookSaveError";
-export { triggerKeywordError } from "./model/keywordNoteEdit";
+export { excludeKeywordError, triggerKeywordError } from "./model/keywordNoteEdit";
+export { dragMoveIndices, stepMoveIndices, type MoveIndices } from "./model/keywordNoteOrder";
 export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessage";
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
@@ -49,10 +50,15 @@ export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";
 export {
   COMPARISON_OPERATORS,
+  createKeywordNote,
   endingSchema,
   keywordNoteSchema,
   LOGIC_OPERATORS,
+  MAX_ALWAYS_ON_KEYWORD_NOTES,
+  MAX_EXCLUDE_KEYWORDS,
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
+  MAX_KEYWORD_NOTE_NAME_LENGTH,
+  MAX_KEYWORD_NOTE_STICKY_TURNS,
   MAX_KEYWORD_NOTES,
   MAX_MEDIA_BOOK_CELLS,
   MAX_MEDIA_BOOK_NAME_LENGTH,

@@ -9,3 +9,9 @@ export function triggerKeywordError(keyword: string, existing: readonly string[]
   const result = keywordNoteSchema.shape.triggerKeywords.safeParse([...existing, keyword.trim()]);
   return result.success ? undefined : result.error.issues[0]?.message;
 }
+
+/** 금지 키워드를 하나 더 넣을 때의 거절 이유 — `triggerKeywordError` 와 같은 방식으로 금지 키워드 목록을 검사한다. */
+export function excludeKeywordError(keyword: string, existing: readonly string[]): string | undefined {
+  const result = keywordNoteSchema.shape.excludeKeywords.safeParse([...existing, keyword.trim()]);
+  return result.success ? undefined : result.error.issues[0]?.message;
+}
