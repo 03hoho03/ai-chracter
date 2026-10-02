@@ -46,6 +46,7 @@ from api.chat.prompt_builder import (
 )
 from api.chat.prompt_set_cache import get_cached_active_prompt_set, set_cached_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
+from api.chat.room_stats import seed_missing_room_stats
 from api.chat.schemas import (
     ChangeStartingSetupRequest,
     ChatDoneEvent,
@@ -369,6 +370,19 @@ def _ending_rules_pass(
             ", ".join(sorted(missing_stat_ids)),
         )
     return evaluate_rule_list(rule_items, stats)
+
+
+def _write_room_stat(
+    db: AsyncSession, room_id: uuid.UUID, stat_rows: dict[str, ChatRoomStat], stat_id: str, value: float
+) -> None:
+    """버전을 옮긴 방에는 새 버전에 생긴 스탯의 행이 없을 수 있다. 바뀐 값을 쓸 행이 없으면 만들어 쓴다."""
+    row = stat_rows.get(stat_id)
+    if row is None:
+        row = ChatRoomStat(chat_room_id=room_id, stat_entity_id=uuid.UUID(stat_id), current_value=Decimal(str(value)))
+        db.add(row)
+        stat_rows[stat_id] = row
+    else:
+        row.current_value = Decimal(str(value))
 
 
 async def _ending_snapshot(db: AsyncSession, ending: Ending) -> EndingSnapshot:
@@ -1401,6 +1415,9 @@ async def _stream_new_turn(
                     ).all()
                 }
                 current_stats = {stat_id: float(row.current_value) for stat_id, row in stat_rows.items()}
+                # 행이 없는 스탯(버전을 옮긴 방에서 새 버전에 생긴 스탯)은 시작값으로 본다 — 승격이 채우는 값과 같다.
+                for stat_def in stat_defs:
+                    current_stats.setdefault(str(stat_def.entity_id), float(stat_def.initial_value))
                 stat_prompt = build_stat_judgment_prompt(
                     prompt_set=prompt_set,
                     sections=prompt_sections,
@@ -1448,7 +1465,7 @@ async def _stream_new_turn(
 
                 for stat_id, new_value in updated_stats.items():
                     if new_value != current_stats.get(stat_id):
-                        stat_rows[stat_id].current_value = Decimal(str(new_value))
+                        _write_room_stat(db, room.id, stat_rows, stat_id, new_value)
                         stat_change_events.append(ChatStatChangeEvent(stat_id=stat_id, new_value=new_value))
 
                 # 엔딩 판정: 엔딩별 turn_count_gate를 넘긴 시점부터 5턴마다만 호출하고, 그 외
@@ -2215,12 +2232,14 @@ async def pin_latest_version(
 ) -> ChatRoomResponse:
     """`messages`는 그대로 두고 방이 고정한
     `content_version_id`만 콘텐츠의 현재 발행 버전으로 갱신 — 이후 응답(생성/판단)부터
-    새 버전이 적용된다. 버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상)."""
+    새 버전이 적용된다. 새 버전에 생긴 스탯은 시작값으로 채우고 지금까지의 스탯 값은 둔다.
+    버전 목록/롤백 엔드포인트는 없다(항상 최신 1건만 대상)."""
     room = await _get_owned_room(db, room_id, user_id)
     content = await db.get(Content, room.content_id)
     assert content is not None
     if content.current_published_version_id is not None:
         room.content_version_id = content.current_published_version_id
+        await seed_missing_room_stats(db, ChatRoom.id == room.id)
     await db.commit()
     return await _to_response(db, room)
 

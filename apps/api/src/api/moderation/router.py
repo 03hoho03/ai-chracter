@@ -9,6 +9,7 @@ from starlette.concurrency import run_in_threadpool
 
 from api.admin.action_log import ADMIN_ACTION_TYPE_BY_MODERATION_ACTION, record_admin_action
 from api.admin.dependencies import get_current_admin_id
+from api.chat.room_stats import seed_missing_room_stats
 from api.core.s3 import generate_presigned_get_url
 from api.db.models.character import CharacterVersionDetail
 from api.db.models.chat import ChatMessage, ChatMessageRole, ChatRoom
@@ -299,6 +300,8 @@ async def upgrade_content_chat_rooms_to_latest_version(db: AsyncSession, content
         .where(ChatRoom.content_id == content.id)
         .values(content_version_id=content.current_published_version_id, version_auto_upgraded=True)
     )
+    # 새 버전에 생긴 스탯은 시작값으로 채운다 — 사용자의 최신 버전 고정과 같은 처리다.
+    await seed_missing_room_stats(db, ChatRoom.content_id == content.id)
 
 
 @router.post("/admin/reports/{report_id}/action")
