@@ -68,6 +68,7 @@ export {
   countCharacters,
   MAX_STARTING_SETUPS,
   MAX_SUGGESTED_REPLIES,
+  MAX_TRIGGER_KEYWORDS,
   PROMPT_TEMPLATE_VALUES,
   ruleListItemSchema,
   shortcutSchema,
