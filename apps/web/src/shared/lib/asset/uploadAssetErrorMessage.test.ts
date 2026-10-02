@@ -15,6 +15,12 @@ describe("uploadAssetErrorMessage", () => {
     expect(new Set(messages).size).toBe(CODES.length);
   });
 
+  it("원본이 너무 크면 원본 크기 검사의 상한을 MB 로 말한다", () => {
+    expect(uploadAssetErrorMessage(new UploadAssetError("FILE_TOO_LARGE", "debug"))).toBe(
+      "15MB가 넘는 사진은 올릴 수 없어요. 더 작은 사진을 선택해주세요.",
+    );
+  });
+
   it("분류되지 않은 에러는 일반 문구로 폴백한다", () => {
     const fallback = uploadAssetErrorMessage(new Error("boom"));
 

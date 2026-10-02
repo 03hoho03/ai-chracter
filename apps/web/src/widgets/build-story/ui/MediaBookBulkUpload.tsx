@@ -106,6 +106,12 @@ export function MediaBookBulkUpload() {
       const notInserted = final.entries.length - settledCount;
       if (notInserted > 0) toast(`빌더를 떠나서 이미지 ${notInserted}장은 넣지 않았어요. 다시 열어 올려 주세요.`);
     };
+    // 덮어쓰기 모달은 화면 맨 위에 떠 있어 빌더를 떠난 뒤에도 답할 수 있다. 그 사이 끊긴 신호에는 리스너를 붙여도
+    // 발화하지 않으므로, 여기서 한 번 알리고 아무것도 올리지 않는다(취소로 답했으면 위에서 이미 끝났다).
+    if (shellSignal.aborted) {
+      notifyLeftBuilder();
+      return;
+    }
     shellSignal.addEventListener("abort", notifyLeftBuilder, { once: true });
     setProgress({ done: 0, total: final.entries.length });
     setStartAnnouncement(`이미지 ${final.entries.length}장을 올리는 중이에요`);

@@ -45,6 +45,7 @@ export { mediaBookPublishErrorMessage } from "./model/mediaBookPublishErrorMessa
 export {
   findNextIncompleteCell,
   formatMediaBookProgress,
+  isIncompleteCell,
   summarizeMediaBookProgress,
   toUsedAssetLabels,
   type MediaBookProgress,

@@ -40,7 +40,7 @@ describe("toStoryImageArchiveView", () => {
       imageUrl: "https://s3.example/thumb.webp",
       hint: "밤에 옥상으로",
       aspectRatio: "768 / 1024",
-      alt: "민아의 아직 보지 못한 이미지",
+      alt: "민아 · 아직 보지 못한 이미지",
     });
   });
 

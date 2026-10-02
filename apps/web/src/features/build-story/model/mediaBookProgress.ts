@@ -66,15 +66,23 @@ export function formatMediaBookProgress(progress: MediaBookProgress): string {
 }
 
 /**
- * 지금 칸 다음의 미완성 칸 — 이미지가 없거나 상황 설명이 공백뿐인 칸. 표를 읽는 순서(장면 줄 → 그 줄의 인물)로
- * 지금 칸 다음부터 찾고, 끝에 닿으면 처음으로 돈다. 지금 칸은 돌려주지 않는다. 이미지가 상한만큼 찼으면 빈 칸은 더
- * 채울 수 없으므로 건너뛰고 설명 없는 칸만 찾는다.
+ * 아직 손볼 수 있는 미완성 칸인가 — 이미지가 없거나 상황 설명이 공백뿐인 칸. 이미지가 상한만큼 찼으면 빈 칸은 더
+ * 채울 수 없으므로 미완성으로 치지 않는다. "다음 미완성 칸" 이 찾는 기준이자, 남은 미완성 칸이 지금 칸뿐인지 가리는
+ * 기준이다.
+ */
+export function isIncompleteCell(mediaBook: MediaBookValues, position: CellPosition): boolean {
+  const cell = findCell(mediaBook, position.personId, position.sceneId);
+  return cell ? !hasDescription(cell) : mediaBook.cells.length < MAX_MEDIA_BOOK_CELLS;
+}
+
+/**
+ * 지금 칸 다음의 미완성 칸(`isIncompleteCell`). 표를 읽는 순서(장면 줄 → 그 줄의 인물)로 지금 칸 다음부터 찾고, 끝에
+ * 닿으면 처음으로 돈다. 지금 칸은 돌려주지 않는다.
  */
 export function findNextIncompleteCell(
   mediaBook: MediaBookValues,
   current: CellPosition,
 ): CellPosition | undefined {
-  const canAddImage = mediaBook.cells.length < MAX_MEDIA_BOOK_CELLS;
   const positions = mediaBook.scenes.flatMap((scene) =>
     mediaBook.people.map((person) => ({ personId: person.id, sceneId: scene.id })),
   );
@@ -84,8 +92,7 @@ export function findNextIncompleteCell(
   for (let step = 1; step <= positions.length; step += 1) {
     const position = positions[(currentIndex + step + positions.length) % positions.length];
     if (!position || (position.personId === current.personId && position.sceneId === current.sceneId)) continue;
-    const cell = findCell(mediaBook, position.personId, position.sceneId);
-    if (cell ? !hasDescription(cell) : canAddImage) return position;
+    if (isIncompleteCell(mediaBook, position)) return position;
   }
   return undefined;
 }

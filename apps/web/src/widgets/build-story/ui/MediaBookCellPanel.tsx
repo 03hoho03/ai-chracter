@@ -14,6 +14,7 @@ import {
   countCharacters,
   findCell,
   findNextIncompleteCell,
+  isIncompleteCell,
   MAX_MEDIA_BOOK_SITUATION_LENGTH,
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
   removeCell,
@@ -82,6 +83,10 @@ export function MediaBookCellPanel({
   const tag = toMediaNameTag(person.name, scene.name);
   const headingId = `${id}-heading`;
   const hasNextIncomplete = findNextIncompleteCell(mediaBook, position) !== undefined;
+  // 비활성인데 지금 칸이 미완성이면 진척 줄만으로는 "미완성 칸이 남았는데 왜 못 가나" 로 들린다 — 이유를 덧붙인다.
+  const isOnlyIncompleteHere = !hasNextIncomplete && isIncompleteCell(mediaBook, position);
+  const onlyHereId = `${id}-only-incomplete`;
+  const nextDescribedBy = isOnlyIncompleteHere ? `${progressId} ${onlyHereId}` : progressId;
 
   function focusHeading() {
     document.getElementById(headingId)?.focus({ preventScroll: true });
@@ -232,12 +237,17 @@ export function MediaBookCellPanel({
               size="sm"
               className="ml-auto aria-disabled:opacity-65"
               aria-disabled={!hasNextIncomplete}
-              aria-describedby={hasNextIncomplete ? undefined : progressId}
+              aria-describedby={hasNextIncomplete ? undefined : nextDescribedBy}
               onClick={handleNext}
             >
               다음 미완성 칸
               <ChevronRight aria-hidden />
             </Button>
+            {isOnlyIncompleteHere && (
+              <span id={onlyHereId} className="sr-only">
+                남은 미완성 칸은 이 칸뿐이에요
+              </span>
+            )}
           </div>
         </div>
       </div>

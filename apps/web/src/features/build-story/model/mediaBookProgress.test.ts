@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   findNextIncompleteCell,
   formatMediaBookProgress,
+  isIncompleteCell,
   summarizeMediaBookProgress,
   toUsedAssetLabels,
 } from "./mediaBookProgress";
@@ -128,6 +129,30 @@ describe("findNextIncompleteCell", () => {
 
   it("has nothing to offer when the table has no cells", () => {
     expect(findNextIncompleteCell({ people: [], scenes: [], cells: [] }, { personId: DOHEE, sceneId: READING })).toBeUndefined();
+  });
+});
+
+describe("isIncompleteCell", () => {
+  it("counts an empty cell as incomplete while images can still be added", () => {
+    expect(isIncompleteCell(bookWith([]), { personId: DOHEE, sceneId: READING })).toBe(true);
+  });
+
+  it("does not count an empty cell once the image cap is reached, since it cannot be filled", () => {
+    const capped = bookWith(fillerCells(MAX_MEDIA_BOOK_CELLS));
+
+    expect(isIncompleteCell(capped, { personId: DOHEE, sceneId: READING })).toBe(false);
+  });
+
+  it("counts a filled cell whose situation description is only spaces as incomplete", () => {
+    const book = bookWith([described(CELL_A, DOHEE, READING, "  ")]);
+
+    expect(isIncompleteCell(book, { personId: DOHEE, sceneId: READING })).toBe(true);
+  });
+
+  it("does not count a filled cell with a situation description", () => {
+    const book = bookWith([described(CELL_A, DOHEE, READING)]);
+
+    expect(isIncompleteCell(book, { personId: DOHEE, sceneId: READING })).toBe(false);
   });
 });
 
