@@ -188,3 +188,12 @@ def test_tutorial_suggested_replies_load_their_heroine_note_on_the_first_turn() 
 
                 for name in heroine_notes:
                     assert name in selected, f"{story.slug} / {reply!r}: 첫 턴에 {name} 노트가 빠진다 (실림 {selected})"
+
+                # 가이드는 첫 턴에 빠지는 노트가 맨 아래 태민의 노트 하나뿐이라고 설명한다. "맨 아래 노트"로만
+                # 검사하면 장소 노트를 맨 아래로 옮겨도 통과하므로 이름으로 고정한다 — 장소 노트가 빠지면 그
+                # 노트에만 있는 사실(편집실 마감 시각 등)을 첫 턴의 AI가 받지 못한다.
+                hit = [note.name for note in notes if match_keyword_notes([note], [opening], reply)]
+                dropped = [name for name in hit if name not in selected]
+                assert dropped == ["태민"], (
+                    f"{story.slug} / {reply!r}: 첫 턴에 태민 노트만 빠져야 한다 (빠짐 {dropped})"
+                )
