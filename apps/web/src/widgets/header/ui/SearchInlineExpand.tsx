@@ -37,6 +37,11 @@ export function SearchInlineExpand({
   const [isExpanded, setIsExpanded] = useState(Boolean(urlQuery));
   const [value, setValue] = useState(urlQuery ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  const expandedGroupRef = useRef<HTMLDivElement>(null);
+  const searchButtonRef = useRef<HTMLButtonElement>(null);
+  // 접히는 순간 포커스가 펼친 입력칸 쪽(입력칸·닫기 버튼)에 있었는가. 그 둘이 사라지면 포커스가 `<body>` 로
+  // 떨어지므로, 그랬다면 접힌 뒤 다시 생기는 검색 버튼으로 돌려준다(아래 효과).
+  const shouldFocusSearchButtonRef = useRef(false);
   // 디바운스가 URL에 마지막으로 쓴 검색어. URL 검색어가 이것과 다르면 바깥에서 바뀐 것이다(아래 동기화 효과).
   const lastWrittenQueryRef = useRef(urlQuery);
   // 검색 범위는 지금 보고 있는 홈의 유형이다. 홈 밖에서 검색하면 파라미터 없는 `/`(스토리)로 간다.
@@ -59,7 +64,14 @@ export function SearchInlineExpand({
   );
 
   useEffect(() => {
-    if (isExpanded) inputRef.current?.focus();
+    if (isExpanded) {
+      inputRef.current?.focus();
+      return;
+    }
+    if (shouldFocusSearchButtonRef.current) {
+      shouldFocusSearchButtonRef.current = false;
+      searchButtonRef.current?.focus();
+    }
   }, [isExpanded]);
 
   // 사용자 이벤트로 인한 펼침/접힘은 `setIsExpanded`를 직접 부르는 지점
@@ -74,7 +86,11 @@ export function SearchInlineExpand({
     onExpandedChange?.(isExpanded);
   }, []);
 
+  // 닫기 버튼·Esc·URL 검색어가 지워져 접힐 때는 포커스가 펼친 쪽에 있어 검색 버튼으로 돌려준다. 빈 입력칸에서
+  // 포커스가 바깥으로 떠나 접힐 때(blur)와 로고처럼 바깥을 눌러 접힐 때는 포커스가 이미 다른 곳이라 건드리지 않는다.
   const collapse = () => {
+    // 참일 때만 세운다 — 같은 접힘에서 사라지는 입력칸의 blur 가 한 번 더 부르면 그때는 포커스가 이미 `<body>` 다.
+    if (expandedGroupRef.current?.contains(document.activeElement)) shouldFocusSearchButtonRef.current = true;
     setIsExpanded(false);
     setValue("");
     onExpandedChange?.(false);
@@ -107,14 +123,17 @@ export function SearchInlineExpand({
       )}
     >
       {isExpanded ? (
-        <div className="flex w-full items-center gap-1">
+        <div ref={expandedGroupRef} className="flex w-full items-center gap-1">
           <Input
             ref={inputRef}
             name="q"
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onBlur={() => {
-              if (value.trim() === "") collapse();
+            onBlur={(event) => {
+              if (value.trim() !== "") return;
+              // 빈 입력칸에서 Tab 으로 옆 닫기 버튼에 가면 그 버튼도 함께 접혀 사라진다 — 검색 버튼이 받는다.
+              if (expandedGroupRef.current?.contains(event.relatedTarget)) shouldFocusSearchButtonRef.current = true;
+              collapse();
             }}
             onKeyDown={(e) => {
               if (e.key === "Escape") collapse();
@@ -140,6 +159,7 @@ export function SearchInlineExpand({
         </div>
       ) : (
         <Button
+          ref={searchButtonRef}
           type="button"
           variant="ghost"
           size="icon"
