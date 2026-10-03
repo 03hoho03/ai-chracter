@@ -1,4 +1,4 @@
-import { useCallback, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
@@ -19,6 +19,7 @@ import {
   useContentDetailModal,
   useContentListQuery,
   useGenreListQuery,
+  useHomeCurationQuery,
   type ContentListItem,
   type ContentListSort,
   type ContentType,
@@ -29,8 +30,11 @@ import { SITE_INTRO } from "@/shared/config/site";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
 import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScrollClip";
 
+import { useCurationWaitCap } from "../model/curationWaitCap";
+import { shouldRestoreResultsFocus, toHomeCurationLayoutKey, toHomeCurationView } from "../model/homeCuration";
 import { HOME_EMPTY_MESSAGE, toHomeListEndMessage, toHomeListStatus } from "../model/homeListStatus";
 import { HOME_FILTER_RESET, hasHomeFilter, type HomeSearch } from "../model/homeSearch";
+import { HomeCurationSection } from "./HomeCurationSection";
 
 const SORT_LABEL: Record<ContentListSort, string> = {
   latest: "최신순",
@@ -82,6 +86,41 @@ export function HomePage({
   const hasActiveChip = Boolean(search.q || search.creator || search.hashtag);
   const isFiltered = hasHomeFilter(search);
   const thumbnailAspect = toThumbnailAspect(contentType);
+
+  // 조건이 걸려도 조회는 그대로 둔다(숨기기만 한다) — 조건을 풀면 응답이 이미 있어 섹션이 기다림 없이 돌아온다.
+  //
+  // 목록과 큐레이션은 따로 도착한다. 필터 없는 홈에서는 큐레이션이 정해질 때까지(응답 또는 대기 상한 포기) 그리드를
+  // 스켈레톤으로 붙잡아, 실제 카드가 그려진 뒤 섹션이 끼어드는 일을 막는다. 목록이 다 온 뒤에도 큐레이션만 기다리는
+  // 시간은 상한을 넘기지 않는다 — 넘기면 이 마운트에서는 섹션을 포기하고 그리드를 먼저 그린다(`useCurationWaitCap`).
+  // 스켈레톤이 밀리는 것은 아래 `curationLayoutKey` 가 막는다.
+  const homeCurationQuery = useHomeCurationQuery(contentType);
+  const isHoldingGrid = !isFiltered && homeCurationQuery.isPending && !contentListQuery.isPending;
+  const hasGivenUpCuration = useCurationWaitCap(isHoldingGrid);
+  const curationView = toHomeCurationView({
+    isFiltered,
+    hasGivenUp: hasGivenUpCuration,
+    isPending: homeCurationQuery.isPending,
+    item: homeCurationQuery.data ?? null,
+  });
+  const isListPending = contentListQuery.isPending || curationView.kind === "waiting";
+  const curationLayoutKey = toHomeCurationLayoutKey(curationView);
+
+  // 덩어리를 갈아 끼우면 그 안에 있던 포커스(대개 필터를 바꾼 뒤의 착지점인 결과 영역)가 버려진 노드와 함께
+  // 사라져 `<body>` 로 떨어진다 — 필터 걸린 주소로 들어와 큐레이션 응답 전에 칩 ×·`필터 지우기` 를 누르면 키가
+  // 결정됨 → 결정 중으로 돌아가며 생긴다. 포커스가 덩어리 안에 있었는지를 포커스 이벤트로 기억해 두었다가(노드가
+  // 지워질 때는 blur 가 오지 않아 값이 남는다), 갈아 끼운 직후 포커스를 잃었으면 새 결과 영역으로 옮긴다. 덩어리
+  // 밖(칩 줄·헤더)에 있던 포커스는 건드리지 않는다. 페인트 전에 옮기려고 layout effect 다.
+  const isFocusInChunkRef = useRef(false);
+  const lastLayoutKeyRef = useRef(curationLayoutKey);
+  useLayoutEffect(() => {
+    const isRemounted = lastLayoutKeyRef.current !== curationLayoutKey;
+    lastLayoutKeyRef.current = curationLayoutKey;
+    const active = document.activeElement;
+    const isFocusLost = active === null || active === document.body;
+    if (shouldRestoreResultsFocus({ isRemounted, wasFocusInside: isFocusInChunkRef.current, isFocusLost })) {
+      resultsRef.current?.focus({ preventScroll: true });
+    }
+  }, [curationLayoutKey]);
 
   const fetchNextPage = useCallback(() => {
     if (contentListQuery.hasNextPage && !contentListQuery.isFetchingNextPage) {
@@ -242,27 +281,47 @@ export function HomePage({
         </div>
       )}
 
-      {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
-          스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}
-      <section ref={resultsRef} tabIndex={-1} aria-label="작품 목록" className="flex flex-col gap-6 outline-none">
-        <HomeContentBody
-          query={contentListQuery}
-          items={items}
-          thumbnailAspect={thumbnailAspect}
-          sentinelRef={sentinelRef}
-          endMessage={toHomeListEndMessage(contentType, isFiltered)}
-          onOpenContent={open}
-          onAuthorClick={(creatorUserId) => changeFilter({ creator: creatorUserId })}
-          onFiltersClear={isFiltered ? () => changeFilter(HOME_FILTER_RESET) : undefined}
-          // `다시 시도`도 자기 패널을 언마운트시킨다 — 데이터가 하나도 없는 쿼리는 재요청을 시작하는 순간
-          // `isPending`으로 돌아가 스켈레톤 분기가 되므로 패널·버튼이 즉시 사라진다. 그래서 `changeFilter`와
-          // 같이 재요청 **전에** 동기로 결과 영역에 포커스를 옮긴다.
-          onRetry={() => {
-            resultsRef.current?.focus({ preventScroll: true });
-            void contentListQuery.refetch();
-          }}
-        />
-      </section>
+      {/* 큐레이션 섹션과 결과 영역은 한 덩어리로 다시 만든다(덩어리 div 의 `gap-6` 은 `<main>` 의 간격과 같은 값이라 배치가
+          바뀌지 않는다). 기다리는 동안 결과 영역의 스켈레톤이 큐레이션 자리에
+          그려져 있다가, 섹션이 정해지는 순간 그 위에 섹션이 끼어들면 스켈레톤이 섹션 높이만큼 밀려 내려간다 — 브라우저는
+          이것을 레이아웃 이동으로 센다(390px 실측 0.19). 정해지는 순간 `key` 를 바꿔 스켈레톤을 옮기지 않고 새 노드로
+          갈아 끼우면, 사라진 노드와 새로 생긴 노드는 이동으로 세지 않는다. 덩어리 아래(푸터)는 스켈레톤 그리드가 첫
+          화면보다 길어 화면 밖에 있다. 정해진 뒤 스켈레톤 → 실제 카드는 같은 덩어리 안에서 같은 높이로 바뀐다. */}
+      <div
+        key={curationLayoutKey}
+        className="flex flex-col gap-6"
+        onFocus={() => {
+          isFocusInChunkRef.current = true;
+        }}
+        onBlur={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget)) isFocusInChunkRef.current = false;
+        }}
+      >
+        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} onOpen={open} />}
+
+        {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
+            스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}
+        <section ref={resultsRef} tabIndex={-1} aria-label="작품 목록" className="flex flex-col gap-6 outline-none">
+          <HomeContentBody
+            query={contentListQuery}
+            isPending={isListPending}
+            items={items}
+            thumbnailAspect={thumbnailAspect}
+            sentinelRef={sentinelRef}
+            endMessage={toHomeListEndMessage(contentType, isFiltered)}
+            onOpenContent={open}
+            onAuthorClick={(creatorUserId) => changeFilter({ creator: creatorUserId })}
+            onFiltersClear={isFiltered ? () => changeFilter(HOME_FILTER_RESET) : undefined}
+            // `다시 시도`도 자기 패널을 언마운트시킨다 — 데이터가 하나도 없는 쿼리는 재요청을 시작하는 순간
+            // `isPending`으로 돌아가 스켈레톤 분기가 되므로 패널·버튼이 즉시 사라진다. 그래서 `changeFilter`와
+            // 같이 재요청 **전에** 동기로 결과 영역에 포커스를 옮긴다.
+            onRetry={() => {
+              resultsRef.current?.focus({ preventScroll: true });
+              void contentListQuery.refetch();
+            }}
+          />
+        </section>
+      </div>
 
       {/* 결과 상태 라이브 영역. 분기마다 갈아끼우는 자리에 두면 영역 자체가 새로 생겨 읽히지 않으므로
           `HomeContentBody` 밖에 항상 마운트해 두고 글자만 바꾼다. */}
@@ -270,7 +329,7 @@ export function HomePage({
         {toHomeListStatus({
           type: contentType,
           isFiltered,
-          isPending: contentListQuery.isPending,
+          isPending: isListPending,
           isError: contentListQuery.isError,
           itemCount: items.length,
           hasNextPage: Boolean(contentListQuery.hasNextPage),
@@ -306,6 +365,8 @@ function HomeFilterChip({ label, removeLabel, onRemove }: { label: string; remov
 
 type HomeContentBodyProps = {
   query: ReturnType<typeof useContentListQuery>;
+  /** 목록 쿼리의 `isPending` 에 큐레이션 기다림을 더한 값 — 스켈레톤 분기는 이것만 본다. */
+  isPending: boolean;
   items: ContentListItem[];
   thumbnailAspect: ThumbnailAspect;
   sentinelRef: ReturnType<typeof useInfiniteScrollSentinel>;
@@ -321,6 +382,7 @@ type HomeContentBodyProps = {
  * `pages/favorites/ui/FavoritesPage.tsx`의 `FavoritesBody`. 라이브 영역 문구(`toHomeListStatus`)도 같은 순서다. */
 function HomeContentBody({
   query,
+  isPending,
   items,
   thumbnailAspect,
   sentinelRef,
@@ -330,7 +392,7 @@ function HomeContentBody({
   onFiltersClear,
   onRetry,
 }: HomeContentBodyProps) {
-  if (query.isPending) {
+  if (isPending) {
     return (
       <ContentCardGrid thumbnailAspect={thumbnailAspect}>
         {Array.from({ length: 8 }, (_, index) => (

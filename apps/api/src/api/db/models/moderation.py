@@ -199,6 +199,8 @@ AdminActionType = Literal[
     "content-delete",
     "content-lift",
     "content-restrict",
+    "home-curation-clear",
+    "home-curation-set",
     "image-view",
     "inquiry-reply",
     "legal-publish",

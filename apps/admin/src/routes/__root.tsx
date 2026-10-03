@@ -2,7 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { createRootRouteWithContext, Outlet, useRouterState } from "@tanstack/react-router";
 
 import { DeleteConfirmModal, LiftRestrictionConfirmModal } from "../features/act-on-report";
-import { ContentActionConfirmModal } from "../pages/content-detail";
+import { ContentActionConfirmModal, HomeCurationConfirmModal } from "../pages/content-detail";
 import { PublishDialog } from "../pages/legal";
 import { PublishNoticeDialog } from "../pages/notice-detail";
 import { PublishPromptSetDialog, RestorePromptSetDialog } from "../pages/prompt-sets";
@@ -38,6 +38,7 @@ function RootComponent() {
       <DeleteConfirmModal />
       <LiftRestrictionConfirmModal />
       <ContentActionConfirmModal />
+      <HomeCurationConfirmModal />
       <UserActionConfirmModal />
       <PublishDialog />
       <PublishNoticeDialog />

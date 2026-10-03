@@ -29,4 +29,5 @@ export const adminContentKeys = {
       params.sort ?? "recent",
     ] as const,
   detail: (id: string) => [...adminContentKeys.all, "detail", id] as const,
+  homeCurations: () => [...adminContentKeys.all, "home-curations"] as const,
 };

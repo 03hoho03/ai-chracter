@@ -241,6 +241,9 @@ async def _build_user_detail_response(db: AsyncSession, user: User) -> AdminUser
         await db.scalars(
             select(AdminActionLog)
             .where(or_(*action_log_conditions))
+            # 홈 큐레이션 지정·해제는 그 작가에게 한 조치가 아니라 운영자가 홈에 건 것이다. 이 표는 최근 20행뿐이라
+            # 지정을 몇 번 바꾸면 제재 기록이 밀려나므로 뺀다(감사 로그 행은 그대로 남는다).
+            .where(AdminActionLog.action_type.not_in(["home-curation-set", "home-curation-clear"]))
             .order_by(AdminActionLog.created_at.desc(), AdminActionLog.id)
             .limit(20)
         )

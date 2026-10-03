@@ -14,6 +14,8 @@ export {
   type AdminContentActionType,
   type ContentActionReasonCategory,
 } from "./api/useContentActionMutation";
+export { useHomeCurationsQuery, type AdminHomeCurationSlot } from "./api/useHomeCurationsQuery";
+export { useHomeCurationMutation, type HomeCurationChange } from "./api/useHomeCurationMutation";
 export {
   CONTENT_TYPE_LABELS,
   CONTENT_TYPE_OPTIONS,
