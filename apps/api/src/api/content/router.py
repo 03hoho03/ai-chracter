@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, read_image_content_type
 from api.chat.prompt_builder import load_active_prompt_set
-from api.content.access import is_open_to, publicly_listed_conditions
+from api.content.access import detail_model_for as _detail_model, is_open_to, select_publicly_listed
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
     MediaBookFilterCell,
@@ -2412,10 +2412,6 @@ async def update_content_visibility(
     await db.commit()
 
 
-def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:
-    return CharacterVersionDetail if content_type == ContentType.CHARACTER else StoryVersionDetail
-
-
 def _encode_cursor(parts: list[str]) -> str:
     return base64.urlsafe_b64encode(json.dumps(parts).encode()).decode()
 
@@ -2444,13 +2440,8 @@ async def list_contents(
     """
     detail_model = _detail_model(type)
 
-    query = (
-        select(Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname)
-        .join(detail_model, detail_model.content_version_id == Content.current_published_version_id)
-        .join(User, User.id == Content.creator_user_id)
-        # 고르는 열은 없지만 내부 조인이라 장르 없는 작품을 목록에서 뺀다 — 지우면 걸러지는 대상이 바뀐다.
-        .join(Genre, Genre.id == Content.genre_id)
-        .where(Content.type == type, *publicly_listed_conditions())
+    query = select_publicly_listed(
+        type, Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname
     )
 
     if genre is not None:
