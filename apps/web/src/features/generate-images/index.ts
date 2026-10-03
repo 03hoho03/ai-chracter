@@ -10,6 +10,8 @@ export { GenerateImagesPromptField } from "./ui/GenerateImagesPromptField";
 export { GenerateImagesReferenceField } from "./ui/GenerateImagesReferenceField";
 export { GenerateImagesResultGrid } from "./ui/GenerateImagesResultGrid";
 export { GenerateImagesStyleGrid } from "./ui/GenerateImagesStyleGrid";
+export { GenerateImagesStyleSummaryButton } from "./ui/GenerateImagesStyleSummaryButton";
+export type { ResultShape } from "./model/resultTileLayout";
 export {
   GenerateImagesUnavailableState,
   type UnavailableReason,

@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { flushSync } from "react-dom";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@ai-character-chat/ui/components/tabs";
 import { useQueryClient } from "@tanstack/react-query";
@@ -15,11 +16,13 @@ import {
   GenerateImagesPromptField,
   GenerateImagesReferenceField,
   GenerateImagesResultGrid,
+  GenerateImagesStyleSummaryButton,
   GenerateImagesUnavailableState,
   useGenerateImagesMutation,
   useGenerateImagesSubmit,
   type GenerateImagesFormValues,
   type GenerateImagesSubmitHelpers,
+  type ResultShape,
 } from "@/features/generate-images";
 import { GeneratedImagePickerModal } from "@/features/select-generated-image";
 import { isApiError } from "@/shared/api/client";
@@ -29,7 +32,7 @@ import { formatImageRateLimitMessage, getImageRateLimit } from "../model/imageRa
 import { formatReferenceImageErrorMessage, getReferenceImageError } from "../model/referenceImageError";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
-import { ImageStudioOptionsRail } from "./ImageStudioOptionsRail";
+import { ImageStudioOptionsRail, type OptionsSheetEntry } from "./ImageStudioOptionsRail";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -51,9 +54,19 @@ export function ImageStudioShell({
 }) {
   // 시트 열림 상태는 이 셸의 지역 state다. widgets/chat-room의 chatSidePanelAtom은 트리거
   // (ChatMoreNav)가 콘텐츠(ChatMorePanel/ChatMoreSidebar) **안쪽**에 중첩돼 있어 atom으로 건너뛰지만,
-  // 여기는 트리거(탭 스트립)와 두 Rail이 전부 이 컴포넌트의 직계 자식이라 prop 한 단이면 닿는다.
+  // 여기는 트리거(탭 스트립·중앙의 스타일 선택 버튼)와 두 Rail이 전부 이 컴포넌트 아래라 prop으로
+  // 닿는다 — 가장 깊은 스타일 선택 버튼도 중앙 탭 내용 컴포넌트를 거치는 두 단이다.
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
-  const [isOptionsOpen, setIsOptionsOpen] = useState(false);
+  // 옵션 시트는 진입점이 둘(탭 줄의 옵션 아이콘, 중앙의 스타일 선택 버튼)이라 열림 여부와 함께 "누가
+  // 열었나"를 쥔다 — `aria-expanded`는 연 트리거에만 참이고, 시트는 그 값으로 열 때 보낼 자리와 닫을 때
+  // 돌려줄 트리거를 고른다. 닫아도 `entry`를 지우지 않는 것은 닫힘 포커스 처리기가 닫히는 그 순간에
+  // 이 값을 읽기 때문이다.
+  const [optionsSheet, setOptionsSheet] = useState<{ isOpen: boolean; entry: OptionsSheetEntry }>({
+    isOpen: false,
+    entry: "options",
+  });
+  // 202 직후 스크롤할 결과 영역.
+  const resultAreaRef = useRef<HTMLDivElement>(null);
 
   // features/generate-images가 조각을 한 열로 쌓아 두던 옛 조합 컴포넌트가 갖고 있던 잡 폴링·
   // 제출 로직 — 3열로 조각을 흩는 이 셸이 그 조합을 대신하면서 쓰는 곳이 없어져 지웠고(고아 정리),
@@ -137,7 +150,18 @@ export function ImageStudioShell({
       // 바뀌는 이 자리(202)에서 함께 되돌린다. 요청이 실패하면 잡이 바뀌지 않으므로 표시도 그대로다.
       hasInvalidatedGalleryRef.current = false;
       hasInvalidatedCloverRef.current = false;
-      setSubmission({ jobId: response.jobId, aspectRatio: values.aspectRatio, count: values.count });
+      // 결과 영역을 시야로 데려온다 — 생성 버튼이 화면 위쪽에 있어 결과가 화면 아래로 밀려 있을 수 있다.
+      // `flushSync`로 새 제출을 먼저 커밋하는 것은 제출한 비율의 스켈레톤 높이로 판정해야 직전 결과와
+      // 비율이 다를 때 모자라거나 지나치게 밀지 않기 때문이다. `nearest`라 이미 다 보이면 움직이지 않고,
+      // 넘친 만큼만 민다(좁은 화면은 문서가, 넓은 화면은 중앙 스크롤러가 움직인다). 포커스는 누른
+      // 생성 버튼에 그대로 둔다. 모션 감소 설정이면 즉시 옮긴다.
+      flushSync(() => {
+        setSubmission({ jobId: response.jobId, aspectRatio: values.aspectRatio, count: values.count });
+      });
+      resultAreaRef.current?.scrollIntoView({
+        block: "nearest",
+        behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      });
       // 202 시점에 이미 차감이 끝났다(게이트가 `Depends`에서 깎는다) — 잡이 끝나기를 기다리지
       // 않고 여기서 한 번 반영한다. 위 효과는 그 뒤의 **환불**을 잡는다.
       void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
@@ -197,20 +221,20 @@ export function ImageStudioShell({
     // max-w-2xl은 탭바 선이 뷰포트 폭과 어긋나는 문제가 있어(800px에서 x=64~672px, 2026-09-14
     // 사용자 피드백) 중앙 컬럼의 스크롤 콘텐츠 쪽으로 옮겼다.
     <div className="flex w-full min-h-0 flex-col lg:h-below-header lg:flex-row">
-      {/* 좌열 — lg 이상만 보인다(그림자 없음, 경계는 border-r 한 줄, DESIGN.md Flat-at-Rest). */}
-      <aside className="hidden w-60 shrink-0 flex-col border-r border-border lg:flex">
-        <ImageStudioLibraryRail isOpen={isLibraryOpen} onOpenChange={setIsLibraryOpen} />
-      </aside>
-
-      {/* GenerateImagesFormProvider는 중앙(프롬프트·참조·결과)과
-          우열(옵션·스타일) 양쪽의 공통 조상이어야 폼 context가 닿는다(React context는 DOM 위치와
-          무관). 좌열(보관함)은 그 바깥에 둔다 — 폼 context가 전혀 필요 없고, 모델 목록을 못
-          불러온 상태에서도 이미 만든 보관함은 계속 열 수 있어야 한다.
-          이 프로바이더는 더 이상 "이용 불가" 판정으로 children을 통째로 갈아치우지 않는다
-          (브라우저 실검증 회귀 수정) — 탭 스트립·시트 트리거·좌우열 껍데기는 어떤 상태에서도
-          항상 남고, 판정 결과만 context로 내려 중앙 TabsContent 안(ImageStudioGenerateTabContent)
-          에서만 대체 UI로 바꿔 낀다. */}
+      {/* GenerateImagesFormProvider는 좌열(보관함)·중앙(프롬프트·참조·결과)·우열(옵션·스타일) 셋 모두의
+          공통 조상이다(React context는 DOM 위치와 무관해 포털로 뜨는 시트 안에도 닿는다). 보관함까지
+          감싸는 것은 보관함에서 연 이미지를 참조로 넣으려면 보관함도 폼에 닿아야 하기 때문이다.
+          모델 목록을 못 불러온 상태에서도 이미 만든 보관함은 계속 열 수 있어야 하는데, 이 프로바이더는
+          "이용 불가" 판정으로 children을 갈아치우지 않고 늘 그대로 그리므로(브라우저 실검증 회귀
+          수정) 감싸도 그 성질이 유지된다 — 탭 스트립·시트 트리거·좌우열 껍데기는 어떤 상태에서도
+          남고, 판정 결과만 context로 내려 중앙 TabsContent 안(ImageStudioGenerateTabContent)에서만
+          대체 UI로 바꿔 낀다. */}
       <GenerateImagesFormProvider onSubmit={handleSubmit} onPickReference={pickReferenceImage}>
+        {/* 좌열 — lg 이상만 보인다(그림자 없음, 경계는 border-r 한 줄, DESIGN.md Flat-at-Rest). */}
+        <aside className="hidden w-60 shrink-0 flex-col border-r border-border lg:flex">
+          <ImageStudioLibraryRail isOpen={isLibraryOpen} onOpenChange={setIsLibraryOpen} />
+        </aside>
+
         <Tabs
           value={tab}
           onValueChange={(value) => {
@@ -258,9 +282,9 @@ export function ImageStudioShell({
                   variant="ghost"
                   size="icon"
                   aria-label="생성 옵션"
-                  aria-expanded={isOptionsOpen}
+                  aria-expanded={optionsSheet.isOpen && optionsSheet.entry === "options"}
                   data-image-studio-trigger="options"
-                  onClick={() => setIsOptionsOpen(true)}
+                  onClick={() => setOptionsSheet({ isOpen: true, entry: "options" })}
                 >
                   <SlidersHorizontal aria-hidden className="size-4" />
                 </Button>
@@ -280,6 +304,9 @@ export function ImageStudioShell({
                   필요해서 남겨 둔다. */}
               <TabsContent value="generate" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
                 <ImageStudioGenerateTabContent
+                  isStyleSheetOpen={optionsSheet.isOpen && optionsSheet.entry === "style"}
+                  onOpenStyleSheet={() => setOptionsSheet({ isOpen: true, entry: "style" })}
+                  resultAreaRef={resultAreaRef}
                   submission={submission}
                   jobData={jobQuery.data}
                   isJobQueryError={jobQuery.isError}
@@ -291,7 +318,11 @@ export function ImageStudioShell({
 
         {/* 우열 — lg 이상만 보인다. */}
         <aside className="hidden w-80 shrink-0 flex-col border-l border-border lg:flex xl:w-96">
-          <ImageStudioOptionsRail isOpen={isOptionsOpen} onOpenChange={setIsOptionsOpen} />
+          <ImageStudioOptionsRail
+            isOpen={optionsSheet.isOpen}
+            entry={optionsSheet.entry}
+            onOpenChange={(isOpen) => setOptionsSheet((previous) => ({ ...previous, isOpen }))}
+          />
         </aside>
       </GenerateImagesFormProvider>
     </div>
@@ -299,24 +330,26 @@ export function ImageStudioShell({
 }
 
 /** 202를 받은 제출. 결과 영역은 이 잡의 진행을 이 비율·개수 모양으로 그린다. */
-type JobSubmission = {
-  jobId: string;
-  aspectRatio: GenerateImagesFormValues["aspectRatio"];
-  count: number;
-};
+type JobSubmission = ResultShape & { jobId: string };
 
 type ImageStudioGenerateTabContentProps = {
+  isStyleSheetOpen: boolean;
+  onOpenStyleSheet: () => void;
+  resultAreaRef: RefObject<HTMLDivElement | null>;
   submission: JobSubmission | undefined;
   jobData: ImageJobStatusResponse | undefined;
   isJobQueryError: boolean;
 };
 
 // 브라우저 실검증 회귀 수정 — GenerateImagesFormProvider가 더 이상 early return하지 않으므로
-// (파일 상단 주석), "이용 불가"일 때 프롬프트·참조·결과 대신 대체 UI를 꽂는 이 판정은 중앙
+// (파일 상단 주석), "이용 불가"일 때 프롬프트·참조·스타일 선택 버튼·결과 대신 대체 UI를 꽂는 이 판정은 중앙
 // TabsContent **안**에서만 일어난다. 이 함수가 useGenerateImagesSubmit()을 부르려면 그 자체가
 // GenerateImagesFormProvider의 자손이어야 한다 — ImageStudioShell 본문에서 그냥 호출하면 아직
 // FormProvider가 만들어지기 전 트리를 읽어 항상 실패한다.
 function ImageStudioGenerateTabContent({
+  isStyleSheetOpen,
+  onOpenStyleSheet,
+  resultAreaRef,
   submission,
   jobData,
   isJobQueryError,
@@ -331,9 +364,23 @@ function ImageStudioGenerateTabContent({
     <>
       <GenerateImagesPromptField />
       <GenerateImagesReferenceField />
-      {/* 결과 영역은 참조 바로 아래에 늘 있다 — 첫 생성 전에는 빈 상태로 자리를 잡아 두어, 생성을 누른
-          자리에서 눈을 옮기지 않고 진행과 결과를 본다. 스타일은 우열(좁은 화면은 옵션 시트)에 있다. */}
-      <GenerateImagesResultGrid shape={submission} job={jobData} isQueryError={isJobQueryError} />
+      {/* 좁은 화면에서 스타일은 옵션 시트 안에 있어, 고른 스타일과 비율·개수를 결과 바로 위에 요약해 보이고
+          누르면 그 시트의 스타일 자리로 연다. 넓은 화면은 우열에 스타일이 늘 보여 숨긴다. 이용 불가
+          화면에는 고를 스타일이 없어 이 버튼도 없다(위 early return) — 그래서 시트의 닫힘 포커스는 이
+          버튼이 없으면 옵션 아이콘으로 물러선다. */}
+      <GenerateImagesStyleSummaryButton
+        aria-expanded={isStyleSheetOpen}
+        data-image-studio-trigger="style"
+        onClick={onOpenStyleSheet}
+        className="lg:hidden"
+      />
+      {/* 결과 영역은 그 아래에 늘 있다 — 첫 생성 전에는 빈 상태로 자리를 잡아 두어, 생성을 누른 자리에서
+          눈을 옮기지 않고 진행과 결과를 본다. 감싼 div는 202 직후 스크롤의 대상이고, 스크롤 여백은
+          좁은 화면에서 창이 스크롤되며 sticky 헤더(h-14) 아래로 숨지 않게 위를 80px, 넓은 화면에서는
+          중앙 스크롤러 위쪽이 이미 헤더 아래라 24px만 띄운다. 아래 24px은 결과가 화면 바닥에 붙지 않게 한다. */}
+      <div ref={resultAreaRef} className="scroll-mt-20 scroll-mb-6 lg:scroll-mt-6">
+        <GenerateImagesResultGrid shape={submission} job={jobData} isQueryError={isJobQueryError} />
+      </div>
     </>
   );
 }

@@ -4,6 +4,7 @@ import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
 
+import { getImageModelsUnavailableReason } from "../model/imageModelsUnavailableReason";
 import { isReferenceImageEnabled } from "../model/isReferenceImageEnabled";
 import {
   generateImagesDefaultValues,
@@ -15,7 +16,6 @@ import {
   type GenerateImagesSubmitContextValue,
   type GenerateImagesSubmitHelpers,
 } from "../model/useGenerateImagesSubmit";
-import type { UnavailableReason } from "./GenerateImagesUnavailableState";
 
 type GenerateImagesFormProviderProps = {
   onSubmit: (values: GenerateImagesFormValues, helpers: GenerateImagesSubmitHelpers) => void | Promise<void>;
@@ -30,7 +30,8 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
   const {
     data: models,
     isPending: isModelsPending,
-    isError: isModelsError,
+    errorUpdatedAt: modelsErrorUpdatedAt,
+    dataUpdatedAt: modelsDataUpdatedAt,
     refetch: refetchModels,
   } = useImageModelsQuery();
 
@@ -60,26 +61,14 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
     });
   }, [models, getValues, reset]);
 
-  const availableModels = models?.filter((model) => model.available) ?? [];
-
-  let unavailableReason: UnavailableReason | undefined;
-  let onRetry: (() => void) | undefined;
-  // 배경 refetch 실패(staleTime 30s + refetchOnWindowFocus 기본값)에도 query-core의 'error' reducer는
-  // 이전 data를 지우지 않는다 — 그래서 models가 남아 있으면(낡았어도) 화면을 갈아엎지 않고 폼을 그대로
-  // 보여준다. "사전 헬스체크 + 즉시 실패" 원칙과 모순되지 않는다: 로컬 비가동은 *성공한* 쿼리가
-  // `available: false`를 실어 오는 값이라 아래 unavailable 분기가 잡는다. 여기는 쿼리 자체가 실패해
-  // "그런지 아닌지도 모른다"이고, 그건 보여줄 게 없을 때만 화면을 대체할 가치가 있다.
-  if (isModelsError && models === undefined) {
-    unavailableReason = "error";
-    onRetry = () => void refetchModels();
-  } else if (models !== undefined && models.length === 0) {
-    // models 쿼리의 선행 갭 — 빈 목록과 전 모델 일시 불가는 전에는 "활성화된 빈 Select + 낡은
-    // 기본값 + 제출 가능"으로 조용히 깨졌다. 둘 다 제출 이전 상태로 이름을 준다.
-    unavailableReason = "empty";
-  } else if (models !== undefined && availableModels.length === 0) {
-    unavailableReason = "unavailable";
-    onRetry = () => void refetchModels();
-  }
+  const unavailableReason = getImageModelsUnavailableReason({
+    models,
+    errorUpdatedAt: modelsErrorUpdatedAt,
+    dataUpdatedAt: modelsDataUpdatedAt,
+  });
+  // 빈 목록은 정적 레지스트리가 빈 것이라 다시 물어도 고쳐지지 않는다.
+  const onRetry =
+    unavailableReason === "error" || unavailableReason === "unavailable" ? () => void refetchModels() : undefined;
 
   // 참조 판정은 화면에 보이는 값이 아니라 **제출한 값**의 모델로 다시 한다 — 렌더와 제출 사이에
   // 모델이 바뀌어도 보낸 요청과 판정이 어긋나지 않는다.
