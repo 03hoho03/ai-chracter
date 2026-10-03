@@ -8,14 +8,13 @@ import { toast } from "sonner";
 
 import { cloverKeys, IMAGE_CLOVER_COST } from "@/entities/clover";
 import { generatedImagesKeys } from "@/entities/generated-image";
-import { useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
+import { hasImageJobPollError, useImageJobStatusQuery, type ImageJobStatusResponse } from "@/entities/image-job";
 import { imageModelKeys } from "@/entities/image-model";
 import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import {
   GenerateImagesFormProvider,
   GenerateImagesPromptField,
   GenerateImagesReferenceField,
-  GenerateImagesResultGrid,
   GenerateImagesStyleSummaryButton,
   GenerateImagesUnavailableState,
   useGenerateImagesMutation,
@@ -30,9 +29,11 @@ import { assertNever } from "@/shared/lib/assertNever";
 
 import { formatImageRateLimitMessage, getImageRateLimit } from "../model/imageRateLimitMessage";
 import { formatReferenceImageErrorMessage, getReferenceImageError } from "../model/referenceImageError";
+import { isImageJobInProgress } from "../model/imageJobProgress";
 import { isImageStudioTab, type ImageStudioTab } from "../model/imageStudioTab";
 import { ImageStudioLibraryRail } from "./ImageStudioLibraryRail";
 import { ImageStudioOptionsRail, type OptionsSheetEntry } from "./ImageStudioOptionsRail";
+import { ImageStudioResultArea } from "./ImageStudioResultArea";
 
 const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
@@ -79,12 +80,33 @@ export function ImageStudioShell({
   const [submission, setSubmission] = useState<JobSubmission | undefined>(undefined);
   const generateMutation = useGenerateImagesMutation();
   const jobQuery = useImageJobStatusQuery(submission?.jobId ?? "", submission !== undefined);
+  const hasPollError = hasImageJobPollError({
+    errorUpdatedAt: jobQuery.errorUpdatedAt,
+    dataUpdatedAt: jobQuery.dataUpdatedAt,
+  });
+  // 잡이 끝나기 전에는 생성 버튼을 잠근다 — 서버가 사용자당 잡을 하나만 받아, 잠그지 않으면 다시 눌러도
+  // 429로 끝난다.
+  const isJobInProgress = isImageJobInProgress({
+    hasSubmission: submission !== undefined,
+    status: jobQuery.data?.status,
+    hasPollError,
+  });
+
+  // 이 화면의 상세 모달(결과에서 연 것·보관함에서 연 것)에서 지운 이미지, 그리고 결과를 눌렀는데 다시 받은
+  // 목록에도 없던 이미지. 결과 영역은 잡 응답의 이미지를 그리므로 지운 것을 여기서 따로 뺀다 — 보관함
+  // 목록과 대조하지 않는 것은 새 결과가 목록 재조회 전이라 목록에 아직 없을 때 그 결과까지 숨기기
+  // 때문이다. 다음 잡에서도 비우지 않는다(지운 id 는 다시 나오지 않아 남겨 둬도 걸리는 것이 없다).
+  const [deletedAssetIds, setDeletedAssetIds] = useState<ReadonlySet<string>>(() => new Set());
+  function markImageDeleted(assetId: string) {
+    setDeletedAssetIds((previous) => (previous.has(assetId) ? previous : new Set(previous).add(assetId)));
+  }
 
   // 잡이 끝나면 보관함 목록을 무효화한다. 중앙 열은 잡 응답의 job.images로 새 이미지를 이미
   // 보여주지만, 보관함(과 빌더 피커)이 공유하는 `useGeneratedImagesQuery`는 refetchOnWindowFocus
   // 뿐이라 창을 떠났다 돌아오기 전까지 낡은 채로 남았다 — 그 값은 보관함이 "다른 화면"이던 시절에
   // 맞춘 것이고, 3열 개편으로 생성 화면 옆에 상시 노출되면서 갭이 드러났다.
-  // 그 쿼리는 gcTime: 0이라 시트가 닫혀 있으면(좁은 화면) 무효화가 no-op이고 다음에 열 때 새로 받는다.
+  // 그 쿼리는 gcTime: 0이라 보관함 시트와 결과 상세가 모두 닫혀 있으면(좁은 화면) 무효화가 no-op이고
+  // 다음에 열 때 새로 받는다.
   // failed는 새로 생긴 게 없으므로 제외한다.
   const queryClient = useQueryClient();
   // 확인 게이트의 트리거. `features/generate-images`가 아니라 이
@@ -232,7 +254,11 @@ export function ImageStudioShell({
       <GenerateImagesFormProvider onSubmit={handleSubmit} onPickReference={pickReferenceImage}>
         {/* 좌열 — lg 이상만 보인다(그림자 없음, 경계는 border-r 한 줄, DESIGN.md Flat-at-Rest). */}
         <aside className="hidden w-60 shrink-0 flex-col border-r border-border lg:flex">
-          <ImageStudioLibraryRail isOpen={isLibraryOpen} onOpenChange={setIsLibraryOpen} />
+          <ImageStudioLibraryRail
+            isOpen={isLibraryOpen}
+            onOpenChange={setIsLibraryOpen}
+            onImageDeleted={markImageDeleted}
+          />
         </aside>
 
         <Tabs
@@ -261,7 +287,11 @@ export function ImageStudioShell({
                   무관하게 항상 리스트 바닥 +1px에 선다. 행에 세로 패딩이 없으므로 그 자리가 곧
                   탭바 하단 border다. 시트 트리거(36px)는 items-center로 가운데 정렬된다. */}
               <TabsList variant="line" className="group-data-horizontal/tabs:h-12">
-                <TabsTrigger value="generate">생성</TabsTrigger>
+                {/* 표식은 보관함 패널이 쓴다 — 모델 목록을 못 불러온 화면에서 보관함의 마지막 이미지를 지우면
+                    돌아갈 타일도 프롬프트 입력칸도 없어 늘 있는 이 탭으로 포커스를 보낸다. */}
+                <TabsTrigger value="generate" data-image-studio-trigger="generate-tab">
+                  생성
+                </TabsTrigger>
               </TabsList>
 
               {/* 시트 트리거 2개. 크랙은 size-12(48px)지만 우리
@@ -309,7 +339,10 @@ export function ImageStudioShell({
                   resultAreaRef={resultAreaRef}
                   submission={submission}
                   jobData={jobQuery.data}
-                  isJobQueryError={jobQuery.isError}
+                  hasPollError={hasPollError}
+                  isJobInProgress={isJobInProgress}
+                  deletedAssetIds={deletedAssetIds}
+                  onImageDeleted={markImageDeleted}
                 />
               </TabsContent>
             </div>
@@ -338,7 +371,10 @@ type ImageStudioGenerateTabContentProps = {
   resultAreaRef: RefObject<HTMLDivElement | null>;
   submission: JobSubmission | undefined;
   jobData: ImageJobStatusResponse | undefined;
-  isJobQueryError: boolean;
+  hasPollError: boolean;
+  isJobInProgress: boolean;
+  deletedAssetIds: ReadonlySet<string>;
+  onImageDeleted: (assetId: string) => void;
 };
 
 // 브라우저 실검증 회귀 수정 — GenerateImagesFormProvider가 더 이상 early return하지 않으므로
@@ -352,7 +388,10 @@ function ImageStudioGenerateTabContent({
   resultAreaRef,
   submission,
   jobData,
-  isJobQueryError,
+  hasPollError,
+  isJobInProgress,
+  deletedAssetIds,
+  onImageDeleted,
 }: ImageStudioGenerateTabContentProps) {
   const { unavailableReason, onRetry } = useGenerateImagesSubmit();
 
@@ -362,7 +401,7 @@ function ImageStudioGenerateTabContent({
 
   return (
     <>
-      <GenerateImagesPromptField />
+      <GenerateImagesPromptField isJobInProgress={isJobInProgress} />
       <GenerateImagesReferenceField />
       {/* 좁은 화면에서 스타일은 옵션 시트 안에 있어, 고른 스타일과 비율·개수를 결과 바로 위에 요약해 보이고
           누르면 그 시트의 스타일 자리로 연다. 넓은 화면은 우열에 스타일이 늘 보여 숨긴다. 이용 불가
@@ -379,7 +418,14 @@ function ImageStudioGenerateTabContent({
           좁은 화면에서 창이 스크롤되며 sticky 헤더(h-14) 아래로 숨지 않게 위를 80px, 넓은 화면에서는
           중앙 스크롤러 위쪽이 이미 헤더 아래라 24px만 띄운다. 아래 24px은 결과가 화면 바닥에 붙지 않게 한다. */}
       <div ref={resultAreaRef} className="scroll-mt-20 scroll-mb-6 lg:scroll-mt-6">
-        <GenerateImagesResultGrid shape={submission} job={jobData} isQueryError={isJobQueryError} />
+        <ImageStudioResultArea
+          shape={submission}
+          job={jobData}
+          hasPollError={hasPollError}
+          hiddenAssetIds={deletedAssetIds}
+          onImageDeleted={onImageDeleted}
+          containerRef={resultAreaRef}
+        />
       </div>
     </>
   );

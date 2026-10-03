@@ -1,5 +1,5 @@
 import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { FormProvider, useForm, useWatch } from "react-hook-form";
 
 import { useImageModelsQuery } from "@/entities/image-model";
@@ -15,6 +15,7 @@ import {
   GenerateImagesSubmitContext,
   type GenerateImagesSubmitContextValue,
   type GenerateImagesSubmitHelpers,
+  type PickedReferenceImage,
 } from "../model/useGenerateImagesSubmit";
 
 type GenerateImagesFormProviderProps = {
@@ -39,7 +40,7 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
     resolver: zodResolver(generateImagesSchema),
     defaultValues: generateImagesDefaultValues,
   });
-  const { getValues, reset, setValue, setError, control } = form;
+  const { getValues, reset, setValue, setError, clearErrors, control } = form;
   const selectedModelId = useWatch({ control, name: "model" });
   const isReferenceEnabled = isReferenceImageEnabled(models, selectedModelId);
 
@@ -70,6 +71,24 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
   const onRetry =
     unavailableReason === "error" || unavailableReason === "unavailable" ? () => void refetchModels() : undefined;
 
+  // 피커가 준 presigned URL은 만료되는 표시 전용 값이라 폼 값이 아니라 state로 둔다. 어느 이미지의
+  // 미리보기인지 id를 함께 들고 있다가 필드가 폼 값과 같을 때만 보이므로, 서버 오류로 참조가 비워지거나
+  // 다른 이미지로 바뀌면 옛 미리보기가 저절로 떨어진다.
+  const [referencePreview, setReferencePreview] = useState<PickedReferenceImage>();
+  const referencePickButtonRef = useRef<HTMLButtonElement>(null);
+
+  function setReference(picked: PickedReferenceImage) {
+    setReferencePreview(picked);
+    setValue("reference", { assetId: picked.assetId }, { shouldDirty: true });
+    // `setValue`는 기본으로 재검증하지 않아, 그대로 두면 서버가 건 "참조를 찾지 못함" 오류가 새 참조를
+    // 넣은 뒤에도 남는다. 고른 참조는 스키마상 언제나 유효하므로 검증 대신 오류를 바로 지운다.
+    clearErrors("reference");
+  }
+
+  function focusReferenceField() {
+    referencePickButtonRef.current?.focus();
+  }
+
   // 참조 판정은 화면에 보이는 값이 아니라 **제출한 값**의 모델로 다시 한다 — 렌더와 제출 사이에
   // 모델이 바뀌어도 보낸 요청과 판정이 어긋나지 않는다.
   function handleSubmit(values: GenerateImagesFormValues) {
@@ -92,6 +111,10 @@ export function GenerateImagesFormProvider({ onSubmit, onPickReference, children
           onRetry,
           isReferenceEnabled,
           onPickReference,
+          referencePreview,
+          setReference,
+          referencePickButtonRef,
+          focusReferenceField,
         }}
       >
         {children}
