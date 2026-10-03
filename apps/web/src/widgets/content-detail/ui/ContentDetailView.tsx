@@ -28,10 +28,12 @@ import {
   useContentDetailQuery,
   useToggleFavoriteMutation,
   useToggleLikeMutation,
+  type ContentDetailResponse,
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
 import { toMediaTagImages } from "@/entities/media-book";
+import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
@@ -42,6 +44,7 @@ import { MediaTagText } from "./MediaTagText";
 import { StoryDetailBody } from "./StoryDetailBody";
 import { StoryPlayBar } from "./StoryPlayBar";
 import { VersionHistoryModal } from "./VersionHistoryModal";
+import { applyLikeResult } from "../lib/applyLikeResult";
 import { useContentEditingViewport } from "../lib/useContentEditingViewport";
 
 type ContentDetailViewProps = {
@@ -143,55 +146,90 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
     [queryClient],
   );
 
+  // 정산 순서: 성공하면 보낸 값을 상세 캐시에 먼저 쓰고 같은 동기 구간에서 낙관값을 푼다. 둘 사이에 await 가
+  // 끼면 그 틈의 렌더가 캐시의 옛 값을 그려 버튼이 리페치가 올 때까지 꺼졌다 켜진다(POST/DELETE 가 204 라
+  // 새 값을 받으려면 리페치를 기다려야 했다). 무효화는 서버 값 확인용으로 그 뒤 백그라운드에 둔다 — 활성 쿼리의
+  // 무효화는 진행 중이던 옛 GET 을 취소하므로, 창 포커스 등으로 먼저 출발한 GET 이 늦게 와 캐시를 되돌리지 못한다.
+  // 해제는 호출 단위 `onSettled` 가 아니라 `mutateAsync` 프로미스에 건다 — observer 옵션이 바뀌면 앞 호출의
+  // 콜백은 불리지 않을 수 있다.
+  // 요청 중에는 보내지 않고, deps 에 서버 값과 `isPending` 을 넣어 정산 뒤 다시 따져 본다. 느린 요청 중에
+  // 다시 눌러 바뀐 의도가 그 요청이 끝난 뒤에 나가야 화면과 서버가 갈린 채 굳지 않는다. 정산 뒤 낙관값이
+  // 서버 값과 같으면 위 조기 반환에 걸려 아무것도 보내지 않는다.
   useDebounce(
     () => {
-      if (content === undefined || isLikeDesired === undefined || isLikeDesired === content.isLiked) return;
+      if (
+        content === undefined ||
+        isLikeDesired === undefined ||
+        isLikeDesired === content.isLiked ||
+        toggleLike.isPending
+      )
+        return;
       const isNextLiked = isLikeDesired;
-      toggleLike.mutate(isNextLiked, {
-        onError: (error) => {
-          toast.error(
-            error.status === 401 ? "로그인 후 좋아요를 남길 수 있어요." : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+      // 정산되는 사이 다시 클릭해 isLikeDesired가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
+      const releaseOverride = () => setIsLikeDesired((current) => (current === isNextLiked ? undefined : current));
+      void toggleLike.mutateAsync(isNextLiked).then(
+        () => {
+          queryClient.setQueryData<ContentDetailResponse>(contentKeys.detail(id), (old) =>
+            applyLikeResult(old, isNextLiked),
           );
-        },
-        onSettled: () => {
-          // 정산되는 사이 다시 클릭해 isLikeDesired가 이미 다른 값으로 바뀌었다면(연타) 그 새 의도를 덮어쓰지 않는다.
-          setIsLikeDesired((current) => (current === isNextLiked ? undefined : current));
+          releaseOverride();
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
         },
-      });
+        (error: unknown) => {
+          toast.error(
+            isApiError(error) && error.status === 401
+              ? "로그인 후 좋아요를 남길 수 있어요."
+              : "좋아요 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+          // 실패하면 캐시를 쓰지 않으므로 낙관값만 풀면 마지막으로 받은 서버 값으로 돌아간다. 실패가 곧 서버에
+          // 반영되지 않았다는 뜻은 아니므로(응답만 잃은 경우) 다시 받아 확인한다.
+          releaseOverride();
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+        },
+      );
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [isLikeDesired],
+    [isLikeDesired, content?.isLiked, toggleLike.isPending],
   );
 
+  // 좋아요와 같은 정산 순서·보류 규칙이다(위 주석). 즐겨찾기는 수가 없어 값만 쓴다.
   useDebounce(
     () => {
       if (
         content === undefined ||
         isFavoriteDesired === undefined ||
-        isFavoriteDesired === content.isFavorited
+        isFavoriteDesired === content.isFavorited ||
+        toggleFavorite.isPending
       )
         return;
       const isNextFavorited = isFavoriteDesired;
-      toggleFavorite.mutate(isNextFavorited, {
-        onError: (error) => {
-          toast.error(
-            error.status === 401
-              ? "로그인 후 즐겨찾기에 담을 수 있어요."
-              : "즐겨찾기 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+      const releaseOverride = () =>
+        setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
+      void toggleFavorite.mutateAsync(isNextFavorited).then(
+        () => {
+          queryClient.setQueryData<ContentDetailResponse>(contentKeys.detail(id), (old) =>
+            old === undefined ? old : { ...old, isFavorited: isNextFavorited },
           );
-        },
-        onSettled: () => {
-          setIsFavoriteDesired((current) => (current === isNextFavorited ? undefined : current));
+          releaseOverride();
           void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
           // `favoriteKeys.list(type)`이 타입별로 캐시를 가른다 — 접두사로
           // 두 타입 모두 무효화한다. 한쪽만 지우면 반대 타입 즐겨찾기 목록이 stale로 남는다.
           void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
         },
-      });
+        (error: unknown) => {
+          toast.error(
+            isApiError(error) && error.status === 401
+              ? "로그인 후 즐겨찾기에 담을 수 있어요."
+              : "즐겨찾기 처리에 실패했어요. 잠시 후 다시 시도해주세요.",
+          );
+          releaseOverride();
+          void queryClient.invalidateQueries({ queryKey: contentKeys.detail(id) });
+          void queryClient.invalidateQueries({ queryKey: favoriteKeys.all });
+        },
+      );
     },
     TOGGLE_SYNC_DEBOUNCE_MS,
-    [isFavoriteDesired],
+    [isFavoriteDesired, content?.isFavorited, toggleFavorite.isPending],
   );
 
   if (detailQuery.isPending) return <ContentDetailSkeleton type={type} variant={variant} />;
