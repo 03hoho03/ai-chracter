@@ -304,7 +304,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
               to="/profile/$userId"
               params={{ userId: content.creatorUserId }}
               onClick={() => setModalState(undefined)}
-              className="w-fit text-sm text-muted-foreground hover:underline"
+              // 보더 없는 텍스트 컨트롤이라 반투명 헤일로만으로는 포커스가 배경 대비 3:1 에 못 미친다 — 불투명 1px
+              // 아웃라인이 그 몫을 진다(DESIGN.md Buttons 절의 Focus). 아래 해시태그도 같다.
+              className="w-fit rounded-sm text-sm text-muted-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             >
               {content.creatorNickname}
             </Link>
@@ -323,7 +325,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
                       // 싣는다 — 파라미터 없는 `/`는 스토리라, 빼면 캐릭터 태그로 스토리 목록을 걸러 빈 화면이 된다.
                       void navigate({ to: "/", search: { hashtag: tag, type: toHomeTypeParam(content.type) } });
                     }}
-                    className="text-xs text-muted-foreground hover:underline"
+                    className="rounded-sm text-xs text-muted-foreground hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     #{tag}
                   </button>
@@ -400,13 +402,14 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           hover 표면이 `bg-muted`가 아닌 이유: `--muted`와 `--popover`가 다크 0.210 / 라이트 0.970으로
           **값이 같아** 모달 안에서 hover가 통째로 사라진다(같은 함정을 Slider 트랙에서 겪었다).
           `secondary`는 페이지 배경·모달 표면 양쪽에서 살아남는다. hover에서 글자도 `foreground`로 올린다 —
-          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md Colors 절의 "표면 위 채움 규칙"). */}
+          라이트 `muted-foreground` on `secondary`는 4.29:1로 AA 미달이다(DESIGN.md Colors 절의 "표면 위 채움 규칙").
+          포커스 때 보더를 `ring` 으로 올린다 — 무채색 보더 위 반투명 헤일로만으로는 3:1 에 못 미친다. */}
       <section className="flex flex-col gap-2">
         <h2 className="text-sm font-semibold text-foreground">업데이트</h2>
         <button
           type="button"
           onClick={() => setIsVersionHistoryOpen(true)}
-          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+          className="flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2.5 text-left text-sm text-muted-foreground motion-safe:transition-colors hover:bg-secondary hover:text-foreground focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
         >
           <History aria-hidden className="size-4 shrink-0" />
           <span className="min-w-0 flex-1 break-keep">

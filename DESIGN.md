@@ -262,7 +262,7 @@ components:
 - **Destructive:** **채움이 아니라 틴트다** — `bg-destructive/10 text-destructive-text`, hover 시 `/20`. 솔리드 레드 버튼은 이 시스템에 존재하지 않는다. **포커스는 하우스 레시피의 hue만 바꾼다** — `focus-visible:border-destructive` + `ring-destructive/50`. 알파를 낮추지 말 것: 보더 40% · 링 20%였을 때 포커스가 **어느 쪽으로도 보이지 않았다**(링 대 배경 1.2371 다크 / 1.3694 라이트, 링 대 자기 채움 1.1312 / 1.1728 — 이 앱에서 포커스가 사실상 안 보이는 유일한 컨트롤이었다). 불투명 보더는 자기 채움 대비 **4.8431 / 4.5795**, 배경 대비 **5.2933 / 5.3328**이다.
 - **Link:** `text-primary` + underline-offset-4.
 - **Press feedback:** `active:translate-y-px` — 1px 눌림. 이게 이 시스템의 유일한 촉각 신호다(팝오버를 여는 버튼은 제외).
-- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **3:1을 지는 건 50% 링이 아니라 불투명 1px 보더다** — 링은 페이지 배경 대비 2.5757 다크 / 2.5511 라이트지만 보더는 자기 채움 대비 **7.1768 / 6.7011**이다(실측). 그래서 이 레시피는 **보더가 살아 있는 한** 성립한다. **채움이 `primary` 솔리드면 무너진다** — 보더가 채움과 같은 색이 되어 사라지므로 링을 불투명으로 올린다(아래 §Toggles). `/10` 틴트 채움(destructive, `toggle` `list`)은 보더가 남으므로 hue만 갈아끼우면 된다.
+- **Focus:** `focus-visible:ring-3 ring-ring/50` + `border-ring`. 항상 노출한다. **3:1을 지는 건 50% 링이 아니라 불투명 1px 보더다** — 링은 페이지 배경 대비 2.5757 다크 / 2.5511 라이트지만 보더는 자기 채움 대비 **7.1768 / 6.7011**이다(실측). 그래서 이 레시피는 **보더가 살아 있는 한** 성립한다. **채움이 `primary` 솔리드면 무너진다** — 보더가 채움과 같은 색이 되어 사라지므로 링을 불투명으로 올린다(아래 §Toggles). `/10` 틴트 채움(destructive, `toggle` `list`)은 보더가 남으므로 hue만 갈아끼우면 된다. **보더가 없는 컨트롤** 가운데 문장 밖에 홀로 선 텍스트 링크·버튼(콘텐츠 카드·로고·카드 안 작가 버튼·모달 작가 링크·해시태그·푸터 링크)은 불투명 1px 아웃라인이 그 몫을 진다 — `focus-visible:outline-1 focus-visible:outline-ring` + 같은 50% 링. 아웃라인은 보더와 같은 `ring` 색이라 배경 대비 값도 위 보더와 같고, 레이아웃을 먹지 않는다(투명 보더로 대신하면 1px가 자리를 차지해 카드 썸네일이 카드 가장자리와 어긋난다). 반투명 링만 있으면 3:1 미달이다. 이미 아웃라인을 지우는 프리미티브(`outline-none`)는 대상이 아니다 — 그쪽은 보더가 진다. 문장 속 인라인 링크는 여기서 빠진다 — 3px 링이 라인박스를 깨므로 `apps/web/CLAUDE.md` 포커스 절의 규칙대로 `focus-visible:underline`으로 표시한다.
 
 ### Toggles (선택 칩 / 목록형 선택지)
 단일선택 토글은 `packages/ui/src/components/toggle.tsx`의 `toggleVariants` 하나에서만 정의된다 — 장르 필터, 헤더의 캐릭터/스토리, 테마 선택, 빌더의 시작설정·공개범위가 전부 같은 프리미티브다. 스탯·엔딩 탭 머리의 시작설정 칩은 시작설정이 둘 이상일 때만 그린다 — 하나면 고를 것이 없는데 선택된 칩 하나가 솔리드 채움으로 화면에서 가장 밝은 물체가 되므로, 칩 대신 "‘이름’의 스탯" 문장으로 어느 시작설정의 목록인지만 알린다(`widgets/build-story/ui/StartingSetupPicker.tsx`). 헤더·드로어에서 캐릭터/스토리 옆에 놓이는 "이미지" 링크는 토글이 아니라 `/studio/images`로 가는 내비 링크라 `ToggleGroup` **밖**에 두지만(radio 그룹의 화살표 이동·선택 의미에 섞이지 않게), 시각은 `toggleVariants({ variant })`를 그대로 빌리고 활성 표시는 `data-state="on"`으로 켠다 — 선택 표시를 호출부 클래스로 따로 만들지 않는다(아래 금지 규칙과 같은 이유). 캐릭터/스토리 쪽은 **홈에서만** 선택이 켜진다(값 = 홈 URL의 `?type=`, 없으면 스토리). 홈 밖 화면(이미지 화면 포함)은 어느 유형에도 속하지 않아 토글 값이 비어(`""`) 아무것도 선택되지 않고, 누르면 그 유형의 홈으로 간다.
@@ -286,7 +286,7 @@ components:
   - **껍데기를 걷은 이유**는 썸네일이 그 화면의 콘텐츠 자체이기 때문이다 — 레퍼런스 둘(크랙·케이브덕)은 카드에 border·padding·배경이 **전혀 없고** 썸네일이 곧 카드다(실측: `padding: 0px`, `rgba(0,0,0,0)`, 썸네일 `rect.left == 카드 rect.left`).
   - **경계는 카드가 아니라 썸네일이 진다**(아래 Thumbnail well). 텍스트는 썸네일 좌측 가장자리와 flush하게 정렬되고 둘 사이는 `gap-2`(8px)다.
   - **hover 신호를 두지 않는다.** 전엔 카드 표면이 `rgb(13,13,13)→(24,24,24)`(대비비 **1.0946**, 픽셀 실측)로 밝아졌는데 칠할 표면이 사라졌고, **레퍼런스 둘 다 카드 hover가 없다** — 케이브덕은 rest/hover 픽셀이 완전 동일하고 DOM에 `hover:`/`group-hover:`/`transition` 클래스가 0개, 크랙도 카드 스타일이 불변이다(1~2초 머물면 미리보기 팝오버가 뜨지만 그건 별개 기능이다). **터치 피드백인 `active:translate-y-px`는 남긴다** — 그게 유일한 눌림 표시다.
-  - focus 링(`focus-visible:ring-3 ring-ring/50`)은 카드 전체를 감싼다. 카드에 `overflow-hidden`이 없으므로 잘릴 일도 없다.
+  - focus 표시는 불투명 1px 아웃라인 + 50% 링(`focus-visible:outline-1 outline-ring ring-3 ring-ring/50`, Buttons 절의 Focus — 보더 없는 컨트롤)이고 카드 전체를 감싼다. 50% 링만으로는 3:1 미달이다. 카드에 `overflow-hidden`이 없으므로 잘릴 일도 없다. 홈 큐레이션 카드도 같은 문자열이다.
 - **Hover:** `hover:bg-accent/50` — 사다리 위로 반 칸. **단, 이건 정지 표시용 카드에만 유효하다** — 아래 예외를 볼 것. **`ContentCard`는 hover 자체가 없다**(위).
 - **예외: 카드 자체가 그 화면의 주 인터랙션이면 button-outline 레시피를 카드 크기로 쓴다** — `border-border bg-background` + `hover:bg-muted` + 하우스 focus 레시피 + `active:translate-y-px`. `bg-card` 위에서는 `hover:bg-accent/50`도 `hover:bg-muted`도 **픽셀상 아무것도 그리지 않기** 때문이다(`background-color`는 층으로 쌓이지 않고 `bg-card`를 대체한 뒤 페이지 배경 위에 합성된다 — 스크린샷 픽셀 실측 **다크 1.0000:1 / 라이트 1.0178:1**). 이 예외를 쓰면 rest에서 카드 채움이 페이지 배경과 같아져 Elevation 절의 명도 사다리를 벗어나지만, 경계는 `border`가 유지하고 hover는 다크 1.0946 / 라이트 1.0902로 실제로 보인다. 대안인 `bg-card` + `hover:bg-secondary`(hover 라이트 1.1239 / 다크 1.1439)는 `muted-foreground` 본문이 그대로면 라이트 4.30:1로 AA에 미달하므로, **hover 때 본문을 `group-hover:text-foreground`로 올리는 경우에만** 쓴다(14.06:1) — 그러면 셋(사다리·hover 가시성·본문 AA)을 동시에 만족한다. 적용처: admin `CountCards`. outline 레시피 적용처: `BuilderTypeSelectPage`·`InquiriesPage`·`NoticesPage`·`MyChatRoomListView`. **`ContentCard`는 2026-09-11에 이 레시피에서 빠져나왔다** — 껍데기를 통째로 걷고 hover를 없앴다(위).
 - **Thumbnail well:** `overflow-hidden rounded-xl border border-foreground/10 bg-secondary` + 타입별 비율 클래스. **카드의 경계를 이 웰이 진다** — 카드엔 보더가 없다. **네 모서리 모두** `rounded-xl`이다. 이미지 없으면 `ImageOff` 아이콘을 `text-muted-foreground`로.
@@ -546,7 +546,7 @@ components:
 - **Do** 깊이를 그림자가 아니라 명도로 만든다. 카드가 떠 보여야 하면 `bg-card`를 쓰지 `shadow-md`를 쓰지 않는다.
 - **Do** 다크에서 채움 위 텍스트를 뒤집는다 — `primary`와 `destructive` 모두 밝은 채움 + 어두운 텍스트다. 이 쌍을 깨지 말 것.
 - **Do** 애니메이션에 `motion-safe:`를 붙인다 — 예외는 Motion 절에만 적는다.
-- **Do** 모든 인터랙티브 엘리먼트에 `focus-visible` 링(`ring-3 ring-ring/50`)을 유지한다(전연령/접근성 정책).
+- **Do** 모든 인터랙티브 엘리먼트에 `focus-visible` 표시를 유지한다 — 50% 링(`ring-3 ring-ring/50`)에 불투명 1px(보더가 있으면 `border-ring`, 없으면 `outline-1 outline-ring`)을 함께 둔다. 50% 링만으로는 배경 대비 3:1에 못 미친다(Buttons 절의 Focus, 전연령/접근성 정책).
 - **Do** 본문에 `text-sm`(1rem)을 쓴다. 이것이 기본값이다.
 
 ### Don't:

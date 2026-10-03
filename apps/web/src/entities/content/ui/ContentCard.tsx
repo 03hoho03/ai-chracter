@@ -170,7 +170,9 @@ export function ContentCard({
         // 카드 껍데기(border·배경·hover)가 없다 — 썸네일이 카드 가장자리와 flush하다. `rounded-xl`은
         // 표면을 자르기 위해서가 아니라 focus-visible 링의 모양을 잡기 위해 남는다. `gap-2`는 썸네일과
         // 텍스트 사이 8px.
-        "flex w-full cursor-pointer flex-col gap-2 rounded-xl text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px",
+        // 포커스: 보더가 없어 반투명 헤일로만으로는 배경 대비 3:1 에 못 미친다. 불투명 1px 아웃라인이 그 몫을
+        // 진다 — 투명 보더로 같은 효과를 내면 1px 가 레이아웃을 먹어 썸네일이 카드 가장자리와 어긋난다.
+        "flex w-full cursor-pointer flex-col gap-2 rounded-xl text-left focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:translate-y-px",
         className,
       )}
     >

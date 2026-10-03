@@ -48,7 +48,7 @@ export function Header() {
           to="/"
           aria-label="또나"
           className={cn(
-            "inline-flex shrink-0 items-center justify-self-center rounded-md text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            "inline-flex shrink-0 items-center justify-self-center rounded-md text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50",
             isSearchExpanded && "hidden sm:inline-flex",
           )}
         >
