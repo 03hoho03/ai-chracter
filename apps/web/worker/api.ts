@@ -67,9 +67,9 @@ export function isUuid(value: string): boolean {
  *
  * FE의 `canViewDetailPage(access, isOwner = false)`와 같은 규칙이다 — restricted·deleted·
  * private은 막고 public·link는 통과시킨다(링크 공유 미리보기가 이 기능의 목적이다).
- * `GET /contents/{id}`는 비공개 콘텐츠에도 200 + 본문을 주므로(접근 판정을 응답 본문의
- * `accessStatus`로 내려주는 설계다) 이 검사를 생략하면 비공개 콘텐츠의 이름·소개·썸네일이
- * 그대로 새어 나간다.
+ * `GET /contents/{id}`는 비공개 콘텐츠에도 200 을 주고(접근 판정을 응답 본문의 `accessStatus`로
+ * 내려주는 설계다) 상세 소개·시작설정만 비운 채 이름·한 줄 소개·썸네일은 그대로 싣는다. 이 검사를
+ * 생략하면 그 셋이 미리보기로 새어 나간다.
  */
 export function isViewableByCrawler(
   accessStatus: Record<string, unknown>,
