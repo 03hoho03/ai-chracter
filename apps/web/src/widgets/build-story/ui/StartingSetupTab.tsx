@@ -120,6 +120,7 @@ export function StartingSetupTab() {
         suggestedReplies: [],
         stats: [],
         endings: [],
+        situationNotes: [],
       },
       { focusName: `startingSetups.${fields.length}.name` },
     );

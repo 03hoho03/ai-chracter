@@ -237,6 +237,56 @@ def test_load_story_reports_unknown_stat_name(tmp_path: Path) -> None:
         load_story(path)
 
 
+def _with_situation_notes(raw: dict[str, Any], stat_name: str = "신뢰") -> dict[str, Any]:
+    raw["startingSetups"][0]["situationNotes"] = [
+        {
+            "name": "가까워짐",
+            "infoText": "둘은 이제 서로를 믿는다.",
+            "conditionRules": [
+                {"kind": "rule", "stat": stat_name, "operator": "gte", "threshold": 70, "nextOp": "and"},
+                {"kind": "group", "rules": [{"kind": "rule", "stat": stat_name, "operator": "lt", "threshold": 90}]},
+            ],
+        }
+    ]
+    return raw
+
+
+def test_load_story_resolves_situation_note_stat_names_without_moving_other_ids(tmp_path: Path) -> None:
+    """상황 노트 조건도 엔딩 규칙처럼 스탯을 이름으로 적으면 같은 시작설정의 파생 id 로 바뀐다. 노트 id 는 경로에
+    `situationNotes` 가 들어가 파생되므로, 노트를 더해도 이미 시드된 엔딩·스탯의 id 는 그대로다."""
+    before = load_story(_write(tmp_path / "before", "romance-3rdloop", _story_payload()))
+    path = _write(tmp_path, "romance-3rdloop", _with_situation_notes(_story_payload()))
+
+    payload = load_story(path)
+
+    setup = payload.starting_setups[0]
+    [note] = setup.situation_notes
+    note_path = "story:romance-3rdloop:startingSetups[0]:situationNotes[0]"
+    assert note.id == seed_uuid(note_path)
+    rule, group = note.condition_rules
+    assert rule.kind == "rule"
+    assert rule.stat_id == setup.stat_defs[0].id
+    assert group.kind == "group"
+    assert group.id == seed_uuid(f"{note_path}:conditionRules[1]")
+    assert group.rules[0].stat_id == setup.stat_defs[0].id
+    assert setup.stat_defs[0].id == before.starting_setups[0].stat_defs[0].id
+    assert setup.endings[0].id == before.starting_setups[0].endings[0].id
+
+
+def test_load_story_without_situation_notes_leaves_the_field_unset(tmp_path: Path) -> None:
+    """시드 JSON 이 상황 노트를 적지 않으면 저장이 기존 노트를 건드리지 않도록 필드를 보낸 것으로 치지 않는다."""
+    payload = load_story(_write(tmp_path, "romance-3rdloop", _story_payload()))
+
+    assert "situation_notes" not in payload.starting_setups[0].model_fields_set
+
+
+def test_load_story_reports_unknown_stat_name_in_situation_note(tmp_path: Path) -> None:
+    path = _write(tmp_path, "dangling-note", _with_situation_notes(_story_payload(), stat_name="없는스탯"))
+
+    with pytest.raises(SeedContentError, match=re.escape("dangling-note.json: 상황 노트 조건이")):
+        load_story(path)
+
+
 def test_load_character_derives_entity_ids(tmp_path: Path) -> None:
     path = _write(tmp_path, "romance-3rdloop-dj", _character_payload())
 

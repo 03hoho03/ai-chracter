@@ -4,6 +4,8 @@ import {
   MAX_MEDIA_BOOK_NAME_LENGTH,
   MAX_MEDIA_BOOK_SITUATION_LENGTH,
   MAX_MEDIA_BOOK_UNLOCK_HINT_LENGTH,
+  MAX_SITUATION_NOTE_CONTENT_LENGTH,
+  MAX_SITUATION_NOTE_NAME_LENGTH,
   MAX_TRIGGER_KEYWORD_LENGTH,
   type StoryFieldKey,
 } from "@/features/build-story";
@@ -22,6 +24,11 @@ export const READ_TIMING_GROUPS = [
     id: "keyword",
     title: "사용자의 이번 메시지나 바로 앞 AI 응답에 그 단어가 나온 턴에 읽는다",
     caption: "키워드가 나온 턴에",
+  },
+  {
+    id: "situationCondition",
+    title: "사용자가 메시지를 보낸 순간의 스탯 값이 노트의 조건에 맞는 턴에 읽는다",
+    caption: "조건이 맞는 턴에",
   },
   { id: "shortcut", title: "사용자가 단축어를 골랐을 때만 읽는다", caption: "단축어를 고를 때만" },
   { id: "judge", title: "점수와 엔딩을 판정할 때만 읽는다", caption: "판정할 때만" },
@@ -128,10 +135,31 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.statDefs.*.perTurnDelta",
     readTiming: null,
   },
+  // 튜토리얼 시드의 스탯은 변화 방향·최대 폭을 쓰지 않는다(기본값 오르내림·제한 없음).
+  "startingSetups.*.stats.*.changeDirection": { kind: "select", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.maxChangePerTurn": { kind: "number", seedPath: null, readTiming: null },
   "startingSetups.*.stats.*.description": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.description",
     readTiming: "judge",
+  },
+
+  // 튜토리얼 시드에는 상황 노트가 없다 — 이 탭의 예시는 모두 free 다.
+  "startingSetups.*.situationNotes": { kind: "cardList", seedPath: null, readTiming: null },
+  "startingSetups.*.situationNotes.*.name": {
+    kind: "text",
+    seedPath: null,
+    readTiming: null,
+    limit: MAX_SITUATION_NOTE_NAME_LENGTH,
+    counter: true,
+  },
+  "startingSetups.*.situationNotes.*.conditionRules": { kind: "statRules", seedPath: null, readTiming: null },
+  "startingSetups.*.situationNotes.*.content": {
+    kind: "textarea",
+    seedPath: null,
+    readTiming: "situationCondition",
+    limit: MAX_SITUATION_NOTE_CONTENT_LENGTH,
+    counter: true,
   },
 
   // 튜토리얼 시드에는 미디어 북이 없다 — 이 탭의 예시는 모두 free 다.

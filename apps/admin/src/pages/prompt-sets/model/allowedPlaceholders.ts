@@ -22,6 +22,7 @@ const ALLOWED_PLACEHOLDERS: Record<string, readonly string[]> = {
   "generation:memory_summary": ["memory_summary"],
   "generation:history": ["history_lines"],
   "generation:keyword_notes": ["keyword_note_lines"],
+  "generation:situation_notes": ["situation_note_lines"],
   "generation:shortcut_prompt": ["shortcut_prompt"],
   "generation:final_frame": ["user_label", "user_message", "assistant_label"],
   "stat_judgment:stat_defs_intro": ["stat_lines"],

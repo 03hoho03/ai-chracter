@@ -69,6 +69,28 @@ export const storySettingSchema = z
     }
   });
 
+/** 판정 AI 가 정한 값을 코드가 자르는 방향. 순서가 스탯 탭 셀렉트의 항목 순서다(첫 값이 기본값). */
+export const STAT_CHANGE_DIRECTIONS = ["both", "increase", "decrease"] as const;
+export type StatChangeDirection = (typeof STAT_CHANGE_DIRECTIONS)[number];
+
+const MAX_CHANGE_PER_TURN_MESSAGE = "1 이상의 정수로 입력해주세요";
+
+/**
+ * 턴당 자동 변화가 있는 스탯은 판정 AI 가 값을 정하지 않아 방향·최대 폭을 쓸 곳이 없다 — 서버는 둘을 함께 건 스탯의 발행을
+ * 거절한다. 스탯 탭은 한쪽을 채우면 다른 쪽을 잠그므로 이 상태는 다른 기기·옛 데이터에서만 들어온다.
+ */
+export const STAT_CHANGE_CONFLICT_MESSAGE = "턴당 자동 변화와 변화 방향·최대 폭은 함께 쓸 수 없어요. 한쪽을 비워 주세요.";
+
+/** 방향이 "오르내림"이 아니거나 최대 폭 칸이 비어 있지 않으면 변화 제한을 건 스탯이다(값이 잘못 들어간 칸도 비어 있지 않다). */
+export function hasStatChangeLimit(stat: Pick<StatDefValues, "changeDirection" | "maxChangePerTurn">): boolean {
+  return stat.changeDirection !== "both" || stat.maxChangePerTurn !== null;
+}
+
+/** 턴당 자동 변화 칸에 숫자가 들어 있는가(빈 칸은 null, 다 지우지 못한 칸은 NaN). */
+export function hasPerTurnDelta(stat: Pick<StatDefValues, "perTurnDelta">): boolean {
+  return stat.perTurnDelta !== null && Number.isFinite(stat.perTurnDelta);
+}
+
 /**
  * 시작설정별 독립 스탯.
  *
@@ -102,8 +124,20 @@ export const statDefSchema = z
      * 같은 자리에 있던 옛 스탯의 값을 물려받고, 비운 칸이 탭을 오갈 때 옛 값으로 되살아난다.
      */
     perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
+    /** 판정 AI 가 낸 값 중 이 방향을 거스르는 변화는 시스템이 버린다. 서버는 빠진 값을 "기존 값 유지"로 읽어 늘 보낸다. */
+    changeDirection: z.enum(STAT_CHANGE_DIRECTIONS),
+    /** 한 턴에 바뀔 수 있는 최대 폭. 빈 값(null)은 제한 없음이고, 빈 값을 null 로 두는 이유는 `perTurnDelta` 와 같다. */
+    maxChangePerTurn: z
+      .number({ error: MAX_CHANGE_PER_TURN_MESSAGE })
+      .int(MAX_CHANGE_PER_TURN_MESSAGE)
+      .min(1, MAX_CHANGE_PER_TURN_MESSAGE)
+      .nullable(),
   })
   .superRefine((stat, ctx) => {
+    // 오류는 턴당 자동 변화 칸에 붙인다 — 발행 때 이 스탯을 열고 그 칸으로 포커스가 가, 바로 아래 문장이 이유를 말한다.
+    if (hasPerTurnDelta(stat) && hasStatChangeLimit(stat)) {
+      ctx.addIssue({ code: "custom", path: ["perTurnDelta"], message: STAT_CHANGE_CONFLICT_MESSAGE });
+    }
     if (stat.max <= stat.min) {
       ctx.addIssue({ code: "custom", path: ["max"], message: "최대값은 최소값보다 커야 해요" });
       return;
@@ -161,6 +195,51 @@ export const endingSchema = z.object({
   hint: z.string().optional(),
 });
 
+/** 조건 수. 그룹 자체는 세지 않고 그 안의 조건을 센다 — 서버가 상황 노트의 조건 상한·"조건 없음"을 따지는 셈과 같다. */
+export function countRules(items: readonly RuleListItemValues[]): number {
+  return items.reduce((sum, item) => sum + (item.kind === "group" ? item.rules.length : 1), 0);
+}
+
+/** 상황 노트 상한의 단일 소스(서버 상한과 같은 값). 스키마의 검사·메시지와 widgets/build-story 의 상황 노트 탭·조건 편집기의
+ * 입력 가드가 전부 여기를 읽는다. 자동저장은 이 스키마를 거치지 않으므로 상한은 입력 단계에서 막아야 한다 — 넘는 값이 폼에
+ * 들어가면 서버가 그 초안의 저장을 통째로 거절한다. */
+export const MAX_SITUATION_NOTES = 10;
+export const MAX_SITUATION_NOTE_NAME_LENGTH = 20;
+export const MAX_SITUATION_NOTE_CONTENT_LENGTH = 800;
+export const MAX_SITUATION_NOTE_RULES = 10;
+export const SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE = "조건을 하나 이상 넣어 주세요";
+export const SITUATION_NOTE_BLANK_CONTENT_MESSAGE = "상황을 입력해주세요";
+export const SITUATION_NOTE_RULE_LIMIT_MESSAGE = `조건은 노트마다 ${MAX_SITUATION_NOTE_RULES}개까지예요(그룹 안 조건 포함).`;
+
+/**
+ * 시작설정마다 둘 수 있는 상황 노트. 조건(엔딩 스탯 규칙과 같은 규칙 목록)이 참인 턴에 본문이 이야기를 쓰는 AI 에게 실린다.
+ * 순서는 배열 위치다. 본문 이름은 키워드 노트 폼과 같은 `content`(서버는 `infoText`).
+ *
+ * 조건 없음·본문 공백은 서버가 저장은 받고 발행만 막는다(노트를 막 추가한 초안도 저장돼야 한다). 이 스키마는 발행 때만
+ * 돌므로 같은 두 검사를 여기 둬 발행 버튼이 그 노트의 칸을 바로 짚게 한다. 빈 그룹만 있는 노트도 조건 0개다(서버와 같은 셈).
+ */
+export const situationNoteSchema = z.object({
+  id: z.string(),
+  name: z
+    .string()
+    .refine(
+      (value) => countCharacters(value) <= MAX_SITUATION_NOTE_NAME_LENGTH,
+      `이름은 ${MAX_SITUATION_NOTE_NAME_LENGTH}자 이하로 입력해주세요`,
+    ),
+  content: z
+    .string()
+    .refine((value) => value.trim().length > 0, SITUATION_NOTE_BLANK_CONTENT_MESSAGE)
+    .refine(
+      (value) => countCharacters(value) <= MAX_SITUATION_NOTE_CONTENT_LENGTH,
+      `상황은 ${MAX_SITUATION_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
+    ),
+  conditionRules: z.array(ruleListItemSchema).superRefine((rules, ctx) => {
+    const count = countRules(rules);
+    if (count === 0) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE });
+    else if (count > MAX_SITUATION_NOTE_RULES) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_RULE_LIMIT_MESSAGE });
+  }),
+});
+
 /** 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
  * widgets/build-story/ui/StartingSetupTab.tsx의 라벨 표기·추가 버튼 게이트가 전부 여기를 읽는다
  * (같은 숫자를 두 번 적으면 한쪽만 고치고 끝난다). */
@@ -184,6 +263,10 @@ export const startingSetupSchema = z.object({
     .default([]),
   stats: z.array(statDefSchema).default([]),
   endings: z.array(endingSchema).default([]),
+  situationNotes: z
+    .array(situationNoteSchema)
+    .max(MAX_SITUATION_NOTES, `상황 노트는 시작설정마다 최대 ${MAX_SITUATION_NOTES}개까지만 추가할 수 있습니다`)
+    .default([]),
 });
 
 /** 키워드북 상한의 단일 소스. 스키마의 검사·메시지와 widgets/build-story/ui/KeywordNoteTab.tsx 의 입력 가드가 전부
@@ -487,6 +570,7 @@ export type StatDefValues = z.infer<typeof statDefSchema>;
 export type RuleListItemValues = z.infer<typeof ruleListItemSchema>;
 export type SingleRuleValues = Extract<RuleListItemValues, { kind: "rule" }>;
 export type EndingValues = z.infer<typeof endingSchema>;
+export type SituationNoteValues = z.infer<typeof situationNoteSchema>;
 export type StartingSetupValues = z.infer<typeof startingSetupSchema>;
 export type KeywordNoteValues = z.infer<typeof keywordNoteSchema>;
 export type ShortcutValues = z.infer<typeof shortcutSchema>;

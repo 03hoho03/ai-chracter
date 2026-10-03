@@ -4,6 +4,7 @@ import { matchTabForPath } from "@/features/build-common";
 import {
   type FieldLabel,
   PROMPT_TEMPLATE_LABELS,
+  STAT_CHANGE_DIRECTIONS,
   STICKY_TURN_OPTIONS,
   STORY_FIELD_LABELS,
   STORY_TABS,
@@ -32,13 +33,18 @@ import { toGuidePages } from "./toGuidePages";
 // 파서가 던지는 오류가 맡고, 여기서는 원고 내용이 빌더·목업 표와 맞는지를 본다. 시드 대조는 `seedQuotes.test.ts`.
 
 /**
- * 튜토리얼 시드에 데이터가 없어 시드를 인용할 수 없는 빌더 탭. 탭 id 와 그 탭의 시드 JSON 최상위 키를 함께 적는다.
+ * 튜토리얼 시드에 데이터가 없어 시드를 인용할 수 없는 빌더 탭. 탭 id 와 그 탭의 데이터가 시드 JSON 에 놓일 경로를 함께
+ * 적는다(점으로 잇고, `*` 는 배열의 모든 항목).
  * 튜토리얼 시드에는 미디어 북이 없다. 서비스에 올린 예시 작품에는 미디어 북이 있지만, 시드 적재가 미디어 북을 싣지 않고
  * 칸마다 이미지가 필요해 시드에 글만 넣을 수도 없다. 그래서 이 탭의 예시는 원고의 free 값이다.
+ * 상황 노트도 튜토리얼 예시 작품에 일부러 넣지 않았다. 시작설정마다 두는 목록이라 경로가 `startingSetups.*.situationNotes` 다.
  * 아래 "seed-less tab exceptions" 검사가 이 목록이 다른 탭을 가리지 못하게 잡는다.
  */
-const TABS_WITHOUT_TUTORIAL_SEED: Partial<Record<CreationGuideTopicId, readonly { tabId: string; seedKey: string }[]>> = {
-  story: [{ tabId: "mediaBook", seedKey: "mediaBook" }],
+const TABS_WITHOUT_TUTORIAL_SEED: Partial<Record<CreationGuideTopicId, readonly { tabId: string; seedPath: string }[]>> = {
+  story: [
+    { tabId: "situationNote", seedPath: "startingSetups.*.situationNotes" },
+    { tabId: "mediaBook", seedPath: "mediaBook" },
+  ],
 };
 
 /** 시드 JSON 은 테스트 안에서만 읽는다(`seedQuotes.test.ts` 와 같은 이유 — 앱 모듈로 옮기면 운영 번들에 실린다). */
@@ -46,6 +52,18 @@ const TUTORIAL_STORY_SEEDS = import.meta.glob<string>(
   "../../../../../api/scripts/seed_content/data/tutorial/stories/*.json",
   { query: "?raw", import: "default", eager: true },
 );
+
+/**
+ * 시드 JSON 에서 점 경로가 가리키는 값을 모두 모은다(`*` 는 배열의 모든 항목). 경로 중간이 없으면 그 갈래는 값이 없다.
+ * 최상위 키만 보면 시작설정 아래에 놓이는 목록은 늘 비어 보여, 시드에 데이터가 생겨도 예외가 낡은 줄 모른다.
+ */
+function valuesAtSeedPath(node: unknown, segments: readonly string[]): unknown[] {
+  const [head, ...rest] = segments;
+  if (head === undefined) return [node];
+  if (head === "*") return Array.isArray(node) ? node.flatMap((item: unknown) => valuesAtSeedPath(item, rest)) : [];
+  if (typeof node !== "object" || node === null) return [];
+  return valuesAtSeedPath(Reflect.get(node, head), rest);
+}
 
 /** 화면에 보이는 글자 수 — 굵게·인라인 코드 표기와 링크 주소를 뺀 코드 포인트 수(공백 포함). */
 function visibleLength(markdown: string): number {
@@ -206,8 +224,11 @@ describe("seed-less tab exceptions", () => {
     expect(seedPaths.length).toBeGreaterThan(0);
     for (const [path, raw] of Object.entries(TUTORIAL_STORY_SEEDS)) {
       const seed: unknown = JSON.parse(raw);
-      const value = typeof seed === "object" && seed !== null ? Reflect.get(seed, exception.seedKey) : undefined;
-      expect(value, `${path} 에 ${exception.seedKey} 가 생겼다`).toBeUndefined();
+      // 빈 목록(`[]`)은 인용할 데이터가 아니다 — 시드는 목록을 지울 때 빈 목록으로 적는다.
+      const values = valuesAtSeedPath(seed, exception.seedPath.split(".")).filter(
+        (value) => value !== undefined && !(Array.isArray(value) && value.length === 0),
+      );
+      expect(values, `${path} 에 ${exception.seedPath} 가 생겼다`).toEqual([]);
     }
   });
 
@@ -229,6 +250,7 @@ const OPTION_VALUES: Partial<Record<string, readonly unknown[]>> = {
   "registration.target": Object.keys(TARGET_LABELS),
   "registration.visibility": Object.keys(VISIBILITY_LABELS),
   "keywordNotes.*.stickyTurns": STICKY_TURN_OPTIONS.map((option) => Number(option.value)),
+  "startingSetups.*.stats.*.changeDirection": STAT_CHANGE_DIRECTIONS,
 };
 
 /**

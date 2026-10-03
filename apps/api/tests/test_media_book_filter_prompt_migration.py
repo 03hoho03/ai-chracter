@@ -173,8 +173,13 @@ async def test_this_revisions_set_carries_the_media_book_row(db_session: AsyncSe
 
 
 async def test_other_lanes_keep_their_active_sets(db_session: AsyncSession) -> None:
+    """story 레인 활성 세트는 이 리비전 앞의 세트이거나, 뒤 리비전이 story 레인에만 행을 더해 만든 더 나중 세트다
+    (상황 노트 섹션 리비전이 그렇다) — 이 리비전이 만든 세트가 아니다."""
     story, _ = await load_active_prompt_set(db_session, lane="story")
-    assert story.id == _STORY_SET_ID
+    previous = await db_session.get(PromptSet, _STORY_SET_ID)
+    assert previous is not None and previous.published_at is not None and story.published_at is not None
+    assert story.id == _STORY_SET_ID or story.published_at > previous.published_at
+    assert story.note != _M._NOTE
 
 
 # ---- `_patch_draft` ------------------------------------------------------------------------
