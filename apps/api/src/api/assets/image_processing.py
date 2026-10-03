@@ -8,12 +8,22 @@
 import io
 from typing import Literal
 
+from api.core.s3 import build_display_key, build_thumbnail_key
+
 BLUR_RADIUS = 25.0
 BLURRED_CONTENT_TYPE = "image/png"
 
 THUMBNAIL_MAX_EDGE = 512
 THUMBNAIL_WEBP_QUALITY = 80
+# 썸네일과 표시용 변형 둘 다 WebP 라 같은 값을 쓴다.
 THUMBNAIL_CONTENT_TYPE = "image/webp"
+
+# 표시용 변형: 상세 화면 히어로처럼 썸네일보다 크게 그리는 자리에 원본 대신 보낸다. 1024 는 데스크톱 상세 모달
+# (스토리 256×384 CSS px)을 2배 밀도 화면에서 덮고, 화면이 대표 이미지 업로드 전에 줄이는 긴 변 상한
+# (`apps/web/src/shared/api/asset/uploadAsset.ts` 의 `content-thumbnail`)과 같아 업로드한 그림보다 작아지지 않는다.
+DISPLAY_MAX_EDGE = 1024
+# 썸네일과 같은 q80 — 운영에서 이미 쓰는 값이고, 표시용에만 다른 값을 고를 화질 비교 측정은 없다.
+DISPLAY_WEBP_QUALITY = THUMBNAIL_WEBP_QUALITY
 
 
 def generate_blurred_image(image_bytes: bytes, radius: float = BLUR_RADIUS) -> bytes:
@@ -56,19 +66,41 @@ def read_image_content_type(image_bytes: bytes) -> str | None:
 def generate_thumbnail(image_bytes: bytes) -> bytes:
     """CPU-bound (Pillow) — run via `run_in_threadpool`.
 
-    Shrinks the long edge to THUMBNAIL_MAX_EDGE (never upscales) and encodes as
-    WebP. Like `generate_blurred_image`, always normalizes to RGBA first so
-    palette-mode sources and the output encoding have one predictable mode.
-    """
+    Shrinks the long edge to THUMBNAIL_MAX_EDGE (never upscales) and encodes as WebP."""
+    return _shrink_to_webp(image_bytes, THUMBNAIL_MAX_EDGE, THUMBNAIL_WEBP_QUALITY)
+
+
+def generate_display_image(image_bytes: bytes) -> bytes:
+    """CPU-bound (Pillow) — run via `run_in_threadpool`.
+
+    `generate_thumbnail` 과 같은 규칙으로 긴 변을 DISPLAY_MAX_EDGE 로 줄인다. 원본이 더 작으면 원본 크기 그대로다."""
+    return _shrink_to_webp(image_bytes, DISPLAY_MAX_EDGE, DISPLAY_WEBP_QUALITY)
+
+
+def generate_variants(storage_key: str, image_bytes: bytes) -> list[tuple[str, bytes]]:
+    """CPU-bound (Pillow) — run via `run_in_threadpool`.
+
+    READY 이미지 자산이 원본 곁에 늘 가져야 하는 변형 전부를 `(저장 키, WebP 바이트)` 로 만든다. 응답이 변형 키를
+    존재 확인 없이 유도하므로, 자산을 만드는 경로는 이 목록을 전부 올린 뒤에만 READY 로 둔다. 키 순서는
+    `build_variant_keys`(지우는 쪽) 와 같다."""
+    return [
+        (build_thumbnail_key(storage_key), generate_thumbnail(image_bytes)),
+        (build_display_key(storage_key), generate_display_image(image_bytes)),
+    ]
+
+
+def _shrink_to_webp(image_bytes: bytes, max_edge: int, quality: int) -> bytes:
+    """Like `generate_blurred_image`, always normalizes to RGBA first so palette-mode sources and the output
+    encoding have one predictable mode. `Image.thumbnail` only ever shrinks, so small sources keep their size."""
     from PIL import Image
 
     with Image.open(io.BytesIO(image_bytes)) as original:
         original.load()
-        thumbnail = original.convert("RGBA")
-        thumbnail.thumbnail((THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE))
+        shrunk = original.convert("RGBA")
+        shrunk.thumbnail((max_edge, max_edge))
 
     output = io.BytesIO()
-    thumbnail.save(output, format="WEBP", quality=THUMBNAIL_WEBP_QUALITY)
+    shrunk.save(output, format="WEBP", quality=quality)
     return output.getvalue()
 
 

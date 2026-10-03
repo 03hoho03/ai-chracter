@@ -14,7 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     ReferenceImageRejectedError,
-    generate_thumbnail,
+    generate_variants,
     read_image_size,
     validate_reference_image,
 )
@@ -28,7 +28,6 @@ from api.core.rate_limit_gate import (
 )
 from api.core.s3 import (
     build_object_key,
-    build_thumbnail_key,
     download_object,
     generate_presigned_get_url,
     upload_object,
@@ -135,15 +134,14 @@ async def _generate_and_store_one(
         asset_id = uuid.uuid4()
         storage_key = build_object_key("generated", asset_id, mime_type)
         await run_in_threadpool(upload_object, storage_key, data, mime_type)
-        # Invariant: a READY image asset always has a `{key}_thumb.webp` variant.
+        # Invariant: a READY image asset always has every variant (`generate_variants`).
         # The bytes are already in memory, so no download_object round-trip. A
-        # thumbnail failure falls through to the except blocks below (return
+        # variant failure falls through to the except blocks below (return
         # "failed") before the Asset row is created — never READY with only the
         # original.
-        thumbnail_bytes = await run_in_threadpool(generate_thumbnail, data)
-        await run_in_threadpool(
-            upload_object, build_thumbnail_key(storage_key), thumbnail_bytes, THUMBNAIL_CONTENT_TYPE
-        )
+        variants = await run_in_threadpool(generate_variants, storage_key, data)
+        for variant_key, variant_bytes in variants:
+            await run_in_threadpool(upload_object, variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)
         width, height = await run_in_threadpool(read_image_size, data)
 
         async with session_factory() as session:

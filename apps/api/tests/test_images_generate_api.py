@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core import clover, rate_limit_gate
 from api.core.config import settings
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_variant_keys
 from api.db.models.auth import User
 from api.db.models.clover import CloverLedger
 from api.db.models.media import Asset, AssetKind, AssetStatus, ImageGenerationRequest
@@ -326,11 +326,10 @@ async def test_generate_creates_assets_and_completes_job(
         assert asset.style == "soft_portrait"
         s3_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key)
         assert s3_object["Body"].read() == _png_bytes()
-        thumb_object = s3.get_object(
-            Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(asset.storage_key)
-        )
-        with Image.open(io.BytesIO(thumb_object["Body"].read())) as thumb:
-            assert thumb.format == "WEBP"
+        for variant_key in build_variant_keys(asset.storage_key):
+            variant_object = s3.get_object(Bucket=settings.s3_bucket_name, Key=variant_key)
+            with Image.open(io.BytesIO(variant_object["Body"].read())) as variant:
+                assert variant.format == "WEBP"
 
 
 async def test_generated_image_records_dimensions(

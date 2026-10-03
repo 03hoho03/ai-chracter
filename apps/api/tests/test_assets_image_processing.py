@@ -5,10 +5,13 @@ from PIL import Image
 
 from api.assets.image_processing import (
     ReferenceImageRejectedError,
+    generate_display_image,
     generate_thumbnail,
+    generate_variants,
     read_image_size,
     validate_reference_image,
 )
+from api.core.s3 import build_variant_keys
 
 
 def _png_bytes(width: int, height: int) -> bytes:
@@ -78,6 +81,41 @@ def test_generate_thumbnail_preserves_transparency_from_a_non_alpha_source() -> 
     assert isinstance(opaque_pixel, tuple)
     assert transparent_pixel[3] == 0  # tRNS 로 지정한 색 영역은 완전 투명이어야 한다
     assert opaque_pixel[3] == 255  # 나머지는 불투명이어야 한다
+
+
+def test_generate_display_image_landscape_shrinks_long_edge_to_1024() -> None:
+    result = _open(generate_display_image(_png_bytes(2048, 1536)))
+    assert result.format == "WEBP"
+    assert result.size == (1024, 768)
+
+
+def test_generate_display_image_portrait_shrinks_long_edge_to_1024() -> None:
+    result = _open(generate_display_image(_png_bytes(1536, 2048)))
+    assert result.format == "WEBP"
+    assert result.size == (768, 1024)
+
+
+def test_generate_display_image_source_between_both_edges_is_not_upscaled() -> None:
+    """썸네일 한도(512)보다 크고 표시용 한도(1024)보다 작은 원본 — 표시용 변형은 원본 크기 그대로여야 한다.
+    512 와 1024 사이를 고른 것은 한도를 썸네일 값으로 잘못 쓰면 여기서 줄어들어 갈리기 때문이다."""
+    result = _open(generate_display_image(_png_bytes(800, 600)))
+    assert result.format == "WEBP"
+    assert result.size == (800, 600)
+
+
+def test_generate_variants_produces_every_variant_key_with_its_own_size() -> None:
+    """만드는 변형의 키 목록이 지우는 키 목록(`build_variant_keys`)과 같아야 한다 — 어긋나면 만든 사본이
+    자산 삭제·탈퇴 파기에서 빠져 남는다."""
+    storage_key = "assets/generated/abc.png"
+    variants = generate_variants(storage_key, _png_bytes(2048, 1536))
+
+    assert [key for key, _ in variants] == list(build_variant_keys(storage_key))
+    sizes = {key: _open(body).size for key, body in variants}
+    assert sizes == {
+        "assets/generated/abc_thumb.webp": (512, 384),
+        "assets/generated/abc_display.webp": (1024, 768),
+    }
+    assert all(_open(body).format == "WEBP" for _, body in variants)
 
 
 # ---- 참조 이미지 검증 --------------------------------------------------------
