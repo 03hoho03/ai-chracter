@@ -2,7 +2,7 @@ import { Dialog, DialogContent, DialogTitle } from "@ai-character-chat/ui/compon
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import type { ReactNode } from "react";
 
-import { useContentDetailModal } from "@/entities/content";
+import { takeDetailModalReturnFocus, useContentDetailModal } from "@/entities/content";
 
 import { ContentDetailView } from "./ContentDetailView";
 import { useContentEditingViewport } from "../lib/useContentEditingViewport";
@@ -27,6 +27,14 @@ export function ContentDetailModalOutlet({ renderComments }: { renderComments: (
       <DialogContent
         className={cn("flex max-h-[85vh] flex-col sm:max-w-lg", state?.type === "story" && "sm:max-w-2xl")}
         data-content-detail
+        // 트리거가 없어 Radix 기본 처리로는 포커스가 `<body>` 로 떨어진다 — 연 자리로 돌려준다(이유는
+        // `takeDetailModalReturnFocus`). 돌려줄 곳이 없으면 막지 않고 기본 처리에 맡긴다. 스크롤은 그대로 둔다.
+        onCloseAutoFocus={(event) => {
+          const target = takeDetailModalReturnFocus();
+          if (!target) return;
+          event.preventDefault();
+          target.focus({ preventScroll: true });
+        }}
         style={editingViewport ? { top: editingViewport.top + editingViewport.height / 2, maxHeight: Math.max(120, editingViewport.height - 24) } : undefined}
       >
         <DialogTitle className="sr-only">콘텐츠 상세정보</DialogTitle>
