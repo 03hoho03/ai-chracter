@@ -2,7 +2,6 @@ import asyncio
 import base64
 import json
 import logging
-import mimetypes
 import uuid
 from collections.abc import Sequence
 from datetime import UTC, datetime
@@ -18,7 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from starlette.concurrency import run_in_threadpool
 
 from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
-from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE
+from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, read_image_content_type
 from api.chat.prompt_builder import load_active_prompt_set
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
@@ -111,7 +110,7 @@ from api.db.models.story import (
 )
 from api.db.session import get_db_session, get_session_factory
 from api.legal.dependencies import require_legal_consent
-from api.llm.client import LLMCallContext, LLMClient, structured_model
+from api.llm.client import LLMCallContext, LLMClient, LLMPolicyViolationError, structured_model
 from api.llm.dependencies import get_llm_client
 from api.session.dependencies import get_current_user_id, get_current_user_id_optional
 
@@ -1717,28 +1716,53 @@ async def reset_content_draft(
     await db.commit()
 
 
+def _download_original_for_screening(storage_key: str) -> tuple[bytes, str]:
+    """Blocking network call — run via `run_in_threadpool`.
+
+    원본과 그 MIME 타입. MIME 은 저장 키의 확장자가 아니라 바이트에서 읽는다 — 운영은 MIME 표에 `image/webp` 가
+    없어 업로드 키에 확장자가 붙지 않으므로, 키로 짐작하면 그림이 형식 없는 바이트(`application/octet-stream`)로
+    심사에 간다. 헤더만 읽어 디코드 비용은 없다."""
+    data = download_object(storage_key)
+    return data, read_image_content_type(data) or "application/octet-stream"
+
+
+def _download_situational_image_for_screening(storage_key: str) -> tuple[bytes, str]:
+    """Blocking network call — run via `run_in_threadpool`.
+
+    상황 이미지는 축소본(`_thumb.webp`, 긴 변 512px)을 싣는다 — 원본(장당 수 MB)을 여러 장 받는 시간과 메모리를
+    줄인다. 축소본이 **없을** 때만 원본으로 대신한다: READY 그림은 축소본을 갖는 것이 원칙이지만 그 원칙 이전에
+    올라간 그림엔 없을 수 있고, 원본도 같은 그림이라 심사에서 빠지는 그림은 없다. 그 밖의 저장소 오류(권한·장애)는
+    원본 읽기도 같이 실패할 수 있는 상황이라 대신하지 않고 그대로 올려 발행을 멈춘다.
+
+    스토리 미디어 북 칸은 축소본을 못 읽으면 대신하지 않고 발행을 멈춘다 — 두 경로의 정책이 다르다."""
+    try:
+        return download_object(build_thumbnail_key(storage_key)), THUMBNAIL_CONTENT_TYPE
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") not in ("404", "NoSuchKey"):
+            raise
+    logger.warning("상황 이미지 축소본이 없어 원본으로 심사한다: %s", storage_key)
+    return _download_original_for_screening(storage_key)
+
+
 async def _load_publish_filter_images(
     db: AsyncSession, detail: CharacterVersionDetail, situational_images: Sequence[SituationalImage]
 ) -> list[tuple[bytes, str]]:
-    """썸네일(대표이미지) + 이 버전에 등록된 상황별 이미지 원본을 전부 내려받아
-    (바이트, MIME 타입) 쌍으로 반환한다 — LLMClient.generate_structured()의 멀티모달
-    images 인자로 그대로 전달된다. 발행 검증이 이미지 없는 상황별 이미지 행을 먼저 거부하므로
-    아래 `is not None` 은 타입을 좁힐 뿐이다."""
-    asset_ids: list[uuid.UUID] = []
-    if detail.thumbnail_asset_id is not None:
-        asset_ids.append(detail.thumbnail_asset_id)
-
-    asset_ids.extend(
-        image.image_asset_id for image in situational_images if image.image_asset_id is not None
-    )
-
+    """썸네일(대표 이미지) 원본 + 이 버전의 상황 이미지 축소본을 받은 순서대로 내려받아 (바이트, MIME 타입) 쌍으로
+    반환한다 — LLMClient.generate_structured()의 멀티모달 images 인자로 그대로 전달된다. 대표 이미지는 작품
+    얼굴이라 원본 그대로 본다. 발행 검증이 이미지 없는 상황 이미지 행을 먼저 거부하므로 아래 `is not None` 은
+    타입을 좁힐 뿐이다."""
     images: list[tuple[bytes, str]] = []
-    for asset_id in asset_ids:
-        asset = await db.get(Asset, asset_id)
+    if detail.thumbnail_asset_id is not None:
+        thumbnail = await db.get(Asset, detail.thumbnail_asset_id)
+        assert thumbnail is not None
+        images.append(await run_in_threadpool(_download_original_for_screening, thumbnail.storage_key))
+
+    for image in situational_images:
+        if image.image_asset_id is None:
+            continue
+        asset = await db.get(Asset, image.image_asset_id)
         assert asset is not None
-        data = await run_in_threadpool(download_object, asset.storage_key)
-        mime_type, _ = mimetypes.guess_type(asset.storage_key)
-        images.append((data, mime_type or "application/octet-stream"))
+        images.append(await run_in_threadpool(_download_situational_image_for_screening, asset.storage_key))
     return images
 
 
@@ -1769,12 +1793,22 @@ async def _screen_for_publish(
             "publish_filter_skipped call_site=%s key=%s", call_site, memo_key.removeprefix(PASSED_KEY_PREFIX)[:12]
         )
         return
-    filter_result = await llm_client.generate_structured(
-        prompt,
-        PublishFilterResult,
-        images=images,
-        usage=LLMCallContext(call_site=call_site, user_id=content.creator_user_id, room_id=None),
-    )
+    try:
+        filter_result = await llm_client.generate_structured(
+            prompt,
+            PublishFilterResult,
+            images=images,
+            usage=LLMCallContext(call_site=call_site, user_id=content.creator_user_id, room_id=None),
+        )
+    except LLMPolicyViolationError as exc:
+        # Gemini 가 자체 안전 기준으로 응답을 막으면 판정이 없다. 심사가 보는 것은 그림뿐이라 작가에게는 그림 때문에
+        # 거부된 것이므로, 오류(500) 대신 이의제기할 수 있는 거부로 돌려준다. 막힌 범주는 알리지 않는다. 통과가
+        # 아니므로 기억하지 않는다.
+        logger.warning("publish_filter_blocked call_site=%s: %s", call_site, exc)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"reason": "첨부한 이미지 중 안전 기준에 걸리는 그림이 있어 발행할 수 없어요."},
+        ) from exc
     if not filter_result.passed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1844,8 +1878,15 @@ async def _publish_character_content(
     detail = await db.get(CharacterVersionDetail, version.id)
     assert detail is not None
 
+    # 심사가 이 순서로 그림을 싣고 라벨 "상황 이미지 k" 를 붙인다. 순서가 흔들리면 같은 그림의 재발행이 지난
+    # 통과를 못 쓰고, 라벨이 다른 그림을 가리킨다. 동률은 버전을 넘어 같은 `entity_id` 로 가른다 — 물리 `id` 는
+    # 발행 복제 때마다 새로 뽑힌다.
     situational_images = (
-        await db.scalars(select(SituationalImage).where(SituationalImage.content_version_id == version.id))
+        await db.scalars(
+            select(SituationalImage)
+            .where(SituationalImage.content_version_id == version.id)
+            .order_by(SituationalImage.order, SituationalImage.entity_id)
+        )
     ).all()
     missing_fields = validate_character_publish(content, version, detail, situational_images)
     if missing_fields:
@@ -1925,9 +1966,7 @@ async def _load_story_publish_filter_images(
     if detail.thumbnail_asset_id is not None:
         asset = await db.get(Asset, detail.thumbnail_asset_id)
         assert asset is not None
-        data = await run_in_threadpool(download_object, asset.storage_key)
-        mime_type, _ = mimetypes.guess_type(asset.storage_key)
-        images.append((data, mime_type or "application/octet-stream"))
+        images.append(await run_in_threadpool(_download_original_for_screening, asset.storage_key))
     if not cells:
         return images
 

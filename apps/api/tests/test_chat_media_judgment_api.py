@@ -45,7 +45,7 @@ from api.db.models import (
     StoryMediaExposure,
     User,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _add_named_media_cell,
     _clear_llm_override,
@@ -301,8 +301,15 @@ async def test_story_turn_ignores_judged_cell_id_not_in_candidates(
     assert await _exposed_cells(db_session, user.id) == []
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("판정 실패"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
     user, content, setup, stat_def = await _story(db_session)
     assert content.current_published_version_id is not None
@@ -310,7 +317,7 @@ async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
     fake = _JudgingLLMClient(
         stat=StatJudgmentResult(stat_changes=[StatChangeJudgment(stat_id=str(stat_def.entity_id), new_value=60)]),
-        image=LLMClientError("판정 실패"),
+        image=judgment_error,
     )
 
     events = await _send(db_client, room_id, fake)
@@ -323,14 +330,21 @@ async def test_story_turn_keeps_stat_changes_when_media_judgment_fails(
     assert stat_value is not None and float(stat_value) == 60
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("스탯 판정 실패"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_story_turn_keeps_media_image_when_stat_judgment_fails(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
     user, content, setup, _ = await _story(db_session)
     assert content.current_published_version_id is not None
     cell, _ = await _add_named_media_cell(db_session, content.current_published_version_id, user.id, "민아", "창가")
     room_id = await _open_story_room(db_client, db_session, user, content, setup)
-    fake = _JudgingLLMClient(stat=LLMClientError("스탯 판정 실패"), image=_judged(cell.entity_id))
+    fake = _JudgingLLMClient(stat=judgment_error, image=_judged(cell.entity_id))
 
     events = await _send(db_client, room_id, fake)
 

@@ -23,7 +23,7 @@ from api.db.models import (
     StatDef,
     StoryEndingUnlock,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _clear_llm_override,
     _get_genre,
@@ -581,8 +581,15 @@ async def test_send_message_ending_judgment_uses_stat_values_updated_this_turn(
     assert room.ending_entity_id == ending.entity_id
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("429 RESOURCE_EXHAUSTED"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
     """판정 LLM 실패(429 등)가 SSE 제너레이터 밖으로 새면 ASGI 태스크가 취소되며 요청 스코프 DB
     세션이 강제 종료되고, 망가진 커넥션이 풀로 돌아가 무관한 다음 요청이 500이 된다 — 그래서
@@ -600,7 +607,7 @@ async def test_send_message_stat_judgment_llm_failure_still_completes_the_turn(
     await _login_as(db_client, user.id)
     room_id = uuid.UUID((await _create_story_room_via_api(db_client, content.id, setup.id)).json()["id"])
 
-    fake = _FakeLLMClient(tokens=["안", "녕"], structured_results=[LLMClientError("429 RESOURCE_EXHAUSTED")])
+    fake = _FakeLLMClient(tokens=["안", "녕"], structured_results=[judgment_error])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/messages", json={"content": "메시지"})

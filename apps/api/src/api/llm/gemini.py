@@ -176,6 +176,15 @@ class GeminiLLMClient(LLMClient):
         _log_usage(usage, model, usage_metadata)
         await record_usage(usage.call_site, model, usage_metadata)
         if not isinstance(response.parsed, response_schema):
+            # 안전 차단 응답은 본문이 없어 파싱 실패로 보인다. 차단 표시는 파싱에 실패했을 때만 본다 — 파싱해 낸
+            # 결과는 지금처럼 돌려주고, 바뀌는 것은 원래도 실패하던 응답의 예외 종류뿐이다. 판정 호출부는 둘 다
+            # `LLMClientError` 로 흡수하고, 발행 심사만 차단을 작가에게 거부로 돌려준다.
+            prompt_feedback = getattr(response, "prompt_feedback", None)
+            if prompt_feedback is not None and prompt_feedback.block_reason is not None:
+                raise LLMPolicyViolationError("Gemini blocked the structured prompt via safetySettings")
+            for candidate in getattr(response, "candidates", None) or []:
+                if candidate.finish_reason in _POLICY_FINISH_REASONS:
+                    raise LLMPolicyViolationError("Gemini blocked the structured output via safetySettings")
             raise LLMClientError(
                 f"Gemini structured response could not be parsed into {response_schema.__name__}"
             )

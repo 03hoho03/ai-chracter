@@ -339,8 +339,15 @@ async def test_send_preview_message_story_stat_change(db_client: httpx.AsyncClie
     assert state.stats == {stat_id: 80.0}
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("429 RESOURCE_EXHAUSTED"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_send_preview_message_judgment_llm_failure_still_completes_the_turn(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
+    db_client: httpx.AsyncClient, db_session: AsyncSession, judgment_error: LLMClientError
 ) -> None:
     """실제 채팅과 동일하게, 판정 LLM 실패는 SSE 제너레이터 밖으로 새지 않고 흡수된다 —
     이미 스트리밍된 응답은 세션에 정상 반영되고 그 턴의 판정만 포기한다."""
@@ -354,7 +361,7 @@ async def test_send_preview_message_judgment_llm_failure_still_completes_the_tur
         db_client, _story_payload(startingSetups=[_starting_setup_item(statDefs=[stat])])
     )
 
-    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[LLMClientError("429 RESOURCE_EXHAUSTED")])
+    fake = _FakeLLMClient(tokens=["이야기"], structured_results=[judgment_error])
     _override_llm_client(fake)
     try:
         resp = await db_client.post(f"/preview-sessions/{session_id}/messages", json={"content": "달려간다"})

@@ -661,8 +661,15 @@ async def test_regenerate_reruns_image_matching_and_stores_new_image_id(
     assert {e.image_entity_id for e in exposures} == {image_a.entity_id, image_b.entity_id}
 
 
+@pytest.mark.parametrize(
+    "judgment_error",
+    [
+        pytest.param(LLMClientError("judgment down"), id="llm-error"),
+        pytest.param(LLMPolicyViolationError("Gemini 가 안전 기준으로 판정 응답을 막았다"), id="safety-block"),
+    ],
+)
 async def test_regenerate_image_matching_failure_replaces_message_without_image(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch, judgment_error: LLMClientError
 ) -> None:
     """이미지 매칭 실패는 판정 실패와 같은 흡수 경로를
     탄다: 스트림은 정상 종료되고 새 응답 텍스트는 그대로 교체되지만 image_id는 None으로
@@ -702,7 +709,7 @@ async def test_regenerate_image_matching_failure_replaces_message_without_image(
     assert resp.status_code == 200
 
     _override_llm_client(
-        _StructuredFakeLLMClient(tokens=["새응답"], structured_error=LLMClientError("judgment down"))
+        _StructuredFakeLLMClient(tokens=["새응답"], structured_error=judgment_error)
     )
     try:
         resp = await db_client.post(f"/chat-rooms/{room_id}/regenerate")

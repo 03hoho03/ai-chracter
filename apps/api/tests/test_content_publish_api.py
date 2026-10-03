@@ -15,6 +15,7 @@ import boto3
 import httpx
 import pytest
 import sqlalchemy as sa
+from botocore.exceptions import ClientError
 from PIL import Image
 from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -53,7 +54,7 @@ from api.db.models.story import (
     StoryPromptTemplate,
     StoryVersionDetail,
 )
-from api.llm.client import LLMCallContext, LLMClient, LLMClientError
+from api.llm.client import LLMCallContext, LLMClient, LLMClientError, LLMPolicyViolationError
 from factories import (
     _add_media_book_cell,
     _add_named_media_cell,
@@ -513,26 +514,44 @@ async def test_publish_rejects_when_filter_fails_and_leaves_draft_unchanged(
     assert len(remaining_versions) == 1
 
 
-async def test_publish_passes_thumbnail_and_situational_images_to_filter(
+async def test_publish_passes_thumbnail_original_and_situational_thumbnails_in_order(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
+    """대표 이미지는 원본, 상황 이미지는 축소본(`_thumb.webp`)을 싣는다. 상황 이미지는 `order` 순, 같으면
+    `entity_id` 순이다 — 행을 그 반대로 넣어도 순서가 같아야 같은 그림의 재발행이 지난 통과를 쓰고, 라벨
+    "상황 이미지 k" 가 k 번째 그림을 가리킨다. 축소본 색을 그림마다 달리 해 어느 그림이 어느 자리에 실렸는지 가린다."""
     user = _make_user()
     db_session.add(user)
     await db_session.flush()
     genre = await _get_genre(db_session)
-    content, version, _thumbnail, _image = await _make_publishable_character_draft(
+    content, version, thumbnail, last = await _make_publishable_character_draft(
         db_session, creator_user_id=user.id, genre_id=genre.id
     )
-    second_asset = await _make_ready_asset(db_session, owner_user_id=user.id)
-    db_session.add(
-        SituationalImage(
-            entity_id=uuid.uuid4(),
-            content_version_id=version.id,
-            image_asset_id=second_asset.id,
-            trigger_condition="비가 내릴 때",
-            order=1,
+    last.order = 3
+    await db_session.flush()
+    last_asset = await db_session.get(Asset, last.image_asset_id)
+    assert last_asset is not None
+    expected_thumbnails = {last.entity_id: _upload_test_thumbnail(last_asset.storage_key, color=(200, 0, 0))}
+    # 넣는 순서는 기대 순서의 역순이다. 동률(order=1) 두 행도 entity_id 가 큰 쪽을 먼저 넣는다.
+    rows = [
+        (2, uuid.uuid4(), (0, 200, 0)),
+        (1, uuid.UUID("ffffffff-ffff-4fff-bfff-ffffffffffff"), (0, 0, 200)),
+        (1, uuid.UUID("00000000-0000-4000-8000-000000000000"), (200, 200, 0)),
+        (0, uuid.uuid4(), (0, 200, 200)),
+    ]
+    for order, entity_id, color in rows:
+        asset = await _make_ready_asset(db_session, owner_user_id=user.id)
+        expected_thumbnails[entity_id] = _upload_test_thumbnail(asset.storage_key, color=color)
+        db_session.add(
+            SituationalImage(
+                entity_id=entity_id,
+                content_version_id=version.id,
+                image_asset_id=asset.id,
+                trigger_condition="비가 내릴 때",
+                order=order,
+            )
         )
-    )
+        await db_session.flush()
     await db_session.commit()
     await _login_as(db_client, user.id)
 
@@ -544,12 +563,125 @@ async def test_publish_passes_thumbnail_and_situational_images_to_filter(
         _clear_llm_override()
 
     assert resp.status_code == 200
-    assert fake.received_images is not None
-    assert len(fake.received_images) == 3
-    for _data, mime_type in fake.received_images:
-        assert mime_type == "image/png"
+    expected_order = [rows[3][1], rows[2][1], rows[1][1], rows[0][1], last.entity_id]
+    assert fake.received_images == [
+        (_object_bytes(thumbnail.storage_key), "image/png"),
+        *((expected_thumbnails[entity_id], "image/webp") for entity_id in expected_order),
+    ]
     assert fake.received_prompt is not None
-    assert _image_label_lines(fake.received_prompt) == ["1. 대표 이미지", "2. 상황 이미지 1", "3. 상황 이미지 2"]
+    assert _image_label_lines(fake.received_prompt) == [
+        "1. 대표 이미지",
+        *(f"{n + 2}. 상황 이미지 {n + 1}" for n in range(len(expected_order))),
+    ]
+
+
+async def test_publish_screens_situational_original_when_its_thumbnail_is_missing(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """READY 그림은 축소본을 갖는 것이 원칙이지만 옛 데이터엔 없을 수 있다. 없으면 원본으로 심사해 발행을 막지
+    않는다 — 원본도 같은 그림이라 심사가 빠지는 그림은 없다."""
+    content, _, _, image = await _publishable_character(db_session, db_client)
+    asset = await db_session.get(Asset, image.image_asset_id)
+    assert asset is not None
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.delete_object(Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(asset.storage_key))
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images is not None
+    assert fake.received_images[1] == (_object_bytes(asset.storage_key), "image/png")
+
+
+async def test_publish_does_not_fall_back_when_situational_thumbnail_read_fails_otherwise(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """원본으로 대신하는 것은 축소본이 **없을** 때뿐이다. 권한·저장소 장애 같은 다른 오류는 원본 읽기도 같이
+    실패할 수 있는 상황이라 그대로 올려 발행을 멈춘다 — 심사는 불리지 않는다."""
+    content, version, _, _ = await _publishable_character(db_session, db_client)
+
+    def failing_download(key: str) -> bytes:
+        if key.endswith("_thumb.webp"):
+            raise ClientError({"Error": {"Code": "InternalError", "Message": "boom"}}, "GetObject")
+        return _object_bytes(key)
+
+    monkeypatch.setattr("api.content.router.download_object", failing_download)
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        with pytest.raises(ClientError):
+            await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert fake.received_prompt is None
+    await db_session.refresh(version)
+    assert version.published_at is None
+
+
+async def _use_extensionless_key(db_session: AsyncSession, asset_id: uuid.UUID | None) -> bytes:
+    """그림을 운영과 같은 확장자 없는 키(`assets/<용도>/<id>`)로 옮기고 원본 바이트를 돌려준다. 운영은 MIME 표에
+    `image/webp` 가 없어 업로드 키에 확장자가 안 붙는다 — 키로 형식을 짐작하면 그림이 형식 없는 바이트로 간다."""
+    asset = await db_session.get(Asset, asset_id)
+    assert asset is not None
+    data = _object_bytes(asset.storage_key)
+    asset.storage_key = f"assets/situational-image/{uuid.uuid4()}"
+    s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
+    s3.put_object(Bucket=settings.s3_bucket_name, Key=asset.storage_key, Body=data)
+    await db_session.commit()
+    return data
+
+
+async def test_publish_character_sends_original_type_read_from_bytes_not_key(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """원본을 싣는 두 자리(대표 이미지, 축소본이 없는 상황 이미지)는 키 확장자가 아니라 바이트의 형식을 MIME
+    으로 보낸다."""
+    content, _, thumbnail, image = await _publishable_character(db_session, db_client)
+    thumbnail_bytes = await _use_extensionless_key(db_session, thumbnail.id)
+    situational_bytes = await _use_extensionless_key(db_session, image.image_asset_id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images == [(thumbnail_bytes, "image/png"), (situational_bytes, "image/png")]
+
+
+async def test_publish_character_rejects_with_fixed_reason_when_gemini_blocks_an_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """Gemini 가 자체 안전 기준으로 응답을 막으면 판정이 없다. 그래도 작가 입장에선 그림 때문에 발행이 거부된
+    것이라 오류(500) 대신 이의제기할 수 있는 거부(400 `reason`)로 돌려준다. 막힌 범주는 알리지 않는다. 통과가
+    아니므로 기억하지 않아 다음 발행은 다시 심사한다."""
+    content, version, _, _ = await _publishable_character(db_session, db_client)
+    blocking = _BlockedFilterLLMClient(PublishFilterResult(passed=True, reason=None))
+    passing = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+
+    try:
+        _override_llm_client(blocking)
+        blocked = await db_client.post(f"/contents/{content.id}/publish")
+        await db_session.refresh(version)
+        published_after_block = version.published_at
+        _override_llm_client(passing)
+        retried = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert blocked.status_code == 400
+    assert blocked.json()["detail"] == {"reason": "첨부한 이미지 중 안전 기준에 걸리는 그림이 있어 발행할 수 없어요."}
+    assert published_after_block is None
+    assert retried.status_code == 200
+    assert passing.calls == 1
 
 
 async def test_publish_character_filter_prompt_carries_no_creator_text(
@@ -1849,6 +1981,54 @@ async def test_publish_story_does_not_publish_when_filter_call_fails(
     assert _bucket_keys() == keys_before
 
 
+class _BlockedFilterLLMClient(_FakeLLMClient):
+    async def generate_structured(
+        self, prompt: str, response_schema: Any, images: Any = None, *, usage: LLMCallContext
+    ) -> Any:
+        self.received_images = images
+        raise LLMPolicyViolationError("Gemini 가 안전 기준으로 응답을 막았다")
+
+
+async def test_publish_story_rejects_with_fixed_reason_when_gemini_blocks_an_image(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """스토리도 같은 거부로 돌려주고, 거부된 발행이므로 칸 블러를 만들지 않는다."""
+    content, version, _, _ = await _story_with_media_cells(db_session, db_client)
+    keys_before = _bucket_keys()
+
+    _override_llm_client(_BlockedFilterLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"reason": "첨부한 이미지 중 안전 기준에 걸리는 그림이 있어 발행할 수 없어요."}
+    await db_session.refresh(version)
+    assert version.published_at is None
+    assert _bucket_keys() == keys_before
+
+
+async def test_publish_story_sends_thumbnail_type_read_from_bytes_not_key(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """스토리 대표 이미지(원본)도 키가 아니라 바이트로 형식을 정한다. 칸 축소본은 늘 WebP 다."""
+    content, _, thumbnail, cells = await _story_with_media_cells(db_session, db_client)
+    thumbnail_bytes = await _use_extensionless_key(db_session, thumbnail.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+
+    assert resp.status_code == 200
+    assert fake.received_images is not None
+    assert fake.received_images[0] == (thumbnail_bytes, "image/png")
+    assert [mime_type for _, mime_type in fake.received_images[1:]] == ["image/webp"] * len(cells)
+
+
 async def test_publish_story_rejects_more_than_fifty_media_cells(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
@@ -2203,18 +2383,23 @@ async def test_republish_character_with_only_text_changed_skips_filter(
     assert fake.calls == 1
 
 
+@pytest.mark.parametrize("slot", ["thumbnail-original", "situational-thumbnail"])
 async def test_republish_character_with_replaced_image_bytes_rescreens(
-    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, slot: str
 ) -> None:
-    """저장 위치는 그대로 두고 그 자리의 그림만 바뀌어도(시드 이미지 교체 등) 다시 심사한다."""
-    content, _, _, image = await _publishable_character(db_session, db_client)
-    asset = await db_session.get(Asset, image.image_asset_id)
-    assert asset is not None
-    storage_key = asset.storage_key
+    """저장 위치는 그대로 두고 심사가 보는 그 자리의 그림만 바뀌어도(시드 이미지 교체 등) 다시 심사한다. 심사가
+    보는 것은 대표 이미지의 원본과 상황 이미지의 축소본이라 각각 그 객체를 바꾼다."""
+    content, _, thumbnail, image = await _publishable_character(db_session, db_client)
+    situational_asset = await db_session.get(Asset, image.image_asset_id)
+    assert situational_asset is not None
+    thumbnail_key, situational_key = thumbnail.storage_key, situational_asset.storage_key
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
 
     async def replace_bytes() -> None:
-        _upload_test_image(storage_key, size=(24, 24))
+        if slot == "thumbnail-original":
+            _upload_test_image(thumbnail_key, size=(24, 24))
+        else:
+            _upload_test_thumbnail(situational_key, color=(1, 2, 3))
 
     resp = await _publish_twice(db_client, content, fake, replace_bytes)
 
@@ -2222,14 +2407,16 @@ async def test_republish_character_with_replaced_image_bytes_rescreens(
     assert fake.calls == 2
 
 
-async def test_republish_character_with_swapped_image_order_rescreens(
+async def test_republish_character_with_swapped_image_roles_rescreens(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
-    """같은 그림 두 장이라도 대표 이미지와 상황 이미지를 맞바꾸면 심사가 보는 순서가 달라지므로 다시 심사한다."""
+    """대표 이미지와 상황 이미지의 그림을 맞바꾸면 대표 자리는 다른 그림의 원본을, 상황 자리는 다른 그림의
+    축소본을 보게 되므로 다시 심사한다. 두 그림의 원본·축소본을 모두 서로 다르게 둬 두 자리 모두에서 차이가 난다."""
     content, _, thumbnail, image = await _publishable_character(db_session, db_client)
     situational_asset = await db_session.get(Asset, image.image_asset_id)
     assert situational_asset is not None
     _upload_test_image(situational_asset.storage_key, size=(24, 24))
+    _upload_test_thumbnail(situational_asset.storage_key, color=(1, 2, 3))
     fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
 
     async def swap() -> None:
