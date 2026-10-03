@@ -16,6 +16,8 @@ export { useContentVersionsQuery } from "./api/useContentVersionsQuery";
 export type { ContentVersionSummary } from "./api/useContentVersionsQuery";
 export { useContentListQuery } from "./api/useContentListQuery";
 export type { ContentListItem, ContentListResponse } from "./api/useContentListQuery";
+export { useHomeCurationQuery } from "./api/useHomeCurationQuery";
+export type { HomeCurationItem } from "./api/useHomeCurationQuery";
 export { useFavoriteListQuery } from "./api/useFavoriteListQuery";
 export { useGenreListQuery } from "./api/useGenreListQuery";
 export type { GenreResponse } from "./api/useGenreListQuery";

@@ -26,6 +26,9 @@ export const contentKeys = {
   /** 상세 조회가 조회수를 올린 뒤 유형/정렬/필터와 무관하게 홈 목록을 무효화하기 위한 공통 접두사. */
   browseAll: () => [...contentKeys.all, "browse"] as const,
   genres: () => [...contentKeys.all, "genres"] as const,
+  /** `browse` 아래에 두지 않는다 — 상세 열람 뒤 `browseAll()` 무효화가 조회수를 다시 받으려는 것인데 이 응답엔
+   * 조회수가 없어 같이 다시 받을 이유가 없다. */
+  homeCuration: (type: ContentType) => [...contentKeys.all, "home-curation", type] as const,
 };
 
 /** 상세화면 즐겨찾기 토글 성공 시 이 키를 invalidate해 목록을 최신화한다.
