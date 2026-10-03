@@ -1,4 +1,4 @@
-import { createContext, useContext } from "react";
+import { createContext, useContext, type RefObject } from "react";
 
 import type { UnavailableReason } from "../ui/GenerateImagesUnavailableState";
 import type { GenerateImagesFormValues } from "./schema";
@@ -32,6 +32,17 @@ export type GenerateImagesSubmitContextValue = {
   /** 본인 생성 이미지 피커를 연다. 피커는 다른 feature 슬라이스라 이 슬라이스가 직접 import하지 않고
    * 셸(위젯)이 주입한다. 닫으면 `undefined`. */
   onPickReference: () => Promise<PickedReferenceImage | undefined>;
+  /** 지금 고른 참조의 미리보기. 참조 필드 바깥(상세 모달의 "참조로 쓰기")에서도 참조를 넣으므로
+   * 필드가 아니라 프로바이더가 쥔다 — 필드 안에 두면 폼 값만 바뀌어 미리보기 없는 빈 아이콘이 된다.
+   * 폼 값과 `assetId`가 같을 때만 보인다. */
+  referencePreview: PickedReferenceImage | undefined;
+  /** 참조를 넣는 유일한 경로(피커와 상세 모달이 함께 쓴다). 미리보기를 바꾸고, 폼 값을 넣고,
+   * 서버가 건 참조 오류를 지운다. 참조가 꺼진 상태에서 부르지 않는 것은 호출부 몫이다(버튼을 숨긴다). */
+  setReference: (picked: PickedReferenceImage) => void;
+  /** 참조 필드의 고르기 버튼. 필드가 붙이고, 아래 포커스 함수가 읽는다. */
+  referencePickButtonRef: RefObject<HTMLButtonElement | null>;
+  /** 참조를 넣은 뒤 포커스를 참조 필드로 옮긴다. 참조가 꺼져 필드가 없으면 아무것도 하지 않는다. */
+  focusReferenceField: () => void;
 };
 
 // `<form>` 엘리먼트는 GenerateImagesPromptField(중앙 열)가 감싸지만

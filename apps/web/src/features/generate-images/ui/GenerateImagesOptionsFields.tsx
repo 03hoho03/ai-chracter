@@ -11,6 +11,7 @@ import {
   isImageAspectRatio,
   type GenerateImagesFormValues,
 } from "../model/schema";
+import { parseAspectRatio } from "../model/resultTileLayout";
 
 // 비율·개수는 Select가 아니라 ToggleGroup(칩)이다. 모델 Select는
 // 2026-09-14 브라우저 피드백으로 제거했다 — 값이 v1 하나뿐이라 고를 게 없다. model 값 자체는
@@ -46,7 +47,7 @@ export function GenerateImagesOptionsFields() {
               }}
               aria-label="비율"
               // w-full — 프리미티브 기본값 w-fit이 그리드를 콘텐츠 폭(176px)으로 수축시켜 칩이
-              // 53px로 쪼그라든다(브라우저 실측). 우열 가용폭 287px를 다 쓰게 덮는다.
+              // 53px로 쪼그라든다(브라우저 실측). 놓인 자리(우열·옵션 시트)의 폭을 다 쓰게 덮는다.
               // items-stretch — 기본값 items-center면 도형 높이가 비율마다 달라 같은 행 칩 높이가
               // 들쭉날쭉해진다(실측 59/55/59). stretch로 같은 행 칩 높이를 맞춘다.
               className="grid grid-cols-3 w-full items-stretch"
@@ -60,7 +61,8 @@ export function GenerateImagesOptionsFields() {
                     disabled={!supportedRatios.has(ratio)}
                     aria-label={IMAGE_ASPECT_RATIO_LABEL[ratio]}
                     // DESIGN.md Toggles 절의 `variant="list"` 레시피 — 화면당 primary 솔리드 채움은 CTA 하나뿐이어야
-                    // 하는데 이 칩과 아래 개수 칩까지 솔리드면 셋이 된다. 틴트로 내려 예산을 CTA에 남긴다.
+                    // 하는데, 이 칩과 아래 개수 칩까지 솔리드면 CTA와 같은 열 스타일 타일의 선택 체크 원에 둘이
+                    // 더 붙어 넷이 된다. 틴트로 내려 예산을 CTA에 남긴다.
                     // h-auto + py-2 — 도형+라벨 2단은 size="sm"의 h-8에 안 들어간다. px-3/text-xs 등
                     // sm의 나머지 값은 그대로 상속한다.
                     // rounded-lg — 프리미티브 기본 pill을 덮는다. ~90×59 도형 타일에 pill을 주면 원으로
@@ -136,12 +138,12 @@ export function GenerateImagesOptionsFields() {
 // 비율 칩의 도형 치수 — 비율 문자열("16:9")을 그때그때 나눠 계산한다. IMAGE_ASPECT_RATIOS별로
 // 임의값 클래스(w-[18px]/h-[14px] 등)를 6종 만드는 것보다 순수 함수 하나가 더 단순하고, 배열이
 // 늘어도 여기 손댈 곳이 없다 — 그래서 style={{width, height}} 인라인이 맞는 자리다.
-function getAspectRatioShapeSize(ratio: string): { width: number; height: number } {
+// 문자열을 나누는 일은 결과 타일과 같은 `parseAspectRatio`가 한다(파서가 둘이면 한쪽만 고쳐진다).
+function getAspectRatioShapeSize(
+  ratio: GenerateImagesFormValues["aspectRatio"],
+): { width: number; height: number } {
   const LONG_SIDE_PX = 18;
-  // noUncheckedIndexedAccess — split 결과의 각 자리는 string | undefined다.
-  const [widthPart, heightPart] = ratio.split(":");
-  const w = Number(widthPart ?? "");
-  const h = Number(heightPart ?? "");
+  const { width: w, height: h } = parseAspectRatio(ratio);
   if (w >= h) {
     return { width: LONG_SIDE_PX, height: Math.round((LONG_SIDE_PX * h) / w) };
   }

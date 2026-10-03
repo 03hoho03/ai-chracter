@@ -9,7 +9,7 @@ import {
 } from "@ai-character-chat/ui/components/dialog";
 import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
-import { BookOpen, ChevronRight, Trash2, UserRound } from "lucide-react";
+import { BookOpen, ChevronRight, ImagePlus, Trash2, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import {
@@ -32,16 +32,31 @@ const FIELD_LABEL: Record<GeneratedImageItem["usages"][number]["field"], string>
   mediaBook: "미디어 북",
 };
 
+type GeneratedImageDetailModalProps = {
+  image: GeneratedImageItem;
+  onClose: () => void;
+  /** 모달이 완전히 닫힌 뒤 포커스를 둘 곳으로 옮긴다. 이 모달은 트리거 없이 열리므로 넘기지 않으면
+   * 닫힐 때 포커스가 `<body>`로 떨어진다 — 그래서 닫힌 이유(일반 닫기·참조로 쓰기·삭제)마다 갈 곳을
+   * 아는 호출부가 정한다. */
+  onRestoreFocus?: () => void;
+  /** 넘길 때만 "참조로 쓰기" 버튼이 보인다. 참조를 받지 않는 모델이거나 폼을 쓸 수 없는 화면이면
+   * 호출부가 넘기지 않는다. 부른 뒤 모달이 닫힌다. */
+  onUseAsReference?: () => void;
+  /** 삭제가 성공했을 때 모달이 닫히기 전에 부른다. 호출부는 이때 닫힌 뒤 포커스를 둘 곳을 정하고
+   * 다른 자리(결과 영역 등)에서도 그 이미지를 뺀다. */
+  onDeleted?: (assetId: string) => void;
+};
+
 /** 그리드 셀을 눌러 여는 생성 이미지 상세 모달. 이 이미지를 쓰는
  * 작품(usages) 목록을 보여주고 각 항목에서 해당 작품 상세로 이동하며, 미사용 이미지는 여기서
- * 삭제한다(사용 중이면 비활성 + 사유 안내). */
+ * 삭제한다(사용 중이면 비활성 + 사유 안내). 결과 영역과 보관함이 함께 쓴다. */
 export function GeneratedImageDetailModal({
   image,
   onClose,
-}: {
-  image: GeneratedImageItem;
-  onClose: () => void;
-}) {
+  onRestoreFocus,
+  onUseAsReference,
+  onDeleted,
+}: GeneratedImageDetailModalProps) {
   const queryClient = useQueryClient();
   const deleteMutation = useDeleteGeneratedImageMutation(image.assetId);
   const isInUse = image.usages.length > 0;
@@ -54,7 +69,14 @@ export function GeneratedImageDetailModal({
       mutationFn: async (call) => {
         try {
           await deleteMutation.mutateAsync();
+          onDeleted?.(image.assetId);
           toast.success("이미지를 삭제했어요.");
+          // 재조회를 기다리지 않고 캐시 목록에서 바로 뺀다 — 모달이 닫힌 직후 포커스를 옮길 때 지운
+          // 타일이 아직 그려져 있거나, 마지막 한 장을 지웠는데 빈 상태가 아직 안 그려져 있으면 갈 곳이
+          // 어긋난다. 캐시가 없으면(목록을 보는 화면이 없으면) 아무 일도 하지 않는다.
+          queryClient.setQueryData<GeneratedImageItem[]>(generatedImagesKeys.list(), (images) =>
+            images?.filter((item) => item.assetId !== image.assetId),
+          );
           void queryClient.invalidateQueries({ queryKey: generatedImagesKeys.list() });
           call.end();
           onClose();
@@ -77,7 +99,17 @@ export function GeneratedImageDetailModal({
     <Dialog open onOpenChange={(next) => !next && onClose()}>
       {/* 원본 비율 이미지 때문에 높이가 낮은 뷰포트에서는 모달이 화면을 넘는다 — 삭제 푸터까지
           닿도록 모달 내부 스크롤을 허용한다(바깥 페이지는 Radix가 스크롤을 잠근다). */}
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-md">
+      <DialogContent
+        className="max-h-dialog overflow-y-auto sm:max-w-md"
+        onCloseAutoFocus={
+          onRestoreFocus &&
+          ((event) => {
+            // 닫히는 중인 모달이 포커스를 도로 가두지 않게 닫힘이 끝난 다음 프레임에 옮긴다.
+            event.preventDefault();
+            requestAnimationFrame(onRestoreFocus);
+          })
+        }
+      >
         <DialogHeader>
           <DialogTitle>생성 이미지</DialogTitle>
           <DialogDescription>
@@ -133,6 +165,22 @@ export function GeneratedImageDetailModal({
 
         {/* flex-col — 기본 col-reverse를 뒤집어 모바일에서 비활성 사유가 버튼 위에 오게 한다. */}
         <DialogFooter className="flex-col sm:items-center">
+          {/* 참조로 쓰기를 사용 중 안내보다 앞에 둔다 — 그 안내는 삭제 버튼의 비활성 사유라 삭제 버튼과
+              붙어 있어야 한다. 솔리드 채움이 아닌 이유: 이 화면의 `primary` 솔리드는 이미 생성 버튼과 스타일
+              선택 체크 원 둘이고 더 늘리지 않는다(DESIGN.md Colors 절의 밝기 예산 규칙). */}
+          {onUseAsReference && (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                onUseAsReference();
+                onClose();
+              }}
+            >
+              <ImagePlus aria-hidden />
+              참조로 쓰기
+            </Button>
+          )}
           {isInUse && (
             <p className="text-xs text-muted-foreground sm:mr-auto">
               위 작품에서 사용 중이라 삭제할 수 없어요.
