@@ -14,6 +14,7 @@ import {
   useBuilderUiState,
 } from "@/features/build-common";
 import type { StoryBuilderFormValues, StoryCollapsibleList } from "@/features/build-story";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
@@ -117,7 +118,7 @@ function ShortcutRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-name`}>이름 *</Label>
+        <Label htmlFor={`shortcut-${id}-name`}><RequiredText>이름</RequiredText></Label>
         <Input
           id={`shortcut-${id}-name`}
           placeholder="단축어 이름을 입력해주세요"
@@ -133,7 +134,7 @@ function ShortcutRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-description`}>설명 *</Label>
+        <Label htmlFor={`shortcut-${id}-description`}><RequiredText>설명</RequiredText></Label>
         <Textarea
           id={`shortcut-${id}-description`}
           placeholder="이 단축어가 어떤 동작을 하는지 설명해주세요"
@@ -151,7 +152,7 @@ function ShortcutRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`shortcut-${id}-prompt`}>실행될 프롬프트 *</Label>
+        <Label htmlFor={`shortcut-${id}-prompt`}><RequiredText>실행될 프롬프트</RequiredText></Label>
         <Textarea
           id={`shortcut-${id}-prompt`}
           placeholder="단축어 실행 시 AI에게 전달할 프롬프트를 입력해주세요"

@@ -327,6 +327,7 @@ components:
 - **Style:** radius `lg`(8px, §반경 정책 — `Input`은 36px 티어), `border-input` 테두리, 투명 배경. **이 테두리는 장식이 아니라 컨트롤 식별자다** — 채움이 배경과 같아 이 한 줄이 없으면 필드가 존재하지 않는다. 값은 Colors 절 Neutral의 `input`(구분선 `border`와 다른 값)이고 3:1을 진다.
 - **Focus:** `ring-3 ring-ring/50` + `border-ring` — 버튼과 동일한 포커스 언어.
 - **Error:** `aria-invalid`에 `border-destructive` + `ring-destructive/20`. 에러 텍스트는 Label 크기 + `text-destructive-text`(글자는 텍스트 전용 토큰, 보더·링은 `--destructive`).
+- **Required:** 필수 라벨은 글자 뒤 띄어쓰기 한 칸 + 별표이고, 별표만 `text-destructive-text`다(`apps/web/src/shared/ui/RequiredText.tsx`). 빨강이 오류 전용이라는 원칙의 예외로 사용자가 고른 관례다 — 별표 한 글자에만 걸리고 라벨 글자나 다른 강조로 번지지 않는다. 별표는 숨기지 않아 접근 이름에 "*"가 남는다.
 
 ### Builder repeated items (빌더 반복 항목 접기)
 빌더의 반복 항목은 전부 같은 접기 카드(`features/build-common/ui/CollapsibleItemCard.tsx`)에 담긴다 — 스토리의 시작설정·스탯·엔딩(+ 엔딩 안 규칙 그룹)·키워드북 노트·단축어·전개 예시, 캐릭터의 예시 대화·상황별 이미지. 긴 항목 몇 개가 화면을 다 먹어 목록 전체를 훑을 수 없던 것을 푸는 패턴이다.

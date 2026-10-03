@@ -23,6 +23,7 @@ import {
   type Target,
   type Visibility,
 } from "@/features/build-story";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
@@ -79,7 +80,7 @@ export function RegistrationTab() {
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor="story-registration-description">등록 설명 *</Label>
+          <Label htmlFor="story-registration-description"><RequiredText>등록 설명</RequiredText></Label>
           <MediaTagInsertButton name="registration.description" fieldLabel="등록 설명" textareaRef={descriptionRef} />
         </div>
         <Textarea
@@ -103,7 +104,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-registration-genre">장르 *</Label>
+        <Label htmlFor="story-registration-genre"><RequiredText>장르</RequiredText></Label>
         <Controller
           control={control}
           name="registration.genre"
@@ -136,7 +137,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">타겟 *</span>
+        <span className="text-sm leading-none font-medium"><RequiredText>타겟</RequiredText></span>
         <Controller
           control={control}
           name="registration.target"
@@ -214,7 +215,7 @@ export function RegistrationTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">공개범위 *</span>
+        <span className="text-sm leading-none font-medium"><RequiredText>공개범위</RequiredText></span>
         <Controller
           control={control}
           name="registration.visibility"

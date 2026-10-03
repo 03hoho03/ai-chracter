@@ -23,6 +23,7 @@ import {
   type Target,
   type Visibility,
 } from "@/features/build-character";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 // 값 목록(TARGET_VALUES/VISIBILITY_VALUES)은 스키마가 단일 소스다. 여기서는 그 배열을 map해
 // 라벨만 매핑한다.
@@ -71,7 +72,7 @@ export function DetailTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-detail-description">등록 설명 *</Label>
+        <Label htmlFor="character-detail-description"><RequiredText>등록 설명</RequiredText></Label>
         <Textarea
           id="character-detail-description"
           placeholder="캐릭터를 목록에서 소개할 설명을 입력해주세요"
@@ -88,7 +89,7 @@ export function DetailTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-detail-genre">장르 *</Label>
+        <Label htmlFor="character-detail-genre"><RequiredText>장르</RequiredText></Label>
         <Controller
           control={control}
           name="registration.genre"
@@ -121,7 +122,7 @@ export function DetailTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">타겟 *</span>
+        <span className="text-sm leading-none font-medium"><RequiredText>타겟</RequiredText></span>
         <Controller
           control={control}
           name="registration.target"
@@ -199,7 +200,7 @@ export function DetailTab() {
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">공개범위 *</span>
+        <span className="text-sm leading-none font-medium"><RequiredText>공개범위</RequiredText></span>
         <Controller
           control={control}
           name="registration.visibility"
