@@ -18,7 +18,7 @@ from api.assets.router import collect_asset_usages
 from api.chat.room_deletion import delete_chat_rooms
 from api.comments.actions import erase_user_comments, lock_withdrawal_contents
 from api.core import clover
-from api.core.s3 import build_thumbnail_key, delete_object
+from api.core.s3 import build_variant_keys, delete_object
 from api.core.security import hash_withdrawn_email
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User, WithdrawnEmail
@@ -75,11 +75,11 @@ async def erase_account(
         asset = await db.get(Asset, user.profile_image_asset_id)
         if asset is not None:
             await delete_storage_object(asset.storage_key)
-            # assets/router.py:124의 불변식 — READY 이미지 asset은 항상
-            # `{key}_thumb.webp` 변형을 갖는다. 프로필 이미지도 그 공용 업로드
-            # 경로(assets/router.py의 complete_asset_upload)를 타므로 원본만
-            # 지우면 썸네일이 R2에 고아로 남는다.
-            await delete_storage_object(build_thumbnail_key(asset.storage_key))
+            # READY 이미지 asset은 항상 변형(썸네일·표시용, `build_variant_keys`)을 갖는다. 프로필
+            # 이미지도 그 공용 업로드 경로(assets/router.py의 complete_asset_upload)를 타므로 원본만
+            # 지우면 변형이 R2에 고아로 남는다 — 탈퇴한 사람의 사진 사본이다.
+            for variant_key in build_variant_keys(asset.storage_key):
+                await delete_storage_object(variant_key)
 
     user.deleted_at = now
     # users.email이 unique=True, nullable=False라
@@ -174,7 +174,8 @@ async def erase_account(
             # S3를 먼저 지운다 — 실패하면 DB 행이 남아 재시도가 가능하다
             # (assets/router.py의 delete_generated_image와 같은 이유).
             await delete_storage_object(asset.storage_key)
-            await delete_storage_object(build_thumbnail_key(asset.storage_key))
+            for variant_key in build_variant_keys(asset.storage_key):
+                await delete_storage_object(variant_key)
             await db.delete(asset)
 
         # 요청 행은 asset이 하나도 안 남은 것만 지운다. 남은 asset을 가진 요청 행과,

@@ -33,7 +33,7 @@ from api.auth.verification import get_verification_code, store_verification_code
 from api.auth.withdrawal import delete_storage_objects_later
 from api.core.config import settings
 from api.core.redis import redis_client
-from api.core.s3 import build_thumbnail_key
+from api.core.s3 import build_variant_keys
 from api.core.security import hash_password, hash_withdrawn_email
 from api.db.models.auth import User, WithdrawnEmail
 from api.db.models.media import Asset, AssetKind, AssetStatus
@@ -1144,7 +1144,8 @@ async def test_kakao_unlink_webhook_post_form_erases_member_and_deletes_storage_
     await db_session.flush()
     s3 = boto3.client("s3", region_name=settings.aws_region, endpoint_url=settings.s3_endpoint_url)
     s3.put_object(Bucket=settings.s3_bucket_name, Key=storage_key, Body=b"img")
-    s3.put_object(Bucket=settings.s3_bucket_name, Key=build_thumbnail_key(storage_key), Body=b"thumb")
+    for variant_key in build_variant_keys(storage_key):
+        s3.put_object(Bucket=settings.s3_bucket_name, Key=variant_key, Body=b"variant")
 
     resp = await db_client.post(
         "/auth/kakao/unlink",
@@ -1199,7 +1200,7 @@ async def test_kakao_unlink_webhook_session_revoke_failure_still_returns_200_and
     )
     assert resp.status_code == 200
     await _assert_erased_by_webhook(db_session, user, original_email)
-    assert scheduled == [[storage_key, build_thumbnail_key(storage_key)]]
+    assert scheduled == [[storage_key, *build_variant_keys(storage_key)]]
     assert captured == ["redis"]
 
 

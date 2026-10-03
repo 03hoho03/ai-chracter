@@ -26,10 +26,10 @@ from dataclasses import dataclass
 from api.assets.image_processing import (
     THUMBNAIL_CONTENT_TYPE,
     generate_blurred_image,
-    generate_thumbnail,
+    generate_variants,
 )
 from api.core.config import settings
-from api.core.s3 import build_object_key, build_thumbnail_key, upload_object
+from api.core.s3 import build_object_key, upload_object
 from api.db.models.media import AssetKind
 from seed_content.images import CONTENT_TYPE, IMAGES_DIR, asset_storage_key, situational_image_slug
 from seed_content.ids import MIA_THUMBNAIL_ASSET_ID
@@ -62,11 +62,10 @@ def collect_uploads() -> tuple[list[Upload], list[str]]:
         if blurred:
             body = generate_blurred_image(body)
         uploads.append(Upload(slug, key, body))
-        # READY 자산에는 항상 `_thumb.webp`가 있다는 불변식 — 원본을 갈아끼우면
-        # 썸네일도 같은 바이트에서 다시 만들어 함께 올린다.
-        uploads.append(
-            Upload(slug, build_thumbnail_key(key), generate_thumbnail(body), THUMBNAIL_CONTENT_TYPE)
-        )
+        # READY 자산에는 항상 변형(`_thumb.webp`·`_display.webp`)이 있다는 불변식 — 원본을 갈아끼우면
+        # 변형도 같은 바이트에서 다시 만들어 함께 올린다.
+        for variant_key, variant_body in generate_variants(key, body):
+            uploads.append(Upload(slug, variant_key, variant_body, THUMBNAIL_CONTENT_TYPE))
 
     for story in load_stories():
         add(story.slug, asset_storage_key(story.slug, AssetKind.THUMBNAIL))
