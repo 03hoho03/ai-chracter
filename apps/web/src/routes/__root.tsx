@@ -19,6 +19,7 @@ import { UpdateInfoModal } from "@/features/update-info";
 import { ContentDetailModalOutlet } from "@/widgets/content-detail";
 import { Header } from "@/widgets/header";
 import { ReconsentModal } from "@/widgets/reconsent-legal";
+import { isSiteFooterHidden, SiteFooter } from "@/widgets/site-footer";
 import { ConfirmCloverSpendModal } from "@/features/confirm-clover-spend";
 import { CommentActionModal, CommentLoginModal, CommentReportModal } from "@/features/work-comments";
 import { ContentComments } from "@/widgets/content-comments";
@@ -52,8 +53,16 @@ function RootComponent() {
 
   return (
     <>
-      {!isBuilderRoute && <Header />}
-      <Outlet />
+      {/* 페이지 영역을 `flex-1`로 늘려 짧은 페이지에서도 푸터가 뷰포트 바닥에 앉게 한다. 아웃렛은 평범한 블록
+          안에 둔다 — 각 페이지의 `<main>`은 `w-full` 없이 `mx-auto`로 가운데 놓이므로, flex 아이템이 되면
+          내용 폭으로 줄어든다. */}
+      <div className="flex min-h-dvh flex-col">
+        {!isBuilderRoute && <Header />}
+        <div className="flex-1">
+          <Outlet />
+        </div>
+        {!isSiteFooterHidden(pathname) && <SiteFooter />}
+      </div>
       <ContentDetailModalOutlet renderComments={(id) => <ContentComments key={id} contentId={id} />} />
       <CommentActionModal />
       <CommentLoginModal />

@@ -25,6 +25,7 @@ import {
 } from "@/entities/notification";
 import { useSessionQuery } from "@/entities/session";
 import { useLogoutMutation } from "@/features/logout";
+import { isPublicSupportDestinationKey } from "@/shared/config/supportDestinations";
 import { assertNever } from "@/shared/lib/assertNever";
 
 import { NotificationFeedStatus } from "./NotificationFeedStatus";
@@ -35,6 +36,10 @@ const ROW_CLASS =
   "flex items-center gap-2.5 rounded-md px-2.5 py-2.5 text-left text-sm text-foreground motion-safe:transition-colors hover:bg-secondary/50 focus-visible:bg-secondary/50 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50 aria-disabled:opacity-65 [&_svg]:size-4 [&_svg]:shrink-0";
 
 const DIVIDER_CLASS = "my-1 h-px shrink-0 border-0 bg-border";
+
+// 비로그인에게도 열리는 목적지(서비스 소개·공지사항·약관·처리방침)는 로그인 사용자와 같은 목록에서 공개 키만
+// 고른다 — 순서도 그 목록을 따른다.
+const PUBLIC_DESTINATION_KEYS = PROFILE_DESTINATION_GROUPS.flatMap((group) => group.keys).filter(isPublicSupportDestinationKey);
 
 // 목적지 없는 알림(조치 통지 3종)은 제목줄 + `adminComment` 2줄이라 다른 행과 달리 세로로 쌓는다.
 const NOTIFICATION_ACTION_ROW_CLASS = cn(ROW_CLASS, "flex-col items-start gap-0.5");
@@ -120,12 +125,20 @@ export function MobileNavDrawer({ className }: { className?: string }) {
               </button>
             </>
           ) : (
-            <SheetClose asChild>
-              <Link to="/login" className={ROW_CLASS}>
-                <LogIn aria-hidden />
-                로그인
-              </Link>
-            </SheetClose>
+            <>
+              <SheetClose asChild>
+                <Link to="/login" className={ROW_CLASS}>
+                  <LogIn aria-hidden />
+                  로그인
+                </Link>
+              </SheetClose>
+              <hr className={DIVIDER_CLASS} />
+              {PUBLIC_DESTINATION_KEYS.map((key) => (
+                <SheetClose asChild key={key}>
+                  <ProfileDestinationLink destinationKey={key} className={ROW_CLASS} />
+                </SheetClose>
+              ))}
+            </>
           )}
         </nav>
       </SheetContent>

@@ -1,3 +1,4 @@
+import { ABOUT_PATH, handleAboutMeta } from "./aboutMeta";
 import { serveAppShell } from "./appShell";
 import { handleContentMeta, parseContentPath } from "./contentMeta";
 import { isCrawler } from "./crawler";
@@ -105,6 +106,11 @@ async function routeRequest(
   if (isBot) {
     const legalKind = parseLegalPath(url.pathname);
     if (legalKind !== undefined) return handleLegalMeta(request, env, legalKind);
+  }
+
+  // 서비스 소개도 같은 이유로 API_BASE_URL 가드보다 위에 둔다 — 본문이 정적 문장이다.
+  if (isBot && url.pathname === ABOUT_PATH) {
+    return handleAboutMeta(request, env);
   }
 
   // API_BASE_URL은 Pages 런타임 환경변수라 대시보드에서 빠뜨릴 수 있다. 없으면 API를

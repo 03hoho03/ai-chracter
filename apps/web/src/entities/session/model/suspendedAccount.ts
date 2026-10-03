@@ -1,9 +1,9 @@
 import { isApiError } from "@/shared/api/client";
+import { CONTACT_EMAIL } from "@/shared/config/site";
 
 /** 정지 계정 안내 — 로그인(`LoginForm`)·소셜 온보딩(`SignUpWizard`)·비밀번호 변경(`ChangePasswordForm`)이
  * 같은 문장을 쓴다. features 슬라이스끼리는 import하지 못해(FSD) 여기로 내렸다 — 사본을 만들지 않는다. */
-export const SUSPENDED_ERROR_MESSAGE =
-  "이용정지된 계정이에요. 문의사항은 contact@ddona.site로 연락해주세요.";
+export const SUSPENDED_ERROR_MESSAGE = `이용정지된 계정이에요. 문의사항은 ${CONTACT_EMAIL}로 연락해주세요.`;
 
 /** 정지 계정 403인가. 같은 403을 재동의 게이트(`{code: "LEGAL_RECONSENT_REQUIRED"}`)도 내므로 status만으로
  * 가르지 않고 detail까지 본다.

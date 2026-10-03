@@ -7,6 +7,7 @@
  */
 export const KNOWN_ROUTES = [
   "/",
+  "/about",
   "/builder",
   "/builder/$type/$draftId",
   "/chat/$roomId",

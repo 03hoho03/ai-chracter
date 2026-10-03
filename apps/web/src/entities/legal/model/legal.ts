@@ -1,11 +1,14 @@
 import type { components } from "@ai-character-chat/api-types";
 
+import { SUPPORT_DESTINATIONS } from "@/shared/config/supportDestinations";
+
 /** `GET /legal/{kind}` · `POST /legal/consent`이 공유하는 문서 종류. */
 export type LegalDocumentKind = components["schemas"]["LegalConsentRequest"]["kind"];
 
+/** 문서 이름은 헤더 메뉴·푸터 링크 라벨과 같은 문자열이어야 해서 그 목적지 목록에서 가져온다. */
 export const LEGAL_DOCUMENT_LABEL: Record<LegalDocumentKind, string> = {
-  terms: "이용약관",
-  privacy: "개인정보처리방침",
+  terms: SUPPORT_DESTINATIONS.terms.label,
+  privacy: SUPPORT_DESTINATIONS.privacy.label,
 };
 
 /** 현재 호출부는 `Object.keys(...)` 결과만 넘겨 `in`과 `hasOwn`이 갈리지 않지만, 이 술어는 public API라 외부 입력이
