@@ -82,6 +82,8 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "memory_summary"): frozenset({"memory_summary"}),
     ("generation", "history"): frozenset({"history_lines"}),
     ("generation", "keyword_notes"): frozenset({"keyword_note_lines"}),
+    # 조건이 참인 상황 노트 본문. conditional 이라 참인 노트가 없으면 섹션째 빠진다.
+    ("generation", "situation_notes"): frozenset({"situation_note_lines"}),
     ("generation", "shortcut_prompt"): frozenset({"shortcut_prompt"}),
     ("generation", "final_frame"): frozenset({"user_label", "user_message", "assistant_label"}),
     ("stat_judgment", "stat_defs_intro"): frozenset({"stat_lines"}),
@@ -378,6 +380,7 @@ def build_story_generation_prompt(
     memory_note: str,
     memory_summary: str,
     keyword_note_texts: list[str] | None = None,
+    situation_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
 ) -> str:
     """생성 프롬프트를 조립한다 — 스토리 챗 전용.
@@ -391,6 +394,9 @@ def build_story_generation_prompt(
     `[키워드북]`은 `[대화 기록]`
     **뒤**에 온다 — 변하는 속도가 느린 것이 앞, 빠른 것이 뒤여야 캐시 프리픽스가
     안정된다는 이유는 `prompt_sections.order` 시드값이 이미 반영하고 있다.
+
+    `situation_note_texts` 는 스탯 조건이 참인 상황 노트 본문(호출부가 이미 골라 순서대로 넘긴다)이다. 값이
+    비면 빈 문자열을 넘겨 conditional 섹션째 빠지게 한다 — 노트가 없는 방의 프롬프트는 이 인자 이전과 같다.
 
     전개 예시(`development_examples`)는 `story_example_label`("서술자")을, 그 외
     자리(히스토리·마지막 프레임)는 `story_assistant_label`("진행자")을 쓴다 —
@@ -423,6 +429,7 @@ def build_story_generation_prompt(
         "memory_summary": memory_summary,
         "history_lines": history_lines,
         "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
+        "situation_note_lines": "\n".join(situation_note_texts) if situation_note_texts else "",
         "shortcut_prompt": shortcut_prompt or "",
         "user_label": prompt_set.user_label,
         "user_message": user_message,
