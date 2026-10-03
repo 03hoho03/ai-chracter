@@ -7150,6 +7150,31 @@ export interface components {
             /** Email */
             email: string;
         };
+        /**
+         * SituationNoteDraftItem
+         * @description 상황 노트 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다. 배열 순서가 `order`(조건이 참인 노트가 위에서부터
+         *     실린다)라 순서 필드는 따로 없다.
+         *
+         *     조건은 엔딩의 스탯 규칙과 같은 타입을 쓴다 — 같은 시작설정의 스탯을 entity_id 로 가리킨다. 상한(개수·길이·규칙 수)은
+         *     요청에만 건다(`StoryDraftPayload` 의 검증). 이 타입은 응답에도 쓰이므로 여기에 걸면, 나중에 상한을 낮추거나 손으로
+         *     넣은 행이 상한을 넘을 때 그 초안을 열 수 없다(GET 500).
+         *
+         *     조건이 없거나 본문이 빈 노트도 저장은 받는다. 빌더가 "노트 추가" 직후의 빈 노트를 그대로 자동저장하므로 여기서 막으면
+         *     노트를 추가할 때마다 자동저장이 멈춘다 — 그 검사는 발행(`validate_story_publish`)이 한다.
+         */
+        SituationNoteDraftItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Infotext */
+            infoText: string;
+            /** Conditionrules */
+            conditionRules: (components["schemas"]["EndingRuleDraftItem"] | components["schemas"]["EndingRuleGroupDraftItem"])[];
+        };
         /** SituationalImageResponse */
         SituationalImageResponse: {
             /**
@@ -7198,7 +7223,13 @@ export interface components {
             /** Email */
             email: string;
         };
-        /** StartingSetupDraftItem */
+        /**
+         * StartingSetupDraftItem
+         * @description `situation_notes` 는 안 보내면 그 시작설정의 상황 노트를 건드리지 않는다(router 가 `model_fields_set` 으로
+         *     가른다). 상황 노트를 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)·이 필드를 적지 않은 시드는 보내지 않으므로, 빈 목록과
+         *     같게 다루면 그 저장 한 번이 다른 탭에서 만든 노트를 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부
+         *     지운다. 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다.
+         */
         StartingSetupDraftItem: {
             /**
              * Id
@@ -7219,6 +7250,8 @@ export interface components {
             statDefs: components["schemas"]["StatDefDraftItem"][];
             /** Endings */
             endings: components["schemas"]["EndingDraftItem"][];
+            /** Situationnotes */
+            situationNotes?: components["schemas"]["SituationNoteDraftItem"][];
         };
         /** StartingSetupSummary */
         StartingSetupSummary: {

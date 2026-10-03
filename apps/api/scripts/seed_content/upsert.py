@@ -26,7 +26,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assets.image_processing import generate_blurred_image
-from api.content.publish import draft_dangling_stat_rule_paths, validate_character_publish, validate_story_publish
+from api.content.publish import (
+    draft_dangling_situation_note_paths,
+    draft_dangling_stat_rule_paths,
+    validate_character_publish,
+    validate_story_publish,
+)
 from api.content.router import _update_character_draft, _update_story_draft
 from api.content.schemas import (
     CharacterDraftPayload,
@@ -41,7 +46,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import AssetKind
-from api.db.models.story import Ending, KeywordNote, StartingSetup, StatDef, StoryVersionDetail
+from api.db.models.story import Ending, KeywordNote, SituationNote, StartingSetup, StatDef, StoryVersionDetail
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 from .images import ensure_asset, read_image, situational_image_slug
@@ -277,7 +282,7 @@ async def _publish(session: AsyncSession, content: Content, version: ContentVers
 
 
 def _validate_payload(payload: StoryDraftPayload) -> list[str]:
-    """DB 를 건드리기 전에 `validate_story_publish()` + 엔딩 규칙 참조 검사를 돌린다.
+    """DB 를 건드리기 전에 `validate_story_publish()` + 엔딩 규칙·상황 노트 조건의 스탯 참조 검사를 돌린다.
 
     검증 함수가 요구하는 건 ORM 행의 값뿐이라 세션 없이 생성자로만 채운 인메모리 인스턴스로
     충분하다(빌더 미리보기가 `chat/router.py` 의 `_preview_*` 헬퍼로 하는 것과 같은 패턴). 시작설정의 물리적 id 자리에는 entity_id
@@ -293,7 +298,8 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
         for setup_item in payload.starting_setups
     }
     dangling_stat_rule_paths = draft_dangling_stat_rule_paths(payload.starting_setups)
-    return dangling_stat_rule_paths + validate_story_publish(
+    dangling_situation_note_paths = draft_dangling_situation_note_paths(payload.starting_setups)
+    return dangling_stat_rule_paths + dangling_situation_note_paths + validate_story_publish(
         Content(genre_id=payload.genre_id, target=payload.target),
         ContentVersion(detail_description=payload.description),
         StoryVersionDetail(
@@ -334,4 +340,14 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
             for setup_item in payload.starting_setups
             for stat_item in setup_item.stat_defs
         ],
+        # 조건은 DB 경로와 같은 JSON 꼴로 넣어야 검증 함수가 두 경로에서 같은 값을 본다.
+        situation_notes=[
+            SituationNote(
+                info_text=note_item.info_text,
+                condition_rules=[rule_item.model_dump(mode="json") for rule_item in note_item.condition_rules],
+            )
+            for setup_item in payload.starting_setups
+            for note_item in setup_item.situation_notes
+        ],
+        dangling_situation_note_paths=dangling_situation_note_paths,
     )

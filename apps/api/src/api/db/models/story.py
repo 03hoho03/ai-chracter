@@ -164,6 +164,33 @@ class KeywordNote(Base):
     always_on: Mapped[bool] = mapped_column(Boolean, server_default=false(), nullable=False)
 
 
+class SituationNote(Base):
+    """시작설정 하나에 딸린 상황 노트. entity_id 패턴, 순서 있는 목록. 노트의 스탯 조건이 참인 턴에 본문이 이야기를
+    쓰는 프롬프트에 실린다.
+
+    조건(`condition_rules`)은 엔딩의 스탯 규칙과 같은 모양(`kind` 로 가르는 규칙·한 단계 그룹)의 JSON 목록이다.
+    엔딩처럼 규칙 테이블을 따로 두지 않는다 — 규칙의 스탯 참조는 어차피 entity_id 라 FK 가 없고, 한 칸에 두면 규칙
+    자식의 복제·삭제 순서를 따질 일이 없다. 노트 행 자체는 시작설정을 물리 FK 로 가리키므로 시작설정보다 먼저 지운다.
+
+    새 테이블이라 이 테이블을 모르는 이전 API 이미지가 행을 넣는 일은 없다. 그래도 컬럼마다 `server_default` 를
+    두어 손으로 넣는 행(시드 보정·운영 쿼리)이 필수 칸 하나 때문에 막히지 않게 한다 — 본문만 빼고."""
+
+    __tablename__ = "situation_notes"
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True, default=uuid.uuid4)
+    entity_id: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
+    starting_setup_id: Mapped[uuid.UUID] = mapped_column(
+        Uuid, ForeignKey("starting_setups.id"), nullable=False
+    )
+    # 목록에서 노트를 알아보게 하는 이름이다. 모델에 보내는 프롬프트에는 싣지 않는다.
+    name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
+    info_text: Mapped[str] = mapped_column(Text, nullable=False)
+    order: Mapped[int] = mapped_column(Integer, default=0, server_default=text("0"), nullable=False)
+    condition_rules: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default=text("'[]'::jsonb"), nullable=False
+    )
+
+
 class Shortcut(Base):
     """entity_id pattern; scoped to the whole work (content_version_id)."""
 

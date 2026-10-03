@@ -4,7 +4,7 @@ from collections.abc import Hashable, Iterable
 from datetime import datetime
 from typing import Annotated, Literal, Self
 
-from pydantic import AfterValidator, Field, model_validator
+from pydantic import AfterValidator, Field, TypeAdapter, model_validator
 
 from api.chat.keyword_notes import normalize_keyword_text
 from api.core.schema import CamelModel
@@ -323,7 +323,29 @@ class EndingDraftItem(CamelModel):
     stat_rules: list[EndingRuleListDraftItem]
 
 
+class SituationNoteDraftItem(CamelModel):
+    """상황 노트 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다. 배열 순서가 `order`(조건이 참인 노트가 위에서부터
+    실린다)라 순서 필드는 따로 없다.
+
+    조건은 엔딩의 스탯 규칙과 같은 타입을 쓴다 — 같은 시작설정의 스탯을 entity_id 로 가리킨다. 상한(개수·길이·규칙 수)은
+    요청에만 건다(`StoryDraftPayload` 의 검증). 이 타입은 응답에도 쓰이므로 여기에 걸면, 나중에 상한을 낮추거나 손으로
+    넣은 행이 상한을 넘을 때 그 초안을 열 수 없다(GET 500).
+
+    조건이 없거나 본문이 빈 노트도 저장은 받는다. 빌더가 "노트 추가" 직후의 빈 노트를 그대로 자동저장하므로 여기서 막으면
+    노트를 추가할 때마다 자동저장이 멈춘다 — 그 검사는 발행(`validate_story_publish`)이 한다."""
+
+    id: uuid.UUID
+    name: str
+    info_text: str
+    condition_rules: list[EndingRuleListDraftItem]
+
+
 class StartingSetupDraftItem(CamelModel):
+    """`situation_notes` 는 안 보내면 그 시작설정의 상황 노트를 건드리지 않는다(router 가 `model_fields_set` 으로
+    가른다). 상황 노트를 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)·이 필드를 적지 않은 시드는 보내지 않으므로, 빈 목록과
+    같게 다루면 그 저장 한 번이 다른 탭에서 만든 노트를 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부
+    지운다. 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다."""
+
     id: uuid.UUID
     name: str
     prologue: str
@@ -332,6 +354,25 @@ class StartingSetupDraftItem(CamelModel):
     suggested_replies: list[str]
     stat_defs: list[StatDefDraftItem]
     endings: list[EndingDraftItem]
+    situation_notes: list[SituationNoteDraftItem] = Field(default_factory=list)
+
+
+# 상황 노트 저장 상한(시작설정마다). 빌더가 입력 단계에서 같은 상한을 지켜야 하는 이유는 아래 키워드북 상한 주석과 같다.
+# 본문이 참인 턴마다 전부 실리므로 개수와 길이를 함께 묶는다. 규칙 수는 그룹 안의 규칙까지 센다(그룹 자체는 세지 않는다).
+MAX_SITUATION_NOTES_PER_SETUP = 10
+SITUATION_NOTE_MAX_INFO_LENGTH = 800
+SITUATION_NOTE_MAX_NAME_LENGTH = 20
+SITUATION_NOTE_MAX_RULES = 10
+
+
+# 상황 노트의 조건은 JSONB 한 칸에 `model_dump(mode="json")` 꼴로 저장한다(UUID·enum 이 문자열이 된다). 읽는 쪽은 이것으로
+# 다시 규칙 타입으로 되돌린다.
+RULE_LIST_ADAPTER = TypeAdapter(list[EndingRuleListDraftItem])
+
+
+def count_rules(items: Iterable[EndingRuleDraftItem | EndingRuleGroupDraftItem]) -> int:
+    """규칙 목록의 규칙 개수 — 그룹은 그 안의 규칙 수로 센다."""
+    return sum(len(item.rules) if isinstance(item, EndingRuleGroupDraftItem) else 1 for item in items)
 
 
 # 키워드북 저장 상한. 빌더 자동저장은 폼 검증 없이 폼 값을 그대로 보내므로, 빌더가 입력 단계에서 같은 상한을 지켜야
@@ -559,6 +600,22 @@ class StoryDraftPayload(CamelModel):
         # 상시 노트는 매 턴 키워드 발동 노트와 따로 실린다. 개수를 저장에서 막아 두면 대화 중에는 자르지 않아도 된다.
         if sum(note.always_on for note in self.keyword_notes) > MAX_ALWAYS_ON_KEYWORD_NOTES:
             raise ValueError(f"at most {MAX_ALWAYS_ON_KEYWORD_NOTES} keyword notes can be always on")
+        return self
+
+    @model_validator(mode="after")
+    def _check_situation_note_limits(self) -> Self:
+        # 상한을 여기(요청 전용 모델)에 두는 이유는 `SituationNoteDraftItem` docstring. 길이는 키워드북처럼 보낸 글자
+        # 그대로의 코드 포인트 수다.
+        for setup in self.starting_setups:
+            if len(setup.situation_notes) > MAX_SITUATION_NOTES_PER_SETUP:
+                raise ValueError(f"a starting setup holds at most {MAX_SITUATION_NOTES_PER_SETUP} situation notes")
+            for note in setup.situation_notes:
+                if len(note.name) > SITUATION_NOTE_MAX_NAME_LENGTH:
+                    raise ValueError(f"situation note name must be at most {SITUATION_NOTE_MAX_NAME_LENGTH} characters")
+                if len(note.info_text) > SITUATION_NOTE_MAX_INFO_LENGTH:
+                    raise ValueError(f"situation note text must be at most {SITUATION_NOTE_MAX_INFO_LENGTH} characters")
+                if count_rules(note.condition_rules) > SITUATION_NOTE_MAX_RULES:
+                    raise ValueError(f"a situation note holds at most {SITUATION_NOTE_MAX_RULES} condition rules")
         return self
 
 
