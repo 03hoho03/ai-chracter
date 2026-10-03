@@ -61,7 +61,8 @@ export function GenerateImagesOptionsFields() {
                     disabled={!supportedRatios.has(ratio)}
                     aria-label={IMAGE_ASPECT_RATIO_LABEL[ratio]}
                     // DESIGN.md Toggles 절의 `variant="list"` 레시피 — 화면당 primary 솔리드 채움은 CTA 하나뿐이어야
-                    // 하는데 이 칩과 아래 개수 칩까지 솔리드면 셋이 된다. 틴트로 내려 예산을 CTA에 남긴다.
+                    // 하는데, 이 칩과 아래 개수 칩까지 솔리드면 CTA와 같은 열 스타일 타일의 선택 체크 원에 둘이
+                    // 더 붙어 넷이 된다. 틴트로 내려 예산을 CTA에 남긴다.
                     // h-auto + py-2 — 도형+라벨 2단은 size="sm"의 h-8에 안 들어간다. px-3/text-xs 등
                     // sm의 나머지 값은 그대로 상속한다.
                     // rounded-lg — 프리미티브 기본 pill을 덮는다. ~90×59 도형 타일에 pill을 주면 원으로
