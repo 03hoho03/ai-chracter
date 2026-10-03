@@ -4,7 +4,12 @@ import { FormProvider, useForm } from "react-hook-form";
 import { describe, expect, it } from "vitest";
 
 import { createEmptyDraft } from "@/entities/content";
-import { serverToForm, type StatDefValues, type StoryBuilderFormValues } from "@/features/build-story";
+import {
+  serverToForm,
+  STAT_CHANGE_CONFLICT_MESSAGE,
+  type StatDefValues,
+  type StoryBuilderFormValues,
+} from "@/features/build-story";
 
 import { StatChangeFields } from "./StatChangeFields";
 
@@ -25,7 +30,8 @@ function stat(overrides: Partial<StatDefValues>): StatDefValues {
   };
 }
 
-function render(value: StatDefValues): string {
+/** `perTurnDeltaError` 를 주면 발행 검증이 턴당 칸에 오류를 붙인 상태로 그린다. */
+function render(value: StatDefValues, perTurnDeltaError?: string): string {
   function WithForm() {
     const draft = createEmptyDraft("story");
     if (draft.type !== "story") throw new Error("story draft expected");
@@ -33,7 +39,11 @@ function render(value: StatDefValues): string {
     values.startingSetups = [
       { id: "s1", name: "", prologue: "", suggestedReplies: [], stats: [value], endings: [], situationNotes: [] },
     ];
-    const form = useForm<StoryBuilderFormValues>({ defaultValues: values });
+    const errors =
+      perTurnDeltaError === undefined
+        ? undefined
+        : { startingSetups: [{ stats: [{ perTurnDelta: { type: "custom", message: perTurnDeltaError } }] }] };
+    const form = useForm<StoryBuilderFormValues>({ defaultValues: values, errors });
     return createElement(FormProvider<StoryBuilderFormValues>, {
       ...form,
       children: createElement(StatChangeFields, { id: "x", startingSetupIndex: 0, statIndex: 0, stat: value }),
@@ -75,10 +85,21 @@ describe("StatChangeFields 양쪽 잠금", () => {
     expect(html).toContain("AI가 정한 값이 이 방향과 폭을 넘으면 시스템이 잘라요.");
   });
 
-  it("둘 다 채워진 채 들어오면 어느 쪽도 잠그지 않고 한쪽을 비우라고 오류 톤으로 알린다", () => {
+  it("둘 다 채워진 채 들어오면 어느 쪽도 잠그지 않고 한쪽을 비우라고 중립 톤으로 안내한다", () => {
     const html = render(stat({ perTurnDelta: -1, changeDirection: "decrease" }));
     expect([PER_TURN, DIRECTION, MAX_CHANGE].map((id) => isDisabled(html, id))).toEqual([false, false, false]);
-    expect(controlTag(html, "stat-x-change-hint")).toContain("text-destructive-text");
-    expect(html).toContain("함께 쓸 수 없어요. 한쪽을 비워 주세요.");
+    expect(controlTag(html, "stat-x-change-hint")).toContain("text-muted-foreground");
+    expect(html).toContain("둘 중 하나만 쓸 수 있어요. 하나를 비워 주세요.");
+    // 폼 검증 전에는 빨간 오류 문장이 없다 — 오류는 폼 상태에서만 온다.
+    expect(html).not.toContain("text-destructive-text");
+    expect(html).not.toContain(STAT_CHANGE_CONFLICT_MESSAGE);
+  });
+
+  it("발행 검증이 턴당 칸에 붙인 오류는 그 칸 아래에 그대로 보이고 칸에 이어진다", () => {
+    const html = render(stat({ perTurnDelta: -1, changeDirection: "decrease" }), STAT_CHANGE_CONFLICT_MESSAGE);
+    expect(controlTag(html, "stat-x-per-turn-delta-error")).toContain("text-destructive-text");
+    expect(html).toContain(STAT_CHANGE_CONFLICT_MESSAGE);
+    expect(controlTag(html, PER_TURN)).toContain('aria-describedby="stat-x-change-hint stat-x-per-turn-delta-error"');
+    expect(controlTag(html, "stat-x-change-hint")).toContain("text-muted-foreground");
   });
 });

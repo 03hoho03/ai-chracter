@@ -77,7 +77,7 @@ function SituationNoteSection({ startingSetupIndex }: { startingSetupIndex: numb
     getValues,
     setValue,
     setFocus,
-    formState: { errors },
+    formState: { errors, isSubmitted },
   } = form;
   const notesPath = `startingSetups.${startingSetupIndex}.situationNotes` as const;
   const notes = useWatch({ control, name: notesPath });
@@ -98,8 +98,11 @@ function SituationNoteSection({ startingSetupIndex }: { startingSetupIndex: numb
     setFocus(`${notesPath}.${index}.name`);
   }, [notes.length, notesPath, setFocus]);
 
+  // 목록을 통째로 바꿔 쓰면 RHF 는 필드 배열과 달리 오류를 노트와 함께 옮기지 않는다 — 발행 실패 뒤 앞 노트를 지우면 오류가
+  // 그 자리에 들어온 멀쩡한 노트에 남는다. 발행을 한 번 시도한 뒤에는 목록을 다시 검증해 오류를 새 목록 기준으로 다시 쓴다
+  // (조건 칸과 같은 기준이라, 발행 전에는 검증하지 않는다).
   function writeNotes(next: SituationNoteValues[]) {
-    setValue(notesPath, next, { shouldDirty: true });
+    setValue(notesPath, next, { shouldDirty: true, shouldValidate: isSubmitted });
   }
 
   function handleAdd() {
@@ -171,23 +174,7 @@ function SituationNoteSection({ startingSetupIndex }: { startingSetupIndex: numb
       </div>
 
       {notes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-10 text-center">
-          {hasNoStats ? (
-            <>
-              <p id={ADD_REASON_ID} className="text-sm break-keep text-muted-foreground">
-                {NO_STATS_REASON}
-              </p>
-              <p className="text-sm break-keep text-muted-foreground">스탯 탭에서 스탯을 먼저 추가해주세요.</p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm break-keep text-muted-foreground">아직 상황 노트가 없어요.</p>
-              <p className="text-sm break-keep text-muted-foreground">
-                예: ‘상영회까지 &lt;= 0’이면 ‘오늘은 가을 상영회 당일이다.’
-              </p>
-            </>
-          )}
-        </div>
+        <SituationNoteEmptyState hasNoStats={hasNoStats} />
       ) : (
         <ol className="flex flex-col gap-4" aria-label="상황 노트 목록">
           {notes.map((note, index) => (
@@ -226,6 +213,27 @@ function SituationNoteSection({ startingSetupIndex }: { startingSetupIndex: numb
           </p>
         )}
       </div>
+    </div>
+  );
+}
+
+/** 노트가 하나도 없을 때. 스탯도 없으면 노트를 만들 수 없는 사유를 말하고, 그 문장이 추가 버튼의 설명이 된다. */
+function SituationNoteEmptyState({ hasNoStats }: { hasNoStats: boolean }) {
+  if (hasNoStats) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-10 text-center">
+        <p id={ADD_REASON_ID} className="text-sm break-keep text-muted-foreground">
+          {NO_STATS_REASON}
+        </p>
+        <p className="text-sm break-keep text-muted-foreground">스탯 탭에서 스탯을 먼저 추가해주세요.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col items-center justify-center gap-1 rounded-xl border border-dashed border-border px-4 py-10 text-center">
+      <p className="text-sm break-keep text-muted-foreground">아직 상황 노트가 없어요.</p>
+      <p className="text-sm break-keep text-muted-foreground">예: ‘상영회까지 &lt;= 0’이면 ‘오늘은 가을 상영회 당일이다.’</p>
     </div>
   );
 }

@@ -1,12 +1,10 @@
 import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { cn } from "@ai-character-chat/ui/lib/utils";
 import { useFormContext } from "react-hook-form";
 
 import {
   FieldLabelText,
-  STAT_CHANGE_CONFLICT_MESSAGE,
   STAT_CHANGE_DIRECTION_LABELS,
   STAT_CHANGE_DIRECTIONS,
   type StatChangeDirection,
@@ -23,13 +21,14 @@ import {
   type StatChangeMode,
 } from "../model/statChange";
 
-/** 칸 아래 한 문장 — 지금 어느 쪽이 쓰이고 있어 무엇이 잠겼는지, 다른 쪽으로 가려면 무엇을 비우는지 말한다. */
+/** 칸 아래 한 문장 — 지금 어느 쪽이 쓰이고 있어 무엇이 잠겼는지, 다른 쪽으로 가려면 무엇을 비우는지 말한다. 둘 다 채워진
+ * 상태도 안내일 뿐 오류 톤이 아니다 — 발행을 막는 오류 문장은 폼 검증이 턴당 칸에 붙여 그 칸 아래에만 보인다. */
 const STAT_CHANGE_HINT: Record<StatChangeMode, string> = {
   free: "매 턴 이만큼 자동으로 변해요(줄어들면 -1처럼 음수). 비워 두면 AI가 대화를 보고 판단하고, 그때는 AI가 바꿀 수 있는 방향과 한 턴 최대 폭을 정할 수 있어요.",
   perTurn: "턴당 자동 변화가 있으면 AI가 이 스탯을 바꾸지 않아서 변화 방향과 한 턴 최대 폭은 쓰지 않아요.",
   limit:
     "AI가 정한 값이 이 방향과 폭을 넘으면 시스템이 잘라요. 매 턴 같은 만큼 자동으로 바꾸려면 변화 방향을 오르내림으로, 최대 폭을 비워 주세요.",
-  conflict: STAT_CHANGE_CONFLICT_MESSAGE,
+  conflict: "둘 중 하나만 쓸 수 있어요. 하나를 비워 주세요.",
 };
 
 function isStatChangeDirection(value: string): value is StatChangeDirection {
@@ -72,9 +71,6 @@ export function StatChangeFields({ id, startingSetupIndex, statIndex, stat }: St
     maxChangeError: `stat-${id}-max-change-error`,
     hint: `stat-${id}-change-hint`,
   };
-  // 둘을 함께 건 스탯의 폼 오류는 턴당 칸에 붙지만 같은 문장이 아래 힌트 자리에 이미 있다 — 칸 아래에 한 번 더 쓰지 않는다.
-  const perTurnError =
-    statErrors?.perTurnDelta?.message === STAT_CHANGE_CONFLICT_MESSAGE ? undefined : statErrors?.perTurnDelta;
   const describedBy = (errorId: string | undefined) => [ids.hint, errorId].filter(Boolean).join(" ");
 
   return (
@@ -89,12 +85,12 @@ export function StatChangeFields({ id, startingSetupIndex, statIndex, stat }: St
             placeholder="예: -1"
             disabled={isPerTurnLocked}
             aria-invalid={!!statErrors?.perTurnDelta}
-            aria-describedby={describedBy(perTurnError ? ids.perTurnError : undefined)}
+            aria-describedby={describedBy(statErrors?.perTurnDelta ? ids.perTurnError : undefined)}
             {...register(`${statPath}.perTurnDelta`, { setValueAs: perTurnDeltaFromInput })}
           />
-          {perTurnError && (
+          {statErrors?.perTurnDelta && (
             <p id={ids.perTurnError} role="alert" className="text-xs break-keep text-destructive-text">
-              {perTurnError.message}
+              {statErrors.perTurnDelta.message}
             </p>
           )}
         </div>
@@ -152,10 +148,7 @@ export function StatChangeFields({ id, startingSetupIndex, statIndex, stat }: St
         </div>
       </div>
 
-      <p
-        id={ids.hint}
-        className={cn("text-xs break-keep", mode === "conflict" ? "text-destructive-text" : "text-muted-foreground")}
-      >
+      <p id={ids.hint} className="text-xs break-keep text-muted-foreground">
         {STAT_CHANGE_HINT[mode]}
       </p>
     </div>
