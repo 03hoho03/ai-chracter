@@ -77,7 +77,7 @@ function fromApiStatDef(stat: StatDefDraftItem): StatDefValues {
     initial: stat.initialValue,
     unit: stat.unit ?? undefined,
     description: stat.description,
-    perTurnDelta: stat.perTurnDelta ?? undefined,
+    perTurnDelta: stat.perTurnDelta ?? null,
   };
 }
 

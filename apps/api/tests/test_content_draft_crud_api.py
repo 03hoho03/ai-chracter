@@ -2863,6 +2863,40 @@ async def test_patch_story_draft_rejects_ending_rule_pointing_to_stat_missing_fr
     assert saved_setups == []
 
 
+async def test_patch_story_draft_keeps_accepting_stat_whose_range_is_contradictory(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """범위가 모순된 스탯(최소 > 최대, 범위 밖 초기값)도 초안 저장은 받아 저장한다. 이 검사는 발행만 한다 — 이미 그렇게
+    저장된 초안이 있어서, 저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    stat_item = {
+        "id": str(uuid.uuid4()),
+        "name": "체력",
+        "icon": "heart",
+        "color": "rose",
+        "minValue": 100,
+        "maxValue": 0,
+        "initialValue": 500,
+        "unit": None,
+        "description": "체력",
+    }
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(statDefs=[stat_item])]),
+    )
+
+    assert resp.status_code == 200
+    saved = (
+        await db_session.scalars(
+            sa.select(StatDef)
+            .join(StartingSetup, StatDef.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version.id)
+        )
+    ).all()
+    assert [(s.min_value, s.max_value, s.initial_value) for s in saved] == [(100, 0, 500)]
+
+
 async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

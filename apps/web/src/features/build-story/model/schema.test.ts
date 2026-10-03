@@ -147,6 +147,7 @@ function validStatDef() {
     initial: 80,
     unit: "pt",
     description: "생존에 필요한 신체 상태",
+    perTurnDelta: null,
   };
 }
 
@@ -180,6 +181,59 @@ describe("statDefSchema", () => {
 
     expect(missingIcon.success).toBe(false);
     expect(missingColor.success).toBe(false);
+  });
+
+  describe("범위 검사", () => {
+    function issuesOf(overrides: Partial<Omit<ReturnType<typeof validStatDef>, "perTurnDelta"> & { perTurnDelta: number }>) {
+      const result = statDefSchema.safeParse({ ...validStatDef(), ...overrides });
+      return (result.error?.issues ?? []).map((issue) => ({ path: issue.path.join("."), message: issue.message }));
+    }
+
+    it("초기값이 최대값보다 크면 초기값 칸 하나에 실제 범위를 담은 한국어 문구를 붙인다", () => {
+      expect(issuesOf({ initial: 101 })).toEqual([{ path: "initial", message: "초기값은 0~100 사이여야 해요" }]);
+    });
+
+    it("초기값이 최소값보다 작아도 초기값 칸에 붙인다", () => {
+      expect(issuesOf({ min: -5, initial: -6 })).toEqual([{ path: "initial", message: "초기값은 -5~100 사이여야 해요" }]);
+    });
+
+    it("초기값이 최소값·최대값과 같으면 통과한다(경계 포함)", () => {
+      expect(issuesOf({ initial: 0 })).toEqual([]);
+      expect(issuesOf({ initial: 100 })).toEqual([]);
+    });
+
+    it("최대값이 최소값보다 크지 않으면 최대값 칸에만 붙이고 초기값 문구는 겹치지 않는다", () => {
+      const message = "최대값은 최소값보다 커야 해요";
+      expect(issuesOf({ min: 50, max: 50, initial: 50 })).toEqual([{ path: "max", message }]);
+      expect(issuesOf({ min: 100, max: 0, initial: 500 })).toEqual([{ path: "max", message }]);
+    });
+
+    it("빈 숫자 칸(NaN)은 그 칸에 한국어 입력 안내를 붙이고 범위 문구는 덧붙지 않는다", () => {
+      expect(issuesOf({ min: Number.NaN })).toEqual([{ path: "min", message: "최소값을 입력해주세요" }]);
+      expect(issuesOf({ max: Number.NaN })).toEqual([{ path: "max", message: "최대값을 입력해주세요" }]);
+      expect(issuesOf({ initial: Number.NaN })).toEqual([{ path: "initial", message: "초기값을 입력해주세요" }]);
+    });
+
+    it("수치 네 칸은 정수만 받는다 — 소수는 그 칸에 한국어 문구를 붙이고 범위 문구는 덧붙지 않는다", () => {
+      const message = "정수로 입력해주세요";
+      expect(issuesOf({ min: 1.5 })).toEqual([{ path: "min", message }]);
+      expect(issuesOf({ max: 99.5 })).toEqual([{ path: "max", message }]);
+      expect(issuesOf({ initial: 100.5 })).toEqual([{ path: "initial", message }]);
+      expect(issuesOf({ perTurnDelta: -0.5 })).toEqual([{ path: "perTurnDelta", message }]);
+    });
+
+    it("범위 오류는 다른 칸의 오류와 함께 한 번에 보고된다", () => {
+      expect(issuesOf({ name: "", initial: 101 }).map((issue) => issue.path)).toEqual(["name", "initial"]);
+    });
+
+    it("시작설정 스키마를 거쳐도 오류 경로가 그 스탯의 초기값 칸까지 이어진다", () => {
+      const result = startingSetupSchema.safeParse({
+        ...validStartingSetup(),
+        stats: [validStatDef(), { ...validStatDef(), id: "stat-2", initial: 101 }],
+      });
+
+      expect(result.error?.issues.map((issue) => issue.path.join("."))).toEqual(["stats.1.initial"]);
+    });
   });
 });
 

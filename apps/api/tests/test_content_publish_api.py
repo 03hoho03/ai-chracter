@@ -926,6 +926,33 @@ async def test_publish_story_rejects_ending_rules_on_stat_missing_from_their_set
     assert fake.received_prompt is None
 
 
+async def test_publish_story_rejects_stat_with_initial_value_outside_its_range_before_filter(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """초안 저장은 범위가 모순된 스탯도 받아 주므로(자동저장이 멈추면 안 된다) 발행이 막는다. 라우터가 그 버전의
+    스탯을 검증에 넘기는지 본다 — 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    stat_def.initial_value = stat_def.max_value + 1
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": ["stats.range"]}
+    assert fake.received_prompt is None
+
+
 async def test_publish_story_rejects_when_filter_fails_and_leaves_draft_unchanged(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:
@@ -2147,6 +2174,7 @@ def test_validate_story_publish_media_book(
         media_book_cells=cells,
         keyword_notes=[],
         dangling_stat_rule_paths=[],
+        stat_defs=[],
     )
 
     assert missing == expected
@@ -2293,6 +2321,44 @@ def test_validate_story_publish_keyword_notes(
             for info, keywords, always_on in notes
         ],
         dangling_stat_rule_paths=[],
+        stat_defs=[],
+    )
+
+    assert missing == expected
+
+
+@pytest.mark.parametrize(
+    ("ranges", "expected"),
+    [
+        pytest.param([(0, 100, 50)], [], id="inside"),
+        pytest.param([(0, 100, 0), (0, 100, 100)], [], id="initial-on-both-bounds"),
+        pytest.param([(-10, -1, -5)], [], id="negative-range"),
+        pytest.param([(50, 50, 50)], ["stats.range"], id="min-equals-max"),
+        pytest.param([(100, 0, 50)], ["stats.range"], id="min-above-max"),
+        pytest.param([(0, 100, 101)], ["stats.range"], id="initial-above-max"),
+        pytest.param([(0, 100, -1)], ["stats.range"], id="initial-below-min"),
+        pytest.param([(0, 100, 101), (100, 0, 500), (0, 10, 5)], ["stats.range"], id="several-reported-once"),
+    ],
+)
+def test_validate_story_publish_stat_ranges(ranges: list[tuple[int, int, int]], expected: list[str]) -> None:
+    """최소 < 최대, 최소 ≤ 초기 ≤ 최대. 경계(초기값이 최소·최대와 같음)는 통과하고, 어긋난 스탯이 몇 개든 키는 한 번만
+    알린다 — 어느 칸인지는 빌더 폼 검증이 그 칸에서 먼저 보여 준다."""
+    content, version, detail, setups = _valid_story_rows()
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_defs=[
+            StatDef(min_value=low, max_value=high, initial_value=initial) for low, high, initial in ranges
+        ],
     )
 
     assert missing == expected

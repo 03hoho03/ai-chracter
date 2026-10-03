@@ -12,6 +12,7 @@ import type { MediaTagImages } from "@/entities/media-book";
 import type { PreviewStartPayload } from "@/entities/preview-session";
 import {
   storyBuilderSchema,
+  collapseStartingSetupListPath,
   ENDING_RULE_STAT_NOT_FOUND_MESSAGE,
   formToServer,
   isEndingRuleStatNotFoundError,
@@ -26,6 +27,7 @@ import {
   STORY_COLLAPSIBLE_LISTS,
   STORY_MISSING_FIELD_FORM_PATH,
   STORY_MISSING_FIELD_LABELS,
+  STORY_STARTING_SETUP_LIST_LABELS,
   STORY_TABS,
   toMediaBookPreviewImages,
   type StoryBuilderFormValues,
@@ -259,10 +261,16 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
   function handlePublishInvalid(errors: FieldErrors<StoryBuilderFormValues>) {
     revealAndFocusFirstError(errors);
     toast.error(
-      invalidFieldsMessage(flattenFieldErrorPaths(errors).map(collapseMediaBookPath), {
-        ...MISSING_FIELD_LABEL_BY_FORM_PATH,
-        [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL,
-      }),
+      invalidFieldsMessage(
+        flattenFieldErrorPaths(errors)
+          .map(collapseMediaBookPath)
+          .map(collapseStartingSetupListPath),
+        {
+          ...MISSING_FIELD_LABEL_BY_FORM_PATH,
+          ...STORY_STARTING_SETUP_LIST_LABELS,
+          [MEDIA_BOOK_PATH]: MEDIA_BOOK_LABEL,
+        },
+      ),
     );
   }
 

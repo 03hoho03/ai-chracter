@@ -538,6 +538,25 @@ async def test_upsert_story_rejects_incomplete_payload_without_writing(
     assert await db_session.get(ContentVersion, story_version_id(SLUG)) is None
 
 
+async def test_upsert_story_rejects_stat_whose_initial_value_is_outside_its_range(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드는 초안을 거치지 않고 곧장 공개 버전을 만드므로 발행과 같은 범위 검사를 받는다."""
+    await _seed_author(db_session)
+
+    def _out_of_range(raw: dict[str, Any]) -> None:
+        stat = raw["startingSetups"][1]["statDefs"][0]
+        stat["initialValue"] = stat["maxValue"] + 1
+
+    payload = await _load_seed_payload(db_session, tmp_path, _out_of_range)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "stats.range" in str(exc_info.value)
+    assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
 async def test_upsert_story_rejects_ending_rule_pointing_at_unknown_stat(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

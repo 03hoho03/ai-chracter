@@ -33,6 +33,10 @@ type CollapsibleItemToggleProps = {
  *
  * 포커스 표시는 하우스 레시피다 — 50% 링만으로는 배경 대비 3:1 에 못 미쳐 투명 보더를 `ring` 색으로 바꾸는 1px 이 그
  * 몫을 진다. 터치 화면에서는 손가락으로 누를 수 있게 높이를 40px 로 올린다.
+ *
+ * hover 면은 `secondary` 다. 이 토글이 앉는 면(항목 카드·규칙 그룹·미디어 북 섹션)은 모두 `background` 인데, 그 위에서
+ * `muted` 는 다크 1.0946 / 라이트 1.0902:1 로 거의 보이지 않았다. 채움 위의 흐린 글자(요약·자리표시 제목)는 라이트에서 `secondary` 위 AA 에 못
+ * 미쳐 hover 동안 `foreground` 로 올린다.
  */
 export function CollapsibleItemToggle({
   openKey,
@@ -60,17 +64,30 @@ export function CollapsibleItemToggle({
       aria-disabled={isLocked || undefined}
       onClick={isLocked ? undefined : onToggle}
       className={cn(
-        "flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent px-2 text-left outline-none select-none first:-ml-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10",
-        !isLocked && "hover:bg-muted",
+        "group flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-transparent px-2 text-left outline-none select-none first:-ml-2 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:min-h-10",
+        !isLocked && "hover:bg-secondary",
         className,
       )}
     >
       <span id={titleId} className="min-w-0 truncate text-sm font-semibold">
         {srTitlePrefix && <span className="sr-only">{srTitlePrefix}</span>}
-        {trimmedTitle ? trimmedTitle : <span className="font-medium text-muted-foreground">{placeholderTitle}</span>}
+        {trimmedTitle ? (
+          trimmedTitle
+        ) : (
+          <span className={cn("font-medium text-muted-foreground", !isLocked && "group-hover:text-foreground")}>
+            {placeholderTitle}
+          </span>
+        )}
       </span>
       {/* 요약은 남는 폭만 쓴다(기준 폭 0) — 좁아지면 제목보다 요약이 먼저 잘린다. */}
-      <span className="min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground">{summary}</span>
+      <span
+        className={cn(
+          "min-w-0 flex-1 basis-0 truncate text-xs text-muted-foreground",
+          !isLocked && "group-hover:text-foreground",
+        )}
+      >
+        {summary}
+      </span>
       {hasError && (
         <>
           <TriangleAlert aria-hidden className="size-3.5 shrink-0 text-destructive-text" />

@@ -67,20 +67,53 @@ export const storySettingSchema = z
     }
   });
 
-/** 시작설정별 독립 스탯. */
-export const statDefSchema = z.object({
-  id: z.string(),
-  name: z.string().min(1, "스탯 이름을 입력해주세요"),
-  icon: z.string().min(1, "아이콘을 선택해주세요"),
-  color: z.string().min(1, "색상을 선택해주세요"),
-  min: z.number(),
-  max: z.number(),
-  initial: z.number(),
-  unit: z.string().optional(),
-  description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
-  /** 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다. */
-  perTurnDelta: z.number().int().optional(),
-});
+/**
+ * 시작설정별 독립 스탯.
+ *
+ * 최소·최대·초기값 칸은 `valueAsNumber` 로 등록돼 빈 칸이 NaN 으로 들어온다. zod 는 NaN 을 타입 오류로 보고 영어 기본
+ * 문구를 내므로 칸마다 한국어 문구를 직접 준다. 타입 오류는 이후 검사를 멈추게 해서, 빈 칸이 있으면 아래 범위 검사는 돌지
+ * 않는다(NaN 비교로 엉뚱한 범위 오류가 붙지 않는다).
+ *
+ * 범위 검사는 오류를 문제의 칸에 붙인다 — StatTab 이 칸마다 자기 경로의 메시지를 그린다. 최소·최대가 뒤집혀 있으면 최대값
+ * 칸만 알린다. 그 상태에서 초기값 문구("100~0 사이")는 뜻이 없다. 서버는 같은 규칙을 발행 때만 본다(초안 자동저장은 이미
+ * 저장된 모순 초안도 받아야 하므로) — 이 검사가 정상 화면 흐름에서 먼저 막는다.
+ */
+/** 스탯 수치 네 칸(최소·최대·초기값, 턴당 변화)은 서버가 정수로만 받는다 — 소수를 넣으면 초안 자동저장부터 거절된다. */
+const STAT_INTEGER_MESSAGE = "정수로 입력해주세요";
+
+export const statDefSchema = z
+  .object({
+    id: z.string(),
+    name: z.string().min(1, "스탯 이름을 입력해주세요"),
+    icon: z.string().min(1, "아이콘을 선택해주세요"),
+    color: z.string().min(1, "색상을 선택해주세요"),
+    min: z.number({ error: "최소값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
+    max: z.number({ error: "최대값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
+    initial: z.number({ error: "초기값을 입력해주세요" }).int(STAT_INTEGER_MESSAGE),
+    unit: z.string().optional(),
+    description: z.string().min(1, "스탯에 대한 설명을 입력해주세요"),
+    /**
+     * 매 턴 자동으로 더해지는 값(감소는 음수). 비우면 판정 LLM이 이 스탯을 판단한다.
+     *
+     * 빈 값은 `undefined` 가 아니라 `null` 이고 키를 빼지 못하게 둔다. RHF 는 폼 값이 `undefined` 인 칸이 마운트될 때 같은
+     * 경로의 `defaultValues`(초안을 불러올 때의 값, 지우거나 추가해도 인덱스가 밀리지 않는다)로 채운다. 그래서 새 스탯이
+     * 같은 자리에 있던 옛 스탯의 값을 물려받고, 비운 칸이 탭을 오갈 때 옛 값으로 되살아난다.
+     */
+    perTurnDelta: z.number().int(STAT_INTEGER_MESSAGE).nullable(),
+  })
+  .superRefine((stat, ctx) => {
+    if (stat.max <= stat.min) {
+      ctx.addIssue({ code: "custom", path: ["max"], message: "최대값은 최소값보다 커야 해요" });
+      return;
+    }
+    if (stat.initial < stat.min || stat.initial > stat.max) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["initial"],
+        message: `초기값은 ${stat.min}~${stat.max} 사이여야 해요`,
+      });
+    }
+  });
 
 /**
  * `entities/chat-room`의 `SingleRule`/`RuleGroup`/`RuleListItem`과

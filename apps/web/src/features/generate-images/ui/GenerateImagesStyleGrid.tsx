@@ -15,7 +15,7 @@ const STYLE_GRID_CLASSNAME =
 // `listbox`/`option`/`aria-selected` 패턴(ColorPicker·IconPicker
 // 선례). `radiogroup`이 아니다. 방향키 이동은 구현하지 않는다(두 선례 모두 없다).
 //
-// 선택은 `border`, 포커스는 `ring` — 둘이 다른 CSS 속성을 쓰므로 ColorPicker.tsx:60-64가 기록한
+// 선택은 `border`, 포커스는 `ring` — 둘이 다른 CSS 속성을 쓰므로 ColorPicker.tsx 스와치 className 주석이 기록한
 // `--tw-ring-*` 충돌(같은 변수를 공유해 포커스 링이 선택 링을 덮어쓰는 함정)이 원천적으로 없다.
 export function GenerateImagesStyleGrid() {
   const { control } = useFormContext<GenerateImagesFormValues>();
