@@ -42,7 +42,7 @@ describe("buildAboutHead", () => {
 
     expect(head).toContain("<title>서비스 소개 — 또나</title>");
     expect(head).toContain(
-      '<meta name="description" content="또나는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스입니다." />',
+      '<meta name="description" content="또나는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스예요." />',
     );
     expect(head).toContain(
       '<link rel="canonical" href="https://ddona.example/about" />',
