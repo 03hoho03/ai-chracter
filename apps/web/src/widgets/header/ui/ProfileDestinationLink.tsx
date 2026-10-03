@@ -3,6 +3,7 @@ import {
   FileText,
   IdCard,
   ImagePlus,
+  Info,
   LayoutGrid,
   LifeBuoy,
   Megaphone,
@@ -12,11 +13,13 @@ import {
   Shield,
   Star,
   User,
+  type LucideIcon,
 } from "lucide-react";
 import { forwardRef, type ComponentPropsWithoutRef } from "react";
 
 import { CloverIcon } from "@/entities/clover";
 import type { MeResponse } from "@/entities/session";
+import { SUPPORT_DESTINATIONS, type SupportDestinationKey } from "@/shared/config/supportDestinations";
 import { assertNever } from "@/shared/lib/assertNever";
 
 /** 목적지는 이 배열 하나에서만 정한다. 좌측 드로어(`MobileNavDrawer`)가 같은 배열을 평면화해
@@ -29,10 +32,26 @@ export const PROFILE_DESTINATION_GROUPS = [
   { label: "창작", keys: ["builder", "my-works", "studio-images"] },
   { label: "활동", keys: ["chats", "favorites"] },
   { label: "계정", keys: ["profile", "personas", "clover", "mypage"] },
-  { label: "고객센터", keys: ["notices", "inquiry-new", "terms", "privacy"] },
+  { label: "고객센터", keys: ["about", "notices", "inquiry-new", "terms", "privacy"] },
 ] as const satisfies readonly { label: string; keys: readonly string[] }[];
 
 export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number]["keys"][number];
+
+/** 고객센터 목적지의 라벨·경로는 푸터와 함께 쓰는 `SUPPORT_DESTINATIONS`에서 오고, 아이콘만 헤더가 정한다. */
+const SUPPORT_DESTINATION_ICON: Record<SupportDestinationKey, LucideIcon> = {
+  about: Info,
+  notices: Megaphone,
+  "inquiry-new": LifeBuoy,
+  terms: FileText,
+  privacy: Shield,
+};
+
+/** `me`는 `내 프로필`만 쓴다. 그 키에서만 필수로 두어, 비로그인 드로어가 공개 목적지를 `me` 없이 그릴 수 있게 한다. */
+type ProfileDestinationLinkProps = ComponentPropsWithoutRef<"a"> &
+  (
+    | { destinationKey: "profile"; me: MeResponse }
+    | { destinationKey: Exclude<ProfileDestinationKey, "profile">; me?: MeResponse }
+  );
 
 /** 라우트별 `to`/`params` 타입이 제각각이라(`/profile/$userId`만 params가 필요하다) 하나의 배열에
  * `to` 문자열을 담아 범용으로 렌더하면 라우터 제네릭과 계속 부딪힌다 — `switch`로 각 케이스를 그대로
@@ -43,10 +62,10 @@ export type ProfileDestinationKey = (typeof PROFILE_DESTINATION_GROUPS)[number][
  * 이 컴포넌트를 감싸는데, Radix의 Slot은 `ref`와 `onClick`(메뉴 선택·시트 닫기를 거는 바로 그 핸들러)을
  * 바로 아래 자식에 병합해 얹는다. 이 컴포넌트가 일반 함수 컴포넌트로 `className`만 받고 나머지를 버리면
  * 그 `onClick`이 실제 `<Link>`까지 못 가 "눌러도 메뉴/시트가 안 닫힌다"가 조용히 재현된다(실측). */
-export const ProfileDestinationLink = forwardRef<
-  HTMLAnchorElement,
-  ComponentPropsWithoutRef<"a"> & { destinationKey: ProfileDestinationKey; me: MeResponse }
->(function ProfileDestinationLink({ destinationKey, me, className, ...rest }, ref) {
+export const ProfileDestinationLink = forwardRef<HTMLAnchorElement, ProfileDestinationLinkProps>(function ProfileDestinationLink(
+  { destinationKey, me, className, ...rest },
+  ref,
+) {
   switch (destinationKey) {
     case "builder":
       return (
@@ -115,34 +134,20 @@ export const ProfileDestinationLink = forwardRef<
           설정
         </Link>
       );
+    case "about":
     case "notices":
-      return (
-        <Link ref={ref} to="/notices" className={className} {...rest}>
-          <Megaphone aria-hidden />
-          공지사항
-        </Link>
-      );
     case "inquiry-new":
-      return (
-        <Link ref={ref} to="/inquiries/new" className={className} {...rest}>
-          <LifeBuoy aria-hidden />
-          문의하기
-        </Link>
-      );
     case "terms":
+    case "privacy": {
+      const { label, to } = SUPPORT_DESTINATIONS[destinationKey];
+      const Icon = SUPPORT_DESTINATION_ICON[destinationKey];
       return (
-        <Link ref={ref} to="/terms" className={className} {...rest}>
-          <FileText aria-hidden />
-          이용약관
+        <Link ref={ref} to={to} className={className} {...rest}>
+          <Icon aria-hidden />
+          {label}
         </Link>
       );
-    case "privacy":
-      return (
-        <Link ref={ref} to="/privacy" className={className} {...rest}>
-          <Shield aria-hidden />
-          개인정보처리방침
-        </Link>
-      );
+    }
     default:
       // default 가 없으면 키를 PROFILE_DESTINATION_GROUPS 배열에만 추가하고 케이스를 빠뜨려도
       // typecheck 가 통과해 undefined 가 렌더되고, 빈 항목이 조용히 나타나 클릭해도 아무 일도

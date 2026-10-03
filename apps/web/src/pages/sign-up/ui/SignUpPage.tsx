@@ -20,7 +20,7 @@ export function SignUpPage() {
   const { title, description } = STEP_COPY[step];
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background px-4 py-12">
+    <main className="flex min-h-below-header items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-md">
         <div className="rounded-xl border border-border bg-card p-8">
           <div className="mb-6 flex flex-col gap-1">
