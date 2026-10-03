@@ -22,8 +22,8 @@ import {
   FieldLabelText,
   planStatRemoval,
   SELECTED_STARTING_SETUP,
+  StatSummary,
   STORY_FIELD_LABELS,
-  type StatDefValues,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
@@ -37,7 +37,6 @@ import { moveStatErrorsById } from "../model/moveStatErrorsById";
 import { perTurnDeltaFromInput } from "../model/perTurnDelta";
 import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "../model/restoreRemovedStat";
 import { revalidateStatRange, revalidateStatRangeIfInvalid } from "../model/statRangeValidation";
-import { statSummaryParts } from "../model/statSummary";
 
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STAT_LIST: StoryCollapsibleList = "stat";
@@ -362,33 +361,6 @@ function StatRow({
         )}
       </div>
     </CollapsibleItemCard>
-  );
-}
-
-/** 접힌 머리 줄에서 스탯을 가를 최소 정보 — 고른 아이콘·색, 범위(단위 포함)와 초기값, 턴당 변화. 비었거나 숫자가 아닌
- * 칸은 빼고(빈 구분자를 남기지 않는다), 아이콘·색 표식은 장식이라 읽지 않는다.
- *
- * 좁으면 범위는 남기고 뒤쪽부터 잘린다. 범위는 줄어들지 않는 조각이고(요약 폭보다 길 때만 말줄임), 초기값·턴당 변화는 한
- * 줄 글로 이어 붙여 말줄임이 끝(턴당 변화)부터 먹는다. 조각마다 따로 줄어들게 하면 폭이 비율로 나뉘어 범위까지 함께 잘린다. */
-function StatSummary({ stat }: { stat: StatDefValues }) {
-  const StatIcon = STAT_ICON_OPTIONS.find((option) => option.name === stat.icon)?.Icon;
-  const { range, initial, perTurn } = statSummaryParts(stat);
-  const rest = [initial, perTurn].filter((part) => part !== undefined);
-
-  return (
-    <span className="flex min-w-0 items-center">
-      {StatIcon && <StatIcon aria-hidden className="mr-1 size-3.5 shrink-0" />}
-      {stat.color && (
-        <span aria-hidden className="mr-1.5 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stat.color }} />
-      )}
-      {range && <span className="max-w-full shrink-0 truncate">{range}</span>}
-      {/* 앞 공백은 줄 첫머리라 접히므로 줄바꿈 없는 공백으로 둔다(범위가 없으면 구분자도 없다). */}
-      {rest.length > 0 && (
-        <span className="min-w-0 truncate">
-          {range ? `\u00a0· ${rest.join(" · ")}` : rest.join(" · ")}
-        </span>
-      )}
-    </span>
   );
 }
 

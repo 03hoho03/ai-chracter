@@ -141,3 +141,4 @@ export {
   type Visibility,
 } from "./model/schema";
 export { FieldLabelText } from "./ui/FieldLabelText";
+export { StatSummary } from "./ui/StatSummary";

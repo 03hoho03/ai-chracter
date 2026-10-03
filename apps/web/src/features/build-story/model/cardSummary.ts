@@ -12,8 +12,16 @@ export function startingSetupSummary(setup: Pick<StartingSetupValues, "prologue"
     .join(" · ");
 }
 
-/** 판정이 시작되는 턴과 조건 수. 그룹 안의 조건도 하나씩 센다 — 작가가 보는 "조건" 수다. */
-export function endingSummary(ending: Pick<EndingValues, "turnGate" | "statRules">): string {
+/**
+ * 판정이 시작되는 턴과 조건 수. 그룹 안의 조건도 하나씩 센다 — 작가가 보는 "조건" 수다.
+ *
+ * 규칙은 종류와 그룹 안 개수만 본다. 작성 가이드는 폼 값(규칙 id·스탯 id)이 아니라 원고의 시드 모양 규칙을 넘기므로
+ * 폼 타입 전체를 요구하지 않는다.
+ */
+export function endingSummary(ending: {
+  turnGate: EndingValues["turnGate"];
+  statRules: readonly ({ kind: "rule" } | { kind: "group"; rules: readonly unknown[] })[];
+}): string {
   const ruleCount = ending.statRules.reduce((sum, item) => sum + (item.kind === "group" ? item.rules.length : 1), 0);
   return [Number.isFinite(ending.turnGate) ? `${ending.turnGate}턴 이후` : undefined, `규칙 ${ruleCount}개`]
     .filter((part) => part !== undefined)

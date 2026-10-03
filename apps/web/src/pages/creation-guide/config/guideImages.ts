@@ -18,5 +18,13 @@ export const GUIDE_IMAGES = {
 
 export type GuideImageToken = keyof typeof GUIDE_IMAGES;
 
+/** 원고 이미지 칸 값으로 그림을 찾는다. 자리표시 값이면 null, 모르는 값이면 원고 오류라 던진다. */
+export function findGuideImage(token: string): (typeof GUIDE_IMAGES)[GuideImageToken] | null {
+  if (token === GUIDE_IMAGE_PLACEHOLDER) return null;
+  const entry = Object.entries(GUIDE_IMAGES).find(([candidate]) => candidate === token);
+  if (!entry) throw new Error(`모르는 이미지 토큰: ${token}`);
+  return entry[1];
+}
+
 /** 그림 없이 자리만 그리는 이미지 칸 값. */
 export const GUIDE_IMAGE_PLACEHOLDER = "placeholder";

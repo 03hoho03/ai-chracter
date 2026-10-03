@@ -134,7 +134,7 @@
 - **비동기 액션 버튼을 로딩 중에 `disabled`로 막으면 누를 때마다 포커스가 사라진다** — 브라우저가 `disabled`가 붙는 즉시 blur해서 `activeElement`가 `<body>`로 떨어지고, 키보드 사용자는 **한 번 누를 때마다** 헤더부터 Tab을 다시 시작한다. 버튼이 DOM에 남아 있어도 그러므로 "사라져서 그렇다"로 오진하기 쉽다. 처방은 `aria-disabled` + 핸들러 첫 줄 early return이고, `button.tsx`의 흐림은 `disabled:`에만 걸려 있으므로 `aria-disabled:opacity-65`를 함께 준다.
 - **자기가 속한 패널을 언마운트시키는 버튼도 같은 결함이다**(빈 상태의 액션). 상태를 바꾸기 **전에** 동기로, 그 분기에서 언마운트되지 않는 컨트롤로 포커스를 옮긴다(라우터 커밋에 기대는 `requestAnimationFrame`을 쓰지 않는다). 목표를 `[data-state=on]`으로 집으면 **바꾸기 전 값**이 잡히므로 곧 켜질 값을 `data-*` 표식으로 지목한다.
 - **`overflow-x-auto`는 focus 링을 네 방향 모두 클립한다**(가로만 스크롤해도 세로가 함께 클립된다) — 경계에 붙은 첫/마지막 자식은 3px 링이 통째로 사라진다. 링 두께 이상을 안팎으로 상쇄한다(`-m-1 p-1`).
-- **문장 속 인라인 링크의 포커스는 `focus-visible:underline`으로 준다** — 카드용 3px 링 레시피는 라인박스를 깨서 못 쓰고, 전역 base의 1px 아웃라인은 3:1 미달이다. 인라인 링크는 24×24 타깃 요건에서 제외된다(WCAG 2.2 SC 2.5.8 "Inline" 예외).
+- **문장 속 인라인 링크의 포커스는 `focus-visible:underline`으로 준다** — 카드용 3px 링 레시피는 라인박스를 깨서 못 쓰고, 전역 base의 1px 아웃라인은 3:1 미달이다. 인라인 링크는 24×24 타깃 요건에서 제외된다(WCAG 2.2 SC 2.5.8 "Inline" 예외). **단 쉬는 상태에 이미 밑줄이 있는 링크는 그 처방이 바꾸는 것이 없다** — 불투명 2px 아웃라인(`focus-visible:outline-solid focus-visible:outline-2 focus-visible:outline-ring`)으로 준다. `outline-none` 과 함께 쓰려면 `focus-visible:outline-solid` 를 빼지 말 것 — Tailwind 4 의 `outline-none` 은 아웃라인 스타일 변수를 `none` 으로 세우고 `outline-2` 는 그 변수를 읽으므로, `outline-solid` 없이 둘만 있으면 선이 사라진다. `outline-solid` 가 포커스 때 변수를 `solid` 로 되세워 레시피 그대로면 보인다(작성 가이드 칸 링크, `pages/creation-guide/config/guideStyles.ts`).
 
 ### 한국어 조판
 

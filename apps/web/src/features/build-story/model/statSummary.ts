@@ -1,6 +1,6 @@
-import type { StatDefValues } from "@/features/build-story";
+import type { StatDefValues } from "./schema";
 
-/** 접힌 스탯 머리 줄 요약의 글 조각. 비었거나 숫자가 아닌 칸의 조각은 없다. */
+/** 접힌 스탯 머리 줄 요약의 글 조각. 빌더 스탯 카드와 작성 가이드의 카드 모양 예시가 같이 쓴다. 비었거나 숫자가 아닌 칸의 조각은 없다. */
 export type StatSummaryParts = {
   /** 범위와 단위(`0~20일`). 단위는 범위에만 붙인다 — 초기값은 같은 단위라 반복하면 줄만 길어진다. */
   range?: string;
