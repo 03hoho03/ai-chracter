@@ -48,6 +48,19 @@ const TAG_ICON: Partial<Record<ContentCardTag, LucideIcon>> = {
   story: BookOpen,
 };
 
+/**
+ * 카드 안 작가 버튼(분리 줄·합친 줄 공용)의 포커스와 터치 영역.
+ *
+ * 포커스는 카드와 같은 레시피다(불투명 1px 아웃라인 + 반투명 헤일로) — 보더 없는 텍스트라 헤일로만으로는 3:1 에
+ * 못 미친다. 터치(`pointer-coarse`)에서는 보이는 크기(글자 한 줄, 약 19px)를 두고 `::after` 로 누르는 영역만
+ * 위아래 12px 씩(약 43px) 넓힌다. 버튼 자체를 키우면 터치 기기에서만 카드가 길어져, 작가가 없는 로딩 스켈레톤과
+ * 높이가 갈리고 목록이 도착할 때 밀린다. 넓힌 영역은 제목 박스 아래쪽 몇 px 를 덮어 그 자리를 누르면 상세 대신 작가
+ * 필터가 된다(손가락 타깃을 위해 감수). 마우스에서는 넓히지 않는다. 말줄임은 안쪽 span 이 진다 — 버튼에
+ * `overflow: hidden` 을 걸면 자기 `::after` 를 잘라 버린다.
+ */
+const AUTHOR_BUTTON_CLASS =
+  "relative rounded-sm hover:underline focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50 pointer-coarse:after:absolute pointer-coarse:after:-inset-x-1 pointer-coarse:after:-inset-y-3";
+
 /** 카드에 얹는 지표. `viewCount` 하나만 오고 `author`가 없으면(프로필) `조회수 {n}` 평문 그대로 두고,
  * `author`가 함께 오면(홈·즐겨찾기) `Eye` 아이콘 + `·` + 작가명을 한 줄로 합친다.
  * 셋이 다 오면(`/my`) 라벨을 아이콘으로 바꿔 스크린리더에만 한국어 이름을 남긴다.
@@ -286,9 +299,9 @@ export function ContentCard({
               // 카드의 Enter/Space 핸들러가 `preventDefault` 후 상세를 열기 때문에, 막지 않으면 이 버튼에서 누른
               // Enter가 작가 필터 대신 상세 모달을 연다. 전파만 끊으면 버튼 기본 동작(키 → click)이 살아난다.
               onKeyDown={(event) => event.stopPropagation()}
-              className="w-fit truncate text-left text-xs text-muted-foreground hover:underline"
+              className={cn("w-fit max-w-full text-left text-xs text-muted-foreground", AUTHOR_BUTTON_CLASS)}
             >
-              {author.name}
+              <span className="block truncate">{author.name}</span>
             </button>
           ) : (
             <p id={`${id}-author`} className="truncate text-xs text-muted-foreground">
@@ -337,9 +350,9 @@ function ContentCardViewsAndAuthor({ id, viewCount, author, onAuthorClick }: Con
           }}
           // 위 분리 줄의 작가 버튼과 같은 이유로 keydown도 끊는다 — 카드가 Enter/Space를 가로채 상세를 연다.
           onKeyDown={(event) => event.stopPropagation()}
-          className="min-w-0 truncate text-left hover:underline"
+          className={cn("min-w-0 text-left", AUTHOR_BUTTON_CLASS)}
         >
-          {author.name}
+          <span className="block truncate">{author.name}</span>
         </button>
       ) : (
         <span id={`${id}-author`} className="min-w-0 truncate">
