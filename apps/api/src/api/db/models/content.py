@@ -161,3 +161,26 @@ class Like(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class ContentChatParticipant(Base):
+    """작품과 대화를 시작한 적이 있는 (작품, 사용자) 쌍. `contents.chat_count` 는 이 표의 행 수다.
+
+    방은 하드 삭제되므로 방 행으로는 "이 사람이 이미 셌는가" 를 판정할 수 없다 — 방을 지우고 다시 만들면 또 세게
+    된다. 그래서 쌍을 따로 남기고, 이 행을 처음 넣었을 때만 수를 올린다. 방을 지워도 이 행과 수는 남는다. 작가 본인은
+    넣지 않는다.
+
+    복합 PK 가 "쌍당 한 번" 의 유일한 방어선이다(삽입은 `ON CONFLICT DO NOTHING`) — `alembic check` 는 복합 PK
+    구성을 비교하지 않으므로 검증은 행위 테스트가 한다.
+
+    `ondelete` 는 두지 않는다(저장소 규약). 회원은 탈퇴해도 행이 남는 소프트 삭제라 FK 동작이 일어날 일이 없고,
+    탈퇴 파기(`erase_account`)가 그 회원의 행을 직접 지운다 — 수는 내리지 않는다. 작품 행을 지우는 경로는 발행된
+    적 없는 초안 삭제뿐인데, 방은 발행본이 있어야 만들어지므로 그 작품에는 이 행이 생기지 않는다."""
+
+    __tablename__ = "content_chat_participants"
+
+    content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("users.id"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
