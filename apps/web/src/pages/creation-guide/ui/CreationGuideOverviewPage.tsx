@@ -13,7 +13,7 @@ import { GuideStepList } from "./GuideStepList";
 
 /** 원고 첫 절(들어가며). 제목 없이 페이지 제목 아래 리드로 그린다. */
 const INTRO_SECTION_ID = "overview";
-/** "칸을 AI가 읽는 때" 절. 원고에는 리드 문장만 있고 그룹 목록은 목업 표에서 그린다. */
+/** "AI가 칸을 읽는 때" 절. 원고에는 리드 문장만 있고 그룹 목록은 목업 표에서 그린다. */
 const READ_TIMING_SECTION_ID = "reading";
 
 type CreationGuideOverviewPageProps = {
@@ -21,7 +21,8 @@ type CreationGuideOverviewPageProps = {
 };
 
 /**
- * `/guide/<토픽>` 개요 — 들어가는 글, (스토리) 예시 작품과 칸을 AI가 읽는 때, 단계 목록, 미리보기·실수 같은 단계 밖 절.
+ * `/guide/<토픽>` 개요 — 들어가는 글과 (스토리) 예시 작품, 단계 목록, AI가 칸을 읽는 때, 미리보기·실수 같은 단계 밖 절.
+ * 단계 목록을 읽는 때 표보다 앞에 두는 이유: 개요에 온 사람이 먼저 찾는 것은 어느 단계로 갈지다.
  * 로그인 없이 열린다(빌더에서 새 탭으로 연다). 산문이 주인이라 넓은 화면에서도 읽기 폭 한 열이다.
  */
 export function CreationGuideOverviewPage({ topicId }: CreationGuideOverviewPageProps) {
@@ -42,6 +43,7 @@ export function CreationGuideOverviewPage({ topicId }: CreationGuideOverviewPage
         {intro && <GuideContent content={intro.content} headingLevel={2} />}
         {mockupContext && <GuideExampleWork context={mockupContext} />}
       </div>
+      <GuideStepList topicId={topicId} steps={pages.steps} />
       {beforeSections.map((section) => (
         <OverviewSection key={section.id} section={section}>
           {section.id === READ_TIMING_SECTION_ID && mockupContext && (
@@ -49,12 +51,12 @@ export function CreationGuideOverviewPage({ topicId }: CreationGuideOverviewPage
               topicId={topicId}
               mockups={mockupContext.mockups}
               anchorOfKey={pages.anchorOfKey}
+              steps={pages.steps}
               labelledBy={headingIdOf(section)}
             />
           )}
         </OverviewSection>
       ))}
-      <GuideStepList topicId={topicId} steps={pages.steps} />
       {pages.overview.after.map((section) => (
         <OverviewSection key={section.id} section={section} />
       ))}

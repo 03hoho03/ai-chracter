@@ -10,7 +10,6 @@ export {
   keywordNoteSummary,
   keywordNoteTitle,
   startingSetupSummary,
-  type KeywordNoteSummary,
 } from "./model/cardSummary";
 export {
   STORY_FIELD_LABELS,

@@ -4,6 +4,12 @@ import { GUIDE_SUMMARY_CLASS } from "../config/guideStyles";
 
 type GuideDisclosureProps = {
   summary: string;
+  /**
+   * 화면에는 안 보이고 접기 줄 이름 뒤에 괄호로 붙는 칸 이름. 한 페이지에 "자세히"가 여럿이라 접기 줄만 모아 훑는 낭독기
+   * 탐색에서 어느 칸의 것인지 가려지게 한다. 뒤에 붙이는 이유: 보이는 글자가 이름 맨 앞에 그대로 남아야 보이는 라벨이
+   * 접근 가능한 이름의 접두가 된다(WCAG 2.5.3 Label in Name 이 권하는 형태 — 개요의 칸 링크 이름도 같은 순서다).
+   */
+  context?: string;
   children: React.ReactNode;
 };
 
@@ -15,12 +21,13 @@ type GuideDisclosureProps = {
  * 접기 카드도 즉시다). 패널 간격을 `gap` 이 아니라 위 패딩으로 주는 이유: 패널은 `summary` 의 형제라 `details` 가 flex 가
  * 아니면 gap 을 받지 못하고, `details` 를 flex 로 바꾸는 동작은 브라우저마다 다르다.
  */
-export function GuideDisclosure({ summary, children }: GuideDisclosureProps) {
+export function GuideDisclosure({ summary, context, children }: GuideDisclosureProps) {
   return (
     <details className="group">
       <summary className={GUIDE_SUMMARY_CLASS}>
         <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground group-open:rotate-180" />
         {summary}
+        {context && <span className="sr-only">{` (${context})`}</span>}
       </summary>
       <div className="flex flex-col gap-3 pt-2 pb-1">{children}</div>
     </details>

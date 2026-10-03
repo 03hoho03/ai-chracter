@@ -15,13 +15,17 @@ import { GuideMockupFrame } from "./GuideMockupFrame";
 
 // 칸 블록 배치. 좁은 화면은 제목·설명 → 칸 그림 → 접기 줄을 위아래로 쌓고, 넓은 화면은 설명(왼쪽) ↔ 그림(오른쪽) 두 열에
 // 접기 줄을 아래 전폭으로 둔다. 세 자식의 자리를 명시하는 이유: 자동 배치에 맡기면 제목과 설명이 서로 다른 열로 갈린다.
-// 왼쪽 열에만 폭 상한을 두고 그림 폭은 그림에 건다 — 두 열 모두 트랙에 상한을 주면 1024~1368px 에서 남는 폭이 두 열로
-// 나뉘어 그림이 줄어든다. DOM 순서가 두 폭에서 같아 낭독·Tab 순서도 같다.
+// 왼쪽 열에만 폭 상한을 두고 그림은 오른쪽 열을 끝까지 채운다 — 두 열 모두 트랙에 상한을 주면 1024~1368px 에서 남는
+// 폭이 두 열로 나뉘어 그림이 줄어든다. 그림에 따로 폭 상한을 두지 않는 이유: 본문 폭이 이미 그림 폭을 정해, 상한을 두면
+// 그림 오른쪽 끝만 칩 줄·이전/다음 카드의 오른쪽 끝보다 안쪽에서 멈춘다. DOM 순서가 두 폭에서 같아 낭독·Tab 순서도 같다.
 const SECTION_CLASS =
   "grid scroll-mt-20 gap-3 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] lg:items-start lg:gap-x-10";
 const TEXT_CELL_CLASS = "flex min-w-0 flex-col gap-3 lg:col-start-1 lg:row-start-1";
-const MOCKUP_CELL_CLASS = "w-full max-w-xl lg:col-start-2 lg:row-start-1";
+const MOCKUP_CELL_CLASS = "w-full lg:col-start-2 lg:row-start-1";
 const DISCLOSURE_CELL_CLASS = "flex min-w-0 flex-col gap-2 lg:col-span-2 lg:row-start-2";
+// 접기 칸은 넓은 화면에서 두 열 전폭이라, 산문을 그 폭대로 두면 한 줄이 100자를 넘어 읽기 어렵다. 나쁜 예 대비는 두 쪽을
+// 나란히 놓아야 해 전폭을 그대로 쓰고, "자세히"의 산문만 단계 리드와 같은 읽기 폭으로 묶는다.
+const DETAILS_PROSE_CLASS = "flex max-w-2xl min-w-0 flex-col gap-3";
 const HEADING_CLASS = "text-lg font-semibold tracking-tight text-balance text-foreground";
 
 type GuideFieldBlockProps = {
@@ -63,15 +67,19 @@ export function GuideFieldBlock({ block, context }: GuideFieldBlockProps) {
       {(hasDetails || block.bad.length > 0) && (
         <div className={DISCLOSURE_CELL_CLASS}>
           {hasDetails && (
-            <GuideDisclosure summary="자세히">
+            <GuideDisclosure summary="자세히" context={title}>
               {listKey && cardFieldValues.length > 0 && (
                 <OpenCardMockup listKey={listKey} values={cardFieldValues} />
               )}
-              {block.details && <GuideItems items={block.details} />}
+              {block.details && (
+                <div className={DETAILS_PROSE_CLASS}>
+                  <GuideItems items={block.details} />
+                </div>
+              )}
             </GuideDisclosure>
           )}
           {block.bad.length > 0 && (
-            <GuideDisclosure summary={badSummary(block)}>
+            <GuideDisclosure summary={badSummary(block)} context={title}>
               <div className="flex flex-col gap-6">
                 {block.bad.map((part) => (
                   <GuideBadComparison
@@ -146,8 +154,10 @@ export function GuideNoteBlockView({ block }: GuideNoteBlockViewProps) {
       </div>
       {block.details && (
         <div className={DISCLOSURE_CELL_CLASS}>
-          <GuideDisclosure summary="자세히">
-            <GuideItems items={block.details} />
+          <GuideDisclosure summary="자세히" context={block.title}>
+            <div className={DETAILS_PROSE_CLASS}>
+              <GuideItems items={block.details} />
+            </div>
           </GuideDisclosure>
         </div>
       )}

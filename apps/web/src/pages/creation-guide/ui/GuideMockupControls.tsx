@@ -1,5 +1,6 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Check, ChevronDown } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
 
 import {
   FieldLabelText,
@@ -9,7 +10,6 @@ import {
 } from "@/features/build-story";
 
 import { GUIDE_SUMMARY_CLASS } from "../config/guideStyles";
-import { exceedsClampLines } from "../model/clampedText";
 import type { MockupChoice } from "../model/mockupChoices";
 
 // 빌더 칸의 "그림". 진짜 입력 요소(`Input`·`Switch` 등)를 쓰지 않는다 — 읽기 전용 입력칸도 Tab 이 멈추고 스크린리더가
@@ -81,24 +81,71 @@ type MockupTextareaProps = {
 };
 
 /**
- * 여러 줄 칸 모양. 빌더 칸은 글만큼 자라지만 그림은 몇 줄에서 잘라 페이지 길이를 지킨다. 넘칠 때만 "전체 보기"를 둔다 —
- * 잘림은 화면에서만이라 스크린리더는 접힌 상태에서도 글 전체를 읽는다.
+ * 여러 줄 칸 모양. 빌더 칸은 글만큼 자라지만 그림은 네 줄에서 잘라 페이지 길이를 지킨다. 실제로 잘린 칸에만 "전체 보기"를
+ * 둔다 — 글자 수로 미리 짐작하면 넓은 화면에서 네 줄 안에 다 보이는 값에도 눌러도 바뀌지 않는 줄이 남는다. 잘렸는지는
+ * 그린 뒤 높이로 재되 화면에 칠하기 전(레이아웃 효과)에 정해, 줄이 나타났다 사라지는 깜빡임이 없다. 잘림은 화면에서만이라
+ * 스크린리더는 접힌 상태에서도 글 전체를 읽는다.
+ *
+ * "전체 보기"는 칸 블록의 "자세히"·"나쁜 예"보다 한 단계 작고 흐리게 둔다 — 그 둘은 칸 블록의 접기고, 이것은 그림 속
+ * 칸 하나를 늘리는 것이라 같은 무게면 세 줄이 한 종류로 읽힌다.
  *
  * 줄높이는 빌더 칸과 같은 24px 이다(빌더 칸은 `text-base` 의 기본 줄높이). 최소 높이도 빌더 칸과 같아 한 줄짜리 값도
  * 한 줄 입력칸으로 보이지 않는다.
  */
 export function MockupTextarea({ text, clampsLongText = true }: MockupTextareaProps) {
-  const canClamp = clampsLongText && exceedsClampLines(text);
+  const textRef = useRef<HTMLDivElement>(null);
+  const rowRef = useRef<HTMLDetailsElement>(null);
+  const [hasRow, setHasRow] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+
+  // 펼친 동안은 재지 않는다 — 잘림이 풀려 "안 잘림"으로 읽히면 "접기" 줄이 사라진다. 크기가 바뀌면(창 크기·두 열 전환,
+  // 아직 안 잘린 짧은 값이 글자 간격 덮어쓰기 등으로 줄이 늘어 높이가 자라는 경우) 다시 재고, 글꼴이 늦게 들어와 줄바꿈이 달라지는 경우도 잡는다(잘린 상자는 높이가 그대로라 크기 감시로는 모른다).
+  useLayoutEffect(() => {
+    const element = textRef.current;
+    if (!clampsLongText || isExpanded || !element) return;
+    // 포커스를 가진 줄은 안 잘리게 됐어도 남긴다. 펼친 채 화면을 돌려(좁은→넓은 폭) 접으면 그 자리에서 잘림이 없어지는데,
+    // 그때 줄을 내리면 키보드·스크린리더 포커스가 문서 맨 앞(body)으로 튕긴다. 남은 줄은 포커스가 떠난 뒤 다음 재기(폭
+    // 변화 등)에서 내린다 — 포커스가 떠나는 순간 내리면 그 아래 내용이 클릭 도중에 밀려 올라온다.
+    const measure = () => {
+      const isClamped = element.scrollHeight > element.clientHeight;
+      const isRowFocused = rowRef.current?.contains(document.activeElement) ?? false;
+      setHasRow(isClamped || isRowFocused);
+    };
+    measure();
+    // 폭·높이가 둘 다 그대로인 알림은 건너뛴다 — 감시를 걸면 바로 한 번 오는 첫 알림이 그렇다. 그 알림이 늦게 오면 이미
+    // 줄을 떠난 포커스를 보고 줄을 내려, 크기가 바뀌지 않았는데도 아래 내용이 밀려 올라온다. 폭만 보면 안 된다: 안 잘린
+    // 짧은 값은 폭이 그대로여도 줄이 늘면 높이가 자라며 잘리기 시작한다.
+    let measuredWidth = element.clientWidth;
+    let measuredHeight = element.clientHeight;
+    const observer = new ResizeObserver(() => {
+      if (element.clientWidth === measuredWidth && element.clientHeight === measuredHeight) return;
+      measuredWidth = element.clientWidth;
+      measuredHeight = element.clientHeight;
+      measure();
+    });
+    observer.observe(element);
+    let isActive = true;
+    void document.fonts.ready.then(() => {
+      if (isActive) measure();
+    });
+    return () => {
+      isActive = false;
+      observer.disconnect();
+    };
+  }, [clampsLongText, isExpanded, text]);
+
   return (
-    <div className="group/clip flex flex-col gap-2">
+    <div className="flex flex-col gap-2">
       {/* 잘림은 안쪽 글 상자에 건다 — 테두리 상자에 걸면 잘린 다음 줄이 아래 패딩 자리에 비쳐 보인다. */}
       <div className="min-h-16 rounded-lg border border-input px-3 py-2 text-sm leading-6 whitespace-pre-wrap break-keep wrap-break-word text-foreground">
-        <div className={cn(canClamp && "line-clamp-4 group-has-[details[open]]/clip:line-clamp-none")}>{text}</div>
+        <div ref={textRef} className={cn(clampsLongText && !isExpanded && "line-clamp-4")}>
+          {text}
+        </div>
       </div>
-      {canClamp && (
-        <details className="group">
-          <summary className={cn(GUIDE_SUMMARY_CLASS, "w-fit")}>
-            <ChevronDown aria-hidden className="size-4 shrink-0 text-muted-foreground group-open:rotate-180" />
+      {(hasRow || isExpanded) && (
+        <details ref={rowRef} className="group" onToggle={(event) => setIsExpanded(event.currentTarget.open)}>
+          <summary className={cn(GUIDE_SUMMARY_CLASS, "w-fit gap-1.5 text-xs text-muted-foreground hover:text-foreground")}>
+            <ChevronDown aria-hidden className="size-3.5 shrink-0 group-open:rotate-180" />
             <span className="group-open:hidden">전체 보기</span>
             <span className="hidden group-open:inline">접기</span>
           </summary>

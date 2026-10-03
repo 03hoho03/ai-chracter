@@ -9,9 +9,6 @@ import { useHorizontalScrollClip } from "@/shared/lib/scroll/useHorizontalScroll
 import { GUIDE_STEP_ROUTES } from "../config/guideRoutes";
 import type { GuideStep } from "../model/toGuidePages";
 
-/** 오른쪽 페이드 폭(`w-8`). 현재 칩을 끌어올 때 이만큼 더 당겨 페이드에 덮이지 않게 한다. */
-const FADE_WIDTH = 32;
-
 type GuideStepChipsProps = {
   topicId: CreationGuideTopicId;
   topicTitle: string;
@@ -25,9 +22,12 @@ type GuideStepChipsProps = {
  *
  * 화면 위에 붙여 두지 않는다(sticky 아님) — 이 시스템의 붙박이 줄은 전역 헤더 하나뿐이다.
  *
- * 좁은 화면에서 뒤쪽 단계의 칩은 가로로 밖에 있어, 단계가 바뀔 때마다 칩 줄의 가로 위치만 현재 칩이 보이게 맞춘다.
- * `scrollIntoView` 를 쓰지 않는 이유: 칩이 세로로 화면 밖이면(칸 앵커로 아래에서 들어온 경우) 창까지 위로 끌어올려 앵커
- * 이동을 무른다. 부드러운 스크롤 없이 즉시 옮긴다.
+ * 좁은 화면에서 뒤쪽 단계의 칩은 가로로 밖에 있어, 단계가 바뀔 때마다 칩 줄의 가로 위치를 현재 칩이 가운데 오게 다시
+ * 정한다. "안 보일 때만 옮기기"로 두지 않는 이유: 단계를 오가도 이 컴포넌트가 남아 있어 이전 페이지의 가로 위치를
+ * 물려받으므로, 같은 단계라도 어디서 왔느냐에 따라 칩 줄 모양이 달라지고 앞쪽 칩이 반쯤 잘린 채 남는다. 가운데 맞춤은
+ * 현재 단계만으로 위치가 정해지고, 양 끝 단계는 브라우저가 스크롤 범위로 잘라 첫 칩은 왼쪽 끝, 마지막 칩은 오른쪽 끝에
+ * 붙는다(페이드도 그때는 사라진다). `scrollIntoView` 를 쓰지 않는 이유: 칩이 세로로 화면 밖이면(칸 앵커로 아래에서 들어온
+ * 경우) 창까지 위로 끌어올려 앵커 이동을 무른다. 부드러운 스크롤 없이 즉시 옮긴다.
  */
 export function GuideStepChips({ topicId, topicTitle, steps, currentStepId }: GuideStepChipsProps) {
   const clip = useHorizontalScrollClip();
@@ -41,12 +41,9 @@ export function GuideStepChips({ topicId, topicTitle, steps, currentStepId }: Gu
     if (!scroller || !chip) return;
     const scrollerRect = scroller.getBoundingClientRect();
     const chipRect = chip.getBoundingClientRect();
-    const paddingLeft = parseFloat(getComputedStyle(scroller).paddingLeft);
-    if (chipRect.right > scrollerRect.right) scroller.scrollLeft += chipRect.right - scrollerRect.right + FADE_WIDTH;
-    else if (chipRect.left < scrollerRect.left + paddingLeft) {
-      // 비교 기준은 테두리 상자라 패딩(포커스 링 여유)만큼 더 돌려야 첫 칩이 스크롤러 왼쪽 끝에 붙지 않는다.
-      scroller.scrollLeft -= scrollerRect.left + paddingLeft - chipRect.left;
-    }
+    // 지금 가로 위치를 더해 스크롤과 무관한 칩 위치로 바꾼 뒤, 칩 가운데가 스크롤러 가운데에 오는 값을 바로 넣는다.
+    const chipCenter = chipRect.left - scrollerRect.left + scroller.scrollLeft + chipRect.width / 2;
+    scroller.scrollLeft = chipCenter - scroller.clientWidth / 2;
   }, [currentStepId]);
 
   return (

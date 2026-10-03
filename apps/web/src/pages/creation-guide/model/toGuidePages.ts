@@ -24,7 +24,11 @@ export type GuideStep = {
 export type GuideAnchor = { stepId: string; anchorId: string };
 
 export type GuidePages = {
-  /** 개요 페이지 = 첫 단계 앞 절(`before`) → 단계 행 → 마지막 단계 뒤 절(`after`). */
+  /**
+   * 개요 페이지에 들어갈 절. `before` 는 원고에서 첫 단계 앞, `after` 는 마지막 단계 뒤에 있던 절이다. 화면 순서는 원고
+   * 순서와 다르다 — 들어가며 → 단계 행 → `before` 의 나머지(스토리의 AI가 칸을 읽는 때) → `after`(미리보기·자주 하는
+   * 실수).
+   */
   overview: { before: ManuscriptSection[]; after: ManuscriptSection[] };
   steps: GuideStep[];
   /** 칸 키 → 그 키를 품은 블록의 단계와 앵커. 개요 "AI가 읽는 때" 목록의 칸 링크가 쓴다. */
