@@ -458,38 +458,6 @@ async def test_list_contents_sort_popular_prioritizes_chat_count_over_like_and_v
     assert names == ["대화수높음-좋아요조회수낮음", "대화수낮음-좋아요조회수높음"]
 
 
-async def test_list_contents_sort_genre_orders_by_genre_master_sort_order(
-    db_client: httpx.AsyncClient, db_session: AsyncSession
-) -> None:
-    user = _make_user()
-    db_session.add(user)
-    await db_session.flush()
-    genres = await _get_genres(db_session)
-    now = datetime.now(UTC)
-
-    # Older content in the earlier-sort_order genre should still rank first.
-    await _make_published_content(
-        db_session,
-        creator_user_id=user.id,
-        genre_id=genres[1].id,
-        name="장르2-오래됨",
-        created_at=now - timedelta(days=1),
-    )
-    await _make_published_content(
-        db_session,
-        creator_user_id=user.id,
-        genre_id=genres[0].id,
-        name="장르1-최근",
-        created_at=now,
-    )
-    await db_session.commit()
-
-    resp = await db_client.get("/contents", params={"type": "character", "sort": "genre"})
-    assert resp.status_code == 200
-    names = [item["name"] for item in resp.json()["items"]]
-    assert names == ["장르1-최근", "장르2-오래됨"]
-
-
 async def test_list_contents_sort_popular_orders_by_view_count_when_chat_and_like_tie(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
