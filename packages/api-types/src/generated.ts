@@ -260,6 +260,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/home-curations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Home Curations */
+        get: operations["list_home_curations_admin_home_curations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/home-curations/{content_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Home Curation
+         * @description 그 유형의 지정작을 이 작품으로 둔다. 이미 다른 작품이 지정돼 있으면 바꾼다(한 문장 upsert라 동시 지정은 나중
+         *     것이 이긴다). 같은 작품을 다시 지정해도 막지 않고 감사 로그에 한 행 더 남긴다.
+         *
+         *     400 은 둘이고 `code` 로 갈린다: 칸과 유형이 다른 작품(`CONTENT_TYPE_MISMATCH` — 유형 일치는 DB 가 아니라 여기서만
+         *     지킨다), 지금 공개 목록에 실리지 않는 작품(`NOT_PUBLICLY_LISTED` — 지정했는데 홈에 안 보이는 혼란을 지정
+         *     시점에 막는다).
+         */
+        put: operations["set_home_curation_admin_home_curations__content_type__put"];
+        post?: never;
+        /**
+         * Clear Home Curation
+         * @description 그 유형의 지정을 지운다. 지정이 없어도 204 다 — 결과가 같으니 다시 눌러도 막지 않는다. 감사 로그는 실제로
+         *     지웠을 때만 남긴다(대상 작품이 있어야 기록이 무엇을 내렸는지 말할 수 있다).
+         */
+        delete: operations["clear_home_curation_admin_home_curations__content_type__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -1855,6 +1902,32 @@ export interface paths {
          *     the FE's `canDiscoverPublicly`.
          */
         patch: operations["update_content_visibility_contents__id__visibility_patch"];
+        trace?: never;
+    };
+    "/home-curation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Home Curation
+         * @description 홈 첫 화면에 거는 그 유형의 운영자 지정작. 지정이 없거나, 지정 작품이 지금 공개 목록(`list_contents`)에
+         *     실리지 않으면 `item` 이 null 이다 — 목록과 같은 `select_publicly_listed` 로 거르므로 이용제한·비공개가 되면 자동으로
+         *     빠지고 제한이 풀리면 다시 보인다.
+         *
+         *     홈 방문마다 불리므로 상세 GET 과 달리 조회수를 세지 않는다(요청·열람 키를 받지 않는다). 뷰어와 무관한
+         *     응답이라 세션도 읽지 않는다. 경로가 `/contents/{id}` 아래가 아닌 이유는 그 경로의 uuid 칸에 먼저 잡히기
+         *     때문이다.
+         */
+        get: operations["get_home_curation_home_curation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/contents/{id}": {
@@ -4104,6 +4177,55 @@ export interface components {
             /** Messages */
             messages: number;
         };
+        /** AdminHomeCurationClearRequest */
+        AdminHomeCurationClearRequest: {
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /** AdminHomeCurationContent */
+        AdminHomeCurationContent: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+            visibility: components["schemas"]["ContentVisibility"];
+            moderationStatus: components["schemas"]["ModerationStatus"];
+        };
+        /** AdminHomeCurationListResponse */
+        AdminHomeCurationListResponse: {
+            /** Items */
+            items: components["schemas"]["AdminHomeCurationSlot"][];
+        };
+        /**
+         * AdminHomeCurationSetRequest
+         * @description 코멘트는 선택이다 — 되돌릴 수 있고 작가에게 불이익이 없는 조작이라 사유를 강제하지 않는다. 감사 로그에
+         *     누가·언제는 남는다.
+         */
+        AdminHomeCurationSetRequest: {
+            /**
+             * Contentid
+             * Format: uuid
+             */
+            contentId: string;
+            /** Admincomment */
+            adminComment?: string | null;
+        };
+        /**
+         * AdminHomeCurationSlot
+         * @description `is_listed` 는 지정 작품이 지금 홈에 보이는가다 — 공개 목록과 같은 판정이라, 지정 뒤 이용제한·비공개가
+         *     되면 지정은 남은 채 거짓이 된다. 지정이 없으면 거짓이다.
+         */
+        AdminHomeCurationSlot: {
+            type: components["schemas"]["ContentType"];
+            content: components["schemas"]["AdminHomeCurationContent"] | null;
+            /** Islisted */
+            isListed: boolean;
+        };
         /**
          * AdminImageGenerationDetailItem
          * @description 사유 게이트를 통과한 뒤에만 내려간다 — 프롬프트와 이미지 URL이 들어간다.
@@ -4770,7 +4892,7 @@ export interface components {
              * Actiontype
              * @enum {string}
              */
-            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
+            actionType: "appeal-accept" | "chat-report-reject" | "chat-report-resolve" | "chat-view" | "comment-hide" | "comment-report-reject" | "comment-restore" | "content-delete" | "content-lift" | "content-restrict" | "home-curation-clear" | "home-curation-set" | "image-view" | "inquiry-reply" | "legal-publish" | "notice-publish" | "notice-unpublish" | "prompt-set-publish" | "report-reject" | "user-beta-off" | "user-beta-on" | "user-clover-grant" | "user-clover-revoke" | "user-rate-limit-exempt-off" | "user-rate-limit-exempt-on" | "user-suspend" | "user-unsuspend" | "user-warn";
             /** Targetcontentid */
             targetContentId: string | null;
             /** Contentname */
@@ -6395,6 +6517,29 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** HomeCurationItem */
+        HomeCurationItem: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            type: components["schemas"]["ContentType"];
+            /** Name */
+            name: string;
+            /** Oneliner */
+            oneLiner: string;
+            /** Thumbnailurl */
+            thumbnailUrl: string | null;
+        };
+        /**
+         * HomeCurationResponse
+         * @description `item` 이 null 이면 그 유형은 지정이 없거나 지정 작품이 지금 공개 목록에 없다 — 홈은 섹션을 그리지 않는다.
+         *     본문 자체를 null 로 내지 않고 감싸는 이유는 "지정 없음" 을 빈 응답과 헷갈리지 않게 하려는 것이다.
+         */
+        HomeCurationResponse: {
+            item: components["schemas"]["HomeCurationItem"] | null;
+        };
         /** ImageArchiveItem */
         ImageArchiveItem: {
             /**
@@ -7799,6 +7944,92 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["AdminContentDetailResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_home_curations_admin_home_curations_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminHomeCurationListResponse"];
+                };
+            };
+        };
+    };
+    set_home_curation_admin_home_curations__content_type__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_type: components["schemas"]["ContentType"];
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdminHomeCurationSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_home_curation_admin_home_curations__content_type__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                content_type: components["schemas"]["ContentType"];
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AdminHomeCurationClearRequest"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -10229,6 +10460,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_home_curation_home_curation_get: {
+        parameters: {
+            query: {
+                type: components["schemas"]["ContentType"];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HomeCurationResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

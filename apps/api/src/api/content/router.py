@@ -57,6 +57,8 @@ from api.content.schemas import (
     EndingRuleListDraftItem,
     ExampleDialogueItem,
     GenreResponse,
+    HomeCurationItem,
+    HomeCurationResponse,
     KeywordNoteDraftItem,
     MediaBookAxisInput,
     MediaBookAxisItem,
@@ -89,6 +91,7 @@ from api.db.models.content import (
     ContentVisibility,
     Favorite,
     Genre,
+    HomeCuration,
     Like,
     ModerationStatus,
 )
@@ -2514,6 +2517,40 @@ async def list_contents(
             next_cursor = _encode_cursor([last_content.created_at.isoformat(), str(last_content.id)])
 
     return ContentListResponse(items=items, next_cursor=next_cursor)
+
+
+@router.get("/home-curation")
+async def get_home_curation(type: ContentType, db: AsyncSession = Depends(get_db_session)) -> HomeCurationResponse:
+    """홈 첫 화면에 거는 그 유형의 운영자 지정작. 지정이 없거나, 지정 작품이 지금 공개 목록(`list_contents`)에
+    실리지 않으면 `item` 이 null 이다 — 목록과 같은 `select_publicly_listed` 로 거르므로 이용제한·비공개가 되면 자동으로
+    빠지고 제한이 풀리면 다시 보인다.
+
+    홈 방문마다 불리므로 상세 GET 과 달리 조회수를 세지 않는다(요청·열람 키를 받지 않는다). 뷰어와 무관한
+    응답이라 세션도 읽지 않는다. 경로가 `/contents/{id}` 아래가 아닌 이유는 그 경로의 uuid 칸에 먼저 잡히기
+    때문이다."""
+    detail_model = _detail_model(type)
+    row = (
+        await db.execute(
+            select_publicly_listed(
+                type, Content, detail_model.name, detail_model.one_liner, detail_model.thumbnail_asset_id
+            )
+            .join(HomeCuration, HomeCuration.content_id == Content.id)
+            .where(HomeCuration.content_type == type)
+        )
+    ).one_or_none()
+    if row is None:
+        return HomeCurationResponse(item=None)
+
+    content, name, one_liner, thumbnail_asset_id = row
+    return HomeCurationResponse(
+        item=HomeCurationItem(
+            id=content.id,
+            type=content.type,
+            name=name,
+            one_liner=one_liner,
+            thumbnail_url=await _resolve_thumbnail_url(db, thumbnail_asset_id),
+        )
+    )
 
 
 def _resolve_access_status(

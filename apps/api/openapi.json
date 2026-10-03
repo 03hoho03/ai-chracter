@@ -508,6 +508,122 @@
         }
       }
     },
+    "/admin/home-curations": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List Home Curations",
+        "operationId": "list_home_curations_admin_home_curations_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminHomeCurationListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/admin/home-curations/{content_type}": {
+      "put": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set Home Curation",
+        "description": "그 유형의 지정작을 이 작품으로 둔다. 이미 다른 작품이 지정돼 있으면 바꾼다(한 문장 upsert라 동시 지정은 나중\n것이 이긴다). 같은 작품을 다시 지정해도 막지 않고 감사 로그에 한 행 더 남긴다.\n\n400 은 둘이고 `code` 로 갈린다: 칸과 유형이 다른 작품(`CONTENT_TYPE_MISMATCH` — 유형 일치는 DB 가 아니라 여기서만\n지킨다), 지금 공개 목록에 실리지 않는 작품(`NOT_PUBLICLY_LISTED` — 지정했는데 홈에 안 보이는 혼란을 지정\n시점에 막는다).",
+        "operationId": "set_home_curation_admin_home_curations__content_type__put",
+        "parameters": [
+          {
+            "name": "content_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContentType"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdminHomeCurationSetRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Clear Home Curation",
+        "description": "그 유형의 지정을 지운다. 지정이 없어도 204 다 — 결과가 같으니 다시 눌러도 막지 않는다. 감사 로그는 실제로\n지웠을 때만 남긴다(대상 작품이 있어야 기록이 무엇을 내렸는지 말할 수 있다).",
+        "operationId": "clear_home_curation_admin_home_curations__content_type__delete",
+        "parameters": [
+          {
+            "name": "content_type",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContentType"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/AdminHomeCurationClearRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Body"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/admin/users": {
       "get": {
         "tags": [
@@ -4275,6 +4391,48 @@
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/home-curation": {
+      "get": {
+        "tags": [
+          "content"
+        ],
+        "summary": "Get Home Curation",
+        "description": "홈 첫 화면에 거는 그 유형의 운영자 지정작. 지정이 없거나, 지정 작품이 지금 공개 목록(`list_contents`)에\n실리지 않으면 `item` 이 null 이다 — 목록과 같은 `select_publicly_listed` 로 거르므로 이용제한·비공개가 되면 자동으로\n빠지고 제한이 풀리면 다시 보인다.\n\n홈 방문마다 불리므로 상세 GET 과 달리 조회수를 세지 않는다(요청·열람 키를 받지 않는다). 뷰어와 무관한\n응답이라 세션도 읽지 않는다. 경로가 `/contents/{id}` 아래가 아닌 이유는 그 경로의 uuid 칸에 먼저 잡히기\n때문이다.",
+        "operationId": "get_home_curation_home_curation_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContentType"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HomeCurationResponse"
+                }
+              }
+            }
           },
           "422": {
             "description": "Validation Error",
@@ -10040,6 +10198,133 @@
         ],
         "title": "AdminDashboardTrendPoint"
       },
+      "AdminHomeCurationClearRequest": {
+        "properties": {
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "title": "AdminHomeCurationClearRequest"
+      },
+      "AdminHomeCurationContent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          },
+          "visibility": {
+            "$ref": "#/components/schemas/ContentVisibility"
+          },
+          "moderationStatus": {
+            "$ref": "#/components/schemas/ModerationStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "thumbnailUrl",
+          "visibility",
+          "moderationStatus"
+        ],
+        "title": "AdminHomeCurationContent"
+      },
+      "AdminHomeCurationListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/AdminHomeCurationSlot"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "title": "AdminHomeCurationListResponse"
+      },
+      "AdminHomeCurationSetRequest": {
+        "properties": {
+          "contentId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Contentid"
+          },
+          "adminComment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Admincomment"
+          }
+        },
+        "type": "object",
+        "required": [
+          "contentId"
+        ],
+        "title": "AdminHomeCurationSetRequest",
+        "description": "코멘트는 선택이다 — 되돌릴 수 있고 작가에게 불이익이 없는 조작이라 사유를 강제하지 않는다. 감사 로그에\n누가·언제는 남는다."
+      },
+      "AdminHomeCurationSlot": {
+        "properties": {
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "content": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AdminHomeCurationContent"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "isListed": {
+            "type": "boolean",
+            "title": "Islisted"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "content",
+          "isListed"
+        ],
+        "title": "AdminHomeCurationSlot",
+        "description": "`is_listed` 는 지정 작품이 지금 홈에 보이는가다 — 공개 목록과 같은 판정이라, 지정 뒤 이용제한·비공개가\n되면 지정은 남은 채 거짓이 된다. 지정이 없으면 거짓이다."
+      },
       "AdminImageGenerationDetailItem": {
         "properties": {
           "id": {
@@ -11680,6 +11965,8 @@
               "content-delete",
               "content-lift",
               "content-restrict",
+              "home-curation-clear",
+              "home-curation-set",
               "image-view",
               "inquiry-reply",
               "legal-publish",
@@ -15784,6 +16071,66 @@
         },
         "type": "object",
         "title": "HTTPValidationError"
+      },
+      "HomeCurationItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "type": {
+            "$ref": "#/components/schemas/ContentType"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "oneLiner": {
+            "type": "string",
+            "title": "Oneliner"
+          },
+          "thumbnailUrl": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thumbnailurl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "name",
+          "oneLiner",
+          "thumbnailUrl"
+        ],
+        "title": "HomeCurationItem"
+      },
+      "HomeCurationResponse": {
+        "properties": {
+          "item": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HomeCurationItem"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "item"
+        ],
+        "title": "HomeCurationResponse",
+        "description": "`item` 이 null 이면 그 유형은 지정이 없거나 지정 작품이 지금 공개 목록에 없다 — 홈은 섹션을 그리지 않는다.\n본문 자체를 null 로 내지 않고 감싸는 이유는 \"지정 없음\" 을 빈 응답과 헷갈리지 않게 하려는 것이다."
       },
       "ImageArchiveItem": {
         "properties": {

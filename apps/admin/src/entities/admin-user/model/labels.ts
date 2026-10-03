@@ -43,6 +43,10 @@ export const ACTION_TYPE_LABELS = {
   "appeal-accept": "이의제기 인용",
   "chat-view": "채팅 열람",
   "image-view": "이미지 열람",
+  // 작가의 조치 이력 표는 서버가 이 둘을 빼고 준다(제재 기록을 밀어내지 않게) — 타입이 모든 조치의 라벨을 요구해
+  // 둔다. 문구는 작품 상세의 지정·해제 버튼과 같은 말이다.
+  "home-curation-set": "홈 큐레이션 지정",
+  "home-curation-clear": "홈 큐레이션 해제",
   "inquiry-reply": "문의 답변",
   "legal-publish": "약관·정책 게시",
   "notice-publish": "공지 게시",

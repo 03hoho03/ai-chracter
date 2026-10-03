@@ -10,6 +10,7 @@ from sqlalchemy import text
 from api.admin.chat_view import router as admin_chat_view_router
 from api.admin.contents import router as admin_contents_router
 from api.admin.dashboard import router as admin_dashboard_router
+from api.admin.home_curation import router as admin_home_curation_router
 from api.admin.image_generations import router as admin_image_generations_router
 from api.admin.inquiries import router as admin_inquiries_router
 from api.admin.legal import router as admin_legal_router
@@ -109,6 +110,7 @@ app.include_router(admin_router)
 app.include_router(admin_me_router)
 app.include_router(admin_dashboard_router)
 app.include_router(admin_contents_router)
+app.include_router(admin_home_curation_router)
 app.include_router(admin_users_router)
 app.include_router(admin_legal_router)
 app.include_router(admin_notices_router)

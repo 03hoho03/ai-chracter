@@ -34,6 +34,7 @@ from api.db.models.content import (
     ContentVisibility,
     Favorite,
     Genre,
+    HomeCuration,
     Like,
     ModerationStatus,
 )
@@ -115,6 +116,7 @@ __all__ = [
     "Favorite",
     "Genre",
     "GuardianConsent",
+    "HomeCuration",
     "ImageGenerationRequest",
     "Inquiry",
     "InquiryCategory",

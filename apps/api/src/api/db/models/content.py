@@ -184,3 +184,25 @@ class ContentChatParticipant(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class HomeCuration(Base):
+    """홈 첫 화면에 유형(캐릭터·스토리)마다 한 편씩 거는 운영자 지정작. 행이 없으면 그 유형은 지정이 없다.
+
+    유형이 PK 라 유형마다 한 행뿐이고, 지정을 바꾸는 쓰기는 `INSERT … ON CONFLICT (content_type) DO UPDATE` 한
+    문장이다. 지정 작품의 유형이 칸의 유형과 같은지는 DB 가 아니라 지정 API 가 확인한다.
+
+    지정 작품이 나중에 이용제한·비공개가 돼도 행은 그대로 둔다 — 홈은 읽을 때 공개 목록과 같은 조건으로 걸러
+    안 보이게 하고, 제한이 풀리면 조치 경로가 이 표를 몰라도 다시 보인다.
+
+    `ondelete` 는 두지 않는다(저장소 규약). 지정 API 는 공개 목록에 실린 작품만 받는데 그런 작품은 발행본이 있고,
+    작품 행을 지우는 경로는 발행된 적 없는 초안 삭제뿐이라 지정 작품이 지워질 일이 없다. 그런 경로가 새로 생기면
+    조용히 비는 대신 FK 위반으로 드러난다."""
+
+    __tablename__ = "home_curations"
+
+    content_type: Mapped[ContentType] = mapped_column(Enum(ContentType, name="content_type"), primary_key=True)
+    content_id: Mapped[uuid.UUID] = mapped_column(Uuid, ForeignKey("contents.id"), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )

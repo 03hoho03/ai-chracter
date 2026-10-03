@@ -189,6 +189,39 @@ class AdminContentActionRequest(CamelModel):
     admin_comment: str | None = None
 
 
+class AdminHomeCurationContent(CamelModel):
+    id: uuid.UUID
+    name: str
+    thumbnail_url: str | None
+    visibility: ContentVisibility
+    moderation_status: ModerationStatus
+
+
+class AdminHomeCurationSlot(CamelModel):
+    """`is_listed` 는 지정 작품이 지금 홈에 보이는가다 — 공개 목록과 같은 판정이라, 지정 뒤 이용제한·비공개가
+    되면 지정은 남은 채 거짓이 된다. 지정이 없으면 거짓이다."""
+
+    type: ContentType
+    content: AdminHomeCurationContent | None
+    is_listed: bool
+
+
+class AdminHomeCurationListResponse(CamelModel):
+    items: list[AdminHomeCurationSlot]
+
+
+class AdminHomeCurationSetRequest(CamelModel):
+    """코멘트는 선택이다 — 되돌릴 수 있고 작가에게 불이익이 없는 조작이라 사유를 강제하지 않는다. 감사 로그에
+    누가·언제는 남는다."""
+
+    content_id: uuid.UUID
+    admin_comment: str | None = None
+
+
+class AdminHomeCurationClearRequest(CamelModel):
+    admin_comment: str | None = None
+
+
 class AdminUserListItem(CamelModel):
     id: uuid.UUID
     email: str
