@@ -52,8 +52,20 @@ const toggleVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring",
+        /** **`data-filter-default` 표식이 붙은 항목은 선택돼도 채우지 않는다.** 필터 칩 줄의 기본값 항목
+         * (아무것도 거르지 않는 `전체`)이 그 표식을 단다 — 필터가 실제로 걸렸을 때만 `primary` 솔리드
+         * 채움(화면의 밝기 예산)을 쓰게 하려는 것이다(DESIGN.md Toggles 절). 선택 표시는 채움 대신
+         * `border-foreground` + `text-foreground`다(비선택은 `border-input` + `text-muted-foreground`).
+         * 어느 항목이 기본값인지는 variant가 알 수 없어 항목 표식으로 가른다 — 표식이 없는 `outline`
+         * 호출부는 1픽셀도 안 바뀐다.
+         *
+         * 베이스의 선택 채움과 chain이 달라 twMerge가 지우지 못하므로 특이도로 이긴다(표식 하나만큼 높다).
+         * hover는 3중 chain `data-[state=on]:hover:bg-primary/80`이 따로 있어 같은 깊이로 **따로** 덮는다 —
+         * 빠뜨리면 hover에서만 핑크가 스친다. 포커스 보더도 다시 `border-ring`으로 올린다 — 선택 보더
+         * (`border-foreground`)가 베이스의 `focus-visible:border-ring`보다 특이도가 높아 덮어 버리기 때문이다.
+         * 불투명 링(`data-[state=on]:focus-visible:ring-ring`)은 그대로 걸린다. */
         outline:
-          "border border-input bg-transparent hover:bg-muted data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring",
+          "border border-input bg-transparent hover:bg-muted data-[state=on]:focus-visible:ring-ring aria-pressed:focus-visible:ring-ring data-filter-default:data-[state=on]:border-foreground data-filter-default:data-[state=on]:bg-transparent data-filter-default:data-[state=on]:text-foreground data-filter-default:data-[state=on]:hover:bg-muted data-filter-default:data-[state=on]:focus-visible:border-ring",
         /** 세로로 쌓인 목록형 선택지(신고 사유 등). 행이 버튼보다 훨씬 넓어서 솔리드 채움을 쓰면
          * 같은 화면의 primary CTA와 같은 크기·같은 색 덩어리가 둘이 되어 무엇이 액션인지 흐려진다
          * (DESIGN.md 밝기 예산 규칙: "밝은 면적은 예산이고, 한 화면에서 지금 눌러야 할 단 하나에만
