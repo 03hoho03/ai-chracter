@@ -139,6 +139,12 @@ export function HomePage({
     onSearchChange(patch);
   };
 
+  // 상세 모달은 닫히면 연 카드로 포커스를 돌려준다. 그 카드가 그사이 사라졌으면(목록이 다시 그려진 경우) 필터 뒤
+  // 착지점과 같은 결과 영역으로 받는다 — 다음 Tab 이 첫 카드로 간다.
+  const openDetail = (type: ContentType, id: string) => {
+    open(type, id, { getFallbackFocus: () => resultsRef.current });
+  };
+
   return (
     // 홈은 보이는 첫 행이 h1이 아니라 유형·정렬 행인 유일한 라우트라(비로그인은 그 위에 소개 한 줄) 상단
     // 패딩을 pt-4로 줄인다(홈의 h1은 sr-only, 즐겨찾기·내 작품은 보이는 h1으로 시작한다).
@@ -297,7 +303,7 @@ export function HomePage({
           if (!event.currentTarget.contains(event.relatedTarget)) isFocusInChunkRef.current = false;
         }}
       >
-        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} onOpen={open} />}
+        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} onOpen={openDetail} />}
 
         {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
             스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}
@@ -309,7 +315,7 @@ export function HomePage({
             thumbnailAspect={thumbnailAspect}
             sentinelRef={sentinelRef}
             endMessage={toHomeListEndMessage(contentType, isFiltered)}
-            onOpenContent={open}
+            onOpenContent={openDetail}
             onAuthorClick={(creatorUserId) => changeFilter({ creator: creatorUserId })}
             onFiltersClear={isFiltered ? () => changeFilter(HOME_FILTER_RESET) : undefined}
             // `다시 시도`도 자기 패널을 언마운트시킨다 — 데이터가 하나도 없는 쿼리는 재요청을 시작하는 순간

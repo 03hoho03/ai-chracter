@@ -7,7 +7,7 @@ import { SUPPORT_DESTINATIONS, type SupportDestinationKey } from "@/shared/confi
 const FOOTER_LINK_KEYS = ["about", "terms", "privacy", "notices", "inquiry-new"] as const satisfies readonly SupportDestinationKey[];
 
 const LINK_CLASS =
-  "whitespace-nowrap rounded-sm text-xs text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50";
+  "whitespace-nowrap rounded-sm text-xs text-muted-foreground motion-safe:transition-colors hover:text-foreground focus-visible:outline-1 focus-visible:outline-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 /**
  * 문서 끝에 놓이는 정보 푸터. 고정하지 않는다 — 루트 레이아웃이 페이지 영역을 늘려 짧은 페이지에서는 뷰포트
