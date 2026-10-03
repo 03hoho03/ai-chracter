@@ -21,6 +21,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as ChatsRouteImport } from './routes/chats'
+import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as NoticesIndexRouteImport } from './routes/notices.index'
 import { Route as InquiriesIndexRouteImport } from './routes/inquiries.index'
@@ -98,6 +99,11 @@ const FavoritesRoute = FavoritesRouteImport.update({
 const ChatsRoute = ChatsRouteImport.update({
   id: '/chats',
   path: '/chats',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
+  id: '/about',
+  path: '/about',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -193,6 +199,7 @@ const BuilderTypeDraftIdRoute = BuilderTypeDraftIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -225,6 +232,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -258,6 +266,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/about': typeof AboutRoute
   '/chats': typeof ChatsRoute
   '/favorites': typeof FavoritesRoute
   '/forgot-password': typeof ForgotPasswordRoute
@@ -292,6 +301,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/about'
     | '/chats'
     | '/favorites'
     | '/forgot-password'
@@ -324,6 +334,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/about'
     | '/chats'
     | '/favorites'
     | '/forgot-password'
@@ -356,6 +367,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/about'
     | '/chats'
     | '/favorites'
     | '/forgot-password'
@@ -389,6 +401,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AboutRoute: typeof AboutRoute
   ChatsRoute: typeof ChatsRoute
   FavoritesRoute: typeof FavoritesRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
@@ -504,6 +517,13 @@ declare module '@tanstack/react-router' {
       path: '/chats'
       fullPath: '/chats'
       preLoaderRoute: typeof ChatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -637,6 +657,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AboutRoute: AboutRoute,
   ChatsRoute: ChatsRoute,
   FavoritesRoute: FavoritesRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
