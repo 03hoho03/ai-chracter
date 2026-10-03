@@ -40,10 +40,11 @@ function render(items: RuleListItemValues[], emptyText = "규칙이 없어요.")
 const MISSING_STAT_SENTENCE = "이 조건의 스탯이 지워졌어요. 다른 스탯을 고르거나 조건을 지워 주세요.";
 
 describe("RuleListEditor 지워진 스탯 조건", () => {
-  it("목록에 없는 스탯을 가리키는 조건은 스탯 칸에 '지워진 스탯'을 오류로 그리고 고치는 법을 잇는다", () => {
+  it("목록에 없는 스탯을 가리키는 조건은 스탯 칸에 '지워짐'을 오류로 그리고 고치는 법을 잇는다", () => {
     const html = render([rule("r1", "gone")]);
 
-    expect(html).toContain("지워진 스탯");
+    // 넓은 화면의 128px 스탯 칸에 잘리지 않고 들어가는 짧은 글자를 보이고, 온전한 이름은 접근 이름이 맡는다.
+    expect(html).toContain(">지워짐</span>");
     expect(html).toContain('aria-label="스탯 선택: 지워진 스탯"');
     expect(html).toContain('aria-invalid="true"');
     expect(html).toContain(`id="rule-r1-missing-stat"`);
@@ -71,6 +72,7 @@ describe("RuleListEditor 지워진 스탯 조건", () => {
 
     expect(html).toContain('aria-label="스탯 선택"');
     expect(html).not.toContain("지워진 스탯");
+    expect(html).not.toContain("지워짐");
   });
 
   it("빈 목록에서는 호출부가 준 문장을 그린다", () => {

@@ -20,13 +20,13 @@ function saveRejection(code: string, paths?: unknown): ApiErrorObject {
 }
 
 describe("저장 거절 — 지워진 스탯을 쓰는 상황 노트 조건", () => {
-  it("자동저장 실패 문구가 글자 수가 아니라 상황 노트 탭의 '지워진 스탯' 조건을 가리킨다", () => {
+  it("자동저장 실패 문구가 글자 수가 아니라 상황 노트 탭의 스탯 칸에 '지워짐'이 보이는 조건을 가리킨다", () => {
     const message = storyAutosaveErrorMessage(saveRejection("SITUATION_NOTE_STAT_NOT_FOUND"));
 
     expect(message).toBe(SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE);
     expect(message).toContain("상황 노트 탭");
     // 편집기가 그런 조건의 스탯 칸에 그리는 이름과 같은 말이어야 작가가 화면에서 찾는다.
-    expect(message).toContain("‘지워진 스탯’");
+    expect(message).toContain("스탯 칸에 ‘지워짐’이 보이는 조건");
     expect(message).not.toMatch(/글자 수|엔딩/);
   });
 

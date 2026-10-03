@@ -294,8 +294,10 @@ function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: Log
 /** 단일 규칙 한 줄(스탯/연산자/기준값). 그룹 내부와 최상위 목록 양쪽에서 재사용된다.
  *
  * 스탯 칸이 가리키는 스탯이 이 시작설정에 없으면(지워진 스탯) 셀렉트는 고른 항목을 찾지 못해 빈칸을 그린다 — 그 대신
- * '지워진 스탯'을 오류 표시와 함께 그리고 줄 아래에 고치는 법을 적는다. 셀렉트를 열면 지금 스탯 목록이 그대로 나와 하나를
- * 고르면 고쳐지고, 줄 삭제 버튼으로 지울 수도 있다. 사실을 알리는 정적 문장이라 `role="alert"` 를 달지 않는다. */
+ * 경고 아이콘과 '지워짐'을 오류 표시와 함께 그리고 줄 아래에 고치는 법을 적는다. 넓은 화면에서 스탯 칸은 128px 이라 패딩·
+ * 셰브론·아이콘을 빼면 글자 칸이 54px 남짓이고, '지워진 스탯'(약 73px)은 '지워진…'으로 잘려 뜻이 사라졌다 — 그래서 칸에는
+ * 세 글자만 보이고, 온전한 이름은 접근 이름(`스탯 선택: 지워진 스탯`)과 줄 아래 문장이 맡는다. 셀렉트를 열면 지금 스탯 목록이
+ * 그대로 나와 하나를 고르면 고쳐지고, 줄 삭제 버튼으로 지울 수도 있다. 사실을 알리는 정적 문장이라 `role="alert"` 를 달지 않는다. */
 function SingleRuleRow({
   rule,
   stats,
@@ -343,7 +345,7 @@ function SingleRuleRow({
                   {isStatMissing ? (
                     <>
                       <TriangleAlert aria-hidden className="size-3.5 text-destructive-text" />
-                      <span className="truncate text-destructive-text">지워진 스탯</span>
+                      <span className="truncate text-destructive-text">지워짐</span>
                     </>
                   ) : undefined}
                 </SelectValue>

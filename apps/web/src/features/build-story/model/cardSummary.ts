@@ -66,7 +66,7 @@ export function situationNoteTitle(note: Pick<SituationNoteValues, "name" | "con
  * 상황 노트 카드 머리 줄의 조건 요약. 노트를 가르는 재료가 조건이라 첫 조건을 글로 보이고 나머지는 개수로 접는다
  * (`상영회까지 <= 0 외 1개`). 첫 항목이 그룹이면 한 줄로 옮길 수 없어 전체 개수만(`조건 3개`), 조건이 없으면 `조건 없음`.
  * 개수는 편집기의 상한과 같은 셈이다(그룹 자체는 세지 않는다). 스탯 이름과 연산자는 조건 줄의 셀렉트가 그리는 글자와 같게
- * 쓰고, 지워진 스탯을 가리키면 줄의 표시와 같은 `지워진 스탯` 이다.
+ * 쓰고, 지워진 스탯을 가리키면 `지워진 스탯` 이다(줄의 스탯 칸은 좁아 `지워짐` 만 보이지만, 머리 줄은 자리가 있어 온전히 쓴다).
  */
 export function situationNoteConditionSummary(
   rules: readonly RuleListItemValues[],
