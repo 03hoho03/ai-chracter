@@ -15,7 +15,6 @@ import {
   GenerateImagesPromptField,
   GenerateImagesReferenceField,
   GenerateImagesResultGrid,
-  GenerateImagesStyleGrid,
   GenerateImagesUnavailableState,
   useGenerateImagesMutation,
   useGenerateImagesSubmit,
@@ -59,9 +58,14 @@ export function ImageStudioShell({
   // features/generate-images가 조각을 한 열로 쌓아 두던 옛 조합 컴포넌트가 갖고 있던 잡 폴링·
   // 제출 로직 — 3열로 조각을 흩는 이 셸이 그 조합을 대신하면서 쓰는 곳이 없어져 지웠고(고아 정리),
   // 로직만 여기로 옮겼다.
-  const [jobId, setJobId] = useState<string | undefined>(undefined);
+  //
+  // 결과 영역이 보이는 잡은 **202를 받은 제출** 하나다. 그 순간의 잡 id와 비율·개수를 함께 잡아 두고,
+  // 다음 제출이 202를 받을 때만 바꾼다 — 확인 모달을 거절했거나 429·참조 거절·422로 요청이 실패하면
+  // 잡이 생기지 않았으므로 직전 결과가 그대로 남는다. 비율·개수를 `generateMutation.variables`에서
+  // 읽지 않는 이유도 같다: 그 값은 실패한 제출로도 덮여, 직전 결과가 방금 거절된 비율로 다시 그려진다.
+  const [submission, setSubmission] = useState<JobSubmission | undefined>(undefined);
   const generateMutation = useGenerateImagesMutation();
-  const jobQuery = useImageJobStatusQuery(jobId ?? "", jobId !== undefined);
+  const jobQuery = useImageJobStatusQuery(submission?.jobId ?? "", submission !== undefined);
 
   // 잡이 끝나면 보관함 목록을 무효화한다. 중앙 열은 잡 응답의 job.images로 새 이미지를 이미
   // 보여주지만, 보관함(과 빌더 피커)이 공유하는 `useGeneratedImagesQuery`는 refetchOnWindowFocus
@@ -94,9 +98,6 @@ export function ImageStudioShell({
   }, [jobStatus, queryClient]);
 
   async function handleSubmit(values: GenerateImagesFormValues, helpers: GenerateImagesSubmitHelpers) {
-    setJobId(undefined);
-    hasInvalidatedGalleryRef.current = false;
-    hasInvalidatedCloverRef.current = false;
     await generate(values, helpers);
   }
 
@@ -132,7 +133,11 @@ export function ImageStudioShell({
         values,
         isReferenceEnabled: helpers.isReferenceEnabled,
       });
-      setJobId(response.jobId);
+      // 위 두 무효화 효과의 "이 잡에서 이미 했다" 표시는 지켜보는 잡 하나에 묶인 값이라, 지켜보는 잡이
+      // 바뀌는 이 자리(202)에서 함께 되돌린다. 요청이 실패하면 잡이 바뀌지 않으므로 표시도 그대로다.
+      hasInvalidatedGalleryRef.current = false;
+      hasInvalidatedCloverRef.current = false;
+      setSubmission({ jobId: response.jobId, aspectRatio: values.aspectRatio, count: values.count });
       // 202 시점에 이미 차감이 끝났다(게이트가 `Depends`에서 깎는다) — 잡이 끝나기를 기다리지
       // 않고 여기서 한 번 반영한다. 위 효과는 그 뒤의 **환불**을 잡는다.
       void queryClient.invalidateQueries({ queryKey: cloverKeys.balance() });
@@ -197,8 +202,8 @@ export function ImageStudioShell({
         <ImageStudioLibraryRail isOpen={isLibraryOpen} onOpenChange={setIsLibraryOpen} />
       </aside>
 
-      {/* GenerateImagesFormProvider는 중앙(Prompt/Style/Result)과
-          우열(Options) 양쪽의 공통 조상이어야 폼 context가 닿는다(React context는 DOM 위치와
+      {/* GenerateImagesFormProvider는 중앙(프롬프트·참조·결과)과
+          우열(옵션·스타일) 양쪽의 공통 조상이어야 폼 context가 닿는다(React context는 DOM 위치와
           무관). 좌열(보관함)은 그 바깥에 둔다 — 폼 context가 전혀 필요 없고, 모델 목록을 못
           불러온 상태에서도 이미 만든 보관함은 계속 열 수 있어야 한다.
           이 프로바이더는 더 이상 "이용 불가" 판정으로 children을 통째로 갈아치우지 않는다
@@ -233,14 +238,6 @@ export function ImageStudioShell({
                   탭바 하단 border다. 시트 트리거(36px)는 items-center로 가운데 정렬된다. */}
               <TabsList variant="line" className="group-data-horizontal/tabs:h-12">
                 <TabsTrigger value="generate">생성</TabsTrigger>
-                {/* 저장소 최초의 disabled 탭. GenerateImagesStyleGrid의
-                    "· 준비 중" 표기와 같은 어법을 접근 가능한 이름에도 남긴다. */}
-                <TabsTrigger value="transform" disabled>
-                  변형 · 준비 중
-                </TabsTrigger>
-                <TabsTrigger value="inpaint" disabled>
-                  인페인트 · 준비 중
-                </TabsTrigger>
               </TabsList>
 
               {/* 시트 트리거 2개. 크랙은 size-12(48px)지만 우리
@@ -277,15 +274,14 @@ export function ImageStudioShell({
               이유). lg 미만의 max-w-2xl은 행 쪽에 걸려 있던 것을 여기로 옮겼다(위 배경 주석). */}
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-2xl px-4 py-6 sm:px-6 lg:max-w-3xl">
-              {/* forceMount — 탭을 오가도 입력 중인 프롬프트와 진행 중인 생성 잡 표시(로컬 state)가
-                  사라지지 않게 언마운트 대신 숨긴다(StudioImagesPage.tsx 옛 관용구 유지).
-                  변형·인페인트는 disabled라 도달 불가능하므로 그 둘의 TabsContent는 만들지 않는다
-                  (빈 껍데기는 도달 불가능한 코드다). */}
+              {/* forceMount — 탭이 여럿이던 때, 다른 탭으로 가도 입력 중인 프롬프트와 진행 중인 생성 잡
+                  표시(로컬 state)가 사라지지 않게 언마운트 대신 숨기던 관용구다(StudioImagesPage.tsx 옛
+                  관용구). 지금은 탭이 '생성' 하나라 숨겨지는 일이 없지만, 탭을 다시 붙이면 같은 이유로
+                  필요해서 남겨 둔다. */}
               <TabsContent value="generate" forceMount className="flex flex-col gap-6 data-[state=inactive]:hidden">
                 <ImageStudioGenerateTabContent
-                  jobId={jobId}
+                  submission={submission}
                   jobData={jobQuery.data}
-                  requestedCount={generateMutation.variables?.values.count ?? 1}
                   isJobQueryError={jobQuery.isError}
                 />
               </TabsContent>
@@ -294,7 +290,7 @@ export function ImageStudioShell({
         </Tabs>
 
         {/* 우열 — lg 이상만 보인다. */}
-        <aside className="hidden w-80 shrink-0 flex-col border-l border-border lg:flex">
+        <aside className="hidden w-80 shrink-0 flex-col border-l border-border lg:flex xl:w-96">
           <ImageStudioOptionsRail isOpen={isOptionsOpen} onOpenChange={setIsOptionsOpen} />
         </aside>
       </GenerateImagesFormProvider>
@@ -302,22 +298,27 @@ export function ImageStudioShell({
   );
 }
 
+/** 202를 받은 제출. 결과 영역은 이 잡의 진행을 이 비율·개수 모양으로 그린다. */
+type JobSubmission = {
+  jobId: string;
+  aspectRatio: GenerateImagesFormValues["aspectRatio"];
+  count: number;
+};
+
 type ImageStudioGenerateTabContentProps = {
-  jobId: string | undefined;
+  submission: JobSubmission | undefined;
   jobData: ImageJobStatusResponse | undefined;
-  requestedCount: number;
   isJobQueryError: boolean;
 };
 
 // 브라우저 실검증 회귀 수정 — GenerateImagesFormProvider가 더 이상 early return하지 않으므로
-// (파일 상단 주석), "이용 불가"일 때 프롬프트·스타일·결과 대신 대체 UI를 꽂는 이 판정은 중앙
+// (파일 상단 주석), "이용 불가"일 때 프롬프트·참조·결과 대신 대체 UI를 꽂는 이 판정은 중앙
 // TabsContent **안**에서만 일어난다. 이 함수가 useGenerateImagesSubmit()을 부르려면 그 자체가
 // GenerateImagesFormProvider의 자손이어야 한다 — ImageStudioShell 본문에서 그냥 호출하면 아직
 // FormProvider가 만들어지기 전 트리를 읽어 항상 실패한다.
 function ImageStudioGenerateTabContent({
-  jobId,
+  submission,
   jobData,
-  requestedCount,
   isJobQueryError,
 }: ImageStudioGenerateTabContentProps) {
   const { unavailableReason, onRetry } = useGenerateImagesSubmit();
@@ -330,11 +331,9 @@ function ImageStudioGenerateTabContent({
     <>
       <GenerateImagesPromptField />
       <GenerateImagesReferenceField />
-      <GenerateImagesStyleGrid />
-      {/* 생성 결과는 중앙 하단에 그대로 남긴다. */}
-      {jobId !== undefined && (
-        <GenerateImagesResultGrid job={jobData} requestedCount={requestedCount} isQueryError={isJobQueryError} />
-      )}
+      {/* 결과 영역은 참조 바로 아래에 늘 있다 — 첫 생성 전에는 빈 상태로 자리를 잡아 두어, 생성을 누른
+          자리에서 눈을 옮기지 않고 진행과 결과를 본다. 스타일은 우열(좁은 화면은 옵션 시트)에 있다. */}
+      <GenerateImagesResultGrid shape={submission} job={jobData} isQueryError={isJobQueryError} />
     </>
   );
 }

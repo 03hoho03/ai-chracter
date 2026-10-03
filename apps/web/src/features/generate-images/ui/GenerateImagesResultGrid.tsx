@@ -1,28 +1,128 @@
-import { cn } from "@ai-character-chat/ui/lib/utils";
+import { useId } from "react";
 import { Loader2 } from "lucide-react";
+import { useFormContext, useWatch } from "react-hook-form";
 
 import type { ImageJobStatusResponse } from "@/entities/image-job";
 import { assertNever } from "@/shared/lib/assertNever";
 
+import { getResultTileLayout, type ResultShape } from "../model/resultTileLayout";
+import type { GenerateImagesFormValues } from "../model/schema";
+
 type GenerateImagesResultGridProps = {
+  /** 마지막으로 202를 받은 제출의 비율·개수. 없으면 아직 생성한 적이 없는 빈 상태다. */
+  shape: ResultShape | undefined;
   job: ImageJobStatusResponse | undefined;
-  requestedCount: number;
   isQueryError: boolean;
-}
+};
 
 type BlockedReason = NonNullable<ImageJobStatusResponse["blockedReason"]>;
 
 type InputError = NonNullable<ImageJobStatusResponse["inputError"]>;
 
-// 폴링 상태를 그리드로 보여준다. 완료 전엔 남은 칸을 스켈레톤으로 채워 진행률을 드러내고,
-// 완료(succeeded)되면 실제 결과만, 실패(failed)면 에러 메시지를 보여준다.
-// 그리드 스타일은 select-generated-image/GeneratedImagePickerModal과 동일(grid-cols-3 gap-2 + aspect-square rounded-md).
-// 채움만 표면 따라 다르다 — 여기는 background 위라 `bg-muted`, 피커는 모달(popover) 위라 `bg-secondary`(DESIGN.md Colors 절).
-export function GenerateImagesResultGrid({
+// 중앙 열의 결과 영역. 생성 화면에 늘 마운트돼 있고 한 섹션 안에서 빈 상태 → 진행 → 결과(또는 실패)를
+// 그린다. 결과를 언제 바꿀지는 이 컴포넌트가 아니라 제출을 소유한 셸이 정한다(`shape`·`job`을 바꿔 준다).
+//
+// 칸 모양은 `getResultTileLayout` 하나가 정한다 — 열 수 = 장수, 비율 = 제출한 비율, 높이 상한은 열 폭에
+// 건다. 빈 상태 칸·스켈레톤·결과 타일이 같은 값을 쓰므로 결과가 도착해도 칸이 움직이지 않는다.
+// 빈 상태는 폼의 **현재** 비율·개수로 그려, 생성 전에 고른 설정이 어떤 모양으로 나올지 미리 보인다.
+export function GenerateImagesResultGrid({ shape, job, isQueryError }: GenerateImagesResultGridProps) {
+  const headingId = useId();
+  const { control } = useFormContext<GenerateImagesFormValues>();
+  const formAspectRatio = useWatch({ control, name: "aspectRatio" });
+  const formCount = useWatch({ control, name: "count" });
+
+  // 부분 차단은 실패가 아니라 정보다. 성공한 이미지 옆에 무채색 톤으로
+  // 공존시키고(destructive 금지), aria-live="polite"로 알린다 — assertive면 이미지가 막 렌더되는
+  // 순간 스크린리더를 끊고 끼어든다.
+  const partialBlockNotice =
+    shape !== undefined && job?.status === "succeeded" && job.blockedCount > 0 && job.blockedReason != null
+      ? getPartialBlockNotice(job.blockedCount)
+      : undefined;
+
+  return (
+    // relative — 이 안에 absolute 조각(sr-only 등)이 생겨도 그 기준이 이 섹션이 되어 중앙 스크롤러
+    // 안에 머문다. 기준이 될 조상이 없으면 lg 이상의 중앙 스크롤러(`overflow-y-auto`, positioned 아님)
+    // 바깥이 기준이 되어 그 조각이 문서 높이를 늘리고 페이지 전체가 스크롤된다(실제로 그랬다).
+    <section aria-labelledby={headingId} className="relative flex flex-col gap-3">
+      <div className="flex items-center justify-between gap-3">
+        {/* 같은 열의 입력 라벨(`text-sm font-medium`)보다 한 단계 굵게 — 입력과 출력의 경계를
+            크기를 바꾸지 않고 굵기로만 긋는다. */}
+        <h2 id={headingId} className="text-sm font-semibold">
+          생성 결과
+        </h2>
+        {shape !== undefined && !isQueryError && job?.status !== "failed" && <ResultStatusLine job={job} />}
+      </div>
+
+      {shape === undefined ? (
+        <EmptyResultCells shape={{ aspectRatio: formAspectRatio, count: formCount }} />
+      ) : (
+        <ResultBody shape={shape} job={job} isQueryError={isQueryError} />
+      )}
+
+      {/* polite 라이브 리전은 조건부로 마운트하면 announce 여부가 스크린리더/브라우저 조합마다
+          갈린다는 것이 업계 통설이다(이 파일에서 실측한 적은 없다) — 이 저장소의 polite 영역
+          (MyWorksPage·GenerateImagesPromptField 등)이 항상 마운트해 두고 내용만 바꾸는 것도 그 통설을
+          따른 것이다. 그래서 이 <p>는 결과 영역과 함께 늘 DOM에 있고 내용만 빈 문자열 → 문구로 바뀐다.
+          비어 있을 때 sr-only로 접지 않는다 — sr-only는 absolute라 위 섹션 주석의 넘침을 만든 장본인이었고,
+          글자가 없는 in-flow 문단은 높이가 0이라 접을 필요도 없다. */}
+      <p aria-live="polite" className="text-sm text-muted-foreground">
+        {partialBlockNotice}
+      </p>
+    </section>
+  );
+}
+
+// 머리 줄 오른쪽의 진행·완료 문구.
+function ResultStatusLine({ job }: { job: ImageJobStatusResponse | undefined }) {
+  const isInProgress = job?.status !== "succeeded";
+  const text = getStatusText(job);
+
+  return (
+    <p className="flex items-center gap-2 text-sm text-muted-foreground">
+      {isInProgress && <Loader2 aria-hidden className="size-4 animate-spin" />}
+      {text}
+    </p>
+  );
+}
+
+function getStatusText(job: ImageJobStatusResponse | undefined): string {
+  if (job === undefined) return "생성 준비 중...";
+  if (job.status === "succeeded") return `${job.images.length}장 생성 완료`;
+  return `${job.completedCount}/${job.requestedCount}장 생성 중...`;
+}
+
+// 첫 생성 전의 자리표시. 점선은 "보여 줄 내용이 없는 자리"의 어휘이고(DESIGN.md Components 절의
+// Empty state), 채움이 없어 진행 중 스켈레톤(채움 + 펄스)과 모양으로 갈린다. 점선은 장식 구분선이라
+// 3:1 요건이 없고, 뜻은 첫 칸의 안내 글자가 진다.
+function EmptyResultCells({ shape }: { shape: ResultShape }) {
+  const layout = getResultTileLayout(shape.aspectRatio, shape.count);
+
+  return (
+    <div className="grid gap-2" style={{ gridTemplateColumns: layout.gridTemplateColumns }}>
+      {Array.from({ length: shape.count }, (_, i) => (
+        <div
+          key={i}
+          className="flex items-center justify-center rounded-lg border border-dashed border-border p-3"
+          style={{ aspectRatio: layout.aspectRatio }}
+        >
+          {i === 0 && (
+            <p className="text-center text-xs break-keep text-muted-foreground">생성한 이미지가 여기에 나와요</p>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ResultBody({
+  shape,
   job,
-  requestedCount,
   isQueryError,
-}: GenerateImagesResultGridProps) {
+}: {
+  shape: ResultShape;
+  job: ImageJobStatusResponse | undefined;
+  isQueryError: boolean;
+}) {
   if (isQueryError) {
     return (
       <p role="alert" className="text-sm text-destructive-text">
@@ -31,89 +131,53 @@ export function GenerateImagesResultGrid({
     );
   }
 
-  if (!job) {
-    return (
-      <div className="flex flex-col gap-3">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 aria-hidden className="size-4 animate-spin" />
-          <span>생성 준비 중...</span>
-        </div>
-        <div className="grid grid-cols-3 gap-2">
-          {Array.from({ length: requestedCount }, (_, i) => (
-            <div key={i} className="aspect-square animate-pulse rounded-md bg-muted" />
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  if (job.status === "failed") {
-    // 전부 차단이면 서버가 `error`를 비운다(문구는 FE가 조립한다).
-    // 받은 이미지가 없는 실패 표면이므로 기존 failed 분기와 같은 취급(assertive alert)을 따른다.
-    const blockedCopy = job.blockedCount > 0 && job.blockedReason != null
-      ? getBlockedReasonCopy(job.blockedReason)
-      : undefined;
-    // 문법/길이 입력 오류는 결정적이라 blockedReason과
-    // 동시에 나지 않는다(부분 input_error가 원리적으로 불가능한 것과 같은 이유).
-    const inputErrorCopy = job.inputError != null ? getInputErrorCopy(job.inputError) : undefined;
+  if (job?.status === "failed") {
     return (
       <p role="alert" className="text-sm text-destructive-text">
-        {inputErrorCopy ?? blockedCopy ?? job.error ?? "이미지 생성에 실패했어요. 잠시 후 다시 시도해주세요."}
+        {getFailedJobCopy(job)}
       </p>
     );
   }
 
-  const isTerminal = job.status === "succeeded";
-  const skeletonCount = isTerminal ? 0 : Math.max(job.requestedCount - job.images.length, 0);
-  // 부분 차단은 실패가 아니라 정보다. 성공한 이미지 옆에 무채색 톤으로
-  // 공존시키고(destructive 금지), aria-live="polite"로 알린다 — assertive면 이미지가 막 렌더되는
-  // 순간 스크린리더를 끊고 끼어든다.
-  const partialBlockNotice =
-    isTerminal && job.blockedCount > 0 && job.blockedReason != null
-      ? getPartialBlockNotice(job.blockedCount)
-      : undefined;
+  const layout = getResultTileLayout(shape.aspectRatio, shape.count);
+  const images = job?.images ?? [];
+  // 완료 전엔 남은 칸을 스켈레톤으로 채워 진행률을 드러낸다. 완료되면 받은 이미지만 남긴다 —
+  // 부분 차단으로 빠진 칸은 열 수가 그대로라 빈 열로 남는다.
+  const skeletonCount = job?.status === "succeeded" ? 0 : Math.max(shape.count - images.length, 0);
 
+  // 칸 바탕은 `muted`가 아니라 `secondary`다. 둘 다 페이지 배경 위지만 `muted`는 배경 대비 약 1.09:1이라
+  // 다크에서 펄스하는 스켈레톤이 빈 칸처럼 보였고, `secondary`는 다크 1.25 · 라이트 1.23:1로 면이 읽힌다.
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {!isTerminal && <Loader2 aria-hidden className="size-4 animate-spin" />}
-        <span>
-          {isTerminal
-            ? `${job.images.length}장 생성 완료`
-            : `${job.completedCount}/${job.requestedCount}장 생성 중...`}
-        </span>
-      </div>
-      <div className="grid grid-cols-3 gap-2">
-        {job.images.map((image) => (
-          <div key={image.assetId} className="aspect-square overflow-hidden rounded-md bg-muted">
-            <img
-              src={image.imageUrl}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              className="size-full object-cover"
-            />
-          </div>
-        ))}
-        {Array.from({ length: skeletonCount }, (_, i) => (
-          <div key={`pending-${i}`} className="aspect-square animate-pulse rounded-md bg-muted" />
-        ))}
-      </div>
-      {/* polite 라이브 리전은 조건부로 마운트하면 announce 여부가 스크린리더/브라우저 조합마다
-          갈린다는 것이 업계 통설이다(이 파일에서 실측한 적은 없다) — 이 저장소의 polite 3곳
-          (MyWorksPage.tsx:507·GenerateImagesPromptField.tsx:89·여기)이 전부 항상 마운트인 것도
-          그 통설을 따른 선례다. 그래서 이 <p>는
-          isTerminal이 아닌 동안(잡이 아직 진행 중일 때)부터 항상 DOM에 있고, 내용만 빈 문자열→
-          문구로 바뀐다 — 완료 시점에 새 노드로 끼워 넣지 않는다. 아무것도 차단되지 않은 채
-          끝나는 경우(오늘의 기본 화면)와 시각적으로 동일하도록 비어 있을 때는 sr-only로 접는다. */}
-      <p
-        aria-live="polite"
-        className={cn("text-sm text-muted-foreground", !partialBlockNotice && "sr-only")}
-      >
-        {partialBlockNotice}
-      </p>
+    <div className="grid gap-2" style={{ gridTemplateColumns: layout.gridTemplateColumns }}>
+      {images.map((image) => (
+        <div
+          key={image.assetId}
+          className="overflow-hidden rounded-lg bg-secondary"
+          style={{ aspectRatio: layout.aspectRatio }}
+        >
+          <img src={image.imageUrl} alt="" loading="lazy" decoding="async" className="size-full object-cover" />
+        </div>
+      ))}
+      {Array.from({ length: skeletonCount }, (_, i) => (
+        <div
+          key={`pending-${i}`}
+          className="animate-pulse rounded-lg bg-secondary"
+          style={{ aspectRatio: layout.aspectRatio }}
+        />
+      ))}
     </div>
   );
+}
+
+function getFailedJobCopy(job: ImageJobStatusResponse): string {
+  // 전부 차단이면 서버가 `error`를 비운다(문구는 FE가 조립한다).
+  // 받은 이미지가 없는 실패 표면이므로 기존 failed 분기와 같은 취급(assertive alert)을 따른다.
+  const blockedCopy =
+    job.blockedCount > 0 && job.blockedReason != null ? getBlockedReasonCopy(job.blockedReason) : undefined;
+  // 문법/길이 입력 오류는 결정적이라 blockedReason과
+  // 동시에 나지 않는다(부분 input_error가 원리적으로 불가능한 것과 같은 이유).
+  const inputErrorCopy = job.inputError != null ? getInputErrorCopy(job.inputError) : undefined;
+  return inputErrorCopy ?? blockedCopy ?? job.error ?? "이미지 생성에 실패했어요. 잠시 후 다시 시도해주세요.";
 }
 
 // 서버는 blockedReason만 내리고 한국어 문구는 FE가 조립한다. 사유·
