@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { useAtomValue } from "jotai";
 import { Loader2 } from "lucide-react";
 
 import {
@@ -11,7 +10,6 @@ import {
   ContentCardGrid,
   ContentCardSkeleton,
   ContentListEmptyState,
-  contentTypeToggleAtom,
   isContentType,
   toPriorityCount,
   toThumbnailAspect,
@@ -37,8 +35,8 @@ const TYPE_OPTIONS = CONTENT_TYPES.map((value) => ({ value, label: CONTENT_TYPE_
  * 그리드가 항상 단일 타입이어야 타입별 열 수가 예외 없이 성립하므로,
  * 캐릭터/스토리 2택 `Select`를 둔다('전체' 없음). 헤더의 전역 `ContentTypeToggle`과 같은 프리미티브
  * (`ToggleGroup`)를 쓰면 같은 모양의 컨트롤 둘이 다르게 동작하게 돼(하나는 홈으로 이동) `Select`를
- * 쓴다. 기본값은 `contentTypeToggleAtom`의 현재값 — atom은 읽기만 하고
- * 쓰지 않는다. 이후 진실은 `?type=` URL이다. */
+ * 쓴다. 진실은 `?type=` URL 하나이고, 파라미터가 없으면 스토리다 — 홈의 기본 유형과 같은 값이라
+ * 처음 들어온 사람에게 두 화면이 같은 유형으로 열린다. */
 export function FavoritesPage({
   search,
   onSearchChange,
@@ -46,9 +44,8 @@ export function FavoritesPage({
   search: FavoritesSearch;
   onSearchChange: (patch: Partial<FavoritesSearch>) => void;
 }) {
-  const headerToggleType = useAtomValue(contentTypeToggleAtom);
   const { open } = useContentDetailModal();
-  const type = search.type ?? headerToggleType;
+  const type = search.type ?? "story";
 
   const favoriteListQuery = useFavoriteListQuery(type);
 
