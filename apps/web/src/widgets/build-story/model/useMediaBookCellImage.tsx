@@ -1,4 +1,3 @@
-import { Button } from "@ai-character-chat/ui/components/button";
 import { toast } from "sonner";
 
 import {
@@ -15,11 +14,10 @@ import { uploadAssetErrorMessage } from "@/shared/lib/asset/uploadAssetErrorMess
 import { useMediaBookEditor } from "./useMediaBookEditor";
 import { useMediaBookThumbnails } from "./useMediaBookThumbnails";
 import type { MediaBookPosition } from "../ui/MediaBookGrid";
+import { UNDO_TOAST_DURATION_MS, UndoToastButton } from "../ui/UndoToastButton";
 
 /** 칸 이미지를 바꾼 뒤 띄우는 되돌리기 토스트. id 가 하나라 연달아 바꾸면 쌓이지 않고 마지막 교체만 되돌린다. */
 export const MEDIA_BOOK_IMAGE_UNDO_TOAST_ID = "media-book-image-undo";
-// 기본 4초는 바뀐 이미지를 확인하고 되돌리기를 누르기에 짧다.
-const UNDO_TOAST_DURATION_MS = 8000;
 
 /**
  * 칸 하나에 이미지를 올리고 넣는 길. 칸 상세의 버튼(파일 올리기·생성한 이미지에서 고르기)과 배치표 칸에 끌어놓기가 같은
@@ -68,14 +66,8 @@ export function useMediaBookCellImage(focusAfterUndo: (position: MediaBookPositi
     toast(`${cellName} 칸의 이미지를 바꿨어요.`, {
       id: MEDIA_BOOK_IMAGE_UNDO_TOAST_ID,
       duration: UNDO_TOAST_DURATION_MS,
-      // sonner 의 기본 동작 버튼은 밝은 면·작은 반경·다크에서 안 보이는 포커스라 이 앱의 버튼을 넘긴다. 토스트 면이
-      // popover 라 outline 의 hover 채움(muted)이 사라지므로 secondary 로 올린다.
       action: (
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="ml-auto hover:bg-secondary"
+        <UndoToastButton
           onClick={() => {
             // 포커스가 토스트를 떠나면 sonner 가 토스트에 들어오기 전 자리(대개 방금 누른 고르기 버튼)로 돌려준다 —
             // 마우스든 Alt+T 키보드든 같다. 그래서 아래에서 칸으로 옮겨도 그 자리가 있으면 곧바로 그리로 간다. 칸으로
@@ -85,9 +77,7 @@ export function useMediaBookCellImage(focusAfterUndo: (position: MediaBookPositi
             toast.dismiss(MEDIA_BOOK_IMAGE_UNDO_TOAST_ID);
             undoImageChange(cellName, previous, replacedWith);
           }}
-        >
-          되돌리기
-        </Button>
+        />
       ),
     });
   }

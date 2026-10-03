@@ -41,6 +41,7 @@ import {
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StartingSetupPicker } from "./StartingSetupPicker";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 type LogicOp = (typeof LOGIC_OPERATORS)[number];
@@ -69,7 +70,7 @@ export function EndingTab() {
     return (
       <div className="py-6">
         <div className="flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border py-20 text-center">
-          <p className="text-sm text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
+          <p className="text-sm break-keep text-muted-foreground">먼저 시작설정 탭에서 시작설정을 추가해주세요.</p>
         </div>
       </div>
     );
@@ -82,26 +83,13 @@ export function EndingTab() {
 
   return (
     <div className="flex flex-col gap-6 py-6">
-      <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">시작설정 선택 (선택)</span>
-        <p className="text-sm text-muted-foreground">
-          엔딩은 시작설정마다 독립적으로 구성돼요. 엔딩을 0개 등록해도 발행할 수 있어요(열린 결말).
-        </p>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          className="flex-wrap"
-          value={effectiveSetup?.id ?? ""}
-          onValueChange={(value) => value && setSelectedSetupId(value)}
-          aria-label="시작설정 선택"
-        >
-          {startingSetups.map((setup, index) => (
-            <ToggleGroupItem key={setup.id} value={setup.id} aria-label={setup.name || `시작설정 ${index + 1}`}>
-              {setup.name || `시작설정 ${index + 1}`}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
+      <StartingSetupPicker
+        startingSetups={startingSetups}
+        selectedIndex={effectiveIndex}
+        onSelect={setSelectedSetupId}
+        itemNoun="엔딩"
+        note="엔딩이 하나도 없어도 발행할 수 있어요(열린 결말)."
+      />
 
       {effectiveSetup && <EndingSection key={effectiveSetup.id} startingSetupIndex={effectiveIndex} />}
     </div>

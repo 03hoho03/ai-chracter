@@ -41,7 +41,7 @@ from api.db.models.content import (
     ModerationStatus,
 )
 from api.db.models.media import AssetKind
-from api.db.models.story import Ending, KeywordNote, StartingSetup, StoryVersionDetail
+from api.db.models.story import Ending, KeywordNote, StartingSetup, StatDef, StoryVersionDetail
 
 from .ids import SEED_AUTHOR_USER_ID, seed_uuid
 from .images import ensure_asset, read_image, situational_image_slug
@@ -322,4 +322,13 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
             for note_item in payload.keyword_notes
         ],
         dangling_stat_rule_paths=dangling_stat_rule_paths,
+        stat_defs=[
+            StatDef(
+                min_value=stat_item.min_value,
+                max_value=stat_item.max_value,
+                initial_value=stat_item.initial_value,
+            )
+            for setup_item in payload.starting_setups
+            for stat_item in setup_item.stat_defs
+        ],
     )

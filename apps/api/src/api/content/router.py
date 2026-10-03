@@ -2296,8 +2296,11 @@ async def _publish_story_content(
         await db.scalars(select(KeywordNote).where(KeywordNote.content_version_id == version.id))
     ).all()
     dangling_stat_rule_paths: list[str] = []
+    stat_defs: list[StatDef] = []
     for setup_index, setup in enumerate(starting_setups):
-        stat_ids = set((await db.scalars(select(StatDef.entity_id).where(StatDef.starting_setup_id == setup.id))).all())
+        setup_stat_defs = (await db.scalars(select(StatDef).where(StatDef.starting_setup_id == setup.id))).all()
+        stat_defs += setup_stat_defs
+        stat_ids = {stat_def.entity_id for stat_def in setup_stat_defs}
         endings_rules = [await _ending_rule_draft_items(db, ending.id) for ending in endings_by_setup_id[setup.id]]
         dangling_stat_rule_paths += setup_dangling_stat_rule_paths(setup_index, stat_ids, endings_rules)
 
@@ -2312,6 +2315,7 @@ async def _publish_story_content(
         media_book_cells=cells,
         keyword_notes=keyword_notes,
         dangling_stat_rule_paths=dangling_stat_rule_paths,
+        stat_defs=stat_defs,
     )
     if missing_fields:
         raise HTTPException(

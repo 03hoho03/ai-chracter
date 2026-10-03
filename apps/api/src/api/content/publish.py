@@ -21,6 +21,7 @@ from api.db.models.story import (
     MediaBookPerson,
     MediaBookScene,
     StartingSetup,
+    StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
 )
@@ -115,6 +116,7 @@ def validate_story_publish(
     media_book_cells: Sequence[MediaBookCell],
     keyword_notes: Sequence[KeywordNote],
     dangling_stat_rule_paths: Sequence[str],
+    stat_defs: Sequence[StatDef],
 ) -> list[str]:
     """Mirrors `validate_character_publish`'s
     shape. `endings_by_setup_id` is keyed by `StartingSetup.id` (physical) since that's how the
@@ -133,6 +135,11 @@ def validate_story_publish(
     엔딩 규칙이 같은 시작설정에 없는 스탯을 가리키면(`dangling_stat_rule_paths`, 호출부가 `setup_dangling_stat_rule_paths`
     로 구한다) `endings.statRules` 를 한 번 알린다. 그 조건은 영영 참이 될 수 없다. 초안 저장이 같은 검사로 경로까지
     알려 막으므로, 여기는 그 검사 전에 저장된 초안과 API 직접 호출을 막는 마지막 관문이다.
+
+    스탯(`stat_defs`, 모든 시작설정의 것)은 최소 < 최대, 최소 ≤ 초기 ≤ 최대여야 하고, 어긋난 스탯이 하나라도 있으면
+    `stats.range` 를 한 번 알린다. 대화는 방을 열 때 초기값을 그대로 두고 이후 변화부터 범위로 잘라 쓴다 — 범위 밖
+    초기값은 첫 변화에서 경계로 튀고, 뒤집힌 범위에서는 어떤 변화든 최대값 하나로 붙는다. 초안 저장은 이 검사를 하지 않는다 — 이미 그렇게 저장된 초안이 있어 저장에서 막으면 그 초안의
+    자동저장이 편집마다 실패한다. 빌더 폼 검증이 어느 칸인지를 먼저 보여 주므로 여기는 API 직접 호출을 막는 관문이다.
     """
     missing: list[str] = []
     if not detail.name:
@@ -159,6 +166,11 @@ def validate_story_publish(
                 missing.append(f"startingSetups[{setup_index}].endings[{ending_index}].turnCountGate")
     if dangling_stat_rule_paths:
         missing.append("endings.statRules")
+    if any(
+        not (stat.min_value < stat.max_value and stat.min_value <= stat.initial_value <= stat.max_value)
+        for stat in stat_defs
+    ):
+        missing.append("stats.range")
 
     if len(media_book_cells) > MEDIA_BOOK_MAX_CELLS:
         missing.append("mediaBook.cells")

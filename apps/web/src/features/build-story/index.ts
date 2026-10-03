@@ -64,7 +64,12 @@ export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
 export { planStatRemoval, removeRuleListItem } from "./model/removeRulesReferencingStat";
-export { STORY_MISSING_FIELD_FORM_PATH, STORY_MISSING_FIELD_LABELS } from "./model/publishMissingFields";
+export {
+  collapseStartingSetupListPath,
+  STORY_MISSING_FIELD_FORM_PATH,
+  STORY_MISSING_FIELD_LABELS,
+  STORY_STARTING_SETUP_LIST_LABELS,
+} from "./model/publishMissingFields";
 export { serverToForm } from "./model/serverToForm";
 export { STORY_TABS, type StoryBuilderTab } from "./model/tabs";
 export {

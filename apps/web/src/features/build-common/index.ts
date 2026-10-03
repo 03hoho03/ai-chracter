@@ -19,6 +19,7 @@ export { resolveProfileImageUrl, type ProfileImageLocalEntry } from "./model/res
 export { useProfileImageLocalUrl } from "./model/useProfileImageLocalUrl";
 export { useFocusFirstError } from "./lib/useFocusFirstError";
 export { focusNeighborToggle } from "./lib/focusNeighborToggle";
+export { focusItemToggle, revealItemToggle } from "./lib/focusItemToggle";
 export { firstLine } from "./lib/firstLine";
 export { BuilderLayout } from "./ui/BuilderLayout";
 export { BuilderTabStrip } from "./ui/BuilderTabStrip";
