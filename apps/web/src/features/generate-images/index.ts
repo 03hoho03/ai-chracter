@@ -6,7 +6,6 @@ export { useGenerateImagesMutation } from "./api/useGenerateImagesMutation";
 export {
   useGenerateImagesSubmit,
   type GenerateImagesSubmitHelpers,
-  type PickedReferenceImage,
 } from "./model/useGenerateImagesSubmit";
 export { GenerateImagesFormProvider } from "./ui/GenerateImagesFormProvider";
 export { GenerateImagesOptionsFields } from "./ui/GenerateImagesOptionsFields";
