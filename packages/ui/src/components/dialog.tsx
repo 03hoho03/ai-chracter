@@ -63,10 +63,19 @@ function DialogContent({
           tailwind-merge를 쓰는 탓에 호출부가 `grid-cols-*`를 얹으면 그 기저 클래스를 통째로
           지워 버그가 조용히 되살아난다(twMerge 실측: `grid-cols-[minmax(0,1fr)]` + 호출부
           `grid-cols-2` → 전자가 삭제됨). 자식 선택자는 그런 충돌이 없어 이쪽을 택했다. */}
+      {/* `has-data-[slot=dialog-body]:` — 자손에 `DialogBody`가 있을 때만 이 상자가 최대 높이가 있는
+          flex 컬럼이 되어 헤더·푸터는 제자리에 두고 본문만 스크롤한다. prop으로 켜게 하지 않은 이유:
+          prop을 잊고 `DialogBody`만 쓰면 grid 안의 `flex-1 min-h-0`이 무효라 최대 높이가 없어지고,
+          Radix가 body 스크롤을 잠근 채로 화면 밖으로 밀린 본문·푸터에 닿을 길이 조용히 사라진다.
+          `:has()`는 쓰는 순간 레이아웃이 같이 오므로 잊을 것이 없다. `DialogBody`가 없는 다이얼로그는
+          선택자가 거짓이라 계산값이 전과 같다(grid, 최대 높이 없음). 변형 선택자의 특이도(0,2,0)가
+          기본 `grid`(0,1,0)를 이기므로, 상한을 바꾸려는 호출부도 평범한 `max-h-*`가 아니라 같은 변형
+          `has-data-[slot=dialog-body]:max-h-*`로 적어야 한다. 이 상자에 `overflow-hidden`을 걸지 않는
+          것은 댓글 멘션 팝업이 이 상자를 기준으로 absolute 배치되기 때문이다. */}
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 motion-safe:duration-100 outline-none sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 [&>*]:min-w-0",
+          "group/dialog-content fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 motion-safe:duration-100 outline-none sm:max-w-sm motion-safe:data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 motion-safe:data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95 has-data-[slot=dialog-body]:flex has-data-[slot=dialog-body]:max-h-dialog has-data-[slot=dialog-body]:flex-col [&>*]:min-w-0",
           className
         )}
         {...props}
@@ -99,11 +108,65 @@ function DialogContent({
   )
 }
 
+/** 본문이 스크롤하는 다이얼로그(`DialogBody`가 있는 다이얼로그)에서만 오른쪽에 `pr-8`을 둔다 —
+ * 닫기 X(`top-2 right-2`, 32px)가 헤더 첫 줄과 같은 높이에 앉으므로, 헤더 글자가 X 앞 8px에서 끝나게
+ * 하려는 것이다. 모든 헤더에 주지 않는 이유는 설명 문단 폭도 32px 줄어 본문 없는 짧은 확인 모달의
+ * 줄바꿈과 높이가 바뀌기 때문이다. */
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2", className)}
+      className={cn(
+        "flex flex-col gap-2 group-has-data-[slot=dialog-body]/dialog-content:pr-8",
+        className
+      )}
+      {...props}
+    />
+  )
+}
+
+/** 고정 헤더와 고정 푸터 사이에서 혼자 스크롤하는 본문 슬롯. 이것을 넣으면 `DialogContent`가 알아서
+ * 최대 높이가 있는 flex 컬럼이 된다. 자식이 둘 이상이면 이 상자는 `flex`·`gap`이 없는 블록이라 간격이
+ * 0으로 붙는다 — 그때는 호출부가 `className="flex flex-col gap-4"`를 준다(단일 자식의 배치를 바꾸지
+ * 않으려고 기본값에 넣지 않았다).
+ *
+ * - `-mx-4 px-4`: 스크롤포트를 다이얼로그 전폭으로 넓힌다. 다이얼로그의 16px 패딩 안에서 끝나던
+ *   음수 마진 링크의 hover 면, 옆으로 미는 진입 애니메이션, 가장자리 컨트롤의 포커스 링이 스크롤러에
+ *   잘리거나 가로 스크롤바를 만들지 않고, 스크롤바도 다이얼로그 오른쪽 끝에 붙는다.
+ * - `overflow-x-hidden`: `overflow-y:auto`만 주면 x도 auto로 계산되어 순간적인 가로 넘침이 가로
+ *   스크롤바를 깜빡인다.
+ * - `border-t`: 헤더와 본문의 경계선이다. 헤더의 `border-b`가 아니라 여기 둔 이유는 이 상자가 이미
+ *   전폭이라 선이 `DialogFooter`의 선처럼 다이얼로그 양 끝에 닿고, 선이 곧 스크롤 영역의 위 모서리라
+ *   올라간 내용이 정확히 선에서 잘리기 때문이다. 그래서 이 슬롯은 헤더 아래에 오는 것을 전제한다.
+ * - `pt-4`, `pb-1 -mb-1`: 선 아래 16px은 선 위 `gap-4`와 대칭이다. 바닥 4px은 마지막 컨트롤의 포커스
+ *   링 여유이고, 같은 만큼 바깥으로 당겨 보이는 간격(푸터 선까지·다이얼로그 바닥까지 16px)은 그대로 둔다.
+ *
+ * `scrollLabel`을 주면 본문 자체가 Tab 정지(`tabIndex=0`)가 되고 그 이름의 region으로 읽힌다. 닫기 X가
+ * 본문 밖에 있으니 본문에 포커스 요소가 없으면 키보드로 본문을 스크롤할 길이 없어서다. 켜기와 이름을
+ * 한 prop으로 묶어 이름 없는 Tab 정지를 만들 수 없게 했고, 이름은 다이얼로그 제목과 겹치지 않게
+ * "무엇이 스크롤되는가"로 준다. 포커스 표시가 하우스 레시피(바깥 `ring-3`)가 아니라 안쪽 outline인
+ * 이유: 전폭인 이 상자의 바깥 링은 다이얼로그 밖 스크림 위에 그려지고, inset box-shadow는 스크롤하는
+ * 내용(그림 칸 등)에 덮인다. outline은 자손 위에 그려지고 2px 안쪽으로 들어온다. */
+function DialogBody({
+  className,
+  scrollLabel,
+  ...props
+}: React.ComponentProps<"div"> & {
+  /** 주면 본문이 Tab 정지가 되고 이 이름으로 읽힌다 — 본문에 포커스 요소가 없을 수 있는 다이얼로그용. */
+  scrollLabel?: string
+}) {
+  return (
+    <div
+      data-slot="dialog-body"
+      {...(scrollLabel !== undefined && {
+        tabIndex: 0,
+        role: "region",
+        "aria-label": scrollLabel,
+      })}
+      className={cn(
+        "-mx-4 -mb-1 min-h-0 flex-1 overflow-x-hidden overflow-y-auto border-t px-4 pt-4 pb-1 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring",
+        className
+      )}
       {...props}
     />
   )
@@ -180,6 +243,7 @@ function DialogDescription({
 
 export {
   Dialog,
+  DialogBody,
   DialogClose,
   DialogContent,
   DialogDescription,
