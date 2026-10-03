@@ -749,3 +749,22 @@ async def _wait_until_lock_wait(observer: AsyncConnection, *, seconds: float) ->
             f"{seconds}초 안에 가입 요청 커넥션이 users 테이블 잠금 대기 상태로 관측되지"
             " 않았다 (pg_locks: RowExclusiveLock 보유 + transactionid 미승인 대기)"
         ) from None
+
+
+async def _assert_blocked(task: "asyncio.Task[object]", *, block_seconds: float = 0.5) -> None:
+    """`task`가 DB 락에 막혀 있다는 것을 단언한다.
+
+    🔴 **이 단언이 독립 커넥션 경쟁 테스트를 항진명제에서 구한다.** 최종 상태만 보면 두 연산이
+    순차로 돌아도 같은 값이 나오므로, "정말 동시에 같은 행을 다퉜는가"는 여기서만 증명된다.
+    `shield`로 감싸는 이유는 `wait_for`의 타임아웃이 task를 취소해 버리면 뒤에서 결과를 받을
+    수 없기 때문이다.
+
+    타이밍 의존이 한 방향뿐이라 안전하다 — 막힌 쪽은 상대가 커밋하기 전에는 **원리적으로**
+    진행할 수 없으므로 타임아웃이 반드시 난다. 반대로 느슨하게 잡아 실패하는 경우는 없다.
+
+    (인자 이름이 `timeout`이 아닌 것은 ruff `ASYNC109` 때문이다 — 그 규칙은 타임아웃을
+    인자로 넘기지 말고 `asyncio.timeout`을 쓰라고 하는데, 여기서 재는 것은 "제한 시간"이
+    아니라 **"이만큼 기다려도 안 끝난다"**는 성질이라 의미가 다르다.)
+    """
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(asyncio.shield(task), block_seconds)

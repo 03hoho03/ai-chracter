@@ -3875,7 +3875,7 @@
           "content"
         ],
         "summary": "List Contents",
-        "description": "`sort=popular` prioritizes chat_count over like_count/view_count by ordering on\nall three columns lexicographically (chat_count first) instead of a single\nweighted score, so chat_count strictly dominates ties by construction — the\nactual weighted-score formula is still a PRD-level open question for later\ntuning. `sort=genre` orders by the genre master's sort_order.",
+        "description": "`sort=popular` prioritizes chat_count over like_count/view_count by ordering on\nall three columns lexicographically (chat_count first) instead of a single\nweighted score, so chat_count strictly dominates ties by construction — the\nactual weighted-score formula is still a PRD-level open question for later\ntuning.",
         "operationId": "list_contents_contents_get",
         "parameters": [
           {
@@ -3893,8 +3893,7 @@
             "schema": {
               "enum": [
                 "latest",
-                "popular",
-                "genre"
+                "popular"
               ],
               "type": "string",
               "default": "latest",
@@ -4296,7 +4295,7 @@
           "content"
         ],
         "summary": "Get Content Detail",
-        "description": "Access control is query-response-based, not a 403/404 gate here: the full detail\n(including `accessStatus`/`isOwner`) is always returned for any existing, published\ncontent, and `canViewDetailPage` on the FE decides\nwhether to render it or an \"unavailable\" state instead.",
+        "description": "Access control is query-response-based, not a 403/404 gate here: any existing,\npublished content returns 200 with `accessStatus`/`isOwner`, and `canViewDetailPage` on\nthe FE decides whether to render it or an \"unavailable\" state instead. When the viewer\nmay not see the content (`is_open_to` is false), the body — `detailDescription` and the\nstory's `startingSetups` — is sent empty; name, one-liner, thumbnail and hashtags stay.",
         "operationId": "get_content_detail_contents__id__get",
         "parameters": [
           {

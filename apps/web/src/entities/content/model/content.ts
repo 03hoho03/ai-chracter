@@ -36,9 +36,10 @@ export function isContentType(value: string): value is ContentType {
 }
 
 /** `GET /contents`의 sort 쿼리 파라미터 — 별도 named schema가 아니라
- * OpenAPI 오퍼레이션의 인라인 유니언이라 여기서 직접 선언한다. 서버가 아직 받는 `genre`(장르별)는
- * 일부러 뺀 부분집합이다 — 장르 칩과 축이 겹치고 화면에서 보이는 효과가 없어 정렬 메뉴에서 내렸다.
- * 옛 `?sort=genre` 링크는 홈 서치 스키마의 `.catch`가 최신순으로 접는다. */
+ * OpenAPI 오퍼레이션의 인라인 유니언이라 여기서 직접 선언한다. 서버 유니언과 같은 집합이다.
+ * `genre`(장르별)는 장르 칩과 축이 겹치고 화면에서 보이는 효과가 없어 정렬 메뉴와 서버에서 모두 내렸다 —
+ * 서버는 이제 `sort=genre` 를 422 로 거절하므로, 옛 `?sort=genre` 링크는 홈 서치 스키마의 `.catch`가
+ * 요청 전에 최신순으로 접어야 한다. */
 export const CONTENT_LIST_SORTS = ["latest", "popular"] as const;
 export type ContentListSort = (typeof CONTENT_LIST_SORTS)[number];
 

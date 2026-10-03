@@ -10,7 +10,7 @@ from typing import Literal
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
-from sqlalchemy import and_, any_, func, or_, select, tuple_, update
+from sqlalchemy import any_, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -19,6 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, read_image_content_type
 from api.chat.prompt_builder import load_active_prompt_set
+from api.content.access import is_open_to, publicly_listed_conditions
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
     MediaBookFilterCell,
@@ -122,7 +123,7 @@ _MEDIA_BOOK_S3_CONCURRENCY = 8
 
 router = APIRouter(tags=["content"])
 
-ContentListSort = Literal["latest", "popular", "genre"]
+ContentListSort = Literal["latest", "popular"]
 
 CONTENT_LIST_PAGE_SIZE = 20
 FAVORITES_PAGE_SIZE = 20
@@ -2439,21 +2440,17 @@ async def list_contents(
     all three columns lexicographically (chat_count first) instead of a single
     weighted score, so chat_count strictly dominates ties by construction — the
     actual weighted-score formula is still a PRD-level open question for later
-    tuning. `sort=genre` orders by the genre master's sort_order.
+    tuning.
     """
     detail_model = _detail_model(type)
 
     query = (
-        select(Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname, Genre.sort_order)
+        select(Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname)
         .join(detail_model, detail_model.content_version_id == Content.current_published_version_id)
         .join(User, User.id == Content.creator_user_id)
+        # 고르는 열은 없지만 내부 조인이라 장르 없는 작품을 목록에서 뺀다 — 지우면 걸러지는 대상이 바뀐다.
         .join(Genre, Genre.id == Content.genre_id)
-        .where(
-            Content.type == type,
-            Content.current_published_version_id.is_not(None),
-            Content.visibility == ContentVisibility.PUBLIC,
-            Content.moderation_status == ModerationStatus.NORMAL,
-        )
+        .where(Content.type == type, *publicly_listed_conditions())
     )
 
     if genre is not None:
@@ -2484,20 +2481,6 @@ async def list_contents(
                 tuple_(Content.chat_count, Content.like_count, Content.view_count, Content.id)
                 < (int(chat_count), int(like_count), int(view_count), uuid.UUID(last_id))
             )
-    elif sort == "genre":
-        query = query.order_by(Genre.sort_order.asc(), Content.created_at.desc(), Content.id.desc())
-        if cursor is not None:
-            sort_order, created_at, last_id = _decode_cursor(cursor)
-            query = query.where(
-                or_(
-                    Genre.sort_order > int(sort_order),
-                    and_(
-                        Genre.sort_order == int(sort_order),
-                        tuple_(Content.created_at, Content.id)
-                        < (datetime.fromisoformat(created_at), uuid.UUID(last_id)),
-                    ),
-                )
-            )
     else:
         query = query.order_by(Content.created_at.desc(), Content.id.desc())
         if cursor is not None:
@@ -2521,12 +2504,12 @@ async def list_contents(
             creator_user_id=content.creator_user_id,
             creator_nickname=nickname if nickname is not None else WITHDRAWN_USER_NICKNAME,
         )
-        for content, name, thumbnail_asset_id, nickname, _genre_sort_order in page
+        for content, name, thumbnail_asset_id, nickname in page
     ]
 
     next_cursor: str | None = None
     if has_more and page:
-        last_content, _, _, _, last_genre_sort_order = page[-1]
+        last_content = page[-1][0]
         if sort == "popular":
             next_cursor = _encode_cursor(
                 [
@@ -2535,10 +2518,6 @@ async def list_contents(
                     str(last_content.view_count),
                     str(last_content.id),
                 ]
-            )
-        elif sort == "genre":
-            next_cursor = _encode_cursor(
-                [str(last_genre_sort_order), last_content.created_at.isoformat(), str(last_content.id)]
             )
         else:
             next_cursor = _encode_cursor([last_content.created_at.isoformat(), str(last_content.id)])
@@ -2587,10 +2566,11 @@ async def get_content_detail(
     db: AsyncSession = Depends(get_db_session),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
 ) -> ContentDetailResponse:
-    """Access control is query-response-based, not a 403/404 gate here: the full detail
-    (including `accessStatus`/`isOwner`) is always returned for any existing, published
-    content, and `canViewDetailPage` on the FE decides
-    whether to render it or an "unavailable" state instead.
+    """Access control is query-response-based, not a 403/404 gate here: any existing,
+    published content returns 200 with `accessStatus`/`isOwner`, and `canViewDetailPage` on
+    the FE decides whether to render it or an "unavailable" state instead. When the viewer
+    may not see the content (`is_open_to` is false), the body — `detailDescription` and the
+    story's `startingSetups` — is sent empty; name, one-liner, thumbnail and hashtags stay.
     """
     peek = await db.get(Content, id)
     if peek is None or peek.current_published_version_id is None:
@@ -2654,15 +2634,21 @@ async def get_content_detail(
         [detail_description, *prologues], referenced = await normalize_texts(
             db, version.id, [version.detail_description, *(setup.prologue for setup in setups)]
         )
-        can_view_detail = access_status.kind == "accessible" and (
-            content.visibility != ContentVisibility.PRIVATE or is_owner
-        )
-        if can_view_detail:
+        if is_open_to(content, viewer_user_id):
             media_tag_images = await resolve_media_tag_images(db, version.id, referenced)
         starting_setups = [
             StartingSetupSummary(id=setup.id, name=setup.name, prologue=prologue)
             for setup, prologue in zip(setups, prologues, strict=True)
         ]
+
+    # 이 응답은 볼 수 없는 작품에도 200 으로 나가고 화면이 "볼 수 없음" 을 그린다. 본문(소개·시작설정·프롤로그)까지
+    # 실으면 화면이 가려도 주소만 알면 읽히므로 비운다. 그 작품에 방이 있는 사용자도 예외가 아니다 — 이 목록을 쓰는
+    # 곳은 상세 화면과 시작설정 변경 창뿐인데, 볼 수 없는 작품에서는 시작설정 변경(새 방)도 막힌다. 채팅방 헤더는
+    # 이름·썸네일만 쓰므로 그대로 둔다.
+    if not is_open_to(content, viewer_user_id):
+        detail_description = ""
+        if starting_setups is not None:
+            starting_setups = []
 
     is_liked = False
     is_favorited = False

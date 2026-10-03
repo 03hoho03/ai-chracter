@@ -552,8 +552,8 @@ async def test_content_detail_signs_media_tags_only_for_viewers_who_can_see_the_
     assert as_other["mediaTagImages"] == {}
     assert list(as_owner["mediaTagImages"]) == [str(cell.entity_id)]
     assert restricted["mediaTagImages"] == {}
-    # 글은 칸 id 형태로 바뀐 채 나간다(그림 없이 빈칸).
-    assert as_other["startingSetups"][0]["prologue"] == _id_tag(cell.entity_id)
+    # 글은 칸 id 형태로 바뀐 채 나간다. 볼 수 없는 사람에게는 시작설정 자체가 나가지 않으므로 작성자 응답으로 본다.
+    assert as_owner["startingSetups"][0]["prologue"] == _id_tag(cell.entity_id)
 
 
 # ---- 모델로 가는 사본# ---- 모델로 가는 사본 ------------------------------------------------------------------------------------

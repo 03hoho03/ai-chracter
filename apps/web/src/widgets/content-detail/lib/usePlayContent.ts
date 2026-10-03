@@ -4,7 +4,7 @@ import { useAtom } from "jotai";
 import { toast } from "sonner";
 
 import { contentDetailModalAtom, type ContentType } from "@/entities/content";
-import { CONTENT_RESTRICTED_START_MESSAGE, isContentRestrictedError, useStartChatMutation } from "@/entities/chat-room";
+import { toStartChatErrorMessage, useStartChatMutation } from "@/entities/chat-room";
 import { useSessionQuery } from "@/entities/session";
 
 type UsePlayContentOptions = {
@@ -71,12 +71,8 @@ export function usePlayContent(contentId: string, contentType: ContentType, opti
     } catch (error) {
       isStartingRef.current = false;
       setIsStarting(false);
-      // 이용제한된 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
-      toast.error(
-        isContentRestrictedError(error)
-          ? CONTENT_RESTRICTED_START_MESSAGE
-          : "대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요.",
-      );
+      // 이용제한·비공개 작품은 기다려도 안 풀리므로 "잠시 후 다시"라고 말하지 않는다.
+      toast.error(toStartChatErrorMessage(error, "대화방을 시작하지 못했어요. 잠시 후 다시 시도해주세요."));
     }
   }
 
