@@ -20,6 +20,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
@@ -100,7 +101,7 @@ export function SettingTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <span className="text-sm leading-none font-medium">프롬프트 템플릿 *</span>
+        <span className="text-sm leading-none font-medium"><RequiredText>프롬프트 템플릿</RequiredText></span>
         <Controller
           control={control}
           name="storySetting.promptTemplate"
@@ -144,7 +145,7 @@ export function SettingTab() {
 
       {isCustom ? (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="story-setting-custom-prompt">커스텀 프롬프트 *</Label>
+          <Label htmlFor="story-setting-custom-prompt"><RequiredText>커스텀 프롬프트</RequiredText></Label>
           <Textarea
             id="story-setting-custom-prompt"
             placeholder="AI에게 지시할 프롬프트를 자유롭게 작성해주세요"
@@ -162,7 +163,7 @@ export function SettingTab() {
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="story-setting-world">스토리 설정/정보 *</Label>
+          <Label htmlFor="story-setting-world"><RequiredText>스토리 설정/정보</RequiredText></Label>
           <Textarea
             id="story-setting-world"
             placeholder="스토리의 세계관과 설정을 입력해주세요"

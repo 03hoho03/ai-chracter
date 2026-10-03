@@ -34,6 +34,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -278,7 +279,7 @@ function StartingSetupRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`starting-setup-${id}-name`}>이름 *</Label>
+        <Label htmlFor={`starting-setup-${id}-name`}><RequiredText>이름</RequiredText></Label>
         <Input
           id={`starting-setup-${id}-name`}
           placeholder="시작설정 이름을 입력해주세요"
@@ -295,7 +296,7 @@ function StartingSetupRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`starting-setup-${id}-prologue`}>프롤로그 *</Label>
+          <Label htmlFor={`starting-setup-${id}-prologue`}><RequiredText>프롤로그</RequiredText></Label>
           <MediaTagInsertButton name={`startingSetups.${index}.prologue`} fieldLabel="프롤로그" textareaRef={prologueRef} />
         </div>
         <Textarea

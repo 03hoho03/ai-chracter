@@ -6,6 +6,7 @@ import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 type ProfileTabProps = {
   /** 폼이 지금 가진 대표 이미지의 표시 주소. 미리보기 카드와 같은 값을 셸이 정해 내려 준다. */
@@ -29,7 +30,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-2" data-field-path="profile.image">
-        <Label>대표 이미지 *</Label>
+        <Label><RequiredText>대표 이미지</RequiredText></Label>
         <Controller
           control={control}
           name="profile.image"
@@ -56,7 +57,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-profile-name">이름 *</Label>
+        <Label htmlFor="character-profile-name"><RequiredText>이름</RequiredText></Label>
         <Input
           id="character-profile-name"
           placeholder="캐릭터 이름을 입력해주세요"
@@ -72,7 +73,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-profile-oneliner">한줄소개 *</Label>
+        <Label htmlFor="character-profile-oneliner"><RequiredText>한줄소개</RequiredText></Label>
         <Input
           id="character-profile-oneliner"
           placeholder="캐릭터를 한 줄로 소개해주세요"

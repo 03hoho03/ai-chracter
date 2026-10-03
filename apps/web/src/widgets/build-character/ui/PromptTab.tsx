@@ -3,6 +3,7 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { useFormContext } from "react-hook-form";
 
 import type { CharacterBuilderFormValues } from "@/features/build-character";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 /** 대화 생성에 반영되는 자유 텍스트 캐릭터 프롬프트(필수) 단일 필드. */
 export function PromptTab() {
@@ -16,7 +17,7 @@ export function PromptTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-prompt">캐릭터 프롬프트 *</Label>
+        <Label htmlFor="character-prompt"><RequiredText>캐릭터 프롬프트</RequiredText></Label>
         <Textarea
           id="character-prompt"
           placeholder="캐릭터의 성격, 말투, 배경 등을 자유롭게 서술해주세요"

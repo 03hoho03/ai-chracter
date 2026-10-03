@@ -23,6 +23,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { KeywordChipField } from "./KeywordChipField";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -198,7 +199,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor={ids.content}>정보 *</Label>
+            <Label htmlFor={ids.content}><RequiredText>정보</RequiredText></Label>
             <span id={ids.contentCount} className="text-xs tabular-nums text-muted-foreground">
               <span className="sr-only">정보 </span>
               {content.length}/{MAX_KEYWORD_NOTE_CONTENT_LENGTH}
@@ -328,7 +329,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label>적용 대상 *</Label>
+          <Label><RequiredText>적용 대상</RequiredText></Label>
           <ToggleGroup
             type="single"
             variant="outline"

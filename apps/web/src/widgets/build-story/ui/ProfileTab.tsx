@@ -6,6 +6,7 @@ import { toThumbnailAspect, toThumbnailAspectRatio } from "@/entities/content";
 import type { StoryBuilderFormValues } from "@/features/build-story";
 import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
@@ -31,7 +32,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-2" data-field-path="profile.image">
-        <Label>대표 이미지 *</Label>
+        <Label><RequiredText>대표 이미지</RequiredText></Label>
         <Controller
           control={control}
           name="profile.image"
@@ -60,7 +61,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-profile-name">이름 *</Label>
+        <Label htmlFor="story-profile-name"><RequiredText>이름</RequiredText></Label>
         <Input
           id="story-profile-name"
           placeholder="스토리 이름을 입력해주세요"
@@ -76,7 +77,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="story-profile-oneliner">한줄소개 *</Label>
+        <Label htmlFor="story-profile-oneliner"><RequiredText>한줄소개</RequiredText></Label>
         <Input
           id="story-profile-oneliner"
           placeholder="스토리를 한 줄로 소개해주세요"

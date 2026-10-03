@@ -26,6 +26,7 @@ import {
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
+import { RequiredText } from "@/shared/ui/RequiredText";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -231,7 +232,7 @@ function StatRow({
           칸만 키워도 이웃 칸의 윗선이 그대로이게 위로 붙인다. */}
       <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-min`}>최소값 *</Label>
+          <Label htmlFor={`stat-${id}-min`}><RequiredText>최소값</RequiredText></Label>
           <Input
             id={`stat-${id}-min`}
             type="number"
@@ -247,7 +248,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-max`}>최대값 *</Label>
+          <Label htmlFor={`stat-${id}-max`}><RequiredText>최대값</RequiredText></Label>
           <Input
             id={`stat-${id}-max`}
             type="number"
@@ -263,7 +264,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-initial`}>초기값 *</Label>
+          <Label htmlFor={`stat-${id}-initial`}><RequiredText>초기값</RequiredText></Label>
           <Input
             id={`stat-${id}-initial`}
             type="number"
@@ -331,7 +332,7 @@ function StatRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-description`}>설명 *</Label>
+        <Label htmlFor={`stat-${id}-description`}><RequiredText>설명</RequiredText></Label>
         <Textarea
           id={`stat-${id}-description`}
           placeholder="스탯에 대한 설명을 입력해주세요"

@@ -38,6 +38,7 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -444,7 +445,7 @@ function EndingRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-name`}>이름 *</Label>
+        <Label htmlFor={`ending-${id}-name`}><RequiredText>이름</RequiredText></Label>
         <Input
           id={`ending-${id}-name`}
           placeholder="엔딩 이름을 입력해주세요"
@@ -460,7 +461,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-turn-gate`}>엔딩조건 (최소 턴수) *</Label>
+        <Label htmlFor={`ending-${id}-turn-gate`}><RequiredText>엔딩조건 (최소 턴수)</RequiredText></Label>
         <Input
           id={`ending-${id}-turn-gate`}
           type="number"
@@ -480,7 +481,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-judge-prompt`}>판단 프롬프트 *</Label>
+        <Label htmlFor={`ending-${id}-judge-prompt`}><RequiredText>판단 프롬프트</RequiredText></Label>
         <Textarea
           id={`ending-${id}-judge-prompt`}
           placeholder="이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"

@@ -14,6 +14,7 @@ import {
   itemOpenKey,
   useBuilderUiState,
 } from "@/features/build-common";
+import { RequiredText } from "@/shared/ui/RequiredText";
 
 const EXAMPLE_DIALOGUE_LIST: CharacterCollapsibleList = "exampleDialogue";
 
@@ -61,7 +62,7 @@ export function IntroTab() {
   return (
     <div className="flex flex-col gap-6 py-6">
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="character-intro-first-message">인트로 (첫 대화 본문) *</Label>
+        <Label htmlFor="character-intro-first-message"><RequiredText>인트로 (첫 대화 본문)</RequiredText></Label>
         <Textarea
           id="character-intro-first-message"
           placeholder="사용자와의 첫 대화에서 캐릭터가 건넬 말을 입력해주세요"
