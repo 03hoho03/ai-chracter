@@ -26,6 +26,8 @@ import { Pagination } from "@/shared/ui/Pagination";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
+import { HomeCurationStatus } from "./HomeCurationStatus";
+
 /** 세 필터 모두 entities가 Record 키에서 도출한 옵션에 `"전체"`만 얹는다 — 멤버를 여기 손으로
  * 나열하면 서버에 값이 늘어도 이 필터만 조용히 빠진다. `SelectItem`의 value가 `string`이라
  * 되받을 때 좁힘이 필요한데, `as` 대신 entities의 술어를 쓴다(`ReportsListPage` 동형).
@@ -160,6 +162,8 @@ export function ContentsListPage({
           </Select>
         </div>
       </div>
+
+      <HomeCurationStatus />
 
       <ContentsTable params={{ page, type, visibility, moderationStatus, q, sort }} onPageChange={onPageChange} />
     </main>
