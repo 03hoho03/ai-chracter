@@ -1,7 +1,7 @@
 import enum
 import uuid
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import (
     ARRAY,
@@ -21,6 +21,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from api.db.base import Base
+
+
+# 판정 LLM 이 정하는 스탯이 한 턴에 움직일 수 있는 방향. 값 셋뿐이고 다른 테이블이 쓰지 않아 Postgres ENUM 대신
+# Text 로 둔다(ENUM 은 멤버 추가·삭제마다 손으로 쓰는 마이그레이션이 따라온다).
+StatChangeDirection = Literal["both", "increase", "decrease"]
 
 
 class StoryPromptTemplate(str, enum.Enum):
@@ -120,6 +125,12 @@ class StatDef(Base):
     # 건너뛰거나 거꾸로 올리는 일이 실제로 있었고(2026-08-07 실측), 그 카운터에 걸린 엔딩은
     # 도달 가능성이 통째로 흔들린다 — 그래서 카운터는 판단 대상이 아니라 시스템이 굴린다.
     per_turn_delta: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 판정 LLM 이 낸 값을 코드가 자르는 두 옵션(`api.chat.stats.apply_stat_changes`). `per_turn_delta` 가 있는 스탯은
+    # 판정을 받지 않으므로 두 옵션도 쓰지 않는다(발행이 막는다). 세션 없이 생성자로만 만든 행은 둘 다 `None` 이고,
+    # 읽는 쪽은 그것을 "양방향·제한 없음"으로 본다. `server_default` 는 이 컬럼을 모르는 이전 API 이미지로 되돌렸을 때
+    # 그 코드의 스탯 INSERT 가 NOT NULL 위반이 되지 않게 하려는 것이다.
+    change_direction: Mapped[StatChangeDirection] = mapped_column(Text, server_default="both", nullable=False)
+    max_change_per_turn: Mapped[int | None] = mapped_column(Integer, nullable=True)
     order: Mapped[int] = mapped_column(Integer, nullable=False)
 
 

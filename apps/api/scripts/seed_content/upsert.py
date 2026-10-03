@@ -327,6 +327,9 @@ def _validate_payload(payload: StoryDraftPayload) -> list[str]:
                 min_value=stat_item.min_value,
                 max_value=stat_item.max_value,
                 initial_value=stat_item.initial_value,
+                per_turn_delta=stat_item.per_turn_delta,
+                change_direction=stat_item.change_direction,
+                max_change_per_turn=stat_item.max_change_per_turn,
             )
             for setup_item in payload.starting_setups
             for stat_item in setup_item.stat_defs

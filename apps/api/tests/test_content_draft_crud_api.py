@@ -2897,6 +2897,103 @@ async def test_patch_story_draft_keeps_accepting_stat_whose_range_is_contradicto
     assert [(s.min_value, s.max_value, s.initial_value) for s in saved] == [(100, 0, 500)]
 
 
+def _limited_stat_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "name": "남은 날",
+        "icon": "heart",
+        "color": "rose",
+        "minValue": 0,
+        "maxValue": 42,
+        "initialValue": 42,
+        "unit": None,
+        "description": "날이 바뀌면 줄어든다",
+    }
+    item.update(overrides)
+    return item
+
+
+async def _saved_stat_options(db_session: AsyncSession, version_id: uuid.UUID) -> list[tuple[object, ...]]:
+    saved = (
+        await db_session.scalars(
+            sa.select(StatDef)
+            .join(StartingSetup, StatDef.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StatDef.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return [(s.name, s.per_turn_delta, s.change_direction, s.max_change_per_turn) for s in saved]
+
+
+async def test_patch_story_draft_round_trips_stat_change_direction_and_max_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방향·폭을 저장하고 초안 응답이 그대로 돌려준다. 턴당 변화와 함께 건 옵션, 0 이하 폭도 저장은 받는다 — 발행만
+    막는다(저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다)."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    judged = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
+    counter = _limited_stat_item(name="카운터", perTurnDelta=-1, changeDirection="increase", maxChangePerTurn=0)
+    setup = _starting_setup_item(statDefs=[judged, counter])
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup]))
+
+    assert resp.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [
+        ("남은 날", None, "decrease", 7),
+        ("카운터", -1, "increase", 0),
+    ]
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert got.status_code == 200
+    stat_defs = got.json()["startingSetups"][0]["statDefs"]
+    assert [(s["perTurnDelta"], s["changeDirection"], s["maxChangePerTurn"]) for s in stat_defs] == [
+        (None, "decrease", 7),
+        (-1, "increase", 0),
+    ]
+
+
+async def test_patch_story_draft_keeps_stat_change_options_when_fields_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 방향·폭을 기본값으로 되돌리면 안
+    된다. 새 스탯은 기본값(양방향·제한 없음)으로 들어가고, 명시적으로 보낸 기본값은 지운다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    kept = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
+    first = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[kept])]),
+    )
+    assert first.status_code == 200
+
+    old_bundle_kept = {key: value for key, value in kept.items() if key not in ("changeDirection", "maxChangePerTurn")}
+    old_bundle_kept["description"] = "고친 설명"
+    old_bundle_new = _limited_stat_item(name="새 스탯")
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(id=setup_id, statDefs=[old_bundle_kept, old_bundle_new])]
+        ),
+    )
+
+    assert resp.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [
+        ("남은 날", None, "decrease", 7),
+        ("새 스탯", None, "both", None),
+    ]
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=setup_id, statDefs=[{**kept, "changeDirection": "both", "maxChangePerTurn": None}])
+            ]
+        ),
+    )
+    assert cleared.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [("남은 날", None, "both", None)]
+
+
 async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

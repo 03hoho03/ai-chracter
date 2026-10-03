@@ -7232,7 +7232,16 @@ export interface components {
             /** Prologue */
             prologue: string;
         };
-        /** StatDefDraftItem */
+        /**
+         * StatDefDraftItem
+         * @description 스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.
+         *
+         *     `change_direction`·`max_change_per_turn` 은 안 보내면 기존 스탯의 값을 그대로 둔다(router 가 `model_fields_set`
+         *     으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 제약을 지우지 않게
+         *     하려는 것이다. 새 스탯은 기본값(양방향·제한 없음)으로 들어간다. 기본값을 `default_factory` 로 두는 이유는
+         *     `KeywordNoteDraftInput` 의 같은 주석과 같다. 턴당 변화와 함께 쓰거나 폭을 0 이하로 둔 값도 저장은 받는다 —
+         *     여기서 막으면 그 초안의 자동저장이 편집마다 실패하므로 발행(`validate_story_publish`)이 막는다.
+         */
         StatDefDraftItem: {
             /**
              * Id
@@ -7257,6 +7266,13 @@ export interface components {
             description: string;
             /** Perturndelta */
             perTurnDelta?: number | null;
+            /**
+             * Changedirection
+             * @enum {string}
+             */
+            changeDirection?: "both" | "increase" | "decrease";
+            /** Maxchangeperturn */
+            maxChangePerTurn?: number | null;
         };
         /** StatDefSnapshot */
         StatDefSnapshot: {

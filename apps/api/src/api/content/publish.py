@@ -140,6 +140,11 @@ def validate_story_publish(
     `stats.range` 를 한 번 알린다. 대화는 방을 열 때 초기값을 그대로 두고 이후 변화부터 범위로 잘라 쓴다 — 범위 밖
     초기값은 첫 변화에서 경계로 튀고, 뒤집힌 범위에서는 어떤 변화든 최대값 하나로 붙는다. 초안 저장은 이 검사를 하지 않는다 — 이미 그렇게 저장된 초안이 있어 저장에서 막으면 그 초안의
     자동저장이 편집마다 실패한다. 빌더 폼 검증이 어느 칸인지를 먼저 보여 주므로 여기는 API 직접 호출을 막는 관문이다.
+
+    변화 방향·한 턴 최대 폭도 같은 이유로 발행만 검사한다. 턴당 변화가 있는 스탯에 둘 중 하나라도 걸려 있으면
+    `stats.changeLimitWithCounter` 를 알린다 — 그 스탯은 판정을 받지 않아 옵션이 아무 일도 하지 않는데, 작가는 걸었다고
+    믿게 된다. 최대 폭이 0 이하이면 `stats.maxChangePerTurn` 을 알린다(빈 값이 "제한 없음"이다). 두 키 모두 어긋난
+    스탯 수와 상관없이 한 번씩이다.
     """
     missing: list[str] = []
     if not detail.name:
@@ -171,6 +176,14 @@ def validate_story_publish(
         for stat in stat_defs
     ):
         missing.append("stats.range")
+    if any(
+        stat.per_turn_delta is not None
+        and (stat.change_direction not in (None, "both") or stat.max_change_per_turn is not None)
+        for stat in stat_defs
+    ):
+        missing.append("stats.changeLimitWithCounter")
+    if any(stat.max_change_per_turn is not None and stat.max_change_per_turn <= 0 for stat in stat_defs):
+        missing.append("stats.maxChangePerTurn")
 
     if len(media_book_cells) > MEDIA_BOOK_MAX_CELLS:
         missing.append("mediaBook.cells")

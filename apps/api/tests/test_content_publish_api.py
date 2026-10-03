@@ -50,6 +50,7 @@ from api.db.models.story import (
     MediaBookScene,
     Shortcut,
     StartingSetup,
+    StatChangeDirection,
     StatDef,
     StoryPromptTemplate,
     StoryVersionDetail,
@@ -2178,6 +2179,178 @@ def test_validate_story_publish_media_book(
     )
 
     assert missing == expected
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"),
+    [
+        pytest.param([(None, None, None)], [], id="unset"),
+        pytest.param([(None, "decrease", 3), (None, "increase", 1)], [], id="judged-with-options"),
+        pytest.param([(-1, None, None), (-1, "both", None)], [], id="counter-without-options"),
+        pytest.param([(-1, "decrease", None)], ["stats.changeLimitWithCounter"], id="counter-with-direction"),
+        pytest.param([(-1, "both", 3)], ["stats.changeLimitWithCounter"], id="counter-with-step"),
+        pytest.param([(None, "both", 0)], ["stats.maxChangePerTurn"], id="zero-step"),
+        pytest.param([(None, "both", -2), (None, "both", 0)], ["stats.maxChangePerTurn"], id="several-reported-once"),
+        pytest.param(
+            [(2, "increase", 0)], ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"], id="both-problems"
+        ),
+    ],
+)
+def test_validate_story_publish_stat_change_options(
+    options: list[tuple[int | None, StatChangeDirection | None, int | None]], expected: list[str]
+) -> None:
+    """턴당 변화가 있는 스탯은 판정을 받지 않아 방향·폭이 아무 일도 하지 않는다 — 걸려 있으면 발행이 막는다. 폭은 양의
+    정수만(빈 값이 제한 없음). 어긋난 스탯이 몇 개든 키는 한 번만 알린다."""
+    content, version, detail, setups = _valid_story_rows()
+
+    missing = validate_story_publish(
+        content,
+        version,
+        detail,
+        setups,
+        {},
+        media_book_people=[],
+        media_book_scenes=[],
+        media_book_cells=[],
+        keyword_notes=[],
+        dangling_stat_rule_paths=[],
+        stat_defs=[
+            StatDef(
+                min_value=0,
+                max_value=10,
+                initial_value=5,
+                per_turn_delta=delta,
+                change_direction=direction,
+                max_change_per_turn=step,
+            )
+            for delta, direction, step in options
+        ],
+    )
+
+    assert missing == expected
+
+
+def _stat_def_fields(stat_def: StatDef) -> tuple[object, ...]:
+    return (
+        stat_def.name,
+        stat_def.icon,
+        stat_def.color,
+        stat_def.min_value,
+        stat_def.max_value,
+        stat_def.initial_value,
+        stat_def.unit,
+        stat_def.description,
+        stat_def.per_turn_delta,
+        stat_def.change_direction,
+        stat_def.max_change_per_turn,
+        stat_def.order,
+    )
+
+
+async def test_publish_and_reset_clone_every_stat_def_field(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """발행과 편집 취소는 스탯을 생성자에 필드를 하나씩 나열해 복사한다. 하나를 빠뜨리면 그 필드가 조용히 기본값으로
+    돌아가므로(방향은 양방향, 폭·턴당 변화는 없음으로), 모든 필드를 기본값이 아닌 값으로 채워 두고 복사본과 맞춰 본다.
+    턴당 변화와 방향·폭은 발행에서 함께 쓸 수 없으므로 스탯 둘로 나눠 싣는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _, _, setup, _, judged = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    judged.unit = "일"
+    judged.change_direction = "decrease"
+    judged.max_change_per_turn = 7
+    counter = StatDef(
+        entity_id=uuid.uuid4(),
+        starting_setup_id=setup.id,
+        name="산소",
+        icon="wind",
+        color="sky",
+        min_value=-5,
+        max_value=95,
+        initial_value=90,
+        unit="%",
+        description="매 턴 준다",
+        per_turn_delta=-3,
+        order=1,
+    )
+    db_session.add(counter)
+    await db_session.flush()
+    expected = {stat.entity_id: _stat_def_fields(stat) for stat in (judged, counter)}
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    _override_llm_client(_FakeLLMClient(PublishFilterResult(passed=True, reason=None)))
+    try:
+        publish_resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert publish_resp.status_code == 200
+
+    content_id = content.id
+
+    async def _draft_copies() -> dict[uuid.UUID, tuple[object, ...]]:
+        copies = (
+            await db_session.scalars(
+                sa.select(StatDef)
+                .join(StartingSetup, StartingSetup.id == StatDef.starting_setup_id)
+                .join(ContentVersion, ContentVersion.id == StartingSetup.content_version_id)
+                .where(ContentVersion.content_id == content_id, ContentVersion.published_at.is_(None))
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+        return {stat.entity_id: _stat_def_fields(stat) for stat in copies}
+
+    assert await _draft_copies() == expected
+
+    reset_resp = await db_client.post(f"/contents/{content.id}/draft/reset")
+    assert reset_resp.status_code == 204
+    assert await _draft_copies() == expected
+
+
+@pytest.mark.parametrize(
+    ("per_turn_delta", "change_direction", "max_change_per_turn", "expected"),
+    [
+        pytest.param(-1, "decrease", None, ["stats.changeLimitWithCounter"], id="counter-with-direction"),
+        pytest.param(None, "both", 0, ["stats.maxChangePerTurn"], id="zero-step"),
+    ],
+)
+async def test_publish_story_rejects_stat_change_options_before_filter(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    s3_bucket: None,
+    per_turn_delta: int | None,
+    change_direction: StatChangeDirection,
+    max_change_per_turn: int | None,
+    expected: list[str],
+) -> None:
+    """초안 저장은 방향·폭이 어긋난 스탯도 받아 주므로(자동저장이 멈추면 안 된다) 발행이 막는다. 라우터가 그 버전의
+    스탯 행(새 컬럼 포함)을 검증에 넘기는지 본다 — 심사 모델은 부르지 않는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version, _thumbnail, _setup, _ending, stat_def = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    stat_def.per_turn_delta = per_turn_delta
+    stat_def.change_direction = change_direction
+    stat_def.max_change_per_turn = max_change_per_turn
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    fake = _FakeLLMClient(PublishFilterResult(passed=True, reason=None))
+    _override_llm_client(fake)
+    try:
+        resp = await db_client.post(f"/contents/{content.id}/publish")
+    finally:
+        _clear_llm_override()
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == {"missingFields": expected}
+    assert fake.received_prompt is None
 
 
 def _keyword_note_fields(note: KeywordNote) -> tuple[object, ...]:

@@ -2959,6 +2959,8 @@ def _preview_stat_def(item: StatDefDraftItem) -> StatDef:
         max_value=item.max_value,
         initial_value=item.initial_value,
         per_turn_delta=item.per_turn_delta,
+        change_direction=item.change_direction,
+        max_change_per_turn=item.max_change_per_turn,
     )
 
 

@@ -557,6 +557,26 @@ async def test_upsert_story_rejects_stat_whose_initial_value_is_outside_its_rang
     assert await db_session.get(Content, story_content_id(SLUG)) is None
 
 
+async def test_upsert_story_rejects_counter_stat_with_change_direction(
+    db_session: AsyncSession, tmp_path: Path
+) -> None:
+    """시드도 발행과 같은 방향·폭 검사를 받는다. 턴당 변화가 있는 스탯에 방향을 걸면 그 옵션은 아무 일도 하지 않는다."""
+    await _seed_author(db_session)
+
+    def _counter_with_direction(raw: dict[str, Any]) -> None:
+        stat = raw["startingSetups"][1]["statDefs"][0]
+        stat["perTurnDelta"] = -1
+        stat["changeDirection"] = "decrease"
+
+    payload = await _load_seed_payload(db_session, tmp_path, _counter_with_direction)
+
+    with pytest.raises(SeedPublishError) as exc_info:
+        await upsert_story(db_session, SLUG, payload)
+
+    assert "stats.changeLimitWithCounter" in str(exc_info.value)
+    assert await db_session.get(Content, story_content_id(SLUG)) is None
+
+
 async def test_upsert_story_rejects_ending_rule_pointing_at_unknown_stat(
     db_session: AsyncSession, tmp_path: Path
 ) -> None:

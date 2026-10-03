@@ -433,6 +433,23 @@ def build_story_generation_prompt(
     )
 
 
+def _stat_line_tail(stat_def: StatDef) -> str:
+    """판정 프롬프트 스탯 줄 끝의 안내. 방향·폭 제약은 `apply_stat_changes` 가 어차피 잘라 내므로 정확성과는 무관하고,
+    판정이 처음부터 자를 값을 내지 않게 돕는 보조다. 제약 없는 스탯 줄은 꼬리 없이 그대로 둔다. 카운터 줄은 초안·미리보기에
+    옵션이 함께 남아 있어도 판정을 받지 않으므로 제약 꼬리를 달지 않는다."""
+    if stat_def.per_turn_delta is not None:
+        return "  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라."
+    notes: list[str] = []
+    if stat_def.change_direction == "increase":
+        notes.append("증가만 할 수 있다.")
+    elif stat_def.change_direction == "decrease":
+        notes.append("감소만 할 수 있다.")
+    step = stat_def.max_change_per_turn
+    if step is not None and step > 0:
+        notes.append(f"한 턴에 최대 {step}까지 바뀐다.")
+    return f"  ※ {' '.join(notes)}" if notes else ""
+
+
 def build_stat_judgment_prompt(
     *,
     prompt_set: PromptSet,
@@ -461,7 +478,7 @@ def build_stat_judgment_prompt(
         f"- statId={stat_def.entity_id}, 이름={stat_def.name}, 설명={stat_def.description}, "
         f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
         f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}"
-        + ("  ※ 시스템이 매 턴 자동 조정하는 값이다. statChanges에 넣지 마라." if stat_def.per_turn_delta is not None else "")
+        + _stat_line_tail(stat_def)
         for stat_def in stat_defs
     )
     values = {
