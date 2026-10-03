@@ -23,6 +23,7 @@ import {
   contentKeys,
   favoriteKeys,
   toContentAccessStatus,
+  toHomeTypeParam,
   toThumbnailAspect,
   toThumbnailAspectClass,
   useContentDetailQuery,
@@ -270,7 +271,16 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
         {/* min-w-0 — flex 자식의 기본 min-width:auto 때문에 긴 제목·해시태그가 열을 밀어내는 것을 막는다. */}
         <div className="flex min-w-0 flex-1 flex-col gap-5">
           <div className="flex flex-col gap-2">
-            <div className="flex items-center justify-between">
+            {/* 모달의 스토리 2열(`sm` 이상)에서는 이 줄의 오른쪽 끝(`⋯`)이 모달 오른쪽 위 닫기(×) 자리와
+                겹친다 — 닫기는 공용 `DialogContent`가 절대배치로 그리므로 이 줄이 닫기 폭(32px)만큼
+                비켜선다. 공용 다이얼로그를 고치면 web·admin의 모든 다이얼로그가 바뀌어 여기서만 푼다.
+                풀페이지(닫기 없음)와 캐릭터(1열이라 `⋯`이 히어로 아래)는 겹치지 않아 그대로다. */}
+            <div
+              className={cn(
+                "flex items-center justify-between",
+                variant === "modal" && content.type === "story" && "sm:pr-8",
+              )}
+            >
               <span className="inline-flex w-fit items-center gap-1 rounded-full bg-secondary px-2 py-0.5 text-badge font-medium text-secondary-foreground">
                 <TypeIcon aria-hidden className="size-3.5" />
                 {TYPE_LABEL[content.type]}
@@ -309,8 +319,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
                     type="button"
                     onClick={() => {
                       setModalState(undefined);
-                      // 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다.
-                      void navigate({ to: "/", search: { hashtag: tag } });
+                      // 해시태그 클릭 시 홈으로 이동해 해당 해시태그로 필터링한다. 유형도 이 작품의 유형으로
+                      // 싣는다 — 파라미터 없는 `/`는 스토리라, 빼면 캐릭터 태그로 스토리 목록을 걸러 빈 화면이 된다.
+                      void navigate({ to: "/", search: { hashtag: tag, type: toHomeTypeParam(content.type) } });
                     }}
                     className="text-xs text-muted-foreground hover:underline"
                   >

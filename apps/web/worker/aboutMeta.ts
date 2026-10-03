@@ -16,7 +16,8 @@ export const ABOUT_PATH = "/about";
 export function buildAboutHead(origin: string): string {
   return buildMetaTags({
     title: `서비스 소개 — ${SITE_NAME}`,
-    description: `${SITE_NAME}는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스입니다.`,
+    // `src/shared/config/site.ts`의 `SITE_INTRO` 사본이다 — Worker는 별도 런타임이라 import하지 못한다. 함께 고친다.
+    description: `${SITE_NAME}는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스예요.`,
     canonical: `${origin}${ABOUT_PATH}`,
   });
 }

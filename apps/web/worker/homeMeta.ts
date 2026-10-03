@@ -14,7 +14,7 @@ export const HOME_PATH = "/";
  * **오리진을 알아야 만들 수 있는 두 개만** 만든다.
  *
  * canonical은 요청 URL이 아니라 항상 `{origin}/`이다 — `/?sort=latest`, `/?sort=popular`,
- * `/?sort=genre&genre={uuid}`가 전부 같은 홈이라 쿼리를 살려 두면 구글이 중복 콘텐츠로 본다.
+ * `/?type=character&genre={uuid}`가 전부 같은 홈이라 쿼리를 살려 두면 구글이 중복 콘텐츠로 본다.
  */
 export function buildHomeHead(origin: string): string {
   return buildMetaTags({

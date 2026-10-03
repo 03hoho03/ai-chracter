@@ -281,6 +281,9 @@ export function ContentCard({
                 event.stopPropagation();
                 onAuthorClick();
               }}
+              // 카드의 Enter/Space 핸들러가 `preventDefault` 후 상세를 열기 때문에, 막지 않으면 이 버튼에서 누른
+              // Enter가 작가 필터 대신 상세 모달을 연다. 전파만 끊으면 버튼 기본 동작(키 → click)이 살아난다.
+              onKeyDown={(event) => event.stopPropagation()}
               className="w-fit truncate text-left text-xs text-muted-foreground hover:underline"
             >
               {author.name}
@@ -330,6 +333,8 @@ function ContentCardViewsAndAuthor({ id, viewCount, author, onAuthorClick }: Con
             event.stopPropagation();
             onAuthorClick();
           }}
+          // 위 분리 줄의 작가 버튼과 같은 이유로 keydown도 끊는다 — 카드가 Enter/Space를 가로채 상세를 연다.
+          onKeyDown={(event) => event.stopPropagation()}
           className="min-w-0 truncate text-left hover:underline"
         >
           {author.name}

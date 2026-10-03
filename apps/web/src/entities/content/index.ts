@@ -27,7 +27,7 @@ export { useUpdateContentVisibilityMutation } from "./api/useUpdateContentVisibi
 export { useReportContentMutation } from "./api/useReportContentMutation";
 export type { ReportReasonCategory } from "./api/useReportContentMutation";
 export { registerSituationalImage } from "./api/registerSituationalImage";
-export { contentDetailModalAtom, contentTypeToggleAtom } from "./model/atoms";
+export { contentDetailModalAtom } from "./model/atoms";
 export type { ContentDetailModalState } from "./model/atoms";
 export {
   VISIBILITY_FILTER_LABEL,
@@ -63,6 +63,8 @@ export type {
   ContentVisibility,
   ModerationStatus,
 } from "./model/content";
+export { resolveHomeContentType, toHomeTypeParam, toHomeTypeSwitchSearch } from "./model/homeContentType";
+export type { HomeTypeParam } from "./model/homeContentType";
 export { toPriorityCount, toThumbnailAspect, toThumbnailAspectRatio } from "./model/cardLayout";
 export type { GridAspect, ThumbnailAspect } from "./model/cardLayout";
 export { useContentDetailModal } from "./lib/useContentDetailModal";

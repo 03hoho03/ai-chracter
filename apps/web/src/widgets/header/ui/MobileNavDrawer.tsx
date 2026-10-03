@@ -91,7 +91,7 @@ export function MobileNavDrawer({ className }: { className?: string }) {
                 바뀐 것)를 사용자가 볼 수 없으므로 닫아야 한다. 이전엔 atom을 `useAtomValue`로 관찰하고
                 `useEffect`+`useRef` 첫-실행 가드로 닫았는데, `ContentTypeToggle`이 재클릭 가드를 통과한
                 뒤에만 부르는 `onSelected`로 대체한다 — 재클릭은 그 가드에서 막혀 `onSelected`가 안
-                불리므로(현재도 atom이 안 바뀌어 안 닫혔다) 동작은 그대로고, 토글에서는 다른 유형 클릭만 닫는다. */}
+                불리므로 동작은 그대로고, 홈에서는 다른 유형 클릭만 닫는다(홈 밖에서는 선택이 없어 어느 항목이든 홈으로 가며 닫힌다). */}
             <ContentTypeToggle variant="outline" onSelected={() => setIsOpen(false)} />
           </div>
 

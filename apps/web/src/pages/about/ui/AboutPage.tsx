@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
-import { CONTACT_EMAIL, SITE_NAME } from "@/shared/config/site";
+import { CONTACT_EMAIL, SITE_INTRO } from "@/shared/config/site";
 
 /** 문장 속 링크 — 저장소의 인라인 링크 관용구(`LegalConsentFields` 의 약관 링크)와 같다. 포커스는 밑줄로 준다. */
 const INLINE_LINK_CLASSNAME =
@@ -12,21 +12,19 @@ export function AboutPage() {
   return (
     <main className="mx-auto flex max-w-2xl flex-col gap-6 px-4 sm:px-6 py-10">
       <h1 className="text-2xl font-bold tracking-tight text-foreground">서비스 소개</h1>
-      <p className="break-keep text-sm text-foreground">
-        {SITE_NAME}는 AI 캐릭터와 대화하고, 직접 만든 캐릭터와 스토리를 다른 사람과 나누는 서비스입니다.
-      </p>
+      <p className="break-keep text-sm text-foreground">{SITE_INTRO}</p>
 
       <AboutSection title="할 수 있는 것">
         <ul className="flex list-disc flex-col gap-1.5 pl-5 break-keep text-sm text-foreground marker:text-muted-foreground">
-          <li>대화 — 창작자들이 만든 캐릭터와 이야기하거나, 스토리 속 인물이 되어 장면을 이어갑니다.</li>
-          <li>창작 — 캐릭터의 성격·말투·배경과 스토리의 시작 설정·전개를 직접 만들어 발행합니다.</li>
-          <li>이미지 — 캐릭터와 장면 이미지를 생성해 작품에 씁니다.</li>
+          <li>대화 — 창작자들이 만든 캐릭터와 이야기하거나, 스토리 속 인물이 되어 장면을 이어가요.</li>
+          <li>창작 — 캐릭터의 성격·말투·배경과 스토리의 시작 설정·전개를 직접 만들어 발행해요.</li>
+          <li>이미지 — 캐릭터와 장면 이미지를 생성해 작품에 써요.</li>
         </ul>
       </AboutSection>
 
       <AboutSection title="AI 생성물 안내">
         <p className="break-keep text-sm text-foreground">
-          대화와 이미지는 생성형 AI가 자동으로 만든 결과물로, 사실이 아니거나 부정확할 수 있습니다.
+          대화와 이미지는 생성형 AI가 자동으로 만든 결과물로, 사실이 아니거나 부정확할 수 있어요.
         </p>
       </AboutSection>
 

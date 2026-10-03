@@ -1,16 +1,24 @@
 import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Input } from "@ai-character-chat/ui/components/input";
-import { useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useSearch } from "@tanstack/react-router";
 import { Search, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useDebounce } from "react-use";
+
+import { CONTENT_TYPE_LABEL, resolveHomeContentType } from "@/entities/content";
+
+import { resolveSearchInputSync } from "../model/searchInputSync";
 
 const DEBOUNCE_MS = 300;
 
 /**
  * 검색 결과 자체는 홈 화면의 일부이므로 별도 라우트 없이
  * 인라인 익스팬드만 구현한다. 홈이 아닌 화면에서 검색을 시작해도 항상 `/`로 이동 + `?q=` 반영.
+ *
+ * **닫기·Esc는 입력칸을 접기만 하고 검색어는 지우지 않는다.** 걸린 검색어는 홈의 칩 줄이 `“검색어” ×` 칩으로
+ * 보여 주고 해제도 그 칩이 맡는다 — 닫기가 검색어를 지우는 방식은 브라우저 뒤로/앞으로로 `?q=`가 되살아날 때
+ * 입력칸은 접힌 채 검색어만 남아 화면에 안 보이는 필터가 생긴다(칩은 URL에서 그려지므로 그런 상태가 없다).
  *
  * `onExpandedChange` — `sm` 미만에서 펼치면 헤더의 버거·로고를 숨겨야 하는데 그 둘은 `Header`가
  * 그리는 형제 엘리먼트라 이 컴포넌트 내부에서 직접 숨길 수 없다. 펼침 상태 자체(자동 펼침 초기값·디바운스
@@ -23,18 +31,28 @@ export function SearchInlineExpand({
   onExpandedChange?: (expanded: boolean) => void;
 } = {}) {
   const navigate = useNavigate();
-  const initialQuery = useRouterState({ select: (state) => extractHomeQuery(state.location.search) });
-  const [isExpanded, setIsExpanded] = useState(Boolean(initialQuery));
-  const [value, setValue] = useState(initialQuery ?? "");
+  // 홈이 아니면 `undefined`다. 검색어(`q`)는 홈 스키마에만 있으므로 홈 밖에는 걸린 검색어가 없다.
+  const homeSearch = useSearch({ from: "/", shouldThrow: false });
+  const urlQuery = homeSearch?.q;
+  const [isExpanded, setIsExpanded] = useState(Boolean(urlQuery));
+  const [value, setValue] = useState(urlQuery ?? "");
   const inputRef = useRef<HTMLInputElement>(null);
+  // 디바운스가 URL에 마지막으로 쓴 검색어. URL 검색어가 이것과 다르면 바깥에서 바뀐 것이다(아래 동기화 효과).
+  const lastWrittenQueryRef = useRef(urlQuery);
+  // 검색 범위는 지금 보고 있는 홈의 유형이다. 홈 밖에서 검색하면 파라미터 없는 `/`(스토리)로 간다.
+  const searchLabel = `${CONTENT_TYPE_LABEL[resolveHomeContentType(homeSearch?.type)]} 검색`;
 
   useDebounce(
     () => {
       if (!isExpanded) return;
       const q = value.trim();
-      // 홈의 정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
+      // 홈에서는 유형/정렬/장르/크리에이터/해시태그 필터와 조합 적용되어야 하므로 검색어만 갱신하고
       // 나머지 search param은 보존한다(이전엔 `search: { q }`로 통째로 덮어써 다른 필터가 날아갔다).
-      void navigate({ to: "/", search: (prev) => ({ ...prev, q: q === "" ? undefined : q }) });
+      // 홈 밖에서는 지금 화면의 search를 펼치지 않는다 — 즐겨찾기·프로필·내 작품의 `?type=`이 홈 유형으로
+      // 새어 들어간다.
+      const next = q === "" ? undefined : q;
+      lastWrittenQueryRef.current = next;
+      void navigate({ to: "/", search: homeSearch ? { ...homeSearch, q: next } : { q: next } });
     },
     DEBOUNCE_MS,
     [value],
@@ -47,8 +65,8 @@ export function SearchInlineExpand({
   // 사용자 이벤트로 인한 펼침/접힘은 `setIsExpanded`를 직접 부르는 지점
   // (검색 버튼 onClick·`collapse`)에서 `onExpandedChange`도 함께 부른다. 여기 남는 이펙트는 더 이상
   // "상태 복제"가 아니라 "URL 파생 초기값을 부모에 한 번 알리는 핸드셰이크"다 — `isExpanded`의 초기값이
-  // `useState(Boolean(initialQuery))`로 URL에서 오는 그 한 경우만 사용자 이벤트가 아니라서, deps를 `[]`로
-  // 좁혀 마운트 1회만 알린다. useEffect가 아니라 useLayoutEffect인 이유는 그대로다 — `initialQuery`가
+  // `useState(Boolean(urlQuery))`로 URL에서 오는 그 한 경우만 사용자 이벤트가 아니라서, deps를 `[]`로
+  // 좁혀 마운트 1회만 알린다. useEffect가 아니라 useLayoutEffect인 이유는 그대로다 — URL 검색어가
   // 있으면 `isExpanded`가 첫 렌더부터 true인데 useEffect는 페인트 후에 돌아 첫 프레임에 부모(Header)가
   // 아직 false로 그려져 버거·로고가 한 프레임 노출된다(모바일 폭에서 `?q=` URL 직접 열기 — 2026-09-15
   // 적대적 리뷰가 지목).
@@ -61,6 +79,22 @@ export function SearchInlineExpand({
     setValue("");
     onExpandedChange?.(false);
   };
+
+  // URL 검색어가 바깥에서 바뀌면(로고·유형 전환·해시태그·칩 ×·`필터 지우기`·뒤로/앞으로) 펼친 입력칸이 옛
+  // 검색어로 남아 칩과 다른 말을 한다 — 지워졌으면 접고, 다른 값이 됐으면 그 값으로 채운다. 자기 쓰기와
+  // 바깥 변경은 디바운스가 마지막으로 쓴 값으로 가른다(규칙은 `resolveSearchInputSync`). deps를 URL 검색어
+  // 하나로 둬 타이핑으로는 이 효과가 돌지 않는다.
+  useEffect(() => {
+    const sync = resolveSearchInputSync({
+      urlQuery,
+      lastWrittenQuery: lastWrittenQueryRef.current,
+      inputValue: value,
+      isExpanded,
+    });
+    lastWrittenQueryRef.current = urlQuery;
+    if (sync.kind === "collapse") collapse();
+    if (sync.kind === "fill") setValue(sync.value);
+  }, [urlQuery]);
 
   return (
     <div
@@ -85,8 +119,8 @@ export function SearchInlineExpand({
             onKeyDown={(e) => {
               if (e.key === "Escape") collapse();
             }}
-            placeholder="캐릭터·스토리 검색"
-            aria-label="캐릭터·스토리 검색"
+            placeholder={searchLabel}
+            aria-label={searchLabel}
             // 옆 Button(size="icon")이 36px라 Input 기본값(h-9=36px)과 이미 맞는다 — 오버라이드 제거.
             className="min-w-0"
           />
@@ -111,6 +145,8 @@ export function SearchInlineExpand({
           size="icon"
           aria-label="검색"
           onClick={() => {
+            // 걸린 검색어가 있으면 그 말로 채워 연다 — 칩과 입력칸이 다른 말을 하지 않게.
+            setValue(urlQuery ?? "");
             setIsExpanded(true);
             onExpandedChange?.(true);
           }}
@@ -120,12 +156,4 @@ export function SearchInlineExpand({
       )}
     </div>
   );
-}
-
-function extractHomeQuery(search: unknown): string | undefined {
-  if (search && typeof search === "object" && "q" in search) {
-    const { q } = search;
-    return typeof q === "string" ? q : undefined;
-  }
-  return undefined;
 }
