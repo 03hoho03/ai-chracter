@@ -19,14 +19,15 @@ import {
   useBuilderUiState,
 } from "@/features/build-common";
 import {
+  FieldLabelText,
   planStatRemoval,
   SELECTED_STARTING_SETUP,
+  STORY_FIELD_LABELS,
   type StatDefValues,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
-import { RequiredText } from "@/shared/ui/RequiredText";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -168,7 +169,7 @@ function StatRow({
           40px 로 커져 입력칸(36px)보다 크고, 줄이 가운데 정렬이라 위아래로 2px 씩 비어져 나온다. */}
       <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
         <Label htmlFor={`stat-${id}-name`} className="col-start-3">
-          이름 *
+          <FieldLabelText field="startingSetups.*.stats.*.name" />
         </Label>
         <Controller
           control={control}
@@ -179,7 +180,7 @@ function StatRow({
                 value={field.value}
                 onChange={field.onChange}
                 options={STAT_ICON_OPTIONS}
-                label="아이콘"
+                label={STORY_FIELD_LABELS["startingSetups.*.stats.*.icon"].label}
                 isRequired
                 aria-invalid={!!statErrors?.icon}
                 aria-describedby={statErrors?.icon ? errorIds.icon : undefined}
@@ -195,7 +196,7 @@ function StatRow({
               <ColorPicker
                 value={field.value}
                 onChange={field.onChange}
-                label="색"
+                label={STORY_FIELD_LABELS["startingSetups.*.stats.*.color"].label}
                 isRequired
                 aria-invalid={!!statErrors?.color}
                 aria-describedby={statErrors?.color ? errorIds.color : undefined}
@@ -232,7 +233,7 @@ function StatRow({
           칸만 키워도 이웃 칸의 윗선이 그대로이게 위로 붙인다. */}
       <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-min`}><RequiredText>최소값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-min`}><FieldLabelText field="startingSetups.*.stats.*.min" /></Label>
           <Input
             id={`stat-${id}-min`}
             type="number"
@@ -248,7 +249,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-max`}><RequiredText>최대값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-max`}><FieldLabelText field="startingSetups.*.stats.*.max" /></Label>
           <Input
             id={`stat-${id}-max`}
             type="number"
@@ -264,7 +265,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-initial`}><RequiredText>초기값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-initial`}><FieldLabelText field="startingSetups.*.stats.*.initial" /></Label>
           <Input
             id={`stat-${id}-initial`}
             type="number"
@@ -280,7 +281,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-unit`}>단위</Label>
+          <Label htmlFor={`stat-${id}-unit`}><FieldLabelText field="startingSetups.*.stats.*.unit" /></Label>
           <Input
             id={`stat-${id}-unit`}
             placeholder="예: pt, %"
@@ -299,7 +300,7 @@ function StatRow({
       {/* 입력칸은 위 격자의 첫 칸 폭이고, 힌트는 넓으면 그 옆 나머지 세 열에, 좁으면(2열) 다음 줄 전폭에 선다 — 좁은 칸
           옆에 두면 힌트가 다섯 줄로 접힌다. */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-per-turn-delta`}>턴당 자동 변화</Label>
+        <Label htmlFor={`stat-${id}-per-turn-delta`}><FieldLabelText field="startingSetups.*.stats.*.perTurnDelta" /></Label>
         <div className="grid grid-cols-2 items-start gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <div className="flex flex-col gap-1.5">
             <Input
@@ -332,7 +333,7 @@ function StatRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-description`}><RequiredText>설명</RequiredText></Label>
+        <Label htmlFor={`stat-${id}-description`}><FieldLabelText field="startingSetups.*.stats.*.description" /></Label>
         <Textarea
           id={`stat-${id}-description`}
           placeholder="스탯에 대한 설명을 입력해주세요"

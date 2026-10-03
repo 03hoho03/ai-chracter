@@ -8,12 +8,12 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
   CollapsibleItemCard,
-  firstLine,
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
   useBuilderUiState,
 } from "@/features/build-common";
+import { firstLine } from "@/shared/lib/text/firstLine";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
 const EXAMPLE_DIALOGUE_LIST: CharacterCollapsibleList = "exampleDialogue";

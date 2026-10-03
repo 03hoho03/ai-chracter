@@ -3,12 +3,15 @@ import { z } from "zod";
 import { normalizeMediaBookName } from "@/entities/media-book";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
-// widgets/build-story/ui/RegistrationTab.tsx가 이 배열을 map해 라벨만 매핑한다(손복사 금지).
+// 화면 글자는 fieldOptions.ts 가 값마다 붙인다(손복사 금지).
 export const TARGET_VALUES = ["female", "male", "all"] as const;
 export type Target = (typeof TARGET_VALUES)[number];
 
 export const VISIBILITY_VALUES = ["public", "link", "private"] as const;
 export type Visibility = (typeof VISIBILITY_VALUES)[number];
+
+/** 전개 예시 개수 상한. 스키마의 `.max()`와 빌더의 라벨 표기·추가 버튼 게이트가 함께 읽는다. */
+export const MAX_DEVELOPMENT_EXAMPLES = 3;
 
 /**
  * 전개 예시 한 쌍. build-character의
@@ -30,8 +33,7 @@ export const developmentExampleSchema = z.object({
  * 항상 적용되는 L1 작품 층이라 이 분기 대상이 아니고, 어느 템플릿에서도 필수가 아니다
  * (기존 33건이 비어 있는 채로 발행돼 있다).
  */
-// widgets/build-story/ui/SettingTab.tsx의 PROMPT_TEMPLATE_LABELS가 이 배열을 단일 소스로
-// 삼는다(라벨·설명 문구만 위젯이 map해 붙인다).
+// fieldOptions.ts 의 PROMPT_TEMPLATE_LABELS 가 이 배열을 단일 소스로 삼는다(라벨·설명 문구만 값마다 붙인다).
 export const PROMPT_TEMPLATE_VALUES = ["basic", "emotional", "simulation", "custom"] as const;
 export type PromptTemplate = (typeof PROMPT_TEMPLATE_VALUES)[number];
 
@@ -41,7 +43,7 @@ export const storySettingSchema = z
     worldSetting: z.string().optional(),
     developmentExamples: z
       .array(developmentExampleSchema)
-      .max(3, "전개 예시는 최대 3개까지만 추가할 수 있습니다")
+      .max(MAX_DEVELOPMENT_EXAMPLES, `전개 예시는 최대 ${MAX_DEVELOPMENT_EXAMPLES}개까지만 추가할 수 있습니다`)
       .default([]),
     userGoal: z.string().optional(),
     rules: z.string().optional(),

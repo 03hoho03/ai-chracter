@@ -3,16 +3,17 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Label } from "@ai-character-chat/ui/components/label";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 type ChipStyle = "filled" | "outlined";
 
 type KeywordChipFieldProps = {
   /** 입력칸·안내 문장의 id 접두. 노트마다 달라야 한다. */
   idPrefix: string;
+  /** 개수·목록의 접근 이름에 쓰는 칸 이름. 별표를 넣지 않는다. */
   label: string;
-  /** 필수 표시(`*`). 화면 라벨에만 붙이고 개수·목록의 접근 이름에는 넣지 않는다. */
-  isRequired?: boolean;
+  /** 화면 라벨. 필수 별표는 여기에만 붙인다. */
+  labelContent: ReactNode;
   /** 칩 이름을 읽어 주는 접미 — "`은빛열쇠` 트리거 키워드 삭제"처럼 삭제 버튼 이름에 붙는다. */
   chipNoun: string;
   placeholder: string;
@@ -42,7 +43,7 @@ const CHIP_STYLE_CLASS: Record<ChipStyle, string> = {
 export function KeywordChipField({
   idPrefix,
   label,
-  isRequired = false,
+  labelContent,
   chipNoun,
   placeholder,
   keywords,
@@ -118,7 +119,7 @@ export function KeywordChipField({
   return (
     <div className="flex flex-col gap-1.5" data-field-path={fieldPath}>
       <div className="flex items-baseline justify-between gap-2">
-        <Label htmlFor={inputId}>{isRequired ? `${label} *` : label}</Label>
+        <Label htmlFor={inputId}>{labelContent}</Label>
         <span id={countId} className="text-xs tabular-nums text-muted-foreground">
           <span className="sr-only">{label} </span>
           {keywords.length}/{limit}

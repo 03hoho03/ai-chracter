@@ -4,6 +4,8 @@ import { Grid3x3 } from "lucide-react";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
+import { FieldLabelText } from "@/features/build-story";
+
 import { MediaBookAxisList } from "./MediaBookAxisList";
 import { MediaBookBulkUpload } from "./MediaBookBulkUpload";
 import { MediaBookCellPanel } from "./MediaBookCellPanel";
@@ -48,7 +50,7 @@ export function MediaBookTab() {
       {/* 장 수·상한은 여기 두지 않는다 — 배치표 위 진척 한 줄 하나가 맡는다. 둘을 두면 같은 장 수에 분모가 둘(상한과
           표의 칸 수)이 서서 상한을 채워야 할 칸 수로 읽힌다. 상한은 표가 그보다 클 때(그때만 다 채울 수 없다) 그 줄에 붙는다. */}
       <div className="flex flex-col gap-1">
-        <Label>미디어 북</Label>
+        <Label><FieldLabelText field="mediaBook" /></Label>
         <p className="text-sm break-keep text-muted-foreground">
           인물과 장면이 만나는 칸마다 이미지를 한 장씩 넣으면, 대화 중에 AI가 어울리는 이미지를 골라 답 아래에 보여
           줘요. 넣지 않아도 발행할 수 있어요.
