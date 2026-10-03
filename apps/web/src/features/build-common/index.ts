@@ -11,7 +11,7 @@ export {
   useBuilderUiState,
   useCreateBuilderUiState,
 } from "./model/builderUiState";
-export { flattenFieldErrorPaths } from "./model/fieldErrorPaths";
+export { flattenFieldErrorPaths, matchTabForPath } from "./model/fieldErrorPaths";
 export { firstErrorLocation, type FirstErrorLocation } from "./model/firstErrorLocation";
 export { fieldLabelByFormPath, invalidFieldsMessage, missingFieldsMessage } from "./model/missingFieldsMessage";
 export { getFilterRejectionReason, getMissingFields } from "./model/publishRejection";
