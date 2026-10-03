@@ -29,6 +29,8 @@ import {
 } from "@/features/build-common";
 import {
   COMPARISON_OPERATORS,
+  endingSummary,
+  FieldLabelText,
   LOGIC_OPERATORS,
   removeRuleListItem,
   SELECTED_STARTING_SETUP,
@@ -38,7 +40,6 @@ import {
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
-import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -420,11 +421,6 @@ function EndingRow({
   // "이미지 넣기"가 커서 자리를 읽을 입력창. `register` 의 ref 와 함께 건다.
   const epilogueRef = useRef<HTMLTextAreaElement | null>(null);
   const trimmedName = name.trim();
-  // 그룹 안의 조건도 하나씩 센다 — 작가가 보는 "조건" 수다.
-  const ruleCount = statRules.reduce((sum, item) => sum + (item.kind === "group" ? item.rules.length : 1), 0);
-  const summary = [Number.isFinite(turnGate) ? `${turnGate}턴 이후` : undefined, `규칙 ${ruleCount}개`]
-    .filter((part) => part !== undefined)
-    .join(" · ");
 
   return (
     <CollapsibleItemCard
@@ -434,7 +430,7 @@ function EndingRow({
       title={name}
       placeholderTitle="새 엔딩"
       srTitlePrefix={`${endingIndex + 1}번째 엔딩: `}
-      summary={summary}
+      summary={endingSummary({ turnGate, statRules })}
       hasError={!!endingErrors}
       leading={<ItemDragHandle {...attributes} {...listeners} aria-label={`${endingIndex + 1}번째 엔딩 순서 변경`} />}
       trailing={
@@ -445,7 +441,7 @@ function EndingRow({
       }
     >
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-name`}><RequiredText>이름</RequiredText></Label>
+        <Label htmlFor={`ending-${id}-name`}><FieldLabelText field="startingSetups.*.endings.*.name" /></Label>
         <Input
           id={`ending-${id}-name`}
           placeholder="엔딩 이름을 입력해주세요"
@@ -461,7 +457,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-turn-gate`}><RequiredText>엔딩조건 (최소 턴수)</RequiredText></Label>
+        <Label htmlFor={`ending-${id}-turn-gate`}><FieldLabelText field="startingSetups.*.endings.*.turnGate" /></Label>
         <Input
           id={`ending-${id}-turn-gate`}
           type="number"
@@ -481,7 +477,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-judge-prompt`}><RequiredText>판단 프롬프트</RequiredText></Label>
+        <Label htmlFor={`ending-${id}-judge-prompt`}><FieldLabelText field="startingSetups.*.endings.*.judgePrompt" /></Label>
         <Textarea
           id={`ending-${id}-judge-prompt`}
           placeholder="이 엔딩에 도달했는지 AI가 판단할 기준을 입력해주세요"
@@ -500,7 +496,7 @@ function EndingRow({
 
       <div className="flex flex-col gap-1.5">
         <div className="flex items-center justify-between gap-2">
-          <Label htmlFor={`ending-${id}-epilogue`}>에필로그</Label>
+          <Label htmlFor={`ending-${id}-epilogue`}><FieldLabelText field="startingSetups.*.endings.*.epilogue" /></Label>
           <MediaTagInsertButton name={epiloguePath} fieldLabel="에필로그" textareaRef={epilogueRef} />
         </div>
         <Textarea
@@ -524,7 +520,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`ending-${id}-hint`}>엔딩힌트</Label>
+        <Label htmlFor={`ending-${id}-hint`}><FieldLabelText field="startingSetups.*.endings.*.hint" /></Label>
         <Input
           id={`ending-${id}-hint`}
           placeholder="엔딩 힌트를 입력해주세요"
@@ -541,7 +537,7 @@ function EndingRow({
       </div>
 
       <div className="flex flex-col gap-2 rounded-xl border border-border px-4 py-3">
-        <span className="text-sm leading-none font-medium">스탯 기반 규칙 (선택)</span>
+        <span className="text-sm leading-none font-medium"><FieldLabelText field="startingSetups.*.endings.*.statRules" /></span>
         <RuleListEditor
           items={statRules}
           stats={stats}

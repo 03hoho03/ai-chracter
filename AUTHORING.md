@@ -160,9 +160,11 @@
 
 ## 9. 가이드 원고와 시드의 대조
 
-- 원고의 예시 블록은 여는 줄에 `seed=<slug>:<JSON 경로>` 또는 `free`를 단다. `seed=` 블록 본문은 그 필드 값의 부분 문자열이어야 하고, 원고 검사 테스트(`apps/web/src/pages/creation-guide/model/`)가 이것을 강제한다. 시드 문안을 고치면 원고 인용도 같이 고친다.
+- 원고의 예시 블록(산문 속 예시, 칸 목업 값 `value`, 나쁜 예와 견주는 좋은 쪽 발췌 `good`)은 여는 줄에 `seed=<slug>:<JSON 경로>` 또는 `free`를 단다. `seed=` 글은 그 필드 값의 전문이거나 연속된 온전한 줄이어야 하고(줄 중간을 자른 발췌는 안 된다), 글이 아닌 값(칩·선택값·숫자·규칙)은 JSON으로 읽어 시드 값과 같아야 한다. 칸 목업 값은 칸 키와 시드 경로가 짝이어야 하며, 그 짝은 `apps/web/src/pages/creation-guide/config/storyFieldMockups.ts`의 `seedPath`가 정한다. 원고 검사 테스트(`apps/web/src/pages/creation-guide/model/`)가 이것을 강제한다. 시드 문안을 고치면 원고 인용도 같이 고친다.
+- 원고 문법(절·`::: summary`·`::: field`·`::: note`·`::: details`·`::: bad`·펜스 종류)은 파서 `parseManuscript.ts` 머리 주석이 정의한다. 틀린 표기는 본문으로 흘리지 않고 줄 번호를 단 오류로 멈춘다.
 - 시드 JSON만 고친 경우에도 이 대조가 돌아야 하므로 확인은 turbo를 거치지 않고 `pnpm --filter @ai-character-chat/web exec vitest run`으로 한다. turbo의 web 테스트 캐시 입력에는 `apps/api`가 없어서, 시드만 바뀐 뒤 turbo로 돌리면 캐시된 결과가 재생된다.
-- 원고에서 탭 단계 절의 제목 id는 빌더 탭 id(`STORY_TABS`·`CHARACTER_TABS`)와 같다. 빌더에 탭이 생기면 원고에 절을 더한다.
+- 원고에서 탭 단계 절의 제목 id는 빌더 탭 id(`STORY_TABS`·`CHARACTER_TABS`)와 같고, 단계 절 하나가 단계 페이지(`/guide/<토픽>/<탭 id>`) 하나다. 빌더에 탭이 생기면 원고에 절을 더한다.
+- 칸마다 AI가 읽는 때는 원고가 아니라 같은 목업 표의 `readTiming`과 `READ_TIMING_GROUPS`에 있다(개요 목록과 목업 캡션이 둘 다 여기서 나온다). 원고에서 읽는 때를 다시 산문으로 쓰지 않는다.
 
 ## 10. 알려진 한계
 

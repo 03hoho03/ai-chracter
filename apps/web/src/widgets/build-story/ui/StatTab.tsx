@@ -19,14 +19,15 @@ import {
   useBuilderUiState,
 } from "@/features/build-common";
 import {
+  FieldLabelText,
   planStatRemoval,
   SELECTED_STARTING_SETUP,
-  type StatDefValues,
+  StatSummary,
+  STORY_FIELD_LABELS,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
 import { MediaBookConfirmModal } from "@/features/edit-media-book";
-import { RequiredText } from "@/shared/ui/RequiredText";
 import { ColorPicker, IconPicker } from "@/shared/ui/color-icon-picker";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
@@ -36,7 +37,6 @@ import { moveStatErrorsById } from "../model/moveStatErrorsById";
 import { perTurnDeltaFromInput } from "../model/perTurnDelta";
 import { orderWithPendingRemovals, restoreRemovedStat, type RemovedStat } from "../model/restoreRemovedStat";
 import { revalidateStatRange, revalidateStatRangeIfInvalid } from "../model/statRangeValidation";
-import { statSummaryParts } from "../model/statSummary";
 
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
 const STAT_LIST: StoryCollapsibleList = "stat";
@@ -168,7 +168,7 @@ function StatRow({
           40px 로 커져 입력칸(36px)보다 크고, 줄이 가운데 정렬이라 위아래로 2px 씩 비어져 나온다. */}
       <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
         <Label htmlFor={`stat-${id}-name`} className="col-start-3">
-          이름 *
+          <FieldLabelText field="startingSetups.*.stats.*.name" />
         </Label>
         <Controller
           control={control}
@@ -179,7 +179,7 @@ function StatRow({
                 value={field.value}
                 onChange={field.onChange}
                 options={STAT_ICON_OPTIONS}
-                label="아이콘"
+                label={STORY_FIELD_LABELS["startingSetups.*.stats.*.icon"].label}
                 isRequired
                 aria-invalid={!!statErrors?.icon}
                 aria-describedby={statErrors?.icon ? errorIds.icon : undefined}
@@ -195,7 +195,7 @@ function StatRow({
               <ColorPicker
                 value={field.value}
                 onChange={field.onChange}
-                label="색"
+                label={STORY_FIELD_LABELS["startingSetups.*.stats.*.color"].label}
                 isRequired
                 aria-invalid={!!statErrors?.color}
                 aria-describedby={statErrors?.color ? errorIds.color : undefined}
@@ -232,7 +232,7 @@ function StatRow({
           칸만 키워도 이웃 칸의 윗선이 그대로이게 위로 붙인다. */}
       <div className="grid grid-cols-2 items-start gap-3 sm:grid-cols-4">
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-min`}><RequiredText>최소값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-min`}><FieldLabelText field="startingSetups.*.stats.*.min" /></Label>
           <Input
             id={`stat-${id}-min`}
             type="number"
@@ -248,7 +248,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-max`}><RequiredText>최대값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-max`}><FieldLabelText field="startingSetups.*.stats.*.max" /></Label>
           <Input
             id={`stat-${id}-max`}
             type="number"
@@ -264,7 +264,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-initial`}><RequiredText>초기값</RequiredText></Label>
+          <Label htmlFor={`stat-${id}-initial`}><FieldLabelText field="startingSetups.*.stats.*.initial" /></Label>
           <Input
             id={`stat-${id}-initial`}
             type="number"
@@ -280,7 +280,7 @@ function StatRow({
           )}
         </div>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={`stat-${id}-unit`}>단위</Label>
+          <Label htmlFor={`stat-${id}-unit`}><FieldLabelText field="startingSetups.*.stats.*.unit" /></Label>
           <Input
             id={`stat-${id}-unit`}
             placeholder="예: pt, %"
@@ -299,7 +299,7 @@ function StatRow({
       {/* 입력칸은 위 격자의 첫 칸 폭이고, 힌트는 넓으면 그 옆 나머지 세 열에, 좁으면(2열) 다음 줄 전폭에 선다 — 좁은 칸
           옆에 두면 힌트가 다섯 줄로 접힌다. */}
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-per-turn-delta`}>턴당 자동 변화</Label>
+        <Label htmlFor={`stat-${id}-per-turn-delta`}><FieldLabelText field="startingSetups.*.stats.*.perTurnDelta" /></Label>
         <div className="grid grid-cols-2 items-start gap-x-3 gap-y-1.5 sm:grid-cols-4">
           <div className="flex flex-col gap-1.5">
             <Input
@@ -332,7 +332,7 @@ function StatRow({
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor={`stat-${id}-description`}><RequiredText>설명</RequiredText></Label>
+        <Label htmlFor={`stat-${id}-description`}><FieldLabelText field="startingSetups.*.stats.*.description" /></Label>
         <Textarea
           id={`stat-${id}-description`}
           placeholder="스탯에 대한 설명을 입력해주세요"
@@ -361,33 +361,6 @@ function StatRow({
         )}
       </div>
     </CollapsibleItemCard>
-  );
-}
-
-/** 접힌 머리 줄에서 스탯을 가를 최소 정보 — 고른 아이콘·색, 범위(단위 포함)와 초기값, 턴당 변화. 비었거나 숫자가 아닌
- * 칸은 빼고(빈 구분자를 남기지 않는다), 아이콘·색 표식은 장식이라 읽지 않는다.
- *
- * 좁으면 범위는 남기고 뒤쪽부터 잘린다. 범위는 줄어들지 않는 조각이고(요약 폭보다 길 때만 말줄임), 초기값·턴당 변화는 한
- * 줄 글로 이어 붙여 말줄임이 끝(턴당 변화)부터 먹는다. 조각마다 따로 줄어들게 하면 폭이 비율로 나뉘어 범위까지 함께 잘린다. */
-function StatSummary({ stat }: { stat: StatDefValues }) {
-  const StatIcon = STAT_ICON_OPTIONS.find((option) => option.name === stat.icon)?.Icon;
-  const { range, initial, perTurn } = statSummaryParts(stat);
-  const rest = [initial, perTurn].filter((part) => part !== undefined);
-
-  return (
-    <span className="flex min-w-0 items-center">
-      {StatIcon && <StatIcon aria-hidden className="mr-1 size-3.5 shrink-0" />}
-      {stat.color && (
-        <span aria-hidden className="mr-1.5 size-2.5 shrink-0 rounded-full" style={{ backgroundColor: stat.color }} />
-      )}
-      {range && <span className="max-w-full shrink-0 truncate">{range}</span>}
-      {/* 앞 공백은 줄 첫머리라 접히므로 줄바꿈 없는 공백으로 둔다(범위가 없으면 구분자도 없다). */}
-      {rest.length > 0 && (
-        <span className="min-w-0 truncate">
-          {range ? `\u00a0· ${rest.join(" · ")}` : rest.join(" · ")}
-        </span>
-      )}
-    </span>
   );
 }
 

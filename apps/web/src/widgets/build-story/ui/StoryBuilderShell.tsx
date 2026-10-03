@@ -57,6 +57,7 @@ import {
   useProfileImageLocalUrl,
 } from "@/features/build-common";
 import { AppealModal } from "@/features/submit-appeal";
+import { creationGuidePath } from "@/shared/config/creationGuide";
 
 import { useMediaBookThumbnailsStore } from "../model/useMediaBookThumbnailsStore";
 import { EndingTab } from "./EndingTab";
@@ -319,7 +320,7 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         autosaveNotice="변경사항은 자동으로 저장돼요."
         actions={
           <BuilderTopBarActions
-            guidePath="/guide/story"
+            guidePath={creationGuidePath("story", activeTab)}
             isPublishing={isPublishing}
             isPreviewOpen={isPreviewOpen}
             // 미디어 북 탭에서는 이 버튼이 여는 화면이 배치표라 그 화면의 머리와 같은 이름을 단다.

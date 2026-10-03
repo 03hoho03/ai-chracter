@@ -12,28 +12,27 @@ import { useFormContext, useWatch } from "react-hook-form";
 import { CollapsibleItemCard, ItemDragHandle, ItemRemoveButton, itemOpenKey } from "@/features/build-common";
 import {
   excludeKeywordError,
+  FieldLabelText,
+  KEYWORD_NOTE_SCOPE_LABELS,
+  keywordNoteSummary,
+  keywordNoteTitle,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
   MAX_EXCLUDE_KEYWORDS,
   MAX_KEYWORD_NOTE_CONTENT_LENGTH,
   MAX_KEYWORD_NOTE_NAME_LENGTH,
-  MAX_KEYWORD_NOTE_STICKY_TURNS,
   MAX_TRIGGER_KEYWORDS,
+  STICKY_TURN_OPTIONS,
+  STORY_FIELD_LABELS,
   triggerKeywordError,
   type StartingSetupValues,
   type StoryBuilderFormValues,
   type StoryCollapsibleList,
 } from "@/features/build-story";
-import { RequiredText } from "@/shared/ui/RequiredText";
 
 import { KeywordChipField } from "./KeywordChipField";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 
 const KEYWORD_NOTE_LIST: StoryCollapsibleList = "keywordNote";
-
-const STICKY_TURN_OPTIONS = Array.from({ length: MAX_KEYWORD_NOTE_STICKY_TURNS + 1 }, (_, turns) => ({
-  value: String(turns),
-  label: turns === 0 ? "이번 턴만" : `다음 ${turns}턴까지`,
-}));
 
 type KeywordNoteCardProps = {
   id: string;
@@ -81,7 +80,8 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
   const noteErrors = errors.keywordNotes?.[index];
   const isAlwaysOnLocked = !isAlwaysOn && isAlwaysOnFull;
   const position = index + 1;
-  const title = name.trim() || triggerKeywords[0];
+  const title = keywordNoteTitle({ name, triggerKeywords });
+  const summary = keywordNoteSummary({ alwaysOn: isAlwaysOn, stickyTurns, triggerKeywords });
   const ids = {
     title: `keyword-note-${id}-title`,
     name: `keyword-note-${id}-name`,
@@ -141,7 +141,8 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         srTitlePrefix={`${position}번째 노트: `}
         titleId={ids.title}
         summary={
-          <KeywordNoteSummary isAlwaysOn={isAlwaysOn} stickyTurns={stickyTurns} triggerCount={triggerKeywords.length} />
+          // 상시 노트의 `상시` 는 강조해 다른 노트의 개수 요약과 갈라 보이게 한다.
+          summary.isAlwaysOn ? <span className="font-medium text-foreground">{summary.text}</span> : summary.text
         }
         hasError={!!noteErrors}
         leading={
@@ -171,7 +172,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
       >
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor={ids.name}>이름</Label>
+            <Label htmlFor={ids.name}><FieldLabelText field="keywordNotes.*.name" /></Label>
             <span id={ids.nameCount} className="text-xs tabular-nums text-muted-foreground">
               <span className="sr-only">이름 </span>
               {name.length}/{MAX_KEYWORD_NOTE_NAME_LENGTH}
@@ -199,7 +200,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
 
         <div className="flex flex-col gap-1.5">
           <div className="flex items-baseline justify-between gap-2">
-            <Label htmlFor={ids.content}><RequiredText>정보</RequiredText></Label>
+            <Label htmlFor={ids.content}><FieldLabelText field="keywordNotes.*.content" /></Label>
             <span id={ids.contentCount} className="text-xs tabular-nums text-muted-foreground">
               <span className="sr-only">정보 </span>
               {content.length}/{MAX_KEYWORD_NOTE_CONTENT_LENGTH}
@@ -227,8 +228,8 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         <div className="flex flex-col gap-1.5">
           <KeywordChipField
             idPrefix={`keyword-note-${id}-trigger`}
-            label="트리거 키워드"
-            isRequired={!isAlwaysOn}
+            label={STORY_FIELD_LABELS["keywordNotes.*.triggerKeywords"].label}
+            labelContent={<FieldLabelText field="keywordNotes.*.triggerKeywords" isRequired={!isAlwaysOn} />}
             chipNoun="트리거 키워드"
             placeholder="입력 후 Enter 또는 추가"
             keywords={triggerKeywords}
@@ -258,9 +259,10 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
 
         <KeywordChipField
           idPrefix={`keyword-note-${id}-exclude`}
-          label="금지 키워드"
+          label={STORY_FIELD_LABELS["keywordNotes.*.excludeKeywords"].label}
+          labelContent={<FieldLabelText field="keywordNotes.*.excludeKeywords" />}
           chipNoun="금지 키워드"
-          placeholder="이 단어가 나온 턴엔 노트를 빼요"
+          placeholder={STORY_FIELD_LABELS["keywordNotes.*.excludeKeywords"].placeholder}
           keywords={excludeKeywords}
           limit={MAX_EXCLUDE_KEYWORDS}
           limitReason={`금지 키워드는 최대 ${MAX_EXCLUDE_KEYWORDS}개예요. 더 넣으려면 하나를 지워 주세요.`}
@@ -278,7 +280,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         />
 
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor={ids.sticky}>유지 턴</Label>
+          <Label htmlFor={ids.sticky}><FieldLabelText field="keywordNotes.*.stickyTurns" /></Label>
           <Select
             value={String(stickyTurns)}
             disabled={isAlwaysOn}
@@ -306,7 +308,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
 
         <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
           <div className="flex flex-col gap-0.5">
-            <Label htmlFor={ids.alwaysOnSwitch}>상시 적용</Label>
+            <Label htmlFor={ids.alwaysOnSwitch}><FieldLabelText field="keywordNotes.*.alwaysOn" /></Label>
             <p id={ids.alwaysOnHint} className="text-sm break-keep text-muted-foreground">
               키워드 없이 매 턴 실어요. 금지 키워드가 나온 턴엔 빠져요.
             </p>
@@ -329,7 +331,7 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         </div>
 
         <div className="flex flex-col gap-1.5">
-          <Label><RequiredText>적용 대상</RequiredText></Label>
+          <Label><FieldLabelText field="keywordNotes.*.scope" /></Label>
           <ToggleGroup
             type="single"
             variant="outline"
@@ -341,18 +343,18 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
           >
             <ToggleGroupItem
               value="global"
-              aria-label="스토리 전체"
+              aria-label={KEYWORD_NOTE_SCOPE_LABELS.global}
               className={cn(noteErrors?.scope && "border-destructive ring-3 ring-destructive/20")}
             >
-              스토리 전체
+              {KEYWORD_NOTE_SCOPE_LABELS.global}
             </ToggleGroupItem>
             <ToggleGroupItem
               value="startingSetup"
-              aria-label="특정 시작설정"
+              aria-label={KEYWORD_NOTE_SCOPE_LABELS.startingSetup}
               disabled={startingSetups.length === 0}
               className={cn(noteErrors?.scope && "border-destructive ring-3 ring-destructive/20")}
             >
-              특정 시작설정
+              {KEYWORD_NOTE_SCOPE_LABELS.startingSetup}
             </ToggleGroupItem>
           </ToggleGroup>
           {!!noteErrors?.scope && (
@@ -391,23 +393,6 @@ export function KeywordNoteCard({ id, index, startingSetups, isAlwaysOnFull, onR
         </div>
       </CollapsibleItemCard>
     </li>
-  );
-}
-
-type KeywordNoteSummaryProps = {
-  isAlwaysOn: boolean;
-  stickyTurns: number;
-  triggerCount: number;
-};
-
-/** 접힌 머리 줄 요약 — 상시 여부나 유지 턴, 트리거 개수. 상시 노트는 트리거 키워드와 유지 턴을 쓰지 않아 `상시` 만 보인다. */
-function KeywordNoteSummary({ isAlwaysOn, stickyTurns, triggerCount }: KeywordNoteSummaryProps) {
-  if (isAlwaysOn) return <span className="font-medium text-foreground">상시</span>;
-  return (
-    <>
-      {stickyTurns > 0 && `유지 ${stickyTurns}턴 · `}
-      트리거 {triggerCount}개
-    </>
   );
 }
 
