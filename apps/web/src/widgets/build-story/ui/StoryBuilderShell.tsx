@@ -17,11 +17,14 @@ import {
   formToServer,
   isEndingRuleStatNotFoundError,
   isMediaBookPositionTakenError,
+  locateSituationNotePublishError,
   MEDIA_BOOK_POSITION_TAKEN_MESSAGE,
   mediaBookPublishErrorMessage,
   mediaBookSchema,
   SELECTED_STARTING_SETUP,
   serverToForm,
+  SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE,
+  situationNoteStatNotFoundPaths,
   STARTING_SETUP_SCOPE,
   storyAutosaveErrorMessage,
   STORY_COLLAPSIBLE_LISTS,
@@ -70,6 +73,7 @@ import { ProfileTab } from "./ProfileTab";
 import { RegistrationTab } from "./RegistrationTab";
 import { SettingTab } from "./SettingTab";
 import { ShortcutTab } from "./ShortcutTab";
+import { SituationNoteTab } from "./SituationNoteTab";
 import { StartingSetupTab } from "./StartingSetupTab";
 import { StatTab } from "./StatTab";
 
@@ -158,12 +162,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
     },
   });
 
-  // 반복 항목의 열림과 스탯·엔딩 탭이 함께 보는 고른 시작설정. 탭 본문은 탭을 바꿀 때 언마운트되므로 셸이 쥐고, 폼 값이
+  // 반복 항목의 열림과 스탯·상황 노트·엔딩 탭이 함께 보는 고른 시작설정. 탭 본문은 탭을 바꿀 때 언마운트되므로 셸이 쥐고, 폼 값이
   // 아니라서 자동저장·검증과 무관하다.
   const uiState = useCreateBuilderUiState();
 
   // 발행 실패 때 첫 오류로 가기 전에 오류를 품은 항목을 펼치고(오류가 풀려도 펼친 채 둔다 — 고치는 키 입력에 접히면
-  // 포커스가 body 로 떨어진다), 스탯·엔딩 탭이 오류가 있는 시작설정을 보이게 바꿔 둔다. 포커스보다 먼저여야 그 필드가
+  // 포커스가 body 로 떨어진다), 스탯·상황 노트·엔딩 탭이 오류가 있는 시작설정을 보이게 바꿔 둔다. 포커스보다 먼저여야 그 필드가
   // 숨거나 그려지지 않은 채로 포커스를 받지 않는다. 서버 거절은 목록·섹션 경로만 가리켜 펼칠 항목이 없을 수 있다 — 그때는
   // 목록 머리의 오류 문장이 맡는다.
   function revealAndFocusFirstError(errors: FieldErrors<StoryBuilderFormValues>) {
@@ -220,6 +224,12 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
       const missingFields = getMissingFields(error);
       if (missingFields) {
         for (const field of missingFields) {
+          // 상황 노트 키는 서버가 어느 노트인지 알려 주지 않지만 폼에서 같은 조건을 다시 따져 그 칸을 짚을 수 있다.
+          const noteLocation = locateSituationNotePublishError(field, values.startingSetups);
+          if (noteLocation) {
+            form.setError(noteLocation.path, { type: "server", message: noteLocation.message });
+            continue;
+          }
           const formPath = STORY_MISSING_FIELD_FORM_PATH[field];
           if (formPath) form.setError(formPath, { type: "server", message: "필수 항목이에요." });
         }
@@ -235,6 +245,16 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
         if (formPath) form.setError(formPath, { type: "server", message: ENDING_RULE_STAT_NOT_FOUND_MESSAGE });
         revealAndFocusFirstError(form.formState.errors);
         toast.error(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
+        return;
+      }
+      // 같은 원인이 상황 노트 조건에 있으면 서버가 조건 줄의 경로를 알려 준다 — 그 줄의 스탯 칸으로 바로 보낸다. 경로를 못 읽으면
+      // 첫 시작설정의 상황 노트 목록으로 탭만 옮긴다.
+      const noteRulePaths = situationNoteStatNotFoundPaths(error);
+      if (noteRulePaths) {
+        const paths = noteRulePaths.length > 0 ? noteRulePaths : ["startingSetups.0.situationNotes" as const];
+        for (const path of paths) form.setError(path, { type: "server", message: SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE });
+        revealAndFocusFirstError(form.formState.errors);
+        toast.error(SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE);
         return;
       }
       if (isMediaBookPositionTakenError(error)) {
@@ -393,6 +413,9 @@ export function StoryBuilderShell({ draft, draftId, renderPreview }: StoryBuilde
                 </TabsContent>
                 <TabsContent value="stat">
                   <StatTab />
+                </TabsContent>
+                <TabsContent value="situationNote">
+                  <SituationNoteTab />
                 </TabsContent>
                 <TabsContent value="mediaBook">
                   <MediaBookTab />

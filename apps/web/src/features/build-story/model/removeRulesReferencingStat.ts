@@ -1,4 +1,4 @@
-import type { RuleListItemValues } from "./schema";
+import { countRules, type RuleListItemValues } from "./schema";
 
 /**
  * 엔딩 탭에서 조건 줄이나 규칙 그룹의 삭제 버튼을 눌렀을 때의 처리. 지운 항목은 자기 `nextOp` 와 함께 사라지고 남은 항목의
@@ -59,11 +59,6 @@ function countRulesReferencingStat(items: RuleListItemValues[], statId: string):
     else count += item.rules.filter((rule) => rule.statId === statId).length;
   }
   return count;
-}
-
-/** 조건 수. 그룹 자체는 세지 않고 그 안의 조건을 센다 — 서버가 상황 노트의 조건 상한·"조건 없음"을 따지는 셈과 같다. */
-export function countRules(items: RuleListItemValues[]): number {
-  return items.reduce((sum, item) => sum + (item.kind === "group" ? item.rules.length : 1), 0);
 }
 
 /**

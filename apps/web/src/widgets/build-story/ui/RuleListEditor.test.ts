@@ -79,3 +79,37 @@ describe("RuleListEditor 지워진 스탯 조건", () => {
     );
   });
 });
+
+describe("RuleListEditor 조건 상한", () => {
+  const twelve = Array.from({ length: 12 }, (_, index) => rule(`r${index}`, "kept"));
+
+  // 엔딩은 조건 상한이 없다 — 상한을 넘기지 않은 편집기는 조건이 많아도 추가 버튼을 잠그지 않는다.
+  it("상한을 받지 않은 목록(엔딩)은 조건이 많아도 잠그지 않는다", () => {
+    const html = render(twelve);
+
+    expect(html).not.toContain('aria-disabled="true"');
+    expect(html).not.toContain("data-field-path");
+  });
+
+  it("상한에 닿으면 그룹 안의 조건 추가까지 잠근다 — 상한은 그룹 하나가 아니라 목록 전체로 센다", () => {
+    const items: RuleListItemValues[] = [
+      ...Array.from({ length: 8 }, (_, index) => rule(`r${index}`, "kept")),
+      { kind: "group", id: "g1", nextOp: null, rules: [rule("g-a", "kept"), rule("g-b", "kept")] },
+    ];
+    const html = renderToStaticMarkup(
+      createElement(RuleListEditor, {
+        items,
+        stats: [KEPT],
+        allowGroups: true,
+        emptyText: "규칙이 없어요.",
+        groupList: "situationNoteRuleGroup",
+        ruleLimit: { max: 10, reason: "조건은 10개까지예요." },
+        onChange: () => undefined,
+      }),
+    );
+
+    // 바깥 '단일 규칙 추가'·'규칙 그룹 추가'와 그룹 안 '단일 규칙 추가' 셋이 잠긴다.
+    expect(html.match(/aria-disabled="true"/g)).toHaveLength(3);
+    expect(html).toContain("조건은 10개까지예요.");
+  });
+});

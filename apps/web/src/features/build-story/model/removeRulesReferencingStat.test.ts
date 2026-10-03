@@ -1,13 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  countRules,
   planStatRemoval,
   removeRuleListItem,
   removeRulesReferencingStat,
   type StatRemovalCounts,
 } from "./removeRulesReferencingStat";
-import type { RuleListItemValues, SingleRuleValues } from "./schema";
+import { countRules, type RuleListItemValues, type SingleRuleValues } from "./schema";
 
 function rule(id: string, statId: string, nextOp: SingleRuleValues["nextOp"] = null): SingleRuleValues {
   return { kind: "rule", id, statId, operator: ">=", value: 50, nextOp };

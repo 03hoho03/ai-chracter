@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { endingSummary, keywordNoteSummary, keywordNoteTitle, startingSetupSummary } from "./cardSummary";
-import type { RuleListItemValues } from "./schema";
+import {
+  endingSummary,
+  keywordNoteSummary,
+  keywordNoteTitle,
+  situationNoteConditionSummary,
+  situationNoteTitle,
+  startingSetupSummary,
+} from "./cardSummary";
+import type { RuleListItemValues, SingleRuleValues, StatDefValues } from "./schema";
 
 function rule(id: string): Extract<RuleListItemValues, { kind: "rule" }> {
   return { kind: "rule", id, statId: "stat", operator: ">=", value: 1, nextOp: null };
@@ -80,5 +87,63 @@ describe("keywordNoteSummary", () => {
       text: "유지 3턴 · 트리거 0개",
       isAlwaysOn: false,
     });
+  });
+});
+
+const STAT: StatDefValues = {
+  id: "days",
+  name: "상영회까지",
+  icon: "Heart",
+  color: "c",
+  min: 0,
+  max: 42,
+  initial: 42,
+  description: "d",
+  perTurnDelta: null,
+  changeDirection: "both",
+  maxChangePerTurn: null,
+};
+
+function noteRule(id: string, statId = "days", value = 0): SingleRuleValues {
+  return { kind: "rule", id, statId, operator: "<=", value, nextOp: null };
+}
+
+describe("situationNoteConditionSummary", () => {
+  it("조건 하나는 조건 줄의 글자 그대로 보인다", () => {
+    expect(situationNoteConditionSummary([noteRule("r1")], [STAT])).toBe("상영회까지 <= 0");
+  });
+
+  it("조건이 더 있으면 첫 조건 뒤에 나머지 개수를 붙인다(그룹 안 조건도 센다)", () => {
+    const items: RuleListItemValues[] = [
+      noteRule("r1", "days", 7),
+      { kind: "group", id: "g1", nextOp: null, rules: [noteRule("r2"), noteRule("r3")] },
+    ];
+
+    expect(situationNoteConditionSummary(items, [STAT])).toBe("상영회까지 <= 7 외 2개");
+  });
+
+  it("첫 항목이 그룹이면 전체 개수만 보인다", () => {
+    const items: RuleListItemValues[] = [{ kind: "group", id: "g1", nextOp: null, rules: [noteRule("r1"), noteRule("r2")] }];
+
+    expect(situationNoteConditionSummary(items, [STAT])).toBe("조건 2개");
+  });
+
+  it("조건이 없으면(빈 그룹만 있어도) '조건 없음'이다", () => {
+    expect(situationNoteConditionSummary([], [STAT])).toBe("조건 없음");
+    expect(situationNoteConditionSummary([{ kind: "group", id: "g1", nextOp: null, rules: [] }], [STAT])).toBe(
+      "조건 없음",
+    );
+  });
+
+  // 조건 줄이 스탯 칸에 그리는 이름과 같아야 접힌 머리 줄만 보고도 그 노트를 열어 고칠 줄을 찾는다.
+  it("지워진 스탯을 가리키는 첫 조건은 '지워진 스탯'으로 부른다", () => {
+    expect(situationNoteConditionSummary([noteRule("r1", "gone")], [STAT])).toBe("지워진 스탯 <= 0");
+  });
+});
+
+describe("situationNoteTitle", () => {
+  it("uses the trimmed name, or the first line of the situation when the name is blank", () => {
+    expect(situationNoteTitle({ name: "  상영회 당일 ", content: "오늘은" })).toBe("상영회 당일");
+    expect(situationNoteTitle({ name: "", content: "오늘은 상영회 당일이다.\n둘째 줄" })).toBe("오늘은 상영회 당일이다.");
   });
 });

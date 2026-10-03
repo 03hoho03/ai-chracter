@@ -19,7 +19,7 @@ export type FieldLabel = {
  * 시작하는 조각을 쓴다(고급설정 스위치). 목록 자체(`startingSetups` 등)도 키로 둔다.
  *
  * 빌더 화면에 라벨로 보이지 않는 키가 있다. 스탯 아이콘·색은 버튼의 접근 이름으로만 쓰이고, 전개 예시의 두 칸은 빌더에서
- * 자리표시로 보인다. 스탯·엔딩 목록과 미디어 북 인물·장면·배치표는 빌더에 같은 이름의 칸 라벨이 없어 작성 가이드만
+ * 자리표시로 보인다. 스탯·상황 노트·엔딩 목록과 미디어 북 인물·장면·배치표는 빌더에 같은 이름의 칸 라벨이 없어 작성 가이드만
  * 읽는다(탭 이름이나 배치표 머리와 같은 글자를 쓴다).
  */
 export const STORY_FIELD_LABELS = {
@@ -64,6 +64,11 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.stats.*.changeDirection": { label: "변화 방향", required: false },
   "startingSetups.*.stats.*.maxChangePerTurn": { label: "한 턴 최대 폭", required: false },
   "startingSetups.*.stats.*.description": { label: "설명", required: true },
+
+  "startingSetups.*.situationNotes": { label: "상황 노트", required: false },
+  "startingSetups.*.situationNotes.*.name": { label: "이름", required: false },
+  "startingSetups.*.situationNotes.*.conditionRules": { label: "조건", required: true },
+  "startingSetups.*.situationNotes.*.content": { label: "상황", required: true },
 
   mediaBook: { label: "미디어 북", required: false },
   "mediaBook.people": { label: "인물", required: false },

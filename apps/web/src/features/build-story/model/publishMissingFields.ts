@@ -36,6 +36,11 @@ export const STORY_MISSING_FIELD_LABELS = {
   // 막으므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
   "stats.changeLimitWithCounter": "스탯 변화 방향·최대 폭(턴당 자동 변화와 함께 쓸 수 없어요)",
   "stats.maxChangePerTurn": "스탯 한 턴 최대 폭(1 이상의 정수)",
+  // 상황 노트 세 키도 노트 수와 상관없이 한 번씩 온다. 발행 전 폼 검증이 앞의 둘을 그 노트 칸에서 먼저 막고, 지워진 스탯 조건은
+  // 초안 저장이 먼저 거절하므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  "situationNotes.emptyConditionRules": "상황 노트 조건(노트마다 1개 이상)",
+  "situationNotes.infoText": "상황 노트 상황",
+  "situationNotes.conditionRules": "상황 노트 조건(지워진 스탯을 쓰는 조건)",
 };
 
 /** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
@@ -72,19 +77,25 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   "stats.range": "startingSetups.0.stats",
   "stats.changeLimitWithCounter": "startingSetups.0.stats",
   "stats.maxChangePerTurn": "startingSetups.0.stats",
+  // 셋 다 서버가 어느 노트인지 알려 주지 않는다. 폼에서 그 노트를 찾을 수 있으면 셸이 그 칸을 짚고(situationNoteErrors.ts),
+  // 못 찾으면 이 경로로 첫 시작설정의 상황 노트 목록을 가리켜 상황 노트 탭으로 이동시킨다.
+  "situationNotes.emptyConditionRules": "startingSetups.0.situationNotes",
+  "situationNotes.infoText": "startingSetups.0.situationNotes",
+  "situationNotes.conditionRules": "startingSetups.0.situationNotes",
 } satisfies Record<Exclude<MissingField, FieldWithoutFormPath>, Path<StoryBuilderFormValues>>;
 
-/** 시작설정 안 스탯·엔딩 칸의 클라 검증 오류 경로(`startingSetups.1.stats.0.max`)를 목록 하나로 접은 키와 그 라벨. 키는 그
+/** 시작설정 안 스탯·상황 노트·엔딩 칸의 클라 검증 오류 경로(`startingSetups.1.stats.0.max`)를 목록 하나로 접은 키와 그 라벨. 키는 그
  * 목록을 맡은 탭의 오류 경로 프리픽스(tabs.ts)와 같은 글자다. 위 서버 키 맵에 넣지 않는 것은 서버가 이런 경로를 보내지 않아서다. */
 export const STORY_STARTING_SETUP_LIST_LABELS = {
   "startingSetups.*.stats": "스탯",
+  "startingSetups.*.situationNotes": "상황 노트",
   "startingSetups.*.endings": "엔딩",
 };
 
-const STARTING_SETUP_LIST_PATH = /^startingSetups\.\d+\.(stats|endings)(?:\.|$)/;
+const STARTING_SETUP_LIST_PATH = /^startingSetups\.\d+\.(stats|situationNotes|endings)(?:\.|$)/;
 
 /**
- * 클라 검증 토스트용으로 스탯·엔딩 칸의 오류 경로를 `STORY_STARTING_SETUP_LIST_LABELS` 의 키로 접는다. 칸 경로마다 시작설정·
+ * 클라 검증 토스트용으로 스탯·상황 노트·엔딩 칸의 오류 경로를 `STORY_STARTING_SETUP_LIST_LABELS` 의 키로 접는다. 칸 경로마다 시작설정·
  * 항목 번호가 박혀 라벨 맵에 하나씩 적을 수 없어, 접지 않으면 토스트가 "그 밖의 항목"으로만 부른다. 정확한 칸은 인라인
  * 문구와 포커스 이동이 가리키므로 토스트는 어느 탭을 볼지만 알리면 된다. 그 밖의 경로는 그대로 돌려준다.
  */

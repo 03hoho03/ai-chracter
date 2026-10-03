@@ -1,5 +1,7 @@
 import { isApiError } from "@/shared/api/client";
 
+import { isSituationNoteStatNotFoundError, SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE } from "./situationNoteErrors";
+
 // 서버가 칸 자리 경합에 돌려주는 409 의 `detail.code`. 응답에 실리는 실제 식별자다.
 const POSITION_TAKEN_CODE = "MEDIA_BOOK_CELL_POSITION_TAKEN";
 // 엔딩 규칙이 같은 시작설정에 없는 스탯을 가리킬 때 서버가 초안 저장에 돌려주는 422 의 `detail.code`. 응답에 실리는 실제 식별자다.
@@ -43,6 +45,7 @@ export function isEndingRuleStatNotFoundError(error: unknown): boolean {
 export function storyAutosaveErrorMessage(error: unknown): string | undefined {
   if (isMediaBookPositionTakenError(error)) return MEDIA_BOOK_POSITION_TAKEN_MESSAGE;
   if (isEndingRuleStatNotFoundError(error)) return ENDING_RULE_STAT_NOT_FOUND_MESSAGE;
+  if (isSituationNoteStatNotFoundError(error)) return SITUATION_NOTE_STAT_NOT_FOUND_MESSAGE;
   if (isApiError(error) && error.status === 422) return STORY_SAVE_LIMIT_MESSAGE;
   return undefined;
 }

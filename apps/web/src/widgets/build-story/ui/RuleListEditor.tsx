@@ -13,7 +13,7 @@ import { Input } from "@ai-character-chat/ui/components/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
 import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
 import { GripVertical, Trash2, TriangleAlert } from "lucide-react";
-import { useRef } from "react";
+import { useId, useRef } from "react";
 
 import {
   CollapsibleItemCard,
@@ -25,6 +25,7 @@ import {
 } from "@/features/build-common";
 import {
   COMPARISON_OPERATORS,
+  countRules,
   hasRuleWithMissingStat,
   isMissingStat,
   LOGIC_OPERATORS,
@@ -78,6 +79,8 @@ function LogicOpToggle({ value, onChange }: { value: LogicOp; onChange: (op: Log
 type SingleRuleRowProps = {
   rule: SingleRuleValues;
   stats: StatDefValues[];
+  /** 이 조건의 폼 경로(편집기에 `fieldPath` 를 준 목록만). 발행 실패 때 셸이 스탯 칸을 찾아 포커스하는 표식이 된다. */
+  fieldPath: string | undefined;
   onChange: (rule: SingleRuleValues) => void;
   onRemove: () => void;
 };
@@ -90,6 +93,7 @@ type SingleRuleRowProps = {
 function SingleRuleRow({
   rule,
   stats,
+  fieldPath,
   onChange,
   onRemove,
 }: SingleRuleRowProps) {
@@ -127,6 +131,7 @@ function SingleRuleRow({
                 aria-label={isStatMissing ? "스탯 선택: 지워진 스탯" : "스탯 선택"}
                 aria-invalid={isStatMissing || undefined}
                 aria-describedby={isStatMissing ? missingStatHintId : undefined}
+                data-field-path={fieldPath === undefined ? undefined : `${fieldPath}.statId`}
               >
                 <SelectValue placeholder="스탯">
                   {isStatMissing ? (
@@ -195,6 +200,12 @@ type RuleGroupRowProps = {
   stats: StatDefValues[];
   emptyText: string;
   groupList: StoryCollapsibleList;
+  /** 이 그룹의 폼 경로(편집기에 `fieldPath` 를 준 목록만). */
+  fieldPath: string | undefined;
+  ruleLimit: RuleLimit | undefined;
+  /** 바깥 목록 전체의 조건 수 — 상한은 그룹 하나가 아니라 노트 전체로 센다. */
+  rootRuleCount: number;
+  noStatsReason: string | undefined;
   onChange: (group: Extract<RuleListItemValues, { kind: "group" }>) => void;
   onRemove: () => void;
 };
@@ -209,6 +220,10 @@ function RuleGroupRow({
   stats,
   emptyText,
   groupList,
+  fieldPath,
+  ruleLimit,
+  rootRuleCount,
+  noStatsReason,
   onChange,
   onRemove,
 }: RuleGroupRowProps) {
@@ -234,6 +249,10 @@ function RuleGroupRow({
         allowGroups={false}
         emptyText={emptyText}
         groupList={groupList}
+        fieldPath={fieldPath === undefined ? undefined : `${fieldPath}.rules`}
+        ruleLimit={ruleLimit}
+        rootRuleCount={rootRuleCount}
+        noStatsReason={noStatsReason}
         onChange={(next) =>
           onChange({ ...group, rules: next.filter((item): item is SingleRuleValues => item.kind === "rule") })
         }
@@ -250,24 +269,56 @@ type RuleListEditorProps = {
   emptyText: string;
   /** 그룹 열림 키의 목록 이름. 발행 실패 때 셸이 오류가 든 그룹을 여는 키와 같아야 해서, 편집기를 쓰는 목록마다 따로 둔다. */
   groupList: StoryCollapsibleList;
+  /** 이 목록의 폼 경로. 주면 조건 줄의 스탯 칸과 '단일 규칙 추가'에 경로 표식이 붙어, 발행 실패 때 셸이 그 칸을 찾아 포커스한다
+   * (조건 줄은 폼에 등록된 입력이 아니라 경로로는 포커스할 수 없다). */
+  fieldPath?: string;
+  /** 조건 수 상한(그룹 안 조건까지 센다). 상한이 없는 목록(엔딩)은 넘기지 않는다. */
+  ruleLimit?: RuleLimit;
+  /** 그룹 안 편집기에만 그룹이 넘긴다 — 바깥 목록 전체의 조건 수. */
+  rootRuleCount?: number;
+  /** 스탯이 없어 조건을 만들 수 없을 때 추가 버튼 아래에 보일 사유. 없으면(엔딩) 버튼만 잠근다. */
+  noStatsReason?: string;
   onChange: (items: RuleListItemValues[]) => void;
+};
+
+type RuleLimit = {
+  max: number;
+  /** 상한에 닿았을 때 추가 버튼 아래에 보일 사유. */
+  reason: string;
 };
 
 /** 스탯 기반 규칙 목록 편집기. "단일 규칙 추가"/"규칙 그룹 추가"로 항목을 늘리고 dnd-kit로 재정렬한다.
  * `allowGroups=false`로 그룹 내부(단일 규칙만)에도 그대로 재사용된다. 폼 상태를 직접 잡지 않는 제어 컴포넌트라 호출부가
- * 목록을 읽어 넘기고 바뀐 목록을 통째로 써 넣는다. */
+ * 목록을 읽어 넘기고 바뀐 목록을 통째로 써 넣는다.
+ *
+ * 상한(`ruleLimit`)에 닿으면 추가 버튼을 지우지 않고 `aria-disabled` 로 잠근 채 사유를 잇는다 — 지우면 왜 더 못 만드는지가
+ * 사라지고, `disabled` 는 누른 버튼의 포커스를 body 로 떨어뜨린다. 자동저장은 폼 검증을 거치지 않아 상한을 넘은 목록이 폼에
+ * 들어가면 서버가 초안 저장을 통째로 거절하므로, 실제 차단은 클릭 핸들러가 한다. 빈 그룹은 조건 수를 늘리지 않지만 그 안에
+ * 넣을 수 없으니 함께 잠근다. */
 export function RuleListEditor({
   items,
   stats,
   allowGroups,
   emptyText,
   groupList,
+  fieldPath,
+  ruleLimit,
+  rootRuleCount,
+  noStatsReason,
   onChange,
 }: RuleListEditorProps) {
   const sensors = useSensors(useSensor(PointerSensor));
   const uiState = useBuilderUiState();
   const addRuleButtonRef = useRef<HTMLButtonElement>(null);
   const addGroupButtonRef = useRef<HTMLButtonElement>(null);
+  const reasonId = useId();
+  const totalRuleCount = rootRuleCount ?? countRules(items);
+  const isFull = ruleLimit !== undefined && totalRuleCount >= ruleLimit.max;
+  const hasNoStats = stats.length === 0;
+  // 상한이 스탯 없음보다 먼저다 — 상한이면 스탯을 만들어도 추가할 수 없다.
+  let reason: string | undefined;
+  if (isFull) reason = ruleLimit.reason;
+  else if (hasNoStats) reason = noStatsReason;
 
   function updateItem(id: string, next: RuleListItemValues) {
     onChange(items.map((item) => (item.id === id ? next : item)));
@@ -282,8 +333,24 @@ export function RuleListEditor({
     onChange(removeRuleListItem(items, id));
   }
 
+  function addRule() {
+    if (isFull || hasNoStats) return;
+    onChange([
+      ...items,
+      {
+        kind: "rule",
+        id: crypto.randomUUID(),
+        statId: stats[0]?.id ?? "",
+        operator: ">=",
+        value: 0,
+        nextOp: null,
+      },
+    ]);
+  }
+
   // 새 그룹은 펼친 채 만든다(안에 규칙을 바로 넣을 수 있게).
   function addGroup() {
+    if (isFull) return;
     const id = crypto.randomUUID();
     uiState.open([itemOpenKey(groupList, id)]);
     onChange([...items, { kind: "group", id, rules: [], nextOp: null }]);
@@ -313,6 +380,10 @@ export function RuleListEditor({
                       stats={stats}
                       emptyText={emptyText}
                       groupList={groupList}
+                      fieldPath={fieldPath === undefined ? undefined : `${fieldPath}.${index}`}
+                      ruleLimit={ruleLimit}
+                      rootRuleCount={totalRuleCount}
+                      noStatsReason={noStatsReason}
                       onChange={(next) => updateItem(item.id, next)}
                       onRemove={() => removeItem(item.id)}
                     />
@@ -320,6 +391,7 @@ export function RuleListEditor({
                     <SingleRuleRow
                       rule={item}
                       stats={stats}
+                      fieldPath={fieldPath === undefined ? undefined : `${fieldPath}.${index}`}
                       onChange={(next) => updateItem(item.id, next)}
                       onRemove={() => removeItem(item.id)}
                     />
@@ -337,33 +409,41 @@ export function RuleListEditor({
         </DndContext>
       )}
 
-      <div className="flex gap-2">
-        <Button
-          ref={addRuleButtonRef}
-          type="button"
-          variant="secondary"
-          size="sm"
-          disabled={stats.length === 0}
-          onClick={() =>
-            onChange([
-              ...items,
-              {
-                kind: "rule",
-                id: crypto.randomUUID(),
-                statId: stats[0]?.id ?? "",
-                operator: ">=",
-                value: 0,
-                nextOp: null,
-              },
-            ])
-          }
-        >
-          단일 규칙 추가
-        </Button>
-        {allowGroups && (
-          <Button ref={addGroupButtonRef} type="button" variant="secondary" size="sm" onClick={addGroup}>
-            규칙 그룹 추가
+      <div className="flex flex-col gap-1.5">
+        <div className="flex gap-2">
+          <Button
+            ref={addRuleButtonRef}
+            type="button"
+            variant="secondary"
+            size="sm"
+            className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+            disabled={hasNoStats}
+            aria-disabled={isFull || undefined}
+            aria-describedby={reason === undefined ? undefined : reasonId}
+            data-field-path={fieldPath}
+            onClick={addRule}
+          >
+            단일 규칙 추가
           </Button>
+          {allowGroups && (
+            <Button
+              ref={addGroupButtonRef}
+              type="button"
+              variant="secondary"
+              size="sm"
+              className="aria-disabled:pointer-events-none aria-disabled:opacity-65"
+              aria-disabled={isFull || undefined}
+              aria-describedby={isFull ? reasonId : undefined}
+              onClick={addGroup}
+            >
+              규칙 그룹 추가
+            </Button>
+          )}
+        </div>
+        {reason !== undefined && (
+          <p id={reasonId} className="text-xs break-keep text-muted-foreground">
+            {reason}
+          </p>
         )}
       </div>
     </div>

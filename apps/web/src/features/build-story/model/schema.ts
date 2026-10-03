@@ -195,15 +195,49 @@ export const endingSchema = z.object({
   hint: z.string().optional(),
 });
 
+/** 조건 수. 그룹 자체는 세지 않고 그 안의 조건을 센다 — 서버가 상황 노트의 조건 상한·"조건 없음"을 따지는 셈과 같다. */
+export function countRules(items: readonly RuleListItemValues[]): number {
+  return items.reduce((sum, item) => sum + (item.kind === "group" ? item.rules.length : 1), 0);
+}
+
+/** 상황 노트 상한의 단일 소스(서버 상한과 같은 값). 스키마의 검사·메시지와 widgets/build-story 의 상황 노트 탭·조건 편집기의
+ * 입력 가드가 전부 여기를 읽는다. 자동저장은 이 스키마를 거치지 않으므로 상한은 입력 단계에서 막아야 한다 — 넘는 값이 폼에
+ * 들어가면 서버가 그 초안의 저장을 통째로 거절한다. */
+export const MAX_SITUATION_NOTES = 10;
+export const MAX_SITUATION_NOTE_NAME_LENGTH = 20;
+export const MAX_SITUATION_NOTE_CONTENT_LENGTH = 800;
+export const MAX_SITUATION_NOTE_RULES = 10;
+export const SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE = "조건을 하나 이상 넣어 주세요";
+export const SITUATION_NOTE_BLANK_CONTENT_MESSAGE = "상황을 입력해주세요";
+export const SITUATION_NOTE_RULE_LIMIT_MESSAGE = `조건은 노트마다 ${MAX_SITUATION_NOTE_RULES}개까지예요(그룹 안 조건 포함).`;
+
 /**
  * 시작설정마다 둘 수 있는 상황 노트. 조건(엔딩 스탯 규칙과 같은 규칙 목록)이 참인 턴에 본문이 이야기를 쓰는 AI 에게 실린다.
  * 순서는 배열 위치다. 본문 이름은 키워드 노트 폼과 같은 `content`(서버는 `infoText`).
+ *
+ * 조건 없음·본문 공백은 서버가 저장은 받고 발행만 막는다(노트를 막 추가한 초안도 저장돼야 한다). 이 스키마는 발행 때만
+ * 돌므로 같은 두 검사를 여기 둬 발행 버튼이 그 노트의 칸을 바로 짚게 한다. 빈 그룹만 있는 노트도 조건 0개다(서버와 같은 셈).
  */
 export const situationNoteSchema = z.object({
   id: z.string(),
-  name: z.string(),
-  content: z.string(),
-  conditionRules: z.array(ruleListItemSchema),
+  name: z
+    .string()
+    .refine(
+      (value) => countCharacters(value) <= MAX_SITUATION_NOTE_NAME_LENGTH,
+      `이름은 ${MAX_SITUATION_NOTE_NAME_LENGTH}자 이하로 입력해주세요`,
+    ),
+  content: z
+    .string()
+    .refine((value) => value.trim().length > 0, SITUATION_NOTE_BLANK_CONTENT_MESSAGE)
+    .refine(
+      (value) => countCharacters(value) <= MAX_SITUATION_NOTE_CONTENT_LENGTH,
+      `상황은 ${MAX_SITUATION_NOTE_CONTENT_LENGTH}자 이하로 입력해주세요`,
+    ),
+  conditionRules: z.array(ruleListItemSchema).superRefine((rules, ctx) => {
+    const count = countRules(rules);
+    if (count === 0) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_EMPTY_CONDITIONS_MESSAGE });
+    else if (count > MAX_SITUATION_NOTE_RULES) ctx.addIssue({ code: "custom", message: SITUATION_NOTE_RULE_LIMIT_MESSAGE });
+  }),
 });
 
 /** 상한 값의 단일 소스. 스키마의 `.max()`와 메시지,
@@ -229,7 +263,10 @@ export const startingSetupSchema = z.object({
     .default([]),
   stats: z.array(statDefSchema).default([]),
   endings: z.array(endingSchema).default([]),
-  situationNotes: z.array(situationNoteSchema).default([]),
+  situationNotes: z
+    .array(situationNoteSchema)
+    .max(MAX_SITUATION_NOTES, `상황 노트는 시작설정마다 최대 ${MAX_SITUATION_NOTES}개까지만 추가할 수 있습니다`)
+    .default([]),
 });
 
 /** 키워드북 상한의 단일 소스. 스키마의 검사·메시지와 widgets/build-story/ui/KeywordNoteTab.tsx 의 입력 가드가 전부
