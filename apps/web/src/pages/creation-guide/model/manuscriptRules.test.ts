@@ -4,6 +4,7 @@ import { matchTabForPath } from "@/features/build-common";
 import {
   type FieldLabel,
   PROMPT_TEMPLATE_LABELS,
+  STAT_CHANGE_DIRECTIONS,
   STICKY_TURN_OPTIONS,
   STORY_FIELD_LABELS,
   STORY_TABS,
@@ -249,6 +250,7 @@ const OPTION_VALUES: Partial<Record<string, readonly unknown[]>> = {
   "registration.target": Object.keys(TARGET_LABELS),
   "registration.visibility": Object.keys(VISIBILITY_LABELS),
   "keywordNotes.*.stickyTurns": STICKY_TURN_OPTIONS.map((option) => Number(option.value)),
+  "startingSetups.*.stats.*.changeDirection": STAT_CHANGE_DIRECTIONS,
 };
 
 /**
