@@ -128,6 +128,9 @@ export const STORY_FIELD_MOCKUPS = {
     seedPath: "startingSetups.*.statDefs.*.perTurnDelta",
     readTiming: null,
   },
+  // 튜토리얼 시드의 스탯은 변화 방향·최대 폭을 쓰지 않는다(기본값 오르내림·제한 없음).
+  "startingSetups.*.stats.*.changeDirection": { kind: "select", seedPath: null, readTiming: null },
+  "startingSetups.*.stats.*.maxChangePerTurn": { kind: "number", seedPath: null, readTiming: null },
   "startingSetups.*.stats.*.description": {
     kind: "textarea",
     seedPath: "startingSetups.*.statDefs.*.description",

@@ -61,6 +61,8 @@ export const STORY_FIELD_LABELS = {
   "startingSetups.*.stats.*.initial": { label: "초기값", required: true },
   "startingSetups.*.stats.*.unit": { label: "단위", required: false },
   "startingSetups.*.stats.*.perTurnDelta": { label: "턴당 자동 변화", required: false },
+  "startingSetups.*.stats.*.changeDirection": { label: "변화 방향", required: false },
+  "startingSetups.*.stats.*.maxChangePerTurn": { label: "한 턴 최대 폭", required: false },
   "startingSetups.*.stats.*.description": { label: "설명", required: true },
 
   mediaBook: { label: "미디어 북", required: false },

@@ -85,9 +85,12 @@ function baseDraftResponse(): StoryDraftResponse {
             unit: "pt",
             description: "생존에 필요한 신체 상태",
             perTurnDelta: -1,
+            changeDirection: "both",
+            maxChangePerTurn: null,
           },
         ],
         endings: [],
+        situationNotes: [],
       },
     ],
     keywordNotes: [
@@ -145,9 +148,12 @@ describe("serverToForm", () => {
               unit: "pt",
               description: "생존에 필요한 신체 상태",
               perTurnDelta: -1,
+              changeDirection: "both",
+              maxChangePerTurn: null,
             },
           ],
           endings: [],
+          situationNotes: [],
         },
       ],
       keywordNotes: [
@@ -306,6 +312,89 @@ describe("serverToForm", () => {
       },
     ];
   }
+
+  it("reads a stat's change direction and max change per turn", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    stat.perTurnDelta = null;
+    stat.changeDirection = "decrease";
+    stat.maxChangePerTurn = 7;
+
+    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+
+    expect(formStat).toMatchObject({ perTurnDelta: null, changeDirection: "decrease", maxChangePerTurn: 7 });
+  });
+
+  it("fills stat change options the response omits with a new stat's defaults (both directions, no limit)", () => {
+    const response = baseDraftResponse();
+    const stat = requireFirst(requireFirst(response.startingSetups).statDefs);
+    delete stat.changeDirection;
+    delete stat.maxChangePerTurn;
+
+    const formStat = requireFirst(requireFirst(serverToForm(response).startingSetups).stats);
+
+    expect(formStat).toMatchObject({ changeDirection: "both", maxChangePerTurn: null });
+  });
+
+  it("maps situation notes with their condition rule trees, and an omitted list to an empty one", () => {
+    const response = baseDraftResponse();
+    const setup = requireFirst(response.startingSetups);
+    setup.situationNotes = [
+      {
+        id: "situation-1",
+        name: "상영회 당일",
+        infoText: "오늘은 가을 상영회 당일이다.",
+        conditionRules: [
+          { kind: "rule", id: "r1", statId: "stat-1", operator: "lte", threshold: 0, nextOp: "or" },
+          {
+            kind: "group",
+            id: "g1",
+            nextOp: null,
+            rules: [{ kind: "rule", id: "r2", statId: "stat-1", operator: "eq", threshold: 3, nextOp: null }],
+          },
+        ],
+      },
+    ];
+
+    expect(requireFirst(serverToForm(response).startingSetups).situationNotes).toEqual([
+      {
+        id: "situation-1",
+        name: "상영회 당일",
+        content: "오늘은 가을 상영회 당일이다.",
+        conditionRules: [
+          { kind: "rule", id: "r1", statId: "stat-1", operator: "<=", value: 0, nextOp: "or" },
+          {
+            kind: "group",
+            id: "g1",
+            nextOp: null,
+            rules: [{ kind: "rule", id: "r2", statId: "stat-1", operator: "==", value: 3, nextOp: null }],
+          },
+        ],
+      },
+    ]);
+
+    delete setup.situationNotes;
+    expect(requireFirst(serverToForm(response).startingSetups).situationNotes).toEqual([]);
+  });
+
+  it("round-trips stat change options and situation notes back to the same payload", () => {
+    const response = baseDraftResponse();
+    const setup = requireFirst(response.startingSetups);
+    const stat = requireFirst(setup.statDefs);
+    stat.perTurnDelta = null;
+    stat.changeDirection = "increase";
+    stat.maxChangePerTurn = 2;
+    setup.situationNotes = [
+      {
+        id: "situation-1",
+        name: "",
+        infoText: "체력이 바닥났다.",
+        conditionRules: [{ kind: "rule", id: "r1", statId: "stat-1", operator: "lt", threshold: 10, nextOp: null }],
+      },
+    ];
+
+    expect(formToServer(serverToForm(response)).startingSetups).toEqual(response.startingSetups);
+  });
 
   it("maps an ending's rule tree (single rule + group) from the wire shape, including the operator rename", () => {
     const data = baseDraftResponse();

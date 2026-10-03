@@ -28,10 +28,11 @@ export const STORY_SAVE_LIMIT_MESSAGE =
 /**
  * 엔딩 규칙이 지워진 스탯을 가리켜 저장이 거절된 경우의 안내. 같은 422 라도 글자 수 문제가 아니므로 줄이라고 하지 않고
  * 고칠 자리(엔딩 탭)를 짚는다. 이 화면에서 스탯을 지우면 그 규칙도 함께 지워지므로, 이 문구는 그 처리 전에 저장된 초안이나
- * 다른 기기에서 고친 초안에서만 보인다. 그런 규칙 줄은 스탯 칸이 빈칸으로 보인다.
+ * 다른 기기에서 고친 초안에서만 보인다. 그런 규칙 줄은 스탯 칸에 '지워진 스탯'이
+ * 보이므로 문구도 그 이름으로 가리킨다.
  */
 export const ENDING_RULE_STAT_NOT_FOUND_MESSAGE =
-  "지워진 스탯을 쓰는 엔딩 조건이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 엔딩 탭에서 스탯 칸이 빈 조건을 지우거나 다른 스탯으로 바꿔주세요.";
+  "지워진 스탯을 쓰는 엔딩 조건이 있어 저장하지 못했어요. 입력한 내용은 그대로 있으니 엔딩 탭에서 ‘지워진 스탯’ 조건을 지우거나 다른 스탯으로 바꿔주세요.";
 
 export function isEndingRuleStatNotFoundError(error: unknown): boolean {
   if (!isApiError(error) || error.status !== 422) return false;

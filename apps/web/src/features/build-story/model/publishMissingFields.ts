@@ -32,6 +32,10 @@ export const STORY_MISSING_FIELD_LABELS = {
   // 스탯의 최소·최대·초기값이 어긋나면(최소 < 최대, 최소 ≤ 초기 ≤ 최대가 아니면) 스탯 수와 상관없이 한 번 온다. 폼 검증이 그
   // 칸에서 먼저 막고 초안 저장은 이 검사를 하지 않으므로, API 직접 호출이나 폼 검증 전에 저장된 초안처럼 서버만 아는 상태에서만 닿는다.
   "stats.range": "스탯 범위(최소값 < 최대값, 초기값은 그 사이)",
+  // 아래 둘도 스탯 수와 상관없이 한 번씩 온다. 스탯 탭이 턴당 자동 변화와 방향·최대 폭을 서로 잠그고 폼 검증이 폭 칸을 먼저
+  // 막으므로, 다른 기기에서 편집된 초안처럼 서버만 아는 상태에서만 닿는다.
+  "stats.changeLimitWithCounter": "스탯 변화 방향·최대 폭(턴당 자동 변화와 함께 쓸 수 없어요)",
+  "stats.maxChangePerTurn": "스탯 한 턴 최대 폭(1 이상의 정수)",
 };
 
 /** 서버 필드명의 단일 소스는 위 라벨 맵이다 — 아래 폼 경로 맵이 같은 키 집합을 덮는지 `satisfies`가
@@ -66,6 +70,8 @@ export const STORY_MISSING_FIELD_FORM_PATH: Partial<Record<string, Path<StoryBui
   "endings.statRules": "startingSetups.0.endings",
   // 위와 같은 이유로 첫 시작설정의 스탯 목록을 가리킨다 — 스탯 탭으로 이동시키는 데만 쓴다.
   "stats.range": "startingSetups.0.stats",
+  "stats.changeLimitWithCounter": "startingSetups.0.stats",
+  "stats.maxChangePerTurn": "startingSetups.0.stats",
 } satisfies Record<Exclude<MissingField, FieldWithoutFormPath>, Path<StoryBuilderFormValues>>;
 
 /** 시작설정 안 스탯·엔딩 칸의 클라 검증 오류 경로(`startingSetups.1.stats.0.max`)를 목록 하나로 접은 키와 그 라벨. 키는 그

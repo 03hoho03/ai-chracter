@@ -56,6 +56,13 @@ describe("STORY_MISSING_FIELD_FORM_PATH", () => {
     expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH["stats.range"] ?? "", "stat");
   });
 
+  it("스탯 변화 방향·최대 폭의 두 키는 라벨이 있고 스탯 탭으로 간다", () => {
+    for (const key of ["stats.changeLimitWithCounter", "stats.maxChangePerTurn"] as const) {
+      expect(STORY_MISSING_FIELD_LABELS[key]).toMatch(/최대 폭/);
+      expectUnderTabPrefix(STORY_MISSING_FIELD_FORM_PATH[key] ?? "", "stat");
+    }
+  });
+
   it("엔딩 조건이 지워진 스탯을 가리킨다는 키는 라벨이 있고 엔딩 탭 프리픽스 아래로 간다", () => {
     expect(STORY_MISSING_FIELD_LABELS["endings.statRules"]).toMatch(/엔딩.*스탯/);
 

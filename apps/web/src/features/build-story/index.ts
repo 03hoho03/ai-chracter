@@ -20,6 +20,7 @@ export {
 export {
   KEYWORD_NOTE_SCOPE_LABELS,
   PROMPT_TEMPLATE_LABELS,
+  STAT_CHANGE_DIRECTION_LABELS,
   STICKY_TURN_OPTIONS,
   TARGET_LABELS,
   VISIBILITY_LABELS,
@@ -82,7 +83,8 @@ export {
 export { toMediaBookPreviewImages } from "./model/toMediaBookPreviewImages";
 export { nextThumbnailUrlEntry, type ThumbnailUrlEntry } from "./model/stableThumbnailUrl";
 export { reconcileKeywordNotesOnStartingSetupRemoval } from "./model/reconcileKeywordNotes";
-export { planStatRemoval, removeRuleListItem } from "./model/removeRulesReferencingStat";
+export { hasRuleWithMissingStat, isMissingStat } from "./model/missingStatRules";
+export { planStatRemoval, removeRuleListItem, type StatRemovalCounts } from "./model/removeRulesReferencingStat";
 export {
   collapseStartingSetupListPath,
   STORY_MISSING_FIELD_FORM_PATH,
@@ -95,6 +97,8 @@ export {
   COMPARISON_OPERATORS,
   createKeywordNote,
   endingSchema,
+  hasPerTurnDelta,
+  hasStatChangeLimit,
   keywordNoteSchema,
   LOGIC_OPERATORS,
   MAX_ALWAYS_ON_KEYWORD_NOTES,
@@ -117,6 +121,8 @@ export {
   PROMPT_TEMPLATE_VALUES,
   ruleListItemSchema,
   shortcutSchema,
+  STAT_CHANGE_CONFLICT_MESSAGE,
+  STAT_CHANGE_DIRECTIONS,
   startingSetupSchema,
   statDefSchema,
   storyBuilderSchema,
@@ -133,6 +139,7 @@ export {
   type ShortcutValues,
   type SingleRuleValues,
   type StartingSetupValues,
+  type StatChangeDirection,
   type StatDefValues,
   type StoryBuilderFormValues,
   type StorySettingValues,

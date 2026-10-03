@@ -48,6 +48,8 @@ describe("storyAutosaveErrorMessage", () => {
 
     expect(storyAutosaveErrorMessage(error)).toBe(ENDING_RULE_STAT_NOT_FOUND_MESSAGE);
     expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toMatch(/엔딩/);
+    // 편집기가 그런 조건의 스탯 칸에 그리는 이름과 같은 말로 가리켜야 작가가 화면에서 찾는다.
+    expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).toContain("‘지워진 스탯’");
     expect(ENDING_RULE_STAT_NOT_FOUND_MESSAGE).not.toMatch(/글자 수|잠시 후/);
   });
 });

@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { planStatRemoval, removeRuleListItem, removeRulesReferencingStat } from "./removeRulesReferencingStat";
+import {
+  countRules,
+  planStatRemoval,
+  removeRuleListItem,
+  removeRulesReferencingStat,
+  type StatRemovalCounts,
+} from "./removeRulesReferencingStat";
 import type { RuleListItemValues, SingleRuleValues } from "./schema";
 
 function rule(id: string, statId: string, nextOp: SingleRuleValues["nextOp"] = null): SingleRuleValues {
@@ -101,9 +107,10 @@ describe("removeRulesReferencingStat matches deleting the same conditions by han
 });
 
 describe("planStatRemoval", () => {
-  const confirmed = () => vi.fn((_ruleCount: number) => Promise.resolve(true));
+  const confirmed = () => vi.fn((_counts: StatRemovalCounts) => Promise.resolve(true));
+  const noNotes: { conditionRules: RuleListItemValues[] }[] = [];
 
-  it("asks first with the number of conditions that go with the stat, counting rules inside groups", async () => {
+  it("asks first with the number of ending conditions that go with the stat, counting rules inside groups", async () => {
     const confirm = confirmed();
     const group: RuleListItemValues = {
       kind: "group",
@@ -113,27 +120,91 @@ describe("planStatRemoval", () => {
     };
     const endings = [{ statRules: [rule("r1", "gone", "and"), rule("r2", "kept")] }, { statRules: [group] }];
 
-    const updates = await planStatRemoval(endings, "gone", confirm);
+    const updates = await planStatRemoval({ endings, situationNotes: noNotes }, "gone", confirm);
 
-    expect(confirm).toHaveBeenCalledExactlyOnceWith(3);
-    expect(updates).toEqual([
-      { endingIndex: 0, statRules: [rule("r2", "kept")] },
-      { endingIndex: 1, statRules: [] },
-    ]);
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 3, noteRuleCount: 0, emptiedNoteCount: 0 });
+    expect(updates).toEqual({
+      endings: [
+        { endingIndex: 0, statRules: [rule("r2", "kept")] },
+        { endingIndex: 1, statRules: [] },
+      ],
+      situationNotes: [],
+    });
+  });
+
+  it("counts ending and situation note conditions together and asks only once", async () => {
+    const confirm = confirmed();
+    const endings = [{ statRules: [rule("e1", "gone")] }];
+    const situationNotes = [
+      { conditionRules: [rule("n1", "gone", "and"), rule("n2", "kept")] },
+      { conditionRules: [{ kind: "group", id: "g1", nextOp: null, rules: [rule("n3", "gone"), rule("n4", "gone")] }] },
+      { conditionRules: [rule("n5", "kept")] },
+    ] satisfies { conditionRules: RuleListItemValues[] }[];
+
+    const updates = await planStatRemoval({ endings, situationNotes }, "gone", confirm);
+
+    // 두 번째 노트는 조건이 하나도 남지 않는다 — 발행이 막히는 노트라 확인 문장이 따로 알린다.
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 1, noteRuleCount: 3, emptiedNoteCount: 1 });
+    expect(updates).toEqual({
+      endings: [{ endingIndex: 0, statRules: [] }],
+      situationNotes: [
+        { noteIndex: 0, conditionRules: [rule("n2", "kept")] },
+        { noteIndex: 1, conditionRules: [] },
+      ],
+    });
+  });
+
+  it("asks when only situation note conditions use the stat", async () => {
+    const confirm = confirmed();
+    const situationNotes = [{ conditionRules: [rule("n1", "gone")] }];
+
+    const updates = await planStatRemoval({ endings: [], situationNotes }, "gone", confirm);
+
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 0, noteRuleCount: 1, emptiedNoteCount: 1 });
+    expect(updates).toEqual({ endings: [], situationNotes: [{ noteIndex: 0, conditionRules: [] }] });
+  });
+
+  it("does not count a note the author had already left without conditions as emptied by this removal", async () => {
+    const confirm = confirmed();
+    const situationNotes = [
+      { conditionRules: [] },
+      { conditionRules: [rule("n1", "gone"), rule("n2", "kept")] },
+    ] satisfies { conditionRules: RuleListItemValues[] }[];
+
+    await planStatRemoval({ endings: [], situationNotes }, "gone", confirm);
+
+    expect(confirm).toHaveBeenCalledExactlyOnceWith({ endingRuleCount: 0, noteRuleCount: 1, emptiedNoteCount: 0 });
   });
 
   it("changes nothing when the author cancels", async () => {
     const endings = [{ statRules: [rule("r1", "gone")] }];
+    const situationNotes = [{ conditionRules: [rule("n1", "gone")] }];
     const cancelled = vi.fn(() => Promise.resolve(false));
 
-    expect(await planStatRemoval(endings, "gone", cancelled)).toBeUndefined();
+    expect(await planStatRemoval({ endings, situationNotes }, "gone", cancelled)).toBeUndefined();
   });
 
   it("removes without asking when no condition uses the stat", async () => {
     const confirm = confirmed();
     const endings = [{ statRules: [rule("r1", "kept")] }, { statRules: [] }];
+    const situationNotes = [{ conditionRules: [rule("n1", "kept")] }];
 
-    expect(await planStatRemoval(endings, "gone", confirm)).toEqual([]);
+    expect(await planStatRemoval({ endings, situationNotes }, "gone", confirm)).toEqual({
+      endings: [],
+      situationNotes: [],
+    });
     expect(confirm).not.toHaveBeenCalled();
+  });
+});
+
+describe("countRules", () => {
+  it("counts rules inside groups and not the groups themselves", () => {
+    const items: RuleListItemValues[] = [
+      rule("r1", "a"),
+      { kind: "group", id: "g1", nextOp: null, rules: [rule("r2", "a"), rule("r3", "b")] },
+      { kind: "group", id: "g2", nextOp: null, rules: [] },
+    ];
+
+    expect(countRules(items)).toBe(3);
   });
 });
