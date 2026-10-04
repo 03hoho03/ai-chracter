@@ -92,7 +92,7 @@ function VersionTable() {
                       <button
                         type="button"
                         aria-current={isSelected || undefined}
-                        className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+                        className="admin-hit-area flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
                       >
                         <Check aria-hidden className={cn("size-4 text-foreground", !isSelected && "invisible")} />
                         v{item.version}

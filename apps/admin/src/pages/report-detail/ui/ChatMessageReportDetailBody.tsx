@@ -32,7 +32,7 @@ export function ChatMessageReportDetailBody({ reportId }: { reportId: string }) 
         <span className="text-sm text-muted-foreground">{formatDateTime(report.createdAt)} 접수</span></div>
       <dl className="grid grid-cols-1 gap-3 text-sm @xl:grid-cols-2">
         <div><dt className="text-muted-foreground">신고 사유</dt><dd>{CHAT_MESSAGE_REPORT_REASON_LABELS[report.reason]}</dd></div>
-        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
+        <div><dt className="text-muted-foreground">신고자</dt><dd><Link to="/users/$userId" params={{ userId: report.reporterUserId }} className="admin-hit-area font-medium text-primary hover:underline focus-visible:underline">유저 상세 보기</Link></dd></div>
         {/* 재생성·메시지 삭제·방 삭제로 원래 응답이 지워져도 신고와 사본은 남는다 — 사본이 지금 대화와
          * 다를 수 있다는 걸 처리자가 알도록 밝힌다. */}
         <div><dt className="text-muted-foreground">원래 응답</dt><dd>{report.chatMessageId === null ? "대화에서 지워졌어요" : "대화에 남아 있어요"}</dd></div>

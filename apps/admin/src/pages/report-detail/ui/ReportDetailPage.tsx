@@ -125,7 +125,7 @@ function ReportDetailBody({ reportId }: ReportDetailBodyProps) {
                     <Link
                       to="/users/$userId"
                       params={{ userId: report.reporterUserId }}
-                      className="font-medium text-primary hover:underline"
+                      className="admin-hit-area font-medium text-primary hover:underline"
                     >
                       유저 상세 보기
                     </Link>

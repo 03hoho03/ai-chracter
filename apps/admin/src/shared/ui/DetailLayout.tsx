@@ -66,11 +66,15 @@ export function DetailLayout({ children, actions }: DetailLayoutProps) {
   const hasAside = actions !== null && isDesktop;
   const hasBar = actions !== null && !isDesktop;
 
+  // 조치 열이 있으면 본문 열은 상한 없이 남는 폭을 다 받는다 — 바깥 `PageContainer` 상한(`max-w-6xl`)에서 조치 열을 빼면
+  // 본문은 최대 792px 라 줄 길이는 이미 그 상한이 묶는다. 본문 열에 따로 상한을 두면 넓은 화면에서 오른쪽이 비는 동안
+  // 밀집 표(유저 상세의 채팅방·조치 이력)가 가로로 스크롤됐다. 조치 열이 없는 상세(문의 답변·공지 편집·열람 화면)는
+  // 글과 폼이 본문이라 `max-w-3xl` 로 줄 길이를 묶는다.
   return (
     <div
       className={
         hasAside
-          ? "grid grid-cols-[minmax(0,var(--container-3xl))_var(--container-2xs)] items-start gap-6"
+          ? "grid grid-cols-[minmax(0,1fr)_var(--container-2xs)] items-start gap-6"
           : "flex max-w-3xl min-w-0 flex-col gap-6"
       }
     >

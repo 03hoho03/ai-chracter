@@ -14,7 +14,7 @@ import {
 } from "@/entities/admin-user";
 import { CHAT_MESSAGE_REPORT_REASON_LABELS, REPORT_REASON_LABELS, REPORT_STATUS_LABELS } from "@/entities/report";
 import { formatCount } from "@/shared/lib/format/formatCount";
-import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { formatDateTime, formatDateTimeParts } from "@/shared/lib/format/formatDateTime";
 import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { useDocumentTitle } from "@/shared/lib/useDocumentTitle";
 import { DenseTable } from "@/shared/ui/DenseTable";
@@ -29,8 +29,11 @@ type UserDetailPageProps = {
   userId: string;
 };
 
-// 문장 속 링크는 `font-medium text-primary hover:underline`이 저장소 관용구다(MyPagePage 동형).
-const INLINE_LINK_CLASS = "font-medium text-primary hover:underline focus-visible:underline focus-visible:outline-none";
+// 문장 속 링크는 `font-medium text-primary hover:underline`이 저장소 관용구다(MyPagePage 동형). 글자 크기 그대로라
+// 누르는 면은 `admin-hit-area`(app/styles/admin.css)가 박스를 바꾸지 않고 넓힌다.
+const INLINE_LINK_CLASS =
+  "admin-hit-area font-medium text-primary hover:underline focus-visible:underline focus-visible:outline-none";
+
 
 /** `AdminUserActionLogItem.reasonCategory`는 enum이 아니라 plain `string | null`이다 — 작품 직접
  * 조치 로그(신고 사유 5종, REPORT_REASON_LABELS), 채팅 열람 로그(별도 사유 4종,
@@ -218,7 +221,7 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
                         {REPORT_REASON_LABELS[report.reasonCategory]}
                       </TableCell>
                       <TableCell>{REPORT_STATUS_LABELS[report.status]}</TableCell>
-                      <TableCell>{formatDateTime(report.createdAt)}</TableCell>
+                      <DateTimeCell value={report.createdAt} />
                     </TableRow>
                   ))}
                 </TableBody>
@@ -268,7 +271,7 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
                       <TableCell className="min-w-48 whitespace-normal break-keep text-muted-foreground wrap-anywhere">
                         {log.reasonText || "-"}
                       </TableCell>
-                      <TableCell>{formatDateTime(log.createdAt)}</TableCell>
+                      <DateTimeCell value={log.createdAt} />
                     </TableRow>
                   ))}
                 </TableBody>
@@ -311,13 +314,13 @@ function UserDetailSections({ userId, user }: UserDetailSectionsProps) {
                           {chatRoom.contentName || "(이름 없음)"}
                         </Link>
                       </TableCell>
-                      <TableCell className="min-w-32 whitespace-normal break-keep text-muted-foreground wrap-anywhere">
+                      <TableCell className="min-w-24 whitespace-normal break-keep text-muted-foreground wrap-anywhere">
                         {chatRoom.name || "-"}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{formatCount(chatRoom.turnCount)}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCount(chatRoom.messageCount)}</TableCell>
-                      <TableCell>{formatDateTime(chatRoom.lastMessageAt)}</TableCell>
-                      <TableCell>{formatDateTime(chatRoom.createdAt)}</TableCell>
+                      <DateTimeCell value={chatRoom.lastMessageAt} />
+                      <DateTimeCell value={chatRoom.createdAt} />
                       <TableCell>
                         <Link
                           to="/users/$userId/chats/$roomId"
@@ -418,7 +421,7 @@ function CloverLedgerBody({ ledgerQuery }: CloverLedgerBodyProps) {
                 <TableCell className="text-right tabular-nums text-muted-foreground">
                   {formatCount(item.balanceAfter)}
                 </TableCell>
-                <TableCell>{formatDateTime(item.createdAt)}</TableCell>
+                <DateTimeCell value={item.createdAt} />
               </TableRow>
             ))}
           </TableBody>
@@ -444,4 +447,20 @@ function userStatusSummary(user: AdminUserDetailResponse) {
 function reasonCategoryLabel(reasonCategory: string | null) {
   if (!reasonCategory) return "-";
   return REASON_CATEGORY_LABELS_ALL[reasonCategory] ?? reasonCategory;
+}
+
+type DateTimeCellProps = {
+  value: string | null;
+};
+
+/** 표의 일시 칸. 자리가 넉넉하면 한 줄이고, 조치 열 옆 본문 열처럼 모자라면 날짜와 시각 사이에서만 두 줄로 꺾인다 —
+ * 칸이 줄면서 "오전"이 갈라지거나 표가 가로로 스크롤되지 않게. */
+function DateTimeCell({ value }: DateTimeCellProps) {
+  if (!value) return <TableCell>-</TableCell>;
+  const { date, time } = formatDateTimeParts(value);
+  return (
+    <TableCell className="whitespace-normal">
+      <span className="whitespace-nowrap">{date}</span> <span className="whitespace-nowrap">{time}</span>
+    </TableCell>
+  );
 }
