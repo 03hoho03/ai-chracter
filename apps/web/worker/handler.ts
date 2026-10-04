@@ -11,6 +11,7 @@ import { handleOgImage, OG_IMAGE_PATH_PREFIX } from "./ogImage";
 import { handleProfileMeta, parseProfilePath } from "./profileMeta";
 import { handleRobots } from "./robots";
 import { isKnownRoute } from "./routes";
+import { applySecurityHeaders } from "./securityHeaders";
 import { handleSiteVerification } from "./siteVerification";
 import { handleSitemap } from "./sitemap";
 import type { WorkerDeps, WorkerEnv } from "./workerRuntime";
@@ -28,8 +29,8 @@ function isStaticAssetPath(pathname: string): boolean {
  * Worker 진입 핸들러. 런타임 전용 자원(Cache API)은 전부 `deps`로 주입받으므로
  * 이 함수는 vitest(`environment: "node"`)에서 그냥 호출해 테스트할 수 있다.
  *
- * 라우팅 결과는 예외 없이 `applyIndexingPolicy`를 통과해서 나간다 — 프리뷰 배포의
- * 색인 차단을 라우트마다 기억해야 하는 규칙으로 만들지 않기 위해서다.
+ * 라우팅 결과는 예외 없이 `applyIndexingPolicy`와 `applySecurityHeaders`를 통과해서 나간다 —
+ * 프리뷰 배포의 색인 차단과 보안 헤더를 라우트마다 기억해야 하는 규칙으로 만들지 않기 위해서다.
  */
 export async function handleRequest(
   request: Request,
@@ -37,7 +38,7 @@ export async function handleRequest(
   deps: WorkerDeps,
 ): Promise<Response> {
   const response = await routeRequest(request, env, deps);
-  return applyIndexingPolicy(response, env, request);
+  return applySecurityHeaders(applyIndexingPolicy(response, env, request));
 }
 
 async function routeRequest(

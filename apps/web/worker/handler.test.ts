@@ -546,6 +546,59 @@ describe("handleRequest", () => {
     expect(response.headers.get("x-robots-tag")).toBeNull();
   });
 
+  // 배선 위치 검사다. 헤더 값과 "없을 때만" 규칙은 securityHeaders.test.ts가 본다.
+  describe("보안 헤더", () => {
+    it("ASSETS 정적 자산 응답에 붙는다", async () => {
+      const response = await handleRequest(get("/assets/app.js"), createEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+      expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000");
+    });
+
+    it("Worker가 만든 응답(/robots.txt)에도 붙는다", async () => {
+      const response = await handleRequest(get("/robots.txt"), createEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(response.headers.get("x-frame-options")).toBe("DENY");
+    });
+
+    it("옛 도메인 301에도 붙는다", async () => {
+      const response = await handleRequest(
+        new Request("https://ai-character-chat-web.pages.dev/login"),
+        createEnv({ PUBLIC_ORIGIN: "https://ddona.example" }),
+        { cache: NOOP_CACHE },
+      );
+
+      expect(response.status).toBe(301);
+      expect(response.headers.get("referrer-policy")).toBe("strict-origin-when-cross-origin");
+    });
+
+    it("/_ingest 업스트림이 준 Referrer-Policy는 보존하고 빠진 헤더만 채운다", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(() =>
+          Promise.resolve(
+            new Response("<html></html>", {
+              status: 200,
+              headers: { "referrer-policy": "same-origin" },
+            }),
+          ),
+        ),
+      );
+
+      const response = await handleRequest(get("/_ingest/accounts/login/"), createEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.headers.get("referrer-policy")).toBe("same-origin");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    });
+  });
+
   it("API_BASE_URL이 없어도 정적 자산과 SPA 셸은 정상 서빙한다", async () => {
     const env = createEnv({ API_BASE_URL: undefined });
 
@@ -807,6 +860,15 @@ describe("handleRequest", () => {
 
       expect(response.status).toBe(301);
       expect(response.headers.get("location")).toBe("https://ddona.example/sitemap.xml");
+    });
+
+    it("경로가 //로 시작해도 다른 host로 보내지 않는다", async () => {
+      const response = await handleRequest(new Request(`${LEGACY}//evil.com/x`), legacyEnv(), {
+        cache: NOOP_CACHE,
+      });
+
+      expect(response.status).toBe(301);
+      expect(new URL(response.headers.get("location") ?? "").host).toBe("ddona.example");
     });
 
     it("앱에 없는 경로도 404가 아니라 리다이렉트다", async () => {

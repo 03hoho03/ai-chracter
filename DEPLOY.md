@@ -405,6 +405,10 @@ Pages 프로젝트 2개, 각각 Git 연동으로 `main` push 시 자동 빌드:
 - **Build watch paths**: `apps/{web|admin}/*, packages/*, pnpm-lock.yaml, pnpm-workspace.yaml`
   (기본값 `*`는 전체 감시라 BE만 바뀌어도 FE가 재배포된다)
 - SPA fallback은 `apps/{web,admin}/public/_redirects`(`/* /index.html 200`)로 이미 되어 있다.
+- 보안 헤더(HSTS `max-age=31536000`·nosniff·X-Frame-Options·Referrer-Policy)는 저장소 코드가 내보낸다 —
+  web은 Worker(`apps/web/worker/securityHeaders.ts`), admin은 `apps/admin/public/_headers`, API는
+  저장소 루트 `Caddyfile`. **Cloudflare 대시보드의 HSTS 설정(SSL/TLS → Edge Certificates)은 켜지
+  않는다** — 두 군데서 내면 값이 갈리고, 어느 쪽이 실제로 나가는지 저장소만 봐서는 알 수 없게 된다.
 
 ⚠️ **Cloudflare 와일드카드는 `*` 하나가 이미 `/`를 가로질러 매칭한다**("including path separators").
 `**`는 지원하지 않으므로 `apps/web/**`로 쓰면 아무것도 매칭되지 않아 **모든 푸시가 조용히
