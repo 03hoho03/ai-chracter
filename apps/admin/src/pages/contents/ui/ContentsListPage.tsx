@@ -184,7 +184,7 @@ function ContentsList({ params, hasCondition, onReset, onPageChange }: ContentsL
             rows={data.items}
             getRowKey={(item) => item.id}
             columns={COLUMNS}
-            renderRowLink={(item, props) => <Link to="/contents/$contentId" params={{ contentId: item.id }} {...props} />}
+            renderRowTarget={(item, props) => <Link to="/contents/$contentId" params={{ contentId: item.id }} {...props} />}
             card={{
               title: (item) => item.name || "(이름 없음)",
               meta: (item) => (
