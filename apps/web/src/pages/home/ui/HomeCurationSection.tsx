@@ -9,11 +9,14 @@ import {
   type ContentType,
   type HomeCurationItem,
 } from "@/entities/content";
+import { expandAuthorMacros, resolveAuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { toHomeCurationHeading } from "../model/homeCuration";
 
 type HomeCurationSectionProps = {
   item: HomeCurationItem;
+  /** 한줄소개 속 `{{user}}` 에 넣을 보는 사람의 기본 프로필 이름. 비로그인·프로필 없음이면 null(작품 기본 이름). */
+  viewerPersonaName: string | null;
   onOpen: (type: ContentType, id: string) => void;
 };
 
@@ -33,12 +36,22 @@ type HomeCurationSectionProps = {
  * 둔다. 640px 이상에서는 이 그림이 그리드 카드와 크기가 같고 더 위에 있어 LCP 요소가 될 수 있다. 큐레이션 작품이
  * 그리드 첫 행에도 있으면 같은 서명 주소라 요청이 하나로 합쳐져 손해가 없지만, 첫 행에 없으면 이 그림이 보통
  * 우선순위로 따로 받아져 LCP 가 그만큼 늦어질 수 있다. */
-export function HomeCurationSection({ item, onOpen }: HomeCurationSectionProps) {
+export function HomeCurationSection({ item, viewerPersonaName, onOpen }: HomeCurationSectionProps) {
   const id = useId();
   const headingId = `${id}-heading`;
   const nameId = `${id}-name`;
   const oneLinerId = `${id}-one-liner`;
   const thumbnailAspect = toThumbnailAspect(item.type);
+  // 카드의 접근 이름도 이 문단을 가리키므로 보이는 글과 읽히는 글이 함께 바뀐다.
+  const oneLiner = expandAuthorMacros(
+    item.oneLiner,
+    resolveAuthorMacroNames({
+      personaName: viewerPersonaName,
+      defaultUserName: item.defaultUserName,
+      contentType: item.type,
+      contentName: item.name,
+    }),
+  );
 
   return (
     <section aria-labelledby={headingId} className="flex flex-col gap-3">
@@ -84,7 +97,7 @@ export function HomeCurationSection({ item, onOpen }: HomeCurationSectionProps) 
               {item.name}
             </p>
             <p id={oneLinerId} className="line-clamp-4 break-keep break-words text-sm text-muted-foreground">
-              {item.oneLiner}
+              {oneLiner}
             </p>
           </div>
         </div>

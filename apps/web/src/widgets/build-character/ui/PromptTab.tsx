@@ -5,6 +5,8 @@ import { useFormContext } from "react-hook-form";
 import type { CharacterBuilderFormValues } from "@/features/build-character";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
+import { CharacterMacroNotice } from "./CharacterMacroNotice";
+
 /** 대화 생성에 반영되는 자유 텍스트 캐릭터 프롬프트(필수) 단일 필드. */
 export function PromptTab() {
   const form = useFormContext<CharacterBuilderFormValues>();
@@ -26,6 +28,7 @@ export function PromptTab() {
           aria-describedby={errors.prompt?.characterPrompt ? "character-prompt-error" : undefined}
           {...register("prompt.characterPrompt")}
         />
+        <CharacterMacroNotice name="prompt.characterPrompt" />
         {errors.prompt?.characterPrompt && (
           <p id="character-prompt-error" role="alert" className="text-xs text-destructive-text">
             {errors.prompt.characterPrompt.message}

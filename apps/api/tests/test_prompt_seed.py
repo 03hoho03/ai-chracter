@@ -30,13 +30,15 @@ from api.chat.prompt_builder import PromptLane, load_active_prompt_set, system_i
 from api.db.models.prompt import PromptSection, PromptSet
 from api.db.models.story import StoryPromptTemplate
 
-# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 36 / character 19 /
+# 레인 분리 이후 (channel, scope, slot, variant) 전수는 레인별로 갈린다(story 42 / character 22 /
 # publish_filter 4 — 마이그레이션 `a69cbd40dec8`의 `NEW_SECTION_IDS`·`_lanes_for` 배정
 # 26/13/16에 마이그레이션 `b72c33c70240`이 story·character generation에 `user_persona`를 한 행씩 더했고,
 # `c328445d4c2d`가 채팅방 기억 행을 더했다 — generation 2 · story ending_judgment 1 · 새 channel
 # `memory_summary` 3. `2519dde454e0`이 story 레인에 미디어 북 칸 판정 channel `image_judgment` 3행을 더했고,
 # `bd29dd69bc0f`가 publish_filter 레인에 미디어 북 칸 줄 슬롯 `media_book` 1행을 더했고, `859b0fb86629`가
-# publish_filter 레인을 이미지 전용으로 바꿔 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더했다).
+# publish_filter 레인을 이미지 전용으로 바꿔 작가 글 슬롯 13개를 빼고 이미지 목록 슬롯 `image_list` 1행을 더했다.
+# `2417f5829bb1`이 story generation 에 상황 노트 행 1개를 더해 story 37 이 됐고, `8e895c898730`이 사용자 이름 한 줄
+# `user_name`을 story 5행·character 3행 더해 story 42 / character 22 다).
 # system/generation 채널의 `scope='both'` 행은 story·character 두 레인에 사본으로 들어간다.
 _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] = {
     "story": {
@@ -60,6 +62,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("story", "development_examples", ""),
             ("story", "prologue", ""),
             ("both", "user_persona", ""),
+            ("both", "user_name", ""),
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
@@ -70,10 +73,12 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         },
         "stat_judgment": {
             ("story", "stat_defs_intro", ""),
+            ("story", "user_name", ""),
             ("story", "turn_context", ""),
             ("story", "judgment_instruction", ""),
         },
         "ending_judgment": {
+            ("story", "user_name", ""),
             ("story", "memory_summary", ""),
             ("story", "history_header", ""),
             ("story", "turn_context", ""),
@@ -81,11 +86,13 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         },
         "memory_summary": {
             ("both", "instruction", ""),
+            ("both", "user_name", ""),
             ("both", "previous_summary", ""),
             ("both", "turn_context", ""),
         },
         "image_judgment": {
             ("story", "image_list_intro", ""),
+            ("story", "user_name", ""),
             ("story", "turn_context", ""),
             ("story", "judgment_instruction", ""),
         },
@@ -103,6 +110,7 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
             ("character", "character_prompt", ""),
             ("character", "example_dialogues", ""),
             ("both", "user_persona", ""),
+            ("both", "user_name", ""),
             ("both", "memory_note", ""),
             ("both", "memory_summary", ""),
             ("both", "history", ""),
@@ -110,11 +118,13 @@ _EXPECTED_SLOTS_BY_LANE: dict[PromptLane, dict[str, set[tuple[str, str, str]]]] 
         },
         "image_judgment": {
             ("character", "image_list_intro", ""),
+            ("character", "user_name", ""),
             ("character", "turn_context", ""),
             ("character", "judgment_instruction", ""),
         },
         "memory_summary": {
             ("both", "instruction", ""),
+            ("both", "user_name", ""),
             ("both", "previous_summary", ""),
             ("both", "turn_context", ""),
         },

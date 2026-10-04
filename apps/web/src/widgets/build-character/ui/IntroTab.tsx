@@ -8,6 +8,7 @@ import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 import type { CharacterBuilderFormValues, CharacterCollapsibleList } from "@/features/build-character";
 import {
   CollapsibleItemCard,
+  DefaultUserNameField,
   focusNeighborToggle,
   ItemRemoveButton,
   itemOpenKey,
@@ -15,6 +16,8 @@ import {
 } from "@/features/build-common";
 import { firstLine } from "@/shared/lib/text/firstLine";
 import { RequiredText } from "@/shared/ui/RequiredText";
+
+import { CharacterMacroNotice } from "./CharacterMacroNotice";
 
 const EXAMPLE_DIALOGUE_LIST: CharacterCollapsibleList = "exampleDialogue";
 
@@ -33,6 +36,7 @@ export function IntroTab() {
   const uiState = useBuilderUiState();
   const addButtonRef = useRef<HTMLButtonElement>(null);
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(() => fields.length > 0);
+  const defaultUserName = useWatch({ control, name: "intro.defaultUserName" });
 
   // 스위치를 끈 채 이 탭에서 발행하면 예시 대화 오류가 화면에 없는 입력칸에 걸려 아무것도 보이지 않는다. 그래서 발행이 예시
   // 대화에 새 오류 묶음을 내면 그때 한 번 스위치를 켠다. 오류가 남은 채 사용자가 다시 끄는 것은 막지 않는다 — 오류 객체가
@@ -71,12 +75,22 @@ export function IntroTab() {
           aria-describedby={errors.intro?.firstMessage ? "character-intro-first-message-error" : undefined}
           {...register("intro.firstMessage")}
         />
+        <CharacterMacroNotice name="intro.firstMessage" />
         {errors.intro?.firstMessage && (
           <p id="character-intro-first-message-error" role="alert" className="text-xs text-destructive-text">
             {errors.intro.firstMessage.message}
           </p>
         )}
       </div>
+
+      <DefaultUserNameField
+        id="character-intro-default-user-name"
+        label="사용자 기본 이름"
+        contentType="character"
+        value={defaultUserName}
+        publishError={errors.intro?.defaultUserName?.message}
+        registration={register("intro.defaultUserName")}
+      />
 
       <div className="flex items-center justify-between gap-4 rounded-xl border border-border px-4 py-3">
         <div className="flex flex-col gap-0.5">
@@ -110,6 +124,7 @@ export function IntroTab() {
           rows={3}
           {...register("intro.playGuide")}
         />
+        <CharacterMacroNotice name="intro.playGuide" />
       </div>
     </div>
   );
@@ -153,6 +168,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           aria-describedby={userLineError ? userLineErrorId : undefined}
           {...register(`intro.exampleDialogues.${index}.userLine`)}
         />
+        <CharacterMacroNotice name={`intro.exampleDialogues.${index}.userLine`} />
         {userLineError && (
           <p id={userLineErrorId} role="alert" className="text-xs text-destructive-text">
             {userLineError.message}
@@ -167,6 +183,7 @@ function ExampleDialogueItem({ index, onRemove }: ExampleDialogueItemProps) {
           aria-describedby={characterLineError ? characterLineErrorId : undefined}
           {...register(`intro.exampleDialogues.${index}.characterLine`)}
         />
+        <CharacterMacroNotice name={`intro.exampleDialogues.${index}.characterLine`} />
         {characterLineError && (
           <p id={characterLineErrorId} role="alert" className="text-xs text-destructive-text">
             {characterLineError.message}

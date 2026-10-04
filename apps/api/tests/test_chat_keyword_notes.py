@@ -2,6 +2,7 @@ import unicodedata
 import uuid
 
 from api.chat.keyword_notes import ScanTurn, match_keyword_notes, recent_scan_turns, select_keyword_notes
+from api.chat.prompt_builder import PromptNames
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import KeywordNote
 
@@ -30,6 +31,10 @@ def _note(
     )
 
 
+# 이름이 없는 턴 — 이름 한 줄이 비어 섹션째 빠진다. 이름 치환은 `test_prompt_author_macros.py` 가 본다.
+_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
+
+
 def _a(content: str) -> ChatMessage:
     return ChatMessage(role=ChatMessageRole.ASSISTANT, content=content)
 
@@ -46,59 +51,59 @@ def _turn(assistant_text: str, *user_texts: str) -> ScanTurn:
 
 
 def test_first_turn_scans_opening_as_previous_ai_response() -> None:
-    assert recent_scan_turns([_a("O")], "U1", depth=5) == [_turn("O", "U1")]
+    assert recent_scan_turns([_a("O")], "U1", depth=5, names=_NO_NAMES) == [_turn("O", "U1")]
 
 
 def test_room_without_opening_has_no_previous_ai_response() -> None:
-    assert recent_scan_turns([], "U1", depth=5) == [_turn("", "U1")]
-    assert recent_scan_turns([_u("U0")], "U1", depth=5) == [_turn("", "U0", "U1")]
+    assert recent_scan_turns([], "U1", depth=5, names=_NO_NAMES) == [_turn("", "U1")]
+    assert recent_scan_turns([_u("U0")], "U1", depth=5, names=_NO_NAMES) == [_turn("", "U0", "U1")]
 
 
 def test_failed_turn_joins_next_turn_and_keeps_last_read_ai_response() -> None:
     history = [_a("O"), _u("U0"), _a("A0"), _u("U1"), _a("A1"), _u("U2")]
 
-    assert recent_scan_turns(history, "U3", depth=1) == [_turn("A1", "U2", "U3"), _turn("A0", "U1")]
+    assert recent_scan_turns(history, "U3", depth=1, names=_NO_NAMES) == [_turn("A1", "U2", "U3"), _turn("A0", "U1")]
 
 
 def test_consecutive_failed_turns_all_join_the_current_turn() -> None:
     history = [_a("O"), _u("U1"), _a("A1"), _u("U2"), _u("U3")]
 
-    assert recent_scan_turns(history, "U4", depth=0) == [_turn("A1", "U2", "U3", "U4")]
+    assert recent_scan_turns(history, "U4", depth=0, names=_NO_NAMES) == [_turn("A1", "U2", "U3", "U4")]
 
 
 def test_consecutive_ai_responses_scan_only_the_last_one() -> None:
     history = [_a("O"), _u("U1"), _a("A1"), _a("A1-again")]
 
-    assert recent_scan_turns(history, "U2", depth=1) == [_turn("A1-again", "U2"), _turn("O", "U1")]
+    assert recent_scan_turns(history, "U2", depth=1, names=_NO_NAMES) == [_turn("A1-again", "U2"), _turn("O", "U1")]
 
 
 def test_regenerate_input_rebuilds_the_original_turn_including_failed_message() -> None:
     # 재생성 호출부는 대상 사용자 메시지를 뺀 앞부분과 그 메시지 본문을 넘긴다.
     history = [_a("O"), _u("U1"), _a("A1"), _u("U2")]
 
-    assert recent_scan_turns(history, "U3", depth=0) == [_turn("A1", "U2", "U3")]
+    assert recent_scan_turns(history, "U3", depth=0, names=_NO_NAMES) == [_turn("A1", "U2", "U3")]
 
 
 def test_edit_input_joins_failed_message_right_before_the_edited_one() -> None:
     # 편집 호출부는 편집 지점 앞까지와 편집본을 넘긴다. 바로 앞이 응답 없는 사용자 메시지면 함께 묶인다.
     history = [_a("O"), _u("U1"), _a("A1"), _u("U2")]
 
-    assert recent_scan_turns(history, "edited", depth=1) == [_turn("A1", "U2", "edited"), _turn("O", "U1")]
+    assert recent_scan_turns(history, "edited", depth=1, names=_NO_NAMES) == [_turn("A1", "U2", "edited"), _turn("O", "U1")]
 
 
 def test_depth_limits_how_many_past_turns_are_returned() -> None:
     history = [_a("O"), _u("U1"), _a("A1"), _u("U2"), _a("A2")]
 
-    assert recent_scan_turns(history, "U3", depth=0) == [_turn("A2", "U3")]
-    assert recent_scan_turns(history, "U3", depth=1) == [_turn("A2", "U3"), _turn("A1", "U2")]
-    assert len(recent_scan_turns(history, "U3", depth=5)) == 3
+    assert recent_scan_turns(history, "U3", depth=0, names=_NO_NAMES) == [_turn("A2", "U3")]
+    assert recent_scan_turns(history, "U3", depth=1, names=_NO_NAMES) == [_turn("A2", "U3"), _turn("A1", "U2")]
+    assert len(recent_scan_turns(history, "U3", depth=5, names=_NO_NAMES)) == 3
 
 
 def test_media_tags_are_removed_from_history_but_not_from_current_message() -> None:
     cell_id = uuid.uuid4()
     history = [_a(f"앞 {{{{img::{cell_id}}}}} 뒤"), _u("{{img::도희/웃음}}")]
 
-    [turn] = recent_scan_turns(history, "{{img::도희/웃음}}", depth=0)
+    [turn] = recent_scan_turns(history, "{{img::도희/웃음}}", depth=0, names=_NO_NAMES)
 
     assert str(cell_id) not in turn.assistant_text
     assert turn.user_texts[0] == ""
@@ -263,5 +268,5 @@ def test_match_keyword_notes_walks_back_as_far_as_longest_sticky_range() -> None
     note = _note(["마법사"], sticky_turns=2)
     history = [_a("O"), _u("마법사"), _a("A1"), _u("U2"), _a("A2")]
 
-    assert match_keyword_notes([note], history, "U3") == [note]
-    assert match_keyword_notes([note], [*history, _u("U3"), _a("A3")], "U4") == []
+    assert match_keyword_notes([note], history, "U3", names=_NO_NAMES) == [note]
+    assert match_keyword_notes([note], [*history, _u("U3"), _a("A3")], "U4", names=_NO_NAMES) == []

@@ -12,6 +12,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import (
+    PromptNames,
     build_generation_prompt,
     build_story_generation_prompt,
     load_active_prompt_set,
@@ -21,6 +22,9 @@ from api.db.models.prompt import PromptSection
 from api.db.models.story import StoryPromptTemplate
 
 _PERSONA = "이름: 하늘\n성별: 여성\n설명: 밤하늘을 좋아한다"
+
+# 이름이 없는 턴 — 이름 한 줄이 비어 섹션째 빠진다. 이름 치환은 `test_prompt_author_macros.py` 가 본다.
+_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
 
 
 def _generation_body(sections: list[PromptSection], slot: str) -> str:
@@ -51,6 +55,7 @@ async def test_story_persona_section_sits_right_after_prologue_and_right_before_
         user_persona=_PERSONA,
         memory_note="",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     values = {
@@ -80,6 +85,7 @@ async def test_character_persona_section_sits_right_after_examples_and_right_bef
         user_persona=_PERSONA,
         memory_note="",
         memory_summary="",
+        names=_NO_NAMES,
     )
 
     values = {

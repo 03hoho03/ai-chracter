@@ -1133,6 +1133,12 @@ export interface paths {
          *     검사하지 않은 바이트가 최종 키로 간다. 이미 메모리에 있는 바이트를 올리면 최종 키 = 검사·축소본을 만든 바이트가
          *     보장된다. 이미 READY 인 자산은 저장소를 건드리지 않고 같은 응답을 돌려준다 — 같은 요청을 다시 보내는
          *     클라이언트를 깨지 않으면서, 완료 뒤 같은 URL 로 다시 올린 객체는 아무도 읽지 않는다.
+         *
+         *     같은 자산의 완료가 겹치면 Redis 락으로 하나씩 처리한다 — 뒤의 요청은 앞의 요청이 끝날 때까지 기다렸다가 상태를
+         *     다시 읽어 그대로 답한다. 둘이 각자 처리하면 그사이 바꿔 올린 바이트가 원본과 축소본에 섞일 수 있고, 발행 심사는
+         *     칸을 축소본으로 본다. 저장소·디코드를 기다리는 동안에는 DB 트랜잭션을 쥐지 않는다(쥐면 커넥션 하나를 통째로
+         *     잡는다). Redis 장애면 거절한다(503) — 채팅·발행 레이트리밋은 장애 때 통과시키지만 여기서 통과시키면 위 보호가
+         *     사라지고, 세션도 Redis 라 그 상황엔 대개 인증부터 실패한다.
          */
         post: operations["complete_asset_upload_assets__asset_id__complete_post"];
         delete?: never;
@@ -1155,6 +1161,10 @@ export interface paths {
          * @description Downloads the original asset, synchronously
          *     generates a Gaussian-blurred variant (no queue — a single-image blur is
          *     sub-second), and upserts the situational_images row keyed by entity_id.
+         *
+         *     블러본을 만드는 동안(저장소 왕복 넷 + 디코드 한도 대기) DB 트랜잭션을 쥐지 않는다 — 확인을 커밋으로 닫고 블러본을
+         *     올린 뒤, 짧은 트랜잭션에서 작품 행을 잠그고 그 버전이 아직 초안인지 다시 보고 쓴다. 발행 쓰기도 같은 작품 행을
+         *     잠그므로 둘은 줄을 선다 — 그사이 발행됐으면 409 이고, 이 등록이 먼저면 발행이 그림이 바뀐 것을 보고 멈춘다.
          */
         post: operations["register_situational_image_assets__asset_id__register_situational_image_post"];
         delete?: never;
@@ -1645,8 +1655,8 @@ export interface paths {
          * List My Drafts
          * @description 한 번도 발행된 적 없는 콘텐츠의 초안만 돌려준다.
          *
-         *     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_publish_character_content` /
-         *     `_publish_story_content` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
+         *     발행하면 다음 편집을 위한 초안 버전이 자동 복제되므로(`_write_character_publish` /
+         *     `_write_story_publish` 끝부분) 발행작에도 항상 미발행 `content_version` 행이 딸려 있다.
          *     `published_at IS NULL`만으로 거르면 발행작이 전부 초안으로 섞여 나온다 — 그래서 콘텐츠
          *     단위로 `current_published_version_id IS NULL`을 함께 본다.
          *
@@ -1872,6 +1882,19 @@ export interface paths {
         /**
          * Publish Content
          * @description Publish the draft of a character or story.
+         *
+         *     세 구간으로 나눈다. 저장소에서 그림 수십 장을 받고 Gemini 심사를 기다리는 동안(수 초~십수 초) DB 트랜잭션을
+         *     열어 두면 커넥션 하나를 통째로 쥐어 다른 요청이 풀을 기다리기 때문이다.
+         *
+         *     1. 읽기: 따로 연 세션에서 소유·초안 확인, 발행 검증(400 은 여기서), 심사할 그림과 블러본을 만들 칸을 정하고 그
+         *        세션을 닫는다. 요청 세션에 읽은 객체를 남기지 않는 것은 3 이 그 세션에서 같은 행을 다시 읽기 때문이다 — 남아
+         *        있으면 커밋 뒤에도 옛 값을 들고 있어 다시 읽어도 옛 값이 나온다.
+         *     2. 외부 호출: 그림 내려받기 → 심사 → (스토리) 칸 블러본 올리기. 트랜잭션 없음.
+         *     3. 쓰기: 요청 세션의 짧은 트랜잭션에서 작품 행을 잠그고 초안을 다시 읽어, 아직 초안인지와 심사한 그림·블러 대상이
+         *        그대로인지 본다. 다르면 409 `PUBLISH_CONFLICT` 이고 아무것도 쓰지 않는다. 같으면 발행한다.
+         *
+         *     글만 바뀐 경우는 충돌로 치지 않는다 — 심사는 그림만 보고, 발행본에는 3 에서 다시 읽은 글이 실린다. 3 에서 검증을
+         *     다시 돌리므로 그사이 필수 칸이 비면 400 이다. 충돌로 멈춘 발행이 이미 올린 블러본은 가리키는 행 없이 남는다.
          */
         post: operations["publish_content_contents__id__publish_post"];
         delete?: never;
@@ -2678,6 +2701,9 @@ export interface paths {
          *     첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지 않고, 새 응답 텍스트에 맞는 그림이 붙는다. 생성이 실패하면(policyWarning/error) 기존
          *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
          *     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
+         *
+         *     트랜잭션 구간은 `_stream_new_turn` 과 같다 — 생성·판정 LLM 앞에서 요청 세션을 커밋으로 반납하고, 옛 응답 삭제와
+         *     새 응답·노출 기록은 판정 뒤 한 트랜잭션으로 쓴다(방이 그사이 지워졌으면 쓰지 않고 오류 이벤트로 끝낸다).
          */
         post: operations["regenerate_message_chat_rooms__room_id__regenerate_post"];
         delete?: never;
@@ -2698,7 +2724,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Message
-         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다.
+         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다. 진행 중 턴이 있는 방이면 409 — 턴 입력이던
+         *     메시지를 지워도 응답이 그 뒤에 붙는다(`chat/turn_lock.py`).
          */
         delete: operations["delete_message_chat_rooms__room_id__messages__message_id__delete"];
         options?: never;
@@ -3383,6 +3410,9 @@ export interface paths {
          *
          *     `available`은 capability 존재 여부가 아니라 "실제로 생성 가능"을 뜻해야 한다 —
          *     매핑된 style이 하나도 없으면 capability가 있어도 false다(이 경우도 WARNING).
+         *
+         *     `db` 는 인증 의존성과 같은 요청 세션이다 — 그 조회가 연 트랜잭션을 집 PC 조회(캐시가 비면 최대 5초) 전에 닫아
+         *     커넥션을 쥐지 않으려고 받는다.
          */
         get: operations["list_image_models_images_models_get"];
         put?: never;
@@ -5221,6 +5251,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageDraftInput"][];
             /** Description */
@@ -5266,6 +5298,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageItem"][];
             /** Description */
@@ -5540,6 +5574,12 @@ export interface components {
             versionAutoUpgraded: boolean;
             /** Personaid */
             personaId?: string | null;
+            /** Personaname */
+            personaName?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
+            /** Contentname */
+            contentName?: string;
             /** Mediatagimages */
             mediaTagImages?: {
                 [key: string]: components["schemas"]["MediaTagImage"];
@@ -6084,6 +6124,8 @@ export interface components {
             oneLiner: string;
             /** Detaildescription */
             detailDescription: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Chatcount */
             chatCount: number;
             /** Likecount */
@@ -6529,6 +6571,8 @@ export interface components {
             name: string;
             /** Oneliner */
             oneLiner: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Thumbnailurl */
             thumbnailUrl: string | null;
         };
@@ -7239,6 +7283,8 @@ export interface components {
         RoomPersonaResponse: {
             /** Personaid */
             personaId: string | null;
+            /** Personaname */
+            personaName?: string | null;
         };
         /** ShortcutDraftItem */
         ShortcutDraftItem: {
@@ -7498,6 +7544,8 @@ export interface components {
             userGoal?: string | null;
             /** Rules */
             rules?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */
@@ -7548,6 +7596,8 @@ export interface components {
             userGoal: string | null;
             /** Rules */
             rules: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */

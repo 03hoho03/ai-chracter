@@ -23,6 +23,8 @@ export function serverToForm(data: CharacterDraftContent): CharacterBuilderFormV
       firstMessage: data.intro,
       exampleDialogues: data.exampleDialogues,
       playGuide: data.playguide ?? undefined,
+      // 이 칸이 생기기 전 서버의 응답에는 키가 없다(타입은 필수지만 런타임엔 undefined 일 수 있다).
+      defaultUserName: data.defaultUserName ?? "",
     },
     prompt: {
       characterPrompt: data.characterPrompt,

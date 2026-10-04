@@ -12,3 +12,12 @@ type MessageAtPosition = {
 export function isAuthorOpeningMessage({ index, role, contentType }: MessageAtPosition): boolean {
   return contentType === "story" && index === 0 && role === "assistant";
 }
+
+/**
+ * 글 속 `{{user}}`·`{{char}}` 를 이름으로 바꿔 그리는 메시지인가 — 스토리·캐릭터 방의 첫 assistant 메시지(작성자의
+ * 시작상황·프롤로그·인트로 복사본)다. 미디어 북 그림과 달리 캐릭터 인사말도 작성자 글이라 포함한다. 사용자 메시지는
+ * 보낼 때 이미 바꿔 저장했고, 모델 응답은 작성자 글이 아니라 손대지 않는다.
+ */
+export function isAuthorTextMessage({ index, role }: Omit<MessageAtPosition, "contentType">): boolean {
+  return index === 0 && role === "assistant";
+}

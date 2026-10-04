@@ -18,6 +18,7 @@ from collections import Counter
 from pathlib import Path
 
 from api.chat.keyword_notes import match_keyword_notes
+from api.chat.prompt_builder import PromptNames
 from api.db.models.chat import ChatMessage, ChatMessageRole
 from api.db.models.story import KeywordNote
 from seed_content.images import situational_image_slug
@@ -180,11 +181,13 @@ def test_tutorial_suggested_replies_load_their_heroine_note_on_the_first_turn() 
         for setup in story.payload.starting_setups:
             # 방을 만들 때 첫 화면은 시작상황, 없으면 프롤로그가 AI 메시지로 들어간다.
             opening = ChatMessage(role=ChatMessageRole.ASSISTANT, content=setup.opening_message or setup.prologue)
+            # 대화 프로필이 없는 방의 이름 — 첫 메시지의 `{{user}}` 는 작품 기본 이름(없으면 "당신")으로 바뀐 뒤 매칭된다.
+            names = PromptNames(persona_name=None, default_user_name=story.payload.default_user_name, char_name=None)
             for reply in setup.suggested_replies:
                 heroine_notes = [note.name for note in notes if note.name and note.name in reply]
                 assert heroine_notes, f"{story.slug} / {reply!r}: 이름 칸으로 찾은 인물 노트가 없다"
 
-                selected = [note.name for note in match_keyword_notes(notes, [opening], reply)]
+                selected = [note.name for note in match_keyword_notes(notes, [opening], reply, names=names)]
 
                 for name in heroine_notes:
                     assert name in selected, f"{story.slug} / {reply!r}: 첫 턴에 {name} 노트가 빠진다 (실림 {selected})"
@@ -192,7 +195,7 @@ def test_tutorial_suggested_replies_load_their_heroine_note_on_the_first_turn() 
                 # 가이드는 첫 턴에 빠지는 노트가 맨 아래 태민의 노트 하나뿐이라고 설명한다. "맨 아래 노트"로만
                 # 검사하면 장소 노트를 맨 아래로 옮겨도 통과하므로 이름으로 고정한다 — 장소 노트가 빠지면 그
                 # 노트에만 있는 사실(편집실 마감 시각 등)을 첫 턴의 AI가 받지 못한다.
-                hit = [note.name for note in notes if match_keyword_notes([note], [opening], reply)]
+                hit = [note.name for note in notes if match_keyword_notes([note], [opening], reply, names=names)]
                 dropped = [name for name in hit if name not in selected]
                 assert dropped == ["태민"], (
                     f"{story.slug} / {reply!r}: 첫 턴에 태민 노트만 빠져야 한다 (빠짐 {dropped})"

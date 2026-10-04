@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 
 from pydantic import StringConstraints, field_validator
 
+from api.content.author_macros import user_name_error
 from api.core.schema import CamelModel
 
 # 한도의 권위는 BE다. FE zod의 20·500은 이 두 상수의 사본이다.
@@ -22,12 +23,6 @@ PersonaDescription = Annotated[
 # None이 "선택 안 함"이다(DB도 NULL).
 PersonaGender = Literal["male", "female"] | None
 
-# 어드민 게시 검증의 라벨 규칙(`admin/prompts.py`
-# `_validate_prompt_draft_for_publish`)과 같은 집합에 `\r`을 더했다. 나중에 `{{user}}` 치환이
-# 이름을 라벨·stop sequence 자리에 넣게 될 때를 위한 선제 방어다. 전각 `：`는 막지 않는다(stop
-# sequence가 반각 `:`만 본다).
-_FORBIDDEN_NAME_CHARACTERS = (":", "\n", "\r")
-
 
 class PersonaUpsertRequest(CamelModel):
     """`PUT /me/personas/{id}`는 전체 교체라 필드에 기본값을 두지 않는다 — 빠진 필드가
@@ -40,8 +35,11 @@ class PersonaUpsertRequest(CamelModel):
     @field_validator("name")
     @classmethod
     def _reject_forbidden_characters(cls, value: str) -> str:
-        if any(character in value for character in _FORBIDDEN_NAME_CHARACTERS):
-            raise ValueError("이름에는 콜론(:)이나 줄바꿈을 쓸 수 없어요.")
+        # 이름은 작가 글의 `{{user}}` 자리에 들어간다. 무엇을 왜 막는지는 `user_name_error` 에 있다. 저장할 때만 막고
+        # 이미 저장된 이름은 그대로 읽힌다(응답 모델에는 이 검사가 없다).
+        error = user_name_error(value)
+        if error is not None:
+            raise ValueError(error)
         return value
 
 
@@ -75,3 +73,6 @@ class PersonaSelectRequest(CamelModel):
 
 class RoomPersonaResponse(CamelModel):
     persona_id: uuid.UUID | None
+    # 방 응답(`ChatRoomResponse.persona_name`)과 같은 값 — 화면이 방을 다시 읽지 않고 바꾼 이름을 바로 쓰게.
+    # 기본값은 이 필드를 모르는 생성 타입·픽스처와의 호환용이다.
+    persona_name: str | None = None

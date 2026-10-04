@@ -11,6 +11,7 @@
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.chat.prompt_builder import (
+    PromptNames,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_memory_summary_prompt,
@@ -22,6 +23,9 @@ from api.db.models.prompt import PromptSection
 from api.db.models.story import StoryPromptTemplate
 
 _PERSONA = "이름: 하늘"
+
+# 이름이 없는 턴 — 이름 한 줄이 비어 섹션째 빠진다. 이름 치환은 `test_prompt_author_macros.py` 가 본다.
+_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
 _NOTE = "여동생 이름은 서연이다."
 _SUMMARY = "두 사람은 편의점에서 처음 만났다."
 
@@ -62,6 +66,7 @@ async def test_story_generation_puts_note_then_summary_between_persona_and_histo
         user_persona=_PERSONA,
         memory_note=_NOTE,
         memory_summary=_SUMMARY,
+        names=_NO_NAMES,
     )
 
     history_lines = f"{prompt_set.user_label}: 이전 메시지\n{prompt_set.story_assistant_label}: 이전 응답"
@@ -85,6 +90,7 @@ async def test_character_generation_puts_note_then_summary_between_persona_and_h
         user_persona=_PERSONA,
         memory_note=_NOTE,
         memory_summary=_SUMMARY,
+        names=_NO_NAMES,
     )
 
     history_lines = f"{prompt_set.user_label}: 이전 메시지\n{prompt_set.character_assistant_label}: 이전 응답"
@@ -104,6 +110,7 @@ async def test_ending_judgment_puts_summary_right_before_history_header(db_sessi
         user_message="이번 메시지",
         assistant_message="이번 응답",
         memory_summary=_SUMMARY,
+        names=_NO_NAMES,
     )
 
     expected_start = "\n\n".join(
@@ -122,7 +129,7 @@ async def test_memory_summary_prompt_with_previous_summary_is_instruction_previo
     prompt_set, sections = await load_active_prompt_set(db_session, lane="story")
 
     prompt = build_memory_summary_prompt(
-        prompt_set=prompt_set, sections=sections, is_story_chat=True, previous_summary=_SUMMARY, turns=_history()
+        prompt_set=prompt_set, sections=sections, is_story_chat=True, previous_summary=_SUMMARY, turns=_history(), names=_NO_NAMES
     )
 
     turn_lines = f"{prompt_set.user_label}: 이전 메시지\n{prompt_set.story_assistant_label}: 이전 응답"
@@ -141,7 +148,7 @@ async def test_first_memory_summary_prompt_drops_previous_summary_and_uses_chara
     prompt_set, sections = await load_active_prompt_set(db_session, lane="character")
 
     prompt = build_memory_summary_prompt(
-        prompt_set=prompt_set, sections=sections, is_story_chat=False, previous_summary="", turns=_history()
+        prompt_set=prompt_set, sections=sections, is_story_chat=False, previous_summary="", turns=_history(), names=_NO_NAMES
     )
 
     turn_lines = f"{prompt_set.user_label}: 이전 메시지\n{prompt_set.character_assistant_label}: 이전 응답"

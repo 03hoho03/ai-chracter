@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_tags import strip_media_tags
 from api.db.models.character import SituationalImage
 from api.db.models.chat import ChatMessage, ChatMessageRole
@@ -77,6 +78,9 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
     ("generation", "prologue"): frozenset({"prologue"}),
     # 대화 생성 채널에만 있다. 판정 채널에는 넣지 않는다.
     ("generation", "user_persona"): frozenset({"user_persona"}),
+    # 사용자 이름 한 줄. 판정·요약 채널은 프로필 전체가 아니라 이 이름 한 줄만 받는다. 값이 비면(실제 이름이 없으면,
+    # 생성 채널은 프로필이 있으면) conditional 이라 섹션째 빠진다 — `PromptNames` 가 값을 정한다.
+    ("generation", "user_name"): frozenset({"user_name"}),
     # 채팅방 기억 — 사용자 노트와 자동 요약. 둘 다 conditional이라 값이 비면 섹션째 빠진다.
     ("generation", "memory_note"): frozenset({"memory_note"}),
     ("generation", "memory_summary"): frozenset({"memory_summary"}),
@@ -91,17 +95,21 @@ ALLOWED_PLACEHOLDERS: dict[tuple[str, str], frozenset[str]] = {
         {"user_label", "user_message", "assistant_label", "assistant_message"}
     ),
     ("stat_judgment", "judgment_instruction"): frozenset(),
+    ("stat_judgment", "user_name"): frozenset({"user_name"}),
     ("ending_judgment", "memory_summary"): frozenset({"memory_summary"}),
     ("ending_judgment", "history_header"): frozenset(),
     ("ending_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("ending_judgment", "criteria"): frozenset({"judgment_prompt"}),
+    ("ending_judgment", "user_name"): frozenset({"user_name"}),
     # 요약 호출 전용 channel — `build_memory_summary_prompt`가 만드는 `values`.
     ("memory_summary", "instruction"): frozenset(),
     ("memory_summary", "previous_summary"): frozenset({"previous_summary"}),
     ("memory_summary", "turn_context"): frozenset({"turn_lines"}),
+    ("memory_summary", "user_name"): frozenset({"user_name"}),
     ("image_judgment", "image_list_intro"): frozenset({"image_lines"}),
     ("image_judgment", "turn_context"): frozenset({"turn_lines"}),
     ("image_judgment", "judgment_instruction"): frozenset(),
+    ("image_judgment", "user_name"): frozenset({"user_name"}),
     # 발행 심사는 이미지만 본다 — 작가 글은 싣지 않고, 코드가 만든 이미지 목록 라벨 하나만 넘긴다.
     ("publish_filter", "intro_instruction"): frozenset(),
     ("publish_filter", "image_list"): frozenset({"image_lines"}),
@@ -258,6 +266,45 @@ def format_user_persona(*, name: str, gender: str | None, description: str) -> s
     return "\n".join(lines)
 
 
+@dataclass(frozen=True)
+class PromptNames:
+    """한 턴의 프롬프트가 쓰는 이름 — 작가 글의 `{{user}}`·`{{char}}` 를 바꿀 이름과 이름 한 줄 섹션의 값.
+
+    `persona_name` 은 대화 프로필 이름(없으면 None), `default_user_name` 은 방이 고정한 버전(미리보기는 초안)의 작품
+    기본 이름, `char_name` 은 캐릭터 작품의 이름(스토리는 None — `{{char}}` 를 글자 그대로 둔다).
+
+    작가 글은 원문 그대로 저장되고 빌더가 값을 조립하는 순간 바꾼다. 빌더가 바꾸는 것은 작가 글 필드와 대화 기록의
+    모델 응답 줄(첫 메시지는 작가 글의 복사본이다)뿐이다 — 사용자 메시지는 화면이 보내기 전에 이미 바꿔 저장하므로, 거기
+    남은 `{{user}}` 는 사용자가 친 글자다. 이미지 태그는 먼저 지우고 나서 바꾼다(이름이 태그로 읽히지 않게)."""
+
+    persona_name: str | None
+    default_user_name: str
+    char_name: str | None
+
+    def expand(self, text: str) -> str:
+        return expand_author_macros(
+            text, user_name=resolve_user_name(self.persona_name, self.default_user_name), char_name=self.char_name
+        )
+
+    @property
+    def judgment_user_name(self) -> str:
+        """판정·요약 채널의 이름 한 줄 값 — 실제 이름(프로필 또는 작품 기본 이름)이 있을 때만. 대체어 "당신" 은 이름이
+        아니라 "사용자의 이름: 당신" 같은 줄이 나가지 않게 비운다."""
+        return self.persona_name or self.default_user_name
+
+    @property
+    def generation_user_name(self) -> str:
+        """생성 채널의 이름 한 줄 값 — 프로필이 없고 작품 기본 이름이 있을 때만. 프로필이 있으면 프로필 섹션이 이미 이름을
+        준다. 작품 기본 이름으로 프로필 섹션을 채우지 않는 이유는 그 섹션 문안이 "사용자가 스스로 정한 자기 설정"이라서다."""
+        return "" if self.persona_name else self.default_user_name
+
+
+def _turn_text(message: ChatMessage, names: PromptNames, *, strip_tags: bool) -> str:
+    """대화 기록 한 줄의 모델 사본. 모델 응답 줄만 이름을 바꾸고 사용자 줄은 그대로 둔다(`PromptNames` 참고)."""
+    text = strip_media_tags(message.content) if strip_tags else message.content
+    return text if message.role == ChatMessageRole.USER else names.expand(text)
+
+
 def _story_generation_variant(template: StoryPromptTemplate) -> str:
     """스토리 generation 채널의 variant — `build_story_generation_prompt`와
     `user_persona_rendered`가 같은 규칙을 쓰도록 한 자리에 둔다."""
@@ -325,6 +372,7 @@ def build_generation_prompt(
     user_persona: str,
     memory_note: str,
     memory_summary: str,
+    names: PromptNames,
 ) -> str:
     """생성 프롬프트를 조립한다 — 캐릭터 챗 전용.
 
@@ -339,20 +387,25 @@ def build_generation_prompt(
 
     `memory_note`(사용자가 적은 기억 노트)와 `memory_summary`(윈도우 밖으로 접힌 대화의 현재 요약)도
     같은 규칙이다 — 비어 있으면 섹션째 빠지고, 기본값이 없다.
+
+    작가 글(캐릭터 프롬프트, 예시 대화의 양쪽 줄 — 사용자 라벨 줄도 작가가 쓴 글이다)과 대화 기록의 모델 응답 줄은
+    `names` 로 `{{user}}`·`{{char}}` 를 바꾼다. 이 빌더는 이미지 태그를 지우지 않는다(캐릭터 작품에는 미디어 북이 없다).
     """
     example_lines = "\n".join(
-        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.character_assistant_label}: {pair['characterLine']}"
+        f"{prompt_set.user_label}: {names.expand(pair['userLine'])}\n"
+        f"{prompt_set.character_assistant_label}: {names.expand(pair['characterLine'])}"
         for pair in example_dialogues
     )
     history_lines = "\n".join(
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.character_assistant_label}: "
-        f"{message.content}"
+        f"{_turn_text(message, names, strip_tags=False)}"
         for message in history
     )
     values = {
-        "character_prompt": character_prompt,
+        "character_prompt": names.expand(character_prompt),
         "example_lines": example_lines,
         "user_persona": user_persona,
+        "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
         "history_lines": history_lines,
@@ -379,6 +432,7 @@ def build_story_generation_prompt(
     user_persona: str,
     memory_note: str,
     memory_summary: str,
+    names: PromptNames,
     keyword_note_texts: list[str] | None = None,
     situation_note_texts: list[str] | None = None,
     shortcut_prompt: str | None = None,
@@ -407,30 +461,38 @@ def build_story_generation_prompt(
     표지라, 모델이 받으면 태그를 흉내 내거나 인물·장면 이름이 문맥을 오염시킨다. 첫 메시지(작성자 글의
     복사본)가 히스토리로 매 턴 다시 들어오므로 히스토리는 역할과 무관하게 모든 줄에 건다. 이번 턴
     `user_message` 는 사용자가 방금 친 글이라 그대로 싣는다.
+
+    작가 글 필드 전부(설정·커스텀·규칙·목표·전개 예시의 양쪽 줄·프롤로그·키워드북·상황 노트·단축어 프롬프트)와 대화
+    기록의 모델 응답 줄은 태그를 지운 뒤 `names` 로 `{{user}}` 를 바꾼다. 단축어 프롬프트는 화면이 같은 이름으로 바꿔
+    보낸 사용자 메시지와 한 프롬프트에 함께 실린다.
     """
     example_lines = "\n".join(
-        f"{prompt_set.user_label}: {pair['userLine']}\n{prompt_set.story_example_label}: {pair['assistantLine']}"
+        f"{prompt_set.user_label}: {names.expand(pair['userLine'])}\n"
+        f"{prompt_set.story_example_label}: {names.expand(pair['assistantLine'])}"
         for pair in development_examples
     )
     history_lines = "\n".join(
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{strip_media_tags(message.content)}"
+        f"{_turn_text(message, names, strip_tags=True)}"
         for message in history
     )
     values = {
-        "setting_text": setting_text or "",
-        "custom_prompt": custom_prompt or "",
-        "rules": rules or "",
-        "user_goal": user_goal or "",
+        "setting_text": names.expand(setting_text or ""),
+        "custom_prompt": names.expand(custom_prompt or ""),
+        "rules": names.expand(rules or ""),
+        "user_goal": names.expand(user_goal or ""),
         "example_lines": example_lines,
-        "prologue": strip_media_tags(prologue),
+        "prologue": names.expand(strip_media_tags(prologue)),
         "user_persona": user_persona,
+        "user_name": names.generation_user_name,
         "memory_note": memory_note,
         "memory_summary": memory_summary,
         "history_lines": history_lines,
-        "keyword_note_lines": "\n".join(keyword_note_texts) if keyword_note_texts else "",
-        "situation_note_lines": "\n".join(situation_note_texts) if situation_note_texts else "",
-        "shortcut_prompt": shortcut_prompt or "",
+        "keyword_note_lines": "\n".join(names.expand(text) for text in keyword_note_texts) if keyword_note_texts else "",
+        "situation_note_lines": (
+            "\n".join(names.expand(text) for text in situation_note_texts) if situation_note_texts else ""
+        ),
+        "shortcut_prompt": names.expand(shortcut_prompt or ""),
         "user_label": prompt_set.user_label,
         "user_message": user_message,
         "assistant_label": prompt_set.story_assistant_label,
@@ -465,6 +527,7 @@ def build_stat_judgment_prompt(
     current_stats: dict[str, float],
     user_message: str,
     assistant_message: str,
+    names: PromptNames,
 ) -> str:
     """판단 프롬프트를 조립한다 — 스탯 변경 판단(스토리 챗 전용).
 
@@ -477,12 +540,15 @@ def build_stat_judgment_prompt(
     입력도 거기 맞춘다. `build_ending_judgment_prompt`는 반대로 히스토리를 싣는다 —
     엔딩은 "지금까지의 대화가 기준을 충족하는지"를 묻는 누적 판단이라 이번 턴만으로는
     판정할 수 없다. 이 비대칭이 이 변경의 핵심이다.
+
+    스탯 이름·설명(작가 글)과 이번 턴 모델 응답은 `names` 로 `{{user}}` 를 바꾸고, 이름 한 줄에 실제 이름을 싣는다.
     """
     # `per_turn_delta`가 있는 스탯은 `apply_stat_changes`가 매 턴 결정적으로 굴리고 LLM 판단은
     # 무시된다. 그래도 현재값은 서사 판단의 근거이므로 목록에는 남기고, 판단 대상이 아니라는
     # 것만 표시해 불필요한 출력을 줄인다.
     stat_lines = "\n".join(
-        f"- statId={stat_def.entity_id}, 이름={stat_def.name}, 설명={stat_def.description}, "
+        f"- statId={stat_def.entity_id}, 이름={names.expand(stat_def.name)}, "
+        f"설명={names.expand(stat_def.description)}, "
         f"범위=[{stat_def.min_value}, {stat_def.max_value}], "
         f"현재값={current_stats.get(str(stat_def.entity_id), stat_def.initial_value)}"
         + _stat_line_tail(stat_def)
@@ -493,7 +559,8 @@ def build_stat_judgment_prompt(
         "user_label": prompt_set.user_label,
         "user_message": user_message,
         "assistant_label": prompt_set.story_assistant_label,
-        "assistant_message": assistant_message,
+        "assistant_message": names.expand(assistant_message),
+        "user_name": names.judgment_user_name,
     }
     return render_prompt_channel(sections, channel="stat_judgment", scope="story", values=values)
 
@@ -518,6 +585,7 @@ def build_ending_judgment_prompt(
     user_message: str,
     assistant_message: str,
     memory_summary: str,
+    names: PromptNames,
 ) -> str:
     """판단 프롬프트를 조립한다 — 엔딩 판정(스토리 챗 전용).
 
@@ -538,19 +606,23 @@ def build_ending_judgment_prompt(
     바이트까지 같다(기본값이 없는 이유는 생성 빌더와 같다).
 
     히스토리 본문의 미디어 북 이미지 태그는 생성 빌더와 같은 이유로 지운다.
+
+    판정 기준(작가 글)과 모델 응답 줄(대화 기록·이번 턴)은 `names` 로 `{{user}}` 를 바꾸고, 이름 한 줄에 실제 이름을
+    싣는다.
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else prompt_set.story_assistant_label}: "
-        f"{strip_media_tags(message.content)}"
+        f"{_turn_text(message, names, strip_tags=True)}"
         for message in history
     ]
     turn_lines.append(f"{prompt_set.user_label}: {user_message}")
-    turn_lines.append(f"{prompt_set.story_assistant_label}: {assistant_message}")
+    turn_lines.append(f"{prompt_set.story_assistant_label}: {names.expand(assistant_message)}")
 
     values = {
         "turn_lines": "\n".join(turn_lines),
-        "judgment_prompt": judgment_prompt,
+        "judgment_prompt": names.expand(judgment_prompt),
         "memory_summary": memory_summary,
+        "user_name": names.judgment_user_name,
     }
     return render_prompt_channel(sections, channel="ending_judgment", scope="story", values=values)
 
@@ -561,10 +633,12 @@ class EndingJudgmentResult(BaseModel):
     triggered: bool
 
 
-def situational_image_lines(situational_images: Sequence[SituationalImage]) -> str:
-    """캐릭터 상황별 이미지 판정의 후보 줄 — 이미지마다 id 와 노출 조건(order 오름차순은 호출부가 정한다)."""
+def situational_image_lines(situational_images: Sequence[SituationalImage], *, names: PromptNames) -> str:
+    """캐릭터 상황별 이미지 판정의 후보 줄 — 이미지마다 id 와 노출 조건(order 오름차순은 호출부가 정한다). 노출 조건은
+    작가 글이라 `{{user}}`·`{{char}}` 를 바꾼다."""
     return "\n".join(
-        f"- imageEntityId={image.entity_id}, 노출 조건={image.trigger_condition}" for image in situational_images
+        f"- imageEntityId={image.entity_id}, 노출 조건={names.expand(image.trigger_condition)}"
+        for image in situational_images
     )
 
 
@@ -578,12 +652,13 @@ class MediaCellCandidate:
     situation_description: str
 
 
-def media_cell_image_lines(cells: Sequence[MediaCellCandidate]) -> str:
+def media_cell_image_lines(cells: Sequence[MediaCellCandidate], *, names: PromptNames) -> str:
     """스토리 칸 판정의 후보 줄 — 판정 근거는 칸의 인물·장면 이름과, 작성자가 적었으면 상황 설명이다(비었으면
-    그 항목을 줄에서 뺀다 — 빈 값을 근거처럼 보이게 하지 않는다)."""
+    그 항목을 줄에서 뺀다 — 빈 값을 근거처럼 보이게 하지 않는다). 상황 설명만 `{{user}}` 를 바꾼다 — 인물·장면 이름은
+    이미지 태그(`{{img::인물/장면}}`)의 키라 바꾸면 태그와 어긋난다."""
     return "\n".join(
         f"- imageEntityId={cell.entity_id}, 인물={cell.person}, 장면={cell.scene}"
-        + (f", 상황 설명={cell.situation_description}" if cell.situation_description else "")
+        + (f", 상황 설명={names.expand(cell.situation_description)}" if cell.situation_description else "")
         for cell in cells
     )
 
@@ -598,6 +673,7 @@ def build_image_judgment_prompt(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
+    names: PromptNames,
 ) -> str:
     """판단 프롬프트를 조립한다 — 이번 턴에 붙일 그림 하나 고르기. 캐릭터 상황별 이미지(`scope="character"`,
     후보 = `situational_image_lines`)와 스토리 미디어 북 칸(`scope="story"`, 후보 = `media_cell_image_lines`)이
@@ -612,22 +688,24 @@ def build_image_judgment_prompt(
     `story_assistant_label`(story 레인 게시 검증은 캐릭터 라벨을 보지 않는다).
 
     히스토리 본문의 미디어 북 태그는 생성 빌더와 같은 이유로 지운다(스토리 첫 메시지가 칸 id 형태 태그를 담는다.
-    태그가 없는 글은 바이트 그대로다).
+    태그가 없는 글은 바이트 그대로다). 모델 응답 줄(대화 기록·이번 턴)은 그다음 `names` 로 `{{user}}`·`{{char}}` 를
+    바꾸고, 이름 한 줄에 실제 이름을 싣는다. 후보 줄(`image_lines`)은 후보 줄 헬퍼가 이미 바꿔 넘긴다.
 
     렌더 결과가 비면 `PromptRenderError` — 레인에 이 채널 행이 없는 세트(배포 직후 활성 세트 캐시에 남은 옛
     story 세트)로는 빈 프롬프트로 판정을 부르지 않고 그 턴의 그림만 포기하게 한다(`fold_memory` 와 같은 가드).
     """
     turn_lines = [
         f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: "
-        f"{strip_media_tags(message.content)}"
+        f"{_turn_text(message, names, strip_tags=True)}"
         for message in history
     ]
     turn_lines.append(f"{prompt_set.user_label}: {user_message}")
-    turn_lines.append(f"{assistant_label}: {assistant_message}")
+    turn_lines.append(f"{assistant_label}: {names.expand(assistant_message)}")
 
     values = {
         "image_lines": image_lines,
         "turn_lines": "\n".join(turn_lines),
+        "user_name": names.judgment_user_name,
     }
     prompt = render_prompt_channel(sections, channel="image_judgment", scope=scope, values=values)
     if not prompt:
@@ -654,6 +732,7 @@ def build_memory_summary_prompt(
     is_story_chat: bool,
     previous_summary: str,
     turns: list[ChatMessage],
+    names: PromptNames,
 ) -> str:
     """요약 호출 프롬프트를 조립한다 — 긴 방에서 윈도우 밖으로 접을 대화를 요약한다.
 
@@ -661,13 +740,17 @@ def build_memory_summary_prompt(
     `previous_summary`가 `""`(첫 요약)이면 그 섹션은 통째로 빠진다. 화자 라벨은 생성 프롬프트와 같은
     것을 쓴다 — 스토리 챗은 `story_assistant_label`, 캐릭터 챗은 `character_assistant_label`.
     노트·스탯·계정 정보는 인자로 받지 않는다: 노트는 매 턴 따로 실리고, 스탯 수치가 요약에 새면
-    진실 소스가 둘이 되며, 계정 정보는 프롬프트에 넣지 않는다."""
+    진실 소스가 둘이 되며, 계정 정보는 프롬프트에 넣지 않는다. 사용자 이름은 계정 정보가 아니라 이야기 속에서 사용자를
+    부르는 이름이라(대화 프로필 이름 또는 작품 기본 이름) 이름 한 줄로 싣는다 — 요약이 대화 속 그 이름이 사용자라는 걸
+    알게 하려는 것이다. 모델 응답 줄은 `names` 로 `{{user}}`·`{{char}}` 를 바꾼다(태그는 지우지 않는다 — 요약 입력에는
+    작가 글의 복사본인 첫 메시지가 빠져 있다)."""
     assistant_label = prompt_set.story_assistant_label if is_story_chat else prompt_set.character_assistant_label
     turn_lines = "\n".join(
-        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: {message.content}"
+        f"{prompt_set.user_label if message.role == ChatMessageRole.USER else assistant_label}: "
+        f"{_turn_text(message, names, strip_tags=False)}"
         for message in turns
     )
-    values = {"previous_summary": previous_summary, "turn_lines": turn_lines}
+    values = {"previous_summary": previous_summary, "turn_lines": turn_lines, "user_name": names.judgment_user_name}
     return render_prompt_channel(
         sections, channel="memory_summary", scope="story" if is_story_chat else "character", values=values
     )

@@ -31,6 +31,7 @@ from api.chat.prompt_builder import (
     ImageMatchJudgmentResult,
     MediaCellCandidate,
     PromptLane,
+    PromptNames,
     PromptRenderError,
     StatJudgmentResult,
     build_ending_judgment_prompt,
@@ -94,7 +95,8 @@ from api.chat.schemas import (
     StoryImageArchiveItem,
 )
 from api.chat.stats import StatChange, apply_stat_changes
-from api.content.access import is_open_to, is_open_to_participant
+from api.content.access import detail_model_for, is_open_to, is_open_to_participant
+from api.content.author_macros import expand_author_macros, resolve_user_name
 from api.content.media_book import (
     normalize_texts,
     normalize_texts_for_display,
@@ -690,6 +692,7 @@ async def _prepare_situational_image_judgment(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
+    names: PromptNames,
 ) -> _SituationalImageJudgment | None:
     """캐릭터 챗 상황별 이미지 판정의 DB 읽기와 프롬프트 조립. 등록된 이미지가 없으면 `None` — 판정 호출 자체를
     생략한다. 판정(`_judge_situational_image`)과 노출 기록(`_record_character_image_exposure`)을 따로 두는 이유는 그
@@ -707,10 +710,11 @@ async def _prepare_situational_image_judgment(
         sections=prompt_sections,
         scope="character",
         assistant_label=prompt_set.character_assistant_label,
-        image_lines=situational_image_lines(situational_images),
+        image_lines=situational_image_lines(situational_images, names=names),
         history=history,
         user_message=user_message,
         assistant_message=assistant_message,
+        names=names,
     )
     return _SituationalImageJudgment(prompt=prompt, candidates=situational_images)
 
@@ -748,6 +752,7 @@ async def _prepare_media_cell_judgment(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
+    names: PromptNames,
 ) -> _MediaCellJudgment | None:
     """스토리 미디어 북 칸 판정의 DB 읽기와 프롬프트 조립. 후보는 방이 고정한 버전의 칸 중 대화 중 노출
     제외가 아닌 것이고, 빌더 축 순서(인물 → 장면)로 싣는다. 후보가 없으면(미디어 북 없음·전부 노출 제외)
@@ -807,10 +812,11 @@ async def _prepare_media_cell_judgment(
             sections=prompt_sections,
             scope="story",
             assistant_label=prompt_set.story_assistant_label,
-            image_lines=media_cell_image_lines(candidates),
+            image_lines=media_cell_image_lines(candidates, names=names),
             history=history,
             user_message=user_message,
             assistant_message=assistant_message,
+            names=names,
         )
     except PromptRenderError as exc:
         logger.warning("대화방 %s 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", room.id, exc)
@@ -970,6 +976,13 @@ async def _insert_opening_message(db: AsyncSession, room: ChatRoom, setup: Start
 async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
     content = await db.get(Content, room.content_id)
     assert content is not None
+    version_detail: CharacterVersionDetail | StoryVersionDetail | None = (
+        await db.get(CharacterVersionDetail, room.content_version_id)
+        if content.type == ContentType.CHARACTER
+        else await db.get(StoryVersionDetail, room.content_version_id)
+    )
+    assert version_detail is not None
+    persona = await db.get(UserPersona, room.persona_id) if room.persona_id is not None else None
 
     siblings = await _room_siblings(db, room.user_id, room.content_id)
     ordinal = next(index for index, sibling in enumerate(siblings, start=1) if sibling.id == room.id)
@@ -1057,6 +1070,9 @@ async def _to_response(db: AsyncSession, room: ChatRoom) -> ChatRoomResponse:
         latest_version_available=content.current_published_version_id != room.content_version_id,
         version_auto_upgraded=room.version_auto_upgraded,
         persona_id=room.persona_id,
+        persona_name=persona.name if persona is not None else None,
+        default_user_name=version_detail.default_user_name,
+        content_name=version_detail.name,
         content_restricted=content.moderation_status != ModerationStatus.NORMAL,
         created_at=room.created_at,
         updated_at=room.updated_at,
@@ -1304,7 +1320,7 @@ async def _lock_room_for_turn_write(db: AsyncSession, room: ChatRoom) -> uuid.UU
 
 
 def _format_persona(persona: UserPersona | None) -> str:
-    """실채팅(`_build_prompt`)과 미리보기(`_preview_persona_dependency`)가 공유한다 — 프로필이
+    """실채팅(`_build_prompt`)과 미리보기(`send_preview_message`)가 공유한다 — 프로필이
     없으면 `""`라 생성 프롬프트가 프로필 기능 이전과 바이트까지 같다."""
     if persona is None:
         return ""
@@ -1320,7 +1336,7 @@ async def _build_prompt(
     shortcut: Shortcut | None,
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
-) -> tuple[str, str, bool, bool]:
+) -> tuple[str, str, bool, bool, PromptNames]:
     """캐릭터 챗은 character_prompt+exampleDialogues로, 스토리 챗은 스토리 설정 템플릿+시작설정
     프롤로그로 생성 프롬프트를 조립한다. `send_message`/`edit_message`
     (`_stream_new_turn` 경유)와 `regenerate_message`가 공유한다.
@@ -1337,6 +1353,10 @@ async def _build_prompt(
     세 번째·네 번째 값은 대화 프로필·기억 노트 섹션이 이 프롬프트에 **실제로 들어갔는가**다
     (`user_persona_rendered`·`memory_note_rendered`, 정책 안내 문구 분기용). scope·variant를 아는
     곳이 여기뿐이라 함께 돌려준다.
+
+    다섯 번째 값은 이 턴의 이름(`PromptNames`) — 방 프로필 이름, 방이 고정한 버전의 작품 기본 이름, 캐릭터 작품이면
+    그 이름이다. 작가 글의 `{{user}}`·`{{char}}` 를 바꾸고 이름 한 줄을 채우는 데 쓰며, 프로필과 버전 상세를 읽는 곳이
+    여기뿐이라 판정·요약 호출부가 같은 값을 쓰도록 함께 돌려준다(같은 턴 안에서 생성과 판정의 이름이 갈리지 않게).
 
     `history`는 호출부가 읽은 전체 히스토리이고, 요약 스냅샷이 덮은 메시지는 여기서 빼고 그 자리를
     현재 요약 본문이 대신한다(`prompt_window`). 세 라우트의 생성 프롬프트가 모두 이 함수를 지나므로
@@ -1370,7 +1390,12 @@ async def _build_prompt(
                 .order_by(KeywordNote.order, KeywordNote.entity_id)
             )
         ).all()
-        matched_notes = match_keyword_notes(notes, history, user_content)
+        names = PromptNames(
+            persona_name=persona.name if persona is not None else None,
+            default_user_name=story_detail.default_user_name,
+            char_name=None,
+        )
+        matched_notes = match_keyword_notes(notes, history, user_content, names=names)
         situation_notes = (
             await db.scalars(
                 select(SituationNote)
@@ -1403,6 +1428,7 @@ async def _build_prompt(
             keyword_note_texts=[note.info_text for note in matched_notes],
             situation_note_texts=situation_note_texts,
             shortcut_prompt=shortcut.prompt if shortcut is not None else None,
+            names=names,
         )
         return (
             prompt,
@@ -1413,10 +1439,16 @@ async def _build_prompt(
             memory_note_rendered(
                 prompt_sections, is_story_chat=True, template=story_detail.prompt_template, memory_note=memory_note
             ),
+            names,
         )
 
     detail = await db.get(CharacterVersionDetail, room.content_version_id)
     assert detail is not None
+    names = PromptNames(
+        persona_name=persona.name if persona is not None else None,
+        default_user_name=detail.default_user_name,
+        char_name=detail.name,
+    )
     prompt = build_generation_prompt(
         prompt_set=prompt_set,
         sections=prompt_sections,
@@ -1427,12 +1459,14 @@ async def _build_prompt(
         user_persona=user_persona,
         memory_note=memory_note,
         memory_summary=memory_summary,
+        names=names,
     )
     return (
         prompt,
         system_instruction_for(prompt_sections, is_story_chat=False),
         user_persona_rendered(prompt_sections, is_story_chat=False, user_persona=user_persona),
         memory_note_rendered(prompt_sections, is_story_chat=False, memory_note=memory_note),
+        names,
     )
 
 
@@ -1539,7 +1573,7 @@ async def _stream_new_turn(
     생성 윈도우 설정이 꺼져 있으면 요약을 싣지 않으므로 접기도 예약하지 않는다.
     """
     try:
-        prompt, system_instruction, persona_rendered, note_rendered = await _build_prompt(
+        prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
             db, room, setup, history, user_content, shortcut, prompt_set, prompt_sections
         )
     except PromptRenderError as exc:
@@ -1613,6 +1647,7 @@ async def _stream_new_turn(
                     current_stats=current_stats,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    names=names,
                 )
                 due_endings = await _load_due_endings(db, room, setup, history, next_turn)
             media_judgment = await _prepare_media_cell_judgment(
@@ -1623,6 +1658,7 @@ async def _stream_new_turn(
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
+                names=names,
             )
             await db.commit()
 
@@ -1674,6 +1710,7 @@ async def _stream_new_turn(
                         user_message=user_content,
                         assistant_message=assistant_content,
                         memory_summary=due_endings.summary,
+                        names=names,
                     )
                     ending_judgment = await llm_client.generate_structured(
                         ending_judgment_prompt,
@@ -1694,6 +1731,7 @@ async def _stream_new_turn(
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
+                names=names,
             )
             await db.commit()
             if situational_judgment is not None:
@@ -1803,6 +1841,7 @@ async def _stream_new_turn(
             prompt_set=prompt_set,
             sections=prompt_sections,
             is_story_chat=setup is not None,
+            names=names,
         )
 
     for stat_change_event in stat_change_events:
@@ -1981,7 +2020,7 @@ async def regenerate_message(
             )
             user_content = history[-1].content
         try:
-            prompt, system_instruction, persona_rendered, note_rendered = await _build_prompt(
+            prompt, system_instruction, persona_rendered, note_rendered, names = await _build_prompt(
                 db, room, setup, history[:-1], user_content, None, prompt_set, prompt_sections
             )
         except PromptRenderError as exc:
@@ -2034,6 +2073,7 @@ async def regenerate_message(
                     history=history[:-1],
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    names=names,
                 )
                 await db.commit()
                 if situational_judgment is not None:
@@ -2052,6 +2092,7 @@ async def regenerate_message(
                 history=history[:-1],
                 user_message=user_content,
                 assistant_message=assistant_content,
+                names=names,
             )
             await db.commit()
             if media_judgment is not None:
@@ -2251,6 +2292,41 @@ async def delete_message(
         await db.commit()
 
 
+async def _persona_names(db: AsyncSession, rooms: Sequence[ChatRoom]) -> dict[uuid.UUID, str]:
+    """방들이 고른 대화 프로필의 이름을 한 번에 읽는다(방마다 읽으면 방 수만큼 쿼리가 는다)."""
+    persona_ids = {room.persona_id for room in rooms if room.persona_id is not None}
+    if not persona_ids:
+        return {}
+    return {
+        persona.id: persona.name
+        for persona in (await db.scalars(select(UserPersona).where(UserPersona.id.in_(persona_ids)))).all()
+    }
+
+
+def _last_message_preview(
+    message: ChatMessage | None,
+    room: ChatRoom,
+    content_type: ContentType,
+    content_name: str,
+    default_user_name: str,
+    persona_names: dict[uuid.UUID, str],
+) -> str:
+    """방 목록의 마지막 메시지 미리보기. 목록 화면은 방마다 다른 프로필 이름을 모르므로 작가 글의 `{{user}}`·
+    `{{char}}` 를 여기서 그 방의 이름으로 바꾼다. 바꾸는 것은 모델 응답·첫 메시지(작가 글의 복사본)뿐이다 — 사용자
+    메시지는 화면이 보내기 전에 이미 바꿔 저장한다. 이름이 이미지 태그로 읽히지 않게 태그를 먼저 지운다."""
+    if message is None:
+        return ""
+    preview = strip_media_tags(message.content)
+    if message.role != ChatMessageRole.ASSISTANT:
+        return preview
+    persona_name = persona_names.get(room.persona_id) if room.persona_id is not None else None
+    return expand_author_macros(
+        preview,
+        user_name=resolve_user_name(persona_name, default_user_name),
+        char_name=content_name if content_type == ContentType.CHARACTER else None,
+    )
+
+
 @router.get("")
 async def list_chat_rooms(
     content_id: uuid.UUID = Query(alias="contentId"),
@@ -2260,6 +2336,21 @@ async def list_chat_rooms(
     rooms = await _room_siblings(db, user_id, content_id)
     if not rooms:
         return []
+    content = await db.get(Content, content_id)
+    assert content is not None
+    detail_model = detail_model_for(content.type)
+    # 방마다 고정한 버전이 다를 수 있다 — 버전별 작품명·작품 기본 이름.
+    version_names: dict[uuid.UUID, tuple[str, str]] = {
+        version_id: (name, default_user_name)
+        for version_id, name, default_user_name in (
+            await db.execute(
+                select(detail_model.content_version_id, detail_model.name, detail_model.default_user_name).where(
+                    detail_model.content_version_id.in_({room.content_version_id for room in rooms})
+                )
+            )
+        ).all()
+    }
+    persona_names = await _persona_names(db, rooms)
 
     last_messages: dict[uuid.UUID, ChatMessage] = {}
     for message in (
@@ -2278,7 +2369,9 @@ async def list_chat_rooms(
             ChatRoomListItem(
                 id=room.id,
                 name=_display_name(room, ordinal),
-                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
+                last_message_preview=_last_message_preview(
+                    last_message, room, content.type, *version_names[room.content_version_id], persona_names
+                ),
                 created_at=room.created_at,
             )
         )
@@ -2364,6 +2457,8 @@ async def list_my_chat_rooms(
         ).all()
     }
 
+    persona_names = await _persona_names(db, rooms)
+
     all_details: list[CharacterVersionDetail | StoryVersionDetail] = [
         *character_details.values(),
         *story_details.values(),
@@ -2408,7 +2503,9 @@ async def list_my_chat_rooms(
                 content_type=content.type,
                 content_name=detail.name,
                 thumbnail_url=thumbnail_url,
-                last_message_preview=strip_media_tags(last_message.content) if last_message is not None else "",
+                last_message_preview=_last_message_preview(
+                    last_message, room, content.type, detail.name, detail.default_user_name, persona_names
+                ),
                 last_message_at=last_message.created_at if last_message is not None else None,
                 created_at=room.created_at,
             )
@@ -2541,11 +2638,10 @@ async def set_room_persona(
     **둘 다** 본다 — 방만 보면 남의 프로필 id를 내 방에 걸 수 있다."""
     room = await _get_owned_room(db, room_id, user_id)
     await lock_user_default_persona(db, user_id)
-    if payload.persona_id is not None:
-        await get_owned_persona(db, payload.persona_id, user_id)
+    persona = await get_owned_persona(db, payload.persona_id, user_id) if payload.persona_id is not None else None
     room.persona_id = payload.persona_id
     await db.commit()
-    return RoomPersonaResponse(persona_id=room.persona_id)
+    return RoomPersonaResponse(persona_id=room.persona_id, persona_name=persona.name if persona is not None else None)
 
 
 @router.post(
@@ -3086,10 +3182,10 @@ async def _preview_prompt_set_dependency(
 async def _preview_persona_dependency(
     user_id: uuid.UUID = Depends(get_current_user_id),
     session_factory: async_sessionmaker[AsyncSession] = Depends(get_session_factory),
-) -> str:
+) -> UserPersona | None:
     """미리보기는 작가 본인의 **기본** 프로필을 쓴다 —
-    없으면 `""`(프로필 기능 이전과 같다). 턴마다 읽고 `PreviewSessionState`에는 저장하지 않는다(작가가
-    도중에 기본을 바꾸면 다음 턴에 반영된다).
+    없으면 None(프로필 섹션이 빠져 프로필 기능 이전과 같다). 턴마다 읽고 `PreviewSessionState`에는 저장하지 않는다(작가가
+    도중에 기본을 바꾸면 다음 턴에 반영된다). 프로필 섹션 값과 `{{user}}` 를 바꿀 이름이 둘 다 이 프로필에서 나온다.
 
     세션은 짧게 열고 바로 닫는다. 이 경로에도
     요청 스코프 세션이 있다 — `require_legal_consent`가 `Depends(get_db_session)`으로 열어
@@ -3102,12 +3198,12 @@ async def _preview_persona_dependency(
     `charge`(차감 게이트)보다 앞에 둔다(`send_preview_message`).
     도메인 예외는 없다 — DB 장애만 예외가 되고, 그때는 차감 전에 실패한다."""
     async with session_factory() as session:
-        persona = await session.scalar(
+        persona: UserPersona | None = await session.scalar(
             select(UserPersona)
             .join(User, User.default_persona_id == UserPersona.id)
             .where(User.id == user_id)
         )
-        return _format_persona(persona)
+        return persona
 
 
 async def _preview_media_book_dependency(
@@ -3231,6 +3327,7 @@ def _build_preview_prompt(
     prompt_sections: list[PromptSection],
     user_persona: str,
     stats: dict[str, float],
+    names: PromptNames,
 ) -> str:
     """`_build_prompt`(실제 방)과 동일한 조립 규칙을 DB 조회 대신 payload 필드에서 직접
     읽어 적용한다. 스토리 draft가 시작설정을 아직 하나도 갖지 않으면("미완성 상태에서도
@@ -3247,11 +3344,12 @@ def _build_preview_prompt(
             user_persona=user_persona,
             memory_note="",
             memory_summary="",
+            names=names,
         )
 
     setup = payload.starting_setups[0] if payload.starting_setups else None
     notes = _preview_keyword_notes(payload, setup.id if setup is not None else None)
-    matched_notes = match_keyword_notes(notes, history, user_content)
+    matched_notes = match_keyword_notes(notes, history, user_content, names=names)
     situation_notes = setup.situation_notes if setup is not None else []
     return build_story_generation_prompt(
         prompt_set=prompt_set,
@@ -3275,6 +3373,7 @@ def _build_preview_prompt(
             [(note.condition_rules, note.info_text) for note in situation_notes], stats
         ),
         shortcut_prompt=shortcut.prompt if shortcut is not None else None,
+        names=names,
     )
 
 
@@ -3304,6 +3403,7 @@ def _prepare_preview_media_cell_judgment(
     history: list[ChatMessage],
     user_message: str,
     assistant_message: str,
+    names: PromptNames,
 ) -> _MediaCellJudgment | None:
     """미리보기 칸 판정 — 실채팅 `_prepare_media_cell_judgment` 의 페이로드판. 후보는 노출 제외가 아니고 그림을
     서명한 칸(요청자 소유·준비 완료 — `_preview_media_book_dependency`)이며 빌더 축 순서다. 렌더 실패는 그림만
@@ -3332,10 +3432,11 @@ def _prepare_preview_media_cell_judgment(
             sections=prompt_sections,
             scope="story",
             assistant_label=prompt_set.story_assistant_label,
-            image_lines=media_cell_image_lines(candidates),
+            image_lines=media_cell_image_lines(candidates, names=names),
             history=history,
             user_message=user_message,
             assistant_message=assistant_message,
+            names=names,
         )
     except PromptRenderError as exc:
         logger.warning("미리보기 미디어 북 칸 판정 프롬프트 렌더 실패 — 이번 턴은 그림 없이 진행한다: %s", exc)
@@ -3371,6 +3472,7 @@ async def _stream_preview_turn(
     prompt_set: PromptSet,
     prompt_sections: list[PromptSection],
     user_persona: str,
+    names: PromptNames,
     charge: ChatCharge,
     session_factory: async_sessionmaker[AsyncSession],
     # `_stream_new_turn`은 `room.user_id`를 쓰지만 `PreviewSessionState`에는 user_id가 없다
@@ -3392,7 +3494,15 @@ async def _stream_preview_turn(
     template = state.payload.prompt_template if isinstance(state.payload, StoryDraftPayload) else None
     try:
         prompt = _build_preview_prompt(
-            state.payload, history, user_content, shortcut, prompt_set, prompt_sections, user_persona, state.stats
+            state.payload,
+            history,
+            user_content,
+            shortcut,
+            prompt_set,
+            prompt_sections,
+            user_persona,
+            state.stats,
+            names,
         )
         system_instruction = system_instruction_for(
             prompt_sections, is_story_chat=isinstance(state.payload, StoryDraftPayload), template=template
@@ -3468,6 +3578,7 @@ async def _stream_preview_turn(
                     current_stats=current_stats,
                     user_message=user_content,
                     assistant_message=assistant_content,
+                    names=names,
                 )
             media_judgment = _prepare_preview_media_cell_judgment(
                 state.payload,
@@ -3477,6 +3588,7 @@ async def _stream_preview_turn(
                 history=history,
                 user_message=user_content,
                 assistant_message=assistant_content,
+                names=names,
             )
 
             judgment, judged_cell_id = await asyncio.gather(
@@ -3531,6 +3643,7 @@ async def _stream_preview_turn(
                         user_message=user_content,
                         assistant_message=assistant_content,
                         memory_summary="",
+                        names=names,
                     )
                     ending_judgment = await llm_client.generate_structured(
                         ending_judgment_prompt,
@@ -3578,7 +3691,7 @@ async def send_preview_message(
     llm_client: LLMClient = Depends(get_llm_client),
     prompt_set_data: tuple[PromptSet, list[PromptSection]] = Depends(_preview_prompt_set_dependency),
     # 작가의 기본 대화 프로필. `charge`보다 앞이다.
-    user_persona: str = Depends(_preview_persona_dependency),
+    persona: UserPersona | None = Depends(_preview_persona_dependency),
     # 미디어 북 칸 그림(소유·준비 확인 + 서명, 아닌 칸은 뺀다). DB 장애가 차감 전에 실패하도록 `charge`보다 앞이다.
     media_images: dict[uuid.UUID, MediaTagImage] = Depends(_preview_media_book_dependency),
     # 차감 게이트(mypy가 안 잡는다, 조회·검증
@@ -3597,6 +3710,12 @@ async def send_preview_message(
         await db.commit()
 
     prompt_set, prompt_sections = prompt_set_data
+    # 실제 방과 같은 규칙으로 고른 이름 — 프로필은 작가의 기본 프로필, 작품 기본 이름은 초안 값이다.
+    names = PromptNames(
+        persona_name=persona.name if persona is not None else None,
+        default_user_name=state.payload.default_user_name,
+        char_name=state.payload.name if isinstance(state.payload, CharacterDraftPayload) else None,
+    )
     history = [_preview_chat_message(message) for message in state.messages]
     state.messages.append(
         ChatMessageResponse(
@@ -3612,7 +3731,8 @@ async def send_preview_message(
         shortcut,
         prompt_set,
         prompt_sections,
-        user_persona,
+        _format_persona(persona),
+        names,
         charge,
         session_factory,
         user_id,

@@ -190,6 +190,16 @@ class ChatRoomResponse(CamelModel):
     # 옆의 nullable 필드들처럼 `= None`을 둔다 — 생성 타입에서 선택 필드가 되어 이 필드를 모르는
     # 기존 FE 픽스처(`toChatRoomState.test.ts`)가 깨지지 않는다. 응답에는 항상 실린다.
     persona_id: uuid.UUID | None = None
+    # 아래 셋은 화면이 작가 글의 `{{user}}`·`{{char}}` 를 바꿀 때 쓰는 이름이다. 작품 쪽 둘은 방이 고정한 버전의 값이다
+    # — 최신 발행본 상세로 대신하면 작가가 이름을 바꿔 재발행한 뒤 모델이 부른 이름과 화면의 이름이 갈린다.
+    # 프로필 이름은 조회할 때 읽으므로 프로필 이름을 고치거나 지우면 다음 조회에 바로 반영된다. 기본값을 두는 이유는
+    # `persona_id` 와 같다.
+    # 방이 고른 대화 프로필의 이름. 프로필이 없으면 None.
+    persona_name: str | None = None
+    # 작품 기본 이름. 빈 값이면 대체어를 쓴다.
+    default_user_name: str = Field(default_factory=str)
+    # 작품명. 캐릭터 작품에서는 이것이 `{{char}}` 의 이름이다(스토리에는 `{{char}}` 가 없다).
+    content_name: str = Field(default_factory=str)
     # 첫 메시지(작성자 글의 복사본)에 든 칸 id 형태 태그가 가리키는 그림 — 방이 고정한 버전의 칸으로
     # 해석한다. 사용자 메시지에 사용자가 친 태그는 보지 않는다(아무 칸 id 나 쳐서 원본을 받지 못하게).
     media_tag_images: dict[uuid.UUID, MediaTagImage] = Field(default_factory=dict)

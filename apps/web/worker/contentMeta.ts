@@ -1,5 +1,6 @@
 import { fetchApiJson, isRecord, isUuid, isViewableByCrawler } from "./api";
 import { readAppShellHtml, serveAppShell } from "./appShell";
+import { expandAuthorMacros, FALLBACK_USER_NAME } from "./authorMacros";
 import { buildJsonLd, injectHead } from "./html";
 import { buildMetaTags, SITE_NAME, toMetaDescription } from "./meta";
 import { resolvePublicOrigin } from "./origin";
@@ -29,6 +30,8 @@ export type ContentMetaSource = {
   oneLiner: string;
   detailDescription: string;
   creatorNickname: string;
+  /** 작가가 정한 작품 기본 이름. 비어 있으면 대체어. */
+  defaultUserName: string;
 };
 
 const MEDIA_TAG = /\{\{img::([^{}\n]*)\}\}/g;
@@ -45,12 +48,21 @@ export function stripMediaTags(text: string): string {
   );
 }
 
-/** 한 줄 소개 우선, 없으면 상세 설명 앞부분(그림 태그를 뺀 글). */
+/**
+ * 한 줄 소개 우선, 없으면 상세 설명 앞부분(그림 태그를 뺀 글). 글 속 `{{user}}` 는 작품 기본 이름(없으면 대체어)으로,
+ * 캐릭터 작품의 `{{char}}` 는 작품 이름으로 바꾼다 — 링크 미리보기에는 보는 사람이 없어 프로필 이름을 쓸 수 없지만,
+ * 매크로 원문이 검색 결과·공유 미리보기에 나가서는 안 된다. 그림 태그를 먼저 지운다(넣은 이름이 태그로 읽히지 않게).
+ */
 function toDescription(content: ContentMetaSource): string | undefined {
-  return toMetaDescription(
+  const text =
     content.oneLiner.trim() === ""
       ? stripMediaTags(content.detailDescription)
-      : content.oneLiner,
+      : content.oneLiner;
+  return toMetaDescription(
+    expandAuthorMacros(text, {
+      userName: content.defaultUserName || FALLBACK_USER_NAME,
+      charName: content.type === "character" ? content.name : null,
+    }),
   );
 }
 
@@ -128,6 +140,7 @@ function toContentMetaSource(
     oneLiner: toText(data.oneLiner),
     detailDescription: toText(data.detailDescription),
     creatorNickname: toText(data.creatorNickname),
+    defaultUserName: toText(data.defaultUserName),
   };
 }
 

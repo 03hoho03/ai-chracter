@@ -7,6 +7,7 @@ export type {
   PreviewStreamEvent,
 } from "./api/previewStream";
 export type {
+  PreviewAuthorNameSource,
   PreviewSessionState,
   PreviewShortcut,
   PreviewStatDef,
