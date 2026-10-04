@@ -1,10 +1,13 @@
 /* 손가락 포인터에서만 admin 컨트롤을 40px 로 올린다. packages/ui 프리미티브에 넣으면 web 화면 크기까지
-   바뀌므로 admin 에만 로드되는 이 파일이 프리미티브의 data-slot 으로 건다. 레이어 밖(unlayered)이라
+   바뀌므로 admin 에만 로드되는 이 파일이 프리미티브의 표식으로 건다. 레이어 밖(unlayered)이라
    Tailwind 유틸리티를 이긴다 — height 는 건드리지 않고 min-height 만 올려 h-8·h-9 가 하한으로 남는다.
    체크박스는 이미 의사 요소로 히트 영역을 넓혔고 textarea 는 원래 크며, 셀렉트 항목은 프리미티브에
    이미 같은 처방이 있어 여기서 빠진다. 사이드바 내비 행은 프리미티브가 아니라 그 행 클래스에 있다. */
 @media (pointer: coarse) {
-  [data-slot="button"],
+  /* 버튼만 data-slot 이 아니라 Button 의 기반 클래스로 찾는다. 시트 트리거(버거)·시트와 모달의 닫기 X 처럼
+     Radix 의 `asChild` 로 Button 을 감싼 자리는 바깥의 data-slot(sheet-trigger·dialog-close 등)이 Button 의
+     것을 덮어 `[data-slot="button"]` 으로는 빠진다. */
+  .group\/button,
   [data-slot="select-trigger"],
   [data-slot="toggle-group-item"],
   [data-slot="toggle"],
@@ -13,7 +16,7 @@
   }
 
   /* 아이콘 버튼은 정사각을 유지한다. */
-  [data-slot="button"][data-size^="icon"] {
+  .group\/button[data-size^="icon"] {
     min-width: 2.5rem;
   }
 
