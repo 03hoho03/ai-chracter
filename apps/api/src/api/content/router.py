@@ -19,7 +19,7 @@ from starlette.concurrency import run_in_threadpool
 from api.assets.blur import BlurredUpload, blurred_asset_row, upload_blurred_copy
 from api.assets.image_processing import THUMBNAIL_CONTENT_TYPE, read_image_content_type
 from api.chat.prompt_builder import load_active_prompt_set
-from api.content.access import is_open_to, publicly_listed_conditions
+from api.content.access import detail_model_for as _detail_model, is_open_to, select_publicly_listed
 from api.content.media_book import MEDIA_BOOK_CELL_IMAGE_KINDS, normalize_texts, resolve_media_tag_images
 from api.content.publish import (
     MediaBookFilterCell,
@@ -61,6 +61,8 @@ from api.content.schemas import (
     EndingRuleListDraftItem,
     ExampleDialogueItem,
     GenreResponse,
+    HomeCurationItem,
+    HomeCurationResponse,
     KeywordNoteDraftItem,
     MediaBookAxisInput,
     MediaBookAxisItem,
@@ -94,6 +96,7 @@ from api.db.models.content import (
     ContentVisibility,
     Favorite,
     Genre,
+    HomeCuration,
     Like,
     ModerationStatus,
 )
@@ -2524,10 +2527,6 @@ async def update_content_visibility(
     await db.commit()
 
 
-def _detail_model(content_type: ContentType) -> type[CharacterVersionDetail] | type[StoryVersionDetail]:
-    return CharacterVersionDetail if content_type == ContentType.CHARACTER else StoryVersionDetail
-
-
 def _encode_cursor(parts: list[str]) -> str:
     return base64.urlsafe_b64encode(json.dumps(parts).encode()).decode()
 
@@ -2556,13 +2555,8 @@ async def list_contents(
     """
     detail_model = _detail_model(type)
 
-    query = (
-        select(Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname)
-        .join(detail_model, detail_model.content_version_id == Content.current_published_version_id)
-        .join(User, User.id == Content.creator_user_id)
-        # 고르는 열은 없지만 내부 조인이라 장르 없는 작품을 목록에서 뺀다 — 지우면 걸러지는 대상이 바뀐다.
-        .join(Genre, Genre.id == Content.genre_id)
-        .where(Content.type == type, *publicly_listed_conditions())
+    query = select_publicly_listed(
+        type, Content, detail_model.name, detail_model.thumbnail_asset_id, User.nickname
     )
 
     if genre is not None:
@@ -2635,6 +2629,40 @@ async def list_contents(
             next_cursor = _encode_cursor([last_content.created_at.isoformat(), str(last_content.id)])
 
     return ContentListResponse(items=items, next_cursor=next_cursor)
+
+
+@router.get("/home-curation")
+async def get_home_curation(type: ContentType, db: AsyncSession = Depends(get_db_session)) -> HomeCurationResponse:
+    """홈 첫 화면에 거는 그 유형의 운영자 지정작. 지정이 없거나, 지정 작품이 지금 공개 목록(`list_contents`)에
+    실리지 않으면 `item` 이 null 이다 — 목록과 같은 `select_publicly_listed` 로 거르므로 이용제한·비공개가 되면 자동으로
+    빠지고 제한이 풀리면 다시 보인다.
+
+    홈 방문마다 불리므로 상세 GET 과 달리 조회수를 세지 않는다(요청·열람 키를 받지 않는다). 뷰어와 무관한
+    응답이라 세션도 읽지 않는다. 경로가 `/contents/{id}` 아래가 아닌 이유는 그 경로의 uuid 칸에 먼저 잡히기
+    때문이다."""
+    detail_model = _detail_model(type)
+    row = (
+        await db.execute(
+            select_publicly_listed(
+                type, Content, detail_model.name, detail_model.one_liner, detail_model.thumbnail_asset_id
+            )
+            .join(HomeCuration, HomeCuration.content_id == Content.id)
+            .where(HomeCuration.content_type == type)
+        )
+    ).one_or_none()
+    if row is None:
+        return HomeCurationResponse(item=None)
+
+    content, name, one_liner, thumbnail_asset_id = row
+    return HomeCurationResponse(
+        item=HomeCurationItem(
+            id=content.id,
+            type=content.type,
+            name=name,
+            one_liner=one_liner,
+            thumbnail_url=await _resolve_thumbnail_url(db, thumbnail_asset_id),
+        )
+    )
 
 
 def _resolve_access_status(

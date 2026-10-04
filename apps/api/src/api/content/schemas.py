@@ -95,6 +95,21 @@ class ContentListResponse(CamelModel):
     next_cursor: str | None
 
 
+class HomeCurationItem(CamelModel):
+    id: uuid.UUID
+    type: ContentType
+    name: str
+    one_liner: str
+    thumbnail_url: str | None
+
+
+class HomeCurationResponse(CamelModel):
+    """`item` 이 null 이면 그 유형은 지정이 없거나 지정 작품이 지금 공개 목록에 없다 — 홈은 섹션을 그리지 않는다.
+    본문 자체를 null 로 내지 않고 감싸는 이유는 "지정 없음" 을 빈 응답과 헷갈리지 않게 하려는 것이다."""
+
+    item: HomeCurationItem | None
+
+
 class StartingSetupSummary(CamelModel):
     id: uuid.UUID
     name: str

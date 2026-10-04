@@ -7,6 +7,7 @@ import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
 
 import { ContentActionPanel } from "./ContentActionPanel";
+import { HomeCurationSection } from "./HomeCurationSection";
 import { PublishedImagesSection } from "./PublishedImagesSection";
 
 type ContentDetailPageProps = {
@@ -147,6 +148,13 @@ function ContentDetailBody({ contentId }: ContentDetailBodyProps) {
           </Table>
         </div>
       </section>
+
+      <HomeCurationSection
+        contentId={contentDetailQuery.data.id}
+        contentType={contentDetailQuery.data.type}
+        contentName={contentDetailQuery.data.name || "(이름 없음)"}
+        moderationStatus={contentDetailQuery.data.moderationStatus}
+      />
 
       <ContentActionPanel
         contentId={contentDetailQuery.data.id}
