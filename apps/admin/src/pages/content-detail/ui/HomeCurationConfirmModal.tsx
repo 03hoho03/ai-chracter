@@ -15,6 +15,7 @@ import { toast } from "sonner";
 import { CONTENT_TYPE_LABELS, useHomeCurationMutation, type ContentTypeFilter } from "@/entities/admin-content";
 import { isApiError } from "@/shared/lib/api/client";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
 
 /** 지정 거부 code 는 OpenAPI 에 노출되지 않아 생성 타입이 없다 — 구조화 dict `detail` 을 직접 읽는다. */
 const REJECTION_MESSAGES: Record<string, string> = {
@@ -32,6 +33,8 @@ type HomeCurationFormValues = {
 type HomeCurationConfirmModalProps = {
   contentType: ContentTypeFilter;
   contentName: string;
+  /** 지정·해제가 성공해 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. 거부(공개 목록에 없음 등)는 바뀐 것이 없어 부르지 않는다. */
+  onSuccess?: () => void;
 } & ({ mode: "set"; contentId: string; replacingName: string | null } | { mode: "clear" });
 
 /** 홈 큐레이션 지정·해제 확인. 지정은 운영 홈 첫 화면에 바로 보이는 조작이고, 같은 유형의 기존 지정작을 밀어내므로
@@ -58,6 +61,7 @@ export const HomeCurationConfirmModal = createCallable<HomeCurationConfirmModalP
       );
       toast.success(isSet ? "홈 큐레이션으로 지정했어요." : "홈 큐레이션 지정을 해제했어요.");
       call.end();
+      props.onSuccess?.();
     } catch (error) {
       const rejection = rejectionMessage(error);
       toast.error(rejection ?? ERROR_MESSAGE);
@@ -68,7 +72,7 @@ export const HomeCurationConfirmModal = createCallable<HomeCurationConfirmModalP
 
   return (
     <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusInitialElement}>
         <DialogHeader>
           <DialogTitle>{isSet ? "홈 큐레이션 지정" : "홈 큐레이션 해제"}</DialogTitle>
           <DialogDescription>
@@ -104,7 +108,7 @@ export const HomeCurationConfirmModal = createCallable<HomeCurationConfirmModalP
           </div>
 
           <DialogFooter>
-            <Button type="button" variant="outline" autoFocus onClick={() => call.end()}>
+            <Button type="button" variant="outline" autoFocus data-initial-focus onClick={() => call.end()}>
               취소
             </Button>
             <Button type="submit" disabled={isSubmitting}>

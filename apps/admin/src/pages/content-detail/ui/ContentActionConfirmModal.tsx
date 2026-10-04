@@ -19,6 +19,7 @@ import { z } from "zod";
 import { useContentActionMutation, type AdminContentActionType } from "@/entities/admin-content";
 import { isReportReasonCategory, REPORT_REASON_OPTIONS, REPORT_REASON_VALUES } from "@/entities/report";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { focusInitialElement } from "@/shared/lib/callable/focusInitialElement";
 
 const ACTION_TITLE: Record<AdminContentActionType, string> = {
   restrict: "이용제한 부과",
@@ -57,6 +58,8 @@ type ContentActionConfirmModalProps = {
   contentId: string;
   contentName: string;
   action: ContentConfirmAction;
+  /** 조치가 성공해 모달이 닫힌 뒤 부른다 — 상세 레이아웃이 하단 시트를 닫는다. */
+  onSuccess?: () => void;
 };
 
 /** 조치 확인 다이얼로그. `restrict`/`delete`는 사유 카테고리가
@@ -67,7 +70,7 @@ type ContentActionConfirmModalProps = {
  * 모달을 이어붙이는 것보다 패턴만 재사용하는 쪽이 사용자에게 확인 단계가 하나로 보인다.
  * 조치별로 갈리는 이 세 규칙의 단일 소스는 `createContentActionSchema`다. */
 export const ContentActionConfirmModal = createCallable<ContentActionConfirmModalProps, void>(
-  ({ call, contentId, contentName, action }) => {
+  ({ call, contentId, contentName, action, onSuccess }) => {
     const actionMutation = useContentActionMutation(contentId);
     const {
       control,
@@ -87,6 +90,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
         await actionMutation.mutateAsync(formToServer(values, action));
         toast.success(SUCCESS_MESSAGE[action]);
         call.end();
+        onSuccess?.();
       } catch {
         toast.error(ERROR_MESSAGE);
       }
@@ -94,7 +98,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
 
     return (
       <Dialog open={!call.ended} onOpenChange={(open) => !open && call.end()}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="sm:max-w-md" onOpenAutoFocus={focusInitialElement}>
           <DialogHeader>
             <DialogTitle>{ACTION_TITLE[action]}</DialogTitle>
             <DialogDescription>
@@ -176,6 +180,7 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
                   id="content-action-confirm-text"
                   placeholder={contentName}
                   autoFocus
+                  data-initial-focus
                   aria-invalid={!!errors.confirmText}
                   aria-describedby={errors.confirmText ? "content-action-confirm-text-error" : undefined}
                   {...register("confirmText")}
@@ -190,7 +195,13 @@ export const ContentActionConfirmModal = createCallable<ContentActionConfirmModa
 
             {/* 첫 포커스는 취소다(무심코 Enter 를 눌러도 아무 일도 일어나지 않게). 삭제만 이름 확인칸이 그 자리를 갖는다. */}
             <DialogFooter>
-              <Button type="button" variant="outline" autoFocus={!isNameMatchRequired} onClick={() => call.end()}>
+              <Button
+                type="button"
+                variant="outline"
+                autoFocus={!isNameMatchRequired}
+                data-initial-focus={!isNameMatchRequired || undefined}
+                onClick={() => call.end()}
+              >
                 취소
               </Button>
               <Button type="submit" variant={action === "delete" ? "destructive" : "default"} disabled={isSubmitting}>

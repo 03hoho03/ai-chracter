@@ -10,14 +10,14 @@ type PublishedImagesSectionProps = {
  */
 export function PublishedImagesSection({ images }: PublishedImagesSectionProps) {
   return (
-    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-6">
+    <section className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 @xl:p-6">
       <h2 className="text-lg font-semibold text-foreground">
         발행본 이미지 <span className="tabular-nums text-muted-foreground">{images.length}</span>
       </h2>
       {images.length === 0 ? (
         <p className="text-sm text-muted-foreground">발행본 이미지가 없어요.</p>
       ) : (
-        <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4">
+        <ul className="grid grid-cols-3 gap-3 @xl:grid-cols-4">
           {/* 같은 그림이 두 칸에 걸릴 수 있고 인물·장면 이름이 겹칠 수도 있어, 라벨과 주소를 함께 키로 쓴다. */}
           {images.map((image) => (
             <li key={`${image.label}|${image.imageUrl}`}>
