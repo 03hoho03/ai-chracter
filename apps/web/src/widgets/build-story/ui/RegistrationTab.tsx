@@ -26,6 +26,7 @@ import {
 } from "@/features/build-story";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** 등록 설명/장르/타겟/해시태그/공개범위 메타데이터. 캐릭터 빌더
@@ -82,6 +83,7 @@ export function RegistrationTab() {
           }}
         />
         <UnknownMediaTagNotice name="registration.description" />
+        <StoryMacroNotice name="registration.description" />
         {errors.registration?.description && (
           <p id="story-registration-description-error" role="alert" className="text-xs text-destructive-text">
             {errors.registration.description.message}

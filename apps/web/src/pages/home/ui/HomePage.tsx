@@ -25,6 +25,7 @@ import {
   type ContentType,
   type ThumbnailAspect,
 } from "@/entities/content";
+import { useViewerPersonaName } from "@/entities/persona";
 import { useSessionQuery } from "@/entities/session";
 import { SITE_INTRO } from "@/shared/config/site";
 import { useInfiniteScrollSentinel } from "@/shared/lib/infinite-scroll/useInfiniteScrollSentinel";
@@ -94,6 +95,8 @@ export function HomePage({
   // 시간은 상한을 넘기지 않는다 — 넘기면 이 마운트에서는 섹션을 포기하고 그리드를 먼저 그린다(`useCurationWaitCap`).
   // 스켈레톤이 밀리는 것은 아래 `curationLayoutKey` 가 막는다.
   const homeCurationQuery = useHomeCurationQuery(contentType);
+  // 큐레이션 응답은 보는 사람과 무관하다 — 한줄소개 속 `{{user}}` 에 넣을 보는 사람의 이름은 여기서 붙인다.
+  const viewerPersonaName = useViewerPersonaName(sessionQuery.data !== undefined);
   const isHoldingGrid = !isFiltered && homeCurationQuery.isPending && !contentListQuery.isPending;
   const hasGivenUpCuration = useCurationWaitCap(isHoldingGrid);
   const curationView = toHomeCurationView({
@@ -303,7 +306,7 @@ export function HomePage({
           if (!event.currentTarget.contains(event.relatedTarget)) isFocusInChunkRef.current = false;
         }}
       >
-        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} onOpen={openDetail} />}
+        {curationView.kind === "shown" && <HomeCurationSection item={curationView.item} viewerPersonaName={viewerPersonaName} onOpen={openDetail} />}
 
         {/* 필터를 바꾼 뒤의 포커스 착지점(`changeFilter`). 로딩·빈·실패·목록 어느 분기에서도 마운트돼 있다.
             스크립트로만 포커스를 받는 영역이라 링을 그리지 않는다 — 다음 Tab이 첫 카드로 간다. */}

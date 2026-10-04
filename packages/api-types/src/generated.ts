@@ -2678,6 +2678,9 @@ export interface paths {
          *     첫 노출만 기록해 멱등이라 재실행이 중복 적용을 만들지 않고, 새 응답 텍스트에 맞는 그림이 붙는다. 생성이 실패하면(policyWarning/error) 기존
          *     응답을 그대로 둔다 — 대체 텍스트가 확정되기 전까지는 메시지를 건드리지 않는다. 바꿀 응답을
          *     덮던 요약은 생성 전에 되감겨 커밋되므로 생성이 실패해도 되돌아오지 않는다.
+         *
+         *     트랜잭션 구간은 `_stream_new_turn` 과 같다 — 생성·판정 LLM 앞에서 요청 세션을 커밋으로 반납하고, 옛 응답 삭제와
+         *     새 응답·노출 기록은 판정 뒤 한 트랜잭션으로 쓴다(방이 그사이 지워졌으면 쓰지 않고 오류 이벤트로 끝낸다).
          */
         post: operations["regenerate_message_chat_rooms__room_id__regenerate_post"];
         delete?: never;
@@ -2698,7 +2701,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Message
-         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다.
+         * @description 개별 메시지 삭제 — 사용자/AI 메시지 모두 동일하게 지원한다. 진행 중 턴이 있는 방이면 409 — 턴 입력이던
+         *     메시지를 지워도 응답이 그 뒤에 붙는다(`chat/turn_lock.py`).
          */
         delete: operations["delete_message_chat_rooms__room_id__messages__message_id__delete"];
         options?: never;
@@ -5221,6 +5225,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageDraftInput"][];
             /** Description */
@@ -5266,6 +5272,8 @@ export interface components {
             characterPrompt: string;
             /** Playguide */
             playguide: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Situationalimages */
             situationalImages: components["schemas"]["CharacterSituationalImageItem"][];
             /** Description */
@@ -5540,6 +5548,12 @@ export interface components {
             versionAutoUpgraded: boolean;
             /** Personaid */
             personaId?: string | null;
+            /** Personaname */
+            personaName?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
+            /** Contentname */
+            contentName?: string;
             /** Mediatagimages */
             mediaTagImages?: {
                 [key: string]: components["schemas"]["MediaTagImage"];
@@ -6084,6 +6098,8 @@ export interface components {
             oneLiner: string;
             /** Detaildescription */
             detailDescription: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Chatcount */
             chatCount: number;
             /** Likecount */
@@ -6529,6 +6545,8 @@ export interface components {
             name: string;
             /** Oneliner */
             oneLiner: string;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Thumbnailurl */
             thumbnailUrl: string | null;
         };
@@ -7239,6 +7257,8 @@ export interface components {
         RoomPersonaResponse: {
             /** Personaid */
             personaId: string | null;
+            /** Personaname */
+            personaName?: string | null;
         };
         /** ShortcutDraftItem */
         ShortcutDraftItem: {
@@ -7498,6 +7518,8 @@ export interface components {
             userGoal?: string | null;
             /** Rules */
             rules?: string | null;
+            /** Defaultusername */
+            defaultUserName?: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */
@@ -7548,6 +7570,8 @@ export interface components {
             userGoal: string | null;
             /** Rules */
             rules: string | null;
+            /** Defaultusername */
+            defaultUserName: string;
             /** Startingsetups */
             startingSetups: components["schemas"]["StartingSetupDraftItem"][];
             /** Keywordnotes */

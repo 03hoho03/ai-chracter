@@ -984,6 +984,63 @@ def _starting_setup_item(**overrides: object) -> dict[str, object]:
     return item
 
 
+_DEFAULT_USER_NAME_DRAFTS = [
+    pytest.param(_make_empty_story_draft, _story_draft_payload, id="story"),
+    pytest.param(_make_empty_character_draft, _draft_payload, id="character"),
+]
+
+
+@pytest.mark.parametrize(("make_draft", "make_payload"), _DEFAULT_USER_NAME_DRAFTS)
+async def test_patch_draft_keeps_default_user_name_when_key_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, make_draft: Any, make_payload: Any
+) -> None:
+    """작품 기본 이름 칸을 모르는 옛 화면(배포 전부터 열린 빌더 탭)의 자동저장은 이 키를 안 보낸다. 그 저장이 작가가 넣은
+    이름을 빈 값으로 지우면 안 된다. 보낸 값은 앞뒤 공백을 걷어 저장하고, 빈 값을 보내면 지운다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await make_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    saved = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=" 지훈 "))
+    assert saved.status_code == 200
+    assert saved.json()["defaultUserName"] == "지훈"
+
+    omitted = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(name="새 이름"))
+    assert omitted.status_code == 200
+    assert omitted.json()["defaultUserName"] == "지훈"
+    assert (await db_client.get(f"/contents/{content.id}/draft")).json()["defaultUserName"] == "지훈"
+
+    cleared = await db_client.patch(f"/contents/{content.id}/draft", json=make_payload(defaultUserName=""))
+    assert cleared.status_code == 200
+    assert cleared.json()["defaultUserName"] == ""
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        pytest.param("가" * 21, id="longer-than-profile-name"),
+        pytest.param("{{user}}", id="braces"),
+        pytest.param("*민수*", id="markdown"),
+        pytest.param("민:수", id="colon"),
+    ],
+)
+async def test_patch_draft_rejects_default_user_name_that_cannot_stand_in_for_user(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, name: str
+) -> None:
+    """작품 기본 이름은 작가 글의 `{{user}}` 자리에 들어간다. 프로필 이름이 못 쓰는 문자·길이와 중괄호를 막는다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    content = await _make_empty_story_draft(db_session, creator_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(defaultUserName=name))
+    assert resp.status_code == 422
+
+
 async def test_patch_content_draft_upserts_starting_setup_tree(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:

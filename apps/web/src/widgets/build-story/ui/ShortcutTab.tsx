@@ -16,6 +16,7 @@ import { FieldLabelText, type StoryBuilderFormValues, type StoryCollapsibleList 
 import { firstLine } from "@/shared/lib/text/firstLine";
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 
 const SHORTCUT_LIST: StoryCollapsibleList = "shortcut";
 
@@ -143,6 +144,7 @@ function ShortcutRow({
           {...register(`shortcuts.${index}.description`)}
         />
         <MediaTagOutsideNotice name={`shortcuts.${index}.description`} />
+        <StoryMacroNotice name={`shortcuts.${index}.description`} />
         {shortcutErrors?.description && (
           <p id={`shortcut-${id}-description-error`} role="alert" className="text-xs text-destructive-text">
             {shortcutErrors.description.message}
@@ -161,6 +163,7 @@ function ShortcutRow({
           {...register(`shortcuts.${index}.prompt`)}
         />
         <MediaTagOutsideNotice name={`shortcuts.${index}.prompt`} />
+        <StoryMacroNotice name={`shortcuts.${index}.prompt`} />
         {shortcutErrors?.prompt && (
           <p id={`shortcut-${id}-prompt-error`} role="alert" className="text-xs text-destructive-text">
             {shortcutErrors.prompt.message}

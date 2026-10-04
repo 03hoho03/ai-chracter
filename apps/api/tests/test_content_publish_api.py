@@ -169,6 +169,7 @@ async def _make_publishable_character_draft(
             intro="안녕하세요",
             example_dialogues=[{"id": "d1", "userLine": "안녕", "characterLine": "반가워"}],
             character_prompt="너는 아리아다.",
+            default_user_name="여행자",
         )
     )
     await db_session.flush()
@@ -249,6 +250,7 @@ async def _make_publishable_story_draft(
             development_examples=[{"userLine": "안녕", "assistantLine": "어서오세요"}],
             user_goal="용을 물리친다",
             rules="폭력 묘사는 암시로만 한다",
+            default_user_name="모험가",
         )
     )
     await db_session.flush()
@@ -761,6 +763,7 @@ async def test_publish_confirms_transaction_and_clones_draft(
     assert new_detail.thumbnail_asset_id == thumbnail.id
     assert new_detail.intro == "안녕하세요"
     assert new_detail.character_prompt == "너는 아리아다."
+    assert new_detail.default_user_name == "여행자"
 
     new_images = (
         (
@@ -1098,6 +1101,7 @@ async def test_publish_story_confirms_transaction_and_clones_draft(
     assert new_detail.development_examples == [{"userLine": "안녕", "assistantLine": "어서오세요"}]
     assert new_detail.user_goal == "용을 물리친다"
     assert new_detail.rules == "폭력 묘사는 암시로만 한다"
+    assert new_detail.default_user_name == "모험가"
 
     new_setup = await db_session.scalar(
         sa.select(StartingSetup).where(
@@ -1207,6 +1211,7 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
             "exampleDialogues": [],
             "characterPrompt": "고쳐 쓴 프롬프트",
             "playguide": None,
+            "defaultUserName": "고쳐 쓴 이름",
             "situationalImages": [],
             "description": "고쳐 쓴 설명",
             "genreId": str(genre.id),
@@ -1230,6 +1235,7 @@ async def test_reset_draft_after_real_publish_restores_character_edits(
     assert draft_detail.name == "아리아"
     assert draft_detail.thumbnail_asset_id == thumbnail.id
     assert draft_detail.character_prompt == "너는 아리아다."
+    assert draft_detail.default_user_name == "여행자"
 
     draft_images = (
         (
@@ -1296,6 +1302,7 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
             "settingText": "고쳐 쓴 세계관",
             "developmentExample": None,
             "customPrompt": None,
+            "defaultUserName": "고쳐 쓴 이름",
             "startingSetups": [
                 {
                     "id": str(setup.entity_id),
@@ -1333,6 +1340,7 @@ async def test_reset_draft_after_real_publish_restores_story_edits(
     assert draft_detail is not None
     assert draft_detail.name == "잃어버린 도시"
     assert draft_detail.setting_text == "세계관 설명"
+    assert draft_detail.default_user_name == "모험가"
 
     draft_setup = await db_session.scalar(
         sa.select(StartingSetup).where(StartingSetup.content_version_id == draft_version_id)

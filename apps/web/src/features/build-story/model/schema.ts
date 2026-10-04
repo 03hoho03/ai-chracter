@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { normalizeMediaBookName } from "@/entities/media-book";
+import { defaultUserNameIssue } from "@/entities/persona";
 
 // 목록과 유니온 타입은 한쪽에서 도출한다. 값 목록을 스키마 옆의 단일 소스로 두고
 // 화면 글자는 fieldOptions.ts 가 값마다 붙인다(손복사 금지).
@@ -46,6 +47,14 @@ export const storySettingSchema = z
       .max(MAX_DEVELOPMENT_EXAMPLES, `전개 예시는 최대 ${MAX_DEVELOPMENT_EXAMPLES}개까지만 추가할 수 있습니다`)
       .default([]),
     userGoal: z.string().optional(),
+    // 사용자의 역할 옆에 두는 작품 기본 이름. 대화 프로필이 없는 사람의 `{{user}}` 가 된다. 비우면 대체어를 쓴다.
+    defaultUserName: z
+      .string()
+      .superRefine((value, ctx) => {
+      const issue = defaultUserNameIssue(value);
+      if (issue !== null) ctx.addIssue({ code: "custom", message: issue });
+    })
+      .default(""),
     rules: z.string().optional(),
     customPrompt: z.string().optional(),
   })

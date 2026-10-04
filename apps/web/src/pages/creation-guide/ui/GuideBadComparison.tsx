@@ -1,9 +1,10 @@
 import { cn } from "@ai-character-chat/ui/lib/utils";
 import { Ban, Check } from "lucide-react";
 
-import { ChatMarkdown, USER_MESSAGE_FRAME } from "@/entities/chat-room";
+import { AuthorMacroNamesProvider, ChatMarkdown, USER_MESSAGE_FRAME } from "@/entities/chat-room";
 import { assertNever } from "@/shared/lib/assertNever";
 
+import { GUIDE_CHAT_MACRO_NAMES } from "../config/guideChatMacroNames";
 import type { GuideMockupContext } from "../model/guideMockupContext";
 import type { FieldBadPart } from "../model/parseManuscript";
 import { toDisplayItems } from "../model/toGuidePages";
@@ -94,13 +95,15 @@ function BadProse({ part }: { part: FieldBadPart }) {
       case "conversation":
         // 증상 채팅은 카드 없이 이 면에 바로 그린다. 상태창 코드 블록은 `muted` 면 위에서 사라지지 않게 `secondary` 다.
         return (
-          <div key={index} className="flex flex-col gap-6">
-            {item.messages.map((message, messageIndex) => (
-              <div key={messageIndex} className={message.role === "user" ? USER_MESSAGE_FRAME : undefined}>
-                <ChatMarkdown content={message.body} codeBlockSurface="secondary" />
-              </div>
-            ))}
-          </div>
+          <AuthorMacroNamesProvider key={index} names={GUIDE_CHAT_MACRO_NAMES}>
+            <div className="flex flex-col gap-6">
+              {item.messages.map((message, messageIndex) => (
+                <div key={messageIndex} className={message.role === "user" ? USER_MESSAGE_FRAME : undefined}>
+                  <ChatMarkdown content={message.body} codeBlockSurface="secondary" />
+                </div>
+              ))}
+            </div>
+          </AuthorMacroNamesProvider>
         );
       default:
         return assertNever(item);

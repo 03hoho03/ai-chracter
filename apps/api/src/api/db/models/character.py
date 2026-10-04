@@ -29,6 +29,8 @@ class CharacterVersionDetail(Base):
     example_dialogues: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
     character_prompt: Mapped[str] = mapped_column(Text, nullable=False)
     playguide: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # `StoryVersionDetail.default_user_name` 과 같다.
+    default_user_name: Mapped[str] = mapped_column(Text, server_default="", nullable=False)
 
 
 class SituationalImage(Base):

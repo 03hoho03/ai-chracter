@@ -23,6 +23,7 @@ import {
 
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
 import { RuleListEditor } from "./RuleListEditor";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 
 const SITUATION_NOTE_LIST: StoryCollapsibleList = "situationNote";
 const RULE_GROUP_LIST: StoryCollapsibleList = "situationNoteRuleGroup";
@@ -171,6 +172,7 @@ export function SituationNoteCard({ startingSetupIndex, noteIndex, note, stats, 
           조건이 맞는 턴에 ‘지금 이야기 속 사실’로 전해져요. ‘~해라’ 같은 지시 대신 사실로 적어 주세요.
         </p>
         <MediaTagOutsideNotice name={`${notePath}.content`} />
+        <StoryMacroNotice name={`${notePath}.content`} />
         {!!noteErrors?.content && (
           <p id={ids.contentError} role="alert" className="text-xs text-destructive-text">
             {noteErrors.content.message}

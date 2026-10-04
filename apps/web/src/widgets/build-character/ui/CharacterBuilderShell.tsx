@@ -246,7 +246,13 @@ export function CharacterBuilderShell({ draft, draftId, renderPreview }: Charact
   function handlePublishInvalid(errors: FieldErrors<CharacterBuilderFormValues>) {
     revealErrorItems(errors);
     focusFirstError(firstErrorLocation(errors, TABS));
-    toast.error(invalidFieldsMessage(flattenFieldErrorPaths(errors), MISSING_FIELD_LABEL_BY_FORM_PATH));
+    toast.error(
+      invalidFieldsMessage(flattenFieldErrorPaths(errors), {
+        ...MISSING_FIELD_LABEL_BY_FORM_PATH,
+        // 서버는 이 칸을 누락 필드로 보내지 않아(형식이 틀리면 요청 단계에서 거절한다) 위 서버 맵에 자리가 없다.
+        "intro.defaultUserName": "사용자 기본 이름",
+      }),
+    );
   }
 
   // 폼과 프리뷰가 동시에 살아 있어야 하므로(lg 이상 2단) 더 이상

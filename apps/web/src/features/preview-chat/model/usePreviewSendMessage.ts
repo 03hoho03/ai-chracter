@@ -14,6 +14,7 @@ import { previewStreamEventSchema } from "@/entities/preview-session";
 import type { PreviewChatMessage, PreviewSessionState } from "@/entities/preview-session";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 // isSending(boolean) + error(boolean)의 조합은 "전송 중이면서 동시에 에러"라는 불가능 상태를
 // 타입으로 막지 못했다(useSendMessage와 동일한 처방). 재시도가 없어 useSendMessage와 달리 retryPayload는
@@ -40,6 +41,8 @@ export function usePreviewSendMessage(
    * `useSendMessage`와 같은 이유로 위젯이 주입한다(feature끼리 import하지 않는다, 선례 0건).
    * 미리보기도 채팅 4경로의 같은 게이트를 지나므로 같은 확인이 필요하다. */
   confirmCloverSpend?: (error: unknown) => Promise<CloverSpendConfirmOutcome>,
+  /** 보내는 글 속 `{{user}}`·`{{char}}` 에 넣을 이름 — 화면이 첫 메시지·칩에 그린 이름과 같은 것을 위젯이 넘긴다. */
+  macroNames?: AuthorMacroNames,
 ) {
   const queryClient = useQueryClient();
   const [status, setStatus] = useState<PreviewSendStatus>({ kind: "idle" });
@@ -52,7 +55,14 @@ export function usePreviewSendMessage(
    * 미리보기도 채팅 일일 창을 공유하므로 막는 대상이 `useSendMessage`와 같다 — **서버가 커밋된
    * 동의를 인정하지 않는 경우** 하나뿐이고, 동의 POST 실패나 자정 넘김은 여기서 성립하지 않는다.
    * 사유는 그쪽 주석에 적어 뒀다(사본을 두지 않는다). */
-  async function send(
+  /** 보내는 글의 이름 매크로를 낙관적 메시지를 만들기 전에 바꾼다 — 입력창·추천 답변·단축어 프롬프트가 모두 여기를
+   * 지나고, 바꾼 글이 화면과 서버에 함께 간다(실채팅 전송 훅과 같은 규칙). */
+  function send(previewSessionId: string, rawText: string, shortcutId?: string): Promise<void> {
+    const text = macroNames === undefined ? rawText : expandAuthorMacros(rawText, macroNames);
+    return sendExpanded(previewSessionId, text, shortcutId);
+  }
+
+  async function sendExpanded(
     previewSessionId: string,
     text: string,
     shortcutId?: string,
@@ -127,7 +137,8 @@ export function usePreviewSendMessage(
         );
         setStreamingText("");
         handedOffToRetry = true;
-        await send(previewSessionId, text, shortcutId, false);
+        // 이미 바꾼 글이다 — 다시 바꾸지 않는다(이름 속 매크로 글자가 두 번째로 읽히지 않게).
+        await sendExpanded(previewSessionId, text, shortcutId, false);
         return;
       }
       rateLimit = getChatRateLimit(error);

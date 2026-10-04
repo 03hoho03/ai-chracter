@@ -29,7 +29,7 @@ const SECONDARY_TEXT_CLASS =
   "text-muted-foreground group-hover/persona-option:text-foreground group-data-[state=on]/persona-option:text-foreground";
 
 /** 대화방의 대화 프로필 목록("선택 안 함" 포함). 누르면 바로 `PUT`한다 — 확인 단계가 없는 이유는 되돌리기가
- * 같은 동작 한 번이고 과거 메시지는 바뀌지 않기 때문이다(다음 턴부터 반영).
+ * 같은 동작 한 번이고 내가 보낸 메시지는 바뀌지 않기 때문이다(작품 글 속 이름은 바로, 캐릭터는 다음 턴부터 반영).
  *
  * `variant="list"` — 넓은 행이 세로로 쌓인 선택지라 틴트로 표시한다(DESIGN.md §Toggles). `hover:bg-secondary`는
  * 프리미티브의 `hover:bg-muted`가 모달 표면(`popover`)과 같은 값이라 사라지는 것을 한 칸 올린다. */
@@ -42,7 +42,7 @@ export function RoomPersonaPicker({ roomId, currentPersonaId, personaList, onCha
     if (value === "" || value === selectedValue || setRoomPersonaMutation.isPending) return;
     setRoomPersonaMutation.mutate(value === NO_PERSONA_VALUE ? null : value, {
       onSuccess: () => {
-        toast.success("대화 프로필을 바꿨어요. 다음 대화부터 반영돼요.");
+        toast.success("대화 프로필을 바꿨어요. 캐릭터는 다음 대화부터 알아요.");
         onChanged();
       },
       onError: () => toast.error("대화 프로필을 바꾸지 못했어요. 잠시 후 다시 시도해주세요."),

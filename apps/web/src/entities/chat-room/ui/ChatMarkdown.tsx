@@ -7,10 +7,12 @@ import { Button } from "@ai-character-chat/ui/components/button";
 import { cn } from "@ai-character-chat/ui/lib/utils";
 
 import { dropUnresolvedMediaTags } from "@/entities/media-book/@x/chat-room";
+import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
 import { MediaImageFrame, type MediaImageSurface } from "@/shared/ui/media-image-frame/MediaImageFrame";
 
 import { CHAT_MARKDOWN_MEDIA_OPTIONS, CHAT_MARKDOWN_OPTIONS, prepareChatMarkdownSource } from "../lib/chatMarkdown";
 import { copyCodeToClipboard } from "../lib/copyCodeToClipboard";
+import { useAuthorMacroNames } from "../model/useAuthorMacroNames";
 import { useMediaTagImages } from "../model/useMediaTagImages";
 
 // 코드 블록과 글 속 그림 자리가 같은 면 값을 받으므로 그림 틀의 면 종류를 그대로 쓴다.
@@ -70,7 +72,13 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }: ChatMarkdownProps) {
   // 그림 맵은 `MediaTagImagesProvider` 로 감싼 메시지(작성자 글)에만 있다. 없으면 태그는 글자 그대로다.
   const mediaTagImages = useMediaTagImages();
-  const source = mediaTagImages === undefined ? content : dropUnresolvedMediaTags(content, mediaTagImages);
+  // 이름은 `AuthorMacroNamesProvider` 로 감싼 작성자 글에만 있다. 그림 태그를 먼저 처리하고 이름을 나중에 넣는다 —
+  // 넣은 이름이 태그로 읽히지 않게. 마크다운 파싱 전이라 이름 속 표기 문자는 이름 규칙이 막는다(`userNameError`).
+  const authorMacroNames = useAuthorMacroNames();
+  const withoutUnresolvedTags =
+    mediaTagImages === undefined ? content : dropUnresolvedMediaTags(content, mediaTagImages);
+  const source =
+    authorMacroNames === undefined ? withoutUnresolvedTags : expandAuthorMacros(withoutUnresolvedTags, authorMacroNames);
   // `break-words` 가 아니라 `wrap-break-word` 인 이유: tailwind-merge 가 `break-words` 와 `break-keep` 을
   // 같은 무리로 보고 앞의 것을 지운다. 둘 다 살아 있어야 어절은 지키고 긴 URL 같은 한 덩어리는 접힌다.
   return (

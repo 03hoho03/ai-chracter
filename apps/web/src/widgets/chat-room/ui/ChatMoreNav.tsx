@@ -6,6 +6,7 @@ import { EndingCollectionModal } from "@/features/ending-collection";
 import { ImageArchiveModal, StoryImageArchiveModal } from "@/features/image-archive";
 import { PlayGuideModal } from "@/features/play-guide";
 import { UpdateInfoModal } from "@/features/update-info";
+import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { chatSidePanelAtom } from "../model/atoms";
 import { RoomPersonaModal } from "./RoomPersonaModal";
@@ -40,24 +41,26 @@ export type ChatMoreNavProps = {
   characterId?: string;
   /** 스토리 방일 때만 있다(캐릭터 방은 undefined) — 보관함이 작품마다 갈린다. */
   storyId?: string;
+  /** 이 방의 `{{user}}`·`{{char}}` 이름. 여기서 여는 모달은 방 밖(루트)에 마운트돼 방을 모르므로 이름을 넘겨받는다. */
+  macroNames: AuthorMacroNames;
 };
 
 // 항목 목록 자체는 react-call을 쓰지 않는다
 // (열림/닫힘만 있는 목록일 뿐 "호출→결과 반환"이 필요 없다). 항목을 누르면 패널을 닫고 해당 기능
 // 전용 react-call 모달을 연다 — 데스크톱 인라인 사이드바(ChatMoreSidebar)와 모바일 Sheet
 // (ChatMorePanel)가 이 목록과 핸들러를 공유하므로 두 곳에서 그려져도 정의는 여기 한 곳뿐이다.
-export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId, storyId }: ChatMoreNavProps) {
+export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId, storyId, macroNames }: ChatMoreNavProps) {
   const setPanel = useSetAtom(chatSidePanelAtom);
   const items = contentType === "story" ? STORY_ITEMS : CHARACTER_ITEMS;
 
   function handleItemClick(item: MorePanelItem) {
     if (!item.isActive) return;
     setPanel(undefined);
-    if (item.key === "play-guide") void PlayGuideModal.call({ roomId });
+    if (item.key === "play-guide") void PlayGuideModal.call({ roomId, macroNames });
     if (item.key === "update-info") void UpdateInfoModal.call({ roomId });
-    if (item.key === "change-starting-setup") void ChangeStartingSetupModal.call({ roomId });
+    if (item.key === "change-starting-setup") void ChangeStartingSetupModal.call({ roomId, macroNames });
     if (item.key === "ending-collection" && startingSetupId) {
-      void EndingCollectionModal.call({ startingSetupId });
+      void EndingCollectionModal.call({ startingSetupId, macroNames });
     }
     // 선택 UI를 모달로 둔 근거는 RoomPersonaModal 주석.
     if (item.key === "persona") void RoomPersonaModal.call({ roomId });
@@ -65,7 +68,7 @@ export function ChatMoreNav({ roomId, contentType, startingSetupId, characterId,
       void ImageArchiveModal.call({ characterId });
     }
     if (item.key === "image-archive" && storyId) {
-      void StoryImageArchiveModal.call({ storyId });
+      void StoryImageArchiveModal.call({ storyId, macroNames });
     }
   }
 

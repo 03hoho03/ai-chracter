@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type ReactNode } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { RotateCw, Send, TriangleAlert } from "lucide-react";
@@ -6,8 +6,10 @@ import { toast } from "sonner";
 
 import type { PreviewShortcut, PreviewStartPayload } from "@/entities/preview-session";
 import {
+  AuthorMacroNamesProvider,
   EndingDivider,
   isAuthorOpeningMessage,
+  isAuthorTextMessage,
   MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
@@ -24,7 +26,9 @@ import { useConfirmCloverSpend } from "@/features/confirm-clover-spend";
 import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { usePreviewSendMessage } from "@/features/preview-chat";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
+import { expandAuthorMacros } from "@/shared/lib/text/authorMacros";
 
+import { previewAuthorMacroNames } from "../model/previewAuthorMacroNames";
 import { previewPersonaLabel } from "../model/previewPersonaLabel";
 
 type PreviewSessionViewProps = {
@@ -54,20 +58,28 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
   // useStartPreviewMutation의 성공 콜백으로만 채워진다. 지연 시작 이후 첫 전송 전에는 그 캐시가
   // 비어 있으므로, 세션 id 없이 계산한 로컬 상태로 대신한다 — 안 그러면 첫 전송 전까지 영구
   // 스켈레톤이 된다.
+  // 세션이 생긴 뒤에는 폼을 다시 변환하지 않는다 — 스트리밍 글자마다 이 화면이 다시 그려진다.
   const state = stateQuery.data ?? buildPreviewStartState(undefined, getPayload(), getMediaBookImages?.());
+  // 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
+  // 위에 한 줄로 보인다. `isSuccess`만 넘기는 건 재조회 실패(옛 data가 남은 error)에도 숨기기 위해서다.
+  const personasQuery = usePersonasQuery();
+  const personaList = personasQuery.isSuccess ? personasQuery.data : undefined;
+  const personaCaption = previewPersonaLabel(personaList);
+  // 작가 글(첫 메시지·에필로그·칩·단축어·스탯 이름)의 `{{user}}`·`{{char}}` 를 서버의 미리보기 프롬프트와 같은 이름으로
+  // 바꿔 보인다. 작품 쪽 값은 세션 상태의 것이라 세션 도중 폼에서 이름을 고쳐도 서버(시작 때 페이로드)와 갈리지 않는다.
+  const macroNames = previewAuthorMacroNames(state.authorNameSource, state.contentType, personaList);
+  const expandForPreview = (text: string) => expandAuthorMacros(text, macroNames);
 
   // 미리보기도 채팅 4경로와 **같은 게이트**를 지나므로 같은
   // 확인이 필요하다. 트리거를 위젯이 만들어 넘기는 이유와 단가를 여기서 묶는 이유는
   // `ChatRoomView`와 같다 — 한 턴 단가다.
   const confirmCloverSpend = useConfirmCloverSpend();
-  const { send, status, policyWarning, streamingText } = usePreviewSendMessage((error) =>
-    // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
-    confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
+  const { send, status, policyWarning, streamingText } = usePreviewSendMessage(
+    (error) =>
+      // 미리보기도 `"chat"`이다 — 게이트가 채팅 4경로에 같은 일일 버킷을 쓰므로 자정 사유가 참이다.
+      confirmCloverSpend(error, CHAT_TURN_CLOVER_COST, "chat"),
+    macroNames,
   );
-  // 미리보기 턴은 작가의 기본 프로필을 조용히 쓴다. 무엇이 들어가는지 입력창
-  // 위에 한 줄로 보인다. `isSuccess`만 넘기는 건 재조회 실패(옛 data가 남은 error)에도 숨기기 위해서다.
-  const personasQuery = usePersonasQuery();
-  const personaCaption = previewPersonaLabel(personasQuery.isSuccess ? personasQuery.data : undefined);
   const isSending = status.kind === "sending";
   const [text, setText] = useState("");
   const [isStarting, setIsStarting] = useState(false);
@@ -171,31 +183,50 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
       />
 
       <div className="mx-auto flex w-full min-h-0 max-w-5xl flex-1 flex-col">
-        {state.statDefs.length > 0 && <StatGaugePanel stats={state.statDefs} values={state.stats} />}
+        {state.statDefs.length > 0 && (
+          <StatGaugePanel
+            stats={state.statDefs.map((stat) => ({
+              ...stat,
+              name: expandForPreview(stat.name),
+              unit: stat.unit === undefined ? undefined : expandForPreview(stat.unit),
+            }))}
+            values={state.stats}
+          />
+        )}
 
         <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
           {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
               같은 값이면 메시지 경계와 문단 경계가 구분되지 않는다. */}
           <div className="flex flex-col gap-6">
             {/* 스토리 첫 메시지는 작성자 글이라 글 속 미디어 북 태그를 그림으로 그린다(채팅방과 같은 규칙). */}
-            {state.messages.map((message, index) =>
-              isAuthorOpeningMessage({ index, role: message.role, contentType: state.contentType }) ? (
-                <MediaTagImagesProvider key={message.id} images={state.openingMediaTagImages}>
+            {/* 첫 메시지(캐릭터 인사말 포함)는 작성자 글이라 이름 매크로도 바꾼다. */}
+            {state.messages.map((message, index) => {
+              const bubble = isAuthorOpeningMessage({ index, role: message.role, contentType: state.contentType }) ? (
+                <MediaTagImagesProvider images={state.openingMediaTagImages}>
                   <MessageBubble message={message} />
                 </MediaTagImagesProvider>
               ) : (
-                <MessageBubble key={message.id} message={message} />
-              ),
-            )}
+                <MessageBubble message={message} />
+              );
+              return isAuthorTextMessage({ index, role: message.role }) ? (
+                <AuthorMacroNamesProvider key={message.id} names={macroNames}>
+                  {bubble}
+                </AuthorMacroNamesProvider>
+              ) : (
+                <Fragment key={message.id}>{bubble}</Fragment>
+              );
+            })}
 
             {state.endingStatus.reached && !!state.endingStatus.epilogue && (
               <>
                 <EndingDivider />
-                <MediaTagImagesProvider images={state.endingStatus.mediaTagImages ?? {}}>
-                  <MessageBubble
-                    message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
-                  />
-                </MediaTagImagesProvider>
+                <AuthorMacroNamesProvider names={macroNames}>
+                  <MediaTagImagesProvider images={state.endingStatus.mediaTagImages ?? {}}>
+                    <MessageBubble
+                      message={{ id: "ending-epilogue", role: "assistant", content: state.endingStatus.epilogue, createdAt: "" }}
+                    />
+                  </MediaTagImagesProvider>
+                </AuthorMacroNamesProvider>
               </>
             )}
 
@@ -248,7 +279,7 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
                   onClick={() => handleSuggestedReplyClick(reply)}
                   className="shrink-0 rounded-full"
                 >
-                  {reply}
+                  {expandForPreview(reply)}
                 </Button>
               ))}
             </div>
@@ -273,7 +304,11 @@ export function PreviewSessionView({ getPayload, getMediaBookImages, onClose }: 
               />
               {state.shortcuts.length > 0 && text.startsWith("/") && (
                 <ShortcutAutocomplete
-                  shortcuts={state.shortcuts}
+                  shortcuts={state.shortcuts.map((shortcut) => ({
+                    ...shortcut,
+                    name: expandForPreview(shortcut.name),
+                    description: expandForPreview(shortcut.description),
+                  }))}
                   query={text.slice(1)}
                   onSelect={handleShortcutSelect}
                 />

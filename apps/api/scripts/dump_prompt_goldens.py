@@ -30,6 +30,7 @@ from uuid import UUID
 from api.chat.prompt_builder import (
     MediaCellCandidate,
     PromptLane,
+    PromptNames,
     build_ending_judgment_prompt,
     build_generation_prompt,
     build_image_judgment_prompt,
@@ -89,9 +90,37 @@ DEVELOPMENT_EXAMPLE: dict[str, Any] = {
 }
 
 
+# 이름이 없는 턴 — 대화 프로필도 작품 기본 이름도 없다. 이름 한 줄(생성·판정)이 비어 섹션째 빠지므로 이 인자가 생기기
+# 전에 뜬 골든과 바이트까지 같다. 픽스처 글에는 `{{char}}` 가 없어 캐릭터 이름은 결과에 영향이 없다.
+_NO_NAMES = PromptNames(persona_name=None, default_user_name="", char_name=None)
+
+# 작가 글의 `{{user}}` 가 이름으로 바뀌는 턴 — 아래 두 골든은 이 리비전 이후에 손으로 적었다(`main()` 으로 뜨지 않았다).
+# 생성은 프로필 없이 작품 기본 이름만 있는 방이라 생성 채널에도 이름 한 줄이 실리고, 판정은 프로필 이름이 있는 방이다.
+# 기록의 사용자 줄에 남은 `{{user}}` 는 사용자가 친 글자라 그대로다.
+_DEFAULT_NAME_ONLY = PromptNames(persona_name=None, default_user_name="지훈", char_name=None)
+_PERSONA_NAME = PromptNames(persona_name="하늘", default_user_name="", char_name=None)
+STORY_SETTING_TEXT_WITH_USER = "옥상에서 {{user}}는 늘 혼자다."
+ENDING_JUDGMENT_PROMPT_WITH_USER = "{{user}}가 종잇조각을 읽으면 이 엔딩이 발동한다."
+
+
+def _story_history_with_user_macro() -> list[ChatMessage]:
+    return [
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content="{{user}}가 문 앞에 서자 바람이 분다."),
+        ChatMessage(role=ChatMessageRole.USER, content="{{user}}는 문을 두드려 본다."),
+    ]
+
+
+def _story_history_calling_the_user() -> list[ChatMessage]:
+    return [
+        ChatMessage(role=ChatMessageRole.USER, content="문을 두드려 본다."),
+        ChatMessage(role=ChatMessageRole.ASSISTANT, content="안에서 {{user}}를 부르는 소리가 난다."),
+    ]
+
+
 # 미디어 북 이미지 태그가 든 프롤로그·대화 기록. 태그는 화면에서만 이미지가 되고 모델로 가는 사본에서는
 # 지워져야 한다 — 빈 줄 사이에 홀로 선 태그 줄은 빈 줄 하나로 접히고, 글 맨 앞 태그 줄은 사라지고, 줄 중간
-# 태그는 글자만 사라진다. 미디어 북 태그가 아닌 `{{user}}` 는 그대로 남는다.
+# 태그는 글자만 사라진다. 미디어 북 태그가 아닌 `{{user}}` 는 그대로 남는다 — 그 줄은 기록의 사용자 줄이라 이름으로도
+# 바꾸지 않는다(사용자 메시지는 화면이 보내기 전에 바꿔 저장하므로, 남은 `{{user}}` 는 사용자가 친 글자다).
 STORY_PROLOGUE_WITH_MEDIA_TAGS = "옥상 문은 살짝 열려 있다.\n\n{{img::민아/옥상}}\n\n바람에 종잇조각 하나가 팔랑인다."
 # 태그 없이 빈 줄이 연달아 있는 글. 태그를 지우며 생긴 빈 줄만 접어야 하므로 이 글은 그대로 나가야 한다.
 STORY_PROLOGUE_WITH_BLANK_LINES = "옥상 문은 살짝 열려 있다.\n\n\n바람에 종잇조각 하나가 팔랑인다."
@@ -244,6 +273,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             user_persona="",
             memory_note="",
             memory_summary="",
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -259,6 +289,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             user_persona="",
             memory_note="",
             memory_summary="",
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -274,6 +305,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             user_persona="",
             memory_note="",
             memory_summary="",
+            names=_NO_NAMES,
         ),
     ),
     # -- 생성 프롬프트: 스토리 CUSTOM/비-CUSTOM(BASIC 대표) × filled/empty --
@@ -297,6 +329,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=[KEYWORD_NOTE_TEXT],
             shortcut_prompt=SHORTCUT_PROMPT,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -319,6 +352,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -341,6 +375,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=[KEYWORD_NOTE_TEXT],
             shortcut_prompt=SHORTCUT_PROMPT,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -363,6 +398,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
+            names=_NO_NAMES,
         ),
     ),
     # -- 생성 프롬프트: 미디어 북 태그 제거 --
@@ -389,6 +425,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -411,6 +448,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             memory_summary="",
             keyword_note_texts=None,
             shortcut_prompt=None,
+            names=_NO_NAMES,
         ),
     ),
     # -- 판단 프롬프트: 스탯/엔딩/이미지 × filled/empty --
@@ -424,6 +462,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             current_stats={str(_AFFECTION_ENTITY_ID): 62.0},
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -436,6 +475,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             current_stats={},
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -449,6 +489,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
             memory_summary="",
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -462,6 +503,7 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
             memory_summary="",
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -472,10 +514,11 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             sections=sections,
             scope="character",
             assistant_label=ps.character_assistant_label,
-            image_lines=situational_image_lines(_situational_images()),
+            image_lines=situational_image_lines(_situational_images(), names=_NO_NAMES),
             history=_character_history(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            names=_NO_NAMES,
         ),
     ),
     (
@@ -486,10 +529,11 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             sections=sections,
             scope="character",
             assistant_label=ps.character_assistant_label,
-            image_lines=situational_image_lines([]),
+            image_lines=situational_image_lines([], names=_NO_NAMES),
             history=[],
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            names=_NO_NAMES,
         ),
     ),
     # 스토리 미디어 북 칸 판정 — 위 캐릭터 골든을 뜬 뒤에 더한 케이스라 기대 텍스트를 손으로 적었다.
@@ -502,10 +546,49 @@ GOLDEN_CASES: list[tuple[str, PromptLane, GoldenBuilder]] = [
             sections=sections,
             scope="story",
             assistant_label=ps.story_assistant_label,
-            image_lines=media_cell_image_lines(_media_cells()),
+            image_lines=media_cell_image_lines(_media_cells(), names=_NO_NAMES),
             history=_story_history_with_media_tags(),
             user_message=USER_MESSAGE,
             assistant_message=ASSISTANT_MESSAGE,
+            names=_NO_NAMES,
+        ),
+    ),
+    # -- 작가 글의 `{{user}}` 치환과 이름 한 줄 --
+    (
+        "generation_story_default_user_name.txt",
+        "story",
+        lambda ps, sections: build_story_generation_prompt(
+            prompt_set=ps,
+            sections=sections,
+            prompt_template=StoryPromptTemplate.BASIC,
+            setting_text=STORY_SETTING_TEXT_WITH_USER,
+            development_examples=[],
+            user_goal=None,
+            rules=None,
+            custom_prompt=None,
+            prologue=STORY_PROLOGUE,
+            history=_story_history_with_user_macro(),
+            user_message=USER_MESSAGE,
+            user_persona="",
+            memory_note="",
+            memory_summary="",
+            keyword_note_texts=None,
+            shortcut_prompt=None,
+            names=_DEFAULT_NAME_ONLY,
+        ),
+    ),
+    (
+        "judgment_ending_user_name.txt",
+        "story",
+        lambda ps, sections: build_ending_judgment_prompt(
+            prompt_set=ps,
+            sections=sections,
+            judgment_prompt=ENDING_JUDGMENT_PROMPT_WITH_USER,
+            history=_story_history_calling_the_user(),
+            user_message=USER_MESSAGE,
+            assistant_message=ASSISTANT_MESSAGE,
+            memory_summary="",
+            names=_PERSONA_NAME,
         ),
     ),
     # -- 발행 심사: 이미지 목록만 싣는다 --

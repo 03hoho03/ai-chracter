@@ -5,6 +5,7 @@ import { ChevronDown } from "lucide-react";
 
 import type { ContentDetailResponse } from "@/entities/content";
 import { stripMediaTags, type MediaTagImages } from "@/entities/media-book";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { MediaTagText } from "./MediaTagText";
 
@@ -12,6 +13,8 @@ type StoryDetailBodyProps = {
   startingSetups: NonNullable<ContentDetailResponse["startingSetups"]>;
   /** 프롤로그 속 칸 id 형태 태그가 가리키는 그림. */
   mediaTagImages: MediaTagImages;
+  /** 시작설정 이름·프롤로그 속 `{{user}}`·`{{char}}` 를 바꿀 이름(보는 사람 기준). */
+  macroNames: AuthorMacroNames;
   selectedSetupId: string | undefined;
   onSelectedSetupIdChange: (id: string) => void;
 }
@@ -24,6 +27,7 @@ type StoryDetailBodyProps = {
 export function StoryDetailBody({
   startingSetups,
   mediaTagImages,
+  macroNames,
   selectedSetupId,
   onSelectedSetupIdChange,
 }: StoryDetailBodyProps) {
@@ -41,7 +45,7 @@ export function StoryDetailBody({
       {startingSetups.length === 1 ? (
         <div className="flex flex-col gap-1.5">
           <h2 className="text-sm font-semibold text-foreground">시작 상황</h2>
-          <p className="text-sm leading-snug font-medium break-keep wrap-anywhere text-foreground">‘{selectedSetup.name}’</p>
+          <p className="text-sm leading-snug font-medium break-keep wrap-anywhere text-foreground">‘{expandAuthorMacros(selectedSetup.name, macroNames)}’</p>
         </div>
       ) : (
         <>
@@ -62,7 +66,7 @@ export function StoryDetailBody({
           >
             {startingSetups.map((setup) => (
               <ToggleGroupItem key={setup.id} value={setup.id}>
-                {setup.name}
+                {expandAuthorMacros(setup.name, macroNames)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -77,12 +81,13 @@ export function StoryDetailBody({
           <MediaTagText
             text={selectedSetup.prologue}
             images={mediaTagImages}
+            names={macroNames}
             className="whitespace-pre-wrap text-sm text-muted-foreground"
             surface="secondary"
           />
         ) : (
           <p className="line-clamp-4 whitespace-pre-wrap text-sm text-muted-foreground">
-            {stripMediaTags(selectedSetup.prologue)}
+            {expandAuthorMacros(stripMediaTags(selectedSetup.prologue), macroNames)}
           </p>
         )}
         <button

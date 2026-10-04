@@ -34,6 +34,7 @@ export { usePinLatestVersionMutation } from "./api/usePinLatestVersionMutation";
 export { useRenameChatRoomMutation } from "./api/useRenameChatRoomMutation";
 export { useResetChatRoomMutation } from "./api/useResetChatRoomMutation";
 export { useStartChatMutation } from "./api/useStartChatMutation";
+export { AuthorMacroNamesProvider } from "./ui/AuthorMacroNamesProvider";
 export { ChatMarkdown } from "./ui/ChatMarkdown";
 export { EndingDivider } from "./ui/EndingDivider";
 export { MediaTagImagesProvider } from "./ui/MediaTagImagesProvider";
@@ -56,7 +57,8 @@ export {
 } from "./model/contentRestricted";
 export { CHAT_TURN_IN_PROGRESS_NOTICE, isChatTurnInProgressError } from "./model/chatTurnInProgress";
 export { STAT_ICON_OPTIONS } from "./model/statIcons";
-export { isAuthorOpeningMessage } from "./model/isAuthorOpeningMessage";
+export { isAuthorOpeningMessage, isAuthorTextMessage } from "./model/isAuthorOpeningMessage";
+export { roomAuthorMacroNames } from "./model/roomAuthorMacroNames";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
 export { OPERATOR_MAP as ENDING_RULE_OPERATOR_SYMBOLS, toChatRoomState } from "./api/toChatRoomState";
 export { restoreMessages, truncateAndEdit } from "./model/truncateAndEdit";

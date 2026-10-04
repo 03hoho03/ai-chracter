@@ -35,8 +35,11 @@ import {
   type ThumbnailAspect,
 } from "@/entities/content";
 import { toMediaTagImages } from "@/entities/media-book";
+import { useViewerPersonaName } from "@/entities/persona";
+import { useSessionQuery } from "@/entities/session";
 import { isApiError } from "@/shared/api/client";
 import { assertNever } from "@/shared/lib/assertNever";
+import { expandAuthorMacros, resolveAuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { CharacterChatHistoryLink } from "./CharacterChatHistoryLink";
 import { CharacterPlayBar } from "./CharacterPlayBar";
@@ -119,6 +122,9 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   // 않지만 다른 optimistic override들과 같은 이유로 무조건 호출한다(hooks 규칙).
   const [selectedSetupIdOverride, setSelectedSetupIdOverride] = useState<string | undefined>(undefined);
   const content = detailQuery.data;
+  // 방이 없는 화면이라 작가 글의 `{{user}}` 는 보는 사람의 기본 프로필 이름이다(없거나 비로그인이면 작품 기본 이름).
+  const isLoggedIn = useSessionQuery().data !== undefined;
+  const viewerPersonaName = useViewerPersonaName(isLoggedIn);
 
   // 상세 GET이 백그라운드로 조회수를 올리므로 홈 목록을 무효화해야 한다 — 모달 경로는 홈 리스트가
   // 언마운트되지 않아 이것 없이는 닫아도 카드 숫자가 갱신되지 않는다.
@@ -266,6 +272,12 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
   const likeCount = content.likeCount + optimisticDelta(isLiked, content.isLiked);
   const isFavorited = isFavoriteDesired ?? content.isFavorited;
   const selectedSetupId = selectedSetupIdOverride ?? content.startingSetups?.[0]?.id;
+  const macroNames = resolveAuthorMacroNames({
+    personaName: viewerPersonaName,
+    defaultUserName: content.defaultUserName,
+    contentType: content.type,
+    contentName: content.name,
+  });
 
   let footer: ReactNode;
   switch (content.type) {
@@ -275,6 +287,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
           contentId={content.id}
           startingSetups={content.startingSetups ?? []}
           selectedSetupId={selectedSetupId}
+          macroNames={macroNames}
           onRestoreSetup={setSelectedSetupIdOverride}
         />
       );
@@ -436,7 +449,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
 
           </div>
 
-          <p className="text-sm font-medium text-foreground">{content.oneLiner}</p>
+          <p className="text-sm font-medium text-foreground">{expandAuthorMacros(content.oneLiner, macroNames)}</p>
         </div>
       </div>
 
@@ -447,6 +460,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
       <MediaTagText
         text={content.detailDescription}
         images={toMediaTagImages(content.mediaTagImages)}
+        names={macroNames}
         className="whitespace-pre-wrap text-sm text-muted-foreground"
         surface={variant === "modal" ? "secondary" : "muted"}
       />
@@ -455,6 +469,7 @@ export function ContentDetailView({ id, type, variant, comments }: ContentDetail
         <StoryDetailBody
           startingSetups={content.startingSetups ?? []}
           mediaTagImages={toMediaTagImages(content.mediaTagImages)}
+          macroNames={macroNames}
           selectedSetupId={selectedSetupId}
           onSelectedSetupIdChange={setSelectedSetupIdOverride}
         />

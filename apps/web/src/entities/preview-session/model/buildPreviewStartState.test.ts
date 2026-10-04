@@ -93,6 +93,27 @@ function storyPayload(overrides: Partial<StoryDraftPayload> = {}): StoryDraftPay
 }
 
 describe("buildPreviewStartState", () => {
+  // 서버는 세션을 시작할 때 받은 페이로드의 작품 기본 이름·작품 이름을 세션 내내 쓴다. 화면도 그 순간 값을 상태에 들고 있어야
+  // 세션 도중 폼에서 이름을 고쳐도 둘이 갈리지 않는다.
+  it("keeps the work's default user name and name as they were when the session started", () => {
+    expect(buildPreviewStartState("session-1", characterPayload({ defaultUserName: "막내" })).authorNameSource).toEqual({
+      defaultUserName: "막내",
+      contentName: "여름밤의 소녀",
+    });
+    expect(buildPreviewStartState("session-1", storyPayload({ defaultUserName: "조수" })).authorNameSource).toEqual({
+      defaultUserName: "조수",
+      contentName: "여름밤의 항해",
+    });
+    expect(buildPreviewStartState("session-1", storyPayload({ startingSetups: [] })).authorNameSource.contentName).toBe(
+      "여름밤의 항해",
+    );
+  });
+
+  // 서버가 받지 않을 기본 이름은 페이로드에서 빠진다. 서버는 빠진 칸을 빈 값으로 읽으므로 화면도 같다.
+  it("reads a default user name left out of the payload as empty, like the server", () => {
+    expect(buildPreviewStartState("session-1", characterPayload()).authorNameSource.defaultUserName).toBe("");
+  });
+
   it("previewSessionId가 undefined면 결과에도 undefined를 그대로 옮긴다 — 지연 시작의 로컬 플레이스홀더", () => {
     const state = buildPreviewStartState(undefined, characterPayload());
 

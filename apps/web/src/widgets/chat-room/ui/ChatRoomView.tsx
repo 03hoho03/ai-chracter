@@ -6,18 +6,21 @@ import { Textarea } from "@ai-character-chat/ui/components/textarea";
 import { ArrowLeft, Ban, History, RotateCw, Send, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 
-import type { Shortcut } from "@/entities/chat-room";
+import type { Ending, Shortcut } from "@/entities/chat-room";
 import {
+  AuthorMacroNamesProvider,
   CHAT_TURN_IN_PROGRESS_NOTICE,
   CONTENT_RESTRICTED_NOTICE,
   EndingDivider,
   isAuthorOpeningMessage,
+  isAuthorTextMessage,
   MediaTagImagesProvider,
   MessageBubble,
   RateLimitNotice,
   StatGaugePanel,
   TypingIndicator,
   canReportMessage,
+  roomAuthorMacroNames,
   shouldShowSuggestedReplies,
   useAcknowledgeVersionUpgradeMutation,
   useChatRoomQuery,
@@ -36,6 +39,7 @@ import { NarrationMarkerButton } from "@/features/insert-narration-marker";
 import { ReportChatMessageModal } from "@/features/report-chat-message";
 import { useSendMessage } from "@/features/send-message";
 import { ShortcutAutocomplete } from "@/features/shortcut-autocomplete";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { useMemoryFollowUpRefresh } from "../lib/useMemoryFollowUpRefresh";
 import { chatSidePanelAtom } from "../model/atoms";
@@ -156,6 +160,24 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
   // 어느 쪽이든 입력창·재생성·편집을 걷고 안내만 남긴다(읽기·삭제·신고는 그대로).
   const isRestricted = room.contentRestricted || (status.kind === "error" && status.restricted === true);
 
+  // 작가 글 속 `{{user}}`·`{{char}}` 를 방의 이름으로 바꿔 보인다. 보내는 글은 전송 훅이 같은 이름으로 바꾼다 — 칩에
+  // 보인 글과 저장되는 글이 같다.
+  const macroNames = roomAuthorMacroNames(room);
+  const expandForRoom = (text: string) => expandAuthorMacros(text, macroNames);
+  const snapshot = room.contentSnapshot && {
+    ...room.contentSnapshot,
+    stats: room.contentSnapshot.stats.map((stat) => ({
+      ...stat,
+      name: expandForRoom(stat.name),
+      unit: stat.unit === undefined ? undefined : expandForRoom(stat.unit),
+    })),
+    shortcuts: room.contentSnapshot.shortcuts.map((shortcut) => ({
+      ...shortcut,
+      name: expandForRoom(shortcut.name),
+      description: expandForRoom(shortcut.description),
+    })),
+  };
+
   // no-nested-ternary — 네 갈래(레이트리밋/앞 턴 진행 중/거절/실패)를 렌더 전에 미리 갈라 둔다.
   // 제한 거부는 실패 배너를 띄우지 않는다 — 다시 시도해도 안 풀리고, 안내는 입력창 자리가 맡는다.
   let errorNotice: ReactNode = null;
@@ -230,6 +252,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
             characterId={characterId}
             storyId={storyId}
+            macroNames={macroNames}
           />
         </div>
       </header>
@@ -249,7 +272,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
             </div>
           )}
 
-          {room.contentSnapshot && <StatGaugePanel stats={room.contentSnapshot.stats} values={room.stats} />}
+          {snapshot && <StatGaugePanel stats={snapshot.stats} values={room.stats} />}
 
           <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-4">
             {/* 메시지 사이 gap-6(24px)은 한 메시지 안 문단 간격(12px)의 두 배다. 상자 없는 산문이 한 컬럼에 흐르므로
@@ -283,25 +306,31 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                 );
                 // 스토리 방 첫 메시지는 작성자 글의 복사본이라 글 속 미디어 북 태그를 그림으로 그린다(판정 규칙은
                 // `isAuthorOpeningMessage`). 나머지 메시지의 태그는 글자 그대로다.
-                return isAuthorOpeningMessage({ index, role: message.role, contentType: room.contentType }) ? (
-                  <MediaTagImagesProvider key={message.id} images={room.openingMediaTagImages}>
-                    {bubble}
-                  </MediaTagImagesProvider>
+                const withImages = isAuthorOpeningMessage({ index, role: message.role, contentType: room.contentType }) ? (
+                  <MediaTagImagesProvider images={room.openingMediaTagImages}>{bubble}</MediaTagImagesProvider>
                 ) : (
                   bubble
+                );
+                // 첫 메시지(캐릭터 인사말 포함)는 작성자 글이라 이름 매크로를 방의 이름으로 바꾼다(`isAuthorTextMessage`).
+                return isAuthorTextMessage({ index, role: message.role }) ? (
+                  <AuthorMacroNamesProvider key={message.id} names={macroNames}>
+                    {withImages}
+                  </AuthorMacroNamesProvider>
+                ) : (
+                  withImages
                 );
               })}
 
               {room.endingStatus.reached && !!room.endingStatus.epilogue && (
                 <>
-                  <EndingDivider
-                    endingName={room.contentSnapshot?.endings.find((ending) => ending.id === room.endingStatus.endingId)?.name}
-                  />
-                  <MediaTagImagesProvider images={room.endingStatus.mediaTagImages ?? {}}>
-                    <MessageBubble
-                      message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
-                    />
-                  </MediaTagImagesProvider>
+                  <EndingDivider endingName={toEndingName(room.contentSnapshot?.endings, room.endingStatus.endingId, macroNames)} />
+                  <AuthorMacroNamesProvider names={macroNames}>
+                    <MediaTagImagesProvider images={room.endingStatus.mediaTagImages ?? {}}>
+                      <MessageBubble
+                        message={{ id: "ending-epilogue", role: "assistant", content: room.endingStatus.epilogue, createdAt: "" }}
+                      />
+                    </MediaTagImagesProvider>
+                  </AuthorMacroNamesProvider>
                 </>
               )}
 
@@ -344,14 +373,14 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                     사용자 메시지가 전송 즉시 캐시에 낙관적으로 추가되므로 hasUserMessage 항이 스트리밍
                     구간을 덮는다. 전송이 실패해도 그 메시지는 캐시에 남으므로 칩은 되살아나지
                     않는다 — 재시도는 오류 배너의 "다시 시도"가 담당한다. */}
-                {room.contentSnapshot &&
+                {snapshot &&
                   shouldShowSuggestedReplies(
-                    room.contentSnapshot.suggestedReplies,
+                    snapshot.suggestedReplies,
                     room.turnCount,
                     room.messages.some((message) => message.role === "user"),
                   ) && (
                     <div className="mb-2 flex gap-2 overflow-x-auto pb-0.5">
-                      {room.contentSnapshot.suggestedReplies.map((reply) => (
+                      {snapshot.suggestedReplies.map((reply) => (
                         <Button
                           key={reply}
                           type="button"
@@ -361,7 +390,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                           onClick={() => handleSuggestedReplyClick(reply)}
                           className="shrink-0 rounded-full"
                         >
-                          {reply}
+                          {expandForRoom(reply)}
                         </Button>
                       ))}
                     </div>
@@ -393,9 +422,9 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
                       rows={1}
                       className="max-h-40 resize-none"
                     />
-                    {room.contentSnapshot && text.startsWith("/") && (
+                    {snapshot && text.startsWith("/") && (
                       <ShortcutAutocomplete
-                        shortcuts={room.contentSnapshot.shortcuts}
+                        shortcuts={snapshot.shortcuts}
                         query={text.slice(1)}
                         onSelect={handleShortcutSelect}
                       />
@@ -417,6 +446,7 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
           startingSetupId={room.contentSnapshot?.pinnedStartingSetupId}
           characterId={characterId}
           storyId={storyId}
+          macroNames={macroNames}
         />
         <ChatMemorySidebar roomId={roomId} triggerRef={memoryTriggerRef} />
       </div>
@@ -427,6 +457,12 @@ export function ChatRoomView({ roomId }: { roomId: string }) {
       <RoomPersonaModal />
     </div>
   );
+}
+
+/** 도달한 엔딩의 이름(이름 매크로를 바꾼 것). 엔딩을 못 찾으면 undefined — 구분선이 이름 없는 문구를 쓴다. */
+function toEndingName(endings: Ending[] | undefined, endingId: string | undefined, names: AuthorMacroNames): string | undefined {
+  const name = endings?.find((ending) => ending.id === endingId)?.name;
+  return name === undefined ? undefined : expandAuthorMacros(name, names);
 }
 
 function ChatRoomSkeleton() {

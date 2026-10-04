@@ -38,6 +38,7 @@ import { MediaBookConfirmModal } from "@/features/edit-media-book";
 
 import { MediaTagInsertButton } from "./MediaTagInsertButton";
 import { MediaTagOutsideNotice } from "./MediaTagOutsideNotice";
+import { StoryMacroNotice } from "./StoryMacroNotice";
 import { UnknownMediaTagNotice } from "./UnknownMediaTagNotice";
 
 /** 열림 키의 목록 이름 — 발행 실패 때 셸이 오류 항목을 여는 키와 같은 이름이어야 한다(타입이 목록 정의의 키로 묶는다). */
@@ -309,6 +310,7 @@ function StartingSetupRow({
           }}
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.prologue`} />
+        <StoryMacroNotice name={`startingSetups.${index}.prologue`} />
         {rowErrors?.prologue && (
           <p id={`starting-setup-${id}-prologue-error`} role="alert" className="text-xs text-destructive-text">
             {rowErrors.prologue.message}
@@ -338,6 +340,7 @@ function StartingSetupRow({
           }}
         />
         <UnknownMediaTagNotice name={`startingSetups.${index}.openingSituation`} />
+        <StoryMacroNotice name={`startingSetups.${index}.openingSituation`} />
         <p className="text-xs text-muted-foreground">
           비워두면 채팅 시작 시 프롤로그가 첫 메시지로 노출돼요.
         </p>
@@ -377,6 +380,7 @@ function StartingSetupRow({
               {...register(`startingSetups.${index}.playGuide`)}
             />
             <MediaTagOutsideNotice name={`startingSetups.${index}.playGuide`} />
+            <StoryMacroNotice name={`startingSetups.${index}.playGuide`} />
             {rowErrors?.playGuide && (
               <p id={`starting-setup-${id}-play-guide-error`} role="alert" className="text-xs text-destructive-text">
                 {rowErrors.playGuide.message}

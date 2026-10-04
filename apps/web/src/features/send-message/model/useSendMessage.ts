@@ -20,6 +20,7 @@ import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
+import { expandUserTextForRoom } from "./expandUserTextForRoom";
 import { imageArchiveKeyToInvalidate, type ImageArchiveTarget } from "./imageArchiveKeyToInvalidate";
 import { settleTurnInProgress } from "./settleTurnInProgress";
 import { truncateForEditAttempt } from "./truncateForEditAttempt";
@@ -204,7 +205,10 @@ export function useSendMessage(
     }
   }
 
-  function send(text: string, shortcutId?: string): void {
+  // 보내는 글의 이름 매크로는 낙관적 메시지를 만들기 전에 바꾼다(`expandUserTextForRoom`). 재시도는 이미 바꾼 페이로드를
+  // 다시 보내고, 재생성은 글을 보내지 않는다.
+  function send(rawText: string, shortcutId?: string): void {
+    const text = expandUserTextForRoom(queryClient, roomId, rawText);
     const optimisticMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "user",
@@ -229,8 +233,9 @@ export function useSendMessage(
   // openStream이 truncateAndEdit로 그 메시지 이후를 먼저 잘라낸 뒤, 일반 전송과 동일한 스트리밍 흐름을
   // 재실행한다(편집 대상 이후 새 응답을 append) — send()와 달리 낙관적 사용자 메시지를 새로
   // 추가하지 않는다(이미 캐시에 있는 메시지를 truncateAndEdit이 갱신한다).
-  function editMessage(messageId: string, text: string): void {
+  function editMessage(messageId: string, rawText: string): void {
     if (status.kind === "sending") return;
+    const text = expandUserTextForRoom(queryClient, roomId, rawText);
     void openStream({ payload: buildEditPayload({ roomId, messageId, text }), kind: "newTurn" });
   }
 

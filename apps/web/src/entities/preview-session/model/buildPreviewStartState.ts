@@ -72,11 +72,13 @@ export function buildPreviewStartState(
   mediaBookImages: MediaTagImages = {},
 ): PreviewSessionState {
   const now = new Date().toISOString();
+  const authorNameSource = { defaultUserName: payload.defaultUserName ?? "", contentName: payload.name };
 
   if (isCharacterPayload(payload)) {
     return {
       previewSessionId,
       contentType: "character",
+      authorNameSource,
       messages: [{ id: PREVIEW_OPENING_MESSAGE_ID, role: "assistant", content: payload.intro, createdAt: now }],
       openingMediaTagImages: {},
       stats: {},
@@ -95,6 +97,7 @@ export function buildPreviewStartState(
     return {
       previewSessionId,
       contentType: "story",
+      authorNameSource,
       messages: [],
       openingMediaTagImages: {},
       stats: {},
@@ -118,6 +121,7 @@ export function buildPreviewStartState(
   return {
     previewSessionId,
     contentType: "story",
+    authorNameSource,
     messages: [{ id: PREVIEW_OPENING_MESSAGE_ID, role: "assistant", content: opening.text, createdAt: now }],
     openingMediaTagImages,
     stats,

@@ -26,7 +26,7 @@ from sqlalchemy.pool import NullPool
 from api.chat import memory_fold
 from api.chat.memory_fold import fold_memory
 from api.chat.memory_rewind import rewind_memory
-from api.chat.prompt_builder import MemorySummaryResult, load_active_prompt_set
+from api.chat.prompt_builder import MemorySummaryResult, PromptNames, load_active_prompt_set
 from api.chat.room_deletion import delete_chat_rooms
 from api.db.models import (
     Asset,
@@ -555,6 +555,7 @@ async def _run_fold(engine: AsyncEngine, room: Room, factory: async_sessionmaker
         prompt_set=prompt_set,
         sections=sections,
         is_story_chat=False,
+        names=PromptNames(persona_name=None, default_user_name="", char_name=None),
     )
 
 

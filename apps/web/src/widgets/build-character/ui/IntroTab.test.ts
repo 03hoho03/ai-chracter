@@ -9,7 +9,9 @@ import { IntroTab } from "./IntroTab";
 
 function IntroTabWithForm() {
   const form = useForm<CharacterBuilderFormValues>({
-    defaultValues: { intro: { exampleDialogues: [{ id: "dialogue-1", userLine: "", characterLine: "" }] } },
+    defaultValues: {
+      intro: { exampleDialogues: [{ id: "dialogue-1", userLine: "", characterLine: "" }], defaultUserName: "" },
+    },
   });
   return createElement(FormProvider<CharacterBuilderFormValues>, { ...form, children: createElement(IntroTab) });
 }
@@ -25,5 +27,13 @@ describe("IntroTab example dialogues", () => {
   it.each(["userLine", "characterLine"])("renders %s as a multi-line field", (key) => {
     const html = renderToStaticMarkup(createElement(IntroTabWithForm));
     expect(fieldTagOf(html, `intro.exampleDialogues.0.${key}`)).toBe("textarea");
+  });
+});
+
+describe("IntroTab default user name", () => {
+  // 작가가 `{{user}}` 를 가장 많이 쓰는 인트로·예시 대화와 한 화면에 둔다.
+  it("puts the default user name field on the intro tab", () => {
+    const html = renderToStaticMarkup(createElement(IntroTabWithForm));
+    expect(fieldTagOf(html, "intro.defaultUserName")).toBe("input");
   });
 });

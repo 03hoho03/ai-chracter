@@ -8,14 +8,17 @@ import {
 
 import { useChatRoomPlayGuideQuery } from "@/entities/chat-room";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 type PlayGuideModalProps = {
   roomId: string;
+  /** 연 방의 `{{user}}`·`{{char}}` 이름 — 이 모달은 루트에 마운트돼 방을 모른다. */
+  macroNames: AuthorMacroNames;
 };
 
 /** "더보기 > 플레이가이드"에서 여는 읽기 전용 react-call 모달.
  * 입력/제출이 없어 mutationFn/useMutationFlow 없이 call.end()만으로 닫는다. */
-export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call, roomId }) => {
+export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call, roomId, macroNames }) => {
   const isOpen = !call.ended;
   const playGuideQuery = useChatRoomPlayGuideQuery(roomId, isOpen);
 
@@ -27,14 +30,20 @@ export const PlayGuideModal = createCallable<PlayGuideModalProps, void>(({ call,
           <DialogDescription>대화를 이어가는 데 도움이 되는 진행 팁이에요.</DialogDescription>
         </DialogHeader>
 
-        <PlayGuideBody query={playGuideQuery} />
+        <PlayGuideBody query={playGuideQuery} macroNames={macroNames} />
       </DialogContent>
     </Dialog>
   );
 });
 
 /** 네 상태(로딩·에러·본문·빈 값)가 배타적이라 early return으로 순서를 강제한다. */
-function PlayGuideBody({ query }: { query: ReturnType<typeof useChatRoomPlayGuideQuery> }) {
+function PlayGuideBody({
+  query,
+  macroNames,
+}: {
+  query: ReturnType<typeof useChatRoomPlayGuideQuery>;
+  macroNames: AuthorMacroNames;
+}) {
   if (query.isPending) {
     return (
       <div className="flex flex-col gap-2">
@@ -57,5 +66,5 @@ function PlayGuideBody({ query }: { query: ReturnType<typeof useChatRoomPlayGuid
     return <p className="py-4 text-center text-sm text-muted-foreground">등록된 플레이가이드가 없어요.</p>;
   }
 
-  return <p className="whitespace-pre-wrap text-sm text-foreground">{playGuide}</p>;
+  return <p className="whitespace-pre-wrap text-sm text-foreground">{expandAuthorMacros(playGuide, macroNames)}</p>;
 }

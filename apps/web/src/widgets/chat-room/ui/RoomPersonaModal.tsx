@@ -50,7 +50,7 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
       setView("select");
       return;
     }
-    toast.success("새 프로필을 만들고 이 대화방에 적용했어요. 다음 대화부터 반영돼요.");
+    toast.success("새 프로필을 만들고 이 대화방에 적용했어요. 캐릭터는 다음 대화부터 알아요.");
     call.end();
   }
 
@@ -101,7 +101,7 @@ export const RoomPersonaModal = createCallable<RoomPersonaModalProps, void>(({ c
           <DialogDescription className="break-keep">
             {isCreateView
               ? "만들면 바로 이 대화방에 적용돼요."
-              : "이 대화방에서 캐릭터가 알게 될 '나'예요. 바꾸면 다음 대화부터 반영되고, 지난 대화는 그대로예요."}
+              : "이 대화방에서 캐릭터가 알게 될 '나'예요. 바꾸면 작품 글 속 내 이름은 바로 바뀌고, 캐릭터는 다음 대화부터 새 프로필을 알아요. 내가 보낸 메시지는 그대로예요."}
           </DialogDescription>
         </DialogHeader>
 

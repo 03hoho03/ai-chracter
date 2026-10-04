@@ -8,6 +8,8 @@ import { ImageCropModal } from "@/features/crop-image";
 import { GeneratedImageField } from "@/features/select-generated-image";
 import { RequiredText } from "@/shared/ui/RequiredText";
 
+import { CharacterMacroNotice } from "./CharacterMacroNotice";
+
 type ProfileTabProps = {
   /** 폼이 지금 가진 대표 이미지의 표시 주소. 미리보기 카드와 같은 값을 셸이 정해 내려 준다. */
   thumbnailUrl: string | null;
@@ -81,6 +83,7 @@ export function ProfileTab({ thumbnailUrl, onUploadComplete, onPick }: ProfileTa
           aria-describedby={errors.profile?.oneLiner ? "character-profile-oneliner-error" : undefined}
           {...register("profile.oneLiner")}
         />
+        <CharacterMacroNotice name="profile.oneLiner" />
         {errors.profile?.oneLiner && (
           <p id="character-profile-oneliner-error" role="alert" className="text-xs text-destructive-text">
             {errors.profile.oneLiner.message}
