@@ -8,14 +8,12 @@ import { Link, useNavigate } from "@tanstack/react-router";
 import { EyeIcon, EyeOffIcon } from "lucide-react";
 import { useForm } from "react-hook-form";
 
-import { isSuspendedError, sessionKeys, SUSPENDED_ERROR_MESSAGE } from "@/entities/session";
-import { isApiError } from "@/shared/api/client";
+import { sessionKeys } from "@/entities/session";
 
 import { useLoginMutation } from "../api/useLoginMutation";
 import {
-  GENERIC_LOGIN_ERROR_MESSAGE,
   getLoginErrorMessage,
-  MINIMUM_AGE_ERROR_MESSAGE,
+  getLoginSubmitErrorMessage,
   type LoginErrorParam,
   type SignupMethod,
 } from "../model/loginErrorMessage";
@@ -27,9 +25,6 @@ type LoginFormProps = {
   errorCode?: LoginErrorParam;
   errorMethod?: SignupMethod;
 }
-
-const EMAIL_VERIFICATION_REQUIRED_MESSAGE =
-  "이메일 인증이 완료되지 않은 계정이에요. 같은 이메일로 회원가입을 다시 진행하면 인증 메일을 새로 받을 수 있어요.";
 
 export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps) {
   const {
@@ -61,18 +56,7 @@ export function LoginForm({ redirectTo, errorCode, errorMethod }: LoginFormProps
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = isApiError(error) ? error : undefined;
-      if (apiError?.status === 401) {
-        setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
-      } else if (isSuspendedError(error)) {
-        setError("root", { message: SUSPENDED_ERROR_MESSAGE });
-      } else if (apiError?.status === 403 && apiError.detail === "Minimum age not met") {
-        setError("root", { message: MINIMUM_AGE_ERROR_MESSAGE });
-      } else if (apiError?.status === 403) {
-        setError("root", { message: EMAIL_VERIFICATION_REQUIRED_MESSAGE });
-      } else {
-        setError("root", { message: GENERIC_LOGIN_ERROR_MESSAGE });
-      }
+      setError("root", { message: getLoginSubmitErrorMessage(error) });
     }
   }
 

@@ -40,6 +40,19 @@ describe("getChangePasswordErrorBanner", () => {
     });
   });
 
+  it("429 AUTH_LIMIT는 기다릴 분을 말하고 로그인 링크를 주지 않는다", () => {
+    const error = apiError(429, { code: "AUTH_LIMIT", retryAfterSeconds: 600, window: "auth" });
+
+    expect(getChangePasswordErrorBanner(error)).toEqual({
+      message: "비밀번호 확인을 너무 많이 시도했어요 · 약 10분 뒤에 다시 시도할 수 있어요",
+      shouldShowLoginLink: false,
+    });
+  });
+
+  it("모양이 다른 429는 undefined", () => {
+    expect(getChangePasswordErrorBanner(apiError(429, "Too Many Requests"))).toBeUndefined();
+  });
+
   it("500은 undefined", () => {
     expect(getChangePasswordErrorBanner(apiError(500))).toBeUndefined();
   });

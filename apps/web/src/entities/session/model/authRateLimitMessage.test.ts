@@ -31,7 +31,7 @@ describe("formatAuthRateLimitMessage", () => {
     expect(message).not.toContain("분");
   });
 
-  it.each(["signup", "password-reset", "resend"] as const)(
+  it.each(["signup", "password-reset", "resend", "login", "password-confirm"] as const)(
     "%s 문구는 계정 존재를 암시하는 어휘를 쓰지 않는다",
     (surface) => {
       const message = formatAuthRateLimitMessage(

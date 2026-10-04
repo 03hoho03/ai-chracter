@@ -7,16 +7,14 @@ import { useNavigate } from "@tanstack/react-router";
 import { useForm } from "react-hook-form";
 
 import { sessionKeys } from "@/entities/session";
-import { isApiError } from "@/shared/lib/api/client";
 
 import { useLoginMutation } from "../api/mutations";
+import { getLoginErrorMessage } from "../model/loginErrorMessage";
 import { loginDefaultValues, loginSchema, type LoginFormValues } from "../model/schema";
 
 type LoginFormProps = {
   redirectTo?: string;
 };
-
-const GENERIC_ERROR_MESSAGE = "일시적인 오류가 발생했어요. 잠시 후 다시 시도해주세요.";
 
 export function LoginForm({ redirectTo }: LoginFormProps) {
   const {
@@ -41,12 +39,7 @@ export function LoginForm({ redirectTo }: LoginFormProps) {
       await queryClient.invalidateQueries({ queryKey: sessionKeys.current() });
       await navigate({ to: redirectTo || "/" });
     } catch (error) {
-      const apiError = isApiError(error) ? error : undefined;
-      if (apiError?.status === 401) {
-        setError("root", { message: "이메일 또는 비밀번호가 올바르지 않습니다." });
-      } else {
-        setError("root", { message: GENERIC_ERROR_MESSAGE });
-      }
+      setError("root", { message: getLoginErrorMessage(error) });
     }
   }
 
