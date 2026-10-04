@@ -13,6 +13,9 @@ apps/web/.env.local
 tasks/*.md
 tasks/archive/**
 
+# 보관 문서 — gitignore 대상인 런 보고서 등(예: docs/infra/)
+docs/**
+
 # 필요할 때만 주석 해제
 # 워크트리에서 시드를 재실행할 때 (38M)
 # apps/api/scripts/seed_content/images/**
