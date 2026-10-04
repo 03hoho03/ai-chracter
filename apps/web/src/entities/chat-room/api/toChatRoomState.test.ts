@@ -29,9 +29,37 @@ describe("toChatRoomState", () => {
       stats: {},
       endingStatus: { reached: false, endingId: undefined, reachedAtTurn: undefined, epilogue: undefined },
       turnCount: 3,
+      defaultUserName: "",
       latestVersionAvailable: true,
       versionAutoUpgraded: false,
       contentRestricted: false,
+    });
+  });
+
+  // 화면이 작가 글의 `{{user}}`·`{{char}}` 를 방이 고정한 버전의 이름으로 바꾸려면 세 이름이 방 상태에 있어야 한다.
+  // 프로필 없음(서버 null)은 undefined 로 접는다 — 이름 고르기가 다음 순서(작품 기본 이름)로 넘어간다.
+  it("carries the names the screen puts in for {{user}} and {{char}}", () => {
+    const base: Parameters<typeof toChatRoomState>[0] = {
+      id: "room-1",
+      contentId: "content-1",
+      contentType: "character",
+      name: "대화 1",
+      turnCount: 0,
+      endingReached: false,
+      messages: [],
+      latestVersionAvailable: false,
+      versionAutoUpgraded: false,
+      contentRestricted: false,
+      createdAt: "2026-07-08T00:00:00Z",
+      updatedAt: "2026-07-08T00:00:00Z",
+    };
+
+    expect(
+      toChatRoomState({ ...base, personaName: "지훈", defaultUserName: "조감독", contentName: "유나" }),
+    ).toMatchObject({ personaName: "지훈", defaultUserName: "조감독", contentName: "유나" });
+    expect(toChatRoomState({ ...base, personaName: null })).toMatchObject({
+      personaName: undefined,
+      defaultUserName: "",
     });
   });
 

@@ -17,14 +17,21 @@ import {
   type UnlockedArchiveTile,
 } from "@/entities/story-image-archive";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 type StoryImageArchiveModalProps = {
   storyId: string;
+  /**
+   * 해금 힌트 속 `{{user}}` 이름 — 보관함은 작품 단위지만 여는 곳이 언제나 대화방이라 그 방의 이름을 쓴다. 인물·장면
+   * 이름은 바꾸지 않는다: 글 속 그림 태그가 그 이름을 그대로 가리키는 키라, 화면 이름만 바뀌면 작가가 쓴 태그와
+   * 어긋나 보인다.
+   */
+  macroNames: AuthorMacroNames;
 };
 
 // 스토리 방의 "더보기 > 이미지 보관함". 캐릭터 보관함(ImageArchiveModal)과 응답 모양·표시가 달라(인물별 묶음, 원본
 // 비율, 힌트) 따로 둔다 — 한 컴포넌트에서 분기하면 캐릭터 보관함의 표시가 함께 흔들린다.
-export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps, void>(({ call, storyId }) => {
+export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps, void>(({ call, storyId, macroNames }) => {
   const isOpen = !call.ended;
   const archiveQuery = useStoryImageArchiveQuery(storyId, isOpen);
 
@@ -41,7 +48,7 @@ export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps
         </DialogHeader>
 
         <DialogBody scrollLabel="보관함 이미지">
-          <StoryImageArchiveBody query={archiveQuery} />
+          <StoryImageArchiveBody query={archiveQuery} macroNames={macroNames} />
         </DialogBody>
       </DialogContent>
     </Dialog>
@@ -49,7 +56,13 @@ export const StoryImageArchiveModal = createCallable<StoryImageArchiveModalProps
 });
 
 /** 네 상태(로딩·오류·빈 목록·묶음)가 배타적이라 early return 으로 순서를 강제한다. */
-function StoryImageArchiveBody({ query }: { query: ReturnType<typeof useStoryImageArchiveQuery> }) {
+function StoryImageArchiveBody({
+  query,
+  macroNames,
+}: {
+  query: ReturnType<typeof useStoryImageArchiveQuery>;
+  macroNames: AuthorMacroNames;
+}) {
   if (query.isPending) {
     return (
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -87,13 +100,13 @@ function StoryImageArchiveBody({ query }: { query: ReturnType<typeof useStoryIma
       </p>
       {groups.map((group, index) => (
         // 같은 이름의 인물이 떨어져 올 수 있어(toStoryImageArchiveView) 이름이 아니라 첫 칸 id 로 묶음을 가른다.
-        <PersonGroup key={group.tiles[0]?.id ?? index} group={group} />
+        <PersonGroup key={group.tiles[0]?.id ?? index} group={group} macroNames={macroNames} />
       ))}
     </div>
   );
 }
 
-function PersonGroup({ group }: { group: StoryImageArchiveGroup }) {
+function PersonGroup({ group, macroNames }: { group: StoryImageArchiveGroup; macroNames: AuthorMacroNames }) {
   return (
     <section className="flex flex-col gap-2">
       <h3 className="text-sm font-medium break-keep text-foreground">{group.personName}</h3>
@@ -101,7 +114,7 @@ function PersonGroup({ group }: { group: StoryImageArchiveGroup }) {
       <ul className="grid grid-cols-2 items-start gap-2 sm:grid-cols-3">
         {group.tiles.map((tile) => (
           <li key={tile.id}>
-            {tile.kind === "unlocked" ? <UnlockedTile tile={tile} /> : <LockedTile tile={tile} />}
+            {tile.kind === "unlocked" ? <UnlockedTile tile={tile} /> : <LockedTile tile={tile} macroNames={macroNames} />}
           </li>
         ))}
       </ul>
@@ -127,7 +140,7 @@ function UnlockedTile({ tile }: { tile: UnlockedArchiveTile }) {
  * 테마를 따르는 `background` 면 위의 `foreground` 글자라 다크에서 순백이 되지 않고, 면을 칸 전체가 아니라 글자 둘레에만
  * 깔아 흐린 그림이 남아 보이게 한다.
  */
-function LockedTile({ tile }: { tile: LockedArchiveTile }) {
+function LockedTile({ tile, macroNames }: { tile: LockedArchiveTile; macroNames: AuthorMacroNames }) {
   return (
     <TileFrame aspectRatio={tile.aspectRatio}>
       <img src={tile.imageUrl} alt={tile.alt} loading="lazy" decoding="async" className="size-full object-cover" />
@@ -137,7 +150,7 @@ function LockedTile({ tile }: { tile: LockedArchiveTile }) {
           {tile.hint !== undefined && (
             <p className="text-xs break-keep wrap-break-word">
               <span className="sr-only">해금 힌트: </span>
-              {tile.hint}
+              {expandAuthorMacros(tile.hint, macroNames)}
             </p>
           )}
         </div>

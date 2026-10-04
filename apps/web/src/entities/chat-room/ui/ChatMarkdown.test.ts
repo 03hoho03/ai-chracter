@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import { ChatMarkdown } from "./ChatMarkdown";
+import type { AuthorMacroNames } from "@/shared/lib/text/authorMacros";
+
+import { AuthorMacroNamesProvider } from "./AuthorMacroNamesProvider";
 import { MediaTagImagesProvider } from "./MediaTagImagesProvider";
 
 type RenderOptions = { codeBlockSurface?: "muted" | "secondary" };
@@ -151,6 +154,50 @@ describe("ChatMarkdown", () => {
       const html = renderWithImages(`{{img::${CELL}}}`, { codeBlockSurface: "secondary" });
       expect(html).toMatch(/class="self-start overflow-hidden rounded-lg bg-secondary"/);
       expect(html).not.toMatch(/rounded-lg bg-muted/);
+    });
+  });
+
+  // 글 속 `{{user}}`·`{{char}}` 는 이름으로 감싼 메시지(작성자 글)에서만 바뀐다. 사용자 메시지는 보낼 때 이미 바꿨고,
+  // 모델 응답은 작성자 글이 아니라 감싸지 않는다.
+  describe("author macro names", () => {
+    const CELL = "aaaaaaaa-0000-0000-0000-000000000001";
+    const images = { [CELL]: { url: "https://cdn.example/a.webp", width: 1024, height: 768 } };
+
+    function renderWithNames(content: string, names: AuthorMacroNames = { userName: "지훈", charName: null }): string {
+      return renderToStaticMarkup(
+        createElement(AuthorMacroNamesProvider, { names, children: createElement(ChatMarkdown, { content }) }),
+      );
+    }
+
+    it("puts the name in and fixes the particle right after it", () => {
+      expect(renderWithNames("*문이 열린다.* {{user}}는 고개를 든다.")).toContain(
+        '<p class="m-0"><em class="not-italic text-muted-foreground">문이 열린다.</em> 지훈은 고개를 든다.</p>',
+      );
+    });
+
+    it("leaves the macros as written when no names are given", () => {
+      expect(render("{{user}}는 고개를 든다.")).toContain("{{user}}는 고개를 든다.");
+    });
+
+    it("names {{char}} only when a character name is given", () => {
+      expect(renderWithNames("{{char}}가 웃는다.", { userName: "지훈", charName: "유나" })).toContain("유나가 웃는다.");
+      expect(renderWithNames("{{char}}가 웃는다.")).toContain("{{char}}가 웃는다.");
+    });
+
+    it("draws the opening message's images and names together", () => {
+      const html = renderToStaticMarkup(
+        createElement(AuthorMacroNamesProvider, {
+          names: { userName: "하늘", charName: null },
+          children: createElement(MediaTagImagesProvider, {
+            images,
+            children: createElement(ChatMarkdown, { content: `{{user}}으로부터\n\n{{img::${CELL}}}\n\n{{user}}으로` }),
+          }),
+        }),
+      );
+      expect(html).toContain('src="https://cdn.example/a.webp"');
+      // 뒤가 한글이면 조사가 아니라 낱말의 일부라 두고, 글 끝의 조사는 ㄹ 받침에 맞춘다.
+      expect(html).toContain("하늘으로부터");
+      expect(html).toContain("하늘로");
     });
   });
 });

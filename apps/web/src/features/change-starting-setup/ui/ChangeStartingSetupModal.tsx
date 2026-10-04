@@ -18,18 +18,21 @@ import {
 } from "@/entities/chat-room";
 import { canViewDetailPage, type ContentDetailResponse, toContentAccessStatus, useContentDetailQuery } from "@/entities/content";
 import { createCallable } from "@/shared/lib/callable/createCallable";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 
 import { ConfirmStartingSetupChangeModal } from "./ConfirmStartingSetupChangeModal";
 
 type ChangeStartingSetupModalProps = {
   roomId: string;
+  /** 연 방의 `{{user}}`·`{{char}}` 이름 — 시작설정 이름에도 쓸 수 있다. */
+  macroNames: AuthorMacroNames;
 };
 
 // UpdateInfoModal과 동일하게 roomId만 받아 부모
 // (ChatRoomView)가 이미 채워둔 chatRoomKeys.detail 캐시를 자체 구독한다. 현재 사용 중인 시작설정은
 // room.contentSnapshot.pinnedStartingSetupId(물리적 PK)로 판정 — room.startingSetupId는
 // entity_id라 GET /contents/{id}가 내려주는 startingSetups[].id(물리적 PK)와 비교할 수 없다.
-export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalProps, void>(({ call, roomId }) => {
+export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalProps, void>(({ call, roomId, macroNames }) => {
   const isOpen = !call.ended;
   const room = useChatRoomQuery(roomId).data;
   const contentQuery = useContentDetailQuery(room?.contentId ?? "", isOpen && room !== undefined);
@@ -85,7 +88,7 @@ export const ChangeStartingSetupModal = createCallable<ChangeStartingSetupModalP
                     : "text-foreground enabled:hover:bg-secondary/50",
                 )}
               >
-                <span className="truncate">{setup.name}</span>
+                <span className="truncate">{expandAuthorMacros(setup.name, macroNames)}</span>
                 {isCurrent && (
                   <span className="flex shrink-0 items-center gap-1 text-xs text-muted-foreground">
                     <Check aria-hidden className="size-3.5" />

@@ -71,6 +71,11 @@ export type ChatRoomState = {
   turnCount: number;
   // 방의 대화 프로필. undefined = "선택 안 함"(서버 null). 다음 턴부터 반영된다.
   personaId?: string;
+  // 작가 글의 `{{user}}`·`{{char}}` 를 화면에서 바꿀 때 쓰는 이름들(`roomAuthorMacroNames`). 모두 방이 고정한 버전
+  // 기준이다 — 화면의 작품 상세는 최신 발행본이라 그것으로 대신하면 모델이 부른 이름과 갈릴 수 있다.
+  personaName?: string; // 방 프로필의 이름. undefined = 프로필 없음
+  defaultUserName: string; // 작가가 정한 작품 기본 이름. 빈 값이면 대체어
+  contentName?: string; // 작품 이름 — 캐릭터 작품에서 `{{char}}` 가 된다
   latestVersionAvailable: boolean; // 원작에 이 방보다 최신 버전이 있는지
   versionAutoUpgraded: boolean; // 이번 조회에서 서버가 자동 마이그레이션했는지
   contentRestricted: boolean; // 작품이 이용제한·삭제돼 이 방에서 대화를 이어갈 수 없는지(읽기·삭제·초기화는 된다)
