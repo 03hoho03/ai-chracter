@@ -3592,6 +3592,46 @@ async def test_publish_story_is_refused_when_a_cell_image_changes_while_it_is_be
 
 
 @pytest.mark.usefixtures("committing_request_session")
+async def test_publish_story_is_refused_when_a_cell_loses_its_blur_while_it_is_being_screened(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 심사하는 동안 자동저장이 블러본이 있던 칸의 그림을 A→B→A 로 바꾸면 심사한
+    그림은 같지만 블러본은 비워져, 이 발행이 올리지 않은 칸이 블러 대상이 된다. 그 발행은 409 `PUBLISH_CONFLICT` 이고
+    아무것도 발행되지 않아야 한다. 500 이면 블러 대상 비교 없이 올리지 않은 블러본을 찾다 터진 것이다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version, _, _, _, _ = await _make_publishable_story_draft(
+        db_session, creator_user_id=user.id, genre_id=genre.id
+    )
+    kept_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept_blur = await _make_ready_asset(db_session, owner_user_id=user.id)
+    kept = await _add_media_book_cell(db_session, version.id, kept_image.id, kept_blur.id)
+    other_image = await _make_ready_asset(db_session, owner_user_id=user.id)
+    await db_session.commit()
+    await _login_as(db_client, user.id)
+
+    async def swap_away_and_back() -> None:
+        # 그림을 바꾸면 자동저장이 블러본을 비운다. 되돌려도 블러본은 돌아오지 않는다.
+        for image_id in (other_image.id, kept_image.id):
+            await db_session.execute(
+                sa.update(MediaBookCell)
+                .where(MediaBookCell.id == kept.id)
+                .values(image_asset_id=image_id, blurred_asset_id=None)
+            )
+            await db_session.commit()
+
+    resp, _ = await _publish_while_first_screening_waits(db_client, content.id, swap_away_and_back)
+
+    assert resp.status_code == 409, resp.text
+    assert resp.json() == {"detail": {"code": "PUBLISH_CONFLICT"}}
+    assert await _versions(db_session, content.id) == [(None, False)]
+    await db_session.refresh(kept)
+    assert (kept.image_asset_id, kept.blurred_asset_id) == (kept_image.id, None)
+
+
+@pytest.mark.usefixtures("committing_request_session")
 async def test_publish_still_succeeds_when_only_text_changes_while_it_is_being_screened(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None
 ) -> None:

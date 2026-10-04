@@ -107,7 +107,8 @@ def _upload_size_limit(storage_key: str) -> int | None:
 
 # 같은 자산의 업로드 완료를 한 번에 하나만 들이는 락. TTL 은 완료 한 번이 걸릴 수 있는 가장 긴 시간보다 넉넉해야 한다
 # — 저장소 왕복 넷(HEAD·GET·PUT 셋)에 클라이언트 타임아웃을 따로 두지 않았고 디코드는 프로세스 전역 한도를 기다릴 수
-# 있다. 만료되면 늦게 끝난 쪽은 상태를 PENDING 일 때만 바꾸므로 먼저 끝난 결과를 덮지 않는다.
+# 있다. 만료되면 둘이 겹칠 수 있다. 늦은 쪽은 최종 키에 올리기 직전에 상태를 다시 읽어 이미 끝난 자산의 저장소 객체를
+# 덮지 않고, 행은 PENDING 일 때만 바꾼다. 그래도 둘이 동시에 올리는 중이면 저장소 객체는 늦게 올린 쪽 바이트가 된다.
 _COMPLETE_LOCK_TTL_MS = 300_000
 _COMPLETE_LOCK_POLL_SECONDS = 0.2
 
@@ -260,6 +261,12 @@ async def _complete_locked_upload(db: AsyncSession, asset_id: uuid.UUID, storage
     # 표가 없는 운영 이미지에서는 WebP 키에 확장자가 붙지 않아 `application/octet-stream` 이 되고, 원본을 새 탭에서
     # 열면 그림 대신 다운로드가 된다.
     content_type = detected_content_type or "application/octet-stream"
+    # 내려받기·디코드 동안 락이 만료돼 다른 완료가 먼저 끝냈거나 지웠으면 최종 키를 덮지 않는다 — 행은 아래 조건부
+    # 쓰기가 지키지만 저장소 객체는 이 확인만 지킨다(그 행의 크기·축소본과 다른 바이트가 원본 자리에 남는다).
+    still_pending = await db.scalar(select(Asset.status).where(Asset.id == asset_id)) == AssetStatus.PENDING
+    await db.commit()
+    if not still_pending:
+        return await _response_for_current_state(db, asset_id)
     await run_in_threadpool(upload_object, storage_key, original_bytes, content_type)
     for variant_key, variant_bytes in variants:
         await run_in_threadpool(upload_object, variant_key, variant_bytes, THUMBNAIL_CONTENT_TYPE)

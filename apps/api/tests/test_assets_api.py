@@ -613,6 +613,44 @@ async def test_complete_keeps_the_result_of_a_completion_that_finished_meanwhile
 
 
 @pytest.mark.usefixtures("committing_request_session")
+async def test_late_complete_does_not_overwrite_the_stored_image_of_a_completion_that_finished_meanwhile(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """판정 기준(결과를 보기 전에 적었다): 늦은 완료가 내려받는 사이 락이 만료돼 다른 완료가 먼저 READY 로 만들었다면,
+    늦은 쪽은 최종 키에 아무것도 올리지 않고 READY 응답만 돌려준다. 올리면 먼저 끝난 쪽의 행(크기·축소본)과 다른
+    바이트가 원본 자리에 남는다 — 행의 조건부 쓰기만으로는 저장소 객체를 지키지 못한다."""
+    await _logged_in_user(db_client, db_session)
+    asset_id, upload_url = await _presign(db_client)
+    _put_via_presigned_url(upload_url, _png_bytes(64, 64))
+
+    async def finish_elsewhere() -> None:
+        await db_session.execute(
+            update(Asset).where(Asset.id == uuid.UUID(asset_id)).values(status=AssetStatus.READY, width=7, height=9)
+        )
+        await db_session.commit()
+
+    loop = asyncio.get_running_loop()
+
+    def download_then_someone_else_finishes(key: str) -> bytes:
+        body = download_object(key)
+        asyncio.run_coroutine_threadsafe(finish_elsewhere(), loop).result(10)
+        return body
+
+    uploaded_keys: list[str] = []
+
+    def recording_upload(key: str, body: bytes, content_type: str) -> None:
+        uploaded_keys.append(key)
+        upload_object(key, body, content_type)
+
+    monkeypatch.setattr(assets_router, "download_object", download_then_someone_else_finishes)
+    monkeypatch.setattr(assets_router, "upload_object", recording_upload)
+    resp = await db_client.post(f"/assets/{asset_id}/complete")
+
+    assert (resp.status_code, resp.json()) == (200, {"assetId": asset_id, "status": "ready"})
+    assert uploaded_keys == []
+
+
+@pytest.mark.usefixtures("committing_request_session")
 async def test_failed_complete_does_not_delete_an_upload_that_finished_meanwhile(
     db_client: httpx.AsyncClient, db_session: AsyncSession, s3_bucket: None, monkeypatch: pytest.MonkeyPatch
 ) -> None:
