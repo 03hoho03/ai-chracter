@@ -72,8 +72,10 @@ function focusAndScroll<T extends FieldValues>(form: UseFormReturn<T>, fieldPath
   // register()/Controller 필드 대부분은 위 setFocus만으로 포커스 + (브라우저 기본 동작인) 스크롤까지
   // 끝난다. IconPicker/ColorPicker/GeneratedImageField처럼 포커스 가능한 DOM을 setFocus에 노출하지
   // 않는 필드는 조용히 아무 일도 하지 않으므로, 그런 필드가 심어 둔 FIELD_PATH_ATTRIBUTE로 최소한
-  // 스크롤은 되게 한다.
+  // 스크롤은 되게 한다. 표식이 붙은 요소가 그 자체로 포커스를 받는 컨트롤이면(상황 노트 조건 줄의 스탯 칸처럼 폼에 등록되지
+  // 않은 제어 컴포넌트) 포커스도 준다 — 표식이 감싸는 `div` 는 `tabIndex` 가 -1 이라 여기서 걸리지 않는다.
   const fallbackTarget = document.querySelector(`[${FIELD_PATH_ATTRIBUTE}="${fieldPath}"]`);
+  if (fallbackTarget instanceof HTMLElement && fallbackTarget.tabIndex >= 0) fallbackTarget.focus({ preventScroll: true });
   fallbackTarget?.scrollIntoView({
     behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
     block: "center",

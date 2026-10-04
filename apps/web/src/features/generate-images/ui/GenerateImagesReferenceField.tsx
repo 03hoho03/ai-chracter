@@ -1,10 +1,9 @@
-import { useRef, useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import { ImageOff, Images, X } from "lucide-react";
 import { Controller, useFormContext } from "react-hook-form";
 
 import type { GenerateImagesFormValues } from "../model/schema";
-import { useGenerateImagesSubmit, type PickedReferenceImage } from "../model/useGenerateImagesSubmit";
+import { useGenerateImagesSubmit } from "../model/useGenerateImagesSubmit";
 
 const LABEL_ID = "generate-images-reference-label";
 const NOTICE_ID = "generate-images-reference-notice";
@@ -19,12 +18,10 @@ const ERROR_ID = "generate-images-reference-error";
 // 이미지에 대한 고지는 필요 없다. 그 사이 폼에 남은 참조는 `formToServer`가 싣지 않는다.
 export function GenerateImagesReferenceField() {
   const { control } = useFormContext<GenerateImagesFormValues>();
-  const { isReferenceEnabled, onPickReference } = useGenerateImagesSubmit();
-  // 피커가 준 presigned URL은 만료되는 표시 전용 값이라 폼이 아니라 여기 둔다. 어느 이미지의
-  // 미리보기인지 id를 함께 들고 있다가 폼 값과 같을 때만 보인다 — 서버 오류로 참조가 비워지거나
-  // 다른 이미지로 바뀌면 옛 미리보기가 저절로 떨어진다.
-  const [preview, setPreview] = useState<PickedReferenceImage>();
-  const pickButtonRef = useRef<HTMLButtonElement>(null);
+  // 미리보기와 고르기 버튼 ref는 프로바이더가 쥔다 — 상세 모달의 "참조로 쓰기"도 같은 경로로 참조를
+  // 넣고 이 버튼으로 포커스를 보내기 때문이다.
+  const { isReferenceEnabled, onPickReference, referencePreview, setReference, referencePickButtonRef } =
+    useGenerateImagesSubmit();
 
   if (!isReferenceEnabled) return null;
 
@@ -43,19 +40,20 @@ export function GenerateImagesReferenceField() {
           .filter(Boolean)
           .join(" ");
         const previewUrl =
-          reference !== null && preview?.assetId === reference.assetId ? preview.imageUrl : undefined;
+          reference !== null && referencePreview?.assetId === reference.assetId
+            ? referencePreview.imageUrl
+            : undefined;
 
         async function handlePick() {
           const picked = await onPickReference();
           if (picked === undefined) return;
-          setPreview(picked);
-          field.onChange({ assetId: picked.assetId });
+          setReference(picked);
         }
 
         function handleRemove() {
           // 빼기 버튼은 이 조작으로 사라진다 — 상태를 바꾸기 **전에** 남는 버튼으로 포커스를 옮겨야
           // 키보드 사용자가 <body>로 떨어지지 않는다.
-          pickButtonRef.current?.focus();
+          referencePickButtonRef.current?.focus();
           field.onChange(null);
         }
 
@@ -99,10 +97,11 @@ export function GenerateImagesReferenceField() {
               {/* 버튼과 보조 문구를 한 열로 묶어 미리보기 오른쪽에 둔다 — 좁은 폭에서도 행이 가로로
                   넘치지 않고 문구만 열 안에서 접힌다(`min-w-0`). */}
               <div className="flex min-w-0 flex-col items-start gap-1.5">
-                {/* 솔리드 채움은 생성 버튼 하나뿐이라 outline이다. 라벨만 바꾸고 같은 엘리먼트를
-                    유지해 빼기 뒤 포커스가 돌아올 자리가 사라지지 않게 한다. */}
+                {/* 이 화면의 `primary` 솔리드(생성 버튼·스타일 선택 체크 원)를 더 늘리지 않으려고
+                    outline이다. 라벨만 바꾸고 같은 엘리먼트를 유지해 빼기 뒤 포커스가 돌아올 자리가
+                    사라지지 않게 한다. */}
                 <Button
-                  ref={pickButtonRef}
+                  ref={referencePickButtonRef}
                   type="button"
                   variant="outline"
                   size="sm"
@@ -120,10 +119,11 @@ export function GenerateImagesReferenceField() {
                   </p>
                 )}
                 {/* 서버가 고른 참조를 찾지 못했을 때만 생긴다(그 사이 보관함에서 지워진 경우 등). 고칠
-                    행동이 이 버튼이라 고지 문장 아래가 아니라 버튼 바로 밑에 둔다. 따로 지우지 않는다 —
-                    이 오류는 제출 뒤에만 생기고, 제출을 한 번 마친 폼은 값이 바뀔 때마다 리졸버로 그
-                    필드를 다시 검증해 통과하면 오류를 지운다(react-hook-form 기본 `reValidateMode: "onChange"`).
-                    다음 제출도 검증 결과로 오류 전체를 갈아 끼우므로 남지 않는다. */}
+                    행동이 이 버튼이라 고지 문장 아래가 아니라 버튼 바로 밑에 둔다. 다시 고르면
+                    `setReference`가 오류를 지운다. 빼기는 `field.onChange`라, 이 오류가 생긴 시점엔 제출을
+                    한 번 마친 폼이 값이 바뀔 때마다 리졸버로 그 필드를 다시 검증해 통과하면 오류를 지운다
+                    (react-hook-form 기본 `reValidateMode: "onChange"`). 다음 제출도 검증 결과로 오류
+                    전체를 갈아 끼우므로 남지 않는다. */}
                 {errorMessage !== undefined && (
                   <p id={ERROR_ID} role="alert" className="break-keep text-xs text-destructive-text">
                     {errorMessage}

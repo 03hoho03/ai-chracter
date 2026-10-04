@@ -57,7 +57,7 @@ export {
 export { STAT_ICON_OPTIONS } from "./model/statIcons";
 export { isAuthorOpeningMessage } from "./model/isAuthorOpeningMessage";
 export { shouldShowSuggestedReplies } from "./model/shouldShowSuggestedReplies";
-export { toChatRoomState } from "./api/toChatRoomState";
+export { OPERATOR_MAP as ENDING_RULE_OPERATOR_SYMBOLS, toChatRoomState } from "./api/toChatRoomState";
 export { truncateAndEdit } from "./model/truncateAndEdit";
 export { dropLastMessage, restoreMessage } from "./model/dropLastMessage";
 export { stripChatNotation } from "./model/stripChatNotation";

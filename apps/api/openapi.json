@@ -17646,6 +17646,53 @@
         ],
         "title": "SignupResponse"
       },
+      "SituationNoteDraftItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "infoText": {
+            "type": "string",
+            "title": "Infotext"
+          },
+          "conditionRules": {
+            "items": {
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/EndingRuleDraftItem"
+                },
+                {
+                  "$ref": "#/components/schemas/EndingRuleGroupDraftItem"
+                }
+              ],
+              "discriminator": {
+                "propertyName": "kind",
+                "mapping": {
+                  "group": "#/components/schemas/EndingRuleGroupDraftItem",
+                  "rule": "#/components/schemas/EndingRuleDraftItem"
+                }
+              }
+            },
+            "type": "array",
+            "title": "Conditionrules"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "infoText",
+          "conditionRules"
+        ],
+        "title": "SituationNoteDraftItem",
+        "description": "상황 노트 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다. 배열 순서가 `order`(조건이 참인 노트가 위에서부터\n실린다)라 순서 필드는 따로 없다.\n\n조건은 엔딩의 스탯 규칙과 같은 타입을 쓴다 — 같은 시작설정의 스탯을 entity_id 로 가리킨다. 상한(개수·길이·규칙 수)은\n요청에만 건다(`StoryDraftPayload` 의 검증). 이 타입은 응답에도 쓰이므로 여기에 걸면, 나중에 상한을 낮추거나 손으로\n넣은 행이 상한을 넘을 때 그 초안을 열 수 없다(GET 500).\n\n조건이 없거나 본문이 빈 노트도 저장은 받는다. 빌더가 \"노트 추가\" 직후의 빈 노트를 그대로 자동저장하므로 여기서 막으면\n노트를 추가할 때마다 자동저장이 멈춘다 — 그 검사는 발행(`validate_story_publish`)이 한다."
+      },
       "SituationalImageResponse": {
         "properties": {
           "entityId": {
@@ -17788,6 +17835,13 @@
             },
             "type": "array",
             "title": "Endings"
+          },
+          "situationNotes": {
+            "items": {
+              "$ref": "#/components/schemas/SituationNoteDraftItem"
+            },
+            "type": "array",
+            "title": "Situationnotes"
           }
         },
         "type": "object",
@@ -17801,7 +17855,8 @@
           "statDefs",
           "endings"
         ],
-        "title": "StartingSetupDraftItem"
+        "title": "StartingSetupDraftItem",
+        "description": "`situation_notes` 는 안 보내면 그 시작설정의 상황 노트를 건드리지 않는다(router 가 `model_fields_set` 으로\n가른다). 상황 노트를 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)·이 필드를 적지 않은 시드는 보내지 않으므로, 빈 목록과\n같게 다루면 그 저장 한 번이 다른 탭에서 만든 노트를 전부 지운다. 보냈을 때만 페이로드에 맞춘다 — 빈 목록이면 전부\n지운다. 기본값을 `default_factory` 로 두는 이유는 `KeywordNoteDraftInput` 의 같은 주석과 같다."
       },
       "StartingSetupSummary": {
         "properties": {
@@ -17883,6 +17938,26 @@
               }
             ],
             "title": "Perturndelta"
+          },
+          "changeDirection": {
+            "type": "string",
+            "enum": [
+              "both",
+              "increase",
+              "decrease"
+            ],
+            "title": "Changedirection"
+          },
+          "maxChangePerTurn": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxchangeperturn"
           }
         },
         "type": "object",
@@ -17897,7 +17972,8 @@
           "unit",
           "description"
         ],
-        "title": "StatDefDraftItem"
+        "title": "StatDefDraftItem",
+        "description": "스탯 하나. 저장 요청·초안 응답·미리보기 세션이 함께 쓴다.\n\n`change_direction`·`max_change_per_turn` 은 안 보내면 기존 스탯의 값을 그대로 둔다(router 가 `model_fields_set`\n으로 가른다). 이 옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 제약을 지우지 않게\n하려는 것이다. 새 스탯은 기본값(양방향·제한 없음)으로 들어간다. 기본값을 `default_factory` 로 두는 이유는\n`KeywordNoteDraftInput` 의 같은 주석과 같다. 턴당 변화와 함께 쓰거나 폭을 0 이하로 둔 값도 저장은 받는다 —\n여기서 막으면 그 초안의 자동저장이 편집마다 실패하므로 발행(`validate_story_publish`)이 막는다."
       },
       "StatDefSnapshot": {
         "properties": {

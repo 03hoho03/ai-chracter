@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@ai-character-chat/ui/components/button";
 import {
   Dialog,
+  DialogBody,
   DialogContent,
   DialogDescription,
   DialogHeader,
@@ -35,10 +36,14 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
 
   return (
     <Dialog open={isOpen} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-h-dialog overflow-y-auto sm:max-w-sm">
+      {/* 목록↔상세 래퍼는 `key` 로 바뀔 때마다 새로 마운트돼 진입 애니메이션을 다시 돌리고, 본문 스크롤도 맨 위에서
+          시작한다. 애니메이션은 래퍼가 아니라 헤더와 본문 안쪽에 건다 — 래퍼째 옆으로 밀면 다이얼로그 전폭인 본문(경계선·
+          스크롤바)이 다이얼로그 오른쪽 밖으로 삐져나온다. 안쪽 내용이 밀리는 8px 은 본문이 가로로 잘라 낸다. 본문에는
+          포커스할 것이 없을 수 있어(잠긴 엔딩만 있는 목록, 에필로그 글) 본문 자체를 Tab 정지로 둔다. */}
+      <DialogContent className="sm:max-w-sm">
         {selectedEnding ? (
-          <div key={selectedEnding.id} className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
-            <DialogHeader>
+          <div key={selectedEnding.id} className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogHeader className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
               <Button
                 variant="ghost"
                 size="sm"
@@ -54,16 +59,23 @@ export const EndingCollectionModal = createCallable<EndingCollectionModalProps, 
               </DialogTitle>
               <DialogDescription className="sr-only">엔딩 에필로그</DialogDescription>
             </DialogHeader>
-            <EndingEpilogue epilogue={selectedEnding.epilogue} mediaTagImages={selectedEnding.mediaTagImages} />
+            <DialogBody scrollLabel="에필로그">
+              <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-right-2 motion-safe:duration-200">
+                <EndingEpilogue epilogue={selectedEnding.epilogue} mediaTagImages={selectedEnding.mediaTagImages} />
+              </div>
+            </DialogBody>
           </div>
         ) : (
-          <div key="list" className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
-            <DialogHeader>
+          <div key="list" className="flex min-h-0 flex-1 flex-col gap-4">
+            <DialogHeader className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
               <DialogTitle>엔딩 컬렉션</DialogTitle>
               <DialogDescription>지금까지 도달한 엔딩을 모아봤어요.</DialogDescription>
             </DialogHeader>
-
-            <EndingListBody query={endingsQuery} onSelect={setSelectedEnding} />
+            <DialogBody scrollLabel="엔딩 목록">
+              <div className="motion-safe:animate-in motion-safe:fade-in-0 motion-safe:duration-200">
+                <EndingListBody query={endingsQuery} onSelect={setSelectedEnding} />
+              </div>
+            </DialogBody>
           </div>
         )}
       </DialogContent>

@@ -39,6 +39,7 @@ from api.db.models.story import (
     MediaBookPerson,
     MediaBookScene,
     Shortcut,
+    SituationNote,
     StartingSetup,
     StatDef,
     StoryPromptTemplate,
@@ -2897,6 +2898,103 @@ async def test_patch_story_draft_keeps_accepting_stat_whose_range_is_contradicto
     assert [(s.min_value, s.max_value, s.initial_value) for s in saved] == [(100, 0, 500)]
 
 
+def _limited_stat_item(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "name": "남은 날",
+        "icon": "heart",
+        "color": "rose",
+        "minValue": 0,
+        "maxValue": 42,
+        "initialValue": 42,
+        "unit": None,
+        "description": "날이 바뀌면 줄어든다",
+    }
+    item.update(overrides)
+    return item
+
+
+async def _saved_stat_options(db_session: AsyncSession, version_id: uuid.UUID) -> list[tuple[object, ...]]:
+    saved = (
+        await db_session.scalars(
+            sa.select(StatDef)
+            .join(StartingSetup, StatDef.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StatDef.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    return [(s.name, s.per_turn_delta, s.change_direction, s.max_change_per_turn) for s in saved]
+
+
+async def test_patch_story_draft_round_trips_stat_change_direction_and_max_change(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """방향·폭을 저장하고 초안 응답이 그대로 돌려준다. 턴당 변화와 함께 건 옵션, 0 이하 폭도 저장은 받는다 — 발행만
+    막는다(저장에서 막으면 그 초안의 자동저장이 편집마다 실패한다)."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    judged = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
+    counter = _limited_stat_item(name="카운터", perTurnDelta=-1, changeDirection="increase", maxChangePerTurn=0)
+    setup = _starting_setup_item(statDefs=[judged, counter])
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup]))
+
+    assert resp.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [
+        ("남은 날", None, "decrease", 7),
+        ("카운터", -1, "increase", 0),
+    ]
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert got.status_code == 200
+    stat_defs = got.json()["startingSetups"][0]["statDefs"]
+    assert [(s["perTurnDelta"], s["changeDirection"], s["maxChangePerTurn"]) for s in stat_defs] == [
+        (None, "decrease", 7),
+        (-1, "increase", 0),
+    ]
+
+
+async def test_patch_story_draft_keeps_stat_change_options_when_fields_omitted(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """옵션을 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)의 자동저장이 작가가 건 방향·폭을 기본값으로 되돌리면 안
+    된다. 새 스탯은 기본값(양방향·제한 없음)으로 들어가고, 명시적으로 보낸 기본값은 지운다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id = str(uuid.uuid4())
+    kept = _limited_stat_item(name="남은 날", changeDirection="decrease", maxChangePerTurn=7)
+    first = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[_starting_setup_item(id=setup_id, statDefs=[kept])]),
+    )
+    assert first.status_code == 200
+
+    old_bundle_kept = {key: value for key, value in kept.items() if key not in ("changeDirection", "maxChangePerTurn")}
+    old_bundle_kept["description"] = "고친 설명"
+    old_bundle_new = _limited_stat_item(name="새 스탯")
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(id=setup_id, statDefs=[old_bundle_kept, old_bundle_new])]
+        ),
+    )
+
+    assert resp.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [
+        ("남은 날", None, "decrease", 7),
+        ("새 스탯", None, "both", None),
+    ]
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                _starting_setup_item(id=setup_id, statDefs=[{**kept, "changeDirection": "both", "maxChangePerTurn": None}])
+            ]
+        ),
+    )
+    assert cleared.status_code == 200
+    assert await _saved_stat_options(db_session, version.id) == [("남은 날", None, "both", None)]
+
+
 async def test_patch_story_draft_persists_keyword_note_order_from_array_position(
     db_client: httpx.AsyncClient, db_session: AsyncSession
 ) -> None:
@@ -3073,3 +3171,334 @@ async def test_patch_removing_setup_referenced_by_note_succeeds(
     assert note.starting_setup_id is None
     if keep_other_setup:
         assert remaining[0].playguide == "이어서 친 글"
+
+
+def _note_stat_item(stat_id: str, name: str = "남은 날") -> dict[str, object]:
+    return {
+        "id": stat_id,
+        "name": name,
+        "icon": "heart",
+        "color": "rose",
+        "minValue": 0,
+        "maxValue": 42,
+        "initialValue": 42,
+        "unit": None,
+        "description": "날이 바뀌면 줄어든다",
+    }
+
+
+def _note_rule(stat_id: str, *, operator: str = "lte", threshold: float = 7, next_op: str | None = None) -> dict[str, object]:
+    return {
+        "kind": "rule",
+        "id": str(uuid.uuid4()),
+        "statId": stat_id,
+        "operator": operator,
+        "threshold": threshold,
+        "nextOp": next_op,
+    }
+
+
+def _situation_note(**overrides: object) -> dict[str, object]:
+    item: dict[str, object] = {
+        "id": str(uuid.uuid4()),
+        "name": "마감 직전",
+        "infoText": "상영회까지 일주일도 남지 않았다.",
+        "conditionRules": [],
+    }
+    item.update(overrides)
+    return item
+
+
+async def _situation_notes_by_setup(
+    db_session: AsyncSession, version_id: uuid.UUID
+) -> dict[str, list[tuple[str, str, str, int, list[dict[str, Any]]]]]:
+    rows = (
+        await db_session.execute(
+            sa.select(StartingSetup.entity_id, SituationNote)
+            .join(StartingSetup, SituationNote.starting_setup_id == StartingSetup.id)
+            .where(StartingSetup.content_version_id == version_id)
+            .order_by(StartingSetup.order, SituationNote.order)
+            .execution_options(populate_existing=True)
+        )
+    ).all()
+    result: dict[str, list[tuple[str, str, str, int, list[dict[str, Any]]]]] = {}
+    for setup_entity_id, note in rows:
+        result.setdefault(str(setup_entity_id), []).append(
+            (str(note.entity_id), note.name, note.info_text, note.order, note.condition_rules)
+        )
+    return result
+
+
+async def test_patch_story_draft_round_trips_situation_notes_per_starting_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상황 노트는 시작설정마다 따로 저장되고, 배열 순서가 순서 칸이 된다. 조건(그룹 포함)은 JSON 한 칸에 저장했다가
+    초안 응답이 보낸 모양 그대로 돌려준다 — 그래야 빌더가 받은 값을 다시 저장해도 바뀌지 않는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    first_setup, second_setup = str(uuid.uuid4()), str(uuid.uuid4())
+    days, mood = str(uuid.uuid4()), str(uuid.uuid4())
+    group = {
+        "kind": "group",
+        "id": str(uuid.uuid4()),
+        "nextOp": None,
+        "rules": [_note_rule(mood, operator="gte", threshold=30, next_op="or"), _note_rule(mood, operator="eq", threshold=0)],
+    }
+    deadline = _situation_note(name="마감 직전", conditionRules=[_note_rule(days, next_op="and"), group])
+    showday_rule = _note_rule(days, threshold=0)
+    showday = _situation_note(name="상영회 당일", infoText="오늘은 상영회 당일이다.", conditionRules=[showday_rule])
+    other = _situation_note(name="", infoText="다른 시작설정", conditionRules=[_note_rule(days)])
+    payload = _story_draft_payload(
+        startingSetups=[
+            _starting_setup_item(
+                id=first_setup,
+                statDefs=[_note_stat_item(days), _note_stat_item(mood, "기분")],
+                situationNotes=[deadline, showday],
+            ),
+            _starting_setup_item(id=second_setup, statDefs=[_note_stat_item(days)], situationNotes=[other]),
+        ]
+    )
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=payload)
+
+    assert resp.status_code == 200
+    saved = await _situation_notes_by_setup(db_session, version.id)
+    assert [(note_id, name, order) for note_id, name, _, order, _ in saved[first_setup]] == [
+        (deadline["id"], "마감 직전", 0),
+        (showday["id"], "상영회 당일", 1),
+    ]
+    assert [(note_id, info, order) for note_id, _, info, order, _ in saved[second_setup]] == [
+        (other["id"], "다른 시작설정", 0)
+    ]
+    # 규칙의 스탯 참조·연산자는 문자열 그대로 저장된다(직접 조회하는 운영 쿼리가 읽을 수 있는 꼴).
+    assert saved[first_setup][1][4] == [
+        {"kind": "rule", "id": showday_rule["id"], "stat_id": days, "operator": "lte", "threshold": 0, "next_op": None}
+    ]
+
+    got = await db_client.get(f"/contents/{content.id}/draft")
+    assert got.status_code == 200
+    setups = got.json()["startingSetups"]
+    assert setups[0]["situationNotes"] == [deadline, showday]
+    assert [note["id"] for note in setups[1]["situationNotes"]] == [other["id"]]
+
+    resaved = await db_client.patch(f"/contents/{content.id}/draft", json={**payload, "startingSetups": setups})
+    assert resaved.status_code == 200
+    assert await _situation_notes_by_setup(db_session, version.id) == saved
+
+
+async def test_patch_story_draft_keeps_situation_notes_when_field_omitted_and_clears_on_empty_list(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상황 노트를 모르는 화면(배포 전부터 열려 있던 탭의 옛 번들)·시드는 이 필드를 보내지 않는다. 그 저장이 다른 탭에서
+    만든 노트를 지우면 안 된다. 명시적으로 보낸 빈 목록은 그 시작설정의 노트를 전부 지운다. 남는 노트를 보내면 빠진 노트만
+    지우고 순서를 다시 매긴다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup_id, days = str(uuid.uuid4()), str(uuid.uuid4())
+    first, second, third = (_situation_note(name=name, conditionRules=[_note_rule(days)]) for name in ("하나", "둘", "셋"))
+
+    def setup(**overrides: object) -> dict[str, object]:
+        return _starting_setup_item(id=setup_id, statDefs=[_note_stat_item(days)], **overrides)
+
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[setup(situationNotes=[first, second, third])]),
+    )
+    assert created.status_code == 200
+
+    old_bundle = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup(name="고친 이름")])
+    )
+    assert old_bundle.status_code == 200
+    assert [(name, order) for _, name, _, order, _ in (await _situation_notes_by_setup(db_session, version.id))[setup_id]] == [
+        ("하나", 0),
+        ("둘", 1),
+        ("셋", 2),
+    ]
+
+    pruned = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[setup(situationNotes=[third, first])]),
+    )
+    assert pruned.status_code == 200
+    assert [(name, order) for _, name, _, order, _ in (await _situation_notes_by_setup(db_session, version.id))[setup_id]] == [
+        ("셋", 0),
+        ("하나", 1),
+    ]
+
+    cleared = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup(situationNotes=[])])
+    )
+    assert cleared.status_code == 200
+    assert await _situation_notes_by_setup(db_session, version.id) == {}
+
+
+def _rules(count: int, stat_id: str) -> list[dict[str, object]]:
+    return [_note_rule(stat_id) for _ in range(count)]
+
+
+@pytest.mark.parametrize(
+    ("notes_for", "accepted"),
+    [
+        pytest.param(lambda stat: [_situation_note(conditionRules=_rules(1, stat)) for _ in range(10)], True, id="ten-notes"),
+        pytest.param(lambda stat: [_situation_note(conditionRules=_rules(1, stat)) for _ in range(11)], False, id="eleven-notes"),
+        pytest.param(lambda stat: [_situation_note(infoText="가" * 800)], True, id="text-800"),
+        pytest.param(lambda stat: [_situation_note(infoText="가" * 801)], False, id="text-801"),
+        pytest.param(lambda stat: [_situation_note(name="가" * 20)], True, id="name-20"),
+        pytest.param(lambda stat: [_situation_note(name="가" * 21)], False, id="name-21"),
+        pytest.param(lambda stat: [_situation_note(conditionRules=_rules(10, stat))], True, id="ten-rules"),
+        pytest.param(lambda stat: [_situation_note(conditionRules=_rules(11, stat))], False, id="eleven-rules"),
+        pytest.param(
+            lambda stat: [
+                _situation_note(
+                    conditionRules=[*_rules(6, stat), {"kind": "group", "id": str(uuid.uuid4()), "nextOp": None, "rules": _rules(5, stat)}]
+                )
+            ],
+            False,
+            id="eleven-rules-counting-group-members",
+        ),
+    ],
+)
+async def test_patch_story_draft_enforces_situation_note_limits(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    notes_for: Any,
+    accepted: bool,
+) -> None:
+    """시작설정당 노트 10개·본문 800자·이름 20자·노트당 규칙 10개(그룹 안 규칙까지 센다)를 넘는 저장은 422 로 막고
+    아무것도 저장하지 않는다. 경계값은 받는다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    days = str(uuid.uuid4())
+
+    resp = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[_starting_setup_item(statDefs=[_note_stat_item(days)], situationNotes=notes_for(days))]
+        ),
+    )
+
+    assert resp.status_code == (200 if accepted else 422)
+    assert bool(await _situation_notes_by_setup(db_session, version.id)) is accepted
+
+
+async def test_draft_response_does_not_apply_situation_note_limits(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상한은 요청에만 건다. 상한을 넘는 행이 이미 저장돼 있어도(상한이 생기기 전이나 서버를 되돌린 사이 저장된 행)
+    초안은 열려야 빌더에서 고칠 수 있다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    setup = StartingSetup(entity_id=uuid.uuid4(), content_version_id=version.id, name="시작", prologue="프롤로그", order=0)
+    db_session.add(setup)
+    await db_session.flush()
+    stat_id = uuid.uuid4()
+    rules = [
+        {"kind": "rule", "id": str(uuid.uuid4()), "stat_id": str(stat_id), "operator": "gte", "threshold": 1, "next_op": None}
+        for _ in range(12)
+    ]
+    for order in range(11):
+        db_session.add(
+            SituationNote(
+                entity_id=uuid.uuid4(),
+                starting_setup_id=setup.id,
+                name="가" * 25,
+                info_text="나" * 900,
+                order=order,
+                condition_rules=rules,
+            )
+        )
+    await db_session.commit()
+
+    got = await db_client.get(f"/contents/{content.id}/draft")
+
+    assert got.status_code == 200
+    notes = got.json()["startingSetups"][0]["situationNotes"]
+    assert len(notes) == 11
+    assert len(notes[0]["conditionRules"]) == 12
+
+
+async def test_patch_story_draft_rejects_situation_note_rule_pointing_to_stat_missing_from_its_setup(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상황 노트 조건이 같은 시작설정에 없는 스탯을 가리키면 그 노트는 영영 실리지 않는다. 엔딩과 다른 전용 코드로 그룹
+    안 규칙까지 경로를 알리고 아무것도 저장하지 않는다. 엔딩 조건도 함께 어긋났으면 엔딩 쪽을 먼저 알린다(엔딩 응답은
+    상황 노트가 생기기 전과 같다)."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    own_stat, other_setup_stat = str(uuid.uuid4()), str(uuid.uuid4())
+    note = _situation_note(
+        conditionRules=[
+            _note_rule(own_stat),
+            _note_rule(other_setup_stat),
+            {"kind": "group", "id": str(uuid.uuid4()), "nextOp": None, "rules": [_note_rule(own_stat), _note_rule(str(uuid.uuid4()))]},
+        ]
+    )
+    setups = [
+        _starting_setup_item(statDefs=[_note_stat_item(own_stat)], situationNotes=[_situation_note(conditionRules=[_note_rule(own_stat)]), note]),
+        _starting_setup_item(statDefs=[_note_stat_item(other_setup_stat)]),
+    ]
+
+    resp = await db_client.patch(f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=setups))
+
+    assert resp.status_code == 422
+    assert resp.json()["detail"] == {
+        "code": "SITUATION_NOTE_STAT_NOT_FOUND",
+        "paths": [
+            "startingSetups[0].situationNotes[1].conditionRules[1].statId",
+            "startingSetups[0].situationNotes[1].conditionRules[2].rules[1].statId",
+        ],
+    }
+    assert (
+        await db_session.scalars(sa.select(StartingSetup).where(StartingSetup.content_version_id == version.id))
+    ).all() == []
+
+    ending = {
+        "id": str(uuid.uuid4()),
+        "name": "엔딩",
+        "turnCountGate": 10,
+        "judgmentPrompt": "판정",
+        "epilogue": None,
+        "hint": None,
+        "statRules": [_note_rule(other_setup_stat)],
+    }
+    both = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(startingSetups=[{**setups[0], "endings": [ending]}, setups[1]]),
+    )
+    assert both.status_code == 422
+    assert both.json()["detail"] == {
+        "code": "ENDING_RULE_STAT_NOT_FOUND",
+        "paths": ["startingSetups[0].endings[0].statRules[0].statId"],
+    }
+
+
+async def test_removing_starting_setup_deletes_its_situation_notes(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    """상황 노트는 시작설정을 물리 FK 로 가리킨다. 시작설정을 지우는 저장과 초안 삭제가 노트를 먼저 지우지 않으면 FK
+    위반으로 실패한다. 남는 시작설정의 노트는 그대로다."""
+    _, content, version, _ = await _logged_in_story_draft(db_client, db_session)
+    kept_setup, removed_setup, days = str(uuid.uuid4()), str(uuid.uuid4()), str(uuid.uuid4())
+    kept_note = _situation_note(conditionRules=[_note_rule(days)])
+
+    def setup(setup_id: str, notes: list[dict[str, object]]) -> dict[str, object]:
+        return _starting_setup_item(id=setup_id, statDefs=[_note_stat_item(days)], situationNotes=notes)
+
+    created = await db_client.patch(
+        f"/contents/{content.id}/draft",
+        json=_story_draft_payload(
+            startingSetups=[
+                setup(kept_setup, [kept_note]),
+                setup(removed_setup, [_situation_note(conditionRules=[_note_rule(days)]) for _ in range(2)]),
+            ]
+        ),
+    )
+    assert created.status_code == 200
+
+    removed = await db_client.patch(
+        f"/contents/{content.id}/draft", json=_story_draft_payload(startingSetups=[setup(kept_setup, [kept_note])])
+    )
+
+    assert removed.status_code == 200
+    saved = await _situation_notes_by_setup(db_session, version.id)
+    assert {setup_id: [note[0] for note in notes] for setup_id, notes in saved.items()} == {kept_setup: [kept_note["id"]]}
+
+    deleted = await db_client.delete(f"/contents/{content.id}/draft")
+    assert deleted.status_code == 204
+    assert (await db_session.scalars(sa.select(SituationNote).execution_options(populate_existing=True))).all() == []
