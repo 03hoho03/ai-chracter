@@ -80,7 +80,7 @@ from api.content.schemas import (
 from api.content.view_count import resolve_viewer_key, try_mark_viewed
 from api.core.config import settings
 from api.core.constants import WITHDRAWN_USER_NICKNAME
-from api.core.s3 import build_thumbnail_key, download_object, generate_presigned_get_url
+from api.core.s3 import build_display_key, build_thumbnail_key, download_object, generate_presigned_get_url
 from api.core.sentry import capture_dependency_failure
 from api.db.models.auth import User
 from api.db.models.character import CharacterVersionDetail, SituationalImage
@@ -354,16 +354,18 @@ async def list_my_favorites(
     return ContentListResponse(items=items, next_cursor=next_cursor)
 
 
-async def _resolve_asset_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
-    """No presigned-GET/public-read path exists for assets yet, so a renderable
-    URL is signed on demand from the stored object key each time it's needed
-    (first done for profile images, reused here for content thumbnails)."""
+async def _resolve_display_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
+    """상세 응답의 대표 이미지 주소 — 원본 대신 `_display.webp`(긴 변 1024 WebP) 변형을 서명한다. 이 주소를 받는
+    자리(상세 히어로, 채팅방 헤더 아바타, 콘텐츠 링크 미리보기 이미지) 중 가장 흔한 데스크톱 상세 모달을 긴 변 1024 가
+    2배 밀도로 덮는데, 시드 원본은 장당 1MB 안팎의 PNG 라 그대로 내보내면 같은 그림에 열 배 넘게 받는다. 이 변형도 썸네일처럼
+    모든 READY 이미지 자산에 만들어지고(생성 시점, 그 전 자산은 `scripts/backfill_thumbnails.py` 로 소급) 키를 존재
+    확인 없이 유도한다."""
     if asset_id is None:
         return None
     asset = await db.get(Asset, asset_id)
     if asset is None:
         return None
-    return await run_in_threadpool(generate_presigned_get_url, asset.storage_key)
+    return await run_in_threadpool(generate_presigned_get_url, build_display_key(asset.storage_key))
 
 
 async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -> str | None:
@@ -371,7 +373,7 @@ async def _resolve_thumbnail_url(db: AsyncSession, asset_id: uuid.UUID | None) -
     need full resolution, and every READY image asset is guaranteed to have this
     variant (generated at creation, backfilled for older assets by
     `scripts/backfill_thumbnails.py`), so the key is derived without an existence check.
-    Detail views (`get_content_detail`) keep `_resolve_asset_url`."""
+    The detail view draws the image larger and signs `_display.webp` instead (`_resolve_display_url`)."""
     if asset_id is None:
         return None
     asset = await db.get(Asset, asset_id)
@@ -675,8 +677,8 @@ async def _ending_rule_draft_items(db: AsyncSession, ending_id: uuid.UUID) -> li
     `ending_rule_groups` share one `order` sequence, reconstructed
     here as the same `kind`-discriminated tree so the draft response round-trips through
     `PATCH` unchanged. Not imported from `chat/schemas.py`/`chat/router.py` directly — same
-    "duplicate the small helper, don't cross-import router files" convention as
-    `_resolve_asset_url`."""
+    "duplicate the small helper, don't cross-import router files" convention as the
+    `_resolve_asset_url` copies in the moderation/admin/inquiry routers."""
     top_rules = (await db.scalars(select(EndingRule).where(EndingRule.ending_id == ending_id))).all()
     groups = (await db.scalars(select(EndingRuleGroup).where(EndingRuleGroup.ending_id == ending_id))).all()
 
@@ -2696,7 +2698,7 @@ async def get_content_detail(
         id=content.id,
         type=content.type,
         name=name,
-        thumbnail_url=await _resolve_asset_url(db, thumbnail_asset_id),
+        thumbnail_url=await _resolve_display_url(db, thumbnail_asset_id),
         creator_user_id=content.creator_user_id,
         creator_nickname=creator_nickname
         if creator_nickname is not None

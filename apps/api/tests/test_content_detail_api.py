@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone, UTC
+from datetime import datetime, timedelta, timezone, UTC
+from urllib.parse import urlparse
 
 import httpx
 import pytest
@@ -8,8 +9,11 @@ from redis.exceptions import RedisError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.core.redis import redis_client
+from api.core.s3 import build_display_key
 
 from api.db.models import (
+    Asset,
+    AssetKind,
     CharacterVersionDetail,
     Content,
     ContentTarget,
@@ -24,7 +28,7 @@ from api.db.models import (
     StoryVersionDetail,
     User,
 )
-from factories import _get_genre, _login_as, _make_asset, _make_user
+from factories import _get_genre, _login_as, _make_asset, _make_user, _set_signing_clock
 
 
 async def _make_published_content(
@@ -154,6 +158,117 @@ async def test_get_content_detail_returns_meta_metrics_and_version_fields(
     assert body["versionNumber"] == 1
     assert body["isOwner"] is False
     assert body["accessStatus"] == {"kind": "accessible", "visibility": "public"}
+
+
+def _url_key(url: str) -> str:
+    """서명 URL 이 가리키는 객체 키(경로에서 버킷 이름을 뗀 나머지)."""
+    return urlparse(url).path.split("/", 2)[2]
+
+
+async def _thumbnail_asset(db_session: AsyncSession, version: ContentVersion, content_type: ContentType) -> Asset:
+    thumbnail_asset_id = (
+        await db_session.scalar(
+            sa.select(CharacterVersionDetail.thumbnail_asset_id).where(
+                CharacterVersionDetail.content_version_id == version.id
+            )
+        )
+        if content_type == ContentType.CHARACTER
+        else await db_session.scalar(
+            sa.select(StoryVersionDetail.thumbnail_asset_id).where(StoryVersionDetail.content_version_id == version.id)
+        )
+    )
+    assert thumbnail_asset_id is not None
+    asset = await db_session.get(Asset, thumbnail_asset_id)
+    assert asset is not None
+    return asset
+
+
+@pytest.mark.parametrize("content_type", [ContentType.CHARACTER, ContentType.STORY])
+@pytest.mark.parametrize(
+    ("kind", "storage_key"),
+    [
+        # 작가가 올린 대표 이미지, 빌더가 복사 없이 거는 생성 이미지, 블러본 — 대표 이미지가 될 수 있는 자산
+        # 종류마다 원래 확장자가 달라도 같은 규칙으로 표시용 변형 키가 나와야 한다.
+        (AssetKind.ORIGINAL, "assets/content-thumbnail/{id}.webp"),
+        (AssetKind.GENERATED, "assets/generated/{id}.png"),
+        (AssetKind.BLURRED, "assets/situational-image-blurred/{id}.png"),
+    ],
+)
+async def test_get_content_detail_signs_the_display_variant_of_the_thumbnail(
+    db_client: httpx.AsyncClient,
+    db_session: AsyncSession,
+    content_type: ContentType,
+    kind: AssetKind,
+    storage_key: str,
+) -> None:
+    """상세 히어로·채팅방 헤더 아바타·링크 미리보기가 이 주소를 그대로 쓴다. 원본은 장당 1MB 안팎이라 크게 그리는
+    자리에도 긴 변 1024 표시용 변형을 내보낸다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version = await _make_published_content(
+        db_session, creator_user_id=user.id, genre_id=genre.id, content_type=content_type
+    )
+    asset = await _thumbnail_asset(db_session, version, content_type)
+    asset.kind = kind
+    asset.storage_key = storage_key.format(id=uuid.uuid4())
+    await db_session.commit()
+
+    resp = await db_client.get(f"/contents/{content.id}")
+
+    assert resp.status_code == 200
+    assert _url_key(resp.json()["thumbnailUrl"]) == build_display_key(asset.storage_key)
+
+
+async def test_get_content_detail_thumbnail_url_is_null_without_a_thumbnail(
+    db_client: httpx.AsyncClient, db_session: AsyncSession
+) -> None:
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, version = await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id)
+    detail = await db_session.scalar(
+        sa.select(CharacterVersionDetail).where(CharacterVersionDetail.content_version_id == version.id)
+    )
+    assert detail is not None
+    detail.thumbnail_asset_id = None
+    await db_session.commit()
+
+    resp = await db_client.get(f"/contents/{content.id}")
+
+    assert resp.status_code == 200
+    assert resp.json()["thumbnailUrl"] is None
+
+
+async def test_get_content_detail_thumbnail_url_is_identical_within_a_signing_window(
+    db_client: httpx.AsyncClient, db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """상세를 다시 받아도(모달 재오픈·채팅방 재진입) 같은 15분 구간이면 주소가 글자까지 같아 브라우저 캐시에서 바로
+    그린다. 구간 경계를 넘으면 새 서명이라 바뀐다."""
+    user = _make_user()
+    db_session.add(user)
+    await db_session.flush()
+    genre = await _get_genre(db_session)
+    content, _version = await _make_published_content(db_session, creator_user_id=user.id, genre_id=genre.id)
+    await db_session.commit()
+
+    async def thumbnail_url_at(at: datetime) -> str:
+        _set_signing_clock(monkeypatch, at)
+        resp = await db_client.get(f"/contents/{content.id}")
+        assert resp.status_code == 200
+        url: str = resp.json()["thumbnailUrl"]
+        return url
+
+    window_start = datetime(2026, 10, 1, 10, 0, tzinfo=UTC)
+    window_end = window_start + timedelta(minutes=15)
+    first = await thumbnail_url_at(window_start + timedelta(seconds=1))
+    last = await thumbnail_url_at(window_end - timedelta(seconds=1))
+    next_window = await thumbnail_url_at(window_end)
+
+    assert first == last
+    assert next_window != last
 
 
 async def test_get_content_detail_shows_placeholder_nickname_for_withdrawn_creator(
