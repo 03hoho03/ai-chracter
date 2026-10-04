@@ -8,8 +8,10 @@ import { isApiError } from "./client";
  *
  * 단언 대신 스키마로 파싱하는 이유는 `client.ts`의 `errorEnvelopeSchema`와 같다 — 서버가 주는 외부
  * 데이터라 모양을 우리가 보장할 수 없다. `window`는 "어느 상한이냐"가 아니라 "어느 기능이냐"다:
- * 채팅 4경로는 minute/clover, 이미지 생성은 image 하나(둘을 가르는 건 `code`), auth 3경로는 auth
- * 하나(둘을 가르는 것도 `code` — `AUTH_LIMIT`/`AUTH_COOLDOWN`)다.
+ * 채팅 4경로는 minute/clover, 이미지 생성은 image 하나(둘을 가르는 건 `code`), auth 경로는 auth
+ * 하나(둘을 가르는 것도 `code` — `AUTH_LIMIT`/`AUTH_COOLDOWN`), 발행 심사는 publish, 업로드 URL 발급은
+ * upload 다(둘 다 `USER_LIMIT`). upload 는 화면이 따로 말하지 않지만, 값이 여기 없으면 그 429 가
+ * 파싱 실패로 접히므로 BE 가 보내는 값은 전부 담는다.
  *
  * 🔴 이 enum 둘이 **1관문**이다. BE가 보내는 값이 여기 없으면
  * `safeParse`가 실패해 아래 `getRateLimitDetail`이 `null`을 돌려주고, 화면은 **429인 줄도 모른 채**
@@ -35,7 +37,7 @@ const rateLimitDetailSchema = z.object({
     "CLOVER_CONFIRM_REQUIRED",
   ]),
   retryAfterSeconds: z.number(),
-  window: z.enum(["minute", "day", "image", "auth", "clover"]),
+  window: z.enum(["minute", "day", "image", "auth", "clover", "publish", "upload"]),
 });
 
 export type RateLimitDetail = z.infer<typeof rateLimitDetailSchema>;
