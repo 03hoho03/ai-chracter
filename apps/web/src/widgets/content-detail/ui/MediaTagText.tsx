@@ -1,9 +1,12 @@
 import { splitMediaTagText, type MediaTagImages } from "@/entities/media-book";
+import { expandAuthorMacros, type AuthorMacroNames } from "@/shared/lib/text/authorMacros";
 import { MediaImageFrame, type MediaImageSurface } from "@/shared/ui/media-image-frame/MediaImageFrame";
 
 type MediaTagTextProps = {
   text: string;
   images: MediaTagImages;
+  /** 글 속 `{{user}}`·`{{char}}` 를 바꿀 이름. 그림 태그를 가른 뒤 글 조각마다 바꾼다 — 넣은 이름이 태그로 읽히지 않게. */
+  names: AuthorMacroNames;
   /** 글 조각(`<p>`)에 입히는 클래스 — 원래 평문 문단의 클래스를 그대로 준다. */
   className?: string;
   surface: MediaImageSurface;
@@ -19,11 +22,11 @@ type MediaTagTextImageProps = {
  * 바꾸지 않는 이유: 기존 설명이 `*`·`#` 를 글자로 쓰고 있으면 렌더러를 바꾸는 순간 기존 작품의 표시가 달라진다.
  * 맵에 없는 칸의 태그는 빈칸이다. 태그가 없으면 원래와 같은 문단 하나다.
  */
-export function MediaTagText({ text, images, className, surface }: MediaTagTextProps) {
+export function MediaTagText({ text, images, names, className, surface }: MediaTagTextProps) {
   const segments = splitMediaTagText(text, images);
   const [first] = segments;
   if (segments.length <= 1 && first?.kind !== "image") {
-    return <p className={className}>{first?.text ?? ""}</p>;
+    return <p className={className}>{expandAuthorMacros(first?.text ?? "", names)}</p>;
   }
 
   return (
@@ -32,7 +35,7 @@ export function MediaTagText({ text, images, className, surface }: MediaTagTextP
       {segments.map((segment, index) =>
         segment.kind === "text" ? (
           <p key={`text-${index}`} className={className}>
-            {segment.text}
+            {expandAuthorMacros(segment.text, names)}
           </p>
         ) : (
           <MediaTagTextImage key={`image-${index}`} image={images[segment.cellId]} surface={surface} />
