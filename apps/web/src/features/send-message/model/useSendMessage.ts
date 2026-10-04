@@ -20,6 +20,7 @@ import { isLegalReconsentRequiredError } from "@/entities/legal";
 import { resetSessionIfLost, sessionKeys } from "@/entities/session";
 import { openChatStream } from "@/shared/api/sse/openChatStream";
 
+import { ensureUserMessageForSend } from "./ensureUserMessageForSend";
 import { expandUserTextForRoom } from "./expandUserTextForRoom";
 import { imageArchiveKeyToInvalidate, type ImageArchiveTarget } from "./imageArchiveKeyToInvalidate";
 import { settleTurnInProgress } from "./settleTurnInProgress";
@@ -242,6 +243,8 @@ export function useSendMessage(
   function retry(): void {
     if (status.kind !== "error") return;
     // 동일 payload로 스트림만 재오픈 — 사용자 메시지를 중복 추가하지 않음(send()를 다시 호출하지 않음).
+    // 다만 그 사이 재조회가 낙관적 메시지를 지웠으면 다시 둔다(끝에 같은 글이 있으면 그대로).
+    ensureUserMessageForSend(queryClient, roomId, status.retryPayload.payload);
     void openStream(status.retryPayload);
   }
 
