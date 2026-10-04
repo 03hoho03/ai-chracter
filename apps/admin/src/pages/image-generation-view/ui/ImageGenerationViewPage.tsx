@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { imageGenerationStatusLabel } from "@/entities/admin-image-generation";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { useRememberedListSearch } from "@/shared/lib/list-search-memory/listSearchMemory";
 import { DetailLayout } from "@/shared/ui/DetailLayout";
 import { PageContainer } from "@/shared/ui/PageContainer";
 
@@ -17,10 +18,14 @@ import { ViewReasonDialog } from "./ViewReasonDialog";
 
 type ImageGenerationViewPageProps = {
   userId: string;
+  /** 전역 이미지 생성 목록의 행에서 들어왔는지(URL `from=image-generations`). 그러면 "목록으로"·사유 입력 취소가
+   * 유저 상세가 아니라 그 목록(마지막으로 본 필터·페이지)으로 돌아간다. */
+  isFromImageGenerations: boolean;
 };
 
-export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps) {
+export function ImageGenerationViewPage({ userId, isFromImageGenerations }: ImageGenerationViewPageProps) {
   const navigate = useNavigate();
+  const rememberedListSearch = useRememberedListSearch("/image-generations/");
   // 페이지 단위 응답을 그대로 배열에 쌓는다(채팅 열람의 flat item 배열과 다른 점) — 각 항목이
   // 어느 페이지에서 왔는지를 유지해야 presigned 이미지 만료 시 그 페이지만 다시 불러올 수 있다
   // (아래 handleRetryPage 주석 참고).
@@ -34,19 +39,18 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   // 두 번째로도 실패한 이미지는 화면에 "깨졌다"고 보여야 하므로 이건 리렌더가 필요해 state로 둔다.
   const [brokenAssetIds, setBrokenAssetIds] = useState<Set<string>>(new Set());
   const pager = useImageGenerationsPager(userId);
-  const goToUserDetail = () => void navigate({ to: "/users/$userId", params: { userId } });
+  const goBack = () =>
+    void (isFromImageGenerations
+      ? navigate({ to: "/image-generations", search: rememberedListSearch ?? {} })
+      : navigate({ to: "/users/$userId", params: { userId } }));
 
   if (pages.length === 0) {
     return (
       <PageContainer>
         <DetailLayout actions={null}>
-          <Button asChild variant="outline" size="sm" className="self-start">
-            <Link to="/users/$userId" params={{ userId }}>
-              유저 상세로
-            </Link>
-          </Button>
+          <BackLink userId={userId} isFromImageGenerations={isFromImageGenerations} />
           <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
-          <ViewReasonDialog userId={userId} onCancel={goToUserDetail} onConfirmed={(data) => setPages([data])} />
+          <ViewReasonDialog userId={userId} onCancel={goBack} onConfirmed={(data) => setPages([data])} />
         </DetailLayout>
       </PageContainer>
     );
@@ -104,11 +108,7 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
   return (
     <PageContainer>
       <DetailLayout actions={null}>
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link to="/users/$userId" params={{ userId }}>
-            유저 상세로
-          </Link>
-        </Button>
+        <BackLink userId={userId} isFromImageGenerations={isFromImageGenerations} />
 
         <h1 className="text-2xl font-bold tracking-tight text-foreground">생성 이미지 열람</h1>
 
@@ -149,6 +149,24 @@ export function ImageGenerationViewPage({ userId }: ImageGenerationViewPageProps
         )}
       </DetailLayout>
     </PageContainer>
+  );
+}
+
+function BackLink({ userId, isFromImageGenerations }: { userId: string; isFromImageGenerations: boolean }) {
+  const rememberedListSearch = useRememberedListSearch("/image-generations/");
+
+  return (
+    <Button asChild variant="outline" size="sm" className="self-start">
+      {isFromImageGenerations ? (
+        <Link to="/image-generations" search={rememberedListSearch ?? {}}>
+          목록으로
+        </Link>
+      ) : (
+        <Link to="/users/$userId" params={{ userId }}>
+          유저 상세로
+        </Link>
+      )}
+    </Button>
   );
 }
 

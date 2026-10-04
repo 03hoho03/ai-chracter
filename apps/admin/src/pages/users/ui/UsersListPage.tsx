@@ -1,24 +1,24 @@
 import { Button } from "@ai-character-chat/ui/components/button";
-import { Input } from "@ai-character-chat/ui/components/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@ai-character-chat/ui/components/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@ai-character-chat/ui/components/table";
-import { ToggleGroup, ToggleGroupItem } from "@ai-character-chat/ui/components/toggle-group";
-import { useNavigate } from "@tanstack/react-router";
-import { useForm } from "react-hook-form";
+import { Link } from "@tanstack/react-router";
 
-import { useUserListQuery, type AdminUserListParams } from "@/entities/admin-user";
-import { Pagination } from "@/shared/ui/Pagination";
+import { useUserListQuery, type AdminUserListParams, type AdminUserListResponse } from "@/entities/admin-user";
 import { formatCount } from "@/shared/lib/format/formatCount";
 import { formatDateTime } from "@/shared/lib/format/formatDateTime";
+import { DataList, type DataListColumn } from "@/shared/ui/DataList";
+import { FilterBar, selectFilter } from "@/shared/ui/FilterBar";
 import { PageContainer } from "@/shared/ui/PageContainer";
+import { PageHeader } from "@/shared/ui/PageHeader";
+import { Pagination } from "@/shared/ui/Pagination";
+import { QueryState } from "@/shared/ui/QueryState";
 
-type SuspendedFilterValue = "all" | "normal" | "suspended";
-
-const SUSPENDED_FILTER_OPTIONS: { value: SuspendedFilterValue; label: string }[] = [
-  { value: "all", label: "전체" },
+const SUSPENDED_OPTIONS = [
   { value: "normal", label: "정상" },
   { value: "suspended", label: "정지" },
-];
+] as const;
+
+/** BE는 `beta=false`(미지정만)도 받지만 쓰는 일은 "베타 참가자만 보기"뿐이라 선택지를 하나만 둔다
+ * (라우트 search도 `true`만 받는다). */
+const BETA_OPTIONS = [{ value: "beta", label: "베타만" }] as const;
 
 type UsersFilterPatch = {
   q?: string;
@@ -38,177 +38,139 @@ type UsersListPageProps = {
 /** ContentsListPage 동형 — 필터·검색·페이지는 전부 라우트 search에 담긴다(routes/users.index.tsx).
  * 이메일·닉네임 검색은 제출 기반이다 — 타이핑마다 요청을 날리지 않는다. `sort`는 BE에 없어 만들지 않는다. */
 export function UsersListPage({ page, q, suspended, beta, onPageChange, onFilterChange }: UsersListPageProps) {
+  const resetFilters = () => onFilterChange({ suspended: undefined, beta: undefined });
+  const hasCondition = suspended !== undefined || beta !== undefined || q !== undefined;
+
   return (
     <PageContainer>
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">유저 관리</h1>
+      <PageHeader title="유저 관리" />
 
-        {/* 베타 칩은 정지 `Select`와 셸(높이·보더)이 같아 붙여 두면 한 축의 선택지로 읽힌다 —
-         * 축 사이를 `gap-6`으로 벌린다(`apps/web/CLAUDE.md` 필터 절). */}
-        <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* 뒤로가기 등으로 라우트 search의 q가 외부에서 바뀌면 폼째 리마운트해 입력창을 맞춘다. */}
-            <UserSearchForm key={q ?? ""} defaultQuery={q} onSearch={(nextQuery) => onFilterChange({ q: nextQuery })} />
+      <FilterBar
+        search={{
+          label: "이메일 또는 닉네임 검색",
+          placeholder: "이메일 또는 닉네임 검색",
+          value: q,
+          onSubmit: (nextQuery) => onFilterChange({ q: nextQuery }),
+        }}
+        fields={[
+          // URL 의 `suspended` 는 불리언이라 셀렉트 값(문자열)과 오가며 바꾼다 — 기본값 "전체"는 `undefined`.
+          selectFilter({
+            id: "suspended",
+            label: "정지 상태",
+            options: SUSPENDED_OPTIONS,
+            value: suspendedFilterValueOf(suspended),
+            defaultLabel: "전체",
+            onChange: (value) => onFilterChange({ suspended: value === undefined ? undefined : value === "suspended" }),
+          }),
+          selectFilter({
+            id: "beta",
+            label: "베타",
+            options: BETA_OPTIONS,
+            value: beta ? "beta" : undefined,
+            defaultLabel: "전체",
+            onChange: (value) => onFilterChange({ beta: value === "beta" ? true : undefined }),
+          }),
+        ]}
+        onReset={resetFilters}
+      />
 
-            <Select
-              value={suspendedFilterValueOf(suspended)}
-              onValueChange={(value) => {
-                if (!isSuspendedFilterValue(value)) return;
-                onFilterChange({ suspended: value === "all" ? undefined : value === "suspended" });
-              }}
-            >
-              <SelectTrigger size="sm" aria-label="정지 상태 필터" className="w-28">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {SUSPENDED_FILTER_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* BE는 `beta=false`(미지정만)도 받지만 쓰는 일은 "베타 참가자만 보기"뿐이라 두 칩만 둔다
-           * (라우트 search도 `true`만 받는다). */}
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            size="sm"
-            value={beta ? "beta" : "all"}
-            aria-label="베타 참가자 필터"
-            onValueChange={(value) => {
-              // 선택된 칩을 다시 누르면 Radix가 `""`를 보낸다 — 단일선택이라 무시한다.
-              if (value === "all" || value === "beta") onFilterChange({ beta: value === "beta" ? true : undefined });
-            }}
-          >
-            <ToggleGroupItem value="all">전체</ToggleGroupItem>
-            <ToggleGroupItem value="beta">베타만</ToggleGroupItem>
-          </ToggleGroup>
-        </div>
-      </div>
-
-      <UsersTable params={{ page, q, suspended, beta }} onPageChange={onPageChange} />
+      <UsersList
+        params={{ page, q, suspended, beta }}
+        hasCondition={hasCondition}
+        onReset={() => onFilterChange({ suspended: undefined, beta: undefined, q: undefined })}
+        onPageChange={onPageChange}
+      />
     </PageContainer>
   );
 }
 
-/** 검색은 제출만 하고 검증이 없어 zod 스키마 없이 폼 값 타입만 둔다. */
-type SearchFormValues = {
-  q: string;
-};
+type UserListItem = AdminUserListResponse["items"][number];
 
-type UserSearchFormProps = {
-  defaultQuery?: string;
-  onSearch: (query: string | undefined) => void;
-};
-
-function UserSearchForm({ defaultQuery, onSearch }: UserSearchFormProps) {
-  const { register, handleSubmit } = useForm<SearchFormValues>({ defaultValues: { q: defaultQuery ?? "" } });
-
-  return (
-    <form
-      onSubmit={(event) => {
-        event.preventDefault();
-        void handleSubmit(({ q }) => onSearch(q.trim() || undefined))(event);
-      }}
-      className="flex items-center gap-2"
-    >
-      {/* 옆 Button(size="sm")이 32px라 그 높이에 맞춘다. */}
-      <Input placeholder="이메일 또는 닉네임 검색" aria-label="이메일 또는 닉네임 검색" className="h-8 w-48 sm:w-64" {...register("q")} />
-      <Button type="submit" variant="outline" size="sm">
-        검색
-      </Button>
-    </form>
-  );
-}
-
-type UsersTableProps = {
-  params: AdminUserListParams;
-  onPageChange: (page: number) => void;
-};
-
-/** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
-function UsersTable({ params, onPageChange }: UsersTableProps) {
-  const userListQuery = useUserListQuery(params);
-  const navigate = useNavigate();
-
-  if (userListQuery.isPending) {
-    return <div className="h-64 animate-pulse rounded-xl bg-muted" />;
-  }
-
-  if (userListQuery.isError) {
-    return <p className="text-sm text-destructive-text">유저 목록을 불러오지 못했어요. 잠시 후 다시 시도해주세요.</p>;
-  }
-
-  if (userListQuery.data.items.length === 0) {
-    return <p className="text-sm text-muted-foreground">조건에 맞는 유저가 없어요.</p>;
-  }
-
-  const goToDetail = (userId: string) => void navigate({ to: "/users/$userId", params: { userId } });
-
+/** 정지와 베타는 별개 축이라 같은 칸에 덧붙이되, 기본 상태(미지정)엔 아무것도 안 붙인다. */
+function UserStatus({ item }: { item: UserListItem }) {
   return (
     <>
-      <div className="overflow-hidden rounded-xl border border-border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>이메일</TableHead>
-              <TableHead>닉네임</TableHead>
-              <TableHead>상태</TableHead>
-              <TableHead className="text-right">작품수</TableHead>
-              <TableHead className="text-right">채팅방수</TableHead>
-              <TableHead>가입일시</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {userListQuery.data.items.map((item) => (
-              <TableRow
-                key={item.id}
-                tabIndex={0}
-                role="button"
-                className="cursor-pointer"
-                onClick={() => goToDetail(item.id)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" || event.key === " ") {
-                    event.preventDefault();
-                    goToDetail(item.id);
-                  }
-                }}
-              >
-                <TableCell>{item.email}</TableCell>
-                <TableCell className="text-muted-foreground">{item.nickname}</TableCell>
-                <TableCell>
-                  {item.suspendedAt ? "정지" : "정상"}
-                  {/* 베타는 정지와 별개 축이라 같은 칸에 덧붙이되, 기본 상태(미지정)엔 아무것도 안 붙인다. */}
-                  {!!item.betaJoinedAt && <span className="text-muted-foreground"> · 베타</span>}
-                </TableCell>
-                <TableCell className="text-right tabular-nums">{formatCount(item.contentCount)}</TableCell>
-                <TableCell className="text-right tabular-nums">{formatCount(item.chatRoomCount)}</TableCell>
-                <TableCell>{formatDateTime(item.createdAt)}</TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </div>
-
-      <Pagination
-        page={userListQuery.data.page}
-        totalPages={userListQuery.data.totalPages}
-        totalCount={userListQuery.data.totalCount}
-        onPageChange={onPageChange}
-      />
+      {item.suspendedAt ? "정지" : "정상"}
+      {!!item.betaJoinedAt && <span className="text-muted-foreground"> · 베타</span>}
     </>
   );
 }
 
-/** `SelectItem`의 value가 `string`이라 좁힘이 필요하다. `as` 대신 술어를 쓴다(ContentsListPage 동형). */
-function isSuspendedFilterValue(value: string): value is SuspendedFilterValue {
-  return SUSPENDED_FILTER_OPTIONS.some((option) => option.value === value);
+const COLUMNS: readonly DataListColumn<UserListItem>[] = [
+  { id: "email", header: "이메일", isPrimary: true, cell: (item) => item.email },
+  { id: "nickname", header: "닉네임", cell: (item) => <span className="text-muted-foreground">{item.nickname}</span> },
+  { id: "status", header: "상태", cell: (item) => <UserStatus item={item} /> },
+  { id: "contents", header: "작품수", align: "end", cell: (item) => formatCount(item.contentCount) },
+  { id: "chat-rooms", header: "채팅방수", align: "end", cell: (item) => formatCount(item.chatRoomCount) },
+  { id: "created", header: "가입일시", cell: (item) => formatDateTime(item.createdAt) },
+];
+
+type UsersListProps = {
+  params: AdminUserListParams;
+  /** 필터·검색어가 하나라도 걸렸는지 — 빈 결과의 안내가 갈린다. */
+  hasCondition: boolean;
+  onReset: () => void;
+  onPageChange: (page: number) => void;
+};
+
+/** 헤더(제목·필터)는 로딩·에러에도 남아야 해서 쿼리에 의존하는 본문만 갈라낸다. */
+function UsersList({ params, hasCondition, onReset, onPageChange }: UsersListProps) {
+  const userListQuery = useUserListQuery(params);
+
+  return (
+    <QueryState
+      query={userListQuery}
+      errorMessage="유저 목록을 불러오지 못했어요."
+      isEmpty={(data) => data.items.length === 0}
+      empty={
+        hasCondition
+          ? {
+              title: "검색·필터에 맞는 유저가 없어요. 이메일 일부로도 찾을 수 있어요.",
+              action: (
+                <Button type="button" variant="outline" size="sm" onClick={onReset}>
+                  검색·필터 초기화
+                </Button>
+              ),
+            }
+          : { title: "가입한 유저가 없어요." }
+      }
+    >
+      {(data) => (
+        <>
+          <DataList
+            caption="유저 목록"
+            rows={data.items}
+            getRowKey={(item) => item.id}
+            columns={COLUMNS}
+            renderRowTarget={(item, props) => <Link to="/users/$userId" params={{ userId: item.id }} {...props} />}
+            card={{
+              title: (item) => item.email,
+              meta: (item) => (
+                <>
+                  <span className="wrap-anywhere">{item.nickname}</span>
+                  <span aria-hidden>·</span>
+                  <span className="font-medium text-foreground">
+                    <UserStatus item={item} />
+                  </span>
+                </>
+              ),
+              trailing: (item) => formatDateTime(item.createdAt),
+            }}
+          />
+
+          <Pagination
+            page={data.page}
+            totalPages={data.totalPages}
+            totalCount={data.totalCount}
+            onPageChange={onPageChange}
+          />
+        </>
+      )}
+    </QueryState>
+  );
 }
 
-function suspendedFilterValueOf(suspended: boolean | undefined): SuspendedFilterValue {
-  if (suspended === undefined) return "all";
+function suspendedFilterValueOf(suspended: boolean | undefined) {
+  if (suspended === undefined) return undefined;
   return suspended ? "suspended" : "normal";
 }

@@ -34,12 +34,7 @@ function RouteComponent() {
       status={status}
       category={category}
       onPageChange={(nextPage) => void navigate({ search: (prev) => ({ ...prev, page: nextPage }) })}
-      onStatusChange={(nextStatus) =>
-        void navigate({ search: (prev) => ({ ...prev, status: nextStatus, page: 1 }) })
-      }
-      onCategoryChange={(nextCategory) =>
-        void navigate({ search: (prev) => ({ ...prev, category: nextCategory, page: 1 }) })
-      }
+      onFilterChange={(patch) => void navigate({ search: (prev) => ({ ...prev, ...patch, page: 1 }) })}
     />
   );
 }
